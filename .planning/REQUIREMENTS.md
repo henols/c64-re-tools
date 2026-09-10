@@ -128,27 +128,47 @@ Success-Criteria live in `.planning/ROADMAP.md` → "Phase Details".
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DECOMP-01 | TBD | Pending |
-| DECOMP-02 | TBD | Pending |
-| DECOMP-03 | TBD | Pending |
-| DECOMP-04 | TBD | Pending |
-| BUILD-01 | TBD | Pending |
-| BUILD-02 | TBD | Pending |
-| BUILD-03 | TBD | Pending |
-| BUILD-04 | TBD | Pending |
-| BUILD-05 | TBD | Pending |
-| BUILD-06 | TBD | Pending |
-| BUILD-07 | TBD | Pending |
-| EQUIV-01 | TBD | Pending |
-| EQUIV-02 | TBD | Pending |
-| EQUIV-03 | TBD | Pending |
-| EQUIV-04 | TBD | Pending |
+| DECOMP-01 | Phase 45 | Pending |
+| DECOMP-02 | Phase 45 | Pending |
+| DECOMP-03 | Phase 45 | Pending |
+| DECOMP-04 | Phase 45 | Pending |
+| BUILD-01 | Phase 47 | Pending |
+| BUILD-02 | Phase 47 | Pending |
+| BUILD-03 | Phase 47 | Pending |
+| BUILD-04 | Phase 48 | Pending |
+| BUILD-05 | Phase 46 | Pending |
+| BUILD-06 | Phase 49 | Pending |
+| BUILD-07 | Phase 46 | Pending |
+| EQUIV-01 | Phase 50 | Pending |
+| EQUIV-02 | Phase 50 | Pending |
+| EQUIV-03 | Phase 50 | Pending |
+| EQUIV-04 | Phase 50 | Pending |
 
 **Coverage:**
 - v1.0.0 requirements: 15 total
-- Mapped to phases: 0 (roadmap not yet created)
-- Unmapped: 15
+- Mapped to phases: 15
+- Unmapped: 0
+
+Six phases, 45-50. Every requirement above maps to exactly one phase; no
+requirement is orphaned and none is owned by two. Two mappings are worth
+stating explicitly because they look like exceptions and are not:
+
+- **`BUILD-04` owns the purpose-built synthetic subject as well as the four-class
+  hazard report**, both inside Phase 48, by owner decision 2026-09-10 ("Strategy
+  B"). There is deliberately **no** separate early fixture phase — a fixture
+  built ahead of its detector gets written to match it, the `COV-01` failure
+  mode this project measured across four verification rounds.
+- **`EQUIV-04` is mapped to Phase 50 only.** Its "fixtures are committed" half is
+  satisfied by Phase 48's deliverable, which Phase 50 *consumes* rather than
+  re-owns; Phase 50 wires the committed subject into CI. That is a dependency
+  edge, not a second mapping.
+
+`BUILD-06` is its own phase (49) and stands **before** the phase it gates (50),
+which is what its own text requires. `BUILD-05` and `BUILD-07` share Phase 46
+because they are one invariant stated two ways — `BUILD-05` states it,
+`BUILD-07` makes it checkable — and it is built before the exporter widens in
+Phase 47 rather than retrofitted onto it.
 
 ---
 *Requirements defined: 2026-09-10*
-*Last updated: 2026-09-10 at the start of milestone v1.0.0*
+*Last updated: 2026-09-10 — traceability populated by roadmap creation (Phases 45-50, 15/15 mapped)*

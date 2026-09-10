@@ -15,6 +15,8 @@
 - ✅ **v0.8.0 Frame-Exact Capture and the Two Engines** — Phases 33-38 (opened 2026-09-02, shipped 2026-09-06; `GATE-01` returned `degrade` by rule `R6`)
 - ✅ **v0.9.0 The Text Channel and the Runtime Evidence Layer** — Phases 39-44 (opened 2026-09-06, shipped 2026-09-10; 20/20 requirements, 51 plans, 123 tasks; `CHAN-01` returned **`go`** by rule `R15` — the first `go` of this project's four gates). Requirement count was corrected 20→19 on 2026-09-08 when `PREP-03` was removed by owner direction, then back to 20 the same day when `PREP-05` was added by owner direction during the Phase 40 UAT; see `docs/phase40-preprocessing-tools-decisions.md`
 
+- 🚧 **v1.0.0 The Rebuild Half** — Phases 45-50 (opened 2026-09-10; 15/15 requirements mapped: `DECOMP-01..04`, `BUILD-01..07`, `EQUIV-01..04`). The three phases cut at the v0.5.0 close, taken forward a third time and finally standing on a substrate where nothing they depend on is hypothetical. **No opening go/degrade/no-go gate phase** — a recorded decision, reasoned in the phase section below; the gate discipline is distributed as a red-observed control in every phase, plus `BUILD-06`'s own gate phase (49) standing before the phase it gates (50)
+
 *v0.8.0 continues phase numbering from Phase 32 — it starts at Phase **33**.
 Phase numbers are continuous across milestones and are **never** reused,
 including the cut Phases 20-22, the **retired but held** Phases 24 and 26, and
@@ -38,6 +40,11 @@ No number is reset and none is reused. Phase **directories** are likewise not
 archived, per the standing v0.4.0 decision re-measured at the v0.7.0 close, so
 Phases 39-44 land alongside the 34 directories already under `.planning/phases/`
 rather than in a fresh tree.*
+
+*v1.0.0 continues phase numbering from Phase 44 — it starts at Phase **45**.
+Same two rules, unchanged: no number is reset, none is reused, and phase
+directories are not archived — Phases 45-50 land alongside the 40 directories
+already under `.planning/phases/`.*
 
 ## Standing Constraints
 
@@ -573,6 +580,91 @@ v0.6.0's for the window-slicing reason recorded there.
 
 </details>
 
+### 🚧 v1.0.0 The Rebuild Half (Phases 45-50)
+
+**Goal:** Ship the "and rebuild" half that `## What This Is` has claimed since
+v0.1.x and never delivered — from an annotated binary to ACME source a person
+can actually read, change, reassemble and observe behaving identically in VICE.
+
+**15 requirements, all mapped, each to exactly one phase** — `DECOMP-01..04`,
+`BUILD-01..07`, `EQUIV-01..04`. Cross-checked mechanically against the per-phase
+`**Requirements**:` lines further below rather than by eye, because this project
+has a recorded history of a requirement owned by two phases or by none.
+
+**Phase numbering continues at 45.** No number is reset and none is reused.
+Phase **directories** are likewise not archived, per the standing v0.4.0
+decision re-measured at the v0.7.0 close, so Phases 45-50 land alongside the 40
+directories already under `.planning/phases/` rather than in a fresh tree.
+
+**The governing constraint binds every phase below, not just the two that name
+it:** *the tool reports; the end-user decides what gets reverse-engineered.* No
+phase here delivers behaviour that removes, strips, drops or excludes part of a
+subject binary on the tool's own judgement. **Phase 46 exists specifically to
+make that invariant structural rather than stated** — it builds the recorded
+exclusion mechanism and the no-filter guard *before* the exporter is widened, so
+Phase 47's multi-file work is written against an already-enforced invariant
+instead of having one retrofitted onto it. Phase 48's hazard report enumerates
+and acts on nothing it finds.
+
+**No opening go / degrade / no-go gate phase — and that is a recorded decision
+rather than an omission.** Four prior milestones opened with one (Phases 9, 23,
+33, 39), and each probed the same shape of unknown: a fact about something this
+project does **not** control — could a third-party analyser be driven headless;
+did the pivot's numbers hold on real cracked code; could a real emulator be
+stopped frame-exactly; could two clients share one upstream VICE. v1.0.0 has no
+unknown of that shape. Every substrate it stands on is code this project owns
+and already ships: `.annostore`, `anno-export-asm.ts`, `acme-verify.ts`'s
+real-ACME byte-diff oracle, `scanIndirectDispatch()` (which already survived a
+false-positive incident, CR-04), `capture-pair.mjs`/`compare.mjs`, and v0.9.0's
+`anno_evid_exec` join. Research returned HIGH confidence on all four axes with
+**zero new npm dependencies and zero new host prerequisites**, and the one real
+blocker it found — `host-tool.mts`'s `acme.build` spawn setting no `cwd` — is an
+identified defect with a one-line fix, not an open question. The two genuinely
+unproven requirements (`BUILD-04`'s hazard detection and `EQUIV-01`'s
+cross-binary comparison, both with essentially no reusable prior art) have
+failure modes that **narrow a requirement**, not cancel the milestone: a hazard
+class that cannot be decided statically is reported `unclassified`, which is the
+degrade path built into the requirement itself, and a comparison that cannot
+separate signal from noise degrades `EQUIV-02` to a narrower, honestly-qualified
+claim. The gate discipline is therefore **distributed rather than dropped**, and
+in its stronger form — every phase below carries at least one control that must
+be **observed going RED** at the point of use, rather than one gate measured once
+up front. Where the discipline genuinely binds, it is still a phase: **Phase 49
+is `BUILD-06`'s gate, its rules committed to git before its first real run, and
+it stands before the phase it gates** (Phase 50), on this project's own Phase 9 /
+Phase 12 precedent.
+
+**`BUILD-04`'s purpose-built synthetic subject ships inside Phase 48, with the
+detector — owner decision 2026-09-10 ("Strategy B").** Research produced two
+competing sequencings and declined to pick between them; the owner picked. A
+fixture built ahead of its detector gets written to *match* it rather than test
+it, which is the exact failure mode this project measured on the `COV-01`
+coverage instrument across four verification rounds. There is therefore **no
+separate early "build the fixture" phase**, and that choice has a named cost
+recorded in the sequencing rationale below rather than left to be discovered:
+Phase 47's export work cannot use the purpose-built subject, so it runs against
+the existing committed fixtures and Phase 48 re-runs the multi-file export path
+over the new subject as one of its own criteria.
+
+**Explicitly carried, NOT in scope, and no phase may quietly absorb them:**
+`PROOF-03` on real cracked code; the `audit-root-args.test.ts` scratch-fixture
+race; the 3-failure `test:automated` floor in `anno-register`/`anno-import`;
+`STORE-03`'s traceability row contradicting its own verifier's quoted sentence;
+`ANNO-13`/`14`/`15`; and the live `broker-owned-tool-output-paths` seed. Each
+was weighed at this open and left standing on the owner's decision to scope
+v1.0.0 to the rebuild half alone.
+
+- [ ] **Phase 45: Decomposition to Closure, Disagreement First** - Every byte of the committed fixtures carries a type, a name and a documented purpose, with the two independent classifiers' disagreements resolved rather than averaged — and an honest decline wherever the evidence is genuinely path-dependent
+- [ ] **Phase 46: The Lossless-Export Invariant and the Provenance Carry** - The export path is made structurally incapable of dropping a byte on its own judgement, and what the provenance evidence says about a range travels with the range to the point of use — built before the exporter widens, not retrofitted after
+- [ ] **Phase 47: Multi-File Rebuildable Source** - An annotated store becomes a tree of ACME files a person can open and edit — one file per scope, data tables in their own swappable files, every reference through a symbol — and real ACME assembles the tree back to the same program
+- [ ] **Phase 48: The Movement-Hazard Report and Its Purpose-Built Subject** - One synthetic C64 program deliberately carrying all four movement-blocking classes, and a report that enumerates them across those four classes — delivered and reviewed together so neither is written to match the other, and acting on nothing it finds
+- [ ] **Phase 49: The Reassembly Gate, Committed Before the Phase It Gates** - A gate that says whether an exported tree really rebuilds — byte-diffed against the image, hazard report attached, movement exercised on every run — with its rules in git before its first real run and its verdict read as a precondition by Phase 50
+- [ ] **Phase 50: Equivalence and Modifiability** - The rebuild shown behaving like the original in a real emulator and shown being changed, with committed transcripts as the artifacts of record rather than described walkthroughs — and the comparison observed failing before it is trusted
+
+**Phase details, the dependency edges and the sequencing rationale** are in the
+two v1.0.0 sections further below, placed after v0.6.0's and v0.9.0's for the
+window-slicing reason recorded there.
+
 ## v0.6.0 Own the substrate — CLOSED INCOMPLETE (Phase Details)
 
 *v0.6.0's phase details, kept in place rather than archived. Phase 23 is
@@ -875,6 +967,266 @@ direction at the Phase 40 discussion, and **`PREP-05` was added** by owner
 direction at the Phase 40 UAT — the count held at 20 in-scope requirements. See
 `docs/phase40-preprocessing-tools-decisions.md`.
 
+## v1.0.0 The Rebuild Half (Phase Details)
+
+*Placed **after** v0.6.0's and v0.9.0's sections, deliberately, for the same
+window-slicing reason recorded above `### Phase 23`:
+`extractCurrentMilestoneScoped()` slices the active milestone's window from its
+summary heading to the next version-bearing heading, so a v1.0.0 detail block
+placed earlier would swallow — or be swallowed by — a neighbouring milestone's
+window. Do not reorder these sections.*
+
+### Phase 45: Decomposition to Closure, Disagreement First
+
+**Goal**: Every byte of the committed synthetic fixtures carries a type, a name
+and a documented purpose a person can read — with the two independent
+classifiers' disagreements resolved rather than averaged, and an explicit
+decline wherever the evidence is genuinely path-dependent.
+**Depends on**: Nothing new (first phase of v1.0.0; consumes v0.9.0's shipped
+`anno_evid_exec` / `reconcileObservedExecution()` join and the existing
+`anno_*` label, comment and project-enum tools — no new module required)
+**Requirements**: DECOMP-01, DECOMP-02, DECOMP-03, DECOMP-04
+**Success Criteria** (what must be TRUE):
+
+  1. A completeness report over each committed fixture reads **zero** `Undefined` bytes — every byte is code, byte, word, address, PETSCII, screencode or table — and the report **cannot render without `anno_evid_disagreements` as an input**: removing the disagreement query makes the gate fail rather than silently pass, observed. The soundness asymmetry the type system already enforces is respected in the output, not just in the schema: a range observed executing **is** code, and a never-observed range is never rendered as `data` on that absence alone.
+  2. Every `anno_evid_disagreements` row on an executed fixture is either resolved into the block table or recorded as an **accepted** disagreement naming why — a nonzero unresolved count blocks the phase rather than being reported beside it. This is the integration research named as the milestone's most dangerous gap; leaving the oracle uncashed is the failure being prevented.
+  3. A search over each fixture's labels returns **no `p_XXXX` or `l_XXXX` survivor**, and every code entry point's comment states its function, its inputs, its outputs and its side effects — checkable per entry point rather than as an aggregate count.
+  4. Every referenced non-hardware address resolves to a named, documented symbol, **and** an address whose target is genuinely path-dependent produces an explicit recorded decline naming what is unknown rather than a fabricated symbol — observed on `bank-path-dependent.prg`, a fixture that already exists precisely because it contains one, and on a runtime-varying zero-page pointer.
+  5. Hardware register writes render as named enum members rather than magic numbers, with at least one multi-bit register (`$D011` or `$D018`) shown decomposed into its named bits rather than emitted as one hex constant.
+
+**Plans**: TBD
+
+Notes:
+
+- **Nothing here is new architecture.** The whole phase runs on tools that shipped in v0.7.0 and v0.9.0. What is new is the *closure bar* and the *required* disagreement input; if a plan here proposes a new module, that is a signal to re-read `ARCHITECTURE.md` → "What already exists that this milestone builds on".
+- **The subject of this phase is the existing committed fixtures**, not the purpose-built synthetic subject — that lands in Phase 48 with its detector (owner decision, Strategy B). A plan that waits for the new subject to start decomposition has mis-read the sequencing.
+- Pitfall 5 (bank-state collapse) and Pitfall 12 (fabricated indirect targets) both land on criterion 4, and both are prevented by the *same* discipline: decline with a reason. A confident wrong symbol is worse here than an absent one, and `.annostore`'s importer already declines this way — match it rather than inventing a second convention.
+
+### Phase 46: The Lossless-Export Invariant and the Provenance Carry
+
+**Goal**: The export path is structurally incapable of dropping a byte on its
+own judgement, and what the provenance evidence says about a range travels with
+the range to the point of use — established **before** the exporter is widened
+for multi-file output rather than retrofitted onto it afterwards.
+**Depends on**: Nothing structurally (extends the shipped `anno-export-asm.ts`
+against existing fixtures); sequenced before Phase 47 by design, so the
+multi-file work is written against an already-enforced invariant
+**Requirements**: BUILD-05, BUILD-07
+**Success Criteria** (what must be TRUE):
+
+  1. A **planted control** fixture carrying a range a plausible heuristic *would* want to drop — a `CRACKER-PATCH`-classified, cracktro-shaped or present-but-unreferenced range — exports with that range present byte for byte. The control is **observed failing** first, against a deliberately-filtering variant of the exporter, before its green result is trusted: a control that has never been red proves nothing.
+  2. A user-requested exclusion is emitted as a **recorded excluded range** — its identity and extent readable in the output, marked as something the user asked for — never as a silent hole. Reading the export back recovers what was excluded and why.
+  3. `c64-provenance-diff`'s **existing** verdict appears inline at the point of use on every emitted block regardless of its value: `HIGH`, `UNKNOWN` and `CRACKER-PATCH` ranges are all annotated and no verdict value changes what is emitted. A structural test asserts the exporter reads no confidence threshold and takes no inclusion decision from a verdict.
+  4. The verdict is **read** from the existing ledger, never re-derived inside the exporter — with the ledger absent, the exporter declines by name rather than inventing a verdict, observed.
+
+**Plans**: TBD
+
+Notes:
+
+- **This is the milestone's structural expression of the governing constraint.** `BUILD-05` states the invariant; `BUILD-07` makes it checkable. A plan that implements the provenance carry as a threshold inside `exportAsm()` has reintroduced exactly the tool-is-the-decider failure mode the 2026-09-10 rewording removed — see `ARCHITECTURE.md` → "Letting the exporter learn about provenance verdicts directly".
+- **Out of scope by requirement, not by preference:** a store table for the *hazard* report. The exclusion record is a different thing and is in scope; if it needs a `SCHEMA_VERSION` bump, that is a decision recorded beside the code that adds it (the `EVID-02` shape from Phase 43), not a separate phase.
+- **Do not plan a `name` column on `anno_scope`.** Per-scope filenames derive deterministically from `scope.start`; the column is `FUT-08` and is deliberately unowned here.
+
+### Phase 47: Multi-File Rebuildable Source
+
+**Goal**: An annotated store becomes a tree of ACME files a person can open,
+read and edit — one file per scope, data tables in their own swappable files,
+every reference through a symbol — and real ACME assembles the tree back to the
+same program.
+**Depends on**: Phase 46 (exclusion-aware block emission and the no-filter
+guard must already be enforced), and Phase 45 for a subject with no `Undefined`
+bytes and real symbol names to emit
+**Requirements**: BUILD-01, BUILD-02, BUILD-03
+**Success Criteria** (what must be TRUE):
+
+  1. Export writes one `.a` file per annotation-store scope plus a root file wiring them with **bare-filename** `!source`, and real ACME — reached through `runHostTool()`, with `cwd` set to the output directory — assembles the tree to a single `.prg` that byte-diffs clean against the exporter's own `expectedBytes`. The `cwd` fix is shown **load-bearing** rather than asserted: without it the same export fails to resolve its own `!source` lines.
+  2. Data tables are emitted as their own files through the store's `external_file` type and referenced by `!binary`, and replacing one file's bytes with different bytes of the same length changes the assembled program's data **without touching a single line of code** — demonstrated on a real graphics or charset table, not described.
+  3. No branch, `JSR`, `JMP` or data reference in the emitted source is a raw hex address: every one goes through a symbol, including across file boundaries. An unresolved cross-reference makes the export **refuse by name** rather than fall back to raw hex, observed; and a cross-zone reference that used to be an implicit local label still resolves after the split.
+  4. Two exports from an unchanged store are **byte-identical**, file for file, with file ordering deterministic from address — asserted by a drift guard, so a re-export is a reviewable diff rather than an unreviewable full-tree churn.
+  5. Zero-page symbols are declared in a file the root sources **first**, and ACME's `.rep` listing shows the two-byte encoding for a known zero-page reference — with the three-byte absolute fallback observed being **caught** when that ordering is deliberately broken.
+
+**Plans**: TBD
+
+Notes:
+
+- **The export path belongs in the `anno_*` family, extending `anno-export-asm.ts`.** Never in the `acme-build` skill, which has no store reach — a second export route through a skill script duplicates store-derivation logic outside the family's confinement and reintroduces the re-derived-seam failure mode this project has direct incident history with.
+- **`host-tool.mts`'s `acme.build` spawn sets no `cwd` today**, and ACME resolves a quoted `!source "x.a"` relative to its working directory. Harmless while the exporter emits no `!source`; a real blocker the moment it does. This is the phase that fixes it — and the fix must not be worked around by writing host paths into generated source, which would hardcode a machine-specific path into a store-derived artifact that is supposed to be portable.
+- **`BUILD-02` is the largest of the three.** `.annostore` already reserves an `external_file` type member with **zero** current consumers, built for exactly this need — wiring it is new export logic, not a rename.
+- **This phase cannot use the purpose-built synthetic subject**, which lands in Phase 48. It runs against the existing committed fixtures (`smc.prg` for a self-modifying operand label, `tracer.prg` for a dispatch table, the `ghidra/` set for banking), and Phase 48 re-runs this path over the new subject. That is the named cost of Strategy B, recorded here rather than discovered later.
+- Split hi/lo address tables must generate **paired** names and move together; the store's four split-layout types exist for this and per-byte symbolisation is the defect to avoid. The control that moves one half without the other belongs to Phase 49's gate.
+
+### Phase 48: The Movement-Hazard Report and Its Purpose-Built Subject
+
+**Goal**: One synthetic C64 program that deliberately carries all four
+movement-blocking classes, and a report that enumerates what blocks movement
+across those four classes — delivered and reviewed together against a
+non-vacuity bar so neither is written to match the other, and acting on nothing
+it finds.
+**Depends on**: Phase 47 (the new subject is exported and assembled through the
+multi-file path as one of this phase's own criteria) and Phase 45's
+decomposition discipline; `scanIndirectDispatch()` already exists and is
+imported, not re-derived
+**Requirements**: BUILD-04
+**Success Criteria** (what must be TRUE):
+
+  1. A committed, purpose-built synthetic subject assembles under real ACME and runs in VICE with **visible on-screen behaviour**, and carries — deliberately, and documented per class — an indexed jump table including the RTS-trick idiom, self-modifying code, page-alignment dependence, and cycle-exact raster code, plus sprite, charset, level and music tables. A fixture design document states, **per class, which variant was chosen and why it is not the textbook idiom**, and shows the four classes are structurally different from each other rather than one shape reskinned four times.
+  2. The hazard report enumerates findings across all four classes as a **read-only computed query** over existing tables — it opens no new store table, writes nothing, and removes, strips, drops or excludes nothing. A structural test observes it refusing a write path.
+  3. Each of the four classes is **observed firing on a non-canonical planted variant** and **observed not firing on a negative control**; class 1 is the existing `scanIndirectDispatch()` imported rather than a second implementation, asserted by a single-call-site test. `splitTableCandidates` is carried through verbatim as the report's "unproven, flagged" bucket.
+  4. Every finding carries its **detection mechanism and a confidence**, and the third outcome `unclassified` is both reachable and reached: a region the detectors cannot decide is reported as undecided, never as clean. A boolean clean/dirty report shape is refused by test — a miss that reads as a guarantee is worse here than no detector.
+  5. The detectors are cross-checked against the **independently-sourced** committed fixtures (`tracer.prg`, `bank.prg`, `smc.prg`), each result recorded as detected / missed / false-positive — so a detector that has only ever seen its own fixture is visible as such. `anno_evid_exec` is used only to **strengthen** a flag already raised by static evidence, never to suppress one; treating never-observed as evidence of safety is refused.
+
+**Plans**: TBD
+
+**Research flag**: this phase needs a research pass at planning time. There is
+essentially **no reusable prior art** — 6502bench SourceGen tags the RTS trick
+interactively by hand, no static SMC verifier transferable from the x86 malware
+literature exists, and no static algorithm for cycle-exact raster detection
+exists at all. A variant taxonomy per class, written before implementation, is
+the deliverable that makes criterion 3 non-vacuous.
+
+Notes:
+
+- **Fixture and detector ship together by owner decision (Strategy B, 2026-09-10).** The reasoning is not scheduling convenience: a fixture built ahead of its detector gets written to match it, which is the `COV-01` failure mode this project measured across four verification rounds. The countermeasure that makes same-phase delivery safe is criterion 5's cross-check against fixtures **this phase did not author** — without it, Strategy B is self-validation with fewer steps.
+- **The report reports.** `BUILD-04` was already the correct model under this milestone's governing constraint and its text is unchanged from v0.5.0. Nothing here relocates, rebases or excludes anything; automatic relocation is explicitly out of scope and no surveyed prior-art project attempts it.
+- **Cycle-exact raster detection cannot be guaranteed and must not be stated as if it could.** Flag it, corroborate it with observed execution where available, and state the limit beside the capability rather than behind it.
+- **A fifth hazard class is `FUT-06`, not scope creep to absorb here.** Packed images whose depacker hardcodes an unpack destination were raised by research as a reasoned addition and deliberately left out of `BUILD-04`'s four classes, whose text is v0.5.0's.
+
+### Phase 49: The Reassembly Gate, Committed Before the Phase It Gates
+
+**Goal**: A gate that says whether an exported tree really rebuilds — byte-diffed
+against the image, hazard report attached, movement exercised on every run —
+with its pass/fail rules committed to git before its first real run, and
+standing **before** the phase it gates rather than after it.
+**Depends on**: Phase 47 (a multi-file export must exist to reassemble) and
+Phase 48 (a hazard report must exist to gate on). Must be built and **run for
+real — green, or explicitly acknowledged — before Phase 50 begins**
+**Requirements**: BUILD-06
+**Success Criteria** (what must be TRUE):
+
+  1. The gate's decision rules and its outcome vocabulary are **committed to git before any measurement is taken against them**, and its verdict is a machine-readable artifact that Phase 50's planner reads as a precondition. This is the Phase 9 / Phase 23 / Phase 33 / Phase 39 discipline applied where it actually binds in this milestone; a rule written after the measurement makes every future gate advisory.
+  2. The verdict is derived from a **byte-diff against the exporter's own `expectedBytes`** — never from ACME's exit status, never from an aggregate summary line, and never from a fixed or stale output path — and it **extends `acme-verify.ts`'s existing three-outcome oracle** (`ok` / `failed` / `skipped`, where `skipped` is never a pass) rather than minting a second one. A test refuses a second independent verify path.
+  3. The gate is **observed going RED** on planted controls before any green result is trusted: a wrong-byte rebuild; a stale-output-path scenario where a previous run's artifact would be read as this run's; and a rebuild in which a hazard-adjacent range was left outside the diff scope.
+  4. **Movement is exercised on every run, not optionally.** At least one symbol is relocated from its original address and the rebuild reassembled and diffed at the new layout; a same-address-only round trip is refused as a pass. Moving one half of a split hi/lo address table without the other is caught.
+  5. A non-clean hazard report either blocks the gate or passes only with an **explicit, recorded, per-finding acknowledgement** visible in the verdict artifact — there is no path from "hazard found" to "silently green".
+
+**Plans**: TBD
+
+Notes:
+
+- **This is a gate phase and its deliverable is a verdict, not product.** The gate script is test-only and stays absent from the published package exactly as `acme-verify.ts` does today — `BUILD-06`'s gate is a CI/dev-time gate, not a shipped runtime verb.
+- **`BUILD-06`'s wording is the ordering requirement**: *"a gate that exists before the phase it gates runs, not after"*. Do not plan Phase 50's equivalence work before this phase closes and its verdict is readable. Precedent for what "before" means structurally: Phase 9 and Phase 12.
+- **The ACME invocation goes through the same typed `host_tool` op** as everything else. A fourth `spawnSync` site for the rebuild's own assembly is banned, and `scripts/check-no-skill-external-spawn.mjs` has been observed biting on planted violations — run it against any new script before this phase is considered done.
+- Recovery cost if this is got wrong is HIGH and is recorded: a gate later found to be exit-status-derived freezes every consumer and forces every prior "passing" rebuild back through the corrected gate before any of them can be trusted.
+
+### Phase 50: Equivalence and Modifiability
+
+**Goal**: The rebuilt program is shown behaving like the original in a real
+emulator, and shown being **changed** — one behaviour removed, one added — with
+committed transcripts as the artifacts of record rather than described
+walkthroughs, and the pipeline runnable from committed synthetic fixtures alone.
+**Depends on**: Phase 49's gate, run for real and green or explicitly
+acknowledged, and Phase 48's purpose-built subject (the only committed subject
+with behaviour worth removing and adding)
+**Requirements**: EQUIV-01, EQUIV-02, EQUIV-03, EQUIV-04
+**Success Criteria** (what must be TRUE):
+
+  1. `compare.mjs` runs in **original-versus-different-binary mode** — a mode it has never been run in — with a narrowed volatile mask **committed before any rebuild is compared under it**, an explicit allowlist for intentional differences, and per-binary logical checkpoints. A `$D020` / `$D015` / `$D018` regression planted in a rebuild is observed being **caught**, proving the mask does not hide it.
+  2. The comparison is **observed failing before it is trusted**: a paired red transcript on a deliberately-broken rebuild and a green transcript on the real one, produced by the same mechanism, both committed. A green-only result is refused as evidence — and a difference is resolved by naming it in the allowlist with why it is intentional, never by widening the mask until the rebuild passes.
+  3. Behavioural equivalence between the original and the rebuild is demonstrated in VICE with the **committed transcript as the artifact of record**, and every remaining difference is named rather than absorbed. Byte-identity is not the bar and is not claimed; a narrower pre-modification byte-identical sanity check may be recorded as an optional extra and must not be presented as the acceptance criterion.
+  4. **One behaviour is removed and one added** in the rebuilt source, reassembled through Phase 49's gate, and both are observed taking effect in VICE with transcripts committed. Each change is cross-referenced to a hazard-report finding or a moved range, so the demonstration touches decomposed and rebuilt code rather than an already-easy already-symbolised constant.
+  5. CI runs the pipeline on **committed synthetic fixtures alone** — no copyrighted image, no new host prerequisite — and the boundary is **stated rather than blurred**: which segment a GitHub runner actually executes (store → export → assemble → gate → byte-diff, on the ACME the workflow already installs) and which segment is emulator-dependent and therefore a named manual step whose committed transcripts CI checks for freshness against the fixture's hash, so a stale transcript is caught instead of read as a pass. A broken step is observed reddening CI.
+
+**Plans**: TBD
+
+Notes:
+
+- **`EQUIV-01` is this milestone's other no-prior-art requirement.** VICE's own Testbench is emulator regression testing, not cross-binary behavioural equivalence; nothing surveyed does what this criterion needs. Treat the instrument as unvalidated until criterion 2's red transcript exists — a second signal added before the first is trusted (`FUT-07`'s `DISPLAY_GET` framebuffer diffing) only measures agreement between two unvalidated instruments, which is why it is deferred.
+- **The mask is where this phase can quietly fail.** Narrowing it *after* seeing the rebuild's differences is the same failure shape the owner legislated against for `BUILD-04`'s fixture: an instrument tuned until the subject passes. Committing the mask first, in git, is what makes criterion 1 mean anything.
+- **`EQUIV-04`'s fixture half is Phase 48's deliverable, consumed here rather than re-owned.** This phase wires the committed subject into CI; it does not author it. The requirement is mapped to exactly one phase — this one — and the overlap is a dependency, not a duplicate mapping.
+- **`FUT-05` (the pipeline on a real title) is the natural successor and is not this phase.** Applying the pipeline to `bruce_lee`, where two cracked releases and a provenance ledger already exist, is downstream use. Synthetic-fixture validation is this milestone's bar, and `danish.d64` / `saeger.d64` sitting untracked on disk under `.planning/phases/23-*/evidence/corpus/` does not make them available to it.
+- `EQUIV-03`'s modifiability demonstration and Phase 48's hazard report are deliberately coupled by criterion 4. A trivial decoupled change proves ACME works, not that the decomposition is modifiable — which is the actual claim.
+
+## Sequencing Rationale (v1.0.0)
+
+**Why decomposition is first, and why it does not wait for the new subject.**
+Every later phase assumes a classified, named subject: the exporter emits
+symbols the decomposition created, the hazard report queries the block table the
+decomposition filled, and the gate byte-diffs against an image the decomposition
+described. Phase 45 needs no new architecture at all — it runs on tools that
+shipped in v0.7.0 and v0.9.0 — so making it first costs nothing and unblocks
+everything. It runs against the **existing** committed fixtures deliberately:
+the purpose-built subject ships in Phase 48 with its detector, and a
+decomposition phase that waited for it would idle for two phases to gain
+nothing it needs.
+
+**Why the invariant comes before the exporter that must honour it.** Phase 46
+builds the recorded-exclusion mechanism and the structural no-filter guard
+before Phase 47 widens `anno-export-asm.ts` for multi-file output. The order is
+the point: an invariant enforced first means the multi-file work is *written*
+against it, while an invariant added afterwards means auditing scope-splitting,
+`!source` wiring and table extraction for filtering behaviour that was never
+prevented in the first place. This is the same "rules and instrument before the
+work they gate" shape as Phase 9, Phase 12, Phase 23, Phase 33 and Phase 39,
+applied to an invariant instead of a measurement.
+
+**Why the hazard report and its subject are one phase — and what that costs.**
+Owner decision, 2026-09-10, "Strategy B". Research produced two defensible
+sequencings and refused to choose; both reasoned from real incident history.
+Strategy B wins on the stronger precedent: this project already paid for a
+self-validating instrument once, on `COV-01`, across four verification rounds
+each finding new gameability. Same-phase delivery puts fixture and detector in
+front of one reviewer under one non-vacuity bar. **The cost is real and is
+recorded rather than discovered:** Phase 47 cannot exercise the new subject's
+hazard-adjacent shapes — SMC operand labels, split hi/lo tables — through the
+multi-file path, because that subject does not exist yet. Phase 47 therefore
+runs against the existing committed fixtures, and Phase 48 carries re-running
+the multi-file export over the new subject as one of its own criteria. Strategy
+A would have inverted this cost, not removed it.
+
+**Why `BUILD-04` is one phase and not four.** It reads as four detectors and is
+three plus a reuse: `anno-coverage.ts`'s `scanIndirectDispatch()` **already**
+detects the RTS-trick idiom and split jump tables, and it already survived a
+real false-positive incident (CR-04) with a mechanically-enforced closed shape
+list and negative controls proven to reach the predicate's interior. A second
+implementation would start over from zero evidence and could silently
+reintroduce exactly the false-positive class CR-04 fixed. Sizing the phase as
+four new detectors would have over-scoped it and invited that re-derivation.
+
+**Why the gate is its own phase.** `BUILD-06`'s own text requires it: *"a gate
+that exists before the phase it gates runs, not after."* Folding it into Phase
+47 or Phase 50 makes it a step inside the work it judges, which is the
+structural difference between a gate and a checklist item. It is also the phase
+where this milestone's committed-rules-before-measurement discipline genuinely
+binds, which is why the milestone does not open with a separate
+go/degrade/no-go phase: the discipline is placed where the decision actually is.
+
+**Why `EQUIV-01` sits with `EQUIV-02`/`03` rather than in the gate phase.** It
+is tempting to promote the comparison instrument into Phase 49 alongside the
+reassembly gate, on the grounds that both are instruments the final claim is
+measured by. It is not promoted, for two reasons. `BUILD-06`'s gate judges the
+*rebuild* — bytes and hazards, no emulator — while `EQUIV-01` judges *runtime
+behaviour*, and merging them would produce a gate with two unrelated substrates
+and no single verdict. And the discipline `EQUIV-01` needs is not a phase
+boundary but a commit order: the narrowed mask in git **before** any rebuild is
+compared under it, plus a red transcript, both of which are criteria 1 and 2 of
+Phase 50. Research's own pitfall-to-phase mapping puts `EQUIV-01` in the
+equivalence phase for the same reason.
+
+**Why no opening gate phase, stated once more because its absence is the
+conspicuous difference from the last four milestones.** The gate pattern's
+trigger is an unproven load-bearing assumption about something this project does
+**not** control, whose falsification re-scopes or cancels the milestone. v1.0.0
+stands entirely on owned, shipped, tested code, with zero new dependencies and
+zero new host prerequisites, and its two genuinely unproven requirements each
+carry their own degrade path inside the requirement text (`unclassified` for
+hazards; a narrower qualified claim for equivalence). What replaces the single
+up-front gate is a control **observed going RED** in every phase — the
+deliberately-filtering exporter in 46, the broken zero-page ordering in 47, the
+non-canonical variants and negative controls in 48, the wrong-byte and
+stale-path rebuilds in 49, the deliberately-broken rebuild in 50 — which is the
+same discipline measured at five points of use instead of one point up front.
+Asserting a fix is present proves nothing; making the failure happen does.
+
 ## Progress
 
 **This per-phase table is load-bearing, not decorative.**
@@ -935,6 +1287,12 @@ in a milestone archive.
 | 42. The Text-Format Parsers and Their Two-Binary Fixtures | v0.9.0 | 16/16 | Complete | 2026-09-10 |
 | 43. The Runtime Evidence Layer | v0.9.0 | 7/7 | Complete | 2026-09-10 |
 | 44. PROOF-04 — The Independent External Check | v0.9.0 | 3/3 | Complete | 2026-09-10 |
+| 45. Decomposition to Closure, Disagreement First | v1.0.0 | - | Not started | - |
+| 46. The Lossless-Export Invariant and the Provenance Carry | v1.0.0 | - | Not started | - |
+| 47. Multi-File Rebuildable Source | v1.0.0 | - | Not started | - |
+| 48. The Movement-Hazard Report and Its Purpose-Built Subject | v1.0.0 | - | Not started | - |
+| 49. The Reassembly Gate, Committed Before the Phase It Gates | v1.0.0 | - | Not started | - |
+| 50. Equivalence and Modifiability | v1.0.0 | - | Not started | - |
 
 **Milestone roll-up:** v0.2.0 — 9 phases, 87 plans, 51/51 in-scope requirements,
 shipped 2026-08-19 (audit round 4 `tech_debt`; 13 deferred items at close).
@@ -1036,3 +1394,4 @@ scoped work above rather than doing it.
 *v0.9.0 roadmap created 2026-09-06 — Phases 39-44, continuing numbering from Phase 38, 19/19 requirements mapped (`CHAN-01..05`, `PARSE-01..04`, `EVID-01..06`, `PREP-01`, `PREP-02`, `PREP-04`, `PROOF-04`). **AMENDED 2026-09-08** — corrected from 20/20 after `PREP-03` was removed from scope by owner direction; see `docs/phase40-preprocessing-tools-decisions.md`.*
 *v0.9.0 shipped and collapsed 2026-09-10 → `milestones/v0.9.0-ROADMAP.md`. Phase directories again NOT archived (`--no-archive-phases`), per the standing v0.4.0 decision re-measured at the v0.7.0 close. The `## Progress` per-phase table was deliberately KEPT rather than collapsed to a per-milestone summary — `comment-phase-pointers.test.ts` parses it, and collapsing it empties the cut-phase set and reds four of its tests.*
 *v0.9.0's requirement count reads 20/20, not the 19/19 recorded in the line above: `PREP-05` was added by owner direction at the Phase 40 UAT after `PREP-03` was struck, restoring the total the same day.*
+*v1.0.0 roadmap created 2026-09-10 — Phases 45-50, continuing numbering from Phase 44, 15/15 requirements mapped (`DECOMP-01..04`, `BUILD-01..07`, `EQUIV-01..04`), each to exactly one phase. `BUILD-04`'s purpose-built synthetic subject ships inside its detector's phase (48) by owner decision 2026-09-10 ("Strategy B"); `BUILD-06`'s gate is its own phase (49), standing before the phase it gates (50). No opening go/degrade/no-go gate phase, reasoned in the phase section rather than omitted silently.*

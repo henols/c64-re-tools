@@ -3,10 +3,10 @@ gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: The Rebuild Half
 status: planning
-last_updated: "2026-09-10T17:57:37.084Z"
+last_updated: "2026-09-10T19:40:00.000Z"
 last_activity: 2026-09-10
 progress:
-  total_phases: 0
+  total_phases: 6
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -27,11 +27,23 @@ RAM, inspect chip state — and keep working when the emulator misbehaves.
 means — two concurrent monitor channels to one machine, with contention reported
 by name rather than misdiagnosed as a wedge — without moving the ONE thing.*
 
-**Current focus:** **Planning the next milestone.** v0.9.0 shipped 2026-09-10;
-`.planning/REQUIREMENTS.md` was removed at the close and a fresh one is created
-by `/gsd-new-milestone`. The presumptive next scope is the **rebuild half**
-(`DECOMP-01`..`04`, `BUILD-01`..`06`, `EQUIV-01`..`04`), whose one stated
-blocker — the runtime-evidence layer sitting upstream of it — v0.9.0 discharged.
+**Current focus:** **v1.0.0 "The Rebuild Half" — roadmap created 2026-09-10,
+Phases 45-50, 15/15 requirements mapped.** The presumptive scope recorded at the
+v0.9.0 close is now the committed one: `DECOMP-01..04`, `BUILD-01..07` (the text
+grew by one — `BUILD-07` was added at this open to make `BUILD-05`'s reworded
+invariant checkable) and `EQUIV-01..04`. The one stated blocker — the
+runtime-evidence layer sitting upstream of the rebuild half — v0.9.0 discharged,
+and `DECOMP-01`'s completeness gate now takes `anno_evid_disagreements` as a
+**required** input rather than an optional cross-check.
+
+**Next action:** plan Phase 45 (`/gsd-plan-phase 45`). Phase 48 carries a
+research flag — the hazard classes have essentially no reusable prior art and
+need a variant taxonomy per class written before implementation.
+
+**The governing constraint, which no phase may violate:** the tool reports; the
+end-user decides what gets reverse-engineered. No phase delivers behaviour that
+removes, strips, drops or excludes part of a subject binary on the tool's own
+judgement. Phase 46 makes that structural rather than stated.
 
 ---
 
@@ -236,10 +248,11 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-09-10 — Milestone v1.0.0 started
+Phase: 45 — Decomposition to Closure, Disagreement First (not started)
+Plan: — (no plans created yet)
+Status: Roadmap created, awaiting phase planning
+Progress: 0/6 phases complete — `[------]`
+Last activity: 2026-09-10 — v1.0.0 roadmap created: Phases 45-50, 15/15 requirements mapped
 
 ## Performance Metrics
 
@@ -647,6 +660,43 @@ Last activity: 2026-09-10 — Milestone v1.0.0 started
   a second channel needing the same serialization discipline and a contended
   instance must not be diagnosed as wedged; and `c1541` and `cartconv` exit `0`
   on error, so an exit-status check over them passes failures silently.
+
+- **v1.0.0 opened as Phases 45-50 (2026-09-10)**, continuing numbering from
+  Phase 44 rather than resetting. Six phases: decomposition to closure (45), the
+  lossless-export invariant and the provenance carry (46), multi-file
+  rebuildable source (47), the movement-hazard report with its purpose-built
+  subject (48), the reassembly gate (49), equivalence and modifiability (50).
+  15/15 requirements mapped, each to exactly one phase.
+
+- **v1.0.0: `BUILD-04`'s synthetic subject ships inside its detector's phase
+  (48), not ahead of it** — owner decision 2026-09-10, "Strategy B". Research
+  produced two defensible sequencings and refused to choose; the owner chose.
+  The reasoning is a measured failure mode rather than a preference: a fixture
+  built ahead of its detector gets written to *match* it, which is what
+  `COV-01` cost this project across four verification rounds. The named cost of
+  the choice is recorded rather than left to be discovered — Phase 47's export
+  work cannot exercise the new subject, so it runs against the existing
+  committed fixtures and Phase 48 re-runs the multi-file export path over the
+  new subject as one of its own criteria.
+
+- **v1.0.0: no opening go/degrade/no-go gate phase, and that is a decision
+  rather than an omission.** Four prior milestones opened with one (Phases 9,
+  23, 33, 39); each probed a fact about something this project does *not*
+  control. v1.0.0 stands entirely on owned, shipped, tested code with zero new
+  npm dependencies and zero new host prerequisites, and its two genuinely
+  unproven requirements each carry a degrade path inside their own text
+  (`unclassified` for hazards; a narrower qualified claim for equivalence). The
+  gate discipline is distributed instead: every phase carries at least one
+  control that must be **observed going RED** at the point of use. Where the
+  discipline genuinely binds it is still a phase — Phase 49 is `BUILD-06`'s
+  gate, rules committed to git before its first real run, standing before the
+  phase it gates (50).
+
+- **v1.0.0: `BUILD-05` and `BUILD-07` share Phase 46, and it is placed before
+  the exporter widens in Phase 47.** They are one invariant stated two ways —
+  `BUILD-05` states it, `BUILD-07` makes it checkable by a planted control — and
+  enforcing it first means the multi-file work is *written* against it rather
+  than audited for filtering behaviour that was never prevented.
 
 ### Decisions
 
@@ -2766,4 +2816,10 @@ Resume file: .planning/phases/32-the-deletion-and-the-grep-gate/32-CONTEXT.md
 
 ## Operator Next Steps
 
-- Start the next milestone with /gsd-new-milestone
+- Plan Phase 45 with /gsd-plan-phase 45
+- Phase 48 carries a research flag: no reusable prior art for any of the four
+  movement-hazard classes. A variant taxonomy per class, written before
+  implementation, is what makes its non-vacuity criterion mean anything.
+- Phase 50's CI criterion needs a stated boundary rather than a blurred one:
+  the GitHub runner installs ACME but has no VICE, no built dxa and no Ghidra,
+  and new host prerequisites are out of scope for this milestone.
