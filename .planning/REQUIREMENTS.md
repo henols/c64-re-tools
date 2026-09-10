@@ -42,7 +42,7 @@ whose whole job is to settle it.
 
 ### Evidence — observed execution as its own accumulating fact
 
-- [ ] **EVID-01**: What the emulator observed is stored as its own durable, accumulating rows in `.annostore`, **keyed by run identity**, so a later session queries the evidence instead of re-running the program. Run identity reuses the capture identity v0.8.0 already established rather than minting a second notion of "the same run".
+- [x] **EVID-01**: What the emulator observed is stored as its own durable, accumulating rows in `.annostore`, **keyed by run identity**, so a later session queries the evidence instead of re-running the program. Run identity reuses the capture identity v0.8.0 already established rather than minting a second notion of "the same run".
 - [x] **EVID-02**: Adding the evidence table to an existing `.annostore` has a decided, recorded outcome for stores that already exist in the field — either a migration arm, or a deliberate re-affirmation of the current strict-equality refusal — reached from a factual check of whether such stores exist, and never defaulted into silently. *(The existing schema-version mechanism refuses on mismatch rather than migrating; the justification recorded for the last bump — "no store file exists yet" — is very likely stale after two milestones of real store use.)*
 - [ ] **EVID-03**: A user can ask where the byte-derived block classification and the observed-execution evidence **disagree**, and get the disagreements first. The block table stays byte-derived and is never silently overwritten by an observation; agreement is reported as a count rather than as a wall of rows. *(Disagreement — bytes say data, execution says code — is the highest-value output of the whole design, and the two classifiers' independence is the asset that produces it.)*
 - [ ] **EVID-04**: The evidence layer cannot state, imply, or render that an address is `data` on the strength of never having been observed executing. An address observed executing **is** code; an address never touched proves nothing, and a union across runs — however many — never becomes exhaustive. Any percentage or summary carries the denominator it is a fraction of. *(The soundness asymmetry is a design constraint of the whole layer, not a caveat on it. Several individually-plausible implementation choices violate it quietly, so this is stated as a requirement rather than left to care.)*
@@ -129,7 +129,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | PARSE-02 | Phase 42 | Complete |
 | PARSE-03 | Phase 42 | Complete |
 | PARSE-04 | Phase 42 | Complete |
-| EVID-01 | Phase 43 | Pending |
+| EVID-01 | Phase 43 | Complete |
 | EVID-02 | Phase 43 | Complete |
 | EVID-03 | Phase 43 | Pending |
 | EVID-04 | Phase 43 | Pending |
