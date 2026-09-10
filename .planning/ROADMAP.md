@@ -1210,7 +1210,20 @@ record.
   2. **The check is genuinely independent of the thing it checks.** The oracle is observed execution from a real run; the subject is the static classification dxa and Ghidra produced. Neither tier sees the other's output, asserted structurally rather than promised — otherwise this closes a reversal condition with a classifier grading its own homework, which is precisely the weakness `PROOF-01` was left carrying.
   3. **A shortfall is recorded as a shortfall, and absence is never converted into `data`.** If a run reaches only part of the image, the answer is a count over what was reached with the denominator named — never a clean bill of health. If the check cannot be run at all, `not-exercised` is recorded together with what was searched and at what depth, which is the outcome Phase 38 recorded for `PROOF-02` rather than smoothing over. What this phase may claim is additionally bounded by Phase 43's `EVID-06` verdict: if instrumentation perturbs frame-exactness, these runs are labelled instrumented and any comparison against v0.8.0's frame-exact captures is stated as narrowed rather than assumed.
 
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 44-01-PLAN.md — the derivation rule fixed before any number exists, the two closed-boundary evidence producers (dxa's static classification of the extracted entry; a live `memmapshow` capture over the S3 anchor sequence), the join driver over the shipped `reconcileObservedExecution()`, one live end-to-end pass at anchor depth 10, and a non-vacuous structural independence test plus self-checks for the empty, zero-denominator and ordering edges
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 44-02-PLAN.md — the measurement itself: one licensed run at anchor hit target 50 inside `EVID-06`'s proven region and one deeper run labelled `narrowed` with the hit-50 / hit-75 boundary quoted beside it, each joined and committed as its own transcript with its depth, its depth label, its broker state and its verdict
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 44-03-PLAN.md — the findings record: the false-positive count with its denominator and its positive class, `PROOF-01`'s `100.00 (24/24)` and the fixture and pivot figures stated beside it unreplaced, four separately-named limits, five explicit non-closures, and a committed gate that re-derives every stated number from the transcripts alone and is proven to have teeth
 
 Notes:
 
