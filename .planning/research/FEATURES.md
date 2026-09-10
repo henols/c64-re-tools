@@ -1,433 +1,576 @@
 # Feature Research
 
-**Domain:** Runtime dynamic-analysis / execution-evidence layer for a static C64
-reverse-engineering toolchain (text-monitor channel, `memmapshow`/`prof`/`chis`/`bt`/`io`,
-and three VICE standalone preprocessing binaries: `c1541`, `petcat`, `cartconv`)
-**Researched:** 2026-09-06
-**Confidence:** MEDIUM-HIGH (VICE manual and tool source are HIGH-confidence primary
-sources; mapping of general dynamic-analysis/coverage-tooling practice onto this
-project's specific store design is a synthesis and is scored MEDIUM)
+**Domain:** 6502/C64 disassembly-to-rebuildable-source pipelines ("the rebuild half") — for `c64-re-tools` v1.0.0
+**Researched:** 2026-09-10
+**Confidence:** MEDIUM-HIGH (prior art is well-documented but sparse and largely artisanal; complexity/dependency estimates against this codebase are HIGH-confidence since they were checked against source)
 
-## Ground rules carried in from required reading (not re-derived here)
+## Scope note
 
-- **Soundness asymmetry is load-bearing, not a style choice.** An address observed
-  executing **is** code (proof). An address never touched proves **nothing** — a
-  single run licenses `code` and can **never** license `data`. Every feature below
-  that touches classification is checked against this; anything that would silently
-  promote absence-of-execution into a `data` claim is marked an **anti-feature**,
-  full stop, matching the design already fixed in
-  `.planning/seeds/runtime-evidence-layer.md`.
-- **Already decided, not re-proposed:** the evidence layer is a separate,
-  monotonically-accumulating, run-keyed store joined against the block table by a
-  query that reports agreement *and* disagreement — never a silent overwrite or a
-  promotion into `BlockClass`'s three-valued (`code | data | undefined`) vocabulary.
-  Both alternatives (promote-into-block-table, live-only-nothing-persisted) are
-  already rejected with reasons in the seed. This document does not revisit that
-  choice; it surveys what *shape* of feature work sits on top of it.
-- **`PROJECT.md`'s `### Out of Scope` is binding.** Nothing below re-proposes: VICE
-  event record/replay as the reproducibility mechanism (measured absent — `x64sc
-  -record` exits 255), the text monitor's `stopwatch` as a capture route,
-  `-limitcycles` or text-monitor `bsave` as capture routes, a persisted
-  `program.json` parallel model, bank-qualified addressing as a *modelled store*
-  feature, a Ghidra post-script writing `.annostore` directly, vendoring Ghidra, or
-  the text monitor's assembler/disassembler/`x64`↔`x64sc` switching (declined
-  2026-09-06, on the record, for the exact reason this milestone already has two
-  disassembly engines). Where research below touches one of these boundaries, it
-  is flagged explicitly and not re-argued.
+This is a **subsequent-milestone** feature study, not a greenfield one. It answers
+the five milestone questions directly, then rolls the answers into the
+table-stakes / differentiator / anti-feature framework the roadmapper expects.
+Existing capabilities (`.annostore`, dxa+Ghidra auto-annotation, ACME
+byte-diff verify, `c64-provenance-diff`) are treated as **substrate**, not
+things to re-research.
+
+Two settled bars govern everything below (from `v0.5.0-REQUIREMENTS.md`,
+restated as v1.0.0's bars):
+- **Byte-identity is not the acceptance bar** — there is no clean original to
+  match, only a provenance-graded composite. Functional equivalence is the bar.
+- **Proving ground is committed synthetic fixtures only** — no copyrighted
+  image enters the repo.
+
+And one constraint frames every "differentiator" and rules out several
+"table stakes" a naive reading of prior art would suggest: **the tool
+reports, the end-user decides what gets reverse-engineered.** No feature
+below may have the pipeline strip, drop, or silently omit any part of a
+subject binary on its own judgement.
+
+---
+
+## Q1 — Decomposition to closure: what does "complete" look like?
+
+**Prior art's answer is a closed type vocabulary with an explicit "not yet
+classified" member, never a forced binary code/data split.** The most
+directly comparable real methodology is [SkoolKit](https://skoolkit.ca/)'s
+`.ctl` file format, used for the ZX Spectrum disassemblies of *The Great
+Escape*, *Skool Daze*, *Manic Miner*, *Jet Set Willy*, and the Spectrum ROM
+itself ([skoolkid/rom](https://github.com/skoolkid/rom)). Its
+[control-file block types](https://skoolkit.ca/docs/skoolkit/control-files.html)
+are `b` (data), `c` (code), `g` (game-status-buffer variable), `i` (ignore —
+deliberately unmodelled), `s` (a same-byte run, typically unused zero
+padding), `t` (text), `u` (unused memory), `w` (word table). Three of those
+eight (`i`, `s`, `u`) exist specifically so a practitioner never has to lie
+about a byte's classification — they are honest "this is not code or
+meaningful data" markers, not gaps.
+
+This project's own store already has the equivalent structure: `anno-types.ts`
+freezes a **twelve-member** `DATA_TYPES` vocabulary — `code`, `byte`, `word`,
+`address`, `petscii`, `screencode`, the four split-table layouts
+(`lo_hi_address`/`hi_lo_address`/`lo_hi_word`/`hi_lo_word`), `external_file`,
+and `undefined`. `undefined` is the SkoolKit-`i`/`u` equivalent: an explicit,
+queryable "not yet classified" state rather than an absence of a row.
+`DECOMP-01`'s bar — "nothing left `Undefined`" — is therefore not asking for
+a new type; it is asking for **zero rows carrying the type that already means
+"not yet looked at."** That is a closure metric the store can already answer
+with one query (`COUNT(*) WHERE dataType = 'undefined'`), which is a much
+lower-complexity deliverable than it first appears — the hard part is driving
+the classification to zero, not building a way to measure it.
+
+**Categories of byte that genuinely resist classification**, per prior art
+and this project's own dxa/Ghidra findings (`docs/phase38-*`,
+`PROOF-01`..`PROOF-04`):
+
+| Resistant category | Why it resists | Honest handling |
+|---|---|---|
+| Padding / unused runs | No semantic content, often all-zero or all-`$FF` fill to a block boundary | SkoolKit's `s`; this store's `byte` type with a comment naming it padding, never `code` |
+| Compressed/crunched blobs (Exomizer, Pucrunch, etc.) | Opaque until depacked — [Iridis Alpha](https://github.com/mwenge/iridisalpha) is disassembled *post*-depack for exactly this reason, and its own README notes the final binary is re-compressed with Exomizer, which is why byte-identical verification does not apply end-to-end even there | Typed `byte`/`external_file` with a comment naming the packer (this project's own `SURF-03` packer-finding output is the evidence source); never guessed as code |
+| Self-modifying operand/opcode bytes | The byte a disassembler sees at rest is not the byte the CPU executes at runtime — see Q3 | `code` with a comment naming the SMC site and its write origin, not silently retyped |
+| Load-address-dependent / bank-dependent overlap | Two valid interpretations exist depending on `$01` state or load address, and this project's own `AUTO-*` importer already **declines with a reason** here rather than guess (Phase 37, `docs/phase37-*`) | Carry the decline forward as the DECOMP-01 answer for that range: an explicit "ambiguous, here is why" comment, not a silent `undefined` |
+| Cracktro/loader/depacker regions the user has not decided about | Not this pipeline's decision (see the milestone's scoping constraint) | Typed and commented like anything else; provenance verdict attached via `BUILD-05`, inclusion/exclusion left to the user |
+| Dead code / unreachable regions never observed executing | The runtime-evidence layer's own stated limit: never-observed is a **count**, not a `data` verdict (`RuntimeExecClass` has no `data` member) | Typed by the static classifier (dxa/Ghidra) as best-effort `code`, annotated with "never observed executing" from `anno_evid_disagreements` rather than silently downgraded |
+
+**Practitioner naming convention for closure of entry points (`DECOMP-02`):**
+Gridrunner's own disassembly notes
+([Disassembling.md](https://github.com/mwenge/gridrunner/blob/master/Disassembling.md))
+describe exactly the workflow `DECOMP-02` demands: raw labels like `b1535` or
+`e8C50` are progressively replaced by semantic names (`CopyLevelTextLoop`,
+`MaterializeShip`) as understanding grows, driven by finding a recognizable
+data structure (a custom charset) and tracing references outward from it.
+This project already has the mechanical hook for the same workflow — the
+auto-importer's default naming produces exactly the `p_XXXX`/`l_XXXX` forms
+`DECOMP-02` requires to be zero at the end, and `routine-queue-walker` (an
+existing skill) already exists to drive a backlog of such auto-named symbols
+to closure. **`DECOMP-02` is largely an application of an existing skill
+against a stricter zero-tolerance bar, not new tooling.**
+
+**`DECOMP-04` (hardware register enums)** has a documented complication:
+`ANNO-13` (generated bit-name enums from `memmap.json`) is **Validated but
+currently has NO ROUTE** — the `gen-enums` CLI verb was removed at the v0.7.0
+cut. The heuristics survive as live code (`anno-enum-gen.ts`), and the by-hand
+route (`anno_create_project_enum` + `anno_apply_enum_usage`) writes identical
+rows. v1.0.0 does not own restoring the automated route (PROJECT.md is
+explicit that no phase does), so `DECOMP-04`'s closure bar must be satisfiable
+through the **by-hand route** on the synthetic fixture — a fixture with a
+bounded, known register-write surface is exactly the case where by-hand enum
+creation is tractable, which is itself a reason the fixture should be scoped
+small (see Q5).
+
+---
+
+## Q2 — Rebuildable vs merely reassemblable source
+
+**The distinguishing line practitioners draw is symbolization density, not
+reassembly success.** A file that reassembles byte-identical but is full of
+absolute-hex branch targets and inline magic numbers "compiles" but cannot be
+*edited* — inserting one instruction shifts every address after it, and
+every literal branch target silently goes stale. The named prior-art
+projects all treat this as the actual bar:
+
+- **SkoolKit** explicitly generates *both* an HTML cross-referenced view and a
+  re-assemblable `.asm` from the same `skool` source — the skool file is
+  described as "the common 'source' for both," and its whole value
+  proposition over a raw disassembly listing is that every reference resolves
+  to a symbol, so code can be edited and the cross-references stay correct
+  automatically (skoolkit.ca).
+- **Gridrunner** explicitly states its guiding principle is compiling to a
+  "byte-for-byte copy of the original," which only works because every
+  address referenced by a branch/JSR/JMP is a label, not a literal — you
+  cannot get byte-identical reassembly from a listing with drifted literal
+  addresses once you've renamed and re-ordered anything.
+- **N64/GameCube decompilation projects** (the [splat](https://github.com/ethteck/splat)
+  ecosystem — Ogre Battle 64, Rogue Squadron, Super Smash Bros. decomp) use a
+  different but structurally identical convention: a binary is split into
+  named **segments** (roughly this project's "scopes"), each segment renders
+  to its own file, and every cross-segment reference goes through a symbols
+  table the build system resolves — "one file per logical unit, everything
+  cross-referenced by name" is the load-bearing pattern across two completely
+  different CPU architectures and two completely different eras of tooling.
+  This is direct, cross-platform confirmation that `BUILD-01`+`BUILD-03`
+  together (one file per scope, universal symbolization) is *the* standard
+  shape of "rebuildable," not an invented one.
+
+**`BUILD-02` (data tables in their own files)** is the same principle applied
+to data rather than code, and this project's own store schema already has a
+type built for exactly this: `external_file` is one of the frozen twelve
+`DATA_TYPES` and today has **no consumer** — `grep` across
+`anno-export-asm.ts` finds zero references to it. This is a genuine gap, not
+a rename: today's `exportAsm()` (`src/mcp/vice/anno-export-asm.ts:764`)
+emits one flat source blob regardless of type, with no scope-splitting and no
+per-type file routing. `BUILD-01` and `BUILD-02` are therefore new logic in
+the export path, wiring an already-reserved but currently-inert type onto
+real file output — **medium complexity**, bounded because the type already
+exists and is frozen (can't be redefined, only newly *acted on*), but the
+splitting/linking logic (deciding scope boundaries, wiring ACME's `!source`
+directive, keeping symbol references valid across file boundaries) is new.
+
+**Complexity ranking for Q2's three sub-asks:**
+- `BUILD-03` (universal symbolization) — MEDIUM. The store already has
+  cross-reference tracking (`STORE-06`) and the four split-address types
+  exist for exactly this; the work is making export *refuse* to emit a raw
+  literal anywhere a symbol should exist, which is a new export-time
+  assertion, not new store schema.
+- `BUILD-01` (one file per scope + `!source`) — MEDIUM. Scopes already exist
+  in the store; wiring them to `acme-build`'s existing `!source` support and
+  splitting export output is new but mechanical.
+  See `acme-build/SKILL.md`.
+- `BUILD-02` (external data files) — MEDIUM-HIGH. `external_file` exists in
+  schema but is unused; this is the newest logic of the three.
+
+---
+
+## Q3 — Movement hazards
+
+**The four named classes are the textbook set, but a fifth recurs constantly
+in real C64 practice and should be named explicitly: packed/crunched loaders
+with a load-address baked into the depacker.**
+
+1. **Indexed jump tables, including the RTS trick.** Confirmed real and
+   well-documented: the [NESdev RTS Trick page](https://wiki.nesdev.com/w/index.php/RTS_Trick)
+   and 6502.org's jump-table thread describe the idiom (push target-1 onto
+   the stack, `RTS` adds 1 and "returns" into the target) and its specific
+   relocation trap — **pointer-table entries must encode target-1, and a
+   naive relocator that rewrites "the address" by +1 instead of +0 silently
+   breaks every entry, with `$FFFF`/page-wrap dummy values as a named extra
+   gotcha.** A disassembler that does not recognize the RTS-trick idiom sees
+   three unrelated instructions (two loads, a push each, an `RTS`) and no
+   jump at all — the reference is invisible to the classifier, which is why
+   `BUILD-04` calls this out as something "nothing in this stack detects
+   today." Detection requires pattern-matching the `LDA`/`PHA`/`LDA`/`PHA`/
+   `RTS` idiom specifically, not general jump-table detection.
+
+2. **Self-modifying code.** The [cc65 `smc.inc` macro package](https://cc65.github.io/doc/smc.html)
+   is the closest real tooling analog: it exists because "self modifying code
+   is often hard to identify" by inspection, and its answer is a **naming
+   convention** — a placeholder value (e.g. an address literal like `$FADE`
+   used as a doc-only stand-in) marking a byte that will be overwritten,
+   rather than any attempt to prove SMC absent. The practitioner-honest
+   approach `BUILD-04` should adopt: detect the write (a `STA`/`STX`/`STY`
+   whose target falls inside a previously-classified `code` range) and
+   *report* the site and its write origin — never attempt to resolve what
+   the "real" instruction is, since that depends on runtime state.
+
+3. **Page-alignment dependence.** Two independent real causes, both worth
+   naming separately in the hazard report: (a) data tables that must start
+   at a page boundary so a single index register spans the whole table
+   without a carry (a hi-byte/lo-byte split table, or a sprite-pointer table
+   at `$C000`-aligned addresses — literally this store's own `lo_hi_address`
+   type's use case); (b) **branch-timing dependence on which side of a page
+   boundary an instruction lands**, covered under raster code below since the
+   mechanism is the same (an extra cycle on a taken branch that crosses a
+   page).
+
+4. **Cycle-exact raster code.** Extensively documented in the retro C64 dev
+   literature — [Bumbershoot Software's raster-stabilization series](https://bumbershootsoft.wordpress.com/2015/12/29/stabilizing-the-vic-ii-raster/)
+   and the classic [Antimon "Making Stable Raster Routines"](https://www.antimon.org/dl/c64/code/stable.txt)
+   document both describe IRQ entry jitter (0–6 extra cycles depending on
+   what the CPU was mid-executing) corrected by NOP-padded double-IRQ
+   synchronization, and both note that **a branch instruction costs one extra
+   cycle when its target crosses a page boundary** — so relocating
+   raster-critical code by even one byte can silently move a branch across a
+   page boundary and desync a stable raster routine with no assembly error
+   and no visible symptom until the picture judders. This is the
+   least-mechanically-detectable of the four: static analysis can flag "this
+   code writes `$D012`/raster-compare and lives inside an IRQ handler" as a
+   *candidate*, but proving cycle-exactness requires either manual review or
+   an emulator-driven cycle count (which this project already has via `chis`/
+   `vice_cpu_history`, making this hazard class the one most naturally
+   *verified* rather than merely flagged).
+
+**A fifth hazard class practitioners hit constantly and this project's own
+fixture history has already brushed against**: **packed/crunched images whose
+depacker assumes a fixed load address.** Iridis Alpha's own README notes the
+shipped binary passes through Exomizer, and this project's `SURF-03` work
+established that packer identity is itself only sometimes recoverable. A
+depacker's unpack loop frequently hardcodes the *destination* address for the
+unpacked payload (sometimes literally reusing the depacker's own now-dead
+code space) — relocating the depacked program without also verifying the
+depacker's target addresses is a distinct, very common failure mode separate
+from the four named classes. **Recommendation: name this as a fifth hazard
+class (`packed-image load-address coupling`) in `BUILD-04`'s report**, scoped
+to *detecting and reporting* a hardcoded unpack-destination write, exactly
+like the other four — never attempting to fix it.
+
+A sixth, narrower case worth a one-line mention rather than a full class:
+**zero-page variable collisions** (code assuming a specific zero-page address
+is free, colliding with KERNAL/BASIC or another module after relocation) is
+a real but *data*-movement hazard, not code-movement — it belongs to
+`BUILD-02`'s data-table story more than `BUILD-04`'s code-hazard story, and
+should not dilute the four(+1) code-hazard taxonomy.
+
+**How practitioners conventionally report vs. work around these**: universally,
+*report, don't fix*. None of the surveyed prior art (SkoolKit, Gridrunner,
+Iridis Alpha) attempts automatic relocation — SkoolKit's disassemblies are
+literally never relocated, they document the game at its original load
+address; when C64 scene actors *do* relocate code (for cracks, trainers,
+NTSC/PAL fixes) it is manual, by a human who has already read the hazard by
+eye. This directly matches and validates this project's existing framing:
+`BUILD-04` "enumerates... and acts on none of it," and "automatic relocation
+or rebasing" is already an explicit anti-feature (v0.5.0 Out of Scope,
+carried forward) because "no general solution exists for 6502."
+
+---
+
+## Q4 — Demonstrating equivalence and modifiability credibly
+
+**Credible demonstrations in the wild share three properties: they are
+executed against a real interpreter/emulator (not argued in prose), they are
+committed as artifacts (not described), and they show a *change* taking
+effect, not just a re-run of the original.** The weakest version of this
+seen anywhere is theatrical: a written claim that "the logic is the same"
+with no re-run, or a diff of source text with no execution. The strongest
+version, seen in the "matching decompilation" community (N64/GameCube:
+splat-based projects, and the general practice the modding community calls
+"100% matching" — [Held Games' explainer](https://heldgames.com/guides/retro-decompilation-recompilation-explained)
+describes it as "the reconstructed source code, when compiled with the
+original toolchain, produces a binary that is identical to the retail game"),
+demonstrates equivalence at build time by literal binary comparison. That
+bar is explicitly **not** available here (no clean original, no matching
+toolchain guarantee), which is exactly why this project's own settled bar
+substitutes *behavioral* equivalence for *binary* equivalence — a documented,
+deliberate divergence from the strongest prior-art convention, for a
+structural reason rather than a laziness one.
+
+Given that substitution, the credible middle ground — and the one `EQUIV-01`/
+`EQUIV-02`/`EQUIV-03` already describe — is:
+
+- **A real second-binary run, not a self-comparison.** `EQUIV-01`
+  specifically calls out that `compare.mjs` has never been run in
+  original-vs-rebuilt mode — only ever self-consistency mode. Running it in
+  the mode it was never exercised in is itself non-vacuous evidence; a tool
+  that only ever compared a binary to itself cannot be trusted to catch
+  divergence, however clean its historical pass record looks.
+- **A volatile mask narrow enough that a real regression cannot hide behind
+  it.** `EQUIV-01`'s framing (`$D020`/`$D015`/`$D018` must not be maskable)
+  is the credibility test for this whole category: an equivalence checker
+  that excludes "anything that might differ" is a vacuous pass generator, the
+  same failure mode `COV-02` was built to catch for the coverage instrument.
+  Concretely: any volatile-masking rule should be reviewed by asking "would
+  this mask hide a one-byte wrong write to a VIC-II/SID/CIA register a human
+  would call a bug?" — if yes, the mask is too wide.
+- **A committed transcript as the artifact of record** (`EQUIV-02`), not a
+  described walkthrough — matching this project's own established pattern
+  (Phase 40's live text-channel evidence, Phase 44's PROOF-04 transcripts)
+  of treating "we measured this" claims as only as credible as the
+  committed evidence behind them.
+- **A remove-one/add-one modification, reassembled and re-observed**
+  (`EQUIV-03`) — this is the one piece with no equivalent in the surveyed
+  prior art (SkoolKit/Gridrunner/Iridis Alpha projects demonstrate
+  reassembly, not a live behavioral edit-and-observe cycle) — likely because
+  those projects' goal is documentation/preservation, not this project's
+  stated goal of *modifiable* source. This is a genuine differentiator, not
+  a copied practice, and is exactly why `EQUIV-03` needs the purpose-built
+  fixture (Q5) — none of today's single-purpose probe fixtures has an
+  observable, removable/addable on-screen behavior to demonstrate against.
+
+**What makes a demonstration theatrical rather than credible, named
+explicitly for the roadmap:**
+- Running the equivalence check only in self-comparison mode and calling it
+  "verified" (the exact trap `EQUIV-01` names as unexercised).
+- A volatile mask wide enough to swallow a real regression — undetectable
+  from the outside without inspecting the mask's own contents.
+- Describing a modification in prose ("we changed X and it worked") instead
+  of committing the before/after transcript.
+- Demonstrating modifiability against a toy that never had the hazard classes
+  present, so "we relocated code successfully" proves nothing about the
+  hazard detector (this is precisely why Q5's fixture is scoped to carry the
+  hazards deliberately rather than incidentally).
+
+---
+
+## Q5 — The synthetic subject: minimum realistic shape
+
+The fixture must make **two different tools non-vacuous simultaneously**:
+`BUILD-04`'s hazard detector (needs all classes actually present and
+individually distinguishable) and `EQUIV-03`'s modifiability proof (needs
+observable behavior that can be removed and added, and needs to still work
+*after* the hazard-carrying regions are exercised by relocation/export).
+Overbuilding is a real risk here — PROJECT.md's own history (`COV-01`'s four
+rounds of "gameable" fixture shapes) shows this project has been burned
+before by fixtures that don't force the property they're meant to test.
+
+**Minimum realistic shape** (each item ties to one hazard/proof requirement,
+nothing added speculatively):
+
+| Component | Ties to | Why it must be genuine, not decorative |
+|---|---|---|
+| A dispatch routine using the **RTS-trick jump table** with ≥3 real targets | `BUILD-04` class 1 | Must actually use `PHA`/`PHA`/`RTS`, not a plain `JMP (table,X)` — the RTS-trick's specific relocation trap (target-1 encoding) is only exercised by the real idiom |
+| A **self-modifying** instruction operand (e.g. a table-driven color-cycle routine that patches its own `LDA #imm` operand each frame) | `BUILD-04` class 2 | The write must target a previously-`code`-typed byte for real, not a data table read normally |
+| A **page-aligned sprite-pointer or split-address table** at a `$xx00` boundary | `BUILD-04` class 3 | Must be an actual `lo_hi_address`/`hi_lo_address` pair this store already types, so the hazard detector's output is checkable against the store's own typed range, not a separate ad-hoc check |
+| A **raster IRQ handler** doing a real stable-raster technique (cycle-counted NOP padding, a `$D012` compare) that visibly changes border/background color at a fixed screen line | `BUILD-04` class 4, plus visible on-screen behavior for `EQUIV-02`/`EQUIV-03` | Needs enough real cycle-counting that relocating it across a page boundary would (in principle) desync it — this is what makes the hazard *detectable* rather than assumed |
+| At least one **swappable data table** (charset or sprite bitmap) large enough to be worth extracting, typed as a candidate `external_file` range | `BUILD-02` | Must be big enough that "extract to its own file" is a meaningful operation, not one byte |
+| A **small level/music-style table** distinct from the graphics table | `BUILD-02` | Proves the extraction mechanism generalizes across at least two data kinds, not one coincidentally-shaped table |
+| **One clearly observable on-screen behavior to remove, and one to add** (e.g. remove: a border-flash on a key input; add: a new border color choice) | `EQUIV-03` | The behavior must be observable via a VICE screen capture / checkpoint, not merely "the code path was hit" — otherwise the demonstration degrades into a code-coverage claim, not a behavioral one |
+
+**What should NOT be added** (over-scoping risks, named explicitly since this
+project has a documented pattern of catching this late otherwise):
+- No actual game logic, scoring, or multi-level structure — a single
+  visible screen with the above five mechanisms is sufficient; "looks like a
+  real game" is not a requirement anywhere in `DECOMP-*`/`BUILD-*`/`EQUIV-*`.
+- No loader/depacker stage and no packing — the fifth hazard class named in
+  Q3 (packed-image/load-address coupling) is real but **out of scope for
+  this fixture**: it belongs to the real-cracked-code question
+  (`PROOF-03`), which this milestone explicitly does not take.
+- No bank-switching / `$01` multi-configuration dependence — bank-qualified
+  addressing is a standing Out of Scope item (v0.7.0/v0.8.0 audits, both
+  reaffirmed), and pulling it into the fixture would silently reopen that
+  boundary.
+- No cracktro/loader-style content to "report on but not decide about" — the
+  fixture is entirely original, so there is no provenance question to
+  demonstrate `BUILD-05` against; `BUILD-05`'s provenance-carry behavior
+  should be demonstrated separately (e.g. against the existing
+  `c64-provenance-diff` fixtures, which already carry a graded ledger), not
+  invented into this fixture.
+
+**Complexity**: MEDIUM. The five mechanisms are each individually
+well-documented, small (tens of lines of ACME each), and independent of each
+other, so they can be built and tested incrementally; the risk is entirely in
+under- or over-scoping the on-screen behavior for `EQUIV-03`; a single
+`$D020`-driven border color plus one input-triggered flash is enough and
+should not grow further.
 
 ---
 
 ## Feature Landscape
 
-### A. Text-monitor channel and command surface
-
-The channel itself (a `channel: "binary" | "text"` discriminator on `monitorClient`,
-proven-safe coexistence with the binary client) is this milestone's own gating
-prerequisite (its hypothesis H1) and is not re-derived here — it is the **root
-dependency** for every row below in sections B–D. What *is* in scope for this
-research is what a client does once the channel is open.
+### Table Stakes (users expect these — this milestone's stated bar)
 
 | Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| Single-seam text-response parser (one module per command format: `memmapshow`, `prof flat`, `chis`, `bt`, `io`) | The seed itself names this as needed first: "real surface area with real drift risk across VICE versions... one module owns each format, fixtures pinned". This is the same discipline `hostpath.ts`/`vice.ts` already apply elsewhere in this codebase | MEDIUM–HIGH | Human-formatted text, not a binary wire format — no schema to lean on. VICE's own text-console output is not contractually stable across releases (unlike the binary-monitor opcode set); fixtures must be pinned per VICE version the same way the binary client already version-gates `CPUHISTORY_GET`. Directly reuses the `capability-registry.ts` version-gating pattern from v0.2.0, applied to a text-format axis instead of an opcode axis |
-| `device c:` issued before any drive-side text-channel command | Already-known remedy for `default_memspace` contamination (a CLAUDE.md-documented pitfall with **no binary-monitor remedy**) — this milestone is what makes the remedy reachable at all | LOW | Direct dependency: nothing new to design, just a call that must precede any drive-scoped `memmapshow`/`chis`/`bt` use. Names a concrete cross-feature link: drive-side runtime evidence (§E) is gated on this |
+|---|---|---|---|
+| Zero `undefined`-typed bytes on the fixture (`DECOMP-01`) | Baseline definition of "annotated" in every surveyed prior-art project (SkoolKit's `i`/`u`/`s` closure, dxa/Ghidra coverage census this project already has) | LOW (measurement) / HIGH (driving the count to zero) | The type already exists (`anno-types.ts`); the query is trivial, the classification work is not |
+| Named entry points with function/inputs/outputs/side-effects comments, zero `p_XXXX`/`l_XXXX` (`DECOMP-02`) | Universal in commented disassemblies (Gridrunner's label-evolution workflow) | MEDIUM | `routine-queue-walker` skill already exists for exactly this backlog-drive workflow |
+| Every non-hardware address named (`DECOMP-03`) | Same as above — an unnamed data address is functionally an `undefined` byte with extra steps | MEDIUM | Store already has cross-reference tracking (`STORE-06`) to drive this |
+| Hardware register writes as named enums (`DECOMP-04`) | Table stakes for readability in every hand-written or hand-annotated 6502 source seen | MEDIUM | `ANNO-13`'s automated route has NO ROUTE currently; must use the by-hand route (`anno_create_project_enum`) on the bounded fixture |
+| One ACME file per scope, `!source`-wired, assembling to one output (`BUILD-01`) | The universal "rebuildable" shape (SkoolKit's dual skool→asm/html output; splat's per-segment files) | MEDIUM | Current `exportAsm()` emits one flat file; scope splitting is new |
+| Data tables in their own files (`BUILD-02`) | Same universal shape, applied to data (splat segments; SkoolKit data blocks) | MEDIUM-HIGH | `external_file` type exists in schema, unused by export today — genuinely new export logic |
+| Universal symbolization of branches/JSR/JMP/data refs (`BUILD-03`) | The actual dividing line between "reassembles" and "editable" (SkoolKit, Gridrunner, splat all treat this as non-negotiable) | MEDIUM | Store's split-address types and xref tracking already exist; new export-time assertion needed |
+| Hazard report across 4(+1) classes, report-only (`BUILD-04`) | No surveyed prior-art tool attempts automatic relocation; all report hazards for human judgement | HIGH | Genuinely new detection logic per class; RTS-trick idiom-matching and raster-code candidate-flagging are the hardest two |
+| Lossless export — no range dropped by the tool's own judgement (`BUILD-07`) | Direct consequence of this milestone's scoping constraint | LOW-MEDIUM | Provable by a planted-control test (a heuristic that *would* want to drop a range, and the range survives) — same pattern this project already uses elsewhere |
+| Reassembly + clean hazard report as a pre-existing gate (`BUILD-06`) | Prevents downstream phases building on unverified export | LOW | Reuses the existing real-ACME byte-diff oracle infrastructure from `EXPORT-01`..`03` |
+| Committed VICE transcript demonstrating behavioral equivalence (`EQUIV-02`) | Universal "show, don't tell" convention across this project's own evidence discipline and every credible RE demonstration surveyed | MEDIUM | Reuses `compare.mjs`, run in a mode it has never been exercised in |
+| Committed remove/add modifiability transcript (`EQUIV-03`) | The one genuinely novel demonstration this milestone requires — no direct prior-art equivalent found | MEDIUM-HIGH | Needs the purpose-built fixture (Q5); vacuous without it |
+| Fixtures committed, pipeline runnable in CI (`EQUIV-04`) | Matches this project's standing CI discipline for every prior milestone | LOW | Mechanical, once the fixture exists |
 
-**Anti-feature (already decided, named for completeness):** VICE's text-monitor
-assembler/disassembler (`a`/`d`) and `x64`↔`x64sc` mode switching. `PROJECT.md`
-records this as declined on the spot, 2026-09-06, because it would be "a fourth
-classifier nobody asked for" against two already-owned disassembly engines. Not
-revisited here; research surfaced nothing that reopens it.
-
----
-
-### B. The runtime code/data oracle (`memmapshow`)
-
-**How comparable toolchains present this.** Three independent survey points, all
-converging on the same UX shape:
-
-1. **radare2's `dt`/`dtc`/`dtg` family** keeps instruction/call traces as their own
-   named, addressable objects (`dt [addr]`, `dt*` lists all traced opcode offsets,
-   `dtc` traces calls specifically, `dtg` renders a call/return graph) — entirely
-   separate from `aa`'s static analysis results. radare2 never merges a trace into
-   the static type/flag database; a trace is queried *against* the static view.
-   This is independent confirmation the seed's "keep it a separate, joined layer"
-   design is the standard shape, not a novel one.
-2. **Ghidra's coverage-overlay plugins** (`Cartographer`, `dragondance`, and the
-   older `Lighthouse`, all consumed via the DRCOV trace format) work by loading a
-   *pre-collected* per-address execution bitmap and highlighting it directly in
-   the Listing/Decompiler views — overlay, not overwrite. The practitioner-facing
-   behavior these tools converge on: unremarkable when execution agrees with the
-   static view (just a highlight), and the actual analytic payoff is scanning for
-   addresses where the *static* view claims one thing (a function, a data table)
-   and the highlighted coverage disagrees (partial coverage inside a claimed
-   function, or coverage landing inside a claimed data range).
-3. **gprof-family flat profiles** (see §D) are the same shape one level up: ranked
-   by self time, and the actionable read is "what's at the top", not "what's
-   present at all".
-
-**What good UX for this project's "bytes say data, execution says code" oracle
-looks like**, synthesized from the above and consistent with the seed's own
-framing that "disagreement is the highest-value output of the whole design":
+### Differentiators (competitive advantage — align with Core Value)
 
 | Feature | Value Proposition | Complexity | Notes |
-|---------|--------------------|------------|-------|
-| A joined query returning **only disagreement rows** (byte-classifier says `data`/`undefined`, runtime observed `EXECUTE`) as its headline output, with agreement summarized as a count rather than enumerated | Matches the coverage-tool convention above: agreement is unremarkable and would drown the signal if listed row-by-row across a 64K image; disagreement is rare and is exactly the packer-unfolded / self-modifying / table-driven-jump signal the disassembly workflow (`docs/dissambler-workflow.md`) cannot resolve statically | MEDIUM | Depends on: `block-class.ts`'s existing three-valued classifier (read-only consumer, not a schema change) and the new evidence-layer tables. This is the concrete shape of "a query joins the two and reports agreement and disagreement" from the seed — this research adds *which side to foreground* |
-| Each disagreement row carries the **denominator** (how many runs / which run identities observed `EXECUTE` there, how many never reached it) | Both surveyed coverage tools and the seed agree: a single "executed" bit without a run-count is a weaker fact than an accumulated one. The seed states this explicitly ("$9C00 never executed is only meaningful with the denominator attached") | LOW (mostly a `COUNT(*) GROUP BY address` over already-keyed rows) | Depends on run-identity keying, §C |
-| Cross-checking `io <addr>`'s decoded register semantics against the existing v0.2.0 client-side VIC-II/CIA decoder, as a second independent oracle, with *its own* disagreement report | Same "two independent classifiers, compare rather than trust one" philosophy this project already applies to dxa vs. Ghidra. A genuine second oracle is a differentiator; a silent duplicate that replaces the existing decoder is not | LOW–MEDIUM | **Only** a differentiator if wired as a second, comparable source with a disagreement report. Wired as a drop-in replacement with no comparison, it is redundant maintenance for no new information — flag this fork in the road explicitly when scoping, don't default to "replace" |
-| `bt` (JSR chain) run at checkpoint hits, cross-referenced against Ghidra's static call graph to surface calls the static CFG missed (classic value of dynamic call-graph recovery — indirect calls/jumps through computed addresses) | This is the single most-cited reason dynamic tracing beats static CFG recovery in every surveyed toolchain (Ghidra/radare2 alike): indirect control flow is exactly where static analysis is weakest and dynamic observation is strongest | MEDIUM | One-shot, not a bulk source (the seed already says this — "useful at a checkpoint hit rather than as a bulk source"). Depends on the store's existing cross-reference machinery (`STORE-06`) as the static side of the comparison |
+|---|---|---|---|
+| Runtime-evidence-informed decomposition (joining `anno_evid_exec` disagreement-first output into `DECOMP-01`'s closure workflow) | No surveyed prior-art project has a live execution oracle feeding its static classification — this project's v0.9.0 delivered exactly that, upstream of this milestone | already built (v0.9.0) — this milestone consumes it | The `$8000-$BFFF` code-vs-data ambiguity PROJECT.md calls out is precisely where this pays off |
+| Provenance-aware reporting carried to point of use (`BUILD-05`, reworded) | Nobody else in the surveyed prior art has a graded-confidence provenance ledger (`c64-provenance-diff`) to carry forward at all — most prior-art projects work from a single canonical original | LOW-MEDIUM (carry, don't decide) | Must render the provenance verdict *at* the export/hazard-report point without ever excluding a range — this is the milestone's central scoping discipline made concrete |
+| Cycle-exact raster hazard flagging backed by a real cycle-count instrument (`chis`/`vice_cpu_history`) | Most prior-art projects flag raster-timing risk by eye; this project can *measure* cycle counts across a relocation to confirm or refute a flagged hazard | MEDIUM (uses existing v0.9.0 capability) | Turns a "manual review flag" into a checkable claim, which is unusual in this domain |
+| Hazard report as a structured, queryable artifact rather than prose comments | Every surveyed prior-art project's hazard knowledge lives in the disassembler's head or scattered inline comments, never a first-class report | MEDIUM | Natural fit for `.annostore`'s existing comment/label infrastructure — a hazard is just a specially-tagged annotation |
 
-**Anti-features (soundness-asymmetry violations — hard no, matching the seed's
-already-rejected alternatives):**
+### Anti-Features (commonly requested, often problematic — some already excluded, restated here because Q1-Q5 would otherwise reintroduce them)
 
-| Feature | Why Requested | Why Problematic | Alternative |
-|---------|---------------|------------------|-------------|
-| Auto-writing `data` into `.annostore`'s per-range type for any address with zero `EXECUTE` observations across all runs to date | Looks like "free" coverage of the data-recovery numbers `PROOF-01` already tracks | Directly violates the soundness asymmetry: absence of execution is not evidence of `data`, only evidence of "not yet reached." A wrong write here is unrecoverable in the same way the seed already names for confidence-bracket promotion | Keep it query-only: report "never executed across N runs" as a strengthening *statement*, never a write |
-| Promoting `EXECUTE`-observed addresses directly into `block-class.ts`'s type field under a confidence threshold | Fewer moving parts, one classifier instead of three | Already rejected in the seed verbatim — "collapses two independent classifiers into one, destroys the disagreement signal, and a wrong promotion is unrecoverable" | The join-query design already chosen |
-
----
-
-### C. Run identity and reproducibility
-
-**Survey finding:** with native event record/replay measured absent (confirmed:
-`event.c` has six options, none `-record`; `x64sc -record` exits 255), every
-comparable emulator-based workflow (TAS communities, embedded-fuzzing-to-Ghidra
-pipelines like the Lauterbach/SCHUTZWERK writeup, and this project's own already-
-built capture protocol) converges on the same two-tier mechanism, not a
-single silver bullet:
-
-1. **Savestate + checkpoint bracket is table stakes**, and this project already
-   has it. The frame-exact reproducible-run protocol (`REPRO-01..05`) and the
-   `.vsf`-slice capture (`CAP-01..04`) already key a run by `(binary sha256, argv
-   digest, seed)` — exactly the denominator the evidence layer needs. **This is
-   not new work for the evidence layer to invent; it is a direct reuse of an
-   already-shipped key.** The "which bracket" axis is likewise already solved:
-   checkpoint hit-count deltas are the existing, regression-pinned mechanism
-   (`vice-sync.ts`'s "poll on `hit_count`, never on paused state" invariant).
-2. **Scripted input is the differentiator**, and it is two-tier itself:
-   - `-keybuf <string>` (confirmed in the VICE manual: "Put the specified string
-     into the keyboard buffer") is launch-time, deterministic, and ASCII/hex-
-     escapable — but the manual documents **no injection timing or length limit**,
-     so treating it as a scenario primitive needs an empirical probe (measure,
-     don't assume) before it's load-bearing, the same discipline this project
-     already applied to `warp`/`CPUHISTORY_GET`/`default_memspace`.
-   - Scripted joystick/port sequences via the existing binary-monitor
-     `JOYPORT_SET` tool, applied at exact checkpoint-bracket boundaries — this is
-     precisely the pattern TAS-style tooling uses in the absence of native replay:
-     savestate + deterministic per-frame input write, not a recorded stream.
-     `-keybuf` alone only reaches "past the loader"; a scenario that needs to be
-     "past the title screen, mid-level" needs this second mechanism.
-
-| Feature | Value Proposition | Complexity | Notes |
-|---------|--------------------|------------|-------|
-| Key every evidence row by the existing `(binary sha256, argv digest, seed)` capture-record tuple, not a new identity scheme | Reuses `CAP-01..04` verbatim; zero new design surface for "which run" | LOW | Hard dependency: `CAP-01..04`, the `.vsf`-slice capture protocol |
-| Checkpoint-hit-count brackets as the "which scenario boundary" primitive | Already regression-pinned (`vice-sync.ts`); no new mechanism | LOW | Hard dependency: the documented "exactly one resume per wait; poll on `hit_count`" invariant — must not be re-derived, only reused |
-| `-keybuf` as a deterministic launch-time scenario primitive (get past a BASIC loader / simple prompt reproducibly) | Differentiator over "just autostart and hope": lets a scenario definition be text, versioned, and diffable | MEDIUM (needs an empirical timing/length probe first — VICE's own docs don't say) | Table-stakes-adjacent: cheap, and this project already treats "confirm empirically before designing around it" as standard practice (13-check binary-monitor probe, the `chis`/`warp`/`memspace` corrections in the live-probe note) |
-| Scripted `JOYPORT_SET` sequences at checkpoint boundaries as a scenario primitive for in-game (not just loader) reproducibility | The only route to a repeatable *gameplay* scenario without native replay — matches how TAS-style tooling solves the identical absence-of-replay problem elsewhere | HIGH | Real complexity: requires a director loop (checkpoint hit → write input → resume → next checkpoint), and interacts directly with the still-open interleaved binary/text coexistence question (H1). Should not be scoped before H1 is resolved |
-
-**Anti-features (already excluded in `PROJECT.md`, named for completeness, not
-reopened):** VICE event record/replay as the reproducibility mechanism (does not
-exist); the text-monitor `stopwatch`/`sw` as a capture or bracket denominator
-(it is a raw cumulative `clk` counter, not address-keyed — confirmed again by this
-research: it answers "how long", never "which addresses", so it cannot serve as
-an evidence-row key even in principle); `-limitcycles` and text-monitor `bsave` as
-capture routes.
-
----
-
-### D. Profiling as a triage tool (`prof flat N`)
-
-**Survey finding (gprof, the canonical flat-profile precedent):** flat profiles
-are conventionally sorted "first by decreasing run-time spent in them, then by
-decreasing call count, then alphabetically" and the documented practitioner
-workflow is exactly "start with the top of the list" — self time is the intended
-triage signal, not total/cumulative time, precisely because self time answers
-"where is this program actually spending its cycles" without being inflated by
-callees. `prof flat N`'s existing measured shape (self **and** total cycles,
-ranked and percentaged) already matches this convention.
-
-**What the first-pass question actually is, for a 64K image:** not "what does
-this code do" (that's Ghidra's job) but "which of the ~145/131/3-region split
-this project's own dxa partition already produces is worth a human's attention at
-all" — i.e., profiling is a **prioritization filter over static analysis**, not a
-classifier. The seed says this directly: "profiling tells you which of those
-regions is worth a human's attention at all."
-
-| Feature | Value Proposition | Complexity | Notes |
-|---------|--------------------|------------|-------|
-| `prof flat N` output parsed into `(address, self%, total%, hit-count)` rows and joined against **existing store labels/ranges** (not a bare address list) | Bare addresses force a human back to `anno_get_address_details` per row; joining against the store turns "the top 5 hottest addresses" into "the top 5 hottest *named/typed* regions" in one query — directly actionable | MEDIUM | Depends on: the store's existing label/range query surface (`anno_*` search), and the run-identity keying in §C so a profile is attributable to a specific scenario, not an ambient "the profiler ran at some point" |
-| Address-range rollup (map a flat per-function address to the containing dxa/Ghidra-recovered function boundary, not just the leaf address `prof` reports) | `prof flat`'s addresses are individual function entry points; without rolling up to known boundaries, adjacent inlined/jump-table-adjacent code fragments look like separate, smaller entries than they are | MEDIUM | Depends on: dxa/Ghidra's already-recovered function boundaries in the store |
-| Ranked report as **the** entry point into a fresh, unfamiliar 64K image — i.e., "run `prof flat`, look at rows 1–5, start there" as the documented first move in the disassembly workflow | Matches the surveyed gprof convention exactly (sort order *is* the UX) and closes the loop `docs/dissambler-workflow.md` draws but cannot feed today | LOW (mostly a documentation/skill-playbook concern once the parse+join above exists) | This is a skill-doc feature, not a code feature — cheap once B/C exist |
-
-**No anti-features surfaced here.** Profiling is inherently sound-positive in the
-same way execution observation is (hit ⇒ executed ⇒ code), so it does not create
-a new soundness-asymmetry risk — it is a ranking over addresses already known to
-have executed, not a claim about addresses that didn't.
-
----
-
-### E. Disk-level analysis (`c1541`)
-
-**What `c1541`'s low-level surface gives that plain file extraction does not:**
-plain extraction (reading a `.d64`'s directory and pulling the named file) trusts
-the disk's own claimed structure completely. `c1541`'s `bam` (allocation bitmap),
-`chain` (walk a file's actual sector-link chain from a given track/sector), and
-`bpeek`/`bpoke`/`block` (raw sector-level read/write bypassing the filesystem
-layer entirely) let a reverse engineer see the **physical layout independent of
-what the directory claims** — exactly the surface fastloaders and copy-protection
-schemes target (non-standard sector interleave, sectors marked free in the BAM
-that a loader reads anyway, chains that loop or point outside the claimed file).
-
-**Table stakes vs. differentiator, as asked:**
-
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| Static structural read: `bam` + `chain` + `block`/`bpeek` walked into a JSON preprocessing artifact (claimed sector chain, BAM allocation state, per-block raw bytes) | This is the direct, offline, well-documented (official VICE manual + Debian manpages) capability the milestone context names; no protocol risk, `c1541` is a mature standalone tool with a stable batch-mode command set | LOW–MEDIUM | Reached over `host_tool`, same pattern as the six existing host tools (`acme`, `dxa`, `analyzeHeadless`, etc.) — a straightforward seventh/eighth/ninth entry, not a new pattern |
-| `bpoke` (raw sector write) as a **test-fixture-construction** utility (building synthetic copy-protection scenarios for the project's own test suite, in the same spirit as `PROOF-03`'s synthetic fixture) | Useful, but narrower than a core analysis capability — this project is analysis-only against real disks; write access is for building controlled test inputs, not for the RE workflow itself | LOW | Scope this as a test-infrastructure differentiator, not a headline analysis feature — avoid over-claiming it as part of the "real" RE capability set |
-
-**The actual fastloader/copy-protection signal — differentiator, and genuinely
-hard, not glossed:**
-
-| Feature | Value Proposition | Complexity | Notes |
-|---------|--------------------|------------|-------|
-| Comparing the disk's **claimed** chain (from `c1541`, static) against the sectors a loader **actually reads** at runtime | This is the real signal named in the question — the gap between claimed structure and observed drive behavior is exactly where non-standard loaders and protection schemes live, and no static tool alone can produce it | HIGH | `c1541` itself is offline-only and cannot observe runtime reads at all — the runtime half needs the **drive CPU's own execution**, observed via drive-scoped checkpoints/`memmapshow`, which requires `Drive8TrueEmulation` + non-zero `Drive8Type` (documented gate — with true drive emulation off, drive memory reads are **silent zeros, not an error**) and the `device c:` remedy for `default_memspace` contamination this same milestone's text channel newly makes reachable (§A). This is a real, direct same-milestone dependency chain worth naming explicitly to whoever scopes phases: the disk-analysis differentiator is gated on the text-channel work, not merely adjacent to it |
-
----
-
-### F. BASIC stub decoding (`petcat`)
-
-**How this is used in practice:** `petcat` detokenizes a `.prg`'s BASIC portion
-into readable text; the standard convention (confirmed by the VICE manual and
-community tutorials) is a stub line containing a `SYS <address>` statement whose
-argument is the machine-code entry point — the practitioner's actual first move
-on an unfamiliar `.prg` is "detokenize, find `SYS`, that address is where the real
-disassembly starts", spending zero disassembler time on the BASIC wrapper itself.
-
-**Failure modes, which is exactly what the question asks for:**
-
-- **Computed/obfuscated `SYS` argument.** Not every stub is a literal `10 SYS
-  2064`. Crack/protection stubs commonly compute the target from zero-page
-  `PEEK`s (`SYS PEEK(43)+256*PEEK(44)`), arithmetic (`SYS 49152+X`), or a value
-  set by a prior `POKE`/loop — a plain regex for `SYS \d+` silently fails (finds
-  nothing) or silently misleads (finds a decoy literal inside a `REM` or string
-  literal that is not the real target).
-- **Non-standard load address.** The convention assumes BASIC starts at `$0801`;
-  loaders that relocate BASIC (e.g., to `$1C01` under a different memory
-  configuration) break any hard-coded assumption about where the stub begins.
-- **Packed/obfuscated stub itself.** A stub that is itself compressed or whose
-  tokens have been hand-patched to defeat naive detokenizers is a real, observed
-  crack-scene technique — `petcat` will still detokenize the bytes it's given,
-  but the *human-readable* result may still require manual reading rather than
-  automated extraction.
-- **Multi-statement / `REM`-hiding lines.** BASIC lines separated by `:` and
-  `REM` comments that contain binary-looking bytes are a known way to hide data
-  or defeat naive line-oriented parsing.
-
-| Feature | Value Proposition | Complexity | Notes |
-|---------|--------------------|------------|-------|
-| `petcat`-based detokenize → regex-extract literal `SYS <decimal>` as the fast path | Handles the large majority of real stubs (the "standard" case) essentially for free, before any disassembler time is spent | LOW | Reached over `host_tool`, same pattern as the other five |
-| A **named, disclosed decline** (not a silent wrong guess) when the `SYS` argument is not a literal decimal — mirroring this project's own existing convention (dxa/Ghidra's "decline with a reason rather than a confident wrong comment wherever bank state is path-dependent") | Directly matches the project's own established engineering discipline (`AUTO-*`'s bank-state declines) rather than introducing a new failure philosophy | LOW | This is a **direct precedent match**, not new design — reuse the existing decline pattern verbatim rather than inventing a confidence score for entry-point guessing |
-| Computed-argument resolution (tracing the `PEEK`/arithmetic expression) | Would recover the entry point even from obfuscated stubs | HIGH, and arguably out of this milestone's actual ask — the question only asks what `petcat` gives before any disassembler is spent; resolving a computed expression **is** disassembly-adjacent work | Flagged as a candidate differentiator for later, not this milestone: the "decline with a reason" answer above is the correct v0.9.0-shaped scope, and reaching further risks re-deriving a mini-interpreter that the two owned disassembly engines already do better |
-
----
-
-### G. Cartridge handling (`cartconv`)
-
-**How much bank-structure output actually changes the starting representation:**
-a real, non-cosmetic amount — genuinely more than "which flag do I pass". Many
-CRT types are bank-switched (multiple 8K/16K ROM banks mapped in and out via
-I/O-triggered bank registers, not all resident at the same address
-simultaneously); treating a CRT as a flat `$8000–$9FFF` window silently analyzes
-**only whichever bank happens to be resident at dump time** and never sees the
-others at all — not a degraded view, a **missing** one. `cartconv`'s own header
-parsing already identifies cartridge type and bank count/size directly from the
-well-documented CRT header format.
-
-| Feature | Value Proposition | Complexity | Notes |
-|---------|--------------------|------------|-------|
-| `cartconv`-driven CRT→per-bank flat image splitting, each bank exported as its own normalized image (matching the "segments" concept `docs/dissambler-workflow.md` already sketches for banked ROMs) | This is the actual value: without it, bank-switched cartridges are **structurally invisible** past bank 0 to both dxa and Ghidra, not merely less convenient to analyze | LOW–MEDIUM | `cartconv`'s CRT-type/bank-count identification is well-documented and stable; the harder part is *what this project does with N banks*, addressed below |
-| Analyze each split bank as **its own independent image**, through the existing single-bank-at-a-time dxa/Ghidra flow, rather than modeling banks inside `.annostore` | Reuses the entire existing pipeline unchanged — N banks are N images, not a new addressing dimension | LOW | **Hard constraint, not a suggestion:** `PROJECT.md`'s Out of Scope explicitly excludes "bank-qualified addressing as a modelled store feature" (named twice, v0.7.0 and v0.8.0 audits). `cartconv`'s bank split must feed the *existing* single-image-at-a-time flow, never motivate reopening that exclusion. This research found nothing that should reopen it — multiple independent per-bank images is a complete, correct answer that doesn't need bank-qualified store addressing at all |
-
-**No anti-feature surfaced specific to `cartconv` beyond the constraint above** —
-the tool's identification/splitting role is narrow and well-bounded by the CRT
-header format itself.
-
----
+| Feature | Why it seems appealing | Why problematic | Alternative |
+|---|---|---|---|
+| Automatic relocation or rebasing | "If we can detect the hazards, why not fix them automatically?" | No general solution exists for 6502 (already an explicit v0.5.0 Out of Scope entry, reaffirmed); a `da65`+ca65/ld65 auto-rebuild route was actually tried and measured producing a **wrong binary** (v0.8.0 Out of Scope) | Report hazards, human relocates by hand — matches every surveyed prior-art project's actual practice |
+| Automatically excluding cracker patches / loader / cracktro content | Feels like "cleaning up" the rebuild | Makes the tool the decider — directly forbidden by this milestone's scoping decision (2026-09-10, owner) | Carry the provenance verdict to point of use (`BUILD-05`); user decides inclusion/exclusion explicitly |
+| Byte-identical rebuild as the acceptance bar | The strongest prior-art convention (N64/GameCube "matching decomp") | Structurally undefined here — no clean original exists, only a graded composite | Behavioral equivalence (`EQUIV-01`/`02`), narrowed volatile mask instead |
+| C or higher-level decompiled output | Looks more "modern" / easier to read | Not reassemblable to the same program; not what a C64 rebuild is edited in; not the deliverable this milestone promises | Modifiable 6502 ACME source — the actual deliverable |
+| Auto-renaming symbols with no evidence bar, to hit `DECOMP-02`'s zero-`p_XXXX` count faster | Tempting shortcut under a hard zero-tolerance metric | Defeats `COV-02`'s vacuous-pass protection by construction; manufactures confident nonsense — the exact failure mode `c64-provenance-diff` exists to prevent | Drive `routine-queue-walker`'s evidence-backed workflow to genuine closure, even if slower |
+| Multi-assembler output (targeting KickAssembler, ca65, etc. alongside ACME) | "More reach" | No measured caller; ACME is this project's assembler (standing Out of Scope) | Stay ACME-only |
+| A packed/compressed loader stage in the synthetic fixture | Would make the fixture "more realistic" | Pulls in the fifth hazard class and the real-cracked-code question this milestone explicitly does not take (`PROOF-03` deferred) | Keep the fixture unpacked; test packed-image coupling only against real cracked code, in a later milestone |
+| Deterministic input replay as a general capability, to make `EQUIV-03`'s demonstration "more automated" | Would remove manual VICE interaction from the transcript-capture step | No VICE-specific tooling exists for this (checked, `FUT-04`); TASVideos-style movie replay is the nearest precedent and is a different domain entirely | Committed transcript from a driven, checkpoint-based VICE session — the pattern this project already uses everywhere else |
 
 ## Feature Dependencies
 
 ```
-Text-monitor channel client (H1, this milestone's own gate)
-    └──requires──> coexistence proof: binary + text clients, interleaved commands
-                   (Unverified — the seed and PROJECT.md both name this as the
-                   thing everything else in this file sits behind)
+DECOMP-01 (zero undefined bytes)
+    └──requires──> runtime-evidence layer (anno_evid_exec, EXISTING v0.9.0)
+    └──requires──> dxa + Ghidra auto-annotation (EXISTING v0.8.0)
 
-Runtime evidence layer (§B)
-    ├──requires──> Text-monitor channel client (parses memmapshow/prof/chis/bt/io)
-    ├──requires──> Run-identity keying (§C) — reuses CAP-01..04's
-    │              (binary sha256, argv digest, seed) tuple, not a new scheme
-    ├──requires──> block-class.ts's existing three-valued classifier (read-only
-    │              join target — never mutated by the evidence layer)
-    └──enhances──> the dxa/Ghidra disassembly workflow (docs/dissambler-workflow.md):
-                   profiling (§D) directs which regions are worth Ghidra's/a
-                   human's attention; disagreement rows (§B) surface exactly the
-                   packer/self-modifying/table-dispatch cases both static
-                   engines guess at
+DECOMP-02 (named entry points + purpose comments)
+    └──requires──> DECOMP-01 (can't purposefully name what isn't typed as code yet)
+    └──enhances-via──> routine-queue-walker skill (EXISTING)
 
-Disk fastloader signal (§E, differentiator half)
-    └──requires──> Text-monitor channel client's `device c:` remedy for
-                   default_memspace contamination (§A) — a same-milestone
-                   dependency, not a future one
-    └──requires──> Drive8TrueEmulation + non-zero Drive8Type (existing documented
-                   gate; silent zeros otherwise, not an error)
+DECOMP-03 (named non-hardware addresses)
+    └──requires──> STORE-06 cross-references (EXISTING v0.7.0)
 
-BASIC-stub decoding (§F) ──feeds──> disassembly entry point selection
-                                    (dxa/Ghidra already own everything past this)
+DECOMP-04 (register enums)
+    └──requires──> by-hand enum route (anno_create_project_enum, EXISTING — ANNO-13's automated route has NO ROUTE)
 
-Cartridge bank splitting (§G) ──feeds──> N independent per-bank images through the
-                                          EXISTING single-image dxa/Ghidra flow
-                                          (does NOT feed a bank-qualified store —
-                                          that remains explicitly out of scope)
+BUILD-01 (one file per scope + !source)
+    └──requires──> DECOMP-01..04 substantially complete (exporting an undocumented mess is not "rebuildable")
+    └──requires──> acme-build's existing !source support (EXISTING)
 
-host_tool control op (existing, SEAM-01..07)
-    └──required by──> c1541, petcat, cartconv (three new host binaries, same
-                       pattern as acme/dxa/analyzeHeadless — never spawnSync'd
-                       from a skill script)
+BUILD-02 (data tables to own files)
+    └──requires──> BUILD-01 (file-splitting mechanism)
+    └──requires──> external_file DATA_TYPE (EXISTING schema, unused today)
+
+BUILD-03 (universal symbolization)
+    └──requires──> DECOMP-03 (named addresses) and split-address types (EXISTING)
+    └──enhances──> BUILD-01/02 (moved files stay correct only if refs are symbolic)
+
+BUILD-04 (hazard report)
+    └──requires──> BUILD-03 (symbolization surfaces the jump targets/data refs a hazard scan walks)
+    └──requires──> the synthetic fixture (Q5) to be NON-VACUOUS
+    └──enhanced-by──> vice_cpu_history / chis (EXISTING v0.9.0, cycle-exact class)
+
+BUILD-05 (provenance carried to point of use)
+    └──requires──> c64-provenance-diff's graded ledger (EXISTING)
+    └──conflicts-with──> any automatic exclusion logic (explicitly forbidden this milestone)
+
+BUILD-06 (reassembly + clean hazard gate before next phase)
+    └──requires──> BUILD-01..04 and the real-ACME byte-diff oracle (EXISTING v0.7.0 EXPORT-01..03)
+
+BUILD-07 (lossless export)
+    └──conflicts-with──> any heuristic that would drop/filter a range
+    └──enhances──> BUILD-05 (provenance carried, not enforced by omission)
+
+EQUIV-01 (compare.mjs, original-vs-rebuilt mode)
+    └──requires──> BUILD-06's gate passed (rebuild exists and reassembles)
+    └──requires──> narrowed volatile mask (new logic, not existing)
+
+EQUIV-02 (behavioral equivalence transcript)
+    └──requires──> EQUIV-01 and the synthetic fixture's observable behavior (Q5)
+
+EQUIV-03 (modifiability demonstration)
+    └──requires──> EQUIV-02 passing AND the synthetic fixture's removable/addable behavior (Q5)
+    └──requires──> BUILD-01..03 (the modification must be made in the exported, scoped, symbolized source)
+
+EQUIV-04 (CI-runnable pipeline)
+    └──requires──> the synthetic fixture (Q5) committed
+    └──requires──> EQUIV-01..03 automatable without manual VICE interaction beyond a scripted session
 ```
 
 ### Dependency Notes
 
-- **Everything in §B–E depends on H1 (text-channel coexistence).** This is not a
-  new finding — it's restated here because every complexity estimate above
-  assumes H1 resolves favorably; if interleaved binary+text commands corrupt each
-  other's view, the whole evidence-layer feature set is blocked, not degraded.
-- **Run identity is reused, not designed.** `CAP-01..04`'s `(binary sha256, argv
-  digest, seed)` key is the correct denominator for evidence rows; this research
-  found no reason to invent a second identity scheme.
-- **The disk fastloader differentiator and the text-channel work are the same
-  milestone, not sequential milestones** — the `device c:` fix that makes
-  drive-side checkpoints usable is delivered by this same phase's text channel,
-  which is worth flagging explicitly since it changes the natural ordering: the
-  text channel isn't just a prerequisite for §B, it's also a prerequisite for
-  §E's hardest differentiator.
-- **Bank-qualified addressing stays out of the store, permanently, per two prior
-  audits.** `cartconv`'s bank split must resolve to "N images," never to "one
-  image with a bank axis."
-
----
+- **The synthetic fixture (Q5) is the single most load-bearing new artifact
+  in the milestone** — `BUILD-04` and `EQUIV-03` are *both* vacuous without
+  it, and it should therefore be built early in phase sequencing, before
+  either hazard-detection or modifiability-proof work starts, so both can be
+  developed and tested against a real non-trivial subject from day one
+  rather than retrofitted later.
+- **`DECOMP-*` gates `BUILD-*`, and `BUILD-*` gates `EQUIV-*`, in that strict
+  order** — this mirrors the existing phase split (originally Phases 20/21/22
+  in the v0.5.0 archive) and there is no prior-art or dependency reason to
+  interleave them; every surveyed project (SkoolKit, Gridrunner, splat-based
+  decomps) treats "classify," "make editable," and "prove it still works" as
+  sequential passes, not parallel tracks.
+- **`ANNO-13`'s missing automated route is a real but boundable risk**: it
+  only blocks `DECOMP-04` if the by-hand route can't cover the fixture's
+  bounded register-write surface in reasonable effort — which it should,
+  precisely because the fixture (Q5) is deliberately small (see Q5's
+  over-scoping warnings).
+- **`external_file` conflicts with nothing else in the frozen vocabulary** —
+  it was reserved at `STORE-01`'s one-irreversible-decision point precisely
+  for this use, so `BUILD-02` is additive schema *usage*, never a schema
+  change (the vocabulary itself cannot be touched again per `STORE-01`'s
+  framing).
 
 ## MVP Definition
 
-### Launch with (v0.9.0, assuming H1 resolves favorably)
+### Launch With (v1.0.0 — nothing here is optional; all 15 requirements are already committed)
 
-- [ ] Text-channel parser for `memmapshow`/`prof flat`/`chis`/`bt`/`io`, one seam
-      per format, fixtures pinned — the prerequisite for everything else here
-- [ ] Evidence rows keyed by the existing `(binary sha256, argv digest, seed)`
-      run-identity tuple — no new identity scheme
-- [ ] Agreement/disagreement join query over the evidence table and
-      `block-class.ts`, **surfacing disagreement rows as the headline output**
-      and agreement as a summary count — matches the surveyed coverage-tool
-      convention (Cartographer/dragondance/radare2's `dt`) and the seed's own
-      framing
-- [ ] `prof flat N` parsed and joined against existing store labels/ranges —
-      turns "top 5 hot addresses" into "top 5 hot named regions"
-- [ ] `c1541` static structural preprocessing (`bam`/`chain`/`block`) over
-      `host_tool`, as a JSON artifact — table stakes, no protocol risk
-- [ ] `petcat` detokenize → literal `SYS <decimal>` fast path, with a **named,
-      disclosed decline** (not a silent guess) on any non-literal argument —
-      direct reuse of the project's existing decline convention
-- [ ] `cartconv`-driven CRT bank splitting into N independent flat images fed
-      through the existing single-image dxa/Ghidra flow
+- [ ] `DECOMP-01`..`04` — closure on the synthetic fixture (not on any real
+      cracked title — that's explicitly deferred)
+- [ ] `BUILD-01`..`03`, `06`, `07` — rebuildable, symbolized, lossless,
+      gated export
+- [ ] `BUILD-04` — the hazard report, all five classes (four named + the
+      packed-image coupling class this research recommends adding)
+- [ ] `BUILD-05` — provenance carried to point of use, reworded per the
+      2026-09-10 scoping decision
+- [ ] `EQUIV-01`..`04` — equivalence and modifiability, both demonstrated
+      and committed as transcripts
+- [ ] The purpose-built synthetic fixture — enabling deliverable for both
+      `BUILD-04` and `EQUIV-03`
 
-### Add after validation (v0.9.x / v1.0.0)
+### Add After Validation (v1.x)
 
-- [ ] `-keybuf` as a versioned, diffable scenario-definition primitive — needs an
-      empirical timing/length probe first (VICE's own docs don't specify either)
-- [ ] `io <addr>` wired as a genuine second independent oracle against the
-      existing v0.2.0 client-side VIC-II/CIA decoder, with its own disagreement
-      report — trigger: a concrete case where the two disagree is found
-- [ ] `bt`-at-checkpoint cross-referenced against Ghidra's static call graph, to
-      surface indirect-call/jump targets the static CFG missed
+- [ ] `PROOF-03` on real cracked code (bank-boundary claim, currently only
+      proven on a synthetic two-caller fixture) — explicitly deferred at
+      this milestone's open
+- [ ] Restoring `ANNO-13`'s automated enum-generation route, if the by-hand
+      route proves too slow once applied beyond the small fixture
+- [ ] Applying the whole pipeline to a real title (`FUT-05`, `bruce_lee`,
+      where a provenance ledger already exists) — explicitly named as
+      downstream use, not this milestone's evidence
 
-### Future consideration (v1.x+)
+### Future Consideration (v2+)
 
-- [ ] Scripted `JOYPORT_SET` sequences at checkpoint boundaries, as the route to
-      genuinely repeatable *gameplay* scenarios (not just past-the-loader) —
-      defer until H1's interleaved-command question is fully settled, since this
-      is the highest-complexity, highest-coordination item in the whole set
-- [ ] Drive-side checkpoint/`memmapshow` correlation for the full claimed-vs-
-      actual sector-read fastloader signal — defer past the static `c1541`
-      preprocessing table-stakes item; this is real, hard work gated on
-      `Drive8TrueEmulation` plus the text channel's `device c:` remedy
-- [ ] `petcat` computed-`SYS`-argument resolution (tracing `PEEK`/arithmetic
-      expressions) — arguably belongs to the disassembly engines, not `petcat`
-      preprocessing; revisit only if the "decline with a reason" answer proves
-      insufficient in practice
-
----
+- [ ] The fifth (packed-image/load-address) hazard class evaluated against
+      real crunched titles, once `PROOF-03`'s real-code question is answered
+- [ ] Extending the hazard report to bank-switching-aware code, if
+      bank-qualified addressing is ever un-excluded
 
 ## Feature Prioritization Matrix
 
 | Feature | User Value | Implementation Cost | Priority |
-|---------|------------|----------------------|----------|
-| Text-channel format parsers (memmapshow/prof/chis/bt/io) | HIGH | HIGH | P1 |
-| Evidence rows keyed by existing run-identity tuple | HIGH | LOW | P1 |
-| Agreement/disagreement join, disagreement-first presentation | HIGH | MEDIUM | P1 |
-| `prof flat` joined against store labels | HIGH | MEDIUM | P1 |
-| `c1541` static structural preprocessing | HIGH | LOW-MEDIUM | P1 |
-| `petcat` SYS-literal fast path + disclosed decline | MEDIUM-HIGH | LOW | P1 |
-| `cartconv` bank splitting into N images | MEDIUM-HIGH | LOW-MEDIUM | P1 |
-| `-keybuf` scenario primitive (post-probe) | MEDIUM | MEDIUM | P2 |
-| `io` as second independent oracle | LOW-MEDIUM | LOW-MEDIUM | P2 |
-| `bt`-at-checkpoint vs. static call graph | MEDIUM | MEDIUM | P2 |
-| Scripted `JOYPORT_SET` gameplay scenarios | HIGH | HIGH | P3 |
-| Drive-side claimed-vs-actual sector reads | HIGH | HIGH | P3 |
-| `petcat` computed-argument resolution | LOW-MEDIUM | HIGH | P3 |
+|---|---|---|---|
+| DECOMP-01..04 (closure) | HIGH | MEDIUM | P1 |
+| BUILD-01 (scope files + !source) | HIGH | MEDIUM | P1 |
+| BUILD-02 (data table extraction) | HIGH | MEDIUM-HIGH | P1 |
+| BUILD-03 (universal symbolization) | HIGH | MEDIUM | P1 |
+| BUILD-04 (hazard report) | HIGH | HIGH | P1 |
+| BUILD-05 (provenance carry) | MEDIUM-HIGH | LOW-MEDIUM | P1 |
+| BUILD-06 (gate) | HIGH | LOW | P1 |
+| BUILD-07 (lossless export) | HIGH | LOW-MEDIUM | P1 |
+| Synthetic fixture | HIGH (enabling) | MEDIUM | P1 |
+| EQUIV-01 (compare.mjs new mode) | HIGH | MEDIUM | P1 |
+| EQUIV-02 (equivalence transcript) | HIGH | MEDIUM | P1 |
+| EQUIV-03 (modifiability transcript) | HIGH | MEDIUM-HIGH | P1 |
+| EQUIV-04 (CI-runnable) | MEDIUM | LOW | P1 |
+| ANNO-13 automated-route restoration | MEDIUM | MEDIUM | P3 |
+| PROOF-03 on real code | MEDIUM | HIGH (needs real corpus work) | P2 (next milestone) |
+| Real-title pipeline run (FUT-05) | HIGH (long-term) | HIGH | P3 |
 
-**Priority key:**
-- P1: Directly answers this milestone's four stated hypotheses
-- P2: Genuine value, but reasonably deferred a beat without blocking the milestone
-- P3: Real and named, but each has an explicit gating dependency (H1's
-  interleaved-command question, or drive-emulation correctness) that should
-  resolve first
-
----
+**Priority key:** P1 must-have (already committed requirements). P2
+should-have, natural next milestone. P3 future consideration, no current
+owner.
 
 ## Sources
 
-- [VICE Manual — Invoking the emulators (`-keybuf`)](https://vice-emu.sourceforge.io/vice_2.html) — HIGH confidence, primary/official
-- [VICE Manual — c1541](https://vice-emu.sourceforge.io/vice_14.html) — HIGH confidence, primary/official
-- [c1541(1) — Debian manpages](https://manpages.debian.org/testing/vice/c1541.1.en.html) — HIGH confidence, primary/official
-- [VICE Manual — petcat](https://vice-emu.sourceforge.io/vice_16.html) — HIGH confidence, primary/official
-- [Tokenize/De-tokenize Commodore Basic Programs Using petcat](https://techtinkering.com/articles/tokenize-detokenize-commodore-basic-programs-using-petcat/) — MEDIUM confidence, community tutorial
-- [VICE Manual — cartconv](https://vice-emu.sourceforge.io/vice_15.html) — HIGH confidence, primary/official
-- [VICE cartconv.txt (source doc)](https://github.com/martinpiper/VICE/blob/master/doc/cartconv.txt) — HIGH confidence, primary/official
-- [dt — Radare2 wiki (Display instruction traces)](https://r2wiki.readthedocs.io/en/latest/options/d/dt/) — MEDIUM-HIGH confidence, project-adjacent community docs
-- [Radare2 Code Analysis book](https://book.rada.re/analysis/code_analysis.html) — MEDIUM-HIGH confidence, official book
-- [Cartographer — Code Coverage Exploration Plugin for Ghidra (NCC Group)](https://github.com/nccgroup/Cartographer) — HIGH confidence, primary source repo
-- [dragondance — Binary code coverage visualizer for Ghidra](https://github.com/0ffffffffh/dragondance) — HIGH confidence, primary source repo
-- [GNU gprof — Flat Profile](https://sourceware.org/binutils/docs/gprof/Flat-Profile.html) — HIGH confidence, primary/official
-- [GNU gprof — How to Understand the Flat Profile](https://www.math.utah.edu/docs/info/gprof_5.html) — HIGH confidence, primary/official
-
----
-*Feature research for: v0.9.0 text-monitor channel and runtime evidence layer, c64-re-tools*
-*Researched: 2026-09-06*
+- [SkoolKit](https://skoolkit.ca/) and its [control-files documentation](https://skoolkit.ca/docs/skoolkit/control-files.html) — ZX Spectrum disassembly toolkit; `.ctl` block-type vocabulary (`b`/`c`/`g`/`i`/`s`/`t`/`u`/`w`) as real-world prior art for closure typing
+- [skoolkid/rom](https://github.com/skoolkid/rom) — SkoolKit-based Spectrum ROM disassembly
+- [dpt/The-Great-Escape](https://github.com/dpt/The-Great-Escape) — SkoolKit-based full-game reverse engineering
+- [mwenge/gridrunner, Disassembling.md](https://github.com/mwenge/gridrunner/blob/master/Disassembling.md) — C64 disassembly with explicit byte-for-byte MD5 verification methodology and label-evolution workflow
+- [mwenge/iridisalpha](https://github.com/mwenge/iridisalpha) — C64 disassembly noting Exomizer re-compression, illustrating the "byte-identical to what" problem
+- [Piddewitt/C64-Game-Source-Code](https://github.com/Piddewitt/C64-Game-Source-Code) and [GregWagner/6502-Disassembly](https://github.com/GregWagner/6502-Disassembly) — curated indexes of reverse-engineered C64/6502 game source including a Bruce Lee disassembly
+- [5k3105/bruce](https://github.com/5k3105/bruce) — a raw, IDA-derived Bruce Lee disassembly text, useful as a contrast case (not rebuildable source in this project's sense)
+- [NESdev Wiki, RTS Trick](https://wiki.nesdev.com/w/index.php/RTS_Trick) and [6502.org Jump Tables thread](http://forum.6502.org/viewtopic.php?f=2&t=4897) — the RTS-trick idiom and its relocation trap
+- [cc65 `smc.inc` macro documentation](https://cc65.github.io/doc/smc.html) — real tooling convention for documenting self-modifying code with placeholder values
+- [Bumbershoot Software, "Stabilizing the VIC-II Raster"](https://bumbershootsoft.wordpress.com/2015/12/29/stabilizing-the-vic-ii-raster/) and [Antimon, "Making Stable Raster Routines"](https://www.antimon.org/dl/c64/code/stable.txt) — cycle-exact raster technique and page-crossing branch-timing hazard
+- [ethteck/splat](https://github.com/ethteck/splat) and its consuming projects (Ogre Battle 64, Rogue Squadron 64, Super Smash Bros. decomp) — segment/symbol-based rebuildable-source pattern from N64/GameCube decompilation, cross-platform confirmation of the scope-file + universal-symbolization shape
+- [Held Games, "Retro Game Decompilation and Recompilation, Explained"](https://heldgames.com/guides/retro-decompilation-recompilation-explained) — the "100% matching decompilation" convention as the strongest (and here, deliberately not adopted) equivalence bar
+- This project's own source, checked directly: `src/mcp/vice/anno-types.ts` (frozen `DATA_TYPES` vocabulary), `src/mcp/vice/anno-export-asm.ts` (current single-file export, no `external_file` consumer), `.planning/PROJECT.md`, `.planning/milestones/v0.5.0-REQUIREMENTS.md`
