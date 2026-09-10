@@ -101,3 +101,48 @@ None found at the must-have level. Every roadmap success criterion is backed by 
 
 *Verified: 2026-09-10*
 *Verifier: Claude (gsd-verifier)*
+
+---
+
+## Human Verification Closed — 2026-09-10 (`/gsd-verify-work 44`)
+
+The one `human_verification` item in this report's frontmatter was presented as UAT
+test 1 and **passed** — see `44-UAT.md` (`status: complete`, 1/1 passed, 0 issues,
+0 gaps). `status` was therefore canonicalized `human_needed` → `passed`.
+
+The verify:post hooks both ran and both closed clean:
+
+- **Nyquist** (`44-VALIDATION.md`, `status: validated`) — 13 deliverables, 0 gaps,
+  9 automated and green, 4 manual-only by design. `nyquist_compliant: false` is
+  deliberate: PROOF-04's central criterion is a *measurement*, and a CI assertion of
+  a specific false-positive count would be circular. PARTIAL is the correct terminal
+  state here, not outstanding debt.
+- **Security** (`44-SECURITY.md`, `status: verified`) — 18 threats, all closed,
+  `threats_open: 0` at ASVS L1. Register was authored at plan time in all three plans,
+  so this was verification rather than retroactive STRIDE.
+
+**Controls re-executed during this session** (not taken from SUMMARY claims), with
+the broker confirmed `inactive` and no `x64sc` running before and after:
+
+| Command | Result |
+|---------|--------|
+| `node --test evidence/proof04-independence.test.ts` | 7/7 pass |
+| `node evidence/proof04-reconcile.mjs --self-check` | `SELFCHECK_RESULT pass` |
+| `node evidence/proof04-verify-record.mjs` | `RECORDGATE_RESULT pass`, 7/7 assertions |
+| `node --test` ×4 doc-guards | 50/50 pass |
+| `cd src/mcp/vice && npm run test:automated` | 4051 tests, 4034 pass, 4 fail, exit 1 |
+
+The suite's 4 failures were compared as a **set**, not a count: 3 are the documented
+STORE-06 floor in `anno-import.test.ts` / `anno-register.test.ts`, and the 4th is the
+known `zz-scratch` ENOENT race in `check-skill-tool-coverage`. Both are recorded as
+pre-existing in Phase 40's `deferred-items.md`. Nothing is attributable to Phase 44.
+
+**One documentation correction** was made after the original verification pass:
+`44-03-SUMMARY.md:184` cited the findings record as `docs/proof04-false-positives.md`,
+a path that does not exist — corrected to `evidence/proof04-false-positives.md`. This
+touches a prose path reference only; no finding, number or verdict changed. This
+section is appended so the report postdates that correction rather than reading stale
+against it.
+
+*Human verification closed: 2026-09-10*
+*Closed by: `/gsd-verify-work 44` (orchestrator)*
