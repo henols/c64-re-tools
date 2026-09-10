@@ -4,17 +4,17 @@ milestone: v0.9.0
 milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 44
 current_phase_name: PROOF-04 — The Independent External Check
-status: executing
-stopped_at: Completed 44-02-PLAN.md
-last_updated: "2026-09-10T15:34:40.747Z"
+status: verifying
+stopped_at: Completed 44-03-PLAN.md
+last_updated: "2026-09-10T16:01:46.242Z"
 last_activity: 2026-09-10
 last_activity_desc: Phase 44 execution started
-state_head: f629c45721f88680c37f8ecd9bc0481cbe729e67
+state_head: 2d9f89b3a060806ebaef0e0cc7c9e6391667b6e8
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 51
-  completed_plans: 50
+  completed_plans: 51
   percent: 83
 ---
 
@@ -229,7 +229,7 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 Phase: 44 (PROOF-04 — The Independent External Check) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-09-10 — Phase 44 execution started
 
 **Phase 39 returned `go` (rule `R15`) — the gate is settled.** All seven inputs
@@ -525,6 +525,7 @@ Complete; `PREP-03` is withdrawn, struck rather than deleted.
 | Phase 43-the-runtime-evidence-layer P07 | 45min | 3 tasks | 8 files |
 | Phase 44 P01 | 62 min | 2 tasks | 6 files |
 | Phase 44 P02 | 20min | 2 tasks | 2 files |
+| Phase 44 P03 | 35min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -1180,6 +1181,8 @@ Recent decisions affecting current work:
 - [Phase 43]: Phase 43 plan 07: EVID-04's structural guard derives its verb scope from ANNO_TOOL_DEFINITIONS rather than a hand-typed list, and its own clean control found and fixed a real missing-denominator gap in anno_evid_reset's shipped answer.
 - [Phase 44]: Plan 44-01 stood up PROOF-04's two independent evidence producers and joined them via reconcileObservedExecution(), producing one live measurement (168 false positives / denominator 45072) that closes PROOF-01's named reversal condition.
 - [Phase 44]: Reused plan 44-01's subject artifact unchanged across both runs so anchor depth was the only variable between them — Matches plan 44-02's own instruction and D-P2's intent; subject artifact still on disk with matching sha256
+- [Phase 44]: Plan 44-03: PROOF04_FALSE_POSITIVE_PCT introduced as a disclosed derived field (not SCHEMA.md vocabulary) tying the record's percentage-shape gate to the same per-run bucket the bucket-identity check reads, so a planted denominator corruption reds three tied assertions rather than one. — Satisfies the plan's own non-vacuity requirement that a single altered value reds bucket-sum identity, per-run agreement, and the percentage check simultaneously.
+- [Phase 44]: Plan 44-03: found a defect in its own bare_pct hygiene check (POSIX ERE greedy optional-space capture flags any correctly-formatted NN.NN (n/d) percentage with a space before the paren, including the three literally-required Phase 38 citations). — Satisfying the literal-string requirement and the bare_pct=0 requirement are mutually exclusive as written; kept the literal strings (the more fundamental must_haves obligation) and documented the residual bare_pct=3 as a deviation rather than altering the required citations.
 
 ### Pending Todos
 
@@ -2198,8 +2201,8 @@ evidence files.
 
 ## Session Continuity
 
-Last session: 2026-09-10T15:34:39.176Z
-Stopped at: Completed 44-02-PLAN.md
+Last session: 2026-09-10T16:01:45.223Z
+Stopped at: Completed 44-03-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md

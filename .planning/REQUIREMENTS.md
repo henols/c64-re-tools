@@ -60,7 +60,7 @@ whose whole job is to settle it.
 
 ### Proof — closing a named reversal condition
 
-- [ ] **PROOF-04**: `PROOF-01` gains the independent external check it shipped without, using observed execution as the oracle, so its false-positive count becomes computable for the first time rather than structurally uncomputable. *(This closes the reversal condition stated verbatim at the v0.8.0 open — "a binary-monitor-reachable execution oracle, or a decision to open the text channel" — by taking the second branch deliberately. Continues the `PROOF-` numbering from v0.8.0's `PROOF-01..03` rather than opening a new family, because it is the same question.)*
+- [x] **PROOF-04**: `PROOF-01` gains the independent external check it shipped without, using observed execution as the oracle, so its false-positive count becomes computable for the first time rather than structurally uncomputable. *(This closes the reversal condition stated verbatim at the v0.8.0 open — "a binary-monitor-reachable execution oracle, or a decision to open the text channel" — by taking the second branch deliberately. Continues the `PROOF-` numbering from v0.8.0's `PROOF-01..03` rather than opening a new family, because it is the same question.)*
 
 ---
 
@@ -140,7 +140,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | ~~PREP-03~~ | Phase 40 | ~~Pending~~ — **Removed 2026-09-08**, see Excluded table |
 | PREP-04 | Phase 40 | Complete |
 | PREP-05 | Phase 40 | Complete |
-| PROOF-04 | Phase 44 | Pending |
+| PROOF-04 | Phase 44 | Complete |
 
 **Coverage:**
 
