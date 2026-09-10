@@ -136,6 +136,7 @@ import { extname } from "node:path";
 import {
   addScope,
   applyEnumUsage,
+  applyWrite,
   clearEnumUsage,
   closeStore,
   createProjectEnum,
@@ -2335,11 +2336,18 @@ function dispatchEvidIngest(handle: AnnoStoreHandle, args: unknown): unknown {
   // A reply that recorded no execution anywhere is a real, legitimate
   // answer -- not an error -- but `insertExecObservations` refuses an EMPTY
   // observations array, so that zero-write case is reported directly here
-  // rather than calling a store function built to refuse it.
+  // rather than calling a store function built to refuse it. WR-01: it is
+  // still routed through `applyWrite()` with a no-op mutator (rather than
+  // returning early on `currentRevision(handle)` alone) so a stale
+  // `base_revision` is refused on THIS path exactly as it would be on the
+  // non-empty path below -- every other write verb in this store enforces
+  // staleness through `applyWrite()`'s own check, and a caller relying on
+  // that contract must not get a silent success here instead.
   if (ingested.observations.length === 0) {
+    const { revision } = applyWrite(handle, () => false, { baseRevision });
     return {
       store: handle.path,
-      revision: currentRevision(handle),
+      revision,
       changed: false,
       observationsWritten: 0,
       addressesWithRecordedAccess,
