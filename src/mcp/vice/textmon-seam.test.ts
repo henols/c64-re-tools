@@ -297,6 +297,14 @@ const FORMAT_OWNERS: readonly FormatOwner[] = [
         file: "text-capability-probe.test.ts",
         reason: "PARSE-04's capability probe test, dialing memmapshow as one of five probed commands with a realistic stub reply",
       },
+      {
+        file: "anno-tools.test.ts",
+        reason: "plan 43-05's anno_evid_ingest dispatch tests, constructing synthetic memmapshow reply text through a local memmapReplyText() helper",
+      },
+      {
+        file: "evid-ingest.test.ts",
+        reason: "plan 43-05's pure-transform tests, exercising a malformed-line refusal case built from this header plus one bad data line",
+      },
       { file: SEAM_FILE, reason: SELF_DECLARATION_REASON },
     ],
     importConsumers: [
@@ -305,6 +313,22 @@ const FORMAT_OWNERS: readonly FormatOwner[] = [
       {
         file: "text-monitor-live.test.ts",
         reason: "plan 42-09's live opt-in suite, calling this owner's own parse export directly on a reply dialed from genuine stock VICE to prove the live wiring, not merely the fixture shape",
+      },
+      {
+        file: "evid-ingest.ts",
+        reason: "plan 43-05 (EVID-01, EVID-04): the pure transform from a parsed access map to durable-shaped observations, type-only importing AccessMap/AccessMapParseResult",
+      },
+      {
+        file: "evid-ingest.test.ts",
+        reason: "evid-ingest.ts's own test file, calling the owner's parse export directly to build real AccessMapParseResult values",
+      },
+      {
+        file: "anno-tools.ts",
+        reason: "plan 43-05's anno_evid_ingest dispatch arm, calling the owner's parse export (the ONE parse) and its range-projection export for its denominator/addressesQueried projection",
+      },
+      {
+        file: "anno-tools.test.ts",
+        reason: "anno-tools.ts's own test file, calling the owner's parse and range-projection exports directly to compute independent expectations for the dispatch tests",
       },
     ],
   },

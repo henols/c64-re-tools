@@ -239,6 +239,24 @@ export const ANNO_VERB_REGISTER: readonly AnnoVerbRegisterEntry[] = Object.freez
       "address MEAN against the published memory map), not one upstream's absorbed procedures ever asked. Without " +
       "this verb the annotation the join produces has no route onto the surface at all.",
   },
+  {
+    verb: "anno_evid_ingest",
+    kind: "unclassified",
+    consumers: [
+      { path: "src/mcp/vice/evid-ingest.ts", symbol: "ingestAccessMap" },
+      { path: "src/mcp/vice/anno-tools.ts", symbol: "anno_evid_ingest" },
+    ],
+    requirements: ["EVID-01", "EVID-04"],
+    rationale:
+      "EVID-01 requires what the emulator observed executing to become durable, accumulating rows in `.annostore`, " +
+      "keyed by run identity, so a later session queries the evidence instead of re-running the program. EVID-04 " +
+      "requires the write path be unable to state, imply or render that an address is data on the strength of " +
+      "never having been observed executing. The manifest's five absorbed upstream procedures predate this store " +
+      "having any runtime-evidence table at all, so the derivation is silent about a verb that did not exist when " +
+      "the manifest was written. This verb is the ONE place a parsed memmapshow access map becomes store rows: " +
+      "without it, an observed execute bit has no route onto the surface at all, and EVID-01's own goal (query the " +
+      "evidence instead of re-running the program) is unreachable.",
+  },
 
   // --- manifest-deviation: classified, routed, and answering differently ---
   {
