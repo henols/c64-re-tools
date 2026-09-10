@@ -3995,6 +3995,66 @@
       }
     },
     {
+      "name": "vice_memmap_zap",
+      "description": "Stock-only, no fork counterpart -- reaches VICE's text monitor over the -remotemonitor channel and halts the machine for the duration of the command, exactly as a binary-monitor command does. Issues the single allowlisted verb \"memmapzap\", which clears the emulator's accumulated memory-access map, and then \"memmapshow\", so the returned \"addressesWithRecordedAccess\" and \"addressesQueried\" are observable proof the map was cleared, never a bare acknowledgement. Takes no parameters at all. An address with no recorded access is reported only via the gap between \"addressesWithRecordedAccess\" and \"addressesQueried\" -- never rendered, named, or implied as data.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "identityWarning": {
+            "type": "string"
+          },
+          "addressesWithRecordedAccess": {
+            "type": "integer"
+          },
+          "addressesQueried": {
+            "type": "integer"
+          },
+          "executeCounts": {
+            "type": "object",
+            "properties": {
+              "io": {
+                "type": "integer"
+              },
+              "rom": {
+                "type": "integer"
+              },
+              "ram": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "io",
+              "rom",
+              "ram"
+            ]
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
+        },
+        "required": [
+          "command",
+          "addressesWithRecordedAccess",
+          "addressesQueried",
+          "executeCounts",
+          "runState"
+        ]
+      }
+    },
+    {
       "name": "vice_cpu_history",
       "description": "Stock-only, no fork counterpart -- reaches VICE's text monitor over the -remotemonitor channel and halts the machine for the duration of the command, exactly as a binary-monitor command does. Issues \"chis\" (or \"chis N\" for a caller-chosen decimal row count -- the ONE place that string is built, and validated/rendered there, never here), returning the decoded CPU-history entries -- address, raw bytes, disassembly, registers, processor flags and cycle count -- in the emulator's own emitted order. \"chis\" is compiled behind the same build-time flag as vice_memmap_show's \"memmapshow\"; a build without --enable-cpuhistory is reported as a named missing capability with its remedy, never a parse error.",
       "inputSchema": {

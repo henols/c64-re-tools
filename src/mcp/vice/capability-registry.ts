@@ -330,6 +330,15 @@ export const CAPABILITY_REGISTRY: readonly CapabilityEntry[] = [
       "bit for both RAM and ROM.",
   },
   {
+    name: "vice_memmap_zap",
+    category: "stock-only-gain",
+    providedBy: "stock",
+    reason:
+      "The fork's custom HTTP API has no equivalent; this is the native text-monitor \"memmapzap\" command, " +
+      "reached over the -remotemonitor channel, followed by \"memmapshow\" so the answer proves the accumulated " +
+      "access map was cleared -- a measurement bracket can start from nothing.",
+  },
+  {
     name: "vice_cpu_history",
     category: "stock-only-gain",
     providedBy: "stock",

@@ -96,6 +96,9 @@ const STOCK_ONLY_TOOLS = new Set([
   // Plan 42-01, PARSE-01: the memmapshow access-map tool -- same reasoning
   // as the pair above, reached over the same text-monitor channel.
   "vice_memmap_show",
+  // Plan 43-03, EVID-05: the memmapzap bracket-reset tool -- same reasoning,
+  // reached over the same text-monitor channel.
+  "vice_memmap_zap",
   // Plan 42-07, PARSE-02: the three remaining stock-only text-channel
   // parsers, same reasoning -- reached over the same text-monitor channel,
   // no fork HTTP-API equivalent. vice_backtrace is deliberately NOT here:
@@ -2901,6 +2904,26 @@ conformanceTest("vice_memmap_show", async () => {
       const deps = buildTextConformanceDeps(port);
       const result = await dispatchStock("vice_memmap_show", {}, deps);
       assertAnswerConforms("vice_memmap_show", result);
+    },
+  );
+});
+
+// plan 43-03 (EVID-05): two dials in one session -- "memmapzap" first
+// (acknowledged), then "memmapshow" (the answer's own observable
+// post-condition).
+conformanceTest("vice_memmap_zap", async () => {
+  await withConformanceTextServer(
+    (line, socket) => {
+      if (line === "memmapzap") {
+        socket.write("(C:$0000) ");
+      } else {
+        socket.write("addr: IO  ROM RAM\n0000: --- --- rw-\n(C:$0000) ");
+      }
+    },
+    async (port) => {
+      const deps = buildTextConformanceDeps(port);
+      const result = await dispatchStock("vice_memmap_zap", {}, deps);
+      assertAnswerConforms("vice_memmap_zap", result);
     },
   );
 });
