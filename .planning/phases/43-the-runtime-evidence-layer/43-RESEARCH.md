@@ -609,6 +609,8 @@ packages this phase.
      the schema can add a `read`/`write` observation table later without a
      migration, since it would be a wholly new table (additive, matching the
      store's existing "add a table" discipline at each schema bump).
+   - **Decided (plan 43-05):** see `docs/phase43-runtime-evidence-layer.md`'s
+     "The one positive fact" section for the shipped answer.
 
 2. **What exact hit count `N` should the EVID-06 A/B use?**
    - What we know: hits 1/10/50 are all measured byte-identical (0 differing
@@ -634,6 +636,8 @@ packages this phase.
    - Recommendation: MCP tool is required (matches `anno_*` precedent
      directly); a CLI verb is a nice-to-have the planner can scope out if
      time-constrained, since `anno-cli.ts`'s wiring is a known, separate cost.
+   - **Decided (plan 43-06):** see `docs/phase43-runtime-evidence-layer.md`'s
+     "What shipped" table for the shipped surface(s).
 
 ## Environment Availability
 

@@ -305,6 +305,12 @@ const FORMAT_OWNERS: readonly FormatOwner[] = [
         file: "evid-ingest.test.ts",
         reason: "plan 43-05's pure-transform tests, exercising a malformed-line refusal case built from this header plus one bad data line",
       },
+      {
+        file: "evid-report-keys.test.ts",
+        reason:
+          "plan 43-07's derived key-walk fixture, constructing synthetic memmapshow reply text through its own local memmapReplyText() " +
+          "helper to seed one planted disagreement for all four anno_evid_* verbs",
+      },
       { file: SEAM_FILE, reason: SELF_DECLARATION_REASON },
     ],
     importConsumers: [
