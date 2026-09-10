@@ -107,6 +107,20 @@ export const PROMPT_RE = /\(C:\$[0-9A-Fa-f]{4}\)\s*$/;
  * verbs are added here ONLY so the live opt-in suite can toggle the
  * profiler on before proving `prof flat`'s own parsing path, and off again
  * afterward, leaving the toggle itself reachable but unused elsewhere.
+ *
+ * `memmapzap` (plan 43-01, a conscious, measured widening, not a speculative
+ * one): clears VICE's accumulated memory-access map (`mon_memmap_zap()`'s
+ * `memset()`, per the VICE Manual and `mon_memmap.c`) so a runtime-evidence
+ * measurement bracket starts from nothing rather than inheriting whatever
+ * `memmapshow` has accumulated since the instance booted. This is what lets
+ * the evidence layer arm a fresh bracket immediately before a run instead of
+ * subtracting a prior baseline after the fact. The sibling verb `memmapsave`
+ * is deliberately NOT added here -- it writes a host file, and this
+ * allowlist's own membership test (`text-protocol.test.ts`) refuses any
+ * entry whose name matches the pattern that spells the words `load` or
+ * `save`, the same file-touching-verb rule `device c:`, `warp on/off`,
+ * `memmapshow`, `prof flat`, `chis`, `bt`, `io` and `prof on/off` already
+ * satisfy.
  */
 export const TEXT_COMMAND_ALLOWLIST = Object.freeze([
   "device c:",
@@ -119,6 +133,7 @@ export const TEXT_COMMAND_ALLOWLIST = Object.freeze([
   "io",
   "prof on",
   "prof off",
+  "memmapzap",
 ] as const);
 
 export type TextCommand = (typeof TEXT_COMMAND_ALLOWLIST)[number];

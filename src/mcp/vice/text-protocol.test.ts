@@ -117,14 +117,21 @@ test("isAllowlistedTextCommand: accepts every TEXT_COMMAND_ALLOWLIST entry and r
   assert.ok(!isAllowlistedTextCommand("device c"), "the colon is required -- device c (no colon) is a different, non-allowlisted string");
 });
 
-test("TEXT_COMMAND_ALLOWLIST: every entry is exactly one of the ten named verbs, never a file-touching monitor verb (T-41-02)", () => {
+test("TEXT_COMMAND_ALLOWLIST: every entry is exactly one of the eleven named verbs, never a file-touching monitor verb (T-41-02)", () => {
   // Widened to ten in plan 42-09 (a conscious, measured widening, not a
   // speculative one, per this constant's own header comment): `prof on`/
   // `prof off` were added so the live opt-in suite can toggle VICE's own
   // profiler on before proving `prof flat`'s parsing path against real
   // rows, and off again afterward -- MEASURED live that `prof flat` alone
   // returns "No profiling data available..." on a fresh instance.
-  const expected = ["device c:", "warp on", "warp off", "memmapshow", "prof flat", "chis", "bt", "io", "prof on", "prof off"];
+  //
+  // Widened to eleven in plan 43-01 (EVID-06's measurement bracket and
+  // EVID-05's bracket reset): `memmapzap` clears VICE's accumulated
+  // memory-access map so a runtime-evidence measurement starts from
+  // nothing. The file-writing sibling `memmapsave` was considered and
+  // rejected -- it touches a host file and this test's own load/save regex
+  // below refuses it by name.
+  const expected = ["device c:", "warp on", "warp off", "memmapshow", "prof flat", "chis", "bt", "io", "prof on", "prof off", "memmapzap"];
   assert.deepEqual([...TEXT_COMMAND_ALLOWLIST].sort(), [...expected].sort());
   for (const cmd of TEXT_COMMAND_ALLOWLIST) {
     assert.doesNotMatch(cmd, /\bload\b|\bsave\b/, `${JSON.stringify(cmd)} must not be a file-touching verb`);
