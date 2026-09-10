@@ -146,6 +146,14 @@ export const ANNO_INVOCATION_FLOOR = 10;
 // one CI actually uses. One definition, two callers -- the same split
 // `scripts/lib/anno-cli-verbs.mjs` uses.
 // ---------------------------------------------------------------------------
+// `evid-disagreements` (phase 43 plan 43-06) deliberately has NO entry here:
+// it takes no positional argument at all (only `--store` and `--json`), and
+// `checkInvocation()`'s own `own(positionalKinds, verb) ?? []` treats an
+// ABSENT key as "this verb reads no positional" -- the correct meaning for a
+// verb that genuinely has none, distinct from the empty-array convention
+// `REQUIRED_FLAGS`/`FLAG_KINDS` use below for their own different question
+// ("does this verb require/type a FLAG", which every verb answers, even with
+// nothing).
 export const POSITIONAL_KINDS = Object.freeze({
   coverage: Object.freeze([".prg", ".raw", ".bin"]),
   "render-memmap": Object.freeze([".annostore", ".store"]),
@@ -192,6 +200,7 @@ export const REQUIRED_FLAGS = Object.freeze({
   coverage: Object.freeze(["--store"]),
   "render-memmap": Object.freeze(["--provenance"]),
   "export-asm": Object.freeze(["--store"]),
+  "evid-disagreements": Object.freeze(["--store"]),
 });
 
 // ---------------------------------------------------------------------------
@@ -274,6 +283,9 @@ export const FLAG_KINDS = Object.freeze({
   "export-asm": Object.freeze({
     "--store": Object.freeze([".annostore", ".store"]),
     "--out": Object.freeze([".a", ".asm"]),
+  }),
+  "evid-disagreements": Object.freeze({
+    "--store": Object.freeze([".annostore", ".store"]),
   }),
 });
 

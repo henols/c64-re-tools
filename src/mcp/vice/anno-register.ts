@@ -257,6 +257,54 @@ export const ANNO_VERB_REGISTER: readonly AnnoVerbRegisterEntry[] = Object.freez
       "without it, an observed execute bit has no route onto the surface at all, and EVID-01's own goal (query the " +
       "evidence instead of re-running the program) is unreachable.",
   },
+  {
+    verb: "anno_evid_disagreements",
+    kind: "unclassified",
+    consumers: [
+      { path: "src/mcp/vice/evid-reconcile.ts", symbol: "reconcileObservedExecution" },
+      { path: "src/mcp/vice/anno-tools.ts", symbol: "anno_evid_disagreements" },
+    ],
+    requirements: ["EVID-03", "EVID-04"],
+    rationale:
+      "EVID-03 requires a user be able to ask where the byte-derived block classification and the observed-execution " +
+      "evidence disagree, and get the disagreements first, with the block table never silently overwritten and " +
+      "agreement reported as a count rather than a wall of rows. EVID-04 requires that no summary this surface " +
+      "produces can state, imply or render that a never-observed address is data, and that every count carries the " +
+      "denominator it is a fraction of. This verb is the ONE place `reconcileObservedExecution()`'s pure join is " +
+      "reached from the MCP surface: without it, the reconciliation module a prior plan built has no caller at all, " +
+      "and EVID-03's own goal (a user can ask) is unreachable.",
+  },
+  {
+    verb: "anno_evid_runs",
+    kind: "unclassified",
+    consumers: [
+      { path: "src/mcp/vice/anno-store.ts", symbol: "listObservedRuns" },
+      { path: "src/mcp/vice/anno-tools.ts", symbol: "anno_evid_runs" },
+    ],
+    requirements: ["EVID-04"],
+    rationale:
+      "EVID-04 requires that any summary carry the denominator it is a fraction of and that a union across however " +
+      "many runs never be presented as exhaustive. This verb is the ONE surface route to `listObservedRuns()`'s " +
+      "per-run observation counts and their shared denominator, so a later session can see what evidence a store " +
+      "already holds -- across however many runs contributed -- without re-running the program and without ever " +
+      "reading the counts as coverage of the image.",
+  },
+  {
+    verb: "anno_evid_reset",
+    kind: "unclassified",
+    consumers: [
+      { path: "src/mcp/vice/anno-store.ts", symbol: "deleteExecObservationsForRun" },
+      { path: "src/mcp/vice/anno-tools.ts", symbol: "anno_evid_reset" },
+    ],
+    requirements: ["EVID-05"],
+    rationale:
+      "EVID-05 requires that a bracket can be reset and re-measured without a previous run's observations leaking " +
+      "into it. This verb is the store-side half of that reset (beside plan 43-03's emulator-side `vice_memmap_zap`): " +
+      "it derives the run identity through the same `runIdentityFrom()` `anno_evid_ingest` uses and deletes only " +
+      "that identity's rows, leaving every other identity and the byte-derived block table untouched. Without it, " +
+      "`deleteExecObservationsForRun()` -- the store function EVID-05's own requirement asks for -- has no route " +
+      "onto the surface at all.",
+  },
 
   // --- manifest-deviation: classified, routed, and answering differently ---
   {

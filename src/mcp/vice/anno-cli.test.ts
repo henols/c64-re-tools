@@ -43,7 +43,18 @@ import {
   blocksFromStore,
   crossReferencesFromStore,
 } from "./anno-cli.ts";
-import { openStore, closeStore, setLabel, setComment, setDataType, putXref, listLabels, listComments, listRanges } from "./anno-store.ts";
+import {
+  openStore,
+  closeStore,
+  setLabel,
+  setComment,
+  setDataType,
+  putXref,
+  listLabels,
+  listComments,
+  listRanges,
+  insertExecObservations,
+} from "./anno-store.ts";
 import { buildCoverageReport, coverageFindings } from "./anno-coverage.ts";
 import type { AnnoComment, AnnoCrossReference, AnnoSymbol } from "./anno-coverage.ts";
 import type { BlockEntry } from "./block-class.ts";
@@ -66,8 +77,10 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REMOVED_VERBS = ["bootstrap", "verify", "gen-enums", "export-lbl", "import-lbl"];
 
 /** The verbs the CLI really dispatches. Same reasoning, opposite polarity.
- * Grew from two to three on 2026-08-31 with `export-asm`. */
-const SURVIVING_VERBS = ["render-memmap", "coverage", "export-asm"];
+ * Grew from two to three on 2026-08-31 with `export-asm`, and from three to
+ * four by phase 43 plan 43-06 with `evid-disagreements` -- the CLI route for
+ * EVID-03's disagreement query. */
+const SURVIVING_VERBS = ["render-memmap", "coverage", "export-asm", "evid-disagreements"];
 
 /** A fully-filled provenance sidecar -- `parseProvenanceHeader()` refuses a
  * missing or placeholder key by name, so any test that renders for real needs
@@ -760,7 +773,7 @@ test("the cross-reference adapter answers over the WHOLE population, with no cei
 test("the verb-options map agrees with USAGE's own per-verb option lists, for every verb (IN-06)", () => {
   const usage = helpResult.stdout;
   const verbs = Object.keys(VERB_OPTIONS);
-  assert.equal(verbs.length, 3, `expected exactly 3 verbs in VERB_OPTIONS, found ${verbs.length}: ${verbs.join(", ")}`);
+  assert.equal(verbs.length, 4, `expected exactly 4 verbs in VERB_OPTIONS, found ${verbs.length}: ${verbs.join(", ")}`);
 
   for (const verb of verbs) {
     const lineMatch = new RegExp(`^ {2}${verb.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b.*$`, "m").exec(usage);
@@ -862,7 +875,7 @@ const OBJECT_PROTOTYPE_KEYS = [
 /** Every (verb, option) pair where the option takes a VALUE -- i.e. every
  * accepted option that is not one of the two booleans. Derived from
  * `VERB_OPTIONS` so a new value-taking option is covered with no edit. */
-const BOOLEAN_OPTIONS = new Set(["--force", "--check"]);
+const BOOLEAN_OPTIONS = new Set(["--force", "--check", "--json"]);
 const VALUE_TAKING_PAIRS: readonly { verb: string; option: string }[] = Object.entries(VERB_OPTIONS).flatMap(
   ([verb, options]) => options.filter((o) => !BOOLEAN_OPTIONS.has(o)).map((option) => ({ verb, option })),
 );
@@ -1903,5 +1916,154 @@ test("export-asm: more than one positional is refused rather than silently ignor
     );
     assert.notEqual(code, 0);
     assert.match(stderr, /usage: export-asm <image>/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Plan 43-06 Task 3: evid-disagreements -- the CLI route for EVID-03's
+// disagreement query, rendering three distinguishable textual states.
+// ---------------------------------------------------------------------------
+
+const EVID_CLI_SHA = "c".repeat(64);
+const EVID_CLI_DIGEST = "d".repeat(64);
+
+/** A store with ONE typed range and, optionally, ONE runtime-execution
+ * observation at the same address -- the minimal fixture each of the three
+ * planted states needs. Built by direct store calls (never through
+ * `anno_evid_ingest`'s parse layer) since this test only needs a durable
+ * row, not a real `memmapshow` reply. */
+function makeEvidDisagreementsStore(dir: string, name: string, opts: { dataType: "code" | "byte"; observe: boolean }): string {
+  const storePath = join(dir, name);
+  const handle = openStore(storePath, { workspaceRoot: dir });
+  try {
+    setDataType(handle, { start: 0x9000, endInclusive: 0x9000, dataType: opts.dataType });
+    if (opts.observe) {
+      insertExecObservations(handle, {
+        imageSha256: EVID_CLI_SHA,
+        argvDigest: EVID_CLI_DIGEST,
+        seed: "evid-cli-seed",
+        observations: [{ address: 0x9000, sourceBank: "ram" }],
+      });
+    }
+  } finally {
+    closeStore(handle);
+  }
+  return storePath;
+}
+
+test("evid-disagreements: --help documents exactly --store and --json, and names no positional", () => {
+  assert.match(helpResult.stdout, /^ {2}evid-disagreements --store FILE \[--json\]$/m);
+});
+
+test("evid-disagreements: the unknown-verb refusal now names FOUR verbs, not three", async () => {
+  const { result: code, stderr } = await withCapturedConsole(() => runAnnoCli(["not-a-real-verb"]));
+  assert.notEqual(code, 0);
+  assert.match(stderr, /this CLI has exactly four: render-memmap, coverage, export-asm and evid-disagreements/);
+});
+
+test(
+  "evid-disagreements: three planted stores render three distinguishable states -- disagreement rows FIRST, " +
+    "agreement as a count only, silence stating plainly that absence proves nothing",
+  async () => {
+    await withWorkspaceTempDir(async (ws) => {
+      const disagreementStore = makeEvidDisagreementsStore(ws, "disagree.annostore", { dataType: "byte", observe: true });
+      const agreementStore = makeEvidDisagreementsStore(ws, "agree.annostore", { dataType: "code", observe: true });
+      const silenceStore = makeEvidDisagreementsStore(ws, "silence.annostore", { dataType: "code", observe: false });
+
+      const disagreeOut = (await withCapturedConsole(() => runAnnoCli(["evid-disagreements", "--store", disagreementStore]))).stdout;
+      const agreeOut = (await withCapturedConsole(() => runAnnoCli(["evid-disagreements", "--store", agreementStore]))).stdout;
+      const silenceOut = (await withCapturedConsole(() => runAnnoCli(["evid-disagreements", "--store", silenceStore]))).stdout;
+
+      // The DISAGREEMENTS heading comes FIRST (EVID-03). Only the
+      // disagreement store's output carries an actual row under it -- a
+      // "$xxxx  byte-derived=..." line -- the other two print "none".
+      const rowLineRe = /^\s+\$[0-9a-f]{4}\s+byte-derived=/m;
+      assert.match(disagreeOut, rowLineRe, "the disagreement store must render at least one row under DISAGREEMENTS");
+      assert.doesNotMatch(agreeOut, rowLineRe, "the agreement store must render NO disagreement rows");
+      assert.doesNotMatch(silenceOut, rowLineRe, "the silence store must render NO disagreement rows");
+      assert.match(disagreeOut.trimStart(), /^evid-disagreements: /);
+      assert.match(disagreeOut, /DISAGREEMENTS \(1 of 1\)/);
+
+      // The three outputs are pairwise unequal -- three genuinely different
+      // pieces of text, not just three JSON blobs a test can only compare
+      // structurally.
+      assert.notEqual(disagreeOut, agreeOut);
+      assert.notEqual(disagreeOut, silenceOut);
+      assert.notEqual(agreeOut, silenceOut);
+
+      // Agreement is a COUNT line, never a row -- both agree/silence stores
+      // print "AGREEMENT: <n> of <d>" and neither ever prints a row.
+      assert.match(agreeOut, /AGREEMENT: 1 of 1/);
+      assert.match(silenceOut, /AGREEMENT: 0 of 1/);
+
+      // The silence store states plainly that absence proves nothing.
+      assert.match(silenceOut, /NO OBSERVATION: 1 of 1/);
+      assert.match(silenceOut, /proves NOTHING/);
+
+      // Negative grep: the silence store's report must never use the same
+      // word the disagreement report's own byte-derived column prints, as a
+      // claim about the never-observed address (EVID-04). The literal is
+      // named once, in a local constant, rather than spelled again in this
+      // comment, so the check is not satisfied by its own explanation.
+      const BYTE_DERIVED_CLASS_LITERAL = ["d", "a", "t", "a"].join("");
+      assert.doesNotMatch(
+        silenceOut,
+        new RegExp(BYTE_DERIVED_CLASS_LITERAL, "i"),
+        "the silence store's rendered report must never claim the never-observed address holds that classification",
+      );
+
+      // No percentage, rate or coverage figure is ever printed.
+      assert.doesNotMatch(disagreeOut, /%/);
+      assert.doesNotMatch(disagreeOut, /\brate\b/i);
+    });
+  },
+);
+
+test("evid-disagreements: DISAGREEMENTS renders before AGREEMENT, which renders before NO OBSERVATION", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    const store = makeEvidDisagreementsStore(ws, "order.annostore", { dataType: "byte", observe: true });
+    const { stdout } = await withCapturedConsole(() => runAnnoCli(["evid-disagreements", "--store", store]));
+    const disagreementsIdx = stdout.indexOf("DISAGREEMENTS");
+    const agreementIdx = stdout.indexOf("AGREEMENT:");
+    const noObservationIdx = stdout.indexOf("NO OBSERVATION");
+    assert.ok(disagreementsIdx >= 0, "DISAGREEMENTS heading must be present");
+    assert.ok(agreementIdx > disagreementsIdx, "AGREEMENT must render after DISAGREEMENTS");
+    assert.ok(noObservationIdx > agreementIdx, "NO OBSERVATION must render after AGREEMENT");
+  });
+});
+
+test("evid-disagreements: --json prints the raw reconciliation answer instead of the rendered report", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    const store = makeEvidDisagreementsStore(ws, "json.annostore", { dataType: "byte", observe: true });
+    const { stdout, result: code } = await withCapturedConsole(() => runAnnoCli(["evid-disagreements", "--store", store, "--json"]));
+    assert.equal(code, 0);
+    const parsed = JSON.parse(stdout) as { store: string; disagreementCount: number; denominator: number };
+    assert.equal(parsed.disagreementCount, 1);
+    assert.equal(parsed.denominator, 1);
+    assert.equal(parsed.store, store);
+  });
+});
+
+test("evid-disagreements: --store FILE is required, missing value and unknown options are refused", async () => {
+  const absent = await withCapturedConsole(() => runAnnoCli(["evid-disagreements"]));
+  assert.notEqual(absent.result, 0);
+  assert.match(absent.stderr, /--store FILE is required/);
+
+  const noValue = await withCapturedConsole(() => runAnnoCli(["evid-disagreements", "--store"]));
+  assert.notEqual(noValue.result, 0);
+  assert.match(noValue.stderr, /--store requires a value/);
+
+  const unknown = await withCapturedConsole(() => runAnnoCli(["evid-disagreements", "--store", "x.annostore", "--nonsense"]));
+  assert.notEqual(unknown.result, 0);
+  assert.match(unknown.stderr, /unknown option "--nonsense"/);
+});
+
+test("evid-disagreements: a missing annotation store is refused rather than CREATED", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    const absentStore = join(ws, "nope.annostore");
+    const { result: code, stderr } = await withCapturedConsole(() => runAnnoCli(["evid-disagreements", "--store", absentStore]));
+    assert.notEqual(code, 0);
+    assert.match(stderr, /annotation store not found/);
+    assert.equal(existsSync(absentStore), false);
   });
 });

@@ -82,8 +82,14 @@
  * the same plan -- so a reader following the cross-reference found nothing.
  * The paragraph's argument is unchanged and `ANNO_CLI_VERB_FLOOR` is
  * untouched; only the citation now names something that exists.)
+ *
+ * RAISED 3 -> 4 by phase 43 plan 43-06, in the commit that added
+ * `evid-disagreements` (the CLI route for EVID-03's disagreement query, run
+ * against a real store rather than only exposed as an MCP tool). Named in
+ * `src/skills/c64-program-recon/references/tool-selection.md` in the same
+ * commit, so `verbsMissingFromSkills()` never fires on it.
  */
-export const ANNO_CLI_VERB_FLOOR = 3;
+export const ANNO_CLI_VERB_FLOOR = 4;
 
 /**
  * Strips `//` line comments and `/* ... *\/` block comments from `src`,

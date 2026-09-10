@@ -282,9 +282,13 @@ test("the checker reads the CLI's OWN option set, so a flag the CLI accepts is n
     // verb -- an annotation store and failed for a correct reason). Taking the
     // first declared kind means a verb added later cannot make this test red
     // for a reason that has nothing to do with the property under test.
-    const positionalKinds = POSITIONAL_KINDS[verb as keyof typeof POSITIONAL_KINDS] ?? [];
-    assert.ok(positionalKinds.length > 0, `${verb} has no POSITIONAL_KINDS entry, so this test has no valid positional to build`);
-    const positional = `game${positionalKinds[0]}`;
+    //
+    // A verb genuinely WITHOUT a positional (`evid-disagreements`, phase 43
+    // plan 43-06) has no `POSITIONAL_KINDS` entry at all -- see that map's own
+    // comment -- and this loop must build a flags-only invocation for it
+    // rather than assert a positional it does not take.
+    const positionalKinds = POSITIONAL_KINDS[verb as keyof typeof POSITIONAL_KINDS];
+    const positional = positionalKinds !== undefined ? `game${positionalKinds[0]}` : "";
     // Every flag is given a value, which is harmless for the boolean ones
     // here: the point is that no flag in the CLI's own set is refused as
     // UNKNOWN. Since WR-18 the value has to be one the flag's own kinds

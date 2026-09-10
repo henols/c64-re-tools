@@ -8,8 +8,12 @@
 // consuming project for some other filesystem-path-resolving design to find.
 //
 // ---------------------------------------------------------------------------
-// THREE VERBS. THAT IS THE WHOLE SURFACE (D-14, 2026-08-29; third verb landed
-// 2026-08-31).
+// FOUR VERBS. THAT IS THE WHOLE SURFACE (D-14, 2026-08-29; third verb landed
+// 2026-08-31; fourth verb, `evid-disagreements`, landed by phase 43 plan
+// 43-06 -- the CLI route for EVID-03's disagreement query, so a planted test
+// has three RENDERED, textually-distinguishable states to compare rather
+// than only the MCP tool's JSON, which a test can only inspect
+// structurally).
 // ---------------------------------------------------------------------------
 // This file used to carry eight. Six were removed in one commit because they
 // were delivery paths for the retired external analyser this project used to
@@ -134,8 +138,15 @@ import type { CoverageReport, LoadedProject, AnnoComment, AnnoCrossReference, An
 // The store's block-entry shape comes from the boundary that owns its
 // vocabulary, not from the census -- see `block-class.ts`.
 import type { BlockEntry } from "./block-class.ts";
-import { openStore, closeStore, listLabels, listComments, listRanges } from "./anno-store.ts";
+import { openStore, closeStore, listLabels, listComments, listRanges, listExecObservations } from "./anno-store.ts";
 import type { AnnoStoreHandle } from "./anno-store.ts";
+// The disagreement query's own pure join (EVID-03/EVID-04, plan 43-06). This
+// is the SAME reconcileObservedExecution() the anno_evid_disagreements MCP
+// tool calls -- reached here directly (a static import, never lazy) because
+// this module IS the CLI, not a startup-cost-sensitive MCP server entry
+// point.
+import { reconcileObservedExecution } from "./evid-reconcile.ts";
+import type { EvidReconciliation } from "./evid-reconcile.ts";
 // The derived half of STORE-06: cross-references are DERIVED from the bytes
 // plus the store's typed ranges plus the few rows that cannot be recovered
 // from bytes at all. There is exactly one definition of that union and this
@@ -242,6 +253,24 @@ verbs:
       Such an annotation is never silently dropped while this command
       reports success.
 
+  evid-disagreements --store FILE [--json]
+      Answers where the store's byte-derived block classification (its own
+      typed ranges) and the observed-execution evidence (anno_evid_exec rows,
+      written by anno_evid_ingest) DISAGREE -- the SAME reconciliation join
+      the anno_evid_disagreements MCP tool calls, run here against a real
+      store and rendered as three distinguishable states. Disagreements
+      print FIRST, as rows; agreement prints as a single count line, never
+      as rows; an address the block table covers with no observation
+      anywhere prints as its own count line stating plainly that absence
+      proves nothing -- never evidence that the address holds data. Two
+      further count lines name evidence about addresses the block table
+      does not classify as code or data at all, so a reader summing every
+      line gets what the block table covers, never what the program is.
+      No percentage, rate or coverage figure is ever printed. --json prints
+      the raw JSON answer instead of the rendered report.
+      Requires an EXISTING annotation store; creates none and writes
+      nothing.
+
 Every verb requires inputs that already exist. None creates a project, a
 store or a sidecar, and none derives one path from another -- this CLI
 never guesses (D-02).
@@ -276,6 +305,7 @@ export const VERB_OPTIONS: Readonly<Record<string, readonly string[]>> = Object.
   "render-memmap": ["--provenance", "--out", "--force", "--check"],
   coverage: ["--store", "--out", "--force", "--sample"],
   "export-asm": ["--store", "--out", "--force"],
+  "evid-disagreements": ["--store", "--json"],
 });
 
 /**
@@ -1398,6 +1428,165 @@ async function cmdExportAsm(rest: string[]): Promise<number> {
   return 0;
 }
 
+interface EvidDisagreementsParsedArgs {
+  positional: string[];
+  store?: string;
+  storeMissingValue?: boolean;
+  json?: boolean;
+  unknownOption?: string;
+}
+
+/** Fixed, closed option set for evid-disagreements -- exactly `--store` and
+ * `--json`. Same WR-08 posture as every other verb's own parser: an
+ * unimplemented flag is refused as `unknownOption`, and `--store` with a
+ * missing or flag-shaped value is refused through its own `*MissingValue`
+ * field rather than silently swallowing the next token. `--json` is a plain
+ * boolean, parsed the same shape `--force`/`--check` already use. */
+function parseEvidDisagreementsArgs(rest: string[]): EvidDisagreementsParsedArgs {
+  const positional: string[] = [];
+  let store: string | undefined;
+  let storeMissingValue = false;
+  let json = false;
+  let unknownOption: string | undefined;
+  for (let i = 0; i < rest.length; i++) {
+    const a = rest[i]!;
+    if (a === "--store") {
+      const value = rest[i + 1];
+      if (isMissingOptionValue(value)) {
+        storeMissingValue = true;
+      } else {
+        store = value;
+        i++;
+      }
+    } else if (a === "--json") {
+      json = true;
+    } else if (a.startsWith("--")) {
+      unknownOption ??= a;
+    } else {
+      positional.push(a);
+    }
+  }
+  return { positional, store, storeMissingValue, json, unknownOption };
+}
+
+/**
+ * Renders `r` as three separately-headed, textually-distinguishable
+ * sections -- disagreements FIRST, agreement as a single count line,
+ * never-observed as its own count line stating plainly that absence proves
+ * nothing. THE ONE RULE THIS FUNCTION EXISTS TO HOLD, the SAME rule
+ * `printCoverageReport()` holds two verbs over: print every measure's own
+ * number under its own heading and NEVER compute or print a combined
+ * figure, a percentage or a rate at the point of display. `denominator`
+ * rides beside every count for exactly that reason.
+ */
+function printEvidDisagreementsReport(storePath: string, r: EvidReconciliation): void {
+  console.log(`evid-disagreements: ${storePath}`);
+  console.log("");
+  console.log(`  DISAGREEMENTS (${r.disagreementCount} of ${r.denominator})`);
+  if (r.disagreements.length === 0) {
+    console.log("    none");
+  } else {
+    for (const d of r.disagreements) {
+      console.log(`    ${hexAddr(d.address)}  byte-derived=${d.byteDerived}  runtime=${d.runtime}  banks=${d.sourceBanks.join(",")}`);
+    }
+  }
+  console.log("");
+  console.log(`  AGREEMENT: ${r.agreementCount} of ${r.denominator}`);
+  console.log("");
+  console.log(
+    `  NO OBSERVATION: ${r.blockCoveredNeverObservedCount} of ${r.denominator} -- an address never observed executing ` +
+      "proves NOTHING about what it is; absence is not evidence for or against any classification.",
+  );
+  console.log("");
+  console.log(`  OBSERVED OUTSIDE ANY BLOCK: ${r.observedOutsideAnyBlockCount}`);
+  console.log(`  OBSERVED AT UNDEFINED BLOCK: ${r.observedAtUndefinedBlockCount}`);
+  console.log("");
+  console.log(
+    "  Read these five figures against each other, never combined into one: together they name what the block " +
+      "table covers, never what the program actually is.",
+  );
+}
+
+/**
+ * `evid-disagreements --store FILE [--json]` -- the CLI route for EVID-03's
+ * disagreement query (`43-RESEARCH.md` Open Question 3): the criterion that
+ * settles the question is that a planted test needs the disagreement,
+ * agreement and silence states rendered as three DIFFERENT pieces of TEXT
+ * it can tell apart, which an MCP tool's JSON answer can only be inspected
+ * structurally rather than textually.
+ *
+ * Opens the store READ-ONLY (`mustExist: true` -- this verb creates
+ * nothing), fetches both sides itself (`listRanges()`/`listExecObservations()`),
+ * maps the ranges through `blocksFromStore()` -- the ONE `RangeRow` ->
+ * `BlockEntry` seam, never re-implemented here -- and calls
+ * `reconcileObservedExecution()`, the SAME pure join
+ * `anno_evid_disagreements` calls. `--json` prints the raw answer; otherwise
+ * `printEvidDisagreementsReport()` renders the three states.
+ */
+async function cmdEvidDisagreements(rest: string[]): Promise<number> {
+  const { store, storeMissingValue, json, unknownOption } = parseEvidDisagreementsArgs(rest);
+
+  if (unknownOption) {
+    console.error(`evid-disagreements: unknown option "${unknownOption}"\n`);
+    console.log(USAGE);
+    return 1;
+  }
+  if (storeMissingValue) {
+    console.error("evid-disagreements: --store requires a value\n");
+    console.log(USAGE);
+    return 1;
+  }
+  if (!store) {
+    console.error("evid-disagreements: --store FILE is required -- this verb answers a question about ONE annotation store.\n");
+    console.log(USAGE);
+    return 1;
+  }
+
+  // T-19-22/T-29-28-shaped confinement, the SAME seam every other verb's
+  // caller-supplied path goes through.
+  const workspaceRoot = repoRoot();
+  let storePath: string;
+  try {
+    storePath = storePathWithinWorkspace(store, workspaceRoot);
+  } catch (err) {
+    console.error(`evid-disagreements: ${errMsg(err)}`);
+    return 1;
+  }
+  if (!existsSync(storePath)) {
+    console.error(
+      `evid-disagreements: annotation store not found: ${storePath} -- refusing to CREATE one, because "the ` +
+        'annotations are gone" and "there are no annotations" must not read the same.',
+    );
+    return 1;
+  }
+
+  let handle: AnnoStoreHandle;
+  try {
+    handle = openStore(storePath, { workspaceRoot, mustExist: true });
+  } catch (err) {
+    console.error(`evid-disagreements: ${errMsg(err)}`);
+    return 1;
+  }
+  let reconciliation: EvidReconciliation;
+  try {
+    const blocks = blocksFromStore(listRanges(handle));
+    const observations = listExecObservations(handle);
+    reconciliation = reconcileObservedExecution({ blocks, observations });
+  } catch (err) {
+    console.error(`evid-disagreements: ${errMsg(err)}`);
+    return 1;
+  } finally {
+    closeStore(handle);
+  }
+
+  if (json) {
+    console.log(JSON.stringify({ store: storePath, ...reconciliation }, null, 2));
+    return 0;
+  }
+  printEvidDisagreementsReport(storePath, reconciliation);
+  return 0;
+}
+
 /**
  * Entry point for the `anno` subcommand. Returns an exit code; never calls
  * exit the process directly (the bin does that). Handles `--help`/no verb/unknown
@@ -1442,6 +1631,8 @@ export async function runAnnoCli(argv: string[]): Promise<number> {
         return await cmdCoverage(rest);
       case "export-asm":
         return await cmdExportAsm(rest);
+      case "evid-disagreements":
+        return await cmdEvidDisagreements(rest);
       default:
         // WR-14 site 2, corrected 2026-08-30 (plan 29-16). This prefix read
         // `anno:` -- the subcommand renamed to `anno` on 2026-08-29 (29-09)
@@ -1449,7 +1640,9 @@ export async function runAnnoCli(argv: string[]): Promise<number> {
         // no longer dispatches. Only the STRING moved: the enclosing function
         // keeps its current name, so no consumer, test or record entry moves
         // with it (see the plan's <wr14_scope_decision>).
-        console.error(`anno: unknown verb "${verb}" -- this CLI has exactly three: render-memmap, coverage and export-asm\n`);
+        console.error(
+          `anno: unknown verb "${verb}" -- this CLI has exactly four: render-memmap, coverage, export-asm and evid-disagreements\n`,
+        );
         console.log(USAGE);
         return 1;
     }

@@ -32,6 +32,14 @@ usage, not measured). Individual rows that have since been exercised live are ma
 | A verified 64K image, or comparing two captures | the `c64-ram-capture` skill |
 | Whole-program static disassembly with code/data separation | **`anno export-asm`** — withdrawn 2026-08-29, returned 2026-08-31, settled by assembling the output with a real ACME and diffing the bytes against the input. That oracle is test-only, so the verb itself writes source and runs no assembler. For a single routine, read one explicit range at a time with `anno_read_region` / `anno_disassemble` (4096-byte cap per call, refused rather than truncated above it) and record what you verified with `anno_set_data_type` |
 
+## Runtime evidence versus the byte-derived guess
+
+| Question | Call |
+|---|---|
+| Where the store's byte-derived block table (`anno_set_data_type`'s own ranges) disagrees with what the emulator was actually observed executing | **`anno evid-disagreements`** (also `anno_evid_disagreements`) — joins the typed ranges against the runtime-observed rows an `anno_evid_ingest` call already wrote, reporting disagreements first, agreement as a count only, and a never-observed count that is explicitly NOT evidence the address holds data |
+| What evidence a store already holds, without re-running the program | `anno_evid_runs` — every run identity's observation count beside its denominator |
+| Reset one run identity's evidence for a fresh re-measurement | `anno_evid_reset` — clears only that run identity's rows; pair it with `vice_memmap_zap` on the emulator side |
+
 ## Three traps in this table
 
 **`vice_run_until`'s timeout is backend-qualified — it has none on the fork, but stock bounds it

@@ -49,8 +49,14 @@ const CI_SCRIPT = join(ROOT, "scripts", "check-skill-tool-coverage.mjs");
  * sentence records it rather than predicting it. `gen-enums`, `export-lbl` and
  * `import-lbl` did NOT return with it and no phase currently owns them, so the
  * next raise has no named date.
+ *
+ * RAISED THREE -> FOUR by phase 43 plan 43-06, together with
+ * `ANNO_CLI_VERB_FLOOR` again: `evid-disagreements` landed as the CLI route
+ * for EVID-03's disagreement query, named in
+ * `src/skills/c64-program-recon/references/tool-selection.md` in the same
+ * commit so the positive-control test below stays satisfied.
  */
-const REAL_VERBS = ["coverage", "export-asm", "render-memmap"];
+const REAL_VERBS = ["coverage", "export-asm", "render-memmap", "evid-disagreements"];
 
 /**
  * The verbs the COMMENT-HYGIENE synthetic source below carries. Deliberately
@@ -144,7 +150,7 @@ function dummyDispatch(verb) {
 }
 `;
 
-test("real-source parse: anno-cli.ts's dispatch switch yields exactly the 3 known verbs, never 'default'", () => {
+test("real-source parse: anno-cli.ts's dispatch switch yields exactly the 4 known verbs, never 'default'", () => {
   const src = readFileSync(join(HERE, "anno-cli.ts"), "utf8");
   const verbs = parseAnnoCliVerbs(src);
   assert.deepEqual(verbs, [...REAL_VERBS].sort());
@@ -182,7 +188,7 @@ test("comment hygiene: a case hidden in a block comment or a line comment is nev
 });
 
 test("non-vacuity floor: ANNO_CLI_VERB_FLOOR matches the measured true count and the real parse meets it", () => {
-  assert.equal(ANNO_CLI_VERB_FLOOR, 3);
+  assert.equal(ANNO_CLI_VERB_FLOOR, 4);
   const src = readFileSync(join(HERE, "anno-cli.ts"), "utf8");
   const verbs = parseAnnoCliVerbs(src);
   assert.ok(verbs.length >= ANNO_CLI_VERB_FLOOR);

@@ -182,6 +182,7 @@ const CLI_PATH_ARGUMENTS: readonly CliPathArgument[] = [
   { verb: "export-asm", argument: "<image>", kind: "positional" },
   { verb: "export-asm", argument: "--store", kind: "flag" },
   { verb: "export-asm", argument: "--out", kind: "flag" },
+  { verb: "evid-disagreements", argument: "--store", kind: "flag" },
 ];
 
 /**
@@ -195,7 +196,7 @@ const CLI_PATH_ARGUMENTS: readonly CliPathArgument[] = [
  * to the CLI without a confinement call reds HERE, BY NAME, instead of being
  * reviewed.
  */
-const NON_PATH_OPTIONS: readonly string[] = ["--check", "--force", "--sample"];
+const NON_PATH_OPTIONS: readonly string[] = ["--check", "--force", "--sample", "--json"];
 
 /**
  * MEASURED, NOT COPIED: nine caller-supplied path arguments across the three
@@ -209,6 +210,11 @@ const NON_PATH_OPTIONS: readonly string[] = ["--check", "--force", "--sample"];
  * three path arguments are confined by the same seam in `cmdExportAsm()`, and
  * the raise is what makes that statement falsifiable rather than a claim.
  *
+ * RAISED 9 -> 10 by phase 43 plan 43-06, in the commit that landed
+ * `evid-disagreements`. Its one path argument (`--store`) is confined by the
+ * same seam in `cmdEvidDisagreements()`; the verb has no positional and no
+ * `--out`, so it contributes exactly one to this floor rather than three.
+ *
  * HAND-PINNED AS AN INTEGER LITERAL, AND IT MUST STAY THAT WAY. Deriving it
  * from `CLI_PATH_ARGUMENTS.length` (or from disk) would make it unfailable and
  * would discard the entire non-vacuity it exists to provide: a truncated or
@@ -216,7 +222,7 @@ const NON_PATH_OPTIONS: readonly string[] = ["--check", "--force", "--sample"];
  * trivially. Raise it when a verb genuinely grows a path argument; never lower
  * it to fit.
  */
-const CLI_PATH_ARGUMENT_FLOOR = 9;
+const CLI_PATH_ARGUMENT_FLOOR = 10;
 
 // ---------------------------------------------------------------------------
 // 1. The inventory is declared and complete.
