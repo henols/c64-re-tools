@@ -5,16 +5,16 @@ milestone_name: The Rebuild Half
 current_phase: 45
 current_phase_name: Decomposition to Closure, Disagreement First
 status: executing
-stopped_at: Phase 45 planned (10 plans, 5 waves)
-last_updated: "2026-09-10T21:22:02.998Z"
+stopped_at: Completed 45-01-PLAN.md
+last_updated: "2026-09-10T22:11:13.930Z"
 last_activity: 2026-09-10
-last_activity_desc: "Phase 45 planned: 10 plans across 5 waves"
-state_head: 3085add65cfe52187fa6e0a173cd117ef6f88659
+last_activity_desc: Phase 45 execution started
+state_head: 6b50b0a6a856e239e38f6a5d6b6bb757551957c5
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 10
-  completed_plans: 0
+  completed_plans: 1
   percent: 0
 ---
 
@@ -32,8 +32,9 @@ RAM, inspect chip state — and keep working when the emulator misbehaves.
 means — two concurrent monitor channels to one machine, with contention reported
 by name rather than misdiagnosed as a wedge — without moving the ONE thing.*
 
-**Current focus:** **v1.0.0 "The Rebuild Half" — roadmap created 2026-09-10,
-Phases 45-50, 15/15 requirements mapped.** The presumptive scope recorded at the
+**Current focus:** Phase 45 — Decomposition to Closure, Disagreement First
+Milestone **v1.0.0 "The Rebuild Half"**, roadmap created 2026-09-10, Phases 45-50,
+15/15 requirements mapped. The presumptive scope recorded at the
 v0.9.0 close is now the committed one: `DECOMP-01..04`, `BUILD-01..07` (the text
 grew by one — `BUILD-07` was added at this open to make `BUILD-05`'s reworded
 invariant checkable) and `EQUIV-01..04`. The one stated blocker — the
@@ -41,7 +42,7 @@ runtime-evidence layer sitting upstream of the rebuild half — v0.9.0 discharge
 and `DECOMP-01`'s completeness gate now takes `anno_evid_disagreements` as a
 **required** input rather than an optional cross-check.
 
-**Next action:** plan Phase 45 (`/gsd-plan-phase 45`). Phase 48 carries a
+**Next action:** execute Phase 45 (`/gsd-execute-phase 45`) — 10 plans, 5 waves. Phase 48 carries a
 research flag — the hazard classes have essentially no reusable prior art and
 need a variant taxonomy per class written before implementation.
 
@@ -253,11 +254,11 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 45 (Decomposition to Closure, Disagreement First) — READY TO EXECUTE
-Plan: 0/10 executed
+Phase: 45 (Decomposition to Closure, Disagreement First) — EXECUTING
+Plan: 2 of 10
 Status: Ready to execute
-Progress: 0/6 phases complete — `[------]`
-Last activity: 2026-09-10 — Phase 45 planned: 10 plans across 5 waves
+Progress: [░░░░░░░░░░] 0%
+Last activity: 2026-09-10 — Phase 45 execution started
 
 ## Performance Metrics
 
@@ -534,6 +535,7 @@ Last activity: 2026-09-10 — Phase 45 planned: 10 plans across 5 waves
 | Phase 44 P01 | 62 min | 2 tasks | 6 files |
 | Phase 44 P02 | 20min | 2 tasks | 2 files |
 | Phase 44 P03 | 35min | 2 tasks | 2 files |
+| Phase 45 P01 | ~100min | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -1228,6 +1230,9 @@ Recent decisions affecting current work:
 - [Phase 44]: Reused plan 44-01's subject artifact unchanged across both runs so anchor depth was the only variable between them — Matches plan 44-02's own instruction and D-P2's intent; subject artifact still on disk with matching sha256
 - [Phase 44]: Plan 44-03: PROOF04_FALSE_POSITIVE_PCT introduced as a disclosed derived field (not SCHEMA.md vocabulary) tying the record's percentage-shape gate to the same per-run bucket the bucket-identity check reads, so a planted denominator corruption reds three tied assertions rather than one. — Satisfies the plan's own non-vacuity requirement that a single altered value reds bucket-sum identity, per-run agreement, and the percentage check simultaneously.
 - [Phase 44]: Plan 44-03: found a defect in its own bare_pct hygiene check (POSIX ERE greedy optional-space capture flags any correctly-formatted NN.NN (n/d) percentage with a space before the paren, including the three literally-required Phase 38 citations). — Satisfying the literal-string requirement and the bare_pct=0 requirement are mutually exclusive as written; kept the literal strings (the more fundamental must_haves obligation) and documented the residual bare_pct=3 as a deviation rather than altering the required citations.
+- [Phase 45]: evid-disagreements --json now also carries runIdentity (Rule 2), computed from listObservedRuns(), so decomp-completeness's D-09 anti-vacuity check has a run identity to validate a supplied --disagreements document against the same store's evid-runs table.
+- [Phase 45]: dxa's own listing ranges (runDxaDisassemble's map.ranges) feed setDataType, not partitionByteDerived -- that Phase 35 ground-truth classifier never assigns code by design, which would leave the store with no code range for the disagreement query to compare against.
+- [Phase 45]: The frozen survivor prefix set (AUTO_NAME_PREFIX_RE plus three defensive anchored cases) was decided from a real measurement returning zero labels, confirming RESEARCH.md's prediction, and recorded in docs/phase45-wave0-measurements.md.
 
 ### Pending Todos
 
@@ -2300,9 +2305,9 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-10T20:04:28.281Z
-Stopped at: Phase 45 context gathered
-Resume file: .planning/phases/45-decomposition-to-closure-disagreement-first/45-CONTEXT.md
+Last session: 2026-09-10T22:11:13.788Z
+Stopped at: Completed 45-01-PLAN.md
+Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
 Earlier: Completed 42-16-PLAN.md (gap-closure round 2 — CR-02 closed, proven live, PARSE-04 restored)

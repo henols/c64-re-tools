@@ -543,7 +543,6 @@ bytes *imply*. `CHAN-01` returned **`go`** (rule `R15`) — the first `go` any o
 this project's four go/degrade/no-go gates has returned. 20/20 in-scope
 requirements; 51 plans; all six phases `verification_status: passed`.
 
-
 **Goal:** Dial the `-remotemonitor` text-monitor port this project has opened on
 every stock launch since Phase 3 and never connected to, and make what the
 emulator *observed* a durable, accumulating class of fact — kept deliberately
@@ -994,12 +993,12 @@ decline wherever the evidence is genuinely path-dependent.
   4. Every referenced non-hardware address resolves to a named, documented symbol, **and** an address whose target is genuinely path-dependent produces an explicit recorded decline naming what is unknown rather than a fabricated symbol — observed on `bank-path-dependent.prg`, a fixture that already exists precisely because it contains one, and on a runtime-varying zero-page pointer.
   5. Hardware register writes render as named enum members rather than magic numbers, with at least one multi-bit register (`$D011` or `$D018`) shown decomposed into its named bits rather than emitted as one hex constant.
 
-**Plans**: 10 plans
+**Plans**: 1/10 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 45-01-PLAN.md — Tracer: dxa/tracer.prg end to end through the new fifth `anno` verb, plus the Wave 0 measurements (label population, suite baseline) and the D-14 supersession record
+- [x] 45-01-PLAN.md — Tracer: dxa/tracer.prg end to end through the new fifth `anno` verb, plus the Wave 0 measurements (label population, suite baseline) and the D-14 supersession record
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -1313,7 +1312,7 @@ in a milestone archive.
 | 42. The Text-Format Parsers and Their Two-Binary Fixtures | v0.9.0 | 16/16 | Complete | 2026-09-10 |
 | 43. The Runtime Evidence Layer | v0.9.0 | 7/7 | Complete | 2026-09-10 |
 | 44. PROOF-04 — The Independent External Check | v0.9.0 | 3/3 | Complete | 2026-09-10 |
-| 45. Decomposition to Closure, Disagreement First | v1.0.0 | - | Not started | - |
+| 45. Decomposition to Closure, Disagreement First | v1.0.0 | 1/10 | In Progress | - |
 | 46. The Lossless-Export Invariant and the Provenance Carry | v1.0.0 | - | Not started | - |
 | 47. Multi-File Rebuildable Source | v1.0.0 | - | Not started | - |
 | 48. The Movement-Hazard Report and Its Purpose-Built Subject | v1.0.0 | - | Not started | - |
