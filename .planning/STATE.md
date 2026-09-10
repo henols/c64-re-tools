@@ -5,16 +5,16 @@ milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 44
 current_phase_name: PROOF-04 — The Independent External Check
 status: executing
-stopped_at: Completed 44-01-PLAN.md
-last_updated: "2026-09-10T15:19:42.997Z"
+stopped_at: Completed 44-02-PLAN.md
+last_updated: "2026-09-10T15:34:40.747Z"
 last_activity: 2026-09-10
 last_activity_desc: Phase 44 execution started
-state_head: 80acb2d43b7dfdb391efe3ea76727ce00d08800a
+state_head: f629c45721f88680c37f8ecd9bc0481cbe729e67
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 51
-  completed_plans: 49
+  completed_plans: 50
   percent: 83
 ---
 
@@ -228,7 +228,7 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 44 (PROOF-04 — The Independent External Check) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-09-10 — Phase 44 execution started
 
@@ -524,6 +524,7 @@ Complete; `PREP-03` is withdrawn, struck rather than deleted.
 | Phase 43 P06 | ~3h | 3 tasks | 12 files |
 | Phase 43-the-runtime-evidence-layer P07 | 45min | 3 tasks | 8 files |
 | Phase 44 P01 | 62 min | 2 tasks | 6 files |
+| Phase 44 P02 | 20min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -1178,6 +1179,7 @@ Recent decisions affecting current work:
 - [Phase 43]: The evid-disagreements CLI verb doc was placed in its OWN new section in tool-selection.md, not appended to the existing export-asm row, because that row's own withdrawn/returned phrasing shares a blank-line paragraph with anything appended, which falsely trips the withdrawal-status guard for an unrelated verb. — Discovered live when anno-verb-coverage.test.ts reported evid-disagreements as documented withdrawn; fixed by moving the mention to its own paragraph.
 - [Phase 43]: Phase 43 plan 07: EVID-04's structural guard derives its verb scope from ANNO_TOOL_DEFINITIONS rather than a hand-typed list, and its own clean control found and fixed a real missing-denominator gap in anno_evid_reset's shipped answer.
 - [Phase 44]: Plan 44-01 stood up PROOF-04's two independent evidence producers and joined them via reconcileObservedExecution(), producing one live measurement (168 false positives / denominator 45072) that closes PROOF-01's named reversal condition.
+- [Phase 44]: Reused plan 44-01's subject artifact unchanged across both runs so anchor depth was the only variable between them — Matches plan 44-02's own instruction and D-P2's intent; subject artifact still on disk with matching sha256
 
 ### Pending Todos
 
@@ -2196,8 +2198,8 @@ evidence files.
 
 ## Session Continuity
 
-Last session: 2026-09-10T15:19:41.480Z
-Stopped at: Completed 44-01-PLAN.md
+Last session: 2026-09-10T15:34:39.176Z
+Stopped at: Completed 44-02-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
