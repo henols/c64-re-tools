@@ -231,7 +231,7 @@
     {
       "number": "43",
       "name": "The Runtime Evidence Layer",
-      "status": "in_progress"
+      "status": "complete"
     },
     {
       "number": "44",
@@ -241,8 +241,8 @@
   ],
   "next": {
     "command": "/gsd:progress --next",
-    "label": "Advance to the next step",
-    "reason": "Phase 43 of 6 · 67% · executing"
+    "label": "Advance to the next step (plan phase 44)",
+    "reason": "Phase 44 of 6 — needs a plan"
   },
-  "updated_at": "2026-09-10T11:35:10.495Z"
+  "updated_at": "2026-09-10T13:01:37.975Z"
 }
