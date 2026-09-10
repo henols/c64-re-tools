@@ -182,6 +182,81 @@ import { ViceError, type ViceErrorOptions } from "./vice.ts";
  * exist, and it would put new code into a module six hardening rounds went
  * into. Stating the difference is the point: this one is a choice, not an
  * impossibility.
+ *
+ * ---------------------------------------------------------------------------
+ * VERSION 4, 2026-09-10 (EVID-02) -- THE DECISION IS `reaffirm-refusal`, AND
+ * THE FACTUAL BASIS IS TRANSCRIBED HERE RATHER THAN LEFT IN A PLANNING
+ * DIRECTORY, for the same reason VERSION 3's paragraph gives.
+ *
+ * WHAT THE BUMP BUYS: `anno_evid_exec`, the durable, run-identity-keyed table
+ * that records ONE fact per row -- an address was OBSERVED EXECUTING during a
+ * specific run -- so a later session can query accumulated runtime evidence
+ * instead of re-running the program. See `anno-store.ts`'s `DDL` and its
+ * `insertExecObservations` / `listExecObservations` / `listObservedRuns` /
+ * `deleteExecObservationsForRun`.
+ *
+ * THE OPTION SELECTED, BY NAME: `reaffirm-refusal`. The strict-equality
+ * refusal inside `openStore` stays exactly as VERSION 3 left it -- a
+ * version-3 store does not open under this `SCHEMA_VERSION`, no migration arm
+ * is written, and the single-witness property (one comparison site, no
+ * second write of `anno_meta.schema_version`) is unchanged.
+ *
+ * THE FACTUAL CHECK, RUN 2026-09-10, SCOPE ONE DEVELOPMENT MACHINE:
+ *   1. `find / -xdev -name '*.annostore'`, with `.git` directories excluded --
+ *      empty. The broader `find "$HOME" -name '*.annostore'` (closing the `-xdev`
+ *      mount-boundary gap) found five hits, all inside a dated (2026-08-27)
+ *      scratch probe cache (`~/.cache/gsd-probe/c4/...`), with
+ *      fixture-pattern names (`t-half`, `t-zero`, `t-tail-100`, `p`, `proj`)
+ *      and one file zero bytes -- synthetic test fixtures, not a real
+ *      project's store.
+ *   2. `git log --oneline --diff-filter=A -- '*.annostore'` -- empty. No
+ *      `.annostore` has ever been added to this repository's history.
+ *   3. Release tags versus when the store landed: `anno-store.ts` was added
+ *      by `4c9cea3c` (2026-08-27). `v0.7.0` (2026-09-01) and `v0.8.0`
+ *      (2026-09-06) BOTH POSTDATE that landing and the VERSION 3 bump
+ *      itself. **THIS CORRECTS THE VERSION 3 PARAGRAPH ABOVE**: its stated
+ *      justification -- "the last release tag (`v0.5.0`, 2026-08-25)
+ *      PREDATES the store entirely -- so no tagged release has ever shipped
+ *      a store at all" -- was true when written (2026-08-29) and is STALE
+ *      now. Two tagged releases since then could, in principle, have shipped
+ *      a working store to a real user.
+ *   4. Nothing outside that dated scratch/probe cache directory, and nothing
+ *      tracked in git, was found on this machine.
+ *
+ * THE RE-AFFIRMATION IS MADE DESPITE THAT CORRECTION, on the strength of the
+ * observed NULL RESULT (zero real stores found), not on the strength of the
+ * now-stale "no release ever shipped one" framing. What changed since VERSION
+ * 3 is the *possibility* of a field store, not an observation of one, and the
+ * two directions' costs are asymmetric in reversibility: re-affirming refusal
+ * STAYS REVERSIBLE -- a migration arm can be added later, at version 5,
+ * against real evidence -- while shipping a mutating open path now adds a
+ * half-reasoned migration to a module that also has a corruption-refusal
+ * path, exactly where silent corruption lives, inside a plan whose actual job
+ * is an evidence table rather than a schema-migration redesign. House style
+ * settles the shape too: this project's standing pattern for a mismatched or
+ * missing external state is DETECT, THEN REFUSE BY NAME WITH THE REMEDY IN
+ * THE MESSAGE (`CLAUDE.md`'s "external tools are never auto-installed"
+ * constraint states the same discipline for a different kind of missing
+ * state) -- `openStore`'s refusal message is extended to name that remedy
+ * explicitly and to say the refused file is left untouched, so a user who
+ * hits it is not left inferring either fact.
+ *
+ * THE FACTUAL BASIS IS ONE MACHINE ONLY, and the limit travels with the
+ * decision: this is not a global guarantee that no field store exists --
+ * exactly the scope VERSION 3's own paragraph already accepted once.
+ *
+ * THE VERSION 1 PARAGRAPH ABOVE IS STILL THE PRECEDENT THIS IS MEASURED
+ * AGAINST, and this refusal is, again, a CHOICE and not an impossibility:
+ * version 4 COULD be given a migration arm and deliberately is not, for the
+ * reasons above.
+ *
+ * THE REVERSAL CONDITION, RECORDED SO THIS DOES NOT QUIETLY HARDEN INTO
+ * PRECEDENT: a migration arm at version 5 is justified if a real, non-scratch
+ * `.annostore` file is found in the field -- a user's own project, a bug
+ * report attaching one, or a support request -- or if a documented
+ * distribution channel is shown to have shipped a version-3 or version-4
+ * store to users who have not yet upgraded past it. Absent that evidence, the
+ * refusal stays the default.
  */
 export const SCHEMA_VERSION = 3;
 
