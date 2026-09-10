@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v0.9.0
 milestone_name: The Text Channel and the Runtime Evidence Layer
-current_phase: 43
-current_phase_name: The Runtime Evidence Layer
-status: ready_for_verification
-stopped_at: Completed 43-07-PLAN.md
-last_updated: "2026-09-10T12:21:47.383Z"
+current_phase: 44
+current_phase_name: PROOF-04 — The Independent External Check
+status: planning
+stopped_at: Phase 43 complete, ready to plan Phase 44
+last_updated: "2026-09-10T13:01:37.889Z"
 last_activity: 2026-09-10
-last_activity_desc: Phase 43 plan 07 complete (final plan)
-state_head: e5b365e82a1032d48723e78193afc5ec9e69cb82
+last_activity_desc: Phase 43 complete, transitioned to Phase 44
+state_head: fa5aec1029da22b833614419901e230a34b153c8
 progress:
   total_phases: 6
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 48
   completed_plans: 48
-  percent: 67
+  percent: 83
 ---
 
 # Project State
@@ -227,10 +227,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 43 (The Runtime Evidence Layer) — READY FOR VERIFICATION
-Plan: 7 of 7 (all plans complete)
-Status: Plan 07 complete (evid-report-keys.test.ts's derived structural guard over every anno_evid_* answer, a genuinely concurrent two-identity SIGKILL planting plus a reset-then-relaunch planting for anno_evid_reset, and docs/phase43-runtime-evidence-layer.md) — Phase 43's own six requirements (EVID-01..EVID-06) are all Complete; ready for /gsd-verify-work
-Last activity: 2026-09-10 — Phase 43 plan 07 complete (final plan)
+Phase: 44 — PROOF-04 — The Independent External Check
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-09-10 — Phase 43 complete, transitioned to Phase 44
 
 **Phase 39 returned `go` (rule `R15`) — the gate is settled.** All seven inputs
 were measured live against genuine unpatched stock VICE 3.9 and every one came
@@ -256,7 +256,7 @@ Complete; `PREP-03` is withdrawn, struck rather than deleted.
 
 **Velocity:**
 
-- Total plans completed: 361
+- Total plans completed: 368
 - Average duration: —
 - Total execution time: —
 
@@ -301,6 +301,7 @@ Complete; `PREP-03` is withdrawn, struck rather than deleted.
 | 40 | 11 | - | - |
 | 41 | 6 | - | - |
 | 42 | 16 | - | - |
+| 43 | 7 | - | - |
 
 **Recent Trend:**
 
@@ -2194,7 +2195,7 @@ evidence files.
 ## Session Continuity
 
 Last session: 2026-09-10T12:18:18.000Z
-Stopped at: Completed 43-07-PLAN.md
+Stopped at: Phase 43 complete, ready to plan Phase 44
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
