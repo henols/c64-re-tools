@@ -45,6 +45,7 @@ import { loadTextFixture } from "./textmon-fixtures.ts";
 import { accessMapRanges, parseAccessMap } from "./textmon-memmap.ts";
 import { execObservationsFrom } from "./evid-ingest.ts";
 import { argvDigest } from "./capture-predicate.ts";
+import * as annoTypesModule from "./anno-types.ts";
 import { dispatchStock, type StockDispatchDeps } from "./stock-dispatch.ts";
 import type { BrokerControlSession } from "./vice-broker-client.ts";
 import { textConnect, textDisconnect } from "./text-connect.ts";
@@ -2289,3 +2290,352 @@ test(
     }
   },
 );
+
+// ---------------------------------------------------------------------------
+// Plan 43-06 Task 1: anno_evid_disagreements and anno_evid_runs -- the
+// store-side query verbs over evid-reconcile.ts's pure join.
+// ---------------------------------------------------------------------------
+
+function rangesOf(ws: string, store: string): ReturnType<typeof listRanges> {
+  const handle = openStore(store, { workspaceRoot: ws, mustExist: true });
+  try {
+    return listRanges(handle);
+  } finally {
+    closeStore(handle);
+  }
+}
+
+test(
+  "tracer (EVID-03/EVID-04): a planted disagreement is written, ingested and asked for through anno_evid_disagreements, " +
+    "answered disagreement-first with agreement as a count, and the block table is proven unchanged by the query",
+  async () => {
+    await withStore(
+      (handle) => {
+        // "byte" maps to the neutral "data" class through block-class.ts's
+        // fallthrough -- the store's own twelve-member vocabulary has no
+        // literal "data" spelling; every non-code, non-undefined spelling
+        // becomes "data".
+        setDataType(handle, { start: 0x4000, endInclusive: 0x4000, dataType: "byte" });
+      },
+      async (ws, store) => {
+        const rangesBefore = rangesOf(ws, store);
+
+        const ingestResult = await runAnnoTool("anno_evid_ingest", {
+          store,
+          memmap_text: memmapReplyText([{ address: 0x4000, ram: "--x" }]),
+          image_sha256: VALID_SHA,
+          argv: ["x64sc"],
+          seed: "seed-disagree",
+        });
+        assert.equal(ingestResult.isError, false, ingestResult.content[0]?.text);
+
+        const result = await runAnnoTool("anno_evid_disagreements", { store });
+        assert.equal(result.isError, false, result.content[0]?.text);
+        const b = await body(result);
+
+        assert.equal(b.disagreementCount, 1);
+        const disagreements = b.disagreements as { address: number; byteDerived: string; runtime: string }[];
+        assert.equal(disagreements.length, 1);
+        assert.equal(disagreements[0]!.address, 0x4000);
+        assert.equal(disagreements[0]!.byteDerived, "data");
+        assert.equal(disagreements[0]!.runtime, "code");
+        assert.equal(b.agreementCount, 0);
+        assert.equal(b.store, store);
+
+        const keys = Object.keys(b);
+        assert.equal(keys[0], "store");
+        assert.equal(keys[1], "disagreements", "disagreements must be the FIRST key after store (EVID-03)");
+
+        const rangesAfter = rangesOf(ws, store);
+        assert.deepEqual(rangesAfter, rangesBefore, "anno_evid_disagreements must never write to the byte-derived block table");
+      },
+    );
+  },
+);
+
+test("anno_evid_disagreements: an observation inside a code-classified block is agreementCount only -- disagreements stays empty", async () => {
+  await withStore(
+    (handle) => {
+      setDataType(handle, { start: 0x5000, endInclusive: 0x5000, dataType: "code" });
+    },
+    async (ws, store) => {
+      const ingestResult = await runAnnoTool("anno_evid_ingest", {
+        store,
+        memmap_text: memmapReplyText([{ address: 0x5000, ram: "--x" }]),
+        image_sha256: VALID_SHA,
+        argv: ["x64sc"],
+        seed: "seed-agree",
+      });
+      assert.equal(ingestResult.isError, false, ingestResult.content[0]?.text);
+
+      const result = await runAnnoTool("anno_evid_disagreements", { store });
+      assert.equal(result.isError, false, result.content[0]?.text);
+      const b = await body(result);
+      assert.equal(b.disagreementCount, 0);
+      assert.deepEqual(b.disagreements, []);
+      assert.equal(b.agreementCount, 1);
+    },
+  );
+});
+
+test("anno_evid_disagreements: max_results is OPTIONAL (unlike every other list-returning verb) and, when supplied, bounds only the disagreements array", async () => {
+  await withStore(
+    (handle) => {
+      setDataType(handle, { start: 0x6000, endInclusive: 0x6001, dataType: "byte" });
+    },
+    async (_ws, store) => {
+      const ingestResult = await runAnnoTool("anno_evid_ingest", {
+        store,
+        memmap_text: memmapReplyText([
+          { address: 0x6000, ram: "--x" },
+          { address: 0x6001, ram: "--x" },
+        ]),
+        image_sha256: VALID_SHA,
+        argv: ["x64sc"],
+        seed: "seed-bound",
+      });
+      assert.equal(ingestResult.isError, false, ingestResult.content[0]?.text);
+
+      const unbounded = await body(await runAnnoTool("anno_evid_disagreements", { store }));
+      assert.equal(unbounded.disagreementCount, 2);
+      assert.equal((unbounded.disagreements as unknown[]).length, 2);
+      assert.equal(unbounded.truncated, false);
+
+      const bounded = await body(await runAnnoTool("anno_evid_disagreements", { store, max_results: 1 }));
+      assert.equal((bounded.disagreements as unknown[]).length, 1);
+      assert.equal(bounded.matched, 2);
+      assert.equal(bounded.returned, 1);
+      assert.equal(bounded.truncated, true);
+      // agreementCount and every other bucket are counts, never rows -- max_results
+      // never touches them.
+      assert.equal(bounded.disagreementCount, 2);
+    },
+  );
+});
+
+test("anno_evid_disagreements: a run-identity filter requires image_sha256, argv_digest AND seed together -- a partial identity refuses", async () => {
+  await withStore(
+    () => {},
+    async (_ws, store) => {
+      const result = await runAnnoTool("anno_evid_disagreements", { store, image_sha256: VALID_SHA });
+      assert.equal(result.isError, true);
+      assert.match(result.content[0]!.text, /image_sha256.*argv_digest.*seed together|argv_digest.*seed/i);
+    },
+  );
+});
+
+test("anno_evid_runs: reports every run identity's observation count beside a denominator, never a percentage", async () => {
+  await withStore(
+    () => {},
+    async (_ws, store) => {
+      const a = await runAnnoTool("anno_evid_ingest", {
+        store,
+        memmap_text: memmapReplyText([{ address: 0x7000, ram: "--x" }]),
+        image_sha256: VALID_SHA,
+        argv: ["x64sc", "run-a"],
+        seed: "seed-a",
+      });
+      assert.equal(a.isError, false, a.content[0]?.text);
+
+      const result = await runAnnoTool("anno_evid_runs", { store });
+      assert.equal(result.isError, false, result.content[0]?.text);
+      const b = await body(result);
+      assert.equal(b.store, store);
+      assert.equal(typeof b.denominator, "number");
+      const runs = b.runs as { imageSha256: string; argvDigest: string; seed: string; observationCount: number }[];
+      assert.equal(runs.length, 1);
+      assert.equal(runs[0]!.observationCount, 1);
+      assert.equal(runs[0]!.seed, "seed-a");
+    },
+  );
+});
+
+test("anno_evid_disagreements and anno_evid_runs are read-only (T-43-29): both appear in READ_ONLY_ANNO_VERBS", () => {
+  assert.ok(READ_ONLY_ANNO_VERBS.includes("anno_evid_disagreements"));
+  assert.ok(READ_ONLY_ANNO_VERBS.includes("anno_evid_runs"));
+});
+
+test("anno_evid_disagreements and anno_evid_runs are curated (derived from ANNO_TOOL_DEFINITIONS)", () => {
+  assert.ok(CURATED_ANNO_TOOLS.includes("anno_evid_disagreements"));
+  assert.ok(CURATED_ANNO_TOOLS.includes("anno_evid_runs"));
+});
+
+// ---------------------------------------------------------------------------
+// Plan 43-06 Task 2: anno_evid_reset -- the store-side half of a bracket
+// reset (beside plan 43-03's emulator-side vice_memmap_zap) -- plus the
+// round-trip contract test over the single run-identity path.
+// ---------------------------------------------------------------------------
+
+/**
+ * The run-class vocabulary this store schema ACTUALLY supports, derived from
+ * `anno-types.ts`'s own exports rather than hand-typed. On the `promote`
+ * branch (`docs/phase43-instrumentation-perturbation-ab.md`) this would be
+ * `anno-types.ts`'s own exported `RUN_CLASSES` (`"frame-exact" |
+ * "instrumented"`). On the `no-change` branch this project's own live A/B
+ * actually selected, `anno-types.ts` exports no such array at all: there is
+ * exactly ONE implicit run class -- the bare `(imageSha256, argvDigest,
+ * seed)` triple, no discriminator column -- and that single-element
+ * vocabulary is what this constant derives, by detecting the ABSENCE of a
+ * `RUN_CLASSES` export, never by asserting a hand-invented list of possible
+ * run classes of its own. If a future phase takes the `promote` branch and
+ * adds `RUN_CLASSES`, this constant (and therefore the contract test below)
+ * picks it up with no edit here.
+ */
+const RUN_CLASSES: readonly string[] = (() => {
+  const maybe = (annoTypesModule as unknown as Record<string, unknown>).RUN_CLASSES;
+  return Array.isArray(maybe) && maybe.length > 0 ? (maybe as string[]) : (["implicit"] as const);
+})();
+
+test("contract: every evidence row round-trips through the ONE run-identity path (runIdentityFrom/argvDigest), for every supported run class", async () => {
+  assert.ok(RUN_CLASSES.length > 0, "the run-class enumeration must be non-empty -- a walk that silently covered nothing must not pass");
+  let walked = 0;
+  await withStore(
+    () => {},
+    async (_ws, store) => {
+      for (const runClass of RUN_CLASSES) {
+        walked++;
+        const argv = ["x64sc", `run-class-${runClass}`];
+        const seed = `seed-${runClass}`;
+        const ingestResult = await runAnnoTool("anno_evid_ingest", {
+          store,
+          memmap_text: memmapReplyText([{ address: 0x8000, ram: "--x" }]),
+          image_sha256: VALID_SHA,
+          argv,
+          seed,
+        });
+        assert.equal(ingestResult.isError, false, ingestResult.content[0]?.text);
+
+        const runsResult = await runAnnoTool("anno_evid_runs", { store });
+        assert.equal(runsResult.isError, false, runsResult.content[0]?.text);
+        const runsBody = await body(runsResult);
+        const runs = runsBody.runs as { imageSha256: string; argvDigest: string; seed: string }[];
+        const match = runs.find((r) => r.imageSha256 === VALID_SHA && r.seed === seed);
+        assert.ok(match, `expected anno_evid_runs to report a run for seed ${seed}`);
+        assert.equal(
+          match!.argvDigest,
+          argvDigest(argv),
+          "the run identity anno_evid_runs reports must be byte-identical to what runIdentityFrom() (via argvDigest()) computes for the same inputs",
+        );
+
+        // Clean up so the next run class's own `anno_evid_runs` read is not
+        // confused by an earlier iteration's row -- anno_evid_reset itself,
+        // exercised here as ordinary usage rather than as its own test.
+        const reset = await runAnnoTool("anno_evid_reset", { store, image_sha256: VALID_SHA, argv, seed });
+        assert.equal(reset.isError, false, reset.content[0]?.text);
+      }
+    },
+  );
+  assert.equal(walked, RUN_CLASSES.length, "a walk that silently covered nothing (or covered the wrong count) must not pass");
+});
+
+test("anno_evid_reset: reset of identity A leaves identity B's rows readable and unchanged", async () => {
+  await withStore(
+    () => {},
+    async (ws, store) => {
+      const argvA = ["x64sc", "run-a"];
+      const argvB = ["x64sc", "run-b"];
+      const a = await runAnnoTool("anno_evid_ingest", {
+        store,
+        memmap_text: memmapReplyText([{ address: 0x9000, ram: "--x" }]),
+        image_sha256: VALID_SHA,
+        argv: argvA,
+        seed: "seed-a",
+      });
+      assert.equal(a.isError, false, a.content[0]?.text);
+      const b = await runAnnoTool("anno_evid_ingest", {
+        store,
+        memmap_text: memmapReplyText([{ address: 0x9001, ram: "--x" }]),
+        image_sha256: VALID_SHA,
+        argv: argvB,
+        seed: "seed-b",
+      });
+      assert.equal(b.isError, false, b.content[0]?.text);
+
+      const bRowsBefore = (() => {
+        const h = openStore(store, { workspaceRoot: ws, mustExist: true });
+        try {
+          return listExecObservations(h, { imageSha256: VALID_SHA, argvDigest: argvDigest(argvB), seed: "seed-b" });
+        } finally {
+          closeStore(h);
+        }
+      })();
+      assert.equal(bRowsBefore.length, 1);
+
+      const reset = await runAnnoTool("anno_evid_reset", { store, image_sha256: VALID_SHA, argv: argvA, seed: "seed-a" });
+      assert.equal(reset.isError, false, reset.content[0]?.text);
+      const resetBody = await body(reset);
+      assert.equal(resetBody.changed, true);
+      assert.equal(resetBody.observationsRemoved, 1);
+
+      const handle = openStore(store, { workspaceRoot: ws, mustExist: true });
+      try {
+        const rowsA = listExecObservations(handle, { imageSha256: VALID_SHA, argvDigest: argvDigest(argvA), seed: "seed-a" });
+        assert.equal(rowsA.length, 0, "identity A's rows must be gone after its own reset");
+        const rowsB = listExecObservations(handle, { imageSha256: VALID_SHA, argvDigest: argvDigest(argvB), seed: "seed-b" });
+        assert.deepEqual(rowsB, bRowsBefore, "identity B's rows must be untouched by resetting identity A");
+      } finally {
+        closeStore(handle);
+      }
+    },
+  );
+});
+
+test("anno_evid_reset: resetting a run identity holding no observations reports changed:false and observationsRemoved:0 -- not an error", async () => {
+  await withStore(
+    () => {},
+    async (_ws, store) => {
+      const result = await runAnnoTool("anno_evid_reset", {
+        store,
+        image_sha256: VALID_SHA,
+        argv: ["x64sc", "never-ingested"],
+        seed: "seed-empty",
+      });
+      assert.equal(result.isError, false, result.content[0]?.text);
+      const b = await body(result);
+      assert.equal(b.changed, false);
+      assert.equal(b.observationsRemoved, 0);
+    },
+  );
+});
+
+test("anno_evid_reset: never touches the byte-derived block table -- listRanges is deep-equal before and after", async () => {
+  await withStore(
+    (handle) => {
+      setDataType(handle, { start: 0xa000, endInclusive: 0xa000, dataType: "code" });
+    },
+    async (ws, store) => {
+      const ingestResult = await runAnnoTool("anno_evid_ingest", {
+        store,
+        memmap_text: memmapReplyText([{ address: 0xa000, ram: "--x" }]),
+        image_sha256: VALID_SHA,
+        argv: ["x64sc"],
+        seed: "seed-block-untouched",
+      });
+      assert.equal(ingestResult.isError, false, ingestResult.content[0]?.text);
+
+      const rangesBefore = rangesOf(ws, store);
+      const reset = await runAnnoTool("anno_evid_reset", {
+        store,
+        image_sha256: VALID_SHA,
+        argv: ["x64sc"],
+        seed: "seed-block-untouched",
+      });
+      assert.equal(reset.isError, false, reset.content[0]?.text);
+      const rangesAfter = rangesOf(ws, store);
+      assert.deepEqual(rangesAfter, rangesBefore, "anno_evid_reset must never write to the byte-derived block table");
+    },
+  );
+});
+
+test("anno_evid_reset is absent from READ_ONLY_ANNO_VERBS -- it writes, so it takes the existence-check-plus-inode-guard route", () => {
+  assert.equal(READ_ONLY_ANNO_VERBS.includes("anno_evid_reset"), false);
+  assert.ok(CURATED_ANNO_TOOLS.includes("anno_evid_reset"));
+});
+
+test("anno-tools.ts calls argvDigest() nowhere -- the digest is computed only inside evid-ingest.ts/capture-predicate.ts, so a call site here would be a second identity site", () => {
+  assert.equal(
+    (ANNO_TOOLS_SOURCE.match(/argvDigest\(/g) ?? []).length,
+    0,
+    "anno-tools.ts must reference argvDigest only as a field/property name (via runIdentityFrom()'s return value), never call the function itself",
+  );
+});

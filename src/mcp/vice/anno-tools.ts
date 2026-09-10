@@ -140,11 +140,13 @@ import {
   closeStore,
   createProjectEnum,
   currentRevision,
+  deleteExecObservationsForRun,
   insertExecObservations,
   listComments,
   listEnumUsage,
   listExecObservations,
   listLabels,
+  listObservedRuns,
   listProjectEnums,
   listRanges,
   listScopes,
@@ -180,7 +182,8 @@ import { importGhidraExport } from "./anno-import.ts";
 import type { ConstWriteFact } from "./anno-import.ts";
 import { runMemmapJoin } from "./anno-join.ts";
 import { accessMapRanges, parseAccessMap } from "./textmon-memmap.ts";
-import { ingestAccessMap, type IngestRunIdentity } from "./evid-ingest.ts";
+import { ingestAccessMap, runIdentityFrom, type IngestRunIdentity } from "./evid-ingest.ts";
+import { reconcileObservedExecution } from "./evid-reconcile.ts";
 import { flatImageOrigin, parsePrg } from "./prg-image.ts";
 import { repoRoot } from "./repo-root.ts";
 
@@ -326,6 +329,22 @@ function assertMaxResults(name: string, args: unknown, batchIndex?: number): num
         "this surface, so a truncated answer is always an explicit ceiling.",
       batchIndex,
     );
+  }
+  return raw as number;
+}
+
+/** `anno_evid_disagreements`'s own OPTIONAL `max_results` (plan 43-06).
+ * Unlike every other list-returning verb (`assertMaxResults` above, REQUIRED
+ * with no default), an unbounded disagreement report is the ordinary case: a
+ * sound store often disagrees nowhere at all, and forcing a ceiling on a
+ * legitimately small or empty answer would buy nothing. When SUPPLIED, the
+ * bound and refusal wording are the SAME as `assertMaxResults`'s -- this is
+ * not a second, looser rule, only an optional one. */
+function assertOptionalMaxResults(name: string, args: unknown, batchIndex?: number): number | undefined {
+  const raw = argBag(args).max_results;
+  if (raw === undefined) return undefined;
+  if (typeof raw !== "number" || !Number.isInteger(raw) || raw <= 0) {
+    refuseArg(name, "max_results", `"max_results" must be a positive integer when supplied, got ${JSON.stringify(raw)}.`, batchIndex);
   }
   return raw as number;
 }
@@ -1080,6 +1099,114 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
       required: ["store", "memmap_text", "image_sha256", "argv", "seed"],
     },
   },
+  {
+    name: "anno_evid_disagreements",
+    description:
+      "Answers where the byte-derived block classification and the observed-execution evidence DISAGREE, with the " +
+      "disagreements reported FIRST: an address the block table calls 'data' at which the emulator was observed " +
+      "executing is proof a byte-derived guess was wrong, from a source (real execution) that never saw the guess. " +
+      "Agreement (block table says 'code', evidence confirms it) is reported as agreementCount ONLY -- never as rows, " +
+      "because a wall of agreeing rows would bury the one output this query exists to surface. An address the block " +
+      "table covers with NO observation anywhere is blockCoveredNeverObservedCount, and is NOT evidence that the " +
+      "address is data -- an address never observed executing proves nothing. Two further counts " +
+      "(observedOutsideAnyBlockCount, observedAtUndefinedBlockCount) name evidence about addresses the block table " +
+      "does not classify as code or data at all, so the denominator can never quietly drop real evidence. This verb " +
+      "READS the block table and the runtime evidence table; it writes to NEITHER, and a repeated call never changes " +
+      "either. Optional image_sha256/argv_digest/seed scope the question to ONE run identity's observations rather " +
+      "than the union across every run that has ever contributed -- supply all three together or none; a partial " +
+      "identity is refused. max_results bounds the returned disagreements array only, and is OPTIONAL (an empty or " +
+      "small disagreement report is the ordinary, sound case, so no ceiling is forced); the true disagreement count " +
+      "and whether truncation occurred are always reported beside it. Every count in the answer carries denominator " +
+      "beside it; no percentage or rate is ever formed.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ...STORE_PROPERTY,
+        max_results: {
+          type: "integer",
+          description:
+            "Optional bound on the returned disagreements array only. Unlike every other list-returning anno_* verb, " +
+            "this is NOT required -- an empty or small disagreement report is the ordinary, sound case. When " +
+            "supplied, must be a positive integer.",
+        },
+        image_sha256: {
+          type: "string",
+          description:
+            "Optional run-identity filter: the program image this run executed, exactly 64 lowercase hex characters. " +
+            "Supply image_sha256, argv_digest AND seed together to scope to one run, or omit all three to see the " +
+            "union across every run this store holds.",
+        },
+        argv_digest: {
+          type: "string",
+          description:
+            "Optional run-identity filter: the exact digest anno_evid_ingest/anno_evid_runs already computed for a " +
+            "run's launch argv, exactly 64 lowercase hex characters. Never invented by a caller -- pass back what " +
+            "anno_evid_runs reported. Required alongside image_sha256/seed when filtering by run identity.",
+        },
+        seed: {
+          type: "string",
+          description:
+            "Optional run-identity filter: the determinism seed that run's launch pinned. A non-empty string. " +
+            "Required alongside image_sha256/argv_digest when filtering by run identity.",
+        },
+      },
+      required: ["store"],
+    },
+  },
+  {
+    name: "anno_evid_runs",
+    description:
+      "Answers every run identity the store holds an observed-execution row for, with its accumulated observation " +
+      "count and the denominator that count is a fraction of -- so a later session can see what evidence already " +
+      "exists without re-running the program. However many runs contribute observations, their union is NEVER " +
+      "exhaustive coverage of the image: observationCount is a count against denominator, never a rate, and this " +
+      "verb forms no percentage from it.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ...STORE_PROPERTY,
+      },
+      required: ["store"],
+    },
+  },
+  {
+    name: "anno_evid_reset",
+    description:
+      "Clears every observed-execution row for ONE run identity, so that bracket can be re-measured from nothing. " +
+      "Touches no other run identity's rows and no row of the byte-derived block table. Requires the EXACT launch " +
+      "argv and digests it itself (a pre-computed digest is never accepted), so a caller cannot invent a run identity " +
+      "-- the same discipline anno_evid_ingest uses. A run identity holding no observations SUCCEEDS and reports " +
+      "changed:false and observationsRemoved:0 -- resetting an empty bracket is the ordinary thing, not a mistake. " +
+      "Clearing the emulator's own accumulated access map is a DIFFERENT operation, reached through vice_memmap_zap " +
+      "-- a caller re-measuring a bracket from nothing does BOTH: vice_memmap_zap on the emulator side, " +
+      "anno_evid_reset on the store side.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ...STORE_PROPERTY,
+        image_sha256: {
+          type: "string",
+          description:
+            "The program image this run executed, named by the sha256 digest of its own bytes -- exactly 64 " +
+            "lowercase hex characters. This verb does not read image bytes itself and accepts no path to one.",
+        },
+        argv: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "The EXACT emulator launch argument vector, including argv[0] -- a different binary is a different " +
+            "launch. This verb digests it itself; a pre-computed digest is never accepted, so a caller cannot invent " +
+            "a run identity.",
+        },
+        seed: {
+          type: "string",
+          description: "The determinism seed the launch pinned. A non-empty string; not a digest and carries no shape beyond that.",
+        },
+        ...BASE_REVISION_PROPERTY,
+      },
+      required: ["store", "image_sha256", "argv", "seed"],
+    },
+  },
 ];
 
 /** The allow-list, DERIVED from the definitions above rather than hand-typed
@@ -1368,6 +1495,84 @@ function assertEvidIngestArgs(args: unknown, batchIndex?: number): void {
   }
   if (typeof bag.seed !== "string" || bag.seed.length === 0) {
     refuseArg("anno_evid_ingest", "seed", `"seed" must be a non-empty string, got ${JSON.stringify(bag.seed)}.`, batchIndex);
+  }
+}
+
+/** `anno_evid_disagreements`'s own argument assertion (plan 43-06). The
+ * three run-identity filters are ALL-OR-NONE, mirroring
+ * `listExecObservations()`'s own rule in `anno-store.ts` exactly: a partial
+ * identity would silently widen the match to every run sharing the supplied
+ * field, which is not what "filter by run identity" means. */
+function assertEvidDisagreementsArgs(args: unknown, batchIndex?: number): void {
+  assertStoreArg("anno_evid_disagreements", args, batchIndex);
+  assertOptionalMaxResults("anno_evid_disagreements", args, batchIndex);
+  const bag = argBag(args);
+  const filterFieldsGiven = [bag.image_sha256, bag.argv_digest, bag.seed].filter((v) => v !== undefined).length;
+  if (filterFieldsGiven > 0 && filterFieldsGiven < 3) {
+    refuseArg(
+      "anno_evid_disagreements",
+      "image_sha256",
+      "a run-identity filter requires image_sha256, argv_digest AND seed together -- a partial identity would " +
+        "silently widen the match to every run sharing the supplied field(s).",
+      batchIndex,
+    );
+  }
+  if (filterFieldsGiven === 3) {
+    if (typeof bag.image_sha256 !== "string" || !EVID_DIGEST_RE.test(bag.image_sha256)) {
+      refuseArg(
+        "anno_evid_disagreements",
+        "image_sha256",
+        `"image_sha256" must be exactly 64 lowercase hex characters, got ${JSON.stringify(bag.image_sha256)}.`,
+        batchIndex,
+      );
+    }
+    if (typeof bag.argv_digest !== "string" || !EVID_DIGEST_RE.test(bag.argv_digest)) {
+      refuseArg(
+        "anno_evid_disagreements",
+        "argv_digest",
+        `"argv_digest" must be exactly 64 lowercase hex characters, got ${JSON.stringify(bag.argv_digest)}.`,
+        batchIndex,
+      );
+    }
+    if (typeof bag.seed !== "string" || bag.seed.length === 0) {
+      refuseArg("anno_evid_disagreements", "seed", `"seed" must be a non-empty string, got ${JSON.stringify(bag.seed)}.`, batchIndex);
+    }
+  }
+}
+
+/** `anno_evid_runs`'s own argument assertion (plan 43-06): just the
+ * universal `store` argument, since this verb takes no other input. */
+function assertEvidRunsArgs(args: unknown, batchIndex?: number): void {
+  assertStoreArg("anno_evid_runs", args, batchIndex);
+}
+
+/** `anno_evid_reset`'s own argument assertion (plan 43-06), the SAME shape
+ * as `assertEvidIngestArgs` minus `memmap_text` -- refuses BY NAME, before
+ * any store is opened: an `image_sha256` that is not exactly 64 lowercase
+ * hex characters, an `argv` that is not a non-empty array of strings, and a
+ * `seed` that is not a non-empty string. */
+function assertEvidResetArgs(args: unknown, batchIndex?: number): void {
+  assertStoreArg("anno_evid_reset", args, batchIndex);
+  assertBaseRevisionArg("anno_evid_reset", args, batchIndex);
+  const bag = argBag(args);
+  if (typeof bag.image_sha256 !== "string" || !EVID_DIGEST_RE.test(bag.image_sha256)) {
+    refuseArg(
+      "anno_evid_reset",
+      "image_sha256",
+      `"image_sha256" must be exactly 64 lowercase hex characters, got ${JSON.stringify(bag.image_sha256)}.`,
+      batchIndex,
+    );
+  }
+  if (!Array.isArray(bag.argv) || bag.argv.length === 0 || bag.argv.some((entry) => typeof entry !== "string")) {
+    refuseArg(
+      "anno_evid_reset",
+      "argv",
+      `"argv" must be a non-empty array of strings naming the exact emulator launch argument vector, got ${JSON.stringify(bag.argv)}.`,
+      batchIndex,
+    );
+  }
+  if (typeof bag.seed !== "string" || bag.seed.length === 0) {
+    refuseArg("anno_evid_reset", "seed", `"seed" must be a non-empty string, got ${JSON.stringify(bag.seed)}.`, batchIndex);
   }
 }
 
@@ -1682,6 +1887,9 @@ function assertVerbArgs(name: string, args: unknown, batchIndex?: number): void 
   if (name === "anno_import_ghidra_export") return assertImportGhidraExportArgs(args, batchIndex);
   if (name === "anno_join_memmap") return assertJoinMemmapArgs(args, batchIndex);
   if (name === "anno_evid_ingest") return assertEvidIngestArgs(args, batchIndex);
+  if (name === "anno_evid_disagreements") return assertEvidDisagreementsArgs(args, batchIndex);
+  if (name === "anno_evid_runs") return assertEvidRunsArgs(args, batchIndex);
+  if (name === "anno_evid_reset") return assertEvidResetArgs(args, batchIndex);
   if (name === "anno_disassemble") return assertDisassembleArgs(args, batchIndex);
   if (name === "anno_read_region") return assertReadRegionArgs(args, batchIndex);
   if (name === "anno_get_binary_info") return assertBinaryInfoArgs(args, batchIndex);
@@ -1781,6 +1989,8 @@ export const READ_ONLY_ANNO_VERBS: readonly string[] = Object.freeze([
   "anno_get_cross_references",
   "anno_search",
   "anno_get_address_details",
+  "anno_evid_disagreements",
+  "anno_evid_runs",
 ]);
 
 /** Refuses an absent store BY NAME, returning the inode the later guard
@@ -2165,6 +2375,106 @@ function dispatchEvidIngest(handle: AnnoStoreHandle, args: unknown): unknown {
   };
 }
 
+/**
+ * `anno_evid_disagreements`'s dispatch arm (EVID-03/EVID-04, plan 43-06).
+ * Fetches BOTH sides HERE -- `listExecObservations()` and `listRanges()` --
+ * so `reconcileObservedExecution()` (`evid-reconcile.ts`) is never handed a
+ * store to open itself; that pure module's own header states it must never
+ * fetch either side.
+ *
+ * The byte-derived ranges are mapped through `blocksFromStore()`, reached by
+ * a LAZY `await import("./anno-cli.ts")` -- the same lazy pattern
+ * `vice-proxy.ts:307` already uses to reach `runAnnoCli`, so this file's own
+ * static import graph (and therefore the MCP server's startup cost) is
+ * unchanged: `anno-cli.ts` drags in `anno-coverage.ts`, `anno-memmap-render.ts`
+ * and `anno-export-asm.ts`, none of which this verb needs. The mapping
+ * itself is NOT re-implemented here: a second `RangeRow` -> `BlockEntry` site
+ * would be a second answer to "what class is this address", which is
+ * exactly the boundary `block-class.ts` (and `blocksFromStore()`'s own
+ * comment) exists to keep at one.
+ *
+ * `max_results` (optional, `assertOptionalMaxResults`) bounds the RETURNED
+ * `disagreements` array only -- `agreementCount` and every other bucket are
+ * already counts, never rows, so there is nothing else to truncate.
+ * `reconciliation`'s own key order is preserved by spreading it before
+ * re-assigning `disagreements`: JS does not move an existing key to the end
+ * of an object literal on reassignment, so `disagreements` stays the FIRST
+ * key after `store` (EVID-03).
+ */
+async function dispatchEvidDisagreements(handle: AnnoStoreHandle, args: unknown): Promise<unknown> {
+  const maxResults = assertOptionalMaxResults("anno_evid_disagreements", args);
+  const bag = argBag(args);
+  const hasRunFilter = bag.image_sha256 !== undefined;
+  const observations = listExecObservations(
+    handle,
+    hasRunFilter ? { imageSha256: bag.image_sha256, argvDigest: bag.argv_digest, seed: bag.seed } : {},
+  );
+  // Lazy, deliberately: see this function's own doc comment above for why a
+  // static top-level import of anno-cli.ts must never appear in this file.
+  const { blocksFromStore } = await import("./anno-cli.ts");
+  const blocks = blocksFromStore(listRanges(handle));
+  const reconciliation = reconcileObservedExecution({ blocks, observations });
+  const disagreements = maxResults === undefined ? reconciliation.disagreements : reconciliation.disagreements.slice(0, maxResults);
+  return {
+    store: handle.path,
+    ...reconciliation,
+    disagreements,
+    returned: disagreements.length,
+    matched: reconciliation.disagreements.length,
+    truncated: reconciliation.disagreements.length > disagreements.length,
+  };
+}
+
+/** `anno_evid_runs`'s dispatch arm (plan 43-06): `listObservedRuns()`'s own
+ * answer, carried through UNCHANGED beside `store` -- its `denominator` is
+ * reported exactly as that function computed it, never re-derived here. */
+function dispatchEvidRuns(handle: AnnoStoreHandle, args: unknown): unknown {
+  void args; // this verb takes no argument beyond the universal `store`
+  return { store: handle.path, ...listObservedRuns(handle) };
+}
+
+/**
+ * `anno_evid_reset`'s dispatch arm (EVID-05, plan 43-06): the store-side
+ * half of a bracket reset, beside plan 43-03's emulator-side
+ * `vice_memmap_zap`. Derives the run identity through `runIdentityFrom()`
+ * from `evid-ingest.ts` -- the SAME single digest site `anno_evid_ingest`
+ * uses -- never a second hashing site here, and never a caller-supplied
+ * digest. `observationsRemoved` is read from a `listExecObservations()`
+ * query taken BEFORE the delete, so the answer names exactly how many rows
+ * this call removed rather than leaving a caller to infer it from `changed`
+ * alone. `baseRevision` is threaded straight into
+ * `deleteExecObservationsForRun()`, which enforces staleness itself through
+ * `applyWrite()` -- the same "let the store's own write sequence check it"
+ * discipline `dispatchEvidIngest()` above already uses, so there is no
+ * second, redundant `assertNotStale()` call here.
+ */
+function dispatchEvidReset(handle: AnnoStoreHandle, args: unknown): unknown {
+  const bag = argBag(args);
+  const baseRevision = assertBaseRevisionArg("anno_evid_reset", args);
+  const identity = runIdentityFrom({
+    imageSha256: bag.image_sha256 as string,
+    argv: bag.argv as string[],
+    seed: bag.seed as string,
+  });
+  const existing = listExecObservations(handle, {
+    imageSha256: identity.imageSha256,
+    argvDigest: identity.argvDigest,
+    seed: identity.seed,
+  });
+  const written = deleteExecObservationsForRun(handle, {
+    imageSha256: identity.imageSha256,
+    argvDigest: identity.argvDigest,
+    seed: identity.seed,
+    baseRevision,
+  });
+  return {
+    store: handle.path,
+    revision: written.revision,
+    changed: written.changed,
+    observationsRemoved: existing.length,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // The image loader (D-07). The store holds annotations and never bytes, so
 // every derived read names its own image and this function is the ONE place
@@ -2479,6 +2789,9 @@ async function dispatch(name: string, args: unknown, handle: AnnoStoreHandle): P
   if (name === "anno_import_ghidra_export") return dispatchImportGhidraExport(handle, args);
   if (name === "anno_join_memmap") return dispatchJoinMemmap(handle, args);
   if (name === "anno_evid_ingest") return dispatchEvidIngest(handle, args);
+  if (name === "anno_evid_disagreements") return dispatchEvidDisagreements(handle, args);
+  if (name === "anno_evid_runs") return dispatchEvidRuns(handle, args);
+  if (name === "anno_evid_reset") return dispatchEvidReset(handle, args);
   if (name === "anno_disassemble") return dispatchDisassemble(args);
   if (name === "anno_read_region") return dispatchReadRegion(args);
   if (name === "anno_get_binary_info") return dispatchBinaryInfo(args);
