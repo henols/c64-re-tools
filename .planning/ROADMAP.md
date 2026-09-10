@@ -1210,12 +1210,12 @@ record.
   2. **The check is genuinely independent of the thing it checks.** The oracle is observed execution from a real run; the subject is the static classification dxa and Ghidra produced. Neither tier sees the other's output, asserted structurally rather than promised — otherwise this closes a reversal condition with a classifier grading its own homework, which is precisely the weakness `PROOF-01` was left carrying.
   3. **A shortfall is recorded as a shortfall, and absence is never converted into `data`.** If a run reaches only part of the image, the answer is a count over what was reached with the denominator named — never a clean bill of health. If the check cannot be run at all, `not-exercised` is recorded together with what was searched and at what depth, which is the outcome Phase 38 recorded for `PROOF-02` rather than smoothing over. What this phase may claim is additionally bounded by Phase 43's `EVID-06` verdict: if instrumentation perturbs frame-exactness, these runs are labelled instrumented and any comparison against v0.8.0's frame-exact captures is stated as narrowed rather than assumed.
 
-**Plans**: 3 plans
+**Plans**: 1/3 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 44-01-PLAN.md — the derivation rule fixed before any number exists, the two closed-boundary evidence producers (dxa's static classification of the extracted entry; a live `memmapshow` capture over the S3 anchor sequence), the join driver over the shipped `reconcileObservedExecution()`, one live end-to-end pass at anchor depth 10, and a non-vacuous structural independence test plus self-checks for the empty, zero-denominator and ordering edges
+- [x] 44-01-PLAN.md — the derivation rule fixed before any number exists, the two closed-boundary evidence producers (dxa's static classification of the extracted entry; a live `memmapshow` capture over the S3 anchor sequence), the join driver over the shipped `reconcileObservedExecution()`, one live end-to-end pass at anchor depth 10, and a non-vacuous structural independence test plus self-checks for the empty, zero-denominator and ordering edges
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -1370,7 +1370,7 @@ in a milestone archive.
 | 41. The Text Channel, Its Serialization Authority, and the Contention Verdict | v0.9.0 | 6/6 | Complete | 2026-09-09 |
 | 42. The Text-Format Parsers and Their Two-Binary Fixtures | v0.9.0 | 16/16 | Complete | 2026-09-10 |
 | 43. The Runtime Evidence Layer | v0.9.0 | 7/7 | Complete | 2026-09-10 |
-| 44. PROOF-04 — The Independent External Check | v0.9.0 | 0/3 | Planned | - |
+| 44. PROOF-04 — The Independent External Check | v0.9.0 | 1/3 | In Progress | - |
 
 **Milestone roll-up:** v0.2.0 — 9 phases, 87 plans, 51/51 in-scope requirements,
 shipped 2026-08-19 (audit round 4 `tech_debt`; 13 deferred items at close).

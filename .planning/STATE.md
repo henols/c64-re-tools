@@ -5,16 +5,16 @@ milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 44
 current_phase_name: PROOF-04 — The Independent External Check
 status: executing
-stopped_at: Phase 43 complete, ready to plan Phase 44
-last_updated: "2026-09-10T14:53:30.823Z"
+stopped_at: Completed 44-01-PLAN.md
+last_updated: "2026-09-10T15:19:42.997Z"
 last_activity: 2026-09-10
-last_activity_desc: Phase 43 complete, transitioned to Phase 44
-state_head: b13d2e9545342f1c6e09bab3f3a8f9b96a85ac0e
+last_activity_desc: Phase 44 execution started
+state_head: 80acb2d43b7dfdb391efe3ea76727ce00d08800a
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 51
-  completed_plans: 48
+  completed_plans: 49
   percent: 83
 ---
 
@@ -227,10 +227,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 44 (PROOF-04 — The Independent External Check) — READY TO EXECUTE
-Plan: Not started
+Phase: 44 (PROOF-04 — The Independent External Check) — EXECUTING
+Plan: 2 of 3
 Status: Ready to execute
-Last activity: 2026-09-10 — Phase 43 complete, transitioned to Phase 44
+Last activity: 2026-09-10 — Phase 44 execution started
 
 **Phase 39 returned `go` (rule `R15`) — the gate is settled.** All seven inputs
 were measured live against genuine unpatched stock VICE 3.9 and every one came
@@ -523,6 +523,7 @@ Complete; `PREP-03` is withdrawn, struck rather than deleted.
 | Phase 43 P05 | 40 min | 3 tasks | 7 files |
 | Phase 43 P06 | ~3h | 3 tasks | 12 files |
 | Phase 43-the-runtime-evidence-layer P07 | 45min | 3 tasks | 8 files |
+| Phase 44 P01 | 62 min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -1176,6 +1177,7 @@ Recent decisions affecting current work:
 - [Phase 43]: anno_evid_disagreements takes max_results as OPTIONAL (unlike every other list-returning anno_* verb's required-with-no-default convention) because an empty or small disagreement report is the ordinary, sound case. — A dedicated assertOptionalMaxResults sits beside assertMaxResults rather than loosening the shared rule for every other verb.
 - [Phase 43]: The evid-disagreements CLI verb doc was placed in its OWN new section in tool-selection.md, not appended to the existing export-asm row, because that row's own withdrawn/returned phrasing shares a blank-line paragraph with anything appended, which falsely trips the withdrawal-status guard for an unrelated verb. — Discovered live when anno-verb-coverage.test.ts reported evid-disagreements as documented withdrawn; fixed by moving the mention to its own paragraph.
 - [Phase 43]: Phase 43 plan 07: EVID-04's structural guard derives its verb scope from ANNO_TOOL_DEFINITIONS rather than a hand-typed list, and its own clean control found and fixed a real missing-denominator gap in anno_evid_reset's shipped answer.
+- [Phase 44]: Plan 44-01 stood up PROOF-04's two independent evidence producers and joined them via reconcileObservedExecution(), producing one live measurement (168 false positives / denominator 45072) that closes PROOF-01's named reversal condition.
 
 ### Pending Todos
 
@@ -2194,8 +2196,8 @@ evidence files.
 
 ## Session Continuity
 
-Last session: 2026-09-10T12:18:18.000Z
-Stopped at: Phase 43 complete, ready to plan Phase 44
+Last session: 2026-09-10T15:19:41.480Z
+Stopped at: Completed 44-01-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
