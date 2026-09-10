@@ -43,6 +43,7 @@ import { fileURLToPath } from "node:url";
 import {
   closeStore,
   currentRevision,
+  deleteExecObservationsForRun,
   insertExecObservations,
   listExecObservations,
   listRanges,
@@ -729,3 +730,291 @@ test("insertExecObservations refuses an out-of-range address, a source bank outs
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// ---------------------------------------------------------------------------
+// EVID-05, criterion 5 (plan 43-07): a bracket's validity races anything else
+// touching the store, not merely a second sequential run. Two plantings:
+// a genuinely CONCURRENT two-identity SIGKILL, and a RESET followed by a
+// re-measure from a separate process, each asserted by VALUE against a
+// neighbour identity's untouched rows.
+// ---------------------------------------------------------------------------
+
+const IDENTITY_A_CONCURRENT = {
+  imageSha256: "1".repeat(64),
+  argvDigest: "2".repeat(64),
+  seed: "43-07-concurrent-identity-a",
+  address: 0xea50,
+  sourceBank: "ram",
+} as const;
+
+const IDENTITY_B_CONCURRENT = {
+  imageSha256: "3".repeat(64),
+  argvDigest: "4".repeat(64),
+  seed: "43-07-concurrent-identity-b",
+} as const;
+
+const B_SEED_CONCURRENT = [
+  { address: 0x9000, sourceBank: "ram" },
+  { address: 0x9001, sourceBank: "ram" },
+] as const;
+
+const B_SECOND_BATCH_CONCURRENT = { address: 0x9002, sourceBank: "ram" } as const;
+
+test(
+  "EVID-05 concurrent planting: a bracket's validity survives a concurrent writer being killed mid-ingest, and the block table is " +
+    "untouched throughout",
+  async () => {
+    const dir = mkdtempSync(join(tmpdir(), "anno-"));
+    let childA: ReturnType<typeof spawn> | undefined;
+    let childB: ReturnType<typeof spawn> | undefined;
+    try {
+      const path = join(dir, "proj.annostore");
+
+      // A COMPLETE, COMMITTED observation set for run identity B -- seeded
+      // in-process, through the shipped write path, before either child
+      // starts. `rangesBefore` is captured from the SAME handle, before it
+      // is closed.
+      const seedHandle = openStore(path, { workspaceRoot: dir });
+      let rangesBefore: ReturnType<typeof listRanges>;
+      try {
+        insertExecObservations(seedHandle, {
+          imageSha256: IDENTITY_B_CONCURRENT.imageSha256,
+          argvDigest: IDENTITY_B_CONCURRENT.argvDigest,
+          seed: IDENTITY_B_CONCURRENT.seed,
+          observations: B_SEED_CONCURRENT,
+        });
+        rangesBefore = listRanges(seedHandle);
+      } finally {
+        closeStore(seedHandle);
+      }
+
+      const markerA = join(dir, "identity-a-ready");
+
+      // TWO CHILDREN, SPAWNED TOGETHER -- never a second sequential run. A
+      // carries a readiness marker (this mode's new optional argv token,
+      // 43-07); B does not need one, since nothing here waits for it.
+      childA = spawn(
+        process.execPath,
+        [
+          MUTATOR,
+          path,
+          MODE_INSERT_EVID,
+          "commit",
+          IDENTITY_A_CONCURRENT.imageSha256,
+          IDENTITY_A_CONCURRENT.argvDigest,
+          IDENTITY_A_CONCURRENT.seed,
+          String(IDENTITY_A_CONCURRENT.address),
+          IDENTITY_A_CONCURRENT.sourceBank,
+          markerA,
+        ],
+        { stdio: "pipe" },
+      );
+      childB = spawn(
+        process.execPath,
+        [
+          MUTATOR,
+          path,
+          MODE_INSERT_EVID,
+          "commit",
+          IDENTITY_B_CONCURRENT.imageSha256,
+          IDENTITY_B_CONCURRENT.argvDigest,
+          IDENTITY_B_CONCURRENT.seed,
+          String(B_SECOND_BATCH_CONCURRENT.address),
+          B_SECOND_BATCH_CONCURRENT.sourceBank,
+        ],
+        { stdio: "pipe" },
+      );
+
+      // THE `once()` LISTENERS ARE ATTACHED IMMEDIATELY, BEFORE EITHER CHILD
+      // CAN EXIT. This mode's own self-SIGKILL ending is near-instant --
+      // measured well under `waitForMarker`'s own 50ms poll interval -- so a
+      // parent that calls `once(child, "exit")` only AFTER waiting for the
+      // marker or issuing the kill can miss an "exit" event that already
+      // fired, and then hang forever awaiting one that will never come
+      // again. Registering both listeners here, synchronously right after
+      // both `spawn()` calls and before any blocking wait, is what makes
+      // this safe regardless of how quickly either child terminates.
+      const childAExit = once(childA, "exit");
+      const childBExit = once(childB, "exit");
+
+      // THE RACE: the parent waits for A's own readiness marker, then kills A
+      // WITH NO CLEAN CLOSE -- while B's genuinely concurrent write is
+      // in flight against the SAME store file. Killing an already-exited
+      // process is harmless: Node's `kill()` does not throw for that case,
+      // and this mode's own unconditional self-SIGKILL ending (unchanged by
+      // this plan) means A may already be gone by the time this call lands.
+      waitForMarker(markerA);
+      childA.kill("SIGKILL");
+
+      await childBExit;
+      await childAExit;
+      childA = undefined;
+      childB = undefined;
+
+      // A FRESH process, never one of the two writers.
+      const fresh = openStore(path, { workspaceRoot: dir });
+      let aRows: ReturnType<typeof listExecObservations>;
+      let bRows: ReturnType<typeof listExecObservations>;
+      let rangesAfter: ReturnType<typeof listRanges>;
+      try {
+        aRows = listExecObservations(fresh, {
+          imageSha256: IDENTITY_A_CONCURRENT.imageSha256,
+          argvDigest: IDENTITY_A_CONCURRENT.argvDigest,
+          seed: IDENTITY_A_CONCURRENT.seed,
+        });
+        bRows = listExecObservations(fresh, {
+          imageSha256: IDENTITY_B_CONCURRENT.imageSha256,
+          argvDigest: IDENTITY_B_CONCURRENT.argvDigest,
+          seed: IDENTITY_B_CONCURRENT.seed,
+        });
+        rangesAfter = listRanges(fresh);
+      } finally {
+        closeStore(fresh);
+      }
+
+      // THE SURVIVOR IS COMPLETE, BY VALUE: the union of its seed and its
+      // second, concurrently-written batch -- never merely a matching count.
+      const bExpected = [...B_SEED_CONCURRENT, B_SECOND_BATCH_CONCURRENT]
+        .map((o) => ({ address: o.address, sourceBank: o.sourceBank }))
+        .sort((x, y) => x.address - y.address);
+      const bObserved = bRows.map((r) => ({ address: r.address, sourceBank: r.sourceBank })).sort((x, y) => x.address - y.address);
+      assert.deepEqual(
+        bObserved,
+        bExpected,
+        `identity B must survive a concurrent writer's SIGKILL as the complete union of its seed and second batch, got ${JSON.stringify(bObserved)}`,
+      );
+
+      // THE CASUALTY IS ALL-OR-NOTHING -- ONE derived predicate, never two
+      // branches with different messages, so a partial set fails by name
+      // with the observed count and the expected batch size in the message.
+      const aBatch = [{ address: IDENTITY_A_CONCURRENT.address, sourceBank: IDENTITY_A_CONCURRENT.sourceBank }];
+      const aObserved = aRows.map((r) => ({ address: r.address, sourceBank: r.sourceBank }));
+      const isWholeBatch =
+        aObserved.length === aBatch.length && aObserved.every((row, i) => row.address === aBatch[i]!.address && row.sourceBank === aBatch[i]!.sourceBank);
+      const isEmpty = aObserved.length === 0;
+      assert.ok(
+        isWholeBatch || isEmpty,
+        `identity A must be all-or-nothing after a SIGKILL with no clean close, but a fresh process observed ${aObserved.length} row(s) ` +
+          `against an expected batch of ${aBatch.length}: ${JSON.stringify(aObserved)}`,
+      );
+
+      // THE BLOCK TABLE -- a completely different table -- was untouched
+      // throughout, by either writer.
+      assert.deepEqual(rangesAfter, rangesBefore, "the byte-derived block table must be untouched by any evidence-table writer");
+    } finally {
+      if (childA !== undefined) childA.kill("SIGKILL");
+      if (childB !== undefined) childB.kill("SIGKILL");
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
+
+const IDENTITY_A_RELAUNCH = {
+  imageSha256: "5".repeat(64),
+  argvDigest: "6".repeat(64),
+  seed: "43-07-relaunch-identity-a",
+} as const;
+
+const IDENTITY_B_RELAUNCH = {
+  imageSha256: "7".repeat(64),
+  argvDigest: "8".repeat(64),
+  seed: "43-07-relaunch-identity-b",
+} as const;
+
+test(
+  "EVID-05 relaunch planting: a bracket reset followed by a re-measure from a separate process leaves its neighbour byte-identical -- " +
+    "a bracket's validity races anything else touching the store, and a reset followed by a re-measure must not disturb a neighbour",
+  () => {
+    const dir = mkdtempSync(join(tmpdir(), "anno-"));
+    try {
+      const path = join(dir, "proj.annostore");
+
+      const aBatch = [{ address: 0xea70, sourceBank: "rom" }] as const;
+      const bSeed = [
+        { address: 0xea80, sourceBank: "ram" },
+        { address: 0xea81, sourceBank: "ram" },
+      ] as const;
+
+      const seedHandle = openStore(path, { workspaceRoot: dir });
+      try {
+        insertExecObservations(seedHandle, {
+          imageSha256: IDENTITY_A_RELAUNCH.imageSha256,
+          argvDigest: IDENTITY_A_RELAUNCH.argvDigest,
+          seed: IDENTITY_A_RELAUNCH.seed,
+          observations: aBatch,
+        });
+        insertExecObservations(seedHandle, {
+          imageSha256: IDENTITY_B_RELAUNCH.imageSha256,
+          argvDigest: IDENTITY_B_RELAUNCH.argvDigest,
+          seed: IDENTITY_B_RELAUNCH.seed,
+          observations: bSeed,
+        });
+
+        // THE RESET: the store-side half of a bracket reset (EVID-05),
+        // in-process, through the shipped write path -- identity A's rows
+        // only.
+        deleteExecObservationsForRun(seedHandle, {
+          imageSha256: IDENTITY_A_RELAUNCH.imageSha256,
+          argvDigest: IDENTITY_A_RELAUNCH.argvDigest,
+          seed: IDENTITY_A_RELAUNCH.seed,
+        });
+      } finally {
+        closeStore(seedHandle);
+      }
+
+      // THE RE-MEASURE: a SEPARATE spawned process re-ingests A's batch from
+      // nothing. This mode always ends by SIGKILLing itself -- its own
+      // unconditional ending, unchanged by this plan -- so the "error" here
+      // is expected and caught the same way `observeEvidenceMutateKillReopen`
+      // already does above.
+      try {
+        execFileSync(
+          process.execPath,
+          [
+            MUTATOR,
+            path,
+            MODE_INSERT_EVID,
+            "commit",
+            IDENTITY_A_RELAUNCH.imageSha256,
+            IDENTITY_A_RELAUNCH.argvDigest,
+            IDENTITY_A_RELAUNCH.seed,
+            String(aBatch[0].address),
+            aBatch[0].sourceBank,
+          ],
+          { stdio: "pipe" },
+        );
+      } catch {
+        // EXPECTED AND IGNORED -- the self-SIGKILL, for the identical reason
+        // `observeEvidenceMutateKillReopen`'s own catch gives.
+      }
+
+      const fresh = openStore(path, { workspaceRoot: dir });
+      try {
+        const bRows = listExecObservations(fresh, {
+          imageSha256: IDENTITY_B_RELAUNCH.imageSha256,
+          argvDigest: IDENTITY_B_RELAUNCH.argvDigest,
+          seed: IDENTITY_B_RELAUNCH.seed,
+        });
+        const bObserved = bRows.map((r) => ({ address: r.address, sourceBank: r.sourceBank })).sort((x, y) => x.address - y.address);
+        const bExpected = [...bSeed].sort((x, y) => x.address - y.address);
+        assert.deepEqual(
+          bObserved,
+          bExpected,
+          `identity B's row set must be byte-identical to its seed after A's reset and re-ingest, got ${JSON.stringify(bObserved)}`,
+        );
+
+        const aRows = listExecObservations(fresh, {
+          imageSha256: IDENTITY_A_RELAUNCH.imageSha256,
+          argvDigest: IDENTITY_A_RELAUNCH.argvDigest,
+          seed: IDENTITY_A_RELAUNCH.seed,
+        });
+        const aObserved = aRows.map((r) => ({ address: r.address, sourceBank: r.sourceBank }));
+        assert.deepEqual(aObserved, [...aBatch], `identity A's row set must equal exactly its re-ingested batch, got ${JSON.stringify(aObserved)}`);
+      } finally {
+        closeStore(fresh);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);

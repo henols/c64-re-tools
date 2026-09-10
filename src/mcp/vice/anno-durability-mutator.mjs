@@ -114,9 +114,23 @@
 //     writer by typo -- there are only ever two, named once.
 //
 // Argv layout: `<storePath> insert-evid <writerToken> <imageSha256>
-// <argvDigest> <seed> <address> <sourceBank>`. Like the range modes, this
-// mode SIGKILLs itself with no clean close -- the kill is the point, not an
-// afterthought.
+// <argvDigest> <seed> <address> <sourceBank> [markerPath]`. Like the range
+// modes, this mode SIGKILLs itself with no clean close -- the kill is the
+// point, not an afterthought.
+//
+// ---------------------------------------------------------------------------
+// THE OPTIONAL NINTH ARGV TOKEN: A READINESS MARKER (plan 43-07, EVID-05)
+// ---------------------------------------------------------------------------
+// `insert-evid` gains ONE more optional argv token rather than a second write
+// sequence: a readiness-marker path, in the same position and refused with the
+// same message shape `hold-read`'s own marker already uses above. The marker
+// is written after `openStore()` returns and BEFORE `mutateEvidence()`'s write
+// call starts, so a parent racing a SECOND writer against this one can order
+// the two without sleeping -- it waits for the marker, then starts (or kills)
+// the other side, rather than guessing at a delay. Omitted entirely, this mode
+// behaves exactly as it did before this plan: no marker file is written, and
+// every pre-existing caller (plan 43-02's own committing/no-commit durability
+// pair) is unaffected.
 import { writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
@@ -195,11 +209,17 @@ function mutateStore(storePath, write, range) {
  * `mutateStore`'s evidence-table analog: the same shape, the same
  * `write`-as-only-parameter contract, a single raw insert -- never
  * `insertExecObservations()` itself, per this file's own decision 2 above.
- * Returns the open handle; the caller's kill-or-close is, again, the only
- * other thing this mode differs from the range modes in.
+ * `markerPath`, when supplied, is written AFTER the store is open and BEFORE
+ * the insert starts -- the ordering a racing parent needs (plan 43-07). Omit
+ * it (`undefined`) for the original, unordered call shape. Returns the open
+ * handle; the caller's kill-or-close is, again, the only other thing this
+ * mode differs from the range modes in.
  */
-function mutateEvidence(storePath, write, identity) {
+function mutateEvidence(storePath, write, identity, markerPath) {
   const handle = openStore(storePath, { workspaceRoot: dirname(storePath) });
+  if (typeof markerPath === "string" && markerPath.length > 0) {
+    writeFileSync(markerPath, `${process.pid}\n`);
+  }
   write(handle, (db) => {
     db.prepare("insert into anno_evid_exec(image_sha256, argv_digest, seed, address, source_bank) values (?, ?, ?, ?, ?)").run(
       identity.imageSha256,
@@ -269,6 +289,11 @@ if (mode === MODE_COMMIT || mode === MODE_NO_COMMIT) {
   const seed = process.argv[7];
   const address = Number(process.argv[8]);
   const sourceBank = process.argv[9];
+  // OPTIONAL. Absent (`undefined`) preserves this mode's original,
+  // unordered shape for every pre-existing caller (43-02). Supplied, it must
+  // be a non-empty path -- the same refusal shape `hold-read`'s own marker
+  // argument uses above (43-07).
+  const markerPath = process.argv[10];
   if (
     typeof imageSha256 !== "string" ||
     typeof argvDigest !== "string" ||
@@ -281,8 +306,14 @@ if (mode === MODE_COMMIT || mode === MODE_NO_COMMIT) {
     );
     process.exit(2);
   }
+  if (markerPath !== undefined && (typeof markerPath !== "string" || markerPath.length === 0)) {
+    process.stderr.write(
+      `anno-durability-mutator: mode ${MODE_INSERT_EVID} needs argv[10], when supplied, to be a non-empty readiness marker path\n`,
+    );
+    process.exit(2);
+  }
   const write = pickWriter(writerToken);
-  mutateEvidence(storePath, write, { imageSha256, argvDigest, seed, address, sourceBank });
+  mutateEvidence(storePath, write, { imageSha256, argvDigest, seed, address, sourceBank }, markerPath);
   // NO clean close and NO process.exit, for the identical reason the range
   // modes give above: the kill IS the point.
   process.kill(process.pid, "SIGKILL");
