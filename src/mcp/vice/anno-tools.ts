@@ -140,8 +140,10 @@ import {
   closeStore,
   createProjectEnum,
   currentRevision,
+  insertExecObservations,
   listComments,
   listEnumUsage,
+  listExecObservations,
   listLabels,
   listProjectEnums,
   listRanges,
@@ -177,6 +179,8 @@ import { render } from "./disasm-renderer.ts";
 import { importGhidraExport } from "./anno-import.ts";
 import type { ConstWriteFact } from "./anno-import.ts";
 import { runMemmapJoin } from "./anno-join.ts";
+import { accessMapRanges, parseAccessMap } from "./textmon-memmap.ts";
+import { ingestAccessMap, type IngestRunIdentity } from "./evid-ingest.ts";
 import { flatImageOrigin, parsePrg } from "./prg-image.ts";
 import { repoRoot } from "./repo-root.ts";
 
@@ -1030,6 +1034,52 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
       required: ["store", "image"],
     },
   },
+  {
+    name: "anno_evid_ingest",
+    description:
+      "Turns one raw memmapshow reply plus one run identity into durable runtime-execution evidence rows, so a later " +
+      "session can query what the emulator actually executed instead of re-running the program. Writes a row ONLY for " +
+      "an OBSERVED execute bit: an address memmapshow mentioned with read or write access but no execute gets NO row, " +
+      "and an address the reply never mentioned at all gets NO row either -- an address with no row is the ABSENCE of " +
+      "an assertion, never an assertion that the address is data. Requires the EXACT launch argv and digests it itself " +
+      "(argv_digest is never accepted as an argument), so a caller cannot invent a run identity. A memmapshow reply " +
+      "this surface cannot parse is REFUSED, naming its refusal code and offending line, rather than partially " +
+      "absorbed -- nothing is written on a refusal. Re-ingesting the SAME reply for the SAME run identity succeeds " +
+      "and reports changed:false with observationsWritten:0 -- re-running an ingest pass is not an error. Every count " +
+      "in the answer carries a denominator (addressesQueried) beside it; no percentage is ever reported.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ...STORE_PROPERTY,
+        memmap_text: {
+          type: "string",
+          description:
+            "The raw memmapshow reply exactly as the text monitor returned it -- never a pre-parsed object. A reply " +
+            "this parser cannot decode is REFUSED, naming its refusal code and offending line; nothing is written.",
+        },
+        image_sha256: {
+          type: "string",
+          description:
+            "The program image this run executed, named by the sha256 digest of its own bytes -- exactly 64 " +
+            "lowercase hex characters. This verb does not read image bytes itself and accepts no path to one.",
+        },
+        argv: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "The EXACT emulator launch argument vector, including argv[0] -- a different binary is a different " +
+            "launch. This verb digests it itself; a pre-computed digest is never accepted, so a caller cannot invent " +
+            "a run identity.",
+        },
+        seed: {
+          type: "string",
+          description: "The determinism seed the launch pinned. A non-empty string; not a digest and carries no shape beyond that.",
+        },
+        ...BASE_REVISION_PROPERTY,
+      },
+      required: ["store", "memmap_text", "image_sha256", "argv", "seed"],
+    },
+  },
 ];
 
 /** The allow-list, DERIVED from the definitions above rather than hand-typed
@@ -1273,6 +1323,52 @@ function assertJoinMemmapArgs(args: unknown, batchIndex?: number): void {
   assertBaseRevisionArg("anno_join_memmap", args, batchIndex);
   assertConstWritesArg("anno_join_memmap", args, batchIndex);
   assertGraphicsMapIndexArg("anno_join_memmap", args, batchIndex);
+}
+
+/** The run-identity digest shape: exactly 64 lowercase hex characters. This
+ * module's own copy of the check (mirroring `evid-ingest.ts`'s identical,
+ * deliberately un-imported copy): `image_sha256` never reaches a digest
+ * function here, so there is nothing to route through a shared regex, and a
+ * caller-visible refusal must fire BEFORE any store is opened -- before
+ * `evid-ingest.ts`'s own `runIdentityFrom()` ever runs. */
+const EVID_DIGEST_RE = /^[0-9a-f]{64}$/;
+
+/** `anno_evid_ingest`'s own argument assertion, wired into `assertVerbArgs`
+ * beside `anno_join_memmap`'s. Refuses BY NAME, before any store is opened: a
+ * non-string/empty `memmap_text`, an `image_sha256` that is not exactly 64
+ * lowercase hex characters, an `argv` that is not a non-empty array of
+ * strings, and a `seed` that is not a non-empty string (T-43-21). */
+function assertEvidIngestArgs(args: unknown, batchIndex?: number): void {
+  assertStoreArg("anno_evid_ingest", args, batchIndex);
+  assertBaseRevisionArg("anno_evid_ingest", args, batchIndex);
+  const bag = argBag(args);
+  if (typeof bag.memmap_text !== "string" || bag.memmap_text.trim() === "") {
+    refuseArg(
+      "anno_evid_ingest",
+      "memmap_text",
+      `"memmap_text" must be a non-empty string carrying the raw memmapshow reply, got ${JSON.stringify(bag.memmap_text)}.`,
+      batchIndex,
+    );
+  }
+  if (typeof bag.image_sha256 !== "string" || !EVID_DIGEST_RE.test(bag.image_sha256)) {
+    refuseArg(
+      "anno_evid_ingest",
+      "image_sha256",
+      `"image_sha256" must be exactly 64 lowercase hex characters, got ${JSON.stringify(bag.image_sha256)}.`,
+      batchIndex,
+    );
+  }
+  if (!Array.isArray(bag.argv) || bag.argv.length === 0 || bag.argv.some((entry) => typeof entry !== "string")) {
+    refuseArg(
+      "anno_evid_ingest",
+      "argv",
+      `"argv" must be a non-empty array of strings naming the exact emulator launch argument vector, got ${JSON.stringify(bag.argv)}.`,
+      batchIndex,
+    );
+  }
+  if (typeof bag.seed !== "string" || bag.seed.length === 0) {
+    refuseArg("anno_evid_ingest", "seed", `"seed" must be a non-empty string, got ${JSON.stringify(bag.seed)}.`, batchIndex);
+  }
 }
 
 
@@ -1585,6 +1681,7 @@ function assertVerbArgs(name: string, args: unknown, batchIndex?: number): void 
   if (name === "anno_save_project") return assertSaveProjectArgs(args, batchIndex);
   if (name === "anno_import_ghidra_export") return assertImportGhidraExportArgs(args, batchIndex);
   if (name === "anno_join_memmap") return assertJoinMemmapArgs(args, batchIndex);
+  if (name === "anno_evid_ingest") return assertEvidIngestArgs(args, batchIndex);
   if (name === "anno_disassemble") return assertDisassembleArgs(args, batchIndex);
   if (name === "anno_read_region") return assertReadRegionArgs(args, batchIndex);
   if (name === "anno_get_binary_info") return assertBinaryInfoArgs(args, batchIndex);
@@ -1673,7 +1770,7 @@ function resolveStoreArg(name: string, args: unknown): string {
  * takes the existence-check-plus-inode-guard route below. Derived from nothing
  * -- it is a hand-listed property of each verb, and a verb missing from here is
  * merely opened writably, never wrongly refused. */
-const READ_ONLY_ANNO_VERBS: readonly string[] = Object.freeze([
+export const READ_ONLY_ANNO_VERBS: readonly string[] = Object.freeze([
   "anno_get_symbols",
   "anno_get_comments",
   "anno_get_blocks",
@@ -1983,6 +2080,89 @@ function dispatchJoinMemmap(handle: AnnoStoreHandle, args: unknown): unknown {
     ...(constWrites !== undefined ? { constWrites } : {}),
     ...(graphicsMapIndex !== undefined ? { graphicsMapIndex } : {}),
   });
+}
+
+/**
+ * `anno_evid_ingest`'s dispatch arm (EVID-01, EVID-04, plan 43-05). Calls
+ * `parseAccessMap()` -- THE ONE PARSE -- then `ingestAccessMap()` from
+ * `evid-ingest.ts`; on a refusal it throws inside the `ViceError` family
+ * (never absorbs a drifted reply, T-43-22); on success it writes the WHOLE
+ * observation array through ONE `insertExecObservations()` call, so the
+ * write is one transaction through the store's single commit site
+ * (T-43-26). `observationsWritten` is computed from what is ACTUALLY NEW
+ * (queried before the write), not from the size of the array handed in --
+ * re-ingesting the identical reply must report `observationsWritten: 0`
+ * even though the same-shaped array was passed again.
+ *
+ * `denominator` travels beside every count this answer reports
+ * (`addressesQueried`, the parsed map's own projection) -- a bare
+ * `observationsWritten` would invite the reading "the rest is data", which
+ * is why the denominator is never omitted. No percentage is ever formed
+ * here.
+ */
+function dispatchEvidIngest(handle: AnnoStoreHandle, args: unknown): unknown {
+  const bag = argBag(args);
+  const baseRevision = assertBaseRevisionArg("anno_evid_ingest", args);
+
+  const parsed = parseAccessMap(bag.memmap_text as string);
+  const identity: IngestRunIdentity = {
+    imageSha256: bag.image_sha256 as string,
+    argv: bag.argv as string[],
+    seed: bag.seed as string,
+  };
+  const ingested = ingestAccessMap(parsed, identity);
+  if (!ingested.ok) {
+    throw new AnnoToolArgumentError(`anno_evid_ingest refused: ${ingested.message}`, {
+      toolName: "anno_evid_ingest",
+      argument: "memmap_text",
+    });
+  }
+
+  const ranges = parsed.ok ? accessMapRanges(parsed.value) : undefined;
+  const addressesWithRecordedAccess = ranges?.addressesWithRecordedAccess ?? 0;
+  const addressesQueried = ranges?.addressesQueried ?? 0;
+
+  // A reply that recorded no execution anywhere is a real, legitimate
+  // answer -- not an error -- but `insertExecObservations` refuses an EMPTY
+  // observations array, so that zero-write case is reported directly here
+  // rather than calling a store function built to refuse it.
+  if (ingested.observations.length === 0) {
+    return {
+      store: handle.path,
+      revision: currentRevision(handle),
+      changed: false,
+      observationsWritten: 0,
+      addressesWithRecordedAccess,
+      addressesQueried,
+      denominator: addressesQueried,
+    };
+  }
+
+  const existing = listExecObservations(handle, {
+    imageSha256: ingested.runIdentity.imageSha256,
+    argvDigest: ingested.runIdentity.argvDigest,
+    seed: ingested.runIdentity.seed,
+  });
+  const existingKeys = new Set(existing.map((row) => `${row.address}:${row.sourceBank}`));
+  const observationsWritten = ingested.observations.filter((o) => !existingKeys.has(`${o.address}:${o.sourceBank}`)).length;
+
+  const written = insertExecObservations(handle, {
+    imageSha256: ingested.runIdentity.imageSha256,
+    argvDigest: ingested.runIdentity.argvDigest,
+    seed: ingested.runIdentity.seed,
+    observations: ingested.observations.map((o) => ({ address: o.address, sourceBank: o.sourceBank })),
+    baseRevision,
+  });
+
+  return {
+    store: handle.path,
+    revision: written.revision,
+    changed: written.changed,
+    observationsWritten,
+    addressesWithRecordedAccess,
+    addressesQueried,
+    denominator: addressesQueried,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -2298,6 +2478,7 @@ async function dispatch(name: string, args: unknown, handle: AnnoStoreHandle): P
   if (name === "anno_save_project") return dispatchSaveProject(handle);
   if (name === "anno_import_ghidra_export") return dispatchImportGhidraExport(handle, args);
   if (name === "anno_join_memmap") return dispatchJoinMemmap(handle, args);
+  if (name === "anno_evid_ingest") return dispatchEvidIngest(handle, args);
   if (name === "anno_disassemble") return dispatchDisassemble(args);
   if (name === "anno_read_region") return dispatchReadRegion(args);
   if (name === "anno_get_binary_info") return dispatchBinaryInfo(args);

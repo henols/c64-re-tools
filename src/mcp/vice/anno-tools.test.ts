@@ -20,12 +20,14 @@
 // emits an `ExperimentalWarning` unconditionally on first load.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { execFileSync, fork, spawn } from "node:child_process";
+import { connect as netConnect } from "node:net";
 
-import { closeStore, currentRevision, listComments, listLabels, listXrefs, openStore, putXref, setLabel } from "./anno-store.ts";
+import { closeStore, currentRevision, listComments, listExecObservations, listLabels, listRanges, listXrefs, openStore, putXref, setDataType, setLabel } from "./anno-store.ts";
 import {
   ANNO_READ_REGION_MAX_BYTES,
   ANNO_READ_REGION_MAX_BYTES_ENV,
@@ -34,10 +36,19 @@ import {
   AnnoToolArgumentError,
   AnnoUncuratedToolError,
   CURATED_ANNO_TOOLS,
+  READ_ONLY_ANNO_VERBS,
   assertAnnoBatch,
   assertAnnoTool,
   runAnnoTool,
 } from "./anno-tools.ts";
+import { loadTextFixture } from "./textmon-fixtures.ts";
+import { accessMapRanges, parseAccessMap } from "./textmon-memmap.ts";
+import { execObservationsFrom } from "./evid-ingest.ts";
+import { argvDigest } from "./capture-predicate.ts";
+import { dispatchStock, type StockDispatchDeps } from "./stock-dispatch.ts";
+import type { BrokerControlSession } from "./vice-broker-client.ts";
+import { textConnect, textDisconnect } from "./text-connect.ts";
+import { withTextChannelLock } from "./text-protocol.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ANNO_TOOLS_SOURCE = readFileSync(join(HERE, "anno-tools.ts"), "utf8");
@@ -1693,3 +1704,588 @@ test("WR-01: anno_join_memmap's loadImage() error paths -- a missing image and a
     },
   );
 });
+
+// ---------------------------------------------------------------------------
+// Plan 43-05 Task 2: anno_evid_ingest -- registered through the existing
+// anno loop, writing the rows through evid-ingest.ts's pure transform.
+// ---------------------------------------------------------------------------
+
+const VALID_SHA = "b".repeat(64);
+
+/** Assembles a well-formed memmapshow reply text from a small, explicit set
+ * of entries -- exactly the wire shape `parseAccessMap()` decodes (header
+ * line, then "aaaa: xxx xxx xxx" data lines). Every glyph group defaults to
+ * "---" (no access at all) so a test only has to name the banks it cares
+ * about. */
+function memmapReplyText(entries: { address: number; io?: string; rom?: string; ram?: string }[]): string {
+  const lines = ["addr: IO  ROM RAM"];
+  for (const e of entries) {
+    const addr = e.address.toString(16).padStart(4, "0");
+    lines.push(`${addr}: ${e.io ?? "---"} ${e.rom ?? "---"} ${e.ram ?? "---"}`);
+  }
+  return lines.join("\n");
+}
+
+const SAMPLE_EVID_REPLY = memmapReplyText([
+  { address: 0x1000, ram: "--x" },
+  { address: 0x2000, rom: "r-x" },
+  { address: 0x3000, io: "-w-" }, // no execute -- must NOT produce a row
+]);
+
+test("Task 2 Test 1: anno_evid_ingest writes one row per observed execute bit and reports changed:true with observationsWritten and a denominator", async () => {
+  await withStore(
+    () => {},
+    async (ws, store) => {
+      const result = await runAnnoTool("anno_evid_ingest", {
+        store,
+        memmap_text: SAMPLE_EVID_REPLY,
+        image_sha256: VALID_SHA,
+        argv: ["x64sc", "-binarymonitor"],
+        seed: "seed-1",
+      });
+      assert.equal(result.isError, false, result.content[0]?.text);
+      const b = await body(result);
+      assert.equal(b.changed, true);
+      assert.equal(b.observationsWritten, 2, "only the two entries carrying an execute bit may produce a row");
+      assert.equal(typeof b.denominator, "number");
+      assert.equal(b.denominator, b.addressesQueried, "denominator must be the same value as addressesQueried");
+      assert.equal(b.addressesWithRecordedAccess, 3);
+
+      const handle = openStore(store, { workspaceRoot: ws, mustExist: true });
+      try {
+        const rows = listExecObservations(handle);
+        assert.equal(rows.length, 2);
+        assert.deepEqual(
+          rows.map((r) => `${r.address}:${r.sourceBank}`).sort(),
+          ["4096:ram", "8192:rom"],
+        );
+      } finally {
+        closeStore(handle);
+      }
+    },
+  );
+});
+
+test("Task 2 Test 2: an identical repeat reports changed:false and observationsWritten:0, with the row count unchanged", async () => {
+  await withStore(
+    () => {},
+    async (ws, store) => {
+      const args = { store, memmap_text: SAMPLE_EVID_REPLY, image_sha256: VALID_SHA, argv: ["x64sc"], seed: "seed-1" };
+      const first = await runAnnoTool("anno_evid_ingest", args);
+      assert.equal(first.isError, false, first.content[0]?.text);
+
+      const second = await runAnnoTool("anno_evid_ingest", args);
+      assert.equal(second.isError, false, second.content[0]?.text);
+      const secondBody = await body(second);
+      assert.equal(secondBody.changed, false);
+      assert.equal(secondBody.observationsWritten, 0);
+
+      const handle = openStore(store, { workspaceRoot: ws, mustExist: true });
+      try {
+        assert.equal(listExecObservations(handle).length, 2, "a repeated identical ingest must not double-count");
+      } finally {
+        closeStore(handle);
+      }
+    },
+  );
+});
+
+test("Task 2 Test 3: a store path that does not exist refuses by name with the never-create message, and creates no file", async () => {
+  await withStore(
+    () => {},
+    async (ws) => {
+      const absent = join(ws, "not-here.annostore");
+      const result = await runAnnoTool("anno_evid_ingest", {
+        store: absent,
+        memmap_text: SAMPLE_EVID_REPLY,
+        image_sha256: VALID_SHA,
+        argv: ["x64sc"],
+        seed: "seed-1",
+      });
+      assert.equal(result.isError, true);
+      assert.match(result.content[0]!.text, /no annotation store exists/);
+      assert.equal(existsSync(absent), false, "a write verb must never CREATE the store it was asked to annotate");
+    },
+  );
+});
+
+test("Task 2 Test 4: a malformed memmap_text refuses naming the refusal code and the offending line, and writes nothing", async () => {
+  await withStore(
+    () => {},
+    async (ws, store) => {
+      const result = await runAnnoTool("anno_evid_ingest", {
+        store,
+        memmap_text: "addr: IO  ROM RAM\nnot-a-valid-line",
+        image_sha256: VALID_SHA,
+        argv: ["x64sc"],
+        seed: "seed-1",
+      });
+      assert.equal(result.isError, true);
+      assert.match(result.content[0]!.text, /malformed-line/);
+      assert.match(result.content[0]!.text, /line 2/);
+
+      const handle = openStore(store, { workspaceRoot: ws, mustExist: true });
+      try {
+        assert.equal(listExecObservations(handle).length, 0);
+      } finally {
+        closeStore(handle);
+      }
+    },
+  );
+});
+
+test("Task 2 Test 5: an empty argv, a non-array argv, a bad image_sha256, and an absent store each refuse naming the offending argument, and none writes", async () => {
+  await withStore(
+    () => {},
+    async (ws, store) => {
+      const base = { store, memmap_text: SAMPLE_EVID_REPLY, image_sha256: VALID_SHA, argv: ["x64sc"], seed: "seed-1" };
+
+      const emptyArgv = await runAnnoTool("anno_evid_ingest", { ...base, argv: [] });
+      assert.equal(emptyArgv.isError, true);
+      assert.match(emptyArgv.content[0]!.text, /"argv"/);
+
+      const nonArrayArgv = await runAnnoTool("anno_evid_ingest", { ...base, argv: "x64sc" });
+      assert.equal(nonArrayArgv.isError, true);
+      assert.match(nonArrayArgv.content[0]!.text, /"argv"/);
+
+      const badSha = await runAnnoTool("anno_evid_ingest", { ...base, image_sha256: "not-a-digest" });
+      assert.equal(badSha.isError, true);
+      assert.match(badSha.content[0]!.text, /"image_sha256"/);
+
+      const noStore = await runAnnoTool("anno_evid_ingest", {
+        memmap_text: SAMPLE_EVID_REPLY,
+        image_sha256: VALID_SHA,
+        argv: ["x64sc"],
+        seed: "seed-1",
+      });
+      assert.equal(noStore.isError, true);
+      assert.match(noStore.content[0]!.text, /"store"/);
+
+      const handle = openStore(store, { workspaceRoot: ws, mustExist: true });
+      try {
+        assert.equal(listExecObservations(handle).length, 0, "none of the four refusals may write anything");
+      } finally {
+        closeStore(handle);
+      }
+    },
+  );
+});
+
+test("Task 2 Test 6: anno_evid_ingest is curated (derived from ANNO_TOOL_DEFINITIONS) and is NOT in READ_ONLY_ANNO_VERBS -- it takes the existence-check-plus-inode-guard route", () => {
+  assert.ok(CURATED_ANNO_TOOLS.includes("anno_evid_ingest"));
+  assert.equal(READ_ONLY_ANNO_VERBS.includes("anno_evid_ingest"), false);
+});
+
+test("Task 2 Test 7: runAnnoTool resolves rather than rejects on every anno_evid_ingest failure mode", async () => {
+  const cases: unknown[] = [
+    {},
+    { store: "irrelevant.annostore" },
+    { store: "irrelevant.annostore", memmap_text: "", image_sha256: VALID_SHA, argv: ["x64sc"], seed: "s" },
+    { store: "irrelevant.annostore", memmap_text: SAMPLE_EVID_REPLY, image_sha256: "bad", argv: ["x64sc"], seed: "s" },
+  ];
+  for (const args of cases) {
+    await assert.doesNotReject(async () => runAnnoTool("anno_evid_ingest", args));
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Plan 43-05 Task 3: absence proven both directions, the block table
+// untouched, a real inode race, two coexisting run identities, and the two
+// address-space extremes.
+// ---------------------------------------------------------------------------
+
+test("Task 3 Test 1 (fused planting, both directions): read+write with no execute leaves listExecObservations empty, and the SAME address with execute produces exactly one row", async () => {
+  await withStore(
+    () => {},
+    async (ws, store) => {
+      const noExecuteReply = memmapReplyText([{ address: 0x4000, ram: "rw-" }]);
+      const noExecuteResult = await runAnnoTool("anno_evid_ingest", {
+        store,
+        memmap_text: noExecuteReply,
+        image_sha256: VALID_SHA,
+        argv: ["x64sc"],
+        seed: "seed-a",
+      });
+      assert.equal(noExecuteResult.isError, false, noExecuteResult.content[0]?.text);
+      {
+        const handle = openStore(store, { workspaceRoot: ws, mustExist: true });
+        try {
+          assert.deepEqual(listExecObservations(handle), [], "read+write access with no execute must produce NO row");
+        } finally {
+          closeStore(handle);
+        }
+      }
+
+      const executeReply = memmapReplyText([{ address: 0x4000, ram: "--x" }]);
+      const executeResult = await runAnnoTool("anno_evid_ingest", {
+        store,
+        memmap_text: executeReply,
+        image_sha256: VALID_SHA,
+        argv: ["x64sc"],
+        seed: "seed-a",
+      });
+      assert.equal(executeResult.isError, false, executeResult.content[0]?.text);
+      {
+        const handle = openStore(store, { workspaceRoot: ws, mustExist: true });
+        try {
+          const rows = listExecObservations(handle);
+          assert.equal(rows.length, 1, "the SAME address observed executing must produce exactly one row");
+          assert.equal(rows[0]!.address, 0x4000);
+          assert.equal(rows[0]!.sourceBank, "ram");
+        } finally {
+          closeStore(handle);
+        }
+      }
+    },
+  );
+});
+
+test("Task 3 Test 2: an ingest never touches the byte-derived block table -- listRanges is deep-equal before and after", async () => {
+  await withStore(
+    (handle) => {
+      setDataType(handle, { start: 0xc000, endInclusive: 0xc0ff, dataType: "code" });
+    },
+    async (ws, store) => {
+      const before = openStore(store, { workspaceRoot: ws, mustExist: true });
+      let rangesBefore;
+      try {
+        rangesBefore = listRanges(before);
+      } finally {
+        closeStore(before);
+      }
+
+      const reply = memmapReplyText([{ address: 0x4100, ram: "--x" }]);
+      const result = await runAnnoTool("anno_evid_ingest", {
+        store,
+        memmap_text: reply,
+        image_sha256: VALID_SHA,
+        argv: ["x64sc"],
+        seed: "seed-b",
+      });
+      assert.equal(result.isError, false, result.content[0]?.text);
+
+      const after = openStore(store, { workspaceRoot: ws, mustExist: true });
+      let rangesAfter;
+      try {
+        rangesAfter = listRanges(after);
+      } finally {
+        closeStore(after);
+      }
+      assert.deepEqual(
+        rangesAfter,
+        rangesBefore,
+        "an observation must never overwrite, mutate or re-type a row of the byte-derived block table",
+      );
+    },
+  );
+});
+
+test("Task 3 Test 3: the store file replaced between the existence check and the open refuses by name, writing nothing", async () => {
+  await withStore(
+    () => {},
+    async (ws, store) => {
+      // A second, valid, EMPTY store the racer swaps in repeatedly -- same
+      // shape as `store` but a fresh inode every swap, so the guard's own
+      // inode comparison has something real to catch.
+      const decoy = join(ws, "decoy.annostore");
+      const decoyHandle = openStore(decoy, { workspaceRoot: ws });
+      closeStore(decoyHandle);
+
+      const racerFile = join(ws, "racer.mjs");
+      writeFileSync(
+        racerFile,
+        [
+          'import { copyFileSync, renameSync } from "node:fs";',
+          "const storePath = process.argv[2];",
+          "const decoyPath = process.argv[3];",
+          'const scratch = storePath + ".racer-scratch";',
+          "const deadline = Date.now() + 5000;",
+          "while (Date.now() < deadline) {",
+          "  try {",
+          "    copyFileSync(decoyPath, scratch);",
+          "    renameSync(scratch, storePath);",
+          "  } catch {}",
+          "}",
+        ].join("\n"),
+      );
+      const child = fork(racerFile, [store, decoy], { stdio: "ignore" });
+      try {
+        let refused = false;
+        const deadline = Date.now() + 5000;
+        while (!refused && Date.now() < deadline) {
+          const result = await runAnnoTool("anno_evid_ingest", {
+            store,
+            memmap_text: SAMPLE_EVID_REPLY,
+            image_sha256: VALID_SHA,
+            argv: ["x64sc"],
+            seed: "seed-race",
+          });
+          if (result.isError && /was replaced between the existence check and the open/.test(result.content[0]!.text)) {
+            refused = true;
+          }
+        }
+        assert.ok(
+          refused,
+          "expected at least one call, against a store under continuous replacement, to observe the inode mismatch and refuse",
+        );
+      } finally {
+        child.kill();
+      }
+    },
+  );
+});
+
+test("Task 3 Test 4: two different run identities coexist, and neither's filtered rows leak into the other's", async () => {
+  await withStore(
+    () => {},
+    async (ws, store) => {
+      const replyA = memmapReplyText([{ address: 0x5000, ram: "--x" }]);
+      const replyB = memmapReplyText([{ address: 0x6000, ram: "--x" }]);
+      const a = await runAnnoTool("anno_evid_ingest", {
+        store,
+        memmap_text: replyA,
+        image_sha256: VALID_SHA,
+        argv: ["x64sc", "run-a"],
+        seed: "seed-a",
+      });
+      assert.equal(a.isError, false, a.content[0]?.text);
+      const b = await runAnnoTool("anno_evid_ingest", {
+        store,
+        memmap_text: replyB,
+        image_sha256: VALID_SHA,
+        argv: ["x64sc", "run-b"],
+        seed: "seed-b",
+      });
+      assert.equal(b.isError, false, b.content[0]?.text);
+
+      const handle = openStore(store, { workspaceRoot: ws, mustExist: true });
+      try {
+        assert.equal(listExecObservations(handle).length, 2);
+        const digestA = argvDigest(["x64sc", "run-a"]);
+        const digestB = argvDigest(["x64sc", "run-b"]);
+        const rowsA = listExecObservations(handle, { imageSha256: VALID_SHA, argvDigest: digestA, seed: "seed-a" });
+        const rowsB = listExecObservations(handle, { imageSha256: VALID_SHA, argvDigest: digestB, seed: "seed-b" });
+        assert.deepEqual(rowsA.map((r) => r.address), [0x5000]);
+        assert.deepEqual(rowsB.map((r) => r.address), [0x6000]);
+      } finally {
+        closeStore(handle);
+      }
+    },
+  );
+});
+
+test("Task 3 Test 5: 0x0000 and 0xffff each ingest to exactly one row -- neither extreme is special-cased into a falsy hole", async () => {
+  await withStore(
+    () => {},
+    async (ws, store) => {
+      const reply = memmapReplyText([
+        { address: 0x0000, ram: "--x" },
+        { address: 0xffff, io: "--x" },
+      ]);
+      const result = await runAnnoTool("anno_evid_ingest", {
+        store,
+        memmap_text: reply,
+        image_sha256: VALID_SHA,
+        argv: ["x64sc"],
+        seed: "seed-c",
+      });
+      assert.equal(result.isError, false, result.content[0]?.text);
+
+      const handle = openStore(store, { workspaceRoot: ws, mustExist: true });
+      try {
+        const rows = listExecObservations(handle);
+        assert.equal(rows.length, 2);
+        assert.deepEqual(
+          rows.map((r) => r.address).sort((x, y) => x - y),
+          [0x0000, 0xffff],
+        );
+      } finally {
+        closeStore(handle);
+      }
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Task 3 Test 6 (opt-in, live): a real memmapshow reply from genuine stock
+// VICE, dialed through the same withTextTool()/textConnect() seam
+// vice_memmap_show uses, ingested by anno_evid_ingest.
+// ---------------------------------------------------------------------------
+
+const VICE_LIVE_STOCK_BIN_ENV = process.env.VICE_LIVE_STOCK_BIN;
+const EVID_LIVE_SKIP_REASON: string | false = !VICE_LIVE_STOCK_BIN_ENV
+  ? "anno-tools.test.ts's live anno_evid_ingest case is opt-in and default-skipped -- set VICE_LIVE_STOCK_BIN=/usr/bin/x64sc " +
+    '(a real, genuinely unpatched stock VICE binary\'s absolute path) to run it. A bare "x64sc" on PATH resolves to the fork build.'
+  : !existsSync(VICE_LIVE_STOCK_BIN_ENV)
+    ? `VICE_LIVE_STOCK_BIN="${VICE_LIVE_STOCK_BIN_ENV}" does not exist on disk -- opt-in requires a real stock VICE binary at that absolute path.`
+    : false;
+
+const EVID_LIVE_BROKER_CONTROL = {
+  claimMonitor: async () => ({ ok: true as const }),
+  releaseMonitor: async () => ({ ok: true as const }),
+} as unknown as BrokerControlSession;
+
+async function evidFreeEphemeralPort(): Promise<number> {
+  const { createServer } = await import("node:net");
+  return new Promise((resolve, reject) => {
+    const srv = createServer();
+    srv.once("error", reject);
+    srv.listen(0, "127.0.0.1", () => {
+      const address = srv.address();
+      const port = typeof address === "object" && address ? address.port : null;
+      srv.close(() => {
+        if (port === null) reject(new Error("evidFreeEphemeralPort: could not read an ephemeral port from address()"));
+        else resolve(port);
+      });
+    });
+  });
+}
+
+function evidWaitForPortOpen(host: string, port: number, deadlineMs: number): Promise<boolean> {
+  const deadline = Date.now() + deadlineMs;
+  return new Promise((resolveOuter) => {
+    const attempt = () => {
+      const socket = netConnect({ host, port });
+      socket.once("connect", () => {
+        socket.destroy();
+        resolveOuter(true);
+      });
+      socket.once("error", () => {
+        socket.destroy();
+        if (Date.now() >= deadline) resolveOuter(false);
+        else setTimeout(attempt, 200);
+      });
+    };
+    attempt();
+  });
+}
+
+test(
+  "Task 3 Test 6 (opt-in, live): a real memmapshow reply from genuine stock VICE is ingested by anno_evid_ingest, producing 0 < rowCount <= addressesQueried",
+  { skip: EVID_LIVE_SKIP_REASON, timeout: 60000 },
+  async () => {
+    const binPath = VICE_LIVE_STOCK_BIN_ENV as string;
+    const binPort = await evidFreeEphemeralPort();
+    const textPort = await evidFreeEphemeralPort();
+    const scratchDir = mkdtempSync(join(tmpdir(), "evid-ingest-live-"));
+    let annoWs = "";
+    const child = spawn(
+      binPath,
+      [
+        "-default",
+        "-binarymonitor",
+        "-binarymonitoraddress",
+        `ip4://127.0.0.1:${binPort}`,
+        "-remotemonitor",
+        "-remotemonitoraddress",
+        `ip4://127.0.0.1:${textPort}`,
+      ],
+      { stdio: "ignore", env: { ...process.env, XDG_CONFIG_HOME: scratchDir } },
+    );
+    child.once("error", (err) => {
+      console.error(`anno-tools.test.ts (evid-ingest live): spawned emulator process error: ${String(err)}`);
+    });
+
+    try {
+      const ready = await evidWaitForPortOpen("127.0.0.1", textPort, 10000);
+      assert.ok(ready, "expected the text-monitor port to accept connections within 10s");
+
+      const deps: StockDispatchDeps = {
+        ensureLease: async () => ({
+          ok: true,
+          lease: {
+            host: "127.0.0.1",
+            port: binPort,
+            targetId: "anno-tools-evid-ingest-live",
+            brokerControl: EVID_LIVE_BROKER_CONTROL,
+            epochFile: "",
+            supervisorDir: "",
+            remoteMonitorPort: textPort,
+          },
+        }),
+      };
+
+      // Proves the real MCP-facing seam dials successfully against genuine
+      // stock VICE -- dispatchStock() is the SAME entry point vice-proxy.ts
+      // calls.
+      const showResult = await dispatchStock("vice_memmap_show", {}, deps);
+      assert.equal(showResult.isError, false, `expected vice_memmap_show to succeed: ${JSON.stringify(showResult)}`);
+
+      // dispatchStock()'s own answer is already-parsed JSON (ranges,
+      // addressesQueried, executeCounts) -- anno_evid_ingest needs the RAW
+      // reply, so a second, direct text-monitor session dials the identical
+      // allowlisted "memmapshow" command over the SAME stub brokerControl.
+      const session = await textConnect({
+        host: "127.0.0.1",
+        remoteMonitorPort: textPort,
+        targetId: "anno-tools-evid-ingest-live",
+        brokerControl: EVID_LIVE_BROKER_CONTROL,
+      });
+      let rawReply: string;
+      try {
+        rawReply = await withTextChannelLock("anno-tools-evid-ingest-live-memmapshow", () => session.client.command("memmapshow", { timeoutMs: 30000 }));
+      } finally {
+        await textDisconnect(session);
+      }
+
+      const parsed = parseAccessMap(rawReply);
+      assert.equal(parsed.ok, true, `expected the live memmapshow reply to parse: ${JSON.stringify(!parsed.ok ? parsed.refusal : undefined)}`);
+      const ranges = parsed.ok ? accessMapRanges(parsed.value) : undefined;
+      const addressesQueried = ranges?.addressesQueried ?? 0;
+      const expectedObservations = parsed.ok ? execObservationsFrom(parsed.value).length : 0;
+
+      annoWs = mkdtempSync(join(tmpdir(), "evid-ingest-live-store-"));
+      const store = join(annoWs, "project.annostore");
+      const seedHandle = openStore(store, { workspaceRoot: annoWs });
+      closeStore(seedHandle);
+
+      // runAnnoTool() resolves the store path against repoRoot(), which
+      // reads CLAUDE_PROJECT_DIR -- pointed at the scratch workspace for the
+      // duration of this one call and restored unconditionally, mirroring
+      // withStore()'s own discipline exactly.
+      const previousProjectDir = process.env.CLAUDE_PROJECT_DIR;
+      let result;
+      try {
+        process.env.CLAUDE_PROJECT_DIR = annoWs;
+        result = await runAnnoTool("anno_evid_ingest", {
+          store,
+          memmap_text: rawReply,
+          image_sha256: VALID_SHA,
+          argv: [binPath, "-default", "-binarymonitor", "-remotemonitor"],
+          seed: "evid-ingest-live-seed",
+        });
+      } finally {
+        if (previousProjectDir === undefined) delete process.env.CLAUDE_PROJECT_DIR;
+        else process.env.CLAUDE_PROJECT_DIR = previousProjectDir;
+      }
+      assert.equal(result.isError, false, result.content[0]?.text);
+      const b = await body(result);
+      const rowCount = b.observationsWritten as number;
+      // Asserted as a RELATION, never a pinned count (a real capture's exact
+      // execute-bit count is not something this test may assume in advance).
+      assert.ok(rowCount > 0, `expected at least one observed execute bit from a real capture, got ${rowCount}`);
+      assert.ok(rowCount <= addressesQueried, `expected rowCount (${rowCount}) <= addressesQueried (${addressesQueried})`);
+      assert.equal(rowCount, expectedObservations, "the dispatch layer's own count must match the pure transform's own count over the SAME reply");
+    } finally {
+      child.kill("SIGKILL");
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, 3000);
+        child.once("exit", () => {
+          clearTimeout(timer);
+          resolve();
+        });
+      });
+      rmSync(scratchDir, { recursive: true, force: true });
+      if (annoWs) rmSync(annoWs, { recursive: true, force: true });
+      let strayOutput = "";
+      try {
+        strayOutput = execFileSync("pgrep", ["-x", "x64sc"], { encoding: "utf8" });
+      } catch {
+        // pgrep exits non-zero (and prints nothing) when nothing matches --
+        // that is the SUCCESS case here, not a failure to suppress.
+        strayOutput = "";
+      }
+      assert.equal(strayOutput.trim(), "", `expected no x64sc process to survive teardown, found pids: ${strayOutput}`);
+    }
+  },
+);
