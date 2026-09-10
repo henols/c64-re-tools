@@ -352,3 +352,136 @@ above (`resolved` iff at least one recorded run is `resolved` -- both are):
 ```
 PROOF04_PHASE_VERDICT resolved
 ```
+
+## Integrity cross-check and suite baseline
+
+**The gate.** `evidence/proof04-verify-record.mjs`, run against this committed
+record and the two committed transcripts, printed:
+
+```
+RECORDGATE_RUN_AGREEMENT pass
+RECORDGATE_SUBJECT_DIGEST pass
+RECORDGATE_SUBJECT_DIGEST_DETAIL both transcripts cite db8bd51a5259427cf61cacf3b3d0df4413400c3118699987167d69aa13e41f8a
+RECORDGATE_BUCKET_IDENTITY pass
+RECORDGATE_DEPTH_LABEL pass
+RECORDGATE_VERDICT_RULE pass
+RECORDGATE_ROLLUP pass
+RECORDGATE_ROLLUP_DETAIL PROOF04_PHASE_VERDICT=resolved matches roll-up of resolved, resolved
+RECORDGATE_PERCENTAGE_SHAPE pass
+RECORDGATE_RESULT pass
+```
+
+Exit code `0`, seven named assertions (`RUN_AGREEMENT`, `SUBJECT_DIGEST`,
+`BUCKET_IDENTITY`, `DEPTH_LABEL`, `VERDICT_RULE`, `ROLLUP`,
+`PERCENTAGE_SHAPE`), all `pass`.
+
+**The planted-violation proof (non-vacuity).** A scratch copy of this record
+was made under `$HOME/.cache/c64-re-tools/phase44/planted/record.md` (never
+inside this checkout), with its first `PROOF04_DENOMINATOR ` line altered from
+`45072` to `999999999 45072` by a single `sed` substitution on the run-a-hit50
+bucket. Run against that copy via `--record`, the gate printed:
+
+```
+RECORDGATE_RUN_AGREEMENT fail
+RECORDGATE_RUN_AGREEMENT_DETAIL run-a-hit50: PROOF04_DENOMINATOR expected(transcript)=45072 found(record)=999999999 45072
+RECORDGATE_SUBJECT_DIGEST pass
+RECORDGATE_BUCKET_IDENTITY fail
+RECORDGATE_BUCKET_IDENTITY_DETAIL run-a-hit50: bucket sum 168+0+44904+0=45072 expected(denominator)=999999999
+RECORDGATE_DEPTH_LABEL pass
+RECORDGATE_VERDICT_RULE pass
+RECORDGATE_ROLLUP pass
+RECORDGATE_PERCENTAGE_SHAPE fail
+RECORDGATE_PERCENTAGE_SHAPE_DETAIL run-a-hit50: PROOF04_FALSE_POSITIVE_PCT denominator=45072 expected(PROOF04_DENOMINATOR)=999999999 45072
+RECORDGATE_RESULT fail
+```
+
+Exit code `1`. A single altered `PROOF04_DENOMINATOR` value reds exactly the
+three assertions this record's own design ties to it -- `RUN_AGREEMENT`
+(the record no longer matches its own transcript), `BUCKET_IDENTITY` (the four
+buckets no longer sum to the corrupted denominator), and `PERCENTAGE_SHAPE`
+(the derived `PROOF04_FALSE_POSITIVE_PCT` line's own denominator no longer
+matches the same corrupted bucket value it is checked against) -- while
+`SUBJECT_DIGEST`, `DEPTH_LABEL`, `VERDICT_RULE` and `ROLLUP` correctly stay
+`pass`, since none of their own inputs were touched by this one edit. The
+scratch copy was deleted after this proof; nothing altered is left anywhere
+in this checkout.
+
+**Broker and process state at the time of the reading.**
+
+```
+$ systemctl --user is-active vice-broker
+inactive
+
+$ pgrep -x x64sc; echo "exit=$?"
+exit=1
+```
+
+`ORACLE_BROKER_STATE inactive` (both runs, above) and this reading agree: no
+live broker and no surviving `x64sc` process at any point in this plan.
+
+**The automated-subset suite reading**, taken with the broker confirmed
+inactive per the check immediately above (a live broker deterministically
+reddens `vice-proxy.test.ts`'s `BACK-05` case, so a reading taken with one up
+would measure the broker and not this phase):
+
+```
+$ cd src/mcp/vice && npm run test:automated
+...
+ℹ tests 4051
+ℹ pass 4035
+ℹ fail 3
+```
+
+```
+TEST_AUTOMATED_BASELINE tests=4051 pass=4035 fail=3
+```
+
+This project's own automated-subset floor is **three** pre-existing failures
+in `anno-register`/`anno-import`, not zero, per the `STORE-06`
+undeclared-requirement-id bookkeeping cause standing note. The observed fail
+count (3) sits exactly at that documented floor -- no additional failure was
+introduced by this plan. The three failing tests, named individually rather
+than folded into the floor count:
+
+- `anno-import.test.ts:352`
+- `anno-register.test.ts:385`
+- `anno-register.test.ts:479`
+
+All three assert that every `anno_*` MCP tool's own requirement-id citation is
+declared in `.planning/REQUIREMENTS.md`; the standing cause is bookkeeping
+(a handful of requirement ids referenced by tool registration entries --
+`STORE-01`, `STORE-04`, `STORE-06`, `IMP-01`, `IMP-02`, `AUTO-01`, `MCP-04` --
+are not yet declared in `REQUIREMENTS.md`), unrelated to anything this plan
+touched. No test outside this named set of three failed.
+
+**The four doc-guard tests**, run from `src/mcp/vice` after every file this
+phase introduced existed on disk:
+
+```
+$ node --test docs-dangling-refs.test.ts docs-linerefs.test.ts comment-phase-pointers.test.ts shipped-modules.test.ts
+...
+ℹ tests 50
+ℹ pass 50
+ℹ fail 0
+```
+
+Exit code `0`. This phase's new documents (`proof04-false-positives.md`,
+`proof04-verify-record.mjs`) introduced no dangling reference, no
+line-reference drift, no phase number baked into a shipped string literal,
+and no change to the shipped module set.
+
+**The phase's own structural gates**, re-confirmed after every file in this
+phase existed:
+
+```
+$ node --test evidence/proof04-independence.test.ts
+...
+ℹ tests 7
+ℹ pass 7
+ℹ fail 0
+
+$ node evidence/proof04-reconcile.mjs --self-check
+SELFCHECK_RESULT pass
+```
+
+Both exit `0`.
