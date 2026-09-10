@@ -3,9 +3,9 @@ phase: "44"
 slug: "proof-04-the-independent-external-check"
 # status lifecycle: draft (seeded by plan-phase) → validated (set by validate-phase §6)
 # audit-milestone §5.5 distinguishes NOT-VALIDATED (draft) from PARTIAL (validated + nyquist_compliant: false) (#2117)
-status: draft
+status: validated
 nyquist_compliant: false
-wave_0_complete: false
+wave_0_complete: true
 created: "2026-09-10"
 ---
 
@@ -52,11 +52,23 @@ after every live evidence run — the discipline every evidence plan in this mil
 
 ## Per-Task Verification Map
 
-| Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
-|---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| {N}-01-01 | 01 | 1 | REQ-{XX} | T-{N}-01 / — | {expected secure behavior or "N/A"} | unit | `{command}` | ✅ / ❌ W0 | ⬜ pending |
+| Deliverable | Plan | Requirement | Test Type | Automated Command | File Exists | Status |
+|-------------|------|-------------|-----------|-------------------|-------------|--------|
+| D1 — SCHEMA.md derivation rule fixed before any measurement | 01 | PROOF-04 | other (grep + commit-order) | `grep -ac 'not-exercised\|frame-exact-region\|narrowed' evidence/SCHEMA.md` + `git log` order vs. run transcripts | ✅ | ✅ green |
+| D2 — two structurally-independent producers, closed import boundary | 01 | PROOF-04 | unit | `node --test evidence/proof04-independence.test.ts` | ✅ | ✅ green |
+| D3 — join is the shipped `reconcileObservedExecution()`, one call site | 01 | PROOF-04 | unit | `node --test evidence/proof04-independence.test.ts` | ✅ | ✅ green |
+| D4 — one live end-to-end pass at anchor depth 10 | 01 | PROOF-04 | manual_procedural | N/A by design — live measurement | ✅ (transcripts) | 🔵 manual-only |
+| D1 — Run A, anchor hit 50, `frame-exact-region` | 02 | PROOF-04 | manual_procedural | N/A by design — live measurement | ✅ `proof04-run-a-hit50.md` | 🔵 manual-only |
+| D2 — Run B, anchor hit 3000, `narrowed` | 02 | PROOF-04 | manual_procedural | N/A by design — live measurement | ✅ `proof04-run-b-narrowed.md` | 🔵 manual-only |
+| D3 — neither run supersedes the other; every run attempted is recorded | 02 | PROOF-04 | other | transcript content assertion (both files carry the explicit sentence) | ✅ | ✅ green |
+| D4 — no emulator left behind; no run on a contended machine | 02 | PROOF-04 | other | `pgrep -x x64sc` exits 1; `systemctl --user is-active vice-broker` reads `inactive` | ✅ | ✅ green |
+| D1 — record states both counts beside PROOF-01's three figures, unreplaced | 03 | PROOF-04 | other | record census / scope / hygiene gates (Task 1 verify blocks) | ✅ | ✅ green |
+| D2 — committed gate re-derives every stated number, proven non-vacuous | 03 | PROOF-04 | other | `node evidence/proof04-verify-record.mjs` | ✅ | ✅ green |
+| D3 — automated subset at its documented floor, broker inactive | 03 | PROOF-04 | integration | `cd src/mcp/vice && npm run test:automated` | ✅ | ✅ green (floor 3) |
+| D4 — doc-guards and this phase's structural gates all pass | 03 | PROOF-04 | unit | `node --test docs-dangling-refs.test.ts docs-linerefs.test.ts comment-phase-pointers.test.ts shipped-modules.test.ts`; `node evidence/proof04-reconcile.mjs --self-check` | ✅ | ✅ green |
+| D5 — three prose judgments a command cannot settle | 03 | PROOF-04 | manual_procedural | N/A — tone/framing judgment | ✅ (44-UAT.md test 1) | 🔵 manual-only — **signed off 2026-09-10** |
 
-*Populated by `/gsd-validate-phase` once PLAN.md task IDs exist.*
+*Populated by `/gsd-validate-phase` 2026-09-10 from the three SUMMARY `coverage:` blocks. Deliverable ids are the `coverage:` ids, which are what this phase's plans actually emitted — the seeded `{N}-01-01` task-id shape was never used by these plans.*
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -76,19 +88,26 @@ after every live evidence run — the discipline every evidence plan in this mil
 
 ## Wave 0 Requirements
 
-- [ ] `evidence/proof04-independence.test.ts` — structural two-producer purity check
-      covering Criterion 2. No existing file provides it; the closest precedent
-      (`textmon-memmap.ts`'s own test) checks one module only.
-- [ ] `evidence/proof04-subject-dxa.mjs` — subject-producer driver, reusing
-      `dxa-partition.ts`'s `partitionByteDerived()` and Phase 38's `runDxaDisassemble()`
-      call shape. Must never touch VICE.
-- [ ] `evidence/proof04-oracle-memmap.mjs` — oracle-producer driver, reusing
-      `probe-harness.mjs`'s `buildProbeArgs()` / `spawnVice()` and EVID-06's AUTOSTART
-      sequencing unchanged. Must never read the classifier's output.
-- [ ] The derivation-rule document, written and committed **before** any run
-      (`resolved` / `unresolved` / `not-exercised`), on Phase 38's precedent.
-- [ ] No framework install needed — `node --test` is already the runner and every module
-      this phase touches already has committed unit tests.
+- [x] `evidence/proof04-independence.test.ts` — delivered (plan 44-01, commit `d2dee305`).
+      7/7 pass, including planted-violation controls in **both** directions (a forbidden
+      specifier in a real import position IS flagged; the same token inside a comment is NOT).
+- [x] `evidence/proof04-subject-dxa.mjs` — delivered (plan 44-01, commit `c62c261b`).
+      Imports only `node:` builtins, the compiled `host-tool.mjs` seam and `dxa-run.ts`;
+      never touches VICE.
+- [x] `evidence/proof04-oracle-memmap.mjs` — delivered (plan 44-01, commit `c62c261b`).
+      Imports only `node:` builtins, `probe-harness.mjs`, `text-protocol.ts`,
+      `textmon-memmap.ts`, `stock-protocol.ts`, `evid-ingest.ts`; never reads the
+      classifier's output.
+- [x] The derivation-rule document — `evidence/SCHEMA.md`, committed at `c62c261b`
+      (17:13:09), strictly before both run transcripts (`00450ac3` 17:28:40,
+      `dd1517e8` 17:32:15). Amendment ledger §9 is empty.
+- [x] No framework install needed — confirmed; `node --test` remained the runner and no
+      dependency was added (both plans' `tech-stack.added` are empty).
+
+**One deliverable beyond the seeded Wave 0 list** was produced and is also green:
+`evidence/proof04-verify-record.mjs` (plan 44-03) — a committed gate re-deriving every
+number the findings record states from the two transcripts alone, proven non-vacuous
+against a planted altered `PROOF04_DENOMINATOR`.
 
 ---
 
@@ -104,11 +123,69 @@ after every live evidence run — the discipline every evidence plan in this mil
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 120s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All deliverables have an automated verify or a declared manual-only entry — 9 of 13
+      automated and green, 4 manual-only **by design** (see below)
+- [x] Sampling continuity: no 3 consecutive deliverables without automated verify
+- [x] Wave 0 covers all MISSING references — every Wave 0 item delivered, none outstanding
+- [x] No watch-mode flags
+- [x] Feedback latency < 120s (phase-specific gates run in ~1s; full automated subset ~120s)
+- [ ] `nyquist_compliant: true` — **deliberately NOT set.** See the note below.
 
-**Approval:** pending
+### Why this phase closes PARTIAL and not compliant
+
+`nyquist_compliant: true` would assert that every requirement has automated verification.
+PROOF-04's Criterion 1 is a **measurement**, and the seeded strategy above already recorded
+why it cannot be a CI assertion: "the true count is not knowable in advance — a CI assertion
+of a specific number would be circular." The four manual-only entries are the two live runs,
+the depth/exactness labelling, and the closing record's tone/framing judgment. Automating any
+of them would either fabricate a known answer or assert a fact about one particular run.
+
+This is the same shape PROOF-01 (Phase 38) and EVID-06 closed in. PARTIAL here is the
+correct terminal state, not an outstanding gap — re-running `/gsd-validate-phase 44` will
+reach the same conclusion.
+
+**Approval:** validated 2026-09-10 — PARTIAL (9 automated / 4 manual-only, all 4 signed off)
+
+---
+
+## Validation Audit 2026-09-10
+
+| Metric | Count |
+|--------|-------|
+| Deliverables audited | 13 |
+| Automated + green | 9 |
+| Manual-only (by design) | 4 |
+| Gaps found | 0 |
+| Resolved | 0 |
+| Escalated | 0 |
+
+No `gsd-nyquist-auditor` was spawned: gap analysis found nothing MISSING, so the workflow's
+own "No gaps → skip to Step 6" path applied.
+
+### Commands re-run during this audit (not merely cited)
+
+Broker confirmed `inactive` and `pgrep -x x64sc` empty before the run, per the project's
+standing evidence discipline.
+
+| Command | Result |
+|---------|--------|
+| `node --test evidence/proof04-independence.test.ts` | 7/7 pass, exit 0 |
+| `node evidence/proof04-reconcile.mjs --self-check` | `SELFCHECK_RESULT pass`, exit 0 |
+| `node evidence/proof04-verify-record.mjs` | `RECORDGATE_RESULT pass`, 7/7 named assertions, exit 0 |
+| `node --test docs-dangling-refs.test.ts docs-linerefs.test.ts comment-phase-pointers.test.ts shipped-modules.test.ts` | 50/50 pass, exit 0 |
+| `cd src/mcp/vice && npm run test:automated` | tests 4051, pass 4034, **fail 4**, skipped 8, exit 1 |
+
+### On the suite's 4 failures — floor, not regression
+
+The count differs from plan 44-03's recorded 3, so the **failure set** was compared rather
+than the count (the count alone is not the signal):
+
+- 3 failures in `anno-import.test.ts` / `anno-register.test.ts` — the documented STORE-06
+  bookkeeping floor, unchanged.
+- 1 failure in `check-skill-tool-coverage` — the known `zz-scratch` ENOENT race
+  (`src/skills/acme-build/zz-scratch-7teBBr/zz-scratch-wr03-regression.md`, a scratch file
+  removed by a concurrent test between the directory walk and the read). Intermittent,
+  pre-existing, and unrelated to anything Phase 44 touched.
+
+No failure is attributable to this phase, and no new failure was introduced. Deliverable
+44-03 D3 holds as recorded.
