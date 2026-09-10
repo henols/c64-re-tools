@@ -4,17 +4,17 @@ milestone: v0.9.0
 milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 43
 current_phase_name: The Runtime Evidence Layer
-status: executing
-stopped_at: Completed 43-06-PLAN.md
-last_updated: "2026-09-10T11:36:16.464Z"
+status: ready_for_verification
+stopped_at: Completed 43-07-PLAN.md
+last_updated: "2026-09-10T12:21:47.383Z"
 last_activity: 2026-09-10
-last_activity_desc: Phase 43 execution started
-state_head: fa2a785629647e73349ff7a0b4d6499cb3eb4958
+last_activity_desc: Phase 43 plan 07 complete (final plan)
+state_head: e5b365e82a1032d48723e78193afc5ec9e69cb82
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 48
-  completed_plans: 47
+  completed_plans: 48
   percent: 67
 ---
 
@@ -227,10 +227,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 43 (The Runtime Evidence Layer) — EXECUTING
-Plan: 7 of 7
-Status: Plan 06 complete (anno_evid_disagreements/anno_evid_runs/anno_evid_reset plus the evid-disagreements CLI verb, rendering the reconciliation join disagreement-first with agreement as a count), plan 07 next
-Last activity: 2026-09-10 — Phase 43 plan 06 complete
+Phase: 43 (The Runtime Evidence Layer) — READY FOR VERIFICATION
+Plan: 7 of 7 (all plans complete)
+Status: Plan 07 complete (evid-report-keys.test.ts's derived structural guard over every anno_evid_* answer, a genuinely concurrent two-identity SIGKILL planting plus a reset-then-relaunch planting for anno_evid_reset, and docs/phase43-runtime-evidence-layer.md) — Phase 43's own six requirements (EVID-01..EVID-06) are all Complete; ready for /gsd-verify-work
+Last activity: 2026-09-10 — Phase 43 plan 07 complete (final plan)
 
 **Phase 39 returned `go` (rule `R15`) — the gate is settled.** All seven inputs
 were measured live against genuine unpatched stock VICE 3.9 and every one came
@@ -521,6 +521,7 @@ Complete; `PREP-03` is withdrawn, struck rather than deleted.
 | Phase 43 P04 | 55 min | 3 tasks | 4 files |
 | Phase 43 P05 | 40 min | 3 tasks | 7 files |
 | Phase 43 P06 | ~3h | 3 tasks | 12 files |
+| Phase 43-the-runtime-evidence-layer P07 | 45min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -1173,6 +1174,7 @@ Recent decisions affecting current work:
 - [Phase 43]: Phase 43 plan 05: a row is written iff an observed execute bit is true (never from read/write access alone, never from an address's absence); anno_evid_ingest digests argv itself via argvDigest(), accepting no caller-supplied digest.
 - [Phase 43]: anno_evid_disagreements takes max_results as OPTIONAL (unlike every other list-returning anno_* verb's required-with-no-default convention) because an empty or small disagreement report is the ordinary, sound case. — A dedicated assertOptionalMaxResults sits beside assertMaxResults rather than loosening the shared rule for every other verb.
 - [Phase 43]: The evid-disagreements CLI verb doc was placed in its OWN new section in tool-selection.md, not appended to the existing export-asm row, because that row's own withdrawn/returned phrasing shares a blank-line paragraph with anything appended, which falsely trips the withdrawal-status guard for an unrelated verb. — Discovered live when anno-verb-coverage.test.ts reported evid-disagreements as documented withdrawn; fixed by moving the mention to its own paragraph.
+- [Phase 43]: Phase 43 plan 07: EVID-04's structural guard derives its verb scope from ANNO_TOOL_DEFINITIONS rather than a hand-typed list, and its own clean control found and fixed a real missing-denominator gap in anno_evid_reset's shipped answer.
 
 ### Pending Todos
 
@@ -2191,10 +2193,11 @@ evidence files.
 
 ## Session Continuity
 
-Last session: 2026-09-10T11:36:15.500Z
-Stopped at: Completed 43-06-PLAN.md
+Last session: 2026-09-10T12:18:18.000Z
+Stopped at: Completed 43-07-PLAN.md
 Resume file: None
 
+Earlier: Completed 43-06-PLAN.md
 Earlier: Completed 42-16-PLAN.md (gap-closure round 2 — CR-02 closed, proven live, PARSE-04 restored)
 
 Earlier: Completed 40-06-PLAN.md
