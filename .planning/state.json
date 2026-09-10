@@ -1,7 +1,7 @@
 {
   "contract": "1.0.0",
   "flavor": "core",
-  "milestone": "v1.0.0",
+  "milestone": "v1.0.0 — The Rebuild Half",
   "phases": [
     {
       "number": "1",
@@ -237,12 +237,42 @@
       "number": "44",
       "name": "PROOF-04 — The Independent External Check",
       "status": "complete"
+    },
+    {
+      "number": "45",
+      "name": "Decomposition to Closure, Disagreement First",
+      "status": "pending"
+    },
+    {
+      "number": "46",
+      "name": "The Lossless-Export Invariant and the Provenance Carry",
+      "status": "pending"
+    },
+    {
+      "number": "47",
+      "name": "Multi-File Rebuildable Source",
+      "status": "pending"
+    },
+    {
+      "number": "48",
+      "name": "The Movement-Hazard Report and Its Purpose-Built Subject",
+      "status": "pending"
+    },
+    {
+      "number": "49",
+      "name": "The Reassembly Gate, Committed Before the Phase It Gates",
+      "status": "pending"
+    },
+    {
+      "number": "50",
+      "name": "Equivalence and Modifiability",
+      "status": "pending"
     }
   ],
   "next": {
-    "command": "/gsd:discuss-phase",
-    "label": "Discuss the first phase",
-    "reason": "Project initialized — plan your first phase"
+    "command": "/gsd:progress --next",
+    "label": "Advance to the next step (plan phase 45)",
+    "reason": "Phase 45 of 6 — needs a plan"
   },
-  "updated_at": "2026-09-10T17:57:37.112Z"
+  "updated_at": "2026-09-10T21:22:03.109Z"
 }
