@@ -558,6 +558,15 @@ const EXPECTED_SQL_WRITE_SITES = [
   "anno-store.ts#applyEnumUsage",
   "anno-store.ts#clearEnumUsage",
   "anno-store.ts#createProjectEnum",
+  // TWO SITES 43-02 ADDED, for `anno_evid_exec` (SCHEMA_VERSION 4, EVID-01):
+  // `insertExecObservations` writes the observation rows, and
+  // `deleteExecObservationsForRun` is the bracket-reset inverse (EVID-05).
+  // Neither is a cached derivation of anything -- every row is a directly
+  // caller-supplied fact (an observed execution, or its identity), which is
+  // exactly what distinguishes a legitimate new write site here from the
+  // failure this control exists to catch.
+  "anno-store.ts#deleteExecObservationsForRun",
+  "anno-store.ts#insertExecObservations",
   "anno-store.ts#insertRange",
   "anno-store.ts#openStore",
   "anno-store.ts#pruneSnapshots",

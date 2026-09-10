@@ -13,7 +13,9 @@
 // empty-stderr assertion anywhere in this file would fail for that alone.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
+import { once } from "node:events";
 import {
   chmodSync,
   existsSync,
@@ -58,9 +60,13 @@ import {
   contradictedCommentsFor,
   createProjectEnum,
   currentRevision,
+  deleteExecObservationsForRun,
+  insertExecObservations,
   listComments,
   listEnumUsage,
+  listExecObservations,
   listLabels,
+  listObservedRuns,
   listProjectEnums,
   listRanges,
   listScopes,
@@ -5029,5 +5035,224 @@ test("D-15: the schema_version refusal is a SINGLE WITNESS -- exactly one compar
         `store becomes permanently unopenable, and an arm added later would be guessing at a history nothing recorded -- the exact ` +
         `failure the version 1 legacy directory's own record already names`,
     );
+  }
+});
+
+// ---------------------------------------------------------------------------
+// EVID-01/EVID-02/EVID-05, `SCHEMA_VERSION` 4 (43-02, Task 3): idempotent
+// re-ingest, bracket reset without cross-bracket leakage, the
+// denominator-carrying run listing, and two hardening proofs -- a version-3
+// store refused twice concurrently, and re-opening an already-version-4
+// store touching neither the DDL nor `anno_meta`.
+// ---------------------------------------------------------------------------
+
+/** One run identity's fields, spread into every `insertExecObservations` /
+ * `deleteExecObservationsForRun` call below -- named once so a typo in one
+ * digest does not silently create a SECOND identity partway through a test. */
+function evidIdentity(seed: string): { imageSha256: string; argvDigest: string; seed: string } {
+  return { imageSha256: "1".repeat(64), argvDigest: "2".repeat(64), seed };
+}
+
+test("EVID-01: inserting the identical observation set twice for the same run identity reports changed:false on the second call and leaves the row count unchanged", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const store = openStore(path, { workspaceRoot: dir });
+    try {
+      const identity = evidIdentity("idempotent-reingest");
+      const observations = [
+        { address: 0x1000, sourceBank: "ram" as const },
+        { address: 0x1001, sourceBank: "rom" as const },
+      ];
+
+      const first = insertExecObservations(store, { ...identity, observations });
+      assert.equal(first.changed, true, "the first insert is a real edit");
+      assert.equal(listExecObservations(store).length, 2, "and it stored exactly the two rows requested");
+
+      const repeat = insertExecObservations(store, { ...identity, observations });
+      assert.equal(repeat.changed, false, "a byte-identical re-ingest is an accepted NO-OP, not two more rows and not a refusal");
+      assert.equal(listExecObservations(store).length, 2, "the table still holds exactly the original two rows");
+      assert.equal(repeat.revision, first.revision + 1, "the revision still advances by exactly one, like every other write entry point");
+    } finally {
+      closeStore(store);
+    }
+  });
+});
+
+test("EVID-01: an overlapping-but-larger observation set reports changed:true and adds only the NEW observations", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const store = openStore(path, { workspaceRoot: dir });
+    try {
+      const identity = evidIdentity("overlapping-larger-set");
+      insertExecObservations(store, { ...identity, observations: [{ address: 0x1000, sourceBank: "ram" }] });
+
+      const second = insertExecObservations(store, {
+        ...identity,
+        observations: [
+          { address: 0x1000, sourceBank: "ram" }, // already present -- must not duplicate
+          { address: 0x2000, sourceBank: "io" }, // new
+        ],
+      });
+      assert.equal(second.changed, true, "the call added at least one new observation");
+
+      const rows = listExecObservations(store);
+      assert.equal(rows.length, 2, "the overlap was skipped, not re-inserted -- exactly one new row, not two");
+      assert.deepEqual(
+        rows.map((r) => r.address).sort((a, b) => a - b),
+        [0x1000, 0x2000],
+      );
+    } finally {
+      closeStore(store);
+    }
+  });
+});
+
+test("EVID-05: deleteExecObservationsForRun for run identity A removes every row for A and leaves run identity B's rows readable and unchanged", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const store = openStore(path, { workspaceRoot: dir });
+    try {
+      const A = evidIdentity("bracket-A");
+      const B = evidIdentity("bracket-B");
+      insertExecObservations(store, { ...A, observations: [{ address: 0x1000, sourceBank: "ram" }] });
+      insertExecObservations(store, { ...B, observations: [{ address: 0x2000, sourceBank: "rom" }] });
+
+      const deleted = deleteExecObservationsForRun(store, A);
+      assert.equal(deleted.changed, true, "bracket A held a row, so the reset is a real edit");
+
+      const remaining = listExecObservations(store);
+      assert.equal(remaining.length, 1, "only bracket A's row is gone");
+      assert.equal(remaining[0].seed, B.seed, "bracket B's row survives, untouched");
+      assert.equal(remaining[0].address, 0x2000);
+    } finally {
+      closeStore(store);
+    }
+  });
+});
+
+test("EVID-05: deleteExecObservationsForRun for a run identity that holds no rows reports changed:false and is NOT an error -- resetting an empty bracket is the ordinary thing", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const store = openStore(path, { workspaceRoot: dir });
+    try {
+      const result = deleteExecObservationsForRun(store, evidIdentity("never-had-a-row"));
+      assert.equal(result.changed, false);
+    } finally {
+      closeStore(store);
+    }
+  });
+});
+
+test("listObservedRuns returns one row per distinct run identity with the correct observationCount, and its summary carries a denominator naming the address-space size the counts are a fraction of", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const store = openStore(path, { workspaceRoot: dir });
+    try {
+      const A = evidIdentity("denominator-A");
+      const B = evidIdentity("denominator-B");
+      insertExecObservations(store, {
+        ...A,
+        observations: [
+          { address: 0x1000, sourceBank: "ram" },
+          { address: 0x1001, sourceBank: "ram" },
+        ],
+      });
+      insertExecObservations(store, { ...B, observations: [{ address: 0x2000, sourceBank: "rom" }] });
+
+      const { runs, denominator } = listObservedRuns(store);
+      assert.equal(denominator, 65536, "the denominator is the full 6510 address space -- ADDRESS_MAX - ADDRESS_MIN + 1, never a literal");
+      assert.equal(runs.length, 2);
+
+      const runA = runs.find((r) => r.seed === A.seed);
+      const runB = runs.find((r) => r.seed === B.seed);
+      assert.ok(runA !== undefined && runB !== undefined, "both run identities are present");
+      assert.equal(runA!.observationCount, 2);
+      assert.equal(runB!.observationCount, 1);
+
+      // THE RELATION IS ASSERTED, NEVER A PINNED COUNT (this test's own
+      // acceptance criterion): a future fixture with more observations must
+      // not need this test rewritten.
+      for (const run of runs) {
+        assert.ok(run.observationCount <= denominator, `observationCount ${run.observationCount} must never exceed the denominator ${denominator}`);
+      }
+    } finally {
+      closeStore(store);
+    }
+  });
+});
+
+test("EVID-02 idempotency: opening an already-version-4 store does not re-run the DDL and does not rewrite anno_meta -- the revision and the schema_version row are identical before and after", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const first = openStore(path, { workspaceRoot: dir });
+    setDataType(first, { start: 0x1000, endInclusive: 0x1000, dataType: "byte" });
+    const metaBefore = first.db.prepare("select schema_version, revision from anno_meta where id = 1").get() as {
+      schema_version: number;
+      revision: number;
+    };
+    closeStore(first);
+
+    const reopened = openStore(path, { workspaceRoot: dir });
+    try {
+      const metaAfter = reopened.db.prepare("select schema_version, revision from anno_meta where id = 1").get() as {
+        schema_version: number;
+        revision: number;
+      };
+      assert.deepEqual(
+        metaAfter,
+        metaBefore,
+        "re-opening an already-version-4 store must not re-run the DDL and must not rewrite anno_meta -- schema_version and revision are " +
+          "identical before and after",
+      );
+      assert.equal(currentRevision(reopened), metaBefore.revision, "and the handle's own currentRevision() agrees");
+    } finally {
+      closeStore(reopened);
+    }
+  });
+});
+
+test("EVID-02 concurrency: two parallel opens of a version-3 store both refuse by name, and neither writes anno_meta -- the file's sha256 is unchanged before and after both refusals", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "anno-"));
+  try {
+    const path = join(dir, "proj.annostore");
+    const store = openStore(path, { workspaceRoot: dir });
+    // Forging the version-3 state directly, exactly as the schema-version
+    // refusal tests above do -- the point is a file THIS BUILD must refuse,
+    // not a write it would ever perform.
+    store.db.prepare("update anno_meta set schema_version = 3 where id = 1").run();
+    closeStore(store);
+
+    const sha256Before = createHash("sha256").update(readFileSync(path)).digest("hex");
+
+    // TWO CHILD PROCESSES, `spawn`ED (not `execFileSync`'d) so both attempt
+    // the open genuinely concurrently -- reusing `anno-durability.test.ts`'s
+    // own spawn shape rather than inventing a second harness. Any existing
+    // mutator mode calls `openStore()` before doing anything else, so a
+    // version-mismatched store makes it throw UNCAUGHT and exit non-zero,
+    // before ever reaching a write.
+    const children = [spawn(process.execPath, [MUTATOR, path, "commit"], { stdio: "pipe" }), spawn(process.execPath, [MUTATOR, path, "commit"], { stdio: "pipe" })];
+
+    const outcomes = await Promise.all(
+      children.map(async (child) => {
+        let stderr = "";
+        child.stderr?.on("data", (chunk: Buffer) => {
+          stderr += chunk.toString("utf8");
+        });
+        const [code] = (await once(child, "exit")) as [number | null, string | null];
+        return { code, stderr };
+      }),
+    );
+
+    for (const outcome of outcomes) {
+      assert.notEqual(outcome.code, 0, `expected a non-zero exit from a child refusing a version-3 store, got ${JSON.stringify(outcome)}`);
+      assert.match(outcome.stderr, /AnnoStoreCorruptError/, `expected the refusal's own class name in stderr, got: ${outcome.stderr}`);
+      assert.match(outcome.stderr, /schema_version 3/, `expected the refusal to name the version found, got: ${outcome.stderr}`);
+      assert.match(outcome.stderr, /expected 4/, `expected the refusal to name the version wanted, got: ${outcome.stderr}`);
+    }
+
+    const sha256After = createHash("sha256").update(readFileSync(path)).digest("hex");
+    assert.equal(sha256After, sha256Before, "neither refusal may write anno_meta or anything else -- the file's sha256 is byte-identical");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });

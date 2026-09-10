@@ -146,6 +146,8 @@ import {
   assertRunIdentitySeed,
   isSplitDataType,
   splitEntryAddressPairs,
+  ADDRESS_MAX,
+  ADDRESS_MIN,
   AnnoCommentGradeError,
   AnnoLabelError,
   AnnoRangeShapeError,
@@ -3628,24 +3630,71 @@ export function listExecObservations(
   return rows.map(toEvidExecRow);
 }
 
-/** Every distinct run identity with an `anno_evid_exec` row, and its
- * accumulated observation count, ordered by the identity columns. A count,
- * never a percentage or rate -- see `deleteExecObservationsForRun`'s
- * neighbour and this module's `listObservedRuns` (extended with a
- * `denominator` at the same `SCHEMA_VERSION` in the following task) for why
- * a bare count is never divided down inside this module. */
-export function listObservedRuns(handle: AnnoStoreHandle): ObservedRunRow[] {
+/**
+ * Every distinct run identity with an `anno_evid_exec` row, its accumulated
+ * observation count, and the `denominator` those counts are a fraction of
+ * (EVID-04).
+ *
+ * WHY A DENOMINATOR IS RETURNED AT ALL, AND WHY IT NEVER FORMS A PERCENTAGE
+ * ITSELF. A bare count invites the reading "the rest is data" -- exactly the
+ * soundness violation EVID-04 forbids (see `RuntimeExecClass`'s own doc
+ * comment in `anno-types.ts`). `denominator` is `ADDRESS_MAX - ADDRESS_MIN +
+ * 1`, read from `anno-types.ts`'s own constants rather than the literal
+ * `65536` -- a caller comparing a run's `observationCount` against it forms
+ * its own fraction, and there is deliberately no rounding site in this
+ * module to do that division for them (see this file's `toFixed` census in
+ * this task's own acceptance criteria).
+ */
+export function listObservedRuns(handle: AnnoStoreHandle): { runs: ObservedRunRow[]; denominator: number } {
   const rows = handle.db
     .prepare(
       "select image_sha256, argv_digest, seed, count(*) as observation_count from anno_evid_exec group by image_sha256, argv_digest, seed order by image_sha256, argv_digest, seed",
     )
     .all() as { image_sha256: string; argv_digest: string; seed: string; observation_count: number }[];
-  return rows.map((row) => ({
-    imageSha256: row.image_sha256,
-    argvDigest: row.argv_digest,
-    seed: row.seed,
-    observationCount: row.observation_count,
-  }));
+  return {
+    runs: rows.map((row) => ({
+      imageSha256: row.image_sha256,
+      argvDigest: row.argv_digest,
+      seed: row.seed,
+      observationCount: row.observation_count,
+    })),
+    denominator: ADDRESS_MAX - ADDRESS_MIN + 1,
+  };
+}
+
+/**
+ * Deletes every `anno_evid_exec` row for one run identity -- a bracket
+ * reset (EVID-05). A run identity holding no rows returns `changed: false`
+ * and is NOT an error: resetting an empty bracket is the ordinary thing,
+ * matching `clearEnumUsage`'s own direction for the identical case.
+ *
+ * THIS IS THE MODULE'S FIFTH ROW-DELETING STATEMENT. `removeScope`'s doc
+ * block (`anno-store.ts`) states the count as four; this one supersedes it.
+ * The count is written in prose, deliberately without spelling the SQL
+ * prefix a census greps for, so a `grep` over this module counts STATEMENTS
+ * and not the sentences describing them. This statement runs inside the
+ * write sequence's transaction, so a refusal raised anywhere in the
+ * sequence rolls it back with everything else -- and a refusal here can
+ * only come from validating the run-identity arguments themselves, since
+ * deleting zero rows is success, not an error.
+ */
+export function deleteExecObservationsForRun(
+  handle: AnnoStoreHandle,
+  args: { imageSha256: unknown; argvDigest: unknown; seed: unknown; baseRevision?: number },
+): AnnoWriteResult {
+  const imageSha256 = assertRunIdentityDigest(args.imageSha256, "imageSha256");
+  const argvDigest = assertRunIdentityDigest(args.argvDigest, "argvDigest");
+  const seed = assertRunIdentitySeed(args.seed);
+
+  const { revision, result } = applyWrite(
+    handle,
+    (db) => {
+      const info = db.prepare("delete from anno_evid_exec where image_sha256 = ? and argv_digest = ? and seed = ?").run(imageSha256, argvDigest, seed);
+      return Number(info.changes) > 0;
+    },
+    { baseRevision: args.baseRevision },
+  );
+  return { revision, changed: result };
 }
 
 /**
