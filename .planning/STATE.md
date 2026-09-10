@@ -1,21 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.9.0
-milestone_name: The Text Channel and the Runtime Evidence Layer
-status: Awaiting next milestone
-stopped_at: Phase 44 complete — all phases complete
-last_updated: "2026-09-10T17:07:55.961Z"
+milestone: v1.0.0
+milestone_name: The Rebuild Half
+status: planning
+last_updated: "2026-09-10T17:57:37.084Z"
 last_activity: 2026-09-10
-last_activity_desc: Milestone v0.9.0 completed and archived
-state_head: 92db80db299d6959ddc7741082f0772d75d554b0
 progress:
-  total_phases: 6
-  completed_phases: 6
-  total_plans: 51
-  completed_plans: 51
-  percent: 100
-current_phase: 44
-current_phase_name: PROOF-04 — The Independent External Check
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -241,10 +236,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: Milestone v0.9.0 complete
+Phase: Not started (defining requirements)
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-09-10 — Milestone v0.9.0 completed and archived
+Status: Defining requirements
+Last activity: 2026-09-10 — Milestone v1.0.0 started
 
 ## Performance Metrics
 
