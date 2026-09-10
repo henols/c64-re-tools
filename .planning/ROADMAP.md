@@ -1158,7 +1158,7 @@ the frame-exact reproducibility its rows are keyed on.
   4. **The layer cannot state, imply, or render `data` on the strength of absence.** An address observed executing **is** code; an address never touched proves nothing; and a union across runs — however many — never becomes exhaustive. Enforced structurally rather than left to care: the runtime classifier has no `data` branch to return, "no row" and "observed not executing" are distinct facts the schema cannot let collide, and every percentage or summary carries the denominator it is a fraction of. Several individually-plausible implementation choices violate this quietly at different layers, so each gets its own control rather than one blanket assertion.
   5. **A bracket is nameable, resettable and re-measurable without leakage.** Evidence gathered from a run states which bracket it belongs to, and a bracket can be reset and re-measured without a previous run's observations leaking into it — proven against a planted concurrent-reset or relaunch scenario, since a bracket's validity races anything else touching the map, not merely a second sequential run.
 
-**Plans**: 2/7 plans executed
+**Plans**: 3/7 plans executed
 
 Plans:
 **Wave 1**
@@ -1168,7 +1168,7 @@ Plans:
 **Wave 2** *(blocked on Wave 1 completion)*
 
 - [x] 43-02-PLAN.md — the schema decision and the durable home: a blocking checkpoint on migration-arm versus re-affirmed refusal, `SCHEMA_VERSION` 4 with its dated factual basis, the `anno_evid_exec` table in the single `DDL`, and durability across a real process death
-- [ ] 43-03-PLAN.md — `vice_memmap_zap`, the emulator-side half of a bracket reset, registered across the six stock surfaces and proven live by a strictly lower post-zap recorded-access count
+- [x] 43-03-PLAN.md — `vice_memmap_zap`, the emulator-side half of a bracket reset, registered across the six stock surfaces and proven live by a strictly lower post-zap recorded-access count
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -1356,7 +1356,7 @@ in a milestone archive.
 | 40. The Three Preprocessing Host Tools | v0.9.0 | 11/11 | Complete | 2026-09-08 |
 | 41. The Text Channel, Its Serialization Authority, and the Contention Verdict | v0.9.0 | 6/6 | Complete | 2026-09-09 |
 | 42. The Text-Format Parsers and Their Two-Binary Fixtures | v0.9.0 | 16/16 | Complete | 2026-09-10 |
-| 43. The Runtime Evidence Layer | v0.9.0 | 2/7 | In Progress | - |
+| 43. The Runtime Evidence Layer | v0.9.0 | 3/7 | In Progress | - |
 | 44. PROOF-04 — The Independent External Check | v0.9.0 | 0/0 | Not started | - |
 
 **Milestone roll-up:** v0.2.0 — 9 phases, 87 plans, 51/51 in-scope requirements,

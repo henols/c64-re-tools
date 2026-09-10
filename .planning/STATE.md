@@ -5,16 +5,16 @@ milestone_name: The Text Channel and the Runtime Evidence Layer
 current_phase: 43
 current_phase_name: The Runtime Evidence Layer
 status: executing
-stopped_at: Completed 43-02-PLAN.md
-last_updated: "2026-09-10T09:24:38.356Z"
+stopped_at: Completed 43-03-PLAN.md
+last_updated: "2026-09-10T09:51:56.270Z"
 last_activity: 2026-09-10
 last_activity_desc: Phase 43 execution started
-state_head: 058e1b37e42bd68cadb6b2a4dce6b2d9b42e22b8
+state_head: 656a1fedadc7010ee9fc56333b45b95a10f4cf5e
 progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 48
-  completed_plans: 43
+  completed_plans: 44
   percent: 67
 ---
 
@@ -228,9 +228,9 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 43 (The Runtime Evidence Layer) — EXECUTING
-Plan: 3 of 7
-Status: Plan 02 complete (SCHEMA_VERSION 4, anno_evid_exec, reaffirm-refusal), plan 03 next
-Last activity: 2026-09-10 — Phase 43 plan 02 complete
+Plan: 4 of 7
+Status: Plan 03 complete (vice_memmap_zap, live-verified against genuine stock VICE 3.9), plan 04 next
+Last activity: 2026-09-10 — Phase 43 plan 03 complete
 
 **Phase 39 returned `go` (rule `R15`) — the gate is settled.** All seven inputs
 were measured live against genuine unpatched stock VICE 3.9 and every one came
@@ -517,6 +517,7 @@ Complete; `PREP-03` is withdrawn, struck rather than deleted.
 | Phase 42-the-text-format-parsers-and-their-two-binary-fixtures P16 | 20min | 3 tasks | 5 files |
 | Phase 43 P01 | 55min | 3 tasks | 5 files |
 | Phase 43 P02 | 50min | 3 tasks | 7 files |
+| Phase 43 P03 | 30min | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -1164,6 +1165,7 @@ Recent decisions affecting current work:
 - [Phase 43]: EVID-06 verdict: no-perturbation (depths 10 and 50, control-of-the-control equivalent both depths, 0 differing bytes) — Live A/B against genuine stock VICE 3.9 in plan 43-01; memmapzap/memmapshow dials do not perturb the S3 anchor sequence's frame-exact capture through hit 50, so the evidence table's run-identity stays the bare triple with no run_class column
 - [Phase 43]: EVID-02: reaffirm-refusal -- a version-3 .annostore does not open under SCHEMA_VERSION 4; no migration arm written. Decided from a dated four-part factual check (filesystem search, git history, release-tag dates, one-machine scope) transcribed into anno-types.ts's SCHEMA_VERSION doc comment.
 - [Phase 43]: EVID-01 evidence table anno_evid_exec keyed by the no-change run-identity composite (image_sha256, argv_digest, seed), no run_class column, per plan 43-01's live A/B verdict.
+- [Phase 43]: vice_memmap_zap ships as a stock-only tool that dials memmapzap then memmapshow so its answer proves the clear via an observable post-zap count. Live testing against genuine stock VICE 3.9 found that a memmapshow dialed immediately after memmapzap, in the same locked session with the CPU halted throughout, always returns a header with zero data lines (parseAccessMap's own no-data-lines refusal) -- handleMemmapZap treats this one code, in this one handler only, as a confirmed-empty map rather than a refusal, since the two-dial sequence structurally rules out the ambiguity that refusal exists to guard against for an arbitrary caller (handleMemmapShow is unaffected).
 
 ### Pending Todos
 
@@ -2182,8 +2184,8 @@ evidence files.
 
 ## Session Continuity
 
-Last session: 2026-09-10T09:24:37.476Z
-Stopped at: Completed 43-02-PLAN.md
+Last session: 2026-09-10T09:51:55.260Z
+Stopped at: Completed 43-03-PLAN.md
 Resume file: None
 
 Earlier: Completed 42-16-PLAN.md (gap-closure round 2 — CR-02 closed, proven live, PARSE-04 restored)
