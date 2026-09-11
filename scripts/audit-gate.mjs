@@ -199,6 +199,15 @@ export const EXPECTED_DOCS_GUARD_NAMES = Object.freeze([
   // No floor change, on the precedent directly above: the floor is `>= 7` and
   // there are now 9 guards on disk.
   "docs-worktree-isolation.test.ts",
+  // REGISTERED in the same commit that adds the guard file, per the
+  // instruction above. docs-constraints-sync.test.ts asserts that
+  // .planning/PROJECT.md's `## Constraints` list and CLAUDE.md's projected
+  // copy are byte-identical -- the two had drifted while the projected copy's
+  // marker still named the stale one as its source, so a regeneration would
+  // have overwritten the correct text with the wrong one. No floor change, on
+  // the precedent of the two entries above: the floor is `>= 7` and there are
+  // now 10 guards on disk.
+  "docs-constraints-sync.test.ts",
 ]);
 
 /** Every `docs-*.test.ts` guard basename in `viceDir`, sorted. Derived from

@@ -78,6 +78,9 @@ const EXPECTED_GUARD_NAMES_FOR_ASSERTION = [
   // Added by the same commit that registers it in audit-gate.mjs (a02863d
   // shipped the guard file without either entry; CI 33275610121 caught it).
   "docs-worktree-isolation.test.ts",
+  // Added by the same commit that registers it in audit-gate.mjs, so the
+  // mirror never lags the registry it mirrors.
+  "docs-constraints-sync.test.ts",
 ];
 
 interface GateJsonResult {
