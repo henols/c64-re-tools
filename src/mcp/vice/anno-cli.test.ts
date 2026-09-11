@@ -163,7 +163,7 @@ function spawnCli(args: string[]) {
   // pre-existing and is the one that made the newer site in
   // `anno-cli-path-consumers.test.ts` look like a precedent; both moved in one
   // commit. The reason is the same at both: the shipped server has no build
-  // step and runs `.ts` through Node's native type-stripping (Node >= 22.18),
+  // step and runs `.ts` through Node's native type-stripping (Node >= 24),
   // so a PATH-resolved `node` need not be a runtime that can start it at all.
   return spawnSync(process.execPath, [VICE_PROXY, ...args], {
     encoding: "utf8" as const,

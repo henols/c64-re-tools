@@ -13,7 +13,7 @@ separately so it can be launched directly by an MCP client.
 
 ## Requirements
 
-- **Node.js ≥ 22.18** (or ≥ 23.6). The server ships as TypeScript and runs under
+- **Node.js ≥ 24**. The server ships as TypeScript and runs under
   Node's native type-stripping — no build step, no flags. Older Node needs
   `--experimental-strip-types` and is unsupported.
 - A **host** with VICE (`x64sc`) available, reachable from wherever the MCP client

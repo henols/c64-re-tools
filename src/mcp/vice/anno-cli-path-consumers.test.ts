@@ -368,7 +368,7 @@ let usageText = "";
 before(() => {
   // `process.execPath`, never a bare "node" (WR-20). The shipped server has no
   // build step and runs `.ts` through Node's native type-stripping, so it
-  // requires Node >= 22.18; whenever the Node running this suite is not the
+  // requires Node >= 24; whenever the Node running this suite is not the
   // first `node` on PATH -- an nvm/fnm/volta shell, a CI matrix job, a
   // sudo-elevated run, a Debian box whose /usr/bin/node is 20 -- a bare "node"
   // child either cannot parse the TypeScript or is a different runtime
@@ -557,7 +557,7 @@ test("WR-20: no Node child is spawned as a bare \"node\" -- every site passes pr
   assert.deepEqual(
     offenders,
     [],
-    "a Node child spawned as a bare \"node\" resolves through PATH, which need not be the Node >= 22.18 that can " +
+    "a Node child spawned as a bare \"node\" resolves through PATH, which need not be the Node >= 24 that can " +
       "type-strip this tree's .ts sources:\n  " + offenders.join("\n  "),
   );
 });
