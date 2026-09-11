@@ -993,7 +993,7 @@ decline wherever the evidence is genuinely path-dependent.
   4. Every referenced non-hardware address resolves to a named, documented symbol, **and** an address whose target is genuinely path-dependent produces an explicit recorded decline naming what is unknown rather than a fabricated symbol — observed on `bank-path-dependent.prg`, a fixture that already exists precisely because it contains one, and on a runtime-varying zero-page pointer.
   5. Hardware register writes render as named enum members rather than magic numbers, with at least one multi-bit register (`$D011` or `$D018`) shown decomposed into its named bits rather than emitted as one hex constant.
 
-**Plans**: 7/10 plans executed
+**Plans**: 8/10 plans executed
 
 Plans:
 **Wave 1**
@@ -1014,7 +1014,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 45-08-PLAN.md — Closure pass over the dxa / export-asm / petcat family: names, four-element purpose comments, persisted declines, installed enums
+- [x] 45-08-PLAN.md — Closure pass over the dxa / export-asm / petcat family: names, four-element purpose comments, persisted declines, installed enums
 - [ ] 45-09-PLAN.md — Closure pass over the ghidra family, including criterion 4's both-bank-states decline and the `$D011`/`$D018` enum install
 
 **Wave 5** *(blocked on Wave 4 completion)*
@@ -1312,7 +1312,7 @@ in a milestone archive.
 | 42. The Text-Format Parsers and Their Two-Binary Fixtures | v0.9.0 | 16/16 | Complete | 2026-09-10 |
 | 43. The Runtime Evidence Layer | v0.9.0 | 7/7 | Complete | 2026-09-10 |
 | 44. PROOF-04 — The Independent External Check | v0.9.0 | 3/3 | Complete | 2026-09-10 |
-| 45. Decomposition to Closure, Disagreement First | v1.0.0 | 7/10 | In Progress | - |
+| 45. Decomposition to Closure, Disagreement First | v1.0.0 | 8/10 | In Progress | - |
 | 46. The Lossless-Export Invariant and the Provenance Carry | v1.0.0 | - | Not started | - |
 | 47. Multi-File Rebuildable Source | v1.0.0 | - | Not started | - |
 | 48. The Movement-Hazard Report and Its Purpose-Built Subject | v1.0.0 | - | Not started | - |

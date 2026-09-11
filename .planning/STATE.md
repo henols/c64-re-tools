@@ -5,16 +5,16 @@ milestone_name: The Rebuild Half
 current_phase: 45
 current_phase_name: Decomposition to Closure, Disagreement First
 status: executing
-stopped_at: Completed 45-06-PLAN.md
-last_updated: "2026-09-11T09:36:44.849Z"
+stopped_at: Completed 45-08-PLAN.md
+last_updated: "2026-09-11T09:59:02.694Z"
 last_activity: 2026-09-11
 last_activity_desc: Phase 45 execution started
-state_head: 9a8bb3cb43003c66ea2a4bbdda6e7c2e72801b7a
+state_head: cbb59f9b4b22b86c3846d4bc14f4c088f116533b
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 10
-  completed_plans: 7
+  completed_plans: 8
   percent: 0
 ---
 
@@ -255,10 +255,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 45 (Decomposition to Closure, Disagreement First) — EXECUTING
-Plan: 8 of 10
+Plan: 9 of 10
 Status: Ready to execute
-Progress: [░░░░░░░░░░] 0%
-Last activity: 2026-09-11 — Phase 45 wave 1 complete (45-01 tracer spine)
+Progress: [████████░░] 80%
+Last activity: 2026-09-11 — Phase 45 plan 45-08 complete (dxa/export-asm/petcat family closed against decomp-completeness gate)
 
 ## Performance Metrics
 
@@ -542,6 +542,7 @@ Last activity: 2026-09-11 — Phase 45 wave 1 complete (45-01 tracer spine)
 | Phase 45 P05 | 50 min | 3 tasks | 4 files |
 | Phase 45 P06 | ~180min | 3 tasks | 12 files |
 | Phase 45 P07 | 200min | 3 tasks | 5 files |
+| Phase 45 P08 | 50min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -1248,6 +1249,7 @@ Recent decisions affecting current work:
 - [Phase 45]: A multi-bit register write renders as OR-ed named constants AND a decoded comment on both surfaces (D-17), never either alone; a single-field register keeps the pre-existing single-symbol rendering unchanged.
 - [Phase 45]: 45-06: decomp-completeness's --disagreements validator refused a real, non-fabricated runIdentity:null (anno evid-disagreements's own zero-run answer) unconditionally, making D-13's NOT EXECUTED rendering unreachable through the real CLI path. Fixed to accept null only when the store's own evid-runs table is also genuinely empty (anno-cli.ts, completeness-report.mjs).
 - [Phase 45]: 45-06: entry points supplied to dxa/autostart only for the three fixtures whose SYS target or load address names genuine code (tracer.prg, fixture.prg, smc.prg); never for the three non-executed fixtures, since dxa/basic-stub.prg's own SYS target coincides exactly with its planted-unknown arbitrary tail bytes.
+- [Phase 45]: Phase 45 plan 45-08: the enum route cannot install an enum for this family's only register write ($D020) -- no bit-field entry in the curated anno-regbits.json table or its OVERRIDES. Disclosed rather than worked around (hand-editing the generated table is prohibited); recorded in docs/phase45-closure-dxa-family.md and WINDOWS.md.
 
 ### Pending Todos
 
@@ -2320,8 +2322,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-11T08:09:52.555Z
-Stopped at: Completed 45-06-PLAN.md
+Last session: 2026-09-11T09:58:54.649Z
+Stopped at: Completed 45-08-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
