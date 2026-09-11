@@ -50,7 +50,7 @@ import type { LaunchProfile } from "./broker-launch.mts";
 // and importing it would pull `hostpath.ts` into this module, which this
 // file's own header (lines 23-26) forbids and which the host-path
 // consumer-set assertion polices.
-import { mcpHost, ViceError } from "./vice.ts";
+import { mcpHost, ViceError } from "./vice-errors.ts";
 
 // -------------------------------------------------------------- request ids
 //

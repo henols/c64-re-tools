@@ -29,7 +29,8 @@ import {
 import type { DerivedPureHandler } from "./stock-derived.ts";
 import { encodeResponseFrame } from "./binmon-fixtures.ts";
 import { capabilityRefusalMessage } from "./capability-registry.ts";
-import { DENY_LIST, MachineRestartedError, type ToolInfo } from "./vice.ts";
+import { MachineRestartedError, type ToolInfo } from "./vice-errors.ts";
+import { DENY_LIST } from "./vice.ts";
 import { MonitorOwnershipError } from "./vice-broker-client.ts";
 import type { HeldLease, BrokerControlSession } from "./vice-broker-client.ts";
 import type { StockConnectSession, StockConnectOptions } from "./stock-connect.ts";

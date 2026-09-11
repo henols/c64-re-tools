@@ -41,7 +41,7 @@
 import { EventEmitter } from "node:events";
 import net from "node:net";
 
-import { ViceError } from "./vice.ts";
+import { ViceError } from "./vice-errors.ts";
 
 // ---------------------------------------------------------------------------
 // Wire constants (hand-copied, not imported -- see header comment above)

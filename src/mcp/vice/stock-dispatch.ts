@@ -31,7 +31,7 @@
 import { resolve, join } from "node:path";
 
 import type { ViceBackend } from "./backend-detect.mts";
-import type { ToolInfo } from "./vice.ts";
+import type { ToolInfo } from "./vice-errors.ts";
 import { capabilityRefusalMessage } from "./capability-registry.ts";
 import { type HeldLease } from "./vice-broker-client.ts";
 import { stockConnect, stockDisconnect, stockReconnect, type StockConnectSession, type StockConnectDeps } from "./stock-connect.ts";

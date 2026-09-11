@@ -729,7 +729,7 @@ test("anno-types.ts declares no module-level mutable binding, and its import spe
   // four-entry list is a floor and not a wildcard.
   assert.deepEqual(
     [...specifiers].sort(),
-    ["./disasm-opcodes.ts", "./vice.ts", "node:fs", "node:path"],
+    ["./disasm-opcodes.ts", "./vice-errors.ts", "node:fs", "node:path"],
     "anno-types.ts may import the opcode table (for the derived denylist), the error base, node:path, and node:fs -- nothing else. " +
       "STILL FORBIDDEN, unchanged: either host/container path-translation seam, any transport import, any census import, and the SQLite " +
       "builtin, which belongs to anno-store.ts alone under STORE-07. WHY THE THREE-ENTRY VERSION BECAME FALSE: workspace confinement has " +
@@ -747,7 +747,7 @@ test("anno-types.ts declares no module-level mutable binding, and its import spe
   assert.equal(specifiers.length, 4, "four specifiers: a deepEqual catches a wrong one, the length catches a duplicate");
 
   const localSpecifiers = specifiers.filter((specifier) => specifier.startsWith("./"));
-  assert.deepEqual([...localSpecifiers].sort(), ["./disasm-opcodes.ts", "./vice.ts"]);
+  assert.deepEqual([...localSpecifiers].sort(), ["./disasm-opcodes.ts", "./vice-errors.ts"]);
   assert.equal(localSpecifiers.length, 2);
 
   // THREE TARGETED ABSENCE ASSERTIONS -- what the widening did NOT open. The

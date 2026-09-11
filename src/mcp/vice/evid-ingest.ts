@@ -62,7 +62,7 @@
 import type { AccessMap, AccessMapParseResult } from "./textmon-memmap.ts";
 import { argvDigest } from "./capture-predicate.ts";
 import { EVID_SOURCE_BANKS, type EvidSourceBank } from "./anno-types.ts";
-import { ViceError } from "./vice.ts";
+import { ViceError } from "./vice-errors.ts";
 
 /** One observed execute bit: this address, in this source bank, was seen
  * executing. There is no third field -- an `ExecObservation` carries no

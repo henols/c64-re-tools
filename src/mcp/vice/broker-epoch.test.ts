@@ -29,7 +29,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { writeEpochRecord, epochPathFor, instanceLogDirFor, nextEpochFor, type EpochRecord } from "./broker-epoch.mts";
-import { readEpoch } from "./vice.ts";
+import { readEpoch } from "./vice-errors.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = join(HERE, "fixtures");

@@ -130,7 +130,7 @@ import { stockAnswer, isErrorText, convertWireError, type StockToolResult } from
 import { runStateFor } from "./stock-runstate.ts";
 import { compareStopIdentity, ORACLE_TERMS, StopOracleError, type StopIdentity } from "./stop-oracle.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
-import { MachineRestartedError } from "./vice.ts";
+import { MachineRestartedError } from "./vice-errors.ts";
 
 /** The argument name(s) `reproducible: true` cannot run without.
  *

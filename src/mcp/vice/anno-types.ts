@@ -111,7 +111,7 @@ import { existsSync, lstatSync, readlinkSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { OPCODES } from "./disasm-opcodes.ts";
-import { ViceError, type ViceErrorOptions } from "./vice.ts";
+import { ViceError, type ViceErrorOptions } from "./vice-errors.ts";
 
 /**
  * The on-disk schema version every store file carries in `anno_meta`. A

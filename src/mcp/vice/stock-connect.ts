@@ -42,7 +42,7 @@ import {
   StockRequestTimeoutError,
 } from "./stock-protocol.ts";
 import { readCapabilityRecord, writeCapabilityRecord, type CapabilityDeps } from "./backend-detect.mts";
-import { MachineRestartedError, ViceError, readEpoch, type EpochResult } from "./vice.ts";
+import { MachineRestartedError, ViceError, readEpoch, type EpochResult } from "./vice-errors.ts";
 import {
   MonitorOwnershipError,
   type ClaimMonitorOptions,

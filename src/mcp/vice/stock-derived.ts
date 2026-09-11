@@ -76,7 +76,7 @@
 //     withDerivedTool() refuses on this set, and a declared-but-unshipped
 //     module fails at module load in the published tarball rather than at
 //     dispatch.
-import { ViceError, type ViceErrorOptions } from "./vice.ts";
+import { ViceError, type ViceErrorOptions } from "./vice-errors.ts";
 import type { StockToolResult } from "./stock-handler.ts";
 import type { StockDispatchDeps } from "./stock-dispatch.ts";
 

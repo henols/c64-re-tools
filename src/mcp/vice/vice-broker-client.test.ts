@@ -31,7 +31,7 @@ import {
 // resolveControlTarget()'s default answer against the SAME function it
 // delegates to, never a second, hand-derived expectation of what that
 // answer should be.
-import { mcpHost } from "./vice.ts";
+import { mcpHost } from "./vice-errors.ts";
 import {
   startControlListener,
   newControlToken,

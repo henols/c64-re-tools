@@ -107,7 +107,7 @@ import {
   type SetDataTypeResult,
 } from "./anno-store.ts";
 import { codeOnly } from "./shipped-modules.ts";
-import { ViceError } from "./vice.ts";
+import { ViceError } from "./vice-errors.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 

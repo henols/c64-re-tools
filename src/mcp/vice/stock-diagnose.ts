@@ -48,7 +48,7 @@ import { ensureStockSession, type StockDispatchDeps, type EnsureStockSessionOutc
 import type { DerivedPureHandler } from "./stock-derived.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
 import { runStateFor, jamObservedFor } from "./stock-runstate.ts";
-import { MachineRestartedError, readEpoch, type EpochResult } from "./vice.ts";
+import { MachineRestartedError, readEpoch, type EpochResult } from "./vice-errors.ts";
 import { MonitorOwnershipError } from "./vice-broker-client.ts";
 import { tryAcquireChannelLock, currentChannelLockHolder, type ChannelLockHandle, type ChannelLockHolder, type MonitorChannel } from "./channel-lock.ts";
 

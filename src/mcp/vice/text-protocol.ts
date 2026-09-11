@@ -67,7 +67,7 @@
 import { EventEmitter } from "node:events";
 import net from "node:net";
 
-import { ViceError } from "./vice.ts";
+import { ViceError } from "./vice-errors.ts";
 import { acquireChannelLock, currentChannelLockHolder } from "./channel-lock.ts";
 
 // ---------------------------------------------------------------------------

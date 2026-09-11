@@ -27,7 +27,7 @@ import {
   type ViceMonitorClient,
 } from "./stock-protocol.ts";
 import { attachRunStateTracker, resetRunStateTrackersForTest } from "./stock-runstate.ts";
-import { MachineRestartedError } from "./vice.ts";
+import { MachineRestartedError } from "./vice-errors.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
 import type { StockDispatchDeps } from "./stock-dispatch.ts";
 

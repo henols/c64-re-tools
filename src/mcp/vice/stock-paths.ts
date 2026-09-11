@@ -35,7 +35,7 @@
 //     through withEmulatorSidePath() should stop and re-read this paragraph.
 import { dirname, join } from "node:path";
 
-import { ViceError, type ViceErrorOptions } from "./vice.ts";
+import { ViceError, type ViceErrorOptions } from "./vice-errors.ts";
 import { repoRoot, toolsDir } from "./repo-root.ts";
 import { isInsideContainer } from "./container-guard.mts";
 import { tryHostPaths } from "./hostpath.ts";

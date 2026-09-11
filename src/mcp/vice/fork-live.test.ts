@@ -64,7 +64,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:net";
 
-import { useInstance, call, serverInfo, beginSession, readEpoch } from "./vice.ts";
+import { useInstance, readEpoch } from "./vice-errors.ts";
+import { call, serverInfo, beginSession } from "./vice.ts";
 import { buildViceArgs } from "./broker-launch.mts";
 import { DELIBERATELY_DELETED_FORK_TOOLS } from "./fork-deleted-tools.ts";
 

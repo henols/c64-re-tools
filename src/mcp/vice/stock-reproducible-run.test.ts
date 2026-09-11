@@ -38,7 +38,7 @@ import {
   type ViceMonitorClient,
 } from "./stock-protocol.ts";
 import { resetRegisterCatalogsForTest } from "./stock-registers.ts";
-import { MachineRestartedError } from "./vice.ts";
+import { MachineRestartedError } from "./vice-errors.ts";
 import { ORACLE_TERMS } from "./stop-oracle.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
 import type { StockDispatchDeps } from "./stock-dispatch.ts";

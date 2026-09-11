@@ -53,7 +53,7 @@ import {
 } from "./anno-store.ts";
 import { AnnoAddressError, AnnoStoreCorruptError, AnnoStoreError, AnnoTypeError, SCHEMA_VERSION } from "./anno-types.ts";
 import type { RangeRow } from "./anno-types.ts";
-import { ViceError } from "./vice.ts";
+import { ViceError } from "./vice-errors.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 

@@ -30,7 +30,7 @@ import { resetRegisterCatalogsForTest } from "./stock-registers.ts";
 import { resetCheckpointStateForTest } from "./stock-checkpoints.ts";
 import { attachRunStateTracker, resetRunStateTrackersForTest } from "./stock-runstate.ts";
 import { MonitorOwnershipError } from "./vice-broker-client.ts";
-import { MachineRestartedError, type EpochResult } from "./vice.ts";
+import { MachineRestartedError, type EpochResult } from "./vice-errors.ts";
 import { tryAcquireChannelLock, currentChannelLockHolder, resetChannelLockForTests } from "./channel-lock.ts";
 import {
   resolveStockLiveIrqHandler,

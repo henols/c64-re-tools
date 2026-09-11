@@ -64,7 +64,7 @@ import { handleRegistersGet } from "./stock-registers.ts";
 import { stockAnswer, isErrorText, type StockSessionHandler, type StockToolResult } from "./stock-handler.ts";
 import { stockDisconnect, type StockConnectSession } from "./stock-connect.ts";
 import type { StockDispatchDeps } from "./stock-dispatch.ts";
-import { readEpoch } from "./vice.ts";
+import { readEpoch } from "./vice-errors.ts";
 
 function describeError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);

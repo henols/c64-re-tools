@@ -36,7 +36,7 @@
 //     time, so it creates no runtime cycle even though stock-dispatch.ts
 //     imports this file at runtime.
 import { MonitorOwnershipError } from "./vice-broker-client.ts";
-import { MachineRestartedError } from "./vice.ts";
+import { MachineRestartedError } from "./vice-errors.ts";
 import { ErrorCode, StockFramingError, StockProtocolError, StockResponseMismatchError, type ViceMonitorClient } from "./stock-protocol.ts";
 import { runStateFor } from "./stock-runstate.ts";
 import type { StockConnectSession } from "./stock-connect.ts";

@@ -14,7 +14,8 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { useInstance, serverInfo, activeInstance, mcpHost } from "./vice.ts";
+import { useInstance, activeInstance, mcpHost } from "./vice-errors.ts";
+import { serverInfo } from "./vice.ts";
 import type { ContainerGuardDeps } from "./container-guard.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));

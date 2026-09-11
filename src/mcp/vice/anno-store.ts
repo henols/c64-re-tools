@@ -189,7 +189,7 @@ import { CONFIDENCE_GRADES, parseConfidencePrefix, AnnoConfidenceGradeError } fr
 // decide "rethrow unchanged" versus "wrap". Every `Anno*Error` in `anno-types.ts`
 // already extends it, so nothing new enters the module graph -- `anno-types.ts`
 // imports the same class from the same file.
-import { ViceError } from "./vice.ts";
+import { ViceError } from "./vice-errors.ts";
 
 /**
  * What every write entry point in this module returns.

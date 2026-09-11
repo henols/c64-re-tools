@@ -32,7 +32,7 @@
 //     bytes (0x40/0x41, 0x5a/0x5b, 0x60/0x61, 0x7a/0x7b) and the control-code
 //     regions do not follow that rule uniformly; each range below is
 //     checked explicitly, not derived from a single arithmetic shortcut.
-import { ViceError } from "./vice.ts";
+import { ViceError } from "./vice-errors.ts";
 
 /** PETSCII's Return code. Both ASCII LF (`\n`) and CR (`\r`) map here -- this
  * is what the fork's own "Use \n for Return" tool description promises. */

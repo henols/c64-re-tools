@@ -79,21 +79,17 @@
 //     every other file in this repo had by default before this phase.
 //     A rollback restores that protection as a side effect of removing
 //     the only import that ever needed the flag.
-import {
-  call,
-  activeInstance,
-  useInstance,
-  DENY_LIST,
-  denyListRefusalMessage,
-  readEpoch,
-  beginSession,
-  MachineRestartedError,
-  mcpHost,
-  type ActiveInstance,
-  type EpochResult,
-  type SessionInfo,
-  type ToolInfo,
-} from "./vice.ts";
+// Phase 52 split: the lease-state accessors and shared error hierarchy
+// (used by BOTH backends, since buildHeldLease() reads activeInstance() on
+// every stock tool call too) now live in vice-errors.ts. Only the fork's
+// own HTTP/JSON-RPC transport symbols (call, DENY_LIST,
+// denyListRefusalMessage, beginSession, SessionInfo) still come from
+// vice.ts, which this import block therefore now splits into two
+// statements rather than one -- removing the vice.ts half entirely, when
+// the fork transport itself is deleted, is then a single-statement
+// removal instead of an archaeology exercise.
+import { activeInstance, useInstance, readEpoch, MachineRestartedError, mcpHost, type ActiveInstance, type EpochResult, type ToolInfo } from "./vice-errors.ts";
+import { call, DENY_LIST, denyListRefusalMessage, beginSession, type SessionInfo } from "./vice.ts";
 // Sibling import, same relocation as above. probeInstance() is the
 // deliberately-fragile liveness check (see that file's own header): one
 // 1500ms-budget round trip, no retry, no dependency on vice.ts's resilient

@@ -17,7 +17,7 @@ import {
   type ResolvedResponse,
   type ViceMonitorClient,
 } from "./stock-protocol.ts";
-import { MachineRestartedError } from "./vice.ts";
+import { MachineRestartedError } from "./vice-errors.ts";
 import { classifyDiagnoseUnavailable } from "./stock-diagnose.ts";
 import type { StockConnectSession, CpuHistoryCapability } from "./stock-connect.ts";
 import type { StockDispatchDeps } from "./stock-dispatch.ts";

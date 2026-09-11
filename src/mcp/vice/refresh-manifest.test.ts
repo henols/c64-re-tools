@@ -18,7 +18,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { main } from "./refresh-manifest.ts";
-import { useInstance, activeInstance } from "./vice.ts";
+import { useInstance, activeInstance } from "./vice-errors.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 

@@ -45,7 +45,7 @@ import {
   type ParsedCpuHistoryEntry,
   type StockProtocolError,
 } from "./stock-protocol.ts";
-import { MachineRestartedError } from "./vice.ts";
+import { MachineRestartedError } from "./vice-errors.ts";
 import { clampCpuHistoryCount, type StockConnectSession } from "./stock-connect.ts";
 import { registerCatalogFor } from "./stock-registers.ts";
 import { stockAnswer, convertWireError, isErrorText, type StockSessionHandler, type StockOkResult } from "./stock-handler.ts";

@@ -32,7 +32,7 @@
 //     installs one object implementing both; a second holder or a
 //     re-derived address->name map in a family module would force it to
 //     install itself twice.
-import { ViceError, type ViceErrorOptions } from "./vice.ts";
+import { ViceError, type ViceErrorOptions } from "./vice-errors.ts";
 
 export interface SymbolResolver {
   resolve(name: string): number | undefined;

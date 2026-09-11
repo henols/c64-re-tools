@@ -33,7 +33,7 @@
 //     field on the options object claimMonitor()/releaseMonitor() already
 //     take, never a second interface.
 import { TextMonitorClient } from "./text-protocol.ts";
-import { ViceError } from "./vice.ts";
+import { ViceError } from "./vice-errors.ts";
 import type { StockConnectBrokerControl } from "./stock-connect.ts";
 import { MonitorOwnershipError } from "./vice-broker-client.ts";
 

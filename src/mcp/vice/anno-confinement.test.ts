@@ -97,7 +97,7 @@ import { join, sep } from "node:path";
 import { closeStore, openStore } from "./anno-store.ts";
 import { AnnoStorePathError, storePathWithinWorkspace, workspaceRelativePath } from "./anno-types.ts";
 import { runAnnoTool } from "./anno-tools.ts";
-import { ViceError } from "./vice.ts";
+import { ViceError } from "./vice-errors.ts";
 
 /** `anno-store.test.ts`'s `inTempDir` shape -- `mkdtempSync` under `tmpdir()`
  * inside a `try` with an UNCONDITIONAL `finally rmSync`. The one addition is

@@ -94,7 +94,7 @@ import {
 } from "./anno-store.ts";
 import { CONFIDENCE_GRADES, parseConfidencePrefix } from "./anno-confidence.ts";
 import { codeOnly } from "./shipped-modules.ts";
-import { ViceError } from "./vice.ts";
+import { ViceError } from "./vice-errors.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
