@@ -134,6 +134,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { extname } from "node:path";
 
 import {
+  addExcludedRange,
   addScope,
   applyEnumUsage,
   applyWrite,
@@ -145,6 +146,7 @@ import {
   insertExecObservations,
   listComments,
   listEnumUsage,
+  listExcludedRanges,
   listExecObservations,
   listLabels,
   listObservedRuns,
@@ -152,6 +154,7 @@ import {
   listRanges,
   listScopes,
   openStore,
+  removeExcludedRange,
   removeScope,
   setComment,
   setDataType,
@@ -624,6 +627,53 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
         ...STORE_PROPERTY,
         start_address: { description: "Start of the scope to remove, INCLUSIVE. Must match the stored start exactly." },
         end_address: { description: "End of the scope to remove, INCLUSIVE. Must match the stored end exactly." },
+        ...BASE_REVISION_PROPERTY,
+      },
+      required: ["store", "start_address", "end_address"],
+    },
+  },
+  {
+    name: "anno_exclude_range",
+    description:
+      "Records the user's request to leave an inclusive span out, WITH the reason, as a durable row (BUILD-05/BUILD-07). " +
+      "RECORDING AN EXCLUSION DOES NOT REMOVE ANYTHING: the export still emits every byte of that span; the record is " +
+      "what makes the request VISIBLE in the output instead of invisible as a gap. What gets reversed, kept or left out " +
+      "is the end-user's decision, and this verb is how the user states it -- it is not the tool deciding. An " +
+      "overlapping span is REFUSED naming both spans; two records that merely TOUCH at a boundary are disjoint and both " +
+      "accepted; an identical repeat SUCCEEDS reporting `changed: false`; the same extent with a DIFFERENT reason is " +
+      "REFUSED rather than overwriting the stored reason. MIND THE ENDS: one transposed end makes every later exclusion " +
+      "overlapping that start refuse -- use anno_include_range to undo it rather than burning revisions off the 32-deep " +
+      "snapshot ring.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ...STORE_PROPERTY,
+        start_address: { description: "Start of the excluded span, INCLUSIVE. Integer, \"$hex\" or \"0x\" string." },
+        end_address: { description: "End of the excluded span, INCLUSIVE." },
+        reason: {
+          type: "string",
+          description:
+            "Why the user asked for this span to be left out. REQUIRED and must be non-empty: a reason column " +
+            "satisfied by an empty string records that something was excluded and loses WHY.",
+        },
+        ...BASE_REVISION_PROPERTY,
+      },
+      required: ["store", "start_address", "end_address", "reason"],
+    },
+  },
+  {
+    name: "anno_include_range",
+    description:
+      "Removes the exclusion whose span is EXACTLY start_address..end_address -- the exact inverse of anno_exclude_range. " +
+      "Both stored ends must match exactly, because a record is never trimmed, split or partially removed. Read the " +
+      "stored spans with anno_exclude_range's sibling read (the excludedRanges list on either verb's own success body) " +
+      "first if you are unsure. Removing an exclusion that is not there SUCCEEDS and reports `changed: false`.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ...STORE_PROPERTY,
+        start_address: { description: "Start of the exclusion to remove, INCLUSIVE. Must match the stored start exactly." },
+        end_address: { description: "End of the exclusion to remove, INCLUSIVE. Must match the stored end exactly." },
         ...BASE_REVISION_PROPERTY,
       },
       required: ["store", "start_address", "end_address"],
@@ -1295,6 +1345,33 @@ function assertScopeArgs(name: string, args: unknown, batchIndex?: number): void
   assertBaseRevisionArg(name, args, batchIndex);
 }
 
+/** Shared validator for `anno_exclude_range` / `anno_include_range`, called
+ * from `assertVerbArgs()` by two arms so the direct route and
+ * `anno_batch_execute`'s inner loop cannot diverge (mirrors `assertScopeArgs`
+ * exactly). "byte" selects the same two span shape rules a scope uses --
+ * an exclusion is not a table. `reason` is required ONLY for the setter: the
+ * unsetter names an existing record by its span alone. This layer refuses an
+ * absent, non-string or empty/whitespace-only reason at the surface; the
+ * store's own `assertCommentText()` re-checks the full comment-text
+ * vocabulary at write time (T-46-01) -- this is not a second, divergent rule,
+ * only an earlier gate on the same three malformed shapes. */
+function assertExcludedRangeArgs(name: string, args: unknown, batchIndex?: number): void {
+  assertStoreArg(name, args, batchIndex);
+  assertSpanArgs(name, args, "byte", batchIndex);
+  if (name === "anno_exclude_range") {
+    const reason = argBag(args).reason;
+    if (typeof reason !== "string" || reason.trim() === "") {
+      refuseArg(
+        name,
+        "reason",
+        `"reason" must be a non-empty string stating why the user asked for this span to be left out, got ${JSON.stringify(reason)}.`,
+        batchIndex,
+      );
+    }
+  }
+  assertBaseRevisionArg(name, args, batchIndex);
+}
+
 function assertGetCommentsArgs(args: unknown, batchIndex?: number): void {
   assertStoreArg("anno_get_comments", args, batchIndex);
   assertMaxResults("anno_get_comments", args, batchIndex);
@@ -1897,6 +1974,8 @@ function assertVerbArgs(name: string, args: unknown, batchIndex?: number): void 
   if (name === "anno_set_data_type") return assertSetDataTypeArgs(args, batchIndex);
   if (name === "anno_add_scope") return assertScopeArgs("anno_add_scope", args, batchIndex);
   if (name === "anno_remove_scope") return assertScopeArgs("anno_remove_scope", args, batchIndex);
+  if (name === "anno_exclude_range") return assertExcludedRangeArgs("anno_exclude_range", args, batchIndex);
+  if (name === "anno_include_range") return assertExcludedRangeArgs("anno_include_range", args, batchIndex);
   if (name === "anno_get_comments") return assertGetCommentsArgs(args, batchIndex);
   if (name === "anno_get_blocks") return assertGetBlocksArgs(args, batchIndex);
   if (name === "anno_create_project_enum") return assertCreateEnumArgs(args, batchIndex);
@@ -2130,6 +2209,31 @@ function dispatchScope(name: string, handle: AnnoStoreHandle, args: unknown): un
     end_address: parseStoreAddress(bag.end_address, { what: "end_address" }),
     ...written,
     scopes: listScopes(handle),
+  };
+}
+
+/** One dispatcher serving `anno_exclude_range` / `anno_include_range`,
+ * modelled on `dispatchScope()`. `excludedRanges` rides on EVERY successful
+ * body, including when it is empty, for the same reason `dispatchSetDataType`'s
+ * own disclosures do: the resulting state is a fact the caller is told, not
+ * the absence of a field it has to know to look for. */
+function dispatchExcludedRange(name: string, handle: AnnoStoreHandle, args: unknown): unknown {
+  const bag = argBag(args);
+  const span = {
+    start: bag.start_address as number | string,
+    endInclusive: bag.end_address as number | string,
+    baseRevision: assertBaseRevisionArg(name, args),
+  };
+  const written =
+    name === "anno_exclude_range"
+      ? addExcludedRange(handle, { ...span, reason: bag.reason as string })
+      : removeExcludedRange(handle, span);
+  return {
+    store: handle.path,
+    start_address: parseStoreAddress(bag.start_address, { what: "start_address" }),
+    end_address: parseStoreAddress(bag.end_address, { what: "end_address" }),
+    ...written,
+    excludedRanges: listExcludedRanges(handle),
   };
 }
 
@@ -2984,6 +3088,7 @@ async function dispatch(name: string, args: unknown, handle: AnnoStoreHandle): P
   if (name === "anno_set_comment") return dispatchSetComment(handle, args);
   if (name === "anno_set_data_type") return dispatchSetDataType(handle, args);
   if (name === "anno_add_scope" || name === "anno_remove_scope") return dispatchScope(name, handle, args);
+  if (name === "anno_exclude_range" || name === "anno_include_range") return dispatchExcludedRange(name, handle, args);
   if (name === "anno_get_comments") return dispatchGetComments(handle, args);
   if (name === "anno_get_blocks") return dispatchGetBlocks(handle, args);
   if (name === "anno_create_project_enum") return dispatchCreateProjectEnum(handle, args);
