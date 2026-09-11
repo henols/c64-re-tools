@@ -1758,7 +1758,11 @@ and owned rather than inherited silently.
    **The first is coupled to `FORK-01`** — if it lands upstream, one of the three
    reasons to keep the fork backend disappears. The trigger is tracked *manually*,
    because a version probe for an opcode with zero wire presence today would be
-   speculative engineering against an unlanded upstream change.
+   speculative engineering against an unlanded upstream change. *Reversal note,
+   2026-09-12: `FORK-01` was reversed and the fork backend removed on this date.
+   A landed `KEYBOARD_MATRIX_SET` opcode now closes a stock gap for everyone
+   running this project rather than affecting a retain/remove choice that no
+   longer exists — see the `FORK-01` row and `docs/stock-hard-losses.md`.*
 
 2. **The 9 follow-on items v0.4.0 promoted rather than closed**, each already
    carrying a named owner in `milestones/v0.4.0-REQUIREMENTS.md`. This is the
@@ -1774,7 +1778,11 @@ and owned rather than inherited silently.
    - `### Fork Backend Follow-on` (3, `FORK-01` = `retain`): the 24
      fork-only-tool disposition; how a breaking tool-surface change is released;
      tracking the `KEYBOARD_MATRIX_SET` reversal trigger (manual — no version
-     probe is possible).
+     probe is possible). *Superseded 2026-09-12: this inventory correctly
+     records what v0.4.0 decided at the time — `retain` — but `FORK-01` was
+     reversed on 2026-09-12 and the fork backend removed. All three follow-on
+     items are now moot as originally framed; see the `FORK-01` Key Decisions
+     row for the current disposition.*
    - `### Control-Plane Bind Follow-on` (1, `PKG-04` = `accept`): the smart
      loopback-unless-container bind default. Explicitly *not* a narrowing of the
      current `0.0.0.0` default — it is new behaviour, and reversing the
