@@ -110,6 +110,33 @@ $ python3 -c "open('not-basic.prg','wb').write(bytes([(i*7+3)%256 for i in range
 
 sha256: `39e3d7b6b5d075d37d053ad89b24b41bef4f3c29760c84447cab3f3be1882241`
 
+## `computed-sys.annostore.json`, `not-basic.annostore.json` (D-02, D-12)
+
+Phase 45, plan 45-06's committed derived-half exports (`anno-store-export.ts`'s
+`exportStoreDocument()`, D-02 schema, `schemaVersion: 1`) for these two
+fixtures. Producing tool versions: the vendored `dxa` binary (sha256
+`0e2bf1a5ea4433c795dbcc96089a29eb8efb6bdaad73f065a5443d31f0ec8523`), Ghidra
+`12.1.3_PUBLIC` with the `C64NmosLanguage` extension, processor id
+`6502:LE:16:nmos`, `prg` import route for both (`fixtures/decomp-execution-manifest.json`'s
+own `ghidraRoute`).
+
+Neither fixture carries a genuine entry point, so no `-R`/entrypoints file
+was ever supplied to dxa for either -- every byte in both documents is
+`dataType: "byte"` (dxa's own `-a dump` classifies an untraced image
+entirely as data), `provenance: "derived"`, zero xrefs, zero labels, zero
+comments. Both carry an EMPTY `execObservations` array, matching
+`fixtures/decomp-execution-manifest.json`'s own `"not-executed"` disposition
+for both -- rendered explicitly as `NOT EXECUTED` (never a silent omission)
+by `anno decomp-completeness`, recorded in
+`docs/phase45-derivation-execution-evidence.md`.
+
+The authored half is filled by plan 45-08's own closure pass, never this
+one (D-12). The derived half regenerates byte-identically from the same
+tool versions and route -- MEASURED this session for `not-basic.prg`
+(re-derived into a fresh scratch store, re-exported, `git status
+--porcelain` empty against the committed file); regenerate rather than
+hand-edit it (D-03).
+
 **MEASURED live 2026-09-08** (`/usr/local/bin/petcat`, VICE 3.10, and
 independently re-confirmed against `/usr/bin/petcat` VICE 3.9 stock — both
 builds agree): `petcat -2 not-basic.prg` prints a banner line **without**

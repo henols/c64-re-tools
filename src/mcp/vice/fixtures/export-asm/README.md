@@ -61,6 +61,34 @@ its host instruction to immediately AFTER it. ACME accepts both and exits 0 for
 both; the label then names `$0804` -- the *next* instruction's operand -- and
 only the byte-diff tells them apart.
 
+## `smc.annostore.json` (D-02, D-12)
+
+Phase 45, plan 45-06's committed derived-half export (`anno-store-export.ts`'s
+`exportStoreDocument()`, D-02 schema, `schemaVersion: 1`). Producing tool
+versions: the vendored `dxa` binary (sha256
+`0e2bf1a5ea4433c795dbcc96089a29eb8efb6bdaad73f065a5443d31f0ec8523`), Ghidra
+`12.1.3_PUBLIC` with the `C64NmosLanguage` extension, processor id
+`6502:LE:16:nmos`, `prg` import route (`fixtures/decomp-execution-manifest.json`'s
+own `ghidraRoute` for this fixture).
+
+All four typed ranges are `dataType: "code"` (dxa, given the entry point
+`$0801`, traces the whole 11-byte payload as one instruction stream --
+`lda #$00` / `inc $0802` / `sta $d020` / `jmp $0801`), `provenance:
+"derived"`, zero xrefs (Ghidra's own auto-analysis recognises no JSR/JMP
+target here beyond the self-jump). `execObservations` is non-empty: this
+fixture's own `jmp $0801` NEVER HALTS, so its real execution run
+(`docs/phase45-derivation-execution-evidence.md`) bounded the run to an
+EXPLICIT 8-instruction step count (two full loop iterations) after setting
+the entry point directly and disabling interrupts -- never a free-run to
+natural termination, which does not exist for this fixture.
+
+The authored half is EMPTY (zero labels, zero comments) -- filled by plan
+45-08's own closure pass (D-12). The derived half regenerates
+byte-identically from the same tool versions and route; the authored half,
+once reviewed, is frozen (D-03) -- regenerate the derived half rather than
+hand-editing it, exactly like `make-export-asm-fixtures.mjs`'s own
+regenerate-not-hand-edit rule for `smc.prg` itself.
+
 ## Regenerating
 
 ```

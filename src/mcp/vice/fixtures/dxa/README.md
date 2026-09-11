@@ -170,6 +170,46 @@ end-of-program marker's two bytes (`$080b-$080c`) are certain-data while the
 very next address (`$080d`) is `unknown` and the two never merge into one
 range.
 
+## `tracer.annostore.json`, `fixture.annostore.json`, `basic-stub.annostore.json` (D-02, D-12)
+
+Phase 45, plan 45-06's committed derived-half exports (`anno-store-export.ts`'s
+`exportStoreDocument()`, D-02 schema, `schemaVersion: 1`) for these three
+fixtures. Producing tool versions: the vendored `dxa` binary (sha256
+`0e2bf1a5ea4433c795dbcc96089a29eb8efb6bdaad73f065a5443d31f0ec8523`, same
+pin as this file's own MEASURED commands above), Ghidra `12.1.3_PUBLIC`
+with the `C64NmosLanguage` extension, processor id `6502:LE:16:nmos`. Route:
+`tracer.prg` and `fixture.prg` go through Ghidra's `flat64k` import (a
+padded 65,536-byte image built fresh from the `.prg`'s own load address,
+never committed); `basic-stub.prg` goes through the `prg` route directly,
+matching `fixtures/decomp-execution-manifest.json`'s own per-fixture
+`ghidraRoute`.
+
+Every range and comment row in all three documents carries
+`provenance: "derived"` (D-03) -- dxa's own `map.ranges` classification
+(`class: "code"` -> `dataType: "code"`, everything else -> `dataType:
+"byte"`; dxa's `-a dump` always classifies every in-window byte as one or
+the other, so no byte is ever left `"unknown"` by this route) plus Ghidra's
+cross-reference import (`anno_import_ghidra_export`, xrefs only, never
+labels -- zero xrefs for all three fixtures, MEASURED: none has a JSR/JMP
+or a seeded entry point Ghidra's own default auto-analysis recognises).
+`tracer.annostore.json` and `fixture.annostore.json` additionally carry a
+non-empty `execObservations` array -- real runtime-execution evidence from
+a genuine stock VICE run under Phase 33's reproducible-run protocol
+(`docs/phase45-derivation-execution-evidence.md`); `basic-stub.annostore.json`
+carries none, matching the manifest's own `"not-executed"` disposition for
+that fixture.
+
+The authored half (names, purpose comments, `DECLINED:`/`DISAGREEMENT-ACCEPTED:`
+resolutions) is EMPTY in all three documents at this point -- zero labels,
+zero comments -- filled by plan 45-08's own closure pass, never by this one
+(D-12: derive first, then agent closure). The DERIVED half regenerates
+byte-identically from these same tool versions and routes: it is
+REGENERATED, never hand-edited, on that half; the authored half, once
+reviewed, is frozen (D-03). Re-deriving one fixture of this family
+(`tracer.prg`) into a fresh scratch store and re-exporting reproduced the
+ranges/labels/comments/xrefs fields exactly, MEASURED this session
+(`docs/phase45-derivation-execution-evidence.md`).
+
 ## The DXA-03 real-image exercise (35-04, Task 3)
 
 `dxa-live.test.ts`'s `dxa-live CORPUS` case exercises the same `-B`/`-l`
