@@ -59,8 +59,30 @@
       "provenance": "derived"
     }
   ],
-  "labels": [],
-  "comments": [],
+  "labels": [
+    {
+      "address": 2049,
+      "name": "computed_sys_program_start",
+      "kind": "User",
+      "bank": null
+    }
+  ],
+  "comments": [
+    {
+      "address": 2049,
+      "commentType": "line",
+      "text": "function: tokenized BASIC program text (10 sys peek(43)+256*peek(44)); not machine code -- this fixture is declared NOT EXECUTED in fixtures/decomp-execution-manifest.json. | inputs: none | outputs: none | side effects: none (never executed as a program; exists to test petcat.decode's computed-SYS verdict).",
+      "bank": null,
+      "provenance": "authored"
+    },
+    {
+      "address": 2053,
+      "commentType": "line",
+      "text": "DECLINED: SYS peek(43)+256*peek(44) -- the machine-code handover target is computed at runtime from the zero-page BASIC-program-start pointer at $2B/$2C (decimal 43/44), never literal. No single target address is correct for this standalone fixture in isolation, and none is annotated here (Pitfall 12: a fabricated indirect target is worse than an absent one).",
+      "bank": null,
+      "provenance": "authored"
+    }
+  ],
   "projectEnums": [],
   "enumUsage": [],
   "xrefs": [],

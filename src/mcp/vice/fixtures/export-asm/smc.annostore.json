@@ -31,8 +31,30 @@
       "provenance": "derived"
     }
   ],
-  "labels": [],
-  "comments": [],
+  "labels": [
+    {
+      "address": 2049,
+      "name": "smc_loop_entry",
+      "kind": "User",
+      "bank": null
+    }
+  ],
+  "comments": [
+    {
+      "address": 2049,
+      "commentType": "line",
+      "text": "function: self-modifying border-colour loop -- loads its own (previously incremented) immediate operand, stores it to the VIC-II border colour register, increments that operand, then jumps back to itself. | inputs: none (state persists in the mutated operand byte at $0802 across iterations) | outputs: none (never returns) | side effects: modifies its own operand byte at $0802 via INC each iteration (self-modifying code), writes VIC-II border colour $D020, and loops forever via JMP $0801 -- this fixture's own jmp $0801 never halts.",
+      "bank": null,
+      "provenance": "authored"
+    },
+    {
+      "address": 2050,
+      "commentType": "line",
+      "text": "DECLINED: this is smc.prg's own self-modified operand byte -- the immediate operand of the LDA #$00 at $0801, rewritten in place by INC $0802 every loop iteration. Its effective value varies per iteration by construction (0, 1, 2, ... wrapping at 256) and there is no single correct symbol or value to name here -- see export-asm/README.md.",
+      "bank": null,
+      "provenance": "authored"
+    }
+  ],
   "projectEnums": [],
   "enumUsage": [],
   "xrefs": [],

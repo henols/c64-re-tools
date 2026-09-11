@@ -59,8 +59,23 @@
       "provenance": "derived"
     }
   ],
-  "labels": [],
-  "comments": [],
+  "labels": [
+    {
+      "address": 2049,
+      "name": "tracer_entry",
+      "kind": "User",
+      "bank": null
+    }
+  ],
+  "comments": [
+    {
+      "address": 2049,
+      "commentType": "line",
+      "text": "function: BASIC-stub entry (10 SYS 2064) that hands control to the machine-code routine at $0810. | inputs: none | outputs: none | side effects: none directly -- invoking $0810 sets the VIC-II border colour ($D020) to black via LDA #$00 / STA $D020.",
+      "bank": null,
+      "provenance": "authored"
+    }
+  ],
   "projectEnums": [],
   "enumUsage": [],
   "xrefs": [],

@@ -675,8 +675,114 @@
       "provenance": "derived"
     }
   ],
-  "labels": [],
-  "comments": [],
+  "labels": [
+    {
+      "address": 251,
+      "name": "dispatch_ptr_lo",
+      "kind": "User",
+      "bank": null
+    },
+    {
+      "address": 252,
+      "name": "dispatch_ptr_hi",
+      "kind": "User",
+      "bank": null
+    },
+    {
+      "address": 2049,
+      "name": "fixture_entry",
+      "kind": "User",
+      "bank": null
+    },
+    {
+      "address": 2071,
+      "name": "loop_arr",
+      "kind": "User",
+      "bank": null
+    },
+    {
+      "address": 2219,
+      "name": "disp_lo",
+      "kind": "User",
+      "bank": null
+    },
+    {
+      "address": 2222,
+      "name": "disp_hi",
+      "kind": "User",
+      "bank": null
+    },
+    {
+      "address": 2239,
+      "name": "arr_src",
+      "kind": "User",
+      "bank": null
+    },
+    {
+      "address": 2271,
+      "name": "arr_dst",
+      "kind": "User",
+      "bank": null
+    }
+  ],
+  "comments": [
+    {
+      "address": 251,
+      "commentType": "line",
+      "text": "function: zero-page low byte of the indirect-JMP dispatch pointer, loaded from disp_lo[X] before the indirect jump. | inputs: none | outputs: none | side effects: read by the indirect JMP ($00fb) as the low byte of the jump target.",
+      "bank": null,
+      "provenance": "authored"
+    },
+    {
+      "address": 252,
+      "commentType": "line",
+      "text": "function: zero-page high byte of the indirect-JMP dispatch pointer, loaded from disp_hi[X] before the indirect jump. | inputs: none | outputs: none | side effects: read by the indirect JMP ($00fb) as the high byte of the jump target (JMP reads ($00fb)/($00fc) as one 16-bit pointer).",
+      "bank": null,
+      "provenance": "authored"
+    },
+    {
+      "address": 2049,
+      "commentType": "line",
+      "text": "function: BASIC-stub entry (10 SYS 2064) that hands control to the machine-code routine at $0810, which sets the border colour, copies a 32-byte array, then dispatches indirectly through a handler table. | inputs: none | outputs: none | side effects: sets VIC-II border colour $D020 to black, copies arr_src ($08bf) into arr_dst ($08df) 32 bytes via loop_arr ($0817), then JMPs indirectly through the zero-page pointer ($00fb/$00fc) to one of three handler routines selected via disp_lo/disp_hi ($08ab/$08ae) at index 2.",
+      "bank": null,
+      "provenance": "authored"
+    },
+    {
+      "address": 2071,
+      "commentType": "line",
+      "text": "function: array-copy loop body -- copies one byte from arr_src+X to arr_dst+X, increments X, loops until X=$20. | inputs: X = current copy index (0..$1f) | outputs: none | side effects: writes arr_dst[X] = arr_src[X]; branches back to itself ($0817) via BNE until the 32-byte copy completes.",
+      "bank": null,
+      "provenance": "authored"
+    },
+    {
+      "address": 2219,
+      "commentType": "line",
+      "text": "function: low-byte table of the three handler-dispatch addresses (handler0/handler1/handler2), indexed by X. | inputs: X = handler index (0..2) | outputs: A = low byte of the selected handler address | side effects: none (read-only table).",
+      "bank": null,
+      "provenance": "authored"
+    },
+    {
+      "address": 2222,
+      "commentType": "line",
+      "text": "function: high-byte table of the three handler-dispatch addresses (handler0/handler1/handler2), indexed by X. | inputs: X = handler index (0..2) | outputs: A = high byte of the selected handler address | side effects: none (read-only table).",
+      "bank": null,
+      "provenance": "authored"
+    },
+    {
+      "address": 2239,
+      "commentType": "line",
+      "text": "function: 32-byte source array (values 0..31) copied into arr_dst by loop_arr. | inputs: none | outputs: none | side effects: none (read-only data).",
+      "bank": null,
+      "provenance": "authored"
+    },
+    {
+      "address": 2271,
+      "commentType": "line",
+      "text": "function: 32-byte destination array filled by loop_arr's array-copy loop. | inputs: none | outputs: none | side effects: written by loop_arr, one byte per iteration.",
+      "bank": null,
+      "provenance": "authored"
+    }
+  ],
   "projectEnums": [],
   "enumUsage": [],
   "xrefs": [],

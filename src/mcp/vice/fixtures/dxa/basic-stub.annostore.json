@@ -45,8 +45,23 @@
       "provenance": "derived"
     }
   ],
-  "labels": [],
-  "comments": [],
+  "labels": [
+    {
+      "address": 2049,
+      "name": "basic_stub_entry",
+      "kind": "User",
+      "bank": null
+    }
+  ],
+  "comments": [
+    {
+      "address": 2049,
+      "commentType": "line",
+      "text": "function: canonical 10 SYS 2064 BASIC stub followed by 4 arbitrary unknown-region ground-truth bytes (aa bb cc dd); not real code. | inputs: none | outputs: none | side effects: none (declared NOT EXECUTED in fixtures/decomp-execution-manifest.json -- SYS 2064 would jump into 4 garbage bytes with no defined behaviour).",
+      "bank": null,
+      "provenance": "authored"
+    }
+  ],
   "projectEnums": [],
   "enumUsage": [],
   "xrefs": [],

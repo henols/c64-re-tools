@@ -150,8 +150,23 @@
       "provenance": "derived"
     }
   ],
-  "labels": [],
-  "comments": [],
+  "labels": [
+    {
+      "address": 2563,
+      "name": "not_basic_data_start",
+      "kind": "User",
+      "bank": null
+    }
+  ],
+  "comments": [
+    {
+      "address": 2563,
+      "commentType": "line",
+      "text": "function: 64 deterministic non-BASIC bytes ((i*7+3) mod 256), the PREP-04 planted-failure fixture for petcat.decode's non-vacuous control; not a program. | inputs: none | outputs: none | side effects: none (declared NOT EXECUTED in fixtures/decomp-execution-manifest.json; never executed by construction, exists to make petcat.decode refuse it).",
+      "bank": null,
+      "provenance": "authored"
+    }
+  ],
   "projectEnums": [],
   "enumUsage": [],
   "xrefs": [],
