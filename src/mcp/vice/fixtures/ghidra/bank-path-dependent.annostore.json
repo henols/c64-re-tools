@@ -89,7 +89,7 @@
     {
       "address": 12288,
       "commentType": "line",
-      "text": "single-byte destination for probe's own lda $D000,x / sta $3000,x copy (X is always 0 here); written once per caller, with the byte currently visible at $D000 under that caller's own $01 state",
+      "text": "Default BASIC area (38911 bytes) [memmap-sha256:60a517c1833a44e6dc1a99a949554fa39834b558371d9f1e98531499fe3642fe",
       "bank": null,
       "provenance": "authored"
     }
