@@ -659,6 +659,7 @@ v1.0.0 to the rebuild half alone.
 - [ ] **Phase 48: The Movement-Hazard Report and Its Purpose-Built Subject** - One synthetic C64 program deliberately carrying all four movement-blocking classes, and a report that enumerates them across those four classes — delivered and reviewed together so neither is written to match the other, and acting on nothing it finds
 - [ ] **Phase 49: The Reassembly Gate, Committed Before the Phase It Gates** - A gate that says whether an exported tree really rebuilds — byte-diffed against the image, hazard report attached, movement exercised on every run — with its rules in git before its first real run and its verdict read as a precondition by Phase 50
 - [ ] **Phase 50: Equivalence and Modifiability** - The rebuild shown behaving like the original in a real emulator and shown being changed, with committed transcripts as the artifacts of record rather than described walkthroughs — and the comparison observed failing before it is trusted
+- [ ] **Phase 51: Planning Vocabulary Out of the Shipped Server** - The 2384 planning citations still in the 88 modules npm ships verbatim are replaced by the reasoning each one stands for, and the guard that already holds `src/skills/**` at zero is widened to hold the server there too
 
 **Phase details, the dependency edges and the sequencing rationale** are in the
 two v1.0.0 sections further below, placed after v0.6.0's and v0.9.0's for the
@@ -1190,6 +1191,87 @@ Notes:
 - **`FUT-05` (the pipeline on a real title) is the natural successor and is not this phase.** Applying the pipeline to `bruce_lee`, where two cracked releases and a provenance ledger already exist, is downstream use. Synthetic-fixture validation is this milestone's bar, and `danish.d64` / `saeger.d64` sitting untracked on disk under `.planning/phases/23-*/evidence/corpus/` does not make them available to it.
 - `EQUIV-03`'s modifiability demonstration and Phase 48's hazard report are deliberately coupled by criterion 4. A trivial decoupled change proves ACME works, not that the decomposition is modifiable — which is the actual claim.
 
+### Phase 51: Planning Vocabulary Out of the Shipped Server
+
+**Goal**: `src/mcp/vice/**` stops shipping this project's GSD bookkeeping to npm.
+Every planning citation in a module `package.json`'s `files[]` publishes is
+replaced by the reason it stands for, and `skills-planning-vocabulary.test.ts`
+is widened from the skills tree to the shipped module set so the surface cannot
+drift back.
+**Requirements**: TBD — none declared yet; declare them at planning time
+**Depends on**: Nothing in this milestone. `.planning/ENGINEERING_RULES.md` § 21
+and the guard it is enforced by both already exist (2026-09-11), so this phase
+can run in any slot. It is numbered last because it was found last, not because
+the rebuild work gates it.
+**Success Criteria** (what must be TRUE):
+
+  1. `scanForPlanningVocabulary()` reports **zero** occurrences across the file
+     set `src/mcp/vice/package.json`'s `files[]` publishes, and the guard that
+     measures it runs in `npm run test:automated`.
+  2. Each replaced citation states the REASON, not a shorter pointer. A diff
+     whose net effect is deleting explanatory comments fails this phase — § 21.2
+     requires the WHY header to survive, and a sweep that shortens the house's
+     engineering rationale away has done the opposite of the intended thing.
+  3. All six comment-pinning guards are green, having been MOVED rather than
+     relaxed wherever a pin named text this phase rewrote.
+  4. The `.planning/` paths cited from product source that do not resolve are
+     gone — not repointed at a different `.planning/` path, which is the same
+     defect one hop along.
+  5. A planted citation in a shipped module reds the widened guard, proving it
+     is not vacuous on the new surface.
+
+**Plans**: TBD
+
+Notes:
+
+- **MEASURED 2026-09-11, with the guard's own predicate rather than a hand-rolled
+  grep** — so the scope is what the enforcing code actually sees. **2384
+  occurrences across 88 of the 92 scannable files** in `files[]`. By category:
+  requirement id 914, decision or gap id 814, plan citation 294, phase citation
+  165, planning artifact filename 117, `.planning` path 41, planning-document
+  cross-reference 34, gsd command 5. Worst files: `vice-proxy.ts` 199,
+  `anno-cli.ts` 149, `anno-store.ts` 124, `vice-broker-client.ts` 95,
+  `stock-dispatch.ts` 95, `anno-tools.ts` 85, `stock-protocol.ts` 84,
+  `anno-export-asm.ts` 74. Separately, **34 of the 77 distinct `.planning/`
+  targets cited from `src/` do not resolve** in this checkout.
+- **The figure is not the 1663 recorded earlier the same day, and the difference
+  is a rule change rather than drift.** That count predates the 2026-09-11
+  tightening of § 21.2, which removed the "allowed when the line names the
+  defining document" escape for decision AND requirement ids — `docs/` ships in
+  the plugin zip but in neither npm tarball, so the qualified form dangles for
+  every `npx` install. The 914 requirement ids came into scope with that change.
+  Re-measure at planning time rather than trusting either number; both are dated.
+- **This is per-site judgement, not a mechanical strip, and that is the whole
+  cost of the phase.** § 21.2's worked pair is the standard: `// Phase 40, plan
+  40-02 (PREP-01, D-13): reached ONLY through the host-tool seam` becomes
+  `// Reached ONLY through the host-tool seam: this script runs container-side
+  and the binary lives on the host, so a direct spawn finds nothing.` Every one
+  of the 2384 needs someone to know what the citation MEANT. Sites whose meaning
+  cannot be recovered are the phase's real risk, and the honest move there is to
+  say so in the plan, not to delete the comment.
+- **Six committed guards pin comment content in this tree and must move in
+  lockstep** (3445 lines between them): `docs-linerefs.test.ts` (584),
+  `docs-dangling-refs.test.ts` (458), `comment-phase-pointers.test.ts` (607),
+  `hop-chain-comments.test.ts` (454), `docs-absorbed-decisions.test.ts` (231),
+  `audit-integrity.test.ts` (1111). Two need care beyond a rename.
+  `comment-phase-pointers.test.ts` does not merely pin strings — it ARGUES for
+  the practice, recording that "a blanket 'no comment mentions Phase N' rule is
+  not viable here" and legalising historical narration. That position is what
+  § 21 overrides, so the guard needs its reasoning rewritten, not its literals
+  patched. And `docs-dangling-refs.test.ts`'s FLOW-02 check is "deliberately,
+  permanently scoped to literals only"; widening it is NOT the route — the new
+  guard covers whole files, and the two should not be merged.
+- **The guard extension is one function.** `skills-planning-vocabulary.test.ts`'s
+  `shippedSkillFiles()` walks `src/skills/**`; the widened form reads
+  `package.json`'s `files[]` instead. All eight categories apply unchanged, and
+  the file already carries the exemption machinery. Note the ordering trap: the
+  guard must be widened LAST or held behind a scope flag, because a guard that
+  is red on arrival gets switched off rather than obeyed — the reason it was
+  scoped to the skills tree in the first place.
+- **The skills tree stays at zero throughout.** It reached zero on 2026-09-11 and
+  the existing guard holds it there. This phase must not regress it, and the
+  widened guard must keep the skills surface covered rather than replacing it.
+
 ## Sequencing Rationale (v1.0.0)
 
 **Why decomposition is first, and why it does not wait for the new subject.**
@@ -1337,6 +1419,7 @@ in a milestone archive.
 | 48. The Movement-Hazard Report and Its Purpose-Built Subject | v1.0.0 | - | Not started | - |
 | 49. The Reassembly Gate, Committed Before the Phase It Gates | v1.0.0 | - | Not started | - |
 | 50. Equivalence and Modifiability | v1.0.0 | - | Not started | - |
+| 51. Planning Vocabulary Out of the Shipped Server | v1.0.0 | - | Not started | - |
 
 **Milestone roll-up:** v0.2.0 — 9 phases, 87 plans, 51/51 in-scope requirements,
 shipped 2026-08-19 (audit round 4 `tech_debt`; 13 deferred items at close).
