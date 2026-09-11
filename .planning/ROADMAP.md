@@ -1044,7 +1044,7 @@ multi-file work is written against an already-enforced invariant
   3. `c64-provenance-diff`'s **existing** verdict appears inline at the point of use on every emitted block regardless of its value: `HIGH`, `UNKNOWN` and `CRACKER-PATCH` ranges are all annotated and no verdict value changes what is emitted. A structural test asserts the exporter reads no confidence threshold and takes no inclusion decision from a verdict.
   4. The verdict is **read** from the existing ledger, never re-derived inside the exporter — with the ledger absent, the exporter declines by name rather than inventing a verdict, observed.
 
-**Plans**: 2/6 plans executed, 4 waves
+**Plans**: 3/6 plans executed, 4 waves
 
 Plans:
 **Wave 1**
@@ -1054,7 +1054,7 @@ Plans:
 **Wave 2** *(blocked on Wave 1 completion)*
 
 - [x] 46-02-PLAN.md — the ledger reader's full refuse-by-name set, its own test file with an information-disclosure control, and BUILD-05's adjacency / empty / ordering edges asserted through the real exporter (wave 2)
-- [ ] 46-03-PLAN.md — the exclusion record: `SCHEMA_VERSION` 5, the `anno_excluded_range` table with its EVID-02-shaped decision record, three store verbs, and BUILD-07's adjacency edge (wave 2)
+- [x] 46-03-PLAN.md — the exclusion record: `SCHEMA_VERSION` 5, the `anno_excluded_range` table with its EVID-02-shaped decision record, three store verbs, and BUILD-07's adjacency edge (wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -1332,7 +1332,7 @@ in a milestone archive.
 | 43. The Runtime Evidence Layer | v0.9.0 | 7/7 | Complete | 2026-09-10 |
 | 44. PROOF-04 — The Independent External Check | v0.9.0 | 3/3 | Complete | 2026-09-10 |
 | 45. Decomposition to Closure, Disagreement First | v1.0.0 | 10/10 | Complete | 2026-09-11 |
-| 46. The Lossless-Export Invariant and the Provenance Carry | v1.0.0 | 2/6 | In Progress | - |
+| 46. The Lossless-Export Invariant and the Provenance Carry | v1.0.0 | 3/6 | In Progress | - |
 | 47. Multi-File Rebuildable Source | v1.0.0 | - | Not started | - |
 | 48. The Movement-Hazard Report and Its Purpose-Built Subject | v1.0.0 | - | Not started | - |
 | 49. The Reassembly Gate, Committed Before the Phase It Gates | v1.0.0 | - | Not started | - |
