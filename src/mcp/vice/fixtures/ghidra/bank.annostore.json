@@ -17,8 +17,36 @@
       "provenance": "derived"
     }
   ],
-  "labels": [],
-  "comments": [],
+  "labels": [
+    {
+      "address": 2049,
+      "name": "bank_basic_stub",
+      "kind": "User",
+      "bank": null
+    },
+    {
+      "address": 2064,
+      "name": "start",
+      "kind": "User",
+      "bank": null
+    }
+  ],
+  "comments": [
+    {
+      "address": 2049,
+      "commentType": "line",
+      "text": "function: BASIC loader stub (10 SYS 2064) plus 3 zero-padding bytes, handing control to start at $0810 on RUN | inputs: none | outputs: none | side effects: none -- pure data, never executed",
+      "bank": null,
+      "provenance": "authored"
+    },
+    {
+      "address": 2064,
+      "commentType": "line",
+      "text": "function: demonstrates that $D020 means different things under different $01 bank states -- writes it under $37 (I/O in, real border colour), $34 (I/O out, plain RAM write), reads it under $34 (plain RAM read), then copies 256 bytes from $D000,x (Character ROM under $33) to $3000,x before restoring $01=$37 | inputs: none | outputs: none in registers | side effects: writes $01 four times ($37,$34,$33,$37), writes $D020 twice, reads $D020 once, copies 256 bytes $D000-$D0FF to $3000-$30FF via the cpchar loop, re-enables interrupts (cli)",
+      "bank": null,
+      "provenance": "authored"
+    }
+  ],
   "projectEnums": [],
   "enumUsage": [],
   "xrefs": [

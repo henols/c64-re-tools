@@ -17,12 +17,52 @@
       "provenance": "derived"
     }
   ],
-  "labels": [],
+  "labels": [
+    {
+      "address": 2049,
+      "name": "bank_path_dependent_stub",
+      "kind": "User",
+      "bank": null
+    },
+    {
+      "address": 2064,
+      "name": "start",
+      "kind": "User",
+      "bank": null
+    },
+    {
+      "address": 2085,
+      "name": "probe",
+      "kind": "User",
+      "bank": null
+    }
+  ],
   "comments": [
     {
       "address": 1,
       "commentType": "line",
       "text": "6510 On-chip 8-bit Input/Output Register [memmap-sha256:60a517c1833a44e6dc1a99a949554fa39834b558371d9f1e98531499fe3642fe",
+      "bank": null,
+      "provenance": "authored"
+    },
+    {
+      "address": 2049,
+      "commentType": "line",
+      "text": "function: BASIC loader stub (10 SYS 2064) plus 3 zero-padding bytes, handing control to start at $0810 on RUN | inputs: none | outputs: none | side effects: none -- pure data, never executed",
+      "bank": null,
+      "provenance": "authored"
+    },
+    {
+      "address": 2064,
+      "commentType": "line",
+      "text": "function: calls probe twice under two different $01 bank states ($34 then $33) so probe's shared body executes once per bank state | inputs: none | outputs: none in registers | side effects: writes $01 three times ($34, $33, $37 restore), calls probe twice (each call executes probe's own reads/writes under a different bank state), re-enables interrupts (cli)",
+      "bank": null,
+      "provenance": "authored"
+    },
+    {
+      "address": 2085,
+      "commentType": "line",
+      "text": "function: shared body reached from two callers under two different $01 values -- behaviour is caller-dependent, not fixed by this routine alone (see the DECLINED comment at $082c, which names both candidate meanings rather than asserting one) | inputs: none (X is always 0 on entry) | outputs: none in registers; copies one byte from $D000,x to $3000,x | side effects: writes $D020 (resolves to RAM under both callers -- see the comment at $0827), reads $D000,x (Character ROM under $01=$33, RAM under $01=$34 -- declined, see $082c), writes $3000,x, returns via rts",
       "bank": null,
       "provenance": "authored"
     },
