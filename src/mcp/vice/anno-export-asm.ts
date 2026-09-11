@@ -123,6 +123,11 @@ import { decomposeRegisterValue, hasRegBitsEntry, type RegisterDecomposition } f
 import { decode } from "./disasm-decoder.ts";
 import { renderLine } from "./disasm-renderer.ts";
 import { parsePrg, flatImageOrigin } from "./prg-image.ts";
+// BUILD-05 (phase 46 plan 01): the ONE reader of `recovery/PROVENANCE.md`'s
+// generated tier. This module never recomputes a verdict -- see
+// `anno-provenance-ledger.ts`'s own header for why reading and recomputing
+// are deliberately kept apart.
+import { provenanceForRange, readProvenanceLedger, type ProvenanceLedger } from "./anno-provenance-ledger.ts";
 
 /** The store's own spelling for an executable range, read out of the one home
  * of that vocabulary rather than re-typed as a literal. `dataType` is never
@@ -168,6 +173,18 @@ export interface ExportAsmOptions {
    * caller's argument pointed -- and an export of a store this call just
    * invented would read as "the program has no annotations". */
   workspaceRoot: string;
+  /**
+   * The provenance ledger to annotate every emitted block from -- `c64-
+   * provenance-diff`'s generated `recovery/PROVENANCE.md`, read (never
+   * re-derived) through `readProvenanceLedger()`. OPTIONAL (assumption A1,
+   * `46-01-PLAN.md`): every existing caller that omits it keeps exporting
+   * exactly as before, byte for byte and comment for comment. NOTHING
+   * CONFINES THIS PATH INSIDE THIS MODULE, on the same terms as `imagePath`
+   * above -- the CALLER owns its confinement. Supplying it and having the
+   * file be unreadable, malformed, or missing a row for some block is a
+   * refusal; omitting it is not.
+   */
+  ledgerPath?: string;
 }
 
 export interface ExportAsmResult {
@@ -541,6 +558,35 @@ const AUTO_NAME_MARKER = "  ; auto-generated name -- still in the annotation bac
 const ALIAS_MARKER_PREFIX = "  ; ALIAS: this address also carries ";
 
 /**
+ * The fixed leading comment on every line carrying a provenance ledger row's
+ * Verdict and Confidence (BUILD-05, phase 46 plan 01). ONE spelling, in one
+ * place, for the same reason `AUTO_NAME_MARKER` and `ALIAS_MARKER_PREFIX`
+ * are: a second wording makes it ungreppable for the only reader it exists
+ * for.
+ *
+ * THIS SPELLING WAS CHOSEN, NOT INHERITED. `diff-images.mjs`'s own
+ * `renderLedger()` header prose mentions `; PROVENANCE:` once, as an
+ * unwired, forward-looking remark about THIS PROJECT'S OWN documentation
+ * provenance conventions -- it names no writer, no reader and no format, and
+ * `.planning/ARCHITECTURE.md` (the real one, not `.planning/research/
+ * ARCHITECTURE.md`) never uses the word "provenance" at all. Reusing that
+ * string silently would attribute intent to it that it does not carry
+ * (`46-RESEARCH.md` Pitfall 6). `PROVENANCE_MARKER_PREFIX` is therefore a
+ * deliberately DIFFERENT, prefix-distinct spelling: `; PROVENANCE LEDGER:`,
+ * never `; PROVENANCE:`.
+ */
+const PROVENANCE_MARKER_PREFIX = "  ; PROVENANCE LEDGER: ";
+
+/**
+ * The fixed leading comment recording that MORE THAN ONE ledger row overlaps
+ * one emitted block. Same rationale as `PROVENANCE_MARKER_PREFIX` above: one
+ * spelling, in one place. The ambiguity is RECORDED, exactly as
+ * `ALIAS_MARKER_PREFIX` records a colliding label, never resolved by picking
+ * one row and staying silent about the rest (T-46-03).
+ */
+const PROVENANCE_AMBIGUITY_MARKER_PREFIX = "  ; PROVENANCE LEDGER AMBIGUITY: ";
+
+/**
  * The largest value an enum variant may carry to be substitutable into an
  * IMMEDIATE operand.
  *
@@ -822,7 +868,7 @@ function withComments(text: string, start: number, endExclusive: number, ctx: Co
  * addresses and counts only.
  */
 export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
-  const { storePath, imagePath, workspaceRoot } = options;
+  const { storePath, imagePath, workspaceRoot, ledgerPath } = options;
 
   const image = loadImage(imagePath);
 
@@ -900,6 +946,14 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
       );
     }
   }
+
+  // BUILD-05 (phase 46 plan 01): ONE read for the whole export, mirroring the
+  // one-store-handle discipline directly above. `ledgerPath === undefined` is
+  // the ONLY question asked of the caller's intent here -- everything after
+  // this line either has a ledger to join against or does not, and no branch
+  // anywhere below (here or in the per-block loop) ever reads a Verdict,
+  // Confidence or Kind VALUE to decide anything.
+  const ledger: ProvenanceLedger | undefined = ledgerPath === undefined ? undefined : readProvenanceLedger(ledgerPath);
 
   // The label index the renderer's `symbolFor` hook reads. Every name is
   // validated BEFORE it can reach the source text -- REJECT, never sanitise.
@@ -1383,6 +1437,49 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
         block.lineCount += emitted.length;
       }
       dataByteCount += slice.length;
+    }
+
+    // BUILD-05 (phase 46 plan 01): when ledger mode is on, every block gets a
+    // provenance comment BEFORE it is bracketed -- never as a threshold, never
+    // gating which blocks reach `emitBlock()` below. The only conditionals
+    // here are "is ledger mode on", "did zero rows come back" (refuse) and
+    // "did more than one come back" (record the ambiguity, choose neither) --
+    // none of which reads a Verdict, Confidence or Kind VALUE.
+    if (ledger !== undefined) {
+      const overlapping = provenanceForRange(ledger, block.start, block.endExclusive - 1);
+      if (overlapping.length === 0) {
+        throw new Error(
+          `exportAsm: the ledger at "${ledgerPath}" carries no row overlapping the block ${hexExtent(block.start)}..` +
+            `${hexExtent(block.endExclusive - 1)} (inclusive) -- refusing to emit this block unannotated or with an invented ` +
+            `verdict. Regenerate the ledger with c64-provenance-diff's "ledger" verb so it covers this range, or omit --ledger.`,
+        );
+      }
+      const provenanceLines: string[] = [];
+      for (const row of overlapping) {
+        // The ONLY free-text field here (Evidence/Reason) goes through the
+        // EXISTING comment-text validator -- never a second one. Verdict,
+        // Confidence and Kind are the ledger's own short controlled-ish
+        // strings, carried verbatim without re-validation, exactly as
+        // `dataType` is copied onto the block comment elsewhere in this file.
+        const checkedEvidence = assertExportableCommentText(row.evidence, block.start);
+        provenanceLines.push(
+          `${PROVENANCE_MARKER_PREFIX}${hex4(row.start)}..${hex4(row.endInclusive)} verdict=${row.verdict} ` +
+            `confidence=${row.confidence} kind=${row.kind} agreeing=${row.agreeingReleases} evidence=${checkedEvidence}`,
+        );
+      }
+      if (overlapping.length > 1) {
+        // Multiplicity is RECORDED, never resolved by picking one (T-46-03) --
+        // the same posture `ALIAS_MARKER_PREFIX` already takes for two store
+        // labels at one address.
+        provenanceLines.push(
+          `${PROVENANCE_AMBIGUITY_MARKER_PREFIX}${overlapping.length} ledger rows overlap this block; none was chosen -- see above.`,
+        );
+      }
+      // Prepended, not counted in `block.lineCount`: `lineCount` counts
+      // CONTENT lines by its own doc-comment, and a provenance comment is
+      // bookkeeping ABOUT the block -- the two `!if * != ...` assertions in
+      // `emitBlock()` are what actually police its extent.
+      content.unshift(...provenanceLines);
     }
 
     // EVERY block goes through `emitBlock()`, code and data alike, so there is

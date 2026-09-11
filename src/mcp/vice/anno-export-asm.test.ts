@@ -86,6 +86,19 @@ import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-
 import { ACME_VERIFY_ARGV_FLAGS, parseAcmeDiagnostics, verifyAcmeAssembles, type AcmeVerifyResult } from "./acme-verify.ts";
 import { assertDataTypeForExport, assertExportableCommentText, exportAsm, substituteImmediateEnum, type ExportAsmResult } from "./anno-export-asm.ts";
 import { AUTO_NAME_PREFIX_RE } from "./anno-coverage.ts";
+// BUILD-05 (phase 46 plan 01): `renderLedger()` is the ONE writer of the
+// generated tier this fixture must satisfy exactly (its own three refusal
+// preconditions -- non-empty UNKNOWN reasons, agreeing_releases >= 2 for
+// ORIGINAL, and full $0000-$FFFF coverage with no gap or overlap). A TEST
+// importing the skill tree is precedented -- `skill-memory-mapping-cli.test.ts`
+// does exactly this for `c64-memory-mapping`'s own `driver.mjs` -- and tests
+// are not in `package.json`'s `files[]`, so the shipped-closure rule this
+// file's own header names is untouched.
+// diff-images.mjs has no declaration file (a plain, unmodified skill script);
+// the single suppression below is scoped to this one import line, never a
+// project-wide relaxation.
+// @ts-expect-error -- diff-images.mjs (a plain skill script, left unmodified) has no .d.mts
+import { renderLedger } from "../../skills/c64-provenance-diff/scripts/diff-images.mjs";
 import { applyEnumUsage, createProjectEnum, openStore, closeStore, listComments, listLabels, setComment, setDataType, setLabel } from "./anno-store.ts";
 import { AnnoCommentError, DATA_TYPES } from "./anno-types.ts";
 // D-16/D-17 (plan 45-05): the ONE owning decoder's own test-only cache reset,
@@ -2704,5 +2717,242 @@ test("EXTERNAL ORACLE: real ACME refuses the same duplicate at the source-text b
   assert.ok(
     diagnostics.some((d) => d.severity === "Error" && d.message.includes("Symbol already defined.")),
     `ACME's OWN duplicate-symbol message, in its --msvc spelling, must be what refused it:\n  stderr: ${run.stderr}\n  parsed: ${JSON.stringify(diagnostics)}`,
+  );
+});
+
+// ---------------------------------------------------------------------------
+// BUILD-05 (phase 46 plan 01): the provenance carry.
+//
+// Proves the whole seam thinly, end to end, on ONE path: a synthetic
+// `recovery/PROVENANCE.md` is built through `renderLedger()`'s own pure API
+// (zero filesystem I/O for the SOURCE data -- the markdown is written to a
+// temp file only because `readProvenanceLedger()` reads a path, exactly as
+// the store reads a path), joined to the exporter's blocks by address, and
+// its Verdict plus Confidence appear as visible comment text inside every
+// emitted block -- with real ACME still reproducing the bytes.
+// ---------------------------------------------------------------------------
+
+/**
+ * A store with THREE ranges, laid out so each one lands in its own emitted
+ * block: `code` at $0801-$0806 (`SHAPE_BODY`), then two `byte` ranges at
+ * $0807-$0808 and $0809-$080a. Built directly against `dir` (not through
+ * `freshDir()` internally) so the ledger fixture below can be written
+ * alongside it in the SAME directory.
+ */
+function ledgerCarryStore(dir: string): StoreFixture {
+  return buildStore(dir, {
+    origin: 0x0801,
+    body: [...SHAPE_BODY, 0xaa, 0xbb, 0xcc, 0xdd],
+    ranges: [
+      { start: 0x0801, endInclusive: 0x0806, dataType: "code" },
+      { start: 0x0807, endInclusive: 0x0808, dataType: "byte" },
+      { start: 0x0809, endInclusive: 0x080a, dataType: "byte" },
+    ],
+  });
+}
+
+/**
+ * The generated-tier rows fed to `renderLedger()`: five rows covering
+ * exactly $0000-$FFFF with no gap or overlap (its own refusal precondition),
+ * with the three MIDDLE rows aligned exactly onto `ledgerCarryStore()`'s
+ * three blocks -- an `ORIGINAL`/`HIGH` row over the code block, an
+ * `UNKNOWN`/`LOW` row over the first byte block, and a `CRACKER-PATCH` row
+ * (confidence is `renderLedger()`'s own fixed compound string for that
+ * verdict) over the second. The two OUTER rows are padding so the ledger, as
+ * a whole, satisfies `renderLedger()`'s full-coverage precondition -- they
+ * overlap no store range and this fixture makes no claim about them.
+ */
+const LEDGER_GENERATED_RANGES = [
+  {
+    start: 0x0000,
+    end: 0x0800,
+    kind: "unused",
+    verdict: "ORIGINAL",
+    agreeing_releases: 2,
+    evidence: "padding before the annotated range, byte-identical across releases",
+  },
+  {
+    start: 0x0801,
+    end: 0x0806,
+    kind: "game",
+    verdict: "ORIGINAL",
+    agreeing_releases: 3,
+    evidence: "matches both independently-cracked releases byte for byte",
+  },
+  {
+    start: 0x0807,
+    end: 0x0808,
+    kind: "game",
+    verdict: "UNKNOWN",
+    agreeing_releases: 0,
+    reason: "insufficient evidence to classify -- treated as UNKNOWN rather than guessed",
+  },
+  {
+    start: 0x0809,
+    end: 0x080a,
+    kind: "game",
+    verdict: "CRACKER-PATCH",
+    agreeing_releases: 0,
+    evidence: "loader table entry rewritten by the cracker",
+  },
+  {
+    start: 0x080b,
+    end: 0xffff,
+    kind: "unused",
+    verdict: "ORIGINAL",
+    agreeing_releases: 2,
+    evidence: "padding after the annotated range, byte-identical across releases",
+  },
+];
+
+/** Writes `LEDGER_GENERATED_RANGES` (or a caller-supplied override) through
+ * `renderLedger()`'s own pure, filesystem-free API, then writes the result to
+ * `dir/PROVENANCE.md` -- the one place this fixture touches a filesystem,
+ * because `readProvenanceLedger()` reads a PATH. */
+function writeLedgerFixture(dir: string, generatedRanges: readonly unknown[] = LEDGER_GENERATED_RANGES): string {
+  const markdown: string = renderLedger({ generatedRanges, gapTolerance: 16, prose: "synthetic fixture, phase 46 plan 01" });
+  const ledgerPath = join(dir, "PROVENANCE.md");
+  writeFileSync(ledgerPath, markdown, "utf8");
+  return ledgerPath;
+}
+
+/**
+ * The text of the ONE block whose ACME origin is `startHex` (e.g. `"$0809"`),
+ * from the block's own `* = ` line up to (not including) the next block's
+ * `* = ` line, or the end of `source` for the last block. Lets a test assert
+ * "this marker is INSIDE this specific block" rather than merely "this marker
+ * is somewhere in the source".
+ */
+function blockSourceFor(source: string, startHex: string): string {
+  const marker = `* = ${startHex}`;
+  const start = source.indexOf(marker);
+  assert.ok(start >= 0, `block origin ${startHex} must appear in the source:\n${source}`);
+  const next = source.indexOf("* = ", start + marker.length);
+  return next === -1 ? source.slice(start) : source.slice(start, next);
+}
+
+test("PRECONDITION: the fixture ledger really carries a CRACKER-PATCH row overlapping the store's own third range (non-vacuity, anno-coverage.test.ts:918-923 shape)", () => {
+  const range = { start: 0x0809, endInclusive: 0x080a };
+  const hit = LEDGER_GENERATED_RANGES.find(
+    (r) => r.verdict === "CRACKER-PATCH" && r.start <= range.endInclusive && r.end >= range.start,
+  );
+  assert.ok(
+    hit,
+    "the fixture must actually carry a CRACKER-PATCH row overlapping a real store range -- otherwise the assertions below measure an empty input, not a genuine carry",
+  );
+});
+
+test("PROVENANCE CARRY Test 1: a ledger-mode export carries the ledger's CRACKER-PATCH verdict and confidence, verbatim, inside the block it overlaps", () => {
+  const dir = freshDir("provenance-1");
+  const { storePath, imagePath } = ledgerCarryStore(dir);
+  const ledgerPath = writeLedgerFixture(dir);
+
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir, ledgerPath });
+
+  const patchBlock = blockSourceFor(result.source, "$0809");
+  assert.match(patchBlock, /; PROVENANCE LEDGER: /, "the CRACKER-PATCH block must carry a provenance marker line");
+  assert.match(patchBlock, /verdict=CRACKER-PATCH\b/, "the marker must name the CRACKER-PATCH verdict verbatim");
+  assert.match(
+    patchBlock,
+    /confidence=HIGH \(patch\), MEDIUM-LOW \(what original there replaced\)/,
+    "the marker must carry the CRACKER-PATCH confidence cell verbatim",
+  );
+});
+
+test("PROVENANCE CARRY Test 2: EVERY block carries a provenance marker, not only the CRACKER-PATCH one", () => {
+  const dir = freshDir("provenance-2");
+  const { storePath, imagePath } = ledgerCarryStore(dir);
+  const ledgerPath = writeLedgerFixture(dir);
+
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir, ledgerPath });
+
+  const markerCount = result.source.split("\n").filter((line) => line.includes("; PROVENANCE LEDGER: ")).length;
+  assert.ok(
+    markerCount >= result.blocks.length,
+    `every emitted block must carry at least one provenance marker -- found ${markerCount} marker(s) across ${result.blocks.length} block(s)`,
+  );
+});
+
+test("PROVENANCE CARRY Test 3: an ORIGINAL/HIGH row and an UNKNOWN/LOW row are BOTH annotated with their own two cells verbatim (A3's superset reading)", () => {
+  const dir = freshDir("provenance-3");
+  const { storePath, imagePath } = ledgerCarryStore(dir);
+  const ledgerPath = writeLedgerFixture(dir);
+
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir, ledgerPath });
+
+  const originalBlock = blockSourceFor(result.source, "$0801");
+  assert.match(originalBlock, /verdict=ORIGINAL\b/, "the code block's marker must name ORIGINAL verbatim");
+  assert.match(originalBlock, /confidence=HIGH\b/, "the code block's marker must name HIGH confidence verbatim");
+
+  const unknownBlock = blockSourceFor(result.source, "$0807");
+  assert.match(unknownBlock, /verdict=UNKNOWN\b/, "the first byte block's marker must name UNKNOWN verbatim");
+  assert.match(unknownBlock, /confidence=LOW\b/, "the first byte block's marker must name LOW confidence verbatim");
+});
+
+test("PROVENANCE CARRY Test 4: real ACME still reassembles the ledger-annotated export byte-identically", { skip: SKIP_REASON }, () => {
+  const dir = freshDir("provenance-4");
+  const { storePath, imagePath } = ledgerCarryStore(dir);
+  const ledgerPath = writeLedgerFixture(dir);
+
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir, ledgerPath });
+  const verdict = verifyExport(result);
+  assert.equal(verdict.outcome, "ok", `the ledger-annotated export must verify:${context(result, verdict)}`);
+  assert.equal(verdict.byteDiff?.equal, true, `the ledger-annotated export must reassemble byte-identically:${context(result, verdict)}`);
+});
+
+test("PROVENANCE CARRY Test 5: omitting ledgerPath emits no PROVENANCE LEDGER text at all, and blocks.length is unchanged", () => {
+  const dir = freshDir("provenance-5");
+  const { storePath, imagePath } = ledgerCarryStore(dir);
+  writeLedgerFixture(dir); // written but never passed -- proves omission is what matters, not absence of a ledger on disk
+
+  const withLedger = exportAsm({ storePath, imagePath, workspaceRoot: dir, ledgerPath: join(dir, "PROVENANCE.md") });
+  const withoutLedger = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+
+  assert.ok(!withoutLedger.source.includes("PROVENANCE LEDGER"), "omitting ledgerPath must emit no PROVENANCE LEDGER text at all");
+  assert.equal(
+    withoutLedger.blocks.length,
+    withLedger.blocks.length,
+    "the ledger changes comment text and nothing else -- block count must be identical either way",
+  );
+});
+
+test("PROVENANCE CARRY Test 6: a block the ledger leaves uncovered is refused BY NAME, never emitted unannotated or with an invented verdict", () => {
+  const dir = freshDir("provenance-6");
+  const { storePath, imagePath } = ledgerCarryStore(dir);
+
+  // A ledger that is otherwise well-formed but has had the UNKNOWN row over
+  // the FIRST byte block ($0807-$0808) deleted after rendering -- something
+  // `renderLedger()` itself would never produce (it refuses unless the
+  // generated tier covers exactly $0000-$FFFF with no gap), but
+  // `readProvenanceLedger()` does not yet enforce that coverage assertion
+  // (deferred to plan 46-02), so this file is a well-formed-per-row, genuinely
+  // gapped ledger that the reader accepts.
+  const fullMarkdown: string = renderLedger({
+    generatedRanges: LEDGER_GENERATED_RANGES,
+    gapTolerance: 16,
+    prose: "synthetic fixture, phase 46 plan 01",
+  });
+  const gappedMarkdown = fullMarkdown
+    .split("\n")
+    .filter((line) => !line.startsWith("| $0807 |"))
+    .join("\n");
+  const ledgerPath = join(dir, "PROVENANCE-gapped.md");
+  writeFileSync(ledgerPath, gappedMarkdown, "utf8");
+
+  assert.throws(
+    () => exportAsm({ storePath, imagePath, workspaceRoot: dir, ledgerPath }),
+    (e: unknown) => {
+      assert.ok(e instanceof Error);
+      assert.ok(e.message.includes(ledgerPath), `the refusal must name the ledger path: ${e.message}`);
+      assert.ok(
+        !e.message.includes("insufficient evidence to classify"),
+        `the refusal must never quote a ledger row's own Evidence/Reason text: ${e.message}`,
+      );
+      assert.ok(
+        !e.message.includes("loader table entry rewritten by the cracker"),
+        `the refusal must never quote ANY fixture row's Evidence/Reason text, not only the uncovered block's own: ${e.message}`,
+      );
+      return true;
+    },
   );
 });
