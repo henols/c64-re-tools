@@ -72,6 +72,16 @@ Stated once so no requirement below has to restate them.
 - [ ] **EQUIV-03**: Modifiability is demonstrated, not described — one behaviour removed and one added in the rebuilt source, reassembled, both observed taking effect in VICE, transcript committed
 - [ ] **EQUIV-04**: The synthetic fixtures are committed and the whole pipeline is runnable in CI
 
+### Fork-Backend Removal (Phase 52)
+
+- [ ] **FORKRM-01**: `VICE_BACKEND`, `probeBackend()`, `resolvedBackend()`'s fork branch and `buildBackendAwareTool()` are gone, every `backend === "fork"` test branch is removed rather than skipped, and no module imports a fork transport. One backend means no backend selection.
+- [ ] **FORKRM-02**: `.planning/PROJECT.md`'s `FORK-01` row and its `### Out of Scope` fork bullet state the REVERSAL with its date and basis, and `docs-fork-decision.test.ts` is rewritten to pin the new decision rather than deleted.
+- [ ] **FORKRM-03**: SID read-back, matrix keyboard and RESTORE/NMI are recorded as ACCEPTED, dated, with their evidence, in `docs/stock-hard-losses.md`, and they stop being routed to the fork anywhere in shipped skill text.
+- [ ] **FORKRM-04**: `DENY_LIST` and `denyListRefusalMessage()` are gone along with their consumers, and `anno-tools.ts`'s inverted allowlist (`CURATED_ANNO_TOOLS`, `assertAnnoBatch`, `ANNO_MAX_BATCH_DEPTH`) is unchanged and still guarded.
+- [ ] **FORKRM-05**: `capability-registry.ts` is resolved by a recorded decision, not left half-referenced.
+- [ ] **FORKRM-06**: `tools-manifest.stock.json` is the only manifest; `refresh-manifest.ts` and `tools-manifest.json` are gone and nothing regenerates a manifest from a live host.
+- [ ] **FORKRM-07**: `npm run test:automated` is green at the documented failure-set floor, with every fork-conditional test branch removed rather than skipped.
+
 ## Departures from the v0.5.0 text
 
 Recorded explicitly, because these 14 requirements had stood byte-identical
@@ -143,15 +153,36 @@ Success-Criteria live in `.planning/ROADMAP.md` → "Phase Details".
 | EQUIV-02 | Phase 50 | Pending |
 | EQUIV-03 | Phase 50 | Pending |
 | EQUIV-04 | Phase 50 | Pending |
+| FORKRM-01 | Phase 52 | Pending |
+| FORKRM-02 | Phase 52 | Pending |
+| FORKRM-03 | Phase 52 | Pending |
+| FORKRM-04 | Phase 52 | Pending |
+| FORKRM-05 | Phase 52 | Pending |
+| FORKRM-06 | Phase 52 | Pending |
+| FORKRM-07 | Phase 52 | Pending |
 
 **Coverage:**
 
-- v1.0.0 requirements: 15 total
-- Mapped to phases: 15
+- v1.0.0 requirements: 22 total
+- Mapped to phases: 22
 - Unmapped: 0
 
-Six phases, 45-50. Every requirement above maps to exactly one phase; no
-requirement is orphaned and none is owned by two. Two mappings are worth
+Seven phases carry requirements above: 45-50 plus 52. (Phase 51 also carries a
+`TBD` requirements line in `.planning/ROADMAP.md`, but declaring or renumbering
+anything for Phase 51 is that phase's own planning job — doing it here would
+make these Coverage totals wrong the moment 51 is planned. The 22/22 figure
+above is not a claim that every roadmap phase is mapped; it is a claim that
+every requirement declared so far is mapped to exactly one phase.)
+
+**Why `FORKRM-*` is a separate id namespace:** `FORK-01` and `FORK-02` are Key
+Decisions rows in `.planning/PROJECT.md` (with an archived mirror in
+`.planning/milestones/v0.4.0-REQUIREMENTS.md`), not milestone requirements, so
+reusing those ids here would collide a decision id with a requirement id. A
+fresh namespace keeps the 1:1 requirement-to-phase invariant this section
+asserts.
+
+Every requirement above maps to exactly one phase; no requirement is orphaned
+and none is owned by two. Two mappings among the original fifteen are worth
 stating explicitly because they look like exceptions and are not:
 
 - **`BUILD-04` owns the purpose-built synthetic subject as well as the four-class
@@ -172,4 +203,4 @@ Phase 47 rather than retrofitted onto it.
 
 ---
 *Requirements defined: 2026-09-10*
-*Last updated: 2026-09-10 — traceability populated by roadmap creation (Phases 45-50, 15/15 mapped)*
+*Last updated: 2026-09-12 — FORKRM-01..07 declared and traced to Phase 52 (22/22 mapped); Phase 51's TBD line remains unaddressed by design*
