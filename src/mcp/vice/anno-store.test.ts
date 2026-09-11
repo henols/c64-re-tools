@@ -37,6 +37,7 @@ import { fileURLToPath } from "node:url";
 import { buildPaintIndex, NO_ROW, resolveAt } from "./anno-index.ts";
 import {
   AnnoAddressError,
+  AnnoCommentError,
   AnnoCommentGradeError,
   AnnoLabelError,
   AnnoRangeShapeError,
@@ -51,6 +52,7 @@ import {
   SCHEMA_VERSION,
 } from "./anno-types.ts";
 import {
+  addExcludedRange,
   addScope,
   applyEnumUsage,
   applyWrite,
@@ -64,6 +66,7 @@ import {
   insertExecObservations,
   listComments,
   listEnumUsage,
+  listExcludedRanges,
   listExecObservations,
   listLabels,
   listObservedRuns,
@@ -78,6 +81,7 @@ import {
   pruneSnapshots,
   putXref,
   reconcileSnapshotRing,
+  removeExcludedRange,
   retainedRevisions,
   revertTo,
   setComment,
@@ -4662,6 +4666,120 @@ test("WR-21 discrimination: two ADJACENT scopes are both accepted -- touching at
         ],
         "0x2000 and 0x2001 touch and do not overlap -- both scopes are stored",
       );
+    } finally {
+      closeStore(handle);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// BUILD-07 -- the exclusion verbs, RED-phase draft. This is a provisional,
+// representative slice of Task 2's <behavior> list, written before
+// `addExcludedRange`/`listExcludedRanges`/`removeExcludedRange` exist so this
+// TDD task's RED phase is a real observed failure and not merely asserted.
+// Task 3 collects and supersedes this block with the FULL coverage group.
+// ---------------------------------------------------------------------------
+
+test("BUILD-07 RED: addExcludedRange with a fresh disjoint span inserts one row and reports changed:true", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const handle = openStore(path, { workspaceRoot: dir });
+    try {
+      const result = addExcludedRange(handle, { start: 0x4000, endInclusive: 0x4fff, reason: "cracktro, not original game code" });
+      assert.equal(result.changed, true);
+      assert.deepEqual(listExcludedRanges(handle), [{ id: 1, start: 0x4000, endInclusive: 0x4fff, reason: "cracktro, not original game code" }]);
+    } finally {
+      closeStore(handle);
+    }
+  });
+});
+
+test("BUILD-07 RED: an identical repeat reports changed:false and does not insert a second row", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const handle = openStore(path, { workspaceRoot: dir });
+    try {
+      addExcludedRange(handle, { start: 0x4000, endInclusive: 0x4fff, reason: "cracktro" });
+      const repeat = addExcludedRange(handle, { start: 0x4000, endInclusive: 0x4fff, reason: "cracktro" });
+      assert.equal(repeat.changed, false);
+      assert.equal(listExcludedRanges(handle).length, 1);
+    } finally {
+      closeStore(handle);
+    }
+  });
+});
+
+test("BUILD-07 RED: the same extent with a DIFFERENT reason is refused, and the stored reason is unchanged", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const handle = openStore(path, { workspaceRoot: dir });
+    try {
+      addExcludedRange(handle, { start: 0x4000, endInclusive: 0x4fff, reason: "cracktro" });
+      assert.throws(() => addExcludedRange(handle, { start: 0x4000, endInclusive: 0x4fff, reason: "trainer" }), AnnoRangeShapeError);
+      assert.deepEqual(listExcludedRanges(handle), [{ id: 1, start: 0x4000, endInclusive: 0x4fff, reason: "cracktro" }]);
+    } finally {
+      closeStore(handle);
+    }
+  });
+});
+
+test("BUILD-07 RED: an overlapping span is refused, naming both spans and the existing row's id, and nothing is inserted", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const handle = openStore(path, { workspaceRoot: dir });
+    try {
+      addExcludedRange(handle, { start: 0x4000, endInclusive: 0x4fff, reason: "cracktro" });
+      assert.throws(
+        () => addExcludedRange(handle, { start: 0x4fff, endInclusive: 0x5fff, reason: "trainer" }),
+        (e: unknown) => {
+          assert.ok(e instanceof AnnoRangeShapeError);
+          assert.match((e as Error).message, /id=1/);
+          return true;
+        },
+      );
+      assert.equal(listExcludedRanges(handle).length, 1);
+    } finally {
+      closeStore(handle);
+    }
+  });
+});
+
+test("BUILD-07 RED: an empty or whitespace-only reason is refused and nothing is inserted", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const handle = openStore(path, { workspaceRoot: dir });
+    try {
+      assert.throws(() => addExcludedRange(handle, { start: 0x4000, endInclusive: 0x4fff, reason: "   " }), AnnoCommentError);
+      assert.deepEqual(listExcludedRanges(handle), []);
+    } finally {
+      closeStore(handle);
+    }
+  });
+});
+
+test("BUILD-07 RED: listExcludedRanges over a store with no exclusions returns an empty array", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const handle = openStore(path, { workspaceRoot: dir });
+    try {
+      assert.deepEqual(listExcludedRanges(handle), []);
+    } finally {
+      closeStore(handle);
+    }
+  });
+});
+
+test("BUILD-07 RED: removeExcludedRange with an exact extent match deletes the row and reports changed:true; a non-existent extent reports changed:false", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const handle = openStore(path, { workspaceRoot: dir });
+    try {
+      addExcludedRange(handle, { start: 0x4000, endInclusive: 0x4fff, reason: "cracktro" });
+      const removed = removeExcludedRange(handle, { start: 0x4000, endInclusive: 0x4fff });
+      assert.equal(removed.changed, true);
+      assert.deepEqual(listExcludedRanges(handle), []);
+      const removedAgain = removeExcludedRange(handle, { start: 0x4000, endInclusive: 0x4fff });
+      assert.equal(removedAgain.changed, false);
     } finally {
       closeStore(handle);
     }
