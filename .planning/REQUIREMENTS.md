@@ -75,7 +75,7 @@ Stated once so no requirement below has to restate them.
 ### Fork-Backend Removal (Phase 52)
 
 - [ ] **FORKRM-01**: `VICE_BACKEND`, `probeBackend()`, `resolvedBackend()`'s fork branch and `buildBackendAwareTool()` are gone, every `backend === "fork"` test branch is removed rather than skipped, and no module imports a fork transport. One backend means no backend selection.
-- [ ] **FORKRM-02**: `.planning/PROJECT.md`'s `FORK-01` row and its `### Out of Scope` fork bullet state the REVERSAL with its date and basis, and `docs-fork-decision.test.ts` is rewritten to pin the new decision rather than deleted.
+- [x] **FORKRM-02**: `.planning/PROJECT.md`'s `FORK-01` row and its `### Out of Scope` fork bullet state the REVERSAL with its date and basis, and `docs-fork-decision.test.ts` is rewritten to pin the new decision rather than deleted.
 - [ ] **FORKRM-03**: SID read-back, matrix keyboard and RESTORE/NMI are recorded as ACCEPTED, dated, with their evidence, in `docs/stock-hard-losses.md`, and they stop being routed to the fork anywhere in shipped skill text.
 - [ ] **FORKRM-04**: `DENY_LIST` and `denyListRefusalMessage()` are gone along with their consumers, and `anno-tools.ts`'s inverted allowlist (`CURATED_ANNO_TOOLS`, `assertAnnoBatch`, `ANNO_MAX_BATCH_DEPTH`) is unchanged and still guarded.
 - [ ] **FORKRM-05**: `capability-registry.ts` is resolved by a recorded decision, not left half-referenced.
@@ -154,7 +154,7 @@ Success-Criteria live in `.planning/ROADMAP.md` → "Phase Details".
 | EQUIV-03 | Phase 50 | Pending |
 | EQUIV-04 | Phase 50 | Pending |
 | FORKRM-01 | Phase 52 | Pending |
-| FORKRM-02 | Phase 52 | Pending |
+| FORKRM-02 | Phase 52 | Complete |
 | FORKRM-03 | Phase 52 | Pending |
 | FORKRM-04 | Phase 52 | Pending |
 | FORKRM-05 | Phase 52 | Pending |
