@@ -12,7 +12,7 @@
 // updated them). This file is the first COMMITTED test of that set; before
 // it, the set was enforced by comment convention only.
 //
-// Widening the five-member list below is a REVIEWED DECISION, not a
+// Widening the four-member list below is a REVIEWED DECISION, not a
 // mechanical fix for a failing test -- a new tool that genuinely needs
 // host-path translation is rare (D-17's own table is exactly four tools,
 // all long-lived emulator-side file operations) and each addition should be
@@ -152,17 +152,17 @@ function hostpathImporters(): string[] {
 // `host-tool-client.ts`, `ghidra-project.mts`, and the `ghidra-*`/`dxa-*`
 // members still to come) deliberately did NOT join this list. The family
 // reaches host-path logic through `containerpath.ts`, already one of the
-// five below, and every request-side path crosses as workspace-relative and
+// four below, and every request-side path crosses as workspace-relative and
 // is resolved server-side (plan 34-01's A-03) -- there was nothing to
 // translate on the way in. See HOST_TOOL_FAMILY_FLOOR, further down, for the
 // second, independently pinned floor that keeps this family inside the
-// closed-consumer discipline without widening this five-member set.
-const EXPECTED_IMPORTERS = ["containerpath.ts", "install-resources.ts", "stock-paths.ts", "vice-proxy.ts", "vice-sync.ts"];
+// closed-consumer discipline without widening this four-member set.
+const EXPECTED_IMPORTERS = ["containerpath.ts", "install-resources.ts", "stock-paths.ts", "vice-proxy.ts"];
 
-test("hostpath.ts's production consumer set is exactly the five declared modules", () => {
+test("hostpath.ts's production consumer set is exactly the four declared modules", () => {
   const importers = hostpathImporters();
   assert.deepEqual(importers, EXPECTED_IMPORTERS);
-  assert.equal(importers.length, 5);
+  assert.equal(importers.length, 4);
 });
 
 test("stock-derived.ts is absent from the hostpath.ts consumer set", () => {
@@ -194,13 +194,13 @@ test("the disassembler modules (not yet reachable from stock-dispatch.ts in this
 // interception: its runner is registered through buildViceTool() directly and
 // can never reach forwardToVice(), call() or ensureViceSession(), so there is
 // no interception to forget. What makes that argument SOUND rather than merely
-// stated is the five-member EXPECTED_IMPORTERS deepEqual above -- if an anno-*
+// stated is the four-member EXPECTED_IMPORTERS deepEqual above -- if an anno-*
 // module ever imported hostpath.ts, the store path would be translated across
 // the container boundary and would open (or refuse) a file on the wrong side
 // of it.
 //
 // The NAMED-ABSENCE form is deliberate and is the whole point of listing files
-// that do not exist yet: the five-member set alone goes red only AFTER the
+// that do not exist yet: the four-member set alone goes red only AFTER the
 // import lands, and says only "the set changed". This says WHICH module, and
 // says it for a module a later plan in this phase has not written yet -- so
 // the constraint is asserted before there is anything to violate it.
@@ -214,7 +214,7 @@ test("every module this phase adds is absent from the hostpath.ts consumer set (
 /** The annotation module family, derived from disk rather than typed
  * (INT-01/D-11.1-03): every `anno-*.ts` file `topLevelProductionModules()`
  * already excludes `*.test.*` from. This is the SAME `readdirSync`-based
- * helper the five-member EXPECTED_IMPORTERS test above uses -- reused, not a
+ * helper the four-member EXPECTED_IMPORTERS test above uses -- reused, not a
  * second directory walk -- filtered down to the family name pattern.
  *
  * RE-EXPRESSED OVER THE `anno-` PREFIX BY PLAN 29-05 (D-05, D-13). The
@@ -472,7 +472,7 @@ test("planted violation, three import shapes (Phase 10 IN-02 proof): multi-line 
 const HOST_TOOL_FAMILY_RE = /^(host-tool|ghidra|dxa)(-[A-Za-z0-9-]*)?\.(ts|mts)$/;
 
 /** The host-tool execution-seam module family, derived from disk via the
- * SAME `topLevelProductionModules()` helper the five-member consumer scan
+ * SAME `topLevelProductionModules()` helper the four-member consumer scan
  * and the `anno-` family both reuse -- never a second directory walk.
  * Returns a SORTED list so every assertion over it is order-independent
  * (asserted below by driving this over a reversed synthetic listing).

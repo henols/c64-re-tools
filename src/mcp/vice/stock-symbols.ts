@@ -19,9 +19,9 @@
 // Node's `fs` inside the MCP server's OWN process; there is no wire
 // filename argument at all, so the translation does not apply and applying
 // it would read the wrong file (or nothing). hostpath-consumers.test.ts's
-// closed five-member production consumer set (containerpath.ts,
-// install-resources.ts, stock-paths.ts, vice-proxy.ts, vice-sync.ts) must
-// stay exactly five -- this module joining it would fail that test outright.
+// closed four-member production consumer set (containerpath.ts,
+// install-resources.ts, stock-paths.ts, vice-proxy.ts) must stay exactly
+// four -- this module joining it would fail that test outright.
 //
 // The confirmed input format is a VICE label file, one `al C:xxxx .Name`
 // line per symbol, verified against ACME's `--vicelabels` output via
