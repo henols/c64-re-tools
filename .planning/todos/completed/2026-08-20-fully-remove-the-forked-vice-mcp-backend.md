@@ -18,6 +18,26 @@ files:
 resolves_phase: 14
 ---
 
+> **SUPERSEDED — 2026-09-12.** This todo's `retain` disposition, recorded below
+> under `## Resolution` (decided at plan 14-05, 2026-08-22), is superseded as of
+> 2026-09-12. The fork backend was removed. The current answer to this todo's
+> own question is the opposite of what the body below records — no fork
+> backend is retained, and there is no per-backend selection any more.
+>
+> **Basis for the reversal:** both of `FORK-01`'s original retain grounds were
+> withdrawn — the hedge was never exercised (the project's own v0.8.0 close
+> audit recorded this in writing), and the owner reports the fork never worked
+> in practice (owner scope call, 2026-09-11). Full basis:
+> `.planning/notes/fork-removal-reversal-basis.md`.
+>
+> **The live record** is `.planning/PROJECT.md`'s `FORK-01` Key Decisions row
+> (amended in place, not renumbered), with the accepted-losses record — SID
+> read-back, matrix keyboard, RESTORE/NMI, now permanent rather than hedged —
+> at `docs/stock-hard-losses.md`.
+>
+> This file carries no `status`/`disposition` front-matter key to reset; the
+> body below is left completely intact, unedited, below this block.
+
 ## Problem
 
 v0.2.0 made stock upstream `x64sc` a first-class, project-selectable backend, but
