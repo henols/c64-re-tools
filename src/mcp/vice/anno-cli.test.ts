@@ -1651,7 +1651,7 @@ function makeExportableProject(dir: string, imageName = "game.prg"): { storePath
 }
 
 test("export-asm: --help lists the verb and states, in as many words, that it does NOT assemble", () => {
-  assert.match(helpResult.stdout, /^ {2}export-asm <image> --store FILE \[--out FILE\] \[--force\]$/m);
+  assert.match(helpResult.stdout, /^ {2}export-asm <image> --store FILE \[--out FILE\] \[--ledger FILE\] \[--force\]$/m);
   assert.match(helpResult.stdout, /DOES NOT ASSEMBLE/);
   // The claim this verb must never make. `--help` is the only channel by which
   // a caller learns what the command does, so the absence has to hold there.
@@ -1917,6 +1917,113 @@ test("export-asm: more than one positional is refused rather than silently ignor
     );
     assert.notEqual(code, 0);
     assert.match(stderr, /usage: export-asm <image>/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// BUILD-05 (phase 46 plan 01): `--ledger FILE`, the user-facing entry point
+// for the provenance carry. This section exercises the CLI's own PLUMBING --
+// parsing, the closed-option-set gate, confinement, existence, pass-through
+// to `exportAsm()` -- never the ledger's own parse/join behaviour, which
+// `anno-export-asm.test.ts` already covers end to end against real
+// `renderLedger()` output. `writeMinimalLedger()` below is a hand-written
+// fixture for exactly that reason: it only needs to be SHAPED like a ledger,
+// not a byte-for-byte `renderLedger()` product.
+// ---------------------------------------------------------------------------
+
+/** A minimal, hand-written ledger covering exactly `makeExportableProject()`'s
+ * own address range ($C000-$C005). */
+function writeMinimalLedger(dir: string, name = "PROVENANCE.md"): string {
+  const ledgerPath = join(dir, name);
+  writeFileSync(
+    ledgerPath,
+    "| Start | End | Kind | Verdict | Confidence | Agreeing releases | Evidence / Reason |\n" +
+      "|---|---|---|---|---|---|---|\n" +
+      "| $c000 | $c005 | game | ORIGINAL | HIGH | 3 | matches every release |\n",
+    "utf8",
+  );
+  return ledgerPath;
+}
+
+test("export-asm: --ledger FILE annotates the output with the ledger's verdict, and the run still exits 0", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    const { storePath, imagePath } = makeExportableProject(ws);
+    const ledgerPath = writeMinimalLedger(ws);
+    const { result: code, stdout } = await withCapturedConsole(() =>
+      runAnnoCli(["export-asm", imagePath, "--store", storePath, "--ledger", ledgerPath]),
+    );
+    assert.equal(code, 0, stdout);
+    const written = readFileSync(join(ws, "game.a"), "utf8");
+    assert.match(written, /; PROVENANCE LEDGER: /);
+    assert.match(written, /verdict=ORIGINAL/);
+  });
+});
+
+test("export-asm: omitting --ledger still exits 0 and the output carries no PROVENANCE LEDGER text", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    const { storePath, imagePath } = makeExportableProject(ws);
+    const { result: code } = await withCapturedConsole(() => runAnnoCli(["export-asm", imagePath, "--store", storePath]));
+    assert.equal(code, 0);
+    const written = readFileSync(join(ws, "game.a"), "utf8");
+    assert.doesNotMatch(written, /PROVENANCE LEDGER/);
+  });
+});
+
+test("export-asm: a missing --ledger value, and a flag-shaped one, are each refused as a missing value rather than swallowing the next token", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    const { storePath, imagePath } = makeExportableProject(ws);
+
+    const noValue = await withCapturedConsole(() => runAnnoCli(["export-asm", imagePath, "--store", storePath, "--ledger"]));
+    assert.notEqual(noValue.result, 0);
+    assert.match(noValue.stderr, /--ledger requires a value/);
+
+    const flagShaped = await withCapturedConsole(() =>
+      runAnnoCli(["export-asm", imagePath, "--store", storePath, "--ledger", "--force"]),
+    );
+    assert.notEqual(flagShaped.result, 0);
+    assert.match(flagShaped.stderr, /--ledger requires a value/);
+  });
+});
+
+test("export-asm: a nonexistent --ledger is refused by name, and no output file is written", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    const { storePath, imagePath } = makeExportableProject(ws);
+    const missing = join(ws, "does-not-exist.md");
+    const { result: code, stderr } = await withCapturedConsole(() =>
+      runAnnoCli(["export-asm", imagePath, "--store", storePath, "--ledger", missing]),
+    );
+    assert.notEqual(code, 0);
+    assert.match(stderr, /ledger not found/i);
+    assert.equal(existsSync(join(ws, "game.a")), false, "a refused --ledger must not still write an unannotated export");
+  });
+});
+
+test("export-asm: a --ledger outside the workspace root is refused by the ONE seam, on the same terms as --store and --out", async () => {
+  await withTempDir(async (outside) => {
+    await withWorkspaceTempDir(async (ws) => {
+      const { storePath, imagePath } = makeExportableProject(ws);
+      const escaped = writeMinimalLedger(outside, "escaped.md");
+      const { result: code, stderr } = await withCapturedConsole(() =>
+        runAnnoCli(["export-asm", imagePath, "--store", storePath, "--ledger", escaped]),
+      );
+      assert.notEqual(code, 0);
+      assert.match(stderr, /outside the workspace root/i);
+      assert.equal(existsSync(join(ws, "game.a")), false);
+    });
+  });
+});
+
+test("export-asm: --out landing on --ledger is refused, and --force does NOT lift it (WR-05, extended to the third input)", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    const { storePath, imagePath } = makeExportableProject(ws);
+    const ledgerPath = writeMinimalLedger(ws);
+    const originalLedgerText = readFileSync(ledgerPath, "utf8");
+    const { result: code, stderr } = await withCapturedConsole(() =>
+      runAnnoCli(["export-asm", imagePath, "--store", storePath, "--ledger", ledgerPath, "--out", ledgerPath, "--force"]),
+    );
+    assert.notEqual(code, 0);
+    assert.match(stderr, /ledger \(--ledger\)/);
+    assert.equal(readFileSync(ledgerPath, "utf8"), originalLedgerText, "--force must not lift the refusal for the ledger input");
   });
 });
 

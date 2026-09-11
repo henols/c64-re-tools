@@ -129,6 +129,29 @@ assigned at capture time and kept verbatim. Everything the trace reaches is `gam
 Per D-05 the `.bin` files are **never** edited or zeroed. Classification lives in
 the manifests; the bytes stay verbatim evidence.
 
+## Carrying the verdict into the rebuild
+
+A verdict recorded here does not stay here. `anno export-asm`'s `--ledger` flag
+(BUILD-05) reads THIS skill's generated `recovery/PROVENANCE.md` — never
+re-deriving anything — and carries every covered range's Verdict and Confidence
+into the exported ACME source as an inline comment on the block that range
+overlaps:
+
+```
+anno export-asm game.prg --store game.annostore --ledger recovery/PROVENANCE.md
+```
+
+The `<image>` positional wants one of `.prg`/`.raw`/`.bin`, `--store` an
+`.annostore`/`.store` file, and `--ledger` the `.md` this skill's own `ledger`
+verb writes.
+
+**The flag makes the verdict VISIBLE and decides nothing.** Every byte in
+scope is still emitted, whatever the verdict says — a `CRACKER-PATCH` row does
+not drop, filter or alter a single byte, it only makes the evidence readable
+at the point of use. What gets reversed, kept or left out remains the
+end-user's decision, never the tool's. `--ledger` is optional: omitting it
+exports exactly as before, with no provenance comment anywhere in the output.
+
 ## A `CRACKER-PATCH` in `game` code is a trainer until proven otherwise
 
 `count-patches` counts exactly one intersection — verdict `CRACKER-PATCH`, kind

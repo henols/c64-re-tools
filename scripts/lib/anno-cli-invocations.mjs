@@ -289,6 +289,11 @@ export const FLAG_KINDS = Object.freeze({
   "export-asm": Object.freeze({
     "--store": Object.freeze([".annostore", ".store"]),
     "--out": Object.freeze([".a", ".asm"]),
+    // --ledger (phase 46 plan 01, BUILD-05) names the Markdown document
+    // `renderLedger()` writes (`recovery/PROVENANCE.md`) -- `.md` is the only
+    // extension a live invocation can name, since that function has exactly
+    // one writer and it never emits anything else.
+    "--ledger": Object.freeze([".md"]),
   }),
   "evid-disagreements": Object.freeze({
     "--store": Object.freeze([".annostore", ".store"]),

@@ -182,6 +182,7 @@ const CLI_PATH_ARGUMENTS: readonly CliPathArgument[] = [
   { verb: "export-asm", argument: "<image>", kind: "positional" },
   { verb: "export-asm", argument: "--store", kind: "flag" },
   { verb: "export-asm", argument: "--out", kind: "flag" },
+  { verb: "export-asm", argument: "--ledger", kind: "flag" },
   { verb: "evid-disagreements", argument: "--store", kind: "flag" },
   { verb: "decomp-completeness", argument: "--store", kind: "flag" },
   { verb: "decomp-completeness", argument: "--disagreements", kind: "flag" },
@@ -224,6 +225,11 @@ const NON_PATH_OPTIONS: readonly string[] = ["--check", "--force", "--sample", "
  * `cmdDecompCompleteness()`; the verb has no positional and no `--out`, so
  * it contributes exactly three to this floor.
  *
+ * RAISED 13 -> 14 by phase 46 plan 46-01 (BUILD-05), in the commit that added
+ * `export-asm --ledger`. It is confined by the SAME seam, in the SAME
+ * `cmdExportAsm()` confinement block as `<image>` and `--store`, so it
+ * contributes exactly one to this floor.
+ *
  * HAND-PINNED AS AN INTEGER LITERAL, AND IT MUST STAY THAT WAY. Deriving it
  * from `CLI_PATH_ARGUMENTS.length` (or from disk) would make it unfailable and
  * would discard the entire non-vacuity it exists to provide: a truncated or
@@ -231,7 +237,7 @@ const NON_PATH_OPTIONS: readonly string[] = ["--check", "--force", "--sample", "
  * trivially. Raise it when a verb genuinely grows a path argument; never lower
  * it to fit.
  */
-const CLI_PATH_ARGUMENT_FLOOR = 13;
+const CLI_PATH_ARGUMENT_FLOOR = 14;
 
 // ---------------------------------------------------------------------------
 // 1. The inventory is declared and complete.

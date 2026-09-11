@@ -246,7 +246,7 @@ verbs:
       claim unfalsifiable, because any one weak measure can be hidden by
       averaging it against a strong one.
 
-  export-asm <image> --store FILE [--out FILE] [--force]
+  export-asm <image> --store FILE [--out FILE] [--ledger FILE] [--force]
       Writes ACME source for a program from its annotation store. <image>
       supplies the PAYLOAD BYTES and the load origin; --store names the
       ANNOTATION STORE holding the ranges, labels, comments and enums. Those
@@ -259,6 +259,13 @@ verbs:
       confinement seam as a caller-supplied --out, rather than trusted
       because this verb computed it. An existing destination is refused
       unless --force is passed.
+      --ledger names c64-provenance-diff's generated recovery/PROVENANCE.md.
+      Supplying it makes the export carry each covered range's recorded
+      Verdict and Confidence as inline comments (BUILD-05). It is OPTIONAL:
+      omitting it exports exactly as before. The flag changes COMMENT TEXT
+      ONLY -- it never changes which bytes or which blocks are emitted, and a
+      range the supplied ledger does not cover is refused by name rather than
+      emitted unannotated.
       Requires an EXISTING annotation store and an EXISTING image, and
       creates neither.
       THIS VERB DOES NOT ASSEMBLE ITS OUTPUT. It writes source text and
@@ -352,12 +359,15 @@ function errMsg(err: unknown): string {
  *
  * `export-asm` deliberately carries NO assembler-facing option. It writes
  * source and runs no assembler, so there is no binary to name, no exit status
- * to surface and no flag that could imply either.
+ * to surface and no flag that could imply either. `--ledger` (BUILD-05,
+ * phase 46 plan 01) does not weaken that claim: it is an EVIDENCE-CARRYING
+ * INPUT, exactly like `--store`, never an assembler-facing option -- it names
+ * a file to READ, not a way to run or configure an assembler.
  */
 export const VERB_OPTIONS: Readonly<Record<string, readonly string[]>> = Object.freeze({
   "render-memmap": ["--provenance", "--out", "--force", "--check"],
   coverage: ["--store", "--out", "--force", "--sample"],
-  "export-asm": ["--store", "--out", "--force"],
+  "export-asm": ["--store", "--out", "--ledger", "--force"],
   "evid-disagreements": ["--store", "--json"],
   "decomp-completeness": ["--store", "--disagreements", "--manifest", "--json"],
 });
@@ -1240,23 +1250,30 @@ interface ExportAsmParsedArgs {
   storeMissingValue?: boolean;
   out?: string;
   outMissingValue?: boolean;
+  /** BUILD-05 (phase 46 plan 01): the ledger `c64-provenance-diff` generates
+   * (`recovery/PROVENANCE.md`). OPTIONAL -- see `ExportAsmOptions.ledgerPath`
+   * in `anno-export-asm.ts` for why. */
+  ledger?: string;
+  ledgerMissingValue?: boolean;
   force?: boolean;
   unknownOption?: string;
 }
 
-/** Fixed, closed option set for export-asm -- exactly `--store`, `--out` and
- * `--force`. The SAME WR-08 posture, and deliberately the same SHAPE, as
- * `parseRenderMemmapArgs()` and `parseCoverageArgs()` above rather than a
- * third convention: an unimplemented flag is refused as `unknownOption`, and
- * `--store`/`--out` with a missing or flag-shaped value are refused through
- * their own `*MissingValue` fields rather than silently swallowing the next
- * token. */
+/** Fixed, closed option set for export-asm -- exactly `--store`, `--out`,
+ * `--ledger` and `--force`. The SAME WR-08 posture, and deliberately the same
+ * SHAPE, as `parseRenderMemmapArgs()` and `parseCoverageArgs()` above rather
+ * than a third convention: an unimplemented flag is refused as
+ * `unknownOption`, and `--store`/`--out`/`--ledger` with a missing or
+ * flag-shaped value are refused through their own `*MissingValue` fields
+ * rather than silently swallowing the next token. */
 function parseExportAsmArgs(rest: string[]): ExportAsmParsedArgs {
   const positional: string[] = [];
   let store: string | undefined;
   let storeMissingValue = false;
   let out: string | undefined;
   let outMissingValue = false;
+  let ledger: string | undefined;
+  let ledgerMissingValue = false;
   let force = false;
   let unknownOption: string | undefined;
   for (let i = 0; i < rest.length; i++) {
@@ -1277,6 +1294,14 @@ function parseExportAsmArgs(rest: string[]): ExportAsmParsedArgs {
         out = value;
         i++;
       }
+    } else if (a === "--ledger") {
+      const value = rest[i + 1];
+      if (isMissingOptionValue(value)) {
+        ledgerMissingValue = true;
+      } else {
+        ledger = value;
+        i++;
+      }
     } else if (a === "--force") {
       force = true;
     } else if (a.startsWith("--")) {
@@ -1285,7 +1310,7 @@ function parseExportAsmArgs(rest: string[]): ExportAsmParsedArgs {
       positional.push(a);
     }
   }
-  return { positional, store, storeMissingValue, out, outMissingValue, force, unknownOption };
+  return { positional, store, storeMissingValue, out, outMissingValue, ledger, ledgerMissingValue, force, unknownOption };
 }
 
 /**
@@ -1311,11 +1336,11 @@ function defaultExportAsmOut(imagePath: string, storeDir: string): string {
 }
 
 /**
- * `export-asm <image> --store FILE [--out FILE] [--force]` -- ACME source for
- * a program, emitted from its annotation store by `anno-export-asm.ts`'s
- * `exportAsm()`.
+ * `export-asm <image> --store FILE [--out FILE] [--ledger FILE] [--force]` --
+ * ACME source for a program, emitted from its annotation store by
+ * `anno-export-asm.ts`'s `exportAsm()`.
  *
- * ALL THREE OF THIS VERB'S PATHS ARE CONFINED, and the ORDER each step happens
+ * EVERY ONE OF THIS VERB'S PATHS IS CONFINED, and the ORDER each step happens
  * in is the load-bearing part rather than the mere presence of the calls. It
  * follows `cmdRenderMemmap()`'s chain deliberately, because that chain is the
  * corrected shape of three reproduced escapes (`29-VERIFICATION.md` gap 3 /
@@ -1327,6 +1352,9 @@ function defaultExportAsmOut(imagePath: string, storeDir: string): string {
  *     this file exist" for any path this process can reach -- so probing first
  *     and confining second would leak that answer for a path the seam is about
  *     to refuse.
+ *   - `--ledger` (BUILD-05, phase 46 plan 01) joins that SAME confinement
+ *     block, on the SAME terms, WHEN SUPPLIED -- it is a third input this run
+ *     reads, not a second-class one confined later or not at all.
  *   - `--out`'s DEFAULT is applied FIRST and the result confined AFTER, so a
  *     path this verb computed is confined by the same rule as one a caller
  *     supplied, rather than trusted because this verb computed it (CR-02).
@@ -1348,7 +1376,8 @@ function defaultExportAsmOut(imagePath: string, storeDir: string): string {
  * verification result, and the summary says so in as many words.
  */
 async function cmdExportAsm(rest: string[]): Promise<number> {
-  const { positional, store, storeMissingValue, out, outMissingValue, force, unknownOption } = parseExportAsmArgs(rest);
+  const { positional, store, storeMissingValue, out, outMissingValue, ledger, ledgerMissingValue, force, unknownOption } =
+    parseExportAsmArgs(rest);
 
   if (unknownOption) {
     console.error(`export-asm: unknown option "${unknownOption}"\n`);
@@ -1365,9 +1394,14 @@ async function cmdExportAsm(rest: string[]): Promise<number> {
     console.log(USAGE);
     return 1;
   }
+  if (ledgerMissingValue) {
+    console.error("export-asm: --ledger requires a value\n");
+    console.log(USAGE);
+    return 1;
+  }
 
   if (positional.length !== 1) {
-    console.error("export-asm: usage: export-asm <image> --store FILE [--out FILE] [--force]");
+    console.error("export-asm: usage: export-asm <image> --store FILE [--out FILE] [--ledger FILE] [--force]");
     return 1;
   }
   const image = positional[0]!;
@@ -1383,13 +1417,19 @@ async function cmdExportAsm(rest: string[]): Promise<number> {
   // T-30-15 / CR-03: the ONE confinement seam, on both input paths, BEFORE any
   // filesystem probe. `openStore()` downstream is handed this same workspace
   // root, so its own confinement agrees by construction rather than by a
-  // second rule.
+  // second rule. `--ledger` joins this SAME block, WHEN SUPPLIED -- confined
+  // before any probe on the same terms as `<image>` and `--store`, never
+  // confined later or by a second rule.
   const workspaceRoot = repoRoot();
   let imagePath: string;
   let storePath: string;
+  let ledgerPath: string | undefined;
   try {
     imagePath = storePathWithinWorkspace(image, workspaceRoot);
     storePath = storePathWithinWorkspace(store, workspaceRoot);
+    if (ledger !== undefined) {
+      ledgerPath = storePathWithinWorkspace(ledger, workspaceRoot);
+    }
   } catch (err) {
     console.error(`export-asm: ${errMsg(err)}`);
     return 1;
@@ -1403,6 +1443,13 @@ async function cmdExportAsm(rest: string[]): Promise<number> {
   }
   if (!existsSync(imagePath)) {
     console.error(`export-asm: image not found: ${imagePath}`);
+    return 1;
+  }
+  if (ledgerPath !== undefined && !existsSync(ledgerPath)) {
+    console.error(
+      `export-asm: ledger not found: ${ledgerPath} -- regenerate it with c64-provenance-diff's "ledger" verb, or omit ` +
+        "--ledger to export without provenance annotation.",
+    );
     return 1;
   }
 
@@ -1427,6 +1474,9 @@ async function cmdExportAsm(rest: string[]): Promise<number> {
   // below, so this was user-directed rather than silent -- but a CLI whose
   // header says "Every verb takes EXISTING inputs and refuses rather than
   // guess" should not let its own output destination land on its own input.
+  // `--ledger` (BUILD-05, phase 46 plan 01) joins this SAME check: it is a
+  // THIRD input this run reads, and `--force` must not lift the refusal for
+  // it any more than it lifts it for the store or the image.
   //
   // SEPARATE FROM `refuseOverwrite()` AND UNCONDITIONAL, deliberately.
   // `--force` means "yes, replace the file I named"; it cannot mean "yes,
@@ -1434,10 +1484,11 @@ async function cmdExportAsm(rest: string[]): Promise<number> {
   // for that reason. This is the one write refusal in this file `--force`
   // does not lift.
   //
-  // All three paths are confined realpaths by this point, so the comparison
-  // is exact rather than a string-shape guess about `..` and symlinks.
-  if (outPath === storePath || outPath === imagePath) {
-    const which = outPath === storePath ? "annotation store (--store)" : "image (<image>)";
+  // Every path compared here is a confined realpath by this point, so the
+  // comparison is exact rather than a string-shape guess about `..` and
+  // symlinks.
+  if (outPath === storePath || outPath === imagePath || outPath === ledgerPath) {
+    const which = outPath === storePath ? "annotation store (--store)" : outPath === imagePath ? "image (<image>)" : "ledger (--ledger)";
     console.error(
       `export-asm: refusing to write the exported source to ${outPath} -- that is this run's own ${which}. ` +
         `The export would destroy the input it was generated from, and --force does not lift this refusal. ` +
@@ -1454,7 +1505,7 @@ async function cmdExportAsm(rest: string[]): Promise<number> {
 
   let result: ExportAsmResult;
   try {
-    result = exportAsm({ storePath, imagePath, workspaceRoot });
+    result = exportAsm({ storePath, imagePath, workspaceRoot, ledgerPath });
   } catch (err) {
     // Every refusal the exporter raises -- an uncovered range, an
     // inexpressible enum binding, a comment with no line to attach to --
