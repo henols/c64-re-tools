@@ -258,7 +258,7 @@ Phase: 47 — Multi-File Rebuildable Source
 Plan: Not started
 Status: Ready to plan
 Progress: [██░░░░░░░░] 17% (6/6 plans in phase 46; milestone-wide phase percent is tracked separately in frontmatter)
-Last activity: 2026-09-11 — Phase 46 complete, transitioned to Phase 47
+Last activity: 2026-09-11 - Completed quick task 260911-syq: Answer the v1.0.0 three-hard-losses research question to unblock Phase 52
 
 ## Performance Metrics
 
@@ -1540,6 +1540,7 @@ ledger table row below were both updated in the same change as this one.
 | 260902-ech | Strip the 6 unverified chat-artifact citations from `docs/undocumented-opcodes-ghidra.md` (5 carried `utm_source=chatgpt.com`; `[4]` pointed at a third-party VICE fork mirror) — 7 inline markers and 6 link definitions removed, 776 -> 766 lines, the author's own "not yet compiled" caveat preserved | 2026-09-02 | 6749c66 |  | [260902-ech-strip-unverifiable-chatgpt-artifact-cita](./quick/260902-ech-strip-unverifiable-chatgpt-artifact-cita/) |
 | 260902-tkg | Anchor `scripts/package.sh`'s leak guard — `tools/` to the archive root, `node_modules/` at any depth — unblocking the release build, RED on every push since 2026-08-29 on a false positive against nine phase-23 `evidence/tools/` files | 2026-09-02 | 5071e24 |  | [260902-tkg-anchor-tools-leak-guard-to-archive-root](./quick/260902-tkg-anchor-tools-leak-guard-to-archive-root/) |
 | 260908-m4k | Codify the owner's standing no-auto-install constraint for external tools as a `- **Dependency**:` bullet in CLAUDE.md's `### Constraints` list, mirrored byte-identically into `.planning/PROJECT.md` (the GSD-managed block's declared source, so a CLAUDE.md-only edit would have been wiped on the next regeneration). Documents the permitted detect-then-refuse-by-name pattern per tool and names the three deliberate out-of-scope cases (`ensure-mcp-deps.sh`'s own `npm ci`, CI's `apt install acme`, the installer's `--vendor` opt-in). No behavioural change — the tree already complied | 2026-09-08 | 6df87285, 4384ecec |  | [260908-m4k-document-the-no-auto-install-constraint-](./quick/260908-m4k-document-the-no-auto-install-constraint-/) |
+| 260911-syq | Answer the v1.0.0 three-hard-losses research question to unblock Phase 52 | 2026-09-11 | 3c21ce6b |  | [260911-syq-answer-the-v1-0-0-three-hard-losses-rese](./quick/260911-syq-answer-the-v1-0-0-three-hard-losses-rese/) |
 
 ### Blockers/Concerns
 
