@@ -1044,12 +1044,12 @@ multi-file work is written against an already-enforced invariant
   3. `c64-provenance-diff`'s **existing** verdict appears inline at the point of use on every emitted block regardless of its value: `HIGH`, `UNKNOWN` and `CRACKER-PATCH` ranges are all annotated and no verdict value changes what is emitted. A structural test asserts the exporter reads no confidence threshold and takes no inclusion decision from a verdict.
   4. The verdict is **read** from the existing ledger, never re-derived inside the exporter — with the ledger absent, the exporter declines by name rather than inventing a verdict, observed.
 
-**Plans**: 6 plans, 4 waves
+**Plans**: 1/6 plans executed, 4 waves
 
 Plans:
 **Wave 1**
 
-- [ ] 46-01-PLAN.md — TRACER: the provenance carry end to end — synthetic ledger → new reader module → optional `ledgerPath` on `exportAsm()` → verdict and confidence as inline comment text → `anno export-asm --ledger FILE`, with real ACME still reproducing the bytes (wave 1)
+- [x] 46-01-PLAN.md — TRACER: the provenance carry end to end — synthetic ledger → new reader module → optional `ledgerPath` on `exportAsm()` → verdict and confidence as inline comment text → `anno export-asm --ledger FILE`, with real ACME still reproducing the bytes (wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -1332,7 +1332,7 @@ in a milestone archive.
 | 43. The Runtime Evidence Layer | v0.9.0 | 7/7 | Complete | 2026-09-10 |
 | 44. PROOF-04 — The Independent External Check | v0.9.0 | 3/3 | Complete | 2026-09-10 |
 | 45. Decomposition to Closure, Disagreement First | v1.0.0 | 10/10 | Complete | 2026-09-11 |
-| 46. The Lossless-Export Invariant and the Provenance Carry | v1.0.0 | 0/6 | Not started | - |
+| 46. The Lossless-Export Invariant and the Provenance Carry | v1.0.0 | 1/6 | In Progress | - |
 | 47. Multi-File Rebuildable Source | v1.0.0 | - | Not started | - |
 | 48. The Movement-Hazard Report and Its Purpose-Built Subject | v1.0.0 | - | Not started | - |
 | 49. The Reassembly Gate, Committed Before the Phase It Gates | v1.0.0 | - | Not started | - |

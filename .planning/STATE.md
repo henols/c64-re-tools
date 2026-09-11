@@ -5,16 +5,16 @@ milestone_name: The Rebuild Half
 current_phase: 46
 current_phase_name: The Lossless-Export Invariant and the Provenance Carry
 status: executing
-stopped_at: Phase 46 planned (6 plans, 4 waves), ready to execute
-last_updated: "2026-09-11T13:21:36.923Z"
+stopped_at: Completed 46-01-PLAN.md
+last_updated: "2026-09-11T15:11:37.930Z"
 last_activity: 2026-09-11
-last_activity_desc: Phase 46 planned — 6 plans in 4 waves, verification passed
-state_head: e69cf5f66277a61b52ba6cf64f87887aa177e21f
+last_activity_desc: Phase 46 execution started
+state_head: 345ccf24084bc88a7bd4c5383b94c13508b30d4b
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 16
-  completed_plans: 10
+  completed_plans: 11
   percent: 17
 ---
 
@@ -32,7 +32,7 @@ RAM, inspect chip state — and keep working when the emulator misbehaves.
 means — two concurrent monitor channels to one machine, with contention reported
 by name rather than misdiagnosed as a wedge — without moving the ONE thing.*
 
-**Current focus:** Phase 45 — Decomposition to Closure, Disagreement First
+**Current focus:** Phase 46 — The Lossless-Export Invariant and the Provenance Carry
 Milestone **v1.0.0 "The Rebuild Half"**, roadmap created 2026-09-10, Phases 45-50,
 15/15 requirements mapped. The presumptive scope recorded at the
 v0.9.0 close is now the committed one: `DECOMP-01..04`, `BUILD-01..07` (the text
@@ -254,11 +254,11 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 46 (The Lossless-Export Invariant and the Provenance Carry) — READY TO EXECUTE
-Plan: Not started
-Status: Ready to execute
-Progress: [░░░░░░░░░░] 0% (0/6 plans in phase 46; milestone-wide phase percent is tracked separately in frontmatter)
-Last activity: 2026-09-11 — Phase 46 planned (6 plans, 4 waves), verification passed
+Phase: 46 (The Lossless-Export Invariant and the Provenance Carry) — EXECUTING
+Plan: 2 of 6
+Status: Executing
+Progress: [██░░░░░░░░] 17% (1/6 plans in phase 46; milestone-wide phase percent is tracked separately in frontmatter)
+Last activity: 2026-09-11 — Plan 46-01 complete (the end-to-end provenance carry: ledger reader, exportAsm() annotation, CLI --ledger flag)
 
 ## Performance Metrics
 
@@ -546,6 +546,7 @@ Last activity: 2026-09-11 — Phase 46 planned (6 plans, 4 waves), verification 
 | Phase 45 P08 | 50min | 3 tasks | 7 files |
 | Phase 45 P09 | 60min | 3 tasks | 4 files |
 | Phase 45 P10 | 35 min | 3 tasks | 2 files |
+| Phase 46 P01 | 86 min | 2 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -1255,6 +1256,8 @@ Recent decisions affecting current work:
 - [Phase 45]: Phase 45 plan 45-08: the enum route cannot install an enum for this family's only register write ($D020) -- no bit-field entry in the curated anno-regbits.json table or its OVERRIDES. Disclosed rather than worked around (hand-editing the generated table is prohibited); recorded in docs/phase45-closure-dxa-family.md and WINDOWS.md.
 - [Phase 45]: Measured, disclosed correction (45-09): the real decomp-completeness gate's buildEntryPoints() counts every chained jsr target as its own entry point, so charset-phantom.prg's 511-block chain needed all 512 blocks named and documented, not 2-3 as Task 1's own text predicted. — Verified before trusting the plan's prediction by running decomp-completeness --json against the unedited store first; honored the real gate's measured behaviour over the illustrative prediction, matching plans 45-07/45-08's own precedent.
 - [Phase 45]: Phase 45 closure: criterion 5 demonstrated on the real charset-phantom store under real ACME (byte-identical), a 23-test offline regression proves all nine fixtures' gate on every CI run with no external tool, and the phase closure record reports all five ROADMAP criteria MET with two honestly-disclosed partials (a $DD00 curated-table gap worked around via scratch-only enum removal; the idempotence sweep is a whole-document round trip for all nine rather than a raw dxa/Ghidra re-derivation for all nine).
+- [Phase 46]: Provenance annotation is opt-in via an optional ledgerPath on ExportAsmOptions -- a no-ledger export stays byte-identical to v0.9.0.
+- [Phase 46]: The exported comment carries BOTH the ledger's Verdict and Confidence cells verbatim (a strict superset), resolving the ROADMAP wording that conflated a Confidence value with two Verdict values.
 
 ### Pending Todos
 
@@ -2327,8 +2330,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-11T11:06:11.835Z
-Stopped at: Phase 45 complete, ready to plan Phase 46
+Last session: 2026-09-11T15:11:37.593Z
+Stopped at: Completed 46-01-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
