@@ -1527,7 +1527,8 @@ async function cmdExportAsm(rest: string[]): Promise<number> {
   console.log(
     `export-asm: wrote ${outPath} (${result.blocks.length} block(s), ${result.symbolCount} symbol(s), ` +
       `${result.autoNamedSymbolCount} auto-named, ${result.unexpressibleCount} unexpressible instruction(s), ` +
-      `${result.midInstructionLabelCount} mid-instruction label(s), ${result.enumSubstitutionCount} enum substitution(s))`,
+      `${result.midInstructionLabelCount} mid-instruction label(s), ${result.enumSubstitutionCount} enum substitution(s), ` +
+      `${result.excludedRangeCount} exclusion(s) marked)`,
   );
   console.log("export-asm: this file has NOT been assembled -- this command writes source text and runs no assembler.");
   return 0;
