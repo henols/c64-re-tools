@@ -267,12 +267,22 @@
       "number": "50",
       "name": "Equivalence and Modifiability",
       "status": "pending"
+    },
+    {
+      "number": "51",
+      "name": "Planning Vocabulary Out of the Shipped Server",
+      "status": "pending"
+    },
+    {
+      "number": "52",
+      "name": "Remove the Fork Backend",
+      "status": "pending"
     }
   ],
   "next": {
     "command": "/gsd:progress --next",
-    "label": "Advance to the next step (verify)",
-    "reason": "Phase 46 of 6 · 17% · ready to verify"
+    "label": "Advance to the next step (plan phase 47)",
+    "reason": "Phase 47 of 8 — needs a plan"
   },
-  "updated_at": "2026-09-11T17:33:32.795Z"
+  "updated_at": "2026-09-11T18:19:31.811Z"
 }
