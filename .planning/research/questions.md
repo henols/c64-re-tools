@@ -50,6 +50,8 @@ evidence about its value.
 
 **Raised:** 2026-09-11 — `/gsd-explore`, owner scope call to remove the fork backend entirely.
 **Blocks:** the fork-removal phase should not run until this is answered.
+**Settled:** 2026-09-11 — answered below: no. Phase 52's stated dependency on this question is
+discharged.
 
 Removing the fork makes three capabilities **permanently unavailable**, not hedged:
 
@@ -143,3 +145,28 @@ text, which states the completeness gate "takes `anno_evid_disagreements` as a *
 input." That is a data-flow input to a completeness gate, not a keyboard/joystick input device,
 so it is not counter-evidence — it is disambiguated here rather than silently dropped. There is
 no "sound" hit anywhere in the block.
+
+**Framing correction.** This question is posed as "can we accept permanently LOSING these
+three capabilities?" But the owner reports the fork backend never actually worked
+(`.planning/notes/fork-removal-reversal-basis.md` records the owner's scope call), so none of
+the three were ever genuinely available to lose in practice. Removing the fork does not lose a
+capability — it stops the documentation promising one it could not deliver. That is what makes
+this acceptance straightforward rather than a sacrifice.
+
+**Hand-off to Phase 52.** The surviving `requires the fork` / `fork-only` routes found in skill
+text this session (`grep -rniE 'requires the fork|fork-only' src/skills/`), for Phase 52
+criterion 3 to rewrite rather than re-derive:
+
+- `src/skills/c64-program-recon/references/tool-selection.md:17` — `vice_sid_get_state`
+- `src/skills/c64-program-recon/references/control-flow.md:89` — `vice_keyboard_restore`
+- `src/skills/vice-wedge-triage/SKILL.md:225` — the `vice_ping` ×3 non-pausing poll technique
+  (fork-only; the same section already states the stock equivalent)
+- `src/skills/c64-program-recon/SKILL.md:698` — `vice_keyboard_matrix`
+- `src/skills/c64-program-recon/references/sound-and-input.md:64` — `vice_keyboard_matrix`
+- `src/skills/c64-program-recon/references/observation-hazards.md:88` — `vice_sid_get_state`
+- `src/skills/c64-program-recon/references/observation-hazards.md:106` — `vice_keyboard_matrix`
+- `src/skills/c64-ram-capture/SKILL.md:163` — the fork-only keyboard-matrix capture call
+
+This entry ANSWERS the question and unblocks Phase 52. The formal dated ACCEPTANCE record —
+Phase 52's own success criterion 3 — is deliberately **not** written here; writing it in this
+plan would pre-empt that phase and split the record across two places.
