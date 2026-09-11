@@ -86,3 +86,31 @@ inspects sound state, and check the six shipped skills' text for surviving "requ
 routes (`tool-selection.md` carries at least one, for `vice_sid_get_state`). If nothing needs
 them, record the acceptance with its date and evidence and proceed. If something does, that work
 must be rescoped BEFORE the fork is removed, not after.
+
+### Answer, 2026-09-11: No
+
+**No.** Nothing in the v1.0.0 rebuild half needs SID read-back, matrix keyboard, or
+RESTORE/NMI. A word-bounded scan of the whole v1.0.0 phase block (Phase 45 through Phase 51)
+for `keyboard|matrix|nmi|restore|joystick|sid` returns zero hits, run this session.
+
+**Matrix keyboard — not needed.** Phase 48 criterion 1 is the milestone's one new
+input-capable subject: a committed, purpose-built synthetic program that "assembles under real
+ACME and runs in VICE with visible on-screen behaviour." Its input, if any, is authored by this
+project rather than reverse-engineered from a real title, so it can be designed against the
+KERNAL buffer that `KEYBOARD_FEED` (0x72) drives — no direct matrix control is required.
+(Correcting S-1: Phase 45's own Notes say plainly that its subject is "the existing committed
+fixtures," not the purpose-built synthetic one — `tracer.prg`, `bank.prg`, `smc.prg`, plus
+`bank-path-dependent.prg` and `charset-phantom` named in its criterion 4 and criterion 5 — so
+Phase 48's fixture is not "the only subject in v1.0.0"; it is the *new* one, and the
+pre-existing fixtures are Phase 45's decomposition subject, not an input-driving one either
+way.) The decisive scope point is Phase 50's own Notes: applying the pipeline to a real title
+(`bruce_lee`, which scans `$DC00`/`$DC01` directly rather than reading the KERNAL buffer) is
+named `FUT-05` and stated explicitly as "not this phase" — so the one scenario in the whole
+milestone that would need direct matrix control is already outside v1.0.0's scope.
+
+**The `FUT-05` caveat.** `FUT-05` — applying the pipeline to a real title such as `bruce_lee` —
+would plausibly need matrix keyboard, because a game that scans the matrix directly cannot be
+driven through the KERNAL buffer. The remedy at that point is the upstream
+`KEYBOARD_MATRIX_SET` opcode (`PROJECT.md:439`, ~60 lines in `monitor_binary.c` calling
+`keyboard_set_keyarr_any`), which closes the gap for every stock user. It is **not**
+reinstating the fork backend, which the owner reports never actually worked.
