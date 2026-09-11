@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "store": "computed-sys.annostore",
+  "ranges": [
+    {
+      "start": 2049,
+      "endInclusive": 2051,
+      "dataType": "byte",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2052,
+      "endInclusive": 2054,
+      "dataType": "byte",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2055,
+      "endInclusive": 2057,
+      "dataType": "byte",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2058,
+      "endInclusive": 2060,
+      "dataType": "byte",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2061,
+      "endInclusive": 2063,
+      "dataType": "byte",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2064,
+      "endInclusive": 2066,
+      "dataType": "byte",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2067,
+      "endInclusive": 2069,
+      "dataType": "byte",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2070,
+      "endInclusive": 2072,
+      "dataType": "byte",
+      "bank": null,
+      "provenance": "derived"
+    }
+  ],
+  "labels": [],
+  "comments": [],
+  "projectEnums": [],
+  "enumUsage": [],
+  "xrefs": [],
+  "execObservations": []
+}

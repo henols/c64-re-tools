@@ -1,0 +1,159 @@
+{
+  "schemaVersion": 1,
+  "store": "not-basic.annostore",
+  "ranges": [
+    {
+      "start": 2563,
+      "endInclusive": 2565,
+      "dataType": "byte",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2566,
+      "endInclusive": 2568,
+      "dataType": "byte",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2569,
+      "endInclusive": 2571,
+      "dataType": "byte",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2572,
+      "endInclusive": 2574,
+      "dataType": "byte",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2575,
+      "endInclusive": 2577,
+      "dataType": "byte",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2578,
+      "endInclusive": 2580,
+      "dataType": "byte",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2581,
+      "endInclusive": 2583,
+      "dataType": "byte",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2584,
+      "endInclusive": 2586,
+      "dataType": "byte",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2587,
+      "endInclusive": 2589,
+      "dataType": "byte",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2590,
+      "endInclusive": 2592,
+      "dataType": "byte",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2593,
+      "endInclusive": 2595,
+      "dataType": "byte",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2596,
+      "endInclusive": 2598,
+      "dataType": "byte",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2599,
+      "endInclusive": 2601,
+      "dataType": "byte",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2602,
+      "endInclusive": 2604,
+      "dataType": "byte",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2605,
+      "endInclusive": 2607,
+      "dataType": "byte",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2608,
+      "endInclusive": 2610,
+      "dataType": "byte",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2611,
+      "endInclusive": 2613,
+      "dataType": "byte",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2614,
+      "endInclusive": 2616,
+      "dataType": "byte",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2617,
+      "endInclusive": 2619,
+      "dataType": "byte",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2620,
+      "endInclusive": 2622,
+      "dataType": "byte",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2623,
+      "endInclusive": 2624,
+      "dataType": "byte",
+      "bank": null,
+      "provenance": "derived"
+    }
+  ],
+  "labels": [],
+  "comments": [],
+  "projectEnums": [],
+  "enumUsage": [],
+  "xrefs": [],
+  "execObservations": []
+}

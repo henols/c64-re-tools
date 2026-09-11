@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "store": "basic-stub.annostore",
+  "ranges": [
+    {
+      "start": 2049,
+      "endInclusive": 2051,
+      "dataType": "byte",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2052,
+      "endInclusive": 2054,
+      "dataType": "byte",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2055,
+      "endInclusive": 2057,
+      "dataType": "byte",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2058,
+      "endInclusive": 2060,
+      "dataType": "byte",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2061,
+      "endInclusive": 2063,
+      "dataType": "byte",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2064,
+      "endInclusive": 2064,
+      "dataType": "byte",
+      "bank": null,
+      "provenance": "derived"
+    }
+  ],
+  "labels": [],
+  "comments": [],
+  "projectEnums": [],
+  "enumUsage": [],
+  "xrefs": [],
+  "execObservations": []
+}
