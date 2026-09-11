@@ -31,12 +31,47 @@
 //   - Never repair a malformed row. A row that does not split into exactly
 //     seven pipe-delimited cells, or whose Start/End cell is not the `$XXXX`
 //     shape `renderLedger()`'s own `hex4()` writes, is REFUSED -- never
-//     best-effort-parsed, never defaulted, never silently skipped.
+//     best-effort-parsed, never defaulted, never silently skipped. No
+//     trimming a cell into shape, no defaulting a missing column, no
+//     coercing a bad address to zero, no dropping a bad row and continuing
+//     with the rest: a partially-parsed ledger that reports success is worse
+//     than a refusal, because every downstream verdict then looks
+//     authoritative.
 //   - Never interpolate the ledger's own row text into an error message. A
 //     path, a line number and an expected shape are facts ABOUT a file; its
 //     contents are not, and quoting them turns a refusal into a
 //     content-disclosure oracle -- the same rule `anno-export-asm.ts`'s own
-//     header states and this module's refusals below all follow.
+//     header states and this module's refusals below all follow. THE
+//     PERMITTED VOCABULARY, enumerated rather than left as a general
+//     instruction so a later contributor adding a refusal has it in front of
+//     them, is exactly these five fact kinds and nothing else:
+//       1. the ledger's PATH.
+//       2. a 1-based LINE NUMBER, when the refusal is about one row.
+//       3. a column NAME (`"Start"`, `"End"`, or one of
+//          `PROVENANCE_LEDGER_HEADER_CELLS`).
+//       4. a cell COUNT (how many cells a row split into, vs. how many were
+//          expected).
+//       5. a parsed ADDRESS (a `number` this module itself derived by calling
+//          `parseHexAddress()`, formatted back through this module's own
+//          `hex4()` -- never a cell's raw text passed through unexamined).
+//     Cell TEXT -- Kind, Verdict, Confidence, Agreeing releases, Evidence /
+//     Reason, or any cell that failed to parse -- is not on this list and
+//     must never appear in a thrown message.
+//   - Never re-derive `renderLedger()`'s CONTENT-shaped preconditions here.
+//     `renderLedger()` refuses to EMIT under three conditions: an UNKNOWN row
+//     with an empty reason, an ORIGINAL row with `agreeing_releases` below 2,
+//     and a generated tier that does not tile `$0000-$FFFF` exactly. The
+//     first two are claims about what a Verdict cell's CONTENT means --
+//     asserting them here would make this reader adjudicate a verdict's
+//     substance, exactly the "tool is the decider" shape this phase exists
+//     to make structurally unreachable. Coverage, disjointness and ascending
+//     order (the third condition, and the ones this module DOES assert
+//     below) are claims about ADDRESSES only, which is the one thing a join
+//     over ranges is allowed to reason about. A file violating an
+//     ADDRESS-shaped invariant was never producible by the one writer this
+//     format has, so the violation is evidence of a hand edit or corruption,
+//     not of a reader bug -- accepting it would mean joining a store range
+//     against a table that does not describe the whole address space.
 //
 // This module imports NOTHING from `src/skills/` (the shipped `@henols/
 // vice-mcp` tarball does not contain that tree, and `anno-join.ts:26` already
@@ -201,6 +236,30 @@ function parseHexAddress(cell: string): number | undefined {
   return Number.parseInt(match[1]!, 16);
 }
 
+/** Formats a PARSED address (never a cell's raw text) as `$XXXX`, for use in
+ * refusal messages -- the one fact kind on the permitted-vocabulary list that
+ * is a number this module derived itself, not text copied off the file. */
+function hex4(value: number): string {
+  return `$${(value & 0xffff).toString(16).padStart(4, "0")}`;
+}
+
+/**
+ * Throws the shared bad-address refusal for row `lineNumber`'s `column`
+ * cell (`"Start"` or `"End"`) -- ONE template for both columns, since the
+ * only fact that differs between them is the column NAME, which is on the
+ * permitted vocabulary list. The cell's own text is never read here or by
+ * either call site: the caller passes only the column name, never the
+ * string that failed to parse.
+ */
+function refuseBadAddress(ledgerPath: string, lineNumber: number, column: "Start" | "End"): never {
+  throw new ProvenanceLedgerError(
+    `anno-provenance-ledger: row ${lineNumber} of "${ledgerPath}" has a ${column} cell that is not the "$XXXX" shape ` +
+      `renderLedger()'s own hex4() writes -- refusing to parse an address this module cannot be sure of, and never guessing ` +
+      `one from the cell's own text. ${LEDGER_REMEDY}.`,
+    { path: ledgerPath, lineNumber },
+  );
+}
+
 /**
  * Reads and parses `ledgerPath`'s generated tier.
  *
@@ -208,19 +267,35 @@ function parseHexAddress(cell: string): number | undefined {
  * `PROVENANCE_LEDGER_HEADER_CELLS`, skips the `|---|` separator line
  * immediately below it without re-validating its own shape, then parses
  * every following pipe-delimited line into a `ProvenanceLedgerRow` until the
- * first line that is not a table row at all.
+ * first line that is not a table row at all, then asserts the accepted rows
+ * as a WHOLE are strictly ascending, disjoint, and tile exactly
+ * `$0000-$FFFF`.
  *
- * Refuses (`ProvenanceLedgerError`) when: the file cannot be read; no header
- * row matching all seven cells is found; a candidate row does not split into
- * exactly seven cells; or a candidate row's Start/End cell is not the
- * `$XXXX` shape `hex4()` writes. Every refusal names the path and, for a row
- * problem, the 1-based line number and the expected shape -- never the row's
- * own text.
+ * Refuses (`ProvenanceLedgerError`) for eight distinct reasons, and REJECTS
+ * rather than repairs at every one of them -- no trimming, no defaulting, no
+ * coercing a bad address to zero, no dropping a bad row and continuing with
+ * the rest. Listed here in RULE order rather than strict execution order
+ * (the zero-data-rows check can only run once the per-row loop below has
+ * finished, so it fires textually after checks 4-6 even though it is
+ * conceptually "does the table hold any rows at all"):
+ *   1. the file cannot be read.
+ *   2. no header row matching all seven cells is found.
+ *   3. the header and separator are present but zero data rows follow.
+ *   4. a candidate row does not split into exactly seven cells.
+ *   5. a candidate row's Start or End cell is not the `$XXXX` shape
+ *      `hex4()` writes.
+ *   6. a candidate row's End is below its Start.
+ *   7. two rows overlap, or are not strictly ascending by Start.
+ *   8. the accepted rows do not begin at `$0000`, leave a gap, or stop
+ *      below `$FFFF`.
  *
- * Plan 46-02 adds the remaining refusals this ledger family needs (zero data
- * rows, non-ascending or overlapping rows, the full-`$0000-$FFFF` coverage
- * assertion) -- deferred there because this tracer's own fixtures do not
- * need them to prove the carry end to end.
+ * Every refusal names the path and, for a single-row problem, the 1-based
+ * line number -- never the row's own cell text. See the module header's
+ * "WHAT NOT TO DO" section for the full permitted-fact vocabulary, and for
+ * why checks 7 and 8 are the ONLY two that mirror `renderLedger()`'s own
+ * emit-time preconditions: they are the ADDRESS-shaped ones, and the two
+ * CONTENT-shaped ones (UNKNOWN-with-empty-reason, ORIGINAL-agreeing-below-2)
+ * are deliberately never re-asserted here.
  */
 export function readProvenanceLedger(ledgerPath: string): ProvenanceLedger {
   let raw: string;
@@ -228,7 +303,7 @@ export function readProvenanceLedger(ledgerPath: string): ProvenanceLedger {
     raw = readFileSync(ledgerPath, "utf8");
   } catch (err) {
     throw new ProvenanceLedgerError(
-      `readProvenanceLedger: could not read the ledger at "${ledgerPath}" (${err instanceof Error ? err.message : String(err)}) -- ` +
+      `anno-provenance-ledger: could not read the ledger at "${ledgerPath}" (${err instanceof Error ? err.message : String(err)}) -- ` +
         `refusing to annotate without it. ${LEDGER_REMEDY}.`,
       { path: ledgerPath },
     );
@@ -250,13 +325,18 @@ export function readProvenanceLedger(ledgerPath: string): ProvenanceLedger {
   }
   if (headerLineIndex === -1) {
     throw new ProvenanceLedgerError(
-      `readProvenanceLedger: no header row matching the seven expected columns (${PROVENANCE_LEDGER_HEADER_CELLS.join(", ")}) ` +
+      `anno-provenance-ledger: no header row matching the seven expected columns (${PROVENANCE_LEDGER_HEADER_CELLS.join(", ")}) ` +
         `was found in "${ledgerPath}" -- refusing to guess which row starts the table. ${LEDGER_REMEDY}.`,
       { path: ledgerPath },
     );
   }
 
   const rows: ProvenanceLedgerRow[] = [];
+  /** 1-based source line number for `rows[k]`, kept parallel to `rows` so the
+   * ordering/overlap check below can name both offending rows without
+   * re-scanning `lines` -- an internal bookkeeping array, never exposed on
+   * `ProvenanceLedgerRow` itself. */
+  const rowLineNumbers: number[] = [];
   // headerLineIndex + 1 is the `|---|` separator -- skipped, not
   // re-validated. Parsing starts one line further on.
   for (let i = headerLineIndex + 2; i < lines.length; i++) {
@@ -266,9 +346,9 @@ export function readProvenanceLedger(ledgerPath: string): ProvenanceLedger {
 
     if (cells.length !== PROVENANCE_LEDGER_HEADER_CELLS.length) {
       throw new ProvenanceLedgerError(
-        `readProvenanceLedger: row ${i + 1} of "${ledgerPath}" does not split into exactly ` +
-          `${PROVENANCE_LEDGER_HEADER_CELLS.length} pipe-delimited cells -- the shape renderLedger() always writes. ` +
-          `Refusing to parse a row whose own shape is wrong. ${LEDGER_REMEDY}.`,
+        `anno-provenance-ledger: row ${i + 1} of "${ledgerPath}" splits into ${cells.length} pipe-delimited cells, not the ` +
+          `${PROVENANCE_LEDGER_HEADER_CELLS.length} renderLedger() always writes -- refusing to parse a row whose own shape ` +
+          `is wrong. ${LEDGER_REMEDY}.`,
         { path: ledgerPath, lineNumber: i + 1 },
       );
     }
@@ -283,16 +363,73 @@ export function readProvenanceLedger(ledgerPath: string): ProvenanceLedger {
       string,
     ];
     const start = parseHexAddress(startCell);
+    if (start === undefined) refuseBadAddress(ledgerPath, i + 1, "Start");
     const end = parseHexAddress(endCell);
-    if (start === undefined || end === undefined) {
+    if (end === undefined) refuseBadAddress(ledgerPath, i + 1, "End");
+
+    if (end < start) {
       throw new ProvenanceLedgerError(
-        `readProvenanceLedger: row ${i + 1} of "${ledgerPath}" has a Start or End cell that is not the "$XXXX" shape ` +
-          `renderLedger()'s own hex4() writes. Refusing to parse an address this module cannot be sure of. ${LEDGER_REMEDY}.`,
+        `anno-provenance-ledger: row ${i + 1} of "${ledgerPath}" has End ${hex4(end)} below its Start ${hex4(start)} -- ` +
+          `refusing to accept a row whose own span is inverted. ${LEDGER_REMEDY}.`,
         { path: ledgerPath, lineNumber: i + 1 },
       );
     }
 
     rows.push({ start, endInclusive: end, kind, verdict, confidence, agreeingReleases, evidence });
+    rowLineNumbers.push(i + 1);
+  }
+
+  if (rows.length === 0) {
+    throw new ProvenanceLedgerError(
+      `anno-provenance-ledger: the header and separator in "${ledgerPath}" are present but zero data rows follow -- ` +
+        `refusing to treat a table that parsed to no rows the same as no ledger having been asked for at all. ${LEDGER_REMEDY}.`,
+      { path: ledgerPath },
+    );
+  }
+
+  // CHECK 7 -- ADDRESS-SHAPED, mirrors `renderLedger()`'s own "gap or
+  // overlap" precondition. Two rows overlap, or the rows are not strictly
+  // ascending by Start, iff a later row's Start does not come strictly after
+  // the earlier row's own Start AND End. `rows` is in FILE order (not
+  // re-sorted), so this also catches a ledger whose rows were reordered by a
+  // hand edit, not only a genuine address collision.
+  for (let idx = 1; idx < rows.length; idx++) {
+    const prev = rows[idx - 1]!;
+    const cur = rows[idx]!;
+    if (cur.start <= prev.start || cur.start <= prev.endInclusive) {
+      throw new ProvenanceLedgerError(
+        `anno-provenance-ledger: rows ${rowLineNumbers[idx - 1]} and ${rowLineNumbers[idx]} of "${ledgerPath}" are not ` +
+          `strictly ascending and disjoint by Start -- row ${rowLineNumbers[idx - 1]} spans ${hex4(prev.start)}..${hex4(prev.endInclusive)} ` +
+          `and row ${rowLineNumbers[idx]} spans ${hex4(cur.start)}..${hex4(cur.endInclusive)} -- refusing to join a store range against rows ` +
+          `this module cannot order unambiguously. ${LEDGER_REMEDY}.`,
+        { path: ledgerPath, lineNumber: rowLineNumbers[idx] },
+      );
+    }
+  }
+
+  // CHECK 8 -- ADDRESS-SHAPED, mirrors `renderLedger()`'s own two coverage
+  // preconditions (starts at $0000 with no gap; reaches $FFFF). Run only
+  // after check 7 has already established the rows are disjoint and
+  // ascending, so `expected` is a running "next address a row must start at"
+  // cursor rather than a re-derivation of the ordering check above.
+  let expected = 0;
+  for (const row of rows) {
+    if (row.start !== expected) {
+      throw new ProvenanceLedgerError(
+        `anno-provenance-ledger: "${ledgerPath}"'s accepted rows do not cover $0000..$FFFF -- address ${hex4(expected)} is not ` +
+          `covered by any row -- refusing to join a store range against a table that does not describe the whole address space. ` +
+          `${LEDGER_REMEDY}.`,
+        { path: ledgerPath },
+      );
+    }
+    expected = row.endInclusive + 1;
+  }
+  if (expected !== 0x10000) {
+    throw new ProvenanceLedgerError(
+      `anno-provenance-ledger: "${ledgerPath}"'s accepted rows stop at ${hex4(expected - 1)}, not $FFFF -- refusing to join a ` +
+        `store range against a table that does not describe the whole address space. ${LEDGER_REMEDY}.`,
+      { path: ledgerPath },
+    );
   }
 
   return { path: ledgerPath, rows };
