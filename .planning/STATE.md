@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: The Rebuild Half
-current_phase: 45
-current_phase_name: Decomposition to Closure, Disagreement First
-status: verifying
-stopped_at: Completed 45-10-PLAN.md (final plan, phase 45)
-last_updated: "2026-09-11T11:06:20.156Z"
+current_phase: 46
+current_phase_name: The Lossless-Export Invariant and the Provenance Carry
+status: planning
+stopped_at: Phase 45 complete, ready to plan Phase 46
+last_updated: "2026-09-11T12:09:47.647Z"
 last_activity: 2026-09-11
-last_activity_desc: Phase 45 execution started
-state_head: 51ad315a8a85615ffa208a20ea47090fd5f2428f
+last_activity_desc: Phase 45 complete, transitioned to Phase 46
+state_head: 04452ecd9170416990f9babb4fd47dfb66291cc1
 progress:
   total_phases: 6
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 10
   completed_plans: 10
-  percent: 0
+  percent: 17
 ---
 
 # Project State
@@ -254,17 +254,17 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 45 (Decomposition to Closure, Disagreement First) — PLANS COMPLETE
-Plan: 10 of 10
-Status: Phase complete — ready for verification
+Phase: 46 — The Lossless-Export Invariant and the Provenance Carry
+Plan: Not started
+Status: Ready to plan
 Progress: [██████████] 100% (10/10 plans in phase 45; milestone-wide phase percent is tracked separately in frontmatter)
-Last activity: 2026-09-11 — Phase 45 plan 45-10 complete (criterion 5 demonstrated on the real store, offline closure regression added, phase closure record written against all five success criteria)
+Last activity: 2026-09-11 — Phase 45 complete, transitioned to Phase 46
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 371
+- Total plans completed: 381
 - Average duration: —
 - Total execution time: —
 
@@ -311,6 +311,7 @@ Last activity: 2026-09-11 — Phase 45 plan 45-10 complete (criterion 5 demonstr
 | 42 | 16 | - | - |
 | 43 | 7 | - | - |
 | 44 | 3 | - | - |
+| 45 | 10 | - | - |
 
 **Recent Trend:**
 
@@ -2327,7 +2328,7 @@ and are v1.0.0's inheritance.
 ## Session Continuity
 
 Last session: 2026-09-11T11:06:11.835Z
-Stopped at: Completed 45-10-PLAN.md (final plan, phase 45)
+Stopped at: Phase 45 complete, ready to plan Phase 46
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
