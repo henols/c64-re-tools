@@ -291,7 +291,7 @@ other generated artifact in this repo and never hand-edit it.
 existed.** Before gap-closure round 2 the banner recorded the store and the sidecar by their
 ABSOLUTE paths, so the checkout's own location was a silent third cause: an identical store,
 sidecar and rendered file reported `drifted` the moment the tree sat at a different absolute path,
-while `render-memmap` printed the same `render_digest` in both. Plan 29-18 removed that cause by
+while `render-memmap` printed the same `render_digest` in both. That cause was removed by
 recording workspace-relative locations, so the cause set above is the one the shipped verb has. The
 old two-cause wording is superseded rather than merely reworded, and this note says so because a
 reader meeting it in history needs to know which claim was live when.

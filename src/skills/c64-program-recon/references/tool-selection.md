@@ -18,7 +18,7 @@ usage, not measured). Individual rows that have since been exercised live are ma
 | Decode sprite data | `vice_sprite_get` / `vice_sprite_inspect` (**both backends**) |
 | Find a known byte pattern | `vice_memory_search` (**both backends**) |
 | Carry labels across sessions | `vice_symbols_load` / `vice_symbols_lookup` (**both backends**) — ACME `--vicelabels` emits the format they consume. The annotation store's own export into that format is **withdrawn as of 2026-08-29, and no phase currently owns its return** — an earlier forecast naming a numbered phase for it is superseded |
-| Is the machine wedged, or did it stop itself? | `vice_diagnose` — five-state verdict with its evidence (the two backends' verdict sets differ by one; see `docs/stock-vice-parity.md` D-03). **Reachable and proxy-intercepted as of 2026-08-04** (verified live). Triage tree: `vice-wedge-triage` |
+| Is the machine wedged, or did it stop itself? | `vice_diagnose` — five-state verdict with its evidence (five on either backend, but the sets differ by one: the fork answers `stale_read_path`, stock answers `monitor_held_elsewhere` because its monitor serves exactly one client at a time). **Reachable and proxy-intercepted as of 2026-08-04** (verified live). Triage tree: `vice-wedge-triage` |
 | Replace a wedged instance | `vice_recycle` — destructive, requires a `reason`, and that reason is written into `.c64-re-tools/incidents/` **before** anything is killed. The reason *is* the evidence record |
 | Read the restart epoch | **No tool does.** The proxy compares it around every forwarded call and raises drift itself; a value comes from that error or from `vice_diagnose` |
 

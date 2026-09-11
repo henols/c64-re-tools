@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-// c1541.test.mjs -- coverage for the `audit` subcommand's ported fakery
-// detector (Phase 40, plan 40-04, PREP-01, D-06).
+// c1541.test.mjs -- coverage for the `audit` subcommand's fakery detector.
 //
 // Two tiers, deliberately separated:
 //
@@ -8,8 +7,8 @@
 //      detector core, fed synthetic/literal-measured records -- never call
 //      the seam, never need `c1541` installed, ALWAYS run (this is what
 //      keeps this file safe under CI's `node --test 'src/skills/*/scripts/
-//      *.test.mjs'` glob, which has no VICE install at all -- 40-02/40-03's
-//      own SUMMARYs).
+//      *.test.mjs'` glob, which runs on a machine with no VICE install at
+//      all).
 //   2. LIVE end-to-end cases that run the real `audit` CLI against the two
 //      committed fixtures over the real seam -- gated on `c1541` actually
 //      being resolvable on PATH, skipped with a named reason otherwise
@@ -35,17 +34,23 @@ const FIXTURES_DIR = join(projectRoot(), "src", "mcp", "vice", "fixtures", "c154
 const CLEAN_FIXTURE = join(FIXTURES_DIR, "synthetic.d64");
 const CORRUPT_FIXTURE = join(FIXTURES_DIR, "synthetic-corrupt.d64");
 
-// Phase 40, plan 40-04 (D-25): the acknowledged circularity is that
-// synthetic.d64/synthetic-corrupt.d64 were both BUILT by the very c1541
-// binary this suite tests reading back -- so their format-correctness claim
-// ultimately rests on c1541 agreeing with itself. The stated mitigation is
-// keeping ONE assertion against a real, INDEPENDENTLY-produced release image
-// in a live-gated test (fixtures/c1541/README.md's own "acknowledged mild
-// circularity" section names this). Phase 23's own evidence corpus is the
-// one such image already in the tree -- never copied into fixtures/ here,
-// since the point is that it is independently produced, not this phase's
-// artifact.
-const REAL_CORPUS_IMAGE = join(projectRoot(), ".planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/corpus/danish.d64");
+// The acknowledged circularity here is that synthetic.d64 and
+// synthetic-corrupt.d64 were both BUILT by the very c1541 binary this suite
+// tests reading back -- so their format-correctness claim ultimately rests on
+// c1541 agreeing with itself. The mitigation is ONE assertion against a real,
+// INDEPENDENTLY-produced release image (fixtures/c1541/README.md's own
+// "acknowledged mild circularity" section names this).
+//
+// That image is OPERATOR-SUPPLIED and is deliberately committed nowhere: a
+// commercial release image is not this project's to redistribute, and an
+// image this project committed would no longer be independently produced,
+// which is the entire property the assertion rests on. So its location is
+// read from the environment, the same way every other operator-supplied
+// external resource in this repository is named (VICE_BIN, ACME_BIN,
+// GHIDRA_HOME, VICE_LIVE_STOCK_BIN). Unset or absent -> the case skips with
+// a named reason; it is never a failure, and there is no default path to go
+// stale.
+const REAL_CORPUS_IMAGE = process.env.C64_RE_CORPUS_IMAGE ?? "";
 
 // ---------------------------------------------------------------------------
 // Tier 1: pure parsers, against literal MEASURED text (see
@@ -192,7 +197,7 @@ test("auditEntries: a repeated (non-starting) next-directory pointer is also a c
 
 // ---------------------------------------------------------------------------
 // Tier 2: LIVE, gated on c1541 actually being resolvable. CI has no VICE
-// install (40-02/40-03's own SUMMARYs) -- this skips there, never fails.
+// install -- this skips there, never fails.
 // ---------------------------------------------------------------------------
 
 function findC1541OnPath() {
@@ -248,19 +253,20 @@ test(
 );
 
 // ---------------------------------------------------------------------------
-// Phase 40, plan 40-04 (Task 3, D-25): ONE assertion against a real,
-// INDEPENDENTLY-produced release image -- the stated mitigation for the
-// acknowledged circularity that every other fixture in this file was built
-// by the very tool under test. Gated on the corpus image's presence, never
-// on an opt-in env var (a checkout without the evidence tree stays green).
+// ONE assertion against a real, INDEPENDENTLY-produced release image -- the
+// mitigation for the acknowledged circularity that every other fixture in
+// this file was built by the very tool under test. Gated on the operator
+// having supplied such an image, so a checkout without one stays green.
 // ---------------------------------------------------------------------------
 
-const CORPUS_SKIP_REASON = !existsSync(REAL_CORPUS_IMAGE)
-  ? `the Phase 23 evidence corpus image is absent at ${REAL_CORPUS_IMAGE} -- this case is skipped, never failed, on a checkout without that evidence tree`
-  : false;
+const CORPUS_SKIP_REASON = !REAL_CORPUS_IMAGE
+  ? "no independently-produced release image was supplied -- set C64_RE_CORPUS_IMAGE to the path of a real .d64 to run this cross-validation; skipped, never failed, without one"
+  : !existsSync(REAL_CORPUS_IMAGE)
+    ? `C64_RE_CORPUS_IMAGE points at ${REAL_CORPUS_IMAGE}, which does not exist -- this case is skipped, never failed`
+    : false;
 
 test(
-  "LIVE: a real, independently-produced release image (Phase 23's danish.d64) cross-validates the directory listing, one entry's first track/sector, and that entry's own sector chain against each other",
+  "LIVE: a real, independently-produced release image cross-validates the directory listing, one entry's first track/sector, and that entry's own sector chain against each other",
   { skip: CORPUS_SKIP_REASON },
   async () => {
     const outDir = mkdtempSync(join(tmpdir(), "c1541-corpus-"));

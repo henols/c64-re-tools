@@ -22,9 +22,12 @@ a remedy.
 mcp__plugin_c64-re-tools_vice__vice_diagnose        # one call, no arguments, answers which state it is
 ```
 
-`vice_diagnose`'s verdict vocabulary differs by backend, because stock VICE's binary monitor
-services exactly one client and the fork's non-pausing `vice_ping` has no stock equivalent (see
-`docs/stock-vice-parity.md` D-03 for the full reasoning). The fork answers `restarted`,
+`vice_diagnose`'s verdict vocabulary differs by backend, and the difference is one verdict on
+each side. Stock VICE's binary monitor services exactly one client, so a second connection sits
+unserviced in the backlog with no reply and no EOF — a state only stock can be in, and one that
+looks exactly like a wedge unless it is named, hence `monitor_held_elsewhere`. The fork instead has
+a non-pausing `vice_ping` with no stock equivalent, which is what lets it distinguish
+`stale_read_path`. The fork answers `restarted`,
 `checkpoint_trap`, `wedged`, `stale_read_path`, `live`; stock answers `restarted`,
 `checkpoint_trap`, `wedged`, `monitor_held_elsewhere`, `live`. Read the tool's own schema for the
 exact contract on whichever backend is active: `tools/list`'s advertised stock schema is the

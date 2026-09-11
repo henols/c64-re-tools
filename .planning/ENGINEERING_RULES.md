@@ -370,15 +370,29 @@ act on any of this vocabulary. A playbook that tells them to "file findings in
 (`/gsd-quick`)" is giving an instruction that cannot be followed.
 
 **No file under `src/skills/**` may contain planning vocabulary.** Enforced by
-`skills-planning-vocabulary.test.ts`, which fails the build. Two narrow, named exemptions
-are encoded in that guard and nowhere else:
+`skills-planning-vocabulary.test.ts`, which fails the build. Exactly ONE exemption is
+encoded in that guard, and it is derived from content rather than granted by hand:
 
 - A skill's OWN numbered workflow steps. `routine-queue-walker/SKILL.md` runs "Phase 0"
   through "Phase 5"; those are the skill's own procedure, not GSD phases. The guard
-  recognises them by shape (a `## Phase N` heading and back-references to it).
-- A path under `.planning/` that a **test** reads as a real evidence fixture and SKIPS when
-  absent — currently only `c64-disk-access/scripts/c1541.test.mjs`, which cross-validates
-  against the Phase 23 corpus image and never fails on a checkout without it.
+  recognises them by shape — it parses the `## Phase N` headings the file itself declares
+  and exempts only those exact numbers, so `Phase 40` in that same file is still a
+  violation. Because the exemption comes out of the file's own text, it cannot be handed
+  to a file that has not earned it.
+
+**There is deliberately no by-path exemption.** There was one until 2026-09-11:
+`c64-disk-access/scripts/c1541.test.mjs` read a genuine release image from
+`.planning/phases/23-*/evidence/corpus/` as the only independent oracle for a parser whose
+every other fixture the tool under test had built itself. Exempting it by path whitelisted
+the whole FILE and so covered five unrelated citations in it as collateral — which is how
+a by-path exemption always fails. The remedy was to remove the need for it, not to
+document it: the image is operator-supplied and committed nowhere (it is not this
+project's to redistribute, and a committed copy would stop being independently produced,
+which is the property the assertion rests on), so it is now named by `C64_RE_CORPUS_IMAGE`
+like every other operator-supplied resource here (`VICE_BIN`, `ACME_BIN`, `GHIDRA_HOME`,
+`VICE_LIVE_STOCK_BIN`). Same oracle, same skip, no path, no exemption. **If a shipped file
+seems to need a path into `.planning/`, the question is whether the thing it reaches is
+operator-supplied — not whether the file deserves an exemption.**
 
 Anything else — add the fact to the skill in plain prose, or leave it out.
 
@@ -395,10 +409,32 @@ shortened away. What changes is the anchor: **write the reason, not the pointer.
 - Good: `// Reached ONLY through the host-tool seam: this script runs container-side and the
   binary lives on the host, so a direct spawn finds nothing.`
 
-Keep a decision id only where it also resolves outside `.planning/` — `docs/` ids do
-(`docs/stock-vice-parity.md` defines D-01…D-42), and those may be cited **with their
-document named** so the reader can find them: `` `docs/stock-vice-parity.md` D-03 ``. A
-bare `D-13` resolves nowhere for a consumer.
+**No decision id, gap id or requirement id belongs in a shipped file, in any form.**
+This is stricter than the rule as first written on 2026-09-11, and the earlier text is
+superseded rather than merely reworded — a reader meeting it in history should know which
+version was live. That text allowed a decision id when the line also named the document
+defining it (`` `docs/stock-vice-parity.md` D-03 ``), on the reasoning that such a
+reference resolves for the reader.
+
+It resolves for a MINORITY of readers. MEASURED 2026-09-11: `docs/` is packed into the
+plugin zip, because `scripts/package.sh` builds it with `git archive HEAD` and that packs
+the entire tracked tree — but `docs/` is in **neither npm tarball**. `@henols/vice-mcp`'s
+`files[]` lists 90 individual modules and `@henols/c64-re-tools`'s lists `bin/`, `skills/`,
+`README.md`, `THIRD-PARTY-NOTICES.md`. So the document-qualified form dangles for every
+`npx` install, and the qualified form is the *more* misleading of the two: a bare `D-13`
+at least announces itself as an internal token, while `` `docs/…md` D-03 `` looks like a
+working cross-reference and sends the reader after a file they do not have.
+
+The id was never the useful half of the sentence in any case. Write the reasoning, and the
+reader needs no lookup at all:
+
+- Bad: ``the verdict sets differ by one; see `docs/stock-vice-parity.md` D-03``
+- Good: `the sets differ by one — the fork answers stale_read_path, stock answers
+  monitor_held_elsewhere because its monitor serves exactly one client at a time`
+
+Requirement ids (`SEAM-02`, `PREP-01`) fall under the same ban, and the escape was weaker
+for them still: `docs/` does not define requirement ids at all, so naming a `docs/` page
+beside one never made it resolvable.
 
 ### 21.3 Never cite a `.planning/` path from product source
 

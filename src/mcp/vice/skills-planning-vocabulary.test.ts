@@ -38,31 +38,44 @@
 // precision from two narrow, named exemptions rather than from a syntactic
 // scope.
 //
-// THE TWO EXEMPTIONS, AND WHY EACH IS SAFE.
+// THE ONE EXEMPTION, AND WHY IT IS SAFE.
 //
-//   1. A SKILL'S OWN NUMBERED WORKFLOW STEPS. `routine-queue-walker/SKILL.md`
-//      runs "Phase 0" through "Phase 5" as its own procedure; 23 of its lines
-//      mention a phase and not one of them refers to a GSD phase. A blanket
-//      ban would put 23 false positives on the largest apparent offender on
-//      day one. The exemption is NOT "ignore this file": it reads the `##
-//      Phase N` headings the file itself declares and exempts ONLY those exact
-//      numbers. `routine-queue-walker` declares 0-5, so `Phase 3` is fine
-//      there and `Phase 40` is still a violation there. A file that declares
-//      no such heading gets no exemption at all.
+//   A SKILL'S OWN NUMBERED WORKFLOW STEPS. `routine-queue-walker/SKILL.md`
+//   runs "Phase 0" through "Phase 5" as its own procedure; 23 of its lines
+//   mention a phase and not one of them refers to a GSD phase. A blanket ban
+//   would put 23 false positives on the largest apparent offender on day one.
+//   The exemption is NOT "ignore this file": it reads the `## Phase N`
+//   headings the file itself declares and exempts ONLY those exact numbers.
+//   `routine-queue-walker` declares 0-5, so `Phase 3` is fine there and `Phase
+//   40` is still a violation there. A file that declares no such heading gets
+//   no exemption at all. Note the shape of it: the exemption is derived from
+//   the file's own content, so it cannot be granted by hand and cannot spread.
 //
-//   2. ONE TEST THAT READS A REAL EVIDENCE FIXTURE.
-//      `c64-disk-access/scripts/c1541.test.mjs` cross-validates its directory
-//      parser against a genuine release image committed under
-//      `.planning/phases/23-*/evidence/corpus/`, and already SKIPS -- never
-//      fails -- on a checkout without that tree. Deleting the reference would
-//      delete the only independent oracle that test has. It is exempted BY
-//      PATH, as a single named entry, so a second file cannot quietly join it.
+// THERE IS NO BY-PATH EXEMPTION, DELIBERATELY. There was one until 2026-09-11:
+// `c64-disk-access/scripts/c1541.test.mjs` read a genuine release image from
+// `.planning/phases/23-*/evidence/corpus/` as the only independent oracle for
+// a parser whose every other fixture the tool under test had built itself.
+// Exempting it BY PATH whitelisted the whole FILE, and so covered five
+// unrelated citations in it as collateral -- which is how a by-path exemption
+// always fails. The fix was to remove the need for it rather than document it:
+// the image is operator-supplied and committed nowhere (it is not this
+// project's to redistribute, and a committed copy would stop being
+// independently produced), so it is now named by `C64_RE_CORPUS_IMAGE` like
+// every other operator-supplied resource in this repo. No path, no exemption,
+// same oracle, same skip. If a future case seems to need a by-path entry, ask
+// first whether the resource is really operator-supplied.
 //
-// The allowed citation form for a decision id is the one that resolves for a
-// consumer: the id together with the document that defines it, on the same
-// line -- `` `docs/stock-vice-parity.md` D-03 ``. A bare `D-03` resolves
-// nowhere outside `.planning/`, so a bare id is a violation and a
-// document-qualified one is not.
+// A DECISION ID IS A VIOLATION IN EVERY FORM, including one that names the
+// document defining it. Until 2026-09-11 `` `docs/stock-vice-parity.md` D-03 ``
+// was allowed, on the reasoning that a reader with `docs/` can resolve it.
+// MEASURED: that reader is a minority. `docs/` is packed into the plugin zip
+// by `git archive HEAD`, but it is in NEITHER npm tarball -- `@henols/vice-mcp`
+// lists 90 individual modules and `@henols/c64-re-tools` lists `bin/`,
+// `skills/`, `README.md`, `THIRD-PARTY-NOTICES.md`. So the qualified form
+// dangles for every `npx` install, and the id was never the useful half of the
+// sentence anyway: state the reasoning inline and the reader needs no lookup
+// at all. Same for a requirement id, where the escape was weaker still --
+// `docs/` does not define requirement ids in the first place.
 //
 // NON-VACUITY: the two planted-control cases at the bottom run the SAME
 // `scanForPlanningVocabulary()` the real scan runs, over synthetic content, and
@@ -80,14 +93,27 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = repoRoot({ from: HERE });
 const SKILLS_DIR = join(ROOT, "src", "skills");
 
-/** Files whose planning reference is load-bearing and is proven safe on a
- * checkout that lacks the target. Repo-relative, POSIX separators. Keep this
- * list at its documented size -- each entry needs the reason written next to
- * it, because an unexplained entry is how a guard is hollowed out. */
-const EVIDENCE_FIXTURE_READERS = Object.freeze([
-  // Cross-validates the directory parser against the genuine release image in
-  // the Phase 23 evidence corpus, and skips (never fails) when it is absent.
-  "src/skills/c64-disk-access/scripts/c1541.test.mjs",
+/** Shipped tests that reach an OPERATOR-SUPPLIED external resource, named by
+ * environment variable rather than by a repository path. They are listed here
+ * not to exempt them -- nothing here is exempt from the scan -- but so the
+ * test below can assert each one still degrades to a skip when the resource
+ * is absent. That is the property that made the old hard-coded path tolerable;
+ * it must survive the path's removal.
+ *
+ * There is deliberately NO by-path exemption in this guard. The single entry
+ * that used to have one (`c1541.test.mjs`, for a `.planning/` evidence-corpus
+ * path) whitelisted the whole FILE, and so silently covered five unrelated
+ * citations in the same file as collateral. Naming the resource through an env
+ * var removed the need for the exemption instead of documenting it. */
+const OPERATOR_SUPPLIED_RESOURCE_READERS = Object.freeze([
+  {
+    file: "src/skills/c64-disk-access/scripts/c1541.test.mjs",
+    envVar: "C64_RE_CORPUS_IMAGE",
+    // A real, independently-produced release image. Committed nowhere: not
+    // this project's to redistribute, and a committed copy would no longer be
+    // independent, which is the property the cross-validation rests on.
+    why: "an independently-produced .d64 the project did not create",
+  },
 ]);
 
 /** Extensions worth reading. Everything a human or an agent reads as text. */
@@ -128,23 +154,37 @@ const CATEGORIES: readonly Category[] = Object.freeze([
   {
     name: "plan citation",
     // `plan 40-02`, `plans 01.6.3-01..04`, `plan 45-01 task 2`,
-    // `quick-260818-nh5`.
-    pattern: /\bplans?\s+\d+(?:\.\d+)*-\d+|\bquick-\d{6}-[a-z0-9]+/g,
+    // `quick-260818-nh5`. The keyword is matched in BOTH cases: the first
+    // version of this guard spelled it `\bplans?` while its immediate
+    // neighbour above already spelled the equivalent `[Pp]hase`, and that one
+    // inconsistency let a sentence-initial "Plan 29-18 removed that cause by"
+    // through a scan that reported the tree clean. Two adjacent categories
+    // must not disagree about case.
+    pattern: /\b[Pp]lans?\s+\d+(?:\.\d+)*-\d+|\bquick-\d{6}-[a-z0-9]+/g,
   },
   {
     name: "decision or gap id",
-    // A bare `D-03` / `G-40-1`. A decision id is permitted when the line also
-    // names the shipped document that defines it, because that reference
-    // resolves for a consumer.
+    // `D-03`, `G-40-1` -- in ANY form, including one that names the document
+    // defining it. An earlier version of this guard allowed `` `docs/
+    // stock-vice-parity.md` D-03 `` on the reasoning that the reference
+    // resolves for a reader who has `docs/`. Measured 2026-09-11, that reader
+    // is a minority of consumers: `docs/` is in the plugin zip (packed by `git
+    // archive HEAD`) but in NEITHER npm tarball -- `@henols/vice-mcp` lists 90
+    // individual modules and `@henols/c64-re-tools` lists `bin/`, `skills/`,
+    // `README.md`, `THIRD-PARTY-NOTICES.md`. So the qualified form dangles for
+    // every `npx` install. A skill states the reasoning inline instead; the id
+    // adds nothing a consumer can use.
     pattern: /\bD-\d{1,2}\b|\bG-\d+-\d+\b/g,
-    exempt: (_m, line) => /\bdocs\/[a-z0-9-]+\.md/.test(line),
   },
   {
     name: "requirement id",
     // `SEAM-02`, `PREP-01`, `CAP-02`, `BACK-05` -- ids declared only in
-    // `.planning/REQUIREMENTS.md`.
+    // `.planning/REQUIREMENTS.md`, which no consumer has in any distribution.
+    // The document-qualified escape is gone here for the same reason it is
+    // gone above, and it was weaker still: naming a `docs/` page next to a
+    // requirement id never made the id resolvable, because `docs/` does not
+    // define requirement ids at all.
     pattern: /\b[A-Z]{2,8}-\d{2}\b/g,
-    exempt: (_m, line) => /\bdocs\/[a-z0-9-]+\.md/.test(line),
   },
   {
     name: "planning artifact filename",
@@ -220,7 +260,6 @@ test("the shipped skills tree is non-empty and every SKILL.md is scanned", () =>
 test("no shipped skill file contains GSD planning vocabulary (ENGINEERING_RULES § 21.1)", () => {
   const offenders: string[] = [];
   for (const file of shippedSkillFiles()) {
-    if (EVIDENCE_FIXTURE_READERS.includes(file)) continue;
     const hits = scanForPlanningVocabulary(readFileSync(join(ROOT, file), "utf8"));
     for (const h of hits) offenders.push(`${file}:${h.line}: [${h.category}] "${h.match}" -- ${h.text}`);
   }
@@ -233,17 +272,21 @@ test("no shipped skill file contains GSD planning vocabulary (ENGINEERING_RULES 
   );
 });
 
-test("every exempted evidence-fixture reader still exists and still guards its own absence", () => {
-  for (const file of EVIDENCE_FIXTURE_READERS) {
+test("every shipped test reaching an operator-supplied resource names it by env var and still degrades to a skip", () => {
+  for (const { file, envVar, why } of OPERATOR_SUPPLIED_RESOURCE_READERS) {
     const content = readFileSync(join(ROOT, file), "utf8");
     assert.ok(
-      /\.planning\//.test(content),
-      `${file} is exempted from the planning-vocabulary scan but no longer contains a .planning/ reference -- remove it from EVIDENCE_FIXTURE_READERS rather than leaving a dead exemption that would silently cover a future one`,
+      content.includes(`process.env.${envVar}`),
+      `${file} is recorded as reaching ${why} through ${envVar}, but no longer reads that variable -- if the resource is gone, drop the entry; if it moved to a repository path, that path is a planning-vocabulary violation waiting to happen and this entry is now lying about how it is reached`,
+    );
+    assert.ok(
+      !/\.planning\b/.test(content),
+      `${file} must not name a .planning/ path: the operator supplies ${why} through ${envVar} precisely so no repository path is baked into a shipped file`,
     );
     assert.match(
       content,
       /skip/i,
-      `${file} reads a .planning/ evidence fixture, so it MUST degrade to a skip on a checkout without that tree, never a failure`,
+      `${file} reaches ${why}, which no consumer and no fresh clone has, so it MUST degrade to a skip when ${envVar} is unset -- never a failure`,
     );
   }
 });
@@ -270,19 +313,19 @@ test("PLANTED CONTROL 1: a synthetic skill page carrying each category is caught
   }
 });
 
-test("PLANTED CONTROL 2 (the negative control): a clean skill page, and the two exemptions, are reported by NOTHING", () => {
+test("PLANTED CONTROL 2 (the negative control): a clean skill page, and a skill's own workflow steps, are reported by NOTHING -- while every citation form is", () => {
   const clean = [
     "# A skill page",
     "Record what you learn in the project's own notes as you go.",
     "Whole-program static disassembly was withdrawn on 2026-08-29 because it",
     "could not distinguish code from data on a packed image.",
-    "The fork answers `restarted`; stock cannot -- see `docs/stock-vice-parity.md` D-03",
-    "for the full reasoning.",
+    "The fork answers `restarted`; stock cannot, because stock's binary monitor",
+    "services exactly one client and has no non-pausing liveness probe.",
     "Incident records land under `.c64-re-tools/incidents/` before anything is killed.",
   ].join("\n");
   assert.deepEqual(scanForPlanningVocabulary(clean), [], "a clean page must produce no hits");
 
-  // Exemption 1: a skill's own numbered workflow, and only the numbers it declares.
+  // The one exemption: a skill's own numbered workflow, and ONLY the numbers it declares.
   const ownWorkflow = [
     "## Phase 0 — context",
     "Come back and start again at Phase 0.",
@@ -298,15 +341,28 @@ test("PLANTED CONTROL 2 (the negative control): a clean skill page, and the two 
     "a phase number the file does NOT declare as its own step must still be reported, even in a file that declares others -- otherwise one workflow heading whitelists the whole page",
   );
 
-  // Exemption 2: a decision id is legitimate when the line names the shipped
-  // document that defines it, and a bare one is not.
-  assert.deepEqual(
-    scanForPlanningVocabulary("see `docs/stock-vice-parity.md` D-03 for the reasoning"),
-    [],
-    "a document-qualified decision id resolves for a consumer and must be allowed",
-  );
+  // A decision id is a violation in EVERY form -- bare, and qualified by the
+  // document that defines it. The qualified form was allowed until 2026-09-11
+  // on the reasoning that `docs/` resolves for the reader; it does not for the
+  // npm reader, who gets neither `docs/` nor `.planning/`.
   assert.ok(
     scanForPlanningVocabulary("this is bounded per D-02").some((h) => h.match === "D-02"),
     "a bare decision id resolves nowhere for a consumer and must be reported",
+  );
+  assert.ok(
+    scanForPlanningVocabulary("see `docs/stock-vice-parity.md` D-03 for the reasoning").some((h) => h.match === "D-03"),
+    "naming the defining document does NOT rescue a decision id: `docs/` ships in the plugin zip but in neither npm tarball, so the citation still dangles for an `npx` install. State the reasoning inline instead.",
+  );
+  assert.ok(
+    scanForPlanningVocabulary("the seam contract is documented in `docs/stock-vice-parity.md` as SEAM-02").some((h) => h.match === "SEAM-02"),
+    "a requirement id is not rescued by a nearby docs/ reference either -- docs/ does not define requirement ids at all",
+  );
+
+  // A sentence-initial `Plan` must be caught, not just a lowercase `plan`:
+  // the first version of this guard matched only the lowercase spelling and
+  // let exactly one line through while reporting the tree clean.
+  assert.ok(
+    scanForPlanningVocabulary("Plan 29-18 removed that cause by recording relative locations.").some((h) => h.match === "Plan 29-18"),
+    "a sentence-initial `Plan NN-NN` must be reported -- matching only the lowercase spelling is what let this exact line survive a scan that reported zero",
   );
 });

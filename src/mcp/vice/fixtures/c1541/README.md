@@ -51,9 +51,9 @@ format-correctness claim for `synthetic.d64` ultimately rests on `c1541`
 agreeing with itself: a bug shared between the write path (`-format`/
 `-write`, used once here) and the read path (`-dir`/`-bam`/`-entry`/
 `-chain`/`-read`, used by every `c1541.*` seam call) would not be caught by
-this fixture alone. Plan 40-04's real-corpus assertion (a `.d64` this
-project did not create) is the independent check that mitigates this — not
-this fixture, and not this plan.
+this fixture alone. The real-corpus assertion (a `.d64` this project did not
+create, supplied by the operator through `C64_RE_CORPUS_IMAGE`) is the
+independent check that mitigates this — not this fixture.
 
 ## Measured per-capability output shapes (Task 1/2, this plan)
 
@@ -216,8 +216,13 @@ The mitigation lives in `src/skills/c64-disk-access/scripts/c1541.test.mjs`,
 as ONE live-gated test case cross-validating the directory listing, one
 entry's own claimed first track/sector, and that same entry's independently
 walked sector chain against each other, run against Phase 23's own evidence
-corpus image (`.planning/phases/23-the-real-release-gate-go-degrade-no-go/
-evidence/corpus/danish.d64`) — a real release this project did not create
-and never copies into this `fixtures/` tree. The case is gated on that
-corpus image's own presence on disk and SKIPS (never fails) when it is
-absent, so a checkout without the evidence tree stays green.
+corpus image — a real release this project did not create and never copies
+into this `fixtures/` tree.
+
+That image is **operator-supplied and committed nowhere**: a commercial
+release image is not this project's to redistribute, and an image this
+project committed would stop being independently produced, which is the
+whole property the assertion rests on. Point `C64_RE_CORPUS_IMAGE` at a real
+`.d64` on your own disk to run the case. Unset or missing, it SKIPS with a
+named reason and never fails, so a checkout without one stays green — and
+because there is no default path, there is no path to go stale either.
