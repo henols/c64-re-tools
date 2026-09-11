@@ -5,16 +5,16 @@ milestone_name: The Rebuild Half
 current_phase: 46
 current_phase_name: The Lossless-Export Invariant and the Provenance Carry
 status: executing
-stopped_at: Completed 46-01-PLAN.md
-last_updated: "2026-09-11T15:11:37.930Z"
+stopped_at: Completed 46-02-PLAN.md
+last_updated: "2026-09-11T15:48:25.394Z"
 last_activity: 2026-09-11
 last_activity_desc: Phase 46 execution started
-state_head: 345ccf24084bc88a7bd4c5383b94c13508b30d4b
+state_head: 01cf6f6bb03a39947d16a2525516b850d78c3916
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 16
-  completed_plans: 11
+  completed_plans: 12
   percent: 17
 ---
 
@@ -255,10 +255,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 46 (The Lossless-Export Invariant and the Provenance Carry) — EXECUTING
-Plan: 2 of 6
-Status: Executing
-Progress: [██░░░░░░░░] 17% (1/6 plans in phase 46; milestone-wide phase percent is tracked separately in frontmatter)
-Last activity: 2026-09-11 — Plan 46-01 complete (the end-to-end provenance carry: ledger reader, exportAsm() annotation, CLI --ledger flag)
+Plan: 3 of 6
+Status: Ready to execute
+Progress: [██░░░░░░░░] 17% (2/6 plans in phase 46; milestone-wide phase percent is tracked separately in frontmatter)
+Last activity: 2026-09-11 — Plan 46-02 complete (the ledger reader's full refusal set, its own 21-test suite, and BUILD-05's adjacency/empty/ordering edge classes pinned end to end)
 
 ## Performance Metrics
 
@@ -547,6 +547,7 @@ Last activity: 2026-09-11 — Plan 46-01 complete (the end-to-end provenance car
 | Phase 45 P09 | 60min | 3 tasks | 4 files |
 | Phase 45 P10 | 35 min | 3 tasks | 2 files |
 | Phase 46 P01 | 86 min | 2 tasks | 12 files |
+| Phase 46 P02 | 41 min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -1258,6 +1259,8 @@ Recent decisions affecting current work:
 - [Phase 45]: Phase 45 closure: criterion 5 demonstrated on the real charset-phantom store under real ACME (byte-identical), a 23-test offline regression proves all nine fixtures' gate on every CI run with no external tool, and the phase closure record reports all five ROADMAP criteria MET with two honestly-disclosed partials (a $DD00 curated-table gap worked around via scratch-only enum removal; the idempotence sweep is a whole-document round trip for all nine rather than a raw dxa/Ghidra re-derivation for all nine).
 - [Phase 46]: Provenance annotation is opt-in via an optional ledgerPath on ExportAsmOptions -- a no-ledger export stays byte-identical to v0.9.0.
 - [Phase 46]: The exported comment carries BOTH the ledger's Verdict and Confidence cells verbatim (a strict superset), resolving the ROADMAP wording that conflated a Confidence value with two Verdict values.
+- [Phase 46]: Renamed every anno-provenance-ledger.ts refusal message from the readProvenanceLedger: function-name prefix to a single anno-provenance-ledger: module-name prefix, matching the house shape anno-export-asm.ts's own shipped refusals establish.
+- [Phase 46]: The ledger reader's overlap/non-ascending check and its full-$0000-$FFFF-coverage check are two separate refusals, deliberately mirroring renderLedger()'s own two distinct emit-time coverage preconditions rather than one combined "bad ledger" message.
 
 ### Pending Todos
 
@@ -2330,8 +2333,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-11T15:11:37.593Z
-Stopped at: Completed 46-01-PLAN.md
+Last session: 2026-09-11T15:48:24.911Z
+Stopped at: Completed 46-02-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
