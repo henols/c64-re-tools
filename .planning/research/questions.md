@@ -114,3 +114,32 @@ driven through the KERNAL buffer. The remedy at that point is the upstream
 `KEYBOARD_MATRIX_SET` opcode (`PROJECT.md:439`, ~60 lines in `monitor_binary.c` calling
 `keyboard_set_keyarr_any`), which closes the gap for every stock user. It is **not**
 reinstating the fork backend, which the owner reports never actually worked.
+
+**SID read-back — not needed.** The v1.0.0 equivalence instrument does not read SID state
+back at all; it excludes it. `src/skills/c64-ram-capture/scripts/compare.mjs`'s `VOLATILE`
+table (line 40, found via `grep -n 'VOLATILE\|0xd000'`) puts the whole `$D000-$DFFF` I/O range
+in its mask, SID's `$D400-$D7FF` included, with the comment directly above it stating the
+reason: "reading this range samples live hardware and two captures can never agree here."
+Phase 50 criterion 1 narrows this mask further for the original-vs-rebuild comparison, but
+names a `$D020`/`$D015`/`$D018` regression only as the **planted test case** the narrowed mask
+must still be observed catching — its text does not say the narrowing stops at those three
+registers (correcting S-2: "only" in the handed-over evidence was an over-read of what
+criterion 1 actually claims; the three are the proof case for the gate, not a stated ceiling on
+what the mask covers). Either reading leaves the same answer here: the instrument's whole
+design is to mask SID's range rather than read it back, so no v1.0.0 phase needs live SID
+state.
+
+**RESTORE / NMI — not needed.** The Task 1 scan already covers the range this needs checking
+over: the whole v1.0.0 phase block, Phase 45 through Phase 51 (not the narrower Phase 47-50
+range the handed-over evidence checked — correcting S-3, since the v1.0.0 rebuild half is the
+full 45-51 span). That word-bounded scan for `keyboard|matrix|nmi|restore|joystick|sid`
+returned zero hits, so nothing in the milestone reaches for RESTORE or NMI.
+
+**Cross-check over the 15 requirements** (`DECOMP-01..04`, `BUILD-01..07`, `EQUIV-01..04`).
+The hard half — the same word-bounded scan, run over the v1.0.0 Requirements block for
+`keyboard|matrix|sid|nmi|restore|joystick` — returns `0`. A separate scan of the same block for
+`sound|input` returns exactly one hit, not zero as the handed-over evidence claimed: `DECOMP-01`'s
+text, which states the completeness gate "takes `anno_evid_disagreements` as a **required**
+input." That is a data-flow input to a completeness gate, not a keyboard/joystick input device,
+so it is not counter-evidence — it is disambiguated here rather than silently dropped. There is
+no "sound" hit anywhere in the block.
