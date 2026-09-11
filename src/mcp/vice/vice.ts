@@ -11,11 +11,7 @@
 // the shared host MCP server (see CLAUDE.md's hazard note and STATE.md's
 // blocker entry).  The guard below runs *before* any request is serialised,
 // so no caller -- however indirect -- can reach that tool by accident.
-import { resolve, join } from "node:path";
-import { readFileSync } from "node:fs";
-
-import { supervisorDir } from "./repo-root.ts";
-import { isInsideContainer, type ContainerGuardDeps } from "./container-guard.mts";
+import { activeInstance, mcpHost, readEpoch, ViceError, MachineRestartedError, type EpochResult, type ToolInfo } from "./vice-errors.ts";
 
 // Renamed from ENDPOINT to DEFAULT_ENDPOINT (D-5): a pool lease redirects
 // the seam to a DIFFERENT endpoint at runtime via useInstance() below, so
@@ -31,145 +27,16 @@ import { isInsideContainer, type ContainerGuardDeps } from "./container-guard.mt
 // would be the broker squatting a port a human wants, the exact defect
 // D-18 exists to prevent.
 // The host part is resolved through mcpHost() rather than baked in as a
-// literal, for the same container-versus-host reason documented on mcpHost()
-// below -- this URL was the LAST remaining unconditional
-// "host.docker.internal" in the tree. Calling mcpHost() here is legal despite
-// it being declared further down: it is a function DECLARATION, so it is
-// hoisted, and its own import is initialised before this module body runs.
-// Evaluated once at startup, which also warms isInsideContainer()'s cache
-// before any tool call needs it.
+// literal, for the same container-versus-host reason documented on
+// mcpHost()'s own header comment in vice-errors.ts -- this URL was the LAST
+// remaining unconditional "host.docker.internal" in the tree. mcpHost() is
+// now IMPORTED (Phase 52 split it into vice-errors.ts, the shared module
+// this fork-only constant otherwise has no reason to depend on), so it is
+// simply a normal function call here, not a same-file hoisting concern the
+// way it was before the split. Evaluated once at startup, which also warms
+// isInsideContainer()'s cache before any tool call needs it.
 const DEFAULT_ENDPOINT: string = process.env.VICE_MCP_URL || `http://${mcpHost()}:6510/mcp`;
 const DEFAULT_TIMEOUT_MS: number = Number(process.env.VICE_MCP_TIMEOUT_MS || 30000);
-
-// The address of the host machine -- the ONE definition every consumer that
-// needs to build a host-facing URL from a bare port reads, instead of each
-// inlining its own `process.env.VICE_MCP_HOST || "host.docker.internal"` copy
-// (there were three such copies before this: vice-pool.mjs's instanceFor() and
-// defaultInstance(), and vice-session.mjs's readSession()). A FUNCTION, not
-// a module-level constant, so it stays sensitive to a runtime env override
-// -- vice-pool.test.mjs's own withMcpHostEnv() helper mutated
-// process.env.VICE_MCP_HOST across test cases within the SAME process
-// (before that file's 2026-08-02 deletion), which a constant captured once
-// at import time would have silently stopped honouring.
-//
-// CONTAINER-AWARE (2026-08-05, developer instruction). The default was
-// previously the bare literal "host.docker.internal", which is correct in
-// exactly ONE of the two environments this code runs in: it is a
-// Docker-provided alias, published into the container by
-// .devcontainer/devcontainer.json's `--add-host=host.docker.internal:host-gateway`,
-// and it does not resolve on the host at all. Host-bound modules genuinely do
-// consume this tree (vice-broker.mts references vice-broker-client), so a
-// single unconditional answer was wrong for one side by construction.
-//
-// Detection is delegated to container-guard.mts's isInsideContainer() rather
-// than re-derived -- see that function's own comment for why a second
-// detector is a bug waiting to happen here.
-//
-// Non-container branch is 127.0.0.1 rather than "localhost" DELIBERATELY:
-// "localhost" may resolve to ::1 first, and the broker binds 0.0.0.0 --
-// IPv4-only (broker-control.mts's documented bind), so an IPv6 loopback
-// connect would be refused by a listener that is in fact running. An explicit
-// IPv4 literal cannot pick the wrong family. It also classifies as `loopback`
-// under vice-broker-client.ts's classifyConnectHost(), which that resolver
-// deliberately does NOT refuse, and is not `wildcard_bind`, so it does not
-// trip the pre-connect refusal.
-export function mcpHost(deps?: ContainerGuardDeps): string {
-  return process.env.VICE_MCP_HOST || (isInsideContainer(deps) ? "host.docker.internal" : "127.0.0.1");
-}
-
-// Where tools/vice-supervisor.sh (host-only) writes its restart epoch --
-// resolved via repo-root.ts's supervisorDir() (never a fixed hop count off
-// this file's own location), so the path is correct regardless of the
-// caller's cwd AND regardless of how deep this file sits under the repo
-// root. Overridable for tests and for anyone running the supervisor with a
-// non-default VICE_SUPERVISOR_DIR. Kept exactly as-is (D-5: no behaviour
-// change with no pool running) -- this remains the default that
-// activeEpochFile below starts from.
-export const EPOCH_FILE: string = process.env.VICE_EPOCH_FILE
-  ? resolve(process.env.VICE_EPOCH_FILE)
-  : join(supervisorDir(), "epoch.json");
-
-export interface ActiveInstance {
-  port: number;
-  url: string;
-  epochFile: string;
-  pooled: boolean;
-}
-
-// -------------------------------------------------------- active instance
-//
-// Mutable module-level state, deliberately NOT frozen at module load (D-5):
-// restart detection has to stay correct PER INSTANCE, which is impossible if
-// the epoch path is fixed at import time. useInstance() below is the only
-// writer; every other read goes through the functions in this file so a
-// lease redirect takes effect everywhere at once (rpc()'s POST target,
-// readEpoch()'s default path, beginSession()'s default path).
-let activeUrl: string = DEFAULT_ENDPOINT;
-let activeEpochFile: string = EPOCH_FILE;
-// Derived from DEFAULT_ENDPOINT rather than hardcoded or left null: with no
-// lease ever taken (no pool, or a programmatic caller that never calls
-// acquire()/useInstance()), this is still a real port identity -- e.g. for
-// tools/recover.mjs's snapshotName(), which namespaces by port
-// UNCONDITIONALLY (D-4) and must never produce a "no port" name just because
-// nothing redirected the seam. Falls back to 6510 only if the URL has no
-// parseable port at all.
-//
-// PORT TRIAGE (01.6.2-09, D-18): kept, same reasoning as DEFAULT_ENDPOINT
-// above -- this fallback describes the same human-launched, reserved-band
-// (6510-6599) instance, never a broker-allocated one, so 6510 stays correct
-// here too.
-let activePort: number = (() => {
-  try {
-    const p = Number(new URL(DEFAULT_ENDPOINT).port);
-    return Number.isInteger(p) && p > 0 ? p : 6510;
-  } catch {
-    return 6510;
-  }
-})();
-// Not part of the seam redirect itself (rpc()/readEpoch() never consult
-// this) -- carried purely as identity metadata so a caller like
-// tools/recover.mjs's capture record can note whether a dump came from a
-// pooled instance or the unpooled default, without needing its own separate
-// channel back to whatever acquired the lease. Extra, optional field on
-// useInstance()'s object arg -- a caller passing only {port,url,epochFile}
-// (the documented minimum) still works exactly as before, defaulting to
-// false.
-let activePooled = false;
-
-export interface UseInstanceOptions {
-  port: number;
-  url: string;
-  epochFile: string;
-  pooled?: boolean;
-}
-
-/**
- * Redirect the transport seam to a specific pooled (or fallback) instance.
- * MUST reset the MCP handshake (`initialized = false`): the handshake
- * belongs to the endpoint it was performed against, and continuing to use a
- * "logged in" flag from a DIFFERENT endpoint would silently talk to the new
- * instance without ever having initialized a session there. Warns on stderr
- * if called while a session is already open against the previous instance,
- * since that is a real behaviour change the caller should notice.
- */
-export function useInstance({ port, url, epochFile, pooled = false }: UseInstanceOptions): void {
-  if (initialized) {
-    console.error(
-      `warn: useInstance(port ${port}) called while a session was already open against ` +
-        `${activeUrl} -- resetting the handshake. If this is mid-procedure, make sure that was intended.`
-    );
-  }
-  activeUrl = url;
-  activeEpochFile = epochFile;
-  activePort = port;
-  activePooled = pooled;
-  initialized = false;
-}
-
-/** Read-only accessor: the instance the seam is currently pointed at. */
-export function activeInstance(): ActiveInstance {
-  return { port: activePort, url: activeUrl, epochFile: activeEpochFile, pooled: activePooled };
-}
 
 // Forbidden tool names.  Checked by exact string match before any network
 // call is made -- see call() below.  Never remove vice_disk_list from this
@@ -242,53 +109,9 @@ export function denyListRefusalMessage(toolName: string): string {
   );
 }
 
-export interface ViceErrorOptions {
-  code?: number | string;
-  data?: unknown;
-}
-
-export class ViceError extends Error {
-  code?: number | string;
-  data?: unknown;
-
-  constructor(message: string, { code, data }: ViceErrorOptions = {}) {
-    super(message);
-    this.name = "ViceError";
-    this.code = code;
-    this.data = data;
-  }
-}
-
-export interface MachineRestartedErrorOptions {
-  baselineEpoch?: number | null;
-  currentEpoch?: number | null;
-  where?: string;
-  lastToolCall?: string | null;
-}
-
-/**
- * Thrown when a reconnect happened and the emulator's identity across that
- * reconnect could not be proven -- either the epoch file shows it changed,
- * or nothing (no epoch file, no surviving armed checkpoint) could prove it
- * didn't (D-3, D-4). Carries the evidence a caller needs to write a void
- * note: the epochs compared, where in the pipeline the check ran, and the
- * last tool call attempted before detection (see lastToolCall() below).
- */
-export class MachineRestartedError extends ViceError {
-  baselineEpoch?: number | null;
-  currentEpoch?: number | null;
-  where?: string;
-  lastToolCall?: string | null;
-
-  constructor(message: string, { baselineEpoch, currentEpoch, where, lastToolCall }: MachineRestartedErrorOptions = {}) {
-    super(message);
-    this.name = "MachineRestartedError";
-    this.baselineEpoch = baselineEpoch;
-    this.currentEpoch = currentEpoch;
-    this.where = where;
-    this.lastToolCall = lastToolCall;
-  }
-}
+// ViceError / MachineRestartedError moved to vice-errors.ts (Phase 52): both
+// are shared with the surviving stock lease path, not fork-only. Imported
+// above.
 
 let reqId = 0;
 
@@ -326,7 +149,7 @@ async function rpc(method: string, params: unknown, { timeoutMs = DEFAULT_TIMEOU
   const body = JSON.stringify({ jsonrpc: "2.0", id, method, params });
   let res: Response;
   try {
-    res = await fetch(activeUrl, {
+    res = await fetch(activeInstance().url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -380,15 +203,27 @@ async function rpc(method: string, params: unknown, { timeoutMs = DEFAULT_TIMEOU
   return payload.result;
 }
 
+// `initializedUrl` replaces useInstance() directly flipping
+// `initialized = false` on redirect: useInstance() now lives in
+// vice-errors.ts and is deliberately backend-agnostic, so it no longer
+// reaches into this file's own handshake flag. Instead, ensureInitialized()
+// itself detects a redirected instance by comparing the URL it last
+// handshook against the CURRENT activeInstance().url on every call -- a
+// mismatch means a lease redirect happened since the last handshake, which
+// is exactly the case that used to be caught by useInstance()'s own
+// `initialized = false` write.
 let initialized = false;
+let initializedUrl: string | null = null;
 async function ensureInitialized(): Promise<void> {
-  if (initialized) return;
+  const { url } = activeInstance();
+  if (initialized && initializedUrl === url) return;
   await rpc("initialize", {
     protocolVersion: "2024-11-05",
     capabilities: {},
     clientInfo: { name: "vice-recover", version: "1.0" },
   });
   initialized = true;
+  initializedUrl = url;
 }
 
 // The host server has been observed to drop connections and recover on its own,
@@ -459,9 +294,10 @@ async function withReconnect(toolName: string, args: Record<string, unknown>, op
       }
     }
   }
+  const { url: failedUrl, port: failedPort } = activeInstance();
   throw new ViceError(
-    `${toolName} failed after ${RECONNECT_ATTEMPTS} transport attempts against ${activeUrl} ` +
-      `(port ${activePort}): ${lastErr?.message} -- recovery is a HOST-SIDE restart, which this ` +
+    `${toolName} failed after ${RECONNECT_ATTEMPTS} transport attempts against ${failedUrl} ` +
+      `(port ${failedPort}): ${lastErr?.message} -- recovery is a HOST-SIDE restart, which this ` +
       `container cannot perform. Run tools/vice-launcher.sh on the HOST (see its header comment) -- ` +
       `its broker launches a boot-fresh instance on demand, supervises it, and respawns a crashed one ` +
       `with backoff, logging the crash for the still-open root-cause investigation.`
@@ -505,53 +341,9 @@ function summarizeCall(toolName: string, args: unknown): string {
   return full.length > 120 ? `${full.slice(0, 117)}...` : full;
 }
 
-export interface EpochResult {
-  present: boolean;
-  epoch: number | null;
-  spawned_at: string | null;
-  pid: number | null;
-  path: string;
-  reason?: string;
-}
-
-/**
- * Read the supervisor's epoch file. Synchronous -- this is a plain, cheap
- * file read; the whole point of the epoch check is that it costs zero MCP
- * traffic, unlike the checkpoint-fallback probe. NEVER throws: absence is
- * normal (no supervisor running at all) and must not be an error (D-3) --
- * the harness has to keep working exactly as it does today with no
- * supervisor.
- *
- * Treats the file's contents as untrusted, host-written input (T-jty-01):
- * JSON.parse in try/catch, `epoch` must decode to a finite integer, unknown
- * fields are ignored, and no path derived from the file's contents is ever
- * opened.
- */
-export function readEpoch(path: string = activeEpochFile): EpochResult {
-  const absent: EpochResult = { present: false, epoch: null, spawned_at: null, pid: null, path };
-  let raw: string;
-  try {
-    raw = readFileSync(path, "utf8");
-  } catch {
-    return { ...absent, reason: "epoch file absent" };
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return { ...absent, reason: "epoch file present but not valid JSON" };
-  }
-  if (!isPlainObject(parsed) || !Number.isInteger(parsed.epoch)) {
-    return { ...absent, reason: 'epoch file present but its "epoch" field is not a finite integer' };
-  }
-  return {
-    present: true,
-    epoch: parsed.epoch as number,
-    spawned_at: typeof parsed.spawned_at === "string" ? parsed.spawned_at : null,
-    pid: typeof parsed.pid === "number" && Number.isFinite(parsed.pid) ? parsed.pid : null,
-    path,
-  };
-}
+// EpochResult / readEpoch moved to vice-errors.ts (Phase 52): shared with
+// the surviving stock lease path via stock-connect.ts/stock-diagnose.ts,
+// not fork-only. Imported above.
 
 export interface BeginSessionOptions {
   epochPath?: string;
@@ -562,8 +354,11 @@ export interface BeginSessionOptions {
  * baseline every later check compares against, and zero the reconnect
  * counter so a PRIOR session's reconnects (e.g. from a previous `recover()`
  * run inside the same `reproduce()` process) don't leak into this one.
+ * Defaults `epochPath` to the CURRENT lease's epoch file (read fresh through
+ * activeInstance(), Phase 52's shared accessor) rather than a private
+ * module variable this file no longer owns.
  */
-export function beginSession({ epochPath = activeEpochFile }: BeginSessionOptions = {}): SessionInfo {
+export function beginSession({ epochPath = activeInstance().epochFile }: BeginSessionOptions = {}): SessionInfo {
   const baseline = readEpoch(epochPath);
   reconnectCount = 0;
   currentSession = { baseline, epochPath, startedAt: new Date().toISOString() };
@@ -736,12 +531,9 @@ export async function call(toolName: string, args: Record<string, unknown> = {},
 // Alias -- some call sites read more naturally as callTool(...).
 export const callTool: typeof call = call;
 
-export interface ToolInfo {
-  name: string;
-  description?: string;
-  inputSchema?: unknown;
-  [key: string]: unknown;
-}
+// ToolInfo moved to vice-errors.ts (Phase 52): stock-dispatch.ts needs the
+// type only, with no other dependency on this fork-only file. Imported
+// above.
 
 export interface ServerInfoPayload {
   tools?: ToolInfo[];

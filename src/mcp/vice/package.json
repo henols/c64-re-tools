@@ -10,6 +10,7 @@
   "files": [
     "vice-proxy.ts",
     "vice.ts",
+    "vice-errors.ts",
     "vice-sync.ts",
     "vice-probe.ts",
     "vice-broker-client.ts",
