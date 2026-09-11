@@ -109,6 +109,27 @@ function extractCitations(bullet: string): number[] {
   return citations;
 }
 
+/** The FUNCTION-START shorthands a bullet carries: the bare `` `:<N>` ``
+ * form the prose uses for "the function starts at", as distinct from the
+ * full `vice-proxy.ts:<N>` call-site citation.
+ *
+ * SCOPE IS THE WHOLE POINT. This runs ONLY on an already-isolated bullet,
+ * never on a whole document, and that is what makes a bare-shorthand regex
+ * safe here when CITATION_RE (see above) rightly refuses to be one. A
+ * document-wide bare `:<digits>` scan would sweep in `.planning/PROJECT.md`'s
+ * DATED record of past drift, which reads "`rewriteArguments()` citations had
+ * drifted to `:3029`/`:2964`/`:1508`/`:1484`" -- correctly-preserved history
+ * that must never red this guard. That line survives isolation because it
+ * carries no `vice-proxy.ts:<N>` citation, so it is not a qualifying bullet
+ * and this function never sees it.
+ *
+ * The backticks are load-bearing too: they are what distinguishes the
+ * shorthand `` `:3035` `` from the colon inside `` `vice-proxy.ts:3100` ``,
+ * whose backtick sits before the filename rather than before the colon. */
+export function extractFunctionStartShorthands(bullet: string): number[] {
+  return [...bullet.matchAll(/`:(\d+)`/g)].map((m) => Number(m[1]));
+}
+
 /** Isolates the ONE bullet in `text` that cites rewriteArguments()'s call
  * sites, so a citation added elsewhere in the file for an unrelated
  * reason is never swept into the non-vacuity count.
@@ -357,18 +378,62 @@ test("planted-violation (WR-09): a citation pointing at an unrelated top-level f
       `${unrelated.length} rejected vs ${accepted.length} accepted`,
   );
 
-  // And the two citations CLAUDE.md names as function starts must be among the
-  // accepted set -- the arm is not allowed to narrow onto nothing.
-  for (const lineNumber of [1505, 3035]) {
-    const verdict = citationResolves(lineNumber, viceProxyLines);
-    assert.ok(
-      verdict.ok && verdict.why.startsWith("enclosing function"),
-      `vice-proxy.ts:${lineNumber} must resolve VIA THE FUNCTION-START ARM -- it is a declaration line, not a ` +
-        `call line. CLAUDE.md's Architecture bullet cites both of these as function starts and instructs `+
-        `the reader to treat a mismatch as drift to re-verify, so an arm that stopped accepting them `+
-        `would make that instruction uncheckable. Got: ${verdict.why}`,
+  // And the function-start line numbers THE BULLETS THEMSELVES NAME must be
+  // among the accepted set -- the arm is not allowed to narrow onto nothing.
+  //
+  // READ FROM THE DOCUMENTS, NOT HARD-CODED. This pair used to be the literal
+  // `[1505, 3035]`, typed into the test. That made the guard's coverage of the
+  // four numbers asymmetric in a way its own prose did not admit: the two
+  // CALL-SITE citations were read out of the bullet and checked against
+  // source, while the two FUNCTION-START numbers were checked against a copy
+  // living here. A bullet whose `` `:3035` `` drifted to `` `:3041` `` while
+  // this literal stayed 3035 would leave the guard green over a wrong bullet
+  // -- precisely the silent drift the file exists to end, reintroduced one
+  // layer up. Deriving them closes that, and it is what lets the bullets state
+  // plainly that all four numbers are mechanically checked.
+  //
+  // Enabled by the 2026-09-11 cleanup: the bullets used to carry a per-phase
+  // drift changelog full of STALE shorthands (`:2889`, `:1368`, `:3029`, ...),
+  // so a shorthand scan of the bullet would have returned history rather than
+  // the live pair. With the changelog gone -- it duplicated the dated record
+  // that the Evolution section already holds -- each bullet now carries
+  // exactly the two shorthands it asserts.
+  const seen = new Set<number>();
+  for (const doc of SCANNED_DOCS) {
+    const { bullet, problems } = isolateCitationBullet(doc, readFileSync(join(repoRoot({ from: HERE }), doc), "utf8"));
+    assert.deepEqual(problems, [], `${doc}: ${problems.join("; ")}`);
+    const shorthands = extractFunctionStartShorthands(bullet as string);
+    assert.equal(
+      shorthands.length,
+      2,
+      `${doc}'s rewriteArguments() bullet must name exactly 2 function-start shorthands (\`:<N>\`), found ${shorthands.length}: ` +
+        `[${shorthands.join(", ")}]. Two call sites means two enclosing functions. A third would mean this guard is ` +
+        `reading a stale drift changelog back out of the prose instead of the live pair -- put historical numbers in ` +
+        `the Evolution record, not in the constraint.`,
     );
+    for (const lineNumber of shorthands) {
+      seen.add(lineNumber);
+      const verdict = citationResolves(lineNumber, viceProxyLines);
+      assert.ok(
+        verdict.ok && verdict.why.startsWith("enclosing function"),
+        `vice-proxy.ts:${lineNumber}, named as a function start by ${doc}'s Architecture bullet, must resolve VIA THE ` +
+          `FUNCTION-START ARM -- it is a declaration line, not a call line. That bullet instructs the reader to treat a ` +
+          `mismatch as drift to re-verify, so an arm that stopped accepting it would make the instruction uncheckable. ` +
+          `Got: ${verdict.why}`,
+      );
+    }
   }
+
+  // Non-vacuity: the loop above must actually have checked something, and the
+  // two scanned documents must agree. They are two copies of ONE fact; a
+  // silent disagreement between them is the drift that widening SCANNED_DOCS
+  // was introduced to catch, and it would otherwise pass here twice over.
+  assert.equal(
+    seen.size,
+    2,
+    `expected the scanned documents to name the SAME two function-start lines, got [${[...seen].sort((a, b) => a - b).join(", ")}] ` +
+      `across ${SCANNED_DOCS.length} documents -- the copies have drifted apart from each other`,
+  );
 });
 
 // ---------------------------------------------------------------------------
