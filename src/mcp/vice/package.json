@@ -85,6 +85,7 @@
     "anno-types.ts",
     "anno-index.ts",
     "anno-store.ts",
+    "anno-store-export.ts",
     "anno-tools.ts",
     "anno-derive.ts",
     "anno-details.ts",

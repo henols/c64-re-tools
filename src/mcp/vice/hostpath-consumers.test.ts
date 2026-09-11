@@ -307,7 +307,17 @@ function annoProductionModules(): string[] {
 // against D-13's own discipline: a floor tracks a REAL family's REAL count,
 // and an honest deletion is a real count change, not the "adjust the literal
 // to fit" this test's own failure message forbids.
-const ANNO_MODULE_FLOOR = 17 + 2 + 1 + 1 - 1;
+// RAISED FROM 20 TO 21 BY PLAN 45-02 (D-02), which lands exactly one new
+// `anno-*.ts` production module: `anno-store-export.ts` (the general
+// per-fixture store JSON export/import round trip). This raise was NOT
+// caught at the time -- plan 45-02's own `<verify>` block did not run this
+// test or `package.json files[]`'s own scan, so the floor sat stale through
+// plan 45-03 until plan 45-04 (mandatory pre-work: this file's own test was
+// part of the phase's `npm run test:automated` baseline comparison) found
+// and closed the gap. Again a RELATION -- the value plan 40-06 measured,
+// plus the one module plan 45-02 adds -- and again read literally: 21 is
+// strictly greater than the 20 it replaces.
+const ANNO_MODULE_FLOOR = 17 + 2 + 1 + 1 - 1 + 1;
 
 test("the annotation module family (D-08/ANNO-02) is derived from disk with a non-vacuity floor, not a hard-coded list (INT-01/D-11.1-03)", () => {
   const modules = annoProductionModules();
