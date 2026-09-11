@@ -551,9 +551,17 @@ function sqlWriteSites(): string[] {
  * agent-driven surface where a transposed span is likelier, and `28-REVIEW.md`
  * required shipped in the same phase as the refusal. It is a WRITE verb on a
  * WRITE path -- this control caught it, which is the control working.
+ *
+ * TWO SITES 46-03 ADDED, for `anno_excluded_range` (`SCHEMA_VERSION` 5,
+ * `BUILD-07`): `addExcludedRange` records a user-requested exclusion's extent
+ * and reason, and `removeExcludedRange` is its exact inverse, following
+ * `addScope`/`removeScope`'s own pairing. Neither is a cached derivation of
+ * anything -- every row is a directly caller-supplied fact (the user's own
+ * words), exactly like `removeScope` above.
  */
 const EXPECTED_SQL_WRITE_SITES = [
   "anno-store.ts#DDL",
+  "anno-store.ts#addExcludedRange",
   "anno-store.ts#addScope",
   "anno-store.ts#applyEnumUsage",
   "anno-store.ts#clearEnumUsage",
@@ -571,6 +579,7 @@ const EXPECTED_SQL_WRITE_SITES = [
   "anno-store.ts#openStore",
   "anno-store.ts#pruneSnapshots",
   "anno-store.ts#putXref",
+  "anno-store.ts#removeExcludedRange",
   "anno-store.ts#removeScope",
   "anno-store.ts#retype",
   "anno-store.ts#runWriteSequence",

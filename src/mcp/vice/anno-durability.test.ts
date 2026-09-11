@@ -573,15 +573,19 @@ test("CR-06: with a separate OS process holding a READ transaction, the commit R
 // one evidence observation survives a real process death end to end.
 // ---------------------------------------------------------------------------
 
-test("SCHEMA_VERSION 4: a fresh store carries anno_evid_exec with exactly the no-change run-identity column set, all NOT NULL", () => {
+test("SCHEMA_VERSION 5: a fresh store carries anno_evid_exec with exactly the no-change run-identity column set, all NOT NULL", () => {
   const dir = mkdtempSync(join(tmpdir(), "anno-"));
   try {
     const path = join(dir, "proj.annostore");
     const store = openStore(path, { workspaceRoot: dir });
     try {
-      assert.equal(SCHEMA_VERSION, 4, "EVID-02's bump: this build's SCHEMA_VERSION is 4");
+      // RE-RECORDED 2026-09-11 (46-03), 4 -> 5: `anno_evid_exec` itself is
+      // unchanged by this bump (46-03 adds `anno_excluded_range`, a sibling
+      // table), so this test's own claim about `anno_evid_exec`'s column set
+      // stays true; only the SCHEMA_VERSION number it pins moves.
+      assert.equal(SCHEMA_VERSION, 5, "EVID-02's bump was 4; 46-03's is 5 -- this build's SCHEMA_VERSION");
       const meta = store.db.prepare("select schema_version from anno_meta where id = 1").get() as { schema_version: number };
-      assert.equal(meta.schema_version, 4, "a fresh store's declared schema_version is this build's SCHEMA_VERSION");
+      assert.equal(meta.schema_version, 5, "a fresh store's declared schema_version is this build's SCHEMA_VERSION");
 
       const columns = store.db.prepare("pragma table_info(anno_evid_exec)").all() as { name: string; notnull: number; pk: number }[];
       assert.deepEqual(
@@ -602,7 +606,7 @@ test("SCHEMA_VERSION 4: a fresh store carries anno_evid_exec with exactly the no
   }
 });
 
-test("SCHEMA_VERSION 4: a store whose anno_meta.schema_version is 3 is refused by name, naming both versions, with its bytes and mtime unchanged", () => {
+test("SCHEMA_VERSION 5: a store whose anno_meta.schema_version is 3 is refused by name, naming both versions, with its bytes and mtime unchanged", () => {
   const dir = mkdtempSync(join(tmpdir(), "anno-"));
   try {
     const path = join(dir, "proj.annostore");
@@ -621,7 +625,7 @@ test("SCHEMA_VERSION 4: a store whose anno_meta.schema_version is 3 is refused b
       (e: unknown) => {
         assert.ok(e instanceof AnnoStoreCorruptError, `expected AnnoStoreCorruptError, got ${String(e)}`);
         assert.match(e.message, /schema_version 3/, "the refusal must name the version it found");
-        assert.match(e.message, /expected 4/, "the refusal must name the version it wanted");
+        assert.match(e.message, /expected 5/, "the refusal must name the version it wanted");
         return true;
       },
     );
