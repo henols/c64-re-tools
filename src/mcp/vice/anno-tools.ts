@@ -172,13 +172,23 @@ import {
   assertLegalLabel,
   assertRangeShape,
   parseStoreAddress,
+  parseVariantKey,
   storePathWithinWorkspace,
 } from "./anno-types.ts";
-import type { AnnoStoreErrorOptions, CommentRow, LabelRow } from "./anno-types.ts";
+import type { AnnoStoreErrorOptions, CommentRow, EnumUsageRow, LabelRow, ProjectEnumRow } from "./anno-types.ts";
 import { crossReferencesTo, searchAnnotations } from "./anno-derive.ts";
 import { composeAddressDetails } from "./anno-details.ts";
 import { decode } from "./disasm-decoder.ts";
+import type { Instruction } from "./disasm-decoder.ts";
 import { render } from "./disasm-renderer.ts";
+// D-16's SECOND renderer (plan 45-05): `anno-export-asm.ts` carries the
+// proof (a real-ACME byte-diff oracle), this file carries the readability --
+// both call decomposeRegisterValue(), the ONE owning decoder, and NEITHER
+// decodes a bit itself. `REGISTER_ENUM_NAME_RE` below is deliberately a
+// SEPARATE, small predicate from `anno-export-asm.ts`'s own copy: D-16 names
+// two renderers, each owning its own substitution glue, and only the decoder
+// itself is shared.
+import { decomposeRegisterValue, type RegisterDecomposition } from "./anno-enum-gen.ts";
 import { importGhidraExport } from "./anno-import.ts";
 import type { ConstWriteFact } from "./anno-import.ts";
 import { runMemmapJoin } from "./anno-join.ts";
@@ -793,7 +803,11 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
       "fail to reassemble. The extent is bounded by the SAME byte cap that governs anno_read_region -- one cap, both " +
       "views, so there is no per-view rule to get subtly wrong -- and defaults to that cap when end_address is " +
       "omitted. A wider range is REFUSED by name with the cap and the requested width in the message, never " +
-      "silently truncated.",
+      "silently truncated. A register write bound to a project enum (via anno_apply_enum_usage) renders through " +
+      "its named member instead of a hex literal -- a single-field register as `#<enum>_<VARIANT>`, or, for a " +
+      "multi-field register, as its bits OR-ed together by name (`#D018_SELECT..0 | D018_CHARACTER..2 | " +
+      "D018_VIDEO..0`) with a trailing comment naming every field and its decoded value, so a bound write reads " +
+      "the same way here as it does in the exported ACME source.",
     inputSchema: {
       type: "object",
       properties: {
@@ -2626,7 +2640,162 @@ function hexdump(bytes: Uint8Array, start: number): string[] {
   return lines;
 }
 
-function dispatchDisassemble(args: unknown): unknown {
+/** The SAME shape `registerKeyFor().slice(1)` produces (uppercase, exactly
+ * four hex digits) -- `anno-export-asm.ts`'s own `REGISTER_ENUM_NAME_RE`
+ * comment explains why an enum usage is only ATTEMPTED through the decoder
+ * when its name has this shape, and why that check is not centralised: two
+ * renderers, two small local copies of this one predicate, one shared
+ * decoder. Kept in sync by inspection (both are one line) rather than by
+ * import, per D-16's own "two renderers" design. */
+const REGISTER_ENUM_NAME_RE = /^[0-9A-F]{4}$/;
+
+/** `#$XX` -> `#<replacement>` on the ASSEMBLER-VISIBLE half of `line`, the
+ * same confinement `anno-export-asm.ts`'s `substituteImmediateEnum()` uses
+ * (never rewriting inside a trailing `;` comment, where a renderer's own
+ * NOTE text could coincidentally contain the same hex digits). A rendered
+ * line that does not carry the expected literal is a disagreement between
+ * this function and `disasm-renderer.ts`, and it is refused rather than
+ * silently left unchanged. */
+function substituteReadableImmediate(line: string, value: number, replacement: string, address: number): string {
+  const literal = `#$${(value & 0xff).toString(16).padStart(2, "0")}`;
+  const separatorIndex = line.indexOf("  ; ");
+  const directiveHalf = separatorIndex >= 0 ? line.slice(0, separatorIndex) : line;
+  const commentHalf = separatorIndex >= 0 ? line.slice(separatorIndex) : "";
+  const at = directiveHalf.indexOf(literal);
+  if (at < 0) {
+    throw new AnnoStoreError(
+      `anno_disassemble: the instruction at $${address.toString(16).padStart(4, "0")} carries an enum usage, but its rendered line does ` +
+        `not contain the immediate literal ${literal} this renderer expected to replace. Refusing rather than emitting a line whose ` +
+        "substitution silently did nothing.",
+    );
+  }
+  return `${directiveHalf.slice(0, at)}#${replacement}${directiveHalf.slice(at + literal.length)}${commentHalf}`;
+}
+
+/** Appends `comment` as a trailing `;`-comment on `line`, joining it with any
+ * EXISTING trailing comment (a `disasm-renderer.ts` note, e.g. an NMOS
+ * page-wrap warning) via `" | "` -- the SAME separator `formatNotesComment()`
+ * already uses to join multiple notes on one instruction, so a line with
+ * both a note and a decoded register comment reads as one vocabulary rather
+ * than two different join styles on one line. */
+function appendReadableComment(line: string, comment: string): string {
+  const separatorIndex = line.indexOf("  ; ");
+  if (separatorIndex < 0) return `${line}  ; ${comment}`;
+  return `${line} | ${comment}`;
+}
+
+/**
+ * D-16's SECOND renderer (plan 45-05): the READABILITY half. `anno-export-
+ * asm.ts` carries the proof (a real-ACME byte-diff oracle); this is what a
+ * Claude session actually reads. Calls `decomposeRegisterValue()` -- the ONE
+ * owning decoder -- for exactly the same reason: this function decodes
+ * NOTHING itself.
+ *
+ * BYTE-IDENTICAL TO `render()`'S OWN OUTPUT when the store carries no enum
+ * usage inside the decoded range at all (the fast-path return below), and
+ * for every instruction `usageByAddress` does not cover even when it does --
+ * D-16 widens what a bound instruction shows; it does not touch anything
+ * else `render()` already produces.
+ *
+ * THE LINE-INDEX MAPPING THIS RELIES ON: `render(instructions, { origin })`
+ * is called here WITHOUT `showSymbols`, so `resolveSymbol()` (`disasm-
+ * renderer.ts`) always returns `undefined` and its own symbol-header loop
+ * never emits a line -- the header is EXACTLY `"!cpu 6510"` then `"* =
+ * $XXXX"`, two lines, and `instructions[i]` maps to `lines[HEADER_LINES +
+ * i]` with no other possible offset. A future caller of this function that
+ * ever passes `showSymbols: true` would break that mapping silently; this
+ * function does not, and does not need to for the readability job D-16 gives
+ * it.
+ */
+function renderDisassembleListing(handle: AnnoStoreHandle, instructions: readonly Instruction[], origin: number): string {
+  const baseListing = render(instructions as Instruction[], { origin });
+
+  const usageByAddress = new Map<number, EnumUsageRow>();
+  for (const row of listEnumUsage(handle)) usageByAddress.set(row.address, row);
+  if (usageByAddress.size === 0) return baseListing;
+
+  const enumsByName = new Map<string, ProjectEnumRow>();
+  for (const row of listProjectEnums(handle)) enumsByName.set(row.name, row);
+
+  const HEADER_LINES = 2;
+  const lines = baseListing.split("\n");
+
+  instructions.forEach((instr, index) => {
+    const usage = usageByAddress.get(instr.address);
+    if (usage === undefined) return;
+
+    // THE SAME REFUSAL SHAPE THE EXPORT BOUNDARY RAISES (`anno-export-
+    // asm.ts`'s own enum-substitution block) for the same conditions, not a
+    // silently plain listing for a store row this readable surface cannot
+    // honour.
+    const project = enumsByName.get(usage.enumName);
+    if (project === undefined) {
+      throw new AnnoStoreError(
+        `anno_disassemble: the enum usage at $${instr.address.toString(16).padStart(4, "0")} names enum ${JSON.stringify(usage.enumName)}, ` +
+          "which the store holds no definition for. Refusing to render a readable operand whose vocabulary is missing.",
+      );
+    }
+    const role = instr.operand?.role;
+    if (role !== "immediate" || !instr.acmeExpressible) {
+      throw new AnnoStoreError(
+        `anno_disassemble: the enum usage at $${instr.address.toString(16).padStart(4, "0")} names enum ${JSON.stringify(usage.enumName)}, but ` +
+          "the instruction there is not an assembler-visible IMMEDIATE operand -- an enum renders on the immediate operand only. Refusing " +
+          "rather than rendering a readable line with no substitution.",
+      );
+    }
+
+    // D-16: attempted ONLY when the enum's name has the register-key shape;
+    // see `REGISTER_ENUM_NAME_RE`'s own comment for why a name that does not
+    // (e.g. a hand-authored `viccolor`) is never attempted.
+    let decomposition: RegisterDecomposition | undefined;
+    if (REGISTER_ENUM_NAME_RE.test(usage.enumName)) {
+      try {
+        // `Number("0x...")`, never `parseInt()` -- this file's own guard
+        // (anno-tools.test.ts) forbids a second, divergent numeric-parsing
+        // rule beside the store's own. `usage.enumName` is already proven
+        // to match REGISTER_ENUM_NAME_RE (four hex digits) above.
+        decomposition = decomposeRegisterValue(Number(`0x${usage.enumName}`), instr.operand!.value);
+      } catch (err) {
+        throw new AnnoStoreError(
+          `anno_disassemble: decomposing the enum usage at $${instr.address.toString(16).padStart(4, "0")} (enum ` +
+            `${JSON.stringify(usage.enumName)}) against its bit-name table failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
+    const lineIndex = HEADER_LINES + index;
+    const currentLine = lines[lineIndex]!;
+
+    if (decomposition !== undefined && decomposition.multiField) {
+      // D-17: OR-ed named constants AND the decoded comment -- both, exactly
+      // as the export renders them, so a Claude session reading this listing
+      // sees what the export proves.
+      const orExpression = decomposition.terms.map((term) => term.name).join(" | ");
+      const substituted = substituteReadableImmediate(currentLine, instr.operand!.value, orExpression, instr.address);
+      lines[lineIndex] = appendReadableComment(substituted, decomposition.comment);
+      return;
+    }
+
+    // THE EXISTING SINGLE-SYMBOL SHAPE (D-16: not replaced) -- a single-field
+    // register, or an enum usage whose name is not register-shaped at all.
+    let matched: string | undefined;
+    for (const [key, variantName] of Object.entries(project.variants)) {
+      if (parseVariantKey(key) === instr.operand!.value) matched = variantName;
+    }
+    if (matched === undefined) {
+      throw new AnnoStoreError(
+        `anno_disassemble: enum ${JSON.stringify(usage.enumName)} is bound to the immediate operand at ` +
+          `$${instr.address.toString(16).padStart(4, "0")}, whose value is $${(instr.operand!.value & 0xff).toString(16).padStart(2, "0")}, ` +
+          "and the enum has no variant for that value.",
+      );
+    }
+    lines[lineIndex] = substituteReadableImmediate(currentLine, instr.operand!.value, `${usage.enumName}_${matched}`, instr.address);
+  });
+
+  return lines.join("\n");
+}
+
+function dispatchDisassemble(handle: AnnoStoreHandle, args: unknown): unknown {
   const image = loadImage("anno_disassemble", args);
   const bag = argBag(args);
   const start = parseStoreAddress(bag.address, { what: "address" });
@@ -2652,7 +2821,7 @@ function dispatchDisassemble(args: unknown): unknown {
     address: start,
     end_address: requestedEnd,
     instructions: instructions.length,
-    listing: render(instructions, { origin: start }),
+    listing: renderDisassembleListing(handle, instructions, start),
   };
 }
 
@@ -2810,7 +2979,7 @@ async function dispatch(name: string, args: unknown, handle: AnnoStoreHandle): P
   if (name === "anno_evid_disagreements") return dispatchEvidDisagreements(handle, args);
   if (name === "anno_evid_runs") return dispatchEvidRuns(handle, args);
   if (name === "anno_evid_reset") return dispatchEvidReset(handle, args);
-  if (name === "anno_disassemble") return dispatchDisassemble(args);
+  if (name === "anno_disassemble") return dispatchDisassemble(handle, args);
   if (name === "anno_read_region") return dispatchReadRegion(args);
   if (name === "anno_get_binary_info") return dispatchBinaryInfo(args);
   if (name === "anno_get_cross_references") return dispatchCrossReferences(handle, args);

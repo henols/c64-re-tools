@@ -27,7 +27,22 @@ import { fileURLToPath } from "node:url";
 import { execFileSync, fork, spawn } from "node:child_process";
 import { connect as netConnect } from "node:net";
 
-import { closeStore, currentRevision, listComments, listExecObservations, listLabels, listRanges, listXrefs, openStore, putXref, setDataType, setLabel } from "./anno-store.ts";
+import {
+  applyEnumUsage,
+  closeStore,
+  createProjectEnum,
+  currentRevision,
+  listComments,
+  listExecObservations,
+  listLabels,
+  listRanges,
+  listXrefs,
+  openStore,
+  putXref,
+  setDataType,
+  setLabel,
+  updateProjectEnum,
+} from "./anno-store.ts";
 import {
   ANNO_READ_REGION_MAX_BYTES,
   ANNO_READ_REGION_MAX_BYTES_ENV,
@@ -739,6 +754,123 @@ test("anno_disassemble decodes at an EXPLICIT address, and the surface names no 
       assert.match(disasmBody.listing, /jsr \$c010/i);
       assert.match(disasmBody.listing, /jmp \$c010/i);
       assert.match(disasmBody.listing, /\* = \$c000/, "the listing's origin is the requested address");
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// D-16/D-17 (plan 45-05): `anno_disassemble` is the SECOND renderer -- it
+// calls `decomposeRegisterValue()` (`anno-enum-gen.ts`, plan 45-03), the SAME
+// owning decoder `anno-export-asm.ts`'s real-ACME byte-diff oracle proves.
+// This surface adds NOTHING to that proof; it only makes a bound register
+// write readable in the one place a Claude session actually looks.
+// ---------------------------------------------------------------------------
+
+/** `lda #$04` / `sta $d018` / `rts` -- the same $D018=$04 write
+ * `anno-export-asm.test.ts` uses, at `$c000` instead of `$0801` so this file
+ * stays independent of that one's fixture addresses. */
+const D018_WRITE_PRG = prgBytes(0xc000, [0xa9, 0x04, 0x8d, 0x18, 0xd0, 0x60]);
+
+test("D-16/D-17 Test 1: anno_disassemble renders a multi-field register write as OR-ed term names plus a decoded comment, on the same line", async () => {
+  await withStore(
+    (handle) => {
+      createProjectEnum(handle, { name: "D018", variants: {} });
+      applyEnumUsage(handle, { address: 0xc000, name: "D018" });
+    },
+    async (ws, store) => {
+      const image = writeImage(ws, "prog.prg", D018_WRITE_PRG);
+      const result = await runAnnoTool("anno_disassemble", { store, image, address: "$c000", end_address: "$c005" });
+      assert.equal(result.isError, false, result.content[0]!.text);
+      const disasmBody = (await body(result)) as { listing: string };
+
+      const ldaLine = disasmBody.listing.split("\n").find((l) => l.includes("lda #"));
+      assert.ok(ldaLine !== undefined, `the lda line must be present:\n${disasmBody.listing}`);
+      assert.ok(
+        ldaLine!.includes(
+          "lda #D018_SELECT_UPPER_LOWER_CHARACTER_SET0 | D018_CHARACTER_DOT_DATA_BASE_ADDRESS2 | D018_VIDEO_MATRIX_BASE_ADDRESS0",
+        ),
+        `the operand must be the OR-ed term names, exactly as the export renders them:\n${ldaLine}`,
+      );
+      assert.equal(disasmBody.listing.includes("lda #$04"), false, "the hex literal must be REPLACED, not merely accompanied");
+      assert.ok(ldaLine!.includes("  ; $D018: "), `a trailing mechanical-decode comment must be present:\n${ldaLine}`);
+      for (const fragment of ["SELECT_UPPER_LOWER_CHARACTER_SET=0", "CHARACTER_DOT_DATA_BASE_ADDRESS=2", "VIDEO_MATRIX_BASE_ADDRESS=0"]) {
+        assert.ok(ldaLine!.includes(fragment), `the comment must name every field and its decoded value (${fragment}):\n${ldaLine}`);
+      }
+    },
+  );
+});
+
+test("D-16 Test 2: a range with NO enum usage renders exactly what it renders today -- the existing listing is unchanged for unbound instructions", async () => {
+  await withStore(
+    () => {},
+    async (ws, store) => {
+      const image = writeImage(ws, "prog.prg", D018_WRITE_PRG);
+      const result = await runAnnoTool("anno_disassemble", { store, image, address: "$c000", end_address: "$c005" });
+      assert.equal(result.isError, false, result.content[0]!.text);
+      const disasmBody = (await body(result)) as { listing: string };
+      assert.match(disasmBody.listing, /lda #\$04/, `an unbound write must still render the plain hex literal:\n${disasmBody.listing}`);
+      assert.match(disasmBody.listing, /sta \$d018/i, `the following instruction must be untouched:\n${disasmBody.listing}`);
+    },
+  );
+});
+
+test("D-16 Test 3: anno_read_region with view:'disasm' is NOT changed by this task -- one verb's readability, not two", async () => {
+  await withStore(
+    (handle) => {
+      createProjectEnum(handle, { name: "D018", variants: {} });
+      applyEnumUsage(handle, { address: 0xc000, name: "D018" });
+    },
+    async (ws, store) => {
+      const image = writeImage(ws, "prog.prg", D018_WRITE_PRG);
+      const region = await runAnnoTool("anno_read_region", { store, image, start_address: "$c000", end_address: "$c005", view: "disasm" });
+      assert.equal(region.isError, false, region.content[0]!.text);
+      const regionBody = (await body(region)) as { listing: string };
+      assert.match(
+        regionBody.listing,
+        /lda #\$04/,
+        `anno_read_region's disasm view must stay exactly as it is -- D-16 named two surfaces, the export and anno_disassemble, and this is not one of them:\n${regionBody.listing}`,
+      );
+    },
+  );
+});
+
+test("D-16 Test 4: an enum usage naming an enum the store does not hold is REFUSED, matching the export boundary's own refusal shape", async () => {
+  await withStore(
+    (handle) => {
+      // applyEnumUsage() resolves the enum inside its own transaction, so
+      // reaching "the store holds no definition" needs a project enum that
+      // is later removed from underneath the usage -- the same unreachable-
+      // through-the-public-route state `anno-export-asm.ts`'s own identical
+      // check documents. Reproduced the SAME way that file's own comment
+      // says: create the enum, bind the usage, then rename the enum away
+      // from the name the usage still carries (`updateProjectEnum` replaces
+      // wholesale rather than merges, so the OLD name is left with no row).
+      createProjectEnum(handle, { name: "D018", variants: {} });
+      applyEnumUsage(handle, { address: 0xc000, name: "D018" });
+    },
+    async (ws, store) => {
+      // Rename the enum out from under the usage through the SAME store
+      // handle shape `anno-export-asm.test.ts` uses nowhere -- this file
+      // reaches the identical unreachable-in-practice state via a second,
+      // independent store open (a real store file somebody edited is the
+      // scenario the exporter's own comment names).
+      // `mustExist: true` opens READ-ONLY (`openStore()`'s own "judge an
+      // existing image" mode) -- a real write needs the default, writable
+      // open, which is safe here because the store already exists (seeded
+      // above) and `fresh` is therefore false.
+      const handle = openStore(store, { workspaceRoot: ws });
+      try {
+        updateProjectEnum(handle, { name: "D018", newName: "D018_RENAMED" });
+      } finally {
+        closeStore(handle);
+      }
+
+      const image = writeImage(ws, "prog.prg", D018_WRITE_PRG);
+      const result = await runAnnoTool("anno_disassemble", { store, image, address: "$c000", end_address: "$c005" });
+      assert.equal(result.isError, true, "a dangling enum usage must be REFUSED, never rendered as a silently plain listing");
+      assert.match(result.content[0]!.text, /\[AnnoStoreError\]/);
+      assert.ok(result.content[0]!.text.includes("D018"), `the refusal names the ENUM: ${result.content[0]!.text}`);
+      assert.ok(result.content[0]!.text.includes("$c000"), `the refusal names the ADDRESS: ${result.content[0]!.text}`);
     },
   );
 });
