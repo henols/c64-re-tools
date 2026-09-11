@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 34
+open_count: 35
 waived_count: 14
 fixed_count: 9
-total_count: 57
-last_updated: 2026-09-10T22:10:09.848Z
+total_count: 58
+last_updated: 2026-09-11T05:37:04.583Z
 ---
 
 # Broken Windows Ledger
@@ -72,6 +72,7 @@ last_updated: 2026-09-10T22:10:09.848Z
 | 55 | 42 | deviation | src/mcp/vice/text-tools.ts |  | vice_profile_flat cannot produce real profile rows in production: handleProfileFlat dials prof flat alone, but VICE profiler defaults off and needs prof on issued first (MEASURED live, plan 42-09); no handler in this tree issues prof on today | open |  | 2026-09-09T15:46:50.380Z |  |
 | 56 | 45 | deviation | src/skills/routine-queue-walker/scripts/completeness-report.test.mjs |  | Task 3 (tdd=true) implementation predated its test tier -- RED phase not observed, tests confirmed green on first run rather than watched fail first | open |  | 2026-09-10T22:10:09.499Z |  |
 | 57 | 45 | unrun-verify | src/mcp/vice/fixtures/decomp-execution-manifest.json |  | Manifest's own JSON-schema check (9 fixtures, 6 executed/3 not-executed with reasons) was run ad hoc during execution, not committed as a standing automated test | open |  | 2026-09-10T22:10:09.848Z |  |
+| 58 | 45 | deviation | src/mcp/vice/anno-cli.ts |  | FLOW-02: decomp-completeness USAGE text names 'Phase 45'/'Phase 33' literals in shipped source (plan 45-01); pre-existing, not fixed by plan 45-03 (out of scope) -- see 45-03's deferred-items.md | open |  | 2026-09-11T05:37:04.583Z |  |
 
 ````json
 [
@@ -757,6 +758,18 @@ last_updated: 2026-09-10T22:10:09.848Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-10T22:10:09.848Z",
+    "resolved_at": null
+  },
+  {
+    "id": 58,
+    "kind": "deviation",
+    "phase": "45",
+    "file": "src/mcp/vice/anno-cli.ts",
+    "line": null,
+    "description": "FLOW-02: decomp-completeness USAGE text names 'Phase 45'/'Phase 33' literals in shipped source (plan 45-01); pre-existing, not fixed by plan 45-03 (out of scope) -- see 45-03's deferred-items.md",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-11T05:37:04.583Z",
     "resolved_at": null
   }
 ]

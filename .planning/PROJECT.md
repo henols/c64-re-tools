@@ -46,7 +46,10 @@ registry. Seven skills ship, not six.
 *The `ANNO-13`, `ANNO-14` and `ANNO-15` capabilities (generated enums, and the
 symbol round trip in both directions) went with the removal and **no phase owns
 their return** — see the withdrawal notes under Validated rather than assuming
-they still work.*
+they still work. **CORRECTED 2026-09-11 (Phase 45, D-15; plan 45-03):**
+`ANNO-13`'s enum half is now RECLAIMED and returned — see its own Validated
+note below. `ANNO-14` and `ANNO-15` (the symbol round trip) are unaffected by
+this reclaim and remain exactly as stated: no phase owns their return.*
 
 **As of v0.8.0 the store fills itself from real cracked code, and this project
 drives two disassembly engines of its own.** Two runs of the same real release
@@ -227,8 +230,9 @@ rather than re-confirmed a fifth time.
 - ✓ A user can ask which addresses reference a given address, and search labels, comments and instructions across an analysed program — Phase 11 (`ANNO-11`; the 17 curated `anno_*` tools)
 - ✓ Enum definitions are generated from `c64-memory-mapping`'s `memmap.json`, so register writes render with semantic names instead of magic numbers — Phase 11 (`ANNO-13`; `lda #$1b`/`sta $d011` renders as `lda #D011_YSCROLL3_ROW25_SCREENON_TEXT` and reassembles byte-identical under real ACME)
   - ⚠ **WITHDRAWN 2026-08-29 (Phase 29, D-14) — this capability currently has NO ROUTE.** The `gen-enums` CLI verb that delivered `ANNO-13` was removed with the rest of the retired analyser's delivery paths. The heuristics survive as live code in `anno-enum-gen.ts` — the naming vocabulary, the adjacent-pair rule, the one-variant-per-distinct-value plan and the identifier gate — so what left is the fetch and the install around them, not the knowledge. **No phase currently owns its return**: an earlier note paired it with the ACME export oracle's rebuild, and that rebuild covered the export route only. The by-hand route (`anno_create_project_enum` plus `anno_apply_enum_usage`) is open in the meantime and writes exactly the same rows into the store.
+  - ✓ **RECLAIMED 2026-09-11 (Phase 45, D-15; plan 45-03) — this capability now HAS A ROUTE again, the ENUM HALF only.** `anno-enum-gen.ts`'s `fetchRegisterSearchRows()` / `generateEnumsFromStore()` / `installPlannedEnums()` rebuild the fetch and the install over this project's own disassembler and store, calling `pairSearchRows()`, `planEnumsForPairing()` and `sanitizeVariantMap()` UNCHANGED, and installing through the same `anno_create_project_enum` / `anno_update_project_enum` / `anno_apply_enum_usage` write path the by-hand route already used. Phase 45 also shipped `decomposeRegisterValue()` (D-16/D-17), the one owning multi-bit decoder both render surfaces (the ACME export, `anno_disassemble`) will consume. **`ANNO-14` / `ANNO-15` (the symbol round trip) are a SEPARATE capability and remain unowned** — this reclaim does not extend to them; see their own line below.
 - ✓ Symbols annotated in the external analyser export as VICE label files into the symbol store, and names discovered live flow back — closing the round trip — Phase 11 (`ANNO-14`, `ANNO-15`; demonstrated as one closed loop against genuine unpatched stock `x64sc`, with the inbound name's prior absence shown rather than claimed)
-  - ⚠ **WITHDRAWN 2026-08-29 (Phase 29, D-14) — this capability currently has NO ROUTE.** The `export-lbl` and `import-lbl` CLI verbs that delivered `ANNO-14` and `ANNO-15` were removed together with the rest of the retired analyser's delivery paths, because both reached that analyser through `anno-symbols.ts` and would have typechecked, dispatched, and then failed at the first call. **This is a temporary loss of a capability that was genuinely Validated, not a completed one being tidied away** — the round trip was demonstrated end to end against genuine unpatched stock `x64sc`, and that demonstration still stands as a record of what worked. **It does NOT return in the phase this note used to name.** That phase rebuilt the ACME export route only — `export-asm` returned on 2026-08-31 behind a real-ACME byte-diff oracle — and no requirement and no success criterion of it covered `export-lbl` or `import-lbl`, so **no phase currently owns the symbol round trip's return**. Until one does, a reader checking whether the symbol round trip works should read this line as: it does not, the reason is a superseded sequencing forecast rather than a defect, and that forecast is corrected here rather than deleted, because deleting the notice would erase the record that a Validated capability went missing.
+  - ⚠ **WITHDRAWN 2026-08-29 (Phase 29, D-14) — this capability currently has NO ROUTE.** The `export-lbl` and `import-lbl` CLI verbs that delivered `ANNO-14` and `ANNO-15` were removed together with the rest of the retired analyser's delivery paths, because both reached that analyser through `anno-symbols.ts` and would have typechecked, dispatched, and then failed at the first call. **This is a temporary loss of a capability that was genuinely Validated, not a completed one being tidied away** — the round trip was demonstrated end to end against genuine unpatched stock `x64sc`, and that demonstration still stands as a record of what worked. **It does NOT return in the phase this note used to name.** That phase rebuilt the ACME export route only — `export-asm` returned on 2026-08-31 behind a real-ACME byte-diff oracle — and no requirement and no success criterion of it covered `export-lbl` or `import-lbl`, so **no phase currently owns the symbol round trip's return**. Until one does, a reader checking whether the symbol round trip works should read this line as: it does not, the reason is a superseded sequencing forecast rather than a defect, and that forecast is corrected here rather than deleted, because deleting the notice would erase the record that a Validated capability went missing. **STILL UNOWNED as of 2026-09-11 (Phase 45, D-15; plan 45-03):** Phase 45's neighbouring `ANNO-13` reclaim above is the enum half only and does not extend to this symbol round trip — no phase currently owns its return.
 - ✓ the external analyser is adopted as a **static-analysis** backend and is never launched with `--vice`, guarded in code rather than only documented — v0.3.0 Phase 10 (`ANNO-01`; two independent guarantees — unreachable by fixed per-verb argv builders *and* denied by a scan throwing `AnnoViceFlagError`, both pinned by tests proven to fail under live reintroduction)
 - ✓ It runs on the same side of the container boundary as the MCP proxy, so no path translation applies — v0.3.0 Phase 10 (`ANNO-02`; the `anno_*` family registers proxy-locally via `buildViceTool()` and never reaches `forwardToVice()`, asserted structurally by `hostpath-consumers.test.ts` over a `readdirSync`-derived module set. **Scope honesty:** the two-projects-at-once half is a *stated* upstream limit, not a detected one, and the devcontainer half is documented rather than exercised — no devcontainer exists in this repo)
 - ✓ It is a declared prerequisite named in the install documentation alongside VICE, with its licence notice in `THIRD-PARTY-NOTICES.md` — v0.3.0 Phase 10 (`ANNO-03`; the notice records the **true dual `MIT OR Apache-2.0`** licence. The requirement as written said "Apache-2.0", which the Phase 9 probe falsified; every Apache-2.0-only mention in the living documents was corrected)
@@ -349,18 +353,24 @@ Deferred Items at this close):
   mutates mid-suite. Needs either a more tolerant comparison or cross-file
   serialization the runner does not currently provide.
 
-**Two capabilities are Validated but currently have NO ROUTE**, withdrawn by the
-v0.7.0 removal with no phase owning their return. They are named here as well as
+**Two capabilities were Validated but had NO ROUTE as of v0.9.0**, withdrawn by the
+v0.7.0 removal with no phase owning their return at that time. They are named here as well as
 in their Validated notes, because a reader scanning only this list would
 otherwise miss that the project regressed on them deliberately. **v0.9.0 did not
 restore them and was not scoped to** — the 2026-08-26 "no parity is owed"
-decision now stands for a third milestone running:
+decision stood for a third milestone running, until Phase 45 (D-15) partially
+reversed it:
 
 - `ANNO-13` — generated bit-name enums from `memmap.json` (`gen-enums` withdrawn;
   the heuristics survive as live code in `anno-enum-gen.ts`, and the by-hand route
-  through `anno_create_project_enum` + `anno_apply_enum_usage` writes identical rows)
+  through `anno_create_project_enum` + `anno_apply_enum_usage` writes identical rows).
+  **RECLAIMED 2026-09-11 (Phase 45, D-15; plan 45-03), enum half only** — the
+  fetch and the install are rebuilt in `anno-enum-gen.ts` over this project's
+  own disassembler and store; see its own Validated note above.
 - `ANNO-14` / `ANNO-15` — the symbol round trip (`export-lbl` / `import-lbl`
-  withdrawn; both reached the retired analyser through `anno-symbols.ts`)
+  withdrawn; both reached the retired analyser through `anno-symbols.ts`).
+  **STILL UNOWNED** — the `ANNO-13` reclaim above is the enum half only and
+  does not extend to the symbol round trip; no phase currently owns its return.
 
 
 ### Out of Scope
