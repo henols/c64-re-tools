@@ -4,17 +4,17 @@ milestone: v1.0.0
 milestone_name: The Rebuild Half
 current_phase: 46
 current_phase_name: The Lossless-Export Invariant and the Provenance Carry
-status: executing
-stopped_at: Completed 46-05-PLAN.md
-last_updated: "2026-09-11T16:58:27.405Z"
+status: verifying
+stopped_at: Completed 46-06-PLAN.md
+last_updated: "2026-09-11T17:28:40.633Z"
 last_activity: 2026-09-11
 last_activity_desc: Phase 46 execution started
-state_head: 4f4fdc762eb3f1bc817fa07788a4bdec1e21d7fe
+state_head: 0202814c8c156f9bae5149a8a5802c65f8dc2c5b
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 16
-  completed_plans: 15
+  completed_plans: 16
   percent: 17
 ---
 
@@ -254,11 +254,11 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 46 (The Lossless-Export Invariant and the Provenance Carry) — EXECUTING
+Phase: 46 (The Lossless-Export Invariant and the Provenance Carry) — AWAITING VERIFICATION
 Plan: 6 of 6
-Status: Ready to execute
-Progress: [██░░░░░░░░] 17% (5/6 plans in phase 46; milestone-wide phase percent is tracked separately in frontmatter)
-Last activity: 2026-09-11 — Plan 46-05 complete (listExcludedRanges() wired into exportAsm() as a marked, byte-complete exclusion block; EXCLUSION_MARKER_PREFIX; result.excludedRangeCount; readback proven against result.source alone; real ACME round trip with both exclusion and provenance markers)
+Status: Phase complete — ready for verification
+Progress: [██░░░░░░░░] 17% (6/6 plans in phase 46; milestone-wide phase percent is tracked separately in frontmatter)
+Last activity: 2026-09-11 — Plan 46-06 complete (planted a red-then-green control for BUILD-07 via a test-only filtering variant, observed dropping a CRACKER-PATCH-classified range before the real exportAsm() is trusted to keep it; a structural guard over anno-export-asm.ts's own codeOnly()'d source with four non-vacuity proofs; a behavioural companion measuring losslessness across the full verdict vocabulary)
 
 ## Performance Metrics
 
@@ -551,6 +551,7 @@ Last activity: 2026-09-11 — Plan 46-05 complete (listExcludedRanges() wired in
 | Phase 46 P03 | 25min | 3 tasks | 6 files |
 | Phase 46 P04 | 30 min | 3 tasks | 4 files |
 | Phase 46 P05 | 16 min | 2 tasks | 2 files |
+| Phase 46 P06 | 23 min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -1267,6 +1268,8 @@ Recent decisions affecting current work:
 - [Phase 46]: 46-03: anno_excluded_range is a new SQLite table (SCHEMA_VERSION 5), not a nullable column on anno_range; removeExcludedRange refuses a partial/overlapping extent by name rather than the plain no-op removeScope() reports for a mismatched span. — A column would force retype()'s carve to split/duplicate/lose a user-chosen exclusion reason every time a range boundary moved underneath it; a separate table keeps the user's own words independent of the store's typing churn. The stricter remove behavior exists because a near-miss removal on a record carrying a human-authored reason must not silently read as "nothing happened".
 - [Phase 46]: Phase 46 plan 04: anno_exclude_range's register entry cites a real current consumer (anno-tools.ts's own dispatch) instead of the plan's suggested anno-export-asm.ts:listExcludedRanges, because plan 46-05 has not yet wired that call site in this tree. — Citing a symbol that does not yet appear in the named file would be a forward-dated citation, which the register's own header warns against. DIRECTION 5's mechanical check would not have caught it, but accuracy matters for the register's future trustworthiness.
 - [Phase 46]: Phase 46 Plan 05: exclusion markers are additive-only comment lines, never gated on a verdict/confidence/kind value; a recorded exclusion always emits the block's full bytes plus a marker naming the exclusion's own extent. — BUILD-07's prohibition is that "exclude" must never mean "omit"; the overlap test reuses provenanceForRange()/addExcludedRange()'s exact predicate so all three sites agree by construction, and markers within one block sort ascending by start as a recorded (not contractual) choice.
+- [Phase 46]: Plan 46-06: The structural guard's scope is bounded to a regex-extracted slice (sortedRanges through the block .map()'s closing) rather than the whole stripped file, verified empirically against the real anno-export-asm.ts, so a bare word-occurrence check for verdict/confidence/kind cannot collide with the later per-block loop's legitimate ledger-field interpolation. — This keeps the negative assertions unambiguous without needing to distinguish "reading a field" from "branching on a field" inside a wider scan.
+- [Phase 46]: Plan 46-06: Both tasks declared anno-export-asm.test.ts as their only file, so the planted control's RED half (a real, working test-only filtering variant) and GREEN half (the real exportAsm()) landed in ONE commit, matching the plan's own requirement that both halves of the negative control be visible in the same commit.
 
 ### Pending Todos
 
@@ -2343,8 +2346,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-11T16:58:27.013Z
-Stopped at: Completed 46-05-PLAN.md
+Last session: 2026-09-11T17:28:40.229Z
+Stopped at: Completed 46-06-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
