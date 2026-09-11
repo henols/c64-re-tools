@@ -4,18 +4,18 @@ milestone: v1.0.0
 milestone_name: The Rebuild Half
 current_phase: 45
 current_phase_name: Decomposition to Closure, Disagreement First
-status: executing
-stopped_at: Completed 45-09-PLAN.md
-last_updated: "2026-09-11T10:30:41.750Z"
+status: verifying
+stopped_at: Completed 45-10-PLAN.md (final plan, phase 45)
+last_updated: "2026-09-11T11:06:20.156Z"
 last_activity: 2026-09-11
 last_activity_desc: Phase 45 execution started
-state_head: fce3c2523c25b7eb4276b95f5a340719057e0217
+state_head: 51ad315a8a85615ffa208a20ea47090fd5f2428f
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 10
-  completed_plans: 9
-  percent: 90
+  completed_plans: 10
+  percent: 0
 ---
 
 # Project State
@@ -254,11 +254,11 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 45 (Decomposition to Closure, Disagreement First) — EXECUTING
+Phase: 45 (Decomposition to Closure, Disagreement First) — PLANS COMPLETE
 Plan: 10 of 10
-Status: Ready to execute
-Progress: [█████████░] 90%
-Last activity: 2026-09-11 — Phase 45 plan 45-09 complete (ghidra family closed against decomp-completeness gate, D011/D018 enums installed)
+Status: Phase complete — ready for verification
+Progress: [██████████] 100% (10/10 plans in phase 45; milestone-wide phase percent is tracked separately in frontmatter)
+Last activity: 2026-09-11 — Phase 45 plan 45-10 complete (criterion 5 demonstrated on the real store, offline closure regression added, phase closure record written against all five success criteria)
 
 ## Performance Metrics
 
@@ -544,6 +544,7 @@ Last activity: 2026-09-11 — Phase 45 plan 45-09 complete (ghidra family closed
 | Phase 45 P07 | 200min | 3 tasks | 5 files |
 | Phase 45 P08 | 50min | 3 tasks | 7 files |
 | Phase 45 P09 | 60min | 3 tasks | 4 files |
+| Phase 45 P10 | 35 min | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -1252,6 +1253,7 @@ Recent decisions affecting current work:
 - [Phase 45]: 45-06: entry points supplied to dxa/autostart only for the three fixtures whose SYS target or load address names genuine code (tracer.prg, fixture.prg, smc.prg); never for the three non-executed fixtures, since dxa/basic-stub.prg's own SYS target coincides exactly with its planted-unknown arbitrary tail bytes.
 - [Phase 45]: Phase 45 plan 45-08: the enum route cannot install an enum for this family's only register write ($D020) -- no bit-field entry in the curated anno-regbits.json table or its OVERRIDES. Disclosed rather than worked around (hand-editing the generated table is prohibited); recorded in docs/phase45-closure-dxa-family.md and WINDOWS.md.
 - [Phase 45]: Measured, disclosed correction (45-09): the real decomp-completeness gate's buildEntryPoints() counts every chained jsr target as its own entry point, so charset-phantom.prg's 511-block chain needed all 512 blocks named and documented, not 2-3 as Task 1's own text predicted. — Verified before trusting the plan's prediction by running decomp-completeness --json against the unedited store first; honored the real gate's measured behaviour over the illustrative prediction, matching plans 45-07/45-08's own precedent.
+- [Phase 45]: Phase 45 closure: criterion 5 demonstrated on the real charset-phantom store under real ACME (byte-identical), a 23-test offline regression proves all nine fixtures' gate on every CI run with no external tool, and the phase closure record reports all five ROADMAP criteria MET with two honestly-disclosed partials (a $DD00 curated-table gap worked around via scratch-only enum removal; the idempotence sweep is a whole-document round trip for all nine rather than a raw dxa/Ghidra re-derivation for all nine).
 
 ### Pending Todos
 
@@ -2324,8 +2326,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-11T10:30:41.578Z
-Stopped at: Completed 45-09-PLAN.md
+Last session: 2026-09-11T11:06:11.835Z
+Stopped at: Completed 45-10-PLAN.md (final plan, phase 45)
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md

@@ -50,10 +50,10 @@ Stated once so no requirement below has to restate them.
 
 ### Decomposition
 
-- [ ] **DECOMP-01**: Nothing is left `Undefined` on the committed synthetic fixtures — every byte is code, byte, word, address, PETSCII, screencode or table. The completeness gate takes `anno_evid_disagreements` as a **required** input, not an optional cross-check, and respects the soundness asymmetry the type system already enforces: observed-executing **is** code, while never-observed proves nothing and cannot be rendered as `data`
-- [ ] **DECOMP-02**: Every code entry point carries a user-set name and a purpose comment stating function, inputs, outputs and side effects — no `p_XXXX` or `l_XXXX` left
-- [ ] **DECOMP-03**: Every referenced non-hardware address is named and documented
-- [ ] **DECOMP-04**: Hardware register writes render as named enums rather than magic numbers
+- [x] **DECOMP-01**: Nothing is left `Undefined` on the committed synthetic fixtures — every byte is code, byte, word, address, PETSCII, screencode or table. The completeness gate takes `anno_evid_disagreements` as a **required** input, not an optional cross-check, and respects the soundness asymmetry the type system already enforces: observed-executing **is** code, while never-observed proves nothing and cannot be rendered as `data`
+- [x] **DECOMP-02**: Every code entry point carries a user-set name and a purpose comment stating function, inputs, outputs and side effects — no `p_XXXX` or `l_XXXX` left
+- [x] **DECOMP-03**: Every referenced non-hardware address is named and documented
+- [x] **DECOMP-04**: Hardware register writes render as named enums rather than magic numbers
 
 ### Rebuildable Source
 
@@ -128,10 +128,10 @@ Success-Criteria live in `.planning/ROADMAP.md` → "Phase Details".
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DECOMP-01 | Phase 45 | Pending |
-| DECOMP-02 | Phase 45 | Pending |
-| DECOMP-03 | Phase 45 | Pending |
-| DECOMP-04 | Phase 45 | Pending |
+| DECOMP-01 | Phase 45 | Complete |
+| DECOMP-02 | Phase 45 | Complete |
+| DECOMP-03 | Phase 45 | Complete |
+| DECOMP-04 | Phase 45 | Complete |
 | BUILD-01 | Phase 47 | Pending |
 | BUILD-02 | Phase 47 | Pending |
 | BUILD-03 | Phase 47 | Pending |
@@ -145,6 +145,7 @@ Success-Criteria live in `.planning/ROADMAP.md` → "Phase Details".
 | EQUIV-04 | Phase 50 | Pending |
 
 **Coverage:**
+
 - v1.0.0 requirements: 15 total
 - Mapped to phases: 15
 - Unmapped: 0
