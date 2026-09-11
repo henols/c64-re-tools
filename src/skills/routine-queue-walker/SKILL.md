@@ -81,7 +81,24 @@ line comment. That is the only test; do not guess from the label name.
 2. Call `anno_get_comments`, again with an explicit `max_results`. Keep that
    too — the true match count rides beside the list, so truncation is a fact
    you are told rather than one you infer.
-3. Keep a label as a routine candidate when any of these holds:
+3. **Candidate source A — cross-reference and block-derived, checked FIRST and
+   independently of whatever `anno_get_symbols` returned.** Call
+   `anno_get_blocks` with `block_type: "code"` for every code-typed range,
+   read each one with `anno_disassemble`, and collect every `jsr` target
+   address. For each candidate target, confirm it and gather its full caller
+   list with `anno_get_cross_references` (a generous `max_results` — this is
+   also the call that fills in "called from" when the entry is written up in
+   Phase 2.2). Every one of these targets is a routine candidate **regardless
+   of whether it carries any label at all**. `docs/phase45-wave0-
+   measurements.md`'s own MEASUREMENT A found that a purely dxa/Ghidra-derived
+   store carries ZERO labels of any shape — derivation writes typed ranges and
+   cross-references, never names — so a queue built only from Candidate source
+   B below finds nothing to do on such a store and silently reports a clean,
+   empty queue on a program nothing has been named in yet. Source A does not
+   depend on step 1 having found anything.
+4. **Candidate source B — the label-prefix path, for a store that DOES carry
+   externally-imported auto-names.** Keep a label as a routine candidate when
+   any of these holds:
    - its name starts with `s_` (an auto-generated subroutine label);
    - it sits in a code region and is the target of at least one `JSR`
      cross-reference (`anno_get_cross_references`);
@@ -91,9 +108,12 @@ line comment. That is the only test; do not guess from the label name.
      or jump-table and callback targets. Treat every one of them as a
      candidate rather than pattern-matching specific vector addresses;
    - it is the label named exactly `start`.
-4. Drop every candidate that already carries a line comment.
-5. What is left is the routine queue.
-6. **Order it with `start` first** when `start` is in it. The entry point sets
+5. **Union sources A and B by address** — a routine reachable both ways counts
+   once. A store may carry either shape, or both, so neither source alone is
+   sufficient.
+6. Drop every candidate that already carries a line comment.
+7. What is left is the routine queue.
+8. **Order it with `start` first** when `start` is in it. The entry point sets
    the context every other routine is read against.
 
 ### 2.2 Walk it
@@ -131,12 +151,30 @@ when it is a well-known system address (hardware register, KERNAL entry point,
 OS variable).
 
 1. Call `anno_get_symbols` **again** — Phase 2 renamed things.
-2. Keep every label whose name still matches an auto-generated pattern:
-   `zpp_XX`, `zpf_XX`, `zpa_XX` in the zero page; `p_XXXX`, `f_XXXX`, `a_XXXX`
-   and `e_XXXX` outside it.
-3. Exclude: `s_XXXX` (Phase 2 handled those), `b_XXXX` (branch targets, not
-   data symbols), and any `p_XXXX` inside a code region (also Phase 2's).
-4. What is left is the symbol queue.
+2. **Candidate source A — cross-reference and block-derived, checked FIRST
+   and independently of whatever label population exists.** Call
+   `anno_get_blocks` (with `include: ["enum_usage"]` where useful) for every
+   typed range, then use `anno_get_cross_references` to find every address
+   that is: referenced by one half of a split lo/hi pair or by an address
+   table (a `lo_hi_address`/`hi_lo_address`/`lo_hi_word`/`hi_lo_word` range —
+   the `_address` forms produce cross-references, the `_word` forms do not,
+   per that data type's own schema distinction), OR referenced from a code
+   range while NOT itself sitting inside one. Every one of these is a symbol
+   candidate **regardless of whether it carries any label at all**.
+   `docs/phase45-wave0-measurements.md`'s own MEASUREMENT A found that a
+   purely dxa/Ghidra-derived store carries ZERO labels of any shape, so
+   Candidate source B below finds nothing to do on such a store and silently
+   reports a clean, empty queue on a program nothing has been named in yet.
+3. **Candidate source B — the label-prefix path, for a store that DOES carry
+   externally-imported auto-names.** Keep every label whose name still
+   matches an auto-generated pattern: `zpp_XX`, `zpf_XX`, `zpa_XX` in the zero
+   page; `p_XXXX`, `f_XXXX`, `a_XXXX` and `e_XXXX` outside it.
+4. Exclude, from BOTH sources: `s_XXXX` (Phase 2 handled those), `b_XXXX`
+   (branch targets, not data symbols), and any `p_XXXX`-shaped or
+   xref-derived candidate inside a code region (also Phase 2's).
+5. **Union sources A and B by address** — a symbol reachable both ways counts
+   once.
+6. What is left is the symbol queue.
 
 ### 3.2 Walk it
 
@@ -257,15 +295,19 @@ Anything the per-measure findings list names belongs in Phase 4's leftovers
 table, by address. A finding is a named defect in one named measure — it is
 never a rating, and there is no number to report as "the coverage".
 
-### The decomposition-completeness gate (phase 45)
+### The decomposition-completeness gate
 
 This is a DIFFERENT, non-overlapping measurement from the `anno coverage`
-call above — neither replaces the other. Where `anno coverage` is a
-derived-from-bytes census this store's own block table cannot move, the
-decomposition-completeness gate answers Phase 45's own closure bar: whether
-this fixture's byte-derived block classification and its own real,
-observed-execution evidence agree, with the disagreement query itself a
-required, non-defaultable input rather than an optional cross-check.
+call above — neither replaces the other. `anno coverage` is the byte-census
+and label-ratio instrument: a derived-from-bytes census this store's own
+block table cannot move. `anno decomp-completeness` is the
+disagreement-gated closure gate: whether this fixture's byte-derived block
+classification and its own real, observed-execution evidence agree, every
+code entry point carries a name and a complete purpose comment, every
+referenced non-hardware address resolves to a name or a decline, and no
+auto-named survivor remains in a code region — with the disagreement query
+itself a required, non-defaultable input rather than an optional
+cross-check.
 
 ```
 node src/mcp/vice/vice-proxy.ts anno decomp-completeness --store <fixture>.annostore --disagreements <fixture>-disagreements.json --manifest src/mcp/vice/fixtures/decomp-execution-manifest.json
@@ -275,11 +317,22 @@ All three arguments are REQUIRED, and none is derived from another: `--store`
 names the annotation store; `--disagreements` names the JSON `anno
 evid-disagreements --store <same store> --json` wrote for THIS store's own
 run; `--manifest` names the committed execution manifest recording which of
-the nine fixtures were actually run under Phase 33's reproducible-run
-protocol, and which were declared not-executed and why. Omitting any of the
-three refuses by name rather than rendering an empty-disagreement report —
-"the query was never run" and "the query found nothing" must never read the
-same.
+the nine fixtures were actually run under the reproducible-run protocol, and
+which were declared not-executed and why. Omitting any of the three refuses
+by name rather than rendering an empty-disagreement report — "the query was
+never run" and "the query found nothing" must never read the same.
+
+**The stop condition is a measured exit code, not a belief.** The walk
+described in Phases 2-4 above is finished for a fixture when `node
+src/skills/routine-queue-walker/scripts/completeness-report.mjs --store
+<fixture>.annostore --disagreements <fixture>-disagreements.json --manifest
+src/mcp/vice/fixtures/decomp-execution-manifest.json` **exits 0** — never when
+the agent believes the queue is empty. A non-zero exit names, by address,
+exactly which measure still fails (an Undefined byte, a surviving auto-name,
+an entry point missing a name or a purpose-comment element, an unresolved
+referenced address, or an unresolved disagreement); go back to the
+corresponding phase and close it, then re-run the gate. Do not report a pass
+from reading the rendered text alone — read the process exit code.
 
 ## When something fails
 
@@ -295,3 +348,19 @@ same.
 - Never invent an answer to make a queue entry go away. An honest "this looks
   like a table, callers unclear" in the leftovers table is worth more than a
   confident wrong label that the next reader has to un-learn.
+- **A genuinely unresolvable target gets a `DECLINED:` comment, never a
+  fabricated name.** When a referenced address's target is truly
+  path-dependent or otherwise cannot be determined, record it with
+  `anno_set_comment` using the literal prefix `DECLINED:` naming what is
+  unknown and why — the same convention `.annostore`'s own importer already
+  uses for bank-state declines, never a second mechanism. A confident wrong
+  label is worse than an absent one.
+- **An accepted disagreement gets a `DISAGREEMENT-ACCEPTED:` comment.** When
+  the decomposition-completeness gate's disagreement census flags a byte the
+  byte-derived block table calls `data` but the runtime evidence shows
+  executing, and review confirms the runtime evidence is correct (or the
+  disagreement is otherwise a reviewed, accepted fact rather than a
+  classification bug), record it with `anno_set_comment` using the literal
+  prefix `DISAGREEMENT-ACCEPTED:` naming why — greppable, and read by the gate
+  itself as the resolution for that address. Both conventions ride the
+  existing `anno_set_comment` tool; neither is a new mechanism.
