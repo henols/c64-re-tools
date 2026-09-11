@@ -1343,6 +1343,25 @@ Notes:
   REWRITTEN as a stated permanent limitation, not deleted.
   `c64-program-recon/references/tool-selection.md` carries at least one, for
   `vice_sid_get_state`. Grep all nine skills for fork-requirement language.
+- **Two known skill defects should land in the same pass, not separately.**
+  `c64-program-recon` (13 fork references) and `vice-wedge-triage` (12) are
+  already being rewritten by the bullet above, and both defects sit in that
+  neighbourhood — reopening these pages twice is the waste to avoid. Neither is
+  caused by the fork removal, so neither may be treated as a success criterion
+  of this phase; they ride along:
+    - `routine-queue-walker` §2.2/§3.2 paraphrases `c64-program-recon`'s
+      "Documenting one routine, end to end" procedure instead of calling into
+      it as that skill's own scope paragraph claims, and the paraphrase has
+      dropped the 4096-byte `anno_read_region` cap (0 mentions vs 5 in each of
+      the other two) and the tail-call / fall-through bounds rules (0 vs 4).
+      `.planning/todos/pending/routine-queue-walker-restates-instead-of-delegating.md`
+    - `c64-memory-mapping`'s 623-line SKILL.md covers three jobs under a
+      description promising one.
+      `.planning/todos/pending/c64-memory-mapping-is-three-skills.md`
+  Measured 2026-09-11; full audit `.planning/notes/skill-redundancy-audit.md`,
+  which also records that textual duplication across the nine skills is 12
+  lines in 11,040 — so this is a lossy-copy defect, NOT a case for merging or
+  deleting skills.
 - **`vice_disk_list` is already dead independently of this phase** — it is in
   NEITHER manifest, so the one `DENY_LIST` entry carrying the crash hazard has
   been guarding a tool that exists on no backend. Measured 2026-09-11;
