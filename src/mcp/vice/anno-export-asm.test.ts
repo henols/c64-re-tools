@@ -84,7 +84,14 @@ import { fileURLToPath } from "node:url";
 
 import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
 import { ACME_VERIFY_ARGV_FLAGS, parseAcmeDiagnostics, verifyAcmeAssembles, type AcmeVerifyResult } from "./acme-verify.ts";
-import { assertDataTypeForExport, assertExportableCommentText, exportAsm, substituteImmediateEnum, type ExportAsmResult } from "./anno-export-asm.ts";
+import {
+  assertDataTypeForExport,
+  assertExportableCommentText,
+  EXCLUSION_MARKER_PREFIX,
+  exportAsm,
+  substituteImmediateEnum,
+  type ExportAsmResult,
+} from "./anno-export-asm.ts";
 import { AUTO_NAME_PREFIX_RE } from "./anno-coverage.ts";
 // BUILD-05 (phase 46 plan 01): `renderLedger()` is the ONE writer of the
 // generated tier this fixture must satisfy exactly (its own three refusal
@@ -99,7 +106,19 @@ import { AUTO_NAME_PREFIX_RE } from "./anno-coverage.ts";
 // project-wide relaxation.
 // @ts-expect-error -- diff-images.mjs (a plain skill script, left unmodified) has no .d.mts
 import { renderLedger } from "../../skills/c64-provenance-diff/scripts/diff-images.mjs";
-import { applyEnumUsage, createProjectEnum, openStore, closeStore, listComments, listLabels, listRanges, setComment, setDataType, setLabel } from "./anno-store.ts";
+import {
+  addExcludedRange,
+  applyEnumUsage,
+  createProjectEnum,
+  openStore,
+  closeStore,
+  listComments,
+  listLabels,
+  listRanges,
+  setComment,
+  setDataType,
+  setLabel,
+} from "./anno-store.ts";
 import { AnnoCommentError, DATA_TYPES } from "./anno-types.ts";
 // D-16/D-17 (plan 45-05): the ONE owning decoder's own test-only cache reset,
 // used ONLY to construct a synthetic register table for the one collision
@@ -159,6 +178,12 @@ interface StoreSpec {
   comments?: readonly { address: number; commentType: string; text: string }[];
   enums?: readonly { name: string; variants: Record<string, string> }[];
   enumUsage?: readonly { address: number; name: string }[];
+  /** BUILD-07 (phase 46 plan 05): recorded through `addExcludedRange()` --
+   * the store's own public write verb, never raw SQL -- for the same reason
+   * this doc-comment already gives for every other row here: a fixture
+   * built this way has passed the same validators a live `anno_*` tool call
+   * would have passed it through. */
+  exclusions?: readonly { start: number; endInclusive: number; reason: string }[];
 }
 
 interface StoreFixture {
@@ -186,6 +211,7 @@ function buildStore(dir: string, spec: StoreSpec): StoreFixture {
     for (const comment of spec.comments ?? []) setComment(handle, comment);
     for (const projectEnum of spec.enums ?? []) createProjectEnum(handle, projectEnum);
     for (const usage of spec.enumUsage ?? []) applyEnumUsage(handle, usage);
+    for (const exclusion of spec.exclusions ?? []) addExcludedRange(handle, exclusion);
   } finally {
     closeStore(handle);
   }
@@ -211,6 +237,7 @@ function buildStoreOverImage(tag: string, imagePath: string, spec: Omit<StoreSpe
     for (const comment of spec.comments ?? []) setComment(handle, comment);
     for (const projectEnum of spec.enums ?? []) createProjectEnum(handle, projectEnum);
     for (const usage of spec.enumUsage ?? []) applyEnumUsage(handle, usage);
+    for (const exclusion of spec.exclusions ?? []) addExcludedRange(handle, exclusion);
   } finally {
     closeStore(handle);
   }
@@ -3282,4 +3309,371 @@ test("ordering: running the same ledger-mode export twice produces byte-identica
   const second = exportAsm({ storePath, imagePath, workspaceRoot: dir, ledgerPath });
 
   assert.equal(second.source, first.source, "a stable sort over a totally ordered key must be reproducible across two identical runs");
+});
+
+// ---------------------------------------------------------------------------
+// BUILD-07 (phase 46 plan 05): the exclusion marker -- "exclude" means
+// "emit, and say so", never "omit".
+//
+// Every test below proves criterion 2's own words: a recorded exclusion's
+// "identity and extent [are] readable in the output, marked as something the
+// user asked for -- never as a silent hole. Reading the export back recovers
+// what was excluded and why." The load-bearing assertions (Test 2, Test 3)
+// compare BYTE ARRAYS and block lists directly, never source text, because
+// the wrong implementation -- "exclude" reads, in isolation, like "do not
+// emit" -- is the obvious one, and text alone cannot tell the two apart.
+// ---------------------------------------------------------------------------
+
+/**
+ * A store with THREE ranges, each landing in its own emitted block: `code` at
+ * $0801-$0806 (`SHAPE_BODY`), then two `byte` ranges at $0807-$0808 and
+ * $0809-$080a -- the same shape `ledgerCarryStore()` uses above, kept as a
+ * SEPARATE builder because this section's fixtures are about exclusions, not
+ * the provenance ledger, even though the two never interact.
+ */
+function exclusionStore(dir: string, exclusions: readonly { start: number; endInclusive: number; reason: string }[] = []): StoreFixture {
+  return buildStore(dir, {
+    origin: 0x0801,
+    body: [...SHAPE_BODY, 0xaa, 0xbb, 0xcc, 0xdd],
+    ranges: [
+      { start: 0x0801, endInclusive: 0x0806, dataType: "code" },
+      { start: 0x0807, endInclusive: 0x0808, dataType: "byte" },
+      { start: 0x0809, endInclusive: 0x080a, dataType: "byte" },
+    ],
+    exclusions,
+  });
+}
+
+test("EXCLUSION Test 1: a recorded exclusion over the middle range's full extent emits exactly one marker naming its extent and reason verbatim", () => {
+  const dir = freshDir("exclusion-1");
+  const reason = "cracked loader stub, not original game code";
+  const { storePath, imagePath } = exclusionStore(dir, [{ start: 0x0807, endInclusive: 0x0808, reason }]);
+
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+
+  const markerLines = result.source.split("\n").filter((line) => line.startsWith(EXCLUSION_MARKER_PREFIX));
+  assert.equal(markerLines.length, 1, `exactly one marker line expected, source:\n${result.source}`);
+  assert.equal(markerLines[0], `${EXCLUSION_MARKER_PREFIX}$0807..$0808 ${reason}`);
+});
+
+test("EXCLUSION Test 2 (LOAD-BEARING): result.expectedBytes is byte-identical between an export with a recorded exclusion and the same store exported with none", () => {
+  const dirWith = freshDir("exclusion-2-with");
+  const dirWithout = freshDir("exclusion-2-without");
+  const reason = "cracked loader stub, not original game code";
+  const withExclusion = exclusionStore(dirWith, [{ start: 0x0807, endInclusive: 0x0808, reason }]);
+  const withoutExclusion = exclusionStore(dirWithout, []);
+
+  const resultWith = exportAsm({ storePath: withExclusion.storePath, imagePath: withExclusion.imagePath, workspaceRoot: dirWith });
+  const resultWithout = exportAsm({ storePath: withoutExclusion.storePath, imagePath: withoutExclusion.imagePath, workspaceRoot: dirWithout });
+
+  assert.deepEqual(
+    [...resultWith.expectedBytes],
+    [...resultWithout.expectedBytes],
+    "an exclusion adds comment lines and changes NOTHING else -- expectedBytes must be byte-identical, not merely same-length",
+  );
+});
+
+test("EXCLUSION Test 3: result.blocks.length and every block's start/endExclusive are identical between an export with a recorded exclusion and one with none", () => {
+  const dirWith = freshDir("exclusion-3-with");
+  const dirWithout = freshDir("exclusion-3-without");
+  const reason = "cracked loader stub, not original game code";
+  const withExclusion = exclusionStore(dirWith, [{ start: 0x0807, endInclusive: 0x0808, reason }]);
+  const withoutExclusion = exclusionStore(dirWithout, []);
+
+  const resultWith = exportAsm({ storePath: withExclusion.storePath, imagePath: withExclusion.imagePath, workspaceRoot: dirWith });
+  const resultWithout = exportAsm({ storePath: withoutExclusion.storePath, imagePath: withoutExclusion.imagePath, workspaceRoot: dirWithout });
+
+  assert.equal(resultWith.blocks.length, resultWithout.blocks.length, "the block COUNT must be identical");
+  assert.deepEqual(
+    resultWith.blocks.map((b) => ({ start: b.start, endExclusive: b.endExclusive })),
+    resultWithout.blocks.map((b) => ({ start: b.start, endExclusive: b.endExclusive })),
+    "every block's start/endExclusive must be identical -- an exclusion never moves a block boundary",
+  );
+});
+
+test("EXCLUSION Test 4: the excluded block's emitted content lines are the same as the no-exclusion export's for that block, modulo the marker line", () => {
+  const dirWith = freshDir("exclusion-4-with");
+  const dirWithout = freshDir("exclusion-4-without");
+  const reason = "cracked loader stub, not original game code";
+  const withExclusion = exclusionStore(dirWith, [{ start: 0x0807, endInclusive: 0x0808, reason }]);
+  const withoutExclusion = exclusionStore(dirWithout, []);
+
+  const resultWith = exportAsm({ storePath: withExclusion.storePath, imagePath: withExclusion.imagePath, workspaceRoot: dirWith });
+  const resultWithout = exportAsm({ storePath: withoutExclusion.storePath, imagePath: withoutExclusion.imagePath, workspaceRoot: dirWithout });
+
+  const withBlock = blockSourceFor(resultWith.source, "$0807");
+  const withoutBlock = blockSourceFor(resultWithout.source, "$0807");
+  const withBlockNoMarker = withBlock
+    .split("\n")
+    .filter((line) => !line.startsWith(EXCLUSION_MARKER_PREFIX))
+    .join("\n");
+
+  assert.equal(
+    withBlockNoMarker,
+    withoutBlock,
+    "stripping only the marker line must leave the block's origin, bytes and end assertion identical to the no-exclusion export -- a shortened slice would fail this",
+  );
+});
+
+test("EXCLUSION Test 5: an exclusion covering only PART of a store range still emits that range's full block, with the marker naming the exclusion's own narrower extent", () => {
+  const dir = freshDir("exclusion-5");
+  const reason = "only the first byte of this range was cracker-patched";
+  // The third range is $0809..$080a (bytes 0xcc, 0xdd); the exclusion covers
+  // ONLY its first byte, $0809.
+  const { storePath, imagePath } = exclusionStore(dir, [{ start: 0x0809, endInclusive: 0x0809, reason }]);
+
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+
+  const markerLines = result.source.split("\n").filter((line) => line.startsWith(EXCLUSION_MARKER_PREFIX));
+  assert.equal(markerLines.length, 1);
+  assert.equal(
+    markerLines[0],
+    `${EXCLUSION_MARKER_PREFIX}$0809..$0809 ${reason}`,
+    "the marker must name the EXCLUSION's own extent ($0809..$0809), never the containing block's ($0809..$080a)",
+  );
+
+  const block = blockSourceFor(result.source, "$0809");
+  assert.match(block, /\$cc, \$dd/, "the block must still carry BOTH bytes of its full extent, not only the un-excluded one");
+});
+
+test("EXCLUSION Test 6: result.excludedRangeCount counts only exclusion records overlapping an emitted block, not every record in the store", () => {
+  const dir = freshDir("exclusion-6");
+  const { storePath, imagePath } = exclusionStore(dir, [
+    { start: 0x0807, endInclusive: 0x0808, reason: "overlaps the middle range" },
+    { start: 0x0900, endInclusive: 0x0901, reason: "outside every annotated range -- never emitted, never counted" },
+  ]);
+
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+
+  assert.equal(result.excludedRangeCount, 1, "only the one record overlapping an emitted block may be counted, even though the store holds two");
+});
+
+test("EXCLUSION Test 7: a store whose exclusion reason was edited on disk to contain a line break is refused BY NAME at the export boundary", () => {
+  const dir = freshDir("exclusion-7");
+  const { storePath, imagePath } = exclusionStore(dir, [{ start: 0x0807, endInclusive: 0x0808, reason: "clean at write time" }]);
+
+  // Rewrite the row behind the store's own write verb -- the ONE place this
+  // file goes around a public write verb, to reproduce a state the public
+  // verbs (addExcludedRange's own assertCommentText() call) can no longer
+  // create, exactly as the sibling comment-corruption test above does.
+  const handle = openStore(storePath, { workspaceRoot: dir });
+  try {
+    handle.db.prepare("update anno_excluded_range set reason = ?").run("raster split\nlda #$00");
+  } finally {
+    closeStore(handle);
+  }
+
+  assert.throws(
+    () => exportAsm({ storePath, imagePath, workspaceRoot: dir }),
+    (e: unknown) => {
+      assert.ok(e instanceof Error);
+      assert.match(e.message, /^exportAsm: /, "every refusal from this module is prefixed `exportAsm:`");
+      assert.equal(e.message.includes("raster split"), false, "the refusal must NOT quote the stored reason back (CR-03)");
+      return true;
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// EXCLUSION READBACK -- criterion 2's own words, made into a test: "Reading
+// the export back recovers what was excluded and why."
+// ---------------------------------------------------------------------------
+
+/** One exclusion marker as recovered from `result.source` alone. */
+interface ParsedExclusionMarker {
+  start: string;
+  endInclusive: string;
+  reason: string;
+}
+
+/**
+ * Criterion 2's own words, made into code. Takes ONLY the source string --
+ * no store handle, no second export, nothing but the text -- because a
+ * parser that also consulted the store would be proving the STORE
+ * remembers, not that the ARTEFACT carries the fact. Anchored on the
+ * imported `EXCLUSION_MARKER_PREFIX`, never a retyped literal, so a spelling
+ * change in the real constant reds this helper's own tests instead of
+ * silently un-anchoring it.
+ */
+function readBackExclusions(source: string): ParsedExclusionMarker[] {
+  const out: ParsedExclusionMarker[] = [];
+  for (const line of source.split("\n")) {
+    if (!line.startsWith(EXCLUSION_MARKER_PREFIX)) continue;
+    const rest = line.slice(EXCLUSION_MARKER_PREFIX.length);
+    const match = /^(\$[0-9a-f]{2,4})\.\.(\$[0-9a-f]{2,4}) (.*)$/.exec(rest);
+    assert.ok(match, `a line starting with the exclusion marker prefix must match the marker's own shape: ${JSON.stringify(line)}`);
+    out.push({ start: match![1]!, endInclusive: match![2]!, reason: match![3]! });
+  }
+  return out;
+}
+
+test("EXCLUSION READBACK: parsing result.source alone recovers every excluded extent and its reason (criterion 2)", () => {
+  const dir = freshDir("exclusion-readback");
+  const reasonA = "cracked loader stub, not original game code";
+  const reasonB = "trainer patch inserted by this release's cracker";
+  const { storePath, imagePath } = buildStore(dir, {
+    origin: 0x0801,
+    body: [...SHAPE_BODY, 0xaa, 0xbb, 0xcc, 0xdd, 0x11, 0x22],
+    ranges: [
+      { start: 0x0801, endInclusive: 0x0806, dataType: "code" },
+      { start: 0x0807, endInclusive: 0x0808, dataType: "byte" },
+      { start: 0x0809, endInclusive: 0x080a, dataType: "byte" },
+      { start: 0x080b, endInclusive: 0x080c, dataType: "byte" },
+    ],
+    exclusions: [
+      { start: 0x0807, endInclusive: 0x0808, reason: reasonA },
+      { start: 0x080b, endInclusive: 0x080c, reason: reasonB },
+    ],
+  });
+
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+
+  // NON-VACUITY FIRST: a parser that silently matched nothing cannot pass by
+  // returning two empty results.
+  const markerLineCount = result.source.split("\n").filter((line) => line.startsWith(EXCLUSION_MARKER_PREFIX)).length;
+  assert.equal(markerLineCount, 2, `the source must really carry two marker lines before parsing:\n${result.source}`);
+
+  const recovered = readBackExclusions(result.source);
+  assert.deepEqual(
+    new Set(recovered.map((r) => `${r.start}..${r.endInclusive}=${r.reason}`)),
+    new Set([`$0807..$0808=${reasonA}`, `$080b..$080c=${reasonB}`]),
+    "the recovered set must equal what was recorded, with no access to the store",
+  );
+});
+
+test("EXCLUSION READBACK: a one-character mutation of the marker spelling yields zero recoveries", () => {
+  const dir = freshDir("exclusion-readback-mutated");
+  const { storePath, imagePath } = exclusionStore(dir, [{ start: 0x0807, endInclusive: 0x0808, reason: "cracked loader stub" }]);
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+
+  const mutatedPrefix = EXCLUSION_MARKER_PREFIX.replace("REQUEST", "REQUOST"); // one character changed: E -> O
+  assert.notEqual(mutatedPrefix, EXCLUSION_MARKER_PREFIX, "the mutation constant itself must actually differ");
+  const mutatedSource = result.source.split(EXCLUSION_MARKER_PREFIX).join(mutatedPrefix);
+  assert.notEqual(mutatedSource, result.source, "the mutation must actually have changed the source text");
+
+  assert.equal(readBackExclusions(mutatedSource).length, 0, "a source whose marker spelling drifted by one character must yield ZERO recoveries");
+});
+
+// ---------------------------------------------------------------------------
+// exclusion empty
+// ---------------------------------------------------------------------------
+
+test("exclusion empty: a store with no exclusion records emits no exclusion marker", () => {
+  const dir = freshDir("exclusion-empty-none");
+  const { storePath, imagePath } = exclusionStore(dir, []);
+
+  const baseline = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+  const again = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+
+  assert.equal(baseline.excludedRangeCount, 0);
+  assert.ok(
+    !baseline.source.split("\n").some((line) => line.startsWith(EXCLUSION_MARKER_PREFIX)),
+    "zero exclusion records must emit zero marker lines",
+  );
+  assert.equal(again.source, baseline.source, "exporting a store with no exclusion records twice must be byte-identical");
+});
+
+test("exclusion empty: a one-byte exclusion is recorded and emitted", () => {
+  const dir = freshDir("exclusion-empty-oneByte");
+  const withoutDir = freshDir("exclusion-empty-oneByte-without");
+  const reason = "single byte cracker patch";
+  const { storePath, imagePath } = exclusionStore(dir, [{ start: 0x0807, endInclusive: 0x0807, reason }]);
+  const withoutExclusion = exclusionStore(withoutDir, []);
+
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+  const plain = exportAsm({ storePath: withoutExclusion.storePath, imagePath: withoutExclusion.imagePath, workspaceRoot: withoutDir });
+
+  const markerLines = result.source.split("\n").filter((line) => line.startsWith(EXCLUSION_MARKER_PREFIX));
+  assert.equal(markerLines.length, 1);
+  assert.equal(markerLines[0], `${EXCLUSION_MARKER_PREFIX}$0807..$0807 ${reason}`);
+  assert.deepEqual([...result.expectedBytes], [...plain.expectedBytes], "expectedBytes must be unchanged by a one-byte exclusion");
+});
+
+test("exclusion empty: a store with zero ranges still raises the pre-existing no-ranges refusal", () => {
+  const dir = freshDir("exclusion-empty-zero-ranges");
+  const imagePath = join(dir, "game.prg");
+  writeFileSync(imagePath, Buffer.from([0x01, 0x08, 0x00])); // load address plus the minimum one payload byte a .prg needs
+  const storePath = join(dir, "anno.sqlite");
+  const handle = openStore(storePath, { workspaceRoot: dir });
+  try {
+    addExcludedRange(handle, { start: 0x0900, endInclusive: 0x0901, reason: "recorded even though there are no ranges to export" });
+  } finally {
+    closeStore(handle);
+  }
+
+  assert.throws(
+    () => exportAsm({ storePath, imagePath, workspaceRoot: dir }),
+    /holds no ranges/,
+    "the exclusion machinery must not move the pre-existing zero-ranges boundary",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// exclusion ordering (backstop -- see EXCLUSION_MARKER_PREFIX's own overlap
+// comment in anno-export-asm.ts for what is contractual and what is a
+// recorded choice)
+// ---------------------------------------------------------------------------
+
+test("exclusion ordering: two disjoint exclusions inside one block emit markers in ascending start order", () => {
+  const dir = freshDir("exclusion-ordering-ascending");
+  const { storePath, imagePath } = buildStore(dir, {
+    origin: 0x1000,
+    body: new Array(0x100).fill(0xea), // $1000..$10ff, all NOP -- decodes cleanly as "code"
+    ranges: [{ start: 0x1000, endInclusive: 0x10ff, dataType: "code" }],
+    exclusions: [
+      // Recorded in DESCENDING order deliberately, so an ascending-start
+      // assertion on the emitted markers is not merely reflecting insertion
+      // order.
+      { start: 0x1030, endInclusive: 0x103f, reason: "second exclusion, recorded first" },
+      { start: 0x1010, endInclusive: 0x101f, reason: "first exclusion, recorded second" },
+    ],
+  });
+
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+
+  const block = blockSourceFor(result.source, "$1000");
+  const markerLines = block.split("\n").filter((line) => line.startsWith(EXCLUSION_MARKER_PREFIX));
+  assert.equal(markerLines.length, 2);
+  assert.equal(
+    markerLines[0],
+    `${EXCLUSION_MARKER_PREFIX}$1010..$101f first exclusion, recorded second`,
+    "the LOWER-start exclusion's marker must appear FIRST",
+  );
+  assert.equal(
+    markerLines[1],
+    `${EXCLUSION_MARKER_PREFIX}$1030..$103f second exclusion, recorded first`,
+    "the HIGHER-start exclusion's marker must appear SECOND, regardless of recording order",
+  );
+});
+
+test("exclusion ordering: two consecutive identical exports produce byte-identical source", () => {
+  const dir = freshDir("exclusion-ordering-repeat");
+  const { storePath, imagePath } = exclusionStore(dir, [
+    { start: 0x0807, endInclusive: 0x0808, reason: "cracked loader stub" },
+    { start: 0x0809, endInclusive: 0x080a, reason: "trainer patch" },
+  ]);
+  const ledgerPath = writeLedgerFixture(dir);
+
+  const first = exportAsm({ storePath, imagePath, workspaceRoot: dir, ledgerPath });
+  const second = exportAsm({ storePath, imagePath, workspaceRoot: dir, ledgerPath });
+
+  assert.equal(
+    second.source,
+    first.source,
+    "STABILITY across two identical runs is the guarantee; ascending-by-start (asserted above) is a recorded CHOICE, not a written contract",
+  );
+});
+
+test("EXCLUSION + LEDGER: real ACME reassembles an export carrying both exclusion markers and ledger provenance lines byte-identically", { skip: SKIP_REASON }, () => {
+  const dir = freshDir("exclusion-acme-roundtrip");
+  const { storePath, imagePath } = exclusionStore(dir, [
+    { start: 0x0807, endInclusive: 0x0808, reason: "cracked loader stub, not original game code" },
+  ]);
+  const ledgerPath = writeLedgerFixture(dir);
+
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir, ledgerPath });
+  const verdict = verifyExport(result);
+
+  assert.equal(verdict.outcome, "ok", `an export carrying both exclusion and provenance markers must verify:${context(result, verdict)}`);
+  assert.equal(verdict.byteDiff?.equal, true, `an export carrying both exclusion and provenance markers must reassemble byte-identically:${context(result, verdict)}`);
 });
