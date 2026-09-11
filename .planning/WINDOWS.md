@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 35
+open_count: 36
 waived_count: 14
 fixed_count: 9
-total_count: 58
-last_updated: 2026-09-11T05:37:04.583Z
+total_count: 59
+last_updated: 2026-09-11T09:56:23.378Z
 ---
 
 # Broken Windows Ledger
@@ -73,6 +73,7 @@ last_updated: 2026-09-11T05:37:04.583Z
 | 56 | 45 | deviation | src/skills/routine-queue-walker/scripts/completeness-report.test.mjs |  | Task 3 (tdd=true) implementation predated its test tier -- RED phase not observed, tests confirmed green on first run rather than watched fail first | open |  | 2026-09-10T22:10:09.499Z |  |
 | 57 | 45 | unrun-verify | src/mcp/vice/fixtures/decomp-execution-manifest.json |  | Manifest's own JSON-schema check (9 fixtures, 6 executed/3 not-executed with reasons) was run ad hoc during execution, not committed as a standing automated test | open |  | 2026-09-10T22:10:09.848Z |  |
 | 58 | 45 | deviation | src/mcp/vice/anno-cli.ts |  | FLOW-02: decomp-completeness USAGE text names 'Phase 45'/'Phase 33' literals in shipped source (plan 45-01); pre-existing, not fixed by plan 45-03 (out of scope) -- see 45-03's deferred-items.md | open |  | 2026-09-11T05:37:04.583Z |  |
+| 59 | 45 | deviation | src/mcp/vice/fixtures/dxa/tracer.annostore.json |  | Plan 45-08 Task 3: generateEnumsFromStore() found zero eligible register writes for tracer.prg/fixture.prg/smc.prg (all write only $D020, absent from the curated anno-regbits.json table and its OVERRIDES) -- no project enum/usage was installed in this family, contradicting the plan's own Task 3 acceptance criteria; disclosed in docs/phase45-closure-dxa-family.md and 45-08-SUMMARY.md rather than fixed by widening the generated-but-committed regbits table. | open |  | 2026-09-11T09:56:23.378Z |  |
 
 ````json
 [
@@ -770,6 +771,18 @@ last_updated: 2026-09-11T05:37:04.583Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-11T05:37:04.583Z",
+    "resolved_at": null
+  },
+  {
+    "id": 59,
+    "kind": "deviation",
+    "phase": "45",
+    "file": "src/mcp/vice/fixtures/dxa/tracer.annostore.json",
+    "line": null,
+    "description": "Plan 45-08 Task 3: generateEnumsFromStore() found zero eligible register writes for tracer.prg/fixture.prg/smc.prg (all write only $D020, absent from the curated anno-regbits.json table and its OVERRIDES) -- no project enum/usage was installed in this family, contradicting the plan's own Task 3 acceptance criteria; disclosed in docs/phase45-closure-dxa-family.md and 45-08-SUMMARY.md rather than fixed by widening the generated-but-committed regbits table.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-11T09:56:23.378Z",
     "resolved_at": null
   }
 ]
