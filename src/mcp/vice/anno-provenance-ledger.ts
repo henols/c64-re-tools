@@ -213,12 +213,32 @@ const LEDGER_REMEDY =
  * is left with a non-empty last cell, so the seven-cell count check at the
  * call site catches the malformed shape rather than this function silently
  * repairing it.
+ *
+ * A raw NUL byte already present in the line -- e.g. in a hand-edited or
+ * corrupted ledger's Evidence/Reason cell -- is REFUSED rather than restored:
+ * without this check, an existing NUL would collide with the placeholder
+ * this function inserts for its own `\|` escaping, and the unconditional
+ * `.join("|")` restoration below would silently turn that pre-existing NUL
+ * into an extra, unescaped `|` that never delimited anything in the source
+ * file. That is exactly the "repair a malformed row" outcome this module's
+ * header forbids, so it is named and refused like every other malformed
+ * shape this function's caller checks for -- never coerced, never dropped.
+ * `ledgerPath` and `lineNumber` are threaded through only to build that
+ * refusal's message; they change no other behaviour of this function.
  */
-function splitTableRow(line: string): string[] | undefined {
+function splitTableRow(line: string, ledgerPath: string, lineNumber: number): string[] | undefined {
   const trimmed = line.trim();
   if (!trimmed.startsWith("|")) return undefined;
 
   const PLACEHOLDER = String.fromCharCode(0);
+  if (trimmed.includes(PLACEHOLDER)) {
+    throw new ProvenanceLedgerError(
+      `anno-provenance-ledger: row ${lineNumber} of "${ledgerPath}" contains a raw NUL byte -- refusing to parse a row that ` +
+        `could collide with this module's own internal escape-placeholder sentinel rather than silently turning it into an ` +
+        `unescaped "|". ${LEDGER_REMEDY}.`,
+      { path: ledgerPath, lineNumber },
+    );
+  }
   const protectedLine = trimmed.replace(/\\\|/g, PLACEHOLDER);
   let cells = protectedLine.split("|");
   if (cells[0] === "") cells = cells.slice(1);
@@ -313,7 +333,7 @@ export function readProvenanceLedger(ledgerPath: string): ProvenanceLedger {
 
   let headerLineIndex = -1;
   for (let i = 0; i < lines.length; i++) {
-    const cells = splitTableRow(lines[i]!);
+    const cells = splitTableRow(lines[i]!, ledgerPath, i + 1);
     if (
       cells !== undefined &&
       cells.length === PROVENANCE_LEDGER_HEADER_CELLS.length &&
@@ -341,7 +361,7 @@ export function readProvenanceLedger(ledgerPath: string): ProvenanceLedger {
   // re-validated. Parsing starts one line further on.
   for (let i = headerLineIndex + 2; i < lines.length; i++) {
     const line = lines[i]!;
-    const cells = splitTableRow(line);
+    const cells = splitTableRow(line, ledgerPath, i + 1);
     if (cells === undefined) break; // first line that is not a table row at all ends the generated tier
 
     if (cells.length !== PROVENANCE_LEDGER_HEADER_CELLS.length) {

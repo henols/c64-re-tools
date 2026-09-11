@@ -491,6 +491,33 @@ test("refusal: the accepted rows leave a gap (a middle row deleted) -- names the
   );
 });
 
+test("refusal: a data row containing a raw NUL byte is refused rather than silently turned into an extra unescaped pipe (WR-01)", () => {
+  const dir = freshDir("raw-nul");
+  const { markdown } = writeLedgerFile(dir, THREE_ROW_RANGES);
+
+  const { index, lines } = findRowLine(markdown, "$1000");
+  const original = lines[index]!;
+  const NUL = String.fromCharCode(0);
+  const mutated = original.replace(DISCLOSURE_TOKEN, `${DISCLOSURE_TOKEN}${NUL}`);
+  assertMutated(original, mutated, "inject-raw-nul");
+  assert.ok(mutated.includes(NUL), "the mutation must actually place a raw NUL byte in the row, or this test measures nothing");
+  lines[index] = mutated;
+  const path = writeMutated(dir, lines.join("\n"));
+
+  assert.throws(
+    () => readProvenanceLedger(path),
+    (e: unknown) => {
+      assert.ok(e instanceof ProvenanceLedgerError);
+      assert.equal(e.lineNumber, index + 1, "must cite the 1-based line number of the row carrying the NUL byte");
+      assert.ok(e.message.includes(path), `must name the path: ${e.message}`);
+      assert.ok(e.message.toUpperCase().includes("NUL"), `must name the NUL byte by name: ${e.message}`);
+      assert.ok(!e.message.includes(NUL), `must never echo the raw NUL byte itself into the message: ${e.message}`);
+      assert.ok(!e.message.includes(DISCLOSURE_TOKEN), `must never quote the row's own cell text: ${e.message}`);
+      return true;
+    },
+  );
+});
+
 // ---------------------------------------------------------------------------
 // The information-disclosure control (T-46-02): a distinctive token planted
 // in a malformed row's Evidence cell must never leak into a refusal message,

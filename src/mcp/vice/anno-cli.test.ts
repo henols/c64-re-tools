@@ -54,6 +54,7 @@ import {
   listComments,
   listRanges,
   insertExecObservations,
+  addExcludedRange,
 } from "./anno-store.ts";
 import { buildCoverageReport, coverageFindings } from "./anno-coverage.ts";
 import type { AnnoComment, AnnoCrossReference, AnnoSymbol } from "./anno-coverage.ts";
@@ -1697,6 +1698,27 @@ test("export-asm: writes ACME source to the derived default path beside the STOR
     // command must state that it assembled nothing.
     assert.match(lines[1]!, /has NOT been assembled/);
     assert.match(lines[1]!, /runs no assembler/);
+  });
+});
+
+test("export-asm: the summary line reports excludedRangeCount, symmetric with every other figure it already carries (WR-02)", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    const { storePath, imagePath } = makeExportableProject(ws);
+
+    const handle = openStore(storePath, { workspaceRoot: ws });
+    try {
+      addExcludedRange(handle, { start: 0xc000, endInclusive: 0xc000, reason: "WR-02 fixture: one excluded byte" });
+    } finally {
+      closeStore(handle);
+    }
+
+    const { result: code, stdout, stderr } = await withCapturedConsole(() =>
+      runAnnoCli(["export-asm", imagePath, "--store", storePath]),
+    );
+    assert.equal(code, 0, stderr);
+
+    const lines = stdout.split("\n").filter((l) => l.length > 0);
+    assert.match(lines[0]!, /1 exclusion\(s\) marked/, `the summary must name the exclusion count, matching every other "how many of X" figure it prints; got ${lines[0]}`);
   });
 });
 
