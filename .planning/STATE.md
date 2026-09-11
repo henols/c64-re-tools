@@ -5,16 +5,16 @@ milestone_name: The Rebuild Half
 current_phase: 46
 current_phase_name: The Lossless-Export Invariant and the Provenance Carry
 status: executing
-stopped_at: Completed 46-03-PLAN.md
-last_updated: "2026-09-11T16:15:47.491Z"
+stopped_at: Completed 46-04-PLAN.md
+last_updated: "2026-09-11T16:38:46.534Z"
 last_activity: 2026-09-11
 last_activity_desc: Phase 46 execution started
-state_head: 34a690c6139b1ce9cfee5b8f04a22432d080a265
+state_head: 47549a8d1c25a7994d0e3dea0d242216d9d4a25e
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 16
-  completed_plans: 13
+  completed_plans: 14
   percent: 17
 ---
 
@@ -255,10 +255,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 46 (The Lossless-Export Invariant and the Provenance Carry) — EXECUTING
-Plan: 4 of 6
+Plan: 5 of 6
 Status: Ready to execute
-Progress: [█████░░░░░] 50% (3/6 plans in phase 46; milestone-wide phase percent is tracked separately in frontmatter)
-Last activity: 2026-09-11 — Plan 46-03 complete (SCHEMA_VERSION 5, the anno_excluded_range table and its EVID-02 decision paragraph, and the three exclusion verbs with full store-level coverage)
+Progress: [███████░░░] 67% (4/6 plans in phase 46; milestone-wide phase percent is tracked separately in frontmatter)
+Last activity: 2026-09-11 — Plan 46-04 complete (anno_exclude_range/anno_include_range registered at all four MCP sites, their register entries, and the skill's documented round trip)
 
 ## Performance Metrics
 
@@ -549,6 +549,7 @@ Last activity: 2026-09-11 — Plan 46-03 complete (SCHEMA_VERSION 5, the anno_ex
 | Phase 46 P01 | 86 min | 2 tasks | 12 files |
 | Phase 46 P02 | 41 min | 3 tasks | 4 files |
 | Phase 46 P03 | 25min | 3 tasks | 6 files |
+| Phase 46 P04 | 30 min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -1263,6 +1264,7 @@ Recent decisions affecting current work:
 - [Phase 46]: Renamed every anno-provenance-ledger.ts refusal message from the readProvenanceLedger: function-name prefix to a single anno-provenance-ledger: module-name prefix, matching the house shape anno-export-asm.ts's own shipped refusals establish.
 - [Phase 46]: The ledger reader's overlap/non-ascending check and its full-$0000-$FFFF-coverage check are two separate refusals, deliberately mirroring renderLedger()'s own two distinct emit-time coverage preconditions rather than one combined "bad ledger" message.
 - [Phase 46]: 46-03: anno_excluded_range is a new SQLite table (SCHEMA_VERSION 5), not a nullable column on anno_range; removeExcludedRange refuses a partial/overlapping extent by name rather than the plain no-op removeScope() reports for a mismatched span. — A column would force retype()'s carve to split/duplicate/lose a user-chosen exclusion reason every time a range boundary moved underneath it; a separate table keeps the user's own words independent of the store's typing churn. The stricter remove behavior exists because a near-miss removal on a record carrying a human-authored reason must not silently read as "nothing happened".
+- [Phase 46]: Phase 46 plan 04: anno_exclude_range's register entry cites a real current consumer (anno-tools.ts's own dispatch) instead of the plan's suggested anno-export-asm.ts:listExcludedRanges, because plan 46-05 has not yet wired that call site in this tree. — Citing a symbol that does not yet appear in the named file would be a forward-dated citation, which the register's own header warns against. DIRECTION 5's mechanical check would not have caught it, but accuracy matters for the register's future trustworthiness.
 
 ### Pending Todos
 
@@ -2339,8 +2341,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-11T16:15:47.107Z
-Stopped at: Completed 46-03-PLAN.md
+Last session: 2026-09-11T16:38:46.170Z
+Stopped at: Completed 46-04-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
