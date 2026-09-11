@@ -90,9 +90,9 @@
 import { readFileSync } from "node:fs";
 import { extname } from "node:path";
 
-import { openStore, closeStore, listRanges, listLabels, listComments, listProjectEnums, listEnumUsage } from "./anno-store.ts";
+import { openStore, closeStore, listRanges, listLabels, listComments, listProjectEnums, listEnumUsage, listExcludedRanges } from "./anno-store.ts";
 import { AnnoCommentError, COMMENT_TYPES, DATA_TYPES, assertCommentText, assertDataType, parseVariantKey } from "./anno-types.ts";
-import type { CommentRow, DataType, EnumUsageRow, LabelRow, ProjectEnumRow, RangeRow } from "./anno-types.ts";
+import type { CommentRow, DataType, EnumUsageRow, ExcludedRangeRow, LabelRow, ProjectEnumRow, RangeRow } from "./anno-types.ts";
 import { assertLegalAcmeIdentifier } from "./anno-acme-ident.ts";
 // The eleven typed auto-name prefixes, IMPORTED FROM THEIR ONE HOME rather than
 // restated. This is the first cross-module PRODUCTION importer of that
@@ -268,6 +268,19 @@ export interface ExportAsmResult {
    * register, or an enum usage whose name is not a register key at all,
    * counts toward `enumSubstitutionCount` only, never here. */
   enumDecompositionCount: number;
+  /** How many RECORDS from `anno_excluded_range` the export emitted a marker
+   * for -- at least one of their addresses overlapping at least one emitted
+   * block. `BUILD-07` (phase 46 plan 05).
+   *
+   * COUNTS RECORDS, NOT MARKER LINES AND NOT EXCLUDED BYTES -- the same
+   * WR-01 lesson this file already learned once about `symbolCount`: a count
+   * whose name does not match what it counts gets printed to a user
+   * verbatim. One exclusion record spanning two emitted blocks emits TWO
+   * marker lines (one per block) and counts ONCE here. And no byte is ever
+   * excluded -- every block a recorded exclusion overlaps is still emitted
+   * in full -- so this field never measures bytes left out, because there
+   * are none. */
+  excludedRangeCount: number;
 }
 
 /** How many raw bytes go on one `!byte` line for a non-code block. */
@@ -587,6 +600,28 @@ const PROVENANCE_MARKER_PREFIX = "  ; PROVENANCE LEDGER: ";
 const PROVENANCE_AMBIGUITY_MARKER_PREFIX = "  ; PROVENANCE LEDGER AMBIGUITY: ";
 
 /**
+ * The fixed leading comment on every line naming a user-requested exclusion
+ * (`BUILD-07`, phase 46 plan 05). ONE spelling, in one place, for the same
+ * reason `AUTO_NAME_MARKER`, `ALIAS_MARKER_PREFIX` and `PROVENANCE_MARKER_PREFIX`
+ * are: a second wording would make it ungreppable for the only reader it
+ * exists for, and criterion 2's own readback -- recovering what was excluded
+ * and why straight out of the exported text -- depends on there being exactly
+ * one spelling to anchor on.
+ *
+ * THIS IS HOW A USER'S REQUEST TO LEAVE A SPAN OUT APPEARS IN THE ARTEFACT,
+ * and it is deliberately a MARKER rather than an OMISSION: `BUILD-07` requires
+ * the export be lossless by default, and any exclusion be "emitted as a
+ * recorded excluded range rather than a hole". The failure this constant's
+ * existence prevents is the obvious wrong implementation -- skipping the
+ * block would satisfy the word "exclude" and lose the bytes, and the
+ * byte-diff oracle downstream could only ever report that as a coverage gap,
+ * never as "the user asked for this". Every block carrying an overlapping
+ * exclusion record is still emitted in full, with this comment prepended,
+ * never in place of any content.
+ */
+export const EXCLUSION_MARKER_PREFIX = "  ; EXCLUDED BY USER REQUEST: ";
+
+/**
  * The largest value an enum variant may carry to be substitutable into an
  * IMMEDIATE operand.
  *
@@ -883,12 +918,18 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
   let comments: CommentRow[];
   let projectEnums: ProjectEnumRow[];
   let enumUsage: EnumUsageRow[];
+  let excludedRanges: ExcludedRangeRow[];
   try {
     ranges = listRanges(handle);
     labels = listLabels(handle);
     comments = listComments(handle);
     projectEnums = listProjectEnums(handle);
     enumUsage = listEnumUsage(handle);
+    // BUILD-07 (phase 46 plan 05): a sixth read in the SAME handle and the
+    // SAME `try`, mirroring the discipline the five siblings above already
+    // follow -- one handle for the whole export, closed once in the
+    // `finally` below. There is no second store opened for this.
+    excludedRanges = listExcludedRanges(handle);
   } finally {
     closeStore(handle);
   }
@@ -1091,6 +1132,12 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
   let midInstructionLabelCount = 0;
 
   const blockLines: string[] = [];
+
+  /** RECORDS, not lines -- one entry per `anno_excluded_range.id` that has
+   * had at least one marker line emitted for it, across every block. Read at
+   * the end for `excludedRangeCount`; see that field's own doc comment for
+   * why a record spanning two blocks must count once, not twice. */
+  const excludedRangeIdsEmitted = new Set<number>();
 
   for (const block of blocks) {
     const slice = image.bytes.subarray(block.start - imageStart, block.endExclusive - imageStart);
@@ -1482,6 +1529,51 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
       content.unshift(...provenanceLines);
     }
 
+    // BUILD-07 (phase 46 plan 05): every recorded exclusion overlapping this
+    // block gets a marker naming ITS OWN extent (never the block's) and its
+    // checked reason -- NEVER a skipped block, a shortened slice, or a
+    // shrunk `expectedBytes`. `block.start`/`block.endExclusive` above are
+    // completely untouched by this: the slice was already taken, the code
+    // was already decoded or the data lines already emitted, and every one
+    // of those bytes stays in `content`. This is bookkeeping ABOUT the block,
+    // exactly as the provenance comment above is -- prepended, and not
+    // counted in `block.lineCount`, which by its own doc-comment counts
+    // CONTENT lines only.
+    //
+    // THE OVERLAP TEST IS THE SAME PREDICATE `provenanceForRange()` and
+    // `addExcludedRange()` BOTH USE (`row.start <= blockEndInclusive &&
+    // row.endInclusive >= blockStart`, addExcludedRange's own predicate
+    // transposed) -- textually the same test at all three sites, so they
+    // agree by construction and not by three separate authors reaching the
+    // same answer by coincidence. Sorted ascending by `start`: this plan's
+    // own recorded (backstop) choice for two disjoint exclusions inside one
+    // block, never derived from a written contract.
+    const blockEndInclusive = block.endExclusive - 1;
+    const overlappingExclusions = excludedRanges
+      .filter((row) => row.start <= blockEndInclusive && row.endInclusive >= block.start)
+      .sort((a, b) => a.start - b.start);
+    if (overlappingExclusions.length > 0) {
+      const exclusionLines: string[] = [];
+      for (const row of overlappingExclusions) {
+        // RE-CHECKED, NOT RE-DEFINED -- the same predicate
+        // `assertExportableCommentText()` already applies to every stored
+        // comment and to the ledger's own free-text evidence cell, on
+        // EXACTLY the grounds `assertDataTypeForExport()`'s own comment a
+        // few dozen lines above states: the store validated this reason at
+        // write time, and a store file somebody edited on disk reaches this
+        // point through a column nobody re-checked. A stored line break
+        // would put everything after it into the ACME source at column
+        // zero, as assembler input rather than as a comment.
+        const checkedReason = assertExportableCommentText(row.reason, block.start);
+        // THE EXCLUSION'S OWN EXTENT, NOT THE BLOCK'S -- a row narrower than
+        // the block it lands in says so here, because the user asked about
+        // a span, not about whatever block that span happened to land in.
+        exclusionLines.push(`${EXCLUSION_MARKER_PREFIX}${hex4(row.start)}..${hex4(row.endInclusive)} ${checkedReason}`);
+        excludedRangeIdsEmitted.add(row.id);
+      }
+      content.unshift(...exclusionLines);
+    }
+
     // EVERY block goes through `emitBlock()`, code and data alike, so there is
     // exactly one place that brackets a block and no route that emits an
     // unbracketed one.
@@ -1564,5 +1656,6 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
     autoNamedSymbolCount,
     enumSubstitutionCount: appliedEnumUsage.size,
     enumDecompositionCount,
+    excludedRangeCount: excludedRangeIdsEmitted.size,
   };
 }
