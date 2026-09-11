@@ -35,6 +35,12 @@
       "name": "probe",
       "kind": "User",
       "bank": null
+    },
+    {
+      "address": 12288,
+      "name": "char_rom_copy_dest",
+      "kind": "User",
+      "bank": null
     }
   ],
   "comments": [
@@ -67,9 +73,23 @@
       "provenance": "authored"
     },
     {
+      "address": 2087,
+      "commentType": "line",
+      "text": "this sta $D020 write lands in the underlying RAM byte under BOTH callers' $01 configurations, never the VIC-II border-colour register -- under $01=$33 (LORAM=HIRAM=1, CHAREN=0) $D000-$DFFF selects Character ROM for READS only, and writes always land in RAM; under $01=$34 (LORAM=HIRAM=0) the whole range is RAM regardless of CHAREN. Neither caller enables I/O (that requires CHAREN=1 AND (LORAM=1 OR HIRAM=1)), so this write's target is the SAME determinate RAM byte under both configurations -- resolved, not declined",
+      "bank": null,
+      "provenance": "authored"
+    },
+    {
+      "address": 2092,
+      "commentType": "line",
+      "text": "DECLINED: this shared read (lda $D000,x, reached from probe's two callers under two different $01 values) resolves to two disagreeing targets depending on which caller reached it -- under $01=$33 (LORAM=HIRAM=1, CHAREN=0) the read sees Character ROM; under $01=$34 (LORAM=HIRAM=0) the read sees RAM. anno_join_memmap declined both candidate addresses here (reason: \"no recovered processor-port value reaches $d000 -- declining rather than defaulting to the power-on state\", docs/phase45-ghidra-derivation-evidence.md) rather than defaulting to either meaning -- no single symbol is correct, and none is asserted",
+      "bank": null,
+      "provenance": "authored"
+    },
+    {
       "address": 12288,
       "commentType": "line",
-      "text": "Default BASIC area (38911 bytes) [memmap-sha256:60a517c1833a44e6dc1a99a949554fa39834b558371d9f1e98531499fe3642fe",
+      "text": "single-byte destination for probe's own lda $D000,x / sta $3000,x copy (X is always 0 here); written once per caller, with the byte currently visible at $D000 under that caller's own $01 state",
       "bank": null,
       "provenance": "authored"
     }

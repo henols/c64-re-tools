@@ -29,6 +29,24 @@
       "name": "start",
       "kind": "User",
       "bank": null
+    },
+    {
+      "address": 2092,
+      "name": "cpchar",
+      "kind": "User",
+      "bank": null
+    },
+    {
+      "address": 12288,
+      "name": "char_rom_copy_dest",
+      "kind": "User",
+      "bank": null
+    },
+    {
+      "address": 12289,
+      "name": "char_rom_copy_dest_p1",
+      "kind": "User",
+      "bank": null
     }
   ],
   "comments": [
@@ -43,6 +61,27 @@
       "address": 2064,
       "commentType": "line",
       "text": "function: demonstrates that $D020 means different things under different $01 bank states -- writes it under $37 (I/O in, real border colour), $34 (I/O out, plain RAM write), reads it under $34 (plain RAM read), then copies 256 bytes from $D000,x (Character ROM under $33) to $3000,x before restoring $01=$37 | inputs: none | outputs: none in registers | side effects: writes $01 four times ($37,$34,$33,$37), writes $D020 twice, reads $D020 once, copies 256 bytes $D000-$D0FF to $3000-$30FF via the cpchar loop, re-enables interrupts (cli)",
+      "bank": null,
+      "provenance": "authored"
+    },
+    {
+      "address": 2092,
+      "commentType": "line",
+      "text": "loop target for bne cpchar -- copies one byte per iteration from $D000,x (Character ROM, since $01=$33 here) to $3000,x, 256 iterations (X wraps 0..255 via inx/bne)",
+      "bank": null,
+      "provenance": "authored"
+    },
+    {
+      "address": 12288,
+      "commentType": "line",
+      "text": "256-byte destination buffer for the cpchar loop's copy of $D000-$D0FF (Character ROM under $01=$33)",
+      "bank": null,
+      "provenance": "authored"
+    },
+    {
+      "address": 12289,
+      "commentType": "line",
+      "text": "second byte of char_rom_copy_dest ($3000) -- the xref import recorded this address separately from the buffer's own base",
       "bank": null,
       "provenance": "authored"
     }
