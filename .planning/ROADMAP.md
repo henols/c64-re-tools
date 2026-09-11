@@ -654,7 +654,7 @@ was weighed at this open and left standing on the owner's decision to scope
 v1.0.0 to the rebuild half alone.
 
 - [x] **Phase 45: Decomposition to Closure, Disagreement First** - Every byte of the committed fixtures carries a type, a name and a documented purpose, with the two independent classifiers' disagreements resolved rather than averaged — and an honest decline wherever the evidence is genuinely path-dependent (completed 2026-09-11)
-- [ ] **Phase 46: The Lossless-Export Invariant and the Provenance Carry** - The export path is made structurally incapable of dropping a byte on its own judgement, and what the provenance evidence says about a range travels with the range to the point of use — built before the exporter widens, not retrofitted after
+- [x] **Phase 46: The Lossless-Export Invariant and the Provenance Carry** - The export path is made structurally incapable of dropping a byte on its own judgement, and what the provenance evidence says about a range travels with the range to the point of use — built before the exporter widens, not retrofitted after (completed 2026-09-11)
 - [ ] **Phase 47: Multi-File Rebuildable Source** - An annotated store becomes a tree of ACME files a person can open and edit — one file per scope, data tables in their own swappable files, every reference through a symbol — and real ACME assembles the tree back to the same program
 - [ ] **Phase 48: The Movement-Hazard Report and Its Purpose-Built Subject** - One synthetic C64 program deliberately carrying all four movement-blocking classes, and a report that enumerates them across those four classes — delivered and reviewed together so neither is written to match the other, and acting on nothing it finds
 - [ ] **Phase 49: The Reassembly Gate, Committed Before the Phase It Gates** - A gate that says whether an exported tree really rebuilds — byte-diffed against the image, hazard report attached, movement exercised on every run — with its rules in git before its first real run and its verdict read as a precondition by Phase 50
@@ -1495,7 +1495,7 @@ in a milestone archive.
 | 43. The Runtime Evidence Layer | v0.9.0 | 7/7 | Complete | 2026-09-10 |
 | 44. PROOF-04 — The Independent External Check | v0.9.0 | 3/3 | Complete | 2026-09-10 |
 | 45. Decomposition to Closure, Disagreement First | v1.0.0 | 10/10 | Complete | 2026-09-11 |
-| 46. The Lossless-Export Invariant and the Provenance Carry | v1.0.0 | 6/6 | In Progress | - |
+| 46. The Lossless-Export Invariant and the Provenance Carry | v1.0.0 | 6/6 | Complete | 2026-09-11 |
 | 47. Multi-File Rebuildable Source | v1.0.0 | - | Not started | - |
 | 48. The Movement-Hazard Report and Its Purpose-Built Subject | v1.0.0 | - | Not started | - |
 | 49. The Reassembly Gate, Committed Before the Phase It Gates | v1.0.0 | - | Not started | - |

@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: The Rebuild Half
-current_phase: 46
-current_phase_name: The Lossless-Export Invariant and the Provenance Carry
-status: verifying
-stopped_at: Completed 46-06-PLAN.md
-last_updated: "2026-09-11T17:28:40.633Z"
+current_phase: 47
+current_phase_name: Multi-File Rebuildable Source
+status: planning
+stopped_at: Phase 46 complete, ready to plan Phase 47
+last_updated: "2026-09-11T18:19:31.682Z"
 last_activity: 2026-09-11
-last_activity_desc: Phase 46 execution started
-state_head: 0202814c8c156f9bae5149a8a5802c65f8dc2c5b
+last_activity_desc: Phase 46 complete, transitioned to Phase 47
+state_head: 5d459f0017ae0c443be1817e47ae70422334977e
 progress:
-  total_phases: 6
-  completed_phases: 1
+  total_phases: 8
+  completed_phases: 2
   total_plans: 16
   completed_plans: 16
-  percent: 17
+  percent: 25
 ---
 
 # Project State
@@ -254,17 +254,17 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 46 (The Lossless-Export Invariant and the Provenance Carry) — AWAITING VERIFICATION
-Plan: 6 of 6
-Status: Phase complete — ready for verification
+Phase: 47 — Multi-File Rebuildable Source
+Plan: Not started
+Status: Ready to plan
 Progress: [██░░░░░░░░] 17% (6/6 plans in phase 46; milestone-wide phase percent is tracked separately in frontmatter)
-Last activity: 2026-09-11 — Plan 46-06 complete (planted a red-then-green control for BUILD-07 via a test-only filtering variant, observed dropping a CRACKER-PATCH-classified range before the real exportAsm() is trusted to keep it; a structural guard over anno-export-asm.ts's own codeOnly()'d source with four non-vacuity proofs; a behavioural companion measuring losslessness across the full verdict vocabulary)
+Last activity: 2026-09-11 — Phase 46 complete, transitioned to Phase 47
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 381
+- Total plans completed: 387
 - Average duration: —
 - Total execution time: —
 
@@ -312,6 +312,7 @@ Last activity: 2026-09-11 — Plan 46-06 complete (planted a red-then-green cont
 | 43 | 7 | - | - |
 | 44 | 3 | - | - |
 | 45 | 10 | - | - |
+| 46 | 6 | - | - |
 
 **Recent Trend:**
 
@@ -2347,7 +2348,7 @@ and are v1.0.0's inheritance.
 ## Session Continuity
 
 Last session: 2026-09-11T17:28:40.229Z
-Stopped at: Completed 46-06-PLAN.md
+Stopped at: Phase 46 complete, ready to plan Phase 47
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
