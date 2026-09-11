@@ -5,11 +5,11 @@ milestone_name: The Rebuild Half
 current_phase: 52
 current_phase_name: Remove the Fork Backend
 status: executing
-stopped_at: Phase 52 planned out of sequence (10 plans, 8 waves); Phases 47-51 remain unplanned
-last_updated: "2026-09-11T21:35:52.829Z"
+stopped_at: Completed 52-01-PLAN.md
+last_updated: "2026-09-11T22:16:39.107Z"
 last_activity: 2026-09-11
-last_activity_desc: Planned Phase 52 (Remove the Fork Backend) out of sequence - 10 plans, 8 waves, checker passed
-state_head: b523c23dda25414569939e8328ceddc7dff244d0
+last_activity_desc: Phase 52 execution started
+state_head: f56704285b4d5ea5f7ff7a97139dee5fa837a679
 progress:
   total_phases: 8
   completed_phases: 2
@@ -32,7 +32,7 @@ RAM, inspect chip state — and keep working when the emulator misbehaves.
 means — two concurrent monitor channels to one machine, with contention reported
 by name rather than misdiagnosed as a wedge — without moving the ONE thing.*
 
-**Current focus:** Phase 46 — The Lossless-Export Invariant and the Provenance Carry
+**Current focus:** Phase 52 — Remove the Fork Backend
 Milestone **v1.0.0 "The Rebuild Half"**, roadmap created 2026-09-10, Phases 45-50,
 15/15 requirements mapped. The presumptive scope recorded at the
 v0.9.0 close is now the committed one: `DECOMP-01..04`, `BUILD-01..07` (the text
@@ -254,9 +254,9 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 52 (Remove the Fork Backend) — READY TO EXECUTE
-Plan: 0/10 executed (10 plans across 8 waves)
-Status: Ready to execute
+Phase: 52 (Remove the Fork Backend) — EXECUTING
+Plan: 2 of 10
+Status: Executing (52-01 complete)
 
 **Planned OUT OF SEQUENCE.** Phase 52 was planned ahead of Phases 47-51, which
 remain unplanned, because Phase 52's own stated dependency — the open question
@@ -266,8 +266,8 @@ milestone's sequential next phase is still **47 — Multi-File Rebuildable Sourc
 this frontmatter's `current_phase: 52` records where planning last landed, not a
 decision to execute 52 before 47.
 
-Progress: [██░░░░░░░░] 17% (2/8 phases complete in v1.0.0; per-phase plan counts in the ROADMAP Progress table)
-Last activity: 2026-09-11 - Planned Phase 52: research + pattern map + validation strategy + 10 plans, plan-checker VERIFICATION PASSED
+Progress: [███░░░░░░░] 25% (2/8 phases complete in v1.0.0; per-phase plan counts in the ROADMAP Progress table)
+Last activity: 2026-09-11 — Phase 52 execution started
 
 ## Performance Metrics
 
@@ -562,6 +562,7 @@ Last activity: 2026-09-11 - Planned Phase 52: research + pattern map + validatio
 | Phase 46 P04 | 30 min | 3 tasks | 4 files |
 | Phase 46 P05 | 16 min | 2 tasks | 2 files |
 | Phase 46 P06 | 23 min | 2 tasks | 1 files |
+| Phase 52 P01 | 40min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -1280,6 +1281,7 @@ Recent decisions affecting current work:
 - [Phase 46]: Phase 46 Plan 05: exclusion markers are additive-only comment lines, never gated on a verdict/confidence/kind value; a recorded exclusion always emits the block's full bytes plus a marker naming the exclusion's own extent. — BUILD-07's prohibition is that "exclude" must never mean "omit"; the overlap test reuses provenanceForRange()/addExcludedRange()'s exact predicate so all three sites agree by construction, and markers within one block sort ascending by start as a recorded (not contractual) choice.
 - [Phase 46]: Plan 46-06: The structural guard's scope is bounded to a regex-extracted slice (sortedRanges through the block .map()'s closing) rather than the whole stripped file, verified empirically against the real anno-export-asm.ts, so a bare word-occurrence check for verdict/confidence/kind cannot collide with the later per-block loop's legitimate ledger-field interpolation. — This keeps the negative assertions unambiguous without needing to distinguish "reading a field" from "branching on a field" inside a wider scan.
 - [Phase 46]: Plan 46-06: Both tasks declared anno-export-asm.test.ts as their only file, so the planted control's RED half (a real, working test-only filtering variant) and GREEN half (the real exportAsm()) landed in ONE commit, matching the plan's own requirement that both halves of the negative control be visible in the same commit.
+- [Phase 52]: FORK-01 (retain the forked VICE MCP backend, decided 2026-08-22) reversed 2026-09-12 per owner decision: the hedge was never exercised (v0.8.0 close audit) and the near-zero-cost premise was withdrawn by the owner. — SID read-back, matrix keyboard, and RESTORE/NMI become permanent accepted losses on stock VICE, recorded with verbatim hardware reasons in docs/stock-hard-losses.md.
 
 ### Pending Todos
 
@@ -2357,8 +2359,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-11T17:28:40.229Z
-Stopped at: Phase 46 complete, ready to plan Phase 47
+Last session: 2026-09-11T22:16:38.509Z
+Stopped at: Completed 52-01-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md

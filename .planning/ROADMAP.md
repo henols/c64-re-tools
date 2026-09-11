@@ -1319,12 +1319,12 @@ that work is rescoped before this phase runs, not after.
   7. `npm run test:automated` is green at the documented floor, with the
      fork-conditional branches in 12 test files removed rather than skipped.
 
-**Plans**: 10 plans, 8 waves
+**Plans**: 1/10 plans executed, 8 waves
 
 Plans:
 **Wave 1**
 
-- [ ] 52-01-PLAN.md — TRACER: amend the `FORK-01` reversal row and its `### Out of Scope` bullet, create `docs/stock-hard-losses.md`, rewrite `docs-fork-decision.test.ts` — one green vertical cut before any code is deleted
+- [x] 52-01-PLAN.md — TRACER: amend the `FORK-01` reversal row and its `### Out of Scope` bullet, create `docs/stock-hard-losses.md`, rewrite `docs-fork-decision.test.ts` — one green vertical cut before any code is deleted
 - [ ] 52-02-PLAN.md — mint `FORKRM-01..07` in `REQUIREMENTS.md` with Traceability rows, and mark the superseded `retain` todo
 
 **Wave 2** *(blocked on Wave 1 completion)*
@@ -1578,7 +1578,7 @@ in a milestone archive.
 | 49. The Reassembly Gate, Committed Before the Phase It Gates | v1.0.0 | - | Not started | - |
 | 50. Equivalence and Modifiability | v1.0.0 | - | Not started | - |
 | 51. Planning Vocabulary Out of the Shipped Server | v1.0.0 | - | Not started | - |
-| 52. Remove the Fork Backend | v1.0.0 | 0/10 | Not started | - |
+| 52. Remove the Fork Backend | v1.0.0 | 1/10 | In Progress | - |
 
 **Milestone roll-up:** v0.2.0 — 9 phases, 87 plans, 51/51 in-scope requirements,
 shipped 2026-08-19 (audit round 4 `tech_debt`; 13 deferred items at close).
