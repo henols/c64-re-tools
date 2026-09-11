@@ -4673,14 +4673,15 @@ test("WR-21 discrimination: two ADJACENT scopes are both accepted -- touching at
 });
 
 // ---------------------------------------------------------------------------
-// BUILD-07 -- the exclusion verbs, RED-phase draft. This is a provisional,
-// representative slice of Task 2's <behavior> list, written before
-// `addExcludedRange`/`listExcludedRanges`/`removeExcludedRange` exist so this
-// TDD task's RED phase is a real observed failure and not merely asserted.
-// Task 3 collects and supersedes this block with the FULL coverage group.
+// BUILD-07 -- the exclusion verbs' full store-level coverage: every accept
+// and refusal path from Task 2's <behavior> list, each refusal asserting its
+// message content AND its unchanged post-state, the two adjacency
+// directions, the empty case as a `deepEqual([])`, and a stale-`baseRevision`
+// refusal per write verb. This supersedes the RED-phase draft that proved
+// the verbs did not exist before Task 2 implemented them.
 // ---------------------------------------------------------------------------
 
-test("BUILD-07 RED: addExcludedRange with a fresh disjoint span inserts one row and reports changed:true", () => {
+test("addExcludedRange with a fresh disjoint span inserts one row and reports changed:true", () => {
   inTempDir((dir) => {
     const path = join(dir, "proj.annostore");
     const handle = openStore(path, { workspaceRoot: dir });
@@ -4694,7 +4695,7 @@ test("BUILD-07 RED: addExcludedRange with a fresh disjoint span inserts one row 
   });
 });
 
-test("BUILD-07 RED: an identical repeat reports changed:false and does not insert a second row", () => {
+test("an identical repeat -- same extent, same reason -- reports changed:false and does not insert a second row", () => {
   inTempDir((dir) => {
     const path = join(dir, "proj.annostore");
     const handle = openStore(path, { workspaceRoot: dir });
@@ -4702,28 +4703,47 @@ test("BUILD-07 RED: an identical repeat reports changed:false and does not inser
       addExcludedRange(handle, { start: 0x4000, endInclusive: 0x4fff, reason: "cracktro" });
       const repeat = addExcludedRange(handle, { start: 0x4000, endInclusive: 0x4fff, reason: "cracktro" });
       assert.equal(repeat.changed, false);
-      assert.equal(listExcludedRanges(handle).length, 1);
+      assert.equal(listExcludedRanges(handle).length, 1, "no second row was inserted");
     } finally {
       closeStore(handle);
     }
   });
 });
 
-test("BUILD-07 RED: the same extent with a DIFFERENT reason is refused, and the stored reason is unchanged", () => {
+test("the same extent with a DIFFERENT reason is REFUSED by name, and the stored reason is unchanged afterwards", () => {
   inTempDir((dir) => {
     const path = join(dir, "proj.annostore");
     const handle = openStore(path, { workspaceRoot: dir });
     try {
       addExcludedRange(handle, { start: 0x4000, endInclusive: 0x4fff, reason: "cracktro" });
-      assert.throws(() => addExcludedRange(handle, { start: 0x4000, endInclusive: 0x4fff, reason: "trainer" }), AnnoRangeShapeError);
-      assert.deepEqual(listExcludedRanges(handle), [{ id: 1, start: 0x4000, endInclusive: 0x4fff, reason: "cracktro" }]);
+      assert.throws(
+        () => addExcludedRange(handle, { start: 0x4000, endInclusive: 0x4fff, reason: "trainer" }),
+        (e: unknown) => {
+          assert.ok(e instanceof AnnoRangeShapeError, `expected AnnoRangeShapeError, got ${String(e)}`);
+          // THE DISTINGUISHING SUBSTRING, present here and ABSENT from the
+          // overlap refusal's own message below -- the pair most likely to
+          // be confused, per Task 3's own instruction.
+          assert.match((e as Error).message, /DIFFERENT reason/, "names the conflict as a differing reason, not an overlap");
+          assert.doesNotMatch(
+            (e as Error).message,
+            /overlaps the existing exclusion/,
+            "a differing-reason refusal must not read like an overlap refusal",
+          );
+          return true;
+        },
+      );
+      assert.deepEqual(
+        listExcludedRanges(handle),
+        [{ id: 1, start: 0x4000, endInclusive: 0x4fff, reason: "cracktro" }],
+        "the POST-STATE: the stored reason is left exactly as it was",
+      );
     } finally {
       closeStore(handle);
     }
   });
 });
 
-test("BUILD-07 RED: an overlapping span is refused, naming both spans and the existing row's id, and nothing is inserted", () => {
+test("a span overlapping an existing record by one byte is refused, naming both spans and the existing row's id; nothing is inserted or trimmed", () => {
   inTempDir((dir) => {
     const path = join(dir, "proj.annostore");
     const handle = openStore(path, { workspaceRoot: dir });
@@ -4732,36 +4752,140 @@ test("BUILD-07 RED: an overlapping span is refused, naming both spans and the ex
       assert.throws(
         () => addExcludedRange(handle, { start: 0x4fff, endInclusive: 0x5fff, reason: "trainer" }),
         (e: unknown) => {
-          assert.ok(e instanceof AnnoRangeShapeError);
-          assert.match((e as Error).message, /id=1/);
+          assert.ok(e instanceof AnnoRangeShapeError, `expected AnnoRangeShapeError, got ${String(e)}`);
+          // BOTH SPANS, and the existing row's id -- named in the message.
+          assert.match((e as Error).message, /16383\.\.20479|4fff.*5fff|0x4fff/i, "the incoming span is named");
+          assert.match((e as Error).message, /id=1/, "the existing row's id is named");
+          // THE DISTINGUISHING SUBSTRING, present here and ABSENT from the
+          // differing-reason refusal's own message above.
+          assert.match((e as Error).message, /overlaps the existing exclusion/, "names the conflict as an overlap, not a differing reason");
+          assert.doesNotMatch((e as Error).message, /DIFFERENT reason/, "an overlap refusal must not read like a differing-reason refusal");
           return true;
         },
       );
-      assert.equal(listExcludedRanges(handle).length, 1);
+      assert.deepEqual(
+        listExcludedRanges(handle),
+        [{ id: 1, start: 0x4000, endInclusive: 0x4fff, reason: "cracktro" }],
+        "the POST-STATE: nothing was inserted and the existing row is untouched",
+      );
     } finally {
       closeStore(handle);
     }
   });
 });
 
-test("BUILD-07 RED: an empty or whitespace-only reason is refused and nothing is inserted", () => {
+test("adjacency: two exclusion records that touch at a boundary stay TWO records", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const handle = openStore(path, { workspaceRoot: dir });
+    try {
+      addExcludedRange(handle, { start: 0x1000, endInclusive: 0x10ff, reason: "first exclusion" });
+      addExcludedRange(handle, { start: 0x1100, endInclusive: 0x11ff, reason: "second exclusion" });
+      const rows = listExcludedRanges(handle);
+      const [first, second] = rows;
+      // NON-VACUITY FIRST: the two spans really are adjacent. Otherwise this
+      // test is about two ordinary disjoint records and measures nothing
+      // about adjacency.
+      assert.equal(first.endInclusive + 1, second.start, "the fixture must actually be adjacent, or this test proves nothing about adjacency");
+      assert.equal(rows.length, 2, "a touching pair stays TWO records -- never merged into one");
+      assert.equal(first.reason, "first exclusion");
+      assert.equal(second.reason, "second exclusion");
+      assert.notEqual(first.reason, second.reason, "both reasons are intact and distinct");
+    } finally {
+      closeStore(handle);
+    }
+  });
+});
+
+test("adjacency: a span starting exactly one above an existing record's end is likewise accepted, giving two records", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const handle = openStore(path, { workspaceRoot: dir });
+    try {
+      addExcludedRange(handle, { start: 0x2000, endInclusive: 0x20ff, reason: "later exclusion" });
+      addExcludedRange(handle, { start: 0x1f00, endInclusive: 0x1fff, reason: "earlier exclusion" });
+      assert.equal(listExcludedRanges(handle).length, 2, "touching from the other direction also stays two records");
+    } finally {
+      closeStore(handle);
+    }
+  });
+});
+
+test("adjacency: a one-byte overlap is refused, naming both spans", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const handle = openStore(path, { workspaceRoot: dir });
+    try {
+      addExcludedRange(handle, { start: 0x1000, endInclusive: 0x10ff, reason: "first exclusion" });
+      assert.throws(
+        () => addExcludedRange(handle, { start: 0x10ff, endInclusive: 0x11ff, reason: "second exclusion" }),
+        (e: unknown) => {
+          assert.ok(e instanceof AnnoRangeShapeError, `expected AnnoRangeShapeError, got ${String(e)}`);
+          assert.match((e as Error).message, /id=1/, "the existing row's id is named");
+          assert.match((e as Error).message, /4096\.\.4351|1000\.\.10ff/i, "the existing span is named");
+          return true;
+        },
+      );
+      assert.equal(listExcludedRanges(handle).length, 1, "still exactly one record -- the overlapping write was refused");
+    } finally {
+      closeStore(handle);
+    }
+  });
+});
+
+test("a one-byte span (start === endInclusive) is accepted", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const handle = openStore(path, { workspaceRoot: dir });
+    try {
+      const result = addExcludedRange(handle, { start: 0x8000, endInclusive: 0x8000, reason: "one poked byte" });
+      assert.equal(result.changed, true);
+      assert.deepEqual(listExcludedRanges(handle), [{ id: 1, start: 0x8000, endInclusive: 0x8000, reason: "one poked byte" }]);
+    } finally {
+      closeStore(handle);
+    }
+  });
+});
+
+test("a reason the comment-text vocabulary rejects (an embedded line break) is refused at write time and nothing is inserted", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const handle = openStore(path, { workspaceRoot: dir });
+    try {
+      // THE CANONICAL REJECTED CASE, not an arbitrary one: this is the same
+      // mechanism `assertExportableCommentText()`'s own doc-comment names --
+      // everything after the break would land in the ACME source at column
+      // zero as assembler INPUT, not as a comment. Validating at write time
+      // is what stops that shape from being persisted now and discovered at
+      // export later.
+      assert.throws(() => addExcludedRange(handle, { start: 0x4000, endInclusive: 0x4fff, reason: "line one\nline two" }), AnnoCommentError);
+      assert.deepEqual(listExcludedRanges(handle), [], "the POST-STATE: nothing was inserted");
+    } finally {
+      closeStore(handle);
+    }
+  });
+});
+
+test("an empty or whitespace-only reason is refused: a not-null column satisfied by an empty string is a hole with a row in front of it", () => {
   inTempDir((dir) => {
     const path = join(dir, "proj.annostore");
     const handle = openStore(path, { workspaceRoot: dir });
     try {
       assert.throws(() => addExcludedRange(handle, { start: 0x4000, endInclusive: 0x4fff, reason: "   " }), AnnoCommentError);
-      assert.deepEqual(listExcludedRanges(handle), []);
+      assert.deepEqual(listExcludedRanges(handle), [], "the POST-STATE: nothing was inserted");
     } finally {
       closeStore(handle);
     }
   });
 });
 
-test("BUILD-07 RED: listExcludedRanges over a store with no exclusions returns an empty array", () => {
+test("empty: a store with no exclusions lists as an empty array", () => {
   inTempDir((dir) => {
     const path = join(dir, "proj.annostore");
     const handle = openStore(path, { workspaceRoot: dir });
     try {
+      // deepEqual against a LITERAL [], not a truthiness or length check --
+      // undefined and [] must not be able to pass the same assertion.
       assert.deepEqual(listExcludedRanges(handle), []);
     } finally {
       closeStore(handle);
@@ -4769,7 +4893,7 @@ test("BUILD-07 RED: listExcludedRanges over a store with no exclusions returns a
   });
 });
 
-test("BUILD-07 RED: removeExcludedRange with an exact extent match deletes the row and reports changed:true; a non-existent extent reports changed:false", () => {
+test("removeExcludedRange with an exact extent match deletes the row and reports changed:true", () => {
   inTempDir((dir) => {
     const path = join(dir, "proj.annostore");
     const handle = openStore(path, { workspaceRoot: dir });
@@ -4778,8 +4902,96 @@ test("BUILD-07 RED: removeExcludedRange with an exact extent match deletes the r
       const removed = removeExcludedRange(handle, { start: 0x4000, endInclusive: 0x4fff });
       assert.equal(removed.changed, true);
       assert.deepEqual(listExcludedRanges(handle), []);
-      const removedAgain = removeExcludedRange(handle, { start: 0x4000, endInclusive: 0x4fff });
-      assert.equal(removedAgain.changed, false);
+    } finally {
+      closeStore(handle);
+    }
+  });
+});
+
+test("removeExcludedRange with a partial or overlapping extent is refused by name; the row survives", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const handle = openStore(path, { workspaceRoot: dir });
+    try {
+      addExcludedRange(handle, { start: 0x4000, endInclusive: 0x4fff, reason: "cracktro" });
+      assert.throws(
+        () => removeExcludedRange(handle, { start: 0x4000, endInclusive: 0x4ffe }),
+        (e: unknown) => {
+          assert.ok(e instanceof AnnoRangeShapeError, `expected AnnoRangeShapeError, got ${String(e)}`);
+          assert.match((e as Error).message, /id=1/, "names the existing row's id");
+          assert.match((e as Error).message, /never trimmed, split, or partially removed/, "states the never-trimmed clause");
+          return true;
+        },
+      );
+      assert.deepEqual(
+        listExcludedRanges(handle),
+        [{ id: 1, start: 0x4000, endInclusive: 0x4fff, reason: "cracktro" }],
+        "the POST-STATE: the row survives, unchanged",
+      );
+    } finally {
+      closeStore(handle);
+    }
+  });
+});
+
+test("removeExcludedRange for an extent that is not there reports changed:false", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const handle = openStore(path, { workspaceRoot: dir });
+    try {
+      const removed = removeExcludedRange(handle, { start: 0x9000, endInclusive: 0x9fff });
+      assert.equal(removed.changed, false);
+      assert.deepEqual(listExcludedRanges(handle), []);
+    } finally {
+      closeStore(handle);
+    }
+  });
+});
+
+test("a stale baseRevision on addExcludedRange is refused by the same mechanism every other mutating verb uses", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const handle = openStore(path, { workspaceRoot: dir });
+    try {
+      addScope(handle, { start: 0x1000, endInclusive: 0x1000 });
+      const staleBase = currentRevision(handle) - 1;
+      assert.throws(
+        () => addExcludedRange(handle, { start: 0x4000, endInclusive: 0x4fff, reason: "cracktro", baseRevision: staleBase }),
+        (e: unknown) => {
+          assert.ok(e instanceof AnnoStoreStaleRevisionError, `expected AnnoStoreStaleRevisionError, got ${String(e)}`);
+          assert.equal((e as AnnoStoreStaleRevisionError).baseRevision, staleBase);
+          assert.equal((e as AnnoStoreStaleRevisionError).currentRevision, currentRevision(handle));
+          return true;
+        },
+      );
+      assert.deepEqual(listExcludedRanges(handle), [], "the refused write inserted nothing");
+    } finally {
+      closeStore(handle);
+    }
+  });
+});
+
+test("a stale baseRevision on removeExcludedRange is refused by the same mechanism every other mutating verb uses", () => {
+  inTempDir((dir) => {
+    const path = join(dir, "proj.annostore");
+    const handle = openStore(path, { workspaceRoot: dir });
+    try {
+      addExcludedRange(handle, { start: 0x4000, endInclusive: 0x4fff, reason: "cracktro" });
+      const staleBase = currentRevision(handle) - 1;
+      assert.throws(
+        () => removeExcludedRange(handle, { start: 0x4000, endInclusive: 0x4fff, baseRevision: staleBase }),
+        (e: unknown) => {
+          assert.ok(e instanceof AnnoStoreStaleRevisionError, `expected AnnoStoreStaleRevisionError, got ${String(e)}`);
+          assert.equal((e as AnnoStoreStaleRevisionError).baseRevision, staleBase);
+          assert.equal((e as AnnoStoreStaleRevisionError).currentRevision, currentRevision(handle));
+          return true;
+        },
+      );
+      assert.deepEqual(
+        listExcludedRanges(handle),
+        [{ id: 1, start: 0x4000, endInclusive: 0x4fff, reason: "cracktro" }],
+        "the refused write removed nothing",
+      );
     } finally {
       closeStore(handle);
     }
