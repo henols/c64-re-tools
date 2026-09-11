@@ -88,6 +88,15 @@ import { assertDataTypeForExport, assertExportableCommentText, exportAsm, substi
 import { AUTO_NAME_PREFIX_RE } from "./anno-coverage.ts";
 import { applyEnumUsage, createProjectEnum, openStore, closeStore, listComments, listLabels, setComment, setDataType, setLabel } from "./anno-store.ts";
 import { AnnoCommentError, DATA_TYPES } from "./anno-types.ts";
+// D-16/D-17 (plan 45-05): the ONE owning decoder's own test-only cache reset,
+// used ONLY to construct a synthetic register table for the one collision
+// scenario the REAL committed anno-regbits.json cannot reach (see the test
+// that uses it for why -- decomposeRegisterValue()'s name<->value mapping is
+// a bijection for any one real, well-formed field, so "same name, different
+// value" can only be reproduced with a deliberately non-injective synthetic
+// token table, exactly `anno-enum-gen.test.ts`'s own sanctioned technique).
+import { __resetRegBitsCacheForTests } from "./anno-enum-gen.ts";
+import type { RegBitsTable } from "./anno-regbits-gen.ts";
 import { decode } from "./disasm-decoder.ts";
 import { OPCODES } from "./disasm-opcodes.ts";
 
@@ -2067,6 +2076,243 @@ test("an enum usage with no decoded instruction at its address is REFUSED by nam
       return true;
     },
   );
+});
+
+// ---------------------------------------------------------------------------
+// D-16/D-17 (plan 45-05): the OR-ed multi-bit decomposition. `decomposeRegisterValue()`
+// (`anno-enum-gen.ts`, plan 45-03) is the ONE owning decoder; this module never
+// decodes a bit itself -- see the header import comment and `grep -ac
+// 'field.mask'` (must stay 0). An enum usage whose NAME has the shape
+// `registerKeyFor().slice(1)` produces (four uppercase hex digits) is
+// attempted through that decoder; a register with two or more fields (D-18
+// has three) renders as OR-ed named constants PLUS a decoded comment -- both
+// halves, never either alone (D-17).
+// ---------------------------------------------------------------------------
+
+/** `lda #$04` / `sta $d018` / `rts` -- $D018 with value $04 decodes (per the
+ * real committed `anno-regbits.json`) to THREE numeric-kind terms:
+ * `SELECT_UPPER_LOWER_CHARACTER_SET` = 0, `CHARACTER_DOT_DATA_BASE_ADDRESS` =
+ * 2 (masked contribution $04), `VIDEO_MATRIX_BASE_ADDRESS` = 0. Every field is
+ * `kind: "numeric"`, so every one of the three ALWAYS emits a term regardless
+ * of whether its own decoded value is zero -- unlike a `flag` field's
+ * silent-by-design empty token. */
+const D018_BODY = [0xa9, 0x04, 0x8d, 0x18, 0xd0, 0x60] as const;
+
+const D018_SELECT = "D018_SELECT_UPPER_LOWER_CHARACTER_SET0";
+const D018_CHARDATA = "D018_CHARACTER_DOT_DATA_BASE_ADDRESS2";
+const D018_MATRIX = "D018_VIDEO_MATRIX_BASE_ADDRESS0";
+
+function d018Fixture(tag: string, extra: Partial<StoreSpec> = {}): StoreFixture {
+  return buildStore(freshDir(tag), {
+    origin: 0x0801,
+    body: D018_BODY,
+    ranges: [{ start: 0x0801, endInclusive: 0x0806, dataType: "code" }],
+    enums: [{ name: "D018", variants: {} }],
+    enumUsage: [{ address: 0x0801, name: "D018" }],
+    ...extra,
+  });
+}
+
+/** The directive half of a line -- everything before `disasm-renderer.ts`'s
+ * own `"  ; "` comment separator, the same split `substituteImmediateEnum()`
+ * confines its own search to. */
+function directiveHalf(line: string): string {
+  return line.split("  ; ")[0]!;
+}
+
+test("D-17 Test 1/2: a multi-field register write renders OR-ed term names in ascending bit order, with no `$` hex literal in the operand, plus a trailing decoded comment naming every field", { skip: SKIP_REASON }, () => {
+  const { dir, storePath, imagePath } = d018Fixture("d018-basic");
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+  const lines = result.source.split("\n");
+  const ldaLine = lines.find((l) => l.includes("lda #"));
+  assert.ok(ldaLine !== undefined, `the lda line must be present:\n${result.source}`);
+
+  const expectedOperand = `#${D018_SELECT} | ${D018_CHARDATA} | ${D018_MATRIX}`;
+  assert.ok(directiveHalf(ldaLine!).includes(expectedOperand), `the operand must be the OR-ed term names in ascending bit order:\n${ldaLine}`);
+  assert.ok(!directiveHalf(ldaLine!).includes("$"), `the operand must carry no hex literal at all:\n${ldaLine}`);
+  assert.equal(result.source.includes("lda #$04"), false, "the hex literal must be REPLACED, not merely accompanied");
+
+  assert.ok(ldaLine!.includes("  ; $D018: "), `a trailing mechanical-decode comment must be present:\n${ldaLine}`);
+  for (const fragment of ["SELECT_UPPER_LOWER_CHARACTER_SET=0", "CHARACTER_DOT_DATA_BASE_ADDRESS=2", "VIDEO_MATRIX_BASE_ADDRESS=0"]) {
+    assert.ok(ldaLine!.includes(fragment), `the comment must name every field and its decoded value (${fragment}):\n${ldaLine}`);
+  }
+
+  assert.equal(result.enumSubstitutionCount, 1);
+  assert.equal(result.enumDecompositionCount, 1);
+
+  const verdict = verifyExport(result);
+  assert.equal(verdict.outcome, "ok", `the OR-ed decomposition must round-trip byte-identically:${context(result, verdict)}`);
+  assert.equal(verdict.byteDiff?.equal, true, `the byte-diff IS D-17's proof:${context(result, verdict)}`);
+});
+
+test("D-17 Test 3: each per-field constant is defined exactly once in the header, even when two instructions write the same field value", { skip: SKIP_REASON }, () => {
+  const body = [
+    ...D018_BODY, // lda #$04 / sta $d018 / rts, $0801..$0806
+    0xa9, 0x04, // a SECOND lda #$04 at $0807..$0808
+    0x8d, 0x18, 0xd0, // sta $d018 at $0809..$080b
+    0x60, // rts at $080c
+  ];
+  const { dir, storePath, imagePath } = buildStore(freshDir("d018-repeat"), {
+    origin: 0x0801,
+    body,
+    ranges: [{ start: 0x0801, endInclusive: 0x080c, dataType: "code" }],
+    enums: [{ name: "D018", variants: {} }],
+    enumUsage: [
+      { address: 0x0801, name: "D018" },
+      { address: 0x0807, name: "D018" },
+    ],
+  });
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+
+  assert.equal(result.enumSubstitutionCount, 2, "both instructions substituted");
+  assert.equal(result.enumDecompositionCount, 2, "both instructions decomposed");
+
+  for (const term of [D018_SELECT, D018_CHARDATA, D018_MATRIX]) {
+    const occurrences = result.source.split("\n").filter((l) => l.startsWith(`${term} = `));
+    assert.equal(occurrences.length, 1, `${term} must be defined EXACTLY ONCE, not once per instruction that used it:\n${result.source}`);
+  }
+
+  const verdict = verifyExport(result);
+  assert.equal(verdict.outcome, "ok", `two identical decomposed writes must still round-trip:${context(result, verdict)}`);
+  assert.equal(verdict.byteDiff?.equal, true);
+});
+
+test("D-16 Test 4: a SINGLE-field register still renders the existing single `<enum>_<VARIANT>` symbol -- the old path is not replaced", { skip: SKIP_REASON }, () => {
+  // $DC00 ("Data Port A") has exactly ONE field spanning the whole byte in the
+  // real committed anno-regbits.json -- `decomposeRegisterValue(0xdc00,
+  // ...).multiField === false`. The old path uses the STORE's own
+  // hand-authored variant name ("ALLOW_ALL"), never
+  // `decomposeRegisterValue()`'s own field-token naming -- proof the two
+  // paths are genuinely different code, not the same rendering under two
+  // names.
+  const { dir, storePath, imagePath } = buildStore(freshDir("dc00-single-field"), {
+    origin: 0x0801,
+    body: [0xa9, 0x00, 0x8d, 0x00, 0xdc, 0x60], // lda #$00 / sta $dc00 / rts
+    ranges: [{ start: 0x0801, endInclusive: 0x0806, dataType: "code" }],
+    enums: [{ name: "DC00", variants: { $00: "ALLOW_ALL" } }],
+    enumUsage: [{ address: 0x0801, name: "DC00" }],
+  });
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+  const lines = result.source.split("\n");
+
+  assert.ok(lines.some((l) => directiveHalf(l).includes("lda #DC00_ALLOW_ALL")), `the OLD single-symbol path must still fire:\n${result.source}`);
+  assert.equal(definitionOf(lines, "DC00_ALLOW_ALL"), "DC00_ALLOW_ALL = $00");
+  assert.equal(result.enumSubstitutionCount, 1);
+  assert.equal(result.enumDecompositionCount, 0, "a single-field register is not a decomposition, however register-shaped its name is");
+
+  const verdict = verifyExport(result);
+  assert.equal(verdict.outcome, "ok", `the single-field old path must still round-trip:${context(result, verdict)}`);
+  assert.equal(verdict.byteDiff?.equal, true);
+});
+
+test("D-17 Test 5: an authored side comment at the decomposed instruction renders FIRST, then the mechanical decode after a ` -- ` separator -- neither is dropped", { skip: SKIP_REASON }, () => {
+  const { dir, storePath, imagePath } = d018Fixture("d018-authored-comment", {
+    comments: [{ address: 0x0801, commentType: "side", text: "set 40-col screen at $0400" }],
+  });
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+  const lines = result.source.split("\n");
+  const ldaLine = lines.find((l) => l.includes("lda #"));
+  assert.ok(ldaLine !== undefined, `the lda line must be present:\n${result.source}`);
+
+  const authoredAt = ldaLine!.indexOf("set 40-col screen at $0400");
+  const mechanicalAt = ldaLine!.indexOf("$D018: SELECT_UPPER_LOWER_CHARACTER_SET=0");
+  assert.ok(authoredAt >= 0, `the authored comment must survive:\n${ldaLine}`);
+  assert.ok(mechanicalAt >= 0, `the mechanical decode must survive:\n${ldaLine}`);
+  assert.ok(authoredAt < mechanicalAt, `the authored comment renders FIRST:\n${ldaLine}`);
+  assert.ok(
+    ldaLine!.includes("set 40-col screen at $0400 -- $D018:"),
+    `the two are joined by a \` -- \` separator on the SAME trailing comment:\n${ldaLine}`,
+  );
+
+  const verdict = verifyExport(result);
+  assert.equal(verdict.outcome, "ok", `a merged authored+mechanical comment must not change a byte:${context(result, verdict)}`);
+  assert.equal(verdict.byteDiff?.equal, true);
+});
+
+test("D-17 Test 6: a decomposition that would define one term name with two different values is REFUSED, naming the symbol and both values", () => {
+  // The REAL committed $D011/$D018 tables cannot reach this: for any single
+  // real field, decomposeRegisterValue()'s name<->value mapping is a
+  // bijection (the name embeds the decoded number, or is a table lookup this
+  // project's own exhaustive test proves injective across all 256 values --
+  // see 45-03-SUMMARY.md). Reaching a genuine "same name, different value"
+  // collision therefore needs a deliberately non-injective synthetic table --
+  // the SAME sanctioned technique `anno-enum-gen.test.ts` uses for its own
+  // synthetic-register tests.
+  const synthetic: RegBitsTable = {
+    $E000: {
+      label: "synthetic ambiguous-token register (test-only, plan 45-05)",
+      fields: [
+        { mask: 0x01, shift: 0, name: "FLAG", kind: "flag", tokens: { 0: "SAME", 1: "SAME" } },
+        { mask: 0x02, shift: 1, name: "OTHER", kind: "flag", tokens: { 0: "", 1: "OTHER" } },
+      ],
+    },
+  };
+  __resetRegBitsCacheForTests(synthetic);
+  try {
+    const { dir, storePath, imagePath } = buildStore(freshDir("e000-collision"), {
+      origin: 0x0801,
+      body: [
+        0xa9, 0x00, // lda #$00 @ $0801
+        0x8d, 0x20, 0xd0, // sta $d020 @ $0803 (arbitrary; the usage binds to the LOAD)
+        0xa9, 0x01, // lda #$01 @ $0806
+        0x8d, 0x21, 0xd0, // sta $d021 @ $0808
+        0x60, // rts @ $080b
+      ],
+      ranges: [{ start: 0x0801, endInclusive: 0x080b, dataType: "code" }],
+      enums: [{ name: "E000", variants: {} }],
+      enumUsage: [
+        { address: 0x0801, name: "E000" },
+        { address: 0x0806, name: "E000" },
+      ],
+    });
+
+    assert.throws(
+      () => exportAsm({ storePath, imagePath, workspaceRoot: dir }),
+      (e: unknown) => {
+        assert.ok(e instanceof Error);
+        assert.match(e.message, /^exportAsm: /);
+        assert.ok(e.message.includes("E000_SAME"), `the refusal names the colliding SYMBOL: ${e.message}`);
+        assert.ok(e.message.includes("$00") && e.message.includes("$01"), `the refusal names BOTH conflicting values: ${e.message}`);
+        return true;
+      },
+    );
+  } finally {
+    __resetRegBitsCacheForTests(undefined);
+  }
+});
+
+test("D-17 Test 7: `enumSubstitutionCount` and `enumDecompositionCount` are two separately-reported numbers, never combined", { skip: SKIP_REASON }, () => {
+  const { dir, storePath, imagePath } = buildStore(freshDir("mixed-counts"), {
+    origin: 0x0801,
+    body: [
+      ...D018_BODY, // decomposed write, $0801..$0806
+      0xa9, 0x00, // lda #$00 @ $0807 -- the OLD single-symbol enum path
+      0x8d, 0x20, 0xd0, // sta $d020 @ $0809
+      0x60, // rts @ $080c
+    ],
+    ranges: [{ start: 0x0801, endInclusive: 0x080c, dataType: "code" }],
+    enums: [
+      { name: "D018", variants: {} },
+      { name: "viccolor", variants: { $00: "BLACK" } },
+    ],
+    enumUsage: [
+      { address: 0x0801, name: "D018" },
+      { address: 0x0807, name: "viccolor" },
+    ],
+  });
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+
+  assert.equal(result.enumSubstitutionCount, 2, "both usages substituted -- decomposed and single-symbol alike");
+  assert.equal(result.enumDecompositionCount, 1, "only the D018 write is a decomposition");
+  assert.notEqual(
+    result.enumSubstitutionCount,
+    result.enumDecompositionCount,
+    "the two figures disagree here on purpose -- proof neither is computed as a copy of the other",
+  );
+
+  const verdict = verifyExport(result);
+  assert.equal(verdict.outcome, "ok", `a store mixing both enum paths must still round-trip:${context(result, verdict)}`);
+  assert.equal(verdict.byteDiff?.equal, true);
 });
 
 test("a store with no enums reports `enumSubstitutionCount` zero and `autoNamedSymbolCount` zero -- neither counter is a constant", () => {

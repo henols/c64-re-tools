@@ -113,6 +113,13 @@ import { assertLegalAcmeIdentifier } from "./anno-acme-ident.ts";
 // `anno-types.ts:93-99` forbids it by name, and `EXPORT-02` names the failure
 // mode: a five-prefix copy under-counts silently.
 import { AUTO_NAME_PREFIX_RE } from "./anno-coverage.ts";
+// THE ONE OWNING DECODER (D-16, plan 45-03). This module decodes NOTHING
+// itself -- `decomposeRegisterValue()` is the ONLY place a register value is
+// split into named bit-fields, and `anno_disassemble` (plan 45-05, the other
+// D-16 renderer) calls the SAME function. Never re-derive a per-field bit
+// mask in this file -- a phase-45 verification gate greps this file's own
+// text for that shape and must find none.
+import { decomposeRegisterValue, type RegisterDecomposition } from "./anno-enum-gen.ts";
 import { decode } from "./disasm-decoder.ts";
 import { renderLine } from "./disasm-renderer.ts";
 import { parsePrg, flatImageOrigin } from "./prg-image.ts";
@@ -233,8 +240,17 @@ export interface ExportAsmResult {
   autoNamedSymbolCount: number;
   /** How many instruction operands were rendered through a project enum's
    * variant name instead of a hex literal. Every one of them is an IMMEDIATE
-   * operand; any other operand role is refused. */
+   * operand; any other operand role is refused. INCLUDES decomposed writes
+   * (`enumDecompositionCount` below is a SUBSET of this, never added to it --
+   * two named figures, never one combined figure). */
   enumSubstitutionCount: number;
+  /** How many of `enumSubstitutionCount`'s substitutions were rendered as an
+   * OR-ed multi-bit decomposition (D-16/D-17) rather than a single whole-value
+   * variant name -- one register key `regbits` entry with two or more
+   * fields, decoded through `decomposeRegisterValue()`. A single-field
+   * register, or an enum usage whose name is not a register key at all,
+   * counts toward `enumSubstitutionCount` only, never here. */
+  enumDecompositionCount: number;
 }
 
 /** How many raw bytes go on one `!byte` line for a non-code block. */
@@ -536,6 +552,21 @@ const ALIAS_MARKER_PREFIX = "  ; ALIAS: this address also carries ";
 const MAX_IMMEDIATE_VARIANT_VALUE = 0xff;
 
 /**
+ * The SHAPE `registerKeyFor(address).slice(1)` always produces (uppercase,
+ * exactly four hex digits) -- the SAME string `planEnumsForPairing()` uses as
+ * a project enum's own `enumName` (`anno-enum-gen.ts`, D-15). An enum usage
+ * whose `enumName` matches this shape is ATTEMPTED through
+ * `decomposeRegisterValue()`; one that does not (a hand-authored name like
+ * `viccolor`) is never attempted -- this module holds no second table of
+ * which arbitrary names are "really" registers, and guessing would be exactly
+ * the kind of plausible-looking wrong answer this file refuses everywhere
+ * else. Lowercase is deliberately excluded: every writer of this convention
+ * (`registerKeyFor()`) emits uppercase, and matching lowercase too would
+ * accept a shape nothing in this codebase produces.
+ */
+const REGISTER_ENUM_NAME_RE = /^[0-9A-F]{4}$/;
+
+/**
  * Replaces the `#$XX` immediate literal `renderLine()` produced with `#symbol`.
  *
  * WHY A TARGETED TEXT SUBSTITUTION RATHER THAN A `RenderOptions` WIDENING.
@@ -714,10 +745,22 @@ interface CommentPlacement {
  * GATED ON AMBIGUITY, not applied always: prefixing every code-path comment
  * with an address it already sits next to is noise, and it would rewrite every
  * existing expected line in the test suite for nothing.
+ *
+ * `generatedSuffix` (D-17, plan 45-05) is this module's OWN mechanical text --
+ * today, only `decomposeRegisterValue()`'s decoded-field comment for an OR-ed
+ * multi-bit enum substitution -- never a second stored comment. It is NEVER
+ * DROPPED and NEVER REORDERED BEHIND authored text: when a stored SIDE
+ * comment exists at the same address, the authored text renders FIRST and
+ * `generatedSuffix` follows a ` -- ` separator on the SAME trailing comment;
+ * when none exists, `generatedSuffix` is appended alone. Only the FIRST side
+ * comment found absorbs it -- a second one at the same address (a supported
+ * but rare store state) still renders, just without the merge, so the
+ * generated text is never silently duplicated across two lines.
  */
-function withComments(text: string, start: number, endExclusive: number, ctx: CommentPlacement): string[] {
+function withComments(text: string, start: number, endExclusive: number, ctx: CommentPlacement, generatedSuffix?: string): string[] {
   const before: string[] = [];
   let line = text;
+  let generatedMerged = false;
 
   // One emitted line covering more than one address cannot say WHICH address a
   // comment belongs to unless the comment says so itself.
@@ -731,7 +774,12 @@ function withComments(text: string, start: number, endExclusive: number, ctx: Co
       if (row.commentType === LINE_COMMENT) {
         before.push(`${INDENT}; ${safe}`);
       } else if (row.commentType === SIDE_COMMENT) {
-        line = `${line}  ; ${safe}`;
+        if (generatedSuffix !== undefined && !generatedMerged) {
+          line = `${line}  ; ${safe} -- ${generatedSuffix}`;
+          generatedMerged = true;
+        } else {
+          line = `${line}  ; ${safe}`;
+        }
       } else {
         // Unreachable through the type, and reachable through a store file
         // somebody edited. Refusing beats guessing which of the two placements
@@ -742,6 +790,10 @@ function withComments(text: string, start: number, endExclusive: number, ctx: Co
         );
       }
     }
+  }
+
+  if (generatedSuffix !== undefined && !generatedMerged) {
+    line = `${line}  ; ${generatedSuffix}`;
   }
 
   return [...before, line];
@@ -918,10 +970,17 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
   /** `<enumName>_<VARIANT> = $XX` definition lines, in first-emitted order.
    * They join the header block for the same reason label definitions do. */
   const enumDefinitionLines: string[] = [];
-  const definedEnumSymbols = new Set<string>();
+  /** Every emitted enum-derived symbol name (single-value or OR-ed term) to
+   * the ONE value it was defined with. A Map, not a Set (D-17, plan 45-05):
+   * a term name defined by one instruction with one value and referenced by a
+   * SECOND instruction with a DIFFERENT value is a genuine collision in
+   * ACME's one symbol namespace, and the value is what makes that collision
+   * detectable rather than merely a duplicate-looking string. */
+  const definedEnumSymbols = new Map<string, number>();
 
   let unexpressibleCount = 0;
   let dataByteCount = 0;
+  let enumDecompositionCount = 0;
 
   // AUTO-GENERATED NAMES ARE MARKED, not filtered. Every store label reaches
   // the source either way; the marker is the backlog signal, carried into the
@@ -1062,6 +1121,11 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
         }
 
         let rendered = renderLine(instr, { showSymbols: true, symbolFor });
+        // The mechanical decode text (D-17), set only by the OR-ed
+        // decomposition branch below and merged into this instruction's
+        // trailing comment by `withComments()` after the enum-substitution
+        // block finishes.
+        let decompositionComment: string | undefined;
 
         // ENUM SUBSTITUTION, IMMEDIATE OPERAND ONLY.
         const usage = usageByAddress.get(instr.address);
@@ -1126,81 +1190,155 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
             );
           }
 
-          // EVERY variant of the enum is checked, not only the one this operand
-          // matched. An enum carrying a variant above $ff is not a BYTE
-          // vocabulary, and binding it to a byte operand is a modelling error
-          // whose only symptom would otherwise be a variant that silently never
-          // renders. Refusing here names the enum and the variant; ACME's own
-          // refusal for the same shape is `Number does not fit in 8 bits.` at
-          // exit 1, and names a line in a temp file instead.
-          let matched: string | undefined;
-          for (const [key, variantName] of Object.entries(project.variants)) {
-            const value = parseVariantKey(key);
-            if (value > MAX_IMMEDIATE_VARIANT_VALUE) {
+          // D-16 (plan 45-05): THE ONE OWNING DECODER. Attempted ONLY when
+          // `usage.enumName` has the exact shape `registerKeyFor().slice(1)`
+          // produces -- see `REGISTER_ENUM_NAME_RE`'s own comment for why a
+          // name that does not have this shape (e.g. `viccolor`) is never
+          // attempted at all. A throw here is NEVER swallowed to fall back to
+          // the hex literal while still counting a substitution that did not
+          // happen (T-45-21) -- it propagates with the usage address
+          // prepended, so the store row that caused it is always nameable.
+          let decomposition: RegisterDecomposition | undefined;
+          if (REGISTER_ENUM_NAME_RE.test(usage.enumName)) {
+            try {
+              decomposition = decomposeRegisterValue(parseInt(usage.enumName, 16), instr.operand!.value);
+            } catch (err) {
               throw new Error(
-                `exportAsm: enum ${JSON.stringify(usage.enumName)} is bound to the immediate operand at ${hex4(usage.address)}, but its ` +
-                  `variant ${JSON.stringify(variantName)} has the value ${value}, above ` +
-                  `${MAX_IMMEDIATE_VARIANT_VALUE} -- an immediate operand is ONE byte, so this enum is not a byte vocabulary. ` +
-                  `Real ACME refuses the same shape with "Number does not fit in 8 bits." and exit 1; this refusal happens first so it ` +
-                  `can name the enum and the variant rather than a temp-file line number.`,
+                `exportAsm: decomposing the enum usage at ${hex4(usage.address)} (enum ${JSON.stringify(usage.enumName)}, value ` +
+                  `${hex2(instr.operand!.value)}) against its bit-name table failed: ${err instanceof Error ? err.message : String(err)}`,
               );
             }
-            if (value === instr.operand!.value) matched = variantName;
           }
 
-          if (matched === undefined) {
-            throw new Error(
-              `exportAsm: enum ${JSON.stringify(usage.enumName)} is bound to the immediate operand at ${hex4(usage.address)}, whose ` +
-                `value is ${hex2(instr.operand!.value)}, and the enum has no variant for that value. Refusing to emit the hex literal ` +
-                `while reporting an enum substitution that did not happen.`,
-            );
-          }
+          if (decomposition !== undefined && decomposition.multiField) {
+            // D-17: OR-ED NAMED CONSTANTS AND THE DECODED COMMENT -- BOTH,
+            // never either alone. A bare hex constant with a comment still
+            // "emits one hex constant"; bare constants with no comment are
+            // not readable.
+            for (const term of decomposition.terms) {
+              const existingValue = definedEnumSymbols.get(term.name);
+              if (existingValue !== undefined) {
+                if (existingValue !== term.value) {
+                  // ACME has ONE symbol namespace: two register writes that
+                  // decode the SAME field name to TWO different values cannot
+                  // both be `<name> = $XX`. Refusing names the symbol and
+                  // BOTH values, so the conflicting rows are findable.
+                  throw new Error(
+                    `exportAsm: the enum term symbol ${JSON.stringify(term.name)} (enum ${JSON.stringify(usage.enumName)}, field ` +
+                      `${JSON.stringify(term.fieldName)}, bound at ${hex4(usage.address)}) would be defined as ${hex2(term.value)} here, ` +
+                      `but was already defined as ${hex2(existingValue)} by an earlier instruction in this export. ACME has one symbol ` +
+                      `namespace, so one name cannot carry two values. REFUSED -- reconcile the two register writes or bind them to ` +
+                      `distinct enum names.`,
+                  );
+                }
+                // Same name, same value, already defined by an earlier
+                // instruction -- no second definition line (30-REVIEW WR-10's
+                // own "only what the source references" discipline, extended
+                // to terms).
+              } else {
+                // THE SAME LABEL COLLISION CHECK 30-REVIEW WR-10 ADDED FOR A
+                // SINGLE ENUM SYMBOL, EXTENDED HERE -- not a second check.
+                if (labelSymbolNames.has(term.name)) {
+                  throw new Error(
+                    `exportAsm: the enum term symbol ${JSON.stringify(term.name)} (enum ${JSON.stringify(usage.enumName)}, field ` +
+                      `${JSON.stringify(term.fieldName)}, bound at ${hex4(usage.address)}) is ALSO the name of a store label. ACME has ` +
+                      `one symbol namespace, so emitting both definitions is \`Symbol already defined.\` and exit 1 -- and this verb ` +
+                      `assembles nothing, so without this refusal the export would exit 0 here and fail wherever you assembled it. ` +
+                      `REFUSED -- rename the label or the enum term.`,
+                  );
+                }
+                definedEnumSymbols.set(term.name, term.value);
+                enumDefinitionLines.push(formatSymbolDefinition(term.name, term.value));
+              }
+            }
 
-          const symbol = `${usage.enumName}_${matched}`;
-          // REJECT, never sanitise -- the same contract every other name this
-          // module emits passes through, applied to the COMPOSED name because
-          // that is what actually reaches the ACME source.
-          assertLegalAcmeIdentifier(symbol, `exportAsm: enum variant symbol for ${hex4(usage.address)}`);
+            const orExpression = decomposition.terms.map((term) => term.name).join(" | ");
+            rendered = substituteImmediateEnum(rendered, instr.operand!.value, orExpression, instr.address);
+            appliedEnumUsage.add(usage.id);
+            enumDecompositionCount++;
+            decompositionComment = decomposition.comment;
+          } else {
+            // THE EXISTING SINGLE-SYMBOL PATH (D-16: unchanged, not
+            // replaced) -- a single-field register, or an enum usage whose
+            // name is not register-shaped at all.
+            //
+            // EVERY variant of the enum is checked, not only the one this
+            // operand matched. An enum carrying a variant above $ff is not a
+            // BYTE vocabulary, and binding it to a byte operand is a
+            // modelling error whose only symptom would otherwise be a
+            // variant that silently never renders. Refusing here names the
+            // enum and the variant; ACME's own refusal for the same shape is
+            // `Number does not fit in 8 bits.` at exit 1, and names a line in
+            // a temp file instead.
+            let matched: string | undefined;
+            for (const [key, variantName] of Object.entries(project.variants)) {
+              const value = parseVariantKey(key);
+              if (value > MAX_IMMEDIATE_VARIANT_VALUE) {
+                throw new Error(
+                  `exportAsm: enum ${JSON.stringify(usage.enumName)} is bound to the immediate operand at ${hex4(usage.address)}, but its ` +
+                    `variant ${JSON.stringify(variantName)} has the value ${value}, above ` +
+                    `${MAX_IMMEDIATE_VARIANT_VALUE} -- an immediate operand is ONE byte, so this enum is not a byte vocabulary. ` +
+                    `Real ACME refuses the same shape with "Number does not fit in 8 bits." and exit 1; this refusal happens first so it ` +
+                    `can name the enum and the variant rather than a temp-file line number.`,
+                );
+              }
+              if (value === instr.operand!.value) matched = variantName;
+            }
 
-          // THE COLLISION THE COMMENT BELOW NAMES IS NOW CHECKED FOR
-          // (30-REVIEW WR-10, fixed 2026-08-31). That comment identified the
-          // hazard exactly -- "every extra emitted symbol is one more chance to
-          // collide with a label name and turn a correct export into ACME's
-          // `Symbol already defined.`" -- and then did not look.
-          // `definedEnumSymbols` dedupes enum symbols against EACH OTHER but
-          // never against the store's labels.
-          //
-          // Since the `anno export-asm` CLI verb runs no assembler, the
-          // collision produced a file that exited 0 here and failed wherever
-          // the user actually assembled it, with no pointer back to the store
-          // row that caused it. Refusing here names BOTH the enum and the
-          // label, which is what makes it fixable.
-          //
-          // Checked against `labelSymbolNames` -- every store label's name,
-          // whether it ends up defined in the header or inline -- because ACME
-          // has ONE symbol namespace and an inline `=*+$NN` definition
-          // collides exactly as a header one does.
-          if (labelSymbolNames.has(symbol)) {
-            throw new Error(
-              `exportAsm: the enum variant symbol ${JSON.stringify(symbol)} (enum ${JSON.stringify(usage.enumName)}, variant ` +
-                `${JSON.stringify(matched)}, bound at ${hex4(usage.address)}) is ALSO the name of a store label. ACME has one symbol ` +
-                `namespace, so emitting both definitions is \`Symbol already defined.\` and exit 1 -- and this verb assembles ` +
-                `nothing, so without this refusal the export would exit 0 here and fail wherever you assembled it, with no pointer ` +
-                `back to the rows that caused it. REFUSED -- rename the label or the enum variant.`,
-            );
-          }
+            if (matched === undefined) {
+              throw new Error(
+                `exportAsm: enum ${JSON.stringify(usage.enumName)} is bound to the immediate operand at ${hex4(usage.address)}, whose ` +
+                  `value is ${hex2(instr.operand!.value)}, and the enum has no variant for that value. Refusing to emit the hex literal ` +
+                  `while reporting an enum substitution that did not happen.`,
+              );
+            }
 
-          // ONLY THE MATCHED VARIANT IS DEFINED, not the whole vocabulary. A
-          // definition the source never references is clutter a human reader
-          // has to discount, and every extra emitted symbol is one more chance
-          // to collide with a label name and turn a correct export into ACME's
-          // `Symbol already defined.`
-          if (!definedEnumSymbols.has(symbol)) {
-            definedEnumSymbols.add(symbol);
-            enumDefinitionLines.push(formatSymbolDefinition(symbol, instr.operand!.value));
+            const symbol = `${usage.enumName}_${matched}`;
+            // REJECT, never sanitise -- the same contract every other name this
+            // module emits passes through, applied to the COMPOSED name because
+            // that is what actually reaches the ACME source.
+            assertLegalAcmeIdentifier(symbol, `exportAsm: enum variant symbol for ${hex4(usage.address)}`);
+
+            // THE COLLISION THE COMMENT BELOW NAMES IS NOW CHECKED FOR
+            // (30-REVIEW WR-10, fixed 2026-08-31). That comment identified the
+            // hazard exactly -- "every extra emitted symbol is one more chance to
+            // collide with a label name and turn a correct export into ACME's
+            // `Symbol already defined.`" -- and then did not look.
+            // `definedEnumSymbols` dedupes enum symbols against EACH OTHER but
+            // never against the store's labels.
+            //
+            // Since the `anno export-asm` CLI verb runs no assembler, the
+            // collision produced a file that exited 0 here and failed wherever
+            // the user actually assembled it, with no pointer back to the store
+            // row that caused it. Refusing here names BOTH the enum and the
+            // label, which is what makes it fixable.
+            //
+            // Checked against `labelSymbolNames` -- every store label's name,
+            // whether it ends up defined in the header or inline -- because ACME
+            // has ONE symbol namespace and an inline `=*+$NN` definition
+            // collides exactly as a header one does.
+            if (labelSymbolNames.has(symbol)) {
+              throw new Error(
+                `exportAsm: the enum variant symbol ${JSON.stringify(symbol)} (enum ${JSON.stringify(usage.enumName)}, variant ` +
+                  `${JSON.stringify(matched)}, bound at ${hex4(usage.address)}) is ALSO the name of a store label. ACME has one symbol ` +
+                  `namespace, so emitting both definitions is \`Symbol already defined.\` and exit 1 -- and this verb assembles ` +
+                  `nothing, so without this refusal the export would exit 0 here and fail wherever you assembled it, with no pointer ` +
+                  `back to the rows that caused it. REFUSED -- rename the label or the enum variant.`,
+              );
+            }
+
+            // ONLY THE MATCHED VARIANT IS DEFINED, not the whole vocabulary. A
+            // definition the source never references is clutter a human reader
+            // has to discount, and every extra emitted symbol is one more chance
+            // to collide with a label name and turn a correct export into ACME's
+            // `Symbol already defined.`
+            if (!definedEnumSymbols.has(symbol)) {
+              definedEnumSymbols.set(symbol, instr.operand!.value);
+              enumDefinitionLines.push(formatSymbolDefinition(symbol, instr.operand!.value));
+            }
+            rendered = substituteImmediateEnum(rendered, instr.operand!.value, symbol, instr.address);
+            appliedEnumUsage.add(usage.id);
           }
-          rendered = substituteImmediateEnum(rendered, instr.operand!.value, symbol, instr.address);
-          appliedEnumUsage.add(usage.id);
         }
 
         // The span is the instruction's FIRST address only, not its whole
@@ -1208,7 +1346,7 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
         // emitted line, and attaching it to the instruction that happens to
         // contain that byte would move a human's note onto a different address
         // than the one they chose. It stays unplaced and is refused below.
-        const emitted = withComments(rendered, instr.address, instr.address + 1, placement);
+        const emitted = withComments(rendered, instr.address, instr.address + 1, placement, decompositionComment);
         content.push(...emitted);
         block.lineCount += emitted.length;
       }
@@ -1306,5 +1444,6 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
     midInstructionLabelCount,
     autoNamedSymbolCount,
     enumSubstitutionCount: appliedEnumUsage.size,
+    enumDecompositionCount,
   };
 }
