@@ -64,5 +64,5 @@ suppressing it would lose the finding that stopped it being deleted.
 # Watch out for
 
 Do not seed the registry from `tools-manifest.json` — it describes a surface that is not
-advertised (see [[tools-manifest-drift]] and [[mcp-tool-redundancy-census]]). Seed it from the
+advertised (see [[mcp-tool-redundancy-census]]). Seed it from the
 live advertised list.

@@ -12,29 +12,70 @@ agent has fewer ways to pick the same operation?
 
 Everything below is a grep/count over the tree at 2026-09-11, except where marked REASONED.
 
-## The live surface is 72 tools, and `tools-manifest.json` does not describe it
+## The live surface is 72 tools ON STOCK, and both manifests are correct
 
-- **Live advertised**: 46 `vice_*` + 26 `anno_*` = **72**.
-- **`tools-manifest.json`**: 62 entries, of which 4 are protocol entries (`initialize`,
-  `notifications_initialized`, `tools_call`, `tools_list`) already owned by `vice.ts`'s
-  `DENY_LIST`.
+- **Live advertised (stock backend, this session)**: 46 `vice_*` + 26 `anno_*` = **72**.
+- `tools-manifest.stock.json` holds **46** tool entries. All 46 are live. The only live `vice_*`
+  tool absent from it is `vice_result_continue`, registered proxy-locally at
+  `vice-proxy.ts:3403` and never served via a manifest. **Zero drift.**
+- `tools-manifest.json` holds **62** and describes the **fork**, which is a different surface by
+  design (D-07 per-backend trimming).
 
-It is stale in BOTH directions:
+The two files have opposite natures, and this is the load-bearing distinction:
 
-- **Lists but not advertised**: `vice_checkpoint_group_add` / `_create` / `_list` / `_toggle`,
-  `vice_memory_fill`, `vice_sid_set_state`, `vice_sid_get_state`, `vice_cia_set_state`,
-  `vice_vicii_set_state`, `vice_sprite_set`, `vice_display_screenshot`,
-  `vice_display_get_dimensions`, `vice_disk_detach`, `vice_disk_read_sector`,
-  `vice_keyboard_chord` / `_key_press` / `_key_release` / `_matrix` / `_restore`,
-  `vice_joystick_tap`, `vice_machine_config_get` / `_set`, `vice_checkpoint_set_ignore_count`.
-- **Advertised but absent**: the whole `anno_*` family (26), plus every derived tool
-  (`vice_diagnose`, `vice_recycle`, `vice_memmap_show`, `vice_memmap_zap`, `vice_cpu_history`,
-  `vice_profile_flat`, `vice_backtrace`, `vice_io_registers`, `vice_device_console`,
-  `vice_warp_set`, `vice_registers_available`, `vice_result_continue`,
-  `vice_execution_until_return`).
+**`tools-manifest.stock.json` is hand-authored source and CANNOT drift.** `refresh-manifest.ts`
+carries an assertion refusing to ever write it: *"this function regenerates the manifest from a
+LIVE fork host's tools/list, so its output path must NEVER be tools-manifest.stock.json -- that
+file is the hand-authored, separately committed stock surface (D-07/D-09) … a future `--stock`
+flag pointing this generator at the stock file has to edit this line deliberately, not merely
+change a default."* It is pinned to the dispatch table mechanically —
+`stock-dispatch.test.ts:3042` asserts *"every tool in tools-manifest.stock.json must have exactly
+one conformanceTest() case, and vice versa"*, alongside tests that no `DENY_LIST` name, no
+decision-trimmed tool and no curated `anno_*` name appears in it.
 
-Consequence: any redundancy analysis that starts from `tools-manifest.json` analyses a surface
-that is not the one an agent sees. Start from the advertised list.
+**`tools-manifest.json` is a snapshot of an EXTERNAL fork's live `tools/list`.** `refresh-manifest.ts`
+is its only writer and needs a running custom-fork host. The fork (`barryw/vice-mcp`) is not this
+project's repo, so its tool list cannot be derived from this tree — snapshotting is the only
+route, and hand-authoring 62 schemas the project does not own would be worse.
+
+The residual weakness is inherent, not a defect to fix: the fork manifest is the one committed
+artifact whose content depends on whichever fork build the operator had running, and nothing
+verifies it — nothing offline *can*. Contrast `resources-sync.test.ts`, which fails CI on drift
+for the compiled `.mjs`. This disappears with the fork rather than being repairable.
+
+## WITHDRAWN: the "manifest drift" claim
+
+An earlier pass of this note asserted `tools-manifest.json` was "stale in both directions" —
+listing ~22 tools that are not advertised and omitting the whole `anno_*` family plus every
+derived tool. **That was an error of baseline, and it is retracted.**
+
+The fork manifest was being compared against a **stock** session's advertised list. Those are
+*supposed* to differ:
+
+- The ~22 "listed but not advertised" tools (`vice_sid_get_state`, the `vice_checkpoint_group_*`
+  family, `vice_memory_fill`, the `vice_keyboard_*` matrix family, `vice_display_*`, …) are the
+  fork's real tools. They are advertised when running on the fork, and trimmed on stock. That is
+  D-07 working.
+- The `anno_*` and derived-tool omissions are correct **and mechanically enforced**:
+  `stock-dispatch.test.ts:1671` asserts every curated `anno_*` name is absent from BOTH manifests,
+  and `:215` asserts proxy-local tool names are absent from the fork manifest.
+
+**There is no manifest drift.** Any later work must not re-derive this false finding; the todo
+that carried it was deleted rather than corrected.
+
+## One real defect found while checking the above
+
+`capability-registry.ts`'s header says `vice_diagnose` and `vice_recycle` are *"never listed in
+either raw manifest JSON file."* Both ARE in `tools-manifest.stock.json`. MEASURED:
+
+    vice_diagnose         fork: no    stock: YES
+    vice_recycle          fork: no    stock: YES
+    vice_result_continue  fork: no    stock: no
+
+The paragraph's argument survives — both tools are synthetic and proxy-local, and a naive
+set-difference does misclassify them — but the supporting detail went stale when the stock
+manifest was authored. `vice_result_continue` is the tool actually in neither. Captured as
+`.planning/todos/pending/capability-registry-manifest-claim-stale.md`.
 
 ## 16 of 72 live tools are named in no shipped skill — from THREE different causes
 
@@ -124,5 +165,5 @@ question-to-call mapping and is the right idea. Its four limits are structural, 
 `capability-registry.ts` answers **"which backend has this."** Nothing in the tree answers
 **"which of these two should I pick."** That missing seam is the finding.
 
-See [[tool-selection-registry]] (seed), [[tools-manifest-drift]] (todo), and the domination
+See [[tool-selection-registry]] (seed), [[capability-registry-manifest-claim-stale]] (todo), and the domination
 question appended to `.planning/research/questions.md`.

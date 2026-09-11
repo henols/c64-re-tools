@@ -38,5 +38,10 @@ caller cost the other four do not.
    unchanged from v0.1.x"*? Does removing a stock-only tool touch that promise at all, or does
    the constraint bind only tools advertised on both?
 
-**Note on the evidence base:** do not seed this from `tools-manifest.json`. It does not describe
-the advertised surface in either direction — see `.planning/todos/pending/tools-manifest-drift.md`.
+**Note on the evidence base:** seed this from `tools-manifest.stock.json`, which is hand-authored
+source, matches the live stock surface exactly (46/46), and is pinned to the dispatch table by
+`stock-dispatch.test.ts`'s conformance battery. Do NOT seed it from `tools-manifest.json` — that
+file describes the FORK's surface, which differs by design (D-07 per-backend trimming), and
+comparing the two produces false "unused tool" findings. `vice_result_continue` is in neither
+manifest because it is registered proxy-locally (`vice-proxy.ts:3403`); its absence there is not
+evidence about its value.
