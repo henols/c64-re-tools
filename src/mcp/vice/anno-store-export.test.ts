@@ -17,9 +17,9 @@
 //      fail when the env var is absent: `npm run test:automated` runs it.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { openStore, closeStore, setDataType, setLabel, setComment, createProjectEnum, applyEnumUsage, putXref, insertExecObservations } from "./anno-store.ts";
 import type { AnnoStoreHandle } from "./anno-store.ts";
@@ -254,6 +254,50 @@ test("an enum usage naming an enum the document does not define is refused, neve
       assert.throws(() => importStoreDocument(handle, doc), /does not define/);
     } finally {
       closeStore(handle);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tier 2 (Task 3): LIVE, against a REAL dxa+Ghidra-derived store -- gated,
+// default-skip, never hangs, never fails when absent.
+// ---------------------------------------------------------------------------
+
+const LIVE_STORE_ENV = "ANNO_STORE_EXPORT_LIVE_STORE";
+const rawLiveStorePath = process.env[LIVE_STORE_ENV];
+
+/** Computed exactly once. Every test in this tier passes this through
+ * node:test's own `{ skip }` option -- never a hand-rolled early return,
+ * which would report a false PASS rather than a SKIP (mirrors
+ * fork-live.test.ts's own SKIP_REASON convention). */
+const LIVE_SKIP_REASON: string | false =
+  rawLiveStorePath === undefined || rawLiveStorePath === ""
+    ? `anno-store-export.test.ts's live tier is opt-in and default-skipped -- set ${LIVE_STORE_ENV}=/path/to/real.annostore ` +
+      `(a store dxa+Ghidra actually derived, e.g. dxa/tracer.prg per docs/phase45-wave0-measurements.md) to run it. A synthetic ` +
+      `store built by this test file only carries the rows this test's author thought of; a real derived store carries whatever ` +
+      `the derivation route actually writes.`
+    : !existsSync(rawLiveStorePath)
+      ? `${LIVE_STORE_ENV}="${rawLiveStorePath}" does not exist on disk -- opt-in requires a real, already-derived .annostore file at that path.`
+      : false;
+
+test("LIVE: exporting a REAL dxa+Ghidra-derived store, re-importing into a fresh store, and re-exporting reproduces the same document exactly", { skip: LIVE_SKIP_REASON }, () => {
+  const livePath = rawLiveStorePath!;
+  const readHandle = openStore(livePath, { mustExist: true, workspaceRoot: dirname(livePath) });
+  let original: StoreExportDocument;
+  try {
+    original = exportStoreDocument(readHandle, { storeName: "tracer.annostore" });
+  } finally {
+    closeStore(readHandle);
+  }
+
+  inTempDir((dir) => {
+    const target = freshStore(dir, "reimported.annostore");
+    try {
+      importStoreDocument(target, original);
+      const reexported = exportStoreDocument(target, { storeName: "tracer.annostore" });
+      assert.deepEqual(reexported, original, "a real derived store must round-trip exactly, including any row shape this test's author did not anticipate");
+    } finally {
+      closeStore(target);
     }
   });
 });
