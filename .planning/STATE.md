@@ -4,16 +4,16 @@ milestone: v1.0.0
 milestone_name: The Rebuild Half
 current_phase: 46
 current_phase_name: The Lossless-Export Invariant and the Provenance Carry
-status: planning
-stopped_at: Phase 45 complete, ready to plan Phase 46
-last_updated: "2026-09-11T12:09:47.647Z"
+status: executing
+stopped_at: Phase 46 planned (6 plans, 4 waves), ready to execute
+last_updated: "2026-09-11T13:21:36.923Z"
 last_activity: 2026-09-11
-last_activity_desc: Phase 45 complete, transitioned to Phase 46
-state_head: 04452ecd9170416990f9babb4fd47dfb66291cc1
+last_activity_desc: Phase 46 planned — 6 plans in 4 waves, verification passed
+state_head: e69cf5f66277a61b52ba6cf64f87887aa177e21f
 progress:
   total_phases: 6
   completed_phases: 1
-  total_plans: 10
+  total_plans: 16
   completed_plans: 10
   percent: 17
 ---
@@ -254,11 +254,11 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 46 — The Lossless-Export Invariant and the Provenance Carry
+Phase: 46 (The Lossless-Export Invariant and the Provenance Carry) — READY TO EXECUTE
 Plan: Not started
-Status: Ready to plan
-Progress: [██████████] 100% (10/10 plans in phase 45; milestone-wide phase percent is tracked separately in frontmatter)
-Last activity: 2026-09-11 — Phase 45 complete, transitioned to Phase 46
+Status: Ready to execute
+Progress: [░░░░░░░░░░] 0% (0/6 plans in phase 46; milestone-wide phase percent is tracked separately in frontmatter)
+Last activity: 2026-09-11 — Phase 46 planned (6 plans, 4 waves), verification passed
 
 ## Performance Metrics
 

@@ -1047,11 +1047,22 @@ multi-file work is written against an already-enforced invariant
 **Plans**: 6 plans, 4 waves
 
 Plans:
+**Wave 1**
+
 - [ ] 46-01-PLAN.md — TRACER: the provenance carry end to end — synthetic ledger → new reader module → optional `ledgerPath` on `exportAsm()` → verdict and confidence as inline comment text → `anno export-asm --ledger FILE`, with real ACME still reproducing the bytes (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 46-02-PLAN.md — the ledger reader's full refuse-by-name set, its own test file with an information-disclosure control, and BUILD-05's adjacency / empty / ordering edges asserted through the real exporter (wave 2)
 - [ ] 46-03-PLAN.md — the exclusion record: `SCHEMA_VERSION` 5, the `anno_excluded_range` table with its EVID-02-shaped decision record, three store verbs, and BUILD-07's adjacency edge (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 46-04-PLAN.md — `anno_exclude_range` / `anno_include_range` on the MCP surface through all four registration sites, plus their `anno-register.ts` entries and the skill route (wave 3)
 - [ ] 46-05-PLAN.md — exclusion-aware emission: the full bytes plus a recorded marker, never a hole, with the export read back to recover what was excluded and why (wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 46-06-PLAN.md — BUILD-07's planted control observed RED against a test-only filtering variant before being trusted GREEN, plus the structural no-threshold guard and its own non-vacuity proofs (wave 4)
 
 Notes:
