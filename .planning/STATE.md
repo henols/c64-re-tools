@@ -5,16 +5,16 @@ milestone_name: The Rebuild Half
 current_phase: 45
 current_phase_name: Decomposition to Closure, Disagreement First
 status: executing
-stopped_at: Completed 45-05-PLAN.md
-last_updated: "2026-09-11T06:57:33.623Z"
+stopped_at: Completed 45-06-PLAN.md
+last_updated: "2026-09-11T08:09:52.757Z"
 last_activity: 2026-09-11
 last_activity_desc: Phase 45 execution started
-state_head: be0955eeb8276edad658e19f4b8779f83d1ffad7
+state_head: 1dd68d49e4cf7e0e87fadf5f014785d7c1187102
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 10
-  completed_plans: 5
+  completed_plans: 6
   percent: 0
 ---
 
@@ -255,7 +255,7 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 45 (Decomposition to Closure, Disagreement First) — EXECUTING
-Plan: 6 of 10
+Plan: 7 of 10
 Status: Ready to execute
 Progress: [░░░░░░░░░░] 0%
 Last activity: 2026-09-11 — Phase 45 wave 1 complete (45-01 tracer spine)
@@ -540,6 +540,7 @@ Last activity: 2026-09-11 — Phase 45 wave 1 complete (45-01 tracer spine)
 | Phase 45 P03 | 25min | 3 tasks | 5 files |
 | Phase 45 P04 | 165min | 3 tasks | 9 files |
 | Phase 45 P05 | 50 min | 3 tasks | 4 files |
+| Phase 45 P06 | ~180min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -1244,6 +1245,8 @@ Recent decisions affecting current work:
 - [Phase 45]: D-09's disagreement input was proven load-bearing by three planted controls observed going RED against a real derived-and-executed store, two pinned as permanent CI-safe regression tests — This milestone's stated discipline: asserting a fix is present proves nothing, making the failure happen does
 - [Phase 45]: One decoder (decomposeRegisterValue), two independent renderer glue layers (D-16): anno-export-asm.ts's byte-diff-proven OR-ed export and anno_disassemble's readable listing each own their own REGISTER_ENUM_NAME_RE and substitution/collision handling; only the decoder itself is shared.
 - [Phase 45]: A multi-bit register write renders as OR-ed named constants AND a decoded comment on both surfaces (D-17), never either alone; a single-field register keeps the pre-existing single-symbol rendering unchanged.
+- [Phase 45]: 45-06: decomp-completeness's --disagreements validator refused a real, non-fabricated runIdentity:null (anno evid-disagreements's own zero-run answer) unconditionally, making D-13's NOT EXECUTED rendering unreachable through the real CLI path. Fixed to accept null only when the store's own evid-runs table is also genuinely empty (anno-cli.ts, completeness-report.mjs).
+- [Phase 45]: 45-06: entry points supplied to dxa/autostart only for the three fixtures whose SYS target or load address names genuine code (tracer.prg, fixture.prg, smc.prg); never for the three non-executed fixtures, since dxa/basic-stub.prg's own SYS target coincides exactly with its planted-unknown arbitrary tail bytes.
 
 ### Pending Todos
 
@@ -2316,8 +2319,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-11T06:57:13.034Z
-Stopped at: Completed 45-05-PLAN.md
+Last session: 2026-09-11T08:09:52.555Z
+Stopped at: Completed 45-06-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
