@@ -2315,6 +2315,68 @@ test("D-17 Test 7: `enumSubstitutionCount` and `enumDecompositionCount` are two 
   assert.equal(verdict.byteDiff?.equal, true);
 });
 
+// ---------------------------------------------------------------------------
+// Task 2 (plan 45-05): THE REAL-ACME BYTE-DIFF ORACLE, criterion 5's own
+// proof. `fixtures/ghidra/charset-phantom.a`'s `start` writes BOTH `$D011`
+// and `$D018` -- criterion 5's only home among the committed fixtures
+// (45-RESEARCH.md Flag 3) -- and this case reproduces those same two
+// register writes over a small synthetic image, through the SAME oracle
+// machinery every other positive case in this file uses
+// (`verifyExport()` -> `verifyAcmeAssembles()`), never a second one.
+//
+// THE NON-VACUITY CONTROL IS THE POINT: a byte-diff alone would pass
+// IDENTICALLY on a regression that silently stopped decomposing and emitted
+// plain hex literals instead -- `lda #$04` and `lda #$1b` produce the exact
+// same bytes as the OR-ed form (that IS the proof the decomposition is
+// arithmetically correct). The ` | ` assertions below are what makes this
+// case fail on that regression even though the bytes would still match.
+// ---------------------------------------------------------------------------
+
+test("TASK 2 ORACLE: the OR-ed decomposition for BOTH $D011 and $D018 reassembles byte-identically through real ACME, and the exported text is proven non-vacuous", { skip: SKIP_REASON }, () => {
+  const body = [
+    0xa9, 0x04, // lda #$04         @ $0801..$0802
+    0x8d, 0x18, 0xd0, // sta $d018  @ $0803..$0805
+    0xa9, 0x1b, // lda #$1b         @ $0806..$0807
+    0x8d, 0x11, 0xd0, // sta $d011  @ $0808..$080a
+    0x60, // rts                    @ $080b
+  ];
+  const { dir, storePath, imagePath } = buildStore(freshDir("d011-d018-oracle"), {
+    origin: 0x0801,
+    body,
+    ranges: [{ start: 0x0801, endInclusive: 0x080b, dataType: "code" }],
+    // Installed through the SAME public write path `generateEnumsFromStore()`
+    // (D-15, plan 45-03) uses -- `createProjectEnum()` + `applyEnumUsage()` --
+    // never raw SQL, matching every other fixture in this file.
+    enums: [
+      { name: "D018", variants: {} },
+      { name: "D011", variants: {} },
+    ],
+    enumUsage: [
+      { address: 0x0801, name: "D018" },
+      { address: 0x0806, name: "D011" },
+    ],
+  });
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+
+  // NON-VACUITY FIRST: both instructions must actually carry an OR
+  // expression, or the byte-diff below would be proving nothing about D-17's
+  // rendering.
+  assert.ok(result.source.includes(`#${D018_SELECT} | ${D018_CHARDATA} | ${D018_MATRIX}`), `the $D018 write must render OR-ed:\n${result.source}`);
+  assert.ok(
+    result.source.includes("#D011_YSCROLL3 | D011_ROW25 | D011_SCREENON | D011_TEXT"),
+    `the $D011 write must render OR-ed:\n${result.source}`,
+  );
+  assert.equal(result.source.includes("lda #$04"), false, "the $D018 hex literal must be REPLACED");
+  assert.equal(result.source.includes("lda #$1b"), false, "the $D011 hex literal must be REPLACED");
+  assert.equal(result.enumDecompositionCount, 2, "both writes are decompositions");
+
+  // THE PROOF: real ACME assembles the exported source, and the produced
+  // bytes equal the source image byte for byte.
+  const verdict = verifyExport(result);
+  assert.equal(verdict.outcome, "ok", `criterion 5's own proof must round-trip:${context(result, verdict)}`);
+  assert.equal(verdict.byteDiff?.equal, true, `the byte-diff IS the proof the decomposition is arithmetically correct:${context(result, verdict)}`);
+});
+
 test("a store with no enums reports `enumSubstitutionCount` zero and `autoNamedSymbolCount` zero -- neither counter is a constant", () => {
   const { dir, storePath, imagePath } = shapeFixture("enum-count-zero");
   const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
