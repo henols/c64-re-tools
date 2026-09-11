@@ -792,11 +792,11 @@ test("anno-types.ts declares no module-level mutable binding, and its import spe
 // Deriving `3` from the constant would make the pin read its own subject.
 // ---------------------------------------------------------------------------
 
-test("SCHEMA_VERSION is 4, and the constant's own doc comment records EVID-02's reaffirm-refusal decision by name and by date -- the bump is a decision on the record, not a number that drifted", () => {
+test("SCHEMA_VERSION is 5, and the constant's own doc comment records BUILD-07's reaffirm-refusal decision by name and by date -- the bump is a decision on the record, not a number that drifted", () => {
   assert.equal(
     SCHEMA_VERSION,
-    4,
-    "version 4 is EVID-02's deliberate one-way bump: it buys the anno_evid_exec table, and it strands every version 3 store on disk " +
+    5,
+    "version 5 is BUILD-07's deliberate one-way bump: it buys the anno_excluded_range table, and it strands every version 4 store on disk " +
       "because the checkpoint decision was reaffirm-refusal -- no migration arm was written. An edit to this number must be a decision, " +
       "which is why the expectation is typed out here by hand rather than derived from the constant it is checking.",
   );
@@ -805,7 +805,7 @@ test("SCHEMA_VERSION is 4, and the constant's own doc comment records EVID-02's 
   assert.match(
     src,
     /D-15/,
-    "the SCHEMA_VERSION doc comment must still cite D-15 by name for the version 2 -> 3 bump beside version 4's own paragraph: a version " +
+    "the SCHEMA_VERSION doc comment must still cite D-15 by name for the version 2 -> 3 bump beside the later paragraphs: a version " +
       "bump whose rationale lives only in a planning directory is a number the next reader has no way to weigh",
   );
   assert.match(
@@ -818,13 +818,16 @@ test("SCHEMA_VERSION is 4, and the constant's own doc comment records EVID-02's 
     /no migration arm/i,
     "and it must state D-15's accepted COST in the same voice: no migration arm was written, so every version 2 store is unopenable",
   );
-  assert.match(src, /EVID-02/, "the version 4 paragraph must cite EVID-02 by name, the same discipline D-15 established for version 3");
-  assert.match(src, /2026-09-10/, "and it must carry the version 4 decision's own date");
+  assert.match(src, /EVID-02/, "the version 4 paragraph must still cite EVID-02 by name, the same discipline D-15 established for version 3");
+  assert.match(src, /2026-09-10/, "and it must still carry the version 4 decision's own date");
+  assert.match(src, /BUILD-07/, "the version 5 paragraph must cite BUILD-07 by name, the same discipline every prior version's paragraph uses");
+  assert.match(src, /2026-09-11/, "and it must carry the version 5 decision's own date");
   assert.match(
     src,
     /reaffirm-refusal/,
     "and it must name the checkpoint option selected, by name, so the decision is legible without re-deriving it from a checkpoint transcript",
   );
+  assert.match(src, /anno_excluded_range/, "and it must name the table the version 5 bump buys");
 });
 
 test("EnumUsageRow carries exactly id, address, enumId, enumName and bank -- the association is read back by enum ID, with the name resolved through the join rather than stored twice", () => {

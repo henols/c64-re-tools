@@ -3879,11 +3879,18 @@ test("CR-08: a retained snapshot TRUNCATED to zero bytes is REFUSED by name -- t
       // again. The CR-08 reproduction's own historical figures (69,632 and
       // 81,920) are unchanged above and stay matchable against their own
       // findings; only what this line pins -- TODAY's live store size -- moves.
+      //
+      // RE-RECORDED AGAIN 2026-09-11 (46-03), 94208 -> 106496, FOR THE SAME
+      // ADMISSIBLE REASON: `SCHEMA_VERSION` 5 adds `anno_excluded_range` and
+      // its own index, so the same three-write store carries more schema
+      // pages again. Every prior figure above is unchanged and stays
+      // matchable against its own finding; only what this line pins -- TODAY's
+      // live store size -- moves.
       assert.equal(
         bytesBefore.length,
-        94208,
-        "the live store measures 94,208 bytes at SCHEMA_VERSION 4 -- one table and one index bigger than D-15's 81,920 (anno_evid_exec, " +
-          "43-02)",
+        106496,
+        "the live store measures 106,496 bytes at SCHEMA_VERSION 5 -- one table and one index bigger than 43-02's 94,208 (anno_excluded_range, " +
+          "46-03)",
       );
       assert.equal(rowsBefore.length, 3, "with the three rows the three writes added");
 
@@ -5247,7 +5254,7 @@ test("EVID-02 concurrency: two parallel opens of a version-3 store both refuse b
       assert.notEqual(outcome.code, 0, `expected a non-zero exit from a child refusing a version-3 store, got ${JSON.stringify(outcome)}`);
       assert.match(outcome.stderr, /AnnoStoreCorruptError/, `expected the refusal's own class name in stderr, got: ${outcome.stderr}`);
       assert.match(outcome.stderr, /schema_version 3/, `expected the refusal to name the version found, got: ${outcome.stderr}`);
-      assert.match(outcome.stderr, /expected 4/, `expected the refusal to name the version wanted, got: ${outcome.stderr}`);
+      assert.match(outcome.stderr, /expected 5/, `expected the refusal to name the version wanted, got: ${outcome.stderr}`);
     }
 
     const sha256After = createHash("sha256").update(readFileSync(path)).digest("hex");

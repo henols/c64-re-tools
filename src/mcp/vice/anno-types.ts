@@ -257,8 +257,83 @@ import { ViceError, type ViceErrorOptions } from "./vice.ts";
  * distribution channel is shown to have shipped a version-3 or version-4
  * store to users who have not yet upgraded past it. Absent that evidence, the
  * refusal stays the default.
+ *
+ * ---------------------------------------------------------------------------
+ * VERSION 5, 2026-09-11 (BUILD-07) -- THE DECISION IS `reaffirm-refusal`, THE
+ * SAME OPTION VERSION 4 SELECTED, AND THE FACTUAL BASIS IS TRANSCRIBED HERE
+ * RATHER THAN LEFT IN A PLANNING DIRECTORY, for the same reason every prior
+ * version's paragraph gives.
+ *
+ * WHAT THE BUMP BUYS: `anno_excluded_range`, the durable record of a
+ * user-requested exclusion -- its extent AND the reason the user gave -- so
+ * the export can emit the range's real bytes tagged with a visible marker
+ * comment instead of a hole, which is `BUILD-07`'s whole invariant: an
+ * exclusion is a RECORDED, VISIBLE fact, never a silent drop. See
+ * `anno-store.ts`'s `DDL` and its three verbs, `addExcludedRange` /
+ * `listExcludedRanges` / `removeExcludedRange`.
+ *
+ * THE OPTION SELECTED, BY NAME: `reaffirm-refusal`. The strict-equality
+ * refusal inside `openStore` stays EXACTLY as VERSION 4 left it -- this bump
+ * does not touch that comparison site at all: a version-4 store does not open
+ * under this `SCHEMA_VERSION`, no migration arm is written, and the
+ * single-witness property (one comparison site, no second write of
+ * `anno_meta.schema_version`) is unchanged.
+ *
+ * THE FACTUAL CHECK, RUN 2026-09-11, SCOPE ONE DEVELOPMENT MACHINE -- the
+ * same three checks VERSION 4 ran, re-run rather than inherited, with the
+ * REAL results transcribed as of today:
+ *   1. `find "$HOME" -name '*.annostore'`, with `.git` directories excluded --
+ *      SIX hits, not VERSION 4's five. The same five fixture-pattern files
+ *      inside the dated (2026-08-27) scratch probe cache (`t-half`, `t-zero`,
+ *      `t-tail-100`, `p`, `proj`) are still present, UNCHANGED. The SIXTH is
+ *      NEW since VERSION 4's check: `.c64-re-tools/phase45-scratch/
+ *      tracer.annostore`, inside THIS repository's own gitignored scratch
+ *      directory, timestamped 2026-09-10 -- its path and name identify it as
+ *      Phase 45's own tracer/scratch fixture, not a real consuming project's
+ *      store. Six real files, zero real stores.
+ *   2. `git log --oneline --diff-filter=A -- '*.annostore'` -- still empty.
+ *      No `.annostore` has ever been added to this repository's tracked
+ *      history.
+ *   3. Release tags versus when the store landed: `anno-store.ts` was added
+ *      by `4c9cea3c` (2026-08-27). Since VERSION 4's check, ONE MORE tagged
+ *      release has been cut -- `v0.9.0` (2026-09-10) -- joining `v0.7.0`
+ *      (2026-09-01) and `v0.8.0` (2026-09-06). All THREE now postdate the
+ *      store's landing and VERSION 3's original bump, so three tagged
+ *      releases, not two, could in principle have shipped a working store to
+ *      a real user. No result differs in KIND from VERSION 4's; the count of
+ *      possible-exposure releases has grown by one, consistent with time
+ *      having passed rather than with any new evidence of a real store.
+ *
+ * THE RE-AFFIRMATION IS MADE ON THE SAME BASIS VERSION 4 USED: the observed
+ * NULL RESULT (zero real, non-scratch stores found across six candidate
+ * files), not on a claim that no release could have shipped one. The new
+ * sixth file changes nothing about that null result -- it is this project's
+ * OWN scratch output, in a directory this project's own tooling writes to and
+ * that ships nothing.
+ *
+ * WHY A NEW TABLE WAS CHOSEN OVER A NULLABLE `excluded`/`exclusion_reason`
+ * COLUMN PAIR ON `anno_range`, recorded because it is the one part of this
+ * decision that is structural rather than stylistic: an exclusion's extent is
+ * chosen by the USER and has no reason to coincide with a typed range's
+ * boundaries, so a column on `anno_range` would force `retype()`'s carve to
+ * split, duplicate, or lose an exclusion's reason every time a range boundary
+ * moved underneath it -- `retype()` knows nothing about exclusions today and
+ * a column would force it to. A separate table keeps the user's own words
+ * independent of the store's typing churn entirely. This also happens to
+ * match the project's existing preference (`anno_evid_exec` at VERSION 4 over
+ * widening `anno_range`), but that precedent is the WEAKER of the two
+ * arguments -- the structural one above is the one that would still hold even
+ * if this project had no such precedent.
+ *
+ * THE REVERSAL CONDITION, RECORDED SO THIS DOES NOT QUIETLY HARDEN INTO
+ * PRECEDENT: a migration arm at version 6 is justified if a real, non-scratch
+ * `.annostore` is found in the field -- a user's own project, a bug report
+ * attaching one, or a support request -- or if a documented distribution
+ * channel is shown to have shipped a version-4 or version-5 store to users
+ * who have not yet upgraded past it. Absent that evidence the refusal stays
+ * the default.
  */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 /** The 6510's address space, inclusive at both ends. */
 export const ADDRESS_MIN = 0x0000;
@@ -537,6 +612,23 @@ export interface ScopeRow {
   id: number;
   start: number;
   endInclusive: number;
+}
+
+/** One user-requested exclusion as the store holds it, added at
+ * `SCHEMA_VERSION` 5 (`BUILD-07`). Both ends are INCLUSIVE, matching every
+ * other range-shaped row this store persists. There is no `bank` column,
+ * because an exclusion is a statement about a span of the SUBJECT PROGRAM the
+ * user asked to leave out of the rebuild -- not a memory view -- and there is
+ * no confidence, verdict, grade or severity column, because this row holds
+ * WHAT THE USER ASKED FOR and nothing the tool concluded about it. A
+ * judgement column here would be the exact "tool is the decider" shape
+ * `BUILD-05`'s 2026-09-10 rewording removed: the store answers "what did the
+ * user record", never "should this range be excluded". */
+export interface ExcludedRangeRow {
+  id: number;
+  start: number;
+  endInclusive: number;
+  reason: string;
 }
 
 /** One project-local enum as the store holds it. `variants` is keyed by the

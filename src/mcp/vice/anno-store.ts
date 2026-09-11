@@ -261,6 +261,17 @@ export interface AnnoWriteResult {
  * `(image_sha256, argv_digest, seed)`, selected by plan 43-01's live A/B
  * (`docs/phase43-instrumentation-perturbation-ab.md`, verdict
  * `no-perturbation`) -- there is deliberately no `run_class` column.
+ *
+ * AT `SCHEMA_VERSION` 5 (`BUILD-07`), ONE MORE TABLE IS ADDED:
+ * `anno_excluded_range`, the durable record of a user-requested exclusion --
+ * its extent and the reason the user gave. See `anno-types.ts`'s
+ * `SCHEMA_VERSION` doc comment for what the bump buys, why a table was chosen
+ * over a column on `anno_range`, and the decided, dated fate of an existing
+ * version-4 store (`reaffirm-refusal` -- no migration arm). `reason` is `not
+ * null`: an exclusion with no reason is a hole with a row in front of it.
+ * `anno_excluded_range` carries NO `bank` column, for the same reason
+ * `ExcludedRangeRow`'s own doc comment gives -- an exclusion is a statement
+ * about the subject program, not a memory view.
  */
 export const DDL = `
 create table anno_meta (
@@ -337,12 +348,21 @@ create table anno_evid_exec (
   unique(image_sha256, argv_digest, seed, address, source_bank)
 );
 
+create table anno_excluded_range (
+  id integer primary key autoincrement,
+  start integer not null,
+  end_inclusive integer not null,
+  reason text not null,
+  unique(start, end_inclusive)
+);
+
 create index anno_range_end_start on anno_range(end_inclusive, start);
 create index anno_label_address on anno_label(address);
 create index anno_comment_address on anno_comment(address);
 create index anno_enum_usage_address on anno_enum_usage(address);
 create index anno_xref_to on anno_xref(to_address);
 create index anno_evid_exec_address on anno_evid_exec(address);
+create index anno_excluded_range_start on anno_excluded_range(start);
 `;
 
 /** An open store: the connection, the resolved store path, and the directory
