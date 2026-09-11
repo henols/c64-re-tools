@@ -1931,15 +1931,30 @@ test("export-asm: more than one positional is refused rather than silently ignor
 // not a byte-for-byte `renderLedger()` product.
 // ---------------------------------------------------------------------------
 
-/** A minimal, hand-written ledger covering exactly `makeExportableProject()`'s
- * own address range ($C000-$C005). */
+/**
+ * A minimal, hand-written ledger whose MIDDLE row covers exactly
+ * `makeExportableProject()`'s own address range ($C000-$C005), padded before
+ * and after so the whole table tiles $0000-$FFFF exactly.
+ *
+ * Plan 46-02 gave `readProvenanceLedger()` an accept-time assertion that the
+ * rows cover the full address space with no gap -- the SAME condition
+ * `renderLedger()` already refused to EMIT under, now enforced on read too.
+ * A ledger covering only $C000-$C005 (this fixture's original shape) is
+ * therefore refused before this suite's own tests exist to exercise it,
+ * which is a plan-46-02 regression fix, not a behaviour change this file's
+ * own tests are about: this file exercises the CLI's PLUMBING, never the
+ * ledger's own parse/join rules (see the section header above), so the
+ * padding rows exist ONLY to keep the fixture valid, not to test coverage.
+ */
 function writeMinimalLedger(dir: string, name = "PROVENANCE.md"): string {
   const ledgerPath = join(dir, name);
   writeFileSync(
     ledgerPath,
     "| Start | End | Kind | Verdict | Confidence | Agreeing releases | Evidence / Reason |\n" +
       "|---|---|---|---|---|---|---|\n" +
-      "| $c000 | $c005 | game | ORIGINAL | HIGH | 3 | matches every release |\n",
+      "| $0000 | $bfff | unused | ORIGINAL | HIGH | 3 | padding before the annotated range |\n" +
+      "| $c000 | $c005 | game | ORIGINAL | HIGH | 3 | matches every release |\n" +
+      "| $c006 | $ffff | unused | ORIGINAL | HIGH | 3 | padding after the annotated range |\n",
     "utf8",
   );
   return ledgerPath;

@@ -99,7 +99,7 @@ import { AUTO_NAME_PREFIX_RE } from "./anno-coverage.ts";
 // project-wide relaxation.
 // @ts-expect-error -- diff-images.mjs (a plain skill script, left unmodified) has no .d.mts
 import { renderLedger } from "../../skills/c64-provenance-diff/scripts/diff-images.mjs";
-import { applyEnumUsage, createProjectEnum, openStore, closeStore, listComments, listLabels, setComment, setDataType, setLabel } from "./anno-store.ts";
+import { applyEnumUsage, createProjectEnum, openStore, closeStore, listComments, listLabels, listRanges, setComment, setDataType, setLabel } from "./anno-store.ts";
 import { AnnoCommentError, DATA_TYPES } from "./anno-types.ts";
 // D-16/D-17 (plan 45-05): the ONE owning decoder's own test-only cache reset,
 // used ONLY to construct a synthetic register table for the one collision
@@ -2923,10 +2923,16 @@ test("PROVENANCE CARRY Test 6: a block the ledger leaves uncovered is refused BY
   // A ledger that is otherwise well-formed but has had the UNKNOWN row over
   // the FIRST byte block ($0807-$0808) deleted after rendering -- something
   // `renderLedger()` itself would never produce (it refuses unless the
-  // generated tier covers exactly $0000-$FFFF with no gap), but
-  // `readProvenanceLedger()` does not yet enforce that coverage assertion
-  // (deferred to plan 46-02), so this file is a well-formed-per-row, genuinely
-  // gapped ledger that the reader accepts.
+  // generated tier covers exactly $0000-$FFFF with no gap). Plan 46-02 gave
+  // `readProvenanceLedger()` the matching accept-time coverage assertion, so
+  // THIS FILE NOW REFUSES ONE LAYER EARLIER than it did when this test was
+  // written: the reader itself throws the "does not cover $0000..$FFFF"
+  // refusal before `exportAsm()`'s own per-block "no row overlaps this
+  // block" refusal ever gets a chance to run. The two assertions below still
+  // hold at either layer -- the path is named and no row's own text leaks --
+  // which is the reason this test needed no code change, only this comment,
+  // when plan 46-02 landed. See `anno-provenance-ledger.test.ts` for the
+  // reader-level tests of that coverage assertion directly.
   const fullMarkdown: string = renderLedger({
     generatedRanges: LEDGER_GENERATED_RANGES,
     gapTolerance: 16,
@@ -2955,4 +2961,325 @@ test("PROVENANCE CARRY Test 6: a block the ledger leaves uncovered is refused BY
       return true;
     },
   );
+});
+
+// ---------------------------------------------------------------------------
+// Phase 46 plan 02: BUILD-05's three edge classes -- adjacency, empty, and
+// ordering -- pinned end to end through the real `exportAsm()`, extending
+// this file's own ledger section rather than starting a new one. The
+// unit-level `provenanceForRange()` cases already live in
+// `anno-provenance-ledger.test.ts`; every test below is named for the class
+// it belongs to so a verifier reading `node --test` output can map a result
+// to a criterion.
+// ---------------------------------------------------------------------------
+
+/** Invokes `fn`, asserts it throws, and returns the thrown error's message --
+ * the shape every "compare two refusal messages" test below needs, rather
+ * than repeating an `assert.throws()` predicate closure just to smuggle the
+ * message out of it. */
+function captureThrowMessage(fn: () => unknown): string {
+  try {
+    fn();
+  } catch (e) {
+    assert.ok(e instanceof Error, `expected an Error, got: ${String(e)}`);
+    return (e as Error).message;
+  }
+  assert.fail("expected the function to throw, but it returned normally");
+}
+
+// ---------------------------------------------------------------------------
+// adjacency
+// ---------------------------------------------------------------------------
+
+/**
+ * A store with TWO one-byte "byte" ranges, 16 bytes apart: `$1000` (the
+ * "touching" edge below) and `$1010` (the "one-byte overlap" edge below).
+ * One narrow image proves both edges without two separate fixtures --
+ * `exportAsm()` pads any uncovered image byte between declared ranges with
+ * `$00` (this file's own header states the precedent), so the 15 bytes
+ * between the two ranges need no range of their own.
+ */
+function adjacencyStore(dir: string): StoreFixture {
+  return buildStore(dir, {
+    origin: 0x1000,
+    body: new Array(0x11).fill(0xaa), // $1000..$1010 inclusive, 17 bytes; content is irrelevant for "byte" ranges
+    ranges: [
+      { start: 0x1000, endInclusive: 0x1000, dataType: "byte" },
+      { start: 0x1010, endInclusive: 0x1010, dataType: "byte" },
+    ],
+  });
+}
+
+/**
+ * Four rows tiling $0000-$FFFF exactly, cut so that:
+ *   - row A ($0000-$0FFF) ENDS exactly one below the $1000 block's start --
+ *     touching, not overlapping (bullet 1's negative case).
+ *   - row B ($1000-$100F) covers the $1000 block AND itself ends exactly one
+ *     below the $1010 block's start -- the SAME row is both the $1000
+ *     block's covering row and the $1010 block's touching-from-below row.
+ *   - row C ($1010-$1010) covers ONLY the $1010 block, by exactly its one
+ *     byte -- since the block IS one byte wide, "overlaps by exactly one
+ *     byte" and "is the block's sole covering row" are the same fact here
+ *     (bullet 2's positive case).
+ *   - row D ($1011-$FFFF) STARTS exactly one above the $1010 block's end --
+ *     touching from the other side, contributing nothing to either block.
+ * Each row's Evidence names itself (`"row A:"` etc.) so a test can assert
+ * WHICH row's marker appears in a block, not merely how many.
+ */
+const ADJACENCY_LEDGER_RANGES = [
+  {
+    start: 0x0000,
+    end: 0x0fff,
+    kind: "unused",
+    verdict: "ORIGINAL",
+    agreeing_releases: 2,
+    evidence: "row A: ends one below the $1000 block -- touching, not overlapping",
+  },
+  {
+    start: 0x1000,
+    end: 0x100f,
+    kind: "game",
+    verdict: "ORIGINAL",
+    agreeing_releases: 3,
+    evidence: "row B: covers the $1000 block; ends one below the $1010 block",
+  },
+  {
+    start: 0x1010,
+    end: 0x1010,
+    kind: "game",
+    verdict: "CRACKER-PATCH",
+    agreeing_releases: 0,
+    evidence: "row C: covers the $1010 block by exactly its one byte",
+  },
+  {
+    start: 0x1011,
+    end: 0xffff,
+    kind: "unused",
+    verdict: "ORIGINAL",
+    agreeing_releases: 2,
+    evidence: "row D: starts one above the $1010 block -- touching, not overlapping",
+  },
+];
+
+test("adjacency: a ledger row ending exactly one below a store range's start contributes ZERO PROVENANCE LEDGER lines to that block", () => {
+  const dir = freshDir("adjacency-touching");
+  const { storePath, imagePath } = adjacencyStore(dir);
+  const ledgerPath = writeLedgerFixture(dir, ADJACENCY_LEDGER_RANGES);
+
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir, ledgerPath });
+
+  const block = blockSourceFor(result.source, "$1000");
+  const markerLines = block.split("\n").filter((line) => line.includes("; PROVENANCE LEDGER: "));
+  assert.equal(markerLines.length, 1, `the $1000 block must carry exactly one marker (from covering row B), not from touching row A:\n${block}`);
+  assert.ok(markerLines[0]!.includes("row B:"), `the one marker must be row B's own text: ${markerLines[0]}`);
+  assert.ok(!block.includes("row A:"), `row A (the touching row) must contribute ZERO lines to the $1000 block:\n${block}`);
+});
+
+test("adjacency: a ledger row overlapping by exactly one byte contributes exactly ONE PROVENANCE LEDGER line -- a one-byte overlap is an overlap", () => {
+  const dir = freshDir("adjacency-overlap");
+  const { storePath, imagePath } = adjacencyStore(dir);
+  const ledgerPath = writeLedgerFixture(dir, ADJACENCY_LEDGER_RANGES);
+
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir, ledgerPath });
+
+  const block = blockSourceFor(result.source, "$1010");
+  const markerLines = block.split("\n").filter((line) => line.includes("; PROVENANCE LEDGER: "));
+  assert.equal(markerLines.length, 1, `the one-byte-wide $1010 block must carry exactly one marker, from row C:\n${block}`);
+  assert.ok(markerLines[0]!.includes("row C:"), `the one marker must be row C's own text: ${markerLines[0]}`);
+  assert.ok(
+    !block.includes("row B:") && !block.includes("row D:"),
+    `the rows touching from either side must contribute ZERO lines to the $1010 block:\n${block}`,
+  );
+});
+
+test("adjacency: a store range spanning a ledger row boundary is overlapped by exactly two rows, emitted in ascending row-start order with one ambiguity line naming the count 2", () => {
+  const dir = freshDir("adjacency-ambiguity");
+  const { storePath, imagePath } = buildStore(dir, {
+    origin: 0x2000,
+    body: new Array(0x100).fill(0xaa), // $2000..$20ff, 256 bytes, "byte" content irrelevant
+    ranges: [{ start: 0x2000, endInclusive: 0x20ff, dataType: "byte" }],
+  });
+  // The ledger's own row boundary falls INSIDE the store block, at $2080 --
+  // row one covers the block's first half, row two covers its second half,
+  // so BOTH overlap the one $2000..$20ff block.
+  const ambiguityRanges = [
+    { start: 0x0000, end: 0x207f, kind: "game", verdict: "ORIGINAL", agreeing_releases: 2, evidence: "first half: covers $2000..$207f of the block" },
+    { start: 0x2080, end: 0xffff, kind: "game", verdict: "UNKNOWN", agreeing_releases: 0, reason: "second half: covers $2080..$20ff of the block" },
+  ];
+  const ledgerPath = writeLedgerFixture(dir, ambiguityRanges);
+
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir, ledgerPath });
+
+  const block = blockSourceFor(result.source, "$2000");
+  const markerLines = block.split("\n").filter((line) => line.includes("; PROVENANCE LEDGER: "));
+  const ambiguityLines = block.split("\n").filter((line) => line.includes("; PROVENANCE LEDGER AMBIGUITY: "));
+  assert.equal(markerLines.length, 2, `exactly two rows overlap the block -- neither dropped, neither chosen:\n${block}`);
+  assert.ok(markerLines[0]!.includes("first half"), `the first marker (ascending row-start order) must be the first-half row: ${markerLines[0]}`);
+  assert.ok(markerLines[1]!.includes("second half"), `the second marker must be the second-half row: ${markerLines[1]}`);
+  assert.equal(ambiguityLines.length, 1, `exactly one ambiguity line, never one per overlapping row:\n${block}`);
+  assert.match(ambiguityLines[0]!, /\b2\b/, `the ambiguity line's own text must name the count 2: ${ambiguityLines[0]}`);
+});
+
+// ---------------------------------------------------------------------------
+// empty
+// ---------------------------------------------------------------------------
+
+test("empty: omitting ledgerPath over a multi-range store emits zero PROVENANCE LEDGER text and succeeds", () => {
+  const dir = freshDir("empty-omitted");
+  const { storePath, imagePath } = ledgerCarryStore(dir);
+
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+
+  assert.ok(!result.source.includes("PROVENANCE LEDGER"), "omitting ledgerPath must emit no PROVENANCE LEDGER text at all");
+  assert.ok(result.blocks.length > 0, "the export must still succeed and emit blocks");
+});
+
+test("empty: a ledger with the header and ZERO data rows throws the named zero-rows refusal, distinguishable from the absent-file refusal", () => {
+  const dir = freshDir("empty-zero-rows");
+  const { storePath, imagePath } = ledgerCarryStore(dir);
+
+  const fullMarkdown: string = renderLedger({
+    generatedRanges: LEDGER_GENERATED_RANGES,
+    gapTolerance: 16,
+    prose: "phase 46 plan 02 zero-rows fixture",
+  });
+  const zeroRowsMarkdown = fullMarkdown
+    .split("\n")
+    .filter((line) => !line.startsWith("| $"))
+    .join("\n");
+  assert.notEqual(zeroRowsMarkdown, fullMarkdown, "the row-stripping mutation must actually change the text");
+  const zeroRowsPath = join(dir, "PROVENANCE-zero-rows.md");
+  writeFileSync(zeroRowsPath, zeroRowsMarkdown, "utf8");
+  const absentPath = join(dir, "PROVENANCE-never-written.md"); // never written
+
+  const zeroRowsMessage = captureThrowMessage(() => exportAsm({ storePath, imagePath, workspaceRoot: dir, ledgerPath: zeroRowsPath }));
+  const absentMessage = captureThrowMessage(() => exportAsm({ storePath, imagePath, workspaceRoot: dir, ledgerPath: absentPath }));
+
+  assert.notEqual(zeroRowsMessage, absentMessage, '"the table parsed to no rows" must not read the same as "the file does not exist"');
+  assert.ok(
+    zeroRowsMessage.includes("zero data rows") && !absentMessage.includes("zero data rows"),
+    `"zero data rows" must be present in the zero-rows message and absent from the absent-file message:\nzero-rows: ${zeroRowsMessage}\nabsent: ${absentMessage}`,
+  );
+  assert.ok(
+    absentMessage.includes("could not read") && !zeroRowsMessage.includes("could not read"),
+    `"could not read" must be present in the absent-file message and absent from the zero-rows message:\nzero-rows: ${zeroRowsMessage}\nabsent: ${absentMessage}`,
+  );
+});
+
+test("empty: a store with zero ranges still raises the pre-existing no-ranges refusal, unchanged, whether or not ledgerPath was supplied", () => {
+  const dir = freshDir("empty-zero-ranges");
+  const imagePath = join(dir, "game.prg");
+  writeFileSync(imagePath, Buffer.from([0x01, 0x08, 0x00])); // load address plus the minimum one payload byte a .prg needs
+  const storePath = join(dir, "anno.sqlite");
+  const handle = openStore(storePath, { workspaceRoot: dir });
+  closeStore(handle); // zero ranges written -- the store exists but is empty
+
+  // Never written: if the ledger option moved the zero-ranges boundary, this
+  // path would have to be read, and reading it would throw ENOENT instead.
+  const neverReadLedgerPath = join(dir, "PROVENANCE-never-read.md");
+
+  const withoutLedger = captureThrowMessage(() => exportAsm({ storePath, imagePath, workspaceRoot: dir }));
+  const withLedger = captureThrowMessage(() => exportAsm({ storePath, imagePath, workspaceRoot: dir, ledgerPath: neverReadLedgerPath }));
+
+  assert.equal(withoutLedger, withLedger, "the ledger option must not move the zero-ranges boundary");
+  assert.match(withoutLedger, /holds no ranges/, `must be the pre-existing no-ranges refusal, unchanged: ${withoutLedger}`);
+});
+
+test("empty: a single-range store against a single-row ledger tiling all of $0000..$FFFF emits exactly one block carrying exactly one PROVENANCE LEDGER line", () => {
+  const dir = freshDir("empty-single-row");
+  const { storePath, imagePath } = buildStore(dir, {
+    origin: 0x0801,
+    body: [...SHAPE_BODY],
+    ranges: [{ start: 0x0801, endInclusive: 0x0806, dataType: "code" }],
+  });
+  const singleRowRanges = [
+    { start: 0x0000, end: 0xffff, kind: "unused", verdict: "ORIGINAL", agreeing_releases: 2, evidence: "one row tiling everything" },
+  ];
+  const ledgerPath = writeLedgerFixture(dir, singleRowRanges);
+
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir, ledgerPath });
+
+  assert.equal(result.blocks.length, 1, "a single-range store emits exactly one block");
+  const markerCount = result.source.split("\n").filter((line) => line.includes("; PROVENANCE LEDGER: ")).length;
+  assert.equal(markerCount, 1, "the one block must carry exactly one marker from the single tiling row");
+});
+
+// ---------------------------------------------------------------------------
+// ordering
+// ---------------------------------------------------------------------------
+
+/**
+ * A store built from TWO deliberately OVERLAPPING `setDataType()` writes, in
+ * an order that forces `retype()` to carve: writing "code" over the WHOLE
+ * $0801..$0810 span first, then "byte" over the MIDDLE $0805..$0808 subrange,
+ * splits the first write into a head ($0801..$0804) and a tail
+ * ($0809..$0810) remainder plus the new middle range -- three disjoint rows
+ * from two spans written, per `retype()`'s own measured behaviour
+ * (`anno-store.ts:2160-2245`, read in this plan's `<read_first>`).
+ */
+function orderingStore(dir: string): StoreFixture {
+  const imagePath = join(dir, "game.prg");
+  writeFileSync(imagePath, Buffer.from([0x01, 0x08, ...new Array(0x10).fill(0xea)])); // $0801..$0810, all NOP -- decodes cleanly as "code"
+  const storePath = join(dir, "anno.sqlite");
+  const handle = openStore(storePath, { workspaceRoot: dir });
+  try {
+    setDataType(handle, { start: 0x0801, endInclusive: 0x0810, dataType: "code" });
+    setDataType(handle, { start: 0x0805, endInclusive: 0x0808, dataType: "byte" });
+  } finally {
+    closeStore(handle);
+  }
+  return { dir, storePath, imagePath };
+}
+
+test("ordering: emitted block starts are strictly ascending with no two equal, over a store retype() carved from overlapping writes", () => {
+  const dir = freshDir("ordering-carve");
+  const { storePath, imagePath } = orderingStore(dir);
+
+  const handle = openStore(storePath, { workspaceRoot: dir });
+  let finalRanges;
+  try {
+    finalRanges = listRanges(handle);
+  } finally {
+    closeStore(handle);
+  }
+
+  // NON-VACUITY, asserted BEFORE the export: the store must really hold more
+  // than one range, and the carve must really have produced a DIFFERENT row
+  // set than the two spans written -- neither of which (0801..0810,
+  // 0805..0808) survives intact -- or the ascent asserted below is about an
+  // input that never exercised retype()'s carve path at all.
+  assert.equal(finalRanges.length, 3, `retype() must have carved three disjoint rows from the two overlapping spans written, got ${finalRanges.length}`);
+  const finalStarts = finalRanges.map((r) => r.start).sort((a, b) => a - b);
+  assert.deepEqual(finalStarts, [0x0801, 0x0805, 0x0809], "the carved row set must differ from both spans originally written");
+
+  const singleRowRanges = [
+    { start: 0x0000, end: 0xffff, kind: "unused", verdict: "ORIGINAL", agreeing_releases: 2, evidence: "ordering test: one row tiling everything" },
+  ];
+  const ledgerPath = writeLedgerFixture(dir, singleRowRanges);
+
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir, ledgerPath });
+
+  assert.equal(result.blocks.length, finalRanges.length, "result.blocks.length must equal the row count listRanges() returns");
+  const blockStarts = result.blocks.map((b) => b.start);
+  for (let i = 1; i < blockStarts.length; i++) {
+    assert.ok(
+      blockStarts[i]! > blockStarts[i - 1]!,
+      `block starts must be strictly ascending with no two equal -- retype() guarantees disjoint rows, so the exporter's ` +
+        `\`a.start - b.start\` comparator needs no tie-break: ${blockStarts.join(", ")}`,
+    );
+  }
+});
+
+test("ordering: running the same ledger-mode export twice produces byte-identical result.source", () => {
+  const dir = freshDir("ordering-repeat");
+  const { storePath, imagePath } = orderingStore(dir);
+  const singleRowRanges = [
+    { start: 0x0000, end: 0xffff, kind: "unused", verdict: "ORIGINAL", agreeing_releases: 2, evidence: "ordering test: one row tiling everything" },
+  ];
+  const ledgerPath = writeLedgerFixture(dir, singleRowRanges);
+
+  const first = exportAsm({ storePath, imagePath, workspaceRoot: dir, ledgerPath });
+  const second = exportAsm({ storePath, imagePath, workspaceRoot: dir, ledgerPath });
+
+  assert.equal(second.source, first.source, "a stable sort over a totally ordered key must be reproducible across two identical runs");
 });
