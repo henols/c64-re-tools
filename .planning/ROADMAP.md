@@ -1278,9 +1278,15 @@ Notes:
 transport, its manifest, its probe, its per-backend branching and the decision
 records retaining it are gone, and stock's three hard losses are recorded as
 accepted rather than hedged.
-**Requirements**: TBD — declare at planning time. This phase REVERSES `FORK-01`
+**Requirements**: FORKRM-01, FORKRM-02, FORKRM-03, FORKRM-04, FORKRM-05,
+FORKRM-06, FORKRM-07 — minted at planning time (2026-09-11), one per success
+criterion below, in a fresh namespace so a requirement id cannot be mistaken for
+the `FORK-01`/`FORK-02` Key Decisions entries. This phase REVERSES `FORK-01`
 (**retain**, decided by a human at a blocking checkpoint on 2026-08-22) and
 supersedes `FORK-02`; both need an explicit disposition, not silent deletion.
+`FORK-01`/`FORK-02` stay where they are — `.planning/PROJECT.md`'s Key Decisions
+table and its `### Out of Scope` bullet — amended in place, never renumbered and
+never migrated into `REQUIREMENTS.md`.
 **Depends on**: The open question "Does anything in the v1.0.0 rebuild half need
 stock's three hard losses?" (`.planning/research/questions.md`) must be ANSWERED
 first. If any planned work needs matrix keyboard, SID read-back or RESTORE/NMI,
@@ -1313,7 +1319,19 @@ that work is rescoped before this phase runs, not after.
   7. `npm run test:automated` is green at the documented floor, with the
      fork-conditional branches in 12 test files removed rather than skipped.
 
-**Plans**: TBD
+**Plans**: 10 plans, 8 waves
+
+Plans:
+- [ ] 52-01-PLAN.md — TRACER: amend the `FORK-01` reversal row and its `### Out of Scope` bullet, create `docs/stock-hard-losses.md`, rewrite `docs-fork-decision.test.ts` — one green vertical cut before any code is deleted
+- [ ] 52-02-PLAN.md — mint `FORKRM-01..07` in `REQUIREMENTS.md` with Traceability rows, and mark the superseded `retain` todo
+- [ ] 52-03-PLAN.md — split `vice.ts` into `vice-errors.ts`, repoint all 41 importers, delete the dead `vice-sync.ts`
+- [ ] 52-04-PLAN.md — delete `vice-proxy.ts`'s fork region (`forwardToVice`, the evidence gatherers, `rewriteArguments`, `buildBackendAwareTool`) plus `vice-probe.ts`, and retire the Architecture constraint with `docs-linerefs.test.ts`
+- [ ] 52-05-PLAN.md — delete `vice.ts`, `DENY_LIST`, `refresh-manifest.ts` and `tools-manifest.json`; fence `anno-tools.ts`
+- [ ] 52-06-PLAN.md — collapse `backend-detect.mts` and the broker trio, delete the proxy/broker cross-check, rebuild `resources/*.mjs`, strip fork branches from 14 test files
+- [ ] 52-07-PLAN.md — delete `capability-registry.ts` by decision, retire the tool-support table and its guard, close `check-npm-packages.mjs`
+- [ ] 52-08-PLAN.md — rewrite all 9 skill fork-routing sites as stated permanent limitations, plus the two ride-along skill defects
+- [ ] 52-09-PLAN.md — invert and rename the documentation-honesty gate, rewrite README, the parity doc and the two falsified `CLAUDE.md` constraints
+- [ ] 52-10-PLAN.md — add `docs-fork-absence.test.ts`, run the full battery, record the failure SET and reconcile the seven criteria
 
 Notes:
 
@@ -1371,6 +1389,23 @@ Notes:
   `refresh-manifest.ts` (124), `tools-manifest.json` (1223); fork-conditional
   branches in 12 test files, worst `backend-detect.test.ts` (22 hits),
   `broker-control.test.ts` (10), `broker-launch.test.ts` (8).
+- **Blast-radius correction, RE-MEASURED at planning time (2026-09-11).** The
+  figures above undercount, and criterion 7's "12 test files" is the number to
+  read against this correction rather than as the bar. Counting `VICE_BACKEND`
+  as well as `"fork"`, **19** test files carry a fork-conditional branch: 13 in
+  the `test:automated` gate and 6 dispositioned manual-only. Three whole-file
+  casualties appear in no earlier note — `fork-manifest-surface.test.ts`,
+  `fork-deleted-tools.ts` and `tool-support-table.test.mjs` — as do four
+  further fork-manifest readers (`scripts/check-skill-tool-coverage.mjs`, which
+  is a CI step and not a suite test, plus `anno-tools.test.ts`, `smoke.mjs` and
+  `src/mcp/vice/README.md`). `vice.ts` has **23** non-test importers, not ten.
+  Two guards not previously named also fire: `docs-constraints-sync.test.ts`
+  requires `CLAUDE.md` and `PROJECT.md`'s `## Constraints` lists to stay
+  BYTE-IDENTICAL, so every constraint edit must touch both in one commit; and
+  `spawn-seam.test.ts`'s frozen spawn set has exactly one member, the
+  `probeBackend()` `--help` probe, so deleting it empties that set. The skills
+  half is **27** fork-mentioning lines across 9 files, of which the 9 routing
+  sites are a subset.
 
 ## Sequencing Rationale (v1.0.0)
 
