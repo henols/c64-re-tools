@@ -152,6 +152,18 @@ at the point of use. What gets reversed, kept or left out remains the
 end-user's decision, never the tool's. `--ledger` is optional: omitting it
 exports exactly as before, with no provenance comment anywhere in the output.
 
+**When the operator, reading the ledger, decides a range genuinely should be
+left out of the rebuild output** — a trainer patch, a cracktro block, anything
+they choose — the round trip runs entirely on the `anno_*` MCP surface, never
+by editing the ledger or the export: `anno_exclude_range` records the span
+WITH the reason the operator gave, and `anno_include_range` takes the record
+back if the decision changes. Recording an exclusion changes nothing about
+which bytes the export emits — the exported block still carries every byte
+of that span, now with a visible marker naming the exclusion and its reason,
+so nothing is removed and no gap appears in the output. The ledger's verdict
+is information the operator reads at this point; it is never wired as an
+input to an automatic exclusion, here or anywhere else on this surface.
+
 ## A `CRACKER-PATCH` in `game` code is a trainer until proven otherwise
 
 `count-patches` counts exactly one intersection — verdict `CRACKER-PATCH`, kind

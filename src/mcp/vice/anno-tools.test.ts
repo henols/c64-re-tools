@@ -536,6 +536,250 @@ test("F-5: a transposed scope span is refused by the store's overlap rule, and a
   );
 });
 
+// ---------------------------------------------------------------------------
+// Plan 46-04: anno_exclude_range / anno_include_range -- the exclusion
+// setter/unsetter pair, following anno_add_scope/anno_remove_scope's exact
+// four-site registration shape. Every refusal test below asserts BOTH the
+// message's CONTENT and the POST-STATE (a follow-up successful call's
+// excludedRanges is exactly what it was before the refusal) -- a refusal
+// that threw after a partial write would otherwise pass a message assertion
+// while having corrupted the store.
+// ---------------------------------------------------------------------------
+
+test("CURATED_ANNO_TOOLS contains both anno_exclude_range and anno_include_range, without any second list being edited", () => {
+  assert.ok(CURATED_ANNO_TOOLS.includes("anno_exclude_range"));
+  assert.ok(CURATED_ANNO_TOOLS.includes("anno_include_range"));
+  // CURATED_ANNO_TOOLS is a .map() over ANNO_TOOL_DEFINITIONS -- both names
+  // must also be definitions, or this module's own header's "never hand-type
+  // a second list" discipline would have been violated to make this pass.
+  assert.ok(definitionNamed("anno_exclude_range"));
+  assert.ok(definitionNamed("anno_include_range"));
+});
+
+test("anno_exclude_range's description states that recording an exclusion removes nothing -- pinned against the published definition, not a copy", () => {
+  const def = definitionNamed("anno_exclude_range");
+  assert.ok(def, "anno_exclude_range must be in ANNO_TOOL_DEFINITIONS");
+  assert.match(
+    def!.description,
+    /DOES NOT REMOVE ANYTHING/,
+    "the reassurance that recording an exclusion changes nothing about which bytes the export emits must be part of the published surface",
+  );
+});
+
+test("anno_exclude_range and anno_include_range are absent from both tools manifests -- the anno_* family is served proxy-locally, in neither, by design", () => {
+  const fork = JSON.parse(readFileSync(join(HERE, "tools-manifest.json"), "utf8")) as { tools: { name: string }[] };
+  const stock = JSON.parse(readFileSync(join(HERE, "tools-manifest.stock.json"), "utf8")) as { tools: { name: string }[] };
+  const forkNames = new Set(fork.tools.map((t) => t.name));
+  const stockNames = new Set(stock.tools.map((t) => t.name));
+  for (const name of ["anno_exclude_range", "anno_include_range"]) {
+    assert.equal(forkNames.has(name), false, `${name} must be absent from the fork manifest`);
+    assert.equal(stockNames.has(name), false, `${name} must be absent from the stock manifest`);
+  }
+});
+
+test("anno_exclude_range records a span with its reason, reporting changed:true and excludedRanges of length 1; a byte-identical repeat SUCCEEDS reporting changed:false", async () => {
+  await withStore(
+    () => {},
+    async (_ws, store) => {
+      const first = await runAnnoTool("anno_exclude_range", { store, start_address: "$4000", end_address: "$40ff", reason: "cracker intro" });
+      assert.equal(first.isError, false, first.content[0]!.text);
+      const firstBody = (await body(first)) as {
+        store: string;
+        start_address: number;
+        end_address: number;
+        changed: boolean;
+        excludedRanges: { start: number; endInclusive: number; reason: string }[];
+      };
+      assert.equal(firstBody.changed, true);
+      assert.equal(firstBody.start_address, 0x4000);
+      assert.equal(firstBody.end_address, 0x40ff);
+      assert.equal(firstBody.excludedRanges.length, 1, "the SUCCESSFUL body must carry the full current excludedRanges list");
+      assert.equal(firstBody.excludedRanges[0]!.reason, "cracker intro");
+
+      const repeat = await runAnnoTool("anno_exclude_range", { store, start_address: "$4000", end_address: "$40ff", reason: "cracker intro" });
+      assert.equal(repeat.isError, false, "an identical repeat must SUCCEED, never be refused");
+      const repeatBody = (await body(repeat)) as { changed: boolean; excludedRanges: unknown[] };
+      assert.equal(repeatBody.changed, false, "the repeat must report no change");
+      assert.equal(repeatBody.excludedRanges.length, 1, "the list must still be reported in full on the no-op path");
+    },
+  );
+});
+
+test("anno_exclude_range refuses a missing reason at the validation layer, naming the argument, with the store left untouched", async () => {
+  await withStore(
+    () => {},
+    async (_ws, store) => {
+      const refused = await runAnnoTool("anno_exclude_range", { store, start_address: "$5000", end_address: "$50ff" });
+      assert.equal(refused.isError, true);
+      assert.match(refused.content[0]!.text, /\[AnnoToolArgumentError\]/);
+      assert.match(refused.content[0]!.text, /"reason"/, "the refusal must name the offending argument");
+
+      // POST-STATE: nothing was written by the refused call.
+      const after = await runAnnoTool("anno_exclude_range", { store, start_address: "$5000", end_address: "$50ff", reason: "now with a reason" });
+      assert.equal(after.isError, false, after.content[0]!.text);
+      const afterBody = (await body(after)) as { excludedRanges: unknown[] };
+      assert.equal(afterBody.excludedRanges.length, 1, "the refused call must not have left a partial row behind");
+    },
+  );
+});
+
+test("anno_exclude_range refuses an empty or whitespace-only reason the same way a missing one is refused", async () => {
+  await withStore(
+    () => {},
+    async (_ws, store) => {
+      const refused = await runAnnoTool("anno_exclude_range", { store, start_address: "$5100", end_address: "$51ff", reason: "   " });
+      assert.equal(refused.isError, true);
+      assert.match(refused.content[0]!.text, /\[AnnoToolArgumentError\]/);
+      assert.match(refused.content[0]!.text, /"reason"/);
+    },
+  );
+});
+
+test("anno_exclude_range with a transposed span (end below start) is refused by assertSpanArgs's existing rule, not by a new one", async () => {
+  await withStore(
+    () => {},
+    async (_ws, store) => {
+      const refused = await runAnnoTool("anno_exclude_range", { store, start_address: "$6100", end_address: "$6000", reason: "transposed" });
+      assert.equal(refused.isError, true);
+      assert.match(
+        refused.content[0]!.text,
+        /\[AnnoRangeShapeError\]/,
+        "assertSpanArgs's own assertRangeShape() throws this -- the SAME shape validator every other span-shaped verb uses, not a new one",
+      );
+      assert.match(refused.content[0]!.text, /below start/);
+
+      const after = await runAnnoTool("anno_include_range", { store, start_address: "$6000", end_address: "$61ff" });
+      assert.equal(after.isError, false, after.content[0]!.text);
+      assert.equal((await body(after)).changed, false, "nothing was recorded by the refused transposed call");
+    },
+  );
+});
+
+test("anno_exclude_range surfaces the store's overlap refusal, and two exclusions that merely TOUCH are disjoint and both accepted", async () => {
+  await withStore(
+    () => {},
+    async (_ws, store) => {
+      const first = await runAnnoTool("anno_exclude_range", { store, start_address: "$7000", end_address: "$70ff", reason: "block one" });
+      assert.equal(first.isError, false, first.content[0]!.text);
+
+      const overlapping = await runAnnoTool("anno_exclude_range", { store, start_address: "$70ff", end_address: "$71ff", reason: "block two" });
+      assert.equal(overlapping.isError, true, "a one-byte overlap at the boundary must be refused");
+      assert.match(overlapping.content[0]!.text, /\[AnnoRangeShapeError\]/, "the STORE's own overlap refusal surfaces through the tool unchanged");
+      assert.match(overlapping.content[0]!.text, /overlaps the existing exclusion/);
+
+      // TOUCHING (not overlapping): the second span starts exactly one byte
+      // past the first's end -- disjoint, and both accepted as two records.
+      const touching = await runAnnoTool("anno_exclude_range", { store, start_address: "$7100", end_address: "$71ff", reason: "block two, adjacent" });
+      assert.equal(touching.isError, false, touching.content[0]!.text);
+      const touchingBody = (await body(touching)) as { excludedRanges: unknown[] };
+      assert.equal(touchingBody.excludedRanges.length, 2, "touching exclusions stay TWO separate records");
+    },
+  );
+});
+
+test("anno_exclude_range refuses the same extent recorded with a DIFFERENT reason, leaving the stored reason exactly as it was", async () => {
+  await withStore(
+    () => {},
+    async (_ws, store) => {
+      const first = await runAnnoTool("anno_exclude_range", { store, start_address: "$8000", end_address: "$80ff", reason: "original reason" });
+      assert.equal(first.isError, false, first.content[0]!.text);
+
+      const conflicting = await runAnnoTool("anno_exclude_range", { store, start_address: "$8000", end_address: "$80ff", reason: "a different reason" });
+      assert.equal(conflicting.isError, true);
+      assert.match(conflicting.content[0]!.text, /\[AnnoRangeShapeError\]/);
+      assert.match(conflicting.content[0]!.text, /DIFFERENT reason/);
+
+      const read = await runAnnoTool("anno_include_range", { store, start_address: "$8000", end_address: "$80ff" });
+      assert.equal(read.isError, false, read.content[0]!.text);
+      // The record removed here is the ORIGINAL one -- if the conflicting
+      // write had silently overwritten the reason, this would still remove
+      // exactly one row, so the removal alone does not distinguish the two
+      // outcomes; the refusal message above is what proves the store was
+      // untouched, and this assertion proves removal saw a row to remove.
+      assert.equal((await body(read)).changed, true, "the original record must still be the one exactly recorded, not silently dropped");
+    },
+  );
+});
+
+test("anno_include_range removes an exact extent reporting changed:true; an extent that is not there reports changed:false", async () => {
+  await withStore(
+    () => {},
+    async (_ws, store) => {
+      const added = await runAnnoTool("anno_exclude_range", { store, start_address: "$9000", end_address: "$90ff", reason: "to be removed" });
+      assert.equal(added.isError, false, added.content[0]!.text);
+
+      const removed = await runAnnoTool("anno_include_range", { store, start_address: "$9000", end_address: "$90ff" });
+      assert.equal(removed.isError, false, removed.content[0]!.text);
+      const removedBody = (await body(removed)) as { changed: boolean; excludedRanges: unknown[] };
+      assert.equal(removedBody.changed, true);
+      assert.deepEqual(removedBody.excludedRanges, [], "the inverse removed the exclusion outright");
+
+      const noop = await runAnnoTool("anno_include_range", { store, start_address: "$a000", end_address: "$a0ff" });
+      assert.equal(noop.isError, false, noop.content[0]!.text);
+      assert.equal((await body(noop)).changed, false, "removing an exclusion that is not there succeeds reporting no change");
+    },
+  );
+});
+
+test("anno_include_range refuses a span that PARTIALLY overlaps a stored exclusion by name, rather than silently reporting no change", async () => {
+  await withStore(
+    () => {},
+    async (_ws, store) => {
+      const added = await runAnnoTool("anno_exclude_range", { store, start_address: "$b000", end_address: "$b0ff", reason: "partial removal target" });
+      assert.equal(added.isError, false, added.content[0]!.text);
+
+      const partial = await runAnnoTool("anno_include_range", { store, start_address: "$b000", end_address: "$b07f" });
+      assert.equal(partial.isError, true, "a non-exact span must be refused, never treated as a plain no-op");
+      assert.match(partial.content[0]!.text, /\[AnnoRangeShapeError\]/);
+      assert.match(partial.content[0]!.text, /does not EXACTLY match/);
+
+      const read = await runAnnoTool("anno_include_range", { store, start_address: "$b000", end_address: "$b0ff" });
+      assert.equal(read.isError, false, read.content[0]!.text);
+      assert.equal((await body(read)).changed, true, "the exact removal still works after the partial one was refused -- nothing was corrupted");
+    },
+  );
+});
+
+test("BATCH ROUTE (load-bearing): both anno_exclude_range and anno_include_range are validated inside anno_batch_execute by the SAME per-verb validator the direct route uses -- proves the single-validator claim rather than restating it", async () => {
+  await withStore(
+    () => {},
+    async (_ws, store) => {
+      const result = await runAnnoTool("anno_batch_execute", {
+        store,
+        calls: [
+          { name: "anno_exclude_range", arguments: { start_address: "$c000", end_address: "$c0ff", reason: "batch entry zero" } },
+          { name: "anno_exclude_range", arguments: { start_address: "$c100", end_address: "$c1ff" } }, // missing "reason"
+        ],
+      });
+      // Pre-validation runs over the WHOLE batch before anything executes
+      // (the same discipline "NOTHING executes when pre-validation refuses"
+      // proves for the rest of the surface), so the refusal is whole-batch,
+      // isError:true, and names the offending index -- the same interpolation
+      // every other per-verb validator performs via `whereOf()`.
+      assert.equal(result.isError, true, "a missing required argument on ANY batch entry refuses the WHOLE batch before execution");
+      assert.match(result.content[0]!.text, /\[AnnoToolArgumentError\]/);
+      assert.match(result.content[0]!.text, /"reason"/);
+      assert.match(result.content[0]!.text, /calls\[1\]/, "the refusal must name the offending batch index");
+
+      // POST-STATE: NOTHING executed, not even the well-formed first entry.
+      const after = await runAnnoTool("anno_include_range", { store, start_address: "$c000", end_address: "$c0ff" });
+      assert.equal(after.isError, false, after.content[0]!.text);
+      assert.equal((await body(after)).changed, false, "the well-formed first entry must not have landed -- pre-validation refuses the WHOLE batch");
+    },
+  );
+});
+
+test("a tool name outside CURATED_ANNO_TOOLS is still refused outright by the outer gate, even one shaped like the new pair", async () => {
+  await withStore(
+    () => {},
+    async (_ws, store) => {
+      const refused = await runAnnoTool("anno_exclude_range_v2", { store, start_address: "$d000", end_address: "$d0ff", reason: "not curated" });
+      assert.equal(refused.isError, true);
+      assert.match(refused.content[0]!.text, /\[AnnoUncuratedToolError\]/);
+    },
+  );
+});
+
 test("anno_apply_enum_usage with an omitted or empty name CLEARS the association, matching the schema's own contract", async () => {
   await withStore(
     () => {},
