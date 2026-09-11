@@ -45,3 +45,44 @@ file describes the FORK's surface, which differs by design (D-07 per-backend tri
 comparing the two produces false "unused tool" findings. `vice_result_continue` is in neither
 manifest because it is registered proxy-locally (`vice-proxy.ts:3403`); its absence there is not
 evidence about its value.
+
+## Does anything in the v1.0.0 rebuild half need stock's three hard losses?
+
+**Raised:** 2026-09-11 — `/gsd-explore`, owner scope call to remove the fork backend entirely.
+**Blocks:** the fork-removal phase should not run until this is answered.
+
+Removing the fork makes three capabilities **permanently unavailable**, not hedged:
+
+    SID read-back      $D400-$D418 is write-only in hardware and the binary monitor has no SID
+                       command. Not "unimplemented" — unrecoverable on stock.
+    Matrix keyboard    KEYBOARD_FEED (0x72) injects buffer text only; there is no matrix control.
+    RESTORE / NMI      no monitor route to the physical line.
+
+These are exactly what `FORK-01` retained the fork to hedge. Accepting their permanent loss is
+the real content of the reversal, so it should be an explicit, dated acceptance — not a silent
+consequence of a deletion.
+
+**What is already known (do not re-derive):** `PROJECT.md:398`, the v0.8.0 close audit dated
+2026-09-06, records that the hedge was never exercised and that all three losses were **not
+needed by any of the six shipped skills**, running end-to-end on genuine stock `x64sc` 3.9. That
+is strong evidence for acceptance, but it is evidence about the SHIPPED skills at v0.8.0, not
+about work not yet written.
+
+**What is genuinely open:** the v1.0.0 "Rebuild Half" is the milestone in flight. Does any of its
+planned work need to read SID state back, drive the keyboard matrix directly, or trigger
+RESTORE/NMI?
+
+- **Matrix keyboard** is the one to check hardest. It is named as the hardest loss, and
+  `PROJECT.md:1758` couples it to `FORK-01` — an upstream `KEYBOARD_MATRIX_SET` opcode (~60 lines
+  in `monitor_binary.c` calling `keyboard_set_keyarr_any`) would close it for everyone. A game
+  that scans the matrix directly rather than reading the KERNAL buffer cannot be driven without
+  it, and driving a game is squarely in scope for a rebuild milestone.
+- **SID read-back** matters for music-player reverse engineering; check whether any planned phase
+  inspects a running player's register state rather than its code.
+- **RESTORE/NMI** is the narrowest; likely accept without further work.
+
+**How to settle it:** read the v1.0.0 phase list in `ROADMAP.md` for work that drives input or
+inspects sound state, and check the six shipped skills' text for surviving "requires the fork"
+routes (`tool-selection.md` carries at least one, for `vice_sid_get_state`). If nothing needs
+them, record the acceptance with its date and evidence and proceed. If something does, that work
+must be rescoped BEFORE the fork is removed, not after.

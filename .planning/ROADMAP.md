@@ -1272,6 +1272,87 @@ Notes:
   the existing guard holds it there. This phase must not regress it, and the
   widened guard must keep the skills surface covered rather than replacing it.
 
+### Phase 52: Remove the Fork Backend
+
+**Goal**: The `barryw/vice-mcp` fork stops being a supported backend. Its
+transport, its manifest, its probe, its per-backend branching and the decision
+records retaining it are gone, and stock's three hard losses are recorded as
+accepted rather than hedged.
+**Requirements**: TBD — declare at planning time. This phase REVERSES `FORK-01`
+(**retain**, decided by a human at a blocking checkpoint on 2026-08-22) and
+supersedes `FORK-02`; both need an explicit disposition, not silent deletion.
+**Depends on**: The open question "Does anything in the v1.0.0 rebuild half need
+stock's three hard losses?" (`.planning/research/questions.md`) must be ANSWERED
+first. If any planned work needs matrix keyboard, SID read-back or RESTORE/NMI,
+that work is rescoped before this phase runs, not after.
+**Success Criteria** (what must be TRUE):
+
+  1. `VICE_BACKEND`, `probeBackend()`, `resolvedBackend()`'s fork branch,
+     `buildBackendAwareTool()` and every `backend === "fork"` test are gone, and
+     no module imports a fork transport. One backend means no backend selection.
+  2. `PROJECT.md`'s `FORK-01` row and its `### Out of Scope` fork bullet state
+     the REVERSAL with its date and its basis, and `docs-fork-decision.test.ts`
+     has been rewritten to pin the new decision — not deleted. A guard removed
+     rather than repointed loses the protection that made this decision
+     traceable in the first place.
+  3. Stock's three hard losses — SID read-back, matrix keyboard, RESTORE/NMI —
+     are recorded as ACCEPTED, dated, with their evidence, somewhere a reader
+     hits before asking why a capability is missing. They stop being "routed to
+     the fork" anywhere in skill text.
+  4. `DENY_LIST` and `denyListRefusalMessage()` are gone along with their six
+     consumers, and `anno-tools.ts`'s inverted allowlist (`CURATED_ANNO_TOOLS`,
+     `assertAnnoBatch`, `ANNO_MAX_BATCH_DEPTH`) is UNCHANGED and still guarded.
+     The nested-argument hazard is not gone; only the fork's instance of it is.
+  5. `capability-registry.ts` is resolved deliberately. It is a per-BACKEND
+     capability-gap registry; with one backend there are no gaps to explain, so
+     it either goes or is repurposed — whichever, by decision and not by
+     leaving it half-referenced.
+  6. `tools-manifest.stock.json` is the only manifest. `refresh-manifest.ts`
+     and `tools-manifest.json` are gone, and nothing regenerates a manifest from
+     a live host any more.
+  7. `npm run test:automated` is green at the documented floor, with the
+     fork-conditional branches in 12 test files removed rather than skipped.
+
+**Plans**: TBD
+
+Notes:
+
+- **This is a decision reversal with a paper trail, not a cleanup.** `FORK-01`
+  was decided `retain` by a human; a todo named
+  `fully-remove-the-forked-vice-mcp-backend` was already disposed `retain` and
+  moved to `completed/` in plan 14-05. That disposition is now superseded and
+  must not be left reading as the current answer. Full basis and guard inventory:
+  `.planning/notes/fork-removal-reversal-basis.md`.
+- **Order is load-bearing.** `docs-fork-decision.test.ts` (181 lines) asserts
+  six properties of `PROJECT.md`'s `FORK-01` row — that it exists exactly once,
+  is ISO-dated, names `KEYBOARD_MATRIX_SET` case-sensitively, carries a
+  reversal-trigger phrase, and is cited from `### Out of Scope`. It reds on ANY
+  edit to that row. Amend the decision record and rewrite that guard together,
+  in one step, FIRST — then delete code against a green baseline. A code-first
+  pass leaves the suite red throughout and gives no signal about the deletions.
+- **`vice.ts` is not a clean delete.** Ten non-test modules import from it, most
+  for the shared error hierarchy (`ViceError`, `MachineRestartedError`) and
+  `readEpoch`, not the HTTP transport: `stock-symbols.ts`, `stock-petscii.ts`,
+  `stock-paths.ts`, `anno-types.ts`, `stock-reproducible-run.ts`,
+  `stock-handler.ts`, `stock-recycle.ts`, `vice-sync.ts`. Split the shared
+  infrastructure out before removing the transport half.
+- **The skills are the half that does not get simpler.** `SKILL-01` says a skill
+  written against the full fork surface *breaks* on stock rather than degrading,
+  so playbooks name either the stock route or the fork requirement. With no
+  fork, every "requires the fork" route becomes a dead end that must be
+  REWRITTEN as a stated permanent limitation, not deleted.
+  `c64-program-recon/references/tool-selection.md` carries at least one, for
+  `vice_sid_get_state`. Grep all nine skills for fork-requirement language.
+- **`vice_disk_list` is already dead independently of this phase** — it is in
+  NEITHER manifest, so the one `DENY_LIST` entry carrying the crash hazard has
+  been guarding a tool that exists on no backend. Measured 2026-09-11;
+  `.planning/notes/deny-list-is-a-fork-artifact.md`.
+- **Blast radius, MEASURED 2026-09-11**: 9 non-test modules reference the
+  backend split; whole-file candidates `vice.ts` (772), `vice-probe.ts` (278),
+  `refresh-manifest.ts` (124), `tools-manifest.json` (1223); fork-conditional
+  branches in 12 test files, worst `backend-detect.test.ts` (22 hits),
+  `broker-control.test.ts` (10), `broker-launch.test.ts` (8).
+
 ## Sequencing Rationale (v1.0.0)
 
 **Why decomposition is first, and why it does not wait for the new subject.**
@@ -1420,6 +1501,7 @@ in a milestone archive.
 | 49. The Reassembly Gate, Committed Before the Phase It Gates | v1.0.0 | - | Not started | - |
 | 50. Equivalence and Modifiability | v1.0.0 | - | Not started | - |
 | 51. Planning Vocabulary Out of the Shipped Server | v1.0.0 | - | Not started | - |
+| 52. Remove the Fork Backend | v1.0.0 | - | Not started | - |
 
 **Milestone roll-up:** v0.2.0 — 9 phases, 87 plans, 51/51 in-scope requirements,
 shipped 2026-08-19 (audit round 4 `tech_debt`; 13 deferred items at close).
