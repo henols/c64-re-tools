@@ -276,7 +276,7 @@
     {
       "number": "52",
       "name": "Remove the Fork Backend",
-      "status": "pending"
+      "status": "in_progress"
     }
   ],
   "next": {
@@ -284,5 +284,5 @@
     "label": "Advance to the next step",
     "reason": "Phase 52 of 8 · 25% · executing"
   },
-  "updated_at": "2026-09-11T22:16:04.697Z"
+  "updated_at": "2026-09-11T22:26:16.150Z"
 }
