@@ -285,6 +285,39 @@ function assertRowProvenance(value: unknown, what: string): RowProvenance {
   return value;
 }
 
+/**
+ * 45-REVIEW WR-01's fix: `bank` is exported faithfully by `exportStoreDocument()`
+ * for every row kind (`StoreExportRangeRow.bank`, `StoreExportLabelRow.bank`,
+ * `StoreExportCommentRow.bank`, `StoreExportEnumUsageRow.bank`,
+ * `StoreExportXrefRow.bank`), but no write call on `anno-store.ts`'s current
+ * surface (`setDataType`, `setLabel`, `setComment`, `applyEnumUsage`, `putXref`)
+ * accepts a `bank` argument -- every fresh insert hard-codes `bank: null`
+ * (`anno-store.ts:1890`). Threading a real value through five write calls with
+ * no bank-carrying writer anywhere in the codebase to prove it against would be
+ * exactly the kind of speculative widening this project's other modules refuse
+ * (D-10's "narrower than the review's own sketch" pattern). Refusing a non-null
+ * `bank` BY NAME instead -- this project's standing "refuse by name, never
+ * silently drop" convention (`enumUsage[i]` naming an undefined enum, above, is
+ * the same shape) -- means the moment a real writer starts producing a
+ * non-null `bank`, importing that document fails LOUDLY, naming the row and
+ * the value, rather than silently losing it while `importStoreDocument()`
+ * reports success. Every one of this phase's own nine committed fixtures
+ * carries `bank: null` throughout (confirmed by `anno-store-export.test.ts`
+ * and this module's own round-trip proof), so this refusal is unreachable on
+ * every fixture that exists today -- it exists for the writer that does not
+ * exist yet.
+ */
+function assertExportBankIsNull(bank: unknown, what: string): null {
+  if (bank !== null) {
+    throw new AnnoStoreExportError(
+      `${what}: bank must be null -- no write call on anno-store.ts's current surface accepts a bank argument (every fresh insert ` +
+        `hard-codes bank: null), so a non-null bank in an imported document would be silently discarded rather than round-tripped. ` +
+        `Refusing by name (got ${JSON.stringify(bank)}) rather than importing it and reporting success.`,
+    );
+  }
+  return bank;
+}
+
 /** A narrow, NEW shape check for a project enum's `variants` mapping --
  * `anno-store.ts`'s own `validatedVariants()` is private to that module (see
  * this file's header). Catches gross malformation (not a plain object, or a
@@ -427,6 +460,7 @@ export function importStoreDocument(handle: AnnoStoreHandle, doc: StoreExportDoc
     const dataType = assertDataType(row.dataType);
     assertRangeShape(row.start, row.endInclusive, dataType);
     assertRowProvenance(row.provenance, `ranges[${i}]`);
+    assertExportBankIsNull(row.bank, `ranges[${i}]`);
     plan.push({ kind: "range", start: row.start, endInclusive: row.endInclusive, dataType });
   }
 
@@ -434,6 +468,7 @@ export function importStoreDocument(handle: AnnoStoreHandle, doc: StoreExportDoc
     const address = parseStoreAddress(row.address, { what: `labels[${i}].address` });
     const name = assertLegalLabel(row.name);
     const kind = assertLabelKind(row.kind);
+    assertExportBankIsNull(row.bank, `labels[${i}]`);
     plan.push({ kind: "label", address, name, kind_: kind });
   }
 
@@ -442,6 +477,7 @@ export function importStoreDocument(handle: AnnoStoreHandle, doc: StoreExportDoc
     const commentType = assertCommentType(row.commentType);
     const text = assertCommentText(row.text, { what: `comments[${i}].text` });
     assertRowProvenance(row.provenance, `comments[${i}]`);
+    assertExportBankIsNull(row.bank, `comments[${i}]`);
     plan.push({ kind: "comment", address, commentType, text });
   }
 
@@ -462,6 +498,7 @@ export function importStoreDocument(handle: AnnoStoreHandle, doc: StoreExportDoc
         `anno-store-export refused: enumUsage[${i}] names project enum ${JSON.stringify(name)}, which this document's own projectEnums array does not define -- an enum usage naming an undefined enum is refused, never imported against a guess.`,
       );
     }
+    assertExportBankIsNull(row.bank, `enumUsage[${i}]`);
     plan.push({ kind: "enumUsage", address, name });
   }
 
@@ -469,6 +506,7 @@ export function importStoreDocument(handle: AnnoStoreHandle, doc: StoreExportDoc
     const fromAddress = parseStoreAddress(row.fromAddress, { what: `xrefs[${i}].fromAddress` });
     const toAddress = parseStoreAddress(row.toAddress, { what: `xrefs[${i}].toAddress` });
     const accessKind = assertAccessKind(row.accessKind);
+    assertExportBankIsNull(row.bank, `xrefs[${i}]`);
     plan.push({ kind: "xref", fromAddress, toAddress, accessKind });
   }
 

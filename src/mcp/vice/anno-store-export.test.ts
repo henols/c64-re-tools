@@ -231,6 +231,92 @@ test("Test 6: a comment whose text starts with DECLINED: round-trips with proven
 });
 
 // ---------------------------------------------------------------------------
+// 45-REVIEW WR-01 (fixed 2026-09-11): a non-null `bank` on any row kind is
+// REFUSED BY NAME rather than silently discarded. Every row kind that
+// carries `bank` in the export schema is covered -- one throw test per kind,
+// plus one non-vacuity control proving `bank: null` (every committed
+// fixture's real shape) still imports cleanly.
+// ---------------------------------------------------------------------------
+
+test("WR-01 Fix: a non-null bank on a ranges/labels/comments/enumUsage/xrefs row is REFUSED by name, never silently discarded", () => {
+  inTempDir((dir) => {
+    const handle = freshStore(dir);
+    try {
+      const base: StoreExportDocument = {
+        schemaVersion: STORE_EXPORT_SCHEMA_VERSION,
+        store: "x.annostore",
+        ranges: [],
+        labels: [],
+        comments: [],
+        projectEnums: [{ name: "VIC_SCREEN", variants: { "0": "VIC_SCREEN_1024" }, description: null }],
+        enumUsage: [],
+        xrefs: [],
+        execObservations: [],
+      };
+
+      const cases: { what: string; doc: StoreExportDocument }[] = [
+        { what: "ranges[0]", doc: { ...base, ranges: [{ start: 0x0800, endInclusive: 0x080f, dataType: "byte", bank: 1, provenance: "derived" }] } },
+        { what: "labels[0]", doc: { ...base, labels: [{ address: 0x0810, name: "start", kind: "User", bank: 1 }] } },
+        { what: "comments[0]", doc: { ...base, comments: [{ address: 0x0810, commentType: "line", text: "hi", bank: 1, provenance: "authored" }] } },
+        { what: "enumUsage[0]", doc: { ...base, enumUsage: [{ address: 0x0810, enumName: "VIC_SCREEN", bank: 1 }] } },
+        { what: "xrefs[0]", doc: { ...base, xrefs: [{ fromAddress: 0x0810, toAddress: 0xd020, accessKind: "WRITE", bank: 1 }] } },
+      ];
+
+      for (const { what, doc } of cases) {
+        assert.throws(
+          () => importStoreDocument(handle, doc),
+          (err: unknown) => {
+            assert.ok(err instanceof AnnoStoreExportError, `${what}: must be an AnnoStoreExportError, not a silent drop`);
+            assert.ok((err as Error).message.includes(what), `${what}: the refusal must name the offending row: ${(err as Error).message}`);
+            assert.ok((err as Error).message.includes("bank must be null"), `${what}: the refusal must name the cause: ${(err as Error).message}`);
+            return true;
+          },
+          `${what} with a non-null bank must be refused, not silently discarded`,
+        );
+
+        // NON-VACUITY: re-exporting the target store after each throw shows
+        // ZERO rows -- the whole-document validate-before-write invariant
+        // (Test 4) holds for this refusal too, never a partial import.
+        const reexported = exportStoreDocument(handle);
+        assert.equal(reexported.ranges.length, 0, `${what}: a refused import must leave zero ranges`);
+        assert.equal(reexported.labels.length, 0, `${what}: a refused import must leave zero labels`);
+        assert.equal(reexported.comments.length, 0, `${what}: a refused import must leave zero comments`);
+        assert.equal(reexported.enumUsage.length, 0, `${what}: a refused import must leave zero enum usages`);
+        assert.equal(reexported.xrefs.length, 0, `${what}: a refused import must leave zero xrefs`);
+      }
+    } finally {
+      closeStore(handle);
+    }
+  });
+});
+
+test("WR-01 Fix non-vacuity control: bank: null (every committed fixture's real shape) still imports cleanly on every row kind", () => {
+  inTempDir((dirA) => {
+    const source = freshStore(dirA, "source.annostore");
+    let doc: StoreExportDocument;
+    try {
+      populateOneOfEach(source);
+      doc = exportStoreDocument(source);
+    } finally {
+      closeStore(source);
+    }
+    assert.ok(
+      [...doc.ranges, ...doc.labels, ...doc.comments, ...doc.enumUsage, ...doc.xrefs].every((row) => row.bank === null),
+      "precondition: populateOneOfEach() never sets a non-null bank -- every real writer hard-codes null today",
+    );
+
+    inTempDir((dirB) => {
+      const target = freshStore(dirB, "target.annostore");
+      try {
+        assert.doesNotThrow(() => importStoreDocument(target, doc), "a bank: null document must still import cleanly after WR-01's fix");
+      } finally {
+        closeStore(target);
+      }
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Additional structural coverage (acceptance criteria beyond the six named
 // behaviours): the DECLINED: prefix constant is declared in exactly one
 // production file.
