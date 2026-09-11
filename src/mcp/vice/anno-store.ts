@@ -148,6 +148,7 @@ import {
   splitEntryAddressPairs,
   ADDRESS_MAX,
   ADDRESS_MIN,
+  AnnoCommentError,
   AnnoCommentGradeError,
   AnnoLabelError,
   AnnoRangeShapeError,
@@ -169,6 +170,7 @@ import {
   type DataType,
   type EvidExecRow,
   type EvidSourceBank,
+  type ExcludedRangeRow,
   type LabelKind,
   type LabelRow,
   type EnumUsageRow,
@@ -3148,6 +3150,197 @@ export function removeScope(
       if (!existing) return false;
       db.prepare("delete from anno_scope where id = ?").run(existing.id);
       return true;
+    },
+    { baseRevision: args.baseRevision },
+  );
+  return { revision, changed: result };
+}
+
+/**
+ * Records a user-requested exclusion of `start..endInclusive`, with `reason`
+ * stating WHY the user asked for it -- added at `SCHEMA_VERSION` 5
+ * (`BUILD-07`).
+ *
+ * RECORDING AN EXCLUSION CHANGES NOTHING ABOUT WHICH BYTES THE EXPORT EMITS.
+ * The exporter still walks this range's full byte span and emits a real
+ * block, tagged with a visible marker comment, rather than a hole -- that is
+ * `BUILD-07`'s whole invariant. An exporter implementation that skipped the
+ * block on seeing an exclusion row would satisfy the word "exclude" and fail
+ * the requirement outright: this table is a RECORD, never a filter, and the
+ * store answers "what did the user record", never "should this range be
+ * excluded".
+ *
+ * `reason` is validated through `assertCommentText()` -- the ONE comment-text
+ * vocabulary this store has -- BEFORE the write opens, and an empty or
+ * whitespace-only reason is refused with its own message: a `not null`
+ * column satisfied by `""` records that something was excluded and loses WHY,
+ * which is precisely the half of criterion 2 this record exists to carry.
+ *
+ * IDEMPOTENCE FIRST, inside the transaction and BEFORE the overlap check, the
+ * same shape `addScope` uses: an identical repeat -- same extent, same reason
+ * -- is an accepted NO-OP reporting `changed: false`. The SAME extent with a
+ * DIFFERENT reason is REFUSED rather than silently overwritten -- the stored
+ * reason is left exactly as it was, and the route to change it is to remove
+ * the record with `removeExcludedRange` and add it again. Silently replacing
+ * what somebody wrote and reporting success is the failure mode this store's
+ * comment and label verbs already refuse.
+ *
+ * OVERLAP IS REFUSED using `addScope()`'s EXACT predicate --
+ * `start <= ? and end_inclusive >= ?` with the two arguments TRANSPOSED, and
+ * `order by id limit 1` so the message is reproducible -- so adjacency falls
+ * out of the `>=` rather than a second rule: two exclusion records that
+ * merely TOUCH at a boundary are disjoint and both accepted, and they stay
+ * TWO records. The incoming record is NEVER trimmed or split; a caller
+ * wanting a disjoint span reads `listExcludedRanges()` first, or removes the
+ * conflicting record with `removeExcludedRange`.
+ */
+export function addExcludedRange(
+  handle: AnnoStoreHandle,
+  args: { start: number | string; endInclusive: number | string; reason: string; baseRevision?: number },
+): AnnoWriteResult {
+  const start = parseStoreAddress(args.start, { what: "start" });
+  const endInclusive = parseStoreAddress(args.endInclusive, { what: "endInclusive" });
+  assertRangeShape(start, endInclusive, "byte");
+
+  const reason = assertCommentText(args.reason, { what: "exclusion reason" });
+  if (reason.trim() === "") {
+    throw new AnnoCommentError(
+      `exclusion reason is empty or whitespace-only -- a "reason" column satisfied by an empty string records that something was excluded ` +
+        `and loses WHY, which is precisely the half of BUILD-07's criterion 2 this record exists to carry. Supply the reason the user gave.`,
+      { reason: "empty reason" },
+    );
+  }
+
+  const { revision, result } = applyWrite(
+    handle,
+    (db) => {
+      // IDEMPOTENCE FIRST, `addScope`'s own shape: read the existing row
+      // inside the transaction and BEFORE the overlap check, because a
+      // byte-identical exclusion overlaps itself and would otherwise be
+      // refused rather than accepted as the no-op an identical repeat requires.
+      const identical = db
+        .prepare("select id, reason from anno_excluded_range where start = ? and end_inclusive = ?")
+        .get(start, endInclusive) as { id: number; reason: string } | undefined;
+      if (identical) {
+        if (identical.reason === reason) return false;
+        throw new AnnoRangeShapeError(
+          `exclusion ${start}..${endInclusive} ($${start.toString(16).padStart(4, "0")}..$${endInclusive.toString(16).padStart(4, "0")}) ` +
+            `is already recorded (id=${identical.id}) with a DIFFERENT reason -- the stored reason is left EXACTLY as it was. Refusing rather ` +
+            `than silently overwriting what somebody wrote: remove the record with removeExcludedRange and add it again to change the reason.`,
+          { start, endInclusive },
+        );
+      }
+
+      // TWO EXCLUSIONS OVERLAP IFF each starts at or before the other ends.
+      // ADJACENCY FALLS OUT OF THE `>=`, `addScope()`'s exact predicate: an
+      // existing exclusion ending at exactly `start - 1` fails
+      // `end_inclusive >= start`, so touching is not overlapping. `order by id
+      // limit 1` reports the FIRST conflicting row so the message is
+      // reproducible.
+      const overlapper = db
+        .prepare("select id, start, end_inclusive from anno_excluded_range where start <= ? and end_inclusive >= ? order by id limit 1")
+        .get(endInclusive, start) as { id: number; start: number; end_inclusive: number } | undefined;
+      if (overlapper) {
+        throw new AnnoRangeShapeError(
+          `exclusion ${start}..${endInclusive} ($${start.toString(16).padStart(4, "0")}..$${endInclusive.toString(16).padStart(4, "0")}) ` +
+            `overlaps the existing exclusion id=${overlapper.id} ${overlapper.start}..${overlapper.end_inclusive} ` +
+            `($${overlapper.start.toString(16).padStart(4, "0")}..$${overlapper.end_inclusive.toString(16).padStart(4, "0")}) -- the incoming ` +
+            `record is NOT trimmed and NOT split: supply a range disjoint from every existing exclusion. Two exclusions that merely TOUCH at a ` +
+            `boundary are disjoint and both accepted. Read listExcludedRanges() first, or removeExcludedRange the conflicting record.`,
+          { start, endInclusive },
+        );
+      }
+
+      db.prepare("insert into anno_excluded_range(start, end_inclusive, reason) values (?, ?, ?)").run(start, endInclusive, reason);
+      return true;
+    },
+    { baseRevision: args.baseRevision },
+  );
+  return { revision, changed: result };
+}
+
+/** Every recorded exclusion, in ascending `id` order -- insertion order,
+ * matching `listScopes()` and `listRanges()`. A consumer needing address
+ * order sorts it itself, because a second ordering in the store would be a
+ * second answer to the same question. `anno_excluded_range` has no `bank`
+ * column, in the same shape `listScopes()`'s own doc comment uses for the
+ * same absence: an exclusion is a statement about the subject program, not a
+ * memory view. */
+export function listExcludedRanges(handle: AnnoStoreHandle): ExcludedRangeRow[] {
+  const rows = handle.db.prepare("select id, start, end_inclusive, reason from anno_excluded_range order by id").all() as {
+    id: number;
+    start: number;
+    end_inclusive: number;
+    reason: string;
+  }[];
+  return rows.map((row) => ({ id: row.id, start: row.start, endInclusive: row.end_inclusive, reason: row.reason }));
+}
+
+/**
+ * Removes the exclusion whose span is EXACTLY `start..endInclusive`, and
+ * returns `changed: false` when NO exclusion overlaps that span at all --
+ * the exact inverse of `addExcludedRange`, following `removeScope()`.
+ *
+ * THE SPAN MUST MATCH EXACTLY -- both ends, as stored. A record is never
+ * trimmed, split, or partially removed: a span that PARTIALLY OVERLAPS an
+ * existing record (but does not match it end-for-end) is REFUSED BY NAME
+ * rather than silently ignored, because a partial removal would leave a
+ * shape nothing downstream can express, while reporting success. This is
+ * stricter than `removeScope()`, which reports a mismatched span as a plain
+ * no-op -- an exclusion's reason makes a near-miss removal more dangerous to
+ * treat as "nothing happened", since a caller who meant to clear the record
+ * would otherwise walk away believing it gone. A caller that does not know
+ * the stored span reads it from `listExcludedRanges()` first.
+ *
+ * REMOVING A SPAN THAT DOES NOT OVERLAP ANYTHING STORED IS AN ACCEPTED NO-OP
+ * reporting `changed: false`, matching `removeScope`'s own direction: an
+ * inverse that refuses when there is genuinely nothing to undo makes "undo
+ * this" conditional on knowing whether it was ever done.
+ */
+export function removeExcludedRange(
+  handle: AnnoStoreHandle,
+  args: { start: number | string; endInclusive: number | string; baseRevision?: number },
+): AnnoWriteResult {
+  const start = parseStoreAddress(args.start, { what: "start" });
+  const endInclusive = parseStoreAddress(args.endInclusive, { what: "endInclusive" });
+  // The SAME non-split shape check `addExcludedRange`/`removeScope` use, and
+  // for the same reason: an exclusion is not a table, so the split-table
+  // even-count rule must not apply to it.
+  assertRangeShape(start, endInclusive, "byte");
+
+  const { revision, result } = applyWrite(
+    handle,
+    (db) => {
+      const existing = db.prepare("select id from anno_excluded_range where start = ? and end_inclusive = ?").get(start, endInclusive) as
+        | { id: number }
+        | undefined;
+      if (existing) {
+        db.prepare("delete from anno_excluded_range where id = ?").run(existing.id);
+        return true;
+      }
+
+      // NO EXACT MATCH. Before reporting the ordinary "nothing to undo"
+      // no-op, check whether the incoming span PARTIALLY overlaps a stored
+      // record -- the same overlap predicate `addExcludedRange` uses. That
+      // case is refused BY NAME rather than treated as a no-op, because the
+      // caller plainly meant to remove something that exists and a silent
+      // no-op would misreport the outcome.
+      const overlapper = db
+        .prepare("select id, start, end_inclusive from anno_excluded_range where start <= ? and end_inclusive >= ? order by id limit 1")
+        .get(endInclusive, start) as { id: number; start: number; end_inclusive: number } | undefined;
+      if (overlapper) {
+        throw new AnnoRangeShapeError(
+          `removeExcludedRange: ${start}..${endInclusive} ($${start.toString(16).padStart(4, "0")}..${endInclusive
+            .toString(16)
+            .padStart(4, "0")}) does not EXACTLY match the existing exclusion id=${overlapper.id} ${overlapper.start}..${overlapper.end_inclusive} ` +
+            `($${overlapper.start.toString(16).padStart(4, "0")}..$${overlapper.end_inclusive.toString(16).padStart(4, "0")}), which it ` +
+            `partially overlaps -- a record is never trimmed, split, or partially removed, because that would leave a shape nothing downstream ` +
+            `can express while reporting success. Read listExcludedRanges() first to find the exact stored span.`,
+          { start, endInclusive },
+        );
+      }
+
+      return false;
     },
     { baseRevision: args.baseRevision },
   );
