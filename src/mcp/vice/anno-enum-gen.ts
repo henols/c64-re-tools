@@ -133,6 +133,11 @@ import { fileURLToPath } from "node:url";
 
 import type { RegBitsField, RegBitsTable } from "./anno-regbits-gen.ts";
 import { MAX_ACME_IDENTIFIER_LENGTH, assertLegalAcmeIdentifier } from "./anno-acme-ident.ts";
+import { decode } from "./disasm-decoder.ts";
+import type { Instruction } from "./disasm-decoder.ts";
+import { applyEnumUsage, createProjectEnum, listRanges, updateProjectEnum } from "./anno-store.ts";
+import type { AnnoStoreHandle } from "./anno-store.ts";
+import { AnnoLabelError } from "./anno-types.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REGBITS_PATH = join(HERE, "anno-regbits.json");
@@ -714,5 +719,171 @@ export function buildEnumGenerationReport(
     enums: [...enums],
     summaryLines,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Task 2 (D-15): THE REBUILT FETCH AND INSTALL, over this project's own
+// disassembler and store. Everything above this line is a surviving
+// heuristic, called here but never edited (`variantNameFor()`,
+// `pairSearchRows()`, `planEnumsForPairing()`, `sanitizeVariantMap()`,
+// `buildEnumGenerationReport()`).
+// ---------------------------------------------------------------------------
+
+/** The minimal shape this module's fetch needs from a loaded image: the
+ * origin address and the raw body bytes. Deliberately NOT importing
+ * `anno-tools.ts`'s own `LoadedImage` (a private, tool-layer interface) --
+ * that would pull the tool-dispatch module into this one, and all this fetch
+ * needs from it is these two fields. */
+interface EnumSourceImage {
+  origin: number;
+  body: Uint8Array;
+}
+
+const IMMEDIATE_LOAD_MNEMONICS: ReadonlySet<string> = new Set(["lda", "ldx", "ldy"]);
+const ABSOLUTE_STORE_MNEMONICS: ReadonlySet<string> = new Set(["sta", "stx", "sty"]);
+
+/** The slice of `image` covering `[start, endInclusive]`, or `null` when the
+ * span is not entirely inside the image -- mirrors `anno-tools.ts`'s own
+ * `sliceSpan()` bounds discipline (never a short slice, never a fabricated
+ * byte for a range this image does not cover) without importing that
+ * private function. */
+function sliceImageRange(image: EnumSourceImage, start: number, endInclusive: number): Uint8Array | null {
+  const from = start - image.origin;
+  const to = endInclusive - image.origin;
+  if (from < 0 || to >= image.body.length || from > to) return null;
+  return image.body.subarray(from, to + 1);
+}
+
+function searchRowAddress(instr: Instruction): string {
+  return `$${instr.address.toString(16).toUpperCase().padStart(4, "0")}`;
+}
+
+function toSearchRow(instr: Instruction, operand: string): DisasmSearchRow {
+  return { address: searchRowAddress(instr), address_decimal: instr.address, label: "", mnemonic: instr.mnemonic, operand, comment: "" };
+}
+
+export interface FetchRegisterSearchRowsOptions {
+  maxResults?: number;
+}
+
+export interface FetchRegisterSearchRowsResult {
+  ldaRows: DisasmSearchRow[];
+  staRows: DisasmSearchRow[];
+}
+
+/**
+ * THE REBUILT FETCH (D-15). Walks `handle`'s own `code`-typed ranges,
+ * decoding each through the SAME `disasm-decoder.ts` `decode()` function
+ * `anno_disassemble` uses -- never a second decoder, never a regex over
+ * rendered text. Returns two plain row arrays in the exact `DisasmSearchRow`
+ * shape `pairSearchRows()` already consumes: pass 1, immediate loads
+ * (`lda`/`ldx`/`ldy`); pass 2, absolute stores (`sta`/`stx`/`sty`) whose
+ * target is a register `anno-regbits.json` knows.
+ *
+ * `maxResults` bounds EACH pass independently AS IT IS FETCHED, not merely
+ * reported afterwards -- that is what makes `pairSearchRows()`'s own
+ * truncation signal (a returned row count equal to the ceiling) a true
+ * measurement rather than a coincidence: capping here is the only way a
+ * caller comparing the returned length against the same ceiling can trust
+ * what it sees (D-23's "no silent caps").
+ */
+export function fetchRegisterSearchRows(
+  handle: AnnoStoreHandle,
+  image: EnumSourceImage,
+  opts: FetchRegisterSearchRowsOptions = {},
+): FetchRegisterSearchRowsResult {
+  const maxResults = opts.maxResults ?? DEFAULT_MAX_RESULTS;
+  const knownRegisters = new Set(Object.keys(loadRegBits()));
+
+  const ldaRows: DisasmSearchRow[] = [];
+  const staRows: DisasmSearchRow[] = [];
+
+  for (const range of listRanges(handle)) {
+    if (range.dataType !== "code") continue;
+    const bytes = sliceImageRange(image, range.start, range.endInclusive);
+    if (bytes === null) continue; // this image does not cover the range -- never fabricate bytes for it
+    const instructions = decode(bytes, range.start, { end: range.endInclusive });
+    for (const instr of instructions) {
+      if (ldaRows.length < maxResults && instr.mode === "immediate" && instr.operand && IMMEDIATE_LOAD_MNEMONICS.has(instr.mnemonic)) {
+        ldaRows.push(toSearchRow(instr, `#$${instr.operand.value.toString(16).padStart(2, "0")}`));
+      } else if (staRows.length < maxResults && instr.mode === "absolute" && instr.operand && ABSOLUTE_STORE_MNEMONICS.has(instr.mnemonic)) {
+        const key = registerKeyFor(instr.operand.value);
+        if (knownRegisters.has(key)) {
+          staRows.push(toSearchRow(instr, `$${instr.operand.value.toString(16).padStart(4, "0")}`));
+        }
+      }
+    }
+  }
+
+  return { ldaRows, staRows };
+}
+
+/**
+ * THE REBUILT INSTALL (D-15): create-or-update each planned enum through the
+ * shipped `createProjectEnum()`/`updateProjectEnum()` write path -- the SAME
+ * functions `anno_create_project_enum`/`anno_update_project_enum` dispatch
+ * to, never a second install path -- and bind every occurrence through
+ * `applyEnumUsage()`, at the `lda` address (never the store address -- the
+ * measured binding fact in this module's header). `sanitizeVariantMap()`
+ * runs FIRST, before any I/O, so an illegal identifier provably never
+ * reaches the store (the same client-side-first property the deleted
+ * installer proved with a spy binary).
+ *
+ * CREATE-THEN-UPDATE, never a delete: `createProjectEnum()` no-ops on a
+ * byte-identical repeat and THROWS `AnnoLabelError` when the same name
+ * already holds DIFFERENT content -- caught here and retried through
+ * `updateProjectEnum()`, which replaces the variant map wholesale. This is
+ * `EnumInstallAction`'s own documented re-runnability precedent (see its
+ * comment above); an installer that could only ever report "created" would
+ * have quietly dropped ANNO-13's re-runnability requirement.
+ */
+export function installPlannedEnums(handle: AnnoStoreHandle, planned: readonly PlannedEnum[]): EnumInstallSummary[] {
+  const summaries: EnumInstallSummary[] = [];
+  for (const plan of planned) {
+    const sanitized = sanitizeVariantMap(plan.regKey, plan.variants);
+    const description = `Generated by anno-enum-gen.ts (Phase 45, D-15) from ${plan.occurrences.length} observed write(s) to ${plan.regKey}.`;
+
+    let action: EnumInstallAction;
+    try {
+      createProjectEnum(handle, { name: plan.enumName, variants: sanitized, description });
+      action = "created";
+    } catch (err) {
+      if (!(err instanceof AnnoLabelError)) throw err;
+      updateProjectEnum(handle, { name: plan.enumName, variants: sanitized, description });
+      action = "updated";
+    }
+
+    let usagesApplied = 0;
+    for (const occ of plan.occurrences) {
+      applyEnumUsage(handle, { address: occ.ldaAddr, name: plan.enumName });
+      usagesApplied += 1;
+    }
+
+    summaries.push({ regKey: plan.regKey, enumName: plan.enumName, variantCount: plan.variants.size, action, usagesApplied });
+  }
+  return summaries;
+}
+
+export interface GenerateEnumsFromStoreOptions {
+  maxResults?: number;
+}
+
+/**
+ * THE REBUILT PASS (D-15): fetch -> `pairSearchRows()` -> `planEnumsForPairing()`
+ * -> `installPlannedEnums()` (which itself calls `sanitizeVariantMap()`) ->
+ * `buildEnumGenerationReport()`. The three middle heuristics are called,
+ * never edited, exactly per this module's own header specification.
+ */
+export function generateEnumsFromStore(
+  handle: AnnoStoreHandle,
+  image: EnumSourceImage,
+  opts: GenerateEnumsFromStoreOptions = {},
+): EnumGenerationReport {
+  const maxResults = opts.maxResults ?? DEFAULT_MAX_RESULTS;
+  const { ldaRows, staRows } = fetchRegisterSearchRows(handle, image, { maxResults });
+  const pairing = pairSearchRows(ldaRows, staRows, maxResults);
+  const planned = planEnumsForPairing(pairing);
+  const installed = installPlannedEnums(handle, planned);
+  return buildEnumGenerationReport(pairing, installed, maxResults);
 }
 

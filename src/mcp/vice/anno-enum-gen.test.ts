@@ -39,7 +39,8 @@
 // corrected rather than deleted.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -50,6 +51,9 @@ import {
   decomposeRegisterValue,
   type DisasmSearchRow,
   type EnumInstallSummary,
+  fetchRegisterSearchRows,
+  generateEnumsFromStore,
+  installPlannedEnums,
   type RegisterDecomposition,
   __resetRegBitsCacheForTests,
   pairSearchRows,
@@ -60,8 +64,27 @@ import {
   variantNameFor,
 } from "./anno-enum-gen.ts";
 import type { RegBitsTable } from "./anno-regbits-gen.ts";
+import { closeStore, listEnumUsage, listProjectEnums, openStore, setDataType } from "./anno-store.ts";
+import type { AnnoStoreHandle } from "./anno-store.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+
+/** One temp directory per test, removed unconditionally -- mirrors
+ * `anno-store-export.test.ts`'s own `inTempDir()`. Never inside the repo
+ * tree (this project has already had an intermittent suite failure caused
+ * by scratch files racing there). */
+function inTempDir(body: (dir: string) => void): void {
+  const dir = mkdtempSync(join(tmpdir(), "anno-enum-gen-"));
+  try {
+    body(dir);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function freshStore(dir: string, name = "proj.annostore"): AnnoStoreHandle {
+  return openStore(join(dir, name), { workspaceRoot: dir });
+}
 
 /** Builds one disassembly row in the shape the deleted fetch returned and the
  * shape any rebuilt fetch must still produce. */
@@ -493,6 +516,143 @@ test("buildEnumGenerationReport: an 'updated' action is reportable, so ANNO-13's
     { regKey: "$D011", enumName: "D011", variantCount: 1, action: "updated", usagesApplied: 1 },
   ]);
   assert.match(report.summaryLines.join("\n"), /enum D011: updated,/);
+});
+
+// ---------------------------------------------------------------------------
+// Task 2 (D-15): the rebuilt fetch-and-install route, over a real (synthetic,
+// temp-dir) store and a real `decode()` call -- never a hand-built
+// DisasmSearchRow standing in for what the fetch itself must produce.
+// ---------------------------------------------------------------------------
+
+/** `lda #$1b` (a9 1b) then `sta $d011` (8d 11 d0), at $0810 -- the exact
+ * pinned criterion-3 pairing, decoded for real through `decode()` rather
+ * than hand-built as DisasmSearchRow literals. */
+const LDA_STA_D011_BYTES = new Uint8Array([0xa9, 0x1b, 0x8d, 0x11, 0xd0]);
+
+test("fetchRegisterSearchRows: a real code range decodes into one lda row and one sta row 2 bytes apart, and pairSearchRows() pairs them into $D011=0x1b", () => {
+  inTempDir((dir) => {
+    const handle = freshStore(dir);
+    try {
+      setDataType(handle, { start: 0x0810, endInclusive: 0x0814, dataType: "code" });
+      const { ldaRows, staRows } = fetchRegisterSearchRows(handle, { origin: 0x0810, body: LDA_STA_D011_BYTES });
+
+      assert.equal(ldaRows.length, 1);
+      assert.equal(staRows.length, 1);
+      assert.equal(staRows[0]!.address_decimal - ldaRows[0]!.address_decimal, 2);
+
+      const pairing = pairSearchRows(ldaRows, staRows);
+      assert.equal(pairing.pairedStores, 1);
+      assert.deepEqual(pairing.occurrences, [{ regKey: "$D011", value: 0x1b, ldaAddr: 0x0810 }]);
+    } finally {
+      closeStore(handle);
+    }
+  });
+});
+
+test("generateEnumsFromStore: plans exactly one D011 enum with one variant, reporting pairedStores:1, unpairedStores:0", () => {
+  inTempDir((dir) => {
+    const handle = freshStore(dir);
+    try {
+      setDataType(handle, { start: 0x0810, endInclusive: 0x0814, dataType: "code" });
+      const report = generateEnumsFromStore(handle, { origin: 0x0810, body: LDA_STA_D011_BYTES });
+
+      assert.equal(report.pairedStores, 1);
+      assert.equal(report.unpairedStores, 0);
+      assert.equal(report.enums.length, 1);
+      assert.equal(report.enums[0]!.enumName, "D011");
+      assert.equal(report.enums[0]!.variantCount, 1);
+    } finally {
+      closeStore(handle);
+    }
+  });
+});
+
+test("fetchRegisterSearchRows: a store NOT exactly 2 bytes after its lda produces zero paired occurrences and a non-zero unpairedStores (adjacent-only, D-23)", () => {
+  inTempDir((dir) => {
+    const handle = freshStore(dir);
+    try {
+      // lda #$1b (a9 1b), brk (00), sta $d011 (8d 11 d0) -- the sta starts 3
+      // bytes after the lda, not 2, so D-23's adjacent-only rule must miss it.
+      const bytes = new Uint8Array([0xa9, 0x1b, 0x00, 0x8d, 0x11, 0xd0]);
+      setDataType(handle, { start: 0x0810, endInclusive: 0x0815, dataType: "code" });
+      const { ldaRows, staRows } = fetchRegisterSearchRows(handle, { origin: 0x0810, body: bytes });
+      const pairing = pairSearchRows(ldaRows, staRows);
+
+      assert.equal(pairing.totalRegisterStores, 1, "the store is still a store to a known register");
+      assert.equal(pairing.pairedStores, 0);
+      assert.equal(pairing.unpairedStores, 1);
+    } finally {
+      closeStore(handle);
+    }
+  });
+});
+
+test("installPlannedEnums (via generateEnumsFromStore): writes exactly one project enum and binds the usage to the lda address, never the store address", () => {
+  inTempDir((dir) => {
+    const handle = freshStore(dir);
+    try {
+      setDataType(handle, { start: 0x0810, endInclusive: 0x0814, dataType: "code" });
+      generateEnumsFromStore(handle, { origin: 0x0810, body: LDA_STA_D011_BYTES });
+
+      const enums = listProjectEnums(handle);
+      assert.equal(enums.length, 1);
+      assert.equal(enums[0]!.name, "D011");
+      assert.deepEqual(enums[0]!.variants, { $1b: "YSCROLL3_ROW25_SCREENON_TEXT" });
+
+      const usages = listEnumUsage(handle);
+      assert.equal(usages.length, 1);
+      assert.equal(usages[0]!.address, 0x0810, "the usage must bind to the lda address");
+      assert.notEqual(usages[0]!.address, 0x0812, "never the sta (store) address");
+      assert.equal(usages[0]!.enumName, "D011");
+    } finally {
+      closeStore(handle);
+    }
+  });
+});
+
+test("installPlannedEnums (via generateEnumsFromStore, re-run): a byte-identical repeat reports 'created' again and applies no second, duplicate enum -- ANNO-13's re-runnability", () => {
+  inTempDir((dir) => {
+    const handle = freshStore(dir);
+    try {
+      setDataType(handle, { start: 0x0810, endInclusive: 0x0814, dataType: "code" });
+      generateEnumsFromStore(handle, { origin: 0x0810, body: LDA_STA_D011_BYTES });
+      generateEnumsFromStore(handle, { origin: 0x0810, body: LDA_STA_D011_BYTES });
+
+      assert.equal(listProjectEnums(handle).length, 1, "a re-run must never create a second enum for the same register");
+      assert.equal(listEnumUsage(handle).length, 1, "applyEnumUsage() is idempotent -- a re-run must never duplicate the usage row");
+    } finally {
+      closeStore(handle);
+    }
+  });
+});
+
+test("fetchRegisterSearchRows: a pass whose row count equals maxResults reports a possible truncation in words, via generateEnumsFromStore's own report (D-23, no silent caps)", () => {
+  inTempDir((dir) => {
+    const handle = freshStore(dir);
+    try {
+      // Two lda/sta pairs, at $0810 and $0815.
+      const bytes = new Uint8Array([0xa9, 0x1b, 0x8d, 0x11, 0xd0, 0xa9, 0x08, 0x8d, 0x11, 0xd0]);
+      setDataType(handle, { start: 0x0810, endInclusive: 0x0819, dataType: "code" });
+      const report = generateEnumsFromStore(handle, { origin: 0x0810, body: bytes }, { maxResults: 1 });
+      assert.match(report.summaryLines.join("\n"), /truncat/i);
+    } finally {
+      closeStore(handle);
+    }
+  });
+});
+
+test("fetchRegisterSearchRows: a non-code range is never decoded (only 'code'-typed ranges are walked)", () => {
+  inTempDir((dir) => {
+    const handle = freshStore(dir);
+    try {
+      setDataType(handle, { start: 0x0810, endInclusive: 0x0814, dataType: "byte" });
+      const { ldaRows, staRows } = fetchRegisterSearchRows(handle, { origin: 0x0810, body: LDA_STA_D011_BYTES });
+      assert.equal(ldaRows.length, 0);
+      assert.equal(staRows.length, 0);
+    } finally {
+      closeStore(handle);
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
