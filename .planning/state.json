@@ -246,7 +246,7 @@
     {
       "number": "46",
       "name": "The Lossless-Export Invariant and the Provenance Carry",
-      "status": "in_progress"
+      "status": "complete"
     },
     {
       "number": "47",
@@ -281,8 +281,8 @@
   ],
   "next": {
     "command": "/gsd:progress --next",
-    "label": "Advance to the next step (plan phase 47)",
-    "reason": "Phase 47 of 8 — needs a plan"
+    "label": "Advance to the next step",
+    "reason": "Phase 52 of 8 · 25% · executing"
   },
-  "updated_at": "2026-09-11T18:19:31.811Z"
+  "updated_at": "2026-09-11T21:35:52.942Z"
 }
