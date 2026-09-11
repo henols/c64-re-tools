@@ -153,9 +153,11 @@ state — and keep working when the emulator misbehaves.
 - Some functions are documented as deliberately swallowing all errors — e.g.
 - Pure/never-throwing transforms return a `{ result, changes, untranslated }`-shaped record
 ## Comments
-- WHY the file exists (what problem/incident motivated it, often referencing a specific dated
+- WHY the file exists — the incident or constraint stated as a reason a reader can act on, never as a bare pointer. Write "a second broker launch raced the first and killed a live capture", not "plan 02-03 (BROK-03, D-14)".
 - What it is the ONE authoritative place for (the "single seam" pattern — see below).
 - What NOT to do, with the specific past mistake named (e.g. "Do not reintroduce a fixed `".."`").
+- **Planning vocabulary stays inside `.planning/`** — no `.planning/*` path, no `/gsd-*` command name, no phase/plan number, no bare `D-NN`/`G-NN-N` id, no `ROADMAP`/`REQUIREMENTS`/`RE-FINDINGS` cross-reference in any product file. `src/mcp/vice/*.ts` ships verbatim to npm and `src/skills/**` ships to every plugin user; neither reader has a planning tree. Full rule, measured justification and the two named exemptions: `.planning/ENGINEERING_RULES.md` § 21. `src/skills/**` is enforced by `skills-planning-vocabulary.test.ts`.
+- The one surviving citation form is a decision id that resolves OUTSIDE `.planning/`, cited with its document named: `` `docs/stock-vice-parity.md` D-03 ``. A bare `D-03` resolves nowhere for a consumer.
 ## Function Design
 ## Module Design
 <!-- GSD:conventions-end -->

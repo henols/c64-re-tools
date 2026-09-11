@@ -173,9 +173,10 @@ missing pinned git object.
 
 **Decision-record-style header comments are the house style, not an exception.** Non-trivial
 modules and nearly every test file open with a multi-paragraph block covering:
-- **WHY THIS FILE EXISTS** — the incident or requirement that motivated it, usually with a dated
-  plan id (`quick-260818-nh5`, `phase 32 plan 32-04`), a requirement id (`SEAM-02`, `BACK-05`,
-  `GATE-01`, `PKG-03`), or a decision label (`D-3`, `D-10`, `D-32`).
+- **WHY THIS FILE EXISTS** — the incident, constraint or requirement that motivated it, stated
+  as a *reason a reader can act on*, not as a pointer. Write "a second broker launch raced the
+  first and killed a live capture, so this check is synchronous with no `await` inside it" —
+  not "plan 02-03 (BROK-03, D-14)".
 - What this file is the ONE authoritative place for (the single-seam pattern).
 - **WHAT NOT TO DO**, naming the specific past mistake — e.g. "do not re-list these nine file
   names in a CI workflow, an npm script, or a second test runner anywhere else"
@@ -183,9 +184,22 @@ modules and nearly every test file open with a multi-paragraph block covering:
 - What the file deliberately does NOT do, and why the cheaper alternative was rejected (see
   `ci-suite-coverage.test.ts` on not parsing YAML).
 
-**Decision labels** (`D-1`, `D-10`, `D-32`, `D-1.2-H`) and requirement ids are stable
-cross-reference anchors between code comments, tests, and `.planning/` docs. When changing logic
-tied to a label, check whether the recorded reasoning still holds rather than deleting the label.
+**Planning vocabulary does NOT belong in these comments.** `.planning/*` paths, `/gsd-*`
+command names, phase and plan numbers, `D-NN` / `G-NN-N` ids and `ROADMAP`/`REQUIREMENTS`/
+`RE-FINDINGS` cross-references stay inside `.planning/`. `src/mcp/vice/*.ts` ships verbatim to
+npm and `src/skills/**` ships to every plugin user; neither reader has a planning tree. See
+`.planning/ENGINEERING_RULES.md` § 21 for the full rule, its measured justification, and the
+two named exemptions. `src/skills/**` is mechanically enforced by
+`skills-planning-vocabulary.test.ts`.
+
+The one citation that survives is a decision id that resolves OUTSIDE `.planning/`, cited with
+its document named so a consumer can follow it: `` `docs/stock-vice-parity.md` D-03 ``. A bare
+`D-03` resolves nowhere for a reader who has only the package.
+
+NOTE FOR A FUTURE `/gsd-map-codebase` RUN: this section is normative, not descriptive. A large
+population of legacy `Phase N` / `plan NN-NN` / `D-NN` comments still exists in
+`src/mcp/vice/**` (1659 occurrences across 95 of the 103 shipped modules, MEASURED
+2026-09-11); it is a known backlog, not the house style, and must not be re-described as one.
 
 **Comments are mechanically checked.** Several test files assert on comment content and on line
 references, so a careless comment edit fails the build:

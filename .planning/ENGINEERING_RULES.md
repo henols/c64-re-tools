@@ -353,3 +353,78 @@ exactly one client, so concurrent drivers corrupt the evidence. Cite those, not 
 For the same reason, **do not cite line numbers inside the vendored tree** in tracked prose.
 Those numbers drift on every update and nothing can check them. Name the file and the semantic
 anchor instead.
+
+## 21. Planning vocabulary stays inside `.planning/`
+
+GSD is a planning harness. Its bookkeeping — `.planning/*` paths, `/gsd-*` command names,
+phase and plan numbers, `D-NN` decision ids, `G-NN-N` gap ids, and cross-references to
+`ROADMAP.md` / `REQUIREMENTS.md` / `RE-FINDINGS.md` / `STATE.md` — belongs in `.planning/`
+and nowhere else. **Product files must be readable by someone who has only the product.**
+
+### 21.1 The shipped surface: a hard rule, mechanically enforced
+
+`src/skills/**` is read by an end user who installed a plugin or ran `npx
+@henols/c64-re-tools`. That reader has no `.planning/` tree, has never run GSD, and cannot
+act on any of this vocabulary. A playbook that tells them to "file findings in
+`.planning/RE-FINDINGS.md`" or to "enter file-changing work through a GSD command
+(`/gsd-quick`)" is giving an instruction that cannot be followed.
+
+**No file under `src/skills/**` may contain planning vocabulary.** Enforced by
+`skills-planning-vocabulary.test.ts`, which fails the build. Two narrow, named exemptions
+are encoded in that guard and nowhere else:
+
+- A skill's OWN numbered workflow steps. `routine-queue-walker/SKILL.md` runs "Phase 0"
+  through "Phase 5"; those are the skill's own procedure, not GSD phases. The guard
+  recognises them by shape (a `## Phase N` heading and back-references to it).
+- A path under `.planning/` that a **test** reads as a real evidence fixture and SKIPS when
+  absent — currently only `c64-disk-access/scripts/c1541.test.mjs`, which cross-validates
+  against the Phase 23 corpus image and never fails on a checkout without it.
+
+Anything else — add the fact to the skill in plain prose, or leave it out.
+
+### 21.2 Product source: state the reason, not the reference
+
+The rest of `src/**` is a softer boundary because its reader is usually a maintainer. But
+`src/mcp/vice/*.ts` ships **verbatim** to npm (no build step — see `files[]` in
+`src/mcp/vice/package.json`), so a consumer reading `vice-proxy.ts` sees its comments.
+
+Header comments explaining WHY a file exists remain the house style and must not be
+shortened away. What changes is the anchor: **write the reason, not the pointer.**
+
+- Bad: `// Phase 40, plan 40-02 (PREP-01, D-13): reached ONLY through the host-tool seam.`
+- Good: `// Reached ONLY through the host-tool seam: this script runs container-side and the
+  binary lives on the host, so a direct spawn finds nothing.`
+
+Keep a decision id only where it also resolves outside `.planning/` — `docs/` ids do
+(`docs/stock-vice-parity.md` defines D-01…D-42), and those may be cited **with their
+document named** so the reader can find them: `` `docs/stock-vice-parity.md` D-03 ``. A
+bare `D-13` resolves nowhere for a consumer.
+
+### 21.3 Never cite a `.planning/` path from product source
+
+A `.planning/` path in a product file is dead on arrival for a consumer and rots for the
+maintainer. MEASURED 2026-09-11: 32 of the 87 distinct `.planning/` targets cited from
+`src/` did not resolve in this checkout, and `.planning/RE-FINDINGS.md` — cited by 24
+tracked files and by five shipped `SKILL.md` footers — **has never existed in this
+repository at any commit**. It was inherited on 2026-08-09 with source extracted from
+another GSD-managed project and never repointed.
+
+This is the same defect class D-33 already fixed for *writes* on 2026-09-08, when incident
+records moved out of `.planning/incidents/` into `.c64-re-tools/incidents/` because
+"writing incident records into a consumer's GSD planning tree was the named reason for the
+move" (`incident-record.ts`). §21 extends that decision from writes to references.
+
+### 21.4 Why this rule exists, and why a convention document cannot be trusted to carry it
+
+Root-cause session `gsd-internals-leak-into-src` (2026-09-11) established a three-stage
+ratchet: source imported with a donor repo's citations → `/gsd-map-codebase` observed that
+style and wrote it into `.planning/codebase/CONVENTIONS.md` as prescriptive "house style",
+naming plan ids and `D-N` labels as required WHY-header content → GSD's own workflows make
+every discuss/execute agent read that file, and re-generate it each milestone from an
+ever-larger population. Citations went 424 → 3196 in 33 days.
+
+`.planning/codebase/CONVENTIONS.md` is **regenerated** by `/gsd-map-codebase` and will
+re-describe whatever the tree currently looks like. It is therefore not a durable home for
+this rule. This document is hand-maintained; the guard test is mechanical. Those two are
+the enforcement. If a future map-codebase run re-introduces a "cite your plan id"
+convention, it is wrong and this section overrides it.
