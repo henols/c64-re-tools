@@ -90,9 +90,21 @@ import {
   EXCLUSION_MARKER_PREFIX,
   exportAsm,
   substituteImmediateEnum,
+  type ExportAsmOptions,
   type ExportAsmResult,
+  type ExportBlock,
 } from "./anno-export-asm.ts";
 import { AUTO_NAME_PREFIX_RE } from "./anno-coverage.ts";
+// Phase 46 plan 06 (BUILD-07): the real ledger reader, used by the
+// TEST-ONLY filtering variant below to decide which ranges to drop -- never
+// re-derived, on the same "re-check, never re-define" terms this file
+// already applies elsewhere.
+import { provenanceForRange, readProvenanceLedger } from "./anno-provenance-ledger.ts";
+// Phase 46 plan 06 (BUILD-07): the ONE comment-and-string-literal stripper
+// in this tree (shipped-modules.ts's own header), so the structural guard
+// below cannot be satisfied or invalidated by this module's own prose
+// discussing the forbidden shape at length.
+import { codeOnly } from "./shipped-modules.ts";
 // BUILD-05 (phase 46 plan 01): `renderLedger()` is the ONE writer of the
 // generated tier this fixture must satisfy exactly (its own three refusal
 // preconditions -- non-empty UNKNOWN reasons, agreeing_releases >= 2 for
@@ -113,6 +125,7 @@ import {
   openStore,
   closeStore,
   listComments,
+  listEnumUsage,
   listLabels,
   listRanges,
   setComment,
@@ -3677,3 +3690,524 @@ test("EXCLUSION + LEDGER: real ACME reassembles an export carrying both exclusio
   assert.equal(verdict.outcome, "ok", `an export carrying both exclusion and provenance markers must verify:${context(result, verdict)}`);
   assert.equal(verdict.byteDiff?.equal, true, `an export carrying both exclusion and provenance markers must reassemble byte-identically:${context(result, verdict)}`);
 });
+
+// ---------------------------------------------------------------------------
+// Phase 46 plan 06 (BUILD-07): the planted control and the structural guard.
+// Every assertion below was written FIRST and observed to fail before the
+// control/guard existed, per this plan's own TDD instruction (the
+// `anno-bank.test.ts:1-10` voice) -- see `46-06-PLAN.md`'s <behavior> blocks
+// for the exact bullets each test proves.
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// TASK 1 -- the planted control: observed RED against a test-only filtering
+// variant, then trusted GREEN against the real, shipped exporter. Both
+// halves run over ONE fixture in ONE test, so the red and the green are
+// provably about the same input.
+// ---------------------------------------------------------------------------
+
+/** The verdict the test-only filtering variant below is keyed on -- the one
+ * a plausible heuristic would reach for. */
+const FILTERED_VERDICT = "CRACKER-PATCH";
+
+/**
+ * The planted range's own text: printable PETSCII (space, digits, and
+ * uppercase letters share the same byte values as ASCII in unshifted PETSCII
+ * text mode -- `src/skills/c64-petcat/SKILL.md`) reading as crack-credit
+ * text -- exactly the shape a plausible heuristic would reach for and drop.
+ */
+const PLANTED_TEXT = "CRACKED BY GRP";
+const PLANTED_BYTES: readonly number[] = [...PLANTED_TEXT].map((ch) => ch.charCodeAt(0));
+const PLANTED_START = 0x0807;
+const PLANTED_END_INCLUSIVE = PLANTED_START + PLANTED_BYTES.length - 1; // $0814
+
+/**
+ * The planted control's own store: a real, referenced `code` range first (so
+ * the store is not "one range and nothing else"), the PLANTED range second
+ * -- literally the MIDDLE of the three -- and a third plain `byte` range
+ * last. Dropping the middle range (as the filtering variant below does)
+ * therefore leaves exactly ONE fewer block than the store's own range count,
+ * never zero -- see the RED half's own count assertion below.
+ */
+function plantedControlStore(dir: string): StoreFixture {
+  return buildStore(dir, {
+    origin: 0x0801,
+    body: [...SHAPE_BODY, ...PLANTED_BYTES, 0xaa, 0xbb],
+    ranges: [
+      { start: 0x0801, endInclusive: 0x0806, dataType: "code" },
+      { start: PLANTED_START, endInclusive: PLANTED_END_INCLUSIVE, dataType: "byte" },
+      { start: 0x0815, endInclusive: 0x0816, dataType: "byte" },
+    ],
+    labels: [{ address: 0x0801, name: "reset_border" }],
+    comments: [{ address: 0x0801, commentType: "line", text: "sets the border colour to black" }],
+  });
+}
+
+/**
+ * The fixture ledger's generated tier: full $0000-$FFFF coverage
+ * (`renderLedger()`'s own precondition), with the PLANTED range classified
+ * CRACKER-PATCH/cracktro and the other two real ranges ORIGINAL -- so the
+ * "exactly one CRACKER-PATCH row" shape the RED half's count assertion
+ * depends on is unambiguous.
+ */
+const PLANTED_CONTROL_LEDGER_RANGES = [
+  {
+    start: 0x0000,
+    end: 0x0800,
+    kind: "unused",
+    verdict: "ORIGINAL",
+    agreeing_releases: 2,
+    evidence: "padding before the annotated range, byte-identical across releases",
+  },
+  {
+    start: 0x0801,
+    end: 0x0806,
+    kind: "game",
+    verdict: "ORIGINAL",
+    agreeing_releases: 3,
+    evidence: "the border-reset routine matches both independently-cracked releases byte for byte",
+  },
+  {
+    start: PLANTED_START,
+    end: PLANTED_END_INCLUSIVE,
+    kind: "cracktro",
+    verdict: "CRACKER-PATCH",
+    agreeing_releases: 0,
+    evidence: "crack-credit text inserted by the cracker -- no label, comment or cross-reference in the store names it",
+  },
+  {
+    start: 0x0815,
+    end: 0x0816,
+    kind: "game",
+    verdict: "ORIGINAL",
+    agreeing_releases: 2,
+    evidence: "trailing filler byte, byte-identical across releases",
+  },
+  {
+    start: 0x0817,
+    end: 0xffff,
+    kind: "unused",
+    verdict: "ORIGINAL",
+    agreeing_releases: 2,
+    evidence: "padding after the annotated range, byte-identical across releases",
+  },
+];
+
+/**
+ * TEST-ONLY. Must never be copied into `anno-export-asm.ts` or any module in
+ * `package.json`'s `files[]`. This is the negative control BUILD-07
+ * criterion 1 requires: a deliberately-filtering re-implementation of just
+ * the block-construction stretch, dropping any range whose overlapping
+ * ledger row carries `FILTERED_VERDICT`. It exists for exactly one purpose
+ * -- to demonstrate that the assertions in the control test's GREEN half can
+ * tell a lossless exporter from a filtering one -- and its existence in this
+ * file is the reason those green assertions mean something. It does not
+ * need to emit valid ACME; it only produces a block list and an
+ * expected-byte span the same assertions can be run against.
+ */
+function exportAsmWithVerdictFilter(options: ExportAsmOptions): { source: string; expectedBytes: Uint8Array; blocks: ExportBlock[] } {
+  const { storePath, imagePath, workspaceRoot, ledgerPath } = options;
+  if (ledgerPath === undefined) {
+    throw new Error("exportAsmWithVerdictFilter (TEST-ONLY): ledgerPath is required -- this variant exists to filter on ledger verdicts");
+  }
+
+  const raw = readFileSync(imagePath);
+  const origin = raw.readUInt16LE(0);
+  const bytes = raw.subarray(2);
+
+  const ranges = (() => {
+    const handle = openStore(storePath, { workspaceRoot, mustExist: true });
+    try {
+      return listRanges(handle);
+    } finally {
+      closeStore(handle);
+    }
+  })();
+  const sortedRanges = [...ranges].sort((a, b) => a.start - b.start);
+  const ledger = readProvenanceLedger(ledgerPath);
+
+  // THE FORBIDDEN SHAPE, DELIBERATELY: a `.filter()` keyed on the
+  // overlapping ledger row's verdict VALUE -- exactly the shape Task 2's
+  // structural guard below exists to catch if it ever appeared in the
+  // shipped module.
+  const kept = sortedRanges.filter((row) => {
+    const overlapping = provenanceForRange(ledger, row.start, row.endInclusive);
+    return !overlapping.some((r) => r.verdict === FILTERED_VERDICT);
+  });
+
+  const blocks: ExportBlock[] = kept.map((row) => ({
+    start: row.start,
+    endExclusive: row.endInclusive + 1,
+    dataType: row.dataType,
+    lineCount: 0,
+  }));
+
+  const minStart = blocks.length > 0 ? Math.min(...blocks.map((b) => b.start)) : 0;
+  const maxEndExclusive = blocks.length > 0 ? Math.max(...blocks.map((b) => b.endExclusive)) : 0;
+  const expectedBytes = new Uint8Array(Math.max(0, maxEndExclusive - minStart));
+  for (const block of blocks) {
+    expectedBytes.set(bytes.subarray(block.start - origin, block.endExclusive - origin), block.start - minStart);
+  }
+
+  const source = blocks.map((b) => `; block $${b.start.toString(16)}..$${(b.endExclusive - 1).toString(16)}`).join("\n");
+  return { source, expectedBytes, blocks };
+}
+
+test(
+  "PLANTED CONTROL (BUILD-07): a CRACKER-PATCH-classified, cracktro-shaped, wholly unreferenced range is dropped by a filtering variant (RED) and survives byte for byte, annotated, in the real exporter (GREEN)",
+  { skip: SKIP_REASON },
+  () => {
+    const dir = freshDir("planted-control");
+    const { storePath, imagePath } = plantedControlStore(dir);
+    const ledgerPath = writeLedgerFixture(dir, PLANTED_CONTROL_LEDGER_RANGES);
+
+    // --- Fixture non-vacuity: three independent counts, asserted BEFORE
+    // anything about the exporter runs. Without these, "the heuristic would
+    // have wanted to drop it" is an assertion about a fixture that never
+    // tempted anything.
+    const patchRow = PLANTED_CONTROL_LEDGER_RANGES.find(
+      (r) => r.verdict === "CRACKER-PATCH" && r.start <= PLANTED_END_INCLUSIVE && r.end >= PLANTED_START,
+    );
+    assert.ok(patchRow, "the fixture ledger must classify the planted range CRACKER-PATCH -- otherwise nothing here tempts a heuristic");
+    assert.equal(patchRow.verdict, "CRACKER-PATCH", "the planted range's ledger row's verdict must be CRACKER-PATCH, verbatim");
+    assert.equal(patchRow.kind, "cracktro", "the planted range's kind must be cracktro -- the shape a heuristic reaches for");
+
+    assert.ok(
+      PLANTED_BYTES.every((b) => b >= 0x20 && b <= 0x5a),
+      `the planted range's bytes must be a printable run reading as crack-credit text: ${JSON.stringify(PLANTED_BYTES)}`,
+    );
+
+    const { labels, comments, enumUsage } = (() => {
+      const handle = openStore(storePath, { workspaceRoot: dir, mustExist: true });
+      try {
+        return { labels: listLabels(handle), comments: listComments(handle), enumUsage: listEnumUsage(handle) };
+      } finally {
+        closeStore(handle);
+      }
+    })();
+    // Non-vacuity for the zero below: the store DOES carry labels and
+    // comments elsewhere (on the first, real range), so a zero count in the
+    // planted range is a genuine absence, not an empty store
+    // (anno-coverage.test.ts's own non-vacuity idiom).
+    assert.ok(
+      labels.length > 0 && comments.length > 0,
+      "the store must carry SOME labels and comments elsewhere, or the zero count below measures an empty store rather than a genuine absence",
+    );
+    const inPlantedRange = (address: number): boolean => address >= PLANTED_START && address <= PLANTED_END_INCLUSIVE;
+    const referencingPlantedRange = [
+      ...labels.filter((l) => inPlantedRange(l.address)),
+      ...comments.filter((c) => inPlantedRange(c.address)),
+      ...enumUsage.filter((u) => inPlantedRange(u.address)),
+    ];
+    assert.equal(
+      referencingPlantedRange.length,
+      0,
+      `no label, comment or enum usage anywhere in the store may reference the planted range: ${JSON.stringify(referencingPlantedRange)}`,
+    );
+
+    // --- RED half: the filtering variant, run over the SAME fixture, drops
+    // the planted range.
+    const filtered = exportAsmWithVerdictFilter({ storePath, imagePath, workspaceRoot: dir, ledgerPath });
+    const realRanges = (() => {
+      const handle = openStore(storePath, { workspaceRoot: dir, mustExist: true });
+      try {
+        return listRanges(handle);
+      } finally {
+        closeStore(handle);
+      }
+    })();
+    assert.equal(
+      filtered.blocks.length,
+      realRanges.length - 1,
+      "the filtering variant must drop EXACTLY one range -- the planted one -- not fail for some unrelated reason",
+    );
+    assert.ok(
+      !filtered.blocks.some((b) => b.start === PLANTED_START),
+      "the planted range's start must be ABSENT from the filtering variant's block starts",
+    );
+    assert.equal(
+      Buffer.from(filtered.expectedBytes).indexOf(Buffer.from([...PLANTED_BYTES])),
+      -1,
+      "the planted range's bytes must be ABSENT from the filtering variant's expected-byte span",
+    );
+
+    // --- GREEN half: the real, shipped exportAsm() over the SAME fixture.
+    const result = exportAsm({ storePath, imagePath, workspaceRoot: dir, ledgerPath });
+
+    // DISCRIMINATING POWER (recorded per the plan's own requirement): the
+    // specific broken variant tried is `exportAsmWithVerdictFilter` above --
+    // a block-construction `.filter()` keyed on the overlapping ledger
+    // row's verdict, in place of the unconditional `.map()`. Run directly
+    // above, in this same test, it produced exactly the wrong output the
+    // RED half just asserted: one fewer block than the store's own range
+    // count, the planted range's start absent from the block starts, and
+    // its bytes absent from the expected-byte span. This control's red
+    // observation is therefore CONTINUOUS -- run mechanically, in this
+    // test, every time this file runs -- rather than a historical hand run
+    // recorded once at authoring time (contrast
+    // `channel-lock.test.ts:108-118`, whose LIFO variant was run by hand
+    // during authoring and never mechanically re-run since). This is what
+    // confirms the assertions below actually distinguish a lossless
+    // exporter from a filtering one, rather than merely reading whichever
+    // result happens to fall out.
+    const plantedBlock = result.blocks.find((b) => b.start === PLANTED_START);
+    assert.ok(plantedBlock, "the real exporter must still emit a block starting at the planted range's start");
+    assert.equal(
+      plantedBlock.endExclusive,
+      PLANTED_END_INCLUSIVE + 1,
+      "the planted block's endExclusive must be the planted range's inclusive end plus one",
+    );
+
+    const minStart = Math.min(...result.blocks.map((b) => b.start));
+    const offset = PLANTED_START - minStart;
+    assert.deepEqual(
+      Array.from(result.expectedBytes.subarray(offset, offset + PLANTED_BYTES.length)),
+      Array.from(PLANTED_BYTES),
+      "the planted range's exact bytes must appear at the right offset in result.expectedBytes",
+    );
+
+    const plantedSource = blockSourceFor(result.source, `$${PLANTED_START.toString(16).padStart(4, "0")}`);
+    assert.match(
+      plantedSource,
+      /; PROVENANCE LEDGER: .*verdict=CRACKER-PATCH\b/,
+      "the planted block must be ANNOTATED with the CRACKER-PATCH verdict, not merely retained",
+    );
+
+    assert.equal(
+      result.blocks.length,
+      realRanges.length,
+      "nothing may be dropped: the real exporter's block count must equal the store's own range count",
+    );
+
+    const verdict = verifyExport(result);
+    assert.equal(verdict.outcome, "ok", `the planted control's export must round-trip:${context(result, verdict)}`);
+    assert.equal(verdict.byteDiff?.equal, true, `the byte-diff IS the verdict:${context(result, verdict)}`);
+  },
+);
+
+test("the filtering variant's identifier never reaches anno-export-asm.ts's own shipped source", () => {
+  const source = readFileSync(join(HERE, "anno-export-asm.ts"), "utf8");
+  assert.equal(
+    source.includes("exportAsmWithVerdictFilter"),
+    false,
+    "exportAsmWithVerdictFilter is TEST-ONLY and must never be copied into the shipped exporter",
+  );
+});
+
+test("anno-export-asm.test.ts is absent from package.json's files[] array (test-only, mechanically enforced, acme-gate.test.ts's own idiom)", () => {
+  const pkg = JSON.parse(readFileSync(join(HERE, "package.json"), "utf8")) as { files: string[] };
+  assert.ok(Array.isArray(pkg.files), "package.json must declare a files[] array");
+  assert.equal(
+    pkg.files.includes("anno-export-asm.test.ts"),
+    false,
+    "anno-export-asm.test.ts carries the test-only filtering variant and must never ship in the published npm tarball",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// TASK 2 -- the structural guard: reads `anno-export-asm.ts`'s own source
+// through `codeOnly()` so the guard cannot be satisfied or invalidated by
+// the module's own prose discussing the forbidden shape at length. Every
+// predicate below is proven non-vacuous against a synthetic, in-memory
+// mutation before its silence on the real module is trusted -- the same
+// discipline `module-classification.test.ts`'s own DIRECTION guards apply
+// to themselves.
+// ---------------------------------------------------------------------------
+
+/**
+ * The block-construction stretch, and ONLY that stretch, of
+ * `anno-export-asm.ts`'s own stripped source: from `const sortedRanges =
+ * [...ranges].sort(...)` through the closing `}));` of the block-list
+ * `.map()`. Bounded narrowly on purpose -- the LATER per-block loop
+ * legitimately interpolates an overlapping ledger row's
+ * `verdict`/`confidence`/`kind` INTO A COMMENT STRING, which is not the
+ * shape this guard forbids, and a guard scanning the WHOLE file would have
+ * to tell those two apart. This slice contains nothing but the
+ * range-to-block conversion, so any occurrence of `.filter(` or a
+ * provenance field name inside it is unambiguous.
+ */
+function blockConstructionSlice(): string {
+  const raw = readFileSync(join(HERE, "anno-export-asm.ts"), "utf8");
+  const stripped = codeOnly(raw);
+  const match = stripped.match(/const sortedRanges = \[\.\.\.ranges\]\.sort\([\s\S]*?\}\)\);/);
+  assert.ok(match, "the block-construction stretch must be found in anno-export-asm.ts's own stripped source -- the guard below has nothing to scan");
+  return match[0];
+}
+
+/** Positive: the block-construction `.map()` is present in its exact,
+ * unconditional current form -- pinning the one right shape rather than
+ * enumerating wrong ones. */
+function pinsUnconditionalBlockMap(text: string): boolean {
+  return /const blocks: ExportBlock\[\] = sortedRanges\.map\(\(row\) => \(\{\s*start: row\.start,\s*endExclusive: row\.endInclusive \+ 1,[\s\S]*?dataType: assertDataTypeForExport\(row\) as string,\s*lineCount: 0,\s*\}\)\);/.test(
+    text,
+  );
+}
+
+/** Negative: a `.filter()` applied to the RANGE list -- chained before the
+ * `.map()` that builds the block array. */
+function hasRangeListFilter(text: string): boolean {
+  const filterIndex = text.indexOf(".filter(");
+  const mapIndex = text.indexOf(".map(");
+  return filterIndex !== -1 && mapIndex !== -1 && filterIndex < mapIndex;
+}
+
+/** Negative: a `.filter()` applied to the BLOCK list -- chained after the
+ * `.map()` that builds it. */
+function hasBlockListFilter(text: string): boolean {
+  const filterIndex = text.indexOf(".filter(");
+  const mapIndex = text.indexOf(".map(");
+  return filterIndex !== -1 && mapIndex !== -1 && filterIndex > mapIndex;
+}
+
+/** Negative: ANY reference to a provenance field's name inside the
+ * block-construction stretch. The real stretch has none -- `dataType` is
+ * copied verbatim, but `verdict`/`confidence`/`kind` belong to the ledger
+ * row, read only LATER, in the per-block loop this slice deliberately
+ * excludes. A conditional cannot inspect a field's contents without first
+ * naming it, so "no reference at all" is a strictly stronger, and still
+ * correct, form of "no conditional reads it". */
+function referencesProvenanceField(text: string): boolean {
+  return /\b(verdict|confidence|kind)\b/.test(text);
+}
+
+test("guard non-vacuity: codeOnly()'s own extraction of anno-export-asm.ts is non-empty and strictly shorter than the raw source", () => {
+  const raw = readFileSync(join(HERE, "anno-export-asm.ts"), "utf8");
+  const stripped = codeOnly(raw);
+  // ci-suite-coverage.test.ts applies this same self-check to its own text
+  // extraction, for the same reason: a stripper bug that silently returned
+  // nothing (or the whole file unstripped) would make every negative
+  // assertion below pass for the wrong reason.
+  assert.ok(stripped.length > 0, "codeOnly() must not return an empty string for a real module");
+  assert.ok(stripped.length < raw.length, "codeOnly() must actually strip something -- comments and string bodies exist in this module");
+});
+
+test("STRUCTURAL GUARD (BUILD-07): the block array is built 1:1 from the sorted range list, with no filter and no provenance-field conditional", () => {
+  const slice = blockConstructionSlice();
+
+  assert.equal(
+    pinsUnconditionalBlockMap(slice),
+    true,
+    "the block array must be built 1:1 from the sorted range list via an unconditional .map() -- BUILD-07 requires the export path be lossless by default, and no range may be dropped, filtered or omitted on the tool's own judgement",
+  );
+  assert.equal(
+    hasRangeListFilter(slice),
+    false,
+    "no .filter() may be applied to the range list before the block array is built -- that is how a provenance value would gain the power to remove a range from the artefact (T-46-03)",
+  );
+  assert.equal(
+    hasBlockListFilter(slice),
+    false,
+    "no .filter() may be applied to the block list after it is built -- the same BUILD-07/T-46-03 hazard, chained the other way",
+  );
+  assert.equal(
+    referencesProvenanceField(slice),
+    false,
+    "no code between the store read and the emitted block array may reference a verdict, confidence or kind field, let alone branch on one (BUILD-07/T-46-03)",
+  );
+});
+
+// --- The guard's own non-vacuity: each predicate above, fired against a
+// synthetic, in-memory mutation of the SAME slice. A predicate that has
+// never fired is indistinguishable from one that cannot
+// (module-classification.test.ts's own DIRECTION-guard discipline, applied
+// to this guard).
+
+test("guard non-vacuity: pinsUnconditionalBlockMap fires when the block shape drifts from the pinned form", () => {
+  const slice = blockConstructionSlice();
+  const mutated = slice.replace("lineCount: 0,", "lineCount: 0,\n    extraneous: true,");
+  assert.notEqual(mutated, slice, "the mutation must actually change the string, or this proves nothing");
+  assert.equal(pinsUnconditionalBlockMap(mutated), false, "the positive predicate must REPORT a drifted shape, not silently accept it");
+});
+
+test("guard non-vacuity: hasRangeListFilter fires when a .filter() is inserted before the block .map()", () => {
+  const slice = blockConstructionSlice();
+  const mutated = slice.replace("sortedRanges.map(", 'sortedRanges.filter((row) => row.start >= 0).map(');
+  assert.notEqual(mutated, slice, "the mutation must actually change the string, or this proves nothing");
+  assert.equal(hasRangeListFilter(mutated), true, "the range-list-filter predicate must REPORT the inserted filter");
+});
+
+test("guard non-vacuity: hasBlockListFilter fires when a .filter() is chained after the block .map()", () => {
+  const slice = blockConstructionSlice();
+  const mutated = slice.replace(/\}\)\);\s*$/, '})).filter((b) => b.start >= 0);');
+  assert.notEqual(mutated, slice, "the mutation must actually change the string, or this proves nothing");
+  assert.equal(hasBlockListFilter(mutated), true, "the block-list-filter predicate must REPORT the appended filter");
+});
+
+test("guard non-vacuity: referencesProvenanceField fires when a provenance field name is inserted into the slice", () => {
+  const slice = blockConstructionSlice();
+  const mutated = slice.replace(
+    "dataType: assertDataTypeForExport(row) as string,",
+    'dataType: row.verdict === "CRACKER-PATCH" ? "excluded" : (assertDataTypeForExport(row) as string),',
+  );
+  assert.notEqual(mutated, slice, "the mutation must actually change the string, or this proves nothing");
+  assert.equal(referencesProvenanceField(mutated), true, "the field-reference predicate must REPORT the inserted verdict conditional");
+});
+
+// --- The behavioural companion: "no verdict value changes what is emitted"
+// measured across the whole verdict vocabulary, not on one example.
+
+test(
+  "BEHAVIOURAL COMPANION (BUILD-07): no verdict, confidence or kind value changes what is emitted, across the full vocabulary",
+  { skip: SKIP_REASON },
+  () => {
+    const dir = freshDir("guard-companion");
+    const { storePath, imagePath } = exclusionStore(dir, [
+      { start: 0x0807, endInclusive: 0x0808, reason: "behavioural companion: one recorded exclusion, independent of provenance" },
+    ]);
+    const ledgerPath = writeLedgerFixture(dir);
+
+    // Non-vacuity: the fixture ledger really carries all three verdicts and
+    // at least two distinct confidence tiers, checked against its OWN
+    // rendered table -- before anything about the exporter's output is
+    // asserted.
+    const ledgerText = readFileSync(ledgerPath, "utf8");
+    const rows = [...ledgerText.matchAll(/^\| \$[0-9A-Fa-f]{4} \| \$[0-9A-Fa-f]{4} \| \S+ \| (\S+) \| ([^|]+?) \| \d+ \|/gm)];
+    assert.ok(rows.length > 0, "the ledger fixture must actually parse -- otherwise the vocabulary assertions below measure nothing");
+    const verdictsInLedger = new Set(rows.map((r) => r[1]!.trim()));
+    const confidencesInLedger = new Set(rows.map((r) => r[2]!.trim()));
+    assert.deepEqual(
+      [...verdictsInLedger].sort(),
+      ["CRACKER-PATCH", "ORIGINAL", "UNKNOWN"],
+      "the fixture ledger must carry all three verdicts",
+    );
+    assert.ok(
+      confidencesInLedger.size >= 2,
+      `the fixture ledger must carry at least two distinct confidence tiers, found: ${[...confidencesInLedger].join(", ")}`,
+    );
+
+    const result = exportAsm({ storePath, imagePath, workspaceRoot: dir, ledgerPath });
+
+    const storeRangeCount = (() => {
+      const handle = openStore(storePath, { workspaceRoot: dir, mustExist: true });
+      try {
+        return listRanges(handle).length;
+      } finally {
+        closeStore(handle);
+      }
+    })();
+    assert.equal(
+      result.blocks.length,
+      storeRangeCount,
+      "result.blocks.length must equal the store's OWN live range count -- never a hard-coded number",
+    );
+
+    // Per-block annotation, asserted INDIVIDUALLY -- a block annotated twice
+    // cannot cover for a block annotated zero times.
+    for (const block of result.blocks) {
+      const blockHex = `$${block.start.toString(16).padStart(4, "0")}`;
+      const blockText = blockSourceFor(result.source, blockHex);
+      assert.match(blockText, /; PROVENANCE LEDGER: /, `block ${blockHex} must carry at least one provenance line`);
+    }
+
+    // Verdict set equality, asserted in BOTH directions separately: one
+    // direction alone would miss an INVENTED verdict, the other alone would
+    // miss a DROPPED one.
+    const verdictsInSource = new Set([...result.source.matchAll(/verdict=(\S+)/g)].map((m) => m[1]!));
+    for (const v of verdictsInLedger) {
+      assert.ok(verdictsInSource.has(v), `ledger verdict ${v} must appear in the exported source -- nothing may be silently dropped`);
+    }
+    for (const v of verdictsInSource) {
+      assert.ok(verdictsInLedger.has(v), `source verdict ${v} must come from the ledger -- nothing may be invented`);
+    }
+  },
+);
