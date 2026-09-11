@@ -207,7 +207,9 @@ interface DecompCompletenessJson {
   notExecutedReason: string | null;
   byteCensus: { undefinedCount: number };
   survivors: readonly unknown[];
-  referencedAddresses: { unresolved: readonly unknown[] };
+  imageUnavailable: boolean;
+  entryPoints: readonly { address: number }[];
+  referencedAddresses: { unresolved: readonly unknown[]; denominator: number };
   disagreementResolution: { unresolvedCount: number };
 }
 
@@ -356,4 +358,78 @@ test("Test 5 (NON-VACUITY CONTROL): omitting --disagreements makes the real gate
     const combined = `${gate.stdout}${gate.stderr}`;
     assert.ok(combined.includes("--disagreements"), `the refusal must name --disagreements literally, by name:\n${combined}`);
   });
+});
+
+// ---------------------------------------------------------------------------
+// 45-REVIEW WR-02 (fixed 2026-09-11): a manifest-listed fixture whose own
+// image bytes cannot be located must report `imageUnavailable: true` and
+// fabricate NO synthetic `$0000` entry point from a zero-length placeholder's
+// own `origin` -- never reachable through any of the nine real committed
+// fixtures (all nine images exist), so this scenario is built from scratch,
+// entirely outside the repository tree, pointing the manifest at a fixture
+// path that genuinely does not exist under `src/mcp/vice/fixtures/`.
+// ---------------------------------------------------------------------------
+
+test("WR-02 Fix: a fixture whose image cannot be located reports imageUnavailable:true and fabricates no $0000 entry point, while real stored evidence still surfaces", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "anno-decomp-closure-wr02-"));
+  const previousProjectDir = process.env.CLAUDE_PROJECT_DIR;
+  process.env.CLAUDE_PROJECT_DIR = tempDir;
+  try {
+    // A manifest path that does NOT exist under src/mcp/vice/fixtures/ --
+    // reproduces WR-02's exact trigger condition (existsSync(fixtureImagePath)
+    // false) without touching any real committed fixture.
+    const fakeFixturePath = "ghidra/does-not-exist-wr02.prg";
+    assert.equal(existsSync(join(FIXTURES_DIR, fakeFixturePath)), false, "precondition: this path must genuinely not exist under fixtures/");
+
+    const manifestPath = join(tempDir, "manifest.json");
+    writeFileSync(
+      manifestPath,
+      JSON.stringify({ fixtures: [{ path: fakeFixturePath, execution: "executed", reason: null, ghidraRoute: "prg" }] }),
+      "utf8",
+    );
+
+    const storePath = join(tempDir, "does-not-exist-wr02.annostore");
+    const handle = openStore(storePath, { workspaceRoot: tempDir });
+    try {
+      // A stored xref landing inside a code range is a REAL entry-point
+      // candidate that needs no image bytes to establish (buildEntryPoints()
+      // unions it independently of image.origin) -- present here specifically
+      // so the assertion below distinguishes "the fix empties everything" from
+      // "the fix removes only the fabricated $0000", the actual claim.
+      const doc: StoreExportDocument = {
+        schemaVersion: 1,
+        store: "does-not-exist-wr02.annostore",
+        ranges: [{ start: 0x1000, endInclusive: 0x1002, dataType: "code", bank: null, provenance: "derived" }],
+        labels: [],
+        comments: [],
+        projectEnums: [],
+        enumUsage: [],
+        xrefs: [{ fromAddress: 0x0810, toAddress: 0x1000, accessKind: "COMPUTED_JUMP", bank: null }],
+        execObservations: [],
+      };
+      importStoreDocument(handle, doc);
+    } finally {
+      closeStore(handle);
+    }
+
+    const disagreements = await realDisagreements(storePath);
+    const disagreementsPath = join(tempDir, "disagreements.json");
+    writeFileSync(disagreementsPath, JSON.stringify(disagreements), "utf8");
+
+    const report = await realCompletenessJson(storePath, disagreementsPath, manifestPath);
+    assert.equal(report.imageUnavailable, true, "an unlocatable image must be reported BY NAME");
+    assert.deepEqual(
+      report.entryPoints.map((e) => e.address),
+      [0x1000],
+      "the real stored xref target must still surface -- only the fabricated image.origin ($0000) candidate is gone",
+    );
+    assert.ok(
+      !report.entryPoints.some((e) => e.address === 0),
+      "no synthetic $0000 entry point may be fabricated when the image is unavailable",
+    );
+  } finally {
+    if (previousProjectDir === undefined) delete process.env.CLAUDE_PROJECT_DIR;
+    else process.env.CLAUDE_PROJECT_DIR = previousProjectDir;
+    rmSync(tempDir, { recursive: true, force: true });
+  }
 });

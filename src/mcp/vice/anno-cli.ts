@@ -1996,19 +1996,25 @@ function buildRangeProvenance(
  * no separate "call" member, so a stored xref landing in code is treated as
  * a call reference for this census), PLUS the image's own load/start
  * address (`image.origin`) -- the fixture's own natural entry point.
- * Sorted ascending by address. */
+ * Sorted ascending by address.
+ *
+ * `image === null` (45-REVIEW WR-02, fixed 2026-09-11) means the fixture's
+ * own bytes could not be located: no instructions are decoded and NO
+ * `image.origin` candidate is added -- a missing image degrades this to
+ * whatever the store's own stored `xrefs` already establish, never a
+ * fabricated `$0000` from a placeholder's own zero origin. */
 function buildEntryPoints(
   ranges: readonly RangeRow[],
-  image: { origin: number; bytes: Uint8Array },
+  image: { origin: number; bytes: Uint8Array } | null,
   xrefs: readonly { toAddress: number }[],
   labels: readonly LabelRow[],
   comments: readonly CommentRow[],
 ): EntryPointRow[] {
   const codeRanges = ranges.filter((r) => r.dataType === "code");
-  const instructions = decodeCodeRanges(ranges, image);
+  const instructions = image === null ? [] : decodeCodeRanges(ranges, image);
 
   const candidates = new Set<number>();
-  candidates.add(image.origin);
+  if (image !== null) candidates.add(image.origin);
   for (const instr of instructions) {
     if (instr.mnemonic === "jsr") {
       const target = instructionReferencedAddress(instr);
@@ -2049,15 +2055,19 @@ function buildEntryPoints(
  * reference, classified `resolved` (an authored, non-survivor label exists),
  * `declined` (a `DECLINE_COMMENT_PREFIX` comment exists, carrying the
  * decline's own reason), or `unresolved` (neither) -- sorted ascending by
- * address within each bucket. */
+ * address within each bucket.
+ *
+ * `image === null` (45-REVIEW WR-02, fixed 2026-09-11): no instructions are
+ * decoded, so this degrades to whatever the store's own stored `xrefs`
+ * establish -- never fabricated from a placeholder image's bytes. */
 function buildReferencedAddresses(
   ranges: readonly RangeRow[],
-  image: { origin: number; bytes: Uint8Array },
+  image: { origin: number; bytes: Uint8Array } | null,
   xrefs: readonly { toAddress: number }[],
   labels: readonly LabelRow[],
   comments: readonly CommentRow[],
 ): ReferencedAddressesCensus {
-  const instructions = decodeCodeRanges(ranges, image);
+  const instructions = image === null ? [] : decodeCodeRanges(ranges, image);
   const candidates = new Set<number>();
   for (const instr of instructions) {
     const target = instructionReferencedAddress(instr);
@@ -2309,6 +2319,12 @@ async function cmdDecompCompleteness(rest: string[]): Promise<number> {
     byteCensus: { byType: Record<string, number>; undefinedCount: number; denominator: number; undefinedRanges: { start: number; endInclusive: number }[] };
     survivors: { address: number; name: string }[];
     rangeProvenance: RangeProvenanceRow[];
+    // 45-REVIEW WR-02 (fixed 2026-09-11): true when the fixture's own image
+    // bytes could not be located -- see the fallback below. `entryPoints`/
+    // `referencedAddresses` are DEGRADED (never fabricated) when this is
+    // true: no synthetic `$0000` entry point is manufactured from a
+    // zero-length placeholder's own `origin`.
+    imageUnavailable: boolean;
     entryPoints: EntryPointRow[];
     referencedAddresses: ReferencedAddressesCensus;
     disagreementInput: DecompDisagreementInput;
@@ -2383,20 +2399,23 @@ async function cmdDecompCompleteness(rest: string[]): Promise<number> {
     // The full measure set (phase 45 plan 45-04). All four use the SAME
     // fixture bytes the derivation route itself read -- the fixtures-relative
     // manifest path, resolved beside this module (`fixtures/<manifestEntry.path>`),
-    // never a second guess at where the image lives. An image that fails to
-    // decode (never expected for a committed fixture, but never fabricated
-    // either) degrades entryPoints/referencedAddresses to the image's origin
-    // only / empty, rather than throwing -- a missing byte source is not a
-    // caller error this verb's own argument validation already covers.
+    // never a second guess at where the image lives. An image that cannot be
+    // located (never expected for a committed fixture, but never fabricated
+    // either) degrades entryPoints/referencedAddresses to EMPTY -- never a
+    // synthetic zero-length placeholder whose own `origin` (0) would read as
+    // a real `$0000` entry point (45-REVIEW WR-02, fixed 2026-09-11: the
+    // placeholder's origin was previously unioned into the candidate set
+    // unconditionally, fabricating a plausible-looking but fictitious
+    // finding). `imageUnavailable` reports the condition BY NAME instead.
     const comments = listComments(handle);
     const xrefs = listXrefs(handle);
     const fixtureImagePath = join(HERE, "fixtures", manifestEntry.path);
     const loadedImage = existsSync(fixtureImagePath) ? projectImage(fixtureImagePath) : null;
-    const image = loadedImage ?? { origin: 0, bytes: new Uint8Array(0) };
+    const imageUnavailable = loadedImage === null;
 
     const rangeProvenance = buildRangeProvenance(sortedRanges, listExecObservations(handle), comments);
-    const entryPoints = buildEntryPoints(sortedRanges, image, xrefs, labels, comments);
-    const referencedAddresses = buildReferencedAddresses(sortedRanges, image, xrefs, labels, comments);
+    const entryPoints = buildEntryPoints(sortedRanges, loadedImage, xrefs, labels, comments);
+    const referencedAddresses = buildReferencedAddresses(sortedRanges, loadedImage, xrefs, labels, comments);
     const disagreementResolution = buildDisagreementResolution(disagreementInput.disagreements, comments);
 
     report = {
@@ -2407,6 +2426,7 @@ async function cmdDecompCompleteness(rest: string[]): Promise<number> {
       byteCensus: { byType, undefinedCount, denominator, undefinedRanges },
       survivors,
       rangeProvenance,
+      imageUnavailable,
       entryPoints,
       referencedAddresses,
       disagreementInput,
@@ -2445,6 +2465,7 @@ function printDecompCompletenessReport(r: {
   byteCensus: { byType: Record<string, number>; undefinedCount: number; denominator: number; undefinedRanges: { start: number; endInclusive: number }[] };
   survivors: { address: number; name: string }[];
   rangeProvenance: RangeProvenanceRow[];
+  imageUnavailable: boolean;
   entryPoints: EntryPointRow[];
   referencedAddresses: ReferencedAddressesCensus;
   disagreementInput: DecompDisagreementInput;
@@ -2505,6 +2526,13 @@ function printDecompCompletenessReport(r: {
     }
   }
   console.log("");
+
+  // 45-REVIEW WR-02 (fixed 2026-09-11): named BY NAME, not inferred from a
+  // suspiciously-empty entryPoints/referencedAddresses census.
+  if (r.imageUnavailable) {
+    console.log("  IMAGE UNAVAILABLE: the fixture's own image bytes could not be located -- entryPoints and referencedAddresses below are degraded to what the store's own stored xrefs establish, never fabricated from a placeholder image.");
+    console.log("");
+  }
 
   const fullyDocumented = r.entryPoints.filter(
     (e) => e.hasName && e.purposeElements.function && e.purposeElements.inputs && e.purposeElements.outputs && e.purposeElements.sideEffects,
