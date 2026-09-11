@@ -993,7 +993,7 @@ decline wherever the evidence is genuinely path-dependent.
   4. Every referenced non-hardware address resolves to a named, documented symbol, **and** an address whose target is genuinely path-dependent produces an explicit recorded decline naming what is unknown rather than a fabricated symbol — observed on `bank-path-dependent.prg`, a fixture that already exists precisely because it contains one, and on a runtime-varying zero-page pointer.
   5. Hardware register writes render as named enum members rather than magic numbers, with at least one multi-bit register (`$D011` or `$D018`) shown decomposed into its named bits rather than emitted as one hex constant.
 
-**Plans**: 1/10 plans executed
+**Plans**: 2/10 plans executed
 
 Plans:
 **Wave 1**
@@ -1002,7 +1002,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 45-02-PLAN.md — The committed store form: `anno-store-export.ts` JSON export/import with per-row derived/authored provenance (D-02, D-03)
+- [x] 45-02-PLAN.md — The committed store form: `anno-store-export.ts` JSON export/import with per-row derived/authored provenance (D-02, D-03)
 - [ ] 45-03-PLAN.md — `decomposeRegisterValue()`, the one owning multi-bit decoder, and the rebuilt enum fetch/install route (D-15, D-16); ANNO-13 partial reclaim recorded
 
 **Wave 3** *(blocked on Wave 2 completion)*
@@ -1312,7 +1312,7 @@ in a milestone archive.
 | 42. The Text-Format Parsers and Their Two-Binary Fixtures | v0.9.0 | 16/16 | Complete | 2026-09-10 |
 | 43. The Runtime Evidence Layer | v0.9.0 | 7/7 | Complete | 2026-09-10 |
 | 44. PROOF-04 — The Independent External Check | v0.9.0 | 3/3 | Complete | 2026-09-10 |
-| 45. Decomposition to Closure, Disagreement First | v1.0.0 | 1/10 | In Progress | - |
+| 45. Decomposition to Closure, Disagreement First | v1.0.0 | 2/10 | In Progress | - |
 | 46. The Lossless-Export Invariant and the Provenance Carry | v1.0.0 | - | Not started | - |
 | 47. Multi-File Rebuildable Source | v1.0.0 | - | Not started | - |
 | 48. The Movement-Hazard Report and Its Purpose-Built Subject | v1.0.0 | - | Not started | - |

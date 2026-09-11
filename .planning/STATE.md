@@ -5,16 +5,16 @@ milestone_name: The Rebuild Half
 current_phase: 45
 current_phase_name: Decomposition to Closure, Disagreement First
 status: executing
-stopped_at: Completed 45-01-PLAN.md
-last_updated: "2026-09-10T22:11:13.930Z"
-last_activity: 2026-09-10
+stopped_at: Completed 45-02-PLAN.md
+last_updated: "2026-09-11T05:14:22.861Z"
+last_activity: 2026-09-11
 last_activity_desc: Phase 45 execution started
-state_head: 6b50b0a6a856e239e38f6a5d6b6bb757551957c5
+state_head: d02da9373de153a2f72b3d9effc4c27a164990bb
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 10
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -255,10 +255,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 45 (Decomposition to Closure, Disagreement First) — EXECUTING
-Plan: 2 of 10
+Plan: 3 of 10
 Status: Ready to execute
-Progress: [░░░░░░░░░░] 0%
-Last activity: 2026-09-10 — Phase 45 execution started
+Progress: [██░░░░░░░░] 20%
+Last activity: 2026-09-11 — Phase 45 wave 1 complete (45-01 tracer spine)
 
 ## Performance Metrics
 
@@ -536,6 +536,7 @@ Last activity: 2026-09-10 — Phase 45 execution started
 | Phase 44 P02 | 20min | 2 tasks | 2 files |
 | Phase 44 P03 | 35min | 2 tasks | 2 files |
 | Phase 45 P01 | ~100min | 3 tasks | 11 files |
+| Phase 45 P02 | 35min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -1233,6 +1234,7 @@ Recent decisions affecting current work:
 - [Phase 45]: evid-disagreements --json now also carries runIdentity (Rule 2), computed from listObservedRuns(), so decomp-completeness's D-09 anti-vacuity check has a run identity to validate a supplied --disagreements document against the same store's evid-runs table.
 - [Phase 45]: dxa's own listing ranges (runDxaDisassemble's map.ranges) feed setDataType, not partitionByteDerived -- that Phase 35 ground-truth classifier never assigns code by design, which would leave the store with no code range for the disagreement query to compare against.
 - [Phase 45]: The frozen survivor prefix set (AUTO_NAME_PREFIX_RE plus three defensive anchored cases) was decided from a real measurement returning zero labels, confirming RESEARCH.md's prediction, and recorded in docs/phase45-wave0-measurements.md.
+- [Phase 45]: Corrected the checkpoint's own decline-comment provenance framing to match D-03/RESEARCH.md Section 5 — The plan's Task 1 checkpoint text called decline comments 'derived'; CONTEXT.md D-03 and RESEARCH.md Section 5 both state comments (including declines) are the authored half, and Task 2's own Test 6 requires provenance:authored for a DECLINED: comment
 
 ### Pending Todos
 
@@ -2305,8 +2307,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-10T22:11:13.788Z
-Stopped at: Completed 45-01-PLAN.md
+Last session: 2026-09-11T05:14:22.743Z
+Stopped at: Completed 45-02-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
