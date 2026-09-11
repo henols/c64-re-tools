@@ -208,6 +208,48 @@ export const ANNO_VERB_REGISTER: readonly AnnoVerbRegisterEntry[] = Object.freez
   },
 
   {
+    verb: "anno_exclude_range",
+    kind: "unclassified",
+    consumers: [
+      { path: "src/mcp/vice/anno-store.ts", symbol: "addExcludedRange" },
+      { path: "src/mcp/vice/anno-tools.ts", symbol: "anno_exclude_range" },
+    ],
+    requirements: ["BUILD-05", "BUILD-07"],
+    rationale:
+      "BUILD-05 requires that any exclusion be one the user asked for, made explicit and recorded rather than " +
+      "silently applied. BUILD-07 requires a user-requested exclusion be emitted as a recorded excluded range " +
+      "rather than a hole. Both clauses presuppose a route by which the user STATES the request. Without this " +
+      "verb the store persists a table no caller on this surface can write -- a stored capability with no " +
+      "route, which is the same shape anno_add_scope's own entry was written against. The surface is the right " +
+      "home rather than the CLI because an exclusion is a small bounded piece of state a session sets while " +
+      "looking at a range, not a filesystem artefact.",
+    note:
+      "This verb's existence is what makes the requirement's 'never the tool's' clause CHECKABLE rather than " +
+      "aspirational. As long as the only way a range can be excluded is a user calling this verb, there is no " +
+      "code path by which the tool excludes anything on its own judgement. The alternative rejected: a " +
+      "confidence or verdict threshold inside the exporter would have 'implemented' the same user-visible " +
+      "outcome and would have made the tool the decider -- the failure mode the 2026-09-10 rewording of " +
+      "BUILD-05 removed.",
+  },
+  {
+    verb: "anno_include_range",
+    kind: "unclassified",
+    consumers: [
+      { path: "src/mcp/vice/anno-store.ts", symbol: "removeExcludedRange" },
+      { path: "src/mcp/vice/anno-tools.ts", symbol: "anno_include_range" },
+    ],
+    requirements: ["BUILD-07"],
+    rationale:
+      "The inverse of the overlap refusal, on the same terms anno_remove_scope's entry states: the store " +
+      "refuses any exclusion overlapping an existing one, so a single transposed end would otherwise make a " +
+      "whole region permanently unexcludable, with the only route back being a revert through the bounded " +
+      "snapshot ring. A write verb whose mistakes cannot be undone is a data-loss surface even when every " +
+      "individual refusal is correct, so the inverse ships in the same phase as the refusal.",
+    note:
+      "The measured mechanism, not an asserted risk: the snapshot ring is bounded at MAX_SNAPSHOT_REVISIONS, so " +
+      "a mistake that is not directly undoable becomes permanently undoable after that many further writes.",
+  },
+  {
     verb: "anno_import_ghidra_export",
     kind: "unclassified",
     consumers: [
