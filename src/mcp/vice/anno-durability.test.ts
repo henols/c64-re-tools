@@ -640,6 +640,46 @@ test("SCHEMA_VERSION 5: a store whose anno_meta.schema_version is 3 is refused b
   }
 });
 
+// IN-01 (46-REVIEW): the version-5 `reaffirm-refusal` doc comment in
+// `anno-types.ts` states, as part of its own decision basis, "a version-4
+// store does not open under this SCHEMA_VERSION" -- but until this test, no
+// committed fixture actually constructed one; the general `openStore()`
+// mismatch branch was exercised only via the version-3 fixture above. Same
+// shape as that test, `4` in place of `3` throughout, so the two fixtures
+// stay visibly parallel rather than one silently drifting from the other.
+test("SCHEMA_VERSION 5: a store whose anno_meta.schema_version is 4 is refused by name, naming both versions, with its bytes and mtime unchanged", () => {
+  const dir = mkdtempSync(join(tmpdir(), "anno-"));
+  try {
+    const path = join(dir, "proj.annostore");
+    const store = openStore(path, { workspaceRoot: dir });
+    // Forging the version-4 state directly -- the point is a file THIS BUILD
+    // must refuse, not a write it would ever perform.
+    store.db.prepare("update anno_meta set schema_version = 4 where id = 1").run();
+    closeStore(store);
+
+    const statBefore = statSync(path);
+    const bytesBefore = readFileSync(path);
+
+    assert.throws(
+      () => openStore(path, { workspaceRoot: dir }),
+      (e: unknown) => {
+        assert.ok(e instanceof AnnoStoreCorruptError, `expected AnnoStoreCorruptError, got ${String(e)}`);
+        assert.match(e.message, /schema_version 4/, "the refusal must name the version it found");
+        assert.match(e.message, /expected 5/, "the refusal must name the version it wanted");
+        return true;
+      },
+    );
+
+    const statAfter = statSync(path);
+    const bytesAfter = readFileSync(path);
+    assert.equal(bytesAfter.length, bytesBefore.length, "a refusal must not resize the file it refused");
+    assert.ok(bytesAfter.equals(bytesBefore), "and it must not change a single byte -- the file stays recoverable by hand");
+    assert.equal(statAfter.mtimeMs, statBefore.mtimeMs, "and it must not even touch the file's mtime");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("EVID-01/T-43-09: one evidence observation survives a real SIGKILL with no clean close and reads back BY VALUE via listExecObservations", () => {
   const { rows } = observeEvidenceMutateKillReopen("commit");
   assert.equal(rows.length, 1, `expected exactly one evidence row after the committing kill, got ${JSON.stringify(rows)}`);
