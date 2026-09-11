@@ -193,23 +193,29 @@ function addr(a) {
  *
  * THROWS `MissingDisagreementInputError` -- D-09 mechanism 2 -- when
  * `report.disagreementInput` is absent, or present but its own
- * `runIdentity` is not a complete `{ imageSha256, argvDigest, seed }`
- * object. An empty `disagreements` ARRAY alone is not enough to refuse --
- * that is a real, non-vacuous "zero disagreements" answer; what is refused
- * is the ABSENCE of the input itself.
+ * `runIdentity` is neither `null` nor a complete
+ * `{ imageSha256, argvDigest, seed }` object. An empty `disagreements`
+ * ARRAY alone is not enough to refuse -- that is a real, non-vacuous "zero
+ * disagreements" answer; what is refused is the ABSENCE of the input
+ * itself.
+ *
+ * Rule 1 fix (disclosed, plan 45-06): `identity === null` is a THIRD,
+ * legitimate value here, mirroring anno-cli.ts's own
+ * `validateDisagreementDocumentShape()`/match-check -- the real answer `anno
+ * evid-disagreements --json` produces for a store with zero observed runs
+ * (a D-13 non-executed fixture). By the time a report reaches this
+ * function, `anno decomp-completeness`'s own server-side check has already
+ * proven that null against the store's own evid-runs table (refusing a
+ * null identity on a store that DOES carry real runs) -- this function
+ * never re-derives that proof, only trusts an already-validated report.
  */
 export function renderCompletenessReport(report) {
   const input = report?.disagreementInput;
   const identity = input?.runIdentity;
-  if (
-    input === undefined ||
-    input === null ||
-    typeof identity !== "object" ||
+  const identityIsWellFormed =
     identity === null ||
-    typeof identity.imageSha256 !== "string" ||
-    typeof identity.argvDigest !== "string" ||
-    typeof identity.seed !== "string"
-  ) {
+    (typeof identity === "object" && identity !== null && typeof identity.imageSha256 === "string" && typeof identity.argvDigest === "string" && typeof identity.seed === "string");
+  if (input === undefined || input === null || !identityIsWellFormed) {
     throw new MissingDisagreementInputError(
       "renderCompletenessReport: no disagreement input is present on this report -- refusing to render. " +
         "Pass --disagreements to `anno decomp-completeness` (the JSON `anno evid-disagreements --json` wrote " +

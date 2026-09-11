@@ -1722,7 +1722,19 @@ function fixtureStem(path: string): string {
  * verb (via `cmdEvidDisagreements`'s own `--json` branch) adds alongside it.
  * `disagreementInput` in the `--json` answer below is exactly this shape. */
 interface DecompDisagreementInput extends EvidReconciliation {
-  runIdentity: { imageSha256: string; argvDigest: string; seed: string };
+  // Phase 45, plan 45-06 (Rule 1 fix, disclosed): `null` is a THIRD, LEGITIMATE
+  // value here -- `anno evid-disagreements --json`'s own `runIdentity` field
+  // reads `null` when the store holds zero observed runs (listObservedRuns()),
+  // which is exactly the real, non-fabricated answer a D-13 non-executed
+  // fixture's store produces. Refusing null unconditionally made a real
+  // `anno evid-disagreements --json` answer for a non-executed fixture
+  // unusable by this verb, contradicting this phase's own must_haves ("a
+  // non-executed fixture's disagreement answer is a real answer over zero
+  // observations ... never an omitted argument"). The anti-vacuity property
+  // is preserved below: null is accepted ONLY when the store's own evid-runs
+  // table is ALSO empty (cmdDecompCompleteness's own match-check) -- a store
+  // that DOES carry real runs must still supply a real, matching identity.
+  runIdentity: { imageSha256: string; argvDigest: string; seed: string } | null;
 }
 
 const EVID_RECONCILIATION_FIELDS = [
@@ -1759,18 +1771,26 @@ function validateDisagreementDocumentShape(doc: unknown): DecompDisagreementInpu
     }
   }
   const runIdentity = bag.runIdentity;
-  if (
-    typeof runIdentity !== "object" ||
-    runIdentity === null ||
-    typeof (runIdentity as Record<string, unknown>).imageSha256 !== "string" ||
-    typeof (runIdentity as Record<string, unknown>).argvDigest !== "string" ||
-    typeof (runIdentity as Record<string, unknown>).seed !== "string"
-  ) {
-    return (
-      "decomp-completeness: the --disagreements document carries no complete runIdentity " +
-      "(image_sha256/argv_digest/seed) -- an empty or ambiguous-run document is refused rather than " +
-      "rendered as \"no disagreements\" (D-09 mechanism 2, RESEARCH.md Pitfall 9)"
-    );
+  // Rule 1 fix (disclosed, plan 45-06): `null` is accepted HERE as a
+  // well-formed shape -- it is `anno evid-disagreements --json`'s own real
+  // answer for a store with zero observed runs (a D-13 non-executed
+  // fixture). It is NOT yet accepted as a legitimate ANSWER: cmdDecompCompleteness's
+  // own match-check below still refuses a null identity unless the store's
+  // evid-runs table is ALSO genuinely empty, so a store that DOES carry real
+  // runs can never slip past validation with a null identity.
+  if (runIdentity !== null) {
+    if (
+      typeof runIdentity !== "object" ||
+      typeof (runIdentity as Record<string, unknown>).imageSha256 !== "string" ||
+      typeof (runIdentity as Record<string, unknown>).argvDigest !== "string" ||
+      typeof (runIdentity as Record<string, unknown>).seed !== "string"
+    ) {
+      return (
+        "decomp-completeness: the --disagreements document carries no complete runIdentity " +
+        "(image_sha256/argv_digest/seed) -- an empty or ambiguous-run document is refused rather than " +
+        "rendered as \"no disagreements\" (D-09 mechanism 2, RESEARCH.md Pitfall 9)"
+      );
+    }
   }
   return doc as DecompDisagreementInput;
 }
@@ -2297,20 +2317,37 @@ async function cmdDecompCompleteness(rest: string[]): Promise<number> {
   try {
     const ranges = listRanges(handle);
     const { runs } = listObservedRuns(handle);
-    const matchesSomeRun = runs.some(
-      (r) =>
-        r.imageSha256 === disagreementInput.runIdentity.imageSha256 &&
-        r.argvDigest === disagreementInput.runIdentity.argvDigest &&
-        r.seed === disagreementInput.runIdentity.seed,
-    );
-    if (!matchesSomeRun) {
-      console.error(
-        `decomp-completeness: the --disagreements document's run identity (image_sha256=${disagreementInput.runIdentity.imageSha256}, ` +
-          `argv_digest=${disagreementInput.runIdentity.argvDigest}, seed=${JSON.stringify(disagreementInput.runIdentity.seed)}) ` +
-          `matches no row in ${storePath}'s own evid-runs table -- a fabricated or foreign document is refused, never rendered.`,
+    // Rule 1 fix (disclosed, plan 45-06): a `null` runIdentity is accepted
+    // ONLY when the store's own evid-runs table is ALSO genuinely empty --
+    // the real, honest answer for a D-13 non-executed fixture. A store that
+    // DOES carry real runs must still supply a real, matching identity; the
+    // anti-vacuity property this whole check exists for is unaffected.
+    if (disagreementInput.runIdentity === null) {
+      if (runs.length !== 0) {
+        console.error(
+          `decomp-completeness: the --disagreements document carries a null run identity, but ${storePath}'s own ` +
+            `evid-runs table is NOT empty (${runs.length} recorded run(s)) -- a store with real runs must supply a ` +
+            "real, matching identity, never null.",
+        );
+        closeStore(handle);
+        return 1;
+      }
+    } else {
+      const matchesSomeRun = runs.some(
+        (r) =>
+          r.imageSha256 === disagreementInput.runIdentity!.imageSha256 &&
+          r.argvDigest === disagreementInput.runIdentity!.argvDigest &&
+          r.seed === disagreementInput.runIdentity!.seed,
       );
-      closeStore(handle);
-      return 1;
+      if (!matchesSomeRun) {
+        console.error(
+          `decomp-completeness: the --disagreements document's run identity (image_sha256=${disagreementInput.runIdentity.imageSha256}, ` +
+            `argv_digest=${disagreementInput.runIdentity.argvDigest}, seed=${JSON.stringify(disagreementInput.runIdentity.seed)}) ` +
+            `matches no row in ${storePath}'s own evid-runs table -- a fabricated or foreign document is refused, never rendered.`,
+        );
+        closeStore(handle);
+        return 1;
+      }
     }
 
     const sortedRanges = [...ranges].sort((a, b) => a.start - b.start);
