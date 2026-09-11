@@ -478,3 +478,92 @@ like `bank-path-dependent.a`'s own caller-level `sta $01` writes -- so the
 `.prg` route's own gated case in `ghidra-live.test.ts` still exercises the
 CONST_WRITES parse and the graphics derivation's own arithmetic; only the
 live phantom-label capture is flat-64K-only, and its case says so.
+
+## `bank.annostore.json` (45-07, D-02/D-03 derived-half export, D-12 derive-first)
+
+The committed store export for `bank.prg`, phase 45 plan 45-07. Derived-half
+only tools were used: `ghidra.analyze` (Ghidra 12.1.3, processor
+`6502:LE:16:nmos`, flat64k route, `VolatileCarve.java`
+preScript/`GhidraStructExport.java` postScript) for the cross-reference
+import, plus a hand-typed `byte`/`code` split from the fixture's own known
+static layout (BASIC stub+pad `$0801-$080f`, straight-line code
+`$0810-$083a`) -- no `dxa` run: unlike plan 45-06's dxa+Ghidra family, this
+fixture family's own typing is hand-derived per plan 45-07's Task 1 action
+text, not dxa-classified. The flat64k route was used because the manifest
+names it and it produces address-correct Ghidra output for every fixture in
+this family (see the ".prg`-route two-byte offset" section above); either
+route was equally usable for this specific fixture, which has no internal
+`jsr`. `execObservations` were added by a real, live stock-VICE run
+(image_sha256 `e46e71...ded2384`, matching this file's own table above) --
+see `docs/phase45-ghidra-derivation-evidence.md` for the full transcript.
+The authored half (labels, purpose comments, declines) is empty until plan
+45-09. Per D-03, the derived half regenerates byte-identically on a re-run
+(MEASURED this plan, `git status --porcelain` empty after) while the
+authored half, once plan 45-09 writes it, is frozen.
+
+## `bank-path-dependent.annostore.json` (45-07, criterion 4's own fixture)
+
+The committed store export for `bank-path-dependent.prg`, phase 45 plan
+45-07. Same route and tool versions as `bank.annostore.json` above (flat64k
+is REQUIRED here, not merely preferred: the ".prg` route breaks this
+fixture's own internal `jsr probe` target, per the finding already recorded
+in this file). Hand-typed `byte`/`code` split (stub+pad `$0801-$080f`,
+`start`+`probe` `$0810-$0832`). `anno_join_memmap` was run with this run's
+own real recovered `$01` const-write facts (`$0813=0x34`, `$081a=0x33`,
+`$0821=0x37`) and DECLINED both `$d000` and `$d020` -- see
+`docs/phase45-ghidra-derivation-evidence.md` for the exact decline reasons
+and the disclosed finding about why they read `"no recovered value
+reaches"` rather than `"disagreeing processor-port values"`. Neither
+decline is persisted as a store comment in this export -- persistence is
+plan 45-09's own authored-closure job, written FROM this derived evidence.
+`execObservations` come from a real live run that deliberately waited for
+BOTH callers to reach `probe`'s own shared body (`hit_count >= 2` on the
+checkpoint at `probe`'s own `rts`) before capturing `memmapshow`, correcting
+a first attempt that stopped after only the first caller -- see the
+evidence document's own disclosed correction.
+
+## `charset-phantom.annostore.json` (45-07, criterion 5's fixture, and a typing correction)
+
+The committed store export for `charset-phantom.prg`, phase 45 plan 45-07.
+Flat64k route (REQUIRED, not merely preferred, for the same reason recorded
+above: the register-derived `$1000-$17ff` character-set range only
+coincides with the loaded bytes on this route). Typed in four ranges:
+stub+pad `$0801-$080f` (`byte`), `start`'s own six instructions
+`$0810-$0822` (`code`), the `* = $1000` zero gap-fill `$0823-$0fff`
+(`byte`), and the charset chain `$1000-$17ff` (`code`).
+
+**Correction, 2026-09-11 (plan 45-07), appended rather than overwriting the
+`charset_start` section above.** This file's own `charset_start` section
+(37-08) frames the `$1000-$17ff` region as a character-set TABLE -- real
+graphics data the VIC-II reads, and the whole point of the "phantom
+routine" story. **The committed store does not type this region as a
+table, or as any `data`-shaped type at all: it is typed `code`, end to
+end.** This is not a contradiction of the earlier section; it is the SAME
+fixture behaving exactly as its own header comment says a phantom routine
+should. A real, live stock-VICE execution run (plan 45-07's own Task 2,
+full transcript in `docs/phase45-ghidra-derivation-evidence.md`) OBSERVED
+640 of the range's 2048 bytes executing for real (the chain's own `jsr`/
+`rts` opcode bytes) -- and Phase 45's own soundness rule, DECOMP-01, is
+one-directional and unconditional here: **a range observed executing IS
+code.** No byte in this store was re-typed to `data`/`byte` because it was
+never observed executing; the 1408 never-observed bytes in the same range
+stay typed `code` on the byte-structural (derived) reasoning that they are
+identical 4-byte `jsr`/`rts` blocks to the 640 that WERE observed, per the
+asymmetric rule that absence proves nothing either way.
+
+The same live run also MEASURED, and the evidence document records in
+full, a genuine STACK OVERFLOW: the chain's own 511 levels of nested `jsr`
+need 1022 bytes of return-address space, but the 6502 hardware stack holds
+only 256 -- so the earlier `37-08` section's own implicit assumption (an
+analyser reading this chain unconditionally, with no execution-timing
+concern) is unaffected, but this project's OWN separate research document
+(45-RESEARCH.md Section 9) predicted the chain would "unwind cleanly back
+through every intervening block's own trailing RTS" once executed. It does
+not: the real stack corruption means `start`'s own `$0822` return point was
+never reliably reached (a checkpoint armed there never fired across two
+independent attempts). The VIC-II's own independent hardware read of these
+same bytes as a character set is unaffected by any of this -- it is a
+completely separate consumer of the same memory, reading data the CPU never
+had to correctly return through to produce. Plan 45-09's own authored
+purpose comment for `charset_start` is the right place to record that dual
+reading in prose; this store's own `code` typing is not touched by it.
