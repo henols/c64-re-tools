@@ -5,16 +5,16 @@ milestone_name: The Rebuild Half
 current_phase: 45
 current_phase_name: Decomposition to Closure, Disagreement First
 status: executing
-stopped_at: Completed 45-03-PLAN.md
-last_updated: "2026-09-11T05:40:09.072Z"
+stopped_at: Completed 45-04-PLAN.md
+last_updated: "2026-09-11T06:24:36.057Z"
 last_activity: 2026-09-11
 last_activity_desc: Phase 45 execution started
-state_head: 31f1ccf85f4532b20ea5756efb78d86fcc1a65a1
+state_head: a0b9adf3dbc2e949b56cb30f5ca59442989fcebe
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 10
-  completed_plans: 3
+  completed_plans: 4
   percent: 0
 ---
 
@@ -255,7 +255,7 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 45 (Decomposition to Closure, Disagreement First) — EXECUTING
-Plan: 4 of 10
+Plan: 5 of 10
 Status: Ready to execute
 Progress: [░░░░░░░░░░] 0%
 Last activity: 2026-09-11 — Phase 45 wave 1 complete (45-01 tracer spine)
@@ -538,6 +538,7 @@ Last activity: 2026-09-11 — Phase 45 wave 1 complete (45-01 tracer spine)
 | Phase 45 P01 | ~100min | 3 tasks | 11 files |
 | Phase 45 P02 | 35min | 3 tasks | 3 files |
 | Phase 45 P03 | 25min | 3 tasks | 5 files |
+| Phase 45 P04 | 165min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -1238,6 +1239,8 @@ Recent decisions affecting current work:
 - [Phase 45]: Corrected the checkpoint's own decline-comment provenance framing to match D-03/RESEARCH.md Section 5 — The plan's Task 1 checkpoint text called decline comments 'derived'; CONTEXT.md D-03 and RESEARCH.md Section 5 both state comments (including declines) are the authored half, and Task 2's own Test 6 requires provenance:authored for a DECLINED: comment
 - [Phase 45]: decomposeRegisterValue() refuses (assertLegalAcmeIdentifier) rather than emit an illegal term name for register $0001, whose all-digit enum-name prefix would otherwise make every term illegal (T-45-10)
 - [Phase 45]: The exhaustive OR-reconstruction/one-vocabulary tests tolerate a NAMED refusal (via tryDecompose) rather than assert no throw ever, after finding $D019 has a genuine reserved-bit gap in the real committed anno-regbits.json
+- [Phase 45]: decomp-completeness gained the full measure set (rangeProvenance, entryPoints, referencedAddresses, disagreementResolution) and a real gate: completeness-report.mjs's own exit code is 0 only when every measure clears its own bar — D-08 names the report's exit code as routine-queue-walker's numeric stop condition; a bulletin that reports disagreements beside a pass is exactly criterion 2's named failure mode
+- [Phase 45]: D-09's disagreement input was proven load-bearing by three planted controls observed going RED against a real derived-and-executed store, two pinned as permanent CI-safe regression tests — This milestone's stated discipline: asserting a fix is present proves nothing, making the failure happen does
 
 ### Pending Todos
 
@@ -2310,8 +2313,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-11T05:40:08.896Z
-Stopped at: Completed 45-03-PLAN.md
+Last session: 2026-09-11T06:24:35.904Z
+Stopped at: Completed 45-04-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
