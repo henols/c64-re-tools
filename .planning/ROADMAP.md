@@ -1044,11 +1044,19 @@ multi-file work is written against an already-enforced invariant
   3. `c64-provenance-diff`'s **existing** verdict appears inline at the point of use on every emitted block regardless of its value: `HIGH`, `UNKNOWN` and `CRACKER-PATCH` ranges are all annotated and no verdict value changes what is emitted. A structural test asserts the exporter reads no confidence threshold and takes no inclusion decision from a verdict.
   4. The verdict is **read** from the existing ledger, never re-derived inside the exporter — with the ledger absent, the exporter declines by name rather than inventing a verdict, observed.
 
-**Plans**: TBD
+**Plans**: 6 plans, 4 waves
+
+Plans:
+- [ ] 46-01-PLAN.md — TRACER: the provenance carry end to end — synthetic ledger → new reader module → optional `ledgerPath` on `exportAsm()` → verdict and confidence as inline comment text → `anno export-asm --ledger FILE`, with real ACME still reproducing the bytes (wave 1)
+- [ ] 46-02-PLAN.md — the ledger reader's full refuse-by-name set, its own test file with an information-disclosure control, and BUILD-05's adjacency / empty / ordering edges asserted through the real exporter (wave 2)
+- [ ] 46-03-PLAN.md — the exclusion record: `SCHEMA_VERSION` 5, the `anno_excluded_range` table with its EVID-02-shaped decision record, three store verbs, and BUILD-07's adjacency edge (wave 2)
+- [ ] 46-04-PLAN.md — `anno_exclude_range` / `anno_include_range` on the MCP surface through all four registration sites, plus their `anno-register.ts` entries and the skill route (wave 3)
+- [ ] 46-05-PLAN.md — exclusion-aware emission: the full bytes plus a recorded marker, never a hole, with the export read back to recover what was excluded and why (wave 3)
+- [ ] 46-06-PLAN.md — BUILD-07's planted control observed RED against a test-only filtering variant before being trusted GREEN, plus the structural no-threshold guard and its own non-vacuity proofs (wave 4)
 
 Notes:
 
-- **This is the milestone's structural expression of the governing constraint.** `BUILD-05` states the invariant; `BUILD-07` makes it checkable. A plan that implements the provenance carry as a threshold inside `exportAsm()` has reintroduced exactly the tool-is-the-decider failure mode the 2026-09-10 rewording removed — see `ARCHITECTURE.md` → "Letting the exporter learn about provenance verdicts directly".
+- **This is the milestone's structural expression of the governing constraint.** `BUILD-05` states the invariant; `BUILD-07` makes it checkable. A plan that implements the provenance carry as a threshold inside `exportAsm()` has reintroduced exactly the tool-is-the-decider failure mode the 2026-09-10 rewording removed — see `.planning/research/ARCHITECTURE.md:512` → "Letting the exporter learn about provenance verdicts directly". (Path corrected 2026-09-11 during phase-46 planning: this note previously said `ARCHITECTURE.md`, and `.planning/ARCHITECTURE.md` contains zero occurrences of the word "provenance" — the section lives in `.planning/research/ARCHITECTURE.md`. Verified by grep in both files.)
 - **Out of scope by requirement, not by preference:** a store table for the *hazard* report. The exclusion record is a different thing and is in scope; if it needs a `SCHEMA_VERSION` bump, that is a decision recorded beside the code that adds it (the `EVID-02` shape from Phase 43), not a separate phase.
 - **Do not plan a `name` column on `anno_scope`.** Per-scope filenames derive deterministically from `scope.start`; the column is `FUT-08` and is deliberately unowned here.
 
@@ -1313,7 +1321,7 @@ in a milestone archive.
 | 43. The Runtime Evidence Layer | v0.9.0 | 7/7 | Complete | 2026-09-10 |
 | 44. PROOF-04 — The Independent External Check | v0.9.0 | 3/3 | Complete | 2026-09-10 |
 | 45. Decomposition to Closure, Disagreement First | v1.0.0 | 10/10 | Complete | 2026-09-11 |
-| 46. The Lossless-Export Invariant and the Provenance Carry | v1.0.0 | - | Not started | - |
+| 46. The Lossless-Export Invariant and the Provenance Carry | v1.0.0 | 0/6 | Not started | - |
 | 47. Multi-File Rebuildable Source | v1.0.0 | - | Not started | - |
 | 48. The Movement-Hazard Report and Its Purpose-Built Subject | v1.0.0 | - | Not started | - |
 | 49. The Reassembly Gate, Committed Before the Phase It Gates | v1.0.0 | - | Not started | - |
