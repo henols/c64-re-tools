@@ -1,6 +1,6 @@
 ---
 slug: gsd-internals-leak-into-src
-status: awaiting_human_verify
+status: resolved
 trigger: "way is internal gsd nots and information leaking to the source code and the skills. It is not something gsd is designed to do it shall keep it inside its own files"
 created: 2026-09-11
 updated: 2026-09-11
@@ -122,10 +122,9 @@ audit. See Evidence entries 3-9.
 
 expecting: (n/a — hypothesis confirmed, see Evidence 9 for the decisive datum)
 
-next_action: all four checkpoint decisions CLOSED, in three commits
-(ef039bd1, 9003396f, 3ff73fd6). Awaiting confirmation of this round, plus ONE
-genuinely new decision surfaced by Q3 and deliberately not acted on: see
-Resolution.new_finding_for_decision.
+next_action: NONE -- session resolved. Round 3 closed the one open decision
+(reconcile `.planning/PROJECT.md` now) in three commits (c752b944, 345569a2,
+7abd9509) and the user confirmed the session for archive.
 reasoning_checkpoint:
   hypothesis: "Planning vocabulary keeps appearing in product files because
     `.planning/codebase/CONVENTIONS.md` §Comments PRESCRIBES it (plan ids, `D-N`
@@ -449,6 +448,62 @@ tdd_checkpoint: (none)
   `.planning/` literal leaves shipped code, and the by-path exemption can be
   DELETED rather than documented.
 
+- timestamp: 2026-09-11 (debugger, E16 -- round 3: the Node floor, re-measured before acting)
+  checked: `src/mcp/vice/package.json` `engines.node`, the history of that field,
+  and a repo-wide sweep for the old floor.
+  found: `engines.node` is `">=24.0.0"`. The bump landed 2026-09-01 in commit
+  42f83bc7, replacing `">=22.18.0"`. So `PROJECT.md:655` (Constraints, normative)
+  was stale and is corrected. BUT `PROJECT.md:545` IS NOT A DEFECT: it sits inside
+  the "**Where this stood at v0.4.0**" paragraph, v0.4.0 closed 2026-08-23, eight
+  days BEFORE the bump, so `>= 22.18` is historically accurate there. Sweeping the
+  rest of the repo found four further LIVE claims of the old floor that the
+  checkpoint did not know about: `src/mcp/vice/README.md:16` -- which states it as
+  a user-facing **Requirement** and is in `package.json`'s `files[]`, so the wrong
+  floor shipped to every npm consumer -- plus two in
+  `anno-cli-path-consumers.test.ts` and one in `anno-cli.test.ts`. All four
+  corrected. `scripts/version.mjs:7` left alone: its claim is about NODE's
+  capability threshold (still 22.18), not this project's floor.
+  implication: the checkpoint's premise held for one of its two named lines and
+  not the other. "Correcting" :545 would have falsified the historical record --
+  which is why it was checked against the commit that moved the floor rather than
+  taken on the checkpoint's word.
+
+- timestamp: 2026-09-11 (debugger, E17 -- round 3: the count figure, corrected)
+  checked: the round-2 claim that the retired tool "appears 44 times in
+  PROJECT.md", and the claim that FIVE Constraints bullets name it.
+  found: the "five bullets" figure HELD EXACTLY -- 5 of the Constraints section's
+  30 bullets named it, 6 occurrences within the section. The "44" figure is WRONG
+  AS STATED: 44 is the LINE count for one phrasing (`grep -c -i`), not an
+  occurrence count. The real pre-edit numbers were 45 occurrences of that phrasing
+  and 56 of the bare word, spread over 50 lines. Post-edit the whole file is at 50
+  occurrences / 45 lines and the Constraints section is at 0.
+  METHOD, recorded because the checkpoint asked how this was measured: the banned
+  name was never needed and never written. The 2026-09-01 purge already replaced
+  it with a euphemism throughout, so every count above is a count of the
+  euphemism, obtained with `grep -o -i` on that substitute string alone.
+  implication: mechanism right, one number mislabelled. Corrected rather than
+  carried forward.
+
+- timestamp: 2026-09-11 (debugger, E18 -- round 3: which of the five bullets held a surviving fact)
+  checked: rule (b) of the checkpoint -- each of the five bullets, for a fact still
+  true and independent of the retired tool, by looking for the artifacts each named.
+  found: FOUR had none. Their subjects were that tool's installer and toolchain
+  floor, its project-file default, its `.vsf` machine-type parser, and its MCP HTTP
+  mode; all four subjects are gone and nothing succeeded them -- a `.vsf` is now
+  sliced to flat 64K by `vsf-slice.mjs` before analysis, so even the misparse
+  hazard has no successor to inherit it. The FIFTH named `anno-launch.ts` and
+  `anno-mcp-client.ts` (both DELETED) but ALSO `spawn-seam.test.ts`, which EXISTS.
+  That guard's own header records that it was deliberately RE-POINTED, not retired,
+  when the deletion removed both of its original subjects: the surviving property
+  is that every shipped module spawning the EMULATOR binary uses the argv-ARRAY
+  form (never a shell string, never an interpolated binary path) and the spawn-site
+  set is frozen. Verified LIVE rather than from prose -- the guard passes 42/42,
+  including the both-directions set-equality against a frozen set of exactly one
+  (`backend-detect.mts`), the one-spawn-site invariant, and five planted-violation
+  controls.
+  implication: rule (b) fired exactly once. Four bullets deleted outright, one
+  rewritten around the subject that outlived the tool.
+
 
 ## Eliminated
 
@@ -761,7 +816,10 @@ checkpoint_round_2: |
     widened LAST.
 
 new_finding_for_decision: |
-  NOT ACTED ON, deliberately, and not part of the four questions.
+  RESOLVED IN ROUND 3 -- see checkpoint_round_3 below. Recorded as it stood
+  when it was raised:
+
+  NOT ACTED ON at the time, deliberately, and not part of the four questions.
 
   `CLAUDE.md`'s Constraints bullets sit inside `<!-- GSD:project-start
   source:PROJECT.md -->` and so look generated. MEASURED 2026-09-11: they are
@@ -828,3 +886,186 @@ files_changed_round_2:
   - .planning/PROJECT.md
   - .planning/ROADMAP.md
   - CLAUDE.md
+
+checkpoint_round_3: |
+  The second human-verify checkpoint was answered 2026-09-11 with ONE new
+  decision -- reconcile `.planning/PROJECT.md` NOW rather than deferring --
+  and a CONFIRMED for archive. The user's reasoning, adopted: the
+  regeneration hazard IS stage 2 of the ratchet this session already
+  diagnosed, so every day PROJECT.md stays stale is a day one
+  `/gsd-map-codebase` run reverses the whole fix.
+
+  Scoped as instructed: Constraints only, milestone-retrospective sections
+  untouched. Three commits.
+
+  RECONCILIATION (c752b944) -- PROJECT.md's `## Constraints` and CLAUDE.md's
+  projected copy are now 26 bullets each and BYTE-IDENTICAL. Four kinds of
+  divergence, each verified against the code before acting rather than
+  copied on the checkpoint's word:
+    * Node floor -- stale in PROJECT.md, corrected. See E16 for why the
+      SECOND line the checkpoint named was deliberately NOT changed.
+    * The five bullets naming the retired tool -- four removed, one
+      rescued. See E18: rule (b) fired exactly once, and the rescued fact
+      was confirmed by running the guard that still enforces it, not by
+      trusting the bullet's own prose.
+    * Three bullets (`default_memspace`, `WarpMode`, `CPUHISTORY_GET`)
+      stated binary-monitor-only limits as flat facts while CLAUDE.md
+      already carried the measured text-channel qualifications. Copied
+      across -- from CLAUDE.md's already-provenance-stripped text, so no
+      planning vocabulary came with them.
+    * A `manifest-arg-compat.test.ts` pin existed only in PROJECT.md,
+      wrapped in superseded-constraint provenance. This one was NOT a
+      disagreement, so "CLAUDE.md wins" would have DELETED a true fact.
+      The guard file exists, so the fact was kept in BOTH copies and only
+      the provenance dropped.
+
+  THE FLOOR ELSEWHERE (345569a2) -- the sweep the checkpoint asked for found
+  four more live claims of the old floor beyond the two it named, the worst
+  being `src/mcp/vice/README.md`, which states it as a user-facing
+  Requirement and ships in `files[]`. All four corrected; two historical
+  statements and one Node-capability statement deliberately left, with the
+  reasons in the commit body.
+
+  THE GUARD (7abd9509) -- the reconciliation on its own is a one-time sweep
+  against a mechanism that has already drifted these two documents once.
+  `docs-constraints-sync.test.ts` asserts the two lists are byte-identical
+  and in the same order. Byte-equality on precedent, not preference:
+  `docs-linerefs.test.ts`'s own header records that it was widened after
+  PROJECT.md's copy of a shared bullet went stale for a whole milestone
+  "for exactly one reason ... docs-linerefs.test.ts was found to read only
+  CLAUDE.md and not this copy". That widening covers four numbers in one
+  bullet and could not see -- and did not see -- any of these five.
+
+  ONE THING THE GUARD SURFACED IMMEDIATELY, worth recording because it is
+  the system working: adding a `docs-*.test.ts` file reddened
+  `audit-integrity.test.ts`'s registry-drift detector by name, because
+  `audit-gate.mjs`'s `EXPECTED_DOCS_GUARD_NAMES` and its mirror must be
+  extended in the same commit. Both were, with no floor change (floor `>= 7`,
+  10 guards on disk).
+
+verification_round_3: |
+  guardrail_verdict: accepted
+
+  Signal -- RED/GREEN on the REAL documents, the regression proof: with the
+  pre-reconciliation `PROJECT.md` planted back in place, the new guard fails
+  and names the count difference plus every one of the twelve divergent
+  positions -- including the Node floor bullet and all five bullets naming
+  the retired tool. Restored, it is green. So the guard would have caught
+  this exact drift, and the reconciliation is what turns it green.
+
+  Signal -- the guard is non-vacuous beyond that: six planted-violation
+  cases drive the real predicates in memory (one-word edit, dropped bullet,
+  invented bullet, reordering, missing heading, duplicated heading), plus a
+  planted CLEAN control that must report nothing. A shape fault is asserted
+  to surface as a PROBLEM rather than as two empty lists comparing equal --
+  the failure mode that would make the whole guard vacuous. 8/8 pass.
+
+  Signal -- the rescued fact was verified by its own guard, not by prose:
+  `spawn-seam.test.ts` 42/42, including the frozen one-site set-equality in
+  both directions and five planted controls. Every clause of the rewritten
+  bullet corresponds to an assertion that passed.
+
+  Signal -- collateral gates: `npx tsc --noEmit` exit 0 (three separate runs
+  across the round); `node --test test-gate.test.ts ci-suite-coverage.test.ts`
+  13/13, so the new guard is picked up by the automated gate's glob and is
+  not orphaned from the drift guard; `check-npm-packages` OK at
+  @henols/vice-mcp 104 files and @henols/c64-re-tools 42 files / 9 skills --
+  UNCHANGED from round 2, which is the check that the new `.test.ts` did not
+  leak into either tarball; `skills-planning-vocabulary` and `docs-linerefs`
+  green after the CLAUDE.md edit.
+
+  Signal -- FULL SUITE (`npm run test:automated`, broker confirmed inactive):
+  EXIT=1, 4232 tests / 4211 pass / 7 fail. The failure SET, compared entry by
+  entry rather than by count:
+
+    THE SESSION BASELINE, all four still present and unchanged --
+      annoRegisterEntryFor / DIRECTION 5 / planted-violation-negative-control
+      (the known anno-register floor of 3), plus check-skill-fork-honesty
+      (the known scratch-file race).
+
+    THREE INHERITED FROM HEAD, not from this work, and PROVEN so rather than
+      asserted -- AUDIT-04 direction A, its `planted violation: both
+      predicates...` sibling in the same file, and the D-12-02 cascade that
+      fires whenever any docs guard is red. All three have ONE cause: the
+      pending todo `capability-registry-manifest-claim-stale` has no row in
+      STATE.md's Deferred Items section. It arrived in commit 5398a4cd
+      (2026-09-11 19:51), from the concurrent phase-46 session, AFTER this
+      session's last commit. FALSIFICATION TEST RUN: this round's five
+      changed files were stashed and `docs-deferred-ledger.test.ts` +
+      `audit-integrity.test.ts` re-run against the untouched tree at HEAD --
+      3 fail, the same three, so they are not caused by this work. Left
+      unfixed deliberately: STATE.md's ledger belongs to the in-flight
+      session that opened the todo.
+
+    ONE INTERMITTENT, seen once and not carried -- `SEAM-05, non-vacuity: the
+      packed-tarball scope ... expected at least 6 packed skill scripts, got
+      2` appeared in one of four runs. Re-run in isolation: 18/18 pass, exit
+      0. It is the known repo-tree scratch race (a parallel rebuild
+      transiently empties the directory it counts), not a content change --
+      nothing in this round touched `src/skills/` or the installer.
+
+  Four full-suite runs this round, all EXIT=1: 7 fails, then 9 (the two
+  registry-drift entries the new guard correctly raised), then 8 (the race),
+  then 7 again after registration. The stable core is 7 and is fully
+  attributed above.
+
+files_changed_round_3:
+  - .planning/PROJECT.md
+  - CLAUDE.md
+  - src/mcp/vice/README.md
+  - src/mcp/vice/anno-cli-path-consumers.test.ts
+  - src/mcp/vice/anno-cli.test.ts
+  - src/mcp/vice/docs-constraints-sync.test.ts (new)
+  - src/mcp/vice/audit-integrity.test.ts
+  - scripts/audit-gate.mjs
+
+prevention: |
+  Blameless postmortem, in the terms the protocol asks for.
+
+  WHY NO EXISTING GATE CAUGHT THE ORIGINAL LEAK. The project had already
+  drawn a line and drawn it deliberately: planning vocabulary is FORBIDDEN in
+  runtime-visible text (`docs-dangling-refs.test.ts` refuses a phase number
+  in a shipped string or template literal) and PERMITTED in source comments
+  (`comment-phase-pointers.test.ts` explicitly declines a blanket ban and
+  polices only staleness). That line is right for `src/mcp/vice/**`, whose
+  reader is a maintainer with the `.planning/` tree open. It is wrong for
+  `src/skills/**`, whose reader installed a plugin and has no `.planning/` at
+  all. No gate existed for the shipped-skill surface, so the defect was not
+  missed by a gate -- it was outside every gate's declared scope.
+
+  WHY NO EXISTING GATE CAUGHT THE ROUND-3 DRIFT. `docs-linerefs.test.ts`
+  reads BOTH documents, but only four line numbers inside one bullet. Its own
+  header records that it was widened to the second document precisely because
+  a shared bullet had gone stale there for a milestone -- so the class was
+  already known, and the fix taken at the time was scoped to the four numbers
+  that had drifted rather than to the two-copy relationship that let them.
+  The marker comment `source:PROJECT.md` asserted a provenance relationship
+  that nothing verified.
+
+  THE FIVE WHYS, branched rather than chained (the AND-gate fired, so there
+  is more than one terminal cause):
+    - Why is planning vocabulary in the shipped skills? Because it was
+      written there. -> Because a convention document said to. -> Because
+      `/gsd-map-codebase` observed the imported style and wrote it up
+      prescriptively. -> Because the style arrived with an import from
+      another project. -> Because nothing at the import boundary asked
+      whether the incoming citations resolved HERE. (data + convention +
+      tooling, all three required.)
+    - Why did the two constraint documents disagree? Because both were
+      hand-edited while one was labelled generated. -> Because the label was
+      never enforced. -> Because the guard that reads both was scoped to the
+      numbers that had drifted, not to the relationship.
+
+  RECURRENCE GUARDS, each a concrete artifact rather than an intention:
+    - `src/mcp/vice/skills-planning-vocabulary.test.ts` -- eight categories
+      over every text file in `src/skills/**`, one exemption derived from a
+      file's own `## Phase N` headings so it cannot be granted by hand.
+    - `src/mcp/vice/docs-constraints-sync.test.ts` -- byte-equality between
+      the two copies of the Constraints list, proven RED on the
+      pre-reconciliation tree.
+    - `.planning/ENGINEERING_RULES.md` § 21 -- hand-maintained, therefore not
+      erasable by a regeneration, and it explicitly overrides any future
+      map-codebase run that re-describes citations as house style.
+    - Phase 51 -- the measured, scoped backlog for `src/mcp/vice/**`, the one
+      surface still carrying the vocabulary, with the ordering trap recorded
+      (widen the guard LAST).
