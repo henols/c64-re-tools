@@ -5,11 +5,11 @@ milestone_name: The Rebuild Half
 current_phase: 52
 current_phase_name: Remove the Fork Backend
 status: executing
-stopped_at: Completed 52-02-PLAN.md
-last_updated: "2026-09-11T22:26:49.029Z"
+stopped_at: Completed 52-03-PLAN.md
+last_updated: "2026-09-11T23:08:03.223Z"
 last_activity: 2026-09-11
 last_activity_desc: Phase 52 execution started
-state_head: 8c325e5cdd2b306e04e99c7422aabf61eb16ed96
+state_head: b11be6083fa9a6bc3b65993243a43c0e7b85a6de
 progress:
   total_phases: 8
   completed_phases: 2
@@ -255,7 +255,7 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 52 (Remove the Fork Backend) — EXECUTING
-Plan: 3 of 10
+Plan: 4 of 10
 Status: Executing (52-01 complete)
 
 **Planned OUT OF SEQUENCE.** Phase 52 was planned ahead of Phases 47-51, which
@@ -564,6 +564,7 @@ Last activity: 2026-09-11 — Phase 52 execution started
 | Phase 46 P06 | 23 min | 2 tasks | 1 files |
 | Phase 52 P01 | 40min | 3 tasks | 3 files |
 | Phase 52-remove-the-fork-backend P02 | 25min | 2 tasks | 2 files |
+| Phase 52 P03 | 75min | 3 tasks | 47 files |
 
 ## Accumulated Context
 
@@ -1284,6 +1285,8 @@ Recent decisions affecting current work:
 - [Phase 46]: Plan 46-06: Both tasks declared anno-export-asm.test.ts as their only file, so the planted control's RED half (a real, working test-only filtering variant) and GREEN half (the real exportAsm()) landed in ONE commit, matching the plan's own requirement that both halves of the negative control be visible in the same commit.
 - [Phase 52]: FORK-01 (retain the forked VICE MCP backend, decided 2026-08-22) reversed 2026-09-12 per owner decision: the hedge was never exercised (v0.8.0 close audit) and the near-zero-cost premise was withdrawn by the owner. — SID read-back, matrix keyboard, and RESTORE/NMI become permanent accepted losses on stock VICE, recorded with verbatim hardware reasons in docs/stock-hard-losses.md.
 - [Phase 52-remove-the-fork-backend]: Minted FORKRM-01..07 in REQUIREMENTS.md (Coverage 22/22/0) and marked FORKRM-02 Complete on the strength of plan 52-01's already-landed work; the retain todo is annotated SUPERSEDED. — Plan 52-02 had to declare the phase's requirement ids before any FORKRM-* id could be marked complete by any plan, including the already-finished 52-01.
+- [Phase 52]: 52-03: Split vice.ts into vice-errors.ts (shared error hierarchy + lease-state accessors, load-bearing for stock's own lease path) and the fork transport half; repointed all 41 surviving importers; deleted the dead, zero-consumer vice-sync.ts. — buildHeldLease() reads activeInstance() on every stock tool call, so deleting vice.ts wholesale (as later plans do) would have broken stock lease acquisition, not just fork transport. Splitting first makes every later deletion in this phase provably fork-only.
+- [Phase 52]: 52-03: vice-proxy.ts's line-number shift (import block split, -4 lines) drifted docs-linerefs.test.ts's CLAUDE.md/PROJECT.md rewriteArguments()/forwardToVice() citations. Left unfixed and reported for plan 52-04, which retires that whole Architecture bullet.
 
 ### Pending Todos
 
@@ -2361,8 +2364,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-11T22:26:48.330Z
-Stopped at: Completed 52-02-PLAN.md
+Last session: 2026-09-11T23:08:02.729Z
+Stopped at: Completed 52-03-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
