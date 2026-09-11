@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // anno-enum-gen.ts -- the ONE authoritative place in this repo for value ->
 // variant naming, the adjacent-pair rule, identifier sanitization, the
-// per-register enum plan and the coverage report's wording contract
-// (D-20/D-22/D-23, ANNO-13).
+// per-register enum plan, the coverage report's wording contract, and (as of
+// phase 45 plan 45-03) the multi-bit register DECOMPOSITION into named,
+// OR-able terms (D-15/D-16/D-17/D-20/D-22/D-23, ANNO-13).
 //
 // WHAT LEFT, WHAT STAYED, AND WHERE THE ROUTE RETURNS (plan 29-10, D-01,
 // 2026-08-30). Read this paragraph before looking for a function that is not
@@ -39,17 +40,34 @@
 //       leaving it to be inferred from a row count.
 //     - `sanitizeVariantMap()` and the identifier gate it runs, unchanged.
 //
-//   WHERE THE ROUTE RETURNS: **NO PHASE CURRENTLY OWNS ITS RETURN**, and this
-//   line used to say otherwise. It forecast a rebuild of the fetch and the
-//   install over this project's own annotation store, rendering the enums into
-//   the ACME export. The ACME export route itself did come back on 2026-08-31,
-//   as the `anno export-asm` CLI verb -- but the work that rebuilt it covered
-//   that route ONLY: no requirement and no success criterion of it mentioned
-//   `gen-enums`, and no phase currently owns rebuilding it. The forecast was
-//   therefore wrong, and it is CORRECTED here
-//   rather than deleted, because deleting the notice would erase the record
-//   that the capability went missing. Everything above is the specification
-//   whoever eventually rebuilds it builds against.
+//   WHERE THE ROUTE RETURNS: this line used to say "NO PHASE CURRENTLY OWNS
+//   ITS RETURN", and that too is now CORRECTED rather than deleted, for the
+//   same reason the paragraph above was: deleting a withdrawal notice erases
+//   the record that a capability went missing, and deleting a return notice
+//   would erase the record of when and why it came back. The first
+//   correction (recorded here, kept for the history): it forecast a rebuild
+//   of the fetch and the install over this project's own annotation store,
+//   rendering the enums into the ACME export. The ACME export route itself
+//   did come back on 2026-08-31, as the `anno export-asm` CLI verb -- but the
+//   work that rebuilt it covered that route ONLY: no requirement and no
+//   success criterion of it mentioned `gen-enums`, and at that time no phase
+//   owned rebuilding it.
+//
+//   THE SECOND CORRECTION, dated 2026-09-11 (phase 45 plan 45-03, D-15):
+//   Phase 45 owns it now, and has returned it -- the ENUM half of `ANNO-13`
+//   only. `fetchRegisterSearchRows()` walks a store's own `code`-typed ranges
+//   through the same `disasm-decoder.ts` `decode()` `anno_disassemble` uses,
+//   `generateEnumsFromStore()` strings fetch -> `pairSearchRows()` ->
+//   `planEnumsForPairing()` -> `sanitizeVariantMap()` -> `installPlannedEnums()`
+//   -> `buildEnumGenerationReport()`, and `installPlannedEnums()` installs
+//   through the same `createProjectEnum()`/`updateProjectEnum()`/
+//   `applyEnumUsage()` write path the by-hand route already used. The symbol
+//   round trip (`ANNO-14`/`ANNO-15`, `export-lbl`/`import-lbl`) is a SEPARATE
+//   capability this phase does not touch and remains unowned -- see
+//   `.planning/PROJECT.md`'s own withdrawal notice, corrected in the same
+//   plan. Everything above this paragraph is the specification this rebuild
+//   was built against, and it needed no changes to build against: every
+//   surviving heuristic is called here unmodified.
 //
 // MEASURED MECHANISM FACTS, PAST TENSE -- kept because they are WHY the
 // heuristics have the shape they have, not because anything still calls the
@@ -182,32 +200,55 @@ export function registerKeyFor(address: number): string {
  * The measured target this function is pinned against:
  * `variantNameFor(0xd011, 0x1b) === "YSCROLL3_ROW25_SCREENON_TEXT"`.
  */
-export function variantNameFor(register: number, value: number): string {
+/** Looks up `register`'s bit-name table entry, or throws naming the register
+ * and the remedy -- the ONE lookup+refusal both `variantNameFor()` and
+ * `decomposeRegisterValue()` share, so the two can never disagree about
+ * which registers are decodable at all. */
+function requireRegBitsEntry(key: string, callerName: string): RegBitsField[] {
   const table = loadRegBits();
-  const key = registerKeyFor(register);
   const entry = table[key];
   if (!entry) {
     throw new Error(
-      `variantNameFor: no bit-name table entry for register ${key} -- anno-regbits.json has no fields ` +
+      `${callerName}: no bit-name table entry for register ${key} -- anno-regbits.json has no fields ` +
         "for this address (add an OVERRIDES entry in anno-regbits-gen.ts, or exclude it from generation).",
     );
   }
+  return entry.fields as RegBitsField[];
+}
+
+/**
+ * Decodes ONE field of `register`'s value against `field` -- the single
+ * decode step `variantNameFor()` and `decomposeRegisterValue()` BOTH walk in
+ * the same ascending bit order (Task 1's own rule: "do not write a second
+ * decode"). A numeric field ALWAYS returns a non-empty token (total by
+ * construction). A flag/enum field's token is looked up in `field.tokens`;
+ * an explicitly-silent state (empty string) is returned as `""`, never
+ * treated as absent; a genuinely missing token throws, naming the register,
+ * the field and the decoded value, exactly as before this extraction.
+ */
+function decodeField(key: string, field: RegBitsField, value: number): { decoded: number; token: string } {
+  const decoded = (value & field.mask) >>> field.shift;
+  if (field.kind === "numeric") {
+    return { decoded, token: `${field.name}${decoded}` };
+  }
+  const token = field.tokens?.[decoded];
+  if (token === undefined) {
+    throw new Error(
+      `variantNameFor: register ${key} field "${field.name}" (kind ${field.kind}) has no token for decoded ` +
+        `value ${decoded} (full register value 0x${value.toString(16)}) -- refusing rather than silently ` +
+        "dropping a field, which could make two distinct register values decode to the same name.",
+    );
+  }
+  return { decoded, token };
+}
+
+export function variantNameFor(register: number, value: number): string {
+  const key = registerKeyFor(register);
+  const fields = requireRegBitsEntry(key, "variantNameFor");
 
   const tokens: string[] = [];
-  for (const field of entry.fields as RegBitsField[]) {
-    const decoded = (value & field.mask) >>> field.shift;
-    if (field.kind === "numeric") {
-      tokens.push(`${field.name}${decoded}`);
-      continue;
-    }
-    const token = field.tokens?.[decoded];
-    if (token === undefined) {
-      throw new Error(
-        `variantNameFor: register ${key} field "${field.name}" (kind ${field.kind}) has no token for decoded ` +
-          `value ${decoded} (full register value 0x${value.toString(16)}) -- refusing rather than silently ` +
-          "dropping a field, which could make two distinct register values decode to the same name.",
-      );
-    }
+  for (const field of fields) {
+    const { token } = decodeField(key, field, value);
     if (token !== "") tokens.push(token);
   }
   if (tokens.length === 0) {
@@ -224,6 +265,150 @@ export function variantNameFor(register: number, value: number): string {
     return `V${value}`;
   }
   return tokens.join("_");
+}
+
+// ---------------------------------------------------------------------------
+// The ONE owning multi-bit decoder (Task 1, D-16/D-17). `variantNameFor()`
+// above already decodes a value into per-field tokens and joins them with
+// `_` into ONE total name; this is that SAME token list, unjoined, each term
+// carrying its own masked value -- so the OR-ed decomposition and the
+// whole-value enum member are provably one vocabulary, never two.
+// ---------------------------------------------------------------------------
+
+/** One named, OR-able term of a decomposed register write. `name` is the
+ * emitted ACME identifier (`<enumName>_<field token>`, the same
+ * `regKey.slice(1)` prefix `planEnumsForPairing()` already uses for its own
+ * `enumName`). `value` is this term's own masked contribution
+ * (`value & field.mask`) -- the bitwise OR of every term's `value` in a
+ * `RegisterDecomposition` reconstructs the original byte exactly, or
+ * `decomposeRegisterValue()` refuses rather than return the lossy result. */
+export interface RegisterTerm {
+  name: string;
+  value: number;
+  fieldName: string;
+  decoded: number;
+}
+
+/** The full decomposition of one register write. `comment` is the
+ * mechanical decode text (`<REGKEY>: <FIELD>=<decoded>`, comma-separated, in
+ * ascending bit order) -- D-17's readability half; `terms` is the OR-able
+ * half. `multiField` is true when the register's own table entry has two or
+ * more fields, regardless of how many terms a particular value happened to
+ * produce (a single-field register, or a value that silenced every
+ * flag/enum field but one, is not "multi-bit" in the sense D-17 cares
+ * about). */
+export interface RegisterDecomposition {
+  terms: RegisterTerm[];
+  comment: string;
+  multiField: boolean;
+}
+
+/**
+ * THE ONE OWNING DECODER (D-16): splits `value` into one named term per
+ * bit-field of `register`, arithmetically exact. Both render surfaces
+ * (`anno-export-asm.ts`'s OR-ed constants, plan 45-05; `anno_disassemble`'s
+ * readable comment, plan 45-05) consume THIS function rather than decoding
+ * independently -- see this module's own header for why that is the whole
+ * point.
+ *
+ * Rules, each pinned by a test in `anno-enum-gen.test.ts`:
+ *   - Walks the SAME field loop, in the SAME ascending bit order, and the
+ *     SAME per-field decode (`decodeField()` above) that `variantNameFor()`
+ *     walks -- never a second decode.
+ *   - A field whose token is the explicit empty string AND whose masked
+ *     contribution is zero is OMITTED: it contributes nothing to the OR and
+ *     nothing to the name (the silent-by-design case).
+ *   - A field whose token is the empty string but whose masked contribution
+ *     is NON-zero is a DATA ERROR in `anno-regbits.json`'s own OVERRIDES
+ *     table -- refused by name, exactly like the missing-token case
+ *     `decodeField()` already refuses.
+ *   - After building the terms, the OR of every term's `value` MUST equal
+ *     the input `value`. When it does not -- the table's fields do not cover
+ *     every set bit of `value` -- this REFUSES, naming the register, the
+ *     value and the uncovered bits in hex, with the remedy. Never emits a
+ *     residual hex literal into the term list: a magic number in the OR
+ *     expression is exactly what criterion 5 forbids.
+ *   - The degenerate all-silent case (every field decodes to a silent
+ *     token) returns the single `V<value>` term rather than an empty list,
+ *     mirroring `variantNameFor()`'s own fallback so the two never disagree
+ *     about what that value is called. This can only happen when `value`
+ *     itself is `0` for a register whose fields fully cover the byte (every
+ *     silent field's masked contribution is, by the rule above, zero) --
+ *     the OR-reconstruction check above still runs FIRST, so a value this
+ *     branch would otherwise mis-accept as "all silent" but that actually
+ *     has uncovered bits is refused there instead, never silently treated
+ *     as degenerate.
+ */
+export function decomposeRegisterValue(register: number, value: number): RegisterDecomposition {
+  const key = registerKeyFor(register);
+  const fields = requireRegBitsEntry(key, "decomposeRegisterValue");
+  const enumName = key.slice(1); // "$D011" -> "D011", the SAME prefix planEnumsForPairing() derives.
+
+  const terms: RegisterTerm[] = [];
+  const commentParts: string[] = [];
+  let orAccumulator = 0;
+
+  for (const field of fields) {
+    const { decoded, token } = decodeField(key, field, value);
+    const masked = value & field.mask;
+    commentParts.push(`${field.name}=${decoded}`);
+
+    if (token === "") {
+      if (masked !== 0) {
+        throw new Error(
+          `decomposeRegisterValue: register ${key} field "${field.name}" decoded a NON-ZERO contribution ` +
+            `(0x${masked.toString(16)}) from an explicitly-silent token at decoded value ${decoded} (full register ` +
+            `value 0x${value.toString(16)}) -- a silent token must correspond to a zero masked contribution, or the ` +
+            "OR-reconstruction below would silently drop a real bit. This is a data error in anno-regbits.json's " +
+            "OVERRIDES table (anno-regbits-gen.ts), not a value this function can decompose.",
+        );
+      }
+      continue; // silent-by-design, zero contribution -- omitted from both the OR and the name.
+    }
+
+    terms.push({ name: `${enumName}_${token}`, value: masked, fieldName: field.name, decoded });
+    orAccumulator |= masked;
+  }
+
+  if (orAccumulator !== value) {
+    const uncovered = value & ~orAccumulator & 0xff;
+    throw new Error(
+      `decomposeRegisterValue: register ${key} value 0x${value.toString(16)} is not fully covered by its fields -- the ` +
+        `OR of the decomposed terms is 0x${orAccumulator.toString(16)}, leaving bits 0x${uncovered.toString(16)} unaccounted ` +
+        "for. Refusing to emit a lossy decomposition rather than a residual hex literal (add an OVERRIDES entry in " +
+        "anno-regbits-gen.ts and regenerate anno-regbits.json).",
+    );
+  }
+
+  if (terms.length === 0) {
+    // Every field decoded to an explicitly-silent, zero-contribution token --
+    // the invariant check above already proved value === 0 in this branch
+    // (orAccumulator is the OR of zeros), so this mirrors variantNameFor()'s
+    // own V<value> fallback exactly, never disagreeing about what value 0
+    // (or any all-silent value) is called.
+    terms.push({ name: `${enumName}_V${value}`, value, fieldName: "", decoded: value });
+  }
+
+  // T-45-10's mitigation, run here rather than left to a downstream caller:
+  // MEASURED against the real committed table (register $0001, "MOS 6510
+  // Micro-Processor On-Chip I/O Port") that a numeric-leading `enumName`
+  // (`registerKeyFor(1).slice(1)` is the all-digit string "0001") produces
+  // an illegal ACME identifier for EVERY term of that register, regardless
+  // of value -- `sanitizeVariantMap()` never catches this because it only
+  // validates a bare variant name, never the enum-name prefix this
+  // function's own OR-emission shape adds. Refusing here, before returning
+  // anything, is the same client-side-before-I/O property
+  // `sanitizeVariantMap()` already holds -- an illegal name provably never
+  // reaches a render surface.
+  for (const term of terms) {
+    assertLegalAcmeIdentifier(term.name, `decomposeRegisterValue term for register ${key} value 0x${value.toString(16)}`);
+  }
+
+  return {
+    terms,
+    comment: `${key}: ${commentParts.join(", ")}`,
+    multiField: fields.length >= 2,
+  };
 }
 
 // ---------------------------------------------------------------------------

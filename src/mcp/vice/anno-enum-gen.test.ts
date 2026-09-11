@@ -47,8 +47,11 @@ import {
   assertLegalAcmeIdentifier,
   buildEnumGenerationReport,
   DEFAULT_MAX_RESULTS,
+  decomposeRegisterValue,
   type DisasmSearchRow,
   type EnumInstallSummary,
+  type RegisterDecomposition,
+  __resetRegBitsCacheForTests,
   pairSearchRows,
   parseImmediateOperand,
   planEnumsForPairing,
@@ -56,6 +59,7 @@ import {
   sanitizeVariantMap,
   variantNameFor,
 } from "./anno-enum-gen.ts";
+import type { RegBitsTable } from "./anno-regbits-gen.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -107,6 +111,177 @@ for (const addr of [0xd011, 0xd016, 0xd018, 0xd015]) {
     assert.equal(seen.size, 256);
   });
 }
+
+// ---------------------------------------------------------------------------
+// Task 1 (D-16/D-17): decomposeRegisterValue() -- the ONE owning multi-bit
+// decoder. Loads the SAME committed anno-regbits.json this module loads
+// (via the file-read helper below), so the exhaustive checks run against
+// every register the real committed table carries, not a hand-picked
+// subset.
+// ---------------------------------------------------------------------------
+
+const REGBITS_TABLE_RAW = JSON.parse(readFileSync(join(HERE, "anno-regbits.json"), "utf8")) as Record<string, unknown>;
+const ALL_REGISTER_KEYS = Object.keys(REGBITS_TABLE_RAW).filter((k) => k !== "_generated");
+
+test("decomposeRegisterValue(0xd018, 0x04) returns one term per $D018 field, in ascending bit order, matching the pinned criterion-5 fixture", () => {
+  const decomposition = decomposeRegisterValue(0xd018, 0x04);
+  assert.deepEqual(
+    decomposition.terms.map((t) => [t.name, t.value]),
+    [
+      ["D018_SELECT_UPPER_LOWER_CHARACTER_SET0", 0x00],
+      ["D018_CHARACTER_DOT_DATA_BASE_ADDRESS2", 0x04],
+      ["D018_VIDEO_MATRIX_BASE_ADDRESS0", 0x00],
+    ],
+  );
+});
+
+/**
+ * Calls `decomposeRegisterValue`, returning `null` for a LEGITIMATE refusal
+ * rather than letting it fail the exhaustive loops below. Two real, MEASURED
+ * shapes of legitimate refusal exist in the actual committed
+ * `anno-regbits.json` (found BY these exhaustive tests, not assumed):
+ *   - `$D019` ("VIC Interrupt Flag Register") genuinely leaves bits 4-6
+ *     (mask 0x70) with no field entry at all -- reserved/unused hardware
+ *     bits `memmap.json`'s own `bits` prose never documented. A value with
+ *     any of those bits set is correctly UNCOVERED, and refusing it is
+ *     Task 1's own rule working as designed, not a bug.
+ *   - `$0001` ("MOS 6510 ... I/O Port")'s `registerKeyFor(1).slice(1)` is
+ *     the all-digit string `"0001"`, so EVERY term name this function would
+ *     build for that register starts with a digit -- an illegal ACME
+ *     identifier for every value, refused by the T-45-10 gate below. This
+ *     is a genuine, disclosed limitation of the `<enumName>_<field token>`
+ *     naming scheme for a numeric-only register key; see the dedicated
+ *     regression test for it below.
+ * A refusal for any OTHER reason is a genuine test failure, so only these
+ * two named error shapes are swallowed here -- anything else re-throws.
+ */
+function tryDecompose(register: number, value: number): RegisterDecomposition | null {
+  try {
+    return decomposeRegisterValue(register, value);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (/is not fully covered by its fields/.test(message) || /is not a legal ACME identifier/.test(message)) {
+      return null;
+    }
+    throw err;
+  }
+}
+
+test("decomposeRegisterValue: the OR of every term's value reconstructs the input value exactly, exhaustively over every register and all 256 values (legitimate refusals excepted -- see tryDecompose)", () => {
+  let sawAtLeastOneAccepted = false;
+  for (const key of ALL_REGISTER_KEYS) {
+    const address = Number.parseInt(key.slice(1), 16);
+    for (let value = 0; value <= 0xff; value++) {
+      const decomposition = tryDecompose(address, value);
+      if (decomposition === null) continue;
+      sawAtLeastOneAccepted = true;
+      const reconstructed = decomposition.terms.reduce((acc, term) => acc | term.value, 0);
+      assert.equal(
+        reconstructed,
+        value,
+        `register ${key} value 0x${value.toString(16)}: OR of terms (0x${reconstructed.toString(16)}) != value`,
+      );
+    }
+  }
+  assert.ok(sawAtLeastOneAccepted, "the exhaustive loop must exercise at least one accepted decomposition, or this test is vacuous");
+});
+
+test("decomposeRegisterValue: joining the returned terms' field-token halves with '_' reproduces variantNameFor() exactly, exhaustively over every register and all 256 values (legitimate refusals excepted)", () => {
+  let sawAtLeastOneAccepted = false;
+  for (const key of ALL_REGISTER_KEYS) {
+    const address = Number.parseInt(key.slice(1), 16);
+    const enumName = key.slice(1);
+    for (let value = 0; value <= 0xff; value++) {
+      const decomposition = tryDecompose(address, value);
+      if (decomposition === null) continue;
+      sawAtLeastOneAccepted = true;
+      const fieldTokenHalves = decomposition.terms.map((t) => t.name.slice(enumName.length + 1));
+      assert.equal(
+        fieldTokenHalves.join("_"),
+        variantNameFor(address, value),
+        `register ${key} value 0x${value.toString(16)}: decomposed name does not match variantNameFor()`,
+      );
+    }
+  }
+  assert.ok(sawAtLeastOneAccepted, "the exhaustive loop must exercise at least one accepted decomposition, or this test is vacuous");
+});
+
+test("decomposeRegisterValue: a register whose fields do not cover every set bit refuses by name, naming the uncovered mask and the OVERRIDES remedy", () => {
+  const synthetic: RegBitsTable = {
+    $A999: {
+      label: "synthetic partial-coverage register (test-only)",
+      fields: [{ mask: 0x0f, shift: 0, name: "LOW", kind: "numeric" }],
+    },
+  };
+  __resetRegBitsCacheForTests(synthetic);
+  try {
+    assert.throws(() => decomposeRegisterValue(0xa999, 0xff), (err: unknown) => {
+      assert.ok(err instanceof Error);
+      assert.match(err.message, /0xf0/);
+      assert.match(err.message, /anno-regbits-gen\.ts/);
+      return true;
+    });
+  } finally {
+    __resetRegBitsCacheForTests(undefined);
+  }
+});
+
+test("decomposeRegisterValue: a value whose every field decodes to a silent token returns exactly one V<value> term, matching variantNameFor()'s own degenerate case", () => {
+  const synthetic: RegBitsTable = {
+    $A998: {
+      label: "synthetic all-silent register (test-only)",
+      fields: [
+        { mask: 0x01, shift: 0, name: "A", kind: "flag", tokens: { 0: "", 1: "A" } },
+        { mask: 0x02, shift: 1, name: "B", kind: "flag", tokens: { 0: "", 1: "B" } },
+      ],
+    },
+  };
+  __resetRegBitsCacheForTests(synthetic);
+  try {
+    const decomposition = decomposeRegisterValue(0xa998, 0x00);
+    assert.equal(decomposition.terms.length, 1);
+    assert.equal(decomposition.terms[0]!.name, "A998_V0");
+    assert.equal(decomposition.terms[0]!.value, 0x00);
+    assert.equal(variantNameFor(0xa998, 0x00), "V0");
+  } finally {
+    __resetRegBitsCacheForTests(undefined);
+  }
+});
+
+test("decomposeRegisterValue: every returned term name passes the same identifier gate sanitizeVariantMap() applies, for every register and all 256 values (illegal shapes are refused rather than returned -- see tryDecompose)", () => {
+  let sawAtLeastOneAccepted = false;
+  for (const key of ALL_REGISTER_KEYS) {
+    const address = Number.parseInt(key.slice(1), 16);
+    for (let value = 0; value <= 0xff; value++) {
+      const decomposition = tryDecompose(address, value);
+      if (decomposition === null) continue;
+      sawAtLeastOneAccepted = true;
+      for (const term of decomposition.terms) {
+        assert.doesNotThrow(() => assertLegalAcmeIdentifier(term.name, `decomposeRegisterValue term for ${key} value 0x${value.toString(16)}`));
+      }
+    }
+  }
+  assert.ok(sawAtLeastOneAccepted, "the exhaustive loop must exercise at least one accepted decomposition, or this test is vacuous");
+});
+
+test("T-45-10: decomposeRegisterValue refuses register $0001 for every value, because its all-digit enum-name prefix (registerKeyFor(1).slice(1) === \"0001\") makes every term name illegal -- a genuine, MEASURED limitation, never silently emitted", () => {
+  for (const value of [0x00, 0x37, 0xff]) {
+    assert.throws(() => decomposeRegisterValue(0x0001, value), /is not a legal ACME identifier/);
+  }
+});
+
+test("decomposeRegisterValue: multiField is true for a register with two or more fields, false for a single-field register", () => {
+  assert.equal(decomposeRegisterValue(0xd018, 0x00).multiField, true, "$D018 has three fields");
+  const singleField: RegBitsTable = {
+    $A997: { label: "synthetic single-field register (test-only)", fields: [{ mask: 0xff, shift: 0, name: "ALL", kind: "numeric" }] },
+  };
+  __resetRegBitsCacheForTests(singleField);
+  try {
+    assert.equal(decomposeRegisterValue(0xa997, 0x00).multiField, false);
+  } finally {
+    __resetRegBitsCacheForTests(undefined);
+  }
+});
 
 // ---------------------------------------------------------------------------
 // assertLegalAcmeIdentifier -- the sanitization gate.
