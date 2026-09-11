@@ -5,16 +5,16 @@ milestone_name: The Rebuild Half
 current_phase: 45
 current_phase_name: Decomposition to Closure, Disagreement First
 status: executing
-stopped_at: Completed 45-02-PLAN.md
-last_updated: "2026-09-11T05:14:22.861Z"
+stopped_at: Completed 45-03-PLAN.md
+last_updated: "2026-09-11T05:40:09.072Z"
 last_activity: 2026-09-11
 last_activity_desc: Phase 45 execution started
-state_head: d02da9373de153a2f72b3d9effc4c27a164990bb
+state_head: 31f1ccf85f4532b20ea5756efb78d86fcc1a65a1
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 10
-  completed_plans: 2
+  completed_plans: 3
   percent: 0
 ---
 
@@ -255,9 +255,9 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 45 (Decomposition to Closure, Disagreement First) — EXECUTING
-Plan: 3 of 10
+Plan: 4 of 10
 Status: Ready to execute
-Progress: [██░░░░░░░░] 20%
+Progress: [░░░░░░░░░░] 0%
 Last activity: 2026-09-11 — Phase 45 wave 1 complete (45-01 tracer spine)
 
 ## Performance Metrics
@@ -537,6 +537,7 @@ Last activity: 2026-09-11 — Phase 45 wave 1 complete (45-01 tracer spine)
 | Phase 44 P03 | 35min | 2 tasks | 2 files |
 | Phase 45 P01 | ~100min | 3 tasks | 11 files |
 | Phase 45 P02 | 35min | 3 tasks | 3 files |
+| Phase 45 P03 | 25min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -1235,6 +1236,8 @@ Recent decisions affecting current work:
 - [Phase 45]: dxa's own listing ranges (runDxaDisassemble's map.ranges) feed setDataType, not partitionByteDerived -- that Phase 35 ground-truth classifier never assigns code by design, which would leave the store with no code range for the disagreement query to compare against.
 - [Phase 45]: The frozen survivor prefix set (AUTO_NAME_PREFIX_RE plus three defensive anchored cases) was decided from a real measurement returning zero labels, confirming RESEARCH.md's prediction, and recorded in docs/phase45-wave0-measurements.md.
 - [Phase 45]: Corrected the checkpoint's own decline-comment provenance framing to match D-03/RESEARCH.md Section 5 — The plan's Task 1 checkpoint text called decline comments 'derived'; CONTEXT.md D-03 and RESEARCH.md Section 5 both state comments (including declines) are the authored half, and Task 2's own Test 6 requires provenance:authored for a DECLINED: comment
+- [Phase 45]: decomposeRegisterValue() refuses (assertLegalAcmeIdentifier) rather than emit an illegal term name for register $0001, whose all-digit enum-name prefix would otherwise make every term illegal (T-45-10)
+- [Phase 45]: The exhaustive OR-reconstruction/one-vocabulary tests tolerate a NAMED refusal (via tryDecompose) rather than assert no throw ever, after finding $D019 has a genuine reserved-bit gap in the real committed anno-regbits.json
 
 ### Pending Todos
 
@@ -2307,8 +2310,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-11T05:14:22.743Z
-Stopped at: Completed 45-02-PLAN.md
+Last session: 2026-09-11T05:40:08.896Z
+Stopped at: Completed 45-03-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
