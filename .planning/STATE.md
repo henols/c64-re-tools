@@ -1266,8 +1266,11 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-11 pending (11 files in `.planning/todos/pending/` + 0 UAT-gap rows = 11) — see
-`.planning/todos/pending/` (`/gsd-capture --list`). The count
+8 pending (8 files in `.planning/todos/pending/` + 0 UAT-gap rows = 8) — see
+`.planning/todos/pending/` (`/gsd-capture --list`). This line read 11 against a
+real tree of 7 before 2026-09-11; the drift predates that day's `/gsd-capture`
+(which filed the eighth, `2026-09-11-remove-anno-from-the-mcp-surface-…`) and was
+corrected by counting the tree, not by arithmetic on the stale figure. The count
 is authoritative in `## Deferred Items` below, which is derived from the todo
 tree and guarded in both directions by `docs-deferred-ledger.test.ts`. This
 section previously read 18 (set at the phase 13 close) before rising and
@@ -1997,6 +2000,7 @@ regression and not this inheritance.
 | store | 2026-08-28-phase-28-review-round-3-five-open-findings | blocker | Pending |
 | testing | 2026-09-07-move-all-tests-into-a-separate-test-folder | minor | Pending |
 | broker | 2026-09-07-remove-pre-warm-launch-vice-on-first-request | minor | Pending |
+| broker | 2026-09-11-remove-anno-from-the-mcp-surface-reach-it-via-a-stateless-br | minor | Pending |
 
 *The ledger was empty at the v0.4.0 close; every row above was filed after that
 close (one on 2026-08-24, five on 2026-08-26, three on 2026-08-28, one on 2026-08-31, two on
