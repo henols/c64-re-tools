@@ -122,10 +122,10 @@ audit. See Evidence entries 3-9.
 
 expecting: (n/a — hypothesis confirmed, see Evidence 9 for the decisive datum)
 
-next_action: apply the fix in four atomic commits — (a) cut the prescription in
-CONVENTIONS.md + resync the CLAUDE.md block, (b) clean the shipped skills, (c) add
-a guard test scoped to the shipped surface, (d) repoint/remove dangling refs.
-
+next_action: all four checkpoint decisions CLOSED, in three commits
+(ef039bd1, 9003396f, 3ff73fd6). Awaiting confirmation of this round, plus ONE
+genuinely new decision surfaced by Q3 and deliberately not acted on: see
+Resolution.new_finding_for_decision.
 reasoning_checkpoint:
   hypothesis: "Planning vocabulary keeps appearing in product files because
     `.planning/codebase/CONVENTIONS.md` §Comments PRESCRIBES it (plan ids, `D-N`
@@ -395,6 +395,61 @@ tdd_checkpoint: (none)
   "Phase N" step headings or it produces 23 false positives on day one and gets
   switched off.
 
+- timestamp: 2026-09-11 (debugger, E14 — the guard's own miss, from the checkpoint)
+  checked: why `src/skills/c64-program-recon/SKILL.md:294` ("Plan 29-18 removed
+  that cause by…") survived a guard that reports ZERO on the same tree.
+  found: the plan-citation pattern was `/\bplans?\s+\d+.../g` — lowercase-only,
+  with no `i` flag and no `[Pp]` class, while the SIBLING phase-citation pattern
+  in the same table already used `[Pp]hase`. A sentence-initial `Plan` is
+  therefore invisible to it. Re-grepped the whole shipped tree
+  case-insensitively: this is the ONLY sentence-initial instance, so the miss
+  was one line, not a class of them.
+  implication: the guard's final census ("`src/skills/**` is at ZERO") was true
+  of the predicate and false of the rule. A predicate whose two adjacent
+  categories disagree on case is a bug in the guard, not a judgement call —
+  fixed by `[Pp]lans?`, and re-run against the untouched line to PROVE the
+  widened form catches it (see verification).
+
+- timestamp: 2026-09-11 (debugger, E15 — Q1b: the corpus fixture, decided with evidence)
+  checked: three questions the checkpoint set — is the corpus TRACKED, does the
+  reading test SHIP, and what happens to a consumer without `.planning/`.
+  found:
+  (a) `danish.d64` is **NOT tracked, deliberately and by written rule**.
+      `.planning/phases/23-*/evidence/corpus/.gitignore` ignores `*.d64`/`*.prg`/
+      `*.bin`/`*.t64`/`*.crt` and states its reason inline: "the corpus is
+      operator-supplied and its identity in the verdict is release name plus
+      sha256. The binary itself is NEVER committed to this repository. These
+      rules exist so that cannot happen by accident." Only `corpus-intake.txt`
+      and the `.gitignore` are tracked. `git ls-files` on the image → not known
+      to git.
+  (b) `src/skills/c64-disk-access/scripts/c1541.test.mjs` IS tracked, so it is in
+      the **plugin zip** (`scripts/package.sh` uses `git archive HEAD`, which
+      packs the whole tracked tree). It is in **NEITHER npm tarball**:
+      `scripts/check-npm-packages.mjs:95-96` asserts zero `*.test.*` files in
+      either package, and `installer/skills/c64-disk-access/scripts/` holds only
+      `c1541.mjs`.
+  (c) A consumer running it therefore SKIPS — the image is absent for every
+      consumer AND for every fresh clone, including CI, because it is in no
+      distribution artifact at all.
+  implication: BOTH options the checkpoint offered are wrong, for the same
+  reason. "Move the corpus out of `.planning/`" cannot be done: the image may
+  not be committed anywhere (the corpus `.gitignore`'s own rule), and the whole
+  value of the oracle is that it is an independently-produced release image this
+  project never authored — copying it into `fixtures/` would destroy both the
+  rule and the point. "Make the test skip when absent" is already done and has
+  been since it was written. The ACTUAL defect is narrower and was not what was
+  asked: a hard-coded `.planning/` path literal sits in a file that ships in the
+  plugin zip, and the guard exempts that file BY PATH — whitelisting its OTHER
+  five citations (`Phase 40, plan 40-04`, `PREP-01`, `D-06`, `D-25`) as
+  collateral, which is precisely the hole Q4 closes. Chosen fix: name the image
+  through an operator-supplied env var (`C64_RE_CORPUS_IMAGE`), matching this
+  repo's established pattern for every other operator-supplied external
+  resource (`VICE_LIVE_DXA`, `VICE_LIVE_STOCK_BIN`, `GHIDRA_HOME`, `ACME_BIN`,
+  `VICE_BIN`). The oracle survives unchanged, the skip survives unchanged, the
+  `.planning/` literal leaves shipped code, and the by-path exemption can be
+  DELETED rather than documented.
+
+
 ## Eliminated
 
 - hypothesis: "GSD's own executor/planner instructions ask for traceability
@@ -630,3 +685,146 @@ remaining_scope: |
      § 21 rationale ("the reader has only the product") does not apply to it
      the way it applies to a skill. Worth a decision, not an assumption.
 
+checkpoint_round_2: |
+  The human-verify checkpoint was answered 2026-09-11 with four decisions. All
+  four are closed. Q1a/Q1b/Q4 landed together in ONE commit because Q4 changes
+  what the guard must reject and Q1a widens the same predicate -- doing them
+  separately would have re-run the guard against two drafts of the rule.
+
+  Q1 -- VERIFIED, and both reported misses fixed (ef039bd1).
+    (a) THE GUARD HAD A CASE BUG, not merely an escaped line. The plan-citation
+        pattern was lowercase-only (`\bplans?`) while its immediate neighbour in
+        the same table already matched `[Pp]hase`. Widened to `[Pp]lans?` and
+        run FIRST against the untouched tree: it reported
+        `c64-program-recon/SKILL.md:294 [plan citation] "Plan 29-18"` -- proof
+        the widened form catches it, obtained before the line was touched. Only
+        one sentence-initial instance existed repo-wide.
+    (b) DECIDED AGAINST BOTH OFFERED OPTIONS, with the evidence in E15. The
+        corpus CANNOT move: `danish.d64` is untracked by written rule (the
+        corpus `.gitignore`: "the binary itself is NEVER committed to this
+        repository"), and a committed copy would stop being independently
+        produced, which is the only property the assertion rests on. The skip
+        already existed. The actual defect was narrower: a `.planning/` path
+        literal in a file that ships in the plugin zip (tracked -> `git archive
+        HEAD`) though in neither npm tarball (check-npm-packages asserts zero
+        `*.test.*`). Fixed by naming the image through `C64_RE_CORPUS_IMAGE`,
+        matching this repo's pattern for every other operator-supplied resource.
+        VERIFIED BOTH WAYS: unset -> skips with a named reason; supplied -> the
+        cross-validation actually RUNS, 17/17 pass, 0 skipped. The oracle is
+        preserved, not quietly disabled. This also let the last BY-PATH
+        exemption be DELETED rather than documented -- it had been whitelisting
+        the whole file, covering five unrelated citations as collateral.
+
+  Q4 -- § 21.2 REWRITTEN STRICTER; no decision, gap or requirement id in a
+    shipped file in ANY form (ef039bd1). The measured basis: `docs/` is packed
+    into the plugin zip but is in NEITHER npm tarball, so the
+    document-qualified form dangles for every `npx` install -- and it is the
+    MORE misleading of the two forms, since a bare `D-13` announces itself as
+    an internal token while `` `docs/...md` D-03 `` looks like a working
+    cross-reference. Both surviving refs now state the reasoning inline. The
+    requirement-id escape went with it (weaker still: `docs/` does not define
+    requirement ids at all). Guard exemption count is now ONE, derived from a
+    file's own `## Phase N` headings, so it cannot be granted by hand.
+
+  Q3 -- CONSTRAINTS CLEANED; the guard REWORKED, not deleted (9003396f). Two
+    findings changed the shape of this one:
+      * THE PREDICTION THAT IT WOULD RED `docs-linerefs.test.ts` WAS WRONG. That
+        guard checks LINE REFERENCES, not provenance; keeping the facts and
+        dropping the bookkeeping -- which is what Q3 itself instructed -- leaves
+        it green. It passed 13/13 unchanged.
+      * THE `source:PROJECT.md` MARKER IS ASPIRATIONAL. CLAUDE.md's Constraints
+        block and PROJECT.md's have DIVERGED, and CLAUDE.md's is the newer and
+        more correct copy. See new_finding_for_decision below.
+    So the rework is the one the cleanup actually earned: the guard hard-coded
+    `[1505, 3035]`, two of the four numbers typed into the test rather than read
+    from the documents it guards -- asymmetric coverage its own prose did not
+    admit. Both are now derived from each scanned document's own bullet, with a
+    per-document count assertion and a cross-document agreement check. The
+    cleanup ENABLED it: the old bullets carried a changelog of stale shorthands,
+    so a shorthand scan would have read history back out of the prose.
+    MUTATION-TESTED: planting `:1505` -> `:1507` reds it with a message naming
+    the document and the number, where the old hard-coded form would have stayed
+    green on that exact edit.
+
+  Q2 -- PLANNED, NOT FIXED (3ff73fd6). Phase 51 written through `gsd-tools phase
+    add`, then repaired: the verb put a DETAIL stub at the end of the `##
+    Phases` OVERVIEW section and wrote neither the checkbox bullet nor the
+    Progress row. Diffed against a pre-verb copy -- only the Phase 51 additions
+    differ. Scoped from measurement taken with the GUARD'S OWN predicate over
+    the exact `files[]` set: 2384 occurrences across 88 of 92 scannable shipped
+    files, by category, with the eight worst files named. The entry records why
+    that is not the 1663 measured hours earlier (the § 21.2 tightening brought
+    914 requirement ids into scope -- a rule change, not drift), the per-site
+    judgement requirement with a success criterion that a comment-DELETING diff
+    fails, the six lockstep guards with the two that need argued prose rewritten
+    rather than literals patched, and the ordering trap that the guard must be
+    widened LAST.
+
+new_finding_for_decision: |
+  NOT ACTED ON, deliberately, and not part of the four questions.
+
+  `CLAUDE.md`'s Constraints bullets sit inside `<!-- GSD:project-start
+  source:PROJECT.md -->` and so look generated. MEASURED 2026-09-11: they are
+  not in sync with `.planning/PROJECT.md` and have not been for some time, and
+  CLAUDE.md's copy is the NEWER and more correct one. PROJECT.md's copy still
+  says Node >= 22.18 where CLAUDE.md says >= 24, and still carries FIVE bullets
+  about a tool whose whole tree was purged from this repo on 2026-09-01 and
+  which appears 44 times in PROJECT.md against 0 in CLAUDE.md. The block is
+  hand-maintained in practice.
+
+  CONSEQUENCE: running a regeneration today would not merely undo a cleanup --
+  it would REGRESS CLAUDE.md, reintroducing five bullets about a removed tool
+  and a wrong Node floor into the file loaded into every session.
+
+  Both copies of every OVERLAPPING bullet were cleaned, so neither side can
+  re-inject the planning provenance. The five non-overlapping bullets were left
+  exactly as they are: rewriting them is a different problem with its own
+  constraints, and doing it silently inside a debug session would be the wrong
+  seat for it. Decision needed on whether PROJECT.md's Constraints section
+  should be reconciled with CLAUDE.md, and by which workflow.
+
+verification_round_2: |
+  guardrail_verdict: accepted
+
+  Signal -- RED/GREEN, before and after, on the real tree: the widened guard
+  reported exactly three violations on the untouched tree (`Plan 29-18`, and
+  both `D-03` sites) and zero after the content fixes. Nothing else surfaced,
+  so the widening did not over-match.
+
+  Signal -- MUTATION, on the reworked guard: `:1505` -> `:1507` planted in
+  CLAUDE.md's Architecture bullet reds `docs-linerefs.test.ts` naming the
+  document and the number; reverted and re-run green. The pre-rework form would
+  have passed that exact mutation, since the hard-coded literal 1505 still
+  resolves. This is the proof the rework is a narrowing rather than a rename.
+
+  Signal -- ORACLE LIVENESS (the Q1b risk): with `C64_RE_CORPUS_IMAGE` set, the
+  corpus cross-validation RUNS and passes -- 17 tests, 17 pass, 0 skipped. An
+  env-var gate that silently skipped forever would have been a regression
+  disguised as a cleanup, so this was measured rather than assumed.
+
+  Signal -- collateral gates: `npx tsc --noEmit` exit 0; the shipped-skill suite
+  196 tests / 0 fail with the corpus case skipping on its named reason; all five
+  CI skill guards exit 0; `check-npm-packages` OK (@henols/vice-mcp 104 files,
+  @henols/c64-re-tools 42 files / 9 skills) with installer/skills byte-for-byte
+  in sync; the six doc/roadmap guards green (78/78, then 68/68 after the roadmap
+  write); `roadmap get-phase 51` parses the new entry with all five criteria.
+
+  Signal -- FULL SUITE, three times across the round (before Q3, after Q3,
+  final): EXIT=1 each time with a failure SET byte-identical to the session
+  baseline -- annoRegisterEntryFor / DIRECTION 5 / planted-violation (the known
+  anno-register floor of 3) plus check-skill-fork-honesty (the known zz-scratch
+  race, whose ENOENT named `zz-scratch-JOU2TG` this run). No additions, no
+  removals. Broker confirmed inactive before every run.
+
+files_changed_round_2:
+  - src/mcp/vice/skills-planning-vocabulary.test.ts
+  - src/mcp/vice/docs-linerefs.test.ts
+  - src/mcp/vice/fixtures/c1541/README.md
+  - src/skills/c64-disk-access/scripts/c1541.test.mjs
+  - src/skills/c64-program-recon/SKILL.md
+  - src/skills/c64-program-recon/references/tool-selection.md
+  - src/skills/vice-wedge-triage/SKILL.md
+  - .planning/ENGINEERING_RULES.md
+  - .planning/PROJECT.md
+  - .planning/ROADMAP.md
+  - CLAUDE.md
