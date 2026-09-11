@@ -241,7 +241,7 @@
     {
       "number": "45",
       "name": "Decomposition to Closure, Disagreement First",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "number": "46",
@@ -271,8 +271,8 @@
   ],
   "next": {
     "command": "/gsd:progress --next",
-    "label": "Advance to the next step",
-    "reason": "Phase 45 of 6 · 0% · executing"
+    "label": "Advance to the next step (plan phase 46)",
+    "reason": "Phase 46 of 6 — needs a plan"
   },
-  "updated_at": "2026-09-10T22:10:16.316Z"
+  "updated_at": "2026-09-11T12:09:47.816Z"
 }
