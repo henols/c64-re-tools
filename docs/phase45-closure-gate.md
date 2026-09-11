@@ -71,6 +71,30 @@ usage removed. A later plan/human decision is needed on whether to widen
 `anno-regbits-gen.ts`'s `$DD00` field set (adding the VIC-bank-select field)
 or to leave `DD00`'s enum uninstalled in the committed fixture.
 
+> **SUPERSEDED the same day — read this before acting on the paragraph above.**
+> The "later plan/human decision" named above was taken immediately, at the phase's
+> post-review gate: the owner chose to **leave `DD00`'s enum uninstalled in the
+> committed fixture** rather than widen `anno-regbits-gen.ts`. Commit `42820042`
+> removed the `DD00` project enum and its one usage binding from the committed
+> `charset-phantom.annostore.json` itself; `D011` and `D018` were left untouched.
+>
+> Two consequences for the paragraph above, which is now historical rather than current:
+>
+> 1. **`anno export-asm` DOES run over the committed store as committed.** The
+>    sentence "cannot run over the committed store as committed today" describes the
+>    state before `42820042`, not the shipped state. Independently reproduced at the
+>    phase verification gate: the real `exportAsm()` over the real committed store
+>    succeeds, and its output reassembles byte-identically under real ACME 0.97.
+> 2. **The scratch copy is no longer part of the mechanism.** Criterion 5's
+>    demonstration below was originally captured against a DD00-removed *scratch*
+>    copy; the committed fixture now has that same shape on disk, so the two are no
+>    longer different documents. Later references in this file to a "scratch copy"
+>    (and to rows "deleted from a scratch copy") are historical for the same reason.
+>
+> The separate, genuine gap this paragraph identified is unchanged and still open:
+> `anno-regbits.json`'s `$DD00` entry still has no field for bits #0-#1 (VIC bank
+> select). Nothing in this phase widened the curated table.
+
 ### The exported source, verbatim (D011/D018 only — criterion 5's own subject)
 
 Per-field constant header definitions (one line per field, each appearing
