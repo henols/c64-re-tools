@@ -2316,6 +2316,72 @@ test("D-17 Test 7: `enumSubstitutionCount` and `enumDecompositionCount` are two 
 });
 
 // ---------------------------------------------------------------------------
+// 45-REVIEW CR-01 (fixed 2026-09-11): the decomposition attempt is gated on
+// TABLE MEMBERSHIP (`hasRegBitsEntry()`), not name shape alone. Before this
+// fix, a register-shaped enum name for a register `anno-regbits.json` simply
+// does not cover (e.g. `$D020`, one of the most commonly hand-annotated C64
+// registers) made `decomposeRegisterValue()` throw its "no bit-name table
+// entry" error, and the export re-threw it fatally instead of falling
+// through to the pre-existing single-symbol path. The two tests below cover
+// both branches the fix distinguishes: absent-from-table (falls through, no
+// throw, no substitution counted) and present-but-incomplete (still refuses
+// loudly -- T-45-21's invariant, unaffected by this fix).
+// ---------------------------------------------------------------------------
+
+test("CR-01 Fix Test A: a register-shaped enum name for a register anno-regbits.json has NO entry for ($D020) falls through to the single-symbol path, counts no decomposition, and does not throw", { skip: SKIP_REASON }, () => {
+  const { dir, storePath, imagePath } = buildStore(freshDir("d020-absent"), {
+    origin: 0x0801,
+    body: [0xa9, 0x00, 0x8d, 0x20, 0xd0, 0x60], // lda #$00 / sta $d020 / rts
+    ranges: [{ start: 0x0801, endInclusive: 0x0806, dataType: "code" }],
+    enums: [{ name: "D020", variants: { $00: "BLACK" } }],
+    enumUsage: [{ address: 0x0801, name: "D020" }],
+  });
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+  const lines = result.source.split("\n");
+
+  assert.ok(
+    lines.some((l) => directiveHalf(l).includes("lda #D020_BLACK")),
+    `an absent-from-table register-shaped enum must still render through the PLAIN single-symbol path:\n${result.source}`,
+  );
+  assert.equal(definitionOf(lines, "D020_BLACK"), "D020_BLACK = $00");
+  assert.equal(result.enumSubstitutionCount, 1, "the plain substitution still counts");
+  assert.equal(
+    result.enumDecompositionCount,
+    0,
+    "a register absent from anno-regbits.json is never a decomposition, however register-shaped its name is (45-REVIEW CR-01)",
+  );
+
+  const verdict = verifyExport(result);
+  assert.equal(verdict.outcome, "ok", `the fallback path must still round-trip:${context(result, verdict)}`);
+  assert.equal(verdict.byteDiff?.equal, true);
+});
+
+test("CR-01 Fix Test B: a register PRESENT in the table but not fully covered by its fields ($DD00, bits #0-#1 uncovered) still refuses loudly -- the membership-test fix does not weaken T-45-21", () => {
+  const { dir, storePath, imagePath } = buildStore(freshDir("dd00-incomplete"), {
+    origin: 0x0801,
+    body: [0xa9, 0x01, 0x8d, 0x00, 0xdd, 0x60], // lda #$01 (bit #0 set) / sta $dd00 / rts
+    ranges: [{ start: 0x0801, endInclusive: 0x0806, dataType: "code" }],
+    enums: [{ name: "DD00", variants: {} }],
+    enumUsage: [{ address: 0x0801, name: "DD00" }],
+  });
+
+  assert.throws(
+    () => exportAsm({ storePath, imagePath, workspaceRoot: dir }),
+    (e: unknown) => {
+      assert.ok(e instanceof Error);
+      assert.match(e.message, /^exportAsm: /);
+      assert.ok(
+        e.message.includes("decomposing the enum usage") && e.message.includes("bit-name table failed"),
+        `the refusal must be the genuine decomposition failure, not the fallback path: ${e.message}`,
+      );
+      assert.ok(e.message.includes("DD00"), `the refusal names the register/enum: ${e.message}`);
+      assert.ok(e.message.includes("not fully covered"), `the refusal names the real cause (incomplete field coverage): ${e.message}`);
+      return true;
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
 // Task 2 (plan 45-05): THE REAL-ACME BYTE-DIFF ORACLE, criterion 5's own
 // proof. `fixtures/ghidra/charset-phantom.a`'s `start` writes BOTH `$D011`
 // and `$D018` -- criterion 5's only home among the committed fixtures

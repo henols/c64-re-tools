@@ -119,7 +119,7 @@ import { AUTO_NAME_PREFIX_RE } from "./anno-coverage.ts";
 // D-16 renderer) calls the SAME function. Never re-derive a per-field bit
 // mask in this file -- a phase-45 verification gate greps this file's own
 // text for that shape and must find none.
-import { decomposeRegisterValue, type RegisterDecomposition } from "./anno-enum-gen.ts";
+import { decomposeRegisterValue, hasRegBitsEntry, type RegisterDecomposition } from "./anno-enum-gen.ts";
 import { decode } from "./disasm-decoder.ts";
 import { renderLine } from "./disasm-renderer.ts";
 import { parsePrg, flatImageOrigin } from "./prg-image.ts";
@@ -555,14 +555,22 @@ const MAX_IMMEDIATE_VARIANT_VALUE = 0xff;
  * The SHAPE `registerKeyFor(address).slice(1)` always produces (uppercase,
  * exactly four hex digits) -- the SAME string `planEnumsForPairing()` uses as
  * a project enum's own `enumName` (`anno-enum-gen.ts`, D-15). An enum usage
- * whose `enumName` matches this shape is ATTEMPTED through
+ * whose `enumName` matches this shape is a CANDIDATE for
  * `decomposeRegisterValue()`; one that does not (a hand-authored name like
- * `viccolor`) is never attempted -- this module holds no second table of
- * which arbitrary names are "really" registers, and guessing would be exactly
- * the kind of plausible-looking wrong answer this file refuses everywhere
- * else. Lowercase is deliberately excluded: every writer of this convention
- * (`registerKeyFor()`) emits uppercase, and matching lowercase too would
- * accept a shape nothing in this codebase produces.
+ * `viccolor`) is never a candidate at all -- this module holds no second
+ * table of which arbitrary names are "really" registers, and guessing would
+ * be exactly the kind of plausible-looking wrong answer this file refuses
+ * everywhere else. Lowercase is deliberately excluded: every writer of this
+ * convention (`registerKeyFor()`) emits uppercase, and matching lowercase too
+ * would accept a shape nothing in this codebase produces.
+ *
+ * SHAPE ALONE IS NOT ENOUGH (45-REVIEW CR-01, fixed 2026-09-11): a candidate
+ * is only ATTEMPTED once `hasRegBitsEntry()` also confirms `anno-regbits.json`
+ * has a table entry for it. `$D020`/`$D021` -- among the most commonly
+ * hand-annotated C64 registers -- are register-shaped and absent from the
+ * table; before this fix, naming either via `anno_create_project_enum` made
+ * the WHOLE export throw instead of falling through to the pre-existing
+ * single-symbol path. See the call site below for the two-part gate.
  */
 const REGISTER_ENUM_NAME_RE = /^[0-9A-F]{4}$/;
 
@@ -1191,15 +1199,26 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
           }
 
           // D-16 (plan 45-05): THE ONE OWNING DECODER. Attempted ONLY when
-          // `usage.enumName` has the exact shape `registerKeyFor().slice(1)`
-          // produces -- see `REGISTER_ENUM_NAME_RE`'s own comment for why a
-          // name that does not have this shape (e.g. `viccolor`) is never
-          // attempted at all. A throw here is NEVER swallowed to fall back to
-          // the hex literal while still counting a substitution that did not
-          // happen (T-45-21) -- it propagates with the usage address
-          // prepended, so the store row that caused it is always nameable.
+          // BOTH (45-REVIEW CR-01, fixed 2026-09-11):
+          //   1. `usage.enumName` has the exact shape `registerKeyFor().slice(1)`
+          //      produces -- see `REGISTER_ENUM_NAME_RE`'s own comment for why a
+          //      name that does not have this shape (e.g. `viccolor`) is never
+          //      a candidate at all; AND
+          //   2. `anno-regbits.json` actually has a table entry for that
+          //      register (`hasRegBitsEntry()`) -- a register-shaped name for a
+          //      register the table does not cover (e.g. `D020`) is not a
+          //      decomposition failure, it is simply not a decomposable
+          //      register, and falls through to the existing single-symbol
+          //      path below with NO substitution counted.
+          // Once BOTH hold, the table DOES claim this register, and a throw
+          // here is a genuine, non-collateral data/coverage error (e.g. the
+          // disclosed `$DD00` incomplete-bitfield-table case) -- it is NEVER
+          // swallowed to fall back to the hex literal while still counting a
+          // substitution that did not happen (T-45-21). It propagates with the
+          // usage address prepended, so the store row that caused it is always
+          // nameable.
           let decomposition: RegisterDecomposition | undefined;
-          if (REGISTER_ENUM_NAME_RE.test(usage.enumName)) {
+          if (REGISTER_ENUM_NAME_RE.test(usage.enumName) && hasRegBitsEntry(`$${usage.enumName}`)) {
             try {
               decomposition = decomposeRegisterValue(parseInt(usage.enumName, 16), instr.operand!.value);
             } catch (err) {
@@ -1259,8 +1278,11 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
             decompositionComment = decomposition.comment;
           } else {
             // THE EXISTING SINGLE-SYMBOL PATH (D-16: unchanged, not
-            // replaced) -- a single-field register, or an enum usage whose
-            // name is not register-shaped at all.
+            // replaced) -- a single-field register, an enum usage whose name
+            // is not register-shaped at all, OR (45-REVIEW CR-01) a
+            // register-shaped name for a register `anno-regbits.json` simply
+            // has no entry for (e.g. `D020`) -- reached here with no
+            // substitution counted above, never a throw.
             //
             // EVERY variant of the enum is checked, not only the one this
             // operand matched. An enum carrying a variant above $ff is not a

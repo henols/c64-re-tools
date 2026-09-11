@@ -187,8 +187,12 @@ import { render } from "./disasm-renderer.ts";
 // decodes a bit itself. `REGISTER_ENUM_NAME_RE` below is deliberately a
 // SEPARATE, small predicate from `anno-export-asm.ts`'s own copy: D-16 names
 // two renderers, each owning its own substitution glue, and only the decoder
-// itself is shared.
-import { decomposeRegisterValue, type RegisterDecomposition } from "./anno-enum-gen.ts";
+// itself is shared. `hasRegBitsEntry()` is likewise shared (45-REVIEW CR-01,
+// fixed 2026-09-11): both renderers gate the decoder attempt on TABLE
+// MEMBERSHIP, not name shape alone, via this one exported predicate -- a
+// second, locally-derived membership test would be exactly the kind of
+// "two answers to one question" this file's own header elsewhere refuses.
+import { decomposeRegisterValue, hasRegBitsEntry, type RegisterDecomposition } from "./anno-enum-gen.ts";
 import { importGhidraExport } from "./anno-import.ts";
 import type { ConstWriteFact } from "./anno-import.ts";
 import { runMemmapJoin } from "./anno-join.ts";
@@ -2642,11 +2646,17 @@ function hexdump(bytes: Uint8Array, start: number): string[] {
 
 /** The SAME shape `registerKeyFor().slice(1)` produces (uppercase, exactly
  * four hex digits) -- `anno-export-asm.ts`'s own `REGISTER_ENUM_NAME_RE`
- * comment explains why an enum usage is only ATTEMPTED through the decoder
+ * comment explains why an enum usage is only a CANDIDATE for the decoder
  * when its name has this shape, and why that check is not centralised: two
- * renderers, two small local copies of this one predicate, one shared
+ * renderers, two small local copies of this one shape predicate, one shared
  * decoder. Kept in sync by inspection (both are one line) rather than by
- * import, per D-16's own "two renderers" design. */
+ * import, per D-16's own "two renderers" design.
+ *
+ * SHAPE ALONE IS NOT ENOUGH (45-REVIEW CR-01, fixed 2026-09-11): the call
+ * site below also requires `hasRegBitsEntry()` -- imported from
+ * `anno-enum-gen.ts` above, the ONE shared membership predicate, NOT a third
+ * local copy -- to confirm `anno-regbits.json` actually covers the register
+ * before attempting the decoder at all. */
 const REGISTER_ENUM_NAME_RE = /^[0-9A-F]{4}$/;
 
 /** `#$XX` -> `#<replacement>` on the ASSEMBLER-VISIBLE half of `line`, the
@@ -2744,11 +2754,16 @@ function renderDisassembleListing(handle: AnnoStoreHandle, instructions: readonl
       );
     }
 
-    // D-16: attempted ONLY when the enum's name has the register-key shape;
-    // see `REGISTER_ENUM_NAME_RE`'s own comment for why a name that does not
-    // (e.g. a hand-authored `viccolor`) is never attempted.
+    // D-16: attempted ONLY when BOTH (45-REVIEW CR-01, fixed 2026-09-11) the
+    // enum's name has the register-key shape -- see `REGISTER_ENUM_NAME_RE`'s
+    // own comment for why a name that does not (e.g. a hand-authored
+    // `viccolor`) is never a candidate -- AND `anno-regbits.json` actually
+    // has a table entry for it (`hasRegBitsEntry()`). A register-shaped name
+    // for a register the table does not cover (e.g. `D020`) is not a
+    // decomposition failure; it falls through to the single-symbol shape
+    // below with no decomposition attempted at all.
     let decomposition: RegisterDecomposition | undefined;
-    if (REGISTER_ENUM_NAME_RE.test(usage.enumName)) {
+    if (REGISTER_ENUM_NAME_RE.test(usage.enumName) && hasRegBitsEntry(`$${usage.enumName}`)) {
       try {
         // `Number("0x...")`, never `parseInt()` -- this file's own guard
         // (anno-tools.test.ts) forbids a second, divergent numeric-parsing
@@ -2777,7 +2792,9 @@ function renderDisassembleListing(handle: AnnoStoreHandle, instructions: readonl
     }
 
     // THE EXISTING SINGLE-SYMBOL SHAPE (D-16: not replaced) -- a single-field
-    // register, or an enum usage whose name is not register-shaped at all.
+    // register, an enum usage whose name is not register-shaped at all, OR
+    // (45-REVIEW CR-01) a register-shaped name for a register
+    // `anno-regbits.json` has no entry for (e.g. `D020`).
     let matched: string | undefined;
     for (const [key, variantName] of Object.entries(project.variants)) {
       if (parseVariantKey(key) === instr.operand!.value) matched = variantName;

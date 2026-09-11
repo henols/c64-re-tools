@@ -53,6 +53,7 @@ import {
   type EnumInstallSummary,
   fetchRegisterSearchRows,
   generateEnumsFromStore,
+  hasRegBitsEntry,
   installPlannedEnums,
   type RegisterDecomposition,
   __resetRegBitsCacheForTests,
@@ -145,6 +146,43 @@ for (const addr of [0xd011, 0xd016, 0xd018, 0xd015]) {
 
 const REGBITS_TABLE_RAW = JSON.parse(readFileSync(join(HERE, "anno-regbits.json"), "utf8")) as Record<string, unknown>;
 const ALL_REGISTER_KEYS = Object.keys(REGBITS_TABLE_RAW).filter((k) => k !== "_generated");
+
+// ---------------------------------------------------------------------------
+// hasRegBitsEntry() -- THE ONE MEMBERSHIP-TEST PREDICATE (45-REVIEW CR-01,
+// fixed 2026-09-11). Both D-16 render surfaces gate their decomposition
+// attempt on this, rather than each re-deriving "is this register in the
+// table" from a lookup-and-catch of requireRegBitsEntry()'s own throw.
+// ---------------------------------------------------------------------------
+
+test("hasRegBitsEntry: true for every real committed table key, exhaustively -- never a hand-picked subset", () => {
+  assert.ok(ALL_REGISTER_KEYS.length > 0, "the committed table must not be empty, or this check is vacuous");
+  for (const key of ALL_REGISTER_KEYS) {
+    assert.equal(hasRegBitsEntry(key), true, `${key} is a real committed table key and must be reported present`);
+  }
+});
+
+test("hasRegBitsEntry: false for $D020/$D021 -- CONFIRMED ABSENT from anno-regbits.json (docs/phase45-closure-dxa-family.md, Task 3), the exact CR-01 regression case", () => {
+  assert.equal(ALL_REGISTER_KEYS.includes("$D020"), false, "precondition: $D020 really is absent from the committed table");
+  assert.equal(ALL_REGISTER_KEYS.includes("$D021"), false, "precondition: $D021 really is absent from the committed table");
+  assert.equal(hasRegBitsEntry("$D020"), false);
+  assert.equal(hasRegBitsEntry("$D021"), false);
+});
+
+test("hasRegBitsEntry: true for $DD00 -- present but only PARTIALLY covered (bits #0-#1 uncovered), a genuinely different case from absent-entirely", () => {
+  assert.equal(ALL_REGISTER_KEYS.includes("$DD00"), true, "precondition: $DD00 really is in the committed table");
+  assert.equal(hasRegBitsEntry("$DD00"), true, "membership is about the TABLE ENTRY existing, not about full bit coverage");
+});
+
+test("hasRegBitsEntry: honours the test-only cache reset -- a synthetic table with no entries reports false for every real key", () => {
+  __resetRegBitsCacheForTests({});
+  try {
+    for (const key of ALL_REGISTER_KEYS) {
+      assert.equal(hasRegBitsEntry(key), false, `${key} must report absent against an EMPTY synthetic table`);
+    }
+  } finally {
+    __resetRegBitsCacheForTests(undefined);
+  }
+});
 
 test("decomposeRegisterValue(0xd018, 0x04) returns one term per $D018 field, in ascending bit order, matching the pinned criterion-5 fixture", () => {
   const decomposition = decomposeRegisterValue(0xd018, 0x04);

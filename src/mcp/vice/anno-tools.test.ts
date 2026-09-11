@@ -875,6 +875,67 @@ test("D-16 Test 4: an enum usage naming an enum the store does not hold is REFUS
   );
 });
 
+// ---------------------------------------------------------------------------
+// 45-REVIEW CR-01 (fixed 2026-09-11): the decomposition attempt is gated on
+// TABLE MEMBERSHIP (`hasRegBitsEntry()`), not name shape alone -- the SAME
+// fix `anno-export-asm.test.ts` proves through a real-ACME byte-diff oracle,
+// proved here through this SECOND renderer instead. Before this fix, a
+// register-shaped enum name for a register `anno-regbits.json` does not
+// cover (e.g. `$D020`) made `decomposeRegisterValue()` throw its "no
+// bit-name table entry" error, and this renderer re-threw it fatally instead
+// of falling through to the pre-existing single-symbol path.
+// ---------------------------------------------------------------------------
+
+/** `lda #$00` / `sta $d020` / `rts` at `$c000` -- `$D020` (VIC-II border
+ * colour) is CONFIRMED ABSENT from the committed `anno-regbits.json`
+ * (`docs/phase45-closure-dxa-family.md`, Task 3). */
+const D020_WRITE_PRG = prgBytes(0xc000, [0xa9, 0x00, 0x8d, 0x20, 0xd0, 0x60]);
+
+test("CR-01 Fix Test C: a register-shaped enum name for a register anno-regbits.json has NO entry for ($D020) renders through the plain single-symbol path, not a throw", async () => {
+  await withStore(
+    (handle) => {
+      createProjectEnum(handle, { name: "D020", variants: { $00: "BLACK" } });
+      applyEnumUsage(handle, { address: 0xc000, name: "D020" });
+    },
+    async (ws, store) => {
+      const image = writeImage(ws, "prog.prg", D020_WRITE_PRG);
+      const result = await runAnnoTool("anno_disassemble", { store, image, address: "$c000", end_address: "$c005" });
+      assert.equal(result.isError, false, result.content[0]!.text);
+      const disasmBody = (await body(result)) as { listing: string };
+
+      const ldaLine = disasmBody.listing.split("\n").find((l) => l.includes("lda #"));
+      assert.ok(ldaLine !== undefined, `the lda line must be present:\n${disasmBody.listing}`);
+      assert.ok(
+        ldaLine!.includes("lda #D020_BLACK"),
+        `an absent-from-table register-shaped enum must still render through the PLAIN single-symbol path:\n${ldaLine}`,
+      );
+      assert.equal(disasmBody.listing.includes("lda #$00"), false, "the hex literal must be REPLACED, not merely accompanied");
+    },
+  );
+});
+
+/** `lda #$01` (bit #0 set) / `sta $dd00` / `rts` at `$c000` -- `$DD00` IS
+ * present in the committed table but covers only bits #2-#7, so bit #0 is
+ * uncovered (the disclosed `docs/phase45-closure-gate.md` gap class). */
+const DD00_WRITE_PRG = prgBytes(0xc000, [0xa9, 0x01, 0x8d, 0x00, 0xdd, 0x60]);
+
+test("CR-01 Fix Test D: a register PRESENT in the table but not fully covered by its fields ($DD00) still refuses loudly -- the membership-test fix does not weaken T-45-21", async () => {
+  await withStore(
+    (handle) => {
+      createProjectEnum(handle, { name: "DD00", variants: {} });
+      applyEnumUsage(handle, { address: 0xc000, name: "DD00" });
+    },
+    async (ws, store) => {
+      const image = writeImage(ws, "prog.prg", DD00_WRITE_PRG);
+      const result = await runAnnoTool("anno_disassemble", { store, image, address: "$c000", end_address: "$c005" });
+      assert.equal(result.isError, true, "a genuinely-lossy decomposition must still refuse, not fall back to a hex literal");
+      assert.match(result.content[0]!.text, /\[AnnoStoreError\]/);
+      assert.ok(result.content[0]!.text.includes("DD00"), `the refusal names the register/enum: ${result.content[0]!.text}`);
+      assert.ok(result.content[0]!.text.includes("not fully covered"), `the refusal names the real cause: ${result.content[0]!.text}`);
+    },
+  );
+});
+
 test("D-09: no identifier, schema property or dispatch branch on this surface names a cursor or a current address", () => {
   // Asserted over the COMMENT-AND-STRING-STRIPPED source, so the module
   // header's own prose explaining why the anti-feature is absent cannot make

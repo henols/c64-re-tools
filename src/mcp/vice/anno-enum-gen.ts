@@ -222,6 +222,36 @@ function requireRegBitsEntry(key: string, callerName: string): RegBitsField[] {
 }
 
 /**
+ * THE ONE MEMBERSHIP-TEST PREDICATE (45-REVIEW CR-01): answers "does
+ * `anno-regbits.json` have an entry for this register at all", independent
+ * of whether that entry, once found, can fully decompose any particular
+ * value. `pairSearchRows()` above already narrows candidate `sta` targets
+ * this same way (`knownRegisters.has(key)`, built from this table's own
+ * keys) before ever treating one as a register; this export gives the two
+ * D-16 render surfaces (`anno-export-asm.ts`, `anno-tools.ts`'s
+ * `renderDisassembleListing()`) the identical membership check so a
+ * register-SHAPED enum name for a register the table simply does not cover
+ * (e.g. `D020`, `D021` -- confirmed absent, `docs/phase45-closure-dxa-family.md`)
+ * falls through to the plain single-symbol path instead of being attempted,
+ * and failing, through `decomposeRegisterValue()`.
+ *
+ * `key` is the SAME `$`-prefixed shape `registerKeyFor()` produces and the
+ * table's own keys use (e.g. `"$D011"`) -- callers holding only the bare
+ * `regKey.slice(1)` enum name (e.g. `"D011"`) must prefix it with `$` before
+ * calling this, exactly as `requireRegBitsEntry()`'s own callers already do
+ * via `registerKeyFor()`.
+ *
+ * Deliberately NOT folded into `requireRegBitsEntry()`: that function's job
+ * is "fetch or throw naming the remedy" for a caller that already believes
+ * the register IS decodable; this function's job is "may I even ask" for a
+ * caller that does not yet know. Collapsing them would force every
+ * membership check to pay for (and catch) a thrown error it does not want.
+ */
+export function hasRegBitsEntry(key: string): boolean {
+  return loadRegBits()[key] !== undefined;
+}
+
+/**
  * Decodes ONE field of `register`'s value against `field` -- the single
  * decode step `variantNameFor()` and `decomposeRegisterValue()` BOTH walk in
  * the same ascending bit order (Task 1's own rule: "do not write a second
