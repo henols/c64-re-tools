@@ -5,16 +5,16 @@ milestone_name: The Rebuild Half
 current_phase: 45
 current_phase_name: Decomposition to Closure, Disagreement First
 status: executing
-stopped_at: Completed 45-04-PLAN.md
-last_updated: "2026-09-11T06:24:36.057Z"
+stopped_at: Completed 45-05-PLAN.md
+last_updated: "2026-09-11T06:57:33.623Z"
 last_activity: 2026-09-11
 last_activity_desc: Phase 45 execution started
-state_head: a0b9adf3dbc2e949b56cb30f5ca59442989fcebe
+state_head: be0955eeb8276edad658e19f4b8779f83d1ffad7
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 10
-  completed_plans: 4
+  completed_plans: 5
   percent: 0
 ---
 
@@ -255,7 +255,7 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 45 (Decomposition to Closure, Disagreement First) — EXECUTING
-Plan: 5 of 10
+Plan: 6 of 10
 Status: Ready to execute
 Progress: [░░░░░░░░░░] 0%
 Last activity: 2026-09-11 — Phase 45 wave 1 complete (45-01 tracer spine)
@@ -539,6 +539,7 @@ Last activity: 2026-09-11 — Phase 45 wave 1 complete (45-01 tracer spine)
 | Phase 45 P02 | 35min | 3 tasks | 3 files |
 | Phase 45 P03 | 25min | 3 tasks | 5 files |
 | Phase 45 P04 | 165min | 3 tasks | 9 files |
+| Phase 45 P05 | 50 min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -1241,6 +1242,8 @@ Recent decisions affecting current work:
 - [Phase 45]: The exhaustive OR-reconstruction/one-vocabulary tests tolerate a NAMED refusal (via tryDecompose) rather than assert no throw ever, after finding $D019 has a genuine reserved-bit gap in the real committed anno-regbits.json
 - [Phase 45]: decomp-completeness gained the full measure set (rangeProvenance, entryPoints, referencedAddresses, disagreementResolution) and a real gate: completeness-report.mjs's own exit code is 0 only when every measure clears its own bar — D-08 names the report's exit code as routine-queue-walker's numeric stop condition; a bulletin that reports disagreements beside a pass is exactly criterion 2's named failure mode
 - [Phase 45]: D-09's disagreement input was proven load-bearing by three planted controls observed going RED against a real derived-and-executed store, two pinned as permanent CI-safe regression tests — This milestone's stated discipline: asserting a fix is present proves nothing, making the failure happen does
+- [Phase 45]: One decoder (decomposeRegisterValue), two independent renderer glue layers (D-16): anno-export-asm.ts's byte-diff-proven OR-ed export and anno_disassemble's readable listing each own their own REGISTER_ENUM_NAME_RE and substitution/collision handling; only the decoder itself is shared.
+- [Phase 45]: A multi-bit register write renders as OR-ed named constants AND a decoded comment on both surfaces (D-17), never either alone; a single-field register keeps the pre-existing single-symbol rendering unchanged.
 
 ### Pending Todos
 
@@ -2313,8 +2316,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-11T06:24:35.904Z
-Stopped at: Completed 45-04-PLAN.md
+Last session: 2026-09-11T06:57:13.034Z
+Stopped at: Completed 45-05-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
