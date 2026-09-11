@@ -1322,15 +1322,38 @@ that work is rescoped before this phase runs, not after.
 **Plans**: 10 plans, 8 waves
 
 Plans:
+**Wave 1**
+
 - [ ] 52-01-PLAN.md — TRACER: amend the `FORK-01` reversal row and its `### Out of Scope` bullet, create `docs/stock-hard-losses.md`, rewrite `docs-fork-decision.test.ts` — one green vertical cut before any code is deleted
 - [ ] 52-02-PLAN.md — mint `FORKRM-01..07` in `REQUIREMENTS.md` with Traceability rows, and mark the superseded `retain` todo
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 52-03-PLAN.md — split `vice.ts` into `vice-errors.ts`, repoint all 41 importers, delete the dead `vice-sync.ts`
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 52-04-PLAN.md — delete `vice-proxy.ts`'s fork region (`forwardToVice`, the evidence gatherers, `rewriteArguments`, `buildBackendAwareTool`) plus `vice-probe.ts`, and retire the Architecture constraint with `docs-linerefs.test.ts`
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 52-05-PLAN.md — delete `vice.ts`, `DENY_LIST`, `refresh-manifest.ts` and `tools-manifest.json`; fence `anno-tools.ts`
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 52-06-PLAN.md — collapse `backend-detect.mts` and the broker trio, delete the proxy/broker cross-check, rebuild `resources/*.mjs`, strip fork branches from 14 test files
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
 - [ ] 52-07-PLAN.md — delete `capability-registry.ts` by decision, retire the tool-support table and its guard, close `check-npm-packages.mjs`
 - [ ] 52-08-PLAN.md — rewrite all 9 skill fork-routing sites as stated permanent limitations, plus the two ride-along skill defects
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
 - [ ] 52-09-PLAN.md — invert and rename the documentation-honesty gate, rewrite README, the parity doc and the two falsified `CLAUDE.md` constraints
+
+**Wave 8** *(blocked on Wave 7 completion)*
+
 - [ ] 52-10-PLAN.md — add `docs-fork-absence.test.ts`, run the full battery, record the failure SET and reconcile the seven criteria
 
 Notes:
@@ -1555,7 +1578,7 @@ in a milestone archive.
 | 49. The Reassembly Gate, Committed Before the Phase It Gates | v1.0.0 | - | Not started | - |
 | 50. Equivalence and Modifiability | v1.0.0 | - | Not started | - |
 | 51. Planning Vocabulary Out of the Shipped Server | v1.0.0 | - | Not started | - |
-| 52. Remove the Fork Backend | v1.0.0 | - | Not started | - |
+| 52. Remove the Fork Backend | v1.0.0 | 0/10 | Not started | - |
 
 **Milestone roll-up:** v0.2.0 — 9 phases, 87 plans, 51/51 in-scope requirements,
 shipped 2026-08-19 (audit round 4 `tech_debt`; 13 deferred items at close).

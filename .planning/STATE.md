@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: The Rebuild Half
-current_phase: 47
-current_phase_name: Multi-File Rebuildable Source
-status: planning
-stopped_at: Phase 46 complete, ready to plan Phase 47
-last_updated: "2026-09-11T18:19:31.682Z"
+current_phase: 52
+current_phase_name: Remove the Fork Backend
+status: executing
+stopped_at: Phase 52 planned out of sequence (10 plans, 8 waves); Phases 47-51 remain unplanned
+last_updated: "2026-09-11T21:35:52.829Z"
 last_activity: 2026-09-11
-last_activity_desc: Phase 46 complete, transitioned to Phase 47
-state_head: 5d459f0017ae0c443be1817e47ae70422334977e
+last_activity_desc: Planned Phase 52 (Remove the Fork Backend) out of sequence - 10 plans, 8 waves, checker passed
+state_head: b523c23dda25414569939e8328ceddc7dff244d0
 progress:
   total_phases: 8
   completed_phases: 2
@@ -254,11 +254,20 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 47 — Multi-File Rebuildable Source
-Plan: Not started
-Status: Ready to plan
-Progress: [██░░░░░░░░] 17% (6/6 plans in phase 46; milestone-wide phase percent is tracked separately in frontmatter)
-Last activity: 2026-09-11 - Completed quick task 260911-syq: Answer the v1.0.0 three-hard-losses research question to unblock Phase 52
+Phase: 52 (Remove the Fork Backend) — READY TO EXECUTE
+Plan: 0/10 executed (10 plans across 8 waves)
+Status: Ready to execute
+
+**Planned OUT OF SEQUENCE.** Phase 52 was planned ahead of Phases 47-51, which
+remain unplanned, because Phase 52's own stated dependency — the open question
+"Does anything in the v1.0.0 rebuild half need stock's three hard losses?" — was
+discharged (answered **No**, 2026-09-11) and nothing in it waits on 47-51. The
+milestone's sequential next phase is still **47 — Multi-File Rebuildable Source**;
+this frontmatter's `current_phase: 52` records where planning last landed, not a
+decision to execute 52 before 47.
+
+Progress: [██░░░░░░░░] 17% (2/8 phases complete in v1.0.0; per-phase plan counts in the ROADMAP Progress table)
+Last activity: 2026-09-11 - Planned Phase 52: research + pattern map + validation strategy + 10 plans, plan-checker VERIFICATION PASSED
 
 ## Performance Metrics
 

@@ -24,7 +24,7 @@ created: "2026-09-11"
 |----------|-------|
 | **Framework** | Node's built-in test runner (`node --test`) — no separate framework |
 | **Config file** | none — invocation is via `src/mcp/vice/package.json` scripts (`test`, `test:automated`, `test:manual`) plus `test-gate.mjs`'s own file-list logic |
-| **Quick run command** | `cd src/mcp/vice && node --test <the one file the task touched>.test.ts; echo "EXIT=$?"` |
+| **Quick run command** | `cd src/mcp/vice && node --test <the one AUTOMATED file the task touched>.test.ts; echo "EXIT=$?"` |
 | **Full suite command** | `cd src/mcp/vice && npm run test:automated > /tmp/floor.log 2>&1; echo "EXIT=$?"` |
 | **Estimated runtime** | quick ~seconds; `test:automated` ~minutes |
 
@@ -32,7 +32,9 @@ created: "2026-09-11"
 conclusion in this repo):**
 
 1. `npm test` on the full glob **hangs** — it blocks forever on `vice-proxy.test.ts`.
-   `npm run test:automated` is the gate. Never propose the full glob as a verify command.
+   `npm run test:automated` is the gate. Never propose the full glob as a verify command,
+   and never invoke `vice-proxy.test.ts` directly either: it is manual-only for this reason,
+   so "just run the one file" reaches the same hang.
 2. Piping the run (`| tail`, `| grep`) reports the **pipe's** exit code, faking a green
    baseline. Redirect to a file and read `$?` **on the same line**, as the full suite
    command above does.
@@ -43,8 +45,13 @@ conclusion in this repo):**
 
 ## Sampling Rate
 
-- **After every task commit:** the single-file quick command for the file the task touched
-  (e.g. `node --test vice-proxy.test.ts` after a `vice-proxy.ts` edit)
+- **After every task commit:** the single-file quick command for the file the task touched —
+  but **only if that file is in the automated set**. `test-gate.mjs` is the authority on which
+  files those are; ask it rather than assuming:
+  `node -e "const{automatedTestFiles}=await import('./test-gate.mjs');console.log(automatedTestFiles(process.cwd()).includes('<file>.test.ts'))" --input-type=module`
+  **Counter-example, and the trap this line originally fell into:** `vice-proxy.test.ts` is
+  manual-only *because it hangs*. Never use it as a quick-run command after a `vice-proxy.ts`
+  edit — that is hazard 1 below, reached by a different door.
 - **After every plan wave:** `npm run test:automated`, with the **failure set** compared
   against the pre-phase floor — never the failure *count*
 - **Before `/gsd-verify-work`:** full `test:automated` green at the documented floor, plus
