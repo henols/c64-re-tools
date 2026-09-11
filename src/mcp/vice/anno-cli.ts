@@ -278,7 +278,7 @@ verbs:
       nothing.
 
   decomp-completeness --store FILE --disagreements FILE --manifest FILE [--json]
-      Phase 45's decomposition-closure completeness answer for ONE
+      The decomposition-closure completeness answer for ONE
       per-fixture store (D-07). Three REQUIRED arguments, none defaulted from
       another: --store names the annotation store; --disagreements names the
       JSON "anno evid-disagreements --store <same store> --json" wrote for
@@ -2053,7 +2053,7 @@ function printDecompCompletenessReport(r: {
   if (r.executionDisposition === "not-executed") {
     console.log(`  NOT EXECUTED: ${r.notExecutedReason ?? "(no reason recorded)"}`);
   } else {
-    console.log("  EXECUTED: this fixture was run under Phase 33's reproducible-run protocol.");
+    console.log("  EXECUTED: this fixture was run under the reproducible-run protocol (REPRO-02).");
   }
   console.log("");
   console.log(`  BYTE CENSUS (denominator ${r.byteCensus.denominator})`);
