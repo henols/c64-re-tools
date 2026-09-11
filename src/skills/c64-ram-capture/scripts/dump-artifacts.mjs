@@ -55,7 +55,7 @@ export function assembleImage(chunks) {
   return total;
 }
 
-/** SHA-256 of a buffer, hex-encoded. `node:crypto` only -- no package added (D-18). */
+/** SHA-256 of a buffer, hex-encoded. `node:crypto` only -- no package added. */
 export function sha256Buffer(buf) {
   return createHash("sha256").update(buf).digest("hex");
 }
@@ -101,7 +101,7 @@ function charsetBase(d018Raw, dd00Raw) {
 // -------------------------------------------------------------- buildChipState
 
 /**
- * Build the D-04 chip-state sidecar in the exact shape the committed
+ * Build the chip-state sidecar in the exact shape the committed
  * primary sidecars already use (same top-level keys, same `derived` field
  * set), from the register/state readings the agent recorded. `raw` carries
  * whatever the agent fetched via vice_registers_get / vice_sprite_get /
@@ -163,7 +163,7 @@ function powerOnRunLength(image, start) {
 }
 
 /**
- * Emit the D-02 range manifest in the committed shape: ranges whose union
+ * Emit the range manifest in the committed shape: ranges whose union
  * covers $0000-$FFFF with no gap and no overlap, a contiguous power-on-
  * pattern run of at least 16 bytes marked kind `unused`, the I/O window
  * ($D000-$DFFF) marked `io`, everything else `unclassified`, and

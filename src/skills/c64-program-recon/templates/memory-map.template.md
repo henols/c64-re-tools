@@ -1,6 +1,6 @@
 # Memory map generation
 
-**The memory map is GENERATED, not hand-authored (D-24).** The store — labels, comments, block
+**The memory map is GENERATED, not hand-authored.** The store — labels, comments, block
 types and scopes written through the `anno_*` tools described in `../SKILL.md` — is canonical. This
 file used to be a fill-in-the-rows document; it is now the schema for the one input the generator
 needs beyond the store itself, plus the confidence vocabulary that store comments carry.
@@ -36,7 +36,7 @@ one-time, self-clearing banner correction — not a bug, and not a migration.
 ## The provenance sidecar
 
 Some facts belong to the **run** (which capture, which `$01`, which video standard) rather than to
-any address, and the store has no address-keyed shape for them (D-27). They are supplied to the
+any address, and the store has no address-keyed shape for them. They are supplied to the
 renderer as a small JSON sidecar, hand-authored from `c64-ram-capture`'s and `derive.mjs`'s own
 outputs and validated by the renderer — a missing or malformed key is a named error listing every
 problem at once, never a `<placeholder>` silently rendered into a published document.

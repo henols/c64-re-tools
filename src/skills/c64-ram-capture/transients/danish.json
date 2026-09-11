@@ -8,7 +8,7 @@
   ],
   "pair_count": 3,
   "cap": 64,
-  "method": "union of addresses differing across every pairwise comparison of N >= 3 runs of one release at one stop; re-derived per release, never inherited (CAP-02, D-23)",
+  "method": "union of addresses differing across every pairwise comparison of N >= 3 runs of one release at one stop; re-derived per release, never inherited",
   "entries": [
     {
       "address": 164,

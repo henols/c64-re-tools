@@ -4,7 +4,7 @@
 // Node/filesystem checks over `recovery/RELEASES.json` and the files it
 // references, run entirely offline.
 //
-// This is the mechanical enforcement of 01-01-PLAN.md's assumption_delta
+// This is the mechanical enforcement of the assumption_delta
 // decision: the registry is release-CENTRIC (N releases, each a full field
 // set, `canonical` demoted to a boolean on one entry), never
 // canonical-image-centric again. A future plan that quietly reintroduces a
@@ -32,10 +32,10 @@ const die = (m) => { console.error(`error: ${m}`); process.exit(1); };
 // just the ones sitting next to this file. When the six modules moved out of
 // `tools/` into the two skills that use them (2026-08-04), a `HERE`-only scan
 // silently stopped covering the disk-image reader that used to live in the
-// sibling skill's `scripts/` directory (since deleted, Phase 40 plan 40-06)
+// sibling skill's `scripts/` directory (since deleted)
 // and `dump-artifacts.mjs` -- a static guard that keeps passing while
 // checking less is worse than one that fails.
-// 2026-08-22 (plan 16-01): the second entry used to be built project-root-relative,
+// 2026-08-22: the second entry used to be built project-root-relative,
 // naming the skills tree's pre-relocation auto-discovery location by hand -- which
 // stopped resolving the moment the skills tree moved to its current source-tree
 // location. Rebuilt `HERE`-relative instead -- correct in both this dev checkout
@@ -143,7 +143,7 @@ function runBaseChecks(registry) {
       for (const field of REQUIRED_DUMP_FILE_FIELDS) {
         const value = d[field];
         if (!value) {
-          errors.push(`release "${r.id}" dump "${d.label}": field "${field}" is not set (a dump is a four-file set, per D-04/D-02)`);
+          errors.push(`release "${r.id}" dump "${d.label}": field "${field}" is not set (a dump is a four-file set)`);
           continue;
         }
         const filePath = join(REPO_ROOT, value);

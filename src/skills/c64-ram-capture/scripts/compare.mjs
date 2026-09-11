@@ -17,7 +17,7 @@
 //
 // $D000-$DFFF is this module's one departure from what SKILL.md said when it was
 // written: that range is I/O, not RAM, so it can never be stable. See the VOLATILE
-// table below and .planning/RE-FINDINGS.md (2026-08-04) for the evidence.
+// table below for the evidence (observed 2026-08-04).
 
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -36,7 +36,7 @@ const VOLATILE = [
   // live hardware and two captures can never agree here. Added 2026-08-04 after
   // every divergence across all six committed gameentry pairings landed either
   // here ($D344, $D625, $D628) or in RAM under KERNAL ROM -- see
-  // .planning/RE-FINDINGS.md, 2026-08-04. Confidence HIGH: structural.
+  // Observed 2026-08-04. Confidence HIGH: structural.
   [0xd000, 0xdfff],
 ];
 

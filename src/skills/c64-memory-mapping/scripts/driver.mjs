@@ -21,7 +21,7 @@ import { dirname, join, resolve } from "node:path";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // memmap.json lives at the skill root, one level up from scripts/, by decision
-// (D-03): only .mjs modules move into scripts/, data files stay put.
+// only .mjs modules move into scripts/, data files stay put.
 const MEMMAP_JSON = join(HERE, "..", "memmap.json");
 
 // Reference tables, merged into one address -> meaning index. `kind` selects the

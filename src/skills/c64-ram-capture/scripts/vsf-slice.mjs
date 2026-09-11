@@ -21,9 +21,8 @@
 //
 //   (a) a self-contained skill-side script carrying its own copy of the
 //       layout -- the retired skill-side/MCP-side disk-image-reader pair's
-//       own precedent (Phase 40 plan 40-06, two independent copies of the
-//       sector-chain walk, both deleted once the c1541 host-tool seam took
-//       over their one job).
+//       own precedent (two independent copies of the sector-chain walk,
+//       both deleted once the c1541 host-tool seam took over their one job).
 //   (b) a CLI entry point on the MCP-side module, which the skill invokes.
 //
 // (b), because the two cases are not alike. That retired pair's own
@@ -68,7 +67,7 @@
 //     layout constant.)
 import { spawnSync } from "node:child_process";
 
-// Phase 34, plan 34-04 (SEAM-05): the resolution ladder used to live HERE,
+// The resolution ladder used to live HERE,
 // as this file's own `ladder()`/`resolveTarget()` pair. It is now extracted
 // to `mcp-module.mjs` (`resolveMcpModule()`/`refusalMessage()`), because two
 // MORE skill scripts (`acme.mjs`, `packer-finding.mjs`) needed the identical
@@ -113,7 +112,7 @@ function forward(argv) {
 // answered here, with this script's usage, rather than by a subprocess whose
 // own usage names a file the caller did not run.
 //
-// Prototype-less, via Object.create(null) (33 review WR-04). A plain object
+// Prototype-less, via Object.create(null). A plain object
 // literal inherits Object.prototype, so `commands["constructor"]` and
 // `commands["toString"]` are truthy FUNCTIONS: an unknown verb that happens to
 // be a prototype member passed the known-verb test and was then CALLED, so the

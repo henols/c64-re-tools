@@ -111,18 +111,16 @@ script measures it from the file. It prints one JSON object. Read the `verdict`:
 | `unknown` | No route produced an answer. `unavailableReason` always says why. | Continue, but record the unknown. Never write it up as "not packed". |
 
 **A name is reported only when an external oracle stated one, and this project does not guess.**
-No first-party route on this project's surface reports a packer name at all — the dated
-investigation that established this, four independent ways, is written out in
-`.planning/phases/19-absorbed-procedures-and-the-coverage-instrument/19-RESEARCH.md` §2, and the
-dated decision that fixes the acceptance bar and its re-open trigger is recorded under
-`19-DECISIONS.md` in that same directory (SURF-03). So there is no code path here that can write a packer name from entropy, from a
-decompression address, or from a byte pattern. If you want a name and the finding does not give
+No first-party route on this project's surface reports a packer name at all — that was
+established four independent ways, and the acceptance bar a future first-party identifier would
+have to clear was fixed at the same time. So there is no code path here that can write a packer
+name from entropy, from a decompression address, or from a byte pattern. If you want a name and the finding does not give
 you one, install an external identifier on the **host** and point `UNP64` or `UNP64_PATH` at it in
 the environment the host broker process sees — do not infer it. `packer-finding.mjs` never spawns
-that identifier itself (Phase 34, SEAM-05): it reaches it only through the host-tool execution
+that identifier itself: it reaches it only through the host-tool execution
 seam (`src/mcp/vice/host-tool.mts`'s `oracle.probe`/`oracle.run` allowlist entries), because this
 script runs container-side and there is no container PATH to a host binary on. **The container-side
-environment is not consulted at all** (Phase 34, plan 34-08, CR-01): setting `UNP64`/`UNP64_PATH` in
+environment is not consulted at all**: setting `UNP64`/`UNP64_PATH` in
 this script's own (container-side) environment adds only a diagnostic hint to an absent result —
 it can never select what the host executes. The oracle's location is host-side configuration
 only, and the configured path's file name must be the oracle binary's own name (`unp64`) or the
@@ -174,7 +172,7 @@ The method reproduces a known-good result from a static image with no emulator r
 ## Writing findings into the annotation store
 
 Recon's findings are not memory-map prose written once and left to rot — they are entries in a
-queryable annotation store, and the Markdown memory map is a *generated view* of that store (D-24),
+queryable annotation store, and the Markdown memory map is a *generated view* of that store,
 not something you hand-edit yourself.
 
 **There is no bootstrap step, and no bootstrap verb.** The store is created by the first write to
@@ -183,7 +181,7 @@ it: name a `.annostore` path on any mutating call — `anno_set_label_name`, `an
 A read-only call against a path that does not exist yet is REFUSED by name rather than answering
 against an empty store, so "I read nothing" and "there is nothing to read" stay distinguishable.
 
-Every `anno_*` tool takes an explicit `store` path (D-19) — there is no ambient session state
+Every `anno_*` tool takes an explicit `store` path — there is no ambient session state
 naming the store, so which store a call touched is always visible in the transcript. Every call
 that derives its answer from the program's **bytes** rather than from the annotations takes an
 `image` path as well — `anno_get_binary_info`, `anno_read_region`, `anno_disassemble`,
@@ -209,7 +207,7 @@ bracket tokens (quoted verbatim from `anno-confidence.ts`, the parser's own sour
 (confirmed data), `[probable-data]` (probable data), `[unknown]` (unknown).
 
 A typo in the bracket token — wrong case, an underscore, a plural, stray whitespace — **fails
-loudly**; it does not silently degrade into an ungraded comment. As with `RE-FINDINGS.md`, do not
+loudly**; it does not silently degrade into an ungraded comment. Do not
 promote a row by editing its grade in place: re-verify and restate the evidence with a fresh
 `anno_set_comment` call, so the record of when something stopped being a guess survives.
 
@@ -253,7 +251,7 @@ error and no explanation of why.
 The **loop itself is not withdrawn**, only its two automated legs, and the discipline it encodes is
 what to keep doing by hand for as long as they stay gone:
 
-1. **The store is the merge point (D-29), not your own notes.** A name discovered live —
+1. **The store is the merge point, not your own notes.** A name discovered live —
    disassembling the running machine, a checkpoint hit — is written into the store with
    `anno_set_label_name` *first*, before it is carried anywhere else.
 2. **`vice_symbols_load` REPLACES the machine's symbol table rather than merging into it.** Call it
@@ -313,8 +311,8 @@ shipped tree run the sync before they scan it, so a change made only in the twin
 is ever measured. A change made here is SHIPPED only once that sync has run.
 
 **Dated correction, 2026-08-30 — `render-memmap` reads the annotation store directly, and the note
-that used to stand here was WRONG when it shipped.** Phase 29 plan 29-12 rebuilt this verb over the
-Phase 28 annotation store on `D-17`'s authority: its positional is an EXISTING `.annostore`, opened
+that used to stand here was WRONG when it shipped.** This verb was rebuilt over the annotation
+store: its positional is an EXISTING `.annostore`, opened
 with `mustExist` — an absent store is refused by name rather than created — and nothing on the path
 it reaches consults the retired external analyser. The pre-store project file the earlier note named
 has no producer left in this repository, so there is no route back to the old spelling. That earlier
@@ -390,7 +388,7 @@ The two are complementary — reach for the static reads before the emulator is 
 Extracting a program from a `.d64` image is a separate capability that this repository still does
 not have, and — correcting an earlier note that assigned it to the same numbered phase as the ACME
 export oracle — **no phase currently owns it**. Whenever it is built it must name the file inside
-the image explicitly and refuse rather than guess (D-02), because a guess could analyse a cracktro
+the image explicitly and refuse rather than guess, because a guess could analyse a cracktro
 or loader stub instead of the game.
 
 ## Before you touch the emulator
@@ -517,9 +515,9 @@ up a pointer or a vector does it with a pair of immediate loads — `LDA #<targe
 / STA ptr`, `LDA #>target / STA ptr+1`. Upstream calls `set_immediate_format`
 on each of the two instruction addresses, with `low_byte` / `high_byte` and the
 target, so the pair renders as one symbol reference. **That call is not exposed
-on this project's surface.** `BUILD-03` ("every branch, `JSR`/`JMP` and data
-reference goes through a symbol, so code can move") is the requirement that
-supplies its criterion, and the per-call disposition sits in the manifest named
+on this project's surface.** The rule it would serve — "every branch, `JSR`/`JMP`
+and data reference goes through a symbol, so code can move" — still supplies
+its criterion, and the per-call disposition sits in the manifest named
 in the attribution header above. Until then, recombine the two bytes yourself
 and put the reconstructed target in a side comment on both instructions, so the
 vector setup is readable even though the store cannot format it.
@@ -682,9 +680,10 @@ This one is the route between the stations. It does not restate what the others 
 | `references/reconstruction.md` | Binary inclusion, behavioural-equivalence correctness bar, SMC labels, label vocabulary |
 | `templates/memory-map.template.md` | `render-memmap`'s provenance sidecar schema and the confidence vocabulary — the rendered map itself is generated, not hand-authored |
 
-Findings that make RE faster go in `.planning/RE-FINDINGS.md` **at the moment you find them**,
-graded with `Evidence:` and `Confidence:`. Promote by re-logging with the new evidence, never by
-editing a grade in place. File-changing work enters through a GSD command (`/gsd-quick`).
+Record findings that make RE faster in your own project notes **at the moment you find them**,
+graded with `Evidence:` and `Confidence:`. Promote a finding by re-logging it with the new
+evidence, never by editing an old grade in place — the grade is only worth anything if it says
+what was actually known when it was written.
 
 ## Troubleshooting
 

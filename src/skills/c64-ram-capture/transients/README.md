@@ -91,7 +91,7 @@ derivation overflow converts a measurement into an excuse.
 
 The cap does not separate "a few transients" from "a lot of transients". It
 separates **a frame-exact stop** from **a stop that is not**. The numbers, all
-measured on this host during Phase 33:
+measured on this host:
 
 | Differing addresses | The stop that produced it | Verdict under the cap |
 |---|---|---|

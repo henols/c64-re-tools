@@ -182,9 +182,9 @@ combined (driver.mjs:262, 268) — so a partially-reachable or partially-changed
 source set can silently replace good tracked data with less of it. Rebuild, then
 run `git diff --stat` on `memmap.json` before accepting the result, and
 `git checkout` the file if the diff is not explainable as the correction you
-were expecting. Because it mutates the repo, `memmap` belongs behind a GSD
-command (`/gsd-quick`), per this project's GSD Workflow Enforcement rule — it is
-not a read-only lookup like `lookup` and `annotate`.
+were expecting. **`memmap` mutates tracked files** — unlike `lookup` and
+`annotate`, which are read-only — so run it deliberately, on a clean working
+tree, and review the diff before you commit it.
 
 ## Feeding the enum generator
 
@@ -590,9 +590,9 @@ Apply it with `anno_set_label_name`.
 initialised by immediate loads of a target's low and high bytes — `LDA #<target
 / STA ptr / LDA #>target / STA ptr+1` — upstream calls `set_immediate_format`
 twice to turn both immediates into a single readable symbol reference. **That
-call is not exposed on this project's surface.** `BUILD-03` ("every branch,
-`JSR`/`JMP` and data reference goes through a symbol, so code can move") is the
-requirement that supplies its criterion, and the per-call disposition is
+call is not exposed on this project's surface.** The rule it would serve — "every branch,
+`JSR`/`JMP` and data reference goes through a symbol, so code can move" — still
+supplies the criterion, and the per-call disposition is
 recorded in the manifest named in the attribution header above. Until then,
 reconstruct the target by hand and put it in a side comment on both
 instructions — `; low byte of ptr_sprite_table ($C240)` — so the pointer is

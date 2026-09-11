@@ -3,11 +3,9 @@
 // decode a BASIC program's stub to readable text and resolve the numeric
 // address it hands over to machine code, when that address is a literal.
 //
-// Phase 40, plan 40-03 (PREP-02, D-17, D-18): reached ONLY through the
-// host-tool execution seam -- the project owner's rule of 2026-08-28
-// (.planning/seeds/host-tool-executor.md) is that this script runs
-// container-side, `petcat` lives host-side, and there is no container PATH
-// to find it on. This file never spawns `petcat` itself; it constructs a
+// Reached ONLY through the host-tool execution seam -- the project owner's
+// rule of 2026-08-28 is that this script runs container-side, `petcat` lives
+// host-side, and there is no container PATH to find it on. This file never spawns `petcat` itself; it constructs a
 // TYPED request (`petcat.decode`) and reads the produced listing file back
 // off the shared workspace tree, mirroring
 // src/skills/c64-disk-access/scripts/c1541.mjs's own invokeSeam() shape
@@ -173,7 +171,7 @@ function report(response, { json }) {
 
 // ------------------------------------------------------------------ options
 
-// IN-01 (40-REVIEW.md): exported so petcat.test.mjs can cover this file's
+// Exported so petcat.test.mjs can cover this file's
 // own CLI-option parsing as a pure unit, mirroring c1541.mjs's own exported
 // parsers -- never spawns anything, never needs petcat installed.
 export function parseOpts(argv) {
@@ -189,9 +187,9 @@ export function parseOpts(argv) {
 
 // --------------------------------------------------------------------- main
 //
-// WR-04 (40-REVIEW.md): the CLI dispatch below MUST be guarded to run only
+// The CLI dispatch below MUST be guarded to run only
 // when this file is the actual entry point, not merely imported -- mirrors
-// c1541.mjs's own entry-point guard verbatim (Phase 40, plan 40-04, "Rule 3
+// c1541.mjs's own entry-point guard verbatim (the "Rule 3
 // fix, discovered mid-execution"), added there after an unguarded dispatch
 // ran with the TEST RUNNER's own process.argv on every import of
 // c1541.test.mjs, printing the usage banner and calling process.exit(0)

@@ -43,8 +43,7 @@ at a checkpoint is not verified** — the constraint's own conclusion, and the r
 design is part of the reconstruction work rather than something to bolt on afterwards.
 
 **That bar is what buys you the freedom to rename routines, reorganise files, replace constants
-with symbols and add macros** (`.planning/REQUIREMENTS.md` § Out of Scope makes the same
-argument). **But** reorganising changes addresses, which breaks self-modifying code and
+with symbols and add macros**. **But** reorganising changes addresses, which breaks self-modifying code and
 timing-sensitive raster routines. Replay through the checkpoint set after EACH reorganisation, not
 at the end of several: one changed address per failing replay is a short diagnosis, ten is a
 bisect.

@@ -4,8 +4,7 @@
 call; read parameters off those. What the schemas cannot tell you is *which call to reach for
 first*, and that ordering is the whole value here.
 
-Curated from `.planning/RE-FINDINGS.md`'s tool-to-question entry (2026-08-01, doc-derived,
-**Confidence: MEDIUM** — the mapping is reasoned from the tool surface and this project's own
+Curated 2026-08-01, doc-derived, **Confidence: MEDIUM** — the mapping is reasoned from the tool surface and this project's own
 usage, not measured). Individual rows that have since been exercised live are marked.
 
 | Question | Call |
@@ -20,7 +19,7 @@ usage, not measured). Individual rows that have since been exercised live are ma
 | Find a known byte pattern | `vice_memory_search` (**both backends**) |
 | Carry labels across sessions | `vice_symbols_load` / `vice_symbols_lookup` (**both backends**) — ACME `--vicelabels` emits the format they consume. The annotation store's own export into that format is **withdrawn as of 2026-08-29, and no phase currently owns its return** — an earlier forecast naming a numbered phase for it is superseded |
 | Is the machine wedged, or did it stop itself? | `vice_diagnose` — five-state verdict with its evidence (the two backends' verdict sets differ by one; see `docs/stock-vice-parity.md` D-03). **Reachable and proxy-intercepted as of 2026-08-04** (verified live). Triage tree: `vice-wedge-triage` |
-| Replace a wedged instance | `vice_recycle` — destructive, requires a `reason`, and that reason is written into `.planning/incidents/` **before** anything is killed. The reason *is* the evidence record |
+| Replace a wedged instance | `vice_recycle` — destructive, requires a `reason`, and that reason is written into `.c64-re-tools/incidents/` **before** anything is killed. The reason *is* the evidence record |
 | Read the restart epoch | **No tool does.** The proxy compares it around every forwarded call and raises drift itself; a value comes from that error or from `vice_diagnose` |
 
 ## Delegate rather than restate
@@ -42,8 +41,7 @@ usage, not measured). Individual rows that have since been exercised live are ma
 
 ## Three traps in this table
 
-**`vice_run_until`'s timeout is backend-qualified — it has none on the fork, but stock bounds it
-(Phase 7, D-02).** On the fork, `cycles` is documented as *"not yet implemented"* and there is no
+**`vice_run_until`'s timeout is backend-qualified — it has none on the fork, but stock bounds it.** On the fork, `cycles` is documented as *"not yet implemented"* and there is no
 `timeout_ms` either, so a run to an address the program never reaches has nothing to bound it and
 looks exactly like a wedged emulator; prefer `vice_checkpoint_add` + a bounded poll when the
 address is a hypothesis rather than a certainty. **Confidence: MEDIUM on the fork** — read off the

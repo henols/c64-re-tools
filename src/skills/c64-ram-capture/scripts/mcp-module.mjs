@@ -6,7 +6,7 @@
 // ---------------------------------------------------------------------------
 // WHY THIS FILE EXISTS
 // ---------------------------------------------------------------------------
-// Phase 34, plan 34-04 (SEAM-05). Before this file existed, `vsf-slice.mjs`
+// Before this file existed, `vsf-slice.mjs`
 // carried its own copy of this exact three-rung ladder (`ladder()` /
 // `resolveTarget()`), and TWO MORE skill scripts (`acme.mjs`,
 // `packer-finding.mjs`) were about to migrate onto the host-tool execution

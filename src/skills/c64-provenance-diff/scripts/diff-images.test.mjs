@@ -516,7 +516,7 @@ test("renderLedger produces byte-identical generated-tier output across two runs
   assert.equal(tier1, tier2);
 });
 
-test("renderLedger's generated ledger names the consumer's installed script location, never this repository's source-tree location (16-REVIEW.md CR-01 regression)", () => {
+test("renderLedger's generated ledger names the consumer's installed script location, never this repository's source-tree location", () => {
   const generatedRanges = [
     { start: 0, end: 32767, kind: "game", verdict: "ORIGINAL", agreeing_releases: 2, evidence: "identical", reason: "" },
     { start: 32768, end: 65535, kind: "loader", verdict: "CRACKER-PATCH", agreeing_releases: 0, evidence: "loader replacement", reason: "" },

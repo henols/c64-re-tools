@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // petcat.test.mjs -- coverage for this skill script's own CLI plumbing
-// (IN-01, 40-REVIEW.md). Added in the fix pass for Phase 40's code review:
+// Added in a code-review fix pass:
 // petcat.mjs shipped in the same phase as c1541.mjs, wrapping the SAME
 // host-tool seam pattern (invokeSeam(), commonAncestorDir()/toRel(),
 // selfPath()), but had no test file at all -- c1541.mjs's own

@@ -1,7 +1,6 @@
 # Control flow: entry point → vectors → IRQ source → main loop → structure
 
-Source: `.planning/RE-FINDINGS.md` § Control-flow discovery method (2026-08-01, **MEDIUM**,
-doc-derived) except where a line says otherwise. The vector-table step was confirmed against
+Graded 2026-08-01, **MEDIUM**, doc-derived, except where a line says otherwise. The vector-table step was confirmed against
 this project's own captures on 2026-08-04 — see the bottom of this file.
 
 ## 1. Entry point — three routes, and post-depack is a different question
@@ -31,7 +30,7 @@ it prints the IRQ/BRK/NMI and hardware blocks by default and takes `--all` for t
 | Hardware vectors | `$FFFA-$FFFF` | NMI, RESET, IRQ/BRK. Live when the KERNAL is banked out |
 
 **The hardware pairs are only live when the ROMs are banked out via `$01`.** The deciding bit is
-HIRAM, `$01` bit 1 (RE-FINDINGS 2026-08-02). HIRAM = 1 ⇒ KERNAL ROM is in and `$0314/$0315` is
+HIRAM, `$01` bit 1 (observed 2026-08-02). HIRAM = 1 ⇒ KERNAL ROM is in and `$0314/$0315` is
 live. HIRAM = 0 ⇒ RAM at `$E000-$FFFF` and `$FFFE/$FFFF` is live.
 
 Why LOAD and STOP earn their own callout on this project: both releases use custom raw-sector
@@ -173,7 +172,7 @@ holding **`$1103`**, while `$0314/$0315` holds `$0101` — nothing meaningful, e
 dormant-block rule predicts.
 
 `$1103` is the same IRQ-handler entry that phase-01 live work independently established, with the
-raster-split chain `$1103 → $1574 → $152C` (RE-FINDINGS 2026-08-02, checkpoint-trap entry). The
+raster-split chain `$1103 → $1574 → $152C` (observed 2026-08-02, on a checkpoint trap). The
 method reproduces a known-good result from a static image with no emulator running. The widened
 sweep's own results, including two facts this table never surfaced, are in §2 above.
 

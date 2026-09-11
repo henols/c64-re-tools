@@ -100,7 +100,7 @@ function loadManifestForRelease(rel) {
  * Resolve the two-tier sentinel set for one release from registry data and
  * that release's run1 range manifest -- never hardcoded. `stopping` tier is
  * one sentinel per `loader_ranges` entry (the loader-reentry sentinels that
- * must never fire again after the dump point per D-10). `counting` tier is
+ * must never fire again after the dump point). `counting` tier is
  * one sentinel per never-populated range in the run1 manifest, plus one
  * register sentinel on CIA2 port A ($DD00), which carries both the VIC
  * bank-select bits and the bit-banged serial-bus lines a KERNAL-bypassing
@@ -136,7 +136,7 @@ export function WATCH_SET(releaseId, { registry, manifest } = {}) {
       type: "exec",
       start,
       end,
-      reason: lr.note ?? "loader-reentry range: must never fire again after the dump point (D-10)",
+      reason: lr.note ?? "loader-reentry range: must never fire again after the dump point",
       evidence: lr.evidence ?? "",
     });
   }
@@ -285,7 +285,7 @@ export function classifyHit(hit) {
  * are human-audit artifacts and are never hashed here or anywhere else in
  * this project: an encoder can emit different bytes for pixel-identical
  * images, and this project deliberately installs no image-decoding library
- * (D-18) to decode-then-hash instead.
+ * to decode-then-hash instead.
  */
 export function screenSignature(screenMatrixHex, spriteEnable) {
   const buf = Buffer.from(screenMatrixHex, "hex");
@@ -403,24 +403,24 @@ function renderReleaseSection(id, log) {
     for (const h of loadCandidates) {
       s += `- Hit at ${h.address} (cycle ${h.cycle}): supplementary dump \`${h.supplementary_dump ?? "unrecorded"}\`, ` +
         `registry ref \`${h.load_event_ref ?? "unrecorded"}\`. Reproducibility bar: a single capture, decided in ` +
-        `this plan because the claim is about an observed moment rather than a stable state -- if D-13 resolves to ` +
-        `absorbing loaded content into the canonical image, this region must be re-captured at the primary dumps' ` +
-        `three-run bar before Phase 4 treats it as a round-trip diff target.\n`;
+        `the claim is about an observed moment rather than a stable state -- if loaded content is later ` +
+        `absorbed into the canonical image, this region must be re-captured at the primary dumps' ` +
+        `three-run bar before it can be treated as a round-trip diff target.\n`;
     }
     s += "\n";
   }
 
-  s += `### Hand-off to plan 02-02\n\n`;
-  s += "The registry's `watch_set` entries for this release are the re-armable specification: plan 02-02's own " +
-    "executing agent re-arms the same set by issuing the same `mcp__plugin_c64-re-tools_vice__vice_checkpoint_add` calls during Phase " +
-    "2's exhaustive all-chambers trace, and interprets what it observes with this module's pure `attributeAddress`, " +
-    "`reportHits` and `classifyHit` functions. This is a hand-off of data and procedure, not an executable -- plan " +
-    "02-02's own plan text should describe agent-performed arming with acceptance criteria over a committed record " +
+  s += `### Hand-off to the exhaustive trace\n\n`;
+  s += "The registry's `watch_set` entries for this release are the re-armable specification: whoever runs the " +
+    "exhaustive all-chambers trace re-arms the same set by issuing the same `mcp__plugin_c64-re-tools_vice__vice_checkpoint_add` " +
+    "calls, and interprets what it observes with this module's pure `attributeAddress`, " +
+    "`reportHits` and `classifyHit` functions. This is a hand-off of data and procedure, not an executable -- describe " +
+    "agent-performed arming with acceptance criteria over a committed record " +
     "rather than over an exit code. A late hit there reopens this document.\n\n";
 
   s += `### Input sequence notes\n\n`;
   s += (log.input_notes ?? "(no input notes recorded)") + "\n\n";
-  s += "Per D-12 this is plain notes, not a `verify/scripts/` artifact -- VERIFY-01 in Phase 3 owns the real " +
+  s += "This is plain notes, not a `verify/scripts/` artifact -- the replay tooling owns the real " +
     "input-script format; these notes are a seed for it, not a pre-empting specification.\n\n";
 
   s += `### Teardown proof\n\n`;
@@ -448,8 +448,8 @@ function renderReleaseSection(id, log) {
  *
  * The two script paths named in the output below are deliberately the
  * consumer's installed location, not this repository's source tree -- this
- * string is written into a `recovery/LOADING.md` a consumer keeps. Plan
- * 16-04's blanket sweep rewrote them once (16-REVIEW.md CR-01 class); pinned
+ * string is written into a `recovery/LOADING.md` a consumer keeps. A blanket
+ * path sweep rewrote them to the source tree once already; pinned
  * by the test below plus the class-level registry in skill-consumer-paths.test.ts.
  */
 export function renderLoading(entries) {

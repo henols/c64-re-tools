@@ -3,11 +3,9 @@
 // Scope is assembling only: source in, .prg + symbol files out.  Running the
 // result on a C64 belongs to the emulator skill.
 //
-// Phase 34, plan 34-04 (SEAM-05): the assembler is now reached ONLY through
-// the host-tool execution seam -- the project owner's rule of 2026-08-28
-// (.planning/seeds/host-tool-executor.md) is that this script runs
-// container-side, `acme` lives host-side, and there is no container PATH to
-// find it on. This file used to spawn `acme` directly (a synchronous
+// The assembler is reached ONLY through the host-tool execution seam -- the
+// project owner's rule of 2026-08-28 is that this script runs container-side,
+// `acme` lives host-side, and there is no container PATH to find it on. This file used to spawn `acme` directly (a synchronous
 // `spawnSync("acme", args, { env })`) and probed FOUR fixed HOST paths
 // (`/usr/local/share/acme`, `/usr/share/acme`, `/usr/lib/acme`, `~/.acme`)
 // for its `<...>`-include library -- both are exactly what the owner's rule
@@ -296,7 +294,7 @@ function cmdNew(argv) {
   if (!path) die("usage: new <file.a>");
   if (existsSync(path)) die(`${path} already exists`);
   // template.a lives at the skill root, one level up from scripts/, by
-  // decision (D-03): only .mjs modules move into scripts/.
+  // decision: only .mjs modules move into scripts/.
   writeFileSync(path, readFileSync(join(HERE, "..", "template.a"), "utf8"));
   console.log(`wrote ${path}`);
   console.log(`next: node ${selfPath()} build ${path}`);

@@ -5,7 +5,8 @@ this project at real cost. A wrong answer from a register table is cheap; a wron
 machine that changed *because you looked at it* discredits a whole session without announcing
 itself.
 
-Full provenance in `.planning/RE-FINDINGS.md`. Log new hazards there at the moment you hit one.
+Log a new hazard in your own project notes at the moment you hit one — the cost of rediscovering
+one is a whole discredited session.
 
 ## 1. Agent think-time runs the emulator at full speed
 
@@ -59,8 +60,7 @@ bracket, and comes back `wedged`. **The response to `wedged` is recycle, and rec
 instance is the exact loss both the tool and this hazard exist to prevent.** So when a `wedged`
 verdict arrives with any checkpoint still armed, do the two reads by hand before recycling:
 `vice_checkpoint_list`, then resolve the live handler (`$0314/$0315`, or `$FFFE/$FFFF` when `$01`
-has the ROMs banked out). Filed as
-`.planning/todos/pending/2026-08-04-vice-diagnose-checkpoint-trap-shapes-miss-mid-handler-arming.md`.
+has the ROMs banked out). Observed 2026-08-04, and still open.
 
 **Counter-evidence, and why this is MEDIUM:** in one incident, deleting the checkpoint did *not*
 unfreeze the machine, and neither did a soft reset, a hard reset, nor a single step. A checkpoint

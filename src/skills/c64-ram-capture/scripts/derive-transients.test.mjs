@@ -366,10 +366,10 @@ test("a derived artifact round-trips through parseAllowList unmodified", { skip:
 
 // The two implementations were asserted to agree on VERDICTS but not on PARSE
 // STRICTNESS -- which is where a deliberate duplicate drifts first (33 review
-// IN-01). A hand-edited artifact with a non-string `attribution` passed the
+// A hand-edited artifact with a non-string `attribution` passed the
 // skill-side `check` and was refused by the MCP-side predicate, so the two
 // disagreed about whether the ledger was even readable.
-// 33 review IN-04: the JSON.parse sat outside parseArtifact(), so a syntax
+// The JSON.parse used to sit outside parseArtifact(), so a syntax
 // error surfaced through the outer catch as a bare `error: Unexpected token …`
 // naming no file -- unlike every other refusal in this script.
 test("check: a syntactically invalid allow-list names the FILE that failed to parse", { skip: SKIP_REASON }, () => {
@@ -538,7 +538,7 @@ test("an unknown verb is answered by this script's usage", () => {
   assert.match(r.stderr, /usage: node derive-transients\.mjs <command>/);
 });
 
-// The verbs the named-verb case above could not catch (33 review WR-04). The
+// The verbs the named-verb case above could not catch. The
 // dispatch table was a plain object literal, so it inherited
 // Object.prototype: `commands["toString"]` was a truthy FUNCTION, the
 // known-verb test passed, and the member was CALLED -- usage never printed,

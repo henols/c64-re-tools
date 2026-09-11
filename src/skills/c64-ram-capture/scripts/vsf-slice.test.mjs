@@ -158,7 +158,7 @@ test("an unknown verb is answered by THIS script's usage, not by a subprocess's"
   assert.match(r.stderr, /usage: node vsf-slice\.mjs <command>/);
 });
 
-// The same claim for the verbs that used to slip through (33 review WR-04).
+// The same claim for the verbs that used to slip through.
 // The dispatch table was a plain object literal, so it inherited
 // Object.prototype and `commands["constructor"]` was a truthy FUNCTION: the
 // known-verb test passed and the prototype member was then CALLED. The
@@ -211,7 +211,7 @@ test("the wrapper's header records the cross-package constraint and why route (b
   const src = readFileSync(WRAPPER, "utf8");
   // The decision has to be findable, or the next reader sees an oversight
   // where a choice was made.
-  assert.match(src, /Phase 40 plan 40-06/, "the header must cite the retired precedent that recorded the constraint");
+  assert.match(src, /retired skill-side\/MCP-side disk-image-reader pair/, "the header must name the retired precedent that recorded the constraint");
   assert.match(src, /@henols\/vice-mcp/);
   assert.match(src, /@henols\/c64-re-tools/);
   assert.match(src, /two independent copies/, "the header must name the two-copies precedent it declined");

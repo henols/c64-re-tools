@@ -8,8 +8,8 @@
 // broker state, or spawns any process at all -- not even the interpreter
 // already running it.
 //
-// THE METHOD IS THE DELIVERABLE, AND THE ADDRESS SET NEVER IS (`CAP-02`,
-// `D-23`). A real release's transients are its own frame counters, RNG state,
+// THE METHOD IS THE DELIVERABLE, AND THE ADDRESS SET NEVER IS. A real
+// release's transients are its own frame counters, RNG state,
 // sprite positions and music-player pointers. An allow-list inherited from
 // another release cannot be distinguished afterwards from one honestly
 // derived, which is why this script re-derives per release and refuses to
@@ -38,7 +38,7 @@
 //
 //   * NO ADDRESS RANGE IS EVER A VOLATILE SPAN HERE, at any address, under any
 //     name. `compare.mjs` excludes four ranges covering 4866 addresses
-//     (`$0000-$0001`, `$0100-$01FF`, `$0200-$03FF`, `$D000-$DFFF`). `CAP-02`
+//     (`$0000-$0001`, `$0100-$01FF`, `$0200-$03FF`, `$D000-$DFFF`). The rule
 //     requires an ENUMERATED list and never a range, and the artifact this
 //     script writes carries one entry per address for exactly that reason.
 //   * THERE IS NO BIT-COUNT TOLERANCE HERE, at any address, in any form.
@@ -65,7 +65,7 @@
 // route (see `vsf-slice.mjs`'s header for the measured constraint), and
 // `scripts/check-npm-packages.mjs`'s transitive closure walk would fail the
 // pack for one. So this is the retired skill-side/MCP-side disk-image-reader
-// pair's own answer (Phase 40, plan 40-06) rather than the `vsf-slice.mjs`
+// pair's own answer rather than the `vsf-slice.mjs`
 // answer: a second independent implementation of a rule that
 // is STABLE and TINY -- set membership over differing addresses, with no
 // ranges, no tolerances and no version-sensitive layout anywhere in it. The
@@ -76,7 +76,7 @@
 //
 // WHAT NOT TO DO:
 //   - Never raise the cap because a derivation overflowed it. An overflow
-//     means the stop is not frame-exact (`D-22`). MEASURED, for scale: 0
+//     means the stop is not frame-exact. MEASURED, for scale: 0
 //     differing addresses at a frame-exact `READY`-prompt stop, 66 at a
 //     jitter-4000 autostarted stop, 300 at a wall-clock autostarted stop on a
 //     real release, 1242 at a wall-clock `READY` stop with the determinism
@@ -87,7 +87,7 @@
 //     widening the void exists to prevent. The artifact is written once, in
 //     full, only after the cap check clears.
 //   - Never add `$0000`/`$0001` to a derived allow-list by hand. They are
-//     normalised in code by `normalisePorts()` on the snapshot route (`D-24`),
+//     normalised in code by `normalisePorts()` on the snapshot route,
 //     and spending two of the cap's 64 slots on them would hide a real
 //     difference behind a known one. They can legitimately appear in a
 //     derivation taken from un-normalised images -- see `check`'s note below.
@@ -98,13 +98,13 @@ import { basename } from "node:path";
 const IMAGE_BYTES = 65536;
 
 /** The committed maximum number of addresses an allow-list may enumerate
- * (`D-22`). This literal MUST equal `TRANSIENT_ALLOW_LIST_CAP` in
+ * This literal MUST equal `TRANSIENT_ALLOW_LIST_CAP` in
  * `src/mcp/vice/capture-predicate.ts`; the colocated test asserts that
  * equality against the IMPORTED constant rather than against a second copy of
  * the number, so the two cannot drift apart silently. */
 const TRANSIENT_ALLOW_LIST_CAP = 64;
 
-/** The committed minimum number of runs a derivation takes (`D-23`). */
+/** The committed minimum number of runs a derivation takes. */
 const MIN_RUNS = 3;
 
 /** The artifact format version. Bump it when the entry shape changes, never
@@ -119,8 +119,8 @@ const sha256 = (buf) => createHash("sha256").update(buf).digest("hex");
 
 /** The range-shaped keys an entry must never carry, byte-identical to
  * `parseAllowList()`'s own list. Refused BY NAME on the way in AND on the way
- * out: an entry written as a span is an author reaching for the rule `CAP-02`
- * exists to remove. */
+ * out: an entry written as a span is an author reaching for the very rule
+ * this list exists to enforce. */
 const RANGE_SHAPED_KEYS = [
   "start",
   "end",
@@ -358,7 +358,7 @@ function cmdDerive(argv) {
     cap,
     method:
       `union of addresses differing across every pairwise comparison of N >= ${MIN_RUNS} runs of one ` +
-      `release at one stop; re-derived per release, never inherited (CAP-02, D-23)`,
+      `release at one stop; re-derived per release, never inherited`,
     entries,
   };
 
@@ -432,7 +432,7 @@ function parseArtifact(json, path) {
           `array of strings`,
       );
     }
-    // 33 review IN-01: the MCP-side parseAllowList() refuses a non-string
+    // The MCP-side parseAllowList() refuses a non-string
     // `attribution` and this parser did not check the field at all, so a
     // hand-edited artifact with `"attribution": 5` passed `check` here and was
     // refused there. The two implementations are a DELIBERATE duplicate
@@ -495,7 +495,7 @@ function cmdCheck(argv) {
     throw new Error(`check: needs exactly two image paths, got ${positionals.length}`);
   }
 
-  // 33 review IN-04: the JSON.parse sat OUTSIDE parseArtifact(), so a syntax
+  // The JSON.parse used to sit OUTSIDE parseArtifact(), so a syntax
   // error surfaced through the outer catch as a bare `error: Unexpected token
   // …` naming no file -- unlike every other refusal in this script, each of
   // which names the path. On a route whose whole subject is which artifact
@@ -527,7 +527,7 @@ function cmdCheck(argv) {
 
 // ---------------------------------------------------------------- CLI
 
-// Prototype-less, via Object.create(null) (33 review WR-04). A plain object
+// Prototype-less, via Object.create(null). A plain object
 // literal inherits Object.prototype, so `commands["constructor"]` and
 // `commands["toString"]` are truthy FUNCTIONS: an unknown verb that happens to
 // be a prototype member passed the known-verb test and was then CALLED, so the
@@ -559,7 +559,7 @@ The method is re-derived per release and NO address set is ever inherited betwee
 re-deriving over an existing artifact is refused without --force. \`--cap\` only narrows.
 
 \`check\` compares the images exactly as given. On the snapshot route the \`$0000\`/\`$0001\`
-6510-port overlay is normalised in code by the MCP-side predicate (D-24), so a derivation
+6510-port overlay is normalised in code by the MCP-side predicate, so a derivation
 taken from un-normalised images can legitimately carry those two addresses.
 
 Images come from the capture procedure in this skill's SKILL.md. This script contacts

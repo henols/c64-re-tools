@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // packer-finding.mjs -- the ONE place this project answers "which packer was
 // used on this binary", as a project-owned recon finding with an ordered
-// oracle chain and a hard, reasoned unknown (SURF-03).
+// oracle chain and a hard, reasoned unknown.
 //
 // ---------------------------------------------------------------------------
 // WHY THIS FILE EXISTS
@@ -103,7 +103,7 @@ import { basename, dirname, resolve } from "node:path";
 import { resolveMcpModule, refusalMessage } from "../../c64-ram-capture/scripts/mcp-module.mjs";
 
 // ---------------------------------------------------------------------------
-// Phase 34, plan 34-04 (SEAM-05): the oracle's own child-process spawn.
+// The oracle's own child-process spawn.
 // ---------------------------------------------------------------------------
 // Both `probeUnp64()` and `runUnp64()` used to spawn `unp64` directly
 // (`spawnSync`, and a `mkdtempSync()`-created scratch directory for the
@@ -307,7 +307,7 @@ export function shannonEntropy(bytes) {
 // ---------------------------------------------------------------------------
 
 /**
- * Phase 34, plan 34-08 (CR-01): turns a container-side environment record
+ * Turns a container-side environment record
  * into a DIAGNOSTIC HINT, never a configuration value. This script's own
  * filesystem is not the filesystem the oracle runs on -- host-tool.mts's
  * `resolveOracleCommand()` decides the oracle's location from the HOST
@@ -351,7 +351,7 @@ function appendHint(reason, hint) {
  * Locates and probes the external packer identifier, WITHOUT touching any
  * input file.
  *
- * Phase 34, plan 34-08 (CR-01): this function decides NOTHING about the
+ * This function decides NOTHING about the
  * binary any more -- it sends the seam call UNCONDITIONALLY, with an empty
  * argument object, whether or not a container-side oracle variable is set.
  * There is no filesystem existence check on an oracle path here (the removed

@@ -126,13 +126,13 @@ The two seeds are where this goes wrong, and both failure modes are on record:
 `io` (`$D000-$DFFF`) and `unused` (contiguous `$00`/`$FF` power-on runs) are
 assigned at capture time and kept verbatim. Everything the trace reaches is `game`.
 
-Per D-05 the `.bin` files are **never** edited or zeroed. Classification lives in
+The `.bin` files are **never** edited or zeroed. Classification lives in
 the manifests; the bytes stay verbatim evidence.
 
 ## Carrying the verdict into the rebuild
 
 A verdict recorded here does not stay here. `anno export-asm`'s `--ledger` flag
-(BUILD-05) reads THIS skill's generated `recovery/PROVENANCE.md` — never
+reads THIS skill's generated `recovery/PROVENANCE.md` — never
 re-deriving anything — and carries every covered range's Verdict and Confidence
 into the exported ACME source as an inline comment on the block that range
 overlaps:
@@ -269,10 +269,10 @@ addresses.
 | Assembling | `acme-build` |
 | **Whether a byte is original, cracker-changed, or unknown** | here |
 
-Findings that make RE faster go in `.planning/RE-FINDINGS.md` **at the moment you
-find them**, graded with `Evidence:` and `Confidence:`. Promote by re-logging with
-the new evidence, never by editing a grade in place. File-changing work enters
-through a GSD command (`/gsd-quick`).
+Record findings that make RE faster in your own project notes **at the moment you
+find them**, graded with `Evidence:` and `Confidence:`. Promote a finding by
+re-logging it with the new evidence, never by editing an old grade in place — the
+grade is only worth anything if it says what was actually known when it was written.
 
 ## Troubleshooting
 

@@ -44,7 +44,7 @@ export function release(id) {
 }
 
 /**
- * The registry's own N-readiness documentation (01-03-PLAN.md's Task 2):
+ * The registry's own N-readiness documentation:
  * a top-level `schema_notes` string, sibling to `schema_version` and
  * `releases`, stating the mechanical claim that adding a release is one
  * `releases[]` entry plus one invocation of `tools/recover.mjs`. Kept as a

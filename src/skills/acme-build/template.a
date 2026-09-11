@@ -6,7 +6,7 @@
 ; No angle-bracket library includes here on purpose. Neither documented ACME
 ; provisioning route ships the standard hardware-register library - a bare
 ; `~/.local/bin/acme` install and the Debian trixie `apt` candidate were both
-; verified to lack it (Phase 8.1 FINDING-A1) - so a scaffold that depends on
+; verified to lack it - so a scaffold that depends on
 ; it fails to assemble on a fresh install. The five constants below are
 ; exactly what this scaffold's body uses, defined locally instead. If you
 ; want the full library for your own sources' angle-bracket includes, set

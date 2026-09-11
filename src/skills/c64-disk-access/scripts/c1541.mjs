@@ -2,13 +2,11 @@
 // c1541 -> disk-image reader driver. Read-only: directory, block allocation
 // map, a named file's sector chain, and a named file's raw bytes. No write,
 // format, delete or any other mutating verb is reachable from this script --
-// deliberately, per the plan's own D-03.
+// deliberately.
 //
-// Phase 40, plan 40-02 (PREP-01, D-01, D-02): reached ONLY through the
-// host-tool execution seam -- the project owner's rule of 2026-08-28
-// (.planning/seeds/host-tool-executor.md) is that this script runs
-// container-side, `c1541` lives host-side, and there is no container PATH to
-// find it on. This file never spawns c1541 itself; it constructs a TYPED
+// Reached ONLY through the host-tool execution seam -- the project owner's
+// rule of 2026-08-28 is that this script runs container-side, `c1541` lives
+// host-side, and there is no container PATH to find it on. This file never spawns c1541 itself; it constructs a TYPED
 // request per capability (`c1541.bam`/`c1541.dir`/`c1541.entry`/
 // `c1541.chain`/`c1541.read`) and reads the produced files back off the
 // shared workspace tree, mirroring src/skills/acme-build/scripts/acme.mjs's
@@ -134,19 +132,18 @@ const VERB_TO_TOOL = {
 
 // ---------------------------------------------------------------- audit
 //
-// Phase 40, plan 40-04 (PREP-01, D-06). Ports the fakery detector the
-// skill-side pure-parse module carried at its own `parseDirectory()`
-// (that module -- `src/skills/c64-ram-capture/scripts/`'s own disk-image
-// reader -- deleted in phase 40 plan 40-06) onto this skill's own
-// seam-reached capabilities, now that `c1541` is the only `.d64` route
-// (40-CONTEXT.md D-04). Composes THREE
+// Ports the fakery detector the skill-side pure-parse module carried at its
+// own `parseDirectory()` (that module -- `src/skills/c64-ram-capture/`'s own
+// disk-image reader -- has since been deleted) onto this skill's own
+// seam-reached capabilities, now that `c1541` is the only `.d64` route.
+// Composes THREE
 // existing capabilities -- one `dir` call for names/block counts, one `bam`
 // call for the per-sector allocation map, and one `entry` call PER NAME for
 // that file's own claimed first track/sector and its directory sector's
 // "next directory T/S" pointer -- rather than adding a seventh tool id.
 //
 // Same three named-reason signatures as the replaced parser, PLUS a
-// genuinely SHARPER third signature (D-06): the per-SECTOR allocation map
+// genuinely SHARPER third signature: the per-SECTOR allocation map
 // `c1541.bam` returns lets this check test the file's EXACT claimed first
 // sector, not merely whether its whole track is free.
 //   1. block count is 0
@@ -155,7 +152,7 @@ const VERB_TO_TOOL = {
 //      really start there
 //
 // Plus the chain guard the replaced parser carried and `c1541` itself does
-// not (40-RESEARCH.md Pitfall 7): a visited set over every "next directory
+// not: a visited set over every "next directory
 // T/S" pointer observed, seeded with the directory's own starting sector
 // (18/1, the standard 1541 layout every other convention in this project
 // already assumes), and a second visited set over every entry's own claimed
@@ -184,7 +181,7 @@ function stripAnsi(text) {
 
 /** The four sector-count zones of a standard 35-track 1541 image -- same
  * table the deleted skill-side pure-parse module used, copied rather than
- * imported since that module is deleted in Phase 40 plan 40-06. */
+ * imported since that module no longer exists. */
 export function sectorsPerTrack(track) {
   if (!Number.isInteger(track) || track < 1 || track > 35) return null;
   if (track <= 17) return 21;
@@ -372,7 +369,7 @@ function readSeamOutputText(response) {
 /** Composes `c1541.dir` + `c1541.bam` + one `c1541.entry` call per name into
  * the pure `auditEntries()` detector above. When ANY composed seam call
  * fails outright (`ok:false`), the whole audit fails with that call's own
- * refusal reported verbatim -- there is no byte-level fallback (D-05):
+ * refusal reported verbatim -- there is no byte-level fallback:
  * never read the image bytes locally when the seam is unreachable, because
  * a fallback that works on the developer's own host and silently fails
  * inside a container is the exact failure this seam exists to remove.
@@ -533,8 +530,7 @@ function parseOpts(argv) {
 
 // --------------------------------------------------------------------- main
 //
-// Phase 40, plan 40-04 (Rule 3 fix, discovered mid-execution): the CLI
-// dispatch below MUST be guarded to run only when this file is the actual
+// The CLI dispatch below MUST be guarded to run only when this file is the actual
 // entry point, not merely imported -- c1541.test.mjs (this plan) imports
 // auditEntries()/parseDirListing()/etc. as a pure library, and an unguarded
 // dispatch would run this section with the TEST RUNNER's own process.argv

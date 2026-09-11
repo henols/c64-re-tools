@@ -24,10 +24,10 @@ Options: `-o FILE` `--out-dir DIR` `-f FORMAT` `--setpc ADDR` `-DSYM=VAL`
 
 `-I DIR` is resolved **workspace-relative** to the project root the host
 broker was launched with — the same resolution `source`/`--out-dir` already
-go through (Phase 34, SEAM-02/CR-03) — before it ever reaches the assembler.
-An absolute or escaping `-I` directory is refused by the seam rather than
-passed to ACME; this is a documented contract change from before Phase 34,
-when an absolute include reached the assembler unchecked.
+go through — before it ever reaches the assembler. An absolute or escaping
+`-I` directory is refused by the seam rather than passed to ACME; this is a
+documented contract change from earlier releases, when an absolute include
+reached the assembler unchecked.
 
 ## Build
 
@@ -144,8 +144,7 @@ it lives in the `anno` CLI rather than here.
 
 **Dated withdrawal 2026-08-29, dated return 2026-08-31 — both halves are kept,
 because the withdrawal is the record of why the route is shaped the way it is.**
-Whole-program static disassembly was WITHDRAWN on 2026-08-29 (`D-02`/`D-14`)
-rather than left standing on an unverified reassembly claim: the removed route
+Whole-program static disassembly was WITHDRAWN on 2026-08-29 rather than left standing on an unverified reassembly claim: the removed route
 settled correctness with a transcript parser, and the recorded false pass that
 discipline exists against read `ACME not found in PATH (skipped)` / `All
 roundtrip verifications passed.` / `EXIT=0` — exit zero, an aggregate line
@@ -198,9 +197,9 @@ requirement. The scaffold that `new` writes assembles against a bare install
 with no standard hardware-register library — that's deliberate: neither a
 plain `~/.local/bin/acme` build nor the Debian trixie `apt` candidate ships
 one, so a scaffold that depended on it would fail to assemble on a fresh
-install (Phase 8.1 FINDING-A1).
+install.
 
-**Route (Phase 34, SEAM-05):** `scripts/acme.mjs` never spawns `acme` itself
+**Route:** `scripts/acme.mjs` never spawns `acme` itself
 and never probes a container PATH for it — a container has no such PATH to
 probe (the project owner's rule of 2026-08-28). The script reaches the
 assembler only through the host-tool execution seam
@@ -240,10 +239,10 @@ This one turns source into bytes. It does not restate what the others carry.
 | `scripts/acme.mjs` | The driver. Its comments are the contract for every flag above |
 | `template.a` | The scaffold `new` writes: BASIC stub with a computed `SYS`, five local hardware constants (no library needed), no `!to` |
 
-Findings that make RE faster go in `.planning/RE-FINDINGS.md` **at the moment you
-find them**, graded with `Evidence:` and `Confidence:`. Promote by re-logging with
-the new evidence, never by editing a grade in place. File-changing work enters
-through a GSD command (`/gsd-quick`).
+Record findings that make RE faster in your own project notes **at the moment you
+find them**, graded with `Evidence:` and `Confidence:`. Promote a finding by
+re-logging it with the new evidence, never by editing an old grade in place — the
+grade is only worth anything if it says what was actually known when it was written.
 
 ## Troubleshooting
 

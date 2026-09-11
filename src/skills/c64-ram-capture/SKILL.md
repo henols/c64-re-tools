@@ -251,8 +251,8 @@ were guaranteed. Region first, bit-count second.
 `$E000-$FFFF` (RAM under KERNAL ROM when HIRAM = 0) is deliberately **not**
 excluded. `$FAD8` and `$FC51` do differ across captures, but only two addresses
 out of 8192 — too few for power-on garbage, and unexplained. They still fail, and
-what writes them is an open question. Evidence and grading:
-`.planning/RE-FINDINGS.md`, 2026-08-04.
+what writes them is an open question. Observed 2026-08-04; graded MEDIUM,
+structural, not reproduced against a second release.
 
 **Establish a drift floor** with `floor` across every capture of one checkpoint.
 It reports each address that differed in any pairing, with the distinct values
@@ -399,10 +399,10 @@ split: the workflow fits in one file, which is the right call when it does.
 | `scripts/dump-artifacts.mjs` | `assemble` / `chip-state` / `manifest` / `write-set` — the guarded byte work, and the source of every `assembleImage:` message in the table below. |
 | `RELEASES.json.example` | A copyable release-registry shape — see `## Release registry shape` above. |
 
-Findings that make RE faster go in `.planning/RE-FINDINGS.md` **at the moment you
-find them**, graded with `Evidence:` and `Confidence:`. Promote by re-logging with
-the new evidence, never by editing a grade in place. File-changing work enters
-through a GSD command (`/gsd-quick`).
+Record findings that make RE faster in your own project notes **at the moment you
+find them**, graded with `Evidence:` and `Confidence:`. Promote a finding by
+re-logging it with the new evidence, never by editing an old grade in place — the
+grade is only worth anything if it says what was actually known when it was written.
 
 ## Troubleshooting
 

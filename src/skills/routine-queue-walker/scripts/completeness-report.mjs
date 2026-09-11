@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 // completeness-report.mjs -- renders the per-fixture decomposition
-// completeness report for Phase 45 (D-04, D-06, D-07, D-08, D-09, D-10) and
-// OWNS the GATE: this script's own process exit code is routine-queue-
-// walker's numeric stop condition (D-08) -- 0 only when every measure below
+// completeness report, and OWNS the GATE: this script's own process exit
+// code is routine-queue-walker's numeric stop condition -- 0 only when every measure below
 // clears its own bar, 1 the instant any one of them does not, naming which
 // measure and which address failed.
 //
@@ -13,24 +12,24 @@
 // each already built to avoid, one verb over. `routine-queue-walker` already
 // exists to drive an annotation store's backlog to closure and report every
 // leftover; this script supplies the numeric stop condition it currently
-// lacks (D-08).
+// lacks.
 //
 // WHAT THIS IS THE ONE AUTHORITATIVE PLACE FOR: rendering the per-fixture
 // decomposition-completeness report, REFUSING to render at all without the
-// disagreement input (D-09 mechanism 2 -- a required output-schema field
-// only that input can populate), and computing the GATE's pass/fail verdict
+// disagreement input (a required output-schema field only that input can
+// populate), and computing the GATE's pass/fail verdict
 // and exit code from the rendered measures.
 //
 // WHAT NOT TO DO:
 //   - Never derive a completeness measure from the store's block-type
 //     listing directly in THIS file. `anno-coverage.ts`'s own trap 1 forbids
-//     it there, and D-05 forbids extending or re-implementing that module
-//     here -- this script never reads a store; it renders the fifth CLI
+//     it there, and extending or re-implementing that module here is
+//     equally forbidden -- this script never reads a store; it renders the fifth CLI
 //     verb's own `--json` answer, which already did the reading.
 //   - Never render without the disagreement-query input. A missing input is
 //     refused by name (`MissingDisagreementInputError`), never defaulted to
 //     an empty array -- an omitted query and a query that found nothing must
-//     never look the same (D-09).
+//     never look the same.
 //   - Never print a percentage, rate or combined figure. Every count in this
 //     report carries its own denominator, exactly like
 //     `printEvidDisagreementsReport()`'s own discipline.
@@ -40,8 +39,8 @@
 //     --json` already named them.
 //   - Never restate any of the four split-table `SPLIT_DATA_TYPES` spellings
 //     as a literal string in THIS file (a mechanical grep guard over this
-//     exact file is this task's own acceptance criterion). D-11's "table"
-//     naming is computed on the VERB side (`anno-cli.ts`'s own
+//     exact file is a standing acceptance criterion). The "table" naming
+//     is computed on the VERB side (`anno-cli.ts`'s own
 //     `renderedType` field, read from `anno-types.ts`'s `isSplitDataType()`)
 //     and this script only ever renders `renderedType` verbatim.
 //   - Never soften a gate failure into a bulletin. `computeGateFailures()`
@@ -57,13 +56,13 @@ import { resolveMcpModule, refusalMessage, TARGET_PACKAGE } from "../../c64-ram-
 
 /** The MCP-side entry point this script forwards to -- the SAME "node
  * vice-proxy.ts anno <verb>" invocation `routine-queue-walker/SKILL.md`'s
- * own Phase 5 `anno coverage` call already uses (D-06: no broker, no
+ * skill's own closing `anno coverage` call already uses (no broker, no
  * container-out seam -- the store is `node:sqlite` in-process, and this
  * script's own job is orchestration, never a store read of its own). */
 const TARGET_FILE = "vice-proxy.ts";
 
 /** Thrown by `renderCompletenessReport()` when `report.disagreementInput` is
- * absent, or present but missing a complete `runIdentity` -- D-09 mechanism
+ * absent, or present but missing a complete `runIdentity` -- mechanism
  * 2's own required output-schema field. The message always names the
  * `--disagreements` flag literally, so a caller reading only the thrown
  * message still knows what to pass. */
@@ -75,7 +74,7 @@ export class MissingDisagreementInputError extends Error {
 }
 
 /**
- * The frozen survivor prefix set (phase 45 plan 45-01 task 2), MIRRORED from
+ * The frozen survivor prefix set, MIRRORED from
  * `src/mcp/vice/anno-cli.ts`'s own frozen set -- see
  * docs/phase45-wave0-measurements.md for the MEASURED label population this
  * was frozen against. Exported here, separately from the verb's own copy,
@@ -103,7 +102,7 @@ export function isSurvivorName(name) {
 }
 
 /**
- * D-10 mechanism 2's precedence rule, mirrored here (see this file's own
+ * The precedence rule, mirrored here (see this file's own
  * header on why a mirror rather than an import) so this script's own test
  * tier can assert the PRECEDENCE explicitly, not merely pass through a
  * verb-computed value. `anno-cli.ts`'s `typedByFor()` is the authoritative
@@ -132,7 +131,7 @@ const PURPOSE_ELEMENT_KEYS = ["function", "inputs", "outputs", "sideEffects"];
  *
  * Every NEW field defaults to the CONSERVATIVE (gate-failing or vacuity-
  * naming) shape when absent, never to a shape that would silently pass --
- * D-09's own discipline, applied to every field this task adds, not only the
+ * The same refuse-by-name discipline, applied to every field, not only the
  * original disagreement input.
  */
 export function buildCompletenessReport(answer) {
@@ -151,7 +150,7 @@ export function buildCompletenessReport(answer) {
           rows: [],
           // Conservative default: an answer that carries a real disagreement
           // count but no resolution census at all is treated as ENTIRELY
-          // unresolved, never as a silent pass -- the same discipline D-09
+          // unresolved, never as a silent pass -- the same discipline
           // applies to the disagreement input itself, applied here to its
           // resolution.
           unresolvedCount: disagreementInput?.disagreementCount ?? 0,
@@ -191,7 +190,7 @@ function addr(a) {
  * sentence stating what absence does NOT prove, and never a percentage,
  * rate or combined figure.
  *
- * THROWS `MissingDisagreementInputError` -- D-09 mechanism 2 -- when
+ * THROWS `MissingDisagreementInputError` when
  * `report.disagreementInput` is absent, or present but its own
  * `runIdentity` is neither `null` nor a complete
  * `{ imageSha256, argvDigest, seed }` object. An empty `disagreements`
@@ -199,11 +198,11 @@ function addr(a) {
  * disagreements" answer; what is refused is the ABSENCE of the input
  * itself.
  *
- * Rule 1 fix (disclosed, plan 45-06): `identity === null` is a THIRD,
+ * `identity === null` is a THIRD,
  * legitimate value here, mirroring anno-cli.ts's own
  * `validateDisagreementDocumentShape()`/match-check -- the real answer `anno
  * evid-disagreements --json` produces for a store with zero observed runs
- * (a D-13 non-executed fixture). By the time a report reaches this
+ * (a non-executed fixture). By the time a report reaches this
  * function, `anno decomp-completeness`'s own server-side check has already
  * proven that null against the store's own evid-runs table (refusing a
  * null identity on a store that DOES carry real runs) -- this function
@@ -229,7 +228,7 @@ export function renderCompletenessReport(report) {
   if (report.executionDisposition === "not-executed") {
     lines.push(`  NOT EXECUTED: ${report.notExecutedReason ?? "(no reason recorded)"}`);
   } else {
-    lines.push("  EXECUTED: this fixture was run under the reproducible-run protocol (REPRO-02).");
+    lines.push("  EXECUTED: this fixture was run under the reproducible-run protocol.");
   }
   lines.push("");
 
@@ -336,7 +335,7 @@ export function renderCompletenessReport(report) {
 }
 
 /**
- * THE GATE (D-08's numeric stop condition; criterion 2's own words: a
+ * THE GATE (the numeric stop condition; criterion 2's own words: a
  * nonzero unresolved count BLOCKS rather than being reported beside a
  * pass). Returns an array of human-readable failure strings, each naming
  * the offending address where one exists; an empty array means the gate
@@ -440,7 +439,7 @@ export function fetchCompletenessReport(argv) {
  * report); any other thrown error is reported the same way, verbatim,
  * never swallowed. On a SUCCESSFULLY RENDERED report, the exit code is THE
  * GATE's own verdict (`computeGateFailures()`), never a bare 0 -- this is
- * D-08's numeric stop condition, and softening it here is exactly the
+ * the numeric stop condition, and softening it here is exactly the
  * regression planted controls 1/2 (task 2) exist to catch. */
 export function main(argv) {
   let report;

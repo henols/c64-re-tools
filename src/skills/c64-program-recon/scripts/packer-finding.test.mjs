@@ -1,5 +1,5 @@
 // packer-finding.test.mjs -- the committed proof that the packer recon
-// finding cannot invent a name (SURF-03), and that an absent oracle is a
+// finding cannot invent a name, and that an absent oracle is a
 // VISIBLE skip rather than a silent pass.
 //
 // Colocated beside the module on purpose: `ci-suite-coverage.test.ts`'s
@@ -16,7 +16,7 @@
 //     real finding function with that input and asserting `packer` stays null
 //     is what makes rule 1 a measured property instead of a comment.
 //   - THE VISIBLE SKIP. An absent oracle must never read as a passing
-//     SURF-03. The oracle-route test below is skipped with a stated reason
+//     that rule. The oracle-route test below is skipped with a stated reason
 //     that names the missing tool, and a second test -- which is NEVER
 //     skipped -- turns that same absence into a hard failure the moment the
 //     opt-in variable is set.
@@ -190,7 +190,7 @@ test("the parser accepts only a narrow character set, so a hostile line cannot r
 // The probe (T-19-18)
 // ---------------------------------------------------------------------------
 
-// Phase 34, plan 34-08 (CR-01): this script sends no oracle configuration
+// This script sends no oracle configuration
 // across the seam any more -- the three cases below replace the old
 // configured-path probe case, which exercised a client-side existence check
 // that no longer exists (host-tool.mts's resolveOracleCommand() decides the

@@ -338,7 +338,7 @@ test("renderLoading does NOT add the blocked-run warning for an ordinary (non-bl
   assert.doesNotMatch(md, /NOT AN EVIDENCED ZERO/, "an ordinary log must not be flagged as a blocked run");
 });
 
-test("renderLoading names both watch-loads.mjs and dump-artifacts.mjs at the consumer's installed location, never this repository's source-tree location (16-REVIEW.md CR-01 class)", async () => {
+test("renderLoading names both watch-loads.mjs and dump-artifacts.mjs at the consumer's installed location, never this repository's source-tree location", async () => {
   const { renderLoading } = await import("./watch-loads.mjs");
   const normalLog = {
     machine: "C64SC",

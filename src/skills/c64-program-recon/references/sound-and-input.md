@@ -1,7 +1,6 @@
 # SID and CIA: music, effects, the RNG, input, timing
 
-Source: `.planning/RE-FINDINGS.md` § SID discovery and § CIA 6526 discovery (2026-08-01,
-**MEDIUM**, doc-derived) except where marked. Per-register bit detail lives in
+Graded 2026-08-01, **MEDIUM**, doc-derived, except where marked. Per-register bit detail lives in
 `c64-memory-mapping`; this file carries the idioms and the order.
 
 ## SID — separating the player from the game logic

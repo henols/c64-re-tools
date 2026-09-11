@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // completeness-report.test.mjs -- Tier 1 (pure unit) coverage for the
-// decomposition-completeness report (phase 45 plans 45-01, 45-04).
+// decomposition-completeness report.
 //
 // PURE UNIT TESTS ONLY, over the exported `buildCompletenessReport()` /
 // `renderCompletenessReport()` / `computeGateFailures()` / `isSurvivorName()`
@@ -17,8 +17,8 @@
 // renderer does.
 //
 // TWO planted-control tests near the end of this file (controls 1 and 2,
-// phase 45 plan 45-04 task 2) are PERMANENT regression pins for the two
-// automatable D-09 refusals recorded (with their own real-store transcripts)
+// below) are PERMANENT regression pins for the two automatable refusals
+// recorded (with their own real-store transcripts)
 // in docs/phase45-planted-control-evidence.md. They assert the exit code and
 // the named literal string, and are deliberately NOT derived from the code
 // path they test -- a future edit that quietly softens either refusal reds
@@ -332,8 +332,7 @@ test("Test 9: an unresolved disagreement fails the gate; the same disagreement, 
 });
 
 // ---------------------------------------------------------------------------
-// Additional coverage: the disagreement-input refusal (D-09 mechanism 2),
-// carried over from plan 45-01.
+// Additional coverage: the disagreement-input refusal.
 // ---------------------------------------------------------------------------
 test("renderCompletenessReport() throws MissingDisagreementInputError naming --disagreements when disagreementInput is absent", () => {
   const answer = completeAnswer();
@@ -464,7 +463,7 @@ test("a full survivor list, non-empty entry-point/referenced-address failures an
 });
 
 // ---------------------------------------------------------------------------
-// PLANTED CONTROLS (phase 45 plan 45-04 task 2, D-09) -- permanent
+// PLANTED CONTROLS -- permanent
 // regression pins for the two automatable RED observations recorded, with
 // their own real-store transcripts, in docs/phase45-planted-control-
 // evidence.md. Deliberately NOT derived from the code path they test (the
@@ -475,11 +474,11 @@ test("a full survivor list, non-empty entry-point/referenced-address failures an
 //
 // THIS SPAWNS A REAL SUBPROCESS (`main()` -> `fetchCompletenessReport()` ->
 // the resolved `vice-proxy.ts anno decomp-completeness`), but reaches NO
-// broker and starts NO VICE process (D-06: the store is `node:sqlite`
+// broker and starts NO VICE process (the store is `node:sqlite`
 // in-process) -- both controls are ordinary CI-safe Node subprocess calls.
 // ---------------------------------------------------------------------------
 
-test("PLANTED CONTROL 1 (permanent, D-09 mechanism 1): omitting --disagreements refuses by name with exit 1, through main()", () => {
+test("PLANTED CONTROL 1 (permanent): omitting --disagreements refuses by name with exit 1, through main()", () => {
   let stderrOutput = "";
   const originalError = console.error;
   console.error = (msg) => {
@@ -498,16 +497,16 @@ test("PLANTED CONTROL 1 (permanent, D-09 mechanism 1): omitting --disagreements 
   }
   assert.equal(exitCode, 1, "omitting --disagreements must exit 1");
   assert.match(stderrOutput, /--disagreements/, "the refusal must name --disagreements literally");
-  assert.match(stderrOutput, /there is no default and no empty-array substitute/, "must carry D-09 mechanism 1's own stated reason");
+  assert.match(stderrOutput, /there is no default and no empty-array substitute/, "must carry the refusal's own stated reason");
 });
 
-test("PLANTED CONTROL 2 (permanent, D-09 anti-vacuity): a fabricated run identity is refused by name, distinguishing 'no disagreements' from 'the query was never run', through main() against a REAL store", async () => {
+test("PLANTED CONTROL 2 (permanent, anti-vacuity): a fabricated run identity is refused by name, distinguishing 'no disagreements' from 'the query was never run', through main() against a REAL store", async () => {
   // This control genuinely needs a REAL, EXISTING annotation store -- the
   // run-identity mismatch check runs only after existsSync(storePath)
   // succeeds and the store is actually opened, so control 1's "no store
   // needed at all" shortcut does not apply here. Built fresh, in-process,
   // via anno-store.ts's own openStore()/setDataType() -- CI-safe (no VICE,
-  // no broker: D-06 already establishes the store is node:sqlite
+  // no broker: the store is node:sqlite
   // in-process) and non-vacuous: a store with ZERO recorded runs makes
   // EVERY complete-but-non-matching runIdentity a genuine anti-vacuity
   // refusal, exactly like docs/phase45-planted-control-evidence.md's own

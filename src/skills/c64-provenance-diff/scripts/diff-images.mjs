@@ -5,7 +5,7 @@
 // an already-committed file (a release's primary `.bin` dump, its
 // `.map.json` range manifest, and `recovery/RELEASES.json`) and every tool
 // is pure Node over those files -- nothing in this module contacts the
-// emulator, ever (D-18: zero third-party dependencies, `Buffer.indexOf` and
+// emulator, ever (zero third-party dependencies, `Buffer.indexOf` and
 // `node:crypto` are sufficient).
 //
 // This is the step the objective calls "the one most able to produce
@@ -373,7 +373,7 @@ export function diffRanges(images, { gapTolerance = 16 } = {}) {
         // one address's value would be both wrong for the range and would
         // silently defeat collapsing (no two addresses would ever compare
         // equal on evidence text, discovered live while running this tool
-        // against the real dumps -- see .planning/RE-FINDINGS.md).
+        // against the real dumps).
         rec = {
           verdict: "ORIGINAL",
           agreeing_releases: available.length,
@@ -519,7 +519,7 @@ function mergeGroup(group) {
   // `swallowedGap` below. Deduplicated (via Set) so a coalesced range with
   // many same-reason singleton addresses doesn't repeat identical
   // boilerplate once per address -- found live while running this against
-  // the real dumps (see .planning/RE-FINDINGS.md).
+  // the real dumps.
   const constituentNotes = [...new Set(nonOriginal.map((r) => r.evidence || r.reason).filter(Boolean))];
   const swallowedGap = group.length > nonOriginal.length;
   const note =
@@ -599,11 +599,11 @@ export function splitRangeByManifestKind(range, manifestRanges) {
 
 /**
  * Promote one manifest from `ranges-only` to `bucketed`: `unused`/`io`
- * ranges are kept verbatim (D-02's byte-level classification already
+ * ranges are kept verbatim (the byte-level classification already
  * stands); every `unclassified` range is re-partitioned against the
  * release's earned `loader_ranges` (never NOTES.md prose) and this image's
  * own cracktro printable-run scan, with the remainder -- reached by the
- * trace/entry point -- bucketed `game`. Per D-05 the underlying bytes are
+ * trace/entry point -- bucketed `game`. The underlying bytes are
  * never edited; only the manifest's own `kind` field changes.
  */
 export function bucketManifest(image, manifest, { loaderRanges, cracktroMinLength = 8 } = {}) {
@@ -614,7 +614,7 @@ export function bucketManifest(image, manifest, { loaderRanges, cracktroMinLengt
     note: lr.note ?? "",
     evidence: lr.evidence ?? "",
   }));
-  // Keep every already-classified range verbatim (unused/io from D-02's
+  // Keep every already-classified range verbatim (unused/io from the
   // byte-level pass, or -- on a re-run of an already-bucketed manifest --
   // game/loader/cracktro from a prior run of this same function). Only
   // "unclassified" is ever re-partitioned. Filtering "kept" down to just
@@ -693,9 +693,9 @@ export function renderLedger({ generatedRanges, gapTolerance, prose }) {
     throw new Error(`renderLedger: refusing to emit -- generated tier stops at ${hex4(expected - 1)}, does not reach $FFFF`);
   }
 
-  // NOTE (plans 16-01, 16-10): the embedded invocation path below is deliberately the
+  // NOTE: the embedded invocation path below is deliberately the
   // CONSUMER's installed location (`.claude/skills/...`), not this repository's
-  // source-tree location (`src/skills/...`) -- pinned by diff-images.test.mjs and skill-consumer-paths.test.ts (16-REVIEW.md CR-01).
+  // source-tree location (`src/skills/...`) -- pinned by diff-images.test.mjs and skill-consumer-paths.test.ts.
   let generated = `<!-- GENERATED, DO NOT HAND-EDIT. Regenerate with: node .claude/skills/c64-provenance-diff/scripts/diff-images.mjs ledger --gap-tolerance ${gapTolerance} -->\n\n`;
   generated += `| Start | End | Kind | Verdict | Confidence | Agreeing releases | Evidence / Reason |\n`;
   generated += `|---|---|---|---|---|---|---|\n`;

@@ -1,6 +1,6 @@
 # VIC-II: locating every displayed byte
 
-Source: `.planning/RE-FINDINGS.md` § VIC-II discovery (2026-08-01, **MEDIUM**, doc-derived).
+Graded 2026-08-01, **MEDIUM**, doc-derived.
 
 **Graphics data is computed, not searched.** Every pointer the VIC follows derives from two
 registers plus a bank. Read the bank, read `$D018`, read the mode bits, read `$D015` and the
