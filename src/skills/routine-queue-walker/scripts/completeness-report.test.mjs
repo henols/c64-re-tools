@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 // completeness-report.test.mjs -- Tier 1 (pure unit) coverage for the
-// decomposition-completeness report (phase 45 plan 45-01, task 3).
+// decomposition-completeness report (phase 45 plans 45-01, 45-04).
 //
 // PURE UNIT TESTS ONLY, over the exported `buildCompletenessReport()` /
-// `renderCompletenessReport()` / `isSurvivorName()` -- fed synthetic,
-// hand-written literal records, never a live store, never VICE, never the
-// resolved MCP module. This file always runs under CI's
-// `node --test 'src/skills/*/scripts/*.test.mjs'` glob, which has no VICE
-// install at all.
+// `renderCompletenessReport()` / `computeGateFailures()` / `isSurvivorName()`
+// / `typedByFor()` -- fed synthetic, hand-written literal records, never a
+// live store, never VICE, never the resolved MCP module. This file always
+// runs under CI's `node --test 'src/skills/*/scripts/*.test.mjs'` glob,
+// which has no VICE install at all.
 //
 // FROZEN-REGISTRY POSTURE (mirrors anno-verb-coverage.test.ts:33-44): the
 // synthetic records below are hand-written, deliberately NOT derived from
@@ -16,25 +16,74 @@
 // make every assertion below a tautology that passes no matter what the
 // renderer does.
 //
-// The LIVE end-to-end tier (a real derived store, a real live execution run,
-// a real `anno evid-disagreements` answer) belongs to plan 45-04's
-// planted-RED control; it is deliberately NOT built here.
+// TWO planted-control tests near the end of this file (controls 1 and 2,
+// phase 45 plan 45-04 task 2) are PERMANENT regression pins for the two
+// automatable D-09 refusals recorded (with their own real-store transcripts)
+// in docs/phase45-planted-control-evidence.md. They assert the exit code and
+// the named literal string, and are deliberately NOT derived from the code
+// path they test -- a future edit that quietly softens either refusal reds
+// this suite.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { buildCompletenessReport, renderCompletenessReport, isSurvivorName, MissingDisagreementInputError } from "./completeness-report.mjs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+
+import {
+  buildCompletenessReport,
+  renderCompletenessReport,
+  isSurvivorName,
+  typedByFor,
+  computeGateFailures,
+  main,
+  MissingDisagreementInputError,
+} from "./completeness-report.mjs";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+
+/** A temp directory INSIDE the workspace root, mirroring `anno-cli.test.ts`'s
+ * own `withWorkspaceTempDir()` precedent verbatim: `decomp-completeness`
+ * confines its `--store`/`--disagreements`/`--manifest` paths with
+ * `storePathWithinWorkspace()` against `repoRoot()`, so a system tmpdir path
+ * is refused BY DESIGN, not an inconvenience to route around. Cleaned up in
+ * a `finally`, exactly like the TypeScript precedent -- nothing this
+ * function creates is ever left on disk (or gitignored-but-lingering) after
+ * the test that used it completes. */
+async function withWorkspaceTempDir(fn) {
+  const dir = mkdtempSync(join(HERE, ".completeness-report-test-"));
+  try {
+    return await fn(dir);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
 
 /** A complete, synthetic-but-plausible answer shape, mirroring exactly what
  * `anno decomp-completeness --json` prints -- hand-written, not derived from
- * a live run. */
+ * a live run. Every new field defaults to a GATE-PASSING shape so a caller
+ * that only cares about one behaviour can override just that field. */
 function completeAnswer(overrides = {}) {
   return {
     store: "/workspace/.c64-re-tools/tracer.annostore",
     fixture: "dxa/tracer.prg",
     executionDisposition: "executed",
     notExecutedReason: null,
-    byteCensus: { byType: { byte: 15, code: 6 }, undefinedCount: 0, denominator: 21 },
+    byteCensus: { byType: { byte: 15, code: 6 }, undefinedCount: 0, denominator: 21, undefinedRanges: [] },
     survivors: [],
+    rangeProvenance: [
+      { start: 0x0801, endInclusive: 0x080f, dataType: "byte", renderedType: "byte", typedBy: "byte-derived" },
+      { start: 0x0810, endInclusive: 0x0815, dataType: "code", renderedType: "code", typedBy: "observed-executing" },
+    ],
+    entryPoints: [
+      {
+        address: 0x0810,
+        name: "tracer_entry",
+        hasName: true,
+        purposeElements: { function: true, inputs: true, outputs: true, sideEffects: true },
+      },
+    ],
+    referencedAddresses: { resolved: [0x0810], declined: [], unresolved: [], denominator: 1 },
     disagreementInput: {
       disagreements: [],
       disagreementCount: 0,
@@ -47,13 +96,244 @@ function completeAnswer(overrides = {}) {
       tier: "runtime-observed",
       runIdentity: { imageSha256: "a".repeat(64), argvDigest: "b".repeat(64), seed: "fixed-seed" },
     },
+    disagreementResolution: { rows: [], unresolvedCount: 0, denominator: 0 },
     ...overrides,
   };
 }
 
 // ---------------------------------------------------------------------------
-// Test 1: absent disagreementInput throws MissingDisagreementInputError,
-// and the message names --disagreements literally.
+// Test 1: a store with one `undefined`-typed byte makes the gate exit
+// non-zero and renders that byte's address; a store with none exits zero on
+// that measure.
+// ---------------------------------------------------------------------------
+test("Test 1: one Undefined byte makes the gate exit non-zero and names that byte's address; zero Undefined bytes clears the measure", () => {
+  const clean = buildCompletenessReport(completeAnswer());
+  const cleanFailures = computeGateFailures(clean);
+  assert.ok(
+    !cleanFailures.some((f) => f.includes("Undefined")),
+    "a store with zero Undefined bytes must not fail the byte-census gate measure",
+  );
+
+  const dirty = buildCompletenessReport(
+    completeAnswer({
+      byteCensus: { byType: { byte: 14, code: 6 }, undefinedCount: 1, denominator: 21, undefinedRanges: [{ start: 0x080f, endInclusive: 0x080f }] },
+    }),
+  );
+  const dirtyFailures = computeGateFailures(dirty);
+  assert.ok(dirtyFailures.some((f) => f.includes("$080f") && f.includes("Undefined")), "must name the exact undefined byte's address");
+});
+
+// ---------------------------------------------------------------------------
+// Test 2: the aggregate section prints `blockCoveredNeverObservedCount` on
+// its own line beside `denominator`, and the rendered text contains no `%`
+// and no line combining two buckets into one figure.
+// ---------------------------------------------------------------------------
+test("Test 2: blockCoveredNeverObservedCount renders on its own named line beside denominator, and the report never combines two buckets or prints a percentage", () => {
+  const report = buildCompletenessReport(completeAnswer());
+  const text = renderCompletenessReport(report);
+  assert.match(text, /NO OBSERVATION: 18 of 21/, "blockCoveredNeverObservedCount must render under its own name, spelled exactly as evid-reconcile.ts declares it");
+  assert.ok(!text.includes("%"), "the rendered report must never contain a percentage, rate or combined figure");
+  // grep-shaped: the field's own name must appear verbatim somewhere findable.
+  assert.ok(
+    JSON.stringify(report).includes("blockCoveredNeverObservedCount"),
+    "the field name must be spelled exactly as evid-reconcile.ts declares it",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Test 3: a range whose bytes carry an execute observation renders
+// `typedBy: observed-executing`; a range whose start address carries an
+// AUTHORED_PROVENANCE comment and no observation renders `authored`; a
+// range with neither renders `byte-derived`. Precedence is asserted
+// explicitly: a range that is BOTH observed and authored renders
+// `observed-executing`.
+// ---------------------------------------------------------------------------
+test("Test 3: typedByFor() precedence -- observed-executing beats authored beats byte-derived, explicitly for the both-true case", () => {
+  assert.equal(typedByFor(true, false), "observed-executing");
+  assert.equal(typedByFor(false, true), "authored");
+  assert.equal(typedByFor(false, false), "byte-derived");
+  // THE precedence assertion: both true must still resolve to observed-executing.
+  assert.equal(typedByFor(true, true), "observed-executing", "evidence must beat inference even when both signals are present");
+});
+
+test("Test 3b: rangeProvenance rows render their own typedBy verbatim, for all three values", () => {
+  const report = buildCompletenessReport(
+    completeAnswer({
+      rangeProvenance: [
+        { start: 0x0800, endInclusive: 0x0800, dataType: "byte", renderedType: "byte", typedBy: "observed-executing" },
+        { start: 0x0801, endInclusive: 0x0801, dataType: "byte", renderedType: "byte", typedBy: "authored" },
+        { start: 0x0802, endInclusive: 0x0802, dataType: "byte", renderedType: "byte", typedBy: "byte-derived" },
+      ],
+    }),
+  );
+  const text = renderCompletenessReport(report);
+  assert.match(text, /\$0800-\$0800\s+byte\s+typedBy: observed-executing/);
+  assert.match(text, /\$0801-\$0801\s+byte\s+typedBy: authored/);
+  assert.match(text, /\$0802-\$0802\s+byte\s+typedBy: byte-derived/);
+});
+
+// ---------------------------------------------------------------------------
+// Test 4: two ranges that touch exactly (endInclusive + 1 === next.start)
+// render as two rows, never merged; and a disagreement at that boundary
+// byte appears in the disagreements section, not in the agreement count.
+// ---------------------------------------------------------------------------
+test("Test 4: two ranges that touch exactly render as TWO rows, never merged; a disagreement at the boundary byte appears in DISAGREEMENTS, never folded into AGREEMENT", () => {
+  const report = buildCompletenessReport(
+    completeAnswer({
+      rangeProvenance: [
+        { start: 0x1000, endInclusive: 0x1003, dataType: "data", renderedType: "data", typedBy: "byte-derived" },
+        { start: 0x1004, endInclusive: 0x1007, dataType: "code", renderedType: "code", typedBy: "observed-executing" },
+      ],
+      disagreementInput: {
+        ...completeAnswer().disagreementInput,
+        disagreements: [{ address: 0x1004, byteDerived: "data", runtime: "code", sourceBanks: ["ram"] }],
+        disagreementCount: 1,
+        agreementCount: 0,
+      },
+    }),
+  );
+  const text = renderCompletenessReport(report);
+  // Two rows, never merged into one $1000-$1007 span.
+  assert.match(text, /\$1000-\$1003/);
+  assert.match(text, /\$1004-\$1007/);
+  assert.ok(!text.includes("$1000-$1007"), "touching ranges must never be rendered merged into one span");
+  // The boundary disagreement is in DISAGREEMENTS, not folded into AGREEMENT.
+  const disagreementsSection = text.slice(text.indexOf("DISAGREEMENTS"), text.indexOf("AGREEMENT:"));
+  assert.match(disagreementsSection, /\$1004/);
+  assert.match(text, /AGREEMENT: 0 of/);
+});
+
+// ---------------------------------------------------------------------------
+// Test 5: rendering the same answer twice produces byte-identical text, and
+// the row order is ascending address then ascending endInclusive then name.
+// ---------------------------------------------------------------------------
+test("Test 5: rendering the same report twice produces byte-identical text (determinism)", () => {
+  const report = buildCompletenessReport(completeAnswer());
+  const first = renderCompletenessReport(report);
+  const second = renderCompletenessReport(report);
+  assert.equal(first, second);
+});
+
+test("Test 5b: rangeProvenance rows render in the order supplied (ascending address, then endInclusive) -- a caller-scrambled order is rendered as given, since sorting is the VERB's own contract, not this renderer's", () => {
+  const ascending = buildCompletenessReport(
+    completeAnswer({
+      rangeProvenance: [
+        { start: 0x0800, endInclusive: 0x0800, dataType: "byte", renderedType: "byte", typedBy: "byte-derived" },
+        { start: 0x0801, endInclusive: 0x0802, dataType: "byte", renderedType: "byte", typedBy: "byte-derived" },
+      ],
+    }),
+  );
+  const text = renderCompletenessReport(ascending);
+  const firstIndex = text.indexOf("$0800-$0800");
+  const secondIndex = text.indexOf("$0801-$0802");
+  assert.ok(firstIndex >= 0 && secondIndex > firstIndex, "ascending input must render in ascending order");
+});
+
+// ---------------------------------------------------------------------------
+// Test 6: a fixture with zero code entry points renders `0 of 0` against an
+// explicit denominator; the same for zero referenced non-hardware
+// addresses; neither renders as an unqualified pass.
+// ---------------------------------------------------------------------------
+test("Test 6: zero entry points renders 0 of 0 with an explicit denominator, never an unqualified pass", () => {
+  const report = buildCompletenessReport(completeAnswer({ entryPoints: [] }));
+  const text = renderCompletenessReport(report);
+  assert.match(text, /ENTRY POINTS \(0 of 0\)/);
+  assert.match(text, /none -- a zero-entry-point count is a fact about the candidate set, never evidence of completeness\./);
+  // Zero entry points must not, by itself, fail the gate (nothing to fail).
+  const failures = computeGateFailures(report);
+  assert.ok(!failures.some((f) => f.includes("entry point")), "an empty entryPoints array has nothing to fail on");
+});
+
+test("Test 6b: zero referenced non-hardware addresses renders 0 of 0 with an explicit denominator, never an unqualified pass", () => {
+  const report = buildCompletenessReport(completeAnswer({ referencedAddresses: { resolved: [], declined: [], unresolved: [], denominator: 0 } }));
+  const text = renderCompletenessReport(report);
+  assert.match(text, /REFERENCED NON-HARDWARE ADDRESSES \(0 resolved of 0\)/);
+  assert.match(text, /none -- a zero-referenced-address count is a fact about the candidate set, never evidence of completeness\./);
+});
+
+// ---------------------------------------------------------------------------
+// Test 7: a `lo_hi_address` range is rendered with the word `table` while
+// `DATA_TYPES` still holds exactly twelve members. This renderer never
+// restates any of the four split-table spellings itself (see the file's own
+// header and the grep guard over this exact file); it only ever prints
+// whatever `renderedType` the verb already computed.
+// ---------------------------------------------------------------------------
+test("Test 7: a split-table range (dataType lo_hi_address) renders as the word 'table', reading only the verb-supplied renderedType", () => {
+  const report = buildCompletenessReport(
+    completeAnswer({
+      rangeProvenance: [{ start: 0x2000, endInclusive: 0x200f, dataType: "lo_hi_address", renderedType: "table", typedBy: "byte-derived" }],
+    }),
+  );
+  const text = renderCompletenessReport(report);
+  assert.match(text, /\$2000-\$200f\s+table\s+typedBy: byte-derived/);
+});
+
+// ---------------------------------------------------------------------------
+// Test 8: an entry point whose comment lacks any one of `function:`,
+// `inputs:`, `outputs:`, `side effects:` makes the gate exit non-zero and is
+// named by address.
+// ---------------------------------------------------------------------------
+test("Test 8: an entry point missing one purpose-comment element fails the gate, naming the address and the missing element", () => {
+  const report = buildCompletenessReport(
+    completeAnswer({
+      entryPoints: [
+        {
+          address: 0x0900,
+          name: "handler",
+          hasName: true,
+          purposeElements: { function: true, inputs: true, outputs: false, sideEffects: true },
+        },
+      ],
+    }),
+  );
+  const failures = computeGateFailures(report);
+  assert.ok(failures.some((f) => f.includes("$0900") && f.includes("outputs")), "must name the address and the missing element");
+  const text = renderCompletenessReport(report);
+  assert.match(text, /\$0900.*MISSING: outputs/);
+});
+
+test("Test 8b: an entry point with no authored name fails the gate, naming the address, distinct from a missing purpose element", () => {
+  const report = buildCompletenessReport(
+    completeAnswer({
+      entryPoints: [{ address: 0x0901, name: null, hasName: false, purposeElements: { function: false, inputs: false, outputs: false, sideEffects: false } }],
+    }),
+  );
+  const failures = computeGateFailures(report);
+  assert.ok(failures.some((f) => f.includes("$0901") && f.includes("no authored name")));
+  // Must not ALSO double-report every missing purpose element for the same row.
+  assert.ok(!failures.some((f) => f.includes("$0901") && f.includes("MISSING")));
+});
+
+// ---------------------------------------------------------------------------
+// Test 9: a disagreement row with no `DISAGREEMENT-ACCEPTED:` comment at its
+// address counts as unresolved and exits non-zero; the same row with that
+// comment counts as accepted and does not.
+// ---------------------------------------------------------------------------
+test("Test 9: an unresolved disagreement fails the gate; the same disagreement, accepted, does not", () => {
+  const unresolvedReport = buildCompletenessReport(
+    completeAnswer({
+      disagreementInput: { ...completeAnswer().disagreementInput, disagreements: [{ address: 0x0a00, byteDerived: "data", runtime: "code", sourceBanks: ["ram"] }], disagreementCount: 1 },
+      disagreementResolution: { rows: [{ address: 0x0a00, resolved: false, accepted: false, reason: null }], unresolvedCount: 1, denominator: 1 },
+    }),
+  );
+  const unresolvedFailures = computeGateFailures(unresolvedReport);
+  assert.ok(unresolvedFailures.some((f) => f.includes("1 disagreement(s) remain unresolved")));
+
+  const acceptedReport = buildCompletenessReport(
+    completeAnswer({
+      disagreementInput: { ...completeAnswer().disagreementInput, disagreements: [{ address: 0x0a00, byteDerived: "data", runtime: "code", sourceBanks: ["ram"] }], disagreementCount: 1 },
+      disagreementResolution: { rows: [{ address: 0x0a00, resolved: true, accepted: true, reason: "smc target, reviewed" }], unresolvedCount: 0, denominator: 1 },
+    }),
+  );
+  const acceptedFailures = computeGateFailures(acceptedReport);
+  assert.ok(!acceptedFailures.some((f) => f.includes("disagreement(s) remain unresolved")));
+  const acceptedText = renderCompletenessReport(acceptedReport);
+  assert.match(acceptedText, /DISAGREEMENT RESOLUTION: 1 accepted, 0 unresolved of 1/);
+});
+
+// ---------------------------------------------------------------------------
+// Additional coverage: the disagreement-input refusal (D-09 mechanism 2),
+// carried over from plan 45-01.
 // ---------------------------------------------------------------------------
 test("renderCompletenessReport() throws MissingDisagreementInputError naming --disagreements when disagreementInput is absent", () => {
   const answer = completeAnswer();
@@ -69,10 +349,6 @@ test("renderCompletenessReport() throws MissingDisagreementInputError naming --d
   );
 });
 
-// ---------------------------------------------------------------------------
-// Test 2: disagreementInput present but runIdentity missing throws the same
-// named error -- an empty disagreement array alone is not enough to render.
-// ---------------------------------------------------------------------------
 test("renderCompletenessReport() throws the same named error when disagreementInput has no complete runIdentity", () => {
   const answer = completeAnswer();
   delete answer.disagreementInput.runIdentity;
@@ -93,10 +369,6 @@ test("renderCompletenessReport() throws the same named error when disagreementIn
   assert.throws(() => renderCompletenessReport(partialReport), MissingDisagreementInputError);
 });
 
-// ---------------------------------------------------------------------------
-// Test 3: a complete synthetic answer renders a DISAGREEMENTS heading, a
-// denominator beside every count, and no % character anywhere.
-// ---------------------------------------------------------------------------
 test("renderCompletenessReport() with a complete answer renders a DISAGREEMENTS heading, a denominator beside every count, and no percentage character", () => {
   const report = buildCompletenessReport(completeAnswer());
   const text = renderCompletenessReport(report);
@@ -107,10 +379,6 @@ test("renderCompletenessReport() with a complete answer renders a DISAGREEMENTS 
   assert.ok(!text.includes("%"), "the rendered report must never contain a percentage, rate or combined figure");
 });
 
-// ---------------------------------------------------------------------------
-// Test 4: the survivor predicate is anchored and case-sensitive -- l_0810 IS
-// a survivor, L_0810 is NOT (anno-coverage.test.ts's own L_ precedent).
-// ---------------------------------------------------------------------------
 test("isSurvivorName() is anchored and case-sensitive: l_0810 is a survivor, L_0810 is not", () => {
   assert.equal(isSurvivorName("l_0810"), true);
   assert.equal(isSurvivorName("L_0810"), false);
@@ -128,14 +396,6 @@ test("isSurvivorName() is anchored and case-sensitive: l_0810 is a survivor, L_0
   assert.equal(isSurvivorName("bank_switch_handler"), false);
 });
 
-// ---------------------------------------------------------------------------
-// Test 5: a not-executed manifest entry renders a NOT EXECUTED line carrying
-// the entry's own reason; a fixture missing from the manifest is never
-// rendered as executed (this is exercised at the buildCompletenessReport()
-// layer -- the verb itself refuses a genuinely unlisted fixture, so this
-// tier asserts the RENDER shape for a fixture the verb already classified
-// not-executed).
-// ---------------------------------------------------------------------------
 test("a not-executed fixture renders a NOT EXECUTED line carrying its own reason, never a clean bill of health", () => {
   const answer = completeAnswer({
     fixture: "dxa/basic-stub.prg",
@@ -149,9 +409,6 @@ test("a not-executed fixture renders a NOT EXECUTED line carrying its own reason
   assert.ok(!text.includes("EXECUTED: this fixture was run"), "a not-executed fixture must never also print the executed line");
 });
 
-// ---------------------------------------------------------------------------
-// Additional coverage: buildCompletenessReport() itself.
-// ---------------------------------------------------------------------------
 test("buildCompletenessReport() throws a plain Error (not MissingDisagreementInputError) on a non-object answer", () => {
   assert.throws(() => buildCompletenessReport(null), (err) => {
     assert.ok(!(err instanceof MissingDisagreementInputError));
@@ -160,11 +417,150 @@ test("buildCompletenessReport() throws a plain Error (not MissingDisagreementInp
   assert.throws(() => buildCompletenessReport("not an object"));
 });
 
-test("buildCompletenessReport() defaults survivors to an empty array when absent, and preserves it when present", () => {
-  const withoutSurvivors = completeAnswer();
-  delete withoutSurvivors.survivors;
-  assert.deepEqual(buildCompletenessReport(withoutSurvivors).survivors, []);
+test("buildCompletenessReport() defaults survivors/rangeProvenance/entryPoints to empty arrays when absent, and preserves them when present", () => {
+  const withoutExtras = completeAnswer();
+  delete withoutExtras.survivors;
+  delete withoutExtras.rangeProvenance;
+  delete withoutExtras.entryPoints;
+  const built = buildCompletenessReport(withoutExtras);
+  assert.deepEqual(built.survivors, []);
+  assert.deepEqual(built.rangeProvenance, []);
+  assert.deepEqual(built.entryPoints, []);
 
   const withSurvivors = completeAnswer({ survivors: [{ address: 0x0810, name: "l_0810" }] });
   assert.deepEqual(buildCompletenessReport(withSurvivors).survivors, [{ address: 0x0810, name: "l_0810" }]);
+});
+
+test("buildCompletenessReport() defaults a missing disagreementResolution CONSERVATIVELY -- every disagreement is treated as unresolved, never as a silent pass", () => {
+  const answer = completeAnswer({
+    disagreementInput: { ...completeAnswer().disagreementInput, disagreements: [{ address: 0x0b00, byteDerived: "data", runtime: "code", sourceBanks: [] }], disagreementCount: 1 },
+  });
+  delete answer.disagreementResolution;
+  const built = buildCompletenessReport(answer);
+  assert.equal(built.disagreementResolution.unresolvedCount, 1, "a missing resolution census must default to fully-unresolved, never fully-resolved");
+});
+
+test("a full survivor list, non-empty entry-point/referenced-address failures and an unresolved disagreement all surface together in computeGateFailures(), and a fully-clean report has zero failures", () => {
+  const dirty = buildCompletenessReport(
+    completeAnswer({
+      survivors: [{ address: 0x0810, name: "l_0810" }],
+      entryPoints: [{ address: 0x0810, name: null, hasName: false, purposeElements: { function: false, inputs: false, outputs: false, sideEffects: false } }],
+      referencedAddresses: { resolved: [], declined: [], unresolved: [0x0c00], denominator: 1 },
+      disagreementResolution: { rows: [{ address: 0x0d00, resolved: false, accepted: false, reason: null }], unresolvedCount: 1, denominator: 1 },
+    }),
+  );
+  const failures = computeGateFailures(dirty);
+  assert.ok(failures.some((f) => f.includes("survivor")));
+  assert.ok(failures.some((f) => f.includes("$0810") && f.includes("no authored name")));
+  assert.ok(failures.some((f) => f.includes("$0c00")));
+  assert.ok(failures.some((f) => f.includes("unresolved")));
+
+  const clean = buildCompletenessReport(completeAnswer());
+  assert.deepEqual(computeGateFailures(clean), []);
+  const cleanText = renderCompletenessReport(clean);
+  assert.match(cleanText, /GATE: PASS/);
+  const dirtyText = renderCompletenessReport(dirty);
+  assert.match(dirtyText, /GATE: FAIL \(\d+\)/);
+});
+
+// ---------------------------------------------------------------------------
+// PLANTED CONTROLS (phase 45 plan 45-04 task 2, D-09) -- permanent
+// regression pins for the two automatable RED observations recorded, with
+// their own real-store transcripts, in docs/phase45-planted-control-
+// evidence.md. Deliberately NOT derived from the code path they test (the
+// FROZEN-REGISTRY posture this file's own header states): each asserts the
+// exit code and the named literal string a human reading the source would
+// expect, not a re-derivation of `main()`'s own internals. A future edit
+// that quietly softens either refusal reds this suite.
+//
+// THIS SPAWNS A REAL SUBPROCESS (`main()` -> `fetchCompletenessReport()` ->
+// the resolved `vice-proxy.ts anno decomp-completeness`), but reaches NO
+// broker and starts NO VICE process (D-06: the store is `node:sqlite`
+// in-process) -- both controls are ordinary CI-safe Node subprocess calls.
+// ---------------------------------------------------------------------------
+
+test("PLANTED CONTROL 1 (permanent, D-09 mechanism 1): omitting --disagreements refuses by name with exit 1, through main()", () => {
+  let stderrOutput = "";
+  const originalError = console.error;
+  console.error = (msg) => {
+    stderrOutput += String(msg) + "\n";
+  };
+  let exitCode;
+  try {
+    // Deliberately a NONEXISTENT store path: control 1's own refusal fires
+    // on the ABSENCE of --disagreements, before any file-existence check --
+    // see docs/phase45-planted-control-evidence.md's own captured
+    // transcript, reproduced here as a permanent pin. No real store is
+    // needed for THIS control.
+    exitCode = main(["--store", "/nonexistent/whatever.annostore", "--manifest", "/nonexistent/whatever.json"]);
+  } finally {
+    console.error = originalError;
+  }
+  assert.equal(exitCode, 1, "omitting --disagreements must exit 1");
+  assert.match(stderrOutput, /--disagreements/, "the refusal must name --disagreements literally");
+  assert.match(stderrOutput, /there is no default and no empty-array substitute/, "must carry D-09 mechanism 1's own stated reason");
+});
+
+test("PLANTED CONTROL 2 (permanent, D-09 anti-vacuity): a fabricated run identity is refused by name, distinguishing 'no disagreements' from 'the query was never run', through main() against a REAL store", async () => {
+  // This control genuinely needs a REAL, EXISTING annotation store -- the
+  // run-identity mismatch check runs only after existsSync(storePath)
+  // succeeds and the store is actually opened, so control 1's "no store
+  // needed at all" shortcut does not apply here. Built fresh, in-process,
+  // via anno-store.ts's own openStore()/setDataType() -- CI-safe (no VICE,
+  // no broker: D-06 already establishes the store is node:sqlite
+  // in-process) and non-vacuous: a store with ZERO recorded runs makes
+  // EVERY complete-but-non-matching runIdentity a genuine anti-vacuity
+  // refusal, exactly like docs/phase45-planted-control-evidence.md's own
+  // real-store transcript for this same control.
+  const { openStore, closeStore, setDataType } = await import("../../../mcp/vice/anno-store.ts");
+
+  await withWorkspaceTempDir(async (dir) => {
+    const storePath = join(dir, "control2.annostore");
+    const handle = openStore(storePath, { workspaceRoot: dir });
+    setDataType(handle, { start: 0x0800, endInclusive: 0x0800, dataType: "byte" });
+    closeStore(handle);
+
+    const manifestPath = join(dir, "manifest.json");
+    writeFileSync(
+      manifestPath,
+      JSON.stringify({ fixtures: [{ path: "scratch/control2.prg", execution: "executed", reason: null, ghidraRoute: "flat64k" }] }),
+    );
+
+    const disagreementsPath = join(dir, "disagreements.json");
+    writeFileSync(
+      disagreementsPath,
+      JSON.stringify({
+        disagreements: [],
+        disagreementCount: 0,
+        agreementCount: 0,
+        blockCoveredNeverObservedCount: 1,
+        observedOutsideAnyBlockCount: 0,
+        observedAtUndefinedBlockCount: 0,
+        denominator: 1,
+        positiveClass: "code",
+        tier: "runtime-observed",
+        // A COMPLETE, well-shaped runIdentity -- the store has recorded
+        // exactly ZERO runs, so this can never match, regardless of its own
+        // values. That absence-of-any-run is exactly what makes this a
+        // genuine anti-vacuity control rather than a special-cased fabricated
+        // digest.
+        runIdentity: { imageSha256: "a".repeat(64), argvDigest: "b".repeat(64), seed: "no-such-run" },
+      }),
+    );
+
+    let stderrOutput = "";
+    const originalError = console.error;
+    console.error = (msg) => {
+      stderrOutput += String(msg) + "\n";
+    };
+    let exitCode;
+    try {
+      exitCode = main(["--store", storePath, "--disagreements", disagreementsPath, "--manifest", manifestPath]);
+    } finally {
+      console.error = originalError;
+    }
+    assert.equal(exitCode, 1, "a runIdentity matching no row in the store's own evid-runs table must exit 1");
+    assert.match(stderrOutput, /matches no row in .* own evid-runs table/, "must name the unmatched-run-identity refusal");
+    assert.match(stderrOutput, /fabricated or foreign document is refused, never rendered/, "must carry the anti-vacuity reason verbatim");
+  });
 });

@@ -125,6 +125,7 @@
 // (D-08), not merely stated here.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { renderMemoryMap, checkRenderedMemoryMap } from "./anno-memmap-render.ts";
 // The ACME source emitter (EXPORT-01). It reads the store and the image and
@@ -144,8 +145,15 @@ import type { CoverageReport, LoadedProject, AnnoComment, AnnoCrossReference, An
 // The store's block-entry shape comes from the boundary that owns its
 // vocabulary, not from the census -- see `block-class.ts`.
 import type { BlockEntry } from "./block-class.ts";
-import { openStore, closeStore, listLabels, listComments, listRanges, listExecObservations, listObservedRuns } from "./anno-store.ts";
+import { openStore, closeStore, listLabels, listComments, listRanges, listExecObservations, listObservedRuns, listXrefs } from "./anno-store.ts";
 import type { AnnoStoreHandle } from "./anno-store.ts";
+// The shared 6502/6510 decoder (DISASM-01 et al.). `decomp-completeness`'s
+// entry-point and referenced-address censuses (phase 45 plan 45-04) walk the
+// SAME code-range decode `anno_disassemble` and `anno-enum-gen.ts`'s
+// `fetchRegisterSearchRows()` already use -- never a second decoder, never a
+// regex over rendered text.
+import { decode } from "./disasm-decoder.ts";
+import type { Instruction } from "./disasm-decoder.ts";
 // The disagreement query's own pure join (EVID-03/EVID-04, plan 43-06). This
 // is the SAME reconcileObservedExecution() the anno_evid_disagreements MCP
 // tool calls -- reached here directly (a static import, never lazy) because
@@ -158,9 +166,15 @@ import type { EvidReconciliation } from "./evid-reconcile.ts";
 // from bytes at all. There is exactly one definition of that union and this
 // file calls it rather than restating it.
 import { crossReferencesTo } from "./anno-derive.ts";
-import { storePathWithinWorkspace } from "./anno-types.ts";
-import type { CommentRow, LabelRow, RangeRow } from "./anno-types.ts";
+import { storePathWithinWorkspace, isSplitDataType } from "./anno-types.ts";
+import type { CommentRow, LabelRow, RangeRow, DataType } from "./anno-types.ts";
 import { repoRoot } from "./repo-root.ts";
+// D-03's three comment-text conventions (plan 45-02), declared once in
+// anno-store-export.ts and imported everywhere they are matched -- never
+// restated as a second literal (T-45-15's own mitigation).
+import { DECLINE_COMMENT_PREFIX, DISAGREEMENT_ACCEPTED_COMMENT_PREFIX, AUTHORED_PROVENANCE_COMMENT_PREFIX } from "./anno-store-export.ts";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
 const NPX_INVOCATION = "npx -y @henols/vice-mcp anno <verb>";
 const PLUGIN_INVOCATION = "node <plugin-root>/src/mcp/vice/vice-proxy.ts anno <verb>";
 
@@ -1761,6 +1775,319 @@ function validateDisagreementDocumentShape(doc: unknown): DecompDisagreementInpu
   return doc as DecompDisagreementInput;
 }
 
+// ---------------------------------------------------------------------------
+// The full measure set (phase 45 plan 45-04, task 1) -- rangeProvenance
+// (D-10), entryPoints, referencedAddresses (criterion 4) and
+// disagreementResolution (D-09's own gate-vs-bulletin distinction).
+// ---------------------------------------------------------------------------
+
+/** One typed range's provenance classification (D-10 mechanism 2). Always
+ * one of the three named values -- never a fourth, never a boolean. */
+type RangeTypedBy = "observed-executing" | "byte-derived" | "authored";
+
+interface RangeProvenanceRow {
+  start: number;
+  endInclusive: number;
+  dataType: DataType;
+  /** `dataType` unless it is one of the four `SPLIT_DATA_TYPES` members, in
+   * which case it renders as `"table"` (D-11) -- read from `anno-types.ts`'s
+   * own `isSplitDataType()`, NEVER a restated literal, so the four split
+   * spellings never appear in this file's own source as strings. */
+  renderedType: string;
+  typedBy: RangeTypedBy;
+}
+
+interface EntryPointPurposeElements {
+  function: boolean;
+  inputs: boolean;
+  outputs: boolean;
+  sideEffects: boolean;
+}
+
+interface EntryPointRow {
+  address: number;
+  name: string | null;
+  /** True iff `name` is a real, authored label -- present AND not one of the
+   * frozen survivor prefixes (an auto-generated name is not a name for this
+   * gate's purposes, exactly like criterion 3's own survivor search). */
+  hasName: boolean;
+  purposeElements: EntryPointPurposeElements;
+}
+
+interface ReferencedAddressesCensus {
+  resolved: number[];
+  declined: { address: number; reason: string }[];
+  unresolved: number[];
+  denominator: number;
+}
+
+interface DisagreementResolutionRow {
+  address: number;
+  resolved: boolean;
+  accepted: boolean;
+  reason: string | null;
+}
+
+interface DisagreementResolutionCensus {
+  rows: DisagreementResolutionRow[];
+  unresolvedCount: number;
+  denominator: number;
+}
+
+/**
+ * The four hardware-chip memory-mapped register bands `c64-memory-mapping`'s
+ * own `memmap.json` labels by name -- VIC-II, SID, CIA#1, CIA#2. Color RAM
+ * ($D800-$DBFF) and the two generic "I/O Area" bands are deliberately
+ * EXCLUDED: neither holds a chip register this project's curated
+ * `anno-regbits.json` table names, and folding them in would make an
+ * ordinary color-RAM write "hardware" by construction. `$0001` (the 6510's
+ * own I/O port, zero page -- outside every one of these four bands) is
+ * covered separately, by `hardwareRegisterAddresses()` below reading
+ * `anno-regbits.json` itself, never a hand-restated address list.
+ */
+const HARDWARE_CHIP_RANGES: readonly { start: number; endInclusive: number }[] = Object.freeze([
+  { start: 0xd000, endInclusive: 0xd3ff }, // VIC-II
+  { start: 0xd400, endInclusive: 0xd7ff }, // SID
+  { start: 0xdc00, endInclusive: 0xdcff }, // CIA#1
+  { start: 0xdd00, endInclusive: 0xddff }, // CIA#2
+]);
+
+const REGBITS_PATH_FOR_HARDWARE_CHECK = join(HERE, "anno-regbits.json");
+
+let cachedHardwareRegBitsAddresses: ReadonlySet<number> | undefined;
+
+/** Every address `anno-regbits.json` names, read directly (this file never
+ * imports `anno-enum-gen.ts`'s own private `loadRegBits()`, which is not
+ * exported) -- this is a KEY-EXISTENCE check against the generated,
+ * committed artifact, never a second bit-name derivation from memmap.json
+ * (that generator's own header reserves that job to itself). Cached once per
+ * process, mirroring `anno-enum-gen.ts`'s own cache discipline for the same
+ * file. */
+function hardwareRegBitsAddresses(): ReadonlySet<number> {
+  if (cachedHardwareRegBitsAddresses === undefined) {
+    const doc = JSON.parse(readFileSync(REGBITS_PATH_FOR_HARDWARE_CHECK, "utf8")) as Record<string, unknown>;
+    const addresses = new Set<number>();
+    for (const key of Object.keys(doc)) {
+      if (key === "_generated") continue;
+      const parsed = Number.parseInt(key.slice(1), 16);
+      if (Number.isInteger(parsed)) addresses.add(parsed);
+    }
+    cachedHardwareRegBitsAddresses = addresses;
+  }
+  return cachedHardwareRegBitsAddresses;
+}
+
+/** True iff `address` is a hardware register address -- the union `anno-
+ * regbits.json`'s own keys and memmap.json's four labelled chip bands
+ * classify as hardware (see `HARDWARE_CHIP_RANGES`'s own doc comment for
+ * what is deliberately excluded and why). */
+function isHardwareRegisterAddress(address: number): boolean {
+  if (hardwareRegBitsAddresses().has(address)) return true;
+  return HARDWARE_CHIP_RANGES.some((r) => address >= r.start && address <= r.endInclusive);
+}
+
+/** The address an instruction references for the purposes of this file's
+ * entry-point and referenced-address censuses -- mirrors `anno-derive.ts`'s
+ * own (private, unexported) `referencedAddress()` rule exactly: no operand
+ * (`rts`), an `immediate` operand (the value itself, never an address) and an
+ * `indirect` operand (the target lives AT the operand, not IN it) all
+ * reference nothing; everything else resolves to `resolvedTarget` when the
+ * decoder produced one (a branch, a `jmp`/`jsr` absolute) or `operand.value`
+ * otherwise. Restated here, not imported, because `anno-derive.ts` does not
+ * export it. */
+function instructionReferencedAddress(instruction: Instruction): number | undefined {
+  const operand = instruction.operand;
+  if (operand === undefined) return undefined;
+  if (operand.role === "immediate" || operand.role === "indirect") return undefined;
+  const target = instruction.resolvedTarget ?? operand.value;
+  if (!Number.isInteger(target) || target < 0 || target > 0xffff) return undefined;
+  return target;
+}
+
+/** Decodes every `code`-typed range fresh (never memoised, never a second
+ * decoder) and returns every instruction found, tagged with nothing but its
+ * own decoded shape. `image` is the SAME `{origin, bytes}` pair
+ * `loadProjectImage()` already produced for this store's own fixture file. */
+function decodeCodeRanges(ranges: readonly RangeRow[], image: { origin: number; bytes: Uint8Array }): Instruction[] {
+  const instructions: Instruction[] = [];
+  for (const range of ranges) {
+    if (range.dataType !== "code") continue;
+    const from = range.start - image.origin;
+    const to = range.endInclusive - image.origin;
+    if (from < 0 || to >= image.bytes.length || from > to) continue; // this image does not cover the range
+    const bytes = image.bytes.subarray(from, to + 1);
+    instructions.push(...decode(bytes, range.start, { end: range.endInclusive }));
+  }
+  return instructions;
+}
+
+/** True iff any comment at `address` starts with `prefix`. */
+function hasCommentWithPrefix(comments: readonly CommentRow[], address: number, prefix: string): boolean {
+  return comments.some((c) => c.address === address && c.text.startsWith(prefix));
+}
+
+/** The first comment at `address` starting with `prefix`, its text with the
+ * prefix stripped and trimmed -- or `null` when none exists. */
+function commentReasonAfterPrefix(comments: readonly CommentRow[], address: number, prefix: string): string | null {
+  const found = comments.find((c) => c.address === address && c.text.startsWith(prefix));
+  return found ? found.text.slice(prefix.length).trim() : null;
+}
+
+/** D-10 mechanism 2: how ONE typed range was typed. Evidence beats
+ * inference, stated as a fixed precedence that must never be reordered:
+ * `observed-executing` (at least one real execute observation falls inside
+ * the range) beats `authored` (the range's start address carries an
+ * `AUTHORED_PROVENANCE_COMMENT_PREFIX` comment and no observation) beats
+ * `byte-derived` (neither). */
+function typedByFor(hasObservation: boolean, hasAuthoredComment: boolean): RangeTypedBy {
+  if (hasObservation) return "observed-executing";
+  if (hasAuthoredComment) return "authored";
+  return "byte-derived";
+}
+
+/** Builds `rangeProvenance` (D-10 mechanism 2): one row per typed range,
+ * sorted ascending by `start` then `endInclusive` (ranges never overlap, so
+ * this is already the input order once `ranges` itself is pre-sorted, but
+ * the sort is restated here so this function's OWN output contract does not
+ * depend on a caller's sort surviving unchanged). */
+function buildRangeProvenance(
+  ranges: readonly RangeRow[],
+  observations: readonly { address: number }[],
+  comments: readonly CommentRow[],
+): RangeProvenanceRow[] {
+  const sorted = [...ranges].sort((a, b) => a.start - b.start || a.endInclusive - b.endInclusive);
+  return sorted.map((r) => {
+    const hasObservation = observations.some((o) => o.address >= r.start && o.address <= r.endInclusive);
+    const hasAuthoredComment = hasCommentWithPrefix(comments, r.start, AUTHORED_PROVENANCE_COMMENT_PREFIX);
+    return {
+      start: r.start,
+      endInclusive: r.endInclusive,
+      dataType: r.dataType,
+      renderedType: isSplitDataType(r.dataType) ? "table" : r.dataType,
+      typedBy: typedByFor(hasObservation, hasAuthoredComment),
+    };
+  });
+}
+
+/** Builds `entryPoints`: every address that is the target of at least one
+ * JSR-shaped cross-reference (a decoded `jsr` instruction in a `code` range,
+ * unioned with every stored `listXrefs()` row whose target falls inside a
+ * `code`-typed range -- the store's own `XrefAccessKind` vocabulary carries
+ * no separate "call" member, so a stored xref landing in code is treated as
+ * a call reference for this census), PLUS the image's own load/start
+ * address (`image.origin`) -- the fixture's own natural entry point.
+ * Sorted ascending by address. */
+function buildEntryPoints(
+  ranges: readonly RangeRow[],
+  image: { origin: number; bytes: Uint8Array },
+  xrefs: readonly { toAddress: number }[],
+  labels: readonly LabelRow[],
+  comments: readonly CommentRow[],
+): EntryPointRow[] {
+  const codeRanges = ranges.filter((r) => r.dataType === "code");
+  const instructions = decodeCodeRanges(ranges, image);
+
+  const candidates = new Set<number>();
+  candidates.add(image.origin);
+  for (const instr of instructions) {
+    if (instr.mnemonic === "jsr") {
+      const target = instructionReferencedAddress(instr);
+      if (target !== undefined) candidates.add(target);
+    }
+  }
+  for (const xref of xrefs) {
+    if (codeRanges.some((r) => xref.toAddress >= r.start && xref.toAddress <= r.endInclusive)) {
+      candidates.add(xref.toAddress);
+    }
+  }
+
+  const purposeLabelPatterns: Record<keyof EntryPointPurposeElements, RegExp> = {
+    function: /function:/i,
+    inputs: /inputs:/i,
+    outputs: /outputs:/i,
+    sideEffects: /side effects:/i,
+  };
+
+  return [...candidates]
+    .sort((a, b) => a - b)
+    .map((address) => {
+      const label = labels.find((l) => l.address === address);
+      const hasName = label !== undefined && !isSurvivorLabelName(label.name);
+      const addressComments = comments.filter((c) => c.address === address);
+      const purposeElements: EntryPointPurposeElements = {
+        function: addressComments.some((c) => purposeLabelPatterns.function.test(c.text)),
+        inputs: addressComments.some((c) => purposeLabelPatterns.inputs.test(c.text)),
+        outputs: addressComments.some((c) => purposeLabelPatterns.outputs.test(c.text)),
+        sideEffects: addressComments.some((c) => purposeLabelPatterns.sideEffects.test(c.text)),
+      };
+      return { address, name: label?.name ?? null, hasName, purposeElements };
+    });
+}
+
+/** Builds `referencedAddresses` (criterion 4): every non-hardware address a
+ * `code` range's decoded instructions or the store's own `listXrefs()` rows
+ * reference, classified `resolved` (an authored, non-survivor label exists),
+ * `declined` (a `DECLINE_COMMENT_PREFIX` comment exists, carrying the
+ * decline's own reason), or `unresolved` (neither) -- sorted ascending by
+ * address within each bucket. */
+function buildReferencedAddresses(
+  ranges: readonly RangeRow[],
+  image: { origin: number; bytes: Uint8Array },
+  xrefs: readonly { toAddress: number }[],
+  labels: readonly LabelRow[],
+  comments: readonly CommentRow[],
+): ReferencedAddressesCensus {
+  const instructions = decodeCodeRanges(ranges, image);
+  const candidates = new Set<number>();
+  for (const instr of instructions) {
+    const target = instructionReferencedAddress(instr);
+    if (target !== undefined && !isHardwareRegisterAddress(target)) candidates.add(target);
+  }
+  for (const xref of xrefs) {
+    if (!isHardwareRegisterAddress(xref.toAddress)) candidates.add(xref.toAddress);
+  }
+
+  const resolved: number[] = [];
+  const declined: { address: number; reason: string }[] = [];
+  const unresolved: number[] = [];
+  for (const address of [...candidates].sort((a, b) => a - b)) {
+    const label = labels.find((l) => l.address === address);
+    if (label !== undefined && !isSurvivorLabelName(label.name)) {
+      resolved.push(address);
+      continue;
+    }
+    const reason = commentReasonAfterPrefix(comments, address, DECLINE_COMMENT_PREFIX);
+    if (reason !== null) {
+      declined.push({ address, reason });
+      continue;
+    }
+    unresolved.push(address);
+  }
+  return { resolved, declined, unresolved, denominator: resolved.length + declined.length + unresolved.length };
+}
+
+/** Builds `disagreementResolution` (D-09's gate-vs-bulletin distinction,
+ * criterion 2): one row per disagreement the supplied `--disagreements`
+ * document carries, `accepted` when the address carries a
+ * `DISAGREEMENT_ACCEPTED_COMMENT_PREFIX` comment, `resolved` identically (the
+ * only resolution mechanism this gate recognises today), `reason` the
+ * accepting comment's own text with the prefix stripped. `unresolvedCount`
+ * is a named line beside its own `denominator`, never folded into any other
+ * count -- criterion 2's own words: a nonzero unresolved count BLOCKS rather
+ * than being reported beside a pass. */
+function buildDisagreementResolution(
+  disagreements: readonly { address: number }[],
+  comments: readonly CommentRow[],
+): DisagreementResolutionCensus {
+  const rows = disagreements.map((d) => {
+    const reason = commentReasonAfterPrefix(comments, d.address, DISAGREEMENT_ACCEPTED_COMMENT_PREFIX);
+    const accepted = reason !== null;
+    return { address: d.address, resolved: accepted, accepted, reason };
+  });
+  const unresolvedCount = rows.filter((r) => !r.resolved).length;
+  return { rows, unresolvedCount, denominator: rows.length };
+}
+
 interface DecompCompletenessParsedArgs {
   positional: string[];
   store?: string;
@@ -1959,9 +2286,13 @@ async function cmdDecompCompleteness(rest: string[]): Promise<number> {
     fixture: string;
     executionDisposition: "executed" | "not-executed";
     notExecutedReason: string | null;
-    byteCensus: { byType: Record<string, number>; undefinedCount: number; denominator: number };
+    byteCensus: { byType: Record<string, number>; undefinedCount: number; denominator: number; undefinedRanges: { start: number; endInclusive: number }[] };
     survivors: { address: number; name: string }[];
+    rangeProvenance: RangeProvenanceRow[];
+    entryPoints: EntryPointRow[];
+    referencedAddresses: ReferencedAddressesCensus;
     disagreementInput: DecompDisagreementInput;
+    disagreementResolution: DisagreementResolutionCensus;
   };
   try {
     const ranges = listRanges(handle);
@@ -1986,12 +2317,19 @@ async function cmdDecompCompleteness(rest: string[]): Promise<number> {
     const byType: Record<string, number> = {};
     let denominator = 0;
     let undefinedCount = 0;
+    // Every gap between typed ranges, by ADDRESS -- so the gate can name
+    // exactly which byte(s) are Undefined rather than reporting a bare
+    // count (Task 1 Test 1: "a store with one undefined-typed byte ... renders
+    // that byte's address"). Sorted ascending, matching every other array
+    // this verb returns.
+    const undefinedRanges: { start: number; endInclusive: number }[] = [];
     let cursor = sortedRanges.length > 0 ? sortedRanges[0]!.start : 0;
     for (const r of sortedRanges) {
       if (r.start > cursor) {
         const gap = r.start - cursor;
         undefinedCount += gap;
         denominator += gap;
+        undefinedRanges.push({ start: cursor, endInclusive: r.start - 1 });
       }
       const len = r.endInclusive - r.start + 1;
       byType[r.dataType] = (byType[r.dataType] ?? 0) + len;
@@ -2005,14 +2343,37 @@ async function cmdDecompCompleteness(rest: string[]): Promise<number> {
       .map((l) => ({ address: l.address, name: l.name }))
       .sort((a, b) => a.address - b.address);
 
+    // The full measure set (phase 45 plan 45-04). All four use the SAME
+    // fixture bytes the derivation route itself read -- the fixtures-relative
+    // manifest path, resolved beside this module (`fixtures/<manifestEntry.path>`),
+    // never a second guess at where the image lives. An image that fails to
+    // decode (never expected for a committed fixture, but never fabricated
+    // either) degrades entryPoints/referencedAddresses to the image's origin
+    // only / empty, rather than throwing -- a missing byte source is not a
+    // caller error this verb's own argument validation already covers.
+    const comments = listComments(handle);
+    const xrefs = listXrefs(handle);
+    const fixtureImagePath = join(HERE, "fixtures", manifestEntry.path);
+    const loadedImage = existsSync(fixtureImagePath) ? projectImage(fixtureImagePath) : null;
+    const image = loadedImage ?? { origin: 0, bytes: new Uint8Array(0) };
+
+    const rangeProvenance = buildRangeProvenance(sortedRanges, listExecObservations(handle), comments);
+    const entryPoints = buildEntryPoints(sortedRanges, image, xrefs, labels, comments);
+    const referencedAddresses = buildReferencedAddresses(sortedRanges, image, xrefs, labels, comments);
+    const disagreementResolution = buildDisagreementResolution(disagreementInput.disagreements, comments);
+
     report = {
       store: storePath,
       fixture: manifestEntry.path,
       executionDisposition: manifestEntry.execution,
       notExecutedReason: manifestEntry.execution === "not-executed" ? manifestEntry.reason : null,
-      byteCensus: { byType, undefinedCount, denominator },
+      byteCensus: { byType, undefinedCount, denominator, undefinedRanges },
       survivors,
+      rangeProvenance,
+      entryPoints,
+      referencedAddresses,
       disagreementInput,
+      disagreementResolution,
     };
   } catch (err) {
     console.error(`decomp-completeness: ${errMsg(err)}`);
@@ -2044,9 +2405,13 @@ function printDecompCompletenessReport(r: {
   fixture: string;
   executionDisposition: "executed" | "not-executed";
   notExecutedReason: string | null;
-  byteCensus: { byType: Record<string, number>; undefinedCount: number; denominator: number };
+  byteCensus: { byType: Record<string, number>; undefinedCount: number; denominator: number; undefinedRanges: { start: number; endInclusive: number }[] };
   survivors: { address: number; name: string }[];
+  rangeProvenance: RangeProvenanceRow[];
+  entryPoints: EntryPointRow[];
+  referencedAddresses: ReferencedAddressesCensus;
   disagreementInput: DecompDisagreementInput;
+  disagreementResolution: DisagreementResolutionCensus;
 }): void {
   console.log(`decomp-completeness: ${r.store}`);
   console.log(`  FIXTURE: ${r.fixture}`);
@@ -2061,6 +2426,11 @@ function printDecompCompletenessReport(r: {
     console.log(`    ${type}: ${count} of ${r.byteCensus.denominator}`);
   }
   console.log(`    undefined: ${r.byteCensus.undefinedCount} of ${r.byteCensus.denominator}`);
+  if (r.byteCensus.undefinedRanges.length > 0) {
+    for (const gap of r.byteCensus.undefinedRanges) {
+      console.log(`      UNDEFINED: ${hexAddr(gap.start)}-${hexAddr(gap.endInclusive)}`);
+    }
+  }
   console.log("");
   console.log(`  SURVIVORS (${r.survivors.length})`);
   if (r.survivors.length === 0) {
@@ -2082,6 +2452,50 @@ function printDecompCompletenessReport(r: {
     `  NO OBSERVATION: ${r.disagreementInput.blockCoveredNeverObservedCount} of ${r.disagreementInput.denominator} -- ` +
       "an address never observed executing proves NOTHING about what it is; absence is not evidence for or against any classification.",
   );
+  console.log(
+    `  DISAGREEMENT RESOLUTION: ${r.disagreementResolution.rows.length - r.disagreementResolution.unresolvedCount} accepted, ` +
+      `${r.disagreementResolution.unresolvedCount} unresolved of ${r.disagreementResolution.denominator} -- criterion 2's own gate: ` +
+      "a nonzero unresolved count BLOCKS rather than being reported beside a pass.",
+  );
+  console.log("");
+
+  console.log(`  RANGE PROVENANCE (${r.rangeProvenance.length} range(s))`);
+  if (r.rangeProvenance.length === 0) {
+    console.log("    none");
+  } else {
+    for (const row of r.rangeProvenance) {
+      console.log(`    ${hexAddr(row.start)}-${hexAddr(row.endInclusive)}  ${row.renderedType}  typedBy: ${row.typedBy}`);
+    }
+  }
+  console.log("");
+
+  const fullyDocumented = r.entryPoints.filter(
+    (e) => e.hasName && e.purposeElements.function && e.purposeElements.inputs && e.purposeElements.outputs && e.purposeElements.sideEffects,
+  ).length;
+  console.log(`  ENTRY POINTS (${fullyDocumented} of ${r.entryPoints.length})`);
+  if (r.entryPoints.length === 0) {
+    console.log("    none -- a zero-entry-point count is a fact about the candidate set, never evidence of completeness.");
+  } else {
+    for (const e of r.entryPoints) {
+      const missing = (["function", "inputs", "outputs", "sideEffects"] as const).filter((k) => !e.purposeElements[k]);
+      console.log(
+        `    ${hexAddr(e.address)}  ${e.name ?? "(unnamed)"}  hasName=${e.hasName}` +
+          (missing.length > 0 ? `  MISSING: ${missing.join(", ")}` : "  purpose comment complete"),
+      );
+    }
+  }
+  console.log("");
+
+  console.log(`  REFERENCED NON-HARDWARE ADDRESSES (${r.referencedAddresses.resolved.length} resolved of ${r.referencedAddresses.denominator})`);
+  if (r.referencedAddresses.denominator === 0) {
+    console.log("    none -- a zero-referenced-address count is a fact about the candidate set, never evidence of completeness.");
+  } else {
+    console.log(`    RESOLVED: ${r.referencedAddresses.resolved.map(hexAddr).join(", ") || "none"}`);
+    console.log(
+      `    DECLINED: ${r.referencedAddresses.declined.length === 0 ? "none" : r.referencedAddresses.declined.map((d) => `${hexAddr(d.address)} (${d.reason})`).join(", ")}`,
+    );
+    console.log(`    UNRESOLVED: ${r.referencedAddresses.unresolved.length === 0 ? "none" : r.referencedAddresses.unresolved.map(hexAddr).join(", ")}`);
+  }
   console.log("");
   console.log(
     "  Read every figure above against the others, never combined into one -- together they name what this " +

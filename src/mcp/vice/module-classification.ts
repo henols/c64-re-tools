@@ -124,7 +124,7 @@
 //     parser with a range refusal, but its subject was the analyser's own
 //     spawn timeout environment variable and it had no consumer outside the
 //     family.
-//   - `checkAcceptedOptions` (`anno-cli.ts:345`) is a generic argv option
+//   - `checkAcceptedOptions` (`anno-cli.ts:399`) is a generic argv option
 //     checker, used only by the CLI it lives in and its own test. This is the
 //     one of the four whose module SURVIVED, so it is the one that keeps its
 //     citation.
@@ -315,7 +315,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     verdict: "capability",
     basis: {
       consumers: [
-        { path: "src/mcp/vice/anno-enum-gen.ts", symbol: "MAX_ACME_IDENTIFIER_LENGTH", line: 117 },
+        { path: "src/mcp/vice/anno-enum-gen.ts", symbol: "MAX_ACME_IDENTIFIER_LENGTH", line: 135 },
         { path: "src/mcp/vice/anno-symbols.ts", symbol: "assertLegalAcmeIdentifier", line: 107 },
       ],
       requirements: ["EXPORT-01", "EXPORT-03"],
@@ -380,7 +380,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     verdict: "capability",
     basis: {
       consumers: [
-        { path: "src/mcp/vice/anno-cli.ts", symbol: "buildCoverageReport", line: 136 },
+        { path: "src/mcp/vice/anno-cli.ts", symbol: "buildCoverageReport", line: 143 },
         { path: "src/mcp/vice/anno-coverage.test.ts", symbol: "buildCoverageReport" },
         { path: "src/mcp/vice/anno-coverage-grammar.test.ts", symbol: "coverageFindings" },
       ],
@@ -440,7 +440,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     verdict: "capability",
     basis: {
       consumers: [
-        { path: "src/mcp/vice/anno-cli.ts", symbol: "renderMemoryMap", line: 123 },
+        { path: "src/mcp/vice/anno-cli.ts", symbol: "renderMemoryMap", line: 130 },
         { path: "src/mcp/vice/anno-memmap-render.test.ts", symbol: "renderMemoryMap" },
       ],
       requirements: ["SEAM-02"],
@@ -470,7 +470,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     verdict: "capability",
     basis: {
       consumers: [
-        { path: "src/mcp/vice/anno-enum-gen.ts", symbol: "RegBitsTable", line: 116 },
+        { path: "src/mcp/vice/anno-enum-gen.ts", symbol: "RegBitsTable", line: 134 },
         { path: "src/mcp/vice/anno-regbits.test.ts", symbol: "buildRegBits" },
       ],
       requirements: ["SEAM-02"],
@@ -499,7 +499,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     verdict: "capability",
     basis: {
       consumers: [
-        { path: "src/mcp/vice/anno-enum-gen.ts", symbol: "REGBITS_PATH", line: 120 },
+        { path: "src/mcp/vice/anno-enum-gen.ts", symbol: "REGBITS_PATH", line: 143 },
         { path: "src/mcp/vice/anno-regbits.test.ts", symbol: "anno-regbits.json", line: 48 },
         { path: "src/skills/c64-memory-mapping/SKILL.md", symbol: "anno-regbits.json", line: 195 },
       ],

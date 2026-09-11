@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 // completeness-report.mjs -- renders the per-fixture decomposition
-// completeness report for Phase 45 (D-04, D-06, D-07, D-08, D-09, D-10).
+// completeness report for Phase 45 (D-04, D-06, D-07, D-08, D-09, D-10) and
+// OWNS the GATE: this script's own process exit code is routine-queue-
+// walker's numeric stop condition (D-08) -- 0 only when every measure below
+// clears its own bar, 1 the instant any one of them does not, naming which
+// measure and which address failed.
 //
 // WHY THIS FILE EXISTS: criterion 2's disagreement query and criterion 1's
 // zero-`Undefined` census must be answered TOGETHER, from ONE real store, or
@@ -12,9 +16,10 @@
 // lacks (D-08).
 //
 // WHAT THIS IS THE ONE AUTHORITATIVE PLACE FOR: rendering the per-fixture
-// decomposition-completeness report, and REFUSING to render at all without
-// the disagreement input (D-09 mechanism 2 -- a required output-schema field
-// only that input can populate).
+// decomposition-completeness report, REFUSING to render at all without the
+// disagreement input (D-09 mechanism 2 -- a required output-schema field
+// only that input can populate), and computing the GATE's pass/fail verdict
+// and exit code from the rendered measures.
 //
 // WHAT NOT TO DO:
 //   - Never derive a completeness measure from the store's block-type
@@ -33,6 +38,16 @@
 //     any of its field names. This script only ever reads
 //     `disagreementInput`'s fields verbatim, as `anno decomp-completeness
 //     --json` already named them.
+//   - Never restate any of the four split-table `SPLIT_DATA_TYPES` spellings
+//     as a literal string in THIS file (a mechanical grep guard over this
+//     exact file is this task's own acceptance criterion). D-11's "table"
+//     naming is computed on the VERB side (`anno-cli.ts`'s own
+//     `renderedType` field, read from `anno-types.ts`'s `isSplitDataType()`)
+//     and this script only ever renders `renderedType` verbatim.
+//   - Never soften a gate failure into a bulletin. `computeGateFailures()`
+//     below is the ONE place a measure becomes a pass/fail verdict; a
+//     softened refusal here is exactly what planted controls 1 and 2 (task
+//     2) exist to catch going RED.
 //   - Never carry a second copy of the MCP-module resolution ladder. It
 //     lives ONE place, `../../c64-ram-capture/scripts/mcp-module.mjs`, and is
 //     imported from there.
@@ -88,17 +103,60 @@ export function isSurvivorName(name) {
 }
 
 /**
+ * D-10 mechanism 2's precedence rule, mirrored here (see this file's own
+ * header on why a mirror rather than an import) so this script's own test
+ * tier can assert the PRECEDENCE explicitly, not merely pass through a
+ * verb-computed value. `anno-cli.ts`'s `typedByFor()` is the authoritative
+ * copy that actually runs against a real store; this one exists only to be
+ * unit-tested in isolation, exactly like `isSurvivorName()` above. Evidence
+ * beats inference: `observed-executing` (a real execute observation exists
+ * inside the range) beats `authored` (an `AUTHORED_PROVENANCE_COMMENT_PREFIX`
+ * comment exists and there is no observation) beats `byte-derived` (neither).
+ * A range that is BOTH observed and authored renders `observed-executing`.
+ */
+export function typedByFor(hasObservation, hasAuthoredComment) {
+  if (hasObservation) return "observed-executing";
+  if (hasAuthoredComment) return "authored";
+  return "byte-derived";
+}
+
+const PURPOSE_ELEMENT_KEYS = ["function", "inputs", "outputs", "sideEffects"];
+
+/**
  * Normalises a raw `anno decomp-completeness --json` answer into the report
- * shape this module renders. Pure: no filesystem, no subprocess, no store.
- * Throws a plain `Error` (never `MissingDisagreementInputError`, which is
- * `renderCompletenessReport()`'s own refusal) when `answer` is not even a
+ * shape this module renders and gates. Pure: no filesystem, no subprocess, no
+ * store. Throws a plain `Error` (never `MissingDisagreementInputError`, which
+ * is `renderCompletenessReport()`'s own refusal) when `answer` is not even a
  * plausible answer object -- a caller error, distinct from a missing
  * disagreement input.
+ *
+ * Every NEW field defaults to the CONSERVATIVE (gate-failing or vacuity-
+ * naming) shape when absent, never to a shape that would silently pass --
+ * D-09's own discipline, applied to every field this task adds, not only the
+ * original disagreement input.
  */
 export function buildCompletenessReport(answer) {
   if (typeof answer !== "object" || answer === null) {
     throw new Error("buildCompletenessReport: expected a decomp-completeness --json answer object, got " + JSON.stringify(answer));
   }
+  const disagreementInput = answer.disagreementInput;
+  const disagreementResolution =
+    answer.disagreementResolution && typeof answer.disagreementResolution === "object"
+      ? {
+          rows: Array.isArray(answer.disagreementResolution.rows) ? answer.disagreementResolution.rows : [],
+          unresolvedCount: answer.disagreementResolution.unresolvedCount ?? (disagreementInput?.disagreementCount ?? 0),
+          denominator: answer.disagreementResolution.denominator ?? (disagreementInput?.denominator ? disagreementInput.disagreementCount : 0),
+        }
+      : {
+          rows: [],
+          // Conservative default: an answer that carries a real disagreement
+          // count but no resolution census at all is treated as ENTIRELY
+          // unresolved, never as a silent pass -- the same discipline D-09
+          // applies to the disagreement input itself, applied here to its
+          // resolution.
+          unresolvedCount: disagreementInput?.disagreementCount ?? 0,
+          denominator: disagreementInput?.disagreementCount ?? 0,
+        };
   return {
     store: answer.store,
     fixture: answer.fixture,
@@ -106,8 +164,24 @@ export function buildCompletenessReport(answer) {
     notExecutedReason: answer.notExecutedReason ?? null,
     byteCensus: answer.byteCensus,
     survivors: Array.isArray(answer.survivors) ? answer.survivors : [],
-    disagreementInput: answer.disagreementInput,
+    rangeProvenance: Array.isArray(answer.rangeProvenance) ? answer.rangeProvenance : [],
+    entryPoints: Array.isArray(answer.entryPoints) ? answer.entryPoints : [],
+    referencedAddresses:
+      answer.referencedAddresses && typeof answer.referencedAddresses === "object"
+        ? {
+            resolved: Array.isArray(answer.referencedAddresses.resolved) ? answer.referencedAddresses.resolved : [],
+            declined: Array.isArray(answer.referencedAddresses.declined) ? answer.referencedAddresses.declined : [],
+            unresolved: Array.isArray(answer.referencedAddresses.unresolved) ? answer.referencedAddresses.unresolved : [],
+            denominator: answer.referencedAddresses.denominator ?? 0,
+          }
+        : { resolved: [], declined: [], unresolved: [], denominator: 0 },
+    disagreementInput,
+    disagreementResolution,
   };
+}
+
+function addr(a) {
+  return typeof a === "number" ? `$${a.toString(16).padStart(4, "0")}` : String(a);
 }
 
 /**
@@ -149,7 +223,7 @@ export function renderCompletenessReport(report) {
   if (report.executionDisposition === "not-executed") {
     lines.push(`  NOT EXECUTED: ${report.notExecutedReason ?? "(no reason recorded)"}`);
   } else {
-    lines.push("  EXECUTED: this fixture was run under Phase 33's reproducible-run protocol.");
+    lines.push("  EXECUTED: this fixture was run under the reproducible-run protocol (REPRO-02).");
   }
   lines.push("");
 
@@ -159,6 +233,9 @@ export function renderCompletenessReport(report) {
     lines.push(`    ${type}: ${count} of ${census.denominator ?? 0}`);
   }
   lines.push(`    undefined: ${census.undefinedCount ?? 0} of ${census.denominator ?? 0}`);
+  for (const gap of Array.isArray(census.undefinedRanges) ? census.undefinedRanges : []) {
+    lines.push(`      UNDEFINED: ${addr(gap.start)}-${addr(gap.endInclusive)}`);
+  }
   lines.push("");
 
   const survivors = report.survivors ?? [];
@@ -167,8 +244,7 @@ export function renderCompletenessReport(report) {
     lines.push("    none");
   } else {
     for (const s of survivors) {
-      const addr = typeof s.address === "number" ? `$${s.address.toString(16).padStart(4, "0")}` : String(s.address);
-      lines.push(`    ${addr}  ${s.name}`);
+      lines.push(`    ${addr(s.address)}  ${s.name}`);
     }
   }
   lines.push("");
@@ -179,9 +255,8 @@ export function renderCompletenessReport(report) {
     lines.push("    none");
   } else {
     for (const d of disagreements) {
-      const addr = typeof d.address === "number" ? `$${d.address.toString(16).padStart(4, "0")}` : String(d.address);
       const banks = Array.isArray(d.sourceBanks) ? d.sourceBanks.join(",") : "";
-      lines.push(`    ${addr}  byte-derived=${d.byteDerived}  runtime=${d.runtime}  banks=${banks}`);
+      lines.push(`    ${addr(d.address)}  byte-derived=${d.byteDerived}  runtime=${d.runtime}  banks=${banks}`);
     }
   }
   lines.push(`  AGREEMENT: ${input.agreementCount ?? 0} of ${input.denominator ?? 0}`);
@@ -189,12 +264,127 @@ export function renderCompletenessReport(report) {
     `  NO OBSERVATION: ${input.blockCoveredNeverObservedCount ?? 0} of ${input.denominator ?? 0} -- an address never observed ` +
       "executing proves NOTHING about what it is; absence is not evidence for or against any classification.",
   );
+  const resolution = report.disagreementResolution ?? { rows: [], unresolvedCount: 0, denominator: 0 };
+  const acceptedCount = resolution.rows.length - resolution.unresolvedCount;
+  lines.push(
+    `  DISAGREEMENT RESOLUTION: ${acceptedCount} accepted, ${resolution.unresolvedCount} unresolved of ${resolution.denominator} -- ` +
+      "criterion 2's own gate: a nonzero unresolved count BLOCKS rather than being reported beside a pass.",
+  );
   lines.push("");
+
+  const rangeProvenance = report.rangeProvenance ?? [];
+  lines.push(`  RANGE PROVENANCE (${rangeProvenance.length} range(s))`);
+  if (rangeProvenance.length === 0) {
+    lines.push("    none");
+  } else {
+    for (const row of rangeProvenance) {
+      lines.push(`    ${addr(row.start)}-${addr(row.endInclusive)}  ${row.renderedType}  typedBy: ${row.typedBy}`);
+    }
+  }
+  lines.push("");
+
+  const entryPoints = report.entryPoints ?? [];
+  const fullyDocumented = entryPoints.filter(
+    (e) => e.hasName && PURPOSE_ELEMENT_KEYS.every((k) => e.purposeElements && e.purposeElements[k]),
+  ).length;
+  lines.push(`  ENTRY POINTS (${fullyDocumented} of ${entryPoints.length})`);
+  if (entryPoints.length === 0) {
+    lines.push("    none -- a zero-entry-point count is a fact about the candidate set, never evidence of completeness.");
+  } else {
+    for (const e of entryPoints) {
+      const missing = PURPOSE_ELEMENT_KEYS.filter((k) => !(e.purposeElements && e.purposeElements[k]));
+      lines.push(
+        `    ${addr(e.address)}  ${e.name ?? "(unnamed)"}  hasName=${Boolean(e.hasName)}` +
+          (missing.length > 0 ? `  MISSING: ${missing.join(", ")}` : "  purpose comment complete"),
+      );
+    }
+  }
+  lines.push("");
+
+  const refs = report.referencedAddresses ?? { resolved: [], declined: [], unresolved: [], denominator: 0 };
+  lines.push(`  REFERENCED NON-HARDWARE ADDRESSES (${refs.resolved.length} resolved of ${refs.denominator})`);
+  if (refs.denominator === 0) {
+    lines.push("    none -- a zero-referenced-address count is a fact about the candidate set, never evidence of completeness.");
+  } else {
+    lines.push(`    RESOLVED: ${refs.resolved.length === 0 ? "none" : refs.resolved.map(addr).join(", ")}`);
+    lines.push(`    DECLINED: ${refs.declined.length === 0 ? "none" : refs.declined.map((d) => `${addr(d.address)} (${d.reason})`).join(", ")}`);
+    lines.push(`    UNRESOLVED: ${refs.unresolved.length === 0 ? "none" : refs.unresolved.map(addr).join(", ")}`);
+  }
+  lines.push("");
+
   lines.push(
     "  Read every figure above against the others, never combined into one -- together they name what this " +
       "store's block table covers, never what the program actually is.",
   );
+
+  const failures = computeGateFailures(report);
+  lines.push("");
+  if (failures.length === 0) {
+    lines.push("  GATE: PASS -- every measure above cleared its own bar.");
+  } else {
+    lines.push(`  GATE: FAIL (${failures.length})`);
+    for (const f of failures) lines.push(`    - ${f}`);
+  }
+
   return lines.join("\n");
+}
+
+/**
+ * THE GATE (D-08's numeric stop condition; criterion 2's own words: a
+ * nonzero unresolved count BLOCKS rather than being reported beside a
+ * pass). Returns an array of human-readable failure strings, each naming
+ * the offending address where one exists; an empty array means the gate
+ * passes. Never throws -- a malformed report renders its own absence as a
+ * failure (see the individual guards below) rather than crashing the report
+ * that exists to surface exactly this kind of gap.
+ *
+ * ALL FIVE gate conditions, restated from the plan this implements:
+ *   1. `byteCensus.undefinedCount === 0`
+ *   2. `disagreementResolution.unresolvedCount === 0`
+ *   3. `survivors` is empty
+ *   4. every `entryPoints` row has `hasName` true and all four
+ *      `purposeElements` true
+ *   5. `referencedAddresses.unresolved` is empty
+ */
+export function computeGateFailures(report) {
+  const failures = [];
+
+  const undefinedCount = report?.byteCensus?.undefinedCount ?? 0;
+  if (undefinedCount !== 0) {
+    const gaps = Array.isArray(report?.byteCensus?.undefinedRanges) ? report.byteCensus.undefinedRanges : [];
+    const named = gaps.length > 0 ? gaps.map((g) => (g.start === g.endInclusive ? addr(g.start) : `${addr(g.start)}-${addr(g.endInclusive)}`)).join(", ") : "(address not reported)";
+    failures.push(`byte census: ${undefinedCount} Undefined byte(s) remain at ${named} (must be 0)`);
+  }
+
+  const survivors = Array.isArray(report?.survivors) ? report.survivors : [];
+  if (survivors.length > 0) {
+    for (const s of survivors) failures.push(`survivor auto-name at ${addr(s.address)} (${s.name}) still sits in a code region`);
+  }
+
+  const entryPoints = Array.isArray(report?.entryPoints) ? report.entryPoints : [];
+  for (const e of entryPoints) {
+    if (!e.hasName) {
+      failures.push(`entry point ${addr(e.address)} has no authored name`);
+      continue;
+    }
+    const missing = PURPOSE_ELEMENT_KEYS.filter((k) => !(e.purposeElements && e.purposeElements[k]));
+    if (missing.length > 0) {
+      failures.push(`entry point ${addr(e.address)} is missing purpose-comment element(s): ${missing.join(", ")}`);
+    }
+  }
+
+  const refs = report?.referencedAddresses ?? { unresolved: [] };
+  for (const a of Array.isArray(refs.unresolved) ? refs.unresolved : []) {
+    failures.push(`referenced address ${addr(a)} is neither named nor declined`);
+  }
+
+  const resolution = report?.disagreementResolution ?? { unresolvedCount: 0 };
+  const unresolvedCount = resolution.unresolvedCount ?? 0;
+  if (unresolvedCount !== 0) {
+    failures.push(`${unresolvedCount} disagreement(s) remain unresolved (no DISAGREEMENT-ACCEPTED comment)`);
+  }
+
+  return failures;
 }
 
 /**
@@ -242,7 +432,10 @@ export function fetchCompletenessReport(argv) {
  * `main()` stays testable in-process. A thrown `MissingDisagreementInputError`
  * is reported with its own message and nothing more (the refusal IS the
  * report); any other thrown error is reported the same way, verbatim,
- * never swallowed. */
+ * never swallowed. On a SUCCESSFULLY RENDERED report, the exit code is THE
+ * GATE's own verdict (`computeGateFailures()`), never a bare 0 -- this is
+ * D-08's numeric stop condition, and softening it here is exactly the
+ * regression planted controls 1/2 (task 2) exist to catch. */
 export function main(argv) {
   let report;
   try {
@@ -253,7 +446,7 @@ export function main(argv) {
   }
   try {
     console.log(renderCompletenessReport(report));
-    return 0;
+    return computeGateFailures(report).length === 0 ? 0 : 1;
   } catch (err) {
     console.error(err instanceof Error ? err.message : String(err));
     return 1;
