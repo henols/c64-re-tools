@@ -5,11 +5,11 @@ milestone_name: The Rebuild Half
 current_phase: 52
 current_phase_name: Remove the Fork Backend
 status: executing
-stopped_at: Completed 52-07-PLAN.md
-last_updated: "2026-09-12T10:00:49.041Z"
+stopped_at: Completed 52-08-PLAN.md
+last_updated: "2026-09-12T10:21:50.861Z"
 last_activity: 2026-09-11
 last_activity_desc: Phase 52 execution started
-state_head: 954703b657d29a0ba98a9a4c04ca690e5c30a9cb
+state_head: 051c543fabad5dbe9cf15da65965829445029e5e
 progress:
   total_phases: 8
   completed_phases: 2
@@ -255,8 +255,8 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 52 (Remove the Fork Backend) — EXECUTING
-Plan: 8 of 10
-Status: Executing (52-07 complete)
+Plan: 9 of 10
+Status: Executing (52-08 complete)
 
 **Planned OUT OF SEQUENCE.** Phase 52 was planned ahead of Phases 47-51, which
 remain unplanned, because Phase 52's own stated dependency — the open question
@@ -569,6 +569,7 @@ Last activity: 2026-09-11 — Phase 52 execution started
 | Phase 52 P05 | 165min | 3 tasks | 26 files |
 | Phase 52 P06 | long | 3 tasks | 26 files |
 | Phase 52 P07 | 210min | 3 tasks | 22 files |
+| Phase 52 P08 | 35min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -1298,6 +1299,7 @@ Recent decisions affecting current work:
 - [Phase 52]: capability-registry.ts deleted (not repurposed): its six hardware-loss entries were already migrated verbatim to docs/stock-hard-losses.md by plan 52-01, confirmed present before deletion.
 - [Phase 52]: The tool-support table (its generator and byte-identity drift guard) retired outright: with one manifest, tools-manifest.stock.json IS the full per-tool answer.
 - [Phase 52]: ViceBackend kept, narrowed to "stock" (confirmed by census, not re-decided): it is actively used across the broker/control-plane family, not a registry artifact.
+- [Phase 52]: Phase 52 Plan 08: all 27 fork-mentioning lines across 9 shipped skill files rewritten to stated permanent limitations or collapsed single-backend facts (0 remaining). c64-memory-mapping's ride-along scope fix used body restructure, not description-widening, after widening broke an out-of-scope CLAUDE.md invariant.
 
 ### Pending Todos
 
@@ -2375,8 +2377,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-12T10:00:18.720Z
-Stopped at: Completed 52-07-PLAN.md
+Last session: 2026-09-12T10:21:01.962Z
+Stopped at: Completed 52-08-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
