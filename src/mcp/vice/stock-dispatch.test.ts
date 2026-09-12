@@ -1547,11 +1547,14 @@ test("structure/proxy: vice-proxy.ts has exactly one dispatchStock CALL SITE", (
   // Counts call sites in CODE lines only. The original oracle counted every
   // textual occurrence anywhere in the file, prose included, which made the
   // "one dispatch site" guarantee it exists to protect indistinguishable from
-  // "nobody may explain the guarantee in a comment" (CR-07's fix has to
-  // document why the registration seam is backend-aware). The invariant is
-  // unchanged and still enforced: ONE place a stock tools/call is routed from.
-  const matches = VICE_PROXY_CODE_LINES.filter((line) => line.includes("dispatchStock("));
-  assert.equal(matches.length, 1, `expected exactly one dispatchStock( call site, found ${matches.length}: ${JSON.stringify(matches)}`);
+  // "nobody may explain the guarantee in a comment". The invariant is
+  // unchanged and still enforced: ONE place a stock tools/call is routed
+  // from -- dispatchStockFor(), the shared helper the manifest loop and
+  // handleRecycle()/handleDiagnose() all call instead of each building their
+  // own deps object inline (which would have put "dispatchStock(" on three
+  // separate lines and made this guarantee meaningless).
+  const matches = VICE_PROXY_CODE_LINES.filter((line) => line.includes("stockDispatch.dispatchStock("));
+  assert.equal(matches.length, 1, `expected exactly one stockDispatch.dispatchStock( call site, found ${matches.length}: ${JSON.stringify(matches)}`);
 });
 
 test("structure/proxy: vice-proxy.ts's dispatchStock call site passes ensureBrokerLease as its LeaseProvider", () => {
@@ -1599,12 +1602,16 @@ function proxyToolRegistrations(): Array<[string, string]> {
  * manifest loop's own backend-aware runner choice never covers them. */
 const SYNTHETIC_TOOL_KEYS = ["RESULT_CONTINUE_TOOL.name", "RECYCLE_TOOL.name", "DIAGNOSE_TOOL.name"];
 
-/** The two registration keys permitted to bypass buildBackendAwareTool()
- * entirely (plan 29-01): RESULT_CONTINUE_TOOL.name (a continuation store, no
- * transport of any kind) and annoDef.name (the anno_* family's own loop
- * registration -- a proxy-local SQLite annotation store, never VICE, so there
- * is no fork/stock distinction to make). Both are "no transport at all" in the
- * sense that matters here: neither can ever reach forwardToVice()/call().
+/** The two registration keys permitted to bypass dispatchStock() entirely:
+ * RESULT_CONTINUE_TOOL.name (a continuation store, no transport of any kind)
+ * and annoDef.name (the anno_* family's own loop registration -- a
+ * proxy-local SQLite annotation store, never VICE, so there is no dispatch
+ * to make). Both are "no transport at all" in the sense that matters here:
+ * neither can ever reach a generic-dispatch surface, because none exists in
+ * this file for either to be reached behind (the fork-only forwarding
+ * function this file used to route non-bypassing registrations away from is
+ * deleted outright, along with the per-backend registration seam that used
+ * to make this exemption backend-aware).
  *
  * ORDER IS LOAD-BEARING. The deepEqual below is order-sensitive, and the anno
  * entry keeps position 2 -- swapping the two source-order registrations must
@@ -1612,30 +1619,38 @@ const SYNTHETIC_TOOL_KEYS = ["RESULT_CONTINUE_TOOL.name", "RECYCLE_TOOL.name", "
  * collides here rather than being absorbed into a superset. */
 const BACKEND_SEAM_BYPASS_KEYS = ["RESULT_CONTINUE_TOOL.name", "annoDef.name"];
 
-test("structure/proxy (CR-07): every registered tool whose runner can touch a transport goes through buildBackendAwareTool", () => {
+/** Whether a registration's right-hand side reaches dispatchStock -- either
+ * via dispatchStockFor() (the manifest loop's own inline call, and the
+ * shared helper handleRecycle()/handleDiagnose() are asserted elsewhere in
+ * this file to delegate to internally) or by naming handleRecycle()/
+ * handleDiagnose() directly. */
+function reachesDispatchStock(rhs: string): boolean {
+  return /dispatchStockFor\(|handleRecycle\(|handleDiagnose\(/.test(rhs);
+}
+
+test("structure/proxy (CR-07): every registered tool whose runner can touch a transport reaches dispatchStock, directly or via handleRecycle()/handleDiagnose()", () => {
   const registrations = proxyToolRegistrations();
   assert.ok(registrations.length >= 5, `expected the manifest-loop registration, three synthetic ones and the anno loop registration, found ${registrations.length}`);
   for (const [key, rhs] of registrations) {
     if (BACKEND_SEAM_BYPASS_KEYS.includes(key)) continue; // the two asserted exceptions, covered below
-    assert.match(
-      rhs,
-      /buildBackendAwareTool\(/,
-      `tools[${key}] must be registered through buildBackendAwareTool so the stock backend answers or refuses BY NAME, never falls through to the fork's HTTP transport: ${rhs}`,
+    assert.ok(
+      reachesDispatchStock(rhs),
+      `tools[${key}] must be registered through dispatchStock (directly, or via handleRecycle()/handleDiagnose()) -- there is no other route to a stock tool call left in this file: ${rhs}`,
     );
   }
 });
 
-test("structure/proxy (CR-07): the synthetic tools are all registered, and the only registrations bypassing the backend-aware seam are vice_result_continue and the anno_* family", () => {
+test("structure/proxy (CR-07): the synthetic tools are all registered, and the only registrations bypassing dispatchStock entirely are vice_result_continue and the anno_* family", () => {
   const registrations = proxyToolRegistrations();
   const keys = registrations.map(([key]) => key);
   for (const synthetic of SYNTHETIC_TOOL_KEYS) {
     assert.ok(keys.includes(synthetic), `expected a registration for ${synthetic}`);
   }
-  const bypassing = registrations.filter(([, rhs]) => !rhs.includes("buildBackendAwareTool(")).map(([key]) => key);
+  const bypassing = registrations.filter(([, rhs]) => !reachesDispatchStock(rhs)).map(([key]) => key);
   assert.deepEqual(
     bypassing,
     BACKEND_SEAM_BYPASS_KEYS,
-    "exactly two registrations may bypass the backend-aware seam: a continuation store and a proxy-local annotation store are both \"no transport at all\"",
+    "exactly two registrations may bypass dispatchStock entirely: a continuation store and a proxy-local annotation store are both \"no transport at all\"",
   );
 });
 
@@ -1681,20 +1696,22 @@ test("structure/proxy (plan 29-01): every curated anno_* name is absent from BOT
   }
 });
 
-test("structure/proxy (CR-07): buildBackendAwareTool routes the non-fork backend to dispatchStock, and that is the only dispatch site", () => {
-  const start = VICE_PROXY_SOURCE.indexOf("function buildBackendAwareTool(");
-  assert.ok(start > 0, "buildBackendAwareTool() must exist -- it is the one backend-aware registration seam");
-  const body = VICE_PROXY_SOURCE.slice(start, VICE_PROXY_SOURCE.indexOf("\n}", start));
-  assert.match(body, /ACTIVE_BACKEND\.backend === "fork"/, "the branch must read the ONCE-settled ACTIVE_BACKEND, never re-detect");
-  assert.match(body, /dispatchStock\(/, "the non-fork arm must answer through dispatchStock");
+test("structure/proxy (CR-07): handleRecycle() and handleDiagnose() each delegate to dispatchStockFor(), with no per-backend branch left to route around", () => {
+  for (const handlerName of ["handleRecycle", "handleDiagnose"]) {
+    const declStart = VICE_PROXY_SOURCE.indexOf(`function ${handlerName}(args`);
+    assert.ok(declStart > 0, `${handlerName}() must still be declared in vice-proxy.ts`);
+    const body = VICE_PROXY_SOURCE.slice(declStart, VICE_PROXY_SOURCE.indexOf("\n}", declStart));
+    assert.match(body, /dispatchStockFor\(/, `${handlerName}() must delegate to dispatchStockFor() -- the one shared helper that reaches dispatchStock()`);
+    assert.doesNotMatch(body, /ACTIVE_BACKEND\.backend === "fork"/, `${handlerName}() must carry no per-backend branch of its own -- the per-backend registration seam is deleted, not moved inside the handler`);
+  }
 });
 
-test("structure/proxy (CR-07): handleDiagnose and handleRecycle are each referenced by exactly one registration, and it is backend-aware", () => {
+test("structure/proxy (CR-07): handleDiagnose and handleRecycle are each referenced by exactly one registration, via buildViceTool() directly", () => {
   const registrations = proxyToolRegistrations();
   for (const handler of ["handleDiagnose(", "handleRecycle("]) {
     const hits = registrations.filter(([, rhs]) => rhs.includes(handler));
     assert.equal(hits.length, 1, `expected exactly one registration referencing ${handler}, found ${hits.length}`);
-    assert.match(hits[0]![1], /buildBackendAwareTool\(/, `${handler} reaches the fork's HTTP transport, so its registration must be backend-aware`);
+    assert.match(hits[0]![1], /buildViceTool\(/, `${handler} must be registered through buildViceTool() directly -- there is no longer a separate per-backend registration wrapper`);
   }
 });
 

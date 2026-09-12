@@ -17,11 +17,14 @@
 // side finds this comment.
 //
 // WHAT NOT TO DO:
-//   - Never call rewriteArguments() from a stock handler. It lives INSIDE
-//     forwardToVice() (vice-proxy.ts, around line 2773) -- the one function
-//     Phase 2's D-09 says the stock path must never touch -- and its own
-//     comment inverts on stock: what is correct for the fork's derived tools
-//     is exactly wrong here.
+//   - Never merge this file's emulator-side translation with, or replace it
+//     by, a general argument-rewriting pass applied before dispatch. Stock
+//     tool calls no longer go through any such pass -- vice-proxy.ts's own
+//     fork-only per-call path-rewriter (and the generic forwarding function
+//     that ran it) is deleted outright -- and reintroducing one would
+//     re-create exactly the inversion this file's header names: what a
+//     general rewriter does for a client-side-derived path is precisely
+//     wrong for the four emulator-side filenames this file translates.
 //   - Never build a host path with a local heuristic (a hand-rolled prefix
 //     swap, a hardcoded mount guess, anything not routed through
 //     hostpath.ts's own hostPathCandidates()/tryHostPaths()). hostpath.ts is
