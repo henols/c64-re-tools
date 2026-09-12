@@ -5,11 +5,11 @@ milestone_name: The Rebuild Half
 current_phase: 52
 current_phase_name: Remove the Fork Backend
 status: executing
-stopped_at: Completed 52-12-PLAN.md
-last_updated: "2026-09-12T13:57:03.835Z"
+stopped_at: Completed 52-13-PLAN.md
+last_updated: "2026-09-12T14:07:14.590Z"
 last_activity: 2026-09-12
 last_activity_desc: Phase 52 gap-closure round 1 planned (52-11..52-13)
-state_head: 24262a88d01d1f8f84b05cc4f237c716d81fef58
+state_head: b711a40defb7bc4ead0e4ec633ec9bee68f556cc
 progress:
   total_phases: 8
   completed_phases: 2
@@ -255,12 +255,19 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 52 (Remove the Fork Backend) — EXECUTING (gap closure)
-Plan: 12 of 13 executed
-Status: 52-01..52-11 executed; 52-11 corrected the stale-documentation gap
-(CLAUDE.md + ARCHITECTURE.md false fork-backend prose, and widened
-docs-fork-absence.test.ts to catch the class mechanically). 52-12 and 52-13
-remain (waves 10-11), closing ARCHITECTURE.md's remaining stale sections and
-PROJECT.md's two residual Key Decisions rows.
+Plan: 13 of 13 executed
+Status: 52-01..52-13 all executed. 52-11 corrected the stale-documentation
+gap (CLAUDE.md + ARCHITECTURE.md false fork-backend prose, and widened
+docs-fork-absence.test.ts to catch the class mechanically). 52-12 corrected
+the remaining fork-backend prose in ARCHITECTURE.md, STACK.md and
+CONVENTIONS.md — the three documents CLAUDE.md's own markers name as
+sources — and proved a four-file projection census at zero. 52-13 reworded
+PROJECT.md's two residual Key Decisions/Out-of-Scope rows still stating the
+superseded SID routing, annotated the four unprojected codebase snapshots
+with dated supersession notes, and closed the gap round: the test suite
+sits at the predicted 6-member shrink of the 7-member verification-report
+reference set, with the projection census reconfirmed at zero. This
+gap-closure round is now complete pending phase re-verification.
 
 **Planned OUT OF SEQUENCE.** Phase 52 was planned ahead of Phases 47-51, which
 remain unplanned, because Phase 52's own stated dependency — the open question
@@ -578,6 +585,7 @@ Last activity: 2026-09-12 — Phase 52 execution started
 | Phase 52 P10 | 55 min | 3 tasks | 6 files |
 | Phase 52 P11 | 55 min | 3 tasks | 3 files |
 | Phase 52 P12 | 70min | 3 tasks | 3 files |
+| Phase 52-remove-the-fork-backend P13 | 35 min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -1315,6 +1323,7 @@ Recent decisions affecting current work:
 - [Phase 52]: Widened docs-fork-absence.test.ts in place with a boundary-aware deleted-module-citation predicate rather than a sibling guard, since the check shares the existing population, exemption list, and question — Splitting one question (has the fork removal come back) across two files would produce two partial answers and two places to remember to widen
 - [Phase 52]: Corrected fork-backend prose in ARCHITECTURE.md, STACK.md and CONVENTIONS.md (52-12): resolved each stale component row individually by reading the tree (re-point where a successor exists, remove where none does) rather than by pattern.
 - [Phase 52]: Proved the CLAUDE.md projection self-consistent with a four-file census (CLAUDE.md plus its three declared sources): zero deleted-module citations and zero fork-flag mentions remain anywhere in the chain (52-12).
+- [Phase 52-remove-the-fork-backend]: Reworded PROJECT.md's two remaining stale SID decision-log locations to state the permanent, accepted hardware loss (matching FORK-01's amendment style), and annotated the four unprojected codebase snapshots (CONCERNS/INTEGRATIONS/STRUCTURE/TESTING) with dated supersession notes rather than rewriting or deleting them, since none is named as a CLAUDE.md projection source.
 
 ### Pending Todos
 
@@ -2392,8 +2401,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-12T13:57:03.622Z
-Stopped at: Completed 52-12-PLAN.md
+Last session: 2026-09-12T14:07:14.374Z
+Stopped at: Completed 52-13-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
