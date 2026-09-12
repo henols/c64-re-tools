@@ -240,7 +240,6 @@ function startBroker(stateDir: string, viceBinPath: string, scratchDir: string):
     // per this quick task's own live-testing note, and the container guard
     // must pass on its own.
     VICE_SUPERVISOR_ALLOW_CONTAINER: undefined,
-    VICE_BACKEND: "stock",
     VICE_BIN: viceBinPath,
     // MUST be unset, not merely omitted -- a non-empty VICE_ARGS is a FULL
     // argv override in buildViceArgs() (broker-launch.mts) and would drop

@@ -243,7 +243,6 @@ function startBroker(stateDir: string, viceBinPath: string, scratchDir: string):
     ...process.env,
     // Deliberately omitted -- this genuinely runs on the host.
     VICE_SUPERVISOR_ALLOW_CONTAINER: undefined,
-    VICE_BACKEND: "stock",
     VICE_BIN: viceBinPath,
     // MUST be unset, not merely omitted -- a non-empty VICE_ARGS is a FULL
     // argv override in buildViceArgs() and would bypass it entirely, which

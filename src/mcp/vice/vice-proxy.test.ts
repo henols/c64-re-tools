@@ -492,7 +492,7 @@ test("stdout carries only valid JSON-RPC messages", async () => {
 
 test("tools/list reads the committed snapshot with no emulator", async () => {
   const dir = mkdtempSync(join(tmpdir(), "vice-proxy-manifest-"));
-  const manifestFile = join(dir, "tools-manifest.json");
+  const manifestFile = join(dir, "tools-manifest.stock.json");
   const fixture = {
     generated_at: "2026-07-31T00:00:00.000Z",
     endpoint: "http://example.invalid/mcp",
@@ -715,7 +715,7 @@ test("vice_disk_list is absent from tools/list", async () => {
   // READ-TIME filter, not merely serverInfo()'s refresh-time filter, the
   // thing under test.
   const dir = mkdtempSync(join(tmpdir(), "vice-proxy-denylist-"));
-  const manifestFile = join(dir, "tools-manifest.json");
+  const manifestFile = join(dir, "tools-manifest.stock.json");
   writeFileSync(
     manifestFile,
     JSON.stringify({
@@ -770,7 +770,7 @@ test("tools/list's vice_ping entry has an inputSchema deep-equal to the manifest
   // createTool() -> MCPServer's own ListToolsRequestSchema handler ->
   // standardSchemaToJSONSchema() round trip -- not assumed from either
   // library's documentation.
-  const manifestText = readFileSync(join(HERE, "tools-manifest.json"), "utf8");
+  const manifestText = readFileSync(join(HERE, "tools-manifest.stock.json"), "utf8");
   const manifest = JSON.parse(manifestText);
   const manifestPingSchema = manifest.tools.find((t: any) => t.name === "vice_ping").inputSchema;
 
@@ -824,13 +824,13 @@ test("structural: the construction-time tools registry itself filters DENY_LIST,
 // wire schema was byte-identical for ONE tool (vice_ping); this extends that
 // same deep-equal proof to EVERY manifest tool, plus the full name-set/order
 // parity `tools/list`'s must_have calls for -- computed independently from
-// tools-manifest.json, never from any in-memory constant this file or
+// tools-manifest.stock.json, never from any in-memory constant this file or
 // vice-proxy.ts shares, so a passing assertion here is genuine evidence the
 // swap did not change the observable surface at full scale.
 // -----------------------------------------------------------------------
 
 test("tools/list's full output matches the manifest exactly (name set, order, schema, _meta cap) except for DENY_LIST's deliberate absence", async () => {
-  const manifestText = readFileSync(join(HERE, "tools-manifest.json"), "utf8");
+  const manifestText = readFileSync(join(HERE, "tools-manifest.stock.json"), "utf8");
   const manifest = JSON.parse(manifestText);
   // The fork's outer-name refusal array is gone along with the fork
   // transport; nothing is filtered out of the manifest here any more.
@@ -2176,10 +2176,12 @@ async function startControlBroker(dir: string, deps: StubBrokerDeps = {}) {
       warmFloor: 0,
       maxInstances: 1,
       basePort: 0,
-      // WR-04: this fixture stands in for a FORK broker, matching what the proxy
-      // under test resolves for itself here (no x64sc on PATH -> indeterminate ->
-      // "fork"), so ensureBrokerLease()'s backend-mismatch refusal does not fire.
-      backend: "fork" as const,
+      // WR-04/FORKRM-01 (plan 52-06): this field's own broker/proxy
+      // cross-check was deleted outright, so its value no longer affects
+      // ensureBrokerLease() at all -- kept only because HostStateFields
+      // still carries it (text-tools.ts's own cross-check, out of this
+      // plan's scope, still reads it over the real wire).
+      backend: "stock" as const,
     }),
     // Plan 05 (BROK-02/PROTO-08): this proxy-focused fixture never exercises
     // monitor_claim/monitor_release itself -- these stubs exist only to
@@ -3966,13 +3968,13 @@ test("structural: no agent-visible template literal begins with the vice-proxy: 
     "a vice-proxy: literal reached through content/text must still be flagged"
   );
 
-  // Negative control: the EXACT ternary shape from vice-proxy.ts (the one
-  // that broke the old proximity rule) must NOT be flagged -- both arms are
-  // console.error(...)'s own argument, just multi-line.
+  // Negative control: a multi-line ternary shape matching what USED to break
+  // the old proximity rule (both arms are console.error(...)'s own argument,
+  // just multi-line) must NOT be flagged.
   const negativeControl = `console.error(
-  ACTIVE_BACKEND.backend === "fork"
+  someCondition
     ? \`vice-proxy: ready, forwarding to \${activeInstance().url} (port \${activeInstance().port})\`
-    : \`vice-proxy: ready, stock backend active -- dispatching to a broker-claimed binary-monitor instance (resolved binary: \${ACTIVE_BACKEND.binPath})\`,
+    : \`vice-proxy: ready, stock backend active -- dispatching to a broker-claimed binary-monitor instance (resolved binary: \${RESOLVED_BINARY.binPath})\`,
 );`;
   assert.equal(
     viceProxyIdentityViolations(negativeControl).length,
@@ -5213,8 +5215,8 @@ test("structural: the set of source files under src/mcp/vice/ containing a netwo
   );
 });
 
-test("structural: neither synthetic tool name appears in tools-manifest.json, and both appear in a live tools/list response", async () => {
-  const manifestText = readFileSync(join(HERE, "tools-manifest.json"), "utf8");
+test("structural: neither synthetic tool name appears in tools-manifest.stock.json, and both appear in a live tools/list response", async () => {
+  const manifestText = readFileSync(join(HERE, "tools-manifest.stock.json"), "utf8");
   assert.ok(!manifestText.includes("vice_recycle"), "vice_recycle must never be added to the committed manifest -- it is served proxy-local");
   assert.ok(!manifestText.includes("vice_result_continue"), "vice_result_continue must never be added to the committed manifest either");
 
@@ -6300,24 +6302,29 @@ test("structural: SEAM_HAZARDS's checkpoint-arming detector and renderer never r
 // -----------------------------------------------------------------------
 // Plan 08-02 (BACK-05): end-to-end proof that the CallToolRequestSchema
 // override's tools[name] miss branch renders a capability refusal -- naming
-// the tool, the reason, and the providing backend -- rather than the
-// generic "Unknown tool" fallback, for a tool the ACTIVE backend's trimmed
-// manifest (D-07) never registered. VICE_BACKEND=stock/fork resolves via
-// backend-detect.mts's override branch, which returns immediately (PATH
-// resolution only, never a spawn -- see resolvedBackend()), so none of these
-// four tests needs an emulator, a stand-in HTTP server, or a broker.
+// the tool and the reason -- rather than the generic "Unknown tool"
+// fallback, for a tool the trimmed manifest (D-07) never registered. None
+// of these tests needs an emulator, a stand-in HTTP server, or a broker.
+//
+// FORKRM-01 (plan 52-06): the sibling test that used to sit here -- the
+// other backend refusing a capability that backend uniquely gained -- is
+// deleted whole. Its entire subject was vice-proxy.ts calling
+// capabilityRefusalMessage() with an active backend argument that could
+// vary; that call site now always passes the single literal value, so the
+// scenario it exercised (the other backend refusing a capability only it
+// had) can no longer occur.
 //
 // capability-registry.test.ts (plan 08-01) is the automated mirror for
 // these exact wordings, per test-gate.mjs's STANDING RULE (this file is
 // manual-only and therefore invisible to the automated gate) -- the
 // assertions below intentionally check only the distinguishing tokens
-// (tool name, "unrecoverable", "VICE_BACKEND=<backend>"), not the full
-// verbatim string, so a wording tweak reviewed against the registry's own
-// test does not also require touching this file.
+// (tool name, "unrecoverable"), not the full verbatim string, so a wording
+// tweak reviewed against the registry's own test does not also require
+// touching this file.
 // -----------------------------------------------------------------------
 
-test("BACK-05: stock refuses vice_sid_get_state (a fork-only hardware capability) by name and reason, not as Unknown tool", async () => {
-  const proxy = startProxy({ VICE_BACKEND: "stock" });
+test("BACK-05: stock refuses vice_sid_get_state (a hardware capability stock cannot recover) by name and reason, not as Unknown tool", async () => {
+  const proxy = startProxy({});
   try {
     await handshake(proxy);
     proxy.send({
@@ -6331,39 +6338,18 @@ test("BACK-05: stock refuses vice_sid_get_state (a fork-only hardware capability
     const text = resp.result.content[0].text;
     assert.match(text, /vice_sid_get_state/, "the refusal must name the tool");
     assert.match(text, /unrecoverable/, "a hardware-category refusal must say unrecoverable");
-    assert.match(text, /VICE_BACKEND=fork/, "the refusal must name the providing backend");
     assert.doesNotMatch(
       text,
       /Unknown tool/,
-      "REGRESSION GUARD: this is the exact bug this plan exists to fix -- a stock user must never see the generic unknown-tool fallback for a capability the fork backend has"
+      "REGRESSION GUARD: this is the exact bug this plan exists to fix -- a stock user must never see the generic unknown-tool fallback for a capability gap"
     );
   } finally {
     proxy.child.kill("SIGKILL");
   }
 });
 
-test("BACK-05: fork refuses vice_execution_until_return (a stock-only-gain capability) by name and providing backend", async () => {
-  const proxy = startProxy({ VICE_BACKEND: "fork" });
-  try {
-    await handshake(proxy);
-    proxy.send({
-      jsonrpc: "2.0",
-      id: 3,
-      method: "tools/call",
-      params: { name: "vice_execution_until_return", arguments: {} },
-    });
-    const resp = await proxy.nextMessage();
-    assert.equal(resp.result.isError, true, "vice_execution_until_return must be refused on the fork backend");
-    const text = resp.result.content[0].text;
-    assert.match(text, /vice_execution_until_return/, "the refusal must name the tool");
-    assert.match(text, /VICE_BACKEND=stock/, "the refusal must name the providing backend");
-  } finally {
-    proxy.child.kill("SIGKILL");
-  }
-});
-
 test("BACK-05: a genuine typo still gets the plain Unknown tool fallback, verbatim, unchanged by the capability lookup", async () => {
-  const proxy = startProxy({ VICE_BACKEND: "stock" });
+  const proxy = startProxy({});
   try {
     await handshake(proxy);
     proxy.send({
@@ -6385,19 +6371,18 @@ test("BACK-05: a genuine typo still gets the plain Unknown tool fallback, verbat
 });
 
 test("BACK-05 (D-G ordering, observed at the wire): DENY_LIST still wins over a capability refusal for tools_call, and the synthetic tools are never refused", async () => {
-  const proxy = startProxy({ VICE_BACKEND: "stock" });
+  const proxy = startProxy({});
   try {
     await handshake(proxy);
 
     // The ordering invariant: a nested tools_call bypass attempt must get
     // the DENY_LIST refusal (permanently forbidden / tools_call), never a
-    // capability refusal (VICE_BACKEND=...) -- complementing Task 1's
-    // source-offset assertion with a wire-level observation of the same
-    // invariant. DENY_LIST's construction-time skip (`if
-    // (DENY_LIST.includes(def.name)) continue;`) also means tools_call is
-    // never a key in `tools` at all, so even if the ordering inside the
-    // override were somehow wrong, this call could not silently reach a
-    // capability-refusal branch instead.
+    // capability refusal -- complementing Task 1's source-offset assertion
+    // with a wire-level observation of the same invariant. DENY_LIST's
+    // construction-time skip (`if (DENY_LIST.includes(def.name)) continue;`)
+    // also means tools_call is never a key in `tools` at all, so even if the
+    // ordering inside the override were somehow wrong, this call could not
+    // silently reach a capability-refusal branch instead.
     proxy.send({
       jsonrpc: "2.0",
       id: 3,
@@ -6411,19 +6396,19 @@ test("BACK-05 (D-G ordering, observed at the wire): DENY_LIST still wins over a 
     assert.match(denyText, /tools_call/, "the deny-list refusal must name tools_call");
     assert.doesNotMatch(
       denyText,
-      /VICE_BACKEND=/,
+      /unrecoverable|not implemented on the/,
       "the deny-list refusal must never be mistaken for (or replaced by) a capability refusal"
     );
 
-    // vice_diagnose is registered on BOTH backends via synthetic
-    // registration (buildBackendAwareTool/resolveAdvertisedToolDefinition),
-    // so it must reach its real handler rather than either wrong message --
-    // whatever that handler answers without a live emulator is acceptable
-    // here; only the absence of both wrong messages is asserted.
+    // vice_diagnose is registered via its own synthetic registration
+    // (resolveAdvertisedToolDefinition), so it must reach its real handler
+    // rather than either wrong message -- whatever that handler answers
+    // without a live emulator is acceptable here; only the absence of both
+    // wrong messages is asserted.
     proxy.send({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "vice_diagnose", arguments: {} } });
     const diagResp = await proxy.nextMessage();
     const diagText = diagResp.result.content[0].text;
-    assert.doesNotMatch(diagText, /VICE_BACKEND=fork/, "vice_diagnose must never be treated as a capability gap");
+    assert.doesNotMatch(diagText, /unrecoverable|not implemented on the/, "vice_diagnose must never be treated as a capability gap");
     assert.doesNotMatch(diagText, /Unknown tool/, "vice_diagnose must never fall through to the generic fallback");
   } finally {
     proxy.child.kill("SIGKILL");

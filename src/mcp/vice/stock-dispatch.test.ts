@@ -1664,24 +1664,16 @@ test("structure/proxy: vice-proxy.ts CALLS resolvedBackend() exactly once", () =
   assert.equal(matches.length, 1, `expected exactly one resolvedBackend( call, found ${matches.length}: ${JSON.stringify(matches)}`);
 });
 
-test("structure/proxy (WR-04): ensureBrokerLease() compares the broker's own backend verdict against ACTIVE_BACKEND and refuses a definite mismatch", () => {
-  const start = VICE_PROXY_SOURCE.indexOf("async function ensureBrokerLease(");
-  assert.ok(start > 0, "ensureBrokerLease() must still exist in vice-proxy.ts");
-  const body = VICE_PROXY_SOURCE.slice(start, VICE_PROXY_SOURCE.indexOf("\n}", start));
-
-  assert.match(body, /session\.hostState\(\)/, "the proxy must ask the broker which backend IT resolved");
-  assert.match(body, /hostState\.backend !== null/, "a broker that does not report a backend is absent evidence, not agreement");
-  assert.match(body, /hostState\.backend !== ACTIVE_BACKEND\.backend/, "the comparison must be against the ONCE-settled ACTIVE_BACKEND");
-  assert.match(body, /VICE_BACKEND=/, "the refusal must name the explicit override that fixes it");
-
-  // The check must precede the acquire, so a mismatch never allocates an
-  // emulator, and must release the control session it opened.
-  const checkAt = body.indexOf("session.hostState()");
-  const acquireAt = body.indexOf("session.acquire()");
-  assert.ok(checkAt > 0 && acquireAt > 0 && checkAt < acquireAt, "the backend check must run BEFORE the acquire");
-  const refusalBlock = body.slice(checkAt, acquireAt);
-  assert.match(refusalBlock, /session\.release\(\)/, "a refused mismatch must release the control session rather than leaking it");
-});
+// FORKRM-01 (plan 52-06): the sibling test that used to sit here --
+// "ensureBrokerLease() compares the broker's own backend verdict against
+// ACTIVE_BACKEND and refuses a definite mismatch" -- is deleted whole. The
+// broker/proxy backend cross-check it asserted is deleted outright from
+// vice-proxy.ts, by recorded decision, with no lighter replacement (see
+// 52-06-SUMMARY.md): with one backend the comparison was a tautology. This
+// deletion reverses a regression Task 1 of that plan introduced into this
+// file (a structural assertion pointing at now-deleted source), not a
+// registry-content decision -- the file's own registry-shaped fork
+// references remain plan 52-07's scope.
 
 // CR-06: buildHeldLease() is the ONE production construction site for
 // HeldLease, and it lives in the one file the automated gate cannot execute

@@ -191,7 +191,6 @@ function startBroker(stateDir: string, viceBinPath: string, scratchDir: string):
   const merged: Record<string, string | undefined> = {
     ...process.env,
     VICE_SUPERVISOR_ALLOW_CONTAINER: undefined,
-    VICE_BACKEND: "stock",
     VICE_BIN: viceBinPath,
     VICE_ARGS: undefined,
     VICE_BROKER_CONTROL_PORT: "0",
