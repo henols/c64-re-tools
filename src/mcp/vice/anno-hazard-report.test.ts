@@ -23,10 +23,18 @@
 //                     non-findings (hardware register / zp scratch / outside
 //                     the image), the committed negative control, and the
 //                     indirect-indexed miss named as a limit
-//   hazard shape:    no boolean field but `truncated`, no banned field name,
-//                     de-duplication and survival on the (class, anchor,
-//                     mechanism) triple, empty-input safety, no-signal never
-//                     read as clean
+//   hazard class-4:  structural signature matching only -- raster-register
+//                     access, a timing sled, a one-shot timer reload, all
+//                     inside a routine an interrupt vector store names;
+//                     negatives, wording discipline, observed-corroborated
+//                     promotion, and an out-of-image vector handled safely
+//   hazard limits:   every one of the four hazard classes has a limit entry
+//   hazard shape:    no boolean field but `truncated`, no banned field name
+//                     (including verdict/pass), de-duplication and survival
+//                     on the (class, anchor, mechanism) triple, empty-input
+//                     safety, no-signal never read as clean, and the
+//                     undecided third outcome proven REACHED by real
+//                     fixtures rather than merely declared reachable
 //   hazard order:    determinism and ascending-by-anchor ordering
 //   hazard read-only: a structural source-text assertion
 
@@ -40,6 +48,7 @@ import {
   HAZARD_CLASSES,
   HAZARD_DETECTION_STRENGTHS,
   HAZARD_LIMITS,
+  HAZARD_REGION_OUTCOMES,
   type HazardReport,
 } from "./anno-hazard-report.ts";
 
@@ -441,6 +450,118 @@ test("hazard class-3: a finding's detail prose names the boundary its blocked ba
 });
 
 // ---------------------------------------------------------------------------
+// hazard class-4: cycle-exact-raster (structural signature only)
+// ---------------------------------------------------------------------------
+
+/** Builds a synthetic image: a RAM IRQ vector install (`lda #lo ; sta $0314
+ * ; lda #hi ; sta $0315 ; rts`) at $0800, NOP-padded up to `handlerAddress`,
+ * followed by `handlerBytes`. Shared by every class-4 test below so each
+ * test states only what its own handler contains. */
+function buildVectorInstallImage(handlerAddress: number, handlerBytes: number[]): { bytes: Uint8Array; origin: number } {
+  const origin = 0x0800;
+  const lo = handlerAddress & 0xff;
+  const hi = (handlerAddress >> 8) & 0xff;
+  const prefix = [0xa9, lo, 0x8d, 0x14, 0x03, 0xa9, hi, 0x8d, 0x15, 0x03, 0x60];
+  const prefixEnd = origin + prefix.length;
+  if (handlerAddress < prefixEnd) throw new Error("test construction error: handler overlaps the vector-install prefix");
+  const paddingLength = handlerAddress - prefixEnd;
+  const bytes = new Uint8Array(prefix.length + paddingLength + handlerBytes.length);
+  bytes.set(prefix, 0);
+  bytes.fill(0xea, prefix.length, prefix.length + paddingLength);
+  bytes.set(handlerBytes, prefix.length + paddingLength);
+  return { bytes, origin };
+}
+
+const HANDLER_ADDRESS = 0x0810;
+
+test("hazard class-4: a raster-register access inside a routine an interrupt vector store names yields mechanism raster-access-in-vectored-handler at the weakest strength", () => {
+  const { bytes, origin } = buildVectorInstallImage(HANDLER_ADDRESS, [0xad, 0x12, 0xd0, 0x40]); // lda $d012 ; rti
+  const report = buildHazardReport({ bytes, origin });
+  const finding = report.findings.find((f) => f.hazardClass === "cycle-exact-raster" && f.mechanism === "raster-access-in-vectored-handler");
+  assert.ok(finding, "a raster-register access inside the vectored handler must produce this finding");
+  assert.equal(finding!.anchorAddress, HANDLER_ADDRESS);
+  assert.equal(finding!.strength, "static-signature-only");
+});
+
+test("hazard class-4: three or more consecutive NOPs immediately following a raster-register access yield mechanism timing-sled-after-raster-access at the weakest strength", () => {
+  const { bytes, origin } = buildVectorInstallImage(HANDLER_ADDRESS, [0xad, 0x12, 0xd0, 0xea, 0xea, 0xea, 0x60]); // lda $d012 ; nop*3 ; rts
+  const report = buildHazardReport({ bytes, origin });
+  const finding = report.findings.find((f) => f.hazardClass === "cycle-exact-raster" && f.mechanism === "timing-sled-after-raster-access");
+  assert.ok(finding, "a timing sled after a raster access must produce this finding");
+  assert.equal(finding!.strength, "static-signature-only");
+});
+
+test("hazard class-4: a one-shot timer reload written inside a routine an interrupt vector store names yields mechanism timer-reload-in-vectored-handler at the weakest strength", () => {
+  const { bytes, origin } = buildVectorInstallImage(HANDLER_ADDRESS, [0xa9, 0x05, 0x8d, 0x04, 0xdc, 0x60]); // lda #5 ; sta $dc04 ; rts
+  const report = buildHazardReport({ bytes, origin });
+  const finding = report.findings.find((f) => f.hazardClass === "cycle-exact-raster" && f.mechanism === "timer-reload-in-vectored-handler");
+  assert.ok(finding, "a one-shot timer reload inside the vectored handler must produce this finding");
+  assert.equal(finding!.strength, "static-signature-only");
+});
+
+test("hazard class-4: a routine that writes the border colour register in a plain loop with no interrupt vector store and no raster-register access yields no class-4 finding", () => {
+  const bytes = new Uint8Array([0xa9, 0x01, 0x8d, 0x20, 0xd0, 0x4c, 0x00, 0x08]); // lda #1 ; sta $d020 ; jmp $0800
+  const report = buildHazardReport({ bytes, origin: 0x0800 });
+  assert.equal(report.findings.filter((f) => f.hazardClass === "cycle-exact-raster").length, 0);
+});
+
+test("hazard class-4: the committed 23-byte negative-control image yields zero class-4 findings", () => {
+  const { bytes, origin } = loadPrg(TRACER_PRG_PATH);
+  const report = buildHazardReport({ bytes, origin });
+  assert.equal(report.findings.filter((f) => f.hazardClass === "cycle-exact-raster").length, 0);
+});
+
+test("hazard class-4: no finding is ever emitted at the shape-matched or corroborated strength on the strength of a static match alone, and detail prose says 'signature' but never 'verified', 'proven' or 'confirmed'", () => {
+  const images = [
+    buildVectorInstallImage(HANDLER_ADDRESS, [0xad, 0x12, 0xd0, 0x40]),
+    buildVectorInstallImage(HANDLER_ADDRESS, [0xad, 0x12, 0xd0, 0xea, 0xea, 0xea, 0x60]),
+    buildVectorInstallImage(HANDLER_ADDRESS, [0xa9, 0x05, 0x8d, 0x04, 0xdc, 0x60]),
+  ];
+  let checked = 0;
+  for (const { bytes, origin } of images) {
+    const report = buildHazardReport({ bytes, origin });
+    for (const f of report.findings.filter((x) => x.hazardClass === "cycle-exact-raster")) {
+      checked++;
+      assert.equal(f.strength, "static-signature-only", "no class-4 finding may be shape-matched or corroborated from a static match alone");
+      assert.ok(/signature/i.test(f.detail), "class-4 detail prose must name the match as a signature");
+      assert.ok(!/verified|proven|confirmed/i.test(f.detail), `class-4 detail must never assert verification: "${f.detail}"`);
+      assert.ok(!/verified|proven|confirmed|exact/i.test(f.mechanism), `class-4 mechanism id must never assert verification: "${f.mechanism}"`);
+    }
+  }
+  assert.ok(checked >= 3, "precondition: all three positive class-4 constructions above must actually produce findings to check");
+});
+
+test("hazard class-4: a runtime observation covering the finding's own anchor address promotes its strength to observed-corroborated", () => {
+  const { bytes, origin } = buildVectorInstallImage(HANDLER_ADDRESS, [0xad, 0x12, 0xd0, 0x40]);
+  const report = buildHazardReport({
+    bytes,
+    origin,
+    execObservations: [{ id: 1, imageSha256: "x", argvDigest: "y", seed: "z", address: HANDLER_ADDRESS, sourceBank: "ram" }],
+  });
+  const finding = report.findings.find((f) => f.hazardClass === "cycle-exact-raster" && f.mechanism === "raster-access-in-vectored-handler");
+  assert.ok(finding);
+  assert.equal(finding!.strength, "observed-corroborated");
+  assert.equal(finding!.corroboration, "runtime-observed");
+});
+
+test("hazard class-4: an interrupt vector naming an address outside the loaded image is skipped safely -- no finding, no crash", () => {
+  const origin = 0x0800;
+  const bytes = new Uint8Array([0xa9, 0x00, 0x8d, 0x14, 0x03, 0xa9, 0x99, 0x8d, 0x15, 0x03, 0x60]); // vector -> $9900, far outside
+  const report = buildHazardReport({ bytes, origin });
+  assert.equal(report.findings.filter((f) => f.hazardClass === "cycle-exact-raster").length, 0);
+});
+
+// ---------------------------------------------------------------------------
+// hazard limits
+// ---------------------------------------------------------------------------
+
+test("hazard limits: every one of the four hazard classes has at least one entry in the emitted limits array", () => {
+  for (const cls of HAZARD_CLASSES) {
+    assert.ok(HAZARD_LIMITS.some((l) => l.hazardClass === cls), `HAZARD_LIMITS must contain at least one entry for hazard class "${cls}"`);
+  }
+});
+
+// ---------------------------------------------------------------------------
 // hazard shape
 // ---------------------------------------------------------------------------
 
@@ -530,6 +651,71 @@ test("hazard shape: a single-range store over an image with zero findings report
   assert.equal(report.regions[0]!.reason, undefined, "no-signal never carries a reason -- reason is unclassified-only");
   const safetyLimit = HAZARD_LIMITS.find((l) => l.hazardClass === null);
   assert.ok(safetyLimit && /no detection is not evidence of safety/i.test(safetyLimit.consequence));
+});
+
+test("hazard shape: enumerating a real report's own keys finds no boolean field but truncated, and no key name reading clean/dirty/safe/ok/verdict/pass", () => {
+  // The committed hazard-subject fixture carries a real, non-empty
+  // unprovenDispatchCandidates entry (the declining mixed-index-register
+  // construction from plan 48-02) -- the scanner's OWN foreign shape,
+  // preserved verbatim, carries its own `truncated`/`orientationResolved`
+  // booleans. This module's "no boolean but truncated" discipline governs
+  // fields IT defines, not a foreign collection carried through unchanged
+  // (see this field's own doc comment on `HazardReport`), so it is excluded
+  // from this particular walk -- every field this module itself defines is
+  // still walked in full.
+  const { bytes, origin } = loadPrg(HAZARD_SUBJECT_PRG_PATH);
+  const report = buildHazardReport({
+    bytes,
+    origin,
+    ranges: [{ start_address: origin, end_address: origin + bytes.length - 1, type: "code" }],
+  });
+  assert.ok(report.unprovenDispatchCandidates.length > 0, "precondition: this fixture must carry a real advisory candidate for the exclusion above to be meaningful");
+  const { unprovenDispatchCandidates: _foreign, ...ownFields } = report;
+  const entries = collectEntries(ownFields as unknown);
+  assert.ok(entries.length > 0, "the walk must actually visit nested rows");
+  for (const [key, val] of entries) {
+    assert.ok(!/clean|dirty|safe|ok|verdict|pass/i.test(key), `field name "${key}" reads as a safety verdict`);
+    if (typeof val === "boolean") assert.equal(key, "truncated", `only "truncated" may be a boolean field (found on "${key}")`);
+  }
+});
+
+test("hazard shape: across the fixture corpus the suite reads, all three region-outcome tokens occur at least once", () => {
+  const smc = loadPrg(SMC_PRG_PATH);
+  const smcReport = buildHazardReport({
+    bytes: smc.bytes,
+    origin: smc.origin,
+    ranges: [
+      { start_address: smc.origin, end_address: smc.origin + smc.bytes.length - 1, type: "code" },
+      { start_address: 0x9000, end_address: 0x9010, type: "code" }, // wholly outside the loaded image -> unclassified
+    ],
+  });
+  const tracer = loadPrg(TRACER_PRG_PATH);
+  const tracerReport = buildHazardReport({
+    bytes: tracer.bytes,
+    origin: tracer.origin,
+    ranges: [{ start_address: tracer.origin, end_address: tracer.origin + tracer.bytes.length - 1, type: "code" }],
+  });
+  const outcomes = new Set([...smcReport.regions, ...tracerReport.regions].map((r) => r.outcome));
+  for (const token of HAZARD_REGION_OUTCOMES) {
+    assert.ok(outcomes.has(token), `region outcome "${token}" must be reached by at least one real fixture in the suite`);
+  }
+});
+
+test("hazard shape: every undecided (unclassified) region across the fixture corpus carries a non-empty cause", () => {
+  const smc = loadPrg(SMC_PRG_PATH);
+  const smcReport = buildHazardReport({
+    bytes: smc.bytes,
+    origin: smc.origin,
+    ranges: [
+      { start_address: smc.origin, end_address: smc.origin + smc.bytes.length - 1, type: "code" },
+      { start_address: 0x9000, end_address: 0x9010, type: "code" },
+    ],
+  });
+  const unclassified = smcReport.regions.filter((r) => r.outcome === "unclassified");
+  assert.ok(unclassified.length > 0, "precondition: at least one unclassified region must exist to check its cause");
+  for (const region of unclassified) {
+    assert.ok(typeof region.reason === "string" && region.reason.length > 0, "every unclassified region must carry a non-empty reason naming its cause");
+  }
 });
 
 // ---------------------------------------------------------------------------

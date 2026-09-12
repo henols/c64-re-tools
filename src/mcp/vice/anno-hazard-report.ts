@@ -278,6 +278,23 @@ export const HAZARD_LIMITS: readonly HazardLimit[] = Object.freeze([
       "means the target could not be named, not that none exists.",
   },
   {
+    hazardClass: "cycle-exact-raster",
+    limit:
+      "cycle-exact correctness after relocation cannot be verified " +
+      "statically on the 6502: indexed-addressing and branch-taken " +
+      "instructions cost an extra cycle when they cross a 256-byte page " +
+      "boundary, so moving a raster routine's start address can change " +
+      "which of its own instructions cross a page and silently change its " +
+      "total cycle count even though every opcode byte is unchanged. No " +
+      "static algorithm for cycle-exact raster detection exists; this " +
+      "class matches a structural SIGNATURE only.",
+    consequence:
+      "a class-4 finding is never a verified, proven or confirmed timing " +
+      "claim -- it names a matched pattern consistent with cycle-exact " +
+      "raster code, and whether the code actually is cycle-exact, or would " +
+      "remain so after relocation, is not determined by this report.",
+  },
+  {
     hazardClass: null,
     limit:
       "a region with no finding was checked by every detector this report " +
@@ -581,8 +598,26 @@ const IMMEDIATE_LOAD_TO_STORE: Readonly<Record<string, string>> = Object.freeze(
  * loaded from memory) is a genuine runtime fact this narrow recovery does
  * not claim to know, and is correctly left unrecovered rather than guessed.
  */
-function recoverVicConstWrites(instructions: readonly Instruction[]): GraphicsConstWriteFact[] {
-  const facts: GraphicsConstWriteFact[] = [];
+/** One recovered `(storeAddress, targetAddress, value)` triple -- the same
+ * shape `GraphicsConstWriteFact`/`ConstWriteFact` already use elsewhere in
+ * this tree. Declared locally so this generic recovery walk carries no
+ * dependency of its own beyond the plain load/store shape it reads. */
+interface ImmediateStoreFact {
+  storeAddress: number;
+  targetAddress: number;
+  value: number;
+}
+
+/**
+ * Walks the decoded stream ONCE, pairing an immediate load with the very
+ * next instruction when that next instruction is a store, through the SAME
+ * register, to one of `watched`. THE ONE adjacent-pair recovery walk in
+ * this module -- both `recoverVicConstWrites()` (the three VIC-II
+ * registers) and the class-4 interrupt-vector recovery below call this,
+ * rather than each writing its own copy.
+ */
+function recoverImmediateStoreFacts(instructions: readonly Instruction[], watched: ReadonlySet<number>): ImmediateStoreFact[] {
+  const facts: ImmediateStoreFact[] = [];
   for (let i = 0; i + 1 < instructions.length; i++) {
     const load = instructions[i]!;
     if (!load.operand || load.operand.role !== "immediate") continue;
@@ -592,11 +627,15 @@ function recoverVicConstWrites(instructions: readonly Instruction[]): GraphicsCo
     const store = instructions[i + 1]!;
     if (store.mnemonic !== expectedStore) continue;
     const target = literalOperandTarget(store);
-    if (target === null || !WATCHED_VIC_REGISTERS.has(target)) continue;
+    if (target === null || !watched.has(target)) continue;
 
     facts.push({ storeAddress: store.address, targetAddress: target, value: load.operand.value });
   }
   return facts;
+}
+
+function recoverVicConstWrites(instructions: readonly Instruction[]): GraphicsConstWriteFact[] {
+  return recoverImmediateStoreFacts(instructions, WATCHED_VIC_REGISTERS);
 }
 
 /** The store address of the FIRST recovered fact writing `value` to
@@ -755,6 +794,185 @@ function detectSpritePointerStores(
 }
 
 // ---------------------------------------------------------------------------
+// The class-4 (cycle-exact-raster) detector -- structural SIGNATURE only
+// ---------------------------------------------------------------------------
+//
+// No static algorithm for cycle-exact raster detection exists (stated
+// verbatim in `HAZARD_LIMITS`'s own `cycle-exact-raster` entry). What this
+// detector matches is a STRUCTURAL SIGNATURE consistent with the textbook
+// double-IRQ stabiliser and its timer-based variant -- never a claim that
+// the matched code IS cycle-exact, and never a claim it would REMAIN so
+// after relocation. Every finding this detector emits carries the WEAKEST
+// detection-strength token unless a runtime observation covers its own
+// anchor address; its mechanism ids and detail prose are structurally
+// asserted (this module's own test file) to never contain a word that
+// asserts verification.
+
+/** The RAM-resident IRQ vector KERNAL-hooking code installs through
+ * (`$0314`/`$0315`) -- not the hardware vector at `$FFFE`/`$FFFF`, which
+ * sits in ROM and is not the address real C64 programs rewrite. */
+const IRQ_VECTOR_LOW = 0x0314;
+const IRQ_VECTOR_HIGH = 0x0315;
+const IRQ_VECTOR_ADDRESSES: ReadonlySet<number> = new Set([IRQ_VECTOR_LOW, IRQ_VECTOR_HIGH]);
+
+/** `$D012` serves both roles this detector treats as one signal: reading it
+ * returns the current raster line, and writing it sets the raster-compare
+ * value the next raster IRQ fires against. Either access is "a raster
+ * register access" for this detector's purposes. */
+const RASTER_REGISTER_ADDRESS = 0xd012;
+
+/** CIA1 Timer A's reload (latch) registers -- the ones a one-shot
+ * stabiliser reloads on every interrupt. CIA1, not CIA2: CIA1 drives the
+ * IRQ line this detector's vectored-handler walk is already anchored on. */
+const TIMER_A_RELOAD_ADDRESSES: ReadonlySet<number> = new Set([0xdc04, 0xdc05]);
+
+const RASTER_SIGNATURE_DETAIL =
+  "a structural signature consistent with cycle-exact raster code was " +
+  "matched: a raster-register access inside a routine an interrupt vector " +
+  "names. No static check here determines whether the code is actually " +
+  "cycle-exact, or whether it would remain so after relocation.";
+
+const TIMING_SLED_SIGNATURE_DETAIL =
+  "a structural signature consistent with cycle-exact raster code was " +
+  "matched: a run of no-operation instructions immediately following a " +
+  "raster-register access, the textbook jitter-compensation sled. No " +
+  "static check here determines whether the code is actually cycle-exact, " +
+  "or whether it would remain so after relocation.";
+
+const TIMER_RELOAD_SIGNATURE_DETAIL =
+  "a structural signature consistent with cycle-exact raster code was " +
+  "matched: a one-shot timer reload written inside a routine an interrupt " +
+  "vector names, the CIA-timer stabiliser variant. No static check here " +
+  "determines whether the code is actually cycle-exact, or whether it " +
+  "would remain so after relocation.";
+
+/** Cross-products every recovered low-byte write against every recovered
+ * high-byte write of the RAM IRQ vector into 16-bit target addresses,
+ * deduplicated. This detector recognises the conventional low-then-high
+ * install order's TWO byte facts regardless of their relative position in
+ * the stream (`recoverImmediateStoreFacts()` finds each independently); it
+ * does not attempt to prove the two stores belong to a single 4-instruction
+ * idiom, which would be a second, narrower recovery this module does not
+ * need for the signature it matches. */
+function recoverInterruptVectorTargets(instructions: readonly Instruction[]): number[] {
+  const facts = recoverImmediateStoreFacts(instructions, IRQ_VECTOR_ADDRESSES);
+  const lowValues = facts.filter((f) => f.targetAddress === IRQ_VECTOR_LOW).map((f) => f.value);
+  const highValues = facts.filter((f) => f.targetAddress === IRQ_VECTOR_HIGH).map((f) => f.value);
+  const targets = new Set<number>();
+  for (const lo of lowValues) {
+    for (const hi of highValues) targets.add((lo | (hi << 8)) & 0xffff);
+  }
+  return [...targets];
+}
+
+/**
+ * Walks forward from `handlerAddress` (an instruction START address only --
+ * a mid-instruction byte is not a real entry point) to the first
+ * return-from-interrupt (`rti`) or return-from-subroutine (`rts`),
+ * collecting every instruction in between. Bounded by construction: no
+ * revisit, no recursion, and the walk stops at the first return OR the end
+ * of the already-decoded (already image-bounded) instruction array,
+ * whichever comes first.
+ */
+function handlerWindow(instructions: readonly Instruction[], addressToIndex: ReadonlyMap<number, number>, handlerAddress: number): Instruction[] | null {
+  const startIdx = addressToIndex.get(handlerAddress);
+  if (startIdx === undefined) return null;
+  const window: Instruction[] = [];
+  for (let i = startIdx; i < instructions.length; i++) {
+    const instr = instructions[i]!;
+    window.push(instr);
+    if (instr.opcode === 0x40 /* rti */ || instr.opcode === 0x60 /* rts */) break;
+  }
+  return window;
+}
+
+function class4Strength(anchorAddress: number, observedAddresses: ReadonlySet<number>): HazardDetectionStrength {
+  return observedAddresses.has(anchorAddress) ? "observed-corroborated" : "static-signature-only";
+}
+
+/**
+ * Structural signature matching ONLY -- see this section's own header.
+ * Collects every RAM IRQ vector target this image recovers, walks each
+ * one's handler window (when the target names a real instruction start
+ * inside the image), and emits one finding per signal that fires.
+ */
+function detectCycleExactRasterSignatures(
+  instructions: readonly Instruction[],
+  addressToIndex: ReadonlyMap<number, number>,
+  imageStart: number,
+  imageEndInclusive: number,
+  observedAddresses: ReadonlySet<number>,
+): HazardFinding[] {
+  const findings: HazardFinding[] = [];
+  const targets = recoverInterruptVectorTargets(instructions);
+
+  for (const handlerAddress of targets) {
+    if (handlerAddress < imageStart || handlerAddress > imageEndInclusive) continue; // named address lies outside the image
+    const window = handlerWindow(instructions, addressToIndex, handlerAddress);
+    if (window === null) continue; // not a real instruction start -- nothing to walk
+
+    let rasterAccessAnchor: number | null = null;
+    let timingSledAnchor: number | null = null;
+    let timerReloadAnchor: number | null = null;
+
+    for (let i = 0; i < window.length; i++) {
+      const instr = window[i]!;
+      const target = literalOperandTarget(instr);
+      if (target === null) continue;
+
+      if (target === RASTER_REGISTER_ADDRESS) {
+        if (rasterAccessAnchor === null) rasterAccessAnchor = instr.address;
+        // A timing sled is a run of >= 3 NOPs IMMEDIATELY following this
+        // access -- checked once per raster access, so the FIRST qualifying
+        // run in the window is what is reported.
+        if (timingSledAnchor === null && i + 3 < window.length) {
+          const allNop = window[i + 1]!.opcode === 0xea && window[i + 2]!.opcode === 0xea && window[i + 3]!.opcode === 0xea;
+          if (allNop) timingSledAnchor = instr.address;
+        }
+      } else if (TIMER_A_RELOAD_ADDRESSES.has(target) && (instr.mnemonic === "sta" || instr.mnemonic === "stx" || instr.mnemonic === "sty")) {
+        if (timerReloadAnchor === null) timerReloadAnchor = instr.address;
+      }
+    }
+
+    if (rasterAccessAnchor !== null) {
+      findings.push({
+        hazardClass: "cycle-exact-raster",
+        anchorAddress: rasterAccessAnchor,
+        blockedAddress: null,
+        mechanism: "raster-access-in-vectored-handler",
+        strength: class4Strength(rasterAccessAnchor, observedAddresses),
+        detail: RASTER_SIGNATURE_DETAIL,
+        corroboration: observedAddresses.has(rasterAccessAnchor) ? "runtime-observed" : "none",
+      });
+    }
+    if (timingSledAnchor !== null) {
+      findings.push({
+        hazardClass: "cycle-exact-raster",
+        anchorAddress: timingSledAnchor,
+        blockedAddress: null,
+        mechanism: "timing-sled-after-raster-access",
+        strength: class4Strength(timingSledAnchor, observedAddresses),
+        detail: TIMING_SLED_SIGNATURE_DETAIL,
+        corroboration: observedAddresses.has(timingSledAnchor) ? "runtime-observed" : "none",
+      });
+    }
+    if (timerReloadAnchor !== null) {
+      findings.push({
+        hazardClass: "cycle-exact-raster",
+        anchorAddress: timerReloadAnchor,
+        blockedAddress: null,
+        mechanism: "timer-reload-in-vectored-handler",
+        strength: class4Strength(timerReloadAnchor, observedAddresses),
+        detail: TIMER_RELOAD_SIGNATURE_DETAIL,
+        corroboration: observedAddresses.has(timerReloadAnchor) ? "runtime-observed" : "none",
+      });
+    }
+  }
+
+  return findings;
+}
+
+// ---------------------------------------------------------------------------
 // De-duplication and ordering
 // ---------------------------------------------------------------------------
 
@@ -896,7 +1114,9 @@ export function buildHazardReport(input: HazardReportInput): HazardReport {
     if (row && isNonNegativeSafeInteger(row.address)) observedAddresses.add(row.address);
   }
 
-  const classesEvaluated: HazardClass[] = imageIsEmpty ? [] : ["indexed-dispatch", "self-modifying-code", "page-alignment"];
+  const classesEvaluated: HazardClass[] = imageIsEmpty
+    ? []
+    : ["indexed-dispatch", "self-modifying-code", "page-alignment", "cycle-exact-raster"];
 
   // The ONE new call site this plan adds. Same triple the existing consumer
   // (`buildCoverageReport()`) passes: the already-decoded instruction stream,
@@ -910,6 +1130,17 @@ export function buildHazardReport(input: HazardReportInput): HazardReport {
     ? []
     : detectSpritePointerStores(instructions, graphicsEvaluation.spriteRanges, origin, imageEndInclusive);
 
+  // address -> index in `instructions`, first-wins -- only instruction
+  // START addresses key this map, unlike `instructionIndex` above (which
+  // keys every byte an instruction occupies).
+  const addressToIndex = new Map<number, number>();
+  instructions.forEach((instr, idx) => {
+    if (!addressToIndex.has(instr.address)) addressToIndex.set(instr.address, idx);
+  });
+  const rasterFindings = imageIsEmpty
+    ? []
+    : detectCycleExactRasterSignatures(instructions, addressToIndex, origin, imageEndInclusive, observedAddresses);
+
   const rawFindings = imageIsEmpty
     ? []
     : [
@@ -917,6 +1148,7 @@ export function buildHazardReport(input: HazardReportInput): HazardReport {
         ...detectSelfModifyingCode(instructions, instructionIndex, observedAddresses),
         ...graphicsEvaluation.findings,
         ...spriteFindings,
+        ...rasterFindings,
       ];
   const findings = sortFindings(dedupeFindings(rawFindings));
 
