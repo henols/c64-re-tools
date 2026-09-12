@@ -165,7 +165,7 @@ const DELETED_MODULE_CITATION_RE = new RegExp(DELETED_MODULE_CITATION_SOURCE, "g
  * change rather than iteration order. Returns `[]` rather than asserting
  * internally, exactly like `findForbiddenIdentifiers()` above, so the
  * planted-violation tests below drive this EXACT function. */
-export function findDeletedModuleCitations(text: string): string[] {
+function findDeletedModuleCitations(text: string): string[] {
   const found = new Set<string>();
   for (const match of text.matchAll(DELETED_MODULE_CITATION_RE)) {
     found.add(match[1]!);
