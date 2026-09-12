@@ -978,6 +978,100 @@ test("hazard crosscheck: the indexed-dispatch and cycle-exact-raster classes hav
 });
 
 // ---------------------------------------------------------------------------
+// hazard evidence: runtime observation strengthens, never suppresses
+// ---------------------------------------------------------------------------
+
+test("hazard evidence: the same input built twice -- once with an empty observation list and once with observations covering every finding's anchor address -- produces finding sets identical in class, anchor address, blocked address and mechanism, differing only in strength and corroboration", () => {
+  const { bytes, origin } = loadPrg(HAZARD_SUBJECT_PRG_PATH);
+  const bare = buildHazardReport({ bytes, origin });
+  assert.ok(bare.findings.length > 0, "precondition: the subject image must produce at least one finding");
+  const execObservations = bare.findings.map((f, i) => ({
+    id: i + 1,
+    imageSha256: "x",
+    argvDigest: "y",
+    seed: "z",
+    address: f.anchorAddress,
+    sourceBank: "ram" as const,
+  }));
+  const corroborated = buildHazardReport({ bytes, origin, execObservations });
+  const strip = (f: HazardFinding) => ({
+    hazardClass: f.hazardClass,
+    anchorAddress: f.anchorAddress,
+    blockedAddress: f.blockedAddress,
+    mechanism: f.mechanism,
+  });
+  assert.deepEqual(bare.findings.map(strip), corroborated.findings.map(strip));
+});
+
+test("hazard evidence: building the same input with the observation field absent entirely and with it present but empty produces deeply equal reports", () => {
+  const { bytes, origin } = loadPrg(SMC_PRG_PATH);
+  const absent = buildHazardReport({ bytes, origin });
+  const emptyArray = buildHazardReport({ bytes, origin, execObservations: [] });
+  assert.deepEqual(absent, emptyArray);
+});
+
+test("hazard evidence: observations covering addresses where no finding exists add no finding and change no count", () => {
+  const { bytes, origin } = loadPrg(TRACER_PRG_PATH);
+  const bare = buildHazardReport({ bytes, origin });
+  assert.deepEqual(bare.findings, [], "precondition: the negative-control fixture must produce zero findings");
+  const withObservations = buildHazardReport({
+    bytes,
+    origin,
+    execObservations: [
+      { id: 1, imageSha256: "x", argvDigest: "y", seed: "z", address: origin, sourceBank: "ram" },
+      { id: 2, imageSha256: "x", argvDigest: "y", seed: "z", address: origin + bytes.length - 1, sourceBank: "ram" },
+    ],
+  });
+  assert.deepEqual(withObservations.findings, []);
+  assert.equal(withObservations.denominator, bare.denominator);
+});
+
+test("hazard evidence: the module's source contains no arithmetic over the never-observed population -- no identifier containing 'neverObserved' and no field computed as a covered-minus-observed difference", () => {
+  const source = readFileSync(MODULE_PATH, "utf8");
+  assert.ok(!/neverObserved/i.test(source), "the module must never define a never-observed identifier or count");
+  assert.ok(
+    !/observedAddresses\s*\.\s*size\s*-|-\s*observedAddresses\s*\.\s*size/.test(source),
+    "no field may be computed as a difference against the observed-address count",
+  );
+});
+
+test("hazard evidence: a finding whose anchor carries an observation reports the corroborated strength token and the runtime-observed corroboration field; one whose anchor carries none reports its static token and the none corroboration field", () => {
+  // Two independent self-modifying-code findings at two distinct anchors:
+  // host A's opcode byte at $0800, host B's opcode byte at $0806.
+  const bytes = new Uint8Array([
+    0xea, // 0800 nop (host A)
+    0xa9, 0x60, // 0801 lda #$60
+    0x8d, 0x00, 0x08, // 0803 sta $0800 (writer A -> opcode-byte hit at $0800)
+    0xea, // 0806 nop (host B)
+    0xa9, 0x61, // 0807 lda #$61
+    0x8d, 0x06, 0x08, // 0809 sta $0806 (writer B -> opcode-byte hit at $0806)
+  ]);
+  const origin = 0x0800;
+  const bare = buildHazardReport({ bytes, origin });
+  assert.equal(bare.findings.length, 2, "precondition: the hand-built image must produce exactly two findings");
+
+  const report = buildHazardReport({
+    bytes,
+    origin,
+    execObservations: [{ id: 1, imageSha256: "x", argvDigest: "y", seed: "z", address: 0x0800, sourceBank: "ram" }],
+  });
+  const covered = report.findings.find((f) => f.anchorAddress === 0x0800)!;
+  const uncovered = report.findings.find((f) => f.anchorAddress === 0x0806)!;
+  assert.ok(covered && uncovered, "precondition: both findings must survive into the observed run");
+  assert.equal(covered.strength, "observed-corroborated");
+  assert.equal(covered.corroboration, "runtime-observed");
+  assert.equal(uncovered.strength, "static-shape-matched");
+  assert.equal(uncovered.corroboration, "none");
+});
+
+test("hazard evidence: the report's emitted limits contain an entry stating that an address never observed executing proves nothing about whether moving it is safe", () => {
+  const neverObservedLimit = HAZARD_LIMITS.find(
+    (l) => l.hazardClass === null && /never observed executing proves nothing/i.test(l.consequence),
+  );
+  assert.ok(neverObservedLimit, "HAZARD_LIMITS must name the never-observed-proves-nothing limit");
+});
+
+// ---------------------------------------------------------------------------
 // hazard read-only: structural source-text assertion (T-48-01)
 // ---------------------------------------------------------------------------
 

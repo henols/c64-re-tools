@@ -189,6 +189,19 @@ export interface HazardFinding {
   /** A stable, lowercase-hyphenated identifier for how this finding was
    * derived, e.g. `store-target-in-instruction-opcode-byte`. */
   mechanism: string;
+  /**
+   * THE STRENGTH ASYMMETRY, STATED ONCE FOR THE WHOLE MODULE: an execution
+   * observation can only ever RAISE this token, never establish a finding on
+   * its own and never lower or remove one. The static signal is what raised
+   * the finding in the first place -- a run that happened to execute the
+   * anchored code corroborates that the construction is live, but a run that
+   * did NOT happen to execute it is not evidence about that address at all,
+   * only evidence that this particular run took a different path. Every
+   * detector below that ever promotes this field (the self-modifying-code
+   * and cycle-exact-raster detectors) checks the SAME direction only; none
+   * checks whether an address was absent from the observations to decide
+   * anything.
+   */
   strength: HazardDetectionStrength;
   /** Prose naming what breaks if the anchored code or data is moved. */
   detail: string;
@@ -304,6 +317,20 @@ export const HAZARD_LIMITS: readonly HazardLimit[] = Object.freeze([
       "never a claim that the region is safe to move, clean, or hazard-free " +
       "-- it means nothing this report knows how to look for fired there, " +
       "not that nothing is there.",
+  },
+  {
+    hazardClass: null,
+    limit:
+      "an execution observation can only ever raise a finding's detection " +
+      "strength, never establish one on its own -- the underlying finding " +
+      "always comes from a static signal, and an observation merely " +
+      "corroborates that the anchored code was seen running.",
+    consequence:
+      "an address never observed executing proves nothing about whether " +
+      "moving it is safe: no count, field or line in this report is " +
+      "derived from the size of the never-observed population, and an " +
+      "address's absence from every run's observations is never evidence " +
+      "that it is safe to move.",
   },
 ]);
 
