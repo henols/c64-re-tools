@@ -110,6 +110,15 @@ import { decode, type Instruction } from "./disasm-decoder.ts";
 import { blockClassAt, type BlockEntry } from "./block-class.ts";
 import type { LabelRow, CommentRow, XrefRow, EvidExecRow } from "./anno-types.ts";
 import { scanIndirectDispatch, type IndirectDispatchScan, type SplitTableFinding } from "./anno-coverage.ts";
+import {
+  deriveGraphicsRanges,
+  BANK_SELECT_ADDRESS,
+  MEMORY_CONTROL_ADDRESS,
+  CONTROL_REGISTER_1_ADDRESS,
+  SPRITE_POINTER_OFFSET,
+  type GraphicsConstWriteFact,
+  type GraphicsRange,
+} from "./anno-graphics.ts";
 
 // ---------------------------------------------------------------------------
 // The hazard-class vocabulary
@@ -241,6 +250,32 @@ export const HAZARD_LIMITS: readonly HazardLimit[] = Object.freeze([
       "an indirect-indexed self-modification into this program's code is " +
       "invisible to this report; its absence from the findings below is not " +
       "evidence that no such construction exists.",
+  },
+  {
+    hazardClass: "page-alignment",
+    limit:
+      "only VIC-II HARDWARE alignment boundaries are evaluated -- the " +
+      "sprite pointer's 64-byte granularity and the character-set select " +
+      "bits' 2048-byte granularity. A code or table alignment chosen so an " +
+      "indexed access never crosses a 256-byte page -- which changes " +
+      "INSTRUCTION TIMING, not which bytes the hardware reads -- is a " +
+      "separate, real hazard this report does not evaluate at all.",
+    consequence:
+      "a program relying on page-crossing timing stability must be checked " +
+      "for that separately; this report's silence on it is not a claim " +
+      "that no such dependency exists.",
+  },
+  {
+    hazardClass: "page-alignment",
+    limit:
+      "a sprite-pointer value this detector could not resolve to a literal " +
+      "at analysis time -- because it was computed at runtime rather than " +
+      "loaded as an immediate -- is reported as a dependency with an " +
+      "unknown target, never omitted.",
+    consequence:
+      "the absent blocked address on a sprite-pointer-computed-value " +
+      "finding is not a claim that the store is safe to move past; it " +
+      "means the target could not be named, not that none exists.",
   },
   {
     hazardClass: null,
@@ -409,6 +444,19 @@ const WRITE_MNEMONICS_LITERAL_TARGET = new Set(["sta", "stx", "sty", "inc", "dec
  * build. */
 const LITERAL_TARGET_MODES = new Set(["absolute", "absolute_x", "absolute_y", "zeropage", "zeropage_x", "zeropage_y"]);
 
+/** The literal target address an instruction's operand encodes, for an
+ * addressing mode where that address does not depend on a runtime register
+ * value or a runtime-computed pointer -- `null` for every other mode
+ * (indirect, indirect-indexed, or no operand at all). SHARED between the
+ * class-2 (self-modifying-code) detector and the class-3 (page-alignment)
+ * detector's own literal-target checks: this is the ONE operand decoder,
+ * never duplicated. */
+function literalOperandTarget(instr: Instruction): number | null {
+  if (!instr.operand) return null;
+  if (!LITERAL_TARGET_MODES.has(instr.mode)) return null;
+  return instr.operand.value;
+}
+
 function isNonNegativeSafeInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
@@ -451,11 +499,9 @@ function detectSelfModifyingCode(
   const findings: HazardFinding[] = [];
   for (const instr of instructions) {
     if (!WRITE_MNEMONICS_LITERAL_TARGET.has(instr.mnemonic)) continue;
-    if (!LITERAL_TARGET_MODES.has(instr.mode)) continue;
-    const operand = instr.operand;
-    if (!operand) continue;
+    const target = literalOperandTarget(instr);
+    if (target === null) continue;
 
-    const target = operand.value;
     const host = index.get(target);
     if (!host) continue; // hardware register, zp scratch, or outside every instruction: no finding
     if (host === instr) continue; // "another decoded instruction", never itself
@@ -478,6 +524,232 @@ function detectSelfModifyingCode(
       detail: detailForMechanism(mechanism),
       corroboration: strength === "observed-corroborated" ? "runtime-observed" : "none",
     });
+  }
+  return findings;
+}
+
+// ---------------------------------------------------------------------------
+// The class-3 (page-alignment) detector -- VIC-II hardware alignment ONLY
+// ---------------------------------------------------------------------------
+//
+// D-48-A's reading, and only that reading: a VIC-II register or the sprite
+// pointer names an address not as an address but as a SCALED INDEX (a
+// 2048-byte character-set unit, a 64-byte sprite-shape unit), so the
+// hardware silently reads whatever real bytes now sit at that index if the
+// named data moves off the required boundary. The code/timing
+// page-crossing reading RESEARCH.md names as the excluded alternative is
+// recorded as a named limit above, never evaluated here.
+//
+// The VIC-II register arithmetic (bank base, screen base, character base,
+// bitmap-vs-charset mode, the sprite pointer table's own offset) is NEVER
+// re-derived in this file -- `anno-graphics.ts` already owns it, takes
+// plain register-write facts and returns plain ranges, and names a
+// register it never recovered instead of substituting a power-on default.
+// What genuinely IS this module's job, and is not that module's by its own
+// stated scope: recovering the register-write facts from DECODED BYTES
+// (that module takes them as a given), and turning a derived range into a
+// MOVEMENT CONSTRAINT (that module explicitly declines to promise a sprite
+// shape's own address).
+
+/** The three VIC-II registers this detector recovers constant writes for --
+ * `anno-graphics.ts`'s own three exported addresses, named once here so the
+ * recovery walk below reads a single set rather than three separate
+ * comparisons. */
+const WATCHED_VIC_REGISTERS: ReadonlySet<number> = new Set([BANK_SELECT_ADDRESS, MEMORY_CONTROL_ADDRESS, CONTROL_REGISTER_1_ADDRESS]);
+
+/** `anno-graphics.ts`'s own register-name spelling, reversed to an address --
+ * the same strings `GraphicsMap.registerValues`/`missingRegisters` already
+ * use, so a lookup built from a recovered register name matches the
+ * module's own vocabulary rather than inventing a second one. Built once so
+ * the missing-register evidence walk below is a single lookup, never a
+ * `find()` over three entries per recovered register value. */
+const VIC_REGISTER_ADDRESS_BY_NAME: Readonly<Record<string, number>> = Object.freeze({
+  "bank-select": BANK_SELECT_ADDRESS,
+  "memory-control": MEMORY_CONTROL_ADDRESS,
+  "control-register-1": CONTROL_REGISTER_1_ADDRESS,
+});
+
+const IMMEDIATE_LOAD_TO_STORE: Readonly<Record<string, string>> = Object.freeze({ lda: "sta", ldx: "stx", ldy: "sty" });
+
+/**
+ * Walks the decoded stream ONCE, pairing an immediate load with the very
+ * next instruction when that next instruction is a store, through the SAME
+ * register, to one of the three watched VIC-II registers -- reusing
+ * `literalOperandTarget()` for the store's target rather than a second
+ * operand decoder. A register value built from anything else (a
+ * read-modify-write through the accumulator, an indexed store, a value
+ * loaded from memory) is a genuine runtime fact this narrow recovery does
+ * not claim to know, and is correctly left unrecovered rather than guessed.
+ */
+function recoverVicConstWrites(instructions: readonly Instruction[]): GraphicsConstWriteFact[] {
+  const facts: GraphicsConstWriteFact[] = [];
+  for (let i = 0; i + 1 < instructions.length; i++) {
+    const load = instructions[i]!;
+    if (!load.operand || load.operand.role !== "immediate") continue;
+    const expectedStore = IMMEDIATE_LOAD_TO_STORE[load.mnemonic];
+    if (!expectedStore) continue;
+
+    const store = instructions[i + 1]!;
+    if (store.mnemonic !== expectedStore) continue;
+    const target = literalOperandTarget(store);
+    if (target === null || !WATCHED_VIC_REGISTERS.has(target)) continue;
+
+    facts.push({ storeAddress: store.address, targetAddress: target, value: load.operand.value });
+  }
+  return facts;
+}
+
+/** The store address of the FIRST recovered fact writing `value` to
+ * `targetAddress`, or `null` -- the anchor for a graphics-derived finding:
+ * the store that actually SET the register value the derivation used. */
+function anchorForRegisterValue(facts: readonly GraphicsConstWriteFact[], targetAddress: number, value: number): number | null {
+  for (const fact of facts) {
+    if (fact.targetAddress === targetAddress && fact.value === value) return fact.storeAddress;
+  }
+  return null;
+}
+
+const CHARSET_DETAIL =
+  "the VIC-II reads this character set through a 2048-byte-granularity " +
+  "index stored in the memory-control register; relocating the character " +
+  "data without updating that register (or vice versa) leaves the register " +
+  "naming the OLD 2048-byte-aligned block while the bytes moved -- the " +
+  "hardware silently reads whatever now sits at that index, with no error, " +
+  "exception or diagnostic.";
+
+const SPRITE_RESOLVED_DETAIL =
+  `the VIC-II reads this sprite's shape through a 64-byte-granularity index ` +
+  `stored in the sprite pointer byte (the sprite pointer table sits at a ` +
+  `fixed $${SPRITE_POINTER_OFFSET.toString(16)} offset from the screen ` +
+  "matrix base); relocating the shape data without updating that pointer " +
+  "leaves it naming the OLD 64-byte-aligned block, and the hardware " +
+  "silently renders whatever now sits there instead.";
+
+const SPRITE_COMPUTED_DETAIL =
+  "this store targets the sprite pointer table but its value could not be " +
+  "resolved to a literal at analysis time, so whether the resulting " +
+  "64-byte-aligned base is satisfied is unknown -- the dependency is real " +
+  "even though this report cannot name the block it points at.";
+
+interface GraphicsEvaluation {
+  findings: HazardFinding[];
+  /** Store address -> reason, for every recovered fact whose OWN recovered
+   * combination has at least one missing register -- "we looked and could
+   * not tell", never folded into "no-signal" ("we looked and found
+   * nothing"). Consumed by `classifyRegions()` below. */
+  incompleteAreas: Map<number, string>;
+  /** Every `sprite-pointers`-kind range any recovered combination derived,
+   * across every map -- what `detectSpritePointerStores()` tests a literal
+   * store target against. */
+  spriteRanges: GraphicsRange[];
+}
+
+/**
+ * Hands the recovered facts to the EXISTING graphics derivation
+ * (`deriveGraphicsRanges()`, never re-implemented here) and turns its
+ * answer into class-3 findings for the character-set range only -- screen
+ * matrix and bitmap-mode ranges are out of this detector's declared scope
+ * (see this module's own mechanism-id list).
+ */
+function evaluateGraphicsFacts(facts: readonly GraphicsConstWriteFact[], imageStart: number, imageEndInclusive: number): GraphicsEvaluation {
+  const findings: HazardFinding[] = [];
+  const incompleteAreas = new Map<number, string>();
+  const spriteRanges: GraphicsRange[] = [];
+  if (facts.length === 0) return { findings, incompleteAreas, spriteRanges };
+
+  const maps = deriveGraphicsRanges(facts);
+  for (const map of maps) {
+    if (map.missingRegisters.length > 0) {
+      const reason =
+        `the VIC-II register recovery for this combination is incomplete -- missing ${map.missingRegisters.join(", ")} -- ` +
+        "so this report could not determine whether a page-alignment dependency exists here; that is a limit of what was " +
+        "recovered, not a finding that nothing depends on it.";
+      for (const [name, value] of Object.entries(map.registerValues)) {
+        const targetAddress = VIC_REGISTER_ADDRESS_BY_NAME[name];
+        if (targetAddress === undefined) continue;
+        for (const fact of facts) {
+          if (fact.targetAddress === targetAddress && fact.value === value) incompleteAreas.set(fact.storeAddress, reason);
+        }
+      }
+    }
+
+    for (const range of map.ranges) {
+      if (range.kind === "sprite-pointers") spriteRanges.push(range);
+      if (range.kind !== "character-set") continue;
+      if (range.start < imageStart || range.start > imageEndInclusive) continue;
+
+      const memoryControlValue = map.registerValues["memory-control"];
+      const anchor = memoryControlValue !== undefined ? anchorForRegisterValue(facts, MEMORY_CONTROL_ADDRESS, memoryControlValue) : null;
+      findings.push({
+        hazardClass: "page-alignment",
+        anchorAddress: anchor ?? range.start,
+        blockedAddress: range.start,
+        mechanism: "charset-base-pinned-by-register",
+        strength: "static-shape-matched",
+        detail: CHARSET_DETAIL,
+        corroboration: "none",
+      });
+    }
+  }
+  return { findings, incompleteAreas, spriteRanges };
+}
+
+const SPRITE_STORE_TO_LOAD: Readonly<Record<string, string>> = Object.freeze({ sta: "lda", stx: "ldx", sty: "ldy" });
+
+/**
+ * A store whose literal target lands inside ANY derived sprite-pointers
+ * range is a sprite shape selection -- the one signal the graphics module
+ * deliberately does not promise (it derives the pointer TABLE range only,
+ * never a shape's own address). When the value stored is an immediate
+ * literal, the blocked address is that value times 64 (the fixed sprite
+ * granularity); otherwise the dependency is real but its target is not
+ * statically known, reported at the weakest strength with no blocked
+ * address.
+ */
+function detectSpritePointerStores(
+  instructions: readonly Instruction[],
+  spriteRanges: readonly GraphicsRange[],
+  imageStart: number,
+  imageEndInclusive: number,
+): HazardFinding[] {
+  const findings: HazardFinding[] = [];
+  if (spriteRanges.length === 0) return findings;
+
+  for (let i = 0; i < instructions.length; i++) {
+    const instr = instructions[i]!;
+    const expectedLoad = SPRITE_STORE_TO_LOAD[instr.mnemonic];
+    if (!expectedLoad) continue;
+    const target = literalOperandTarget(instr);
+    if (target === null) continue;
+    if (!spriteRanges.some((r) => target >= r.start && target <= r.endInclusive)) continue;
+
+    const prev = i > 0 ? instructions[i - 1] : undefined;
+    const sourcedFromImmediate = !!prev && prev.mnemonic === expectedLoad && prev.operand?.role === "immediate";
+
+    if (sourcedFromImmediate) {
+      const value = prev!.operand!.value;
+      const blockedAddress = value * 64;
+      if (blockedAddress < imageStart || blockedAddress > imageEndInclusive) continue; // not in this image -- no finding
+      findings.push({
+        hazardClass: "page-alignment",
+        anchorAddress: instr.address,
+        blockedAddress,
+        mechanism: "sprite-pointer-names-aligned-base",
+        strength: "static-shape-matched",
+        detail: SPRITE_RESOLVED_DETAIL,
+        corroboration: "none",
+      });
+    } else {
+      findings.push({
+        hazardClass: "page-alignment",
+        anchorAddress: instr.address,
+        blockedAddress: null,
+        mechanism: "sprite-pointer-computed-value",
+        strength: "static-signature-only",
+        detail: SPRITE_COMPUTED_DETAIL,
+        corroboration: "none",
+      });
+    }
   }
   return findings;
 }
@@ -524,6 +796,7 @@ function classifyRegions(
   imageIsEmpty: boolean,
   classesEvaluated: readonly HazardClass[],
   findingAddresses: ReadonlySet<number>,
+  incompleteEvidence: ReadonlyMap<number, string> = new Map(),
 ): HazardRegionDisposition[] {
   const regions: HazardRegionDisposition[] = [];
   for (const range of ranges) {
@@ -548,14 +821,30 @@ function classifyRegions(
         reason = "the region's own store block class is undefined";
       } else {
         let hit = false;
+        let incompleteReason: string | undefined;
         const clampedEnd = Math.min(endInclusive, 0xffff);
         for (let addr = Math.max(start, 0); addr <= clampedEnd; addr++) {
           if (findingAddresses.has(addr)) {
             hit = true;
             break;
           }
+          // "We looked and could not tell" (a recovered-but-incomplete VIC-II
+          // register combination) is never folded into "no-signal" ("we
+          // looked and found nothing"). A real finding elsewhere in this
+          // same region still wins (checked first, above), because a proven
+          // hazard is not weakened by an unrelated recovery gap.
+          if (incompleteReason === undefined && incompleteEvidence.has(addr)) {
+            incompleteReason = incompleteEvidence.get(addr);
+          }
         }
-        outcome = hit ? "hazard-reported" : "no-signal";
+        if (hit) {
+          outcome = "hazard-reported";
+        } else if (incompleteReason !== undefined) {
+          outcome = "unclassified";
+          reason = incompleteReason;
+        } else {
+          outcome = "no-signal";
+        }
       }
     }
 
@@ -607,7 +896,7 @@ export function buildHazardReport(input: HazardReportInput): HazardReport {
     if (row && isNonNegativeSafeInteger(row.address)) observedAddresses.add(row.address);
   }
 
-  const classesEvaluated: HazardClass[] = imageIsEmpty ? [] : ["indexed-dispatch", "self-modifying-code"];
+  const classesEvaluated: HazardClass[] = imageIsEmpty ? [] : ["indexed-dispatch", "self-modifying-code", "page-alignment"];
 
   // The ONE new call site this plan adds. Same triple the existing consumer
   // (`buildCoverageReport()`) passes: the already-decoded instruction stream,
@@ -615,9 +904,20 @@ export function buildHazardReport(input: HazardReportInput): HazardReport {
   // own test file for why a second call site anywhere else is a defect.
   const dispatchScan: IndirectDispatchScan | null = imageIsEmpty ? null : scanIndirectDispatch(instructions, bytes, origin);
 
+  const vicFacts = imageIsEmpty ? [] : recoverVicConstWrites(instructions);
+  const graphicsEvaluation = evaluateGraphicsFacts(vicFacts, origin, imageEndInclusive);
+  const spriteFindings = imageIsEmpty
+    ? []
+    : detectSpritePointerStores(instructions, graphicsEvaluation.spriteRanges, origin, imageEndInclusive);
+
   const rawFindings = imageIsEmpty
     ? []
-    : [...detectIndexedDispatch(dispatchScan!), ...detectSelfModifyingCode(instructions, instructionIndex, observedAddresses)];
+    : [
+        ...detectIndexedDispatch(dispatchScan!),
+        ...detectSelfModifyingCode(instructions, instructionIndex, observedAddresses),
+        ...graphicsEvaluation.findings,
+        ...spriteFindings,
+      ];
   const findings = sortFindings(dedupeFindings(rawFindings));
 
   const findingAddresses = new Set<number>();
@@ -626,7 +926,15 @@ export function buildHazardReport(input: HazardReportInput): HazardReport {
     if (f.blockedAddress !== null) findingAddresses.add(f.blockedAddress);
   }
 
-  const regions = classifyRegions(ranges, origin, imageEndInclusive, imageIsEmpty, classesEvaluated, findingAddresses);
+  const regions = classifyRegions(
+    ranges,
+    origin,
+    imageEndInclusive,
+    imageIsEmpty,
+    classesEvaluated,
+    findingAddresses,
+    graphicsEvaluation.incompleteAreas,
+  );
 
   return {
     findings,

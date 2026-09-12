@@ -13,6 +13,11 @@
 //                     an advisory decline, mismatched index registers, and
 //                     the scanner's own truncation flag propagating through
 //   hazard reuse:    the exact-count call-site pin (criterion 3)
+//   hazard class-3:  VIC-II hardware alignment -- constant-write-fact
+//                     recovery, the character-set base derived through the
+//                     imported graphics module, the missing-register
+//                     undecided case, the sprite-pointer literal/computed
+//                     forms, and the two committed negative controls
 //   hazard class-2:  the self-modifying-code detector -- opcode-byte hits,
 //                     operand-byte hits, read-modify-write instructions,
 //                     non-findings (hardware register / zp scratch / outside
@@ -45,6 +50,8 @@ const SMC_PRG_PATH = join(HERE, "fixtures", "export-asm", "smc.prg");
 const TRACER_PRG_PATH = join(HERE, "fixtures", "dxa", "tracer.prg");
 const HAZARD_SUBJECT_PRG_PATH = join(HERE, "fixtures", "hazard-subject", "hazard-subject.prg");
 const COVERAGE_MODULE_PATH = join(HERE, "anno-coverage.ts");
+const CHARSET_PHANTOM_PRG_PATH = join(HERE, "fixtures", "ghidra", "charset-phantom.prg");
+const BANK_PRG_PATH = join(HERE, "fixtures", "ghidra", "bank.prg");
 
 /** A committed `.prg`'s bytes and load address, split the same way every
  * caller in this tree splits a loaded image: the first two bytes are the
@@ -307,6 +314,130 @@ test("hazard class-2: an indirect-indexed store yields no finding, and the repor
     (l) => l.hazardClass === "self-modifying-code" && /indirect/i.test(l.limit),
   );
   assert.ok(indirectLimit, "HAZARD_LIMITS must name the indirect-indexed self-modification miss");
+});
+
+// ---------------------------------------------------------------------------
+// hazard class-3: VIC-II hardware alignment (page-alignment)
+// ---------------------------------------------------------------------------
+
+test("hazard class-3: an immediate load followed by a store to a watched VIC-II register is recovered as a constant-write fact, evidenced by the resulting finding's anchor address", () => {
+  const bytes = new Uint8Array([
+    0xa9, 0x3f, // 0000 lda #$3f
+    0x8d, 0x00, 0xdd, // 0002 sta $dd00  (bank select)
+    0xa9, 0x00, // 0005 lda #$00
+    0x8d, 0x18, 0xd0, // 0007 sta $d018  (memory control -- the recovered fact this test checks)
+    0xa9, 0x1b, // 000a lda #$1b
+    0x8d, 0x11, 0xd0, // 000c sta $d011  (control register 1 -- character-set mode)
+    0x60, // 000f rts
+  ]);
+  const report = buildHazardReport({ bytes, origin: 0x0000 });
+  const finding = report.findings.find((f) => f.hazardClass === "page-alignment" && f.mechanism === "charset-base-pinned-by-register");
+  assert.ok(finding, "a full recovered VIC-II combination must produce a charset-base-pinned-by-register finding");
+  assert.equal(finding!.anchorAddress, 0x0007, "the anchor must be the store that actually wrote the memory-control register");
+});
+
+test("hazard class-3: the recovered facts handed to the graphics derivation yield a character-set range whose base lies inside the image, producing mechanism charset-base-pinned-by-register", () => {
+  const bytes = new Uint8Array([
+    0xa9, 0x3f, 0x8d, 0x00, 0xdd, // lda #$3f ; sta $dd00
+    0xa9, 0x00, 0x8d, 0x18, 0xd0, // lda #$00 ; sta $d018 -> char base $0000
+    0xa9, 0x1b, 0x8d, 0x11, 0xd0, // lda #$1b ; sta $d011
+    0x60,
+  ]);
+  const report = buildHazardReport({ bytes, origin: 0x0000 });
+  const finding = report.findings.find((f) => f.hazardClass === "page-alignment" && f.mechanism === "charset-base-pinned-by-register");
+  assert.ok(finding);
+  assert.equal(finding!.blockedAddress, 0x0000, "char base $0000 is derived from bankSelect=$3f (bank 0) and memoryControl=$00");
+});
+
+test("hazard class-3: the committed character-set fixture produces exactly that finding, with the blocked address at the 2K-aligned base its own source comment derives", () => {
+  const { bytes, origin } = loadPrg(CHARSET_PHANTOM_PRG_PATH);
+  const report = buildHazardReport({ bytes, origin });
+  const finding = report.findings.find((f) => f.hazardClass === "page-alignment" && f.mechanism === "charset-base-pinned-by-register");
+  assert.ok(finding, "the committed character-set fixture must produce a charset-base-pinned-by-register finding");
+  assert.equal(finding!.blockedAddress, 0x1000, "the blocked address must be the 2K-aligned base ($1000) the fixture's own header derives");
+});
+
+test("hazard class-3: a graphics map whose missingRegisters list is non-empty contributes no finding for the dependent ranges, and the region is undecided (unclassified) rather than no-signal", () => {
+  // Only $d018 is written -- $dd00 (bank select) and $d011 (control register
+  // 1) are never touched, so the combination is genuinely incomplete.
+  const bytes = new Uint8Array([
+    0xa9, 0x05, // 0000 lda #$05
+    0x8d, 0x18, 0xd0, // 0002 sta $d018
+    0x60, // 0005 rts
+  ]);
+  const origin = 0x0000;
+  const report = buildHazardReport({
+    bytes,
+    origin,
+    ranges: [{ start_address: origin, end_address: origin + bytes.length - 1, type: "code" }],
+  });
+  assert.equal(report.findings.filter((f) => f.hazardClass === "page-alignment").length, 0, "an incomplete combination must produce no page-alignment finding");
+  assert.equal(report.regions.length, 1);
+  assert.equal(report.regions[0]!.outcome, "unclassified", "the region must read undecided, never no-signal, when the report could not tell rather than looked and found nothing");
+  assert.ok(report.regions[0]!.reason && /bank-select|control-register-1/.test(report.regions[0]!.reason), "the reason must name a missing register");
+});
+
+test("hazard class-3: a store of an immediate literal into the derived sprite pointer table yields mechanism sprite-pointer-names-aligned-base, blocked at the literal times 64, when inside the image", () => {
+  const bytes = new Uint8Array(100).fill(0xea);
+  bytes.set([0xa9, 0x3f, 0x8d, 0x00, 0xdd], 0); // lda #$3f ; sta $dd00 (bank 0)
+  bytes.set([0xa9, 0x10, 0x8d, 0x18, 0xd0], 5); // lda #$10 ; sta $d018 (screen @ $0400 -> sprite table $07f8)
+  bytes.set([0xa9, 0x01, 0x8d, 0xf8, 0x07], 10); // lda #1 ; sta $07f8 -> blocked = 1*64 = 64
+  const report = buildHazardReport({ bytes, origin: 0x0000 });
+  const finding = report.findings.find((f) => f.hazardClass === "page-alignment" && f.mechanism === "sprite-pointer-names-aligned-base");
+  assert.ok(finding, "a literal sprite-pointer store inside the derived table must produce sprite-pointer-names-aligned-base");
+  assert.equal(finding!.anchorAddress, 12, "the anchor is the sta $07f8 instruction");
+  assert.equal(finding!.blockedAddress, 64, "the blocked address is the literal value times 64");
+});
+
+test("hazard class-3: the same store whose scaled product lies outside the loaded image yields no finding", () => {
+  const bytes = new Uint8Array(100).fill(0xea);
+  bytes.set([0xa9, 0x3f, 0x8d, 0x00, 0xdd], 0);
+  bytes.set([0xa9, 0x10, 0x8d, 0x18, 0xd0], 5);
+  bytes.set([0xa9, 0xc8, 0x8d, 0xf8, 0x07], 10); // lda #200 ; sta $07f8 -> 200*64=12800, past a 100-byte image
+  const report = buildHazardReport({ bytes, origin: 0x0000 });
+  const finding = report.findings.find((f) => f.hazardClass === "page-alignment" && f.mechanism === "sprite-pointer-names-aligned-base");
+  assert.equal(finding, undefined, "a scaled product outside the loaded image must yield no finding");
+});
+
+test("hazard class-3: a store into a sprite pointer address whose value is not an immediate literal yields mechanism sprite-pointer-computed-value at the weakest strength with a null blocked address", () => {
+  const bytes = new Uint8Array(100).fill(0xea);
+  bytes.set([0xa9, 0x3f, 0x8d, 0x00, 0xdd], 0);
+  bytes.set([0xa9, 0x10, 0x8d, 0x18, 0xd0], 5);
+  bytes.set([0xae, 0x34, 0x12, 0x8e, 0xf8, 0x07], 10); // ldx $1234 ; stx $07f8 -- not immediate
+  const report = buildHazardReport({ bytes, origin: 0x0000 });
+  const finding = report.findings.find((f) => f.hazardClass === "page-alignment" && f.mechanism === "sprite-pointer-computed-value");
+  assert.ok(finding, "a non-immediate-sourced sprite-pointer store must produce sprite-pointer-computed-value");
+  assert.equal(finding!.blockedAddress, null);
+  assert.equal(finding!.strength, "static-signature-only", "the weakest strength token -- the target is not statically known");
+});
+
+test("hazard class-3: the committed processor-port bank-switching image yields zero class-3 findings", () => {
+  const { bytes, origin } = loadPrg(BANK_PRG_PATH);
+  const report = buildHazardReport({ bytes, origin });
+  assert.equal(report.findings.filter((f) => f.hazardClass === "page-alignment").length, 0, "a $01-dependent construction is not a page-alignment hazard");
+});
+
+test("hazard class-3: the committed 23-byte negative-control image yields zero class-3 findings", () => {
+  const { bytes, origin } = loadPrg(TRACER_PRG_PATH);
+  const report = buildHazardReport({ bytes, origin });
+  assert.equal(report.findings.filter((f) => f.hazardClass === "page-alignment").length, 0);
+});
+
+test("hazard class-3: a finding's detail prose names the boundary its blocked base must satisfy -- 2048 for a character set, 64 for a sprite shape", () => {
+  const charsetBytes = new Uint8Array([
+    0xa9, 0x3f, 0x8d, 0x00, 0xdd, 0xa9, 0x00, 0x8d, 0x18, 0xd0, 0xa9, 0x1b, 0x8d, 0x11, 0xd0, 0x60,
+  ]);
+  const charsetReport = buildHazardReport({ bytes: charsetBytes, origin: 0x0000 });
+  const charsetFinding = charsetReport.findings.find((f) => f.mechanism === "charset-base-pinned-by-register");
+  assert.ok(charsetFinding && charsetFinding.detail.includes("2048"));
+
+  const spriteBytes = new Uint8Array(100).fill(0xea);
+  spriteBytes.set([0xa9, 0x3f, 0x8d, 0x00, 0xdd], 0);
+  spriteBytes.set([0xa9, 0x10, 0x8d, 0x18, 0xd0], 5);
+  spriteBytes.set([0xa9, 0x01, 0x8d, 0xf8, 0x07], 10);
+  const spriteReport = buildHazardReport({ bytes: spriteBytes, origin: 0x0000 });
+  const spriteFinding = spriteReport.findings.find((f) => f.mechanism === "sprite-pointer-names-aligned-base");
+  assert.ok(spriteFinding && spriteFinding.detail.includes("64"));
 });
 
 // ---------------------------------------------------------------------------
