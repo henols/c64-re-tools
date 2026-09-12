@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 36
+open_count: 37
 waived_count: 14
 fixed_count: 9
-total_count: 59
-last_updated: 2026-09-11T09:56:23.378Z
+total_count: 60
+last_updated: 2026-09-12T11:14:19.640Z
 ---
 
 # Broken Windows Ledger
@@ -74,6 +74,7 @@ last_updated: 2026-09-11T09:56:23.378Z
 | 57 | 45 | unrun-verify | src/mcp/vice/fixtures/decomp-execution-manifest.json |  | Manifest's own JSON-schema check (9 fixtures, 6 executed/3 not-executed with reasons) was run ad hoc during execution, not committed as a standing automated test | open |  | 2026-09-10T22:10:09.848Z |  |
 | 58 | 45 | deviation | src/mcp/vice/anno-cli.ts |  | FLOW-02: decomp-completeness USAGE text names 'Phase 45'/'Phase 33' literals in shipped source (plan 45-01); pre-existing, not fixed by plan 45-03 (out of scope) -- see 45-03's deferred-items.md | open |  | 2026-09-11T05:37:04.583Z |  |
 | 59 | 45 | deviation | src/mcp/vice/fixtures/dxa/tracer.annostore.json |  | Plan 45-08 Task 3: generateEnumsFromStore() found zero eligible register writes for tracer.prg/fixture.prg/smc.prg (all write only $D020, absent from the curated anno-regbits.json table and its OVERRIDES) -- no project enum/usage was installed in this family, contradicting the plan's own Task 3 acceptance criteria; disclosed in docs/phase45-closure-dxa-family.md and 45-08-SUMMARY.md rather than fixed by widening the generated-but-committed regbits table. | open |  | 2026-09-11T09:56:23.378Z |  |
+| 60 | 52 | deviation | src/mcp/vice/vice-proxy.test.ts |  | MANUAL_ONLY test file still references deleted DENY_LIST via a raw readFileSync of the now-deleted vice.ts; would throw if the file were ever executed (it is excluded from npm run test:automated by design, so this never surfaces in CI). No plan explicitly closed this out after vice.ts's deletion. | open |  | 2026-09-12T11:14:19.640Z |  |
 
 ````json
 [
@@ -783,6 +784,18 @@ last_updated: 2026-09-11T09:56:23.378Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-11T09:56:23.378Z",
+    "resolved_at": null
+  },
+  {
+    "id": 60,
+    "kind": "deviation",
+    "phase": "52",
+    "file": "src/mcp/vice/vice-proxy.test.ts",
+    "line": null,
+    "description": "MANUAL_ONLY test file still references deleted DENY_LIST via a raw readFileSync of the now-deleted vice.ts; would throw if the file were ever executed (it is excluded from npm run test:automated by design, so this never surfaces in CI). No plan explicitly closed this out after vice.ts's deletion.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-12T11:14:19.640Z",
     "resolved_at": null
   }
 ]

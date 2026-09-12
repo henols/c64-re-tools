@@ -5,11 +5,11 @@ milestone_name: The Rebuild Half
 current_phase: 52
 current_phase_name: Remove the Fork Backend
 status: executing
-stopped_at: Completed 52-09-PLAN.md
-last_updated: "2026-09-12T10:53:32.658Z"
+stopped_at: Completed 52-10-PLAN.md
+last_updated: "2026-09-12T11:17:42.976Z"
 last_activity: 2026-09-11
 last_activity_desc: Phase 52 execution started
-state_head: 8dcbb9b950ae2cb1a4a33631d1e67b421db1f50e
+state_head: 2791f06f0d634e9fd4865396bd65fc06e820f918
 progress:
   total_phases: 8
   completed_phases: 2
@@ -571,6 +571,7 @@ Last activity: 2026-09-11 — Phase 52 execution started
 | Phase 52 P07 | 210min | 3 tasks | 22 files |
 | Phase 52 P08 | 35min | 3 tasks | 13 files |
 | Phase 52 P09 | 35 min | 3 tasks | 13 files |
+| Phase 52 P10 | 55 min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -1304,6 +1305,7 @@ Recent decisions affecting current work:
 - [Phase 52]: Inverted and renamed check-skill-fork-honesty.mjs to check-skill-capability-honesty.mjs rather than deleting it; every assertion re-pointed at the six permanent stock hard-losses instead of the deleted CAPABILITY_REGISTRY. — The gate is the mitigation for the stale-documentation threat; deleting it re-opens the class the phase's own threat model calls out.
 - [Phase 52]: audit-root-args.test.ts's MATRIX row for the renamed gate moved from contained:refuses to contained:synthetic-corpus, and its hardcoded bound/clean population assertions were updated (2 refusing scripts, 3 clean) to match. — The inversion removed the gate's only static ../src import, so there is no split-read hazard left to refuse; the test file's own hardcoded counts had to move with it or the suite would stay red.
 - [Phase 52]: CLAUDE.md/PROJECT.md's Testing bullet was restated against stock-run-until.ts rather than removed: it honors the exactly-one-resume-per-wait invariant in event-driven, unit-tested form. The sibling poll-on-hit_count invariant was not restated as its own rule, since stock-diagnose.ts explicitly uses wall-clock timing instead by its own comment. — Plan instruction: check whether either invariant survives in a surviving module before deleting the bullet outright; one does, one does not, in the same shape.
+- [Phase 52]: Fixed two falsified fork-era symbol references discovered while reconciling Phase 52's closing criteria: CLAUDE.md/PROJECT.md's probeBackend() Constraints clause and CLAUDE.md's DENY_LIST Key Abstractions bullet. — Both named symbols deleted by earlier plans in this phase (52-05, 52-06); left uncorrected they would have been standing, checked-in false claims about the live codebase.
 
 ### Pending Todos
 
@@ -2381,8 +2383,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-12T10:53:32.439Z
-Stopped at: Completed 52-09-PLAN.md
+Last session: 2026-09-12T11:17:08.478Z
+Stopped at: Completed 52-10-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
