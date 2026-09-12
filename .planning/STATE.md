@@ -5,16 +5,16 @@ milestone_name: The Rebuild Half
 current_phase: 47
 current_phase_name: Multi-File Rebuildable Source
 status: executing
-stopped_at: Phase 47 planned — 6 plans in 5 waves, plan-checker passed
-last_updated: "2026-09-12T15:49:52.389Z"
+stopped_at: Completed 47-01-PLAN.md
+last_updated: "2026-09-12T16:23:16.240Z"
 last_activity: 2026-09-12
-last_activity_desc: Phase 47 planned (6 plans, 5 waves)
-state_head: 275ae9ddf30cf1598c1e1851d3e758954fa9eff2
+last_activity_desc: Phase 47 execution started
+state_head: 59c118834c4331ccdc0449576092f6e871f6d1c0
 progress:
   total_phases: 8
   completed_phases: 2
   total_plans: 22
-  completed_plans: 16
+  completed_plans: 17
   percent: 25
 ---
 
@@ -32,7 +32,7 @@ RAM, inspect chip state — and keep working when the emulator misbehaves.
 means — two concurrent monitor channels to one machine, with contention reported
 by name rather than misdiagnosed as a wedge — without moving the ONE thing.*
 
-**Current focus:** Phase 52 — Remove the Fork Backend
+**Current focus:** Phase 47 — Multi-File Rebuildable Source
 Milestone **v1.0.0 "The Rebuild Half"**, roadmap created 2026-09-10, Phases 45-50,
 15/15 requirements mapped. The presumptive scope recorded at the
 v0.9.0 close is now the committed one: `DECOMP-01..04`, `BUILD-01..07` (the text
@@ -254,16 +254,16 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 47 (Multi-File Rebuildable Source) — READY TO EXECUTE
-Plan: Not started
-Status: Ready to execute
+Phase: 47 (Multi-File Rebuildable Source) — EXECUTING
+Plan: 2 of 6
+Status: Executing Phase 47
 Plans: 6 (47-01 … 47-06) in 5 waves. Wave 2's 47-05 is `autonomous: false` —
 it carries the phase's one blocking decision checkpoint, because promoting
 `anno export-asm --out` from a file path to a directory path breaks a
 published CLI surface.
 
-Progress: [████░░░░░░] 38% (3/8 phases complete in v1.0.0; per-phase plan counts in the ROADMAP Progress table)
-Last activity: 2026-09-12 — Phase 47 planned (6 plans, 5 waves); plans verified
+Progress: [███░░░░░░░] 25% (3/8 phases complete in v1.0.0; per-phase plan counts in the ROADMAP Progress table)
+Last activity: 2026-09-12 — Phase 47 execution started
 
 ## Performance Metrics
 
@@ -572,6 +572,7 @@ Last activity: 2026-09-12 — Phase 47 planned (6 plans, 5 waves); plans verifie
 | Phase 52 P11 | 55 min | 3 tasks | 3 files |
 | Phase 52 P12 | 70min | 3 tasks | 3 files |
 | Phase 52-remove-the-fork-backend P13 | 35 min | 3 tasks | 5 files |
+| Phase 47 P01 | 45min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -1310,6 +1311,8 @@ Recent decisions affecting current work:
 - [Phase 52]: Corrected fork-backend prose in ARCHITECTURE.md, STACK.md and CONVENTIONS.md (52-12): resolved each stale component row individually by reading the tree (re-point where a successor exists, remove where none does) rather than by pattern.
 - [Phase 52]: Proved the CLAUDE.md projection self-consistent with a four-file census (CLAUDE.md plus its three declared sources): zero deleted-module citations and zero fork-flag mentions remain anywhere in the chain (52-12).
 - [Phase 52-remove-the-fork-backend]: Reworded PROJECT.md's two remaining stale SID decision-log locations to state the permanent, accepted hardware loss (matching FORK-01's amendment style), and annotated the four unprojected codebase snapshots (CONCERNS/INTEGRATIONS/STRUCTURE/TESTING) with dated supersession notes rather than rewriting or deleting them, since none is named as a CLAUDE.md projection source.
+- [Phase 47]: cwd is derived from dirname(sourcePath) never outDirPath, and carries no wire key -- a container-side caller can never choose acme.build's working directory — outDir governs where the .prg lands and may be pointed elsewhere by a caller; !source resolution is about where the sources live, and a wire-reachable cwd would be the same trust-boundary regression the oracle.probe command field was removed for
+- [Phase 47]: exportAsmTree()'s block-to-scope assignment handles only wholly-contained and no-scope-at-all cases in plan 47-01; a boundary-crossing block falls through to unscoped.a here, with D47-C's named refusal deferred to plan 47-02 — the plan text explicitly scopes the boundary-crossing refusal and adjacency edges to plan 47-02, so implementing them here would be scope creep ahead of that plan's own tests
 
 ### Pending Todos
 
@@ -2387,8 +2390,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-12T14:07:14.374Z
-Stopped at: Phase 52 complete, ready to plan Phase 47
+Last session: 2026-09-12T16:23:16.011Z
+Stopped at: Completed 47-01-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
