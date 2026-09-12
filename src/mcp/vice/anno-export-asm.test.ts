@@ -6116,3 +6116,159 @@ test("split table: `result.dataByteCount` is unchanged by the symbolisation -- t
   assert.equal(splitResult.dataByteCount, 4, "the table's four bytes went out through the data path");
 });
 
+// ---------------------------------------------------------------------------
+// Phase 47, plan 47-06, Task 2: the two halves are inseparable BY THIS
+// EXPORTER -- asserted directly rather than assumed. One store range is one
+// `ExportBlock` (`sortedRanges.map()`), so a split table's low half and high
+// half always land in the SAME emitted file; and a relocated target's symbol
+// carries both halves to their new value together, never one alone.
+//
+// The adversarial control that deliberately moves ONE half and proves a gate
+// catches it belongs to Phase 49 by the ROADMAP note's own words -- this
+// section proves the emitter cannot separate the halves in the first place,
+// which is what that later gate will be built on top of. Its absence here is
+// a boundary, not an oversight.
+// ---------------------------------------------------------------------------
+
+test("split table: a `lo_hi_address` range yields exactly ONE ExportBlock, and both its half line groups land in the SAME emitted file", () => {
+  const fixture = splitAddressFixture("split-oneblock-onefile", "lo_hi_address");
+  const outDir = join(fixture.dir, "tree");
+  const result = exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir });
+
+  // Link 1: one store row -> one ExportBlock. Not merely trusted --
+  // `sortedRanges.map()` is what makes this true, and a future change that
+  // ever split one range across two blocks would red HERE first.
+  const tableBlocks = result.blocks.filter((b) => b.dataType === "lo_hi_address");
+  assert.equal(tableBlocks.length, 1, "a split range is ONE store row, so it must produce exactly one ExportBlock");
+
+  // Link 2: that one block's lines land in exactly one tree file.
+  const treeFileNames = readdirSync(outDir).filter((name) => name.endsWith(".a"));
+  const filesCarryingOrigin = treeFileNames.filter((name) => readFileSync(join(outDir, name), "utf8").includes(tableBlocks[0]!.lines[0]!));
+  assert.equal(filesCarryingOrigin.length, 1, "the table block's own origin line must appear in exactly one tree .a file");
+
+  // Link 3: BOTH half line groups are inside that SAME file -- the
+  // move-together property stated directly, not derived from Link 2 alone.
+  const text = readFileSync(join(outDir, filesCarryingOrigin[0]!), "utf8");
+  assert.ok(text.includes("<routine_a, <routine_b"), `the low-half line must be in the SAME file as the table block's origin:\n${text}`);
+  assert.ok(text.includes(">routine_a, >routine_b"), `the high-half line must be in the SAME file as the table block's origin:\n${text}`);
+});
+
+/** A one-byte `rts` routine named `routine_a`, immediately followed by a
+ * 2-byte `lo_hi_address` table with its one entry pointing at it -- built at
+ * `routineAddress` as the image's own ORIGIN, so "moving the routine" is
+ * simply choosing a different `routineAddress` and letting the table's own
+ * bytes (derived from it) follow. Every `split table: relocation` test below
+ * builds two of these -- one "before", one "after" -- and never mutates one
+ * in place, since the routine's own code bytes never move in a real image;
+ * what moves is which address holds it. */
+function relocationFixture(tag: string, routineAddress: number, dataType: "lo_hi_address" | "hi_lo_address" = "lo_hi_address"): StoreFixture {
+  const low = routineAddress & 0xff;
+  const high = (routineAddress >> 8) & 0xff;
+  const tableBody = dataType === "lo_hi_address" ? [low, high] : [high, low];
+  return buildStore(freshDir(tag), {
+    origin: routineAddress,
+    body: [0x60, ...tableBody],
+    ranges: [
+      { start: routineAddress, endInclusive: routineAddress, dataType: "code" },
+      { start: routineAddress + 1, endInclusive: routineAddress + 2, dataType },
+    ],
+    labels: [{ address: routineAddress, name: "routine_a" }],
+  });
+}
+
+/** Exports a "before" tree with `routine_a` at $0801 and an "after" tree with
+ * it at $0942 -- chosen so BOTH the low byte ($01 -> $42) and the high byte
+ * ($08 -> $09) genuinely differ, never a move that only changes one -- and
+ * returns each tree's own table bytes, sliced from `result.expectedBytes` at
+ * the table block's own position. Called once per test below under its own
+ * tag, never a shared mutable fixture two tests could interfere through.
+ * `exportAsmTree()` itself is synchronous; this stays synchronous too so the
+ * two structural assertions below need no `await`, while the round-trip test
+ * awaits `runHostTool()` separately over this same shape. */
+function runRelocationDemo(tag: string) {
+  const before = relocationFixture(`${tag}-before`, 0x0801);
+  const beforeOutDir = join(before.dir, "tree");
+  const beforeResult = exportAsmTree({ storePath: before.storePath, imagePath: before.imagePath, workspaceRoot: before.dir, outDir: beforeOutDir });
+
+  const after = relocationFixture(`${tag}-after`, 0x0942);
+  const afterOutDir = join(after.dir, "tree");
+  const afterResult = exportAsmTree({ storePath: after.storePath, imagePath: after.imagePath, workspaceRoot: after.dir, outDir: afterOutDir });
+
+  const beforeTableBlock = beforeResult.blocks.find((b) => b.dataType === "lo_hi_address")!;
+  const afterTableBlock = afterResult.blocks.find((b) => b.dataType === "lo_hi_address")!;
+  const beforeMin = beforeResult.blocks[0]!.start;
+  const afterMin = afterResult.blocks[0]!.start;
+  const beforeTableBytes = beforeResult.expectedBytes.slice(beforeTableBlock.start - beforeMin, beforeTableBlock.endExclusive - beforeMin);
+  const afterTableBytes = afterResult.expectedBytes.slice(afterTableBlock.start - afterMin, afterTableBlock.endExclusive - afterMin);
+
+  return { before, beforeOutDir, beforeResult, beforeTableBytes, after, afterOutDir, afterResult, afterTableBytes };
+}
+
+test("split table: non-vacuity for the relocation demonstration -- the two exports' table bytes really do differ", () => {
+  const { beforeTableBytes, afterTableBytes } = runRelocationDemo("split-reloc-nonvacuity");
+  assert.notDeepEqual(
+    [...beforeTableBytes],
+    [...afterTableBytes],
+    "a no-op move must not be able to pass the together-ness assertion below -- the table bytes must genuinely differ between the two exports",
+  );
+});
+
+test(
+  "split table: relocation -- moving the target routine changes BOTH halves of the affected entry together, never one alone",
+  () => {
+    // This proves the emitter CANNOT separate the halves: the same emitted
+    // symbol reference (`<routine_a`/`>routine_a`, unchanged text in both
+    // trees) resolves to wherever `routine_a` currently is, so relocating it
+    // moves both bytes at once. The adversarial control that deliberately
+    // moves ONE half and proves a gate catches it belongs to Phase 49 by the
+    // ROADMAP note's own assignment -- its absence here is a boundary this
+    // section is built to hand off to, not a gap in this plan.
+    const { beforeTableBytes, afterTableBytes } = runRelocationDemo("split-reloc-together");
+    assert.notEqual(beforeTableBytes[0], afterTableBytes[0], "the LOW half must change when the routine moves");
+    assert.notEqual(beforeTableBytes[1], afterTableBytes[1], "the HIGH half must change when the routine moves");
+  },
+);
+
+test(
+  "split table: relocation -- the moved tree reassembles at exitStatus 0 with bytes deepEqual its own new expectedBytes",
+  { skip: SKIP_REASON },
+  async () => {
+    const { after, afterOutDir, afterResult } = runRelocationDemo("split-reloc-roundtrip");
+    const response = await runHostTool({ tool: "acme.build", args: { source: ROOT_FILE_NAME, format: "plain", noReport: true } }, { repoRoot: afterOutDir });
+    assert.equal(response.ok, true, response.ok ? "" : response.message);
+    if (!response.ok) return;
+    assert.equal(response.exitStatus, 0, "the relocated tree must still assemble cleanly");
+    assert.equal(response.results.length, 1);
+    const producedBytes = new Uint8Array(readFileSync(response.results[0]!.path));
+    assert.deepEqual(producedBytes, afterResult.expectedBytes, "the produced bytes must be octet-identical to bytes taken from the moved image");
+    assert.ok(after.storePath.length > 0, "precondition: the 'after' fixture must actually exist");
+  },
+);
+
+function splitAddressBoundaryCrossingFixture(tag: string): StoreFixture {
+  return buildStore(freshDir(tag), {
+    origin: 0x0801,
+    body: [0xc7, 0x02, 0x03, 0x04, 0x05, 0x06],
+    ranges: [{ start: 0x0803, endInclusive: 0x0806, dataType: "lo_hi_address" }],
+    scopes: [{ start: 0x0801, endInclusive: 0x0804 }],
+  });
+}
+
+test("split table: a split range crossing a scope boundary gets the ORDINARY boundary-crossing refusal, with no special case for the table", () => {
+  const fixture = splitAddressBoundaryCrossingFixture("split-boundary-crossing");
+  const outDir = join(fixture.dir, "tree");
+  mkdirSync(outDir, { recursive: true });
+
+  assert.throws(
+    () => exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir }),
+    (err: unknown) => {
+      assert.ok(err instanceof Error);
+      assert.match(err.message, /\$0803\.\.\$0806/, `the message must name the range's extent: ${err.message}`);
+      assert.match(err.message, /\$0801\.\.\$0804/, `the message must name the scope's extent: ${err.message}`);
+      assert.match(err.message, /wholly contained/, `the message must state the containment rule that was violated -- the table gets no exemption: ${err.message}`);
+      return true;
+    },
+  );
+
+  assert.deepEqual(readdirSync(outDir), [], "the output directory must still be empty after a refusal -- nothing was written before the throw");
+});
