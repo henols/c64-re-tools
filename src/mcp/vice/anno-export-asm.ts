@@ -123,6 +123,7 @@ import { AUTO_NAME_PREFIX_RE } from "./anno-coverage.ts";
 // text for that shape and must find none.
 import { decomposeRegisterValue, hasRegBitsEntry, type RegisterDecomposition } from "./anno-enum-gen.ts";
 import { decode } from "./disasm-decoder.ts";
+import type { Instruction } from "./disasm-decoder.ts";
 import { renderLine } from "./disasm-renderer.ts";
 import { parsePrg, flatImageOrigin } from "./prg-image.ts";
 // BUILD-05 (phase 46 plan 01): the ONE reader of `recovery/PROVENANCE.md`'s
@@ -980,6 +981,51 @@ function withComments(text: string, start: number, endExclusive: number, ctx: Co
 }
 
 /**
+ * Phase 47, plan 47-04 (BUILD-03): the address one decoded instruction's
+ * operand REFERENCES, for the in-tree symbol rule below -- the SAME address
+ * a substitution would substitute, extracted through `resolvedTarget` FIRST
+ * (`disasm-decoder.ts` rule 5 for every relative branch, rule 6 for absolute
+ * `jmp` ($4C) and `jsr` ($20)), and otherwise through the operand's own
+ * `value` for the `absolute`, `zeropage` and `indirect` roles -- the same
+ * three roles `disasm-renderer.ts`'s own `resolveSymbol()` call sites read.
+ *
+ * AN `immediate` OPERAND IS DELIBERATELY NEVER A REFERENCE, and returns
+ * `undefined` here exactly as it falls through every branch below. An
+ * immediate is a BYTE VALUE, not an address: project enums (the
+ * `usageByAddress` branch above) are what give one a name, and treating it as
+ * an address is how `lda #$08` would start demanding a label be recorded at
+ * `$0008`. `disasm-renderer.ts`'s own D-11 comment states the same exclusion
+ * for the identical reason, on the substitution side of this same boundary.
+ */
+function referencedAddress(instr: Instruction): number | undefined {
+  if (instr.resolvedTarget !== undefined) return instr.resolvedTarget;
+  const role = instr.operand?.role;
+  if (role === "absolute" || role === "zeropage" || role === "indirect") return instr.operand!.value;
+  return undefined;
+}
+
+/**
+ * Phase 47, plan 47-04 (BUILD-03, D47-F): true iff `address` falls inside
+ * `[block.start, block.endExclusive)` for SOME block this export emitted --
+ * the half-open interval every other boundary test in this module already
+ * uses. Tested against the `blocks` array `exportAsm()` already built at the
+ * top of the function, never a second range list derived independently of
+ * it: a second list is exactly how the in-tree test and the emitted blocks
+ * could drift apart.
+ *
+ * D47-F'S BOUNDARY, STATED HERE BECAUSE THIS IS WHERE IT IS DECIDED: an
+ * address OUTSIDE every emitted block -- a hardware register like `$d020`,
+ * a KERNAL entry like `$ffd2` -- is NOT in-tree, and a reference to one is
+ * rendered as a hex literal and is never refused. Those addresses are fixed
+ * hardware that cannot move, which is precisely what "so the code can move"
+ * is about; a rule that refused on them would make every real export
+ * impossible and would be measuring the wrong thing.
+ */
+function isInTree(address: number, blocks: readonly ExportBlock[]): boolean {
+  return blocks.some((block) => address >= block.start && address < block.endExclusive);
+}
+
+/**
  * Exports the annotation store at `options.storePath`, over the image at
  * `options.imagePath`, as ACME source plus the exact bytes that source must
  * assemble to.
@@ -1190,6 +1236,21 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
    * doc-comment for what a caller reading this field is obliged to do. */
   const binaries: ExportBinary[] = [];
 
+  /** Phase 47, plan 47-04 (BUILD-03): one in-tree reference this export could
+   * not resolve to a symbol -- collected across the WHOLE block loop and
+   * refused ONCE at the end, in the shape the unapplied-enum-usage and
+   * unplaced-comment refusals below already use. */
+  interface UnresolvedReference {
+    referringAddress: number;
+    targetAddress: number;
+  }
+  const unresolvedReferences: UnresolvedReference[] = [];
+  /** How many in-tree references this export encountered, resolved or not --
+   * the denominator for the refusal's own "N of M" count, on the same terms
+   * `enumUsage.length` is the denominator for the unapplied-enum-usage
+   * refusal below. */
+  let inTreeReferenceCount = 0;
+
   // AUTO-GENERATED NAMES ARE MARKED, not filtered. Every store label reaches
   // the source either way; the marker is the backlog signal, carried into the
   // one artefact that leaves this tree. The predicate is
@@ -1335,6 +1396,29 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
         }
 
         let rendered = renderLine(instr, { showSymbols: true, symbolFor });
+
+        // Phase 47, plan 47-04 (BUILD-03): THE IN-TREE SYMBOL RULE, beside
+        // the `renderLine()` call it has to agree with. `rendered` above
+        // already went through `symbolFor` -- the SAME `labelIndex` map read
+        // here -- so a reference this check calls unresolved is a reference
+        // `renderLine()` also had no name for, and one this check calls
+        // resolved is a reference `renderLine()` already substituted. Reading
+        // a SECOND index here, or re-scanning `sortedLabels`, is exactly how
+        // a refusal could disagree with what the renderer actually did: it
+        // could refuse an export the renderer would have substituted
+        // correctly, or silently pass one it would not.
+        //
+        // Collected here and refused ONCE, after every block has been
+        // processed -- see the throw below the block loop for the message
+        // and D47-F's own boundary.
+        const referenced = referencedAddress(instr);
+        if (referenced !== undefined && isInTree(referenced, blocks)) {
+          inTreeReferenceCount++;
+          if (labelIndex.get(referenced) === undefined) {
+            unresolvedReferences.push({ referringAddress: instr.address, targetAddress: referenced });
+          }
+        }
+
         // The mechanical decode text (D-17), set only by the OR-ed
         // decomposition branch below and merged into this instruction's
         // trailing comment by `withComments()` after the enum-substitution
@@ -1695,6 +1779,34 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
     const emittedBlockLines = emitBlock(block.start, block.endExclusive, content);
     block.lines = emittedBlockLines;
     blockLines.push(...emittedBlockLines);
+  }
+
+  // Phase 47, plan 47-04 (BUILD-03): an in-tree reference this export could
+  // not resolve to a symbol is REFUSED BY NAME, once, across the whole
+  // export -- never emitted as a hex literal that freezes the target's
+  // address into the source while the export reports success. In the same
+  // shape the unapplied-enum-usage and unplaced-comment refusals below
+  // already use: name the first offender, state the "N of M" count, and say
+  // plainly what is refused.
+  //
+  // A reference OUTSIDE every emitted block -- a hardware register, a
+  // KERNAL entry -- is rendered as a hex literal and is NOT a refusal
+  // (D47-F, `isInTree()`'s own doc-comment): that address is fixed hardware
+  // which cannot move, which is precisely what "so the code can move" is
+  // about, and this refusal never fires on one.
+  //
+  // No image byte, no mnemonic and no store comment text is ever
+  // interpolated here -- only addresses and counts, on the same discipline
+  // `assertDataTypeForExport()`'s own comment states.
+  if (unresolvedReferences.length > 0) {
+    const first = unresolvedReferences[0]!;
+    throw new Error(
+      `exportAsm: the instruction at ${hex4(first.referringAddress)} references ${hex4(first.targetAddress)}, an address inside an ` +
+        `emitted block, but no label names that address -- every reference that has to move with the code goes through a symbol, and ` +
+        `this one has none to go through. ${unresolvedReferences.length} of ${inTreeReferenceCount} in-tree reference(s) are in this ` +
+        `state. Refusing to emit a hex literal that freezes the target's address into the source while reporting success -- the whole ` +
+        `point of the symbol is that the code can move. Record a label at ${hex4(first.targetAddress)} to fix this.`,
+    );
   }
 
   // EVERY store label is defined here, in a block BEFORE the first `* =`, not

@@ -609,6 +609,179 @@ test("PLANTED VIOLATION 2: a symbol substituted into a zeropage operand with its
 });
 
 // ---------------------------------------------------------------------------
+// Phase 47, plan 47-04 (BUILD-03): every in-tree reference goes through a
+// symbol, or the export refuses by name. `jsr`/`jmp`/a relative branch/a
+// data reference/an indirect vector all read the SAME `referencedAddress()`
+// extraction and the SAME `isInTree()` boundary test inside `exportAsm()`;
+// each case below exercises one operand shape so a future change that only
+// fixed one of them cannot pass silently. A reference to an address OUTSIDE
+// every emitted block -- fixed hardware, never moved by a rebuild -- is the
+// paired non-vacuity control: it must NOT refuse, or this whole rule would
+// make every real export impossible.
+// ---------------------------------------------------------------------------
+
+test("symbol rule: an in-tree `jsr` with no label at its target makes exportAsm() throw, naming both addresses and the count", () => {
+  const { dir, storePath, imagePath } = buildStore(freshDir("symrule-jsr-unresolved"), {
+    origin: 0x0801,
+    // jsr $0806 / nop / nop / nop / rts -- $0806 (the `rts`) is inside the
+    // $0801..$0807 block and carries no label.
+    body: [0x20, 0x06, 0x08, 0xea, 0xea, 0xea, 0x60],
+    ranges: [{ start: 0x0801, endInclusive: 0x0807, dataType: "code" }],
+    labels: [],
+  });
+
+  assert.throws(
+    () => exportAsm({ storePath, imagePath, workspaceRoot: dir }),
+    (e: unknown) => {
+      assert.ok(e instanceof Error);
+      assert.match(e.message, /^exportAsm: /, "every refusal from this module is prefixed `exportAsm:`");
+      assert.ok(e.message.includes("$0801"), `the refusal names the REFERRING address: ${e.message}`);
+      assert.ok(e.message.includes("$0806"), `the refusal names the TARGET address: ${e.message}`);
+      assert.ok(e.message.includes("1 of 1"), `the refusal states the count: ${e.message}`);
+      return true;
+    },
+  );
+});
+
+test("symbol rule: the same `jsr` store with a label recorded at the target exports cleanly, renders the symbol, and reassembles byte-identically", { skip: SKIP_REASON }, () => {
+  const { dir, storePath, imagePath } = buildStore(freshDir("symrule-jsr-resolved"), {
+    origin: 0x0801,
+    body: [0x20, 0x06, 0x08, 0xea, 0xea, 0xea, 0x60],
+    ranges: [{ start: 0x0801, endInclusive: 0x0807, dataType: "code" }],
+    labels: [{ address: 0x0806, name: "target" }],
+  });
+
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+  assert.ok(result.source.includes("jsr target"), `the resolved reference must render through the symbol:\n${result.source}`);
+
+  const verdict = verifyExport(result);
+  assert.equal(verdict.outcome, "ok", `a resolved in-tree reference must round-trip:${context(result, verdict)}`);
+  assert.equal(verdict.byteDiff?.equal, true, `the byte-diff IS the verdict:${context(result, verdict)}`);
+});
+
+test("symbol rule: a reference to an address OUTSIDE every emitted block renders as a hex literal and does NOT refuse", { skip: SKIP_REASON }, () => {
+  // `shapeFixture()`'s own body is `lda #$00` / `sta $d020` / `rts` -- $d020
+  // is a hardware register, well outside the $0801..$0806 block, so this is
+  // the paired non-vacuity control: the rule must never fire here.
+  const { dir, storePath, imagePath } = shapeFixture("symrule-out-of-tree");
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+
+  assert.ok(result.source.includes("sta $d020"), `an out-of-tree reference must still render as a hex literal:\n${result.source}`);
+
+  const verdict = verifyExport(result);
+  assert.equal(verdict.outcome, "ok", `an out-of-tree reference must not be refused, and must still round-trip:${context(result, verdict)}`);
+  assert.equal(verdict.byteDiff?.equal, true, `the byte-diff IS the verdict:${context(result, verdict)}`);
+});
+
+test("symbol rule: a relative BRANCH whose resolved target is in-tree with no label there refuses too -- the rule covers branches, not only jsr/jmp", () => {
+  const { dir, storePath, imagePath } = buildStore(freshDir("symrule-branch-unresolved"), {
+    origin: 0x0801,
+    // bne +2 (resolvedTarget = $0801 + 2 + 2 = $0805) / nop / nop / rts --
+    // $0805 (the `rts`) is inside the block and carries no label.
+    body: [0xd0, 0x02, 0xea, 0xea, 0x60],
+    ranges: [{ start: 0x0801, endInclusive: 0x0805, dataType: "code" }],
+    labels: [],
+  });
+
+  assert.throws(
+    () => exportAsm({ storePath, imagePath, workspaceRoot: dir }),
+    (e: unknown) => {
+      assert.ok(e instanceof Error);
+      assert.ok(e.message.includes("$0801"), `the refusal names the REFERRING address: ${e.message}`);
+      assert.ok(e.message.includes("$0805"), `the refusal names the TARGET address: ${e.message}`);
+      return true;
+    },
+  );
+});
+
+test("symbol rule: a data reference -- an absolute operand that is not a control-flow target -- in-tree with no label there refuses", () => {
+  const { dir, storePath, imagePath } = buildStore(freshDir("symrule-data-unresolved"), {
+    origin: 0x0801,
+    // lda $0805 (absolute, not jmp/jsr) / nop / rts -- $0805 (the `rts`) is
+    // inside the block and carries no label.
+    body: [0xad, 0x05, 0x08, 0xea, 0x60],
+    ranges: [{ start: 0x0801, endInclusive: 0x0805, dataType: "code" }],
+    labels: [],
+  });
+
+  assert.throws(
+    () => exportAsm({ storePath, imagePath, workspaceRoot: dir }),
+    (e: unknown) => {
+      assert.ok(e instanceof Error);
+      assert.ok(e.message.includes("$0801"), `the refusal names the REFERRING address: ${e.message}`);
+      assert.ok(e.message.includes("$0805"), `the refusal names the TARGET address: ${e.message}`);
+      return true;
+    },
+  );
+});
+
+test("symbol rule: an indirect `jmp` whose VECTOR address is in-tree with no label there refuses", () => {
+  const { dir, storePath, imagePath } = buildStore(freshDir("symrule-indirect-unresolved"), {
+    origin: 0x0801,
+    // jmp ($0805) / nop / rts -- $0805 (the `rts`) is the VECTOR address,
+    // inside the block, and carries no label.
+    body: [0x6c, 0x05, 0x08, 0xea, 0x60],
+    ranges: [{ start: 0x0801, endInclusive: 0x0805, dataType: "code" }],
+    labels: [],
+  });
+
+  assert.throws(
+    () => exportAsm({ storePath, imagePath, workspaceRoot: dir }),
+    (e: unknown) => {
+      assert.ok(e instanceof Error);
+      assert.ok(e.message.includes("$0801"), `the refusal names the REFERRING address: ${e.message}`);
+      assert.ok(e.message.includes("$0805"), `the refusal names the VECTOR address: ${e.message}`);
+      return true;
+    },
+  );
+});
+
+test("symbol rule: the refusal message contains no byte value from the image and no store comment text", () => {
+  const { dir, storePath, imagePath } = buildStore(freshDir("symrule-no-disclosure"), {
+    origin: 0x0801,
+    body: [0x20, 0x06, 0x08, 0xea, 0xea, 0xea, 0x60],
+    ranges: [{ start: 0x0801, endInclusive: 0x0807, dataType: "code" }],
+    labels: [],
+    comments: [{ address: 0x0801, commentType: "line", text: "TOP SECRET STORE TEXT" }],
+  });
+
+  assert.throws(
+    () => exportAsm({ storePath, imagePath, workspaceRoot: dir }),
+    (e: unknown) => {
+      assert.ok(e instanceof Error);
+      assert.equal(e.message.includes("TOP SECRET"), false, `the store's own comment text must never be quoted: ${e.message}`);
+      // Every image byte this fixture carries, checked for absence as a raw
+      // two-hex-digit token distinct from the addresses the message DOES
+      // name ($0801/$0806) -- `$20`/`$06`/`$08`/`$ea`/`$60` are the opcode
+      // and operand bytes themselves, never the referring/target address.
+      for (const byteHex of ["$20", "$ea", "$60"]) {
+        assert.equal(e.message.includes(byteHex), false, `no raw image byte may appear in the refusal: ${e.message}`);
+      }
+      return true;
+    },
+  );
+});
+
+test("symbol rule: an immediate operand is never treated as a reference -- a store loading an immediate equal to a block address exports cleanly", { skip: SKIP_REASON }, () => {
+  const { dir, storePath, imagePath } = buildStore(freshDir("symrule-immediate-not-a-reference"), {
+    origin: 0x0008,
+    // lda #$08 -- the immediate VALUE $08 equals this very block's own start
+    // address $0008. If an immediate were ever treated as a reference, this
+    // would refuse; it must not.
+    body: [0xa9, 0x08, 0x60],
+    ranges: [{ start: 0x0008, endInclusive: 0x000a, dataType: "code" }],
+    labels: [],
+  });
+
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+  assert.ok(result.source.includes("lda #$08"), `the immediate operand must render unchanged:\n${result.source}`);
+
+  const verdict = verifyExport(result);
+  assert.equal(verdict.outcome, "ok", `an immediate operand must never trigger the in-tree rule:${context(result, verdict)}`);
+  assert.equal(verdict.byteDiff?.equal, true, `the byte-diff IS the verdict:${context(result, verdict)}`);
+});
+
+// ---------------------------------------------------------------------------
 // The typed data-range emitter. Every one of the twelve `DATA_TYPES` members
 // must reassemble byte-identically, and the suite is driven from the
 // vocabulary's OWN source so a thirteenth member is covered automatically.
@@ -2641,6 +2814,27 @@ function everyOpcodeImage(origin: number): { bytes: number[]; addressOf: number[
   return { bytes, addressOf };
 }
 
+/**
+ * Phase 47, plan 47-04 (BUILD-03): every relative-mode opcode's own resolved
+ * target -- `address + 2`, per `everyOpcodeImage()`'s own doc-comment -- is
+ * an address INSIDE this block, and the new in-tree symbol rule refuses an
+ * in-tree reference with no label at its target. One label per relative
+ * opcode's target is therefore not optional annotation here: it is what
+ * keeps this fixture exporting at all under the rule Task 1 added. Each
+ * target is the START of the next opcode's own instruction (never
+ * mid-instruction), so every one of these is a HEADER definition only --
+ * `content.length` below stays 256, unchanged by adding them.
+ */
+function everyOpcodeBranchTargetLabels(addressOf: readonly number[]): { address: number; name: string }[] {
+  const labels: { address: number; name: string }[] = [];
+  for (let op = 0; op <= 0xff; op++) {
+    if (OPCODES[op]!.mode === "relative") {
+      labels.push({ address: addressOf[op]! + 2, name: `lbl_${(addressOf[op]! + 2).toString(16)}` });
+    }
+  }
+  return labels;
+}
+
 test("the `!byte` note vocabulary matched below is really present in disasm-renderer.ts (so this file cannot pass for the wrong reason)", () => {
   const src = readFileSync(RENDERER_PATH, "utf8");
   for (const note of [UNASSEMBLABLE_NOTE, ILLEGAL_NOTE]) {
@@ -2655,7 +2849,10 @@ test("ALL 256 OPCODES: every `acmeExpressible: false` entry goes out as `!byte` 
     origin,
     body: bytes,
     ranges: [{ start: origin, endInclusive: origin + bytes.length - 1, dataType: "code" }],
-    labels: [],
+    // The 8 relative-branch self-references (phase 47 plan 47-04, BUILD-03)
+    // -- every other opcode's own operand/resolvedTarget is out-of-tree
+    // ($0000, below `origin`), so this is the fixture's complete label set.
+    labels: everyOpcodeBranchTargetLabels(addressOf),
   });
 
   const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
@@ -2665,7 +2862,12 @@ test("ALL 256 OPCODES: every `acmeExpressible: false` entry goes out as `!byte` 
   const endAssert = lines.findIndex((l) => l.startsWith("!if * != ") && l.includes("block end drifted"));
   assert.ok(originAssert >= 0 && endAssert > originAssert, `the block must be bracketed:\n${result.source}`);
   const content = lines.slice(originAssert + 1, endAssert);
-  assert.equal(content.length, 256, "one emitted line per opcode -- no labels and no comments are in this store, so the mapping is one-to-one");
+  assert.equal(
+    content.length,
+    256,
+    "one emitted line per opcode -- every label this store carries is a HEADER-only definition at an instruction START (phase 47 " +
+      "plan 47-04's branch-target labels) and no comment is in this store, so the mapping is still one-to-one",
+  );
 
   // Computed from the table in this same test, never pinned. 35 against the
   // current table; a correction to `acmeExpressible` moves both sides together.
