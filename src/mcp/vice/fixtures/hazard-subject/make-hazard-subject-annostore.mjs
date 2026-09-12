@@ -235,12 +235,20 @@ try {
         "varies across passes through the routine (NOP on the first pass, RTS afterward) and there is no single correct symbol or " +
         "value to name here.",
     });
+    // Attached to hazard_smc2_write's own START address, not smc2_operand_addr
+    // (that instruction's own operand byte, one past its opcode): a generic
+    // multi-file export can only attach a comment to an instruction's start
+    // address or to an address an annotation label already names, and
+    // smc2_operand_addr is deliberately NOT a store label (a store label here
+    // would be exactly the "misleading symbol" this construction avoids on
+    // purpose). Attaching the comment to the host instruction's own start
+    // still says the same thing about the operand byte one past it.
     setComment(handle, {
-      address: sym("smc2_operand_addr"),
+      address: sym("hazard_smc2_write"),
       commentType: "line",
       text:
-        "DECLINED: this is the second self-modification's own operand byte -- the immediate operand of the LDA at " +
-        "hazard_smc2_write, rewritten in place by an indirect-indexed store through a zero-page pointer built entirely at " +
+        "DECLINED: this instruction's own operand byte -- one past its opcode, the immediate operand of the LDA at " +
+        "hazard_smc2_write -- is rewritten in place by an indirect-indexed store through a zero-page pointer built entirely at " +
         "runtime. Its effective value varies across calls to hazard_smc2_write (one value before the patch, a different one " +
         "after) and there is no single correct symbol or value to name here. No static operand anywhere in this image names this " +
         "address, which is exactly why a report reading this program shows no self-modification finding at it.",

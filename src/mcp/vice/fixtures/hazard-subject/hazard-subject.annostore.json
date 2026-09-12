@@ -258,9 +258,9 @@
       "provenance": "authored"
     },
     {
-      "address": 2100,
+      "address": 2099,
       "commentType": "line",
-      "text": "DECLINED: this is the second self-modification's own operand byte -- the immediate operand of the LDA at hazard_smc2_write, rewritten in place by an indirect-indexed store through a zero-page pointer built entirely at runtime. Its effective value varies across calls to hazard_smc2_write (one value before the patch, a different one after) and there is no single correct symbol or value to name here. No static operand anywhere in this image names this address, which is exactly why a report reading this program shows no self-modification finding at it.",
+      "text": "DECLINED: this instruction's own operand byte -- one past its opcode, the immediate operand of the LDA at hazard_smc2_write -- is rewritten in place by an indirect-indexed store through a zero-page pointer built entirely at runtime. Its effective value varies across calls to hazard_smc2_write (one value before the patch, a different one after) and there is no single correct symbol or value to name here. No static operand anywhere in this image names this address, which is exactly why a report reading this program shows no self-modification finding at it.",
       "bank": null,
       "provenance": "authored"
     }
