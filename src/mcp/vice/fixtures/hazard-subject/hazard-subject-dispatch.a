@@ -1,0 +1,91 @@
+; hazard-subject-dispatch.a -- the planted non-canonical indexed jump table,
+; and the real dispatch a closed accepted-shape list must decline.
+;
+; SITE ONE -- THE PROVEN CONSTRUCTION
+; ------------------------------------
+; The two split address tables below are consumed by a stack-return dispatch
+; routine (`hazard_dispatch_entry`) that lives in the ROOT file
+; (hazard-subject.a), not in this one: the pairing between this file's two
+; tables and that routine resolves across a source-file boundary on purpose.
+; A detector that only ever sees a table and its consumer sitting in the same
+; file has not been asked whether it can follow a real cross-file symbol
+; reference the way a multi-file build actually produces one.
+;
+; The published idiom pushes the HIGH byte of a table entry, then the LOW
+; byte, then returns -- the CPU's own `rts` resumes execution at the pulled
+; address PLUS ONE, because it was designed to return from a `jsr`, whose own
+; operand is the target address minus one. Every entry below is therefore
+; written as its real target address MINUS ONE, with the `-1` spelled out in
+; the expression itself rather than folded into a pre-computed byte constant
+; -- the bias is a fact about the mechanism, and it stays visible in the
+; source rather than hidden inside a magic number.
+;
+; Every fixture this project's own scanner ships in its own test corpus walks
+; its index through the X register on both loads. The routine that consumes
+; these two tables walks Y instead, on both loads -- the scanner is
+; register-agnostic by construction (it reads whichever register an
+; instruction's own addressing mode names), so this is what actually
+; exercises that agnosticism rather than merely assuming it holds.
+;
+; Three targets is enough to prove the reconstruction. Each one writes a
+; different, observable value to the VIC-II border-colour register and
+; returns -- a real, distinguishable effect, not dead code the assembler
+; happened to keep.
+
+dispatch_target_1
+        lda #$02
+        sta $d020
+        rts
+
+dispatch_target_2
+        lda #$04
+        sta $d020
+        rts
+
+dispatch_target_3
+        lda #$06
+        sta $d020
+        rts
+
+; The two address tables `hazard_dispatch_entry` (in the root file) reads.
+; Declared back to back with no padding between them, and the byte
+; immediately after the second table belongs to the SECOND, DECLINING
+; construction below -- two separate hazard-bearing regions whose address
+; ranges exactly touch. That adjacency is deliberate, not an accident of
+; layout: the two are separate constructions and must never be read as one
+; merged region.
+dispatch_hi
+        !byte >(dispatch_target_1-1)
+        !byte >(dispatch_target_2-1)
+        !byte >(dispatch_target_3-1)
+dispatch_lo
+        !byte <(dispatch_target_1-1)
+        !byte <(dispatch_target_2-1)
+        !byte <(dispatch_target_3-1)
+
+; SITE TWO -- THE DECLINING CONTROL
+; -----------------------------------
+; This is a genuine, WORKING dispatch: every byte below actually
+; reconstructs an address the same way site one's does, and the trailing
+; `rts` actually returns to it. The only difference is that its two indexed
+; loads walk two DIFFERENT index registers -- one through X, one through Y
+; -- rather than the same register on both. A detector whose accepted-shape
+; list requires one consistent index register across both loads correctly
+; has no evidence for THIS pairing, and this site exists so a reader can see
+; that decline happen against a real, working construction, not only against
+; a hand-built non-example built to fail on purpose. Declining here is the
+; correct behaviour for a shape the shared evidence gate was never built to
+; check -- not a bug in the gate, and not a case the gate merely forgot.
+decline_hi
+        !byte >(dispatch_target_1-1)
+decline_lo
+        !byte <(dispatch_target_1-1)
+
+dispatch_decline_entry
+        ldx #0
+        ldy #0
+        lda decline_hi,x
+        pha
+        lda decline_lo,y
+        pha
+        rts

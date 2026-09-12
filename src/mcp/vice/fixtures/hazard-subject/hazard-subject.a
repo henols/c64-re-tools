@@ -41,6 +41,24 @@
 ; this handover calls each one in turn and returns.
 entry
         jsr hazard_smc_entry
+        jsr hazard_dispatch_entry
+        rts
+
+; The routine that CONSUMES `hazard-subject-dispatch.a`'s two split address
+; tables -- the code half of the class-1 stack-return construction that
+; file's own header describes. Declared here, in the file that already
+; existed, so the pairing between this routine and its two tables resolves
+; across a source-file boundary rather than sitting entirely inside one
+; file. Both indexed loads walk the Y register, never X; the high byte is
+; pushed first and the low byte second, which is the order the trailing
+; `rts` needs to pop them back off the stack in.
+hazard_dispatch_entry
+        ldy #0
+        lda dispatch_hi,y
+        pha
+        lda dispatch_lo,y
+        pha
         rts
 
 !source "hazard-subject-smc.a"
+!source "hazard-subject-dispatch.a"
