@@ -45,10 +45,14 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   buildHazardReport,
+  crossCheckHazardFixture,
   HAZARD_CLASSES,
   HAZARD_DETECTION_STRENGTHS,
   HAZARD_LIMITS,
   HAZARD_REGION_OUTCOMES,
+  type HazardClass,
+  type HazardCrossCheckExpectation,
+  type HazardFinding,
   type HazardReport,
 } from "./anno-hazard-report.ts";
 
@@ -61,6 +65,7 @@ const HAZARD_SUBJECT_PRG_PATH = join(HERE, "fixtures", "hazard-subject", "hazard
 const COVERAGE_MODULE_PATH = join(HERE, "anno-coverage.ts");
 const CHARSET_PHANTOM_PRG_PATH = join(HERE, "fixtures", "ghidra", "charset-phantom.prg");
 const BANK_PRG_PATH = join(HERE, "fixtures", "ghidra", "bank.prg");
+const CROSS_CHECK_PATH = join(HERE, "fixtures", "hazard-subject", "CROSS-CHECK.md");
 
 /** A committed `.prg`'s bytes and load address, split the same way every
  * caller in this tree splits a loaded image: the first two bytes are the
@@ -730,6 +735,246 @@ test("hazard order: calling the builder twice on the same input returns deeply e
   for (let i = 1; i < first.findings.length; i++) {
     assert.ok(first.findings[i]!.anchorAddress >= first.findings[i - 1]!.anchorAddress);
   }
+});
+
+// ---------------------------------------------------------------------------
+// hazard crosscheck: the expectation table for the four independently-sourced
+// fixtures, declared from each fixture's OWN committed content -- never from
+// a detector run. See `crossCheckHazardFixture()`'s own doc comment for why
+// an expectation is never edited to make a disagreeing row agree.
+// ---------------------------------------------------------------------------
+
+const TRACER_FIXTURE = "fixtures/dxa/tracer.prg";
+const BANK_FIXTURE = "fixtures/ghidra/bank.prg";
+const SMC_FIXTURE = "fixtures/export-asm/smc.prg";
+const CHARSET_FIXTURE = "fixtures/ghidra/charset-phantom.prg";
+
+/**
+ * Sixteen rows: four independently-sourced fixtures times the four hazard
+ * classes. Every `positive` row's `expectedAddresses` is read from that
+ * fixture's own committed source, cited in the comment beside it -- never
+ * from running a detector over it first.
+ */
+const CROSS_CHECK_EXPECTATIONS: readonly HazardCrossCheckExpectation[] = [
+  // --- fixtures/dxa/tracer.prg: the 23-byte border-colour program. Its
+  // whole body is `lda #$00 ; sta $d020 ; rts` (fixtures/dxa/README.md's own
+  // byte table) -- no dispatch construct, no self-modification, no VIC-II
+  // register combination, no interrupt vector store. Negative for all four.
+  { fixture: TRACER_FIXTURE, hazardClass: "indexed-dispatch", kind: "negative", expectedAddresses: [] },
+  { fixture: TRACER_FIXTURE, hazardClass: "self-modifying-code", kind: "negative", expectedAddresses: [] },
+  { fixture: TRACER_FIXTURE, hazardClass: "page-alignment", kind: "negative", expectedAddresses: [] },
+  { fixture: TRACER_FIXTURE, hazardClass: "cycle-exact-raster", kind: "negative", expectedAddresses: [] },
+
+  // --- fixtures/ghidra/bank.prg: the processor-port bank-switching program.
+  // Every access to $d020/$d000 in bank.a is gated by the CURRENT `$01`
+  // value written immediately before it -- a runtime STATE dependency, never
+  // a spatial-alignment one, and the fixture's own header comment says so in
+  // as many words ("the SAME address means different things under different
+  // $01"). No dispatch construct, no self-modifying store, no $dd00/$d018/
+  // $d011 write, no interrupt vector store anywhere in bank.a. Negative for
+  // all four classes, and specifically negative for page-alignment: a
+  // program whose address-meaning dependency is a processor-port state
+  // change is a negative control for a spatial-boundary class, not a
+  // positive example of one.
+  { fixture: BANK_FIXTURE, hazardClass: "indexed-dispatch", kind: "negative", expectedAddresses: [] },
+  { fixture: BANK_FIXTURE, hazardClass: "self-modifying-code", kind: "negative", expectedAddresses: [] },
+  { fixture: BANK_FIXTURE, hazardClass: "page-alignment", kind: "negative", expectedAddresses: [] },
+  { fixture: BANK_FIXTURE, hazardClass: "cycle-exact-raster", kind: "negative", expectedAddresses: [] },
+
+  // --- fixtures/export-asm/smc.a: the 13-byte self-modifying loop.
+  // `smc_operand = *+$01` immediately before `lda #$00` at $0801 names
+  // $0802 -- the operand byte `inc smc_operand` rewrites on every pass
+  // (smc.a's own header comment, and export-asm/README.md's byte table).
+  // Positive for self-modifying-code at exactly $0802. No dispatch
+  // construct, no VIC-II register write, no interrupt vector store anywhere
+  // in smc.a -- negative for the other three.
+  { fixture: SMC_FIXTURE, hazardClass: "indexed-dispatch", kind: "negative", expectedAddresses: [] },
+  { fixture: SMC_FIXTURE, hazardClass: "self-modifying-code", kind: "positive", expectedAddresses: [0x0802] },
+  { fixture: SMC_FIXTURE, hazardClass: "page-alignment", kind: "negative", expectedAddresses: [] },
+  { fixture: SMC_FIXTURE, hazardClass: "cycle-exact-raster", kind: "negative", expectedAddresses: [] },
+
+  // --- fixtures/ghidra/charset-phantom.a: the character-set program.
+  // Its own header comment derives the character-set base register by
+  // register: $dd00=$3f -> bank base $0000; $d018=$04 -> character base
+  // = bank base + 2*2048 = $1000; $d011=$1b -> character-set mode, 2048
+  // bytes. Positive for page-alignment at exactly $1000. The charset block
+  // itself is a chain of plain `jsr`/`rts` blocks (never the stack-return
+  // RTS-trick idiom, never a split hi/lo table), so it produces no
+  // indexed-dispatch finding; no store lands on another instruction's own
+  // decoded byte range, so no self-modifying-code finding; no interrupt
+  // vector store exists anywhere in the source, so no cycle-exact-raster
+  // finding. Negative for the other three.
+  { fixture: CHARSET_FIXTURE, hazardClass: "indexed-dispatch", kind: "negative", expectedAddresses: [] },
+  { fixture: CHARSET_FIXTURE, hazardClass: "self-modifying-code", kind: "negative", expectedAddresses: [] },
+  { fixture: CHARSET_FIXTURE, hazardClass: "page-alignment", kind: "positive", expectedAddresses: [0x1000] },
+  { fixture: CHARSET_FIXTURE, hazardClass: "cycle-exact-raster", kind: "negative", expectedAddresses: [] },
+];
+
+/** The classes with NO independently-sourced positive example among the
+ * four fixtures above -- computed from the expectation table itself so the
+ * two never drift apart, rather than hand-listed a second time. */
+const CLASSES_WITH_NO_INDEPENDENT_POSITIVE: readonly HazardClass[] = HAZARD_CLASSES.filter(
+  (cls) => !CROSS_CHECK_EXPECTATIONS.some((e) => e.hazardClass === cls && e.kind === "positive"),
+);
+
+const FIXTURE_PRG_PATHS: Readonly<Record<string, string>> = {
+  [TRACER_FIXTURE]: TRACER_PRG_PATH,
+  [BANK_FIXTURE]: BANK_PRG_PATH,
+  [SMC_FIXTURE]: SMC_PRG_PATH,
+  [CHARSET_FIXTURE]: CHARSET_PHANTOM_PRG_PATH,
+};
+
+const REPORT_BY_FIXTURE: Readonly<Record<string, HazardReport>> = Object.fromEntries(
+  Object.entries(FIXTURE_PRG_PATHS).map(([fixture, path]) => [fixture, buildHazardReport(loadPrg(path))]),
+);
+
+test("hazard crosscheck: crossCheckHazardFixture() returns a shape with a denominator, three counts and three sorted address arrays, and no boolean, score, rate or percentage field", () => {
+  const report = REPORT_BY_FIXTURE[SMC_FIXTURE]!;
+  const result = crossCheckHazardFixture(report, CROSS_CHECK_EXPECTATIONS.find((e) => e.fixture === SMC_FIXTURE && e.hazardClass === "self-modifying-code")!);
+  assert.equal(result.fixture, SMC_FIXTURE);
+  assert.equal(result.hazardClass, "self-modifying-code");
+  assert.equal(result.positiveClass, "self-modifying-code");
+  assert.equal(typeof result.denominator, "number");
+  assert.equal(typeof result.detected, "number");
+  assert.equal(typeof result.missed, "number");
+  assert.equal(typeof result.falsePositive, "number");
+  assert.ok(Array.isArray(result.detectedAddresses));
+  assert.ok(Array.isArray(result.missedAddresses));
+  assert.ok(Array.isArray(result.falsePositiveAddresses));
+  for (const [key, val] of Object.entries(result)) {
+    assert.notEqual(typeof val, "boolean", `field "${key}" must never be a boolean`);
+    assert.ok(!/score|rate|percent/i.test(key), `field name "${key}" must never read as a score, rate or percentage`);
+  }
+});
+
+test("hazard crosscheck: the expectation table covers four fixtures times four classes -- sixteen rows, each with an expectation kind", () => {
+  assert.equal(CROSS_CHECK_EXPECTATIONS.length, 16);
+  const fixtures = new Set(CROSS_CHECK_EXPECTATIONS.map((e) => e.fixture));
+  assert.equal(fixtures.size, 4);
+  for (const cls of HAZARD_CLASSES) {
+    const rowsForClass = CROSS_CHECK_EXPECTATIONS.filter((e) => e.hazardClass === cls);
+    assert.equal(rowsForClass.length, 4, `hazard class "${cls}" must have exactly one row per fixture`);
+  }
+  for (const e of CROSS_CHECK_EXPECTATIONS) {
+    assert.ok(["positive", "negative", "no-example"].includes(e.kind));
+  }
+});
+
+test("hazard crosscheck: every negative-control fixture has a false-positive count of zero across all four classes -- fails by name, naming fixture, class and addresses, otherwise", () => {
+  for (const expectation of CROSS_CHECK_EXPECTATIONS) {
+    if (expectation.kind !== "negative") continue;
+    const report = REPORT_BY_FIXTURE[expectation.fixture]!;
+    const result = crossCheckHazardFixture(report, expectation);
+    assert.equal(
+      result.falsePositive,
+      0,
+      `negative-control fixture "${expectation.fixture}" produced ${result.falsePositive} false positive(s) for class "${expectation.hazardClass}" at address(es) ${result.falsePositiveAddresses.map((a) => `$${a.toString(16)}`).join(", ")} -- a detector has learned the shape of its own fixture`,
+    );
+  }
+});
+
+test("hazard crosscheck: the 23-byte border-colour fixture has a false-positive count of zero for all four classes", () => {
+  const report = REPORT_BY_FIXTURE[TRACER_FIXTURE]!;
+  for (const cls of HAZARD_CLASSES) {
+    const expectation = CROSS_CHECK_EXPECTATIONS.find((e) => e.fixture === TRACER_FIXTURE && e.hazardClass === cls)!;
+    const result = crossCheckHazardFixture(report, expectation);
+    assert.equal(result.falsePositive, 0, `the border-colour negative control must produce zero false positives for class "${cls}"`);
+  }
+});
+
+test("hazard crosscheck: the processor-port fixture has a false-positive count of zero for all four classes, and specifically zero for the spatial-alignment class", () => {
+  const report = REPORT_BY_FIXTURE[BANK_FIXTURE]!;
+  for (const cls of HAZARD_CLASSES) {
+    const expectation = CROSS_CHECK_EXPECTATIONS.find((e) => e.fixture === BANK_FIXTURE && e.hazardClass === cls)!;
+    const result = crossCheckHazardFixture(report, expectation);
+    assert.equal(result.falsePositive, 0, `the processor-port negative control must produce zero false positives for class "${cls}"`);
+  }
+  const alignmentExpectation = CROSS_CHECK_EXPECTATIONS.find((e) => e.fixture === BANK_FIXTURE && e.hazardClass === "page-alignment")!;
+  assert.equal(alignmentExpectation.kind, "negative", "the processor-port fixture must be a negative control specifically for page-alignment -- a state dependency, never a spatial one");
+});
+
+test("hazard crosscheck: the self-modifying fixture's class-2 row shows one detected and zero missed", () => {
+  const report = REPORT_BY_FIXTURE[SMC_FIXTURE]!;
+  const expectation = CROSS_CHECK_EXPECTATIONS.find((e) => e.fixture === SMC_FIXTURE && e.hazardClass === "self-modifying-code")!;
+  const result = crossCheckHazardFixture(report, expectation);
+  assert.equal(result.detected, 1);
+  assert.equal(result.missed, 0);
+  assert.deepEqual(result.detectedAddresses, [0x0802]);
+});
+
+test("hazard crosscheck: the character-set fixture's alignment row shows at least one detected and zero missed", () => {
+  const report = REPORT_BY_FIXTURE[CHARSET_FIXTURE]!;
+  const expectation = CROSS_CHECK_EXPECTATIONS.find((e) => e.fixture === CHARSET_FIXTURE && e.hazardClass === "page-alignment")!;
+  const result = crossCheckHazardFixture(report, expectation);
+  assert.ok(result.detected >= 1);
+  assert.equal(result.missed, 0);
+  assert.ok(result.detectedAddresses.includes(0x1000));
+});
+
+test("hazard crosscheck: a no-example expectation returns the marker -- every count and the denominator at zero, contributing nothing to any measurement", () => {
+  const noExampleExpectation: HazardCrossCheckExpectation = { fixture: TRACER_FIXTURE, hazardClass: "indexed-dispatch", kind: "no-example", expectedAddresses: [] };
+  const report = REPORT_BY_FIXTURE[TRACER_FIXTURE]!;
+  const result = crossCheckHazardFixture(report, noExampleExpectation);
+  assert.equal(result.denominator, 0);
+  assert.equal(result.detected, 0);
+  assert.equal(result.missed, 0);
+  assert.equal(result.falsePositive, 0);
+  assert.deepEqual(result.detectedAddresses, []);
+  assert.deepEqual(result.missedAddresses, []);
+  assert.deepEqual(result.falsePositiveAddresses, []);
+});
+
+test("hazard crosscheck: an expected address the report found lands in detected, an expected address not found lands in missed, and a reported address no expectation named lands in false-positive", () => {
+  const syntheticReport: HazardReport = {
+    findings: [
+      {
+        hazardClass: "self-modifying-code",
+        anchorAddress: 0x1000,
+        blockedAddress: 0x1001,
+        mechanism: "store-target-in-instruction-operand-byte",
+        strength: "static-shape-matched",
+        detail: "synthetic",
+        corroboration: "none",
+      },
+      {
+        hazardClass: "self-modifying-code",
+        anchorAddress: 0x2000,
+        blockedAddress: 0x2001,
+        mechanism: "store-target-in-instruction-opcode-byte",
+        strength: "static-shape-matched",
+        detail: "synthetic",
+        corroboration: "none",
+      },
+    ],
+    regions: [],
+    limits: HAZARD_LIMITS,
+    denominator: 0,
+    classesEvaluated: ["self-modifying-code"],
+    unprovenDispatchCandidates: [],
+    truncated: false,
+  };
+  const expectation: HazardCrossCheckExpectation = {
+    fixture: "synthetic",
+    hazardClass: "self-modifying-code",
+    kind: "positive",
+    expectedAddresses: [0x1001, 0x9999],
+  };
+  const result = crossCheckHazardFixture(syntheticReport, expectation);
+  assert.deepEqual(result.detectedAddresses, [0x1001], "the expected address the synthetic report found must land in detected");
+  assert.deepEqual(result.missedAddresses, [0x9999], "the expected address the synthetic report did not find must land in missed");
+  assert.deepEqual(result.falsePositiveAddresses, [0x2001], "the reported address no expectation named must land in false-positive");
+});
+
+test("hazard crosscheck: two comparator runs over identical input return deeply equal results", () => {
+  const report = REPORT_BY_FIXTURE[SMC_FIXTURE]!;
+  const expectation = CROSS_CHECK_EXPECTATIONS.find((e) => e.fixture === SMC_FIXTURE && e.hazardClass === "self-modifying-code")!;
+  const first = crossCheckHazardFixture(report, expectation);
+  const second = crossCheckHazardFixture(report, expectation);
+  assert.deepEqual(first, second);
+});
+
+test("hazard crosscheck: the indexed-dispatch and cycle-exact-raster classes have no positive row in the expectation table -- computed from the table itself", () => {
+  assert.deepEqual(new Set(CLASSES_WITH_NO_INDEPENDENT_POSITIVE), new Set(["indexed-dispatch", "cycle-exact-raster"]));
 });
 
 // ---------------------------------------------------------------------------
