@@ -1,6 +1,6 @@
 ---
 phase: 52-remove-the-fork-backend
-reviewed: 2026-09-12T11:25:27Z
+reviewed: 2026-09-12T14:17:06Z
 depth: standard
 files_reviewed: 106
 files_reviewed_list:
@@ -112,15 +112,15 @@ files_reviewed_list:
   - src/skills/vice-wedge-triage/SKILL.md
 findings:
   critical: 0
-  warning: 3
-  info: 1
-  total: 4
+  warning: 4
+  info: 3
+  total: 7
 status: issues_found
 ---
 
 # Phase 52: Code Review Report
 
-**Reviewed:** 2026-09-12T11:25:27Z
+**Reviewed:** 2026-09-12T11:25:27Z (round 1); round 2 gap-closure review appended 2026-09-12T14:17:06Z
 **Depth:** standard
 **Files Reviewed:** 106
 **Status:** issues_found
@@ -215,6 +215,74 @@ ASI happens to make this safe here because the next statement (`async function h
 
 ---
 
-_Reviewed: 2026-09-12T11:25:27Z_
+## Round 2 Findings — Gap-Closure Review (CLAUDE.md + docs-fork-absence.test.ts, reviewed 2026-09-12T14:17:06Z)
+
+This round reviewed exactly the two non-`.planning/` files changed between `edbbf159` and `HEAD`:
+`CLAUDE.md` (documentation-drift repair — replacing every stale reference to a deleted module or
+concept with the surviving one) and `src/mcp/vice/docs-fork-absence.test.ts` (grew from 13 to 24
+tests, adding `findDeletedModuleCitations()`/`scanTextForDeletedModuleCitations()` and
+`FORBIDDEN_TRANSPORT_PHRASES`/`STALE_MANIFEST_FILENAMES` plus their wiring over a prose corpus).
+
+`CLAUDE.md`'s changes were checked against the actual source tree, not just read for plausibility:
+`ViceError`/`MachineRestartedError` do live in `vice-errors.ts` (confirmed at `vice-errors.ts:158`
+and `:185`), `stock-connect.ts` does own `stockConnect()`/`stockDisconnect()`/`stockReconnect()`,
+`stock-dispatch.ts` does hold the mutable `heldSession` module-level state, and
+`tools-manifest.stock.json` does exist and is resolved through `stock-dispatch.ts`. No stale or
+fabricated cross-reference was found in this file's diff.
+
+The new predicate logic in `docs-fork-absence.test.ts` was run directly (`node --test`, all 24
+tests pass) and probed with adversarial in-memory inputs beyond its own planted-violation suite,
+since this file is itself a guard and the review brief for this round explicitly weighs a guard
+that passes vacuously (or matches too little/too much) above style. One real asymmetry was found
+in the new regex construction (WR-04, below); it does not currently make any check pass
+vacuously — the existing planted-violation and non-vacuity tests are sound and all 24 tests are
+green — but it is a genuine latent robustness gap in a guard whose entire job is boundary
+precision. Two minor quality nits are recorded as Info.
+
+### WR-04: `DELETED_MODULE_CITATION_RE` only enforces a leading word-boundary, not a trailing one, unlike its sibling `STALE_MANIFEST_CITATION_RE` in the same file
+
+**File:** `src/mcp/vice/docs-fork-absence.test.ts:154-155` (contrast `:203-206`)
+**Issue:** The regex built for deleted-module filename citations is:
+```ts
+const DELETED_MODULE_CITATION_SOURCE = `(?:^|[^A-Za-z0-9_.-])(${DELETED_MODULES.map((m) => m.replace(/\./g, "\\.")).join("|")})`;
+const DELETED_MODULE_CITATION_RE = new RegExp(DELETED_MODULE_CITATION_SOURCE, "g");
+```
+This only requires a non-word/start-of-string character *before* the filename; it has no equivalent trailing assertion. Its sibling in the very same file, `STALE_MANIFEST_CITATION_RE`, gets both sides:
+```ts
+const STALE_MANIFEST_CITATION_RE = new RegExp(
+  `(?:^|[^A-Za-z0-9_.-])(${STALE_MANIFEST_FILENAMES.map((m) => m.replace(/\./g, "\\.")).join("|")})(?:$|[^A-Za-z0-9_.-])`,
+  "g",
+);
+```
+The doc comment above `DELETED_MODULE_CITATION_SOURCE` frames the whole construction as "boundary-aware" and motivates it entirely by the leading-edge `device.ts`/`vice.ts` false positive, but never states that the trailing edge is deliberately left open — reading the comment, a maintainer would reasonably expect symmetric treatment, exactly as the sibling regex two blocks down provides. Verified directly against the real, exported `findDeletedModuleCitations()` (not a re-implementation):
+```
+findDeletedModuleCitations("see vice.tsx for details")   -> [ 'vice.ts' ]
+findDeletedModuleCitations("see vice.ts-old for details") -> [ 'vice.ts' ]
+```
+A hypothetical future filename that merely starts with a deleted module's name (`vice.tsx`, `vice.ts.bak`, a markdown anchor like `vice.ts#history`) is indistinguishable from a real citation of the deleted `vice.ts`, and would report exactly the failure mode this guard exists to prevent people from routing around: a false positive that gets a future maintainer to loosen or delete the check rather than fix a real one. It does not currently fire (no such string exists in the scanned corpus today, confirmed by a live run), so this is latent rather than active, and it can only ever widen matches (never narrow them), so it is not a silent-miss risk — but it is an inconsistency inside one guard file that undermines the file's own stated design contract.
+**Fix:** Give `DELETED_MODULE_CITATION_SOURCE` the same trailing assertion `STALE_MANIFEST_CITATION_RE` already uses:
+```ts
+const DELETED_MODULE_CITATION_SOURCE =
+  `(?:^|[^A-Za-z0-9_.-])(${DELETED_MODULES.map((m) => m.replace(/\./g, "\\.")).join("|")})(?:$|[^A-Za-z0-9_.-])`;
+```
+and add a planted-violation control mirroring the existing `device.ts` one for the trailing side (e.g. asserting `vice.tsx` is not reported), the same way `tools-manifest.stock.json` already gets one for `STALE_MANIFEST_CITATION_RE`.
+
+## Info (round 2)
+
+### IN-02: `findDeletedModuleCitations` is the only predicate in the file exported with no consumer
+
+**File:** `src/mcp/vice/docs-fork-absence.test.ts:163`
+**Issue:** Every sibling predicate in this file — `findForbiddenIdentifiers`, `scanTextForForbiddenIdentifiers`, `scanTextForDeletedModuleCitations`, `findStaleTransportPhrases`, `scanTextForStaleTransportPhrases` — is declared as a plain, unexported `function`, consistent with the file's own comment that planted-violation tests should "drive this EXACT function" from within the same module. `findDeletedModuleCitations` alone is declared `export function`. A repo-wide grep found no importer anywhere else in `src/` or `scripts/`. This is a harmless but unnecessary widening of the module's surface for a test-only file that is deliberately excluded from `package.json`'s `files[]`.
+**Fix:** Drop the `export` keyword unless a specific external consumer is planned; if one is planned, note it in the doc comment so a future reader does not have to grep for it to find out it is currently unused.
+
+### IN-03: Non-vacuity floor comment overstates its own headroom
+
+**File:** `src/mcp/vice/docs-fork-absence.test.ts:324-337`
+**Issue:** The comment above the `proseScanned >= 18` assertion states "The real count today is twenty files; the floor is set well under that with headroom so a deliberate pruning does not red this." Measured directly (`README.md` + `CLAUDE.md` + `skillMarkdownFiles()`), the real count is indeed 20, but the floor of 18 gives only 2 files of headroom (10%) — adding a single new template/reference `.md` file under `src/skills/**` and later deleting two unrelated ones would already approach the floor. "Well under… with headroom" reads as more slack than the numbers actually provide; this is a documentation-accuracy nit inside the guard's own comment, not a functional defect (the floor still does its job of catching a fully-emptied population).
+**Fix:** Either tighten the prose ("floor is set 2 files below today's count") or lower the floor further (e.g. `>= 15`) if more real headroom is intended, so the comment and the assertion agree on how much slack actually exists.
+
+---
+
+_Reviewed: 2026-09-12T14:17:06Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
