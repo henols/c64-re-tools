@@ -1,14 +1,33 @@
-# Stock VICE parity: what changes for the tool surface
+# Stock VICE parity: what changed for the tool surface
+
+**Dated note (2026-09-12, phase 52):** the fork backend was removed from this
+project in its entirety. This document was originally written as a two-way
+gap analysis for the migration from the custom `x64sc -mcpserver` fork to
+stock VICE's binary monitor, and that migration is now complete — there is no
+second backend left to compare against. It is retained here for its measured
+findings about stock VICE's own protocol behavior, wire layouts and live
+probe results, which remain accurate technical records independent of the
+fork's removal; its many dated measurement records and `(Phase N, REQ-ID)`
+citations are untouched. Three capabilities the fork used to cover have no
+route on stock at all and are now recorded as **permanent** losses rather
+than a gap a second backend hedged against — see
+[`docs/stock-hard-losses.md`](stock-hard-losses.md) for the current,
+authoritative record of what is lost and why. Everything below this note is
+the original migration-era document, describing what changed AT THE TIME
+stock support was added, not a live comparison against a backend that exists
+today.
 
 A two-way gap analysis for the migration from the custom `x64sc -mcpserver` to
 stock VICE's binary monitor (see `docs/roadmap-stock-vice.md`). Grounded in the
-current tool descriptions (`tools-manifest.json`) and VICE's own source
+tool descriptions the fork and stock manifests carried at the time
+(`tools-manifest.stock.json` is the one that survives) and VICE's own source
 (`VICE-Team/svn-mirror`: `monitor_binary.c`, `mon_register.c`).
 
-**Net:** ~85–90% of the surface ports cleanly or reimplements client-side. The two
-things genuinely **lost** are **SID state read-back** and **low-level/matrix
-keyboard**; the two things genuinely **gained** are **CPU-history tracing** and
-**1541 drive-CPU debugging**.
+**Net:** ~85–90% of the surface ported cleanly or was reimplemented client-side.
+The two things genuinely **lost** were **SID state read-back** and
+**low-level/matrix keyboard** (now permanent losses, see
+`docs/stock-hard-losses.md`); the two things genuinely **gained** were
+**CPU-history tracing** and **1541 drive-CPU debugging**.
 
 ## A. What can't be replicated exactly (losses)
 
@@ -261,12 +280,14 @@ below is renumbered to stay contiguous.)
      from scope (v0.2.0, 2026-08-17)"), `vice_machine_config_get`/`set`
      (**CUT from scope 2026-08-17** along with the whole of Phase 6; see
      ROADMAP.md "Cut from scope (v0.2.0, 2026-08-17)").
-   - **Two stock-only tool names with no fork counterpart:**
-     `vice_execution_until_return` (`EXECUTE_UNTIL_RETURN` 0x73) and
-     `vice_registers_available` (`REGISTERS_AVAILABLE` 0x83). Permitted by
-     Phase 2's D-07 (the two backends' advertised lists are genuinely
-     different). Their stock-only status is recorded mechanically in
-     `docs/tool-support.md`, generated from the shipped manifests.
+   - **Two tool names with no fork counterpart, at the time this document was
+     written:** `vice_execution_until_return` (`EXECUTE_UNTIL_RETURN` 0x73)
+     and `vice_registers_available` (`REGISTERS_AVAILABLE` 0x83). Permitted by
+     Phase 2's D-07 (the two backends' advertised lists were genuinely
+     different). `docs/tool-support.md`, the generated per-backend support
+     table this bullet used to point at, was retired along with the fork
+     backend (plan 52-07); both tools are simply part of the stock tool
+     surface now, listed in `tools-manifest.stock.json`.
    - **Disk attach is `AUTOSTART`, and it resets and loads like `vice_autostart` (D-14).**
      `vice_disk_attach` on stock is `AUTOSTART` (0xdd) with `runAfter: false`
      — a documented approximation, not an exact port, previously described
@@ -543,13 +564,14 @@ Present in the binary monitor, absent from today's tool surface — genuine upsi
    whose refusal is source-traced — it simply does not claim to have
    independently verified `memmapzap`'s own stub text.
 
-## C. What the VICE MCP does *more than raw stock* (the value-add to port)
+## C. What the VICE MCP does *more than raw stock* (the value-add that was ported)
 
 The MCP's worth isn't new emulator power — it's **ergonomics layered on
 primitives**: decoded chip/sprite state, disassembly + symbol resolution, sprite
 ASCII rendering, memory search/compare/fill, named checkpoint groups, backtrace,
-ready-to-use PNG screenshots, snapshot metadata — plus the broker/multi-instance
-management and the MCP protocol surface Claude talks to. Stock gives the
-primitives; the MCP gives the convenience. Going stock means porting all of this
-into a client, and accepting the A-list losses (chiefly SID read-back and
-low-level keyboard).
+snapshot metadata — plus the broker/multi-instance management and the MCP
+protocol surface Claude talks to. Stock gives the primitives; the MCP gives the
+convenience. Moving to stock meant porting all of this into a client and
+accepting the A-list losses (SID read-back and low-level keyboard, chiefly) —
+now permanent, recorded in `docs/stock-hard-losses.md`, since the fork backend
+that used to hedge against them no longer exists.

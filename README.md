@@ -6,9 +6,8 @@ Commodore 64 games, reusable across C64 projects.
 It provides two things as a single installable unit:
 
 - **The `vice` MCP server** — tools that drive a host VICE
-  emulator (run disks, read/write RAM, checkpoints, screenshots —
-  fork backend only, see below — save-state capture, scripted input)
-  through an on-demand broker.
+  emulator (run disks, read/write RAM, checkpoints, save-state capture,
+  scripted input) through an on-demand broker.
 - **Six C64 skills:**
   - `acme-build` — assemble 6502/6510 source with the ACME cross-assembler.
   - `c64-memory-mapping` — resolve any C64 address; annotate disassembly.
@@ -86,18 +85,11 @@ any lockfile change, gated on a hash so normal starts are a cheap no-op. This
 needs `node` and `npm` on `PATH` and network access to the npm registry on the
 consumer's machine.
 
-## Installing VICE, and choosing a backend
+## Installing VICE
 
 The `vice` MCP server does not bundle an emulator — it drives one running on
-your host. Two backends exist:
-
-- **Stock upstream VICE**, driven through its binary monitor. Install it from
-  any package manager; no build step required. **Pick this one** unless you
-  specifically need SID register read-back or the raw keyboard matrix (see
-  below).
-- **A custom, non-upstream fork**
-  ([barryw/vice-mcp](https://github.com/barryw/vice-mcp)), exposing an HTTP
-  endpoint. It must be built from source.
+your host, through **stock upstream VICE**'s binary monitor. Install it from
+any package manager; no build step required.
 
 ### Which VICE you get, per package manager
 
@@ -130,58 +122,32 @@ within-one-frame approximation instead of an exact count. This is
 already-shipped graceful degradation — every other tool works the same
 either way.
 
-### Choosing the backend
+### Capabilities with no route on stock
 
-The backend is selected by `VICE_BACKEND`, set to `stock` or `fork`. When it
-is unset, each process probes the configured binary's `--help` output once at
-startup and caches the verdict; an indeterminate probe falls back to `fork`
-(this project's pre-existing default), and you can always force a choice
-explicitly by setting `VICE_BACKEND`.
+Three capabilities have no route on stock VICE at all — a permanent hardware
+fact, not a gap waiting on a later build. Calling any of these returns an
+error naming the tool and the reason; it fails loudly, not silently. See
+[`docs/stock-hard-losses.md`](docs/stock-hard-losses.md) for the full record
+of what is lost and why.
 
-**Two processes read it, each from its own environment**, and they must
-agree:
-
-1. **The MCP server** — the `env` block of the `vice` entry in `.mcp.json`.
-2. **The host broker**, which is what actually launches the emulator — its
-   own environment on the host where you start it.
-
-If both run on the same host and share one environment, setting it once
-covers both. If they do not — the containerised setup this project is
-architected around, where the MCP server runs in a container and the
-emulator runs on the host — you must set it in **both** places. The MCP
-server cannot see the host's binary, so its own probe cannot reach the right
-answer on its own.
-
-Getting this wrong is detected, not silently tolerated: the broker's verdict
-wins, because it is what the emulator was actually launched with, and the
-server refuses every call with a `backend mismatch` error naming both
-resolved values and the exact variable to set. The two backends speak
-different protocols on the same port, so proceeding would put HTTP on a
-binary-monitor port or the reverse.
-
-Consequences of the choice:
-
-- The two backends deliberately advertise **different tool lists**. A tool
-  advertised on both keeps the same name and a backward-compatible argument
-  shape — stock may add optional parameters but never removes, retypes, or
-  newly-requires one.
-- Calling a tool the active backend does not advertise returns an error
-  naming the tool, the reason, and which backend provides it — it fails
-  loudly, not silently.
-- **`vice_sid_get_state` and `vice_keyboard_matrix` require the fork
-  backend**, and are unrecoverable on stock: SID `$D400`-`$D418` is
-  write-only in hardware and the binary monitor has no SID command, and the
-  raw keyboard matrix is not readable over the wire at all (stock's
-  `KEYBOARD_FEED` only injects PETSCII text into the KERNAL buffer).
-- For the full per-tool answer, see the generated
-  [`docs/tool-support.md`](docs/tool-support.md) — derived from the two
-  shipped tool manifests, not maintained by hand.
+- **`vice_sid_get_state`** — permanently unavailable. SID `$D400`-`$D418` is
+  write-only in hardware and the binary monitor has no SID command; writes
+  still work fine over the memory-set primitive.
+- **`vice_keyboard_matrix`** (and its siblings `vice_keyboard_chord`,
+  `vice_keyboard_key_press`, `vice_keyboard_key_release`) — permanently
+  unavailable. The raw keyboard matrix is not readable over the wire at all;
+  the binary monitor's `KEYBOARD_FEED` only injects PETSCII text into the
+  KERNAL buffer.
+- **`vice_keyboard_restore`** — permanently unavailable. RESTORE pulses the
+  NMI line directly, which `KEYBOARD_FEED` has no way to produce.
 
 ### Verifying a stock install
 
 This exact command was run live against a genuine, unpatched stock VICE 3.9
-binary (`/usr/bin/x64sc`, invoked by absolute path since a fork build shadows
-`x64sc` on `PATH`) and observed to bind its monitor port:
+binary (`/usr/bin/x64sc`, invoked by absolute path — a non-stock, patched
+build previously used during this project's own migration can still shadow
+`x64sc` on `PATH` if one happens to be installed) and observed to bind its
+monitor port:
 
 ```
 x64sc -binarymonitor -binarymonitoraddress ip4://127.0.0.1:6502
@@ -254,7 +220,7 @@ src/
   skills/            # the six skills above (canonical source)
 installer/           # @henols/c64-re-tools — npx installer; bundles the skills, depends on vice-mcp
 docs/
-  tool-support.md    # generated per-backend tool support table (see below)
+  stock-hard-losses.md  # the three capabilities with no route on stock, and why (see above)
 scripts/
   ensure-mcp-deps.sh    # SessionStart dependency provisioning (plugin mode)
   package.sh            # validates manifests + builds the plugin release zip
