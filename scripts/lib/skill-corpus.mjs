@@ -3,11 +3,11 @@
 // vice_* tool-name extraction happen.
 //
 // WR-12 (08-REVIEW.md): `scripts/check-skill-tool-coverage.mjs` and
-// `scripts/check-skill-fork-honesty.mjs` are both blocking CI steps
+// `scripts/check-skill-capability-honesty.mjs` are both blocking CI steps
 // (.github/workflows/ci.yml) whose entire purpose is to agree about which
 // skill text exists and which tool names it contains -- and until this
 // module existed, each carried its own byte-for-byte copy of `walkSkills()`,
-// `MCP_PREFIX_RE` and `TOOL_NAME_RE`. `check-skill-fork-honesty.mjs`'s own
+// `MCP_PREFIX_RE` and `TOOL_NAME_RE`. `check-skill-capability-honesty.mjs`'s own
 // comment admitted it: "Copied from scripts/check-skill-tool-coverage.mjs's
 // walkSkills()". Two copies of the same seam agree only until one of them
 // changes -- a new skill file extension, a new `mcp__*` prefix shape, a

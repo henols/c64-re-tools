@@ -6,7 +6,7 @@
 // duplication -- it is a dispatch failure in which the wrong playbook fires
 // and the right one never does, silently, with no error anywhere. Nothing
 // else in this repository looks for it: `check-skill-tool-coverage.mjs`
-// asks whether a named tool exists, `check-skill-fork-honesty.mjs` asks
+// asks whether a named tool exists, `check-skill-capability-honesty.mjs` asks
 // whether a fork requirement is stated near a mention, and neither has any
 // opinion about whether two skills are competing for the same caller.
 //

@@ -1,9 +1,14 @@
 // skill-honesty-checks.test.ts -- the non-vacuity/planted-violation proof
 // for `scripts/lib/skill-honesty-checks.mjs`'s two exported predicates,
-// used by `scripts/check-skill-fork-honesty.mjs` to close WR-11 (Task 1)
+// used by `scripts/check-skill-capability-honesty.mjs` to close WR-11 (Task 1)
 // and IN-03 (Task 2), per 11.1-CONTEXT.md / 11.1-05-PLAN.md.
 //
-// `check-skill-fork-honesty.mjs` runs its whole check at import time (a
+// (RENAMED, phase 52 plan 52-09: this file was `check-skill-fork-honesty.mjs`,
+// inverted and renamed in the same phase that removed the fork backend. The
+// ANNO-05/WR-11/IN-03 checks this file proves are unrelated to the fork and
+// were carried across the rename unchanged.)
+//
+// `check-skill-capability-honesty.mjs` runs its whole check at import time (a
 // plain top-level script, not a callable function), so neither predicate
 // could otherwise be proven non-vacuous by a committed test -- only by
 // re-running the live script and reading its exit code, which says
@@ -23,9 +28,9 @@ import { fileClaimViolations, isStandaloneDisasmToken } from "../../../scripts/l
 const HERE = dirname(fileURLToPath(import.meta.url)); // <root>/src/mcp/vice
 const ROOT = join(HERE, "..", "..", ".."); // <root>
 const ACME_MJS = join(ROOT, "src", "skills", "acme-build", "scripts", "acme.mjs");
-const CI_SCRIPT = join(ROOT, "scripts", "check-skill-fork-honesty.mjs");
+const CI_SCRIPT = join(ROOT, "scripts", "check-skill-capability-honesty.mjs");
 
-// The same claim spec check-skill-fork-honesty.mjs's SKILL_FILE_CLAIMS
+// The same claim spec check-skill-capability-honesty.mjs's SKILL_FILE_CLAIMS
 // entry uses for acme.mjs (WR-11) -- kept local rather than imported, since
 // the CI script has no exported constant, only its own top-level array.
 const WR11_SPEC = { forbidden: ["+ libs"], required: ["no libraries needed"] };
@@ -60,10 +65,10 @@ test("fileClaimViolations(): a file carrying only the required claim (the fixed 
   assert.deepEqual(fileClaimViolations(synthetic, WR11_SPEC), []);
 });
 
-test("live-execution control: check-skill-fork-honesty.mjs exits 0 with OK in its output", () => {
+test("live-execution control: check-skill-capability-honesty.mjs exits 0 with OK in its output", () => {
   const result = spawnSync(process.execPath, [CI_SCRIPT], { cwd: ROOT, encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /check-skill-fork-honesty: OK/);
+  assert.match(result.stdout, /check-skill-capability-honesty: OK/);
 });
 
 // ---------------------------------------------------------------------------
@@ -97,7 +102,7 @@ test("isStandaloneDisasmToken(): the documented provenance-ledger exemption line
 // D-27 (40-05): this used to write a FIXED-name scratch file directly under
 // src/skills/acme-build/ and remove it in a `finally`. Node's test runner
 // executes test FILES concurrently, so another file's own spawned
-// check-skill-fork-honesty.mjs/check-skill-description-overlap.mjs walk of
+// check-skill-capability-honesty.mjs/check-skill-description-overlap.mjs walk of
 // src/skills/ could observe that fixed-name artifact mid-write or
 // mid-delete -- an intermittent, unrelated-looking multi-failure elsewhere
 // in the suite. The fix is a uniquely-named scratch DIRECTORY per

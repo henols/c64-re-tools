@@ -1,18 +1,55 @@
 #!/usr/bin/env node
-// SKILL-01/DIST-02/DIST-03: a playbook naming a fork-only tool with no
-// fork-requirement sentence nearby sends Claude into a refusal it was never
-// warned about -- and CLAUDE.md's Compatibility constraint says such a skill
-// *breaks* on stock rather than degrading. This is the ONE place that checks
-// documentation honesty over first-party prose, and it now covers TWO
-// surfaces sharing that same failure class:
-//   1. playbook prose (src/skills/): every mention of a tool the active
-//      backend might not advertise must sit in a markdown section that also
-//      states the fork requirement (and the stock route, when one exists).
-//   2. README.md: it must name the VICE_BACKEND switch, the two named
-//      fork-only tools, the generated support-table link, the version
-//      gate, and the ATTRIBUTION for the upstream analysis procedures the
-//      skill playbooks adapt -- and it must never re-introduce the ghost
-//      guardrail-test claim.
+// SKILL-01/DIST-02/DIST-03: a playbook naming a permanently-unavailable tool
+// with no permanent-limitation sentence nearby sends Claude into a refusal it
+// was never warned about -- and CLAUDE.md's Compatibility constraint says such
+// a skill *breaks* on stock rather than degrading. This is the ONE place that
+// checks documentation honesty over first-party prose, and it covers THREE
+// surfaces sharing that same failure class.
+//
+// INVERTED AND RENAMED (2026-09-12, phase 52 plan 52-09): this file was
+// `check-skill-fork-honesty.mjs`. Phase 52 removed the `barryw/vice-mcp` fork
+// backend entirely; this project now drives only stock upstream VICE. Every
+// assertion this file used to make was ABOUT the fork -- a `VICE_BACKEND`
+// switch, a per-backend tool-list trim, a `FORK_ONLY_NAMES` set derived from
+// the deleted per-backend capability table that shipped in an earlier phase
+// (see 52-07-SUMMARY.md) -- and every one of those subjects is gone. The
+// obligation that survives the removal is
+// STRONGER, not weaker: shipped prose must not claim a capability route that
+// does not exist. That is true whether the false route is "ask the fork" or
+// "there is no fork to ask" left unstated. This file's own header already
+// carried the precedent for how to handle a required string whose subject
+// changes shape: RE-POINT IT, do not drop it (see the 2026-08-29 note
+// preserved below). This inversion follows that precedent for every assertion
+// in the file, not only one string: a registry-derived set becomes a literal
+// one; a "requires the fork" annotation becomes "permanently unavailable, see
+// docs/stock-hard-losses.md"; a `VICE_BACKEND`/`docs/tool-support.md`
+// requirement on README.md becomes a `docs/stock-hard-losses.md` requirement
+// and a `VICE_BACKEND` prohibition. Every non-vacuity floor the fork-era
+// version carried is replaced by an equivalent floor against the new subject,
+// never dropped -- a lint that finds nothing passes everything, which is worse
+// than the stale assertions it replaced.
+//
+// WHAT NOT TO DO, reaffirmed rather than restated from scratch: do not delete
+// an assertion whose SUBJECT changed instead of re-pointing it at the subject
+// that replaced it. That is the mistake this file exists to prevent one layer
+// up (stale prose in README.md, docs/stock-vice-parity.md and the skill
+// playbooks) and it applies equally to this file's own assertions about
+// itself.
+//
+//   1. playbook prose (src/skills/): every mention of one of the six
+//      permanently-unavailable tool names must sit in a markdown section that
+//      also states the limitation is permanent and cites
+//      `docs/stock-hard-losses.md` somewhere in the skills tree (the
+//      per-mention proximity rule requires the "permanently unavailable"
+//      phrasing; the citation is verified as a tree-wide floor, since a
+//      playbook may correctly point at a sibling reference file that itself
+//      carries the citation rather than repeating it locally).
+//   2. README.md: it must name the two best-known permanently-unavailable
+//      tools (so a reader designing a method around them is warned), the
+//      `docs/stock-hard-losses.md` acceptance record, the version gate, and
+//      the ATTRIBUTION for the upstream analysis procedures the skill
+//      playbooks adapt -- and it must never re-introduce the ghost
+//      guardrail-test claim or the retired `VICE_BACKEND` switch.
 //
 //      THE SIXTH REQUIRED STRING WAS RE-POINTED, NOT DROPPED (2026-08-29,
 //      phase 29 plan 29-09). It used to assert that README named
@@ -25,21 +62,20 @@
 //      reader loses if it goes is no longer an install step; it is the
 //      attribution being findable from the README at all, instead of only
 //      from a notices file nobody opens.
-// Both are documentation-honesty checks over first-party prose read as data,
-// and one CI-blocking step is cheaper to keep green than two.
+// All three are documentation-honesty checks over first-party prose read as
+// data, and one CI-blocking step is cheaper to keep green than three.
 //   3. docs/stock-vice-parity.md: a Nyquist-gap addition (GAP-2, DIST-01/
 //      SKILL-01) -- 08-06 corrected this doc's stale forward-looking claims
 //      (a "deferred to Phase 7"/"ships in Phase 7" pair for tools that
 //      phase closed without building, a "Phase 8's parity harness" promise
 //      for a harness cut from scope, a "must cover answer-shape drift" claim
 //      overstating SKILL-01's actual text, and an open developer-decision
-//      flag) and pointed the reader at the generated docs/tool-support.md
-//      instead. Before this addition, nothing re-checked that correction --
-//      the same class of stale-prose defect could return to this file with
-//      no lint catching it (this script's own skills walk only covers
-//      src/skills/ and README.md). Only claims 08-06-SUMMARY.md actually
-//      corrected are asserted here; the file's many legitimate historical
-//      "(Phase N, REQ-ID)" citations are untouched.
+//      flag). Only claims 08-06-SUMMARY.md actually corrected are asserted
+//      here; the file's many legitimate historical "(Phase N, REQ-ID)"
+//      citations are untouched. Phase 52 plan 52-09 adds one more: the
+//      document must carry a dated note recording that the fork backend was
+//      removed, since a "parity" document with nothing left to compare
+//      against needs to say why it still exists.
 //   4. The ANNO-05 deletion pin (Phase 10, plan 10-08): plan 10-06 deleted
 //      cmdDisasm() (the toacme-backed `disasm` verb) from acme.mjs in full,
 //      and every SKILL.md/references/*.md caveat it motivated. This walks
@@ -52,40 +88,32 @@
 //      one documented exemption: diff-images.test.mjs's provenance-ledger
 //      string `evidence: "disasm"`, exempted by LINE content, not by file,
 //      so a real reintroduction elsewhere in that same file is still caught.
+//      Unrelated to the fork removal; kept unchanged by this inversion.
 //
-// WHAT NOT TO DO: do not hand-maintain a second list of fork-only tool names
-// here. The list is derived from capability-registry.ts's CAPABILITY_REGISTRY
-// (every entry whose providedBy is "fork") -- that module is the ONE place
-// per-backend capability data lives (08-01-SUMMARY.md). A hand-copied list
-// here would drift from it the first time a tool's category changes.
+// WHAT NOT TO DO: do not hand-maintain a second list of permanently-unavailable
+// tool names anywhere else in this repository. `docs/stock-hard-losses.md` is
+// the ONE narrative record of these six hardware-level facts
+// (`scripts/check-skill-tool-coverage.mjs` carries its own byte-identical
+// literal for a different purpose -- coverage classification, not honesty
+// proximity -- and both are pinned to stay consistent with that document by
+// their own non-vacuity floors, not by importing one from the other).
 //
 // This script only ever readFileSync()s and regex-matches. It never uses a
 // dynamic import, require, eval, or a spawn against anything under
 // src/skills/ or README.md -- both are untrusted/first-party prose that
-// is matched, never executed. The only import is the first-party
-// capability-registry.ts.
+// is matched, never executed. Unlike its fork-era predecessor, this file binds
+// NO data through a static `../src/` import: the six-name set below is a
+// literal declared in this file, so there is no comparison data that could
+// fail to follow a `--root` override, and no split-read hazard to refuse (see
+// `paths()` below for what that means for `--root`).
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { CAPABILITY_REGISTRY } from "../src/mcp/vice/capability-registry.ts";
 import { fileClaimViolations, isStandaloneDisasmToken } from "./lib/skill-honesty-checks.mjs";
 import { walkSkills, MCP_PREFIX_RE, TOOL_NAME_RE, topLevelSkillDirs } from "./lib/skill-corpus.mjs";
-import {
-  parseRootArg,
-  resolveContainedRoot,
-  splitReadRefusalReason,
-} from "./lib/audit-root.mjs";
+import { parseRootArg, resolveContainedRoot } from "./lib/audit-root.mjs";
 
 const DEFAULT_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-
-/** The identifier this gate binds STATICALLY, named here so the split-read
- *  refusal below can print it. A static specifier resolves against this file's
- *  own location and cannot follow `--root`; keeping the list beside the import
- *  is what makes a future second import impossible to add without noticing that
- *  it belongs here too. */
-const STATICALLY_BOUND = [
-  { name: "CAPABILITY_REGISTRY", from: "../src/mcp/vice/capability-registry.ts" },
-];
 
 /**
  * Every path this gate reads, derived from ONE root, plus the subset that must
@@ -96,35 +124,27 @@ const STATICALLY_BOUND = [
  * arrange that for some rows is to point the whole gate at a synthetic tree
  * via `--root`. That is only sound if EVERY path comes from the one root.
  *
- * WHAT THIS GATE ACTUALLY DOES WITH `--root`, AND WHY (`CR-03`): every PATH
- * below comes from the one root, but not every INPUT to this gate is a path.
- * `CAPABILITY_REGISTRY` -- the table whose fork-only names this gate polices
- * the corpus against -- arrives through a static import at the top of this
- * file, and a static specifier is resolved against this file's own location, so
- * no argument can move it. This gate therefore does NOT support an arbitrary
- * `--root`: a resolved root that is not `DEFAULT_ROOT` is REFUSED outright,
- * below, rather than half-honoured.
- *
- * A sentence forbidding a re-derived `DEFAULT_ROOT` path stood here until
- * 2026-09-01. It was deleted because this file contradicted it sixteen lines
- * above itself: the phase-32 verifier reproduced this gate reading a synthetic
- * corpus and reporting `OK -- ... 24 fork-only names policed from
- * CAPABILITY_REGISTRY` at exit 0, where the corpus was synthetic and the
- * registry was real. A rule a file breaks in its own text is worse than no
- * rule, because a reader trusts it. The remedy chosen -- of the two the
- * verifier named -- is refusal rather than root-parameterised dynamic imports;
- * the reasoning is recorded in `scripts/lib/audit-root.mjs`'s "THE SPLIT-READ
- * SEAM" block and in plan 32-12's objective.
- *
- * `scripts/check-skill-description-overlap.mjs` still carries that sentence,
- * and correctly: it binds no such import, so it honours an arbitrary contained
- * root for BOTH halves of its comparison.
+ * WHAT THIS GATE DOES WITH `--root`, CORRECTED BY THE INVERSION (phase 52 plan
+ * 52-09): the fork-era version of this file bound its policed name set through
+ * a static `../src/` import of the now-deleted per-backend capability table,
+ * which could not follow a `--root` override, and REFUSED any resolved root that was not
+ * `DEFAULT_ROOT` outright rather than half-honour it (`CR-03`). That import is
+ * gone: the six permanently-unavailable tool names below are a literal
+ * declared in this file, so every input this gate reads -- the policed name
+ * set included -- now comes from the SAME resolved root. There is therefore no
+ * split-read hazard left to refuse, and this gate honours an arbitrary
+ * contained root for its whole comparison, the same as
+ * `scripts/check-skill-description-overlap.mjs` already does and for the same
+ * reason: it binds no `../src/` specifier statically. An out-of-repository
+ * root is still refused by `resolveContainedRoot()` below -- that containment
+ * rule is unrelated to the split-read hazard and did not change.
  */
 function paths(root) {
   const skillsDir = join(root, "src/skills");
   const readmePath = join(root, "README.md");
   const parityDocPath = join(root, "docs/stock-vice-parity.md");
   const acmeBuildSkillPath = join(skillsDir, "acme-build", "SKILL.md");
+  const hardLossesDocPath = join(root, "docs/stock-hard-losses.md");
   return {
     root,
     viceDir: join(root, "src/mcp/vice"),
@@ -132,11 +152,18 @@ function paths(root) {
     readmePath,
     parityDocPath,
     acmeBuildSkillPath,
+    hardLossesDocPath,
     // Every file this gate readFileSync()s at a FIXED path with no existsSync()
     // of its own. (SKILL_FILE_CLAIMS entries are deliberately NOT here: each is
     // already existence-asserted as a first-class check, so a missing one must
     // stay a reported claim failure rather than becoming a --root diagnostic.)
-    required: [skillsDir, readmePath, parityDocPath, acmeBuildSkillPath],
+    // `hardLossesDocPath` is asserted to EXIST -- it is the citation target
+    // both README.md and the skills tree are required to reach -- but is
+    // never itself read by this gate; docs/stock-hard-losses.md's own content
+    // was verified against the per-backend capability table before that table
+    // was deleted (52-07-SUMMARY.md), and re-verifying it here would be
+    // exactly the "re-derive a cross-cutting seam locally" anti-pattern.
+    required: [skillsDir, readmePath, parityDocPath, acmeBuildSkillPath, hardLossesDocPath],
   };
 }
 
@@ -185,10 +212,10 @@ function paths(root) {
 let ROOT_ARG;
 try {
   ({ root: ROOT_ARG } = parseRootArg(process.argv.slice(2), {
-    script: "check-skill-fork-honesty",
+    script: "check-skill-capability-honesty",
   }));
 } catch (err) {
-  console.error(`check-skill-fork-honesty: ${err?.message ?? String(err)}`);
+  console.error(`check-skill-capability-honesty: ${err?.message ?? String(err)}`);
   process.exit(1);
 }
 
@@ -203,29 +230,7 @@ try {
     repoRoot: DEFAULT_ROOT,
   });
 } catch (err) {
-  console.error(`check-skill-fork-honesty: REFUSED -- ${err?.message ?? String(err)}`);
-  process.exit(1);
-}
-
-// A SPLIT-READ REFUSAL (`CR-03`). Third failure class, same exit status as the
-// other two, separated by its message prefix. Checked here -- before paths(),
-// before the existence sweep and before the first read -- so a refused root
-// causes no I/O at all.
-//
-// Measured at 7206f99, before this landed: `--root <in-repo synthetic tree>`
-// exited 0 and printed a full green report ("11 fork-only mentions ... 24
-// fork-only names policed from CAPABILITY_REGISTRY") in which the MENTIONS came
-// from the synthetic corpus and the NAMES they were policed against came from
-// the real repository. A planted violation in that corpus would have been
-// measured against data the plant never touched.
-if (RESOLVED_ROOT !== DEFAULT_ROOT) {
-  console.error(
-    `check-skill-fork-honesty: SPLIT READ REFUSED -- ${splitReadRefusalReason({
-      resolvedRoot: RESOLVED_ROOT,
-      defaultRoot: DEFAULT_ROOT,
-      imports: STATICALLY_BOUND,
-    })}`,
-  );
+  console.error(`check-skill-capability-honesty: REFUSED -- ${err?.message ?? String(err)}`);
   process.exit(1);
 }
 
@@ -247,7 +252,7 @@ try {
     }
   }
 } catch (err) {
-  console.error(`check-skill-fork-honesty: FAIL (--root) -- ${err?.message ?? String(err)}`);
+  console.error(`check-skill-capability-honesty: FAIL (--root) -- ${err?.message ?? String(err)}`);
   process.exit(1);
 }
 
@@ -259,6 +264,7 @@ const {
   skillsDir: SKILLS_DIR,
   readmePath: README_PATH,
   parityDocPath: PARITY_DOC_PATH,
+  hardLossesDocPath: HARD_LOSSES_DOC_PATH,
 } = P;
 
 const errors = [];
@@ -283,28 +289,64 @@ for (const f of skillFiles) {
   dirsWithAFileRead.add(top);
 }
 
-// --- Names to police: derived from the registry, never hand-listed (D-E) ---
-// Every entry whose providedBy is "fork" -- not just the "hardware" category.
-// A descoped fork-only tool named bare in a playbook is the same failure as a
-// hardware one: the active (stock) backend does not have it either way.
-const FORK_ONLY_NAMES = new Set(
-  CAPABILITY_REGISTRY.filter((e) => e.providedBy === "fork").map((e) => e.name)
-);
-const registryByName = new Map(CAPABILITY_REGISTRY.map((e) => [e.name, e]));
+// --- Names to police: a LITERAL, non-empty set, not derived (INVERTED,
+// 52-09) ---
+// The fork-era version derived this set from the per-backend capability
+// table's entries (every one whose providedBy was "fork"). That table
+// is deleted (52-07) along with the whole per-backend concept it modeled.
+// What survives is the six hardware-level facts docs/stock-hard-losses.md
+// records: these tool names have NO route on stock at all, permanently,
+// regardless of build or version. The list below is intentionally NOT
+// imported from anywhere -- see this file's own header ("WHAT NOT TO DO") for
+// why a second hand-copied list is normally the wrong move, and why this one
+// is the exception: `docs/stock-hard-losses.md` is prose, not an importable
+// module, so this literal and `scripts/check-skill-tool-coverage.mjs`'s own
+// `FORK_ONLY_UNRECOVERABLE` literal are the two places this fact lives in
+// checkable form, and each is independently pinned against that document by
+// its own non-vacuity floor.
+const PERMANENTLY_UNAVAILABLE = [
+  [
+    "vice_sid_get_state",
+    "None for reads -- SID $D400-$D418 is write-only in hardware and the binary monitor has no SID command. Writes still work over the memory-set primitive.",
+  ],
+  [
+    "vice_keyboard_matrix",
+    "vice_keyboard_type / vice_keyboard_petscii inject text through the KERNAL keyboard buffer, and vice_joystick_set covers most in-game input.",
+  ],
+  [
+    "vice_keyboard_chord",
+    "vice_keyboard_type / vice_keyboard_petscii inject text through the KERNAL keyboard buffer, and vice_joystick_set covers most in-game input.",
+  ],
+  [
+    "vice_keyboard_key_press",
+    "vice_keyboard_type / vice_keyboard_petscii inject text through the KERNAL keyboard buffer, and vice_joystick_set covers most in-game input.",
+  ],
+  [
+    "vice_keyboard_key_release",
+    "vice_keyboard_type / vice_keyboard_petscii inject text through the KERNAL keyboard buffer, and vice_joystick_set covers most in-game input.",
+  ],
+  [
+    "vice_keyboard_restore",
+    "vice_keyboard_type / vice_keyboard_petscii inject text through the KERNAL keyboard buffer, and vice_joystick_set covers most in-game input -- but neither substitutes for an NMI pulse.",
+  ],
+];
+const FORK_ONLY_NAMES = new Set(PERMANENTLY_UNAVAILABLE.map(([name]) => name));
+const registryByName = new Map(PERMANENTLY_UNAVAILABLE.map(([name, alternative]) => [name, { alternative }]));
 
 // --- Extraction --------------------------------------------------------
 // MCP_PREFIX_RE/TOOL_NAME_RE now live in ./lib/skill-corpus.mjs (WR-12) --
 // imported above, not re-derived here.
 
-// Annotation signals. WR-10 (08-REVIEW.md): "fork backend" and "VICE_BACKEND"
-// are strict superstrings of the two precise phrases below, so they only
-// ever WEAKENED the rule -- incidental prose like "the fork backend is
-// faster here" or an unrelated VICE_BACKEND mention used to silence a
-// whole section. Dropped; only the two precise phrases remain. This
-// pattern is now used ONLY as the single-fork-only-name fallback below
-// (`names.length === 1`); a section naming two or more fork-only tools
-// must satisfy the per-tool windowed match (`nearName`) instead.
-const ANNOTATION_RE = /(fork-only|requires the fork\b)/i;
+// Annotation signal (INVERTED, 52-09). The fork-era phrasing ("fork-only",
+// "requires the fork") named a backend that no longer exists. The surviving
+// concern is unchanged in shape -- a bare mention with no nearby warning sends
+// an agent into an unwarned refusal -- so the phrase it looks for is the one
+// docs/stock-hard-losses.md and the rewritten skill playbooks (plan 52-08)
+// actually use: "permanently unavailable". This pattern is used ONLY as the
+// single-name fallback below (`names.length === 1`); a section naming two or
+// more of these tools must satisfy the per-tool windowed match (`nearName`)
+// instead.
+const ANNOTATION_RE = /permanently unavailable/i;
 
 // The proximity rule (research Assumption A4, resolved): markdown-section
 // scope. Split each .md file into sections at ATX headings (^#{1,6} );
@@ -390,7 +432,7 @@ function splitParagraphs(text) {
   return paragraphs;
 }
 
-let totalForkMentions = 0;
+let totalPermanentLimitationMentions = 0;
 const positiveControlsSeen = new Set();
 
 for (const f of skillFiles) {
@@ -411,8 +453,8 @@ for (const f of skillFiles) {
     }
   }
 
-  // Fork-only mention proximity: markdown-section scope, .md files only (an
-  // ATX heading is a markdown concept; .mjs files carry no section
+  // Permanent-limitation mention proximity: markdown-section scope, .md files
+  // only (an ATX heading is a markdown concept; .mjs files carry no section
   // structure to scope against).
   if (!f.endsWith(".md")) continue;
 
@@ -421,12 +463,12 @@ for (const f of skillFiles) {
     const sectionText = section.lines.join("\n");
     const cleaned = sectionText.replace(MCP_PREFIX_RE, "");
     const matches = [...cleaned.matchAll(TOOL_NAME_RE)];
-    const forkMentionsInSection = matches.filter((m) => FORK_ONLY_NAMES.has(m[0]));
-    if (forkMentionsInSection.length === 0) continue;
+    const flaggedMentionsInSection = matches.filter((m) => FORK_ONLY_NAMES.has(m[0]));
+    if (flaggedMentionsInSection.length === 0) continue;
 
-    totalForkMentions += forkMentionsInSection.length;
+    totalPermanentLimitationMentions += flaggedMentionsInSection.length;
 
-    const names = [...new Set(forkMentionsInSection.map((m) => m[0]))];
+    const names = [...new Set(flaggedMentionsInSection.map((m) => m[0]))];
 
     // WR-10: compliance is decided PER TOOL, not per section. An
     // annotation about tool A must not license a bare mention of tool B in
@@ -435,17 +477,17 @@ for (const f of skillFiles) {
     // meant to annotate. `nearName` requires the annotation phrase to sit
     // within a bounded window (200 chars, never crossing a newline) on
     // either side of THIS name specifically. The `names.length === 1`
-    // fallback keeps every currently-compliant single-fork-only-tool
-    // section (all 7 flagged sections in the committed corpus, confirmed
-    // by 08-REVIEW.md, have exactly one distinct fork-only name each)
+    // fallback keeps every currently-compliant single-flagged-tool section
     // compliant without requiring the annotation to sit inside the
     // 200-char window of that lone name -- there is no ambiguity about
     // which tool a section-wide annotation refers to when only one is
-    // named.
+    // named. Measured against the corpus plan 52-08 produced (2026-09-12):
+    // 7 flagged sections across 5 files, every one carrying exactly one
+    // distinct permanently-unavailable name.
     for (const name of names) {
       const nearName = new RegExp(
-        `${name}[^\\n]{0,200}(fork-only|requires the fork)|` +
-          `(fork-only|requires the fork)[^\\n]{0,200}${name}`,
+        `${name}[^\\n]{0,200}(permanently unavailable)|` +
+          `(permanently unavailable)[^\\n]{0,200}${name}`,
         "i"
       );
       const compliant = nearName.test(cleaned) || (ANNOTATION_RE.test(sectionText) && names.length === 1);
@@ -456,19 +498,20 @@ for (const f of skillFiles) {
       }
 
       // WR-11: the line offset is computed from THIS name's OWN first
-      // mention in the section, not the section's first fork-only mention
+      // mention in the section, not the section's first flagged mention
       // of ANY name -- previously every message after the first cited a
       // line where its own name never appeared.
-      const ownFirstMention = forkMentionsInSection.find((m) => m[0] === name);
+      const ownFirstMention = flaggedMentionsInSection.find((m) => m[0] === name);
       const upToMention = cleaned.slice(0, ownFirstMention.index);
       const lineOffset = upToMention.split("\n").length - 1;
       const lineNo = section.startLine + lineOffset;
       const entry = registryByName.get(name);
-      const altText = entry?.alternative ? ` Stock route: ${entry.alternative}` : " No stock route exists.";
+      const altText = entry?.alternative ? ` Alternative: ${entry.alternative}` : " No alternative exists.";
       need(
         false,
-        `${rel}:${lineNo}: "${name}" mentioned in section "${section.heading}" with no fork-requirement ` +
-          `annotation in that section -- state that it requires the fork backend.${altText}`
+        `${rel}:${lineNo}: "${name}" mentioned in section "${section.heading}" with no permanent-` +
+          `limitation annotation in that section -- state that it is permanently unavailable and see ` +
+          `docs/stock-hard-losses.md.${altText}`
       );
     }
   }
@@ -482,16 +525,18 @@ for (const f of skillFiles) {
 const readmeSource = readFileSync(README_PATH, "utf8");
 
 const REQUIRED_README_SUBSTRINGS = [
-  ["VICE_BACKEND", "a reader cannot select a backend at all"],
   [
     "vice_sid_get_state",
-    "a stock user is not warned this tool requires the fork before they design a method around it",
+    "a user is not warned this tool is permanently unavailable before they design a method around it",
   ],
   [
     "vice_keyboard_matrix",
-    "a stock user is not warned this tool requires the fork before they design a method around it",
+    "a user is not warned this tool is permanently unavailable before they design a method around it",
   ],
-  ["docs/tool-support.md", "the reader loses their route to the full per-tool answer"],
+  [
+    "docs/stock-hard-losses.md",
+    "the reader loses the acceptance record naming which capabilities have no route on stock and why",
+  ],
   ["3.10", "the reader cannot tell what an `apt install` of VICE gives them relative to the version gate"],
   [
     "the external analyser",
@@ -516,6 +561,10 @@ const FORBIDDEN_README_SUBSTRINGS = [
     "vice-mcp-selector-docs.test.ts",
     "this ghost guardrail-test file does not exist anywhere in this repository -- claiming it exists is a false statement about this repo",
   ],
+  [
+    "VICE_BACKEND",
+    "phase 52 removed the fork backend and the env var this project ever read to select between two of them -- reintroducing this string would tell a reader to configure a switch that does nothing",
+  ],
 ];
 for (const [needle, why] of FORBIDDEN_README_SUBSTRINGS) {
   need(!readmeSource.includes(needle), `README.md must not contain "${needle}" -- ${why}.`);
@@ -533,10 +582,18 @@ for (const [needle, why] of FORBIDDEN_README_SUBSTRINGS) {
 // correct attributions, not stale forward references.
 const parityDocSource = readFileSync(PARITY_DOC_PATH, "utf8");
 
+// The `docs/tool-support.md` required string DIES here (INVERTED, 52-09):
+// plan 52-07 retired that generated document along with the per-backend
+// capability table it was generated from, so requiring the parity doc to
+// point at it would pin a dead link. It is
+// REPLACED, not merely dropped, by a required string proving the parity doc
+// carries the dated removal note plan 52-09 adds -- a "parity" document with
+// no second backend left to compare against must say why it still exists,
+// and this is the mechanical proof that it does.
 const REQUIRED_PARITY_SUBSTRINGS = [
   [
-    "docs/tool-support.md",
-    "the reader loses the pointer 08-06 added to the generated per-tool support table, and the stock-only-tool bullet reverts to promising a parity harness that was cut from scope",
+    "the fork backend was removed",
+    "the reader has no way to tell, from this document alone, why a \"parity\" comparison survives with only one backend left to describe -- the dated removal note plan 52-09 added is missing",
   ],
 ];
 for (const [needle, whatIsLost] of REQUIRED_PARITY_SUBSTRINGS) {
@@ -557,11 +614,11 @@ const FORBIDDEN_PARITY_SUBSTRINGS = [
   ],
   [
     "parity harness",
-    "08-06 removed the promise of a Phase 8 parity harness that was cut from scope, replacing it with a pointer to the generated docs/tool-support.md",
+    "08-06 removed the promise of a Phase 8 parity harness that was cut from scope; no replacement harness is promised in its place",
   ],
   [
     "must cover answer-shape drift",
-    "08-06 corrected the overstated claim that SKILL-01 must cover answer-shape drift -- SKILL-01's actual text only names the fork requirement at each call site, and answer-shape drift remains an open, mechanically-unchecked concern",
+    "08-06 corrected the overstated claim that SKILL-01 must cover answer-shape drift -- SKILL-01's actual text only names the permanent limitation at each affected call site, and answer-shape drift remains an open, mechanically-unchecked concern",
   ],
   [
     "flagged here for Phase 8 planning",
@@ -726,14 +783,21 @@ need(
 
 // --- Non-vacuity controls ---------------------------------------------------
 // A lint that finds nothing passes everything -- these are need()s, not
-// comments.
+// comments. Every floor below that policed the now-deleted per-backend
+// capability table or its fork-only mention count is REPLACED against the new
+// subject (INVERTED, 52-09), never simply dropped -- see this file's own header.
 need(
   topLevelDirs.length >= 6 && topLevelDirs.every((d) => dirsWithAFileRead.has(d)),
   `non-vacuity: expected at least 6 skill directories scanned with at least one file read in each, got ${topLevelDirs.length} directories (${[...dirsWithAFileRead].length} with a file read)`
 );
+// Was "at least 8 fork-only tool mentions" (fork-era floor). Measured against
+// the corpus plan 52-08 actually produced (2026-09-12): 9 mentions across 7
+// sections in 5 files, all compliant. Floor set at 8, one below the measured
+// value, so a genuine regression (a rewritten section losing its annotation,
+// or the walk/extraction regex breaking) still trips it.
 need(
-  totalForkMentions >= 8,
-  `non-vacuity: expected at least 8 fork-only tool mentions across src/skills/, got ${totalForkMentions} -- the skills walk or extraction regex may be broken`
+  totalPermanentLimitationMentions >= 8,
+  `non-vacuity: expected at least 8 permanently-unavailable tool mentions across src/skills/, got ${totalPermanentLimitationMentions} -- the skills walk or extraction regex may be broken, or plan 52-08's permanent-limitation annotations regressed`
 );
 need(
   positiveControlsSeen.has("tool-selection.md"),
@@ -743,27 +807,45 @@ need(
   positiveControlsSeen.has("control-flow.md"),
   `non-vacuity: positive control references/control-flow.md must be classified compliant (annotation in the same section as the mention) -- if this fails, the section-scoped proximity rule or the walk is broken`
 );
+// Was "at least 20 fork-only names derived from" the per-backend capability
+// table (fork-era floor, sized to that whole table). The table is
+// gone; the surviving set is the six permanent hardware losses
+// docs/stock-hard-losses.md records -- a literal, not a derivation, so the
+// floor is sized to that literal's actual length rather than guessed.
 need(
-  FORK_ONLY_NAMES.size >= 20,
-  `non-vacuity: expected at least 20 fork-only names derived from CAPABILITY_REGISTRY, got ${FORK_ONLY_NAMES.size} -- the registry import may be broken`
+  FORK_ONLY_NAMES.size >= 6,
+  `non-vacuity: expected at least 6 permanently-unavailable tool names, got ${FORK_ONLY_NAMES.size} -- the literal PERMANENTLY_UNAVAILABLE list may have been emptied`
 );
 need(
   parityDocSource.length > 5000,
   `non-vacuity: docs/stock-vice-parity.md is suspiciously short (${parityDocSource.length} bytes) -- the file may have been truncated or this script may be reading the wrong path`
 );
+// NEW (52-09): the acceptance record must actually be reachable from the
+// skills tree, not merely from README.md -- a playbook that points a reader
+// at "the reason" without naming the document is not a citation. Measured
+// against plan 52-08's corpus: 6 occurrences across 5 files. Floor set at 5.
+const hardLossesCitationCount = skillFiles
+  .filter((f) => f.endsWith(".md"))
+  .reduce((sum, f) => sum + (readFileSync(f, "utf8").match(/docs\/stock-hard-losses\.md/g) || []).length, 0);
+need(
+  hardLossesCitationCount >= 5,
+  `non-vacuity: expected at least 5 citations of docs/stock-hard-losses.md across src/skills/, got ${hardLossesCitationCount} -- the acceptance record plan 52-08 pointed the skills tree at may have been silently unlinked`
+);
 
 // --- Report ------------------------------------------------------------
 if (errors.length) {
-  console.error("check-skill-fork-honesty: FAIL");
+  console.error("check-skill-capability-honesty: FAIL");
   for (const e of errors) console.error("  - " + e);
   process.exit(1);
 }
 
 console.log(
-  `check-skill-fork-honesty: OK -- ${totalForkMentions} fork-only mentions across ${skillFiles.length} files in ` +
-    `${topLevelDirs.length} skill directories, all section-scoped-compliant; ${FORK_ONLY_NAMES.size} fork-only ` +
-    `names policed from CAPABILITY_REGISTRY; no stale phase-deferral prose found; README.md carries all ` +
-    `${REQUIRED_README_SUBSTRINGS.length} required strings and none of the ${FORBIDDEN_README_SUBSTRINGS.length} ` +
-    `forbidden ones; docs/stock-vice-parity.md carries all ${REQUIRED_PARITY_SUBSTRINGS.length} required strings ` +
-    `and none of the ${FORBIDDEN_PARITY_SUBSTRINGS.length} forbidden ones (08-06's regression guard).`
+  `check-skill-capability-honesty: OK -- ${totalPermanentLimitationMentions} permanent-limitation mentions across ` +
+    `${skillFiles.length} files in ${topLevelDirs.length} skill directories, all section-scoped-compliant; ` +
+    `${FORK_ONLY_NAMES.size} permanently-unavailable names policed (docs/stock-hard-losses.md), cited ` +
+    `${hardLossesCitationCount} times across the skills tree; no stale phase-deferral prose found; README.md ` +
+    `carries all ${REQUIRED_README_SUBSTRINGS.length} required strings and none of the ` +
+    `${FORBIDDEN_README_SUBSTRINGS.length} forbidden ones; docs/stock-vice-parity.md carries all ` +
+    `${REQUIRED_PARITY_SUBSTRINGS.length} required strings and none of the ${FORBIDDEN_PARITY_SUBSTRINGS.length} ` +
+    `forbidden ones.`
 );

@@ -2,7 +2,7 @@
 //
 // WHY THIS FILE EXISTS (Nyquist gap, phase 8 SKILL-01/DIST-02/DIST-03): the
 // entirety of SKILL-01/DIST-02/DIST-03's mechanical enforcement is
-// `scripts/check-skill-fork-honesty.mjs` exiting non-zero -- but that only
+// `scripts/check-skill-capability-honesty.mjs` exiting non-zero -- but that only
 // matters if `.github/workflows/ci.yml` actually runs it as a BLOCKING step.
 // Before this file existed, nothing failed if that CI step were deleted or
 // given `continue-on-error: true`: the control would silently evaporate and
@@ -70,7 +70,7 @@ const CI_YAML_PATH = join(REPO_ROOT, ".github/workflows/ci.yml");
 const GUARD_SCRIPTS = [
   "scripts/check-npm-packages.mjs",
   "scripts/check-skill-tool-coverage.mjs",
-  "scripts/check-skill-fork-honesty.mjs",
+  "scripts/check-skill-capability-honesty.mjs",
   "scripts/check-skill-description-overlap.mjs",
 ];
 

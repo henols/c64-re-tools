@@ -206,13 +206,13 @@ jobs:
       - name: Validate skill tool coverage against the stock manifest (Phase 5 criterion 5)
         run: node scripts/check-skill-tool-coverage.mjs
 
-      # Blocking: a skill playbook naming a tool the active backend does not
-      # advertise breaks a user's session with an unwarned refusal, and a
-      # README that no longer tells a reader which VICE to install or which
-      # tools require the fork silently reopens Phase 8's install-honesty
-      # gap (DIST-02/DIST-03, SKILL-01).
-      - name: Validate skill playbook and README backend-honesty (Phase 8)
-        run: node scripts/check-skill-fork-honesty.mjs
+      # Blocking: a skill playbook naming a permanently-unavailable tool with
+      # no nearby limitation notice breaks a user's session with an unwarned
+      # refusal, and a README that no longer names which capabilities have no
+      # route on stock (or reintroduces the retired backend switch) silently
+      # reopens Phase 8's install-honesty gap (DIST-02/DIST-03, SKILL-01).
+      - name: Validate skill playbook and README capability-honesty
+        run: node scripts/check-skill-capability-honesty.mjs
 
       # Blocking: a skill's `description:` IS Claude Code's dispatch input,
       # so two descriptions contending for the same trigger fires the wrong

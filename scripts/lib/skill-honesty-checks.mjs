@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // scripts/lib/skill-honesty-checks.mjs -- shared predicates for
-// `scripts/check-skill-fork-honesty.mjs`, proven non-vacuous by a committed
+// `scripts/check-skill-capability-honesty.mjs`, proven non-vacuous by a committed
 // test (`src/mcp/vice/skill-honesty-checks.test.ts`) that this module
 // makes possible in the first place.
 //
-// `check-skill-fork-honesty.mjs` runs its whole check at import time (it is
+// `check-skill-capability-honesty.mjs` runs its whole check at import time (it is
 // a plain top-level script, not a function you can call), so none of its
 // inline predicates could ever be proven non-vacuous by a committed test --
 // only by re-running the live script and reading its exit code, which says
@@ -21,7 +21,7 @@
 // tracked by git so `scripts/package.sh`'s `git archive` includes it.
 //
 // Both exports take content as STRINGS -- never a path to import, require,
-// eval or spawn. `check-skill-fork-honesty.mjs`'s own header rule (it only
+// eval or spawn. `check-skill-capability-honesty.mjs`'s own header rule (it only
 // ever `readFileSync()`s and regex-matches skill-tree content, which is
 // untrusted/first-party prose) is preserved by construction: nothing here
 // can execute anything it is handed.

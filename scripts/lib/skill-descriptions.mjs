@@ -22,7 +22,7 @@
 // cosmetic duplication -- it is a dispatch failure, in which the wrong
 // playbook fires and the right one never does. That failure is invisible to
 // every other gate in this repository: `check-skill-tool-coverage.mjs`
-// asks whether a named tool exists, `check-skill-fork-honesty.mjs` asks
+// asks whether a named tool exists, `check-skill-capability-honesty.mjs` asks
 // whether a fork requirement is stated nearby, and neither has any opinion
 // about whether two skills are asking for the same job.
 //

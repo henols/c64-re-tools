@@ -513,8 +513,15 @@ interface MatrixRow {
 
 const MATRIX: MatrixRow[] = [
   { script: "check-skill-tool-coverage", contained: "refuses" },
-  { script: "check-skill-fork-honesty", contained: "refuses" },
   { script: "check-skill-cli-invocations", contained: "refuses" },
+  // RETYPED (phase 52 plan 52-09): this row was `check-skill-fork-honesty`,
+  // `contained: "refuses"`. Its inversion replaced the CAPABILITY_REGISTRY
+  // -derived comparison set with a literal declared inside the renamed file,
+  // so it no longer binds any `../src/` specifier statically -- there is no
+  // split-read hazard left to refuse, and it now honours an arbitrary
+  // contained root for its whole comparison, the same as
+  // check-skill-description-overlap and for the same reason.
+  { script: "check-skill-capability-honesty", contained: "synthetic-corpus" },
   { script: "check-skill-description-overlap", contained: "synthetic-corpus" },
   // Uncontained by design (plan 32-16). Needs no extra arguments: `--root` is
   // its only positional concern and both its other flags are optional booleans.
@@ -1121,10 +1128,19 @@ test("split-read contract: every root-accepting script that binds ../src statica
   // NON-VACUITY, POSITIVE DIRECTION. A rule that passes because its antecedent
   // matched nothing proves nothing -- the exact failure mode `CUT-03` exists to
   // forbid -- so the population the antecedent actually selected is asserted.
+  //
+  // The floor was 3 (four scripts, then three after plan 52-07 retired the
+  // per-tool documentation generator with its subject). It is 2 now: plan
+  // 52-09's inversion of the capability-honesty gate replaced its
+  // CAPABILITY_REGISTRY-derived comparison set with a literal declared inside
+  // the file itself, so it binds no `../src/` specifier statically anymore and
+  // moved from `bound` to `clean` below -- a further, deliberate reduction of
+  // the SAME retirement pattern, not a relaxation of this assertion.
   assert.ok(
-    bound.length >= 3,
-    `the antecedent must select at least the three known split-read scripts (the per-tool ` +
-      `documentation generator, the fourth, was retired with its subject in plan 52-07); ` +
+    bound.length >= 2,
+    `the antecedent must select at least the two known split-read scripts (two others were ` +
+      `retired with their subjects: the per-tool documentation generator in plan 52-07, and the ` +
+      `capability-honesty gate's registry-derived import in plan 52-09's inversion); ` +
       `it selected ${bound.length}: ${bound.join(", ")}`,
   );
   for (const script of bound) {
@@ -1134,21 +1150,24 @@ test("split-read contract: every root-accepting script that binds ../src statica
     );
   }
 
-  // THE TWO CLEAN CONTROLS, asserted SPECIFICALLY rather than left to pass by
+  // THE THREE CLEAN CONTROLS, asserted SPECIFICALLY rather than left to pass by
   // silence. They satisfy the rule by carrying no matching import at all, and
   // saying so here is what makes a future edit that gives one of them such an
   // import -- without a refusal -- fail this assertion instead of sliding past
   // it as "still no violations found".
   assert.deepEqual(
     clean.sort(),
-    ["audit-gate", "check-skill-description-overlap"],
+    ["audit-gate", "check-skill-capability-honesty", "check-skill-description-overlap"],
     "the clean controls changed. `check-skill-description-overlap` is the one skill gate that " +
       "honours an arbitrary contained root for BOTH halves of its comparison. `audit-gate` " +
       "joined this population in plan 32-18 when it was keyed on the FLAG rather than on the " +
-      "shared seam; MEASURED there, it binds no ../src specifier statically, so the " +
-      "split-read contract is satisfied for both by carrying no matching import at all rather " +
-      "than by carrying a refusal. If either now binds a ../src import, it needs a refusal " +
-      "too; if a THIRD script became clean, its refusal may have been deleted.",
+      "shared seam; MEASURED there, it binds no ../src specifier statically. " +
+      "`check-skill-capability-honesty` joined in plan 52-09: its inversion replaced the " +
+      "CAPABILITY_REGISTRY-derived FORK_ONLY_NAMES set with a literal declared inside the file, " +
+      "so it now binds no ../src specifier either. All three satisfy the split-read contract by " +
+      "carrying no matching import at all rather than by carrying a refusal. If any of the three " +
+      "now binds a ../src import, it needs a refusal too; if a FOURTH script became clean, its " +
+      "refusal may have been deleted.",
   );
   for (const script of clean) {
     assert.deepEqual(
