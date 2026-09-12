@@ -43,6 +43,10 @@ import type { LaunchProfile } from "./broker-launch.mjs";
 // every HOST-BOUND module, mirrored (not imported, for the container side)
 // by channel-lock.ts and vice-broker-client.ts.
 import type { MonitorChannel } from "./broker-state.mjs";
+// TYPE-ONLY import, same discipline as the two imports directly above --
+// backend-detect.mts is the type's one home (narrowed to a single literal by
+// FORKRM-01, plan 52-06).
+import type { ViceBackend } from "./backend-detect.mjs";
 
 // Phase 34, plan 34-01 (A-01): STILL ONE OP PER SUBSYSTEM. `host_tool` is the
 // EIGHTH member -- and the whole host-tool subsystem, not one member per
@@ -186,17 +190,13 @@ export interface HostStateFields {
   viceBin: string;
   maxInstances: number;
   basePort: number;
-  /** WR-04: the backend verdict THIS broker resolved at startup -- the one that
-   * actually decided the emulator's launch argv. Put on the wire because the
-   * container-side proxy performs its OWN resolvedBackend() against the
-   * CONTAINER's filesystem, where there is usually no x64sc at all, so it
-   * classifies `unknown` -> `{ backend: "fork", source: "indeterminate" }`. D-01's
-   * "one reader" property holds per process but not across the pair, and a
-   * mismatch was previously neither detected nor reported: the proxy would
-   * advertise the fork's full manifest and forward HTTP at a binary-monitor
-   * port. This field is what lets the proxy detect that disagreement instead of
-   * discovering it as a transport failure. */
-  backend: "fork" | "stock";
+  /** FORKRM-01 (plan 52-06): narrowed from `"fork" | "stock"` to the single
+   * literal `ViceBackend` now has. Kept on the wire (rather than deleted
+   * outright) because text-tools.ts's own broker-identity cross-check
+   * (D-42-2, out of this plan's scope -- plan 52-07 owns it) still reads
+   * this field; the broker/proxy cross-check this field ALSO used to serve
+   * is what plan 52-06 deletes, in vice-proxy.ts, not this field itself. */
+  backend: ViceBackend;
 }
 
 export interface StartControlListenerOptions {
@@ -308,8 +308,8 @@ export type ControlResponse =
       vice_bin: string;
       max_instances: number;
       base_port: number;
-      /** WR-04: see HostStateFields.backend for why this is on the wire. */
-      backend: "fork" | "stock";
+      /** See HostStateFields.backend for why this is still on the wire. */
+      backend: ViceBackend;
     }
   | { kind: "monitor_claimed" }
   | { kind: "monitor_released" }
@@ -768,48 +768,14 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
           return;
         }
         const profile = normalised.profile;
-        // 33 review WR-03: the profile is STOCK-ONLY, so refuse it on fork
-        // rather than accept it and ignore it.
-        //
-        // `buildViceArgs()`'s entire profile handling lives inside its
-        // `backend === "stock"` branch -- on fork, neither `-warp` nor
-        // `-console` is ever emitted. Nothing on the path used to notice:
-        // normaliseLaunchProfile() has no backend gate, handleAcquire threads
-        // the profile through unchanged, and spawnAndRecordInstance() mirrors
-        // it onto the InstanceRecord regardless of backend. So a fork caller
-        // asking for {warp:true} got a confident grant and an UNWARPED
-        // machine, with no field in the response saying so; the record then
-        // claimed `profile: {warp:true}` while its own viceArgs carried no
-        // `-warp`, and profileEligible() would later hand that instance to
-        // another warp request as a match. That is exactly the "undetectable
-        // lie" profileEligible()'s own banner and D-16 exist to make
-        // impossible, reintroduced one backend over -- and fork is still the
-        // sole production backend across v0.1.x, so it is the branch most
-        // callers are on.
-        //
-        // Refused HERE because this is the one narrowing site and the wire
-        // boundary that already answers `bad_request`, so the caller LEARNS
-        // its request was dropped instead of having to infer it. Gating the
-        // record mirror instead would stop the record lying but would leave
-        // the caller with no way to find out. Only the two flag-bearing keys
-        // are refused: an empty `{}` and an explicit `{warp:false}` request
-        // nothing the fork argv cannot deliver, so they stay accepted rather
-        // than turning a no-op into an error.
-        const backend = opts.onHostState().backend;
-        if (backend !== "stock" && (profile?.warp === true || profile?.headless === true)) {
-          const asked = [profile?.warp === true ? "warp" : null, profile?.headless === true ? "headless" : null]
-            .filter((key): key is string => key !== null)
-            .join(", ");
-          writeLine(socket, {
-            kind: "error",
-            code: "bad_request" as ControlErrorCode,
-            message:
-              `profile is stock-only: this broker's backend is "${backend}", whose argv has no -warp/-console route, so ` +
-              `profile.${asked} could only be accepted and IGNORED -- the grant would succeed, the machine would not have ` +
-              `the knob, and the instance record would still claim it. Refused rather than accepted and ignored (D-16).`,
-          });
-          return;
-        }
+        // 33 review WR-03's profile-is-stock-only refusal lived here: it
+        // refused `profile.warp`/`profile.headless` when this broker's
+        // resolved backend had no `-warp`/`-console` route at all, so a
+        // caller learned a knob would be silently ignored rather than
+        // getting a confident grant with no effect. FORKRM-01 (plan 52-06):
+        // there is one backend now and it always has that route, so the
+        // condition this refused can no longer occur -- deleted rather than
+        // left as a check against a value that can never disagree.
         void attemptAcquire(requestId, profile).then((settled) => {
           if (!settled) {
             enqueueAcquire(pendingAcquires, { requestId, attempt: () => attemptAcquire(requestId, profile) });

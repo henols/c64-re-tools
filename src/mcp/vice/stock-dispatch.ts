@@ -30,7 +30,6 @@
 //     never the session-acquisition preamble above it.
 import { resolve, join } from "node:path";
 
-import type { ViceBackend } from "./backend-detect.mts";
 import type { ToolInfo } from "./vice-errors.ts";
 import { capabilityRefusalMessage } from "./capability-registry.ts";
 import { type HeldLease } from "./vice-broker-client.ts";
@@ -91,6 +90,17 @@ export type { StockToolResult, StockOkResult, StockErrorResult };
 // manifestPathForBackend() -- the manifest selector.
 // ---------------------------------------------------------------------------
 
+/** FORKRM-01 (plan 52-06): deliberately NOT `backend-detect.mts`'s
+ * `ViceBackend` -- that type now has exactly one member ("stock"), since it
+ * answers "which backend did THIS PROCESS just detect/launch". This module's
+ * manifest-selection and advertised-tool-definition logic below answers a
+ * different, registry-shaped question this plan's own objective names
+ * explicitly out of its scope (plan 52-07 owns it): which of the two
+ * manifests/definitions that once both existed applies. Decoupling the two
+ * types means collapsing detection does not force this module's own
+ * fork/stock selection logic to be redesigned as a side effect. */
+type LegacyViceBackend = "fork" | "stock";
+
 /**
  * Resolves which manifest file backs a given backend's advertised tool
  * surface, following the EXACT override precedence vice-proxy.ts's own
@@ -102,7 +112,7 @@ export type { StockToolResult, StockOkResult, StockErrorResult };
  * process.env read, so this function has no hidden global dependency and a
  * test can drive every combination without mutating the real environment.
  */
-export function manifestPathForBackend(backend: ViceBackend, hereDir: string, envOverride: string | undefined): string {
+export function manifestPathForBackend(backend: LegacyViceBackend, hereDir: string, envOverride: string | undefined): string {
   if (envOverride) {
     return resolve(envOverride);
   }
@@ -143,10 +153,15 @@ export function manifestPathForBackend(backend: ViceBackend, hereDir: string, en
  * standing rule: stock-dispatch.ts <-> stock-diagnose.ts <-> stock-recycle.ts
  * form a runtime import cycle, and the phase already reproduced a live
  * `ReferenceError` from a `const` handler export sitting in that cycle.
+ *
+ * `backend`'s type is `LegacyViceBackend`, not `backend-detect.mts`'s
+ * `ViceBackend` -- see this file's own `LegacyViceBackend` doc comment
+ * above. vice-proxy.ts's two call sites pass the literal `"stock"`, valid
+ * under either type.
  */
 export function resolveAdvertisedToolDefinition(
   syntheticDef: ToolInfo,
-  backend: ViceBackend,
+  backend: LegacyViceBackend,
   manifestTools: ToolInfo[],
 ): ToolInfo {
   if (backend === "fork") {
@@ -192,8 +207,8 @@ export type LeaseProvider = () => Promise<{ ok: true; lease: HeldLease | null } 
  * never implies resolution it did not achieve. It is a plain string handed down from vice-proxy.ts's
  * OWN single, module-scope call to `resolvedBackend()` (see that file's own
  * "resolve the active backend once" discipline) -- this module must never
- * call `resolvedBackend()`/`probeBackend()` itself, per backend-detect.mts's
- * own "do not call this per tool or per call" prohibition. Omitted entirely
+ * call `resolvedBackend()` itself, per backend-detect.mts's own "do not
+ * call this per tool or per call" prohibition. Omitted entirely
  * (never expected in production) falls back to an empty string rather than
  * throwing.
  */
@@ -434,7 +449,7 @@ export async function ensureStockSession(deps: StockDispatchDeps): Promise<Ensur
  * come from the lease vice-proxy.ts built (see HeldLease's own field comments
  * for why they are two DIFFERENT directories), and `binPath` is the same
  * already-settled `resolvedBinaryPath` vice_ping reports -- this module must
- * never call resolvedBackend()/probeBackend() itself.
+ * never call resolvedBackend() itself.
  *
  * An empty string is treated as ABSENT rather than passed through: the two
  * consumers both branch on truthiness, and passing "" would key a capability

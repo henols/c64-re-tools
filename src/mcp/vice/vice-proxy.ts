@@ -188,11 +188,11 @@ import { ANNO_TOOL_DEFINITIONS, runAnnoTool } from "./anno-tools.ts";
 // work in all three routes.
 //
 // This branch runs as the first executable statement of the module body,
-// deliberately ABOVE `ACTIVE_BACKEND`'s backend probe (which shells out to a
-// binary's `--help`), above the manifest read, and above
+// deliberately ABOVE `RESOLVED_BINARY`'s own path resolution (which stats the
+// binary), above the manifest read, and above
 // `new MCPServer(...)`/`server.startStdio()` far below -- a CLI invocation
-// must never open a socket, never probe a binary, and never write a byte of
-// JSON-RPC to stdout. WHAT NOT TO DO: never let this branch fall through
+// must never open a socket, never touch a binary's filesystem identity, and
+// never write a byte of JSON-RPC to stdout. WHAT NOT TO DO: never let this branch fall through
 // into the server path, and never print anything on stdout on the server
 // path that a CLI caller could confuse for `anno` output.
 //
@@ -294,13 +294,16 @@ if (process.argv[2] === "anno") {
 
 const HERE_DIR = dirname(fileURLToPath(import.meta.url));
 
-// D-01/BACK-01: the backend is settled exactly ONCE here, at module scope --
-// never re-settled per tool or per call. Every seam below (manifest
-// selection, the tools construction loop's dispatch choice, and the final
-// ready log line) reads THIS constant, never the raw environment variable
-// and never a second detection call.
+// FORKRM-01 (plan 52-06): there is one backend now, so there is nothing left
+// to select between here -- this used to settle a backend verdict constant
+// once, at module scope, for the manifest selection, the tools construction
+// loop's dispatch choice, the final ready log line, and a cross-check
+// against the broker's own verdict. All four backend-conditional call sites
+// now pass the literal `"stock"` directly; the only thing still resolved
+// here is the binary's own PATH, kept under a narrowly-named constant
+// instead of a backend-shaped object.
 //
-// `ACTIVE_BACKEND.binPath` is what `vice_ping`'s `resolvedBinaryPath` field
+// `RESOLVED_BINARY.binPath` is what `vice_ping`'s `resolvedBinaryPath` field
 // reports (see stock-dispatch.ts's `handlePing()`). It is resolved exactly
 // ONCE here, at MCP-server process startup, by a bare `x64sc` `$PATH` probe
 // run in THIS process's own environment -- it is NOT re-probed per request
@@ -316,7 +319,7 @@ const HERE_DIR = dirname(fileURLToPath(import.meta.url));
 // (2026-08-19 finding, closed as a documentation fix by Phase 15 plan 15-09
 // rather than a per-request requery, which would be a behavioural change out
 // of a disposition phase's remit).
-const ACTIVE_BACKEND = backendDetect.resolvedBackend();
+const RESOLVED_BINARY = backendDetect.resolvedBackend();
 
 // -------------------------------------------------------------- JSON-RPC
 //
@@ -551,12 +554,13 @@ const DIAGNOSE_TOOL: ToolDefinition = {
 };
 
 // Edit 1 (plan 02-10): delegates to stock-dispatch.ts's own selector function
-// -- the ONE manifest site this file keeps, now backend-aware. The existing
-// malformed-manifest fallbacks in readManifestTools() below are untouched: a
-// missing or unreadable stock manifest still answers tools/list with an
-// empty array rather than crashing the server.
+// -- the ONE manifest site this file keeps. FORKRM-01: always resolves the
+// stock manifest now, since there is nothing else to select between; the
+// existing malformed-manifest fallbacks in readManifestTools() below are
+// untouched: a missing or unreadable stock manifest still answers tools/list
+// with an empty array rather than crashing the server.
 function manifestPath(): string {
-  return stockDispatch.manifestPathForBackend(ACTIVE_BACKEND.backend, HERE_DIR, process.env.VICE_TOOLS_MANIFEST);
+  return stockDispatch.manifestPathForBackend("stock", HERE_DIR, process.env.VICE_TOOLS_MANIFEST);
 }
 
 function readManifestTools(): ToolInfo[] {
@@ -648,8 +652,8 @@ type ToolCallResult = ErrorTextResult | OkTextResult;
 function dispatchStockFor(name: string, args: Record<string, unknown>): Promise<ToolCallResult> {
   return stockDispatch.dispatchStock(name, args, {
     ensureLease: ensureBrokerLease,
-    resolvedBinaryPath: ACTIVE_BACKEND.binPath,
-    resolvedBinaryPathIsResolved: ACTIVE_BACKEND.binPathResolved,
+    resolvedBinaryPath: RESOLVED_BINARY.binPath,
+    resolvedBinaryPathIsResolved: RESOLVED_BINARY.binPathResolved,
   });
 }
 
@@ -657,9 +661,9 @@ function dispatchStockFor(name: string, args: Record<string, unknown>): Promise<
 //
 // vice_recycle and vice_diagnose (below) are registered as this file's own
 // proxy-local synthetic tools (RECYCLE_TOOL/DIAGNOSE_TOOL above). Before
-// this plan, each ALSO carried its own fork-only implementation here --
+// plan 52-04, each ALSO carried its own fork-only implementation here --
 // evidence gathered over call()'s HTTP transport, its own incident-record
-// writes -- reachable only when ACTIVE_BACKEND.backend was "fork". The
+// writes -- reachable only on the (now-deleted) fork backend. The
 // (already-active) stock arm never ran that body at all: it dispatched
 // straight through stockDispatch.dispatchStock() to handleRecycleStock()/
 // handleDiagnoseStock() (stock-recycle.ts/stock-diagnose.ts), which own a
@@ -1281,57 +1285,20 @@ async function ensureBrokerLease(): Promise<BrokerLeaseResult> {
   }
   const session = opened.session;
 
-  // WR-04: the FIRST thing done on a freshly opened control session -- before an
-  // emulator is allocated -- is to ask the broker which backend IT resolved, and
-  // refuse if it disagrees with this process's own verdict.
-  //
-  // Why this check has to exist: `ACTIVE_BACKEND` is resolved at module scope
-  // from resolvedBackend(), against the CONTAINER's filesystem, with no
-  // supervisorDir and therefore no cache -- while the emulator it describes is
-  // launched by the broker on the HOST, from the broker's own independent
-  // resolvedBackend({ supervisorDir }). In the normal devcontainer topology the
-  // container has no x64sc at all, so the proxy classifies `unknown` and
-  // degrades to `{ backend: "fork", source: "indeterminate" }`. If the host
-  // binary is stock, the proxy would otherwise advertise the fork's full
-  // manifest and forward HTTP at a binary-monitor port -- and nothing would ever
-  // report the disagreement; it would surface as an inexplicable transport
-  // failure on the first real tool call. D-01's "one reader" property holds per
-  // PROCESS but not across this pair, and this is the seam where the pair first
-  // meets.
-  //
-  // Refusing (rather than adapting) is deliberate: the advertised tool list was
-  // already built at startup from ACTIVE_BACKEND and answered to the client, so
-  // this process cannot re-decide its own surface here. VICE_BACKEND remains the
-  // explicit fix, and it must be set for BOTH processes.
-  //
-  // Absent evidence is NOT disagreement: a broker that does not report a backend
-  // (older build, or an unrecognised value) leaves `backend: null`, and a
-  // hostState() call that fails at all is not allowed to block an acquire. Only
-  // a definite, named mismatch refuses.
-  const brokerState = await session.hostState();
-  if (brokerState.ok && brokerState.hostState.backend !== null && brokerState.hostState.backend !== ACTIVE_BACKEND.backend) {
-    const brokerBackend = brokerState.hostState.backend;
-    await session.release();
-    return {
-      ok: false,
-      message:
-        `vice: backend mismatch between this MCP server and the broker that owns the emulator. This process ` +
-        `resolved "${ACTIVE_BACKEND.backend}" (source: ${ACTIVE_BACKEND.source}, binary: ${ACTIVE_BACKEND.binPath}) while the ` +
-        `broker resolved "${brokerBackend}" (binary: ${brokerState.hostState.vice_bin}) -- and the broker's verdict is the ` +
-        `authoritative one, because it is what the emulator was actually launched with. The two backends speak ` +
-        `different protocols on that port, so proceeding would send ${ACTIVE_BACKEND.backend === "fork" ? "HTTP at a binary-monitor port" : "binary-monitor frames at an HTTP endpoint"}. ` +
-        `This normally means the MCP server runs where the emulator binary is not (a container), so its own detection ` +
-        `could not see it. Set VICE_BACKEND=${brokerBackend} for THIS process as well -- it must be set for both -- ` +
-        `and restart the MCP server so its advertised tool list matches.`,
-    };
-  }
-  if (!brokerState.ok) {
-    console.error(
-      `vice-proxy: could not read the broker's own backend verdict (${brokerState.kind}: ${brokerState.message}) -- ` +
-        `proceeding with this process's own verdict "${ACTIVE_BACKEND.backend}" (source: ${ACTIVE_BACKEND.source}); a mismatch, if any, will not be detected`,
-    );
-  }
-
+  // FORKRM-01 (plan 52-06): the broker/proxy backend cross-check that used to
+  // sit here is deleted outright, by recorded decision, with no lighter
+  // replacement. It existed because two processes could resolve `ViceBackend`
+  // differently -- this process's own resolution (against the CONTAINER's
+  // filesystem, which usually has no x64sc at all) and the broker's own
+  // independent resolution (against the HOST's) -- and a disagreement would
+  // otherwise surface only as an inexplicable transport failure on the first
+  // real tool call. With one backend the comparison is a tautology: both
+  // sides can only ever resolve "stock". The residual signal the check also
+  // caught -- one side finding no x64sc binary at all -- still reaches the
+  // operator independently, unaffected by this deletion: `vice_ping`'s
+  // `resolvedBinaryPath` field reports this process's own resolution (via
+  // `RESOLVED_BINARY.binPath`/`binPathResolved` above), and the broker
+  // reports a launch failure by name when it cannot find its own binary.
   const result = await session.acquire();
   if (!result.ok) {
     // No grant is coming for this session -- nothing to hold the connection
@@ -1614,8 +1581,8 @@ tools[RESULT_CONTINUE_TOOL.name] = buildViceTool(RESULT_CONTINUE_TOOL, (args) =>
 // RECYCLE_TOOL/DIAGNOSE_TOOL definition otherwise, so the advertised
 // tools/list entry stays correct regardless of which manifest currently
 // ships one.
-tools[RECYCLE_TOOL.name] = buildViceTool(stockDispatch.resolveAdvertisedToolDefinition(RECYCLE_TOOL, ACTIVE_BACKEND.backend, manifestTools), (args) => handleRecycle(args));
-tools[DIAGNOSE_TOOL.name] = buildViceTool(stockDispatch.resolveAdvertisedToolDefinition(DIAGNOSE_TOOL, ACTIVE_BACKEND.backend, manifestTools), (args) => handleDiagnose(args));
+tools[RECYCLE_TOOL.name] = buildViceTool(stockDispatch.resolveAdvertisedToolDefinition(RECYCLE_TOOL, "stock", manifestTools), (args) => handleRecycle(args));
+tools[DIAGNOSE_TOOL.name] = buildViceTool(stockDispatch.resolveAdvertisedToolDefinition(DIAGNOSE_TOOL, "stock", manifestTools), (args) => handleDiagnose(args));
 // Backend-INDEPENDENT by construction (plan 29-01): the anno_* family never
 // touches VICE at all -- it reaches a PROXY-LOCAL SQLite annotation store
 // this repo owns, opened and closed inside the runner itself, so there is no
@@ -1667,7 +1634,7 @@ server.getServer().setRequestHandler(CallToolRequestSchema, async (request) => {
     // miss), so a real typo still falls through to the generic message
     // below unchanged. capability-registry.ts is the ONE place to
     // edit this data -- never hand-add a per-tool special case here.
-    const capabilityRefusal = capabilityRefusalMessage(name, ACTIVE_BACKEND.backend);
+    const capabilityRefusal = capabilityRefusalMessage(name, "stock");
     if (capabilityRefusal !== undefined) {
       return { content: [{ type: "text", text: capabilityRefusal }], isError: true };
     }
@@ -1700,5 +1667,5 @@ server.getServer().setRequestHandler(CallToolRequestSchema, async (request) => {
 // tools/call -- so it names the backend and the binary-monitor target
 // instead of a coordinate pair that does not exist yet.
 console.error(
-  `vice-proxy: ready, stock backend active -- dispatching to a broker-claimed binary-monitor instance (resolved binary: ${ACTIVE_BACKEND.binPath})`,
+  `vice-proxy: ready, stock backend active -- dispatching to a broker-claimed binary-monitor instance (resolved binary: ${RESOLVED_BINARY.binPath})`,
 );

@@ -50,10 +50,10 @@ import type { BrokerState, InstanceRecord, PortAllocationResult } from "./broker
 // "./broker-epoch.mts" source import (safe -- test files reference the
 // literal .mts extension, never the post-build .mjs specifier).
 import type { EpochRecord } from "./broker-epoch.mjs";
-// Plan 02-07: ViceBackend's definition moved to backend-detect.mts, which is
-// now the type's one home (and the ONE reader of VICE_BACKEND, via that
-// module's own resolvedBackend() -- see backend-detect.mts's own header
-// comment). TYPE-ONLY, for the same reason as the two imports directly
+// Plan 02-07: ViceBackend's definition lives in backend-detect.mts, which is
+// the type's one home (narrowed to a single literal by FORKRM-01, plan
+// 52-06 -- see backend-detect.mts's own header comment). TYPE-ONLY, for the
+// same reason as the two imports directly
 // above: backend-detect.mts is ALSO a host-bound sibling compiled into this
 // same build, so a VALUE import would need "./backend-detect.mjs" to exist
 // at runtime -- which it does not when this file runs directly, unbuilt,
@@ -160,15 +160,12 @@ export type LaunchProfile = { warp?: boolean; headless?: boolean };
  * understands neither `-mcpserver` nor `-binarymonitor` flags, and that need
  * does not depend on which backend is configured.
  *
- * `backend: "fork"` returns exactly the pre-Phase-2 shape, byte-identical:
- * the MCP server flag, the MCP server host from `mcpHost` or
- * VICE_BROKER_MCP_HOST (default `0.0.0.0`), and the MCP server port.
- *
- * `backend: "stock"` returns `-binarymonitor -binarymonitoraddress
+ * `backend: "stock"` (FORKRM-01, plan 52-06: the only value `ViceBackend` has
+ * left) returns `-binarymonitor -binarymonitoraddress
  * ip4://<host>:<port>` (docs/phase1-probe-results.md's confirmed real-world
  * command line). The host resolves from `binmonHost` or
  * VICE_BROKER_BINMON_HOST, defaulting to `127.0.0.1` -- deliberately
- * narrower than the fork path's `0.0.0.0` default, because VICE's binary
+ * narrow, because VICE's binary
  * monitor is unauthenticated by design and grants full read/write over the
  * emulated machine plus process control to anything that can reach it
  * (planner decision, `02-03-PLAN.md`). Widening the bind away from loopback
@@ -211,9 +208,8 @@ export type LaunchProfile = { warp?: boolean; headless?: boolean };
  * unconditional on stock, so all FIVE stock whole-argv assertions in
  * broker-launch.test.ts move even with `profile` absent -- it is the block and
  * not the profile that moves them. `D-15`'s byte-identity claim therefore
- * survives in full only on the FORK branch, whose argv this plan leaves
- * untouched (a Validated v0.2.0 requirement, not merely a test), and on stock
- * only for the `profile` half: an absent profile adds no flag. */
+ * survives in full only for the `profile` half: an absent profile adds no
+ * flag. */
 export function buildViceArgs(
   port: number,
   {
@@ -230,9 +226,8 @@ export function buildViceArgs(
     viceArgsEnv?: string;
     remoteMonitorPort?: number;
     /** Phase 33, plan 33-05 (`D-15`): the additive launch knobs -- optional
-     * and absent by default, stock-only, and ignored entirely when `backend`
-     * is `"fork"`. See LaunchProfile above and this function's own doc
-     * comment for why absence, `{}` and both-`false` are one behaviour. */
+     * and absent by default. See LaunchProfile above and this function's own
+     * doc comment for why absence, `{}` and both-`false` are one behaviour. */
     profile?: LaunchProfile;
   },
 ): string[] {
@@ -404,16 +399,13 @@ export interface TryLaunchDeps {
   viceBin?: string;
   mcpHost?: string;
   /** Which backend's argv shape to build (D-04, D-12) -- optional and
-   * defaulting to `"fork"` when omitted, so every pre-Phase-2 caller (and
-   * every existing test in broker-launch.test.ts that never mentions this
-   * field) keeps producing the exact byte-identical fork argv it always
-   * has. The real broker resolves this ONCE at startup via
-   * backend-detect.mts's resolvedBackend() and passes the resolved value
-   * down through every real launch call site -- see that module's own doc
-   * comment; this file no longer reads VICE_BACKEND itself in any form. */
+   * defaulting to `"stock"` when omitted, the only value `ViceBackend` has
+   * (FORKRM-01, plan 52-06). The real broker resolves this ONCE at startup
+   * via backend-detect.mts's resolvedBackend() and passes the resolved
+   * value down through every real launch call site -- see that module's own
+   * doc comment; this file reads no environment variable itself. */
   backend?: ViceBackend;
-  /** Stock-only bind override -- see buildViceArgs()'s own doc comment.
-   * Ignored entirely when `backend` is `"fork"` or omitted. */
+  /** Stock-only bind override -- see buildViceArgs()'s own doc comment. */
   binmonHost?: string;
   /** Plan 03-04 (DIRECT-06, D-13): the second, broker-allocated port stock's
    * `-remotemonitor` text monitor binds -- threaded straight through to
@@ -460,7 +452,7 @@ function spawnAndRecordInstance(reason: string, port: number, deps: TryLaunchDep
   const spawnFn = deps.spawn ?? ((cmd: string, args: string[], opts?: SpawnOptionsWithoutStdio) => nodeSpawn(cmd, args, opts));
   const now = deps.now ?? ((): number => Date.now());
   const viceBin = deps.viceBin ?? process.env.VICE_BIN ?? "x64sc";
-  const backend = deps.backend ?? "fork";
+  const backend = deps.backend ?? "stock";
   // Plan 41-05 (D-16): the ONE construction site for a fresh InstanceRecord
   // asserts the invariant every downstream consumer (HeldLease,
   // textConnect(), etc.) was written against -- a stock record NEVER lacks a
@@ -499,10 +491,7 @@ function spawnAndRecordInstance(reason: string, port: number, deps: TryLaunchDep
   // unreachable) and pass it as a third options argument carrying `env`
   // only. Never `shell: true`: the existing array-form spawn(viceBin,
   // viceArgs) call avoids shell interpretation entirely and that property
-  // must survive this widening. For backend === "fork", spawnFn is called
-  // with NO third argument at all, so the fork path's observable behaviour
-  // stays bit-for-bit what it was (BACK-02 is a standing gate and the fork
-  // backend has been the sole production backend across all of v0.1.x).
+  // must survive this widening.
   //
   // Scope boundary (do not remove this note): the production broker daemon
   // always supplies its own deps.spawn / deps.spawnFactory, so the widened
@@ -839,7 +828,7 @@ export interface ProbeDeps {
   /** WR-01: which readiness route this port speaks. Threaded in exactly like
    * buildViceArgs() already receives it -- from the ONE `resolvedBackend()` call
    * the broker makes at startup, never re-detected here. Omitted defaults to
-   * "fork", so every pre-existing fork call site is unchanged. */
+   * "stock", the only value `ViceBackend` has (FORKRM-01, plan 52-06). */
   backend?: ViceBackend;
   /** WR-01: the binary-monitor readiness check, used for `backend: "stock"`.
    * Defaults to the real one-PING-then-EXIT exchange below; tests inject a
@@ -1148,7 +1137,7 @@ export async function promoteLaunchingInstances(deps: PromoteLaunchingInstancesD
   // threads `backend` and omits `probe` gets a matching readiness route
   // rather than an HTTP POST at a binary-monitor port. An explicitly
   // injected `probe` still wins, unchanged.
-  const probe = deps.probe ?? ((port: number) => probeReady(port, { backend: deps.backend ?? "fork" }));
+  const probe = deps.probe ?? ((port: number) => probeReady(port, { backend: deps.backend ?? "stock" }));
 
   for (const record of deps.state.instances.values()) {
     if (record.state !== "launching") continue;
@@ -1636,8 +1625,7 @@ function launchSupervised(
  *
  * Plan 41-05 (D-16): `remoteMonitorPort` is an OPTIONAL fourth parameter,
  * threaded straight through to launchSupervised() exactly like every other
- * optional trailing parameter in this file -- `undefined` (the default) is
- * correct for a `backend: "fork"` launch, which carries none. A
+ * optional trailing parameter in this file. A
  * `backend: "stock"` caller MUST supply it: spawnAndRecordInstance()'s own
  * construction-site assertion (D-16) throws otherwise, since this function
  * is a genuine first-launch call site, not merely a respawn. This is not a

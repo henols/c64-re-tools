@@ -256,15 +256,14 @@ function discoverEmulatorSpawnSites(): EmulatorSpawnSiteReport[] {
  * documentary, read by the assertion failure messages below, never by the
  * discovery logic itself (which derives the real set independently).
  *
- * ONE entry today, where there were two before plan 29-10. That is not a
- * weakening: the two it replaced both spawned a binary that no longer exists,
- * and this one spawns a binary that does. The set-equality test below still
- * fails in BOTH directions. */
-const EXPECTED_EMULATOR_SPAWN_SITES: Readonly<Record<string, string>> = Object.freeze({
-  "backend-detect.mts":
-    "the --help probe -- probeBackend() runs one candidate flag against the resolved VICE binary to " +
-    "classify it as the fork or stock upstream, argv array and shell:false, bounded by a timeout",
-});
+ * EMPTY today (FORKRM-01, plan 52-06), where there was one entry before it
+ * and two before plan 29-10. That is not a weakening: the set's only
+ * member -- backend-detect.mts's own `--help` discriminator function --
+ * was deleted whole, taking its spawn with it, because there is only one
+ * backend left to detect between. The set-equality test below still fails
+ * in BOTH directions, so a future spawn site cannot appear unguarded; the
+ * guard survives emptying out its last member. */
+const EXPECTED_EMULATOR_SPAWN_SITES: Readonly<Record<string, string>> = Object.freeze({});
 
 // -- 1. Set equality, both directions ---------------------------------------
 
@@ -291,8 +290,8 @@ test("the discovered emulator spawn-site set equals EXPECTED_EMULATOR_SPAWN_SITE
   );
   assert.equal(
     Object.keys(EXPECTED_EMULATOR_SPAWN_SITES).length,
-    1,
-    "EXPECTED_EMULATOR_SPAWN_SITES must have exactly one entry"
+    0,
+    "EXPECTED_EMULATOR_SPAWN_SITES must have exactly zero entries (FORKRM-01, plan 52-06)"
   );
 });
 
@@ -300,7 +299,6 @@ test("the discovered emulator spawn-site set equals EXPECTED_EMULATOR_SPAWN_SITE
 
 test("every discovered emulator spawn site uses the argv-array form and builds no shell command string", () => {
   const reports = discoverEmulatorSpawnSites();
-  assert.ok(reports.length > 0, "no emulator spawn site was discovered at all -- see the non-vacuity test below");
   for (const report of reports) {
     assert.deepEqual(
       report.shellFormCalls.map((c) => `${c.fn}(${c.arg}`),
@@ -318,15 +316,24 @@ test("every discovered emulator spawn site uses the argv-array form and builds n
 
 // -- 3. Non-vacuity floor -----------------------------------------------------
 
-test("non-vacuity: the scanned module set is real, and at least one emulator spawn call site was discovered", () => {
+test("non-vacuity: the scanned module set is real, and the frozen expected set is genuinely empty rather than broken", () => {
   const modules = shippedTsModules();
   assert.ok(modules.length >= 40, `expected at least 40 top-level production modules, got ${modules.length}`);
 
+  // FORKRM-01 (plan 52-06): there is no real production spawn site left to
+  // discover, so this can no longer prove the discovery mechanism against a
+  // real one -- the planted-violation tests in section 4 below carry that
+  // proof synthetically instead. What this test still asserts: the shipped
+  // module SET itself is real (checked above), and discovery over that real
+  // set returns EXACTLY the empty set the frozen expectation now claims --
+  // not silently vacuous, but a fully accounted-for zero.
   const reports = discoverEmulatorSpawnSites();
-  assert.ok(
-    reports.length >= 1,
-    "discoverEmulatorSpawnSites() found zero emulator spawn sites -- a discovery pass that finds nothing " +
-      "must fail this test, not silently pass a safe-form check with nothing to check"
+  assert.equal(
+    reports.length,
+    0,
+    "discoverEmulatorSpawnSites() found a real emulator spawn site, but the frozen set is empty -- either a " +
+      "spawn site reappeared (add it to EXPECTED_EMULATOR_SPAWN_SITES after confirming it is safe-form) or " +
+      "this test's own expectation is stale"
   );
 });
 
@@ -391,7 +398,7 @@ test("planted violation control: an emulator spawn mention that exists ONLY insi
     `\n` +
     `/**\n` +
     ` * This module used to call spawnSync(binPath, argv) directly, before\n` +
-    ` * it was refactored to go through probeBackend() instead -- see history.\n` +
+    ` * it was refactored to go through a helper instead -- see history.\n` +
     ` */\n` +
     `export const HISTORICAL_NOTE =\n` +
     `  "this module used to call spawnSync(binPath, argv) directly, before it was refactored";\n` +
@@ -424,47 +431,40 @@ test("planted violation control: a RegExp.prototype.exec() call is never mistake
   assert.equal(report, undefined, "a regex .exec(text) call must never be discovered as an emulator shell spawn");
 });
 
-// -- 5. Real-source sanity: the one named site individually ------------------
+// -- 5. Real-source sanity: backend-detect.mts, the former sole site --------
+//
+// FORKRM-01 (plan 52-06) deleted the `--help` discriminator function -- the frozen set's only
+// member -- whole, along with its --help spawn. These tests replace the old
+// "the one named site is discovered and reports safe" pair: they instead
+// prove backend-detect.mts's REAL, current source is genuinely spawn-free
+// (not vacuously so -- section 4's planted violations already prove the
+// detector catches a synthetic spawn; this proves it catches one seeded
+// into backend-detect.mts's own real text too, so a future re-introduced
+// probe in this specific file could not hide behind some property unique to
+// this file's real source).
 
-test("backend-detect.mts's own probeBackend() spawnSync(binPath, [flag] call is discovered and reports safe", () => {
+test("backend-detect.mts's real, current source contains no emulator spawn call (FORKRM-01, plan 52-06)", () => {
   const src = readFileSync(join(HERE, "backend-detect.mts"), "utf8");
   const report = scanModuleForEmulatorSpawnSites(src, "backend-detect.mts");
-  assert.ok(report, "backend-detect.mts must be discovered as an emulator spawn site");
-  assert.equal(report!.shellFormCalls.length, 0, "backend-detect.mts must build no shell command string");
-  assert.equal(report!.allCallsUseSafeForm, true);
-});
-
-test("the one-spawn-site invariant: backend-detect.mts contains exactly ONE emulator spawn call -- a second path means a probe was added without re-running the decision", () => {
-  const src = readFileSync(join(HERE, "backend-detect.mts"), "utf8");
-  const report = scanModuleForEmulatorSpawnSites(src, "backend-detect.mts");
-  assert.ok(report);
   assert.equal(
-    report!.emulatorSpawnCalls.length,
-    1,
-    `expected exactly ONE emulator spawn call in backend-detect.mts -- found ` +
-      `${report!.emulatorSpawnCalls.length}. A second spawn path appearing means a probe was added without ` +
-      `re-running the single-probe decision, and it must be confirmed safe-form before this number moves.`
+    report,
+    undefined,
+    "backend-detect.mts must be discovered as spawn-free -- its `--help` discriminator function was deleted " +
+      "whole by FORKRM-01; a report here means a spawn call was reintroduced"
   );
 });
 
-test("planted violation: duplicating backend-detect.mts's spawn statement into a second function makes the one-spawn-site invariant fail", () => {
+test("planted violation: seeding a spawn call into backend-detect.mts's OWN real source is still discovered", () => {
   const src = readFileSync(join(HERE, "backend-detect.mts"), "utf8");
-  // Reuses the SAME local identifier name ("binPath") the real spawn call
-  // uses, so identNamesEmulatorBinary() resolves it exactly the way it
-  // resolves the real call's own argument -- a faithful duplicate, not a
-  // decoy the detector would ignore for an unrelated reason.
-  const duplicated =
+  const seeded =
     src +
-    `\nexport function __scratchSecondProbePath(binPath: string, flag: string) {\n` +
+    `\nexport function __scratchReintroducedProbe(binPath: string, flag: string) {\n` +
     `  return spawnSync(binPath, [flag], { encoding: "utf8" });\n` +
     `}\n`;
   const before = scanModuleForEmulatorSpawnSites(src, "backend-detect.mts");
-  const after = scanModuleForEmulatorSpawnSites(duplicated, "backend-detect.mts");
-  assert.equal(before!.emulatorSpawnCalls.length, 1, "sanity: the real file must report exactly one spawn call before duplication");
-  assert.notEqual(
-    after!.emulatorSpawnCalls.length,
-    1,
-    "expected the duplicated spawn statement to be discovered as a SECOND emulator spawn site, flipping the " +
-      "one-spawn-site invariant to fail -- if this assertion itself fails, the test above is vacuous"
-  );
+  const after = scanModuleForEmulatorSpawnSites(seeded, "backend-detect.mts");
+  assert.equal(before, undefined, "sanity: the real file must report no spawn call before seeding");
+  assert.ok(after, "a spawn call seeded into backend-detect.mts's real source must be discovered");
+  assert.equal(after!.emulatorSpawnCalls.length, 1);
+  assert.equal(after!.allCallsUseSafeForm, true);
 });

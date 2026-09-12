@@ -6,122 +6,49 @@
 // rebuild.
 // backend-detect.mts
 //
-// The ONE place that decides which VICE build a binary is, and the ONE
-// reader of VICE_BACKEND anywhere in this tree (D-01). Everything else that
-// needs to know "fork or stock" -- broker-launch.mts's buildViceArgs(),
-// vice-broker.mts's startup wiring, and plan 02-08's later connect handshake
-// -- calls resolvedBackend() below and threads its answer down, exactly like
-// vice.ts's mcpHost() documents for its own container-versus-host question:
-// a SECOND independent reader of the same signal is a bug waiting to
-// happen the moment one copy is updated and the other is not (mcpHost()'s
-// own "three inlined copies" incident is the exact regression this file
-// exists to keep from recurring here).
+// FORKRM-01 (plan 52-06): this file used to be the ONE place that decided
+// which VICE build a binary is (the fork's `-mcpserver` flag versus stock's
+// `-binarymonitor`-only surface) and the ONE reader of an environment
+// override naming a backend, anywhere in this tree. There is only one
+// backend now, so there is nothing left to detect between: the `--help`
+// probe (its own spawn, its fork/stock/unknown classifier) and the
+// environment override are both deleted outright, not merely unreachable.
+//
+// What SURVIVES, and why:
+//   - Binary-path resolution (`resolveBinPath`/`binPathFields`, WR-05) --
+//     `vice_ping`'s `resolvedBinaryPath` field and host-tool.mts's sibling
+//     binary resolution (`c1541`/`petcat`) both still need "which file did
+//     you actually mean", independent of any backend concept.
+//   - The on-disk identity/capability cache (BACK-04) -- it still records
+//     something worth caching once the backend verdict is gone: the version
+//     quad and CPU-history capability a live connect handshake (plan 02-08,
+//     stock-connect.ts) attaches to a resolved binary's identity
+//     (`resolvedPath`/`mtimeMs`/`sizeBytes`). `readCapabilityRecord()`/
+//     `writeCapabilityRecord()` are unchanged in shape; only the cache
+//     record's `backend` field is gone, since it never meant anything once
+//     there was nothing to distinguish.
+//
+// `ViceBackend` is NARROWED to a single literal (`"stock"`), not deleted:
+// text-capability-probe.ts and stock-connect.ts (both out of this plan's
+// scope -- plan 52-07 owns text-capability-probe.ts's own registry-shaped
+// fork references) still import it as a type-only import, and deleting it
+// outright would break their compile for no benefit this plan is scoped to
+// deliver.
 //
 // WHAT NOT TO DO:
-//   - Do not call resolvedBackend()/probeBackend() per acquire, per launch,
-//     or per connect. The broker resolves the backend exactly ONCE, at
-//     process startup (vice-broker.mts's run()), and passes the resolved
-//     value down through every real launch call site -- see this module's
-//     own module-level memo below, which exists as a second line of defence
-//     against an accidental extra call, not as the PRIMARY mechanism (that
-//     is the caller only ever invoking this once).
-//   - Do not call this from inside broker-launch.mts's `inFlight`
-//     single-owner launch guard. This is a possibly-blocking child-process
-//     spawn (probeBackend()'s --help probe); anything that can block inside
-//     that synchronous check-and-set window is the exact failure class the
-//     2026-08-01 triple-launch outage came from (D-03/T-02-25).
-//   - Do not add a trial-launch fallback (launch the binary for real and
-//     watch what happens) as a second detection mechanism. The `--help`
-//     probe below runs entirely outside any launch-guarded critical section
-//     BY CONSTRUCTION -- a trial launch would not. It would also depend on
-//     RESEARCH.md's assumption A1 (stock's argument parser rejects an
-//     unknown flag rather than ignoring it), which is UNVERIFIED against a
-//     real stock binary; see docs/phase2-backend-probe-evidence.md.
-//
-// ENVIRONMENT CONSTRAINT (2026-08-13, explicit user scope override): no real
-// stock or fork VICE binary is reachable from the environment this plan
-// executed in, and the user's own ruling for this plan is "we can't do
-// tests with deciding what vice is". Every test in backend-detect.test.ts
-// therefore drives this module's OVERRIDE path, its on-disk CACHE lifecycle,
-// and classifyHelpOutput()'s STRING-PARSING logic against fixture strings
-// authored in the test file -- never a real spawned binary. The `--help`
-// discriminator itself (does a real stock build's --help output actually
-// contain "-binarymonitor" and omit "-mcpserver", the way classifyHelpOutput()
-// below assumes) is recorded as an OPEN, not a VERIFIED, question in
-// docs/phase2-backend-probe-evidence.md section 2 -- that document's verdict
-// is deliberately left standing; nothing in this file's own tests attempts to
-// resolve it, and no fixture string anywhere in this tree should ever be
-// presented as real captured output from either build. See the follow-up
-// todo tracked under .planning/todos/pending/ for what a real-hardware run
-// must still confirm.
-import { spawnSync } from "node:child_process";
+//   - Do not reintroduce an environment-variable backend override, a
+//     --help probe, or any other backend-discrimination mechanism. There is
+//     one binary shape now; a second detection mechanism would be solving a
+//     problem that no longer exists.
+//   - Do not call resolvedBackend() from inside broker-launch.mts's
+//     `inFlight` single-owner launch guard. This still performs filesystem
+//     I/O (a stat call and, on a fresh or changed identity, a cache write);
+//     anything that can block inside that synchronous check-and-set window
+//     is the exact failure class the 2026-08-01 triple-launch outage came
+//     from (D-03/T-02-25) -- unchanged reasoning from before this plan, only
+//     the mechanism inside resolvedBackend() changed.
 import { existsSync, readFileSync, writeFileSync, chmodSync, renameSync, mkdirSync, statSync, } from "node:fs";
 import { join, resolve as resolvePath } from "node:path";
-// ---------------------------------------------------------------------------
-// classifyHelpOutput() -- pure string classification, no I/O at all.
-// ---------------------------------------------------------------------------
-/** Matches on the literal flag tokens D-02 names as the discriminator: the
- * fork's `-mcpserver` flag versus stock's `-binarymonitor`-only surface.
- * `"fork"` wins when BOTH tokens appear (the fork's own VICE tree is a 3.10
- * checkout and accepts both flags) -- checked FIRST, deliberately, so a
- * build that advertises both is classified by the flag that actually makes
- * it the fork, not merely "also has stock's flag too". `"unknown"` when
- * NEITHER token appears -- a real --help transcript that does not match
- * either shape, a probe that spawned nothing at all (empty text), or
- * anything else this function was never taught to recognise. Never throws;
- * pure function of the text it is given. */
-export function classifyHelpOutput(text) {
-    const hasFork = text.includes("-mcpserver");
-    const hasStock = text.includes("-binarymonitor");
-    if (hasFork)
-        return "fork";
-    if (hasStock)
-        return "stock";
-    return "unknown";
-}
-// ---------------------------------------------------------------------------
-// probeBackend() -- the --help probe. spawnSync only, argv array, shell:
-// false, never a shell string and never string interpolation of binPath
-// into a command line (T-02-03's mitigation). Bounded by a 5000ms timeout
-// with kill-on-timeout so a hostile or hung binary cannot stall broker
-// startup (T-02-25's second mitigation half).
-// ---------------------------------------------------------------------------
-const PROBE_TIMEOUT_MS = 5000;
-/** `--help` first, falling back to `-help` then `-?` ONLY when a run exits
- * non-zero with EMPTY combined output -- a run that exits non-zero but
- * still printed something (some builds write usage to stderr and exit 1) is
- * already usable and is not retried further. */
-const HELP_FLAG_CANDIDATES = ["--help", "-help", "-?"];
-function defaultSpawnHelp(binPath, flag) {
-    try {
-        const result = spawnSync(binPath, [flag], {
-            encoding: "utf8",
-            timeout: PROBE_TIMEOUT_MS,
-            killSignal: "SIGKILL",
-        });
-        const text = `${result.stdout ?? ""}${result.stderr ?? ""}`;
-        return { text, exitedZero: result.status === 0 };
-    }
-    catch {
-        return { text: "", exitedZero: false };
-    }
-}
-/** Runs the fallback ladder above against `binPath` and classifies whatever
- * text the LAST attempted flag produced. Never throws -- every failure mode
- * (spawn error, timeout, empty output, an exit code the caller does not
- * recognise) flows through to classifyHelpOutput() as ordinary text, which
- * itself never throws either. */
-export function probeBackend(binPath, deps = {}) {
-    const spawnHelp = deps.spawnHelp ?? defaultSpawnHelp;
-    let text = "";
-    for (const flag of HELP_FLAG_CANDIDATES) {
-        const outcome = spawnHelp(binPath, flag);
-        text = outcome.text;
-        if (outcome.exitedZero || text.trim() !== "")
-            break;
-    }
-    return classifyHelpOutput(text);
-}
 /** The client-side capability-decision schema version stamped into every
  * capability record this module writes (see BackendCacheRecord's own field
  * comment). BUMP THIS whenever the client's capability probing or the
@@ -165,8 +92,7 @@ function readCacheRecord(supervisorDir) {
         return null;
     if (typeof parsed.resolvedPath !== "string" ||
         typeof parsed.mtimeMs !== "number" ||
-        typeof parsed.sizeBytes !== "number" ||
-        (parsed.backend !== "fork" && parsed.backend !== "stock")) {
+        typeof parsed.sizeBytes !== "number") {
         return null;
     }
     const record = {
@@ -174,7 +100,6 @@ function readCacheRecord(supervisorDir) {
         resolvedPath: parsed.resolvedPath,
         mtimeMs: parsed.mtimeMs,
         sizeBytes: parsed.sizeBytes,
-        backend: parsed.backend,
         probedAt: typeof parsed.probedAt === "string" ? parsed.probedAt : "",
     };
     if (typeof parsed.versionQuad === "string")
@@ -186,10 +111,10 @@ function readCacheRecord(supervisorDir) {
     return record;
 }
 /** Tmp-sibling -> chmod 0600 -> content -> rename, the SAME atomic-write
- * discipline refresh-manifest.ts's writeManifestAtomic() and vice-broker.mts's
- * writeBrokerRecordFile() both already use -- a crash mid-write can only ever
- * leave a stray tmp sibling behind, never a truncated or empty file at the
- * real cache path that a later read would wrongly accept. */
+ * discipline vice-broker.mts's writeBrokerRecordFile() already uses -- a
+ * crash mid-write can only ever leave a stray tmp sibling behind, never a
+ * truncated or empty file at the real cache path that a later read would
+ * wrongly accept. */
 function writeCacheRecordAtomic(supervisorDir, record) {
     mkdirSync(supervisorDir, { recursive: true });
     const finalPath = cachePathFor(supervisorDir);
@@ -223,133 +148,73 @@ function defaultStat(resolvedPath) {
         return null;
     }
 }
-function defaultLog(line) {
-    process.stderr.write(`${line}\n`);
-}
-// Memoised answer for the probe/cache path ONLY -- the override path
-// (VICE_BACKEND set) is always answered fresh, on every call, straight from
-// the environment, and never touches this memo (an explicit override can
-// legitimately differ from call to call within, e.g., a test process driving
-// many scenarios; the detected-backend answer for a fixed binary cannot).
-// This is what makes resolvedBackend() answer "once per long-running
-// process" for the case that actually spawns something, while never
-// requiring a caller to somehow signal "this is a fresh scenario" the way
-// container-guard.mts's isInsideContainer() asks callers to pass explicit
-// deps to bypass ITS OWN memo -- here, the override/no-override distinction
-// already IS that signal.
+// Memoised answer -- a long-running process (the real broker) resolves once
+// per process lifetime; a test suite driving many scenarios calls
+// resetResolvedBackendForTests() between them (see that function's own
+// comment).
 let memoisedResult = null;
-// D-06: gates the "detected backend X for binary Y" stderr note so a
-// long-running broker (or a test suite driving resolvedBackend() many times)
-// emits it at most once per process -- repo-root.ts's warnedEnvOutsideFrom/
-// warnedNoMarkerFound pattern, reused here verbatim.
-let warnedBackendUnset = false;
-function emitDetectedNote(result, viceBin, log) {
-    if (warnedBackendUnset)
-        return;
-    warnedBackendUnset = true;
-    log(`vice-broker: detected backend "${result.backend}" for ${viceBin} (source: ${result.source}) -- ` +
-        `set VICE_BACKEND=stock or VICE_BACKEND=fork to override this detection explicitly`);
-}
-/** Test-only escape hatch: clears the in-process memo and the D-06
- * one-time-note gate. Never called by any real production code path --
- * vice-broker.mts calls resolvedBackend() exactly once per real process
- * lifetime and has no reason to ever reset it; this exists solely so
- * backend-detect.test.ts can drive many distinct scenarios (cache hit, cache
- * miss, indeterminate, ...) in one shared test process without one
- * scenario's memoised answer contaminating the next -- mirroring
- * broker-launch.test.ts's own discipline of restoring module-level state
- * between test cases, made explicit here rather than left to careful test
- * ordering, since this module's memo (unlike buildViceArgs()'s one-time
- * note) has no natural "always widens the same way" ordering to exploit. */
+/** Test-only escape hatch: clears the in-process memo. Never called by any
+ * real production code path -- vice-broker.mts calls resolvedBackend()
+ * exactly once per real process lifetime and has no reason to ever reset it;
+ * this exists solely so backend-detect.test.ts can drive many distinct
+ * scenarios (fresh identity, matching cached identity, changed identity, ...)
+ * in one shared test process without one scenario's memoised answer
+ * contaminating the next. */
 export function resetResolvedBackendForTests() {
     memoisedResult = null;
-    warnedBackendUnset = false;
 }
-/** Honours VICE_BACKEND FIRST, returning immediately without spawning
- * anything when it names `stock` or `fork` (BACK-01: one optional config
- * value switches backends, no code edit). Otherwise consults the on-disk
- * cache (when `supervisorDir` is given and the binary's current
- * `{ resolvedPath, mtimeMs, sizeBytes }` all match the stored record); on a
- * miss, probes via probeBackend() and writes the cache. Memoises the
- * probe/cache answer in a module-level variable so a long-running process
- * resolves once (see the memo's own comment above for what "once" means
- * here). Never throws: a probe that classifies "unknown" (including a
- * spawn failure or a timeout, both of which probeBackend() already reduces
- * to "unknown") returns a defined `{ backend: "fork", source:
- * "indeterminate", ... }` outcome instead -- "fork" because that is the
- * pre-Phase-2 behaviour every existing install already has, so an
- * undetectable binary degrades to what already worked rather than to
- * nothing. */
-/** WR-05: the ONE place `binPath`/`binPathResolved` are derived, so the four
- * return paths below cannot disagree about what "the binary" means. A resolved
- * absolute path when there is one; the configured name, flagged as unresolved,
- * when there is not. */
+/** WR-05: the ONE place `binPath`/`binPathResolved` are derived, so a
+ * resolved absolute path when there is one, or the configured name flagged
+ * as unresolved when there is not, is computed identically everywhere this
+ * file returns it. */
 function binPathFields(resolvedPath, viceBin) {
     return resolvedPath !== null ? { binPath: resolvedPath, binPathResolved: true } : { binPath: viceBin, binPathResolved: false };
 }
+/** Resolves the emulator binary's identity and (re)initialises the on-disk
+ * identity/capability cache record for it when a `supervisorDir` is given.
+ * Memoises the answer in a module-level variable so a long-running process
+ * resolves once (see the memo's own comment above for what "once" means
+ * here). Never throws.
+ *
+ * FORKRM-01: there is nothing left to detect -- `backend` is always
+ * `"stock"`. What this function still does is identity resolution (WR-05's
+ * `binPath`/`binPathResolved`) and cache bookkeeping for BACK-04's capability
+ * record: when the resolved binary's identity (`resolvedPath`/`mtimeMs`/
+ * `sizeBytes`) does not match whatever is already on file -- no record at
+ * all, or a record describing a DIFFERENT binary (replaced in place, or a
+ * fresh install) -- a fresh identity record is written, with no stale
+ * capability fields carried over from a different binary's answer. A
+ * matching identity is left untouched, so a capability answer already
+ * recorded for THIS binary survives. */
 export function resolvedBackend(deps = {}) {
-    const env = deps.env ?? process.env;
-    const viceBin = deps.viceBin ?? env.VICE_BIN ?? "x64sc";
-    // A direct read of the real environment on the right of this ternary
-    // (rather than the generic `env` local above) is deliberate: this file is
-    // grep-gated, tree-wide, as the ONE place that ever names this variable
-    // directly against the real environment -- `deps.env` (the test-injection
-    // seam) still takes precedence when supplied, exactly like every other
-    // field on this options object.
-    const override = deps.env ? deps.env.VICE_BACKEND : process.env.VICE_BACKEND;
-    const resolveBinPath = deps.resolveBinPath ?? defaultResolveBinPath;
-    if (override === "stock" || override === "fork") {
-        // WR-05: an explicit backend override still resolves the PATH, so
-        // `vice_ping` reports a real file rather than the bare name. This is a
-        // filesystem lookup only -- existsSync per PATH entry -- and NEVER a spawn,
-        // so the override path keeps its "answered fresh, straight from the
-        // environment, spawns nothing" property.
-        return { backend: override, source: "override", ...binPathFields(resolveBinPath(viceBin, env), viceBin) };
-    }
     if (memoisedResult !== null)
         return memoisedResult;
-    const log = deps.log ?? defaultLog;
+    const env = deps.env ?? process.env;
+    const viceBin = deps.viceBin ?? env.VICE_BIN ?? "x64sc";
+    const resolveBinPath = deps.resolveBinPath ?? defaultResolveBinPath;
     const stat = deps.stat ?? defaultStat;
-    const probe = deps.probe ?? ((bin) => probeBackend(bin));
     const now = deps.now ?? (() => Date.now());
     const resolvedPath = resolveBinPath(viceBin, env);
     const identity = resolvedPath ? stat(resolvedPath) : null;
     const cacheEligible = resolvedPath !== null && identity !== null && typeof deps.supervisorDir === "string";
     if (cacheEligible) {
-        const cached = readCacheRecord(deps.supervisorDir);
-        if (cached &&
-            cached.resolvedPath === resolvedPath &&
-            cached.mtimeMs === identity.mtimeMs &&
-            cached.sizeBytes === identity.sizeBytes) {
-            const result = { backend: cached.backend, source: "cache", ...binPathFields(resolvedPath, viceBin) };
-            memoisedResult = result;
-            emitDetectedNote(result, viceBin, log);
-            return result;
+        const existing = readCacheRecord(deps.supervisorDir);
+        const identityMatches = existing !== null &&
+            existing.resolvedPath === resolvedPath &&
+            existing.mtimeMs === identity.mtimeMs &&
+            existing.sizeBytes === identity.sizeBytes;
+        if (!identityMatches) {
+            writeCacheRecordAtomic(deps.supervisorDir, {
+                version: 1,
+                resolvedPath: resolvedPath,
+                mtimeMs: identity.mtimeMs,
+                sizeBytes: identity.sizeBytes,
+                probedAt: new Date(now()).toISOString(),
+            });
         }
     }
-    const verdict = probe(viceBin);
-    if (verdict === "unknown") {
-        const note = `vice-broker: could not determine whether ${viceBin} is the stock or fork VICE build -- ` +
-            `its --help output matched neither the -mcpserver nor the -binarymonitor discriminator. ` +
-            `Set VICE_BACKEND=stock or VICE_BACKEND=fork explicitly.`;
-        log(note);
-        const result = { backend: "fork", source: "indeterminate", ...binPathFields(resolvedPath, viceBin), note };
-        memoisedResult = result;
-        return result;
-    }
-    if (cacheEligible) {
-        writeCacheRecordAtomic(deps.supervisorDir, {
-            version: 1,
-            resolvedPath: resolvedPath,
-            mtimeMs: identity.mtimeMs,
-            sizeBytes: identity.sizeBytes,
-            backend: verdict,
-            probedAt: new Date(now()).toISOString(),
-        });
-    }
-    const result = { backend: verdict, source: "probe", ...binPathFields(resolvedPath, viceBin) };
+    const result = { backend: "stock", ...binPathFields(resolvedPath, viceBin) };
     memoisedResult = result;
-    emitDetectedNote(result, viceBin, log);
     return result;
 }
 /** Reads whatever capability answers (BACK-04) are on record for `binPath`
@@ -383,15 +248,13 @@ export function readCapabilityRecord(binPath, deps = {}) {
         result.capabilitySchema = existing.capabilitySchema;
     return result;
 }
-/** Attaches `{ versionQuad, cpuHistoryAvailable }` to the EXISTING backend
- * verdict already on record for `binPath`'s resolved identity -- a no-op,
- * never a throw, when there is no such matching record yet (no supervisorDir
+/** Attaches `{ versionQuad, cpuHistoryAvailable }` to the EXISTING identity
+ * record already on file for `binPath`'s resolved identity -- a no-op, never
+ * a throw, when there is no such matching record yet (no supervisorDir
  * given, the binary cannot be resolved or stat'd, or the cache names a
- * different binary or has no verdict at all). This function never invents a
- * backend verdict of its own: it can only EXTEND a record resolvedBackend()
- * already wrote, since a `--help` probe has no way to observe a version
- * quad and this function must not silently fabricate the field it did not
- * observe either. */
+ * different binary or has no record at all). This function never invents an
+ * identity record of its own: it can only EXTEND a record resolvedBackend()
+ * already wrote. */
 export function writeCapabilityRecord(binPath, capability, deps = {}) {
     if (typeof deps.supervisorDir !== "string")
         return;
@@ -412,7 +275,6 @@ export function writeCapabilityRecord(binPath, capability, deps = {}) {
         resolvedPath,
         mtimeMs: identity.mtimeMs,
         sizeBytes: identity.sizeBytes,
-        backend: existing.backend,
         probedAt: existing.probedAt,
         versionQuad: capability.versionQuad,
         cpuHistoryAvailable: capability.cpuHistoryAvailable,

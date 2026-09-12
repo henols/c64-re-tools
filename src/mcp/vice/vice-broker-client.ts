@@ -37,6 +37,9 @@ import { supervisorDir } from "./repo-root.ts";
 // a client would start requesting a knob the host cannot honour. Type-only, so
 // the container-side bundle never resolves the host-bound module at runtime.
 import type { LaunchProfile } from "./broker-launch.mts";
+// backend-detect.mts is ViceBackend's one home (narrowed to a single literal
+// by FORKRM-01, plan 52-06). Type-only, same discipline as the import above.
+import type { ViceBackend } from "./backend-detect.mts";
 // The module tree's ONE definition of the container-visible host alias
 // (vice.ts:49), carrying its own VICE_MCP_HOST override -- consumed below by
 // resolveControlTarget() rather than a fourth `host.docker.internal` literal
@@ -628,12 +631,12 @@ interface ControlHostStateFields {
   warm_floor: number;
   max_instances: number;
   base_port: number;
-  /** WR-04: the backend verdict the BROKER resolved -- the authoritative one,
-   * since it is what decided the emulator's launch argv. `null` when the broker
-   * predates this field or sent something unrecognised: absent evidence, kept
-   * strictly distinct from a definite disagreement, so a mismatch check can
-   * refuse only on the latter. */
-  backend: "fork" | "stock" | null;
+  /** FORKRM-01 (plan 52-06): narrowed from `"fork" | "stock" | null` to
+   * `ViceBackend | null` -- `null` when the broker predates this field or
+   * sent something unrecognised: absent evidence, kept distinct from a
+   * definite value. text-tools.ts's own broker-identity cross-check (out of
+   * this plan's scope) still reads this field. */
+  backend: ViceBackend | null;
 }
 
 export type ControlHostStateResult =
@@ -1096,10 +1099,11 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
         warm_floor: Number(line.warm_floor),
         max_instances: Number(line.max_instances),
         base_port: Number(line.base_port),
-        // WR-04: narrowed at the boundary, never cast -- anything other than the
-        // two known verdicts reads as `null` ("this broker did not tell us"),
-        // which callers must treat as absent evidence rather than agreement.
-        backend: line.backend === "fork" || line.backend === "stock" ? line.backend : null,
+        // FORKRM-01 (plan 52-06): narrowed at the boundary, never cast --
+        // anything other than the one known verdict reads as `null` ("this
+        // broker did not tell us"), which callers must treat as absent
+        // evidence rather than agreement.
+        backend: line.backend === "stock" ? line.backend : null,
       },
     };
   }

@@ -51,10 +51,21 @@
 //     entirely (confused-deputy bypass, not a missing capability). They must
 //     keep being owned there, not duplicated here.
 //
-// This module imports nothing at runtime -- the only import is a type-only
-// import of ViceBackend, which is erased by Node's type-stripping -- so it
-// has no transport, no filesystem, and no process dependency of its own.
-import type { ViceBackend } from "./backend-detect.mts";
+// This module imports nothing at runtime and, as of FORKRM-01 (plan 52-06),
+// nothing at type-check time either.
+//
+// `LegacyViceBackend` below is deliberately NOT `backend-detect.mts`'s
+// `ViceBackend` -- that type now has exactly one member ("stock"), because
+// it answers "which backend did THIS PROCESS just detect/launch", a runtime
+// question with one possible answer today. This registry answers a
+// different, PERMANENT question: "which of the two backends that once both
+// existed actually provided this capability" -- a historical fact that stays
+// true regardless of what resolvedBackend() can detect now. Coupling the two
+// would have forced this registry's entries to be deleted or reclassified as
+// a side effect of collapsing detection, which is plan 52-07's scope, not
+// this plan's (52-06's own objective calls this file's fork references
+// "registry-shaped, not detection-shaped" for exactly this reason).
+type LegacyViceBackend = "fork" | "stock";
 
 /**
  * Three reason categories, matching the distinctions the project's own docs
@@ -83,7 +94,7 @@ export type CapabilityCategory = "hardware" | "descoped" | "stock-only-gain";
 export interface CapabilityEntry {
   name: string;
   category: CapabilityCategory;
-  providedBy: ViceBackend;
+  providedBy: LegacyViceBackend;
   reason: string;
   alternative?: string;
 }
@@ -417,7 +428,7 @@ export function capabilityEntryFor(name: string): CapabilityEntry | undefined {
  */
 export function capabilityRefusalMessage(
   name: string,
-  activeBackend: ViceBackend,
+  activeBackend: LegacyViceBackend,
 ): string | undefined {
   const entry = capabilityEntryFor(name);
   if (!entry) return undefined;

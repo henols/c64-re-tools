@@ -103,7 +103,15 @@
 //     `textCapabilityVerdictFor()` over the response the caller already has
 //     instead (CR-02, D-42-2 CONTINUED above).
 
-import type { ViceBackend } from "./backend-detect.mts";
+/** FORKRM-01 (plan 52-06): deliberately NOT `backend-detect.mts`'s
+ * `ViceBackend` -- that type now has exactly one member ("stock"), since it
+ * answers "which backend did THIS PROCESS just detect/launch". This
+ * module's identity/cache-keying logic below is registry-shaped, not
+ * detection-shaped (52-06's own objective names this file's fork
+ * references out of its scope; plan 52-07 owns them), matching
+ * capability-registry.ts's own `LegacyViceBackend` decoupling for the exact
+ * same reason. */
+type LegacyViceBackend = "fork" | "stock";
 
 // ---------------------------------------------------------------------------
 // The canonical command set and report order.
@@ -184,7 +192,7 @@ const IO_CHIP_DEGRADATION_STRINGS: readonly string[] = Object.freeze(["No detail
  * failed on -- WR-05's own distinction, threaded down unchanged from
  * `StockDispatchDeps.resolvedBinaryPath`/`resolvedBinaryPathIsResolved`). */
 export interface TextCapabilityIdentity {
-  readonly backend: ViceBackend;
+  readonly backend: LegacyViceBackend;
   readonly binPath: string;
   readonly resolved: boolean;
 }
@@ -198,7 +206,7 @@ export interface TextCapabilityIdentity {
  * `backend: null`, and ... is not allowed to block an acquire. Only a
  * definite, named mismatch refuses."). */
 export interface TextCapabilityBrokerIdentity {
-  readonly backend: ViceBackend | null;
+  readonly backend: LegacyViceBackend | null;
   readonly binPath: string;
 }
 

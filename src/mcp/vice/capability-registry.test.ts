@@ -20,7 +20,6 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { CAPABILITY_REGISTRY, capabilityEntryFor, capabilityRefusalMessage } from "./capability-registry.ts";
-import type { ViceBackend } from "./backend-detect.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -307,7 +306,7 @@ test("every entry carrying an `alternative` renders it in capabilityRefusalMessa
   );
 
   for (const entry of withAlternative) {
-    const absentBackend: ViceBackend = entry.providedBy === "fork" ? "stock" : "fork";
+    const absentBackend = entry.providedBy === "fork" ? "stock" : "fork";
     const message = capabilityRefusalMessage(entry.name, absentBackend);
     assert.ok(
       message,

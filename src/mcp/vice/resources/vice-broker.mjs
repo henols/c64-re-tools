@@ -41,14 +41,15 @@ import { acquirePortAndLaunch, deleteInstanceRecord,
 // itself is retired; this is ONLY the launching -> ready promotion sweep
 // the floor used to carry as its own step 1.
 promoteLaunchingInstances, probeReady, runBrokerPass, withCrashSupervision, } from "./broker-launch.mjs";
-// Plan 02-07: resolvedBackend() is now the ONE reader of VICE_BACKEND in
-// this tree -- ViceBackend's own definition moved to backend-detect.mts too,
-// so broker-launch.mjs's own (type-only) re-import of it and this file's
-// VALUE import both name the same one home. A real value import is safe
-// here (unlike inside broker-launch.mts) because vice-broker.mts is ALWAYS
-// run from its own compiled resources/ form -- both modules are compiled
-// together in the same build.ts pass, so "./backend-detect.mjs" always
-// exists as a real sibling file by the time this import resolves.
+// Plan 02-07: resolvedBackend() resolves the emulator binary's identity --
+// ViceBackend's own definition lives in backend-detect.mts too (narrowed to
+// a single literal by FORKRM-01, plan 52-06), so broker-launch.mjs's own
+// (type-only) re-import of it and this file's VALUE import both name the
+// same one home. A real value import is safe here (unlike inside
+// broker-launch.mts) because vice-broker.mts is ALWAYS run from its own
+// compiled resources/ form -- both modules are compiled together in the
+// same build.ts pass, so "./backend-detect.mjs" always exists as a real
+// sibling file by the time this import resolves.
 import { resolvedBackend } from "./backend-detect.mjs";
 import { verifiedKill, registerShutdownHandlers, startupBanner, reapOrphanedInstances } from "./broker-kill.mjs";
 import { writeEpochRecord, epochPathFor, nextEpochFor, instanceLogDirFor } from "./broker-epoch.mjs";
@@ -273,11 +274,11 @@ function writeEpochForLaunch(record, logRelPath) {
  * CR-01 (03-REVIEW.md): `backend` is a REQUIRED positional parameter, not an
  * optional field a call site may quietly omit. Before this, both real call
  * sites built their deps here WITHOUT it, so `spawnAndRecordInstance()`'s own
- * `deps.backend ?? "fork"` default silently took over the moment crash
- * supervision replaced an instance -- a stock instance's crash-respawn or
- * `vice_recycle` relaunched it with the FORK's `-mcpserver` argv, which stock
- * upstream VICE does not understand at all, leaving a pool member that can
- * never be reached over the binary monitor again while still counting toward
+ * unset-parameter default silently took over the moment crash supervision
+ * replaced an instance -- a stock instance's crash-respawn or `vice_recycle`
+ * could relaunch it with a different backend's argv shape than the one it
+ * was actually launched with, leaving a pool member that can never be
+ * reached over the binary monitor again while still counting toward
  * countReady()/countTotal(). Making it positional and required is what makes
  * that omission a compile error rather than a silent backend swap: the FIRST
  * launch and every REPLACEMENT of it now build their argv from the SAME
@@ -525,7 +526,7 @@ export async function handleAcquire(requestId, stateDir, state, deps = {}) {
     // WR-01: the readiness probe is backend-aware, from the SAME threaded-down
     // verdict handleAcquire already uses for buildViceArgs() -- on stock the port
     // speaks the binary monitor, so an HTTP POST there can never succeed.
-    const backend = deps.backend ?? "fork";
+    const backend = deps.backend ?? "stock";
     const probe = deps.probe ?? ((port) => probeReady(port, { backend }));
     // Textually a verifiedKill( call site, not merely a reference -- reused
     // UNCHANGED from broker-kill.mts (Phase 01.6.2 criterion 6), never
@@ -944,14 +945,14 @@ async function run(args) {
     // broker's own repo root (see parseArgs() above), so this is the SAME
     // directory repo-root.ts's supervisorDir() would resolve to, without this
     // host-bound module ever importing that container-side resolver directly
-    // (backend-detect.mts's own header comment explains why it cannot). An
-    // `indeterminate` outcome does not prevent the broker from starting: it
-    // logs its own note (backend-detect.mts) and this line proceeds with the
-    // "fork" answer resolvedBackend() already returns for that case -- the
-    // pre-Phase-2 behaviour every existing install already has.
+    // (backend-detect.mts's own header comment explains why it cannot).
+    // FORKRM-01 (plan 52-06): there is nothing left to detect -- the resolved
+    // `backend` is always `"stock"`; what this call still does is resolve the
+    // binary's own identity for the log line below and initialise the
+    // capability cache backend-detect.mts's own BACK-04 record depends on.
     const backendResult = resolvedBackend({ supervisorDir: args.stateDir });
     const backend = backendResult.backend;
-    process.stderr.write(`vice-broker: backend "${backend}" (source: ${backendResult.source}, binary: ${backendResult.binPath})\n`);
+    process.stderr.write(`vice-broker: backend "${backend}" (binary: ${backendResult.binPath})\n`);
     // Gap G-40-1, requirement R2 (plan 40-09): THE BROKER mints/verifies the
     // Ghidra runs-root handle here -- after the unconditional startup reap
     // above, and BEFORE the control listener below accepts a single
@@ -992,7 +993,7 @@ async function run(args) {
                 backend,
                 // Plan 03-04 (DIRECT-06, D-13): threaded down to
                 // acquirePortAndLaunch()'s own gate (backend === "stock"); this
-                // callback does NOT re-read VICE_BACKEND itself.
+                // callback does not re-read any environment variable itself.
                 allocateRemoteMonitorPort: (s, exclude) => nextFreePort(s, { exclude }),
                 // Phase 33, plan 33-06 (REPRO-05, D-15): the ALREADY-NARROWED
                 // profile broker-control.mts handed this callback. Nothing here
@@ -1030,9 +1031,10 @@ async function run(args) {
                 viceBin: resolveViceBinForHostState(),
                 maxInstances: resolveCeilingForRecord(),
                 basePort: resolveBasePort(),
-                // WR-04: the verdict THIS process resolved once, at startup, above --
-                // the same one every launch argv is built from. Never a second
-                // resolvedBackend() call (backend-detect.mts's own prohibition).
+                // FORKRM-01 (plan 52-06): the verdict THIS process resolved once, at
+                // startup, above -- kept on the wire because text-tools.ts's own
+                // broker-identity cross-check (out of this plan's scope) still reads
+                // it. Never a second resolvedBackend() call.
                 backend,
             }),
         });

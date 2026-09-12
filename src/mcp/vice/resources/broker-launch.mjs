@@ -115,15 +115,12 @@ export const STOCK_DETERMINISM_FLAGS = Object.freeze([
  * understands neither `-mcpserver` nor `-binarymonitor` flags, and that need
  * does not depend on which backend is configured.
  *
- * `backend: "fork"` returns exactly the pre-Phase-2 shape, byte-identical:
- * the MCP server flag, the MCP server host from `mcpHost` or
- * VICE_BROKER_MCP_HOST (default `0.0.0.0`), and the MCP server port.
- *
- * `backend: "stock"` returns `-binarymonitor -binarymonitoraddress
+ * `backend: "stock"` (FORKRM-01, plan 52-06: the only value `ViceBackend` has
+ * left) returns `-binarymonitor -binarymonitoraddress
  * ip4://<host>:<port>` (docs/phase1-probe-results.md's confirmed real-world
  * command line). The host resolves from `binmonHost` or
  * VICE_BROKER_BINMON_HOST, defaulting to `127.0.0.1` -- deliberately
- * narrower than the fork path's `0.0.0.0` default, because VICE's binary
+ * narrow, because VICE's binary
  * monitor is unauthenticated by design and grants full read/write over the
  * emulated machine plus process control to anything that can reach it
  * (planner decision, `02-03-PLAN.md`). Widening the bind away from loopback
@@ -166,9 +163,8 @@ export const STOCK_DETERMINISM_FLAGS = Object.freeze([
  * unconditional on stock, so all FIVE stock whole-argv assertions in
  * broker-launch.test.ts move even with `profile` absent -- it is the block and
  * not the profile that moves them. `D-15`'s byte-identity claim therefore
- * survives in full only on the FORK branch, whose argv this plan leaves
- * untouched (a Validated v0.2.0 requirement, not merely a test), and on stock
- * only for the `profile` half: an absent profile adds no flag. */
+ * survives in full only for the `profile` half: an absent profile adds no
+ * flag. */
 export function buildViceArgs(port, { backend, mcpHost, binmonHost, viceArgsEnv, remoteMonitorPort, profile, }) {
     const rawViceArgs = viceArgsEnv ?? process.env.VICE_ARGS;
     if (typeof rawViceArgs === "string" && rawViceArgs.trim() !== "") {
@@ -334,7 +330,7 @@ function spawnAndRecordInstance(reason, port, deps) {
     const spawnFn = deps.spawn ?? ((cmd, args, opts) => nodeSpawn(cmd, args, opts));
     const now = deps.now ?? (() => Date.now());
     const viceBin = deps.viceBin ?? process.env.VICE_BIN ?? "x64sc";
-    const backend = deps.backend ?? "fork";
+    const backend = deps.backend ?? "stock";
     // Plan 41-05 (D-16): the ONE construction site for a fresh InstanceRecord
     // asserts the invariant every downstream consumer (HeldLease,
     // textConnect(), etc.) was written against -- a stock record NEVER lacks a
@@ -370,10 +366,7 @@ function spawnAndRecordInstance(reason, port, deps) {
     // unreachable) and pass it as a third options argument carrying `env`
     // only. Never `shell: true`: the existing array-form spawn(viceBin,
     // viceArgs) call avoids shell interpretation entirely and that property
-    // must survive this widening. For backend === "fork", spawnFn is called
-    // with NO third argument at all, so the fork path's observable behaviour
-    // stays bit-for-bit what it was (BACK-02 is a standing gate and the fork
-    // backend has been the sole production backend across all of v0.1.x).
+    // must survive this widening.
     //
     // Scope boundary (do not remove this note): the production broker daemon
     // always supplies its own deps.spawn / deps.spawnFactory, so the widened
@@ -891,7 +884,7 @@ export async function promoteLaunchingInstances(deps) {
     // threads `backend` and omits `probe` gets a matching readiness route
     // rather than an HTTP POST at a binary-monitor port. An explicitly
     // injected `probe` still wins, unchanged.
-    const probe = deps.probe ?? ((port) => probeReady(port, { backend: deps.backend ?? "fork" }));
+    const probe = deps.probe ?? ((port) => probeReady(port, { backend: deps.backend ?? "stock" }));
     for (const record of deps.state.instances.values()) {
         if (record.state !== "launching")
             continue;
@@ -1258,8 +1251,7 @@ function launchSupervised(reason, port, deps, crashTimes, backoffMs, remoteMonit
  *
  * Plan 41-05 (D-16): `remoteMonitorPort` is an OPTIONAL fourth parameter,
  * threaded straight through to launchSupervised() exactly like every other
- * optional trailing parameter in this file -- `undefined` (the default) is
- * correct for a `backend: "fork"` launch, which carries none. A
+ * optional trailing parameter in this file. A
  * `backend: "stock"` caller MUST supply it: spawnAndRecordInstance()'s own
  * construction-site assertion (D-16) throws otherwise, since this function
  * is a genuine first-launch call site, not merely a respawn. This is not a
