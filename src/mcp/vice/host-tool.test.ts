@@ -88,7 +88,7 @@ const hostTool = (await import(new URL("./resources/host-tool.mjs", import.meta.
     // acme.build's own (sourcePath/outDirPath) -- this cast is test-file-
     // local typing only, not the module's own exported type.
     resolved: Record<string, unknown>,
-  ) => { ok: true; toolPath: string; argv: string[]; outputs: string[] } | { ok: false; message: string };
+  ) => { ok: true; toolPath: string; argv: string[]; outputs: string[]; cwd?: string } | { ok: false; message: string };
   runHostTool: (
     raw: unknown,
     deps: { repoRoot: string; log?: (line: string) => void; timeoutMs?: number },
@@ -443,6 +443,26 @@ test("buildHostToolArgv: includePaths: [] and an absent includePaths key both pr
   assert.deepEqual(builtEmptyArray, builtAbsentKey);
   assert.equal(builtEmptyArray.ok, true);
   if (builtEmptyArray.ok) assert.ok(!builtEmptyArray.argv.includes("-I"));
+});
+
+// ---------------------------------------------------------------------------
+// Phase 47, plan 47-01 (T-47-02): acme.build's `cwd` -- derived server-side
+// from the resolved source path, never accepted from the wire. Measured live
+// against ACME 0.97 "Zem": a bare `!source "symbols.a"` resolves against the
+// PROCESS's working directory and nothing else, so `exportAsmTree()`'s
+// generated root file cannot find its own siblings unless `spawnHostTool()`
+// runs in the tree's own directory. See `BuildHostToolArgvResult.cwd`'s own
+// doc-comment for the full reasoning.
+// ---------------------------------------------------------------------------
+
+test("buildHostToolArgv: acme.build's cwd equals the directory part of the resolved source path, and cwd appears nowhere in argv", () => {
+  const request = { tool: "acme.build", args: { source: "root.a" } };
+  const resolved = { sourcePath: "/repo/tree/root.a", outDirPath: "/repo/tree" };
+  const built = buildHostToolArgv(request, resolved);
+  assert.equal(built.ok, true);
+  if (!built.ok) return;
+  assert.equal(built.cwd, "/repo/tree");
+  assert.ok(!built.argv.includes(built.cwd as string), "cwd must never appear as any element of argv");
 });
 
 test("runHostTool: an acme.build request whose includes contains an escaping entry is refused with the workspace-escape message, and the log spy recorded zero lines", async () => {

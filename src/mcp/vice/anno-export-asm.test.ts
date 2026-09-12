@@ -77,11 +77,12 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { build } from "./build.ts";
 import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
 import { ACME_VERIFY_ARGV_FLAGS, parseAcmeDiagnostics, verifyAcmeAssembles, type AcmeVerifyResult } from "./acme-verify.ts";
 import {
@@ -89,9 +90,14 @@ import {
   assertExportableCommentText,
   EXCLUSION_MARKER_PREFIX,
   exportAsm,
+  exportAsmTree,
+  ROOT_FILE_NAME,
+  SYMBOLS_FILE_NAME,
+  scopeFileName,
   substituteImmediateEnum,
   type ExportAsmOptions,
   type ExportAsmResult,
+  type ExportAsmTreeResult,
   type ExportBlock,
 } from "./anno-export-asm.ts";
 import { AUTO_NAME_PREFIX_RE } from "./anno-coverage.ts";
@@ -120,6 +126,7 @@ import { codeOnly } from "./shipped-modules.ts";
 import { renderLedger } from "../../skills/c64-provenance-diff/scripts/diff-images.mjs";
 import {
   addExcludedRange,
+  addScope,
   applyEnumUsage,
   createProjectEnum,
   openStore,
@@ -156,6 +163,26 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const SMC_DIR = join(HERE, "fixtures", "export-asm");
 const SMC_SOURCE_PATH = join(SMC_DIR, "smc.a");
 const SMC_PRG_PATH = join(SMC_DIR, "smc.prg");
+
+// ---------------------------------------------------------------------------
+// Phase 47, plan 47-01 (criterion 1): the byte-diff oracle for a WRITTEN
+// TREE must be reached through `runHostTool()`, never through
+// `acme-verify.ts` (which is single-file by design and never widened -- hard
+// scope fence 3). Reached as the BUILT artifact, copying host-tool.test.ts's
+// own `build()`-then-`import("./resources/host-tool.mjs")` idiom verbatim
+// rather than inventing a second one.
+// ---------------------------------------------------------------------------
+build();
+const hostToolModule = (await import(new URL("./resources/host-tool.mjs", import.meta.url).href)) as unknown as {
+  runHostTool: (
+    raw: unknown,
+    deps: { repoRoot: string; log?: (line: string) => void; timeoutMs?: number },
+  ) => Promise<
+    | { ok: true; tool: string; exitStatus: number | null; results: Array<{ path: string; sha256: string; byteLength: number }>; stderrTail: string }
+    | { ok: false; message: string }
+  >;
+};
+const { runHostTool } = hostToolModule;
 
 test("ACME availability gate", () => {
   assertAcmeRequiredIfEnvSet(assert);
@@ -197,6 +224,10 @@ interface StoreSpec {
    * built this way has passed the same validators a live `anno_*` tool call
    * would have passed it through. */
   exclusions?: readonly { start: number; endInclusive: number; reason: string }[];
+  /** Phase 47, plan 47-01: recorded through `addScope()` -- the store's own
+   * public write verb, on the same "never raw SQL" terms every other row
+   * here already follows. */
+  scopes?: readonly { start: number; endInclusive: number }[];
 }
 
 interface StoreFixture {
@@ -225,6 +256,7 @@ function buildStore(dir: string, spec: StoreSpec): StoreFixture {
     for (const projectEnum of spec.enums ?? []) createProjectEnum(handle, projectEnum);
     for (const usage of spec.enumUsage ?? []) applyEnumUsage(handle, usage);
     for (const exclusion of spec.exclusions ?? []) addExcludedRange(handle, exclusion);
+    for (const scope of spec.scopes ?? []) addScope(handle, scope);
   } finally {
     closeStore(handle);
   }
@@ -384,6 +416,19 @@ function plantedFixture(tag: string): StoreFixture {
       { address: 0x0090, name: "zpf_90" },
       { address: 0x0801, name: "entry" },
     ],
+  });
+}
+
+/** Phase 47, plan 47-01: `shapeFixture()`'s own body/range, plus ONE scope
+ * covering the whole range -- the simplest case `exportAsmTree()`'s tree-file-
+ * set test needs. */
+function oneScopeFixture(tag: string): StoreFixture {
+  return buildStore(freshDir(tag), {
+    origin: 0x0801,
+    body: SHAPE_BODY,
+    ranges: [{ start: 0x0801, endInclusive: 0x0806, dataType: "code" }],
+    labels: [{ address: 0x0801, name: "entry" }],
+    scopes: [{ start: 0x0801, endInclusive: 0x0806 }],
   });
 }
 
@@ -3840,6 +3885,10 @@ function exportAsmWithVerdictFilter(options: ExportAsmOptions): { source: string
     endExclusive: row.endInclusive + 1,
     dataType: row.dataType,
     lineCount: 0,
+    // TEST-ONLY forbidden-shape variant (see the doc-comment above): it never
+    // calls the real `emitBlock()`, so there is no real bracketed text to
+    // capture here -- an empty array, since nothing in this file reads it.
+    lines: [],
   }));
 
   const minStart = blocks.length > 0 ? Math.min(...blocks.map((b) => b.start)) : 0;
@@ -4038,7 +4087,7 @@ function blockConstructionSlice(): string {
  * unconditional current form -- pinning the one right shape rather than
  * enumerating wrong ones. */
 function pinsUnconditionalBlockMap(text: string): boolean {
-  return /const blocks: ExportBlock\[\] = sortedRanges\.map\(\(row\) => \(\{\s*start: row\.start,\s*endExclusive: row\.endInclusive \+ 1,[\s\S]*?dataType: assertDataTypeForExport\(row\) as string,\s*lineCount: 0,\s*\}\)\);/.test(
+  return /const blocks: ExportBlock\[\] = sortedRanges\.map\(\(row\) => \(\{\s*start: row\.start,\s*endExclusive: row\.endInclusive \+ 1,[\s\S]*?dataType: assertDataTypeForExport\(row\) as string,\s*lineCount: 0,\s*lines: \[\],\s*\}\)\);/.test(
     text,
   );
 }
@@ -4211,3 +4260,101 @@ test(
     }
   },
 );
+
+// ---------------------------------------------------------------------------
+// Phase 47, plan 47-01: `exportAsmTree()` -- a store becomes a TREE of real
+// files, and real ACME reassembles it through `runHostTool()`'s new `cwd`.
+// The tree writer is a PARTITION of the already-proven emitter, never a
+// second emitter -- every test below is either about the on-disk shape of
+// the partition, or about the one byte-diff oracle that settles whether it
+// reassembles.
+// ---------------------------------------------------------------------------
+
+/** Builds a one-scope-covering-its-single-range store and exports it as a
+ * tree under a fresh subdirectory of that store's own temp directory. */
+function treeFixture(tag: string): { fixture: StoreFixture; outDir: string; result: ExportAsmTreeResult } {
+  const fixture = oneScopeFixture(tag);
+  const outDir = join(fixture.dir, "tree");
+  const result = exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir });
+  return { fixture, outDir, result };
+}
+
+test("exportAsmTree: a one-scope store writes exactly root.a, symbols.a and one scope_XXXX.a", () => {
+  const { outDir, result } = treeFixture("tree-file-set");
+  const onDisk = readdirSync(outDir).sort();
+  const expected = [ROOT_FILE_NAME, SYMBOLS_FILE_NAME, scopeFileName(0x0801)].sort();
+  assert.deepEqual(onDisk, expected, "the tree's on-disk file-name set must be exactly these three files");
+  assert.deepEqual(result.files, expected, "result.files must agree with what is actually on disk");
+});
+
+test("exportAsmTree: root.a carries !cpu 6510 and exactly two !source lines, symbols file first, every argument a bare filename", () => {
+  const { outDir, result } = treeFixture("tree-root-text");
+  const rootText = readFileSync(join(outDir, ROOT_FILE_NAME), "utf8");
+  assert.match(rootText, /^!cpu 6510$/m, "root.a must carry !cpu 6510");
+  const sourceArgs = [...rootText.matchAll(/^!source "([^"]*)"$/gm)].map((m) => m[1]!);
+  assert.equal(sourceArgs.length, 2, "a one-scope store's root must source exactly symbols.a and one scope file");
+  assert.equal(sourceArgs[0], SYMBOLS_FILE_NAME, "symbols.a must be sourced FIRST -- a symbol defined after its first use widens the referencing instruction (measured)");
+  for (const arg of sourceArgs) {
+    assert.ok(!arg.includes("/") && !arg.includes("\\"), `!source argument "${arg}" must be a bare filename -- no directory component, no host path`);
+  }
+  assert.equal(result.sourceOrder[0], SYMBOLS_FILE_NAME);
+});
+
+test("exportAsmTree: every block's lines group appears exactly once across the tree's .a files, and the tree carries no content line exportAsm() did not produce", () => {
+  const { outDir, result } = treeFixture("tree-partition");
+  const treeFileNames = readdirSync(outDir).filter((name) => name.endsWith(".a"));
+  const fileLinesByName = new Map(treeFileNames.map((name) => [name, readFileSync(join(outDir, name), "utf8").split("\n")] as const));
+
+  // Every block's own `* = $XXXX` origin line is unique to that block, so
+  // counting how many tree files carry it is a check that the block's whole
+  // `lines` group was written to exactly one destination, never split across
+  // two files and never duplicated into two.
+  for (const block of result.blocks) {
+    const originLine = block.lines[0]!;
+    const filesCarryingIt = treeFileNames.filter((name) => fileLinesByName.get(name)!.includes(originLine));
+    assert.equal(
+      filesCarryingIt.length,
+      1,
+      `block origin line "${originLine}" must appear in exactly one tree .a file, found in: ${filesCarryingIt.join(", ") || "(none)"}`,
+    );
+  }
+
+  // The tree is a PARTITION of exportAsm()'s own source -- no line the tree
+  // carries (other than a banner comment or a !source directive, neither of
+  // which exportAsm() itself emits) may be absent from result.source.
+  const sourceLines = new Set(result.source.split("\n"));
+  for (const name of treeFileNames) {
+    for (const line of fileLinesByName.get(name)!) {
+      if (line === "" || line.startsWith("; ") || line.startsWith("!source ")) continue;
+      assert.ok(sourceLines.has(line), `${name}'s content line "${line}" does not appear in exportAsm()'s own source`);
+    }
+  }
+});
+
+test(
+  "cwd control: positive twin -- the identical tree, assembled through runHostTool() with acme.build's new cwd, reaches exitStatus 0 and produces result.expectedBytes",
+  { skip: SKIP_REASON },
+  async () => {
+    const { outDir, result } = treeFixture("cwd-control-positive");
+    const response = await runHostTool({ tool: "acme.build", args: { source: ROOT_FILE_NAME, format: "plain", noReport: true } }, { repoRoot: outDir });
+    assert.equal(response.ok, true, response.ok ? "" : response.message);
+    if (!response.ok) return;
+    assert.equal(response.exitStatus, 0, "real ACME must exit 0 when its cwd is the tree's own directory");
+    assert.equal(response.results.length, 1);
+    const producedBytes = new Uint8Array(readFileSync(response.results[0]!.path));
+    assert.deepEqual(producedBytes, result.expectedBytes, "the produced .prg bytes must be octet-identical to bytes taken from the image");
+  },
+);
+
+test("exportAsm(): source is exactly [\"!cpu 6510\", ...headerLines, every block's own lines].join(\"\\n\") plus a trailing newline -- unchanged by this task's field additions", () => {
+  const { storePath, imagePath, dir } = shapeFixture("source-unchanged");
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+  const reconstructed = `${["!cpu 6510", ...result.headerLines, ...result.blocks.flatMap((b) => b.lines)].join("\n")}\n`;
+  assert.equal(result.source, reconstructed, "result.source must be byte-for-byte reconstructible from its own structured pieces");
+});
+
+test("anno-export-asm.ts imports nothing from node:child_process -- the exporter provably runs no external program", () => {
+  const raw = readFileSync(join(HERE, "anno-export-asm.ts"), "utf8");
+  const stripped = codeOnly(raw);
+  assert.ok(!stripped.includes("node:child_process"), "anno-export-asm.ts must not import node:child_process anywhere in its own source");
+});

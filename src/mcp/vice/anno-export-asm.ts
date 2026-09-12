@@ -87,12 +87,12 @@
 // SCOPE, STILL DELIBERATELY NARROW: code ranges, the twelve typed data ranges,
 // comments, mid-instruction inline labels and immediate-operand enum
 // substitution.
-import { readFileSync } from "node:fs";
-import { extname } from "node:path";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { extname, join } from "node:path";
 
-import { openStore, closeStore, listRanges, listLabels, listComments, listProjectEnums, listEnumUsage, listExcludedRanges } from "./anno-store.ts";
+import { openStore, closeStore, listRanges, listLabels, listComments, listProjectEnums, listEnumUsage, listExcludedRanges, listScopes } from "./anno-store.ts";
 import { AnnoCommentError, COMMENT_TYPES, DATA_TYPES, assertCommentText, assertDataType, parseVariantKey } from "./anno-types.ts";
-import type { CommentRow, DataType, EnumUsageRow, ExcludedRangeRow, LabelRow, ProjectEnumRow, RangeRow } from "./anno-types.ts";
+import type { CommentRow, DataType, EnumUsageRow, ExcludedRangeRow, LabelRow, ProjectEnumRow, RangeRow, ScopeRow } from "./anno-types.ts";
 import { assertLegalAcmeIdentifier } from "./anno-acme-ident.ts";
 // The eleven typed auto-name prefixes, IMPORTED FROM THEIR ONE HOME rather than
 // restated. This is the first cross-module PRODUCTION importer of that
@@ -150,6 +150,16 @@ export interface ExportBlock {
   /** How many CONTENT lines the block emitted -- not its `* =` origin line and
    * not the two `!if * != ...` assertions that bracket it. */
   lineCount: number;
+  /** Phase 47, plan 47-01: exactly what `emitBlock()` returned for this block
+   * -- the `* =` origin line, both `!if * != ...` bracket assertions, and
+   * every content line between them, in emitted order. This is FOR a tree
+   * writer to partition an emission that is already proven, rather than a
+   * second description of the block: `exportAsmTree()` writes each scope's
+   * `.a` file by concatenating its contained blocks' `lines` verbatim, never
+   * by re-deriving what a block looks like from `dataType`/`start`/
+   * `endExclusive` a second time. Populated by `exportAsm()` at the same
+   * point it calls `emitBlock()`; empty only before that call runs. */
+  lines: string[];
 }
 
 export interface ExportAsmOptions {
@@ -190,6 +200,19 @@ export interface ExportAsmOptions {
 export interface ExportAsmResult {
   /** The ACME source text. */
   source: string;
+  /** Phase 47, plan 47-01: the symbol-definition block VERBATIM -- every
+   * enum-variant definition line followed by every store label's own
+   * definition line, in exactly the order `source` carries them. This is FOR
+   * `exportAsmTree()` to write `symbols.a` from, never re-derived: `source`
+   * is still `["!cpu 6510", ...headerLines, ...blockLines].join("\n")` plus
+   * the trailing newline, byte for byte unchanged by this field's addition. */
+  headerLines: string[];
+  /** Phase 47, plan 47-01: every scope the store holds, read by `listScopes()`
+   * as a SEVENTH call inside this function's existing store handle -- there
+   * is still exactly one handle opened for the whole export. `exportAsmTree()`
+   * uses this to decide which scope (or none) each block belongs to; nothing
+   * in `exportAsm()` itself reads a scope's span to change what it emits. */
+  scopes: ScopeRow[];
   /** The bytes `source` must assemble to, DERIVED FROM THE IMAGE and never
    * from `source`. Spans `[minStart, maxEndExclusive)` across every emitted
    * block, with `$00` filling the gaps between them -- which is exactly what
@@ -919,6 +942,7 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
   let projectEnums: ProjectEnumRow[];
   let enumUsage: EnumUsageRow[];
   let excludedRanges: ExcludedRangeRow[];
+  let scopes: ScopeRow[];
   try {
     ranges = listRanges(handle);
     labels = listLabels(handle);
@@ -930,6 +954,11 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
     // follow -- one handle for the whole export, closed once in the
     // `finally` below. There is no second store opened for this.
     excludedRanges = listExcludedRanges(handle);
+    // Phase 47, plan 47-01: a SEVENTH read in the SAME handle and the SAME
+    // `try`, on the same terms as the sixth above -- still one handle for
+    // the whole export, closed once in the `finally` below. There is no
+    // second store opened for this either.
+    scopes = listScopes(handle);
   } finally {
     closeStore(handle);
   }
@@ -974,6 +1003,9 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
     // from it.
     dataType: assertDataTypeForExport(row) as string,
     lineCount: 0,
+    // Populated below, at the same point `emitBlock()` is called for this
+    // block -- empty only before that call runs.
+    lines: [],
   }));
 
   const imageStart = image.origin;
@@ -1576,8 +1608,12 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
 
     // EVERY block goes through `emitBlock()`, code and data alike, so there is
     // exactly one place that brackets a block and no route that emits an
-    // unbracketed one.
-    blockLines.push(...emitBlock(block.start, block.endExclusive, content));
+    // unbracketed one. Captured onto `block.lines` (Phase 47, plan 47-01) at
+    // the SAME point it is pushed onto `blockLines` -- one call, two
+    // destinations, never a second bracketing.
+    const emittedBlockLines = emitBlock(block.start, block.endExclusive, content);
+    block.lines = emittedBlockLines;
+    blockLines.push(...emittedBlockLines);
   }
 
   // EVERY store label is defined here, in a block BEFORE the first `* =`, not
@@ -1645,6 +1681,8 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
 
   return {
     source: `${lines.join("\n")}\n`,
+    headerLines,
+    scopes,
     expectedBytes,
     blocks,
     symbolCount: sortedLabels.length,
@@ -1658,4 +1696,171 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
     enumDecompositionCount,
     excludedRangeCount: excludedRangeIdsEmitted.size,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Phase 47, plan 47-01: the TREE writer (D47-A). `exportAsm()` above stays the
+// proven EMITTER -- this is the primary shape a caller reaches for, built by
+// PARTITIONING `exportAsm()`'s already-proven emission, never by emitting a
+// second time through a second route. See `exportAsmTree()`'s own doc-comment
+// below for the one claim it is NOT allowed to make.
+// ---------------------------------------------------------------------------
+
+/** D47-B: the tree's three fixed file names. DERIVED from nothing but this
+ * module's own naming convention -- never from a store row -- so a store's
+ * free text can never reach one of these three names. */
+export const ROOT_FILE_NAME = "root.a";
+export const SYMBOLS_FILE_NAME = "symbols.a";
+export const UNSCOPED_FILE_NAME = "unscoped.a";
+
+/**
+ * D47-B: the `.a` file name for the scope starting at `start` --
+ * `scope_XXXX.a`, four LOWERCASE hex digits, no `$`, no store free text
+ * anywhere in it.
+ *
+ * DERIVED FROM `start`, an integer this project already controls (a scope
+ * row's own `start` field, itself validated by `addScope()` before it ever
+ * reached the store) -- never from a label name, a comment or any other
+ * store free text (T-47-01). This is what makes a re-export a REVIEWABLE
+ * DIFF instead of full-tree churn: the same scope always gets the same file
+ * name, so an unrelated edit elsewhere in the store does not rename files a
+ * human may have opened.
+ */
+export function scopeFileName(start: number): string {
+  return `scope_${(start & 0xffff).toString(16).padStart(4, "0")}.a`;
+}
+
+export interface ExportAsmTreeOptions extends ExportAsmOptions {
+  /** The directory the tree is written into. NOTHING CONFINES THIS PATH
+   * INSIDE THIS MODULE, on exactly the same terms `imagePath`/`storePath`
+   * above already carry (T-47-03) -- that sentence is present because an
+   * absent comment beside a present one is itself a claim, and a silently-
+   * undocumented path field is what a prior review named as the mechanism of
+   * a real defect. The CALLER owns confining it (the CLI does, through
+   * `storePathWithinWorkspace()`, plan 47-05). Within the directory, every
+   * name this function writes is DERIVED (`scopeFileName()`, the three fixed
+   * constants above), so nothing the caller supplies can escape it a second
+   * time. */
+  outDir: string;
+  /** Reserved for plan 47-03's "never silently overwrite a human-edited data
+   * file" refusal (P-02). This task does not implement that guard -- its own
+   * scope is writing a tree to a fresh directory. */
+  force?: boolean;
+}
+
+export interface ExportAsmTreeResult extends ExportAsmResult {
+  outDir: string;
+  /** Every file this call wrote, ASCENDING -- exactly the tree's on-disk
+   * file-name set. */
+  files: string[];
+  /** The `!source` order `root.a` carries, D47-B: `symbols.a` first, then
+   * each populated scope file ascending by scope start, then `unscoped.a`
+   * last (only when non-empty). */
+  sourceOrder: string[];
+}
+
+/**
+ * Writes `exportAsm()`'s already-proven emission as a TREE of real files on
+ * disk, rather than emitting a second time through a second route --
+ * `root.a` (D47-B order), `symbols.a`, one `scope_XXXX.a` per scope that
+ * contains at least one block, and `unscoped.a` only when at least one block
+ * lies inside no scope (D47-D).
+ *
+ * ASSIGNMENT RULE, THIS TASK ONLY (D47-C is plan 47-02's): a block goes to
+ * the scope that WHOLLY contains it (`scope.start <= block.start` and
+ * `block.endExclusive - 1 <= scope.endInclusive`), or to the unscoped group
+ * when no scope contains it at all. A block that only PARTIALLY overlaps a
+ * scope is neither case here; plan 47-02 turns that into a named refusal.
+ *
+ * Every `!source` argument this function emits is a bare filename -- no
+ * directory component, no absolute path, no host-machine path anywhere in
+ * the generated text, so the tree assembles on a machine that has never
+ * seen this one (hard scope fence 2).
+ *
+ * `root.a` is written LAST, through a temp name in the same directory
+ * followed by a `renameSync` into place -- the same atomic-publish
+ * discipline `build.ts` already uses for every artifact it emits. A tree
+ * whose root exists is a tree every file it sources exists for, so an
+ * interrupted export leaves nothing an assembler would happily turn into a
+ * wrong program.
+ *
+ * `exportAsmTree()` SPAWNS NOTHING AND ASSEMBLES NOTHING. Writing the tree is
+ * not the same claim as the tree being able to reassemble, and nothing this
+ * function writes, prints or returns may be read as an assembly verdict
+ * (P-01) -- that claim is settled elsewhere, by a real ACME reached through
+ * `runHostTool()`.
+ */
+export function exportAsmTree(options: ExportAsmTreeOptions): ExportAsmTreeResult {
+  const result = exportAsm(options);
+  const { outDir } = options;
+  mkdirSync(outDir, { recursive: true });
+
+  const sortedScopes = [...result.scopes].sort((a, b) => a.start - b.start);
+  // Keyed by scope START (D47-B's own file-naming key), never by scope id --
+  // the file name is a function of `start`, so the grouping key matches it.
+  const scopeBlocks = new Map<number, ExportBlock[]>();
+  const unscopedBlocks: ExportBlock[] = [];
+  for (const block of result.blocks) {
+    const blockEndInclusive = block.endExclusive - 1;
+    const containing = sortedScopes.find((scope) => scope.start <= block.start && blockEndInclusive <= scope.endInclusive);
+    if (containing === undefined) {
+      unscopedBlocks.push(block);
+      continue;
+    }
+    const existing = scopeBlocks.get(containing.start);
+    if (existing) existing.push(block);
+    else scopeBlocks.set(containing.start, [block]);
+  }
+
+  const files: string[] = [];
+  const sourceOrder: string[] = [];
+
+  // symbols.a -- ALWAYS written, sourced FIRST (D47-B). Measured live this
+  // session: a zero-page symbol defined AFTER its first use widens the
+  // referencing instruction, so every scope file depends on this one having
+  // already run.
+  const symbolsFileLines = [
+    `; ${SYMBOLS_FILE_NAME} -- every symbol definition this export carries. Sourced FIRST by ${ROOT_FILE_NAME}: a symbol defined after its first use widens the referencing instruction (measured against real ACME 0.97), so every other file in this tree depends on this one having already run.`,
+    ...result.headerLines,
+  ];
+  writeFileSync(join(outDir, SYMBOLS_FILE_NAME), `${symbolsFileLines.join("\n")}\n`, "utf8");
+  files.push(SYMBOLS_FILE_NAME);
+  sourceOrder.push(SYMBOLS_FILE_NAME);
+
+  // One scope_XXXX.a per POPULATED scope, ascending by scope start (D47-B).
+  const populatedScopeStarts = [...scopeBlocks.keys()].sort((a, b) => a - b);
+  for (const scopeStart of populatedScopeStarts) {
+    const name = scopeFileName(scopeStart);
+    const blocksInScope = [...scopeBlocks.get(scopeStart)!].sort((a, b) => a.start - b.start);
+    const fileLines = [`; ${name} -- one scope of this export's tree, addresses ${hex4(scopeStart)} upward.`, ...blocksInScope.flatMap((b) => b.lines)];
+    writeFileSync(join(outDir, name), `${fileLines.join("\n")}\n`, "utf8");
+    files.push(name);
+    sourceOrder.push(name);
+  }
+
+  // unscoped.a -- only when at least one block lies inside no scope (D47-D):
+  // losslessness is the governing constraint, so every existing store (which
+  // has zero scopes today, since nothing reads listScopes() yet) still
+  // exports every block somewhere, never nowhere.
+  if (unscopedBlocks.length > 0) {
+    const sortedUnscoped = [...unscopedBlocks].sort((a, b) => a.start - b.start);
+    const fileLines = [`; ${UNSCOPED_FILE_NAME} -- every block this export emitted that lies inside no scope.`, ...sortedUnscoped.flatMap((b) => b.lines)];
+    writeFileSync(join(outDir, UNSCOPED_FILE_NAME), `${fileLines.join("\n")}\n`, "utf8");
+    files.push(UNSCOPED_FILE_NAME);
+    sourceOrder.push(UNSCOPED_FILE_NAME);
+  }
+
+  // root.a -- LAST, and atomically: a temp name in the SAME directory (so
+  // `renameSync` is a same-filesystem rename, never EXDEV), then renamed into
+  // place. A tree whose root exists is a tree every file it sources exists
+  // for.
+  const rootPath = join(outDir, ROOT_FILE_NAME);
+  const rootTmpPath = join(outDir, `${ROOT_FILE_NAME}.tmp-${process.pid}`);
+  const rootFileLines = [`; ${ROOT_FILE_NAME} -- this tree's entry point.`, "!cpu 6510", ...sourceOrder.map((name) => `!source "${name}"`)];
+  writeFileSync(rootTmpPath, `${rootFileLines.join("\n")}\n`, "utf8");
+  renameSync(rootTmpPath, rootPath);
+  files.push(ROOT_FILE_NAME);
+  files.sort();
+
+  return { ...result, outDir, files, sourceOrder };
 }

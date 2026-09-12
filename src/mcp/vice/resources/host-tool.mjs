@@ -952,7 +952,12 @@ export function buildHostToolArgv(request, resolved, log) {
         if (args.setpc)
             argv.push("--setpc", args.setpc);
         argv.push(sourcePath);
-        return { ok: true, toolPath: acmePath, argv, outputs: [prg] };
+        // The directory holding the resolved ROOT SOURCE, never `outDirPath`:
+        // `outDir` governs where the `.prg` lands and a caller may point it
+        // elsewhere, while `!source` resolution is about where the SOURCES live,
+        // beside `sourcePath` itself. See `BuildHostToolArgvResult.cwd`'s own
+        // doc-comment for the measured reason this field exists at all.
+        return { ok: true, toolPath: acmePath, argv, outputs: [prg], cwd: dirname(sourcePath) };
     }
     if (request.tool === "ghidra.analyze") {
         const { importPath, projectLocation, projectName, preScriptPath, postScriptPath, scriptPathResolved, entrypointsPathResolved, exportPathResolved, dataRangesPathResolved, } = resolved;
@@ -1622,8 +1627,12 @@ function tailBytes(text, capBytes) {
  * `stdout` is captured (not just `stderr`) because oracle.run's contract is
  * "the oracle's stdout", not a file digest -- acme.build/ghidra.analyze
  * simply ignore the field, exactly as they ignored stdout before it was
- * piped (ACME writes nothing to stdout; verified empirically this phase). */
-function spawnHostTool(toolPath, argv, timeoutMs, env) {
+ * piped (ACME writes nothing to stdout; verified empirically this phase).
+ * `cwd` defaults to the broker process's own working directory (`spawn()`'s
+ * own default) when omitted -- exactly `env`'s existing default shape; only
+ * `acme.build` passes one (Phase 47, plan 47-01), and every other tool's
+ * spawn is therefore byte-identical to before this parameter existed. */
+function spawnHostTool(toolPath, argv, timeoutMs, env, cwd) {
     return new Promise((resolvePromise) => {
         let settled = false;
         let timedOut = false;
@@ -1631,7 +1640,7 @@ function spawnHostTool(toolPath, argv, timeoutMs, env) {
         let stderr = "";
         let child;
         try {
-            child = spawn(toolPath, argv, { stdio: ["ignore", "pipe", "pipe"], ...(env ? { env } : {}) });
+            child = spawn(toolPath, argv, { stdio: ["ignore", "pipe", "pipe"], ...(env ? { env } : {}), ...(cwd ? { cwd } : {}) });
         }
         catch (e) {
             resolvePromise({
@@ -2142,7 +2151,7 @@ export async function runHostTool(raw, deps) {
             // classifyC1541ReadOutput() still digests whatever c1541 produces.
         }
     }
-    const spawnResult = await spawnHostTool(built.toolPath, built.argv, timeoutMs, spawnEnv);
+    const spawnResult = await spawnHostTool(built.toolPath, built.argv, timeoutMs, spawnEnv, built.cwd);
     const elapsedMs = Date.now() - startedAt;
     if (spawnResult.spawnErrorMessage !== null) {
         deps.log?.(`host_tool tool=${request.tool} exit=spawn_error elapsed_ms=${elapsedMs} timeout_ms=${timeoutMs} bin=${built.toolPath}`);

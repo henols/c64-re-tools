@@ -1275,7 +1275,24 @@ export type ResolvedHostToolPaths =
   | ResolvedPetcatDecodePaths;
 
 export type BuildHostToolArgvResult =
-  | { ok: true; toolPath: string; argv: string[]; outputs: string[] }
+  | {
+      ok: true;
+      toolPath: string;
+      argv: string[];
+      outputs: string[];
+      /** `acme.build` ONLY (Phase 47, plan 47-01): the directory `spawnHostTool()`
+       * must run the child in. MEASURED live against ACME 0.97 "Zem": a bare
+       * `!source "symbols.a"` resolves against the PROCESS's working directory and
+       * nothing else, so a root source sourcing sibling files by bare filename
+       * fails with `Cannot open input file` unless the child's cwd is the tree's
+       * own directory. DERIVED HERE from the already-`resolveWorkspacePath()`-
+       * confined `sourcePath` -- never accepted from the wire -- because a
+       * container-side caller choosing the host's working directory is the same
+       * trust-boundary regression the `oracle.probe` `command` field was removed
+       * for. Every other tool leaves this `undefined` and spawns exactly as it
+       * did before this field existed. */
+      cwd?: string;
+    }
   | { ok: false; message: string };
 
 /** Deterministic: the same typed request and the same resolved paths yield a
@@ -1326,7 +1343,12 @@ export function buildHostToolArgv(request: HostToolRequest, resolved: ResolvedHo
     if (args.setpc) argv.push("--setpc", args.setpc);
     argv.push(sourcePath);
 
-    return { ok: true, toolPath: acmePath, argv, outputs: [prg] };
+    // The directory holding the resolved ROOT SOURCE, never `outDirPath`:
+    // `outDir` governs where the `.prg` lands and a caller may point it
+    // elsewhere, while `!source` resolution is about where the SOURCES live,
+    // beside `sourcePath` itself. See `BuildHostToolArgvResult.cwd`'s own
+    // doc-comment for the measured reason this field exists at all.
+    return { ok: true, toolPath: acmePath, argv, outputs: [prg], cwd: dirname(sourcePath) };
   }
 
   if (request.tool === "ghidra.analyze") {
@@ -2121,12 +2143,17 @@ interface HostToolSpawnResult {
  * `stdout` is captured (not just `stderr`) because oracle.run's contract is
  * "the oracle's stdout", not a file digest -- acme.build/ghidra.analyze
  * simply ignore the field, exactly as they ignored stdout before it was
- * piped (ACME writes nothing to stdout; verified empirically this phase). */
+ * piped (ACME writes nothing to stdout; verified empirically this phase).
+ * `cwd` defaults to the broker process's own working directory (`spawn()`'s
+ * own default) when omitted -- exactly `env`'s existing default shape; only
+ * `acme.build` passes one (Phase 47, plan 47-01), and every other tool's
+ * spawn is therefore byte-identical to before this parameter existed. */
 function spawnHostTool(
   toolPath: string,
   argv: string[],
   timeoutMs: number,
   env?: NodeJS.ProcessEnv,
+  cwd?: string,
 ): Promise<HostToolSpawnResult> {
   return new Promise((resolvePromise) => {
     let settled = false;
@@ -2136,7 +2163,7 @@ function spawnHostTool(
 
     let child;
     try {
-      child = spawn(toolPath, argv, { stdio: ["ignore", "pipe", "pipe"], ...(env ? { env } : {}) });
+      child = spawn(toolPath, argv, { stdio: ["ignore", "pipe", "pipe"], ...(env ? { env } : {}), ...(cwd ? { cwd } : {}) });
     } catch (e) {
       resolvePromise({
         exitCode: null,
@@ -2646,7 +2673,7 @@ export async function runHostTool(raw: unknown, deps: HostToolDeps): Promise<Hos
       // classifyC1541ReadOutput() still digests whatever c1541 produces.
     }
   }
-  const spawnResult = await spawnHostTool(built.toolPath, built.argv, timeoutMs, spawnEnv);
+  const spawnResult = await spawnHostTool(built.toolPath, built.argv, timeoutMs, spawnEnv, built.cwd);
   const elapsedMs = Date.now() - startedAt;
 
   if (spawnResult.spawnErrorMessage !== null) {
