@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: The Rebuild Half
-current_phase: 47
-current_phase_name: Multi-File Rebuildable Source
-status: verifying
-stopped_at: Completed 47-06-PLAN.md
-last_updated: "2026-09-12T18:38:19.024Z"
+current_phase: 48
+current_phase_name: The Movement-Hazard Report and Its Purpose-Built Subject
+status: planning
+stopped_at: Phase 47 complete, ready to plan Phase 48
+last_updated: "2026-09-12T18:56:01.365Z"
 last_activity: 2026-09-12
-last_activity_desc: Phase 47 execution started
-state_head: 1b6d17743d591d8f8afd860dc1215905e42a8af8
+last_activity_desc: Phase 47 complete, transitioned to Phase 48
+state_head: fe16262dffe8fcd1185f9689cacf9dfbeae29205
 progress:
   total_phases: 8
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 22
   completed_plans: 22
-  percent: 25
+  percent: 38
 ---
 
 # Project State
@@ -254,22 +254,22 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 47 (Multi-File Rebuildable Source) — EXECUTING
-Plan: 6 of 6
-Status: Phase complete — ready for verification
-Plans: 6 (47-01 … 47-06) in 5 waves. Wave 2's 47-05 is `autonomous: false` —
-it carries the phase's one blocking decision checkpoint, because promoting
-`anno export-asm --out` from a file path to a directory path breaks a
-published CLI surface.
+Phase: 48 — The Movement-Hazard Report and Its Purpose-Built Subject
+Plan: Not started
+Status: Ready to plan
+Plans: not yet planned. Phase 47 closed with 6/6 plans across 5 waves, all
+verified 5/5 against real ACME 0.97; its one blocking decision checkpoint
+(promoting `anno export-asm --out` from a file path to a directory path, a
+published-surface break) was answered `promote` by the user.
 
-Progress: [███░░░░░░░] 25% (3/8 phases complete in v1.0.0; per-phase plan counts in the ROADMAP Progress table)
-Last activity: 2026-09-12 — Phase 47 execution started
+Progress: [████░░░░░░] 38% (3/8 phases complete in v1.0.0; per-phase plan counts in the ROADMAP Progress table)
+Last activity: 2026-09-12 — Phase 47 complete, transitioned to Phase 48
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 400
+- Total plans completed: 406
 - Average duration: —
 - Total execution time: —
 
@@ -319,6 +319,7 @@ Last activity: 2026-09-12 — Phase 47 execution started
 | 45 | 10 | - | - |
 | 46 | 6 | - | - |
 | 52 | 13 | - | - |
+| 47 | 6 | - | - |
 
 **Recent Trend:**
 
@@ -2406,7 +2407,7 @@ and are v1.0.0's inheritance.
 ## Session Continuity
 
 Last session: 2026-09-12T18:38:18.767Z
-Stopped at: Completed 47-06-PLAN.md
+Stopped at: Phase 47 complete, ready to plan Phase 48
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
