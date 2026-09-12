@@ -77,9 +77,10 @@
 //
 // `anno_batch_execute` IS THE ONE SANCTIONED NESTED-ARGUMENT VERB ON THIS
 // SURFACE, AND NO SECOND MAY JOIN IT. A meta-tool that takes an arbitrary tool
-// name inside its own arguments is precisely the smuggling shape `vice.ts`'s
-// `DENY_LIST` exists to close: the outer name passes the gate while the inner
-// name never sees it. This one verb earns the exception by being the only
+// name inside its own arguments is precisely the confused-deputy shape a
+// generic meta-tool surface this project closed once had, with an
+// outer-name-only refusal array: the outer name passes the gate while the
+// inner name never sees it. This one verb earns the exception by being the only
 // route to the multi-edit pass an annotation run actually performs, and it
 // pays for it with `assertAnnoBatch()` below -- a recursive, DEPTH-CAPPED
 // pre-validator that refuses the WHOLE batch, before any store is opened, if
@@ -2007,7 +2008,7 @@ function assertVerbArgs(name: string, args: unknown, batchIndex?: number): void 
 
 /**
  * The allow-list gate. Its body's FIRST check is set membership (see WHAT NOT
- * TO DO above, and `vice.ts`'s `DENY_LIST` precedent inverted into an
+ * TO DO above, and the same confused-deputy precedent inverted into an
  * allow-list): a `name` outside `CURATED_ANNO_TOOLS` is refused outright,
  * before any argument is inspected, so an unknown verb can never reach a
  * validator that might coincidentally accept its payload. Only then are the

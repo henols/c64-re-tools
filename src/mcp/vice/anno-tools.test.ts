@@ -566,13 +566,10 @@ test("anno_exclude_range's description states that recording an exclusion remove
   );
 });
 
-test("anno_exclude_range and anno_include_range are absent from both tools manifests -- the anno_* family is served proxy-locally, in neither, by design", () => {
-  const fork = JSON.parse(readFileSync(join(HERE, "tools-manifest.json"), "utf8")) as { tools: { name: string }[] };
+test("anno_exclude_range and anno_include_range are absent from the tools manifest -- the anno_* family is served proxy-locally, in neither, by design", () => {
   const stock = JSON.parse(readFileSync(join(HERE, "tools-manifest.stock.json"), "utf8")) as { tools: { name: string }[] };
-  const forkNames = new Set(fork.tools.map((t) => t.name));
   const stockNames = new Set(stock.tools.map((t) => t.name));
   for (const name of ["anno_exclude_range", "anno_include_range"]) {
-    assert.equal(forkNames.has(name), false, `${name} must be absent from the fork manifest`);
     assert.equal(stockNames.has(name), false, `${name} must be absent from the stock manifest`);
   }
 });
@@ -1598,7 +1595,7 @@ test("anno_batch_execute is advertised as the ONE sanctioned nested-argument ver
   assert.ok((def!.inputSchema.required ?? []).includes("calls"));
   assert.match(ANNO_TOOLS_SOURCE, /ONE SANCTIONED NESTED-ARGUMENT VERB ON THIS/);
   assert.match(ANNO_TOOLS_SOURCE, /NO SECOND MAY JOIN IT/);
-  assert.match(ANNO_TOOLS_SOURCE, /smuggling shape/);
+  assert.match(ANNO_TOOLS_SOURCE, /confused-deputy shape/);
   // The depth cap and the recursive validator are both real, exported names.
   assert.equal(ANNO_MAX_BATCH_DEPTH, 4);
   assert.equal(typeof assertAnnoBatch, "function");
