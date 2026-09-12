@@ -549,13 +549,15 @@ function detectSelfModifyingCode(
 // The class-3 (page-alignment) detector -- VIC-II hardware alignment ONLY
 // ---------------------------------------------------------------------------
 //
-// D-48-A's reading, and only that reading: a VIC-II register or the sprite
-// pointer names an address not as an address but as a SCALED INDEX (a
+// VIC-II HARDWARE alignment, and only that reading: a VIC-II register or the
+// sprite pointer names an address not as an address but as a SCALED INDEX (a
 // 2048-byte character-set unit, a 64-byte sprite-shape unit), so the
 // hardware silently reads whatever real bytes now sit at that index if the
-// named data moves off the required boundary. The code/timing
-// page-crossing reading RESEARCH.md names as the excluded alternative is
-// recorded as a named limit above, never evaluated here.
+// named data moves off the required boundary. A different, excluded reading
+// -- a code or table alignment chosen so an indexed access never crosses a
+// 256-byte page, which changes instruction TIMING rather than which bytes
+// the hardware reads -- is recorded as a named limit above, never evaluated
+// here.
 //
 // The VIC-II register arithmetic (bank base, screen base, character base,
 // bitmap-vs-charset mode, the sprite pointer table's own offset) is NEVER
