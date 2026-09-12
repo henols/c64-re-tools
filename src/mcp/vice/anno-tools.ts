@@ -154,6 +154,7 @@ import {
   listProjectEnums,
   listRanges,
   listScopes,
+  listXrefs,
   openStore,
   removeExcludedRange,
   removeScope,
@@ -203,6 +204,12 @@ import { runMemmapJoin } from "./anno-join.ts";
 import { accessMapRanges, parseAccessMap } from "./textmon-memmap.ts";
 import { ingestAccessMap, runIdentityFrom, type IngestRunIdentity } from "./evid-ingest.ts";
 import { reconcileObservedExecution } from "./evid-reconcile.ts";
+// The pure, read-only movement-hazard report. Declares its own
+// input shapes and never reads a store, a file or a tool on its own behalf --
+// the SAME caller-fetches-everything split `anno-coverage.ts`'s own header
+// states for the coverage instrument, and exactly why the store re-point
+// below is a CALLER-side change and nothing more.
+import { buildHazardReport } from "./anno-hazard-report.ts";
 import { flatImageOrigin, parsePrg } from "./prg-image.ts";
 import { repoRoot } from "./repo-root.ts";
 
@@ -1277,6 +1284,39 @@ export const ANNO_TOOL_DEFINITIONS: readonly AnnoToolDefinition[] = [
       required: ["store", "image_sha256", "argv", "seed"],
     },
   },
+  {
+    name: "anno_hazard_report",
+    description:
+      "Enumerates what blocks a program's code or data from being MOVED, relocated, rebased or stripped, across " +
+      "the movement-hazard constructions this surface can detect from decoded bytes alone. It REPORTS " +
+      "and changes NOTHING: it never removes, strips, relocates or rebases any part of the image, and it never " +
+      "emits an instruction, flag or field a caller could act on as an automatic relocation -- the operator " +
+      "decides what happens to the bytes it describes. Each finding carries its own detection mechanism and a " +
+      "detection-strength token (observed-corroborated, static-shape-matched, static-signature-only) -- a " +
+      "SEPARATE, smaller vocabulary from this store's own five-grade confidence grades, answering a different " +
+      "question (how strong is this ONE static signal, never what does this address classify as). Every checked " +
+      "region reports exactly one of three outcomes -- hazard-reported, no-signal, unclassified -- and NONE of " +
+      "them is a safety claim: a region with no finding is explicitly NOT a claim that the region is safe to " +
+      "move, clean, or hazard-free, only that nothing this report knows how to look for fired there. " +
+      "Always-emitted named limits (for example, a self-modification through a runtime-computed pointer is " +
+      "undetected by construction) accompany every answer. Opens the store READ-ONLY and reads no other table: " +
+      "this verb creates nothing and writes nothing.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ...STORE_PROPERTY,
+        ...IMAGE_PROPERTY,
+        max_results: {
+          type: "integer",
+          description:
+            "Optional bound on the returned findings array only. Unlike most list-returning anno_* verbs, this is " +
+            "NOT required -- an empty or small finding set is the ordinary, sound case. When supplied, must be a " +
+            "positive integer.",
+        },
+      },
+      required: ["store", "image"],
+    },
+  },
 ];
 
 /** The allow-list, DERIVED from the definitions above rather than hand-typed
@@ -1673,6 +1713,14 @@ function assertEvidResetArgs(args: unknown, batchIndex?: number): void {
   }
 }
 
+/** `anno_hazard_report`'s own argument assertion. Reuses the shared store,
+ * image and optional-max-results assertions rather than inlining a fourth
+ * check -- this verb has no argument shape of its own beyond those three. */
+function assertHazardReportArgs(args: unknown, batchIndex?: number): void {
+  assertStoreArg("anno_hazard_report", args, batchIndex);
+  assertImageArg("anno_hazard_report", args, batchIndex);
+  assertOptionalMaxResults("anno_hazard_report", args, batchIndex);
+}
 
 // ---------------------------------------------------------------------------
 // THE ONE SIZE CAP, GOVERNING BOTH VIEWS (T-29-25).
@@ -1989,6 +2037,7 @@ function assertVerbArgs(name: string, args: unknown, batchIndex?: number): void 
   if (name === "anno_evid_disagreements") return assertEvidDisagreementsArgs(args, batchIndex);
   if (name === "anno_evid_runs") return assertEvidRunsArgs(args, batchIndex);
   if (name === "anno_evid_reset") return assertEvidResetArgs(args, batchIndex);
+  if (name === "anno_hazard_report") return assertHazardReportArgs(args, batchIndex);
   if (name === "anno_disassemble") return assertDisassembleArgs(args, batchIndex);
   if (name === "anno_read_region") return assertReadRegionArgs(args, batchIndex);
   if (name === "anno_get_binary_info") return assertBinaryInfoArgs(args, batchIndex);
@@ -2090,6 +2139,7 @@ export const READ_ONLY_ANNO_VERBS: readonly string[] = Object.freeze([
   "anno_get_address_details",
   "anno_evid_disagreements",
   "anno_evid_runs",
+  "anno_hazard_report",
 ]);
 
 /** Refuses an absent store BY NAME, returning the inode the later guard
@@ -2947,6 +2997,50 @@ function dispatchDisassemble(handle: AnnoStoreHandle, args: unknown): unknown {
   };
 }
 
+/**
+ * `anno_hazard_report`'s dispatch arm. Fetches EVERY input here -- the
+ * byte-derived ranges, labels, comments, cross-references, execution
+ * observations and the image bytes -- and hands them to `buildHazardReport()`
+ * exactly once; the pure module itself never fetches any of it (see its own
+ * header). The byte-derived ranges are mapped through `blocksFromStore()`,
+ * reached by the SAME lazy `await import("./anno-cli.ts")`
+ * `dispatchEvidDisagreements()` already uses above, so this file's own static
+ * import graph -- and therefore the MCP server's startup cost -- stays
+ * unchanged: `anno-cli.ts` drags in `anno-coverage.ts`, `anno-memmap-render.ts`
+ * and `anno-export-asm.ts`, none of which this verb needs either. The mapping
+ * itself is NOT re-implemented here, for the same reason `dispatchEvidDisagreements`
+ * states for itself.
+ */
+async function dispatchHazardReport(handle: AnnoStoreHandle, args: unknown): Promise<unknown> {
+  const maxResults = assertOptionalMaxResults("anno_hazard_report", args);
+  const image = loadImage("anno_hazard_report", args);
+  const { blocksFromStore } = await import("./anno-cli.ts");
+  const ranges = blocksFromStore(listRanges(handle));
+  const symbols = listLabels(handle);
+  const comments = listComments(handle);
+  const xrefs = listXrefs(handle);
+  const execObservations = listExecObservations(handle);
+  const report = buildHazardReport({
+    bytes: image.body,
+    origin: image.origin,
+    symbols,
+    comments,
+    ranges,
+    xrefs,
+    execObservations,
+  });
+  const findings = maxResults === undefined ? report.findings : report.findings.slice(0, maxResults);
+  return {
+    store: handle.path,
+    image: image.path,
+    ...report,
+    findings,
+    returned: findings.length,
+    matched: report.findings.length,
+    truncated: report.findings.length > findings.length,
+  };
+}
+
 function dispatchReadRegion(args: unknown): unknown {
   const image = loadImage("anno_read_region", args);
   const bag = argBag(args);
@@ -3103,6 +3197,7 @@ async function dispatch(name: string, args: unknown, handle: AnnoStoreHandle): P
   if (name === "anno_evid_runs") return dispatchEvidRuns(handle, args);
   if (name === "anno_evid_reset") return dispatchEvidReset(handle, args);
   if (name === "anno_disassemble") return dispatchDisassemble(handle, args);
+  if (name === "anno_hazard_report") return dispatchHazardReport(handle, args);
   if (name === "anno_read_region") return dispatchReadRegion(args);
   if (name === "anno_get_binary_info") return dispatchBinaryInfo(args);
   if (name === "anno_get_cross_references") return dispatchCrossReferences(handle, args);

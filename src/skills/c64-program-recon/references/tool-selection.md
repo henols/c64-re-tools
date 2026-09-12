@@ -39,6 +39,21 @@ usage, not measured). Individual rows that have since been exercised live are ma
 | What evidence a store already holds, without re-running the program | `anno_evid_runs` — every run identity's observation count beside its denominator |
 | Reset one run identity's evidence for a fresh re-measurement | `anno_evid_reset` — clears only that run identity's rows; pair it with `vice_memmap_zap` on the emulator side |
 
+## What blocks this program's code from being moved
+
+| Question | Call |
+|---|---|
+| Which constructions block relocating, rebasing or stripping part of this program | **`anno hazard-report`** (also `anno_hazard_report`) — enumerates movement-hazard findings derived from decoded bytes alone (for example, a store or read-modify-write instruction whose literal target lands on another instruction's opcode or operand byte, changing what runs or what value is read on a later pass). Each finding carries its own detection mechanism and a detection-strength token. Reports and changes NOTHING: it never relocates, strips or rebases anything, and it never emits a flag a caller could act on as an automatic relocation |
+
+**A region this report does not flag is undecided or unflagged, never certified safe to move.** Every checked
+region reports one of exactly three outcomes, and only one of them means a construction was actually found
+there — the other two both mean "nothing this report knows how to look for fired here," which is a fact about
+the detectors, not a guarantee about the bytes. A store through a runtime-computed pointer into the code range
+is a known, named miss: this report cannot see it, and its absence from the findings is not evidence that no
+such construction exists. Use this alongside, never instead of, the runtime-evidence and provenance-diff
+routes above and in the sibling skills — a region with no finding still needs a human decision before it is
+moved.
+
 ## Three traps in this table
 
 **`vice_run_until`'s `timeout_ms` bounds the wait.** `timeout_ms` (default 30000, ceiling 600000)

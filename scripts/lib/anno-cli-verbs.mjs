@@ -98,8 +98,16 @@
  * of raise plan 43-06 already made once (three -> four), not a silent bump.
  * Named in `src/skills/routine-queue-walker/SKILL.md` in the same commit, so
  * `verbsMissingFromSkills()` never fires on it.
+ *
+ * RAISED FIVE -> SIX by phase 48 plan 48-01, in the commit that added
+ * `hazard-report` -- the sixth verb, and the CLI route through which the
+ * movement-hazard report (a pure, read-only query over an annotation store
+ * and a program image) is run against a real store rather than only exposed
+ * as an MCP tool, the same reason `evid-disagreements` carries one. Named in
+ * `src/skills/c64-program-recon/references/tool-selection.md` in the same
+ * commit, so `verbsMissingFromSkills()` never fires on it.
  */
-export const ANNO_CLI_VERB_FLOOR = 5;
+export const ANNO_CLI_VERB_FLOOR = 6;
 
 /**
  * Strips `//` line comments and `/* ... *\/` block comments from `src`,

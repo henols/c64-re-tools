@@ -207,6 +207,11 @@ export const REQUIRED_FLAGS = Object.freeze({
   // disagreements FILE is required", "--manifest FILE is required"), and
   // none defaults from another (D-09 mechanism 1).
   "decomp-completeness": Object.freeze(["--store", "--disagreements", "--manifest"]),
+  // hazard-report (phase 48 plan 48-01): both --store and --image are
+  // required -- `anno-cli.ts`'s own refusal branches name each in turn
+  // ("--store FILE is required", "--image FILE is required"), and neither
+  // defaults from the other.
+  "hazard-report": Object.freeze(["--store", "--image"]),
 });
 
 // ---------------------------------------------------------------------------
@@ -327,6 +332,14 @@ export const FLAG_KINDS = Object.freeze({
     "--store": Object.freeze([".annostore", ".store"]),
     "--disagreements": Object.freeze([".json"]),
     "--manifest": Object.freeze([".json"]),
+  }),
+  // hazard-report (phase 48 plan 48-01): --store is the same annotation
+  // store artefact every other verb's --store names; --image takes the same
+  // kinds `POSITIONAL_KINDS["coverage"]`/`["export-asm"]` already declare for
+  // a program image, reached through a flag here rather than a positional.
+  "hazard-report": Object.freeze({
+    "--store": Object.freeze([".annostore", ".store"]),
+    "--image": Object.freeze([".prg", ".raw", ".bin"]),
   }),
 });
 

@@ -347,6 +347,24 @@ export const ANNO_VERB_REGISTER: readonly AnnoVerbRegisterEntry[] = Object.freez
       "`deleteExecObservationsForRun()` -- the store function EVID-05's own requirement asks for -- has no route " +
       "onto the surface at all.",
   },
+  {
+    verb: "anno_hazard_report",
+    kind: "unclassified",
+    consumers: [
+      { path: "src/mcp/vice/anno-hazard-report.ts", symbol: "buildHazardReport" },
+      { path: "src/mcp/vice/anno-tools.ts", symbol: "anno_hazard_report" },
+    ],
+    requirements: ["BUILD-04"],
+    rationale:
+      "A movement-blocking construction must be askable and enumerable, with its detection mechanism and its " +
+      "detection strength reported beside it, and with a third undecided outcome that is never rendered as " +
+      "clean. This verb is the ONE place the pure hazard-report function is reached from the surface: without " +
+      "it, the module a prior task built has no caller at all, and the goal it exists for (a user can ask what " +
+      "blocks a program's code from being moved) is unreachable. The manifest's five absorbed upstream " +
+      "procedures predate any movement-hazard concept in this store at all, so the derivation is silent about a " +
+      "verb that answers a question upstream never asked. This verb opens no new store table and writes " +
+      "nothing -- it is a derived query over tables the surface already writes through other verbs.",
+  },
 
   // --- manifest-deviation: classified, routed, and answering differently ---
   {

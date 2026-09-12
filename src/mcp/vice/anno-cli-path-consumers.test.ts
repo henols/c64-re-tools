@@ -187,6 +187,8 @@ const CLI_PATH_ARGUMENTS: readonly CliPathArgument[] = [
   { verb: "decomp-completeness", argument: "--store", kind: "flag" },
   { verb: "decomp-completeness", argument: "--disagreements", kind: "flag" },
   { verb: "decomp-completeness", argument: "--manifest", kind: "flag" },
+  { verb: "hazard-report", argument: "--store", kind: "flag" },
+  { verb: "hazard-report", argument: "--image", kind: "flag" },
 ];
 
 /**
@@ -225,10 +227,14 @@ const NON_PATH_OPTIONS: readonly string[] = ["--check", "--force", "--sample", "
  * `cmdDecompCompleteness()`; the verb has no positional and no `--out`, so
  * it contributes exactly three to this floor.
  *
- * RAISED 13 -> 14 by phase 46 plan 46-01 (BUILD-05), in the commit that added
- * `export-asm --ledger`. It is confined by the SAME seam, in the SAME
- * `cmdExportAsm()` confinement block as `<image>` and `--store`, so it
- * contributes exactly one to this floor.
+ * RAISED 13 -> 14, in the commit that added `export-asm --ledger`. It is
+ * confined by the SAME seam, in the SAME `cmdExportAsm()` confinement block
+ * as `<image>` and `--store`, so it contributes exactly one to this floor.
+ *
+ * RAISED 14 -> 16, in the commit that added `hazard-report`. Its two path
+ * arguments (`--store`, `--image`) are confined by the same seam in
+ * `cmdHazardReport()`; the verb has no positional and no `--out`, so it
+ * contributes exactly two to this floor.
  *
  * HAND-PINNED AS AN INTEGER LITERAL, AND IT MUST STAY THAT WAY. Deriving it
  * from `CLI_PATH_ARGUMENTS.length` (or from disk) would make it unfailable and
@@ -237,7 +243,7 @@ const NON_PATH_OPTIONS: readonly string[] = ["--check", "--force", "--sample", "
  * trivially. Raise it when a verb genuinely grows a path argument; never lower
  * it to fit.
  */
-const CLI_PATH_ARGUMENT_FLOOR = 14;
+const CLI_PATH_ARGUMENT_FLOOR = 16;
 
 // ---------------------------------------------------------------------------
 // 1. The inventory is declared and complete.

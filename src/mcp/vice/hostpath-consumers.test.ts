@@ -324,7 +324,13 @@ function annoProductionModules(): string[] {
 // Again a RELATION -- the value plan 45-02 measured, plus the one module
 // this plan adds -- and again read literally: 22 is strictly greater than
 // the 21 it replaces.
-const ANNO_MODULE_FLOOR = 17 + 2 + 1 + 1 - 1 + 1 + 1;
+//
+// RAISED FROM 22 TO 23, which lands exactly one new `anno-*.ts` production
+// module: `anno-hazard-report.ts` (the pure, read-only movement-hazard
+// report). Again a RELATION -- the previously-measured value, plus the one
+// module this change adds -- and again read literally: 23 is strictly
+// greater than the 22 it replaces.
+const ANNO_MODULE_FLOOR = 17 + 2 + 1 + 1 - 1 + 1 + 1 + 1;
 
 test("the annotation module family (D-08/ANNO-02) is derived from disk with a non-vacuity floor, not a hard-coded list (INT-01/D-11.1-03)", () => {
   const modules = annoProductionModules();

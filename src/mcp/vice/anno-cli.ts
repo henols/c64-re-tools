@@ -160,6 +160,10 @@ import type { Instruction } from "./disasm-decoder.ts";
 // this module IS the CLI, not a startup-cost-sensitive MCP server entry
 // point.
 import { reconcileObservedExecution } from "./evid-reconcile.ts";
+// The pure, read-only movement-hazard report. The SAME buildHazardReport()
+// the anno_hazard_report MCP tool calls -- reached here directly (a static
+// import, never lazy) because this module IS the CLI.
+import { buildHazardReport } from "./anno-hazard-report.ts";
 import type { EvidReconciliation } from "./evid-reconcile.ts";
 // The derived half of STORE-06: cross-references are DERIVED from the bytes
 // plus the store's typed ranges plus the few rows that cannot be recovered
@@ -344,6 +348,25 @@ verbs:
       document and an EXISTING --manifest file; creates none and writes
       nothing.
 
+  hazard-report --store FILE --image FILE [--json]
+      Enumerates what blocks a program's code or data from being MOVED,
+      relocated, rebased or stripped, across the movement-hazard
+      constructions this surface can detect from decoded bytes alone. It
+      REPORTS and changes NOTHING: it never removes, strips, relocates or
+      rebases any part of the image, and never prints anything a caller
+      could act on as an automatic relocation -- the operator decides.
+      Findings print first, under their own heading, each carrying its own
+      detection mechanism and detection-strength token. Region dispositions
+      print next, grouped under three separate headings by outcome
+      (hazard-reported, no-signal, unclassified) -- the no-signal heading's
+      own text states plainly that no detection is not evidence that a
+      region is safe to move. The named limits print last, verbatim. No
+      percentage, rate or combined verdict is ever printed; each heading
+      prints its own count against the report's own denominator. --json
+      prints the raw JSON answer instead of the rendered report.
+      Requires an EXISTING annotation store and an EXISTING image; creates
+      neither and writes nothing.
+
 Every verb requires inputs that already exist. None creates a project, a
 store or a sidecar, and none derives one path from another -- this CLI
 never guesses (D-02).
@@ -383,6 +406,7 @@ export const VERB_OPTIONS: Readonly<Record<string, readonly string[]>> = Object.
   "export-asm": ["--store", "--out", "--ledger", "--force"],
   "evid-disagreements": ["--store", "--json"],
   "decomp-completeness": ["--store", "--disagreements", "--manifest", "--json"],
+  "hazard-report": ["--store", "--image", "--json"],
 });
 
 /**
@@ -2690,6 +2714,246 @@ function printDecompCompletenessReport(r: {
   );
 }
 
+// ---------------------------------------------------------------------------
+// hazard-report -- the CLI route for the movement-hazard report.
+// ---------------------------------------------------------------------------
+
+interface HazardReportParsedArgs {
+  positional: string[];
+  store?: string;
+  storeMissingValue?: boolean;
+  image?: string;
+  imageMissingValue?: boolean;
+  json?: boolean;
+  unknownOption?: string;
+}
+
+/** Fixed, closed option set for hazard-report -- exactly `--store`,
+ * `--image` and `--json`. Same WR-08 posture as every other verb's own
+ * parser: an unimplemented flag is refused as `unknownOption`, and an
+ * option with a missing or flag-shaped value is refused through its own
+ * `*MissingValue` field rather than silently swallowing the next token. */
+function parseHazardReportArgs(rest: string[]): HazardReportParsedArgs {
+  const positional: string[] = [];
+  let store: string | undefined;
+  let storeMissingValue = false;
+  let image: string | undefined;
+  let imageMissingValue = false;
+  let json = false;
+  let unknownOption: string | undefined;
+  for (let i = 0; i < rest.length; i++) {
+    const a = rest[i]!;
+    if (a === "--store") {
+      const value = rest[i + 1];
+      if (isMissingOptionValue(value)) {
+        storeMissingValue = true;
+      } else {
+        store = value;
+        i++;
+      }
+    } else if (a === "--image") {
+      const value = rest[i + 1];
+      if (isMissingOptionValue(value)) {
+        imageMissingValue = true;
+      } else {
+        image = value;
+        i++;
+      }
+    } else if (a === "--json") {
+      json = true;
+    } else if (a.startsWith("--")) {
+      unknownOption ??= a;
+    } else {
+      positional.push(a);
+    }
+  }
+  return { positional, store, storeMissingValue, image, imageMissingValue, json, unknownOption };
+}
+
+/**
+ * Renders a hazard report as separately-headed, textually-distinguishable
+ * sections -- findings first, then region dispositions grouped by outcome
+ * under three separate headings, then the named limits verbatim. No
+ * percentage, rate or combined verdict is ever printed at the point of
+ * display: every heading prints its own count against the report's own
+ * `denominator`, the same convention `printEvidDisagreementsReport()` uses.
+ * The NO-SIGNAL heading's own text states, in as many words, that no
+ * detection is not evidence that a region is safe to move -- so that
+ * sentence is never left to a reader's inference.
+ */
+function printHazardReport(
+  storePath: string,
+  imagePath: string,
+  r: {
+    findings: readonly {
+      hazardClass: string;
+      anchorAddress: number;
+      blockedAddress: number | null;
+      mechanism: string;
+      strength: string;
+      detail: string;
+    }[];
+    regions: readonly { start: number; endInclusive: number; outcome: string; reason?: string }[];
+    limits: readonly { hazardClass: string | null; limit: string; consequence: string }[];
+    denominator: number;
+    matched: number;
+    returned: number;
+    truncated: boolean;
+  },
+): void {
+  console.log(`hazard-report: ${storePath}`);
+  console.log(`  image: ${imagePath}`);
+  console.log("");
+  console.log(`  FINDINGS (${r.matched} of ${r.denominator}, ${r.returned} shown${r.truncated ? ", truncated" : ""})`);
+  if (r.findings.length === 0) {
+    console.log("    none");
+  } else {
+    for (const f of r.findings) {
+      const blocked = f.blockedAddress !== null ? `  blocked=${hexAddr(f.blockedAddress)}` : "";
+      console.log(`    ${hexAddr(f.anchorAddress)}  class=${f.hazardClass}  mechanism=${f.mechanism}  strength=${f.strength}${blocked}`);
+      console.log(`      ${f.detail}`);
+    }
+  }
+  console.log("");
+
+  const hazardReported = r.regions.filter((region) => region.outcome === "hazard-reported");
+  const noSignal = r.regions.filter((region) => region.outcome === "no-signal");
+  const unclassified = r.regions.filter((region) => region.outcome === "unclassified");
+
+  console.log(`  HAZARD-REPORTED REGIONS (${hazardReported.length} of ${r.denominator})`);
+  if (hazardReported.length === 0) console.log("    none");
+  else for (const region of hazardReported) console.log(`    ${hexAddr(region.start)}..${hexAddr(region.endInclusive)}`);
+  console.log("");
+
+  console.log(
+    `  NO-SIGNAL REGIONS (${noSignal.length} of ${r.denominator}) -- no detection is not evidence that a region is ` +
+      "safe to move, clean, or hazard-free; it means nothing this report knows how to look for fired there.",
+  );
+  if (noSignal.length === 0) console.log("    none");
+  else for (const region of noSignal) console.log(`    ${hexAddr(region.start)}..${hexAddr(region.endInclusive)}`);
+  console.log("");
+
+  console.log(`  UNCLASSIFIED REGIONS (${unclassified.length} of ${r.denominator})`);
+  if (unclassified.length === 0) console.log("    none");
+  else for (const region of unclassified) console.log(`    ${hexAddr(region.start)}..${hexAddr(region.endInclusive)}  (${region.reason ?? "no reason recorded"})`);
+  console.log("");
+
+  console.log("  LIMITS");
+  for (const l of r.limits) {
+    console.log(`    [${l.hazardClass ?? "all classes"}] ${l.limit}`);
+    console.log(`      ${l.consequence}`);
+  }
+}
+
+/**
+ * `hazard-report --store FILE --image FILE [--json]` -- the CLI route for
+ * the movement-hazard report, run here against a real store and a real
+ * image rather than only exposed as an MCP answer (the same reason
+ * `evid-disagreements` carries a CLI verb).
+ *
+ * Opens the store READ-ONLY (`mustExist: true` -- this verb creates
+ * nothing), fetches every input itself (`listRanges()`/`listLabels()`/
+ * `listComments()`/`listXrefs()`/`listExecObservations()`), maps the ranges
+ * through `blocksFromStore()` -- the ONE `RangeRow` -> `BlockEntry` seam,
+ * never re-implemented here -- loads the image through `projectImage()`,
+ * and calls `buildHazardReport()`, the SAME pure function
+ * `anno_hazard_report` calls. `--json` prints the raw answer; otherwise
+ * `printHazardReport()` renders it.
+ */
+async function cmdHazardReport(rest: string[]): Promise<number> {
+  const { store, storeMissingValue, image, imageMissingValue, json, unknownOption } = parseHazardReportArgs(rest);
+
+  if (unknownOption) {
+    console.error(`hazard-report: unknown option "${unknownOption}"\n`);
+    console.log(USAGE);
+    return 1;
+  }
+  if (storeMissingValue) {
+    console.error("hazard-report: --store requires a value\n");
+    console.log(USAGE);
+    return 1;
+  }
+  if (imageMissingValue) {
+    console.error("hazard-report: --image requires a value\n");
+    console.log(USAGE);
+    return 1;
+  }
+  if (!store) {
+    console.error("hazard-report: --store FILE is required -- this verb answers a question about ONE annotation store.\n");
+    console.log(USAGE);
+    return 1;
+  }
+  if (!image) {
+    console.error("hazard-report: --image FILE is required -- the store holds annotations, never bytes.\n");
+    console.log(USAGE);
+    return 1;
+  }
+
+  const workspaceRoot = repoRoot();
+  let storePath: string;
+  let imagePath: string;
+  try {
+    storePath = storePathWithinWorkspace(store, workspaceRoot);
+    imagePath = storePathWithinWorkspace(image, workspaceRoot);
+  } catch (err) {
+    console.error(`hazard-report: ${errMsg(err)}`);
+    return 1;
+  }
+  if (!existsSync(storePath)) {
+    console.error(
+      `hazard-report: annotation store not found: ${storePath} -- refusing to CREATE one, because "the ` +
+        'annotations are gone" and "there are no annotations" must not read the same.',
+    );
+    return 1;
+  }
+  if (!existsSync(imagePath)) {
+    console.error(`hazard-report: image not found: ${imagePath}`);
+    return 1;
+  }
+
+  let handle: AnnoStoreHandle;
+  try {
+    handle = openStore(storePath, { workspaceRoot, mustExist: true });
+  } catch (err) {
+    console.error(`hazard-report: ${errMsg(err)}`);
+    return 1;
+  }
+  let report: ReturnType<typeof buildHazardReport>;
+  try {
+    const ranges = blocksFromStore(listRanges(handle));
+    const symbols = listLabels(handle);
+    const comments = listComments(handle);
+    const xrefs = listXrefs(handle);
+    const execObservations = listExecObservations(handle);
+    const loadedImage = projectImage(imagePath);
+    if (loadedImage === null) {
+      console.error(`hazard-report: ${imagePath} did not decode -- supply a .prg or an exactly-65536-byte flat capture`);
+      return 1;
+    }
+    report = buildHazardReport({
+      bytes: loadedImage.bytes,
+      origin: loadedImage.origin,
+      symbols,
+      comments,
+      ranges,
+      xrefs,
+      execObservations,
+    });
+  } catch (err) {
+    console.error(`hazard-report: ${errMsg(err)}`);
+    return 1;
+  } finally {
+    closeStore(handle);
+  }
+
+  if (json) {
+    console.log(JSON.stringify({ store: storePath, image: imagePath, ...report, returned: report.findings.length, matched: report.findings.length, truncated: false }, null, 2));
+    return 0;
+  }
+  printHazardReport(storePath, imagePath, { ...report, returned: report.findings.length, matched: report.findings.length, truncated: false });
+  return 0;
+}
+
 /**
  * Entry point for the `anno` subcommand. Returns an exit code; never calls
  * exit the process directly (the bin does that). Handles `--help`/no verb/unknown
@@ -2738,6 +3002,8 @@ export async function runAnnoCli(argv: string[]): Promise<number> {
         return await cmdEvidDisagreements(rest);
       case "decomp-completeness":
         return await cmdDecompCompleteness(rest);
+      case "hazard-report":
+        return await cmdHazardReport(rest);
       default:
         // WR-14 site 2, corrected 2026-08-30 (plan 29-16). This prefix read
         // `anno:` -- the subcommand renamed to `anno` on 2026-08-29 (29-09)
@@ -2746,8 +3012,8 @@ export async function runAnnoCli(argv: string[]): Promise<number> {
         // keeps its current name, so no consumer, test or record entry moves
         // with it (see the plan's <wr14_scope_decision>).
         console.error(
-          `anno: unknown verb "${verb}" -- this CLI has exactly five: render-memmap, coverage, export-asm, ` +
-            "evid-disagreements and decomp-completeness\n",
+          `anno: unknown verb "${verb}" -- this CLI has exactly six: render-memmap, coverage, export-asm, ` +
+            "evid-disagreements, decomp-completeness and hazard-report\n",
         );
         console.log(USAGE);
         return 1;
