@@ -73,6 +73,7 @@
     "anno-provenance-ledger.ts",
     "anno-coverage.ts",
     "block-class.ts",
+    "anno-hazard-report.ts",
     "evid-reconcile.ts",
     "evid-ingest.ts",
     "prg-image.ts",
