@@ -1142,7 +1142,7 @@ imported, not re-derived
   4. Every finding carries its **detection mechanism and a confidence**, and the third outcome `unclassified` is both reachable and reached: a region the detectors cannot decide is reported as undecided, never as clean. A boolean clean/dirty report shape is refused by test — a miss that reads as a guarantee is worse here than no detector.
   5. The detectors are cross-checked against the **independently-sourced** committed fixtures (`tracer.prg`, `bank.prg`, `smc.prg`), each result recorded as detected / missed / false-positive — so a detector that has only ever seen its own fixture is visible as such. `anno_evid_exec` is used only to **strengthen** a flag already raised by static evidence, never to suppress one; treating never-observed as evidence of safety is refused.
 
-**Plans**: 4/6 plans executed
+**Plans**: 5/6 plans executed
 
 Plans:
 **Wave 1**
@@ -1160,7 +1160,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 48-05-PLAN.md — Cross-check against four independently-sourced fixtures, the strengthen-never-suppress proof, and the committed record naming the two classes with no independent positive example
+- [x] 48-05-PLAN.md — Cross-check against four independently-sourced fixtures, the strengthen-never-suppress proof, and the committed record naming the two classes with no independent positive example
 - [ ] 48-06-PLAN.md — The fixture design document, and the subject through the multi-file export and a real-assembler reassembly byte-diff
 
 **Research flag**: this phase needs a research pass at planning time. There is
@@ -1662,7 +1662,7 @@ in a milestone archive.
 | 45. Decomposition to Closure, Disagreement First | v1.0.0 | 10/10 | Complete | 2026-09-11 |
 | 46. The Lossless-Export Invariant and the Provenance Carry | v1.0.0 | 6/6 | Complete | 2026-09-11 |
 | 47. Multi-File Rebuildable Source | v1.0.0 | 6/6 | Complete | 2026-09-12 |
-| 48. The Movement-Hazard Report and Its Purpose-Built Subject | v1.0.0 | 4/6 | In Progress | - |
+| 48. The Movement-Hazard Report and Its Purpose-Built Subject | v1.0.0 | 5/6 | In Progress | - |
 | 49. The Reassembly Gate, Committed Before the Phase It Gates | v1.0.0 | - | Not started | - |
 | 50. Equivalence and Modifiability | v1.0.0 | - | Not started | - |
 | 51. Planning Vocabulary Out of the Shipped Server | v1.0.0 | - | Not started | - |
