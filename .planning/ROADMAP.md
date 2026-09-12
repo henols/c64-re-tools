@@ -1090,7 +1090,7 @@ bytes and real symbol names to emit
   4. Two exports from an unchanged store are **byte-identical**, file for file, with file ordering deterministic from address — asserted by a drift guard, so a re-export is a reviewable diff rather than an unreviewable full-tree churn.
   5. Zero-page symbols are declared in a file the root sources **first**, and ACME's `.rep` listing shows the two-byte encoding for a known zero-page reference — with the three-byte absolute fallback observed being **caught** when that ordering is deliberately broken.
 
-**Plans**: 1/6 plans executed, 5 waves
+**Plans**: 2/6 plans executed, 5 waves
 
 Plans:
 **Wave 1**
@@ -1099,7 +1099,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 47-02-PLAN.md — partition across many scopes, place the unscoped remainder, refuse a boundary-crossing range, and guard re-export determinism
+- [x] 47-02-PLAN.md — partition across many scopes, place the unscoped remainder, refuse a boundary-crossing range, and guard re-export determinism
 - [ ] 47-05-PLAN.md — `anno export-asm --out` becomes a directory (one checkpoint: a published-surface change), with the invocation gate and shipped skill updated
 
 **Wave 3** *(blocked on Wave 2 completion)*
@@ -1642,7 +1642,7 @@ in a milestone archive.
 | 44. PROOF-04 — The Independent External Check | v0.9.0 | 3/3 | Complete | 2026-09-10 |
 | 45. Decomposition to Closure, Disagreement First | v1.0.0 | 10/10 | Complete | 2026-09-11 |
 | 46. The Lossless-Export Invariant and the Provenance Carry | v1.0.0 | 6/6 | Complete | 2026-09-11 |
-| 47. Multi-File Rebuildable Source | v1.0.0 | 1/6 | In Progress | - |
+| 47. Multi-File Rebuildable Source | v1.0.0 | 2/6 | In Progress | - |
 | 48. The Movement-Hazard Report and Its Purpose-Built Subject | v1.0.0 | - | Not started | - |
 | 49. The Reassembly Gate, Committed Before the Phase It Gates | v1.0.0 | - | Not started | - |
 | 50. Equivalence and Modifiability | v1.0.0 | - | Not started | - |

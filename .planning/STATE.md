@@ -5,16 +5,16 @@ milestone_name: The Rebuild Half
 current_phase: 47
 current_phase_name: Multi-File Rebuildable Source
 status: executing
-stopped_at: Completed 47-01-PLAN.md
-last_updated: "2026-09-12T16:23:16.240Z"
+stopped_at: Completed 47-02-PLAN.md
+last_updated: "2026-09-12T16:41:42.923Z"
 last_activity: 2026-09-12
 last_activity_desc: Phase 47 execution started
-state_head: 59c118834c4331ccdc0449576092f6e871f6d1c0
+state_head: a11c86765aa41bff0f34333d4413b894f605740c
 progress:
   total_phases: 8
   completed_phases: 2
   total_plans: 22
-  completed_plans: 17
+  completed_plans: 18
   percent: 25
 ---
 
@@ -255,8 +255,8 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 47 (Multi-File Rebuildable Source) — EXECUTING
-Plan: 2 of 6
-Status: Executing Phase 47
+Plan: 3 of 6
+Status: Ready to execute
 Plans: 6 (47-01 … 47-06) in 5 waves. Wave 2's 47-05 is `autonomous: false` —
 it carries the phase's one blocking decision checkpoint, because promoting
 `anno export-asm --out` from a file path to a directory path breaks a
@@ -573,6 +573,7 @@ Last activity: 2026-09-12 — Phase 47 execution started
 | Phase 52 P12 | 70min | 3 tasks | 3 files |
 | Phase 52-remove-the-fork-backend P13 | 35 min | 3 tasks | 5 files |
 | Phase 47 P01 | 45min | 2 tasks | 5 files |
+| Phase 47 P02 | 25min | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -1313,6 +1314,8 @@ Recent decisions affecting current work:
 - [Phase 52-remove-the-fork-backend]: Reworded PROJECT.md's two remaining stale SID decision-log locations to state the permanent, accepted hardware loss (matching FORK-01's amendment style), and annotated the four unprojected codebase snapshots (CONCERNS/INTEGRATIONS/STRUCTURE/TESTING) with dated supersession notes rather than rewriting or deleting them, since none is named as a CLAUDE.md projection source.
 - [Phase 47]: cwd is derived from dirname(sourcePath) never outDirPath, and carries no wire key -- a container-side caller can never choose acme.build's working directory — outDir governs where the .prg lands and may be pointed elsewhere by a caller; !source resolution is about where the sources live, and a wire-reachable cwd would be the same trust-boundary regression the oracle.probe command field was removed for
 - [Phase 47]: exportAsmTree()'s block-to-scope assignment handles only wholly-contained and no-scope-at-all cases in plan 47-01; a boundary-crossing block falls through to unscoped.a here, with D47-C's named refusal deferred to plan 47-02 — the plan text explicitly scopes the boundary-crossing refusal and adjacency edges to plan 47-02, so implementing them here would be scope creep ahead of that plan's own tests
+- [Phase 47]: placeBlockInScope() is the ONE containment predicate a block's file placement is decided by (wholly-contained scope, unscoped, or a thrown boundary-crossing refusal) -- never a second copy of the containment question.
+- [Phase 47]: exportAsmTree()'s output-directory contract computes the full set of names it will write BEFORE touching the directory: without force any pre-existing entry refuses by name, with force only names in that computed set may be overwritten and any other entry is a named refusal, never a deletion.
 
 ### Pending Todos
 
@@ -2390,8 +2393,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-12T16:23:16.011Z
-Stopped at: Completed 47-01-PLAN.md
+Last session: 2026-09-12T16:41:42.684Z
+Stopped at: Completed 47-02-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
