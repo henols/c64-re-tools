@@ -5,11 +5,11 @@ milestone_name: The Rebuild Half
 current_phase: 52
 current_phase_name: Remove the Fork Backend
 status: executing
-stopped_at: Completed 52-04-PLAN.md
-last_updated: "2026-09-12T07:04:20.298Z"
+stopped_at: Completed 52-05-PLAN.md
+last_updated: "2026-09-12T08:23:58.161Z"
 last_activity: 2026-09-11
 last_activity_desc: Phase 52 execution started
-state_head: 599b5c77ef259a8428c1033c8bb372585af05eb6
+state_head: bcc8f6b6cf01f5676ff8a10168767c49018856b8
 progress:
   total_phases: 8
   completed_phases: 2
@@ -255,7 +255,7 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 52 (Remove the Fork Backend) — EXECUTING
-Plan: 5 of 10
+Plan: 6 of 10
 Status: Executing (52-01 complete)
 
 **Planned OUT OF SEQUENCE.** Phase 52 was planned ahead of Phases 47-51, which
@@ -566,6 +566,7 @@ Last activity: 2026-09-11 — Phase 52 execution started
 | Phase 52-remove-the-fork-backend P02 | 25min | 2 tasks | 2 files |
 | Phase 52 P03 | 75min | 3 tasks | 47 files |
 | Phase 52 P04 | 110min | 3 tasks | 14 files |
+| Phase 52 P05 | 165min | 3 tasks | 26 files |
 
 ## Accumulated Context
 
@@ -1290,6 +1291,7 @@ Recent decisions affecting current work:
 - [Phase 52]: 52-03: vice-proxy.ts's line-number shift (import block split, -4 lines) drifted docs-linerefs.test.ts's CLAUDE.md/PROJECT.md rewriteArguments()/forwardToVice() citations. Left unfixed and reported for plan 52-04, which retires that whole Architecture bullet.
 - [Phase 52]: Phase 52 plan 04: handleRecycle()/handleDiagnose() kept as thin dispatchStockFor() delegations rather than deleted, to satisfy a structural oracle pinning handleRecycle's exact declaration form and the plan's own "still declared and registered" acceptance criteria.
 - [Phase 52]: Two whole mechanisms not individually named in the plan (D-13/D-14 replace-and-report, D-16 seam-hazard annotation) were deleted after confirming their sole caller (forwardToVice()) was gone -- generalising the plan's own "delete every helper that exists only to serve it" principle.
+- [Phase 52]: Phase 52 Plan 05: deleted vice.ts (fork transport, DENY_LIST, session-identity apparatus) and the fork manifest (tools-manifest.json, refresh-manifest.ts) whole. Traced the epoch-baseline cluster (ensureViceSession/viceSession/epochBaseline/checkEpochAndRebaseline) to zero external callers and deleted it entirely, correcting the orchestrator's own "LIVE" risk flag. Repaired five consumers beyond the plan's own file list (stock-dispatch.test.ts's three fork-manifest tests, package.json's stray refresh-manifest.ts files[] entry, generate-tool-support-table.mjs's DENY_LIST import breaking an unrelated test file). anno-tools.ts's inverted allowlist left byte-identical, comments rewritten in the abstract.
 
 ### Pending Todos
 
@@ -2367,8 +2369,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-12T07:03:52.611Z
-Stopped at: Completed 52-04-PLAN.md
+Last session: 2026-09-12T08:23:57.956Z
+Stopped at: Completed 52-05-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
