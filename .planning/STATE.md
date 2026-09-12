@@ -5,16 +5,16 @@ milestone_name: The Rebuild Half
 current_phase: 48
 current_phase_name: The Movement-Hazard Report and Its Purpose-Built Subject
 status: executing
-stopped_at: Completed 48-02-PLAN.md
-last_updated: "2026-09-12T21:23:42.666Z"
+stopped_at: Completed 48-03-PLAN.md
+last_updated: "2026-09-12T22:03:24.406Z"
 last_activity: 2026-09-12
 last_activity_desc: Phase 48 execution started
-state_head: f432455e154e4a68053f283d7e09511433805596
+state_head: 6f03b63b8639c02db36a2c98cfd17d469311c7de
 progress:
   total_phases: 8
   completed_phases: 3
   total_plans: 28
-  completed_plans: 24
+  completed_plans: 25
   percent: 38
 ---
 
@@ -255,7 +255,7 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 48 (The Movement-Hazard Report and Its Purpose-Built Subject) — EXECUTING
-Plan: 3 of 6
+Plan: 4 of 6
 Status: Ready to execute
 Plans: not yet planned. Phase 47 closed with 6/6 plans across 5 waves, all
 verified 5/5 against real ACME 0.97; its one blocking decision checkpoint
@@ -581,6 +581,7 @@ Last activity: 2026-09-12 — Phase 48 execution started
 | Phase 47-multi-file-rebuildable-source P06 | 30min | 2 tasks | 2 files |
 | Phase 48 P01 | 38 min | 3 tasks | 18 files |
 | Phase 48 P02 | 62min | 3 tasks | 8 files |
+| Phase 48 P03 | 74min | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -1336,6 +1337,8 @@ Recent decisions affecting current work:
 - [Phase 48]: Phase 48 plan 01: two of the plan's own literal CLI verify commands named a JSON export sidecar as --store, which openStore() correctly refuses as not a real SQLite store; verified instead against a freshly created, real, empty .annostore file with the same images.
 - [Phase 48]: 48-02: the class-1 pairing crosses a source-file boundary by design -- the two split address tables live in the new hazard-subject-dispatch.a while the consuming routine lives in the already-existing root, so the scanner's cross-file resolution is genuinely exercised.
 - [Phase 48]: 48-02: the mis-aligned twin has no committed fourth root .a file -- its root is synthesized in memory by swapping one !source line, matching the plan's declared artifact list exactly while still producing a real, independently assembled program.
+- [Phase 48]: Class 3's VIC-II register recovery only recognises an immediate-load-then-store pair; a read-modify-write register write is left unrecovered, which is what makes plan 48-02's own hazard-subject-align.a exercise the undecided-region path for real.
+- [Phase 48]: Class 4 (cycle-exact-raster) is structural-signature-only: every finding is static-signature-only unless a runtime observation covers its own anchor address.
 
 ### Pending Todos
 
@@ -2413,8 +2416,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-12T21:23:42.359Z
-Stopped at: Completed 48-02-PLAN.md
+Last session: 2026-09-12T22:03:24.098Z
+Stopped at: Completed 48-03-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
