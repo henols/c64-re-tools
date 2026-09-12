@@ -5862,3 +5862,257 @@ test("zeropage order: symbols.a is first in sourceOrder, and first among root.a'
   const sourceLines = rootText.split("\n").filter((line) => line.startsWith("!source "));
   assert.equal(sourceLines[0], `!source "${SYMBOLS_FILE_NAME}"`, `root.a's own first !source line must name symbols.a:\n${rootText}`);
 });
+
+// ---------------------------------------------------------------------------
+// Phase 47, plan 47-06 (BUILD-03): split hi/lo ADDRESS tables get paired
+// low-byte/high-byte symbol references, never per-half symbolisation, through
+// the SAME in-tree symbol rule plan 47-04 built for the instruction path. The
+// two split WORD layouts are deliberately excluded -- the store's own
+// vocabulary distinguishes the address forms (which produce
+// cross-references) from the word forms (which do not).
+//
+// MEASURED live 2026-09-12, real ACME 0.97 "Zem": `routine_a rts` / `routine_b
+// rts` at $0801/$0802, followed by `tbl_lo !byte <routine_a, <routine_b` /
+// `tbl_hi !byte >routine_a, >routine_b`, assembled at exit 0 to `60 60 01 02
+// 08 08` -- byte-identical to what the raw octets would have been. Every
+// `splitAddressFixture()`-based test below reuses this exact shape.
+// ---------------------------------------------------------------------------
+
+/**
+ * Two labelled one-byte `rts` routines at $0801/$0802, plus a `lo_hi_address`
+ * or `hi_lo_address` table over them -- the plan's own measured ACME fixture,
+ * reused as the shape every `split table:` test in Task 1 builds on. Body:
+ * `60 60` (the two routines) followed by the table's four bytes, in the
+ * layout's own physical order.
+ */
+function splitAddressFixture(tag: string, dataType: "lo_hi_address" | "hi_lo_address"): StoreFixture {
+  const lowBytes = [0x01, 0x02]; // <routine_a, <routine_b
+  const highBytes = [0x08, 0x08]; // >routine_a, >routine_b
+  const tableBody = dataType === "lo_hi_address" ? [...lowBytes, ...highBytes] : [...highBytes, ...lowBytes];
+  return buildStore(freshDir(tag), {
+    origin: 0x0801,
+    body: [0x60, 0x60, ...tableBody],
+    ranges: [
+      { start: 0x0801, endInclusive: 0x0802, dataType: "code" },
+      { start: 0x0803, endInclusive: 0x0806, dataType },
+    ],
+    labels: [
+      { address: 0x0801, name: "routine_a" },
+      { address: 0x0802, name: "routine_b" },
+    ],
+  });
+}
+
+test("split table: a `lo_hi_address` range emits paired low-byte/high-byte symbol references, low halves first, then high halves, with no raw hex byte among the resolved entries", () => {
+  const { dir, storePath, imagePath } = splitAddressFixture("split-lohi-shape", "lo_hi_address");
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+
+  assert.ok(
+    result.source.includes("!byte <routine_a, <routine_b"),
+    `the low halves must render through ACME's low-byte operator over the SAME symbol:\n${result.source}`,
+  );
+  assert.ok(
+    result.source.includes("!byte >routine_a, >routine_b"),
+    `the high halves must render through ACME's high-byte operator over the SAME symbol:\n${result.source}`,
+  );
+
+  const lowIndex = result.source.indexOf("!byte <routine_a");
+  const highIndex = result.source.indexOf("!byte >routine_a");
+  assert.ok(lowIndex >= 0 && highIndex > lowIndex, `lo_hi_address must emit the LOW halves BEFORE the HIGH halves:\n${result.source}`);
+
+  const tableLines = result.source.split("\n").filter((line) => line.includes("lo_hi_address"));
+  assert.ok(tableLines.length > 0, "precondition: the table must actually emit lines carrying its own type name, or this test proves nothing");
+  for (const line of tableLines) {
+    assert.equal(/\$[0-9a-f]{2}\b/i.test(line), false, `no raw hex byte may appear among the resolved split-address entries:\n${line}`);
+  }
+});
+
+test(
+  "split table: a `lo_hi_address` range assembles through runHostTool() at exitStatus 0 with bytes deepEqual expectedBytes -- the operators are byte-identical to the octets they replaced",
+  { skip: SKIP_REASON },
+  async () => {
+    const { dir, storePath, imagePath } = splitAddressFixture("split-lohi-roundtrip", "lo_hi_address");
+    const outDir = join(dir, "tree");
+    const result = exportAsmTree({ storePath, imagePath, workspaceRoot: dir, outDir });
+
+    const response = await runHostTool({ tool: "acme.build", args: { source: ROOT_FILE_NAME, format: "plain", noReport: true } }, { repoRoot: outDir });
+    assert.equal(response.ok, true, response.ok ? "" : response.message);
+    if (!response.ok) return;
+    assert.equal(response.exitStatus, 0, "a paired-symbol split-address table must assemble cleanly");
+    assert.equal(response.results.length, 1);
+    const producedBytes = new Uint8Array(readFileSync(response.results[0]!.path));
+    assert.deepEqual(producedBytes, result.expectedBytes, "the produced bytes must be octet-identical to bytes taken from the image");
+  },
+);
+
+test(
+  "split table: a `hi_lo_address` range emits the HIGH halves first, matching the store's own documented byte order, and also reassembles byte-identically",
+  { skip: SKIP_REASON },
+  async () => {
+    const { dir, storePath, imagePath } = splitAddressFixture("split-hilo-shape", "hi_lo_address");
+    const outDir = join(dir, "tree");
+    const result = exportAsmTree({ storePath, imagePath, workspaceRoot: dir, outDir });
+
+    assert.ok(result.source.includes("!byte >routine_a, >routine_b"), `the high halves must still render through the symbol:\n${result.source}`);
+    assert.ok(result.source.includes("!byte <routine_a, <routine_b"), `the low halves must still render through the SAME symbol:\n${result.source}`);
+    const highIndex = result.source.indexOf("!byte >routine_a");
+    const lowIndex = result.source.indexOf("!byte <routine_a");
+    assert.ok(highIndex >= 0 && lowIndex > highIndex, `hi_lo_address must emit the HIGH halves BEFORE the LOW halves:\n${result.source}`);
+
+    const response = await runHostTool({ tool: "acme.build", args: { source: ROOT_FILE_NAME, format: "plain", noReport: true } }, { repoRoot: outDir });
+    assert.equal(response.ok, true, response.ok ? "" : response.message);
+    if (!response.ok) return;
+    assert.equal(response.exitStatus, 0, "a hi_lo_address paired-symbol table must assemble cleanly");
+    assert.equal(response.results.length, 1);
+    const producedBytes = new Uint8Array(readFileSync(response.results[0]!.path));
+    assert.deepEqual(producedBytes, result.expectedBytes, "the produced bytes must be octet-identical to bytes taken from the image");
+  },
+);
+
+/** One `lo_hi_address` entry targeting $d020 (the VIC-II border-colour
+ * register) -- well outside any emitted block. Low byte $20, high byte $d0. */
+function splitAddressOutOfTreeFixture(tag: string): StoreFixture {
+  return buildStore(freshDir(tag), {
+    origin: 0x0801,
+    body: [0x20, 0xd0],
+    ranges: [{ start: 0x0801, endInclusive: 0x0802, dataType: "lo_hi_address" }],
+    labels: [],
+  });
+}
+
+test(
+  "split table: an entry whose composed target lies OUTSIDE every emitted block keeps its raw byte value in both halves and is not a refusal",
+  { skip: SKIP_REASON },
+  () => {
+    const { dir, storePath, imagePath } = splitAddressOutOfTreeFixture("split-outoftree");
+    const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+
+    assert.ok(result.source.includes("!byte $20"), `the low half must keep its raw byte for an out-of-tree target:\n${result.source}`);
+    assert.ok(result.source.includes("!byte $d0"), `the high half must keep its raw byte for an out-of-tree target:\n${result.source}`);
+
+    const verdict = verifyExport(result);
+    assert.equal(verdict.outcome, "ok", `an out-of-tree split-address entry must not be refused, and must still round-trip:${context(result, verdict)}`);
+    assert.equal(verdict.byteDiff?.equal, true, `the byte-diff IS the verdict:${context(result, verdict)}`);
+  },
+);
+
+/** A one-byte routine at $0801 with NO label, targeted by a `lo_hi_address`
+ * table's one entry -- in-tree and unresolved. */
+function splitAddressUnresolvedFixture(tag: string): StoreFixture {
+  return buildStore(freshDir(tag), {
+    origin: 0x0801,
+    body: [0x60, 0x01, 0x08],
+    ranges: [
+      { start: 0x0801, endInclusive: 0x0801, dataType: "code" },
+      { start: 0x0802, endInclusive: 0x0803, dataType: "lo_hi_address" },
+    ],
+    labels: [],
+  });
+}
+
+test(
+  "split table: an entry whose composed target lies INSIDE an emitted block with no label there refuses by name, through the same end-of-export refusal the instruction path uses",
+  () => {
+    const { dir, storePath, imagePath } = splitAddressUnresolvedFixture("split-unresolved");
+
+    assert.throws(
+      () => exportAsm({ storePath, imagePath, workspaceRoot: dir }),
+      (e: unknown) => {
+        assert.ok(e instanceof Error);
+        assert.match(e.message, /^exportAsm: /, "every refusal from this module is prefixed `exportAsm:`");
+        assert.ok(e.message.includes("$0801"), `the refusal must name the TARGET address: ${e.message}`);
+        assert.ok(e.message.includes("1 of 1"), `the refusal must state the count: ${e.message}`);
+        return true;
+      },
+    );
+  },
+);
+
+test("split table: an unresolved split-address entry and an unresolved instruction reference are BOTH reported by the SAME refusal in one run", () => {
+  const { dir, storePath, imagePath } = buildStore(freshDir("split-unresolved-combined"), {
+    origin: 0x0801,
+    // jsr $0805 (INSTRUCTION reference, no label at $0805 -- inside the
+    // table block below) / rts. Table entry ($0805..$0806) targets $0801
+    // (DATA reference, no label there either) -- both kinds, one export.
+    body: [0x20, 0x05, 0x08, 0x60, 0x01, 0x08],
+    ranges: [
+      { start: 0x0801, endInclusive: 0x0804, dataType: "code" },
+      { start: 0x0805, endInclusive: 0x0806, dataType: "lo_hi_address" },
+    ],
+    labels: [],
+  });
+
+  assert.throws(
+    () => exportAsm({ storePath, imagePath, workspaceRoot: dir }),
+    (e: unknown) => {
+      assert.ok(e instanceof Error);
+      assert.ok(
+        e.message.includes("2 of 2"),
+        `both the instruction reference and the data reference must feed the SAME collection -- never only one kind: ${e.message}`,
+      );
+      return true;
+    },
+  );
+});
+
+test(
+  "split table: a `lo_hi_word` range still emits raw bytes and is never symbolised, and neither is `hi_lo_word` -- the address/word boundary asserted in both directions",
+  () => {
+    for (const dataType of ["lo_hi_word", "hi_lo_word"] as const) {
+      const { dir, storePath, imagePath } = buildStore(freshDir(`split-word-${dataType}`), {
+        origin: 0x0801,
+        // The identical bytes a labelled-target lo_hi_address table above
+        // uses -- if this type were ever symbolised by mistake, it would
+        // render exactly like those tests. It must not.
+        body: [0x60, 0x60, 0x01, 0x02, 0x08, 0x08],
+        ranges: [
+          { start: 0x0801, endInclusive: 0x0802, dataType: "code" },
+          { start: 0x0803, endInclusive: 0x0806, dataType },
+        ],
+        labels: [
+          { address: 0x0801, name: "routine_a" },
+          { address: 0x0802, name: "routine_b" },
+        ],
+      });
+      const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+
+      assert.equal(result.source.includes("<routine_a"), false, `${dataType} must never render ACME's low-byte operator:\n${result.source}`);
+      assert.equal(result.source.includes(">routine_a"), false, `${dataType} must never render ACME's high-byte operator:\n${result.source}`);
+      assert.ok(result.source.includes(`; ${dataType}`), `${dataType} must still be named verbatim on its emitted line(s):\n${result.source}`);
+    }
+  },
+);
+
+test("split table: exactly one symbol is consulted per entry -- the low half and the high half of one entry always name the SAME symbol", () => {
+  const { dir, storePath, imagePath } = splitAddressFixture("split-one-symbol-per-entry", "lo_hi_address");
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+
+  const lowNames = [...result.source.matchAll(/<([A-Za-z_][A-Za-z0-9_]*)/g)].map((m) => m[1]!);
+  const highNames = [...result.source.matchAll(/>([A-Za-z_][A-Za-z0-9_]*)/g)].map((m) => m[1]!);
+  assert.equal(lowNames.length, 2, `both entries' low halves must resolve through a symbol:\n${result.source}`);
+  assert.deepEqual(lowNames, highNames, `entry i's low half and high half must name the SAME symbol, in the same order -- never one per half:\n${result.source}`);
+});
+
+test("split table: `result.dataByteCount` is unchanged by the symbolisation -- the same total the raw emission produced for the same extent", () => {
+  const splitFixture = splitAddressFixture("split-databytecount-split", "lo_hi_address");
+  const splitResult = exportAsm({ storePath: splitFixture.storePath, imagePath: splitFixture.imagePath, workspaceRoot: splitFixture.dir });
+
+  const byteFixture = buildStore(freshDir("split-databytecount-byte"), {
+    origin: 0x0801,
+    body: [0x60, 0x60, 0x01, 0x02, 0x08, 0x08],
+    ranges: [
+      { start: 0x0801, endInclusive: 0x0802, dataType: "code" },
+      { start: 0x0803, endInclusive: 0x0806, dataType: "byte" },
+    ],
+    labels: [],
+  });
+  const byteResult = exportAsm({ storePath: byteFixture.storePath, imagePath: byteFixture.imagePath, workspaceRoot: byteFixture.dir });
+
+  assert.equal(
+    splitResult.dataByteCount,
+    byteResult.dataByteCount,
+    "symbolising the split-address entries must not change how many bytes went out through the data path",
+  );
+  assert.equal(splitResult.dataByteCount, 4, "the table's four bytes went out through the data path");
+});
+

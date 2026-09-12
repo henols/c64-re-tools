@@ -53,15 +53,17 @@
 //     so the substitution changes both the bytes and the instruction length. A
 //     non-immediate operand is REFUSED by name below, never rendered and hoped
 //     for.
-//   - Never compare a `dataType` string in this module beyond the THREE
+//   - Never compare a `dataType` string in this module beyond the FOUR
 //     places that already do, each of which says so in its own comment:
 //     `CODE_DATA_TYPE`'s decoder-or-dump branch, `WORD_PAIR_DATA_TYPES`'s
-//     `!word` eligibility check, and (phase 47, plan 47-03)
+//     `!word` eligibility check, (phase 47, plan 47-03)
 //     `EXTERNAL_FILE_DATA_TYPE`'s `!binary`-versus-inline branch inside
-//     `emitDataLines()`. All three are questions about the emitted TEXT.
-//     `block-class.ts` is the one place in this tree allowed to INTERPRET that
-//     column -- what the data means -- and everywhere else here the string is
-//     copied VERBATIM onto the emitted block and its trailing comment.
+//     `emitDataLines()`, and (phase 47, plan 47-06) `isSplitAddressDataType()`'s
+//     paired-symbol-versus-raw-byte branch in the block loop. All four are
+//     questions about the emitted TEXT. `block-class.ts` is the one place in
+//     this tree allowed to INTERPRET that column -- what the data means -- and
+//     everywhere else here the string is copied VERBATIM onto the emitted
+//     block and its trailing comment.
 //   - Never import this tree's host/container path-translation modules
 //     (`hostpath.ts` / `containerpath.ts`). Their consumer set is a closed,
 //     mechanically asserted list of named modules and an exporter has no reason
@@ -93,7 +95,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFile
 import { extname, join } from "node:path";
 
 import { openStore, closeStore, listRanges, listLabels, listComments, listProjectEnums, listEnumUsage, listExcludedRanges, listScopes } from "./anno-store.ts";
-import { AnnoCommentError, COMMENT_TYPES, DATA_TYPES, assertCommentText, assertDataType, parseVariantKey } from "./anno-types.ts";
+import { AnnoCommentError, COMMENT_TYPES, DATA_TYPES, assertCommentText, assertDataType, isSplitDataType, parseVariantKey } from "./anno-types.ts";
 import type { CommentRow, DataType, EnumUsageRow, ExcludedRangeRow, LabelRow, ProjectEnumRow, RangeRow, ScopeRow } from "./anno-types.ts";
 import { assertLegalAcmeIdentifier } from "./anno-acme-ident.ts";
 // The eleven typed auto-name prefixes, IMPORTED FROM THEIR ONE HOME rather than
@@ -373,6 +375,26 @@ const WORDS_PER_DATA_LINE = 8;
  */
 const WORD_PAIR_DATA_TYPES: readonly string[] = Object.freeze(["word", "address"]);
 
+/**
+ * Phase 47, plan 47-06 (BUILD-03): true iff `dataType` is one of the TWO split
+ * layouts that denote ADDRESSES -- `lo_hi_address` / `hi_lo_address` -- as
+ * opposed to the two that denote WORDS (`lo_hi_word` / `hi_lo_word`), which
+ * stay on the raw-`!byte` fallback below unchanged. This is the branch that
+ * decides whether `emitDataLines()`'s caller reaches `emitSplitAddressLines()`
+ * at all.
+ *
+ * DERIVED, never a fourth hand-written list of layout names -- exactly the
+ * drift `WORD_PAIR_DATA_TYPES`'s own comment warns against. `isSplitDataType()`
+ * (imported from `anno-types.ts`, never re-derived here) answers "is this one
+ * of the four split layouts", and the `_address` suffix is the SAME
+ * ADDRESS-VERSUS-WORD axis the `DATA_TYPES` comment already draws
+ * (`anno-types.ts:350-361`'s worked byte example: the address forms produce
+ * cross-references and the word forms do not).
+ */
+function isSplitAddressDataType(dataType: string): boolean {
+  return isSplitDataType(dataType as DataType) && dataType.endsWith("_address");
+}
+
 /** One emitted data line, with the address span it covers. The span is what
  * lets a stored comment find its line: a `!byte` line covers up to sixteen
  * addresses, and a comment on any of them belongs to that line. */
@@ -459,6 +481,143 @@ function emitDataLines(slice: Uint8Array, dataType: string, blockStart: number):
       text: `${INDENT}!byte ${[...chunk].map(hex2).join(", ")}  ; ${dataType}${why}`,
       start: blockStart + offset,
       endExclusive: blockStart + offset + chunk.length,
+    });
+  }
+  return out;
+}
+
+/** Phase 47, plan 47-06 (BUILD-03): one split-address block's own contribution
+ * to the export's shared in-tree-reference bookkeeping -- the SAME
+ * `unresolvedReferences`/`inTreeReferenceCount` totals the code path's in-tree
+ * symbol rule feeds inside `exportAsm()`'s block loop. Returned rather than
+ * mutated through a closure so this function stays a plain, explicitly-typed
+ * transform like every other emitter in this file; the caller folds these
+ * into its own running totals. */
+interface SplitAddressEmission {
+  lines: DataLine[];
+  inTreeReferenceCount: number;
+  unresolvedReferences: { referringAddress: number; targetAddress: number }[];
+}
+
+/**
+ * Emits one split ADDRESS-layout block (`lo_hi_address` / `hi_lo_address`,
+ * `isSplitAddressDataType()`'s own membership) as PAIRED low-byte/high-byte
+ * symbol references -- never per-half symbolisation, and never for the two
+ * split WORD layouts, which never reach this function at all (they stay on
+ * `emitDataLines()`'s raw-`!byte` fallback, unchanged).
+ *
+ * ORIENTATION, taken from the `DATA_TYPES` comment's own worked byte example
+ * (`anno-types.ts:350-361`) and never re-derived: the bytes
+ * `10 34 00 ff 08 12 c0 cf` resolve as `$0810 $1234 $c000 $cfff` under
+ * `lo_hi_address` -- the FIRST run is the low bytes, the SECOND run the high
+ * bytes -- and as `$1008 $3412 $00c0 $ffcf` under `hi_lo_address`, where the
+ * order is reversed. `slice` is split into two EQUAL runs at the midpoint,
+ * relying on the store's own even-byte-count guarantee for every split layout
+ * (`assertRangeShape()`, `anno-types.ts`) rather than re-checking it here.
+ *
+ * ONE SYMBOL PER ENTRY, the property this function exists to make true by
+ * construction rather than merely avoid violating: entry `i`'s composed
+ * 16-bit target decides BOTH halves together, through the SAME `isInTree()`/
+ * `labelIndex` lookup the code path's in-tree symbol rule reads (one rule,
+ * two callers, so a table entry and a `jsr` cannot disagree about what counts
+ * as resolvable):
+ *   - in-tree and named: BOTH halves render through ACME's low-byte/high-byte
+ *     operators (`<name` / `>name`) over that ONE symbol -- measured
+ *     byte-identical to the raw octets on real ACME 0.97 "Zem", 2026-09-12
+ *     (`tbl_lo !byte <routine_a, <routine_b` / `tbl_hi !byte >routine_a,
+ *     >routine_b` assembled to `01 02 08 08`, the same bytes the raw form
+ *     would have produced).
+ *   - out-of-tree (D47-F's boundary, applied here to a second kind of
+ *     reference): BOTH halves keep their raw byte, exactly as the unsplit
+ *     fallback would have emitted them, and this is NOT a refusal.
+ *   - in-tree with no symbol: collected into the returned
+ *     `unresolvedReferences`, for the SAME end-of-export refusal the
+ *     instruction path already raises -- never emitted as a hex literal that
+ *     would freeze the target's address into the source.
+ *
+ * Entry `i`'s first-run byte sits at `blockStart + i` and its second-run byte
+ * at `blockStart + half + i` -- so a stored comment on either address still
+ * finds its own line -- and both runs are chunked at `BYTES_PER_DATA_LINE`,
+ * the SAME per-line budget `emitDataLines()`'s raw-byte fallback already uses,
+ * applied to two runs instead of one. The runs are emitted in PHYSICAL order
+ * (first run's lines, then second run's), which is already the layout's own
+ * documented order: `lo_hi_address` therefore emits low halves first,
+ * `hi_lo_address` emits high halves first, with no reordering logic needed
+ * beyond the two runs' own on-disk position.
+ */
+function emitSplitAddressLines(
+  slice: Uint8Array,
+  dataType: string,
+  blockStart: number,
+  blocks: readonly ExportBlock[],
+  labelIndex: ReadonlyMap<number, string>,
+): SplitAddressEmission {
+  const half = slice.length / 2;
+  const isLoHi = dataType.startsWith("lo_hi_");
+
+  let inTreeReferenceCount = 0;
+  const unresolvedReferences: { referringAddress: number; targetAddress: number }[] = [];
+
+  const firstRunTokens: string[] = [];
+  const secondRunTokens: string[] = [];
+  for (let i = 0; i < half; i++) {
+    const firstByte = slice[i]!;
+    const secondByte = slice[half + i]!;
+    const low = isLoHi ? firstByte : secondByte;
+    const high = isLoHi ? secondByte : firstByte;
+    const target = low | (high << 8);
+
+    let lowToken: string;
+    let highToken: string;
+    if (isInTree(target, blocks)) {
+      inTreeReferenceCount++;
+      const symbol = labelIndex.get(target);
+      if (symbol === undefined) {
+        // Referring address is this entry's own FIRST-run byte -- an address
+        // a human reading the generated source can look at, on the same
+        // terms `instr.address` is for the code path. The export throws
+        // before `lines` below is ever used, so the tokens pushed here for
+        // this entry are never read; they exist only so the loop can finish
+        // uniformly.
+        unresolvedReferences.push({ referringAddress: blockStart + i, targetAddress: target });
+        lowToken = hex2(low);
+        highToken = hex2(high);
+      } else {
+        // ONE SYMBOL, BOTH HALVES: `<name`/`>name` over the identical
+        // `symbol` string, never two independently-looked-up names.
+        lowToken = `<${symbol}`;
+        highToken = `>${symbol}`;
+      }
+    } else {
+      // D47-F's boundary, applied to a second kind of reference: fixed
+      // hardware and KERNAL addresses cannot move, and a rule that refused on
+      // them would make every real export impossible.
+      lowToken = hex2(low);
+      highToken = hex2(high);
+    }
+
+    firstRunTokens.push(isLoHi ? lowToken : highToken);
+    secondRunTokens.push(isLoHi ? highToken : lowToken);
+  }
+
+  const lines = [...tokenDataLines(firstRunTokens, blockStart, dataType), ...tokenDataLines(secondRunTokens, blockStart + half, dataType)];
+
+  return { lines, inTreeReferenceCount, unresolvedReferences };
+}
+
+/** Chunks `tokens` (each either `<name`/`>name` or a raw `hex2()` literal) into
+ * `!byte` lines at the SAME `BYTES_PER_DATA_LINE` budget `emitDataLines()`'s
+ * raw-byte fallback uses, each line spanning `startAddress + offset ..
+ * startAddress + offset + chunk.length` -- one physical run of a split-address
+ * block's paired emission (`emitSplitAddressLines()`'s only caller). */
+function tokenDataLines(tokens: readonly string[], startAddress: number, dataType: string): DataLine[] {
+  const out: DataLine[] = [];
+  for (let offset = 0; offset < tokens.length; offset += BYTES_PER_DATA_LINE) {
+    const chunk = tokens.slice(offset, Math.min(offset + BYTES_PER_DATA_LINE, tokens.length));
+    out.push({
+      text: `${INDENT}!byte ${chunk.join(", ")}  ; ${dataType}`,
+      start: startAddress + offset,
+      endExclusive: startAddress + offset + chunk.length,
     });
   }
   return out;
@@ -1662,6 +1821,24 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
         content.push(...emitted);
         block.lineCount += emitted.length;
       }
+    } else if (isSplitAddressDataType(block.dataType)) {
+      // Phase 47, plan 47-06 (BUILD-03): the two split ADDRESS layouts get
+      // PAIRED symbol emission, never the raw-`!byte` fallback -- see
+      // `emitSplitAddressLines()`'s own doc-comment for the orientation and
+      // the one-symbol-per-entry rule. Read the SAME `blocks`/`labelIndex`
+      // the code path's in-tree symbol rule above reads, and fold its
+      // contribution into the SAME `unresolvedReferences`/
+      // `inTreeReferenceCount` totals, so a table entry and a `jsr` are
+      // refused (or not) by ONE rule, never two that could disagree.
+      const split = emitSplitAddressLines(slice, block.dataType, block.start, blocks, labelIndex);
+      inTreeReferenceCount += split.inTreeReferenceCount;
+      unresolvedReferences.push(...split.unresolvedReferences);
+      for (const dataLine of split.lines) {
+        const emitted = withComments(dataLine.text, dataLine.start, dataLine.endExclusive, placement);
+        content.push(...emitted);
+        block.lineCount += emitted.length;
+      }
+      dataByteCount += slice.length;
     } else {
       // The `dataType` reaching `emitDataLines()` is the store's own string,
       // copied off the row and passed through -- this module never branches on
