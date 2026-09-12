@@ -62,7 +62,11 @@ const GATE = join(ROOT, "scripts", "audit-gate.mjs");
  * argv or to discover files; every discovery in this file goes through
  * `runGate()`'s real subprocess call. */
 const EXPECTED_GUARD_NAMES_FOR_ASSERTION = [
-  "docs-linerefs.test.ts",
+  // "docs-linerefs.test.ts" removed from audit-gate.mjs's registry (fork-
+  // backend removal) -- its subject, the rewriteArguments()/forwardToVice()
+  // Architecture constraint, has no surviving code to cite. Mirrored here
+  // in the same commit so this assertion-only copy never drifts from the
+  // registry it mirrors.
   "docs-dangling-refs.test.ts",
   "docs-deferred-ledger.test.ts",
   "docs-review-disposition.test.ts",

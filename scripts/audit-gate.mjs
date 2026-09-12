@@ -171,7 +171,16 @@ export const DOCS_GUARD_FLOOR = 7;
  * class of drift automatically, rather than relying on a maintainer to
  * remember this comment. */
 export const EXPECTED_DOCS_GUARD_NAMES = Object.freeze([
-  "docs-linerefs.test.ts",
+  // "docs-linerefs.test.ts" REMOVED (fork-backend removal): it pinned the
+  // rewriteArguments()/forwardToVice() Architecture constraint's four
+  // vice-proxy.ts:<N> citations against real source lines. Both call sites
+  // (and the functions they cited) are deleted along with the fork backend
+  // -- the constraint has no surviving subject to cite, so it is retired
+  // from CLAUDE.md/.planning/PROJECT.md's Constraints lists in the SAME
+  // commit as this removal, not merely renumbered. No floor change: the
+  // floor is `>= 7` and there are still 9 guards on disk after this
+  // removal, so the non-vacuity floor this array's own comment protects
+  // is unaffected.
   "docs-dangling-refs.test.ts",
   "docs-deferred-ledger.test.ts",
   "docs-review-disposition.test.ts",
