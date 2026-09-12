@@ -13,12 +13,12 @@ usage, not measured). Individual rows that have since been exercised live are ma
 | What does the handler at this vector do? | `vice_disassemble` — the emulator's own decoder, not a dead listing |
 | Is this really the main loop? | `vice_checkpoint_add` + `vice_run_until` + `vice_registers_get` — fires once per frame ⇒ proven |
 | What code writes this? | `vice_watch_add` — finds **writers**. Best targets: `$D018`, VM+`$03F8`, `$D404` |
-| Whole-chip VIC-II/CIA state without the read hazards | `vice_vicii_get_state` / `vice_cia_get_state` (**both backends**) — prefer these over raw register reads |
-| Whole-chip SID state without the read hazards | `vice_sid_get_state` (**requires the fork** — SID `$D400-$D418` is write-only in hardware and the binary monitor has no SID command; unrecoverable on stock) |
-| Decode sprite data | `vice_sprite_get` / `vice_sprite_inspect` (**both backends**) |
-| Find a known byte pattern | `vice_memory_search` (**both backends**) |
-| Carry labels across sessions | `vice_symbols_load` / `vice_symbols_lookup` (**both backends**) — ACME `--vicelabels` emits the format they consume. The annotation store's own export into that format is **withdrawn as of 2026-08-29, and no phase currently owns its return** — an earlier forecast naming a numbered phase for it is superseded |
-| Is the machine wedged, or did it stop itself? | `vice_diagnose` — five-state verdict with its evidence (five on either backend, but the sets differ by one: the fork answers `stale_read_path`, stock answers `monitor_held_elsewhere` because its monitor serves exactly one client at a time). **Reachable and proxy-intercepted as of 2026-08-04** (verified live). Triage tree: `vice-wedge-triage` |
+| Whole-chip VIC-II/CIA state without the read hazards | `vice_vicii_get_state` / `vice_cia_get_state` — prefer these over raw register reads |
+| Whole-chip SID state without the read hazards | `vice_sid_get_state` — **permanently unavailable**: SID `$D400-$D418` is write-only in hardware and the binary monitor has no SID command, so read-back cannot be recovered. Writes to those addresses still work fine over the memory-set primitive. See `docs/stock-hard-losses.md` |
+| Decode sprite data | `vice_sprite_get` / `vice_sprite_inspect` |
+| Find a known byte pattern | `vice_memory_search` |
+| Carry labels across sessions | `vice_symbols_load` / `vice_symbols_lookup` — ACME `--vicelabels` emits the format they consume. The annotation store's own export into that format is **withdrawn as of 2026-08-29, and no phase currently owns its return** — an earlier forecast naming a numbered phase for it is superseded |
+| Is the machine wedged, or did it stop itself? | `vice_diagnose` — five-state verdict with its evidence (one state is `monitor_held_elsewhere`, because this monitor serves exactly one client at a time). **Reachable and proxy-intercepted as of 2026-08-04** (verified live). Triage tree: `vice-wedge-triage` |
 | Replace a wedged instance | `vice_recycle` — destructive, requires a `reason`, and that reason is written into `.c64-re-tools/incidents/` **before** anything is killed. The reason *is* the evidence record |
 | Read the restart epoch | **No tool does.** The proxy compares it around every forwarded call and raises drift itself; a value comes from that error or from `vice_diagnose` |
 
@@ -41,13 +41,11 @@ usage, not measured). Individual rows that have since been exercised live are ma
 
 ## Three traps in this table
 
-**`vice_run_until`'s timeout is backend-qualified — it has none on the fork, but stock bounds it.** On the fork, `cycles` is documented as *"not yet implemented"* and there is no
-`timeout_ms` either, so a run to an address the program never reaches has nothing to bound it and
-looks exactly like a wedged emulator; prefer `vice_checkpoint_add` + a bounded poll when the
-address is a hypothesis rather than a certainty. **Confidence: MEDIUM on the fork** — read off the
-schema, not reproduced. On stock, `timeout_ms` (default 30000, ceiling 600000) bounds the wait, and
-a timed-out answer says the machine is left halted rather than looking like a wedge — see
-`vice-wedge-triage` for the full triage judgement and its live evidence; do not restate it here.
+**`vice_run_until`'s `timeout_ms` bounds the wait.** `timeout_ms` (default 30000, ceiling 600000)
+bounds a run to an address the program never reaches, and a timed-out answer says the machine is
+left halted rather than looking like a wedged emulator; prefer `vice_checkpoint_add` + a bounded
+poll when the address is a hypothesis rather than a certainty — see `vice-wedge-triage` for the
+full triage judgement and its live evidence; do not restate it here.
 
 **`vice_diagnose` leaves the machine paused.** When it measures a cycle bracket it resumes the
 machine once or twice and then leaves it **paused** — resuming is your own next call. And a

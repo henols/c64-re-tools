@@ -81,15 +81,13 @@ Run over all six committed captures of one title (two releases, runs 1-3 each):
 
 NMI and RESET sharing one entry is the shape of an anti-tamper trap: RESTORE and reset are the two
 ways a user perturbs a running game, and both land in the same place. `$1116` is therefore the
-address to checkpoint when the emulator is next available — press RESTORE with
-`mcp__plugin_c64-re-tools_vice__vice_keyboard_restore` (it is *not* in the keyboard matrix, and NMI will not retrigger
-until the line is released, so it is a press→release **edge**), then `vice_machine_reset` soft and
-hard, and record where the PC actually lands.
-
-**`vice_keyboard_restore` requires the fork backend.** The RESTORE key pulses the NMI line
-directly and is not part of the keyboard matrix, so stock's `KEYBOARD_FEED` (which only injects
-PETSCII text into the buffer) cannot produce it. Calling it on the stock backend returns an error
-naming the reason and the fork backend, rather than pulsing RESTORE.
+address to checkpoint when the emulator is next available. Testing the RESTORE half of that
+experiment is not currently possible: **`vice_keyboard_restore` is permanently unavailable.** The
+RESTORE key pulses the NMI line directly and is not part of the keyboard matrix, so `KEYBOARD_FEED`
+(which only injects PETSCII text into the buffer) cannot produce it; calling the tool returns an
+error naming the reason, rather than pulsing RESTORE. No client-side substitute exists — see
+`docs/stock-hard-losses.md`. The reset half of the experiment remains testable: arm the checkpoint,
+call `vice_machine_reset` soft and hard, and record where the PC actually lands.
 
 **Evidence:** derived mechanically from six three-run-verified captures; every value identical
 across all three runs of its release, so none of it is drift.
@@ -160,9 +158,9 @@ at a title screen and again in gameplay, diff the two captures, and look for a s
 changed in zero page or low RAM. `vice_memory_compare` narrows this; `c64-ram-capture` § Compare
 two captures gives the volatility rules that stop you chasing drift.
 
-On stock, only `mode: 'ranges'` is served — capture the two states at different points in time and
+Only `mode: 'ranges'` is served — capture the two states at different points in time and
 compare two live ranges. `mode: 'snapshot'` is refused with an explanatory message; there is no
-memory-only snapshot producer on either backend.
+memory-only snapshot producer at all.
 
 ## Verified against this project — 2026-08-04
 

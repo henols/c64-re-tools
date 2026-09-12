@@ -80,19 +80,20 @@ Prefer the whole-chip reads — `vice_vicii_get_state`, `vice_cia_get_state`, `v
 — over raw register reads. Whether the VICE monitor's own read path is side-effect-free is
 **unverified**: treat it as verify-don't-assume rather than taking it on faith.
 
-On the stock backend, `vice_vicii_get_state`/`vice_cia_get_state` reads are `sidefx: false` with
+`vice_vicii_get_state`/`vice_cia_get_state` reads are `sidefx: false` with
 no argument able to override it — **VERIFIED**, asserted on the wire body by a regression test.
 Whether the emulator's own `MEM_GET` read path actually honours that flag for
 `$D01E`/`$D01F`/`$DC0D`/`$DD0D` — i.e. whether it truly cannot clear them — is **ASSUMED**, with
-no probe recorded in this repo; treat it as no worse than the fork's own unverified path, not as
-a proven guarantee. `vice_sid_get_state` is **fork-only**, since SID `$D400-$D418` is write-only
-in hardware and the binary monitor has no SID command. Also: on stock, an internal field the
-register map cannot expose is marked `{ available: false, reason }` in the answer, never a bare
-`0` — do not record a stock `0` from one of these fields as a measurement; check `available`
-first. A stock chip-state or sprite answer also **names the memory view it read** (`bank`, or
+no probe recorded in this repo; treat it as unverified, not as a proven guarantee.
+`vice_sid_get_state` read-back is **permanently unavailable**: SID `$D400-$D418` is write-only
+in hardware and the binary monitor has no SID command, so there is no route to recover it.
+Writes to those addresses still work fine. See `docs/stock-hard-losses.md`. Also: an internal
+field the register map cannot expose is marked `{ available: false, reason }` in the answer, never
+a bare `0` — do not record a `0` from one of these fields as a measurement; check `available`
+first. A chip-state or sprite answer also **names the memory view it read** (`bank`, or
 `registerBank`/`dataBank`), read through the emulator's own `io`/`ram` banks, so it stays valid
 even while the program has I/O banked out ($01 driving the RAM/ROM/I-O switch). An answer with
-**no** bank field — an older transcript, or the fork backend — is suspect whenever `$01` may not
+**no** bank field — an older transcript — is suspect whenever `$01` may not
 have been `$37`: those bytes may be the RAM underneath the I/O area, not registers.
 
 ## 4. The keyboard buffer is not how games read keys
@@ -103,13 +104,14 @@ Games and cracks poll the `$DC00`/`$DC01` matrix directly, bypassing the KERNAL 
 `vice_keyboard_type` is invisible to them. Use `vice_keyboard_matrix`, and hold a key across a
 gate by releasing it at the trigger checkpoint, never earlier.
 
-**`vice_keyboard_matrix` requires the fork backend.** The binary monitor's `KEYBOARD_FEED` (0x72)
+**`vice_keyboard_matrix` is permanently unavailable.** The binary monitor's `KEYBOARD_FEED` (0x72)
 only injects PETSCII text into the KERNAL keyboard buffer; the emulator recomputes CIA port B from
 its own keyboard array on every read, so there is no wire command that can drive the raw matrix —
-this is unrecoverable on stock, not merely unbuilt. On stock, use `vice_keyboard_type` /
-`vice_keyboard_petscii` when the gate reads the KERNAL buffer, or `vice_joystick_set` when it polls
-the matrix directly instead; either way, buffer injection is invisible to a program polling
-`$DC00`/`$DC01` itself, so a matrix-polling gate must be driven by the joystick or not at all.
+this is unrecoverable, not merely unbuilt. See `docs/stock-hard-losses.md`. Use
+`vice_keyboard_type` / `vice_keyboard_petscii` when the gate reads the KERNAL buffer, or
+`vice_joystick_set` when it polls the matrix directly instead; either way, buffer injection is
+invisible to a program polling `$DC00`/`$DC01` itself, so a matrix-polling gate must be driven by
+the joystick or not at all.
 
 ## 5. Most state reads pause the emulator and do not resume it
 
