@@ -5,11 +5,11 @@ milestone_name: The Rebuild Half
 current_phase: 52
 current_phase_name: Remove the Fork Backend
 status: executing
-stopped_at: Completed 52-03-PLAN.md
-last_updated: "2026-09-11T23:08:03.223Z"
+stopped_at: Completed 52-04-PLAN.md
+last_updated: "2026-09-12T07:04:20.298Z"
 last_activity: 2026-09-11
 last_activity_desc: Phase 52 execution started
-state_head: b11be6083fa9a6bc3b65993243a43c0e7b85a6de
+state_head: 599b5c77ef259a8428c1033c8bb372585af05eb6
 progress:
   total_phases: 8
   completed_phases: 2
@@ -255,7 +255,7 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 52 (Remove the Fork Backend) — EXECUTING
-Plan: 4 of 10
+Plan: 5 of 10
 Status: Executing (52-01 complete)
 
 **Planned OUT OF SEQUENCE.** Phase 52 was planned ahead of Phases 47-51, which
@@ -565,6 +565,7 @@ Last activity: 2026-09-11 — Phase 52 execution started
 | Phase 52 P01 | 40min | 3 tasks | 3 files |
 | Phase 52-remove-the-fork-backend P02 | 25min | 2 tasks | 2 files |
 | Phase 52 P03 | 75min | 3 tasks | 47 files |
+| Phase 52 P04 | 110min | 3 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -1287,6 +1288,8 @@ Recent decisions affecting current work:
 - [Phase 52-remove-the-fork-backend]: Minted FORKRM-01..07 in REQUIREMENTS.md (Coverage 22/22/0) and marked FORKRM-02 Complete on the strength of plan 52-01's already-landed work; the retain todo is annotated SUPERSEDED. — Plan 52-02 had to declare the phase's requirement ids before any FORKRM-* id could be marked complete by any plan, including the already-finished 52-01.
 - [Phase 52]: 52-03: Split vice.ts into vice-errors.ts (shared error hierarchy + lease-state accessors, load-bearing for stock's own lease path) and the fork transport half; repointed all 41 surviving importers; deleted the dead, zero-consumer vice-sync.ts. — buildHeldLease() reads activeInstance() on every stock tool call, so deleting vice.ts wholesale (as later plans do) would have broken stock lease acquisition, not just fork transport. Splitting first makes every later deletion in this phase provably fork-only.
 - [Phase 52]: 52-03: vice-proxy.ts's line-number shift (import block split, -4 lines) drifted docs-linerefs.test.ts's CLAUDE.md/PROJECT.md rewriteArguments()/forwardToVice() citations. Left unfixed and reported for plan 52-04, which retires that whole Architecture bullet.
+- [Phase 52]: Phase 52 plan 04: handleRecycle()/handleDiagnose() kept as thin dispatchStockFor() delegations rather than deleted, to satisfy a structural oracle pinning handleRecycle's exact declaration form and the plan's own "still declared and registered" acceptance criteria.
+- [Phase 52]: Two whole mechanisms not individually named in the plan (D-13/D-14 replace-and-report, D-16 seam-hazard annotation) were deleted after confirming their sole caller (forwardToVice()) was gone -- generalising the plan's own "delete every helper that exists only to serve it" principle.
 
 ### Pending Todos
 
@@ -2364,8 +2367,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-11T23:08:02.729Z
-Stopped at: Completed 52-03-PLAN.md
+Last session: 2026-09-12T07:03:52.611Z
+Stopped at: Completed 52-04-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
