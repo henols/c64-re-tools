@@ -2,6 +2,16 @@
 
 **Analysis Date:** 2026-09-01
 
+**Fork-backend content corrected: 2026-09-12.** Every claim below that named
+the removed fork backend, its deleted modules, or its deleted refusal
+mechanism as a live convention exemplar was corrected against the tree on
+this date (phase `52-remove-the-fork-backend`, plan 52-12). The rest of this
+document remains a 2026-09-01 snapshot and carries its own, unrelated
+staleness — a reader wanting a current picture of anything else should
+re-run a mapping pass rather than trust these lines. See
+`docs/stock-hard-losses.md` for the permanent, accepted capability losses
+that replaced the deleted per-backend capability table.
+
 ## Scope Note
 
 Code lives in three places, and all three share one hand-maintained style:
@@ -61,7 +71,7 @@ binary and silently skips it. Always use `grep -a` for any content census over t
 **Variables:**
 - `camelCase` for locals and mutable module state (`warnedEnvOutsideFrom`, `reqId`).
 - `SCREAMING_SNAKE_CASE` for module constants, especially env-var or protocol contracts:
-  `HERE`, `WORKSPACE_ROOT`, `CONTAINER_WS`, `DENY_LIST`, `MANUAL_ONLY_TESTS`,
+  `HERE`, `WORKSPACE_ROOT`, `CONTAINER_WS`, `STOCK_DERIVED_TOOLS`, `MANUAL_ONLY_TESTS`,
   `ACQUIRE_TIMEOUT_MS`, `HOST_BOUND_ARTIFACTS`.
 - `HERE` is the idiomatic name for `dirname(fileURLToPath(import.meta.url))`, used across nearly
   every module and test in the tree.
@@ -124,7 +134,7 @@ Node >= 18 for the installer (`installer/package.json`).
 ## Error Handling
 
 **Custom error hierarchy, rooted at one base:**
-- `class ViceError extends Error` (`src/mcp/vice/vice.ts`) carries optional `code`/`data`,
+- `class ViceError extends Error` (`src/mcp/vice/vice-errors.ts:158`) carries optional `code`/`data`,
   mirroring the JSON-RPC error shape.
 - Transport/state subclasses extend it and add domain fields as plain public properties:
   `MachineRestartedError { baselineEpoch, currentEpoch, where, lastToolCall }`.
@@ -154,12 +164,14 @@ comment saying so. Pure transforms return `{ result, changes, untranslated }`-sh
 instead of throwing on partial failure (`containerizeRecord()` in `containerpath.ts`) — prefer that
 shape when a caller needs to know WHICH fields succeeded.
 
-**Silent-but-observable failure is an actively-designed-against bug class.** `repo-root.ts` and
-`vice.ts` carry header comments describing an incident where a wrong-but-non-throwing path
-resolution caused silent data loss, and forbid reintroducing that shape (fixed `".."` hop counts
-instead of marker-based resolution). New fallback branches emit a one-time `console.error()`
-warning (see the `warnedEnvOutsideFrom` / `warnedNoMarkerFound` guards) rather than succeeding on
-a guess.
+**Silent-but-observable failure is an actively-designed-against bug class.** `repo-root.ts` carries
+a header comment describing an incident where a wrong-but-non-throwing path resolution caused
+silent data loss, and forbids reintroducing that shape (fixed `".."` hop counts instead of
+marker-based resolution). `vice-proxy.ts`'s `containerizeGrant()` documents a matching incident of
+its own: a host-rooted epoch path that "simply never resolved, so every broker-granted instance was
+silently unreachable" until the container/host boundary was fixed at that seam. New fallback
+branches emit a one-time `console.error()` warning (see the `warnedEnvOutsideFrom` /
+`warnedNoMarkerFound` guards) rather than succeeding on a guess.
 
 **Fail-closed over degrade-quietly** is the standing rule for guards: a guard whose input set is
 missing must fail, not fall back to a smaller, correct-looking set. `.github/workflows/ci.yml`
@@ -245,10 +257,11 @@ explicitly in `docs-linerefs.test.ts`).
 installer.
 
 **One authoritative seam per concern (the "D-N single source of truth" pattern):** exactly one
-module owns each piece of derived knowledge — `repo-root.ts` for the project root, `vice.ts`'s
-`call()` for the fork HTTP transport, `hostpath.ts`/`containerpath.ts` for path translation,
-`test-gate.mjs`'s `MANUAL_ONLY_TESTS` for the manual test set, `shipped-modules.ts` for what the
-structural guards scan, `capability-registry.ts` for per-backend tool capability. Import the
+module owns each piece of derived knowledge — `repo-root.ts` for the project root,
+`stock-connect.ts`'s connect handshake for the binary-monitor session, `hostpath.ts`/`containerpath.ts`
+for path translation, `test-gate.mjs`'s `MANUAL_ONLY_TESTS` for the manual test set,
+`shipped-modules.ts` for what the structural guards scan, `stock-dispatch.ts` for the tool dispatch
+table (there is no second, per-backend capability table left to own — FORKRM-01). Import the
 existing function instead of recomputing it inline; duplicating that logic is the primary defect
 class this codebase's comments warn against, and several tests exist purely to detect a second
 copy appearing.
