@@ -5,11 +5,11 @@ milestone_name: The Rebuild Half
 current_phase: 52
 current_phase_name: Remove the Fork Backend
 status: executing
-stopped_at: Completed 52-10-PLAN.md
-last_updated: "2026-09-12T12:17:09.532Z"
+stopped_at: Completed 52-11-PLAN.md
+last_updated: "2026-09-12T13:33:27.460Z"
 last_activity: 2026-09-12
 last_activity_desc: Phase 52 gap-closure round 1 planned (52-11..52-13)
-state_head: 5ff154a4b1a109a281f5765d791a48f2b0d06499
+state_head: 86c6a8c3d4d43285b3670b43bc7456398a16e4d7
 progress:
   total_phases: 8
   completed_phases: 2
@@ -254,12 +254,13 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 52 (Remove the Fork Backend) — READY TO EXECUTE (gap closure)
-Plan: 10 of 13 executed
-Status: 52-01..52-10 executed; verification returned `gaps_found` at 7/8 truths.
-Gap-closure round 1 planned 2026-09-12 — 52-11, 52-12, 52-13 (waves 9-11) close
-the one failed truth, the stale-documentation gap. Nothing else in the phase is
-reopened.
+Phase: 52 (Remove the Fork Backend) — EXECUTING (gap closure)
+Plan: 11 of 13 executed
+Status: 52-01..52-11 executed; 52-11 corrected the stale-documentation gap
+(CLAUDE.md + ARCHITECTURE.md false fork-backend prose, and widened
+docs-fork-absence.test.ts to catch the class mechanically). 52-12 and 52-13
+remain (waves 10-11), closing ARCHITECTURE.md's remaining stale sections and
+PROJECT.md's two residual Key Decisions rows.
 
 **Planned OUT OF SEQUENCE.** Phase 52 was planned ahead of Phases 47-51, which
 remain unplanned, because Phase 52's own stated dependency — the open question
@@ -270,7 +271,7 @@ this frontmatter's `current_phase: 52` records where planning last landed, not a
 decision to execute 52 before 47.
 
 Progress: [███░░░░░░░] 25% (2/8 phases complete in v1.0.0; per-phase plan counts in the ROADMAP Progress table)
-Last activity: 2026-09-11 — Phase 52 execution started
+Last activity: 2026-09-12 — Phase 52 execution started
 
 ## Performance Metrics
 
@@ -575,6 +576,7 @@ Last activity: 2026-09-11 — Phase 52 execution started
 | Phase 52 P08 | 35min | 3 tasks | 13 files |
 | Phase 52 P09 | 35 min | 3 tasks | 13 files |
 | Phase 52 P10 | 55 min | 3 tasks | 6 files |
+| Phase 52 P11 | 55 min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -1309,6 +1311,7 @@ Recent decisions affecting current work:
 - [Phase 52]: audit-root-args.test.ts's MATRIX row for the renamed gate moved from contained:refuses to contained:synthetic-corpus, and its hardcoded bound/clean population assertions were updated (2 refusing scripts, 3 clean) to match. — The inversion removed the gate's only static ../src import, so there is no split-read hazard left to refuse; the test file's own hardcoded counts had to move with it or the suite would stay red.
 - [Phase 52]: CLAUDE.md/PROJECT.md's Testing bullet was restated against stock-run-until.ts rather than removed: it honors the exactly-one-resume-per-wait invariant in event-driven, unit-tested form. The sibling poll-on-hit_count invariant was not restated as its own rule, since stock-diagnose.ts explicitly uses wall-clock timing instead by its own comment. — Plan instruction: check whether either invariant survives in a surviving module before deleting the bullet outright; one does, one does not, in the same shape.
 - [Phase 52]: Fixed two falsified fork-era symbol references discovered while reconciling Phase 52's closing criteria: CLAUDE.md/PROJECT.md's probeBackend() Constraints clause and CLAUDE.md's DENY_LIST Key Abstractions bullet. — Both named symbols deleted by earlier plans in this phase (52-05, 52-06); left uncorrected they would have been standing, checked-in false claims about the live codebase.
+- [Phase 52]: Widened docs-fork-absence.test.ts in place with a boundary-aware deleted-module-citation predicate rather than a sibling guard, since the check shares the existing population, exemption list, and question — Splitting one question (has the fork removal come back) across two files would produce two partial answers and two places to remember to widen
 
 ### Pending Todos
 
@@ -2386,8 +2389,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-12T11:17:08.478Z
-Stopped at: Completed 52-10-PLAN.md
+Last session: 2026-09-12T13:33:27.258Z
+Stopped at: Completed 52-11-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md

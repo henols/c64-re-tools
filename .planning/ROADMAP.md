@@ -1319,7 +1319,7 @@ that work is rescoped before this phase runs, not after.
   7. `npm run test:automated` is green at the documented floor, with the
      fork-conditional branches in 12 test files removed rather than skipped.
 
-**Plans**: 10/13 plans executed, 11 waves (3 gap-closure plans added 2026-09-12)
+**Plans**: 11/13 plans executed, 11 waves (3 gap-closure plans added 2026-09-12)
 
 Plans:
 **Wave 1**
@@ -1358,7 +1358,7 @@ Plans:
 
 **Wave 9** *(gap closure — blocked on Wave 8 completion)*
 
-- [ ] 52-11-PLAN.md — TRACER: add a boundary-aware deleted-filename citation check to `docs-fork-absence.test.ts`, correct the twelve false claims in `CLAUDE.md`'s generated blocks, and wire the check over the real prose corpus
+- [x] 52-11-PLAN.md — TRACER: add a boundary-aware deleted-filename citation check to `docs-fork-absence.test.ts`, correct the twelve false claims in `CLAUDE.md`'s generated blocks, and wire the check over the real prose corpus
 
 **Wave 10** *(blocked on Wave 9 completion)*
 
@@ -1625,7 +1625,7 @@ in a milestone archive.
 | 49. The Reassembly Gate, Committed Before the Phase It Gates | v1.0.0 | - | Not started | - |
 | 50. Equivalence and Modifiability | v1.0.0 | - | Not started | - |
 | 51. Planning Vocabulary Out of the Shipped Server | v1.0.0 | - | Not started | - |
-| 52. Remove the Fork Backend | v1.0.0 | 10/13 | In Progress | - |
+| 52. Remove the Fork Backend | v1.0.0 | 11/13 | In Progress | - |
 
 **Milestone roll-up:** v0.2.0 — 9 phases, 87 plans, 51/51 in-scope requirements,
 shipped 2026-08-19 (audit round 4 `tech_debt`; 13 deferred items at close).
