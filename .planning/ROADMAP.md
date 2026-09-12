@@ -1319,7 +1319,7 @@ that work is rescoped before this phase runs, not after.
   7. `npm run test:automated` is green at the documented floor, with the
      fork-conditional branches in 12 test files removed rather than skipped.
 
-**Plans**: 10/10 plans executed, 8 waves
+**Plans**: 10/13 plans executed, 11 waves (3 gap-closure plans added 2026-09-12)
 
 Plans:
 **Wave 1**
@@ -1355,6 +1355,53 @@ Plans:
 **Wave 8** *(blocked on Wave 7 completion)*
 
 - [x] 52-10-PLAN.md — add `docs-fork-absence.test.ts`, run the full battery, record the failure SET and reconcile the seven criteria
+
+**Wave 9** *(gap closure — blocked on Wave 8 completion)*
+
+- [ ] 52-11-PLAN.md — TRACER: add a boundary-aware deleted-filename citation check to `docs-fork-absence.test.ts`, correct the twelve false claims in `CLAUDE.md`'s generated blocks, and wire the check over the real prose corpus
+
+**Wave 10** *(blocked on Wave 9 completion)*
+
+- [ ] 52-12-PLAN.md — correct the three `.planning/codebase/` documents that `CLAUDE.md`'s own markers name as the sources of its Technology Stack, Conventions and Architecture blocks
+
+**Wave 11** *(blocked on Wave 10 completion)*
+
+- [ ] 52-13-PLAN.md — reword the two `PROJECT.md` rows still routing a permanent loss to the removed backend, annotate the four unprojected codebase snapshots, and run the closing battery
+
+## Gap closure (round 1, planned 2026-09-12)
+
+`52-VERIFICATION.md` scored 7/8 and returned `gaps_found`. All seven numbered
+success criteria above are VERIFIED and all seven `FORKRM-*` requirements
+SATISFIED, confirmed against the tree rather than against any summary's word.
+The single failed truth is the eighth, derived by the verifier from this phase's
+own Goal clause "*...and the decision records retaining it are gone*":
+
+> The documents this project loads into every working session no longer describe
+> the fork transport, deleted files, or per-backend selection as CURRENT
+> architecture.
+
+`CLAUDE.md` — loaded as project instructions in every session — still described
+deleted modules as live components across its Technology Stack, Conventions,
+Architecture, Platform Requirements and Error Handling sections. Plan 52-09
+correctly scoped its `CLAUDE.md` edit to the `## Constraints` bullet block (byte-synced
+against `PROJECT.md` and guarded); nothing told a later plan the rest of the document
+was also false, and no guard could see it: `docs-fork-absence.test.ts` scanned for nine
+forbidden code identifiers and checked six deleted filenames against *disk and the
+published file list*, never against prose.
+
+**Planning found one thing the verification did not.** Those three `CLAUDE.md`
+sections are not hand-written — they sit in marker blocks whose own comments name
+`codebase/STACK.md`, `CONVENTIONS.md` and `ARCHITECTURE.md` as their sources. All
+three sources are dated 2026-09-01, eleven days before the removal, and all three
+still describe the fork as a live selectable backend in more detail than `CLAUDE.md`
+did. Correcting only the projected copy would have left a regeneration able to push
+the falsehood back over the fix — the exact failure `docs-constraints-sync.test.ts`'s
+own header records for the `PROJECT.md` pair. Plan 52-12 therefore reconciles both
+sides, as that precedent did.
+
+Out of scope by the verifier's own recorded disposition, and not planned here:
+`WR-01` and `WR-02` (deferred), `WR-03` and `IN-01` (accepted), and the documented
+suite failure floor, which is measured as a SET and never repaired.
 
 Notes:
 
