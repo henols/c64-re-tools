@@ -5,16 +5,16 @@ milestone_name: The Rebuild Half
 current_phase: 47
 current_phase_name: Multi-File Rebuildable Source
 status: executing
-stopped_at: Completed 47-05-PLAN.md
-last_updated: "2026-09-12T17:33:14.630Z"
+stopped_at: Completed 47-03-PLAN.md
+last_updated: "2026-09-12T17:53:03.199Z"
 last_activity: 2026-09-12
 last_activity_desc: Phase 47 execution started
-state_head: 0b4656ebce395e4e33cfd31631cb6b7dda7edcaf
+state_head: 3b558d3cea4eb287084fe24ed5b51fa1999f9713
 progress:
   total_phases: 8
   completed_phases: 2
   total_plans: 22
-  completed_plans: 19
+  completed_plans: 20
   percent: 25
 ---
 
@@ -255,7 +255,7 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 47 (Multi-File Rebuildable Source) — EXECUTING
-Plan: 4 of 6
+Plan: 5 of 6
 Status: Ready to execute
 Plans: 6 (47-01 … 47-06) in 5 waves. Wave 2's 47-05 is `autonomous: false` —
 it carries the phase's one blocking decision checkpoint, because promoting
@@ -575,6 +575,7 @@ Last activity: 2026-09-12 — Phase 47 execution started
 | Phase 47 P01 | 45min | 2 tasks | 5 files |
 | Phase 47 P02 | 25min | 3 tasks | 2 files |
 | Phase 47-multi-file-rebuildable-source P05 | 40min | 2 tasks | 7 files |
+| Phase 47 P03 | 17min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -1320,6 +1321,8 @@ Recent decisions affecting current work:
 - [Phase 47]: Phase 47 plan 05: anno export-asm --out promoted from a FILE to a DIRECTORY (checkpoint resolved: promote, option A). The derived default's fixed suffix is -src, extension-free.
 - [Phase 47]: Phase 47 plan 05: the single-file input-collision refusal generalised to path-segment containment (pathIsOrContains()) -- the output directory may not BE or CONTAIN the store, image or ledger, and --force does not lift it.
 - [Phase 47]: Phase 47 plan 05: FLAG_KINDS[export-asm][--out] kept (not deleted) and changed to the empty-string kind meaning a directory, so the invocation gate's value-presence check survives the file-to-directory promotion.
+- [Phase 47]: 47-03: The generic per-type DATA_TYPES round-trip loop excludes external_file -- its !binary line names a sibling file only exportAsmTree() writes, and acme-verify.ts (single-file by design) has no sibling to write. external_file's own round trip is proved separately through exportAsmTree() in the "binary emission:" suite.
+- [Phase 47]: 47-03: The character-set swap demonstration uses the committed fixtures/ghidra/charset-phantom.prg's own $1000..$17ff bytes through a store this test builds itself (buildStoreOverImage()), never the committed charset-phantom.annostore.json, which Phase 37/45 tests depend on staying typed "code".
 
 ### Pending Todos
 
@@ -2397,8 +2400,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-12T17:33:14.396Z
-Stopped at: Completed 47-05-PLAN.md
+Last session: 2026-09-12T17:52:54.672Z
+Stopped at: Completed 47-03-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
