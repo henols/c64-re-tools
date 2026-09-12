@@ -148,10 +148,15 @@ function scanTextForForbiddenIdentifiers(relPath: string, text: string): string[
  * (`vice.ts`) also matches a filename like `device.ts`, which shares the
  * substring `vice.ts` starting at its second character. That is a measured
  * false positive, and a false positive is precisely what gets a guard
- * switched off rather than obeyed. Asserted non-empty by the non-vacuity
- * test below, so an emptied pattern cannot make the citation checks
- * vacuously pass. */
-const DELETED_MODULE_CITATION_SOURCE = `(?:^|[^A-Za-z0-9_.-])(${DELETED_MODULES.map((m) => m.replace(/\./g, "\\.")).join("|")})`;
+ * switched off rather than obeyed. The same boundary is required on the
+ * TRAILING side too (end-of-string or a non-identifier/non-dot character),
+ * matching its sibling `STALE_MANIFEST_CITATION_RE` below -- without it, a
+ * filename that merely STARTS WITH a deleted module's name (`vice.tsx`,
+ * `vice.ts.bak`, a markdown anchor like `vice.ts#history`) would be
+ * indistinguishable from a real citation of the deleted module. Asserted
+ * non-empty by the non-vacuity test below, so an emptied pattern cannot make
+ * the citation checks vacuously pass. */
+const DELETED_MODULE_CITATION_SOURCE = `(?:^|[^A-Za-z0-9_.-])(${DELETED_MODULES.map((m) => m.replace(/\./g, "\\.")).join("|")})(?:$|[^A-Za-z0-9_.-])`;
 const DELETED_MODULE_CITATION_RE = new RegExp(DELETED_MODULE_CITATION_SOURCE, "g");
 
 /** Pure predicate: every deleted-module filename boundary-aware-cited in
@@ -533,6 +538,11 @@ test("planted violation: an in-memory body citing a deleted module filename is r
 
 test("planted violation control: an in-memory body containing only `device.ts` -- a filename that merely touches a deleted one as a substring -- reports nothing", () => {
   const hits = findDeletedModuleCitations("The disk-access family cross-references `src/mcp/vice/device.ts`.");
+  assert.deepEqual(hits, []);
+});
+
+test("planted violation control: an in-memory body containing only `vice.tsx` -- a filename that merely STARTS WITH a deleted one -- reports nothing", () => {
+  const hits = findDeletedModuleCitations("See `src/mcp/vice/vice.tsx` for the (nonexistent) React variant.");
   assert.deepEqual(hits, []);
 });
 
