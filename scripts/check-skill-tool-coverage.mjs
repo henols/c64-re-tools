@@ -120,10 +120,8 @@ function paths(root) {
     // all of them are asserted present up front instead.
     required: [
       skillsDir,
-      join(viceDir, "tools-manifest.json"),
       join(viceDir, "tools-manifest.stock.json"),
       join(viceDir, "vice-proxy.ts"),
-      join(viceDir, "vice.ts"),
       join(viceDir, "anno-cli.ts"),
     ],
   };
@@ -272,7 +270,7 @@ for (const f of skillFiles) {
 // curated annotation surface (D-16/D-18), RE-POINTED onto that surface's own
 // `anno_*` prefix by plan 29-09 (2026-08-29). Kept in its OWN map rather than
 // merged into `extracted` above -- the two families are served through
-// completely different gates (stock/fork manifests vs. CURATED_ANNO_TOOLS,
+// completely different gates (the stock manifest vs. CURATED_ANNO_TOOLS,
 // a proxy-local allow-list), so conflating them would blur which gate a
 // given name is actually checked against.
 const ANNO_TOOL_NAME_RE = /\banno_[a-z0-9_]+/g;
@@ -300,10 +298,10 @@ for (const f of skillFiles) {
   }
 }
 
-// --- Manifests -----------------------------------------------------------
-const forkManifest = JSON.parse(readFileSync(join(VICE_DIR, "tools-manifest.json"), "utf8"));
+// --- Manifest --------------------------------------------------------------
+// The fork manifest is gone along with the fork transport that served it;
+// tools-manifest.stock.json is the only manifest left to check against.
 const stockManifest = JSON.parse(readFileSync(join(VICE_DIR, "tools-manifest.stock.json"), "utf8"));
-const forkNames = new Set(forkManifest.tools.map((t) => t.name));
 const stockNames = new Set(stockManifest.tools.map((t) => t.name));
 
 // --- Classification --------------------------------------------------------
@@ -346,12 +344,12 @@ const PROXY_LOCAL_WITH_STOCK_MANIFEST_ENTRY = [
   ],
 ];
 
-// 2. Referenced by skills only to FORBID it. Asserted below to appear in
-// vice.ts's DENY_LIST and to be absent from both manifests.
+// 2. Referenced by skills only to FORBID it. Asserted below to be absent
+// from the stock manifest -- it is not a real tool on any backend.
 const DENY_LISTED_TOOLS = [
   [
     "vice_disk_list",
-    "Referenced by skills only to forbid it -- vice_disk_list crashes the shared host VICE MCP server directly and is permanently refused via vice.ts's DENY_LIST.",
+    "Referenced by skills only to forbid it -- vice_disk_list crashes the shared host VICE MCP server directly and is not a real tool on any backend.",
   ],
 ];
 
@@ -413,10 +411,6 @@ for (const [name, reason] of PROXY_LOCAL_TOOLS) {
   // from resolvedAdvertisedCount, because allowlistedNames short-circuits the
   // core check below.
   need(
-    !forkNames.has(name),
-    `${name}: classified as PROXY_LOCAL_TOOLS ("present in neither manifest by design") but present in the FORK manifest -- reclassify rather than leaving two sources of truth disagreeing`
-  );
-  need(
     !stockNames.has(name),
     `${name}: classified as PROXY_LOCAL_TOOLS ("present in neither manifest by design") but present in the STOCK manifest -- move it to PROXY_LOCAL_WITH_STOCK_MANIFEST_ENTRY`
   );
@@ -436,29 +430,19 @@ for (const [name, reason] of PROXY_LOCAL_WITH_STOCK_MANIFEST_ENTRY) {
   );
 }
 
-// --- Assertion: DENY_LISTED_TOOLS still in vice.ts's DENY_LIST, absent from
-// both manifests ------------------------------------------------------------
-const viceTsSrc = readFileSync(join(VICE_DIR, "vice.ts"), "utf8");
-const denyListMatch = viceTsSrc.match(/DENY_LIST:\s*readonly string\[\]\s*=\s*\[([\s\S]*?)\];/);
-const denyListBody = denyListMatch ? denyListMatch[1] : "";
+// --- Assertion: DENY_LISTED_TOOLS absent from the stock manifest -----------
 for (const [name, reason] of DENY_LISTED_TOOLS) {
   need(Boolean(reason) && reason.length > 0, `${name}: DENY_LISTED_TOOLS reason must not be empty`);
-  need(
-    denyListBody.includes(`"${name}"`),
-    `${name}: classified as DENY_LISTED_TOOLS but not found in vice.ts's DENY_LIST array`
-  );
-  need(!forkNames.has(name), `${name}: classified as DENY_LISTED_TOOLS but present in the FORK manifest`);
   need(!stockNames.has(name), `${name}: classified as DENY_LISTED_TOOLS but present in the STOCK manifest`);
 }
 
-// --- Assertion: NOT_A_TOOL_NAMES absent from both manifests ----------------
+// --- Assertion: NOT_A_TOOL_NAMES absent from the stock manifest ------------
 for (const [name, reason] of NOT_A_TOOL_NAMES) {
   need(Boolean(reason) && reason.length > 0, `${name}: NOT_A_TOOL_NAMES reason must not be empty`);
-  need(!forkNames.has(name), `${name}: classified as NOT_A_TOOL_NAMES but present in the FORK manifest -- this classification is now wrong and must be revisited`);
   need(!stockNames.has(name), `${name}: classified as NOT_A_TOOL_NAMES but present in the STOCK manifest -- this classification is now wrong and must be revisited`);
 }
 
-// --- Assertion: FORK_ONLY_UNRECOVERABLE present in fork, absent from stock -
+// --- Assertion: FORK_ONLY_UNRECOVERABLE absent from stock ------------------
 // D-E consolidation: the old reason assertion required both "BACK-05" and
 // "SKILL-01" to appear in the reason text -- a check that can never hold
 // against capability-registry.ts's reasons, which are user-facing refusal
@@ -475,7 +459,6 @@ for (const [name, reason] of FORK_ONLY_UNRECOVERABLE) {
     Boolean(reason) && reason.length >= 40,
     `${name}: FORK_ONLY_UNRECOVERABLE reason must be non-empty and at least 40 characters`
   );
-  need(forkNames.has(name), `${name}: classified as FORK_ONLY_UNRECOVERABLE but absent from the FORK manifest`);
   need(!stockNames.has(name), `${name}: classified as FORK_ONLY_UNRECOVERABLE but present in the STOCK manifest -- it is no longer unrecoverable and this entry must be deleted`);
 }
 // Non-vacuous (WR-06): pins that the projection actually selected the
@@ -594,17 +577,13 @@ for (const [name, files] of extractedAnno) {
       `Resolve by: (1) implementing it and adding it to ANNO_TOOL_DEFINITIONS with a named criterion, (2) removing the skill reference, or (3) recording it as a scope decision.`
   );
 }
-// 2. Every extracted anno_* name must be absent from BOTH manifests -- the
+// 2. Every extracted anno_* name must be absent from the manifest -- the
 //    second committed statement of this plan's manifest decision (D-16's
 //    family is served proxy-locally, in neither manifest, by design), in a
 //    different file from stock-dispatch.test.ts's own structural assertion
 //    of the same fact (the WR-11 lesson: a "present in neither manifest by
 //    design" claim must be checked, not merely asserted once).
 for (const [name, files] of extractedAnno) {
-  need(
-    !forkNames.has(name),
-    `${name}: referenced by ${[...files].join(", ")} but present in the FORK manifest -- the anno_* family is served proxy-locally, in neither manifest, by design`
-  );
   need(
     !stockNames.has(name),
     `${name}: referenced by ${[...files].join(", ")} but present in the STOCK manifest -- the anno_* family is served proxy-locally, in neither manifest, by design`
@@ -614,10 +593,11 @@ for (const [name, files] of extractedAnno) {
 //    (plan 29-09, 2026-08-29). The retired family had a curated allow-list
 //    AND was checkable against two shipped manifests it was absent from. The
 //    surviving `anno_*` family HAS NO MANIFEST AT ALL: it is served
-//    proxy-locally, it is in neither tools-manifest.json nor
-//    tools-manifest.stock.json, and nothing generates one for it. So check 2
-//    above -- "absent from BOTH manifests" -- is the ONLY structural check
-//    these names get, and it can only ever pass. That makes this control
+//    proxy-locally, it is absent from tools-manifest.stock.json (the only
+//    manifest left since the fork manifest and transport were removed), and
+//    nothing generates one for it. So check 2 above -- "absent from the
+//    manifest" -- is the ONLY structural check these names get, and it can
+//    only ever pass. That makes this control
 //    LOAD-BEARING rather than decorative: it is the one assertion here that
 //    fails when a real name leaves the surface, and its SUBJECT has to be
 //    chosen for that job rather than picked as a convenient example.

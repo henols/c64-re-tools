@@ -21,7 +21,6 @@ import { fileURLToPath } from "node:url";
 
 import { CAPABILITY_REGISTRY, capabilityEntryFor, capabilityRefusalMessage } from "./capability-registry.ts";
 import type { ViceBackend } from "./backend-detect.mts";
-import { DENY_LIST } from "./vice.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -91,18 +90,6 @@ test("synthetic-tool guard: vice_diagnose and vice_recycle are absent from the r
   assert.equal(capabilityRefusalMessage("vice_diagnose", "fork"), undefined, guardMessage);
   assert.equal(capabilityRefusalMessage("vice_recycle", "stock"), undefined, guardMessage);
   assert.equal(capabilityRefusalMessage("vice_recycle", "fork"), undefined, guardMessage);
-});
-
-test("DENY_LIST boundary: no DENY_LIST entry is duplicated into the capability registry", () => {
-  for (const denied of DENY_LIST) {
-    assert.equal(
-      capabilityEntryFor(denied),
-      undefined,
-      `${denied} is in DENY_LIST (a bypass hazard, checked first) and must not also appear in ` +
-        `CAPABILITY_REGISTRY (a capability-gap hazard) -- these are different hazard shapes owned ` +
-        `by different mechanisms.`,
-    );
-  }
 });
 
 test("plan 41-06: vice_machine_config_set's reason no longer claims the text channel is undialed, and still names OBJECT_MISSING and launch-time warp", () => {
@@ -250,7 +237,7 @@ test("mechanical completeness: the registry's name set equals the manifest-deriv
       `declaration pattern has drifted.`,
   );
 
-  const excluded = new Set<string>([...DENY_LIST, ...SYNTHETIC]);
+  const excluded = new Set<string>([...SYNTHETIC]);
 
   const expected = new Set<string>();
   for (const name of forkNames) {

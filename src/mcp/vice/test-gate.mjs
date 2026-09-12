@@ -49,16 +49,12 @@
 // every sibling above it is default-SKIP everywhere (opt in via
 // VICE_LIVE_STOCK_BIN) and never hangs CI.
 //
-// This section's EIGHTH entry (backend-decision phase, plan 03) covers the
-// fork backend's OWN `-mcpserver` HTTP transport, which had never been
-// live-exercised anywhere in this repository (broker-e2e.test.ts stubs the
-// binary to /bin/sleep by design; every other live capture on file is
-// either stock-only or spoke the stock binary-monitor protocol to the fork
-// binary rather than the fork's own endpoint). It spawns a real fork VICE
-// binary with buildViceArgs()'s own fork-branch argv and drives it through
-// the SAME `useInstance()`/`call()`/`serverInfo()` seam production uses.
-// Like every sibling above it is default-SKIP everywhere (opt in via
-// VICE_LIVE_FORK_BIN) and never hangs CI.
+// This section's former EIGHTH entry covered the fork backend's own
+// `-mcpserver` HTTP transport (fork-live.test.ts). That transport and its
+// test file are both deleted along with the fork backend's removal; the
+// entry is retired rather than renumbered into the remaining list below, so
+// the ordinal labels on the surviving entries still describe the order each
+// was actually added.
 //
 // This section's NINTH entry (phase 15 plan 15-10) covers
 // stock-a4-checkpoint-flood.test.ts: it arms a genuine non-stopping
@@ -123,8 +119,8 @@
 import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 
-/** The exact thirteen test files dispositioned as manual-only. Frozen: extend
- * this array (never add a parallel list) if a fourteenth file needs the
+/** The exact twelve test files dispositioned as manual-only. Frozen: extend
+ * this array (never add a parallel list) if a thirteenth file needs the
  * same treatment. */
 export const MANUAL_ONLY_TESTS = Object.freeze([
   "vice-broker-launch.test.ts",
@@ -134,7 +130,6 @@ export const MANUAL_ONLY_TESTS = Object.freeze([
   "stock-live-triage.test.ts",
   "stock-live-broker-monitor.test.ts",
   "stock-broker-live.test.ts",
-  "fork-live.test.ts",
   "stock-a4-checkpoint-flood.test.ts",
   "dxa-live.test.ts",
   "ghidra-live.test.ts",

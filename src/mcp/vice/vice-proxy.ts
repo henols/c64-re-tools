@@ -80,21 +80,14 @@
 //     every other file in this repo had by default before this phase.
 //     A rollback restores that protection as a side effect of removing
 //     the only import that ever needed the flag.
-// Phase 52 split: the lease-state accessors and shared error hierarchy
-// (used by BOTH backends, since buildHeldLease() reads activeInstance() on
-// every stock tool call too) now live in vice-errors.ts. Only the fork's
-// own HTTP/JSON-RPC transport symbols (DENY_LIST, denyListRefusalMessage,
-// beginSession, SessionInfo) still come from vice.ts, which this import
-// block therefore now splits into two statements rather than one --
-// removing the vice.ts half entirely, when the fork transport itself is
-// deleted, is then a single-statement removal instead of an archaeology
-// exercise. `call()` and `MachineRestartedError` are no longer imported
-// here: the fork-only generic forwarding function and its recycle/diagnose
-// evidence gatherers that used them are deleted -- every remaining tool
-// dispatch in this file goes through stockDispatch, never through vice.ts's
-// own transport.
-import { activeInstance, useInstance, readEpoch, mcpHost, type ActiveInstance, type EpochResult, type ToolInfo } from "./vice-errors.ts";
-import { DENY_LIST, denyListRefusalMessage, beginSession, type SessionInfo } from "./vice.ts";
+// The lease-state accessors and shared error hierarchy (used by BOTH
+// backends, since buildHeldLease() reads activeInstance() on every stock
+// tool call too) live in vice-errors.ts. The fork's own HTTP/JSON-RPC
+// transport module (its outer-name refusal array, the session-identity
+// apparatus, `call()`/`callTool`, `serverInfo()`) is gone entirely: every
+// remaining tool dispatch in this file goes through stockDispatch, never
+// through a fork transport.
+import { activeInstance, useInstance, mcpHost, type ActiveInstance, type ToolInfo } from "./vice-errors.ts";
 import { repoRoot, toolsDir } from "./repo-root.ts";
 // The single version-resolution seam (quick-260819-tsz, D-5) -- PROXY_VERSION
 // below is the only consumer in this file; see version.ts's own header for
@@ -171,10 +164,8 @@ import { CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 // and every call site.
 import * as backendDetect from "./backend-detect.mts";
 import * as stockDispatch from "./stock-dispatch.ts";
-// Plan 08-02: the single per-backend capability lookup (BACK-05), consumed
-// only inside the CallToolRequestSchema override's tools[name] miss branch
-// below, strictly after the DENY_LIST check -- see the comment at that call
-// site for why the ordering is load-bearing.
+// The single per-backend capability lookup (BACK-05), consumed only inside
+// the CallToolRequestSchema override's tools[name] miss branch below.
 import { capabilityRefusalMessage } from "./capability-registry.ts";
 // Plan 29-01: the curated anno_* tool surface's DEFINITIONS, imported
 // STATICALLY -- registration below happens synchronously at module scope, so
@@ -604,101 +595,27 @@ function readManifestTools(): ToolInfo[] {
 
 // --------------------------------------------------------------- tools/call
 //
-// Delegates every real call to the reused `call()` -- the retry ladder
-// already lives there (Pattern 1). Per Pattern 2, EVERY outcome of a tool
-// invocation attempt -- success or failure -- becomes a well-formed
-// `{content, isError}` result, never a JSON-RPC `error` object. Malformed
-// `tools/call` params (a missing/non-string `name`) are now rejected one
-// layer further out, by the SDK's own `CallToolRequestSchema` zod validation
-// (installed at the construction site near the bottom of this file) --
-// there is no `ProtocolError`/`handleMessage()` pair left in this file to
-// catch that case.
+// Every advertised tool dispatches through stockDispatch.dispatchStock(),
+// which owns its own reconnect and epoch-drift handling (stock-connect.ts).
+// This proxy layer performs no per-call epoch re-check of its own -- the
+// generic forwarding function that once needed one here is gone. Malformed
+// `tools/call` params (a missing/non-string `name`) are rejected one layer
+// further out, by the SDK's own `CallToolRequestSchema` zod validation
+// (installed at the construction site near the bottom of this file).
 //
-// Two hazards are enforced HERE, at the proxy seam, as independent layers on
-// top of what `call()` already does internally:
-//
-//   1. vice_disk_list refusal. `call()` already refuses it (throwing a
-//      ViceError), but this proxy refuses it FIRST, before any forwarding
-//      logic runs and before any network attempt, so the refusal is
-//      observable with zero HTTP traffic and a well-formed MCP frame rather
-//      than one more layer of catch between the hazard and the answer.
-//
-//   2. Per-call epoch re-check (decision D-D). The proxy does NOT call
-//      assertSameMachine() and does NOT probe vice_checkpoint_list -- a
-//      state-reading call that pauses the emulated CPU and never resumes it,
-//      and the proxy arms no checkpoints of its own to probe with anyway.
-//      The narrowed contract is a plain readEpoch() comparison, before AND
-//      after every forwarded call: a changed epoch refuses the call (or
-//      discards its result, if the change happened mid-call) with a loud,
-//      evidence-carrying error naming both epoch values, then adopts the new
-//      value as the baseline so the SESSION stays usable -- a restart report
-//      is never cached, per criterion 6.
 // NEVER-CACHE-A-NEGATIVE-RESULT INVARIANT (plan 01.1-03 task 1, criterion 6;
 // extended to the broker path by plan 01.2-03 task 1, C11): nothing below
-// this line may memoise "the host is down" -- or, as of this extension,
-// "the broker is absent" -- as a fact that outlives a single tools/call.
-// There is no cached probe verdict, no sticky "last known unreachable" flag,
-// and no early-return short-circuit keyed off a PREVIOUS failure -- every
-// forwarded tools/call re-evaluates reachability from scratch (the epoch
-// check below reads the file fresh every time; the liveness probe added in
-// task 2 does its own fresh network round trip every time; task 3's
-// translation runs fresh every time; ensureBrokerLease()'s
-// readBrokerLiveness() call reads broker.json fresh every time it is
-// reached, never memoised at module scope). This is deliberate and easy to
-// break by a later, performance-minded edit ("let's skip the probe if we
-// just failed one 200ms ago", or "let's remember the broker was absent last
-// call so we don't bother checking again") -- don't, for either path. A
-// cached negative here is exactly the "quiet wrong answer" failure class
-// this codebase rejects elsewhere (MachineRestartedError, the epoch
-// re-check itself): the call after a human starts the broker must just
-// work, with no session restart required.
-let viceSession: SessionInfo | null = null; // beginSession()'s return value, set lazily on the first forwarded call
-let epochBaseline: EpochResult | null = null; // the rolling comparison point; updated on every re-baseline
-
-function ensureViceSession(): void {
-  if (!viceSession) {
-    viceSession = beginSession();
-    epochBaseline = viceSession.baseline;
-  }
-}
-
-function currentEpoch(): EpochResult {
-  return readEpoch((viceSession as SessionInfo).epochPath);
-}
-
-function epochChanged(baseline: EpochResult | null, current: EpochResult | null): boolean {
-  return Boolean(baseline?.present) && Boolean(current?.present) && baseline!.epoch !== current!.epoch;
-}
-
-function epochDriftMessage(when: string, baseline: EpochResult, current: EpochResult): string {
-  const pidNote = current && current.pid != null ? `, pid ${current.pid}` : "";
-  const spawnedNote = current && current.spawned_at ? `, spawned_at ${current.spawned_at}` : "";
-  return (
-    `vice: treat every result since the previous call as void and redo that work -- epoch drift was ` +
-    `detected ${when} (epoch changed from ${baseline.epoch} to ${current.epoch}${pidNote}${spawnedNote}).`
-  );
-}
-
-/**
- * Compare the rolling baseline against a fresh epoch read. Returns an error
- * MESSAGE string if the comparison proves a restart (and re-baselines to the
- * new value so the next call is not refused again), or `null` if the call
- * may proceed (including the "absent baseline, now present" case, which is
- * adopted silently -- a supervisor merely started, not a restart, mirroring
- * vice.ts's own "only compare when both are present" rule).
- */
-function checkEpochAndRebaseline(when: string): string | null {
-  const current = currentEpoch();
-  if (epochChanged(epochBaseline, current)) {
-    const msg = epochDriftMessage(when, epochBaseline as EpochResult, current);
-    epochBaseline = current; // never cache a negative result (criterion 6)
-    return msg;
-  }
-  if (!(epochBaseline as EpochResult).present && current.present) {
-    epochBaseline = current;
-  }
-  return null;
-}
+// this line may memoise "the broker is absent" as a fact that outlives a
+// single tools/call. There is no cached probe verdict, no sticky "last known
+// unreachable" flag, and no early-return short-circuit keyed off a PREVIOUS
+// failure -- ensureBrokerLease()'s readBrokerLiveness() call reads
+// broker.json fresh every time it is reached, never memoised at module
+// scope. This is deliberate and easy to break by a later, performance-minded
+// edit ("let's remember the broker was absent last call so we don't bother
+// checking again") -- don't. A cached negative here is exactly the "quiet
+// wrong answer" failure class this codebase rejects elsewhere
+// (MachineRestartedError): the call after a human starts the broker must
+// just work, with no session restart required.
 
 interface ErrorTextResult {
   content: { type: "text"; text: string }[];
@@ -802,7 +719,7 @@ const ONLY_ROUTE_NOTE =
  * SET_ENV_HINT exactly as install-resources.ts's hostLaunchInstructions()
  * does, so a translation failure still yields something to act on rather
  * than an empty message. Recomputed fresh every call -- never cached (see
- * the never-cache-a-negative-result invariant above ensureViceSession()).
+ * the never-cache-a-negative-result invariant above, near tools/call).
  * Points at resources/vice-launcher.sh's deployed copy -- the one surviving
  * host script (01.6.2-09). Every message in this file that used to name
  * either the retiring per-instance supervisor (vice-supervisor.sh) or the
@@ -1324,9 +1241,9 @@ async function ensureBrokerLease(): Promise<BrokerLeaseResult> {
   // re-reads broker.json fresh on every call (see its own implementation in
   // vice-broker-client.ts); nothing here memoises the verdict, so this is the
   // broker-path instance of the same never-cache-a-negative-result invariant
-  // the comment above ensureViceSession() already states for the host path --
-  // the call after a human starts the broker just works, with no session
-  // restart required. openBrokerControl() performs this SAME classification
+  // stated near tools/call above -- the call after a human starts the
+  // broker just works, with no session restart required. openBrokerControl()
+  // performs this SAME classification
   // again internally (over its own read of broker.json) before it ever
   // connects -- a second, independent read, not a second answer to trust
   // instead of this one; fetching liveness here first is what gives the
@@ -1437,7 +1354,6 @@ async function ensureBrokerLease(): Promise<BrokerLeaseResult> {
   // handleGrantedInstanceUnreachable() below) -- one code path for adopting
   // an instance, never a second one for a replacement.
   adoptGrant({ ...result.grant });
-  viceSession = null; // re-baseline: the next ensureViceSession() reads the GRANTED instance's own epoch file
   controlSession = session;
   return { ok: true, lease: buildHeldLease(session) };
 }
@@ -1502,10 +1418,10 @@ function adoptGrant(grant: Record<string, unknown>): void {
 // through buildViceTool() to stockDispatch.dispatchStock() (see the
 // registration loop below) -- there is no surviving generic-dispatch
 // surface for a derived tool to slip behind, matching this plan's own
-// prohibition against re-opening the nested-argument hazard DENY_LIST
-// exists to close. Stock has no equivalent probe-then-replace step at this
-// proxy layer; a dead lease surfaces through stockDispatch's own error
-// handling instead.
+// prohibition against re-opening the nested-argument hazard an outer-name
+// refusal array used to close. Stock has no equivalent probe-then-replace
+// step at this proxy layer; a dead lease surfaces through stockDispatch's
+// own error handling instead.
 
 // -------------------------------------------------------------- teardown
 //
@@ -1654,28 +1570,19 @@ function buildViceTool(def: ToolDefinition, run: (args: Record<string, unknown>)
   });
 }
 
-// Plan 01.6.3-02's tracer proved this mechanism on `vice_ping` alone
-// (TRACER_MANIFEST_TOOL_NAMES, since removed). Plan 01.6.3-03 widens the
-// input set to the FULL manifest -- the loop body itself is unchanged from
-// the tracer: no per-tool special case, only the same DENY_LIST filter
-// already proven in Plan 02. The manifest also lists the host's own
-// generic-surface meta-tools (`tools_call`/`tools_list`/`initialize`/
-// `notifications_initialized`) as ordinary tools; 01.6.3-03 registered them
-// like any other manifest entry (a real, disclosed generic-dispatch risk it
-// did not itself widen -- see the CallToolRequestSchema override below for
-// the historical shape of that risk), and 01.4-01 (tasks 1+2) closed it by
-// adding all four to DENY_LIST itself, so this SAME skip now filters them
-// out of `tools` at construction time exactly like vice_disk_list always
-// was.
-//
-// Construction-time, not read-time -- a deliberate, disclosed narrowing this
-// plan records explicitly: tools/list is now served entirely by MCPServer's
-// own ListToolsRequestSchema handler (unmodified, not overridden), reading
-// from this SAME `tools` object, so vice_disk_list's absence from it is the
-// ONLY enforcement discovery-time needs any more -- no separate filter
-// function runs at read time. A manifest hot-reload mid-session is
-// therefore no longer picked up until the proxy restarts; the manifest is
-// regenerated by a manual, rare build step, never mid-session in practice.
+// This loop registers every tool the active manifest advertises. It used
+// to skip a fixed outer-name refusal array covering the fork HTTP server's
+// own generic-surface meta-tools (`tools_call`/`tools_list`/`initialize`/
+// `notifications_initialized`, all of which the fork's manifest advertised
+// as ordinary forwardable tools) plus `vice_disk_list` (a tool known to
+// crash that same server). Both the fork manifest and the refusal array are
+// gone: the manifest this loop reads never advertised any of those names,
+// so there is nothing left to skip -- every entry registers unconditionally.
+// tools/list is served entirely by MCPServer's own ListToolsRequestSchema
+// handler (unmodified, not overridden), reading from this SAME `tools`
+// object. A manifest hot-reload mid-session is not picked up until the
+// proxy restarts; the manifest is regenerated by a manual, rare build step,
+// never mid-session in practice.
 //
 // The per-backend registration seam this section used to describe
 // (D-09, CR-07) is deleted: every tool this file
@@ -1689,7 +1596,6 @@ const tools: Record<string, ReturnType<typeof buildViceTool>> = {};
 // never re-read per registration (WR-07, plan 07-16).
 const manifestTools = readManifestTools();
 for (const def of manifestTools) {
-  if (DENY_LIST.includes(def.name)) continue;
   tools[def.name] = buildViceTool(def, (args) => dispatchStockFor(def.name, args));
 }
 // Backend-INDEPENDENT by construction: handleResultContinue() is served
@@ -1720,10 +1626,10 @@ tools[DIAGNOSE_TOOL.name] = buildViceTool(stockDispatch.resolveAdvertisedToolDef
 // manifest would be silently wiped on the next refresh.
 // Registered here via buildViceTool() directly (the SAME pattern
 // RESULT_CONTINUE_TOOL above uses), so no anno_* runner ever reaches
-// stockDispatch or ensureViceSession(): there is no generic-dispatch surface
-// left anywhere in this file for a derived tool's runner to slip behind, so
-// this exemption cannot be violated by omission the way it could when a
-// fork-only forwarding path still existed.
+// stockDispatch: there is no generic-dispatch surface left anywhere in this
+// file for a derived tool's runner to slip behind, so this exemption cannot
+// be violated by omission the way it could when a fork-only forwarding path
+// still existed.
 // Deliberately NOT named `def` (the manifest loop's own loop variable,
 // above): `stock-dispatch.test.ts`'s `proxyToolRegistrations()` regex-scans
 // this file's own `tools[...] = ...;` lines and keys each one by its raw
@@ -1746,56 +1652,20 @@ await server.startStdio();
 // dispatch always forces isError:false on success and prepends "Error: " on
 // a thrown failure (read directly from @mastra/mcp's compiled source this
 // session, not its docs), which matches neither this file's own
-// {content, isError} contract nor the deny-list's exact refusal wording a
+// {content, isError} contract nor a capability refusal's exact wording a
 // pre-existing test pins verbatim -- so tools/call is answered entirely by
 // this override, never by MCPServer's own handler. tools/list is NOT
 // overridden -- MCPServer's own ListToolsRequestSchema handler answers it,
 // the one piece of genuine library value this swap adopts.
 server.getServer().setRequestHandler(CallToolRequestSchema, async (request) => {
   const name = request.params.name;
-  // Layer 1 (unchanged mechanism, now here instead of the retired
-  // handleToolsCall()): call-time deny-list refusal, before any tool lookup
-  // and before any network attempt -- independent from `tools`'s own
-  // construction-time absence of vice_disk_list (layer 2, the
-  // discovery-time enforcement tools/list reads from). Removing either
-  // layer leaves the other standing.
-  if (DENY_LIST.includes(name)) {
-    return {
-      content: [{ type: "text", text: denyListRefusalMessage(name) }],
-      isError: true,
-    };
-  }
-  // CLOSED BY 01.4-01 (tasks 1+2), closing Phase 01.4 criterion 3's
-  // already-recorded open breach concern. This check inspects only the
-  // OUTER `name` -- the literal MCP tool being called -- and always has;
-  // that outer-name-only shape is unchanged by this fix and is NOT itself
-  // the hazard. The hazard was that the manifest also lists the host's own
-  // generic-surface meta-tools (`tools_call`/`tools_list`/`initialize`/
-  // `notifications_initialized`) as ordinary forwardable tools, and
-  // `tools_call` specifically could carry a forbidden name (e.g.
-  // `vice_disk_list`) as a NESTED `arguments.name`, bypassing this exact
-  // guard by never presenting the forbidden name as the OUTER one. All four
-  // meta-tool names are now themselves on DENY_LIST (task 1 added
-  // `tools_list`; task 2 added `tools_call`, `initialize` and
-  // `notifications_initialized` after confirming, via a repo-wide grep, that
-  // none has a sanctioned caller): `tools_call` itself is refused before its
-  // own nested argument is ever read, closing the bypass without teaching
-  // this guard to parse nested argument shapes -- one array, no new
-  // mechanism, exactly 01.4-RESEARCH.md's own Pattern 1 and primary
-  // recommendation. The historical bypass-proving test in
-  // vice-proxy.test.ts is repointed (not deleted) to assert this closure.
-  // Full history in 01.6.3-03-SUMMARY.md and
-  // .planning/todos/pending/2026-08-05-generic-surface-deny-list-gap-tools-call-nested-vice-disk-list.md.
   const tool = tools[name];
   if (!tool || !tool.execute) {
-    // Layer 3 (BACK-05, plan 08-02): fires ONLY when the ACTIVE backend's
-    // trimmed manifest (D-07) never registered this name -- i.e. `tools`
-    // has no key for it -- and MUST stay strictly after the DENY_LIST check
-    // above: those four meta-tool names are a confused-deputy bypass hazard
-    // (01.4-01), not a capability gap, and must never be reachable here.
-    // This lookup renders undefined for a genuinely unknown name (or a
-    // same-backend miss), so a real typo still falls through to the generic
-    // message below unchanged. capability-registry.ts is the ONE place to
+    // Fires ONLY when the ACTIVE backend's trimmed manifest (D-07) never
+    // registered this name -- i.e. `tools` has no key for it. This lookup
+    // renders undefined for a genuinely unknown name (or a same-backend
+    // miss), so a real typo still falls through to the generic message
+    // below unchanged. capability-registry.ts is the ONE place to
     // edit this data -- never hand-add a per-tool special case here.
     const capabilityRefusal = capabilityRefusalMessage(name, ACTIVE_BACKEND.backend);
     if (capabilityRefusal !== undefined) {

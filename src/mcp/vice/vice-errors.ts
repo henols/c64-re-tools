@@ -12,15 +12,13 @@
 // limitations, a related but separate concern.
 //
 // WHAT NOT TO DO:
-//   - Never move fork-transport code here: call(), rpc(), ensureInitialized(),
-//     withReconnect(), DENY_LIST, denyListRefusalMessage(), or the session-
-//     identity apparatus (SessionInfo, beginSession(), sessionReconnects(),
-//     lastToolCall(), assertSameMachine()). Those speak the fork's HTTP/
-//     JSON-RPC protocol and stay in vice.ts for as long as it exists.
-//   - Never let this module import anything from ./vice.ts. This module is
-//     deliberately backend-agnostic; a lingering import back into vice.ts
-//     is the sign a symbol was left behind during the split, not a
-//     legitimate dependency.
+//   - The fork transport (call(), rpc(), ensureInitialized(), withReconnect(),
+//     the outer-name refusal array and its refusal-message builder, and the
+//     session-identity apparatus: SessionInfo, beginSession(),
+//     sessionReconnects(), lastToolCall(), assertSameMachine()) was deleted
+//     along with vice.ts once it had no remaining stock-path consumer. Never
+//     reintroduce any of it here -- this module is backend-agnostic by
+//     design, and none of that apparatus has a place to come back to.
 import { resolve, join } from "node:path";
 import { readFileSync } from "node:fs";
 

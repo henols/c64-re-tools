@@ -30,7 +30,6 @@ import type { DerivedPureHandler } from "./stock-derived.ts";
 import { encodeResponseFrame } from "./binmon-fixtures.ts";
 import { capabilityRefusalMessage } from "./capability-registry.ts";
 import { MachineRestartedError, type ToolInfo } from "./vice-errors.ts";
-import { DENY_LIST } from "./vice.ts";
 import { MonitorOwnershipError } from "./vice-broker-client.ts";
 import type { HeldLease, BrokerControlSession } from "./vice-broker-client.ts";
 import type { StockConnectSession, StockConnectOptions } from "./stock-connect.ts";
@@ -54,7 +53,6 @@ import {
 } from "./stock-checkpoints.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const FORK_MANIFEST_PATH = join(HERE, "tools-manifest.json");
 const STOCK_MANIFEST_PATH = join(HERE, "tools-manifest.stock.json");
 
 interface JsonSchemaObject {
@@ -126,17 +124,6 @@ const STOCK_ONLY_TOOLS = new Set([
 // mislabelled stock-only).
 const PROXY_LOCAL_TOOLS = new Set(["vice_diagnose", "vice_recycle"]);
 
-// D-09/plan 03-13: the ONE inputSchema property permitted to omit "type"
-// entirely rather than matching the fork's declared type. The fork types
-// vice_checkpoint_set_condition's `condition` as a bare string; stock accepts
-// EITHER a condition string OR a structured condition object (D-09), which
-// checkAgainstSchema()'s supported subset cannot express as a union (no
-// oneOf/anyOf) -- so this one property deliberately has no "type" keyword at
-// all (see tools-manifest.stock.json's own entry and its description). A
-// second entry here would need the same D-09-style justification, never a
-// silent widening of the general type-equality rule below.
-const TYPE_CHECK_EXEMPT_PROPERTIES = new Set(["vice_checkpoint_set_condition.condition"]);
-
 // --------------------------------------------------------- manifestPathForBackend
 
 test("manifest/backend: fork with no override resolves to <hereDir>/tools-manifest.json", () => {
@@ -159,12 +146,10 @@ test("manifest/backend: VICE_TOOLS_MANIFEST override wins for the stock backend 
 
 // --------------------------------------------------------- tools-manifest.stock.json shape
 
-test("manifest/backend: tools-manifest.stock.json parses and carries the same three top-level keys as the fork manifest", () => {
+test("manifest/backend: tools-manifest.stock.json parses and carries the expected three top-level keys", () => {
   const stock = readManifest(STOCK_MANIFEST_PATH);
-  const fork = readManifest(FORK_MANIFEST_PATH);
   for (const key of ["generated_at", "endpoint", "tools"] as const) {
     assert.ok(key in stock, `stock manifest missing top-level key "${key}"`);
-    assert.ok(key in fork, `fork manifest missing top-level key "${key}"`);
   }
 });
 
@@ -193,27 +178,17 @@ test("manifest/backend: tools-manifest.stock.json's tools array contains a vice_
 // handoff to 03-13, per this plan's own verification section.
 // ---------------------------------------------------------------------------
 
-test("manifest/backend (D-03 name coverage): every non-stock-only, non-proxy-local stock tool has a fork counterpart; every STOCK_ONLY_TOOLS name is stock-only", () => {
+test("manifest/backend (D-03 name coverage): every STOCK_ONLY_TOOLS and PROXY_LOCAL_TOOLS name is present in the stock manifest, and the two sets are disjoint", () => {
+  // The fork-counterpart comparison this test used to run is gone along with
+  // the fork manifest and transport -- there is no second manifest left to
+  // compare against. What survives: both named sets are still real stock
+  // manifest entries, and PROXY_LOCAL_TOOLS is never mislabelled STOCK_ONLY_TOOLS.
   const stock = readManifest(STOCK_MANIFEST_PATH);
-  const fork = readManifest(FORK_MANIFEST_PATH);
-  const forkNames = new Set(fork.tools.map((t) => t.name));
-  for (const tool of stock.tools) {
-    if (PROXY_LOCAL_TOOLS.has(tool.name)) continue; // covered by the proxy-local assertions below
-    if (STOCK_ONLY_TOOLS.has(tool.name)) {
-      assert.ok(!forkNames.has(tool.name), `"${tool.name}" is in STOCK_ONLY_TOOLS but ALSO exists on the fork manifest -- it is not actually stock-only`);
-    } else {
-      assert.ok(forkNames.has(tool.name), `stock tool "${tool.name}" has no counterpart in the fork manifest, and is not in STOCK_ONLY_TOOLS`);
-    }
-  }
   for (const name of STOCK_ONLY_TOOLS) {
     assert.ok(stock.tools.some((t) => t.name === name), `STOCK_ONLY_TOOLS name "${name}" must be present in the stock manifest`);
   }
-  // PROXY_LOCAL_TOOLS: present on stock, absent from the fork manifest (served
-  // proxy-locally there too, never via tools-manifest.json), and explicitly
-  // NOT mislabelled as STOCK_ONLY_TOOLS -- both backends serve these names.
   for (const name of PROXY_LOCAL_TOOLS) {
     assert.ok(stock.tools.some((t) => t.name === name), `PROXY_LOCAL_TOOLS name "${name}" must be present in the stock manifest`);
-    assert.ok(!forkNames.has(name), `PROXY_LOCAL_TOOLS name "${name}" must be absent from the fork manifest (tools-manifest.json) -- it is served proxy-locally, never via that manifest`);
     assert.ok(!STOCK_ONLY_TOOLS.has(name), `PROXY_LOCAL_TOOLS name "${name}" must not also be in STOCK_ONLY_TOOLS -- both backends serve it, it is not stock-only`);
   }
 });
@@ -307,38 +282,13 @@ test("WR-07/resolveAdvertisedToolDefinition (guard): every PROXY_LOCAL_TOOLS nam
   }
 });
 
-test("manifest/backend (D-03 input compatibility): every stock/fork pair has equal required-argument SETS, and stock's extra properties are all optional on the fork side", () => {
-  const stock = readManifest(STOCK_MANIFEST_PATH);
-  const fork = readManifest(FORK_MANIFEST_PATH);
-  for (const tool of stock.tools) {
-    if (STOCK_ONLY_TOOLS.has(tool.name)) continue;
-    const match = fork.tools.find((t) => t.name === tool.name);
-    if (!match) continue; // covered by the name-coverage test above
-    const stockRequired = new Set(tool.inputSchema?.required ?? []);
-    const forkRequired = new Set(match.inputSchema?.required ?? []);
-    assert.deepEqual(stockRequired, forkRequired, `"${tool.name}": required-argument sets differ between backends`);
-
-    const forkProperties = match.inputSchema?.properties ?? {};
-    const stockProperties = tool.inputSchema?.properties ?? {};
-    for (const [propName, forkProp] of Object.entries(forkProperties)) {
-      const stockProp = stockProperties[propName];
-      assert.ok(stockProp, `"${tool.name}.${propName}": the fork declares this property, but stock does not`);
-      if (TYPE_CHECK_EXEMPT_PROPERTIES.has(`${tool.name}.${propName}`)) {
-        continue; // D-09: this property deliberately omits "type" -- see the named exemption set above
-      }
-      assert.equal(stockProp!.type, forkProp.type, `"${tool.name}.${propName}": type differs between backends`);
-    }
-    // Any property stock declares that the fork does not is an EXTRA -- D-03
-    // permits this only when the extra is genuinely optional on stock's own
-    // side (never in stock's own required list, checked above already since
-    // the required SETS are asserted equal).
-    for (const propName of Object.keys(stockProperties)) {
-      if (!(propName in forkProperties)) {
-        assert.ok(!stockRequired.has(propName), `"${tool.name}.${propName}": a stock-only extra property must not be required`);
-      }
-    }
-  }
-});
+// The D-03 input-compatibility test that used to live here (every stock/fork
+// pair has equal required-argument sets, stock's extras all optional on the
+// fork side) is deleted along with the fork manifest and transport: its
+// entire premise was a two-manifest comparison, and with one manifest there
+// is nothing left to compare. `manifest-arg-compat.test.ts` was the other,
+// more thorough guard over the same premise and is deleted whole for the
+// same reason.
 
 test("manifest/backend (bidirectional table/manifest agreement): every stock manifest entry has a dispatch handler, and every dispatch entry has a manifest entry", () => {
   const stock = readManifest(STOCK_MANIFEST_PATH);
@@ -527,13 +477,6 @@ test("manifest/backend (trimmed tools absent): none of the twelve decision-trimm
   const stock = readManifest(STOCK_MANIFEST_PATH);
   for (const [name, decisionId] of TRIMMED_TOOL_DECISIONS) {
     assert.ok(!stock.tools.some((t) => t.name === name), `"${name}" must not appear in the stock manifest (${decisionId})`);
-  }
-});
-
-test("manifest/backend: no DENY_LIST name appears in tools-manifest.stock.json", () => {
-  const stock = readManifest(STOCK_MANIFEST_PATH);
-  for (const name of DENY_LIST) {
-    assert.ok(!stock.tools.some((t) => t.name === name), `DENY_LIST name "${name}" must never appear in the stock manifest`);
   }
 });
 
@@ -1684,14 +1627,11 @@ test("structure/proxy (plan 29-01): the anno_* loop registration's runner is run
   }
 });
 
-test("structure/proxy (plan 29-01): every curated anno_* name is absent from BOTH tools-manifest.json and tools-manifest.stock.json", () => {
-  const fork = readManifest(FORK_MANIFEST_PATH);
+test("structure/proxy (plan 29-01): every curated anno_* name is absent from tools-manifest.stock.json", () => {
   const stock = readManifest(STOCK_MANIFEST_PATH);
-  const forkNames = new Set(fork.tools.map((t) => t.name));
   const stockNames = new Set(stock.tools.map((t) => t.name));
   assert.ok(CURATED_ANNO_TOOLS.length > 0, "the curated set must be non-empty for this assertion to mean anything");
   for (const name of CURATED_ANNO_TOOLS) {
-    assert.ok(!forkNames.has(name), `${name} is curated but present in the FORK manifest -- the anno_* family is served proxy-locally, in neither manifest, by design`);
     assert.ok(!stockNames.has(name), `${name} is curated but present in the STOCK manifest -- the anno_* family is served proxy-locally, in neither manifest, by design`);
   }
 });

@@ -37,7 +37,7 @@
 // `package.json`'s `"test"` script runs (`node --test '*.test.*'`) -- it is
 // imported BY test files, not itself a test file, and must never be collected
 // as one. It is a plain `.ts` module for the same reason
-// `fork-deleted-tools.ts` is: importing a `.test.ts` module for its exports
+// `acme-verify.ts` is: importing a `.test.ts` module for its exports
 // would also re-run every top-level `node:test` `test(...)` call that module
 // registers as an import side effect, silently duplicating that file's test
 // execution inside whatever file imports it.

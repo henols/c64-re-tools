@@ -38,7 +38,6 @@ import { dirname, join, relative, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { CAPABILITY_REGISTRY } from "../src/mcp/vice/capability-registry.ts";
-import { DENY_LIST } from "../src/mcp/vice/vice.ts";
 import {
   parseRootArg,
   resolveContainedRoot,
@@ -52,7 +51,6 @@ import {
  *  belongs here too. */
 const STATICALLY_BOUND = [
   { name: "CAPABILITY_REGISTRY", from: "../src/mcp/vice/capability-registry.ts" },
-  { name: "DENY_LIST", from: "../src/mcp/vice/vice.ts" },
 ];
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -232,13 +230,6 @@ export function generateToolSupportTable(options = {}) {
 
   const forkNames = new Set(forkManifest.tools.map((t) => t.name));
   const stockNames = new Set(stockManifest.tools.map((t) => t.name));
-
-  // Remove every DENY_LIST name from both sets -- host meta-tools, not
-  // capabilities, already carrying a different refusal shape (vice.ts).
-  for (const deniedName of DENY_LIST) {
-    forkNames.delete(deniedName);
-    stockNames.delete(deniedName);
-  }
 
   // Add the mechanically-discovered proxy-local synthetic names to BOTH
   // sets -- they are advertised on both backends regardless of which raw

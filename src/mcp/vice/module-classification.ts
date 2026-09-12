@@ -43,7 +43,7 @@
 //
 //     - THREE GLUE modules had prominent unprefixed consumers. The session
 //       lifecycle was imported by the stdio entry point directly; the tool
-//       surface was too; the CLI is reached from `vice-proxy.ts:299` plus
+//       surface was too; the CLI is reached from `vice-proxy.ts:290` plus
 //       four files under `scripts/`. `vice-proxy.ts` survives the substrate
 //       swap. Its imports of those three modules did NOT -- and ALL THREE
 //       ARE NOW GONE, exactly as this paragraph predicted before any of them
@@ -648,7 +648,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     verdict: "glue",
     basis: {
       consumers: [
-        { path: "src/mcp/vice/vice-proxy.ts", symbol: "runAnnoCli", line: 299 },
+        { path: "src/mcp/vice/vice-proxy.ts", symbol: "runAnnoCli", line: 290 },
         { path: "scripts/check-skill-tool-coverage.mjs", symbol: "parseAnnoCliVerbs", line: 59 },
         { path: "src/mcp/vice/anno-cli.test.ts", symbol: "runAnnoCli" },
       ],

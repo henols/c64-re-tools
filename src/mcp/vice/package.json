@@ -9,7 +9,6 @@
   "main": "vice-proxy.ts",
   "files": [
     "vice-proxy.ts",
-    "vice.ts",
     "vice-errors.ts",
     "vice-broker-client.ts",
     "host-tool-client.ts",
@@ -25,7 +24,6 @@
     "repo-root.ts",
     "install-resources.ts",
     "incident-record.ts",
-    "refresh-manifest.ts",
     "build.ts",
     "container-guard.mts",
     "backend-detect.mts",
@@ -96,7 +94,6 @@
     "anno-graphics.ts",
     "memmap-lookup.ts",
     "resources",
-    "tools-manifest.json",
     "tools-manifest.stock.json",
     "README.md",
     "THIRD-PARTY-NOTICES.md"

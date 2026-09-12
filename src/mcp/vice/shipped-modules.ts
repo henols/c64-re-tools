@@ -73,7 +73,7 @@
 // importing a `.test.ts` module for its exports also re-runs every top-level
 // `test(...)` call that module registers with the runner, as an import side
 // effect, silently duplicating that file's whole execution inside whichever
-// file imports it. `fork-deleted-tools.ts` and `anno-test-gate.ts` state both
+// file imports it. `acme-gate.ts` and `acme-verify.ts` state both
 // rules for themselves; this module is the third instance of the same shape.
 //
 // WHAT NOT TO DO

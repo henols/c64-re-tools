@@ -42,14 +42,9 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, readdirSyn
 import { tmpdir, networkInterfaces } from "node:os";
 import { hostPath } from "./hostpath.ts";
 import { repoRoot } from "./repo-root.ts";
-// The real, live DENY_LIST -- imported (not re-hardcoded) so the full-manifest
-// parity test below stays correct as 01.4-01 grows this array task by task,
-// rather than drifting the moment a second entry (tools_list, this plan) is
-// added and this file's own copy is not updated in lockstep.
-import { DENY_LIST } from "./vice.ts";
-// Plan 11-05: the curated tool surface, imported (not re-hardcoded) for the
-// same reason DENY_LIST above is -- these tests must stay correct as the
-// curated set grows or shrinks, rather than drifting the moment a name
+// Plan 11-05: the curated tool surface, imported (not re-hardcoded) so
+// these tests stay correct as the curated set grows or shrinks, rather
+// than drifting the moment a name
 // changes and this file's own copy is not updated in lockstep.
 // Repointed after plan 29-10's merge: `CURATED_ANNO_TOOLS` died with
 // `anno-tools.ts`; `CURATED_ANNO_TOOLS` (anno-tools.ts) is its successor,
@@ -837,7 +832,9 @@ test("structural: the construction-time tools registry itself filters DENY_LIST,
 test("tools/list's full output matches the manifest exactly (name set, order, schema, _meta cap) except for DENY_LIST's deliberate absence", async () => {
   const manifestText = readFileSync(join(HERE, "tools-manifest.json"), "utf8");
   const manifest = JSON.parse(manifestText);
-  const DENY_LISTED = new Set(DENY_LIST);
+  // The fork's outer-name refusal array is gone along with the fork
+  // transport; nothing is filtered out of the manifest here any more.
+  const DENY_LISTED = new Set<string>();
   const expectedManifestNames = manifest.tools.map((t: any) => t.name).filter((n: string) => !DENY_LISTED.has(n));
   const expectedOrder = [...expectedManifestNames, "vice_result_continue", "vice_recycle", "vice_diagnose", ...CURATED_ANNO_TOOLS];
   const manifestSchemaByName: Record<string, unknown> = Object.fromEntries(

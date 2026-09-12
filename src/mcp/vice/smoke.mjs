@@ -2,7 +2,7 @@
 // Smoke test for the published @henols/vice-mcp package: spawn the server bin
 // exactly as a consumer would (node running the shipped vice-proxy.ts under
 // native type-stripping), complete an MCP `initialize` handshake over stdio,
-// and assert `tools/list` is answered from tools-manifest.json. This proves,
+// and assert `tools/list` is answered from tools-manifest.stock.json. This proves,
 // end to end, that (a) node type-strips the .ts entry with no flags, (b) every
 // file the `files` whitelist ships resolves at runtime, and (c) the MCP stdio
 // transport works -- without needing a live host VICE server (initialize and

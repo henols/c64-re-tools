@@ -39,7 +39,7 @@ Add it to your MCP client configuration and let the client launch it:
 ```
 
 The bin (`vice-mcp`) speaks the MCP stdio protocol. `initialize` and `tools/list`
-are answered locally (from `tools-manifest.json`); `tools/call` forwards to the host
+are answered locally (from `tools-manifest.stock.json`); `tools/call` forwards to the host
 VICE MCP server.
 
 ## Environment
