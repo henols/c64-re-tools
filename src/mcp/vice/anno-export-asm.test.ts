@@ -77,7 +77,7 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -4604,4 +4604,106 @@ test("tree adjacency: a range starting exactly one byte past a scope's last byte
   const unscopedText = readFileSync(join(outDirWithoutSecond, UNSCOPED_FILE_NAME), "utf8");
   const blockUnscoped = resultWithoutSecond.blocks.find((b) => b.start === 0x0807)!;
   assert.ok(unscopedText.includes(blockUnscoped.lines[0]!), "with no second scope, the same range must land in unscoped.a");
+});
+
+// ---------------------------------------------------------------------------
+// Phase 47, plan 47-02, Task 2: the output-directory contract -- refuse
+// rather than scribble, and never delete what this export did not write.
+// ---------------------------------------------------------------------------
+
+test("exportAsmTree output-directory contract: a non-existent output directory is created and the tree is written", () => {
+  const fixture = oneScopeFixture("tree-outdir-missing");
+  const outDir = join(fixture.dir, "does-not-exist-yet", "tree");
+  assert.ok(!existsSync(outDir), "the output directory must not already exist before the export -- this test is about creating it");
+
+  const result = exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir });
+
+  assert.ok(existsSync(outDir), "exportAsmTree must create a missing output directory recursively");
+  assert.deepEqual(readdirSync(outDir).sort(), [...result.files].sort());
+});
+
+test("exportAsmTree output-directory contract: an existing EMPTY output directory is written into", () => {
+  const fixture = oneScopeFixture("tree-outdir-empty");
+  const outDir = join(fixture.dir, "tree");
+  mkdirSync(outDir, { recursive: true });
+  assert.deepEqual(readdirSync(outDir), [], "the directory must genuinely be empty before this test means anything");
+
+  const result = exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir });
+
+  assert.deepEqual(readdirSync(outDir).sort(), [...result.files].sort());
+});
+
+test("exportAsmTree output-directory contract: a non-empty output directory WITHOUT `force` refuses, naming the directory and the overwrite, and writes nothing", () => {
+  const fixture = oneScopeFixture("tree-outdir-nonempty-noforce");
+  const outDir = join(fixture.dir, "tree");
+  mkdirSync(outDir, { recursive: true });
+  const strayPath = join(outDir, "stray.txt");
+  writeFileSync(strayPath, "do not touch me", "utf8");
+
+  assert.throws(
+    () => exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir }),
+    (err: unknown) => {
+      assert.ok(err instanceof Error);
+      assert.ok(err.message.includes(outDir), `the message must name the directory: ${err.message}`);
+      assert.match(err.message, /force/i, `the message must name the explicit overwrite as the way to ask for it: ${err.message}`);
+      return true;
+    },
+  );
+
+  assert.equal(readFileSync(strayPath, "utf8"), "do not touch me", "the pre-existing file must be byte-unchanged after the refusal");
+  assert.deepEqual(readdirSync(outDir), ["stray.txt"], "nothing must have been written alongside the pre-existing file");
+});
+
+test("exportAsmTree output-directory contract: `force: true` re-writes a directory holding a PREVIOUS export of the same store, byte-identical to the first export", () => {
+  const fixture = oneScopeFixture("tree-outdir-force-reexport");
+  const outDir = join(fixture.dir, "tree");
+  const first = exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir });
+  const firstBytesByName = new Map(first.files.map((name) => [name, readFileSync(join(outDir, name))] as const));
+
+  const second = exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir, force: true });
+
+  assert.deepEqual([...second.files].sort(), [...first.files].sort(), "force: true must re-write the SAME file-name set for an unchanged store");
+  for (const name of second.files) {
+    assert.deepEqual(readFileSync(join(outDir, name)), firstBytesByName.get(name), `${name} must be byte-identical to the first export`);
+  }
+});
+
+test("exportAsmTree output-directory contract: `force: true` still refuses a directory holding one file this export would NOT write, naming it, and leaves it byte-unchanged", () => {
+  const fixture = oneScopeFixture("tree-outdir-force-stray");
+  const outDir = join(fixture.dir, "tree");
+  exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir });
+  const strayPath = join(outDir, "not-mine.a");
+  writeFileSync(strayPath, "human-authored content", "utf8");
+
+  assert.throws(
+    () => exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir, force: true }),
+    (err: unknown) => {
+      assert.ok(err instanceof Error);
+      assert.ok(err.message.includes("not-mine.a"), `the message must name the file this export would not write: ${err.message}`);
+      return true;
+    },
+  );
+
+  assert.equal(
+    readFileSync(strayPath, "utf8"),
+    "human-authored content",
+    "a file this export never wrote must be byte-unchanged after the refusal -- force never deletes to make room",
+  );
+});
+
+test("exportAsmTree output-directory contract: root.a's modification time is >= every other written file's -- the interruption guard, not a cosmetic choice", () => {
+  const fixture = oneScopeFixture("tree-outdir-root-last");
+  const outDir = join(fixture.dir, "tree");
+  const result = exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir });
+
+  const rootMtime = statSync(join(outDir, ROOT_FILE_NAME)).mtimeMs;
+  for (const name of result.files) {
+    if (name === ROOT_FILE_NAME) continue;
+    const otherMtime = statSync(join(outDir, name)).mtimeMs;
+    assert.ok(
+      rootMtime >= otherMtime,
+      `root.a's mtime must be >= ${name}'s -- a tree whose root exists is a tree every file it sources exists for, ` +
+        `and that ordering is what makes an interrupted export leave nothing an assembler would happily turn into a wrong program`,
+    );
+  }
 });

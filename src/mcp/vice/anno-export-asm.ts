@@ -87,7 +87,7 @@
 // SCOPE, STILL DELIBERATELY NARROW: code ranges, the twelve typed data ranges,
 // comments, mid-instruction inline labels and immediate-operand enum
 // substitution.
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { extname, join } from "node:path";
 
 import { openStore, closeStore, listRanges, listLabels, listComments, listProjectEnums, listEnumUsage, listExcludedRanges, listScopes } from "./anno-store.ts";
@@ -1742,9 +1742,16 @@ export interface ExportAsmTreeOptions extends ExportAsmOptions {
    * constants above), so nothing the caller supplies can escape it a second
    * time. */
   outDir: string;
-  /** Reserved for plan 47-03's "never silently overwrite a human-edited data
-   * file" refusal (P-02). This task does not implement that guard -- its own
-   * scope is writing a tree to a fresh directory. */
+  /**
+   * Phase 47, plan 47-02, Task 2: what the CALLER IS ASKING FOR, not a
+   * switch that widens what this function is willing to destroy. Set, it
+   * means "this directory already holds a tree I exported before -- replace
+   * it." It deliberately does NOT mean "remove whatever is in my way": a
+   * directory entry that is not one of this export's own file names is
+   * refused by name even with `force: true`, never deleted to make room for
+   * the write. See `exportAsmTree()`'s own doc-comment for the two-rule
+   * contract this field gates.
+   */
   force?: boolean;
 }
 
@@ -1845,7 +1852,6 @@ function placeBlockInScope(block: ExportBlock, sortedScopes: readonly ScopeRow[]
 export function exportAsmTree(options: ExportAsmTreeOptions): ExportAsmTreeResult {
   const result = exportAsm(options);
   const { outDir } = options;
-  mkdirSync(outDir, { recursive: true });
 
   const sortedScopes = [...result.scopes].sort((a, b) => a.start - b.start);
   // Keyed by scope START (D47-B's own file-naming key), never by scope id --
@@ -1869,6 +1875,63 @@ export function exportAsmTree(options: ExportAsmTreeOptions): ExportAsmTreeResul
     else scopeBlocks.set(placement.start, [block]);
   }
 
+  // The FULL set of names this call will write, computed BEFORE any write and
+  // BEFORE the directory-contract check below reads it: the placement pass
+  // above already knows exactly which scopes are populated and whether any
+  // block is unscoped, so this is arithmetic over what is already decided,
+  // never a guess revised after the fact.
+  const populatedScopeStarts = [...scopeBlocks.keys()].sort((a, b) => a - b);
+  const hasUnscoped = unscopedBlocks.length > 0;
+  const namesToWrite = [
+    SYMBOLS_FILE_NAME,
+    ...populatedScopeStarts.map((start) => scopeFileName(start)),
+    ...(hasUnscoped ? [UNSCOPED_FILE_NAME] : []),
+    ROOT_FILE_NAME,
+  ];
+
+  // ---------------------------------------------------------------------
+  // Phase 47, plan 47-02, Task 2: the output-directory contract. Two rules,
+  // both evaluated BEFORE the first write below -- a refusal that has
+  // already written half a tree has left an artefact a later assemble might
+  // succeed on (the same reason the placement pass above runs to completion
+  // before any write).
+  //
+  // Rule one, without `force`: a directory holding ANY entry at all is
+  // refused by name, unconditionally. An export writes a whole tree and will
+  // not mix its files with whatever the directory already held.
+  //
+  // Rule two, with `force`: the caller is asking "this directory already
+  // holds a tree I exported before, replace it" -- never "remove whatever is
+  // in my way". Anything in the directory that is NOT one of `namesToWrite`
+  // is refused by name; nothing is ever deleted to make room for it. The
+  // `.bin` files this export writes are the ones a person is expected to
+  // edit by hand, so replacing them is something the user has to ask for,
+  // and a directory the user pointed at by mistake must not lose a file this
+  // tool never created.
+  // ---------------------------------------------------------------------
+  const existingEntries = existsSync(outDir) ? readdirSync(outDir) : [];
+  if (existingEntries.length > 0) {
+    if (!options.force) {
+      throw new Error(
+        `exportAsmTree: the output directory "${outDir}" already holds ${existingEntries.length} ` +
+          `${existingEntries.length === 1 ? "entry" : "entries"} -- refusing to write into it. An export writes a whole tree and will ` +
+          `not mix its files with whatever is already there. Pass \`force: true\` to ask for the overwrite explicitly if this directory ` +
+          `holds a previous export of this same store.`,
+      );
+    }
+    const namesToWriteSet = new Set(namesToWrite);
+    const unexpected = existingEntries.filter((entry) => !namesToWriteSet.has(entry));
+    if (unexpected.length > 0) {
+      throw new Error(
+        `exportAsmTree: the output directory "${outDir}" holds ${JSON.stringify(unexpected)}, which this export would NOT write -- ` +
+          `refusing the overwrite. \`force: true\` means "replace the tree I exported here before", never "remove whatever is in my ` +
+          `way": every name this export itself produces may be overwritten, but any other entry is left untouched. Remove it yourself, ` +
+          `or point --out at an empty directory.`,
+      );
+    }
+  }
+  mkdirSync(outDir, { recursive: true });
+
   const files: string[] = [];
   const sourceOrder: string[] = [];
 
@@ -1885,7 +1948,7 @@ export function exportAsmTree(options: ExportAsmTreeOptions): ExportAsmTreeResul
   sourceOrder.push(SYMBOLS_FILE_NAME);
 
   // One scope_XXXX.a per POPULATED scope, ascending by scope start (D47-B).
-  const populatedScopeStarts = [...scopeBlocks.keys()].sort((a, b) => a - b);
+  // `populatedScopeStarts` was already computed above, for `namesToWrite`.
   for (const scopeStart of populatedScopeStarts) {
     const name = scopeFileName(scopeStart);
     const blocksInScope = [...scopeBlocks.get(scopeStart)!].sort((a, b) => a.start - b.start);
