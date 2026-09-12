@@ -124,7 +124,7 @@
 // This absence is asserted structurally by `hostpath-consumers.test.ts`
 // (D-08), not merely stated here.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, dirname, extname, join } from "node:path";
+import { basename, dirname, extname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { renderMemoryMap, checkRenderedMemoryMap } from "./anno-memmap-render.ts";
@@ -134,8 +134,8 @@ import { renderMemoryMap, checkRenderedMemoryMap } from "./anno-memmap-render.ts
 // NOT imported here and must never be: it is test-only (it is absent from
 // `package.json`'s `files[]` on purpose), so a shipped module importing it
 // would drag it into the published closure `check-npm-packages.mjs` walks.
-import { exportAsm } from "./anno-export-asm.ts";
-import type { ExportAsmResult } from "./anno-export-asm.ts";
+import { exportAsmTree } from "./anno-export-asm.ts";
+import type { ExportAsmTreeResult } from "./anno-export-asm.ts";
 // The coverage instrument (COV-01/COV-02). It declares its own input shapes
 // and never reads a store, a file or a tool on its own behalf -- a caller
 // fetches and hands the data in, which is exactly what makes the store
@@ -246,19 +246,32 @@ verbs:
       claim unfalsifiable, because any one weak measure can be hidden by
       averaging it against a strong one.
 
-  export-asm <image> --store FILE [--out FILE] [--ledger FILE] [--force]
-      Writes ACME source for a program from its annotation store. <image>
-      supplies the PAYLOAD BYTES and the load origin; --store names the
-      ANNOTATION STORE holding the ranges, labels, comments and enums. Those
-      are two separate files on purpose, and NEITHER IS DERIVED FROM THE
-      OTHER: the store holds annotations and never bytes, so an exporter has
-      to be told which bytes it is describing and this verb refuses to guess
-      one from the other.
-      The default --out is the image's basename with a .a extension, in the
-      STORE's own directory. That derived default is put through the SAME
-      confinement seam as a caller-supplied --out, rather than trusted
-      because this verb computed it. An existing destination is refused
-      unless --force is passed.
+  export-asm <image> --store FILE [--out DIR] [--ledger FILE] [--force]
+      Writes a TREE of ACME source files for a program from its annotation
+      store into --out, a DIRECTORY (D47-A: one output shape at every layer,
+      never a second one for a store with no scopes). <image> supplies the
+      PAYLOAD BYTES and the load origin; --store names the ANNOTATION STORE
+      holding the ranges, labels, comments and enums. Those are two separate
+      files on purpose, and NEITHER IS DERIVED FROM THE OTHER: the store
+      holds annotations and never bytes, so an exporter has to be told which
+      bytes it is describing and this verb refuses to guess one from the
+      other.
+      The tree's entry point is root.a, which !sources symbols.a (every
+      symbol definition) first, then one file per annotation scope, then
+      unscoped.a last for any block that lies inside no scope. A store with
+      no scopes yet still writes this same three-file shape -- root.a,
+      symbols.a, unscoped.a -- rather than a second, single-file output.
+      The default --out is a DIRECTORY beside the STORE: the image's basename
+      stem plus a fixed, extension-free suffix (no --out DIR should ever read
+      as a file). That derived default is put through the SAME confinement
+      seam as a caller-supplied --out, rather than trusted because this verb
+      computed it. The directory may not BE, and may not CONTAIN, the store,
+      the image or the ledger -- --force does not lift that refusal any more
+      than it lifts the single-file version of it did. A non-empty
+      destination is otherwise refused unless --force is passed, and --force
+      replaces only the names this export itself produces -- any other entry
+      already in the directory is refused by name, never deleted to make
+      room.
       --ledger names c64-provenance-diff's generated recovery/PROVENANCE.md.
       Supplying it makes the export carry each covered range's recorded
       Verdict and Confidence as inline comments (BUILD-05). It is OPTIONAL:
@@ -420,16 +433,16 @@ export function checkAcceptedOptions(verb: string, rest: string[]): string | und
 
 /**
  * Refuses to overwrite an existing file at `outPath` unless the caller
- * passed `--force`. Called by ALL THREE verbs that write an output file --
- * `cmdRenderMemmap()` (non-`--check` branch only; `--check` never writes),
- * `cmdCoverage()` and `cmdExportAsm()` -- so overwrite safety is uniform
- * rather than one verb accreting a check the others lack (CR-01/CR-02).
+ * passed `--force`. Called by the TWO verbs that write a single output FILE
+ * -- `cmdRenderMemmap()` (non-`--check` branch only; `--check` never writes)
+ * and `cmdCoverage()` -- so overwrite safety is uniform across both rather
+ * than one verb accreting a check the other lacks (CR-01/CR-02).
  *
  * "SHARED BY EVERY VERB THAT WRITES AN OUTPUT FILE" IS WHAT THIS DOC USED TO
  * SAY, AND IT WAS NOT TRUE. `render-memmap` wrote an output file and had
  * neither `--force` in its option set nor a call to this function anywhere on
  * its path; `29-REVIEW.md` CR-02 reproduced it destroying a pre-existing file
- * silently, exit code 0. The claim is now stated as the THREE call sites it
+ * silently, exit code 0. The claim is now stated as the TWO call sites it
  * actually has, because a count is checkable where "every" is not.
  *
  * "THE TWO CALL SITES" IS WHAT THIS SENTENCE SAID UNTIL 2026-08-31, AFTER
@@ -441,6 +454,15 @@ export function checkAcceptedOptions(verb: string, rest: string[]): string | und
  * mechanically, the way `anno-cli-path-consumers.test.ts` already does for the
  * confinement seam, so the next verb to write an output file cannot leave this
  * number behind again.
+ *
+ * BACK DOWN TO TWO, phase 47 plan 47-05: `export-asm`'s `--out` was promoted
+ * from a FILE to a DIRECTORY (D47-A). A directory's overwrite question --
+ * does this directory already hold something, and may `force` replace it --
+ * is `exportAsmTree()`'s own output-directory contract (phase 47 plan 47-02),
+ * never this function's single-file question, so `cmdExportAsm()` dropped its
+ * call here rather than reshaping a file-shaped check to fit a directory. The
+ * count this doc states, and the count `anno-cli.test.ts` checks mechanically,
+ * moved back down to two with it.
  *
  * `outPath` MUST already be confined through `storePathWithinWorkspace()`.
  * This function performs no confinement of its own and must never be read as
@@ -1315,30 +1337,57 @@ function parseExportAsmArgs(rest: string[]): ExportAsmParsedArgs {
 
 /**
  * The destination `export-asm` writes to when the caller names none: the
- * IMAGE's basename with its extension replaced by `.a`, in the STORE's own
- * directory.
+ * IMAGE's basename STEM plus a fixed, extension-free suffix, in the STORE's
+ * own directory.
  *
  * The store's directory rather than the image's, deliberately and for the
  * reason `render-memmap`'s `memory-map.md` default already gives: the output
  * is a GENERATED VIEW of the annotations, so it belongs beside the artefact it
  * was generated from. The image is an input this verb only reads.
  *
- * A name with no extension keeps its whole basename and gains `.a`; a name
- * that already ends in `.a` is unchanged in spelling, which is correct -- the
- * caller then gets the overwrite refusal rather than a silently-different
- * destination.
+ * NO EXTENSION, on purpose (phase 47 plan 47-05: `--out` was promoted from a
+ * FILE to a DIRECTORY, D47-A). This names a directory the tree is written
+ * INTO, never a file -- a name ending in `.a` would read as a file to every
+ * human and every tool that inspects it, and the tree this verb writes is
+ * not one. The stem is derived the same way it always was (whatever
+ * extension the image happens to carry is stripped, so `game.prg` and
+ * `game.raw` derive the same default), the suffix is fixed text this
+ * function owns rather than anything read off the image, and a name with no
+ * extension at all keeps its whole basename.
  */
 function defaultExportAsmOut(imagePath: string, storeDir: string): string {
   const base = basename(imagePath);
   const ext = extname(base);
   const stem = ext === "" ? base : base.slice(0, -ext.length);
-  return join(storeDir, `${stem}.a`);
+  return join(storeDir, `${stem}-src`);
 }
 
 /**
- * `export-asm <image> --store FILE [--out FILE] [--ledger FILE] [--force]` --
- * ACME source for a program, emitted from its annotation store by
- * `anno-export-asm.ts`'s `exportAsm()`.
+ * Whether `containerPath` (a directory `--out` is about to become, or
+ * already is) either equals `candidate` exactly, or genuinely CONTAINS it.
+ * Compared by PATH SEGMENT via a trailing separator, never by string prefix
+ * (T-47-14) -- `candidate.startsWith(containerPath)` alone would also match a
+ * SIBLING whose name merely starts with the same characters (`game-src2`
+ * beside `game-src`), which is exactly the false positive a segment boundary
+ * rules out.
+ *
+ * Both arguments MUST already be confined, realpath-resolved strings (this
+ * verb's inputs and `--out` all go through `storePathWithinWorkspace()`
+ * before either ever reaches here); this function performs no confinement of
+ * its own and compares the two strings it is given.
+ */
+function pathIsOrContains(containerPath: string, candidate: string): boolean {
+  if (candidate === containerPath) return true;
+  const withTrailingSep = containerPath.endsWith(sep) ? containerPath : containerPath + sep;
+  return candidate.startsWith(withTrailingSep);
+}
+
+/**
+ * `export-asm <image> --store FILE [--out DIR] [--ledger FILE] [--force]` --
+ * a TREE of ACME source files for a program, emitted from its annotation
+ * store by `anno-export-asm.ts`'s `exportAsmTree()` (phase 47 plan 47-05,
+ * D47-A: `--out` promoted from a FILE to a DIRECTORY, decided at this plan's
+ * own checkpoint rather than left to fall out of implementation).
  *
  * EVERY ONE OF THIS VERB'S PATHS IS CONFINED, and the ORDER each step happens
  * in is the load-bearing part rather than the mere presence of the calls. It
@@ -1358,13 +1407,27 @@ function defaultExportAsmOut(imagePath: string, storeDir: string): string {
  *   - `--out`'s DEFAULT is applied FIRST and the result confined AFTER, so a
  *     path this verb computed is confined by the same rule as one a caller
  *     supplied, rather than trusted because this verb computed it (CR-02).
+ *     This is unchanged by the file-to-directory promotion: the confined
+ *     result now NAMES A DIRECTORY rather than a file, but it is confined by
+ *     the exact same call.
  *   - From each seam call onwards the RAW CALLER STRING IS DEAD.
  *     `storePathWithinWorkspace()` returns the REALPATH, and it is the
- *     realpath that reaches `readFileSync`, `openStore()`, `refuseOverwrite()`
- *     and `writeFileSync` -- so every printed line names the file that is
- *     actually on disk.
- *   - `refuseOverwrite()` runs against the CONFINED destination, so the file
- *     it protects is the file that would actually be written.
+ *     realpath that reaches `readFileSync`, `openStore()`, `pathIsOrContains()`
+ *     and `exportAsmTree()` -- so every printed line names the file or
+ *     directory that is actually on disk.
+ *   - The output directory may not BE, and may not CONTAIN, any of the three
+ *     inputs (T-47-14, generalised from the single-file version's plain
+ *     equality check, 30-REVIEW WR-05). `pathIsOrContains()` runs against
+ *     the CONFINED destination and each CONFINED input, so what it protects
+ *     is the input that would actually be read and the directory that would
+ *     actually be written into -- and `--force` does not lift this refusal,
+ *     for the same reason the single-file version never let it: nobody
+ *     types `--force` meaning "destroy the annotations I spent a month
+ *     writing".
+ *   - The output-directory's own overwrite question -- does it already hold
+ *     something, and may `--force` replace it -- is `exportAsmTree()`'s own
+ *     contract (phase 47 plan 47-02), not a second check grown here. This
+ *     verb adds no overwrite rule of its own for the directory as a whole.
  *
  * WHAT THIS VERB DOES NOT DO, stated here as well as in `USAGE` because a
  * reader of the code must not have to infer it: it does not assemble. It
@@ -1401,7 +1464,7 @@ async function cmdExportAsm(rest: string[]): Promise<number> {
   }
 
   if (positional.length !== 1) {
-    console.error("export-asm: usage: export-asm <image> --store FILE [--out FILE] [--ledger FILE] [--force]");
+    console.error("export-asm: usage: export-asm <image> --store FILE [--out DIR] [--ledger FILE] [--force]");
     return 1;
   }
   const image = positional[0]!;
@@ -1464,73 +1527,80 @@ async function cmdExportAsm(rest: string[]): Promise<number> {
     return 1;
   }
 
-  // THE OUTPUT MAY NOT LAND ON AN INPUT, AND `--force` DOES NOT OVERRIDE THIS
-  // (30-REVIEW WR-05, fixed 2026-08-31). `outPath` was confined and
-  // overwrite-checked but never COMPARED to the two inputs, so
-  // `anno export-asm game.raw --store g.annostore --out g.annostore --force`
-  // overwrote the annotation store with ACME text, and `--out game.raw
-  // --force` overwrote the image. `refuseOverwrite()` blocks both without
-  // `--force` and `exportAsm()` has fully read both inputs before the write
-  // below, so this was user-directed rather than silent -- but a CLI whose
-  // header says "Every verb takes EXISTING inputs and refuses rather than
-  // guess" should not let its own output destination land on its own input.
+  // THE OUTPUT DIRECTORY MAY NOT BE, AND MAY NOT CONTAIN, AN INPUT, AND
+  // `--force` DOES NOT OVERRIDE THIS (T-47-14, generalising 30-REVIEW WR-05's
+  // plain-equality refusal to containment now that `--out` names a directory
+  // a whole tree is written into). The single-file version of this refusal
+  // existed because `outPath` was confined and overwrite-checked but never
+  // COMPARED to the inputs, so `anno export-asm game.raw --store g.annostore
+  // --out g.annostore --force` overwrote the annotation store with ACME
+  // text. Promoting `--out` to a directory widens the blast radius of the
+  // same mistake from one file to everything the directory would hold, so the
+  // check widens from equality to containment with it: the directory may not
+  // itself BE an input's own path, and no input may live INSIDE it.
   // `--ledger` (BUILD-05, phase 46 plan 01) joins this SAME check: it is a
   // THIRD input this run reads, and `--force` must not lift the refusal for
   // it any more than it lifts it for the store or the image.
   //
-  // SEPARATE FROM `refuseOverwrite()` AND UNCONDITIONAL, deliberately.
-  // `--force` means "yes, replace the file I named"; it cannot mean "yes,
-  // destroy the annotations I spent a month writing", because nobody types it
-  // for that reason. This is the one write refusal in this file `--force`
-  // does not lift.
+  // SEPARATE FROM `exportAsmTree()`'s OWN output-directory contract AND
+  // UNCONDITIONAL, deliberately. `--force` means "yes, replace the tree I
+  // exported here before"; it cannot mean "yes, destroy the annotations I
+  // spent a month writing", because nobody types it for that reason. This is
+  // the one refusal in this file `--force` does not lift.
   //
-  // Every path compared here is a confined realpath by this point, so the
-  // comparison is exact rather than a string-shape guess about `..` and
-  // symlinks.
-  if (outPath === storePath || outPath === imagePath || outPath === ledgerPath) {
-    const which = outPath === storePath ? "annotation store (--store)" : outPath === imagePath ? "image (<image>)" : "ledger (--ledger)";
-    console.error(
-      `export-asm: refusing to write the exported source to ${outPath} -- that is this run's own ${which}. ` +
-        `The export would destroy the input it was generated from, and --force does not lift this refusal. ` +
-        `Pass a different --out.`,
-    );
-    return 1;
+  // Every path compared here is a confined realpath by this point
+  // (`pathIsOrContains()`), so the comparison is exact and segment-bounded
+  // rather than a string-shape guess about `..`, symlinks or a sibling
+  // directory name that merely starts the same.
+  for (const { path: inputPath, which } of [
+    { path: storePath, which: "annotation store (--store)" },
+    { path: imagePath, which: "image (<image>)" },
+    { path: ledgerPath, which: "ledger (--ledger)" },
+  ]) {
+    if (inputPath !== undefined && pathIsOrContains(outPath, inputPath)) {
+      console.error(
+        `export-asm: refusing to write the exported tree to ${outPath} -- that directory is, or contains, this run's own ${which}. ` +
+          `The export would destroy the input it was generated from, and --force does not lift this refusal. ` +
+          `Pass a different --out.`,
+      );
+      return 1;
+    }
   }
 
-  // Against the CONFINED path, so the file this check protects is the file
-  // that would actually be written.
-  if (!refuseOverwrite(outPath, force, "export-asm")) {
-    return 1;
-  }
-
-  let result: ExportAsmResult;
+  // The output-directory contract itself -- create when missing, refuse a
+  // non-empty directory without `--force`, and with `--force` replace only
+  // the names this export produces -- lives entirely in `exportAsmTree()`
+  // (phase 47 plan 47-02). This verb adds no second overwrite rule of its
+  // own: it forwards the request and reports the library's own refusal
+  // through this same single-line error path every other exporter refusal
+  // already takes.
+  let result: ExportAsmTreeResult;
   try {
-    result = exportAsm({ storePath, imagePath, workspaceRoot, ledgerPath });
+    result = exportAsmTree({ storePath, imagePath, workspaceRoot, ledgerPath, outDir: outPath, force });
   } catch (err) {
-    // Every refusal the exporter raises -- an uncovered range, an
-    // inexpressible enum binding, a comment with no line to attach to --
-    // arrives here already named. It is reported as this verb's own
-    // single actionable line and never as a thrown stack trace, and the verb
-    // exits non-zero rather than reporting success over a dropped annotation.
+    // Every refusal `exportAsmTree()` raises -- an uncovered range, an
+    // inexpressible enum binding, a comment with no line to attach to, a
+    // range crossing a scope boundary, or the output-directory contract's
+    // own refusal -- arrives here already named. It is reported as this
+    // verb's own single actionable line and never as a thrown stack trace,
+    // and the verb exits non-zero rather than reporting success over a
+    // dropped annotation or a scribbled-into directory.
     console.error(`export-asm: ${errMsg(err)}`);
     return 1;
   }
-  try {
-    writeFileSync(outPath, result.source);
-  } catch (err) {
-    // Same shape as `cmdRenderMemmap()`'s write failure one verb over (WR-09):
-    // an ordinary write failure -- missing parent directory, permissions, full
-    // disk -- must not throw past this verb's own never-throw contract.
-    console.error(`export-asm: could not write ${outPath}: ${errMsg(err)}`);
-    return 1;
-  }
+  // Every file this call wrote MINUS the two structural files that are
+  // ALWAYS written (symbols.a, root.a) -- the scope files and the optional
+  // unscoped.a, i.e. the files that actually carry this store's own content
+  // rather than glue. `result.files.length` is never less than 2 (both are
+  // unconditional), so this can never go negative.
+  const dataFileCount = result.files.length - 2;
   console.log(
-    `export-asm: wrote ${outPath} (${result.blocks.length} block(s), ${result.symbolCount} symbol(s), ` +
-      `${result.autoNamedSymbolCount} auto-named, ${result.unexpressibleCount} unexpressible instruction(s), ` +
+    `export-asm: wrote ${outPath} (${result.files.length} file(s), ${dataFileCount} data file(s), ${result.blocks.length} block(s), ` +
+      `${result.symbolCount} symbol(s), ${result.autoNamedSymbolCount} auto-named, ${result.unexpressibleCount} unexpressible instruction(s), ` +
       `${result.midInstructionLabelCount} mid-instruction label(s), ${result.enumSubstitutionCount} enum substitution(s), ` +
       `${result.excludedRangeCount} exclusion(s) marked)`,
   );
-  console.log("export-asm: this file has NOT been assembled -- this command writes source text and runs no assembler.");
+  console.log("export-asm: this tree has NOT been assembled -- this command writes source text and runs no assembler.");
   return 0;
 }
 

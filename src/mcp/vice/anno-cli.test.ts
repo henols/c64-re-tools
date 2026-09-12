@@ -29,7 +29,7 @@
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, copyFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync, copyFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -60,6 +60,7 @@ import { buildCoverageReport, coverageFindings } from "./anno-coverage.ts";
 import type { AnnoComment, AnnoCrossReference, AnnoSymbol } from "./anno-coverage.ts";
 import type { BlockEntry } from "./block-class.ts";
 import { repoRoot } from "./repo-root.ts";
+import { ROOT_FILE_NAME, SYMBOLS_FILE_NAME, UNSCOPED_FILE_NAME } from "./anno-export-asm.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -945,7 +946,7 @@ test("PAIRED DIRECTION: an ordinary value is still accepted at every value-takin
 // the next verb to write an output file cannot leave the number behind again.
 // ---------------------------------------------------------------------------
 
-test("refuseOverwrite()'s call-site count matches the number its own doc states (30-REVIEW WR-08)", () => {
+test("refuseOverwrite()'s call-site count matches the number its own doc states (30-REVIEW WR-08; back to two at phase 47 plan 47-05)", () => {
   const stripped = stripCommentsAndLiterals(readFileSync(ANNO_CLI_SOURCE_PATH, "utf8"));
   // The DECLARATION is not a call site. Counting it is an off-by-one this
   // test caught on itself the first time it ran, which is the shape of the
@@ -953,26 +954,30 @@ test("refuseOverwrite()'s call-site count matches the number its own doc states 
   const declarations = (stripped.match(/\bfunction refuseOverwrite\(/g) ?? []).length;
   assert.equal(declarations, 1, "refuseOverwrite() must be declared exactly once -- it is the ONE shared overwrite check");
   const callSites = (stripped.match(/\brefuseOverwrite\(/g) ?? []).length - declarations;
+  // BACK DOWN TO TWO as of phase 47 plan 47-05: `export-asm`'s `--out` was
+  // promoted to a directory, and its overwrite question moved entirely into
+  // `exportAsmTree()`'s own output-directory contract -- `cmdExportAsm()` no
+  // longer calls this single-file check at all.
   assert.equal(
     callSites,
-    3,
+    2,
     `refuseOverwrite() has ${callSites} call site(s) in anno-cli.ts. If that is correct, update BOTH paragraphs of its ` +
       `doc comment -- the one naming the verbs AND the one stating the count. WR-08 was exactly these two disagreeing.`,
   );
 
-  // And the doc really does say three, in the paragraph that states a count.
-  // Read off disk rather than retyped, so a doc that reverts to "two" fails
+  // And the doc really does say two, in the paragraph that states a count.
+  // Read off disk rather than retyped, so a doc that reverts to "three" fails
   // here rather than passing because this file has its own copy.
   const doc = readFileSync(ANNO_CLI_SOURCE_PATH, "utf8");
   assert.match(
     doc,
-    /stated as the THREE call sites it\s+\* actually has/,
+    /stated as the TWO call sites it\s+\* actually has/,
     "the count-stating paragraph must name the same number the scan just measured",
   );
   assert.doesNotMatch(
     doc,
-    /stated as the two call sites/,
-    "the stale WR-08 wording must not come back",
+    /stated as the THREE call sites/,
+    "the stale phase-47-05 wording (\"three\" as the CURRENT claim) must not come back -- it may still appear as history",
   );
 });
 
@@ -1652,7 +1657,7 @@ function makeExportableProject(dir: string, imageName = "game.prg"): { storePath
 }
 
 test("export-asm: --help lists the verb and states, in as many words, that it does NOT assemble", () => {
-  assert.match(helpResult.stdout, /^ {2}export-asm <image> --store FILE \[--out FILE\] \[--ledger FILE\] \[--force\]$/m);
+  assert.match(helpResult.stdout, /^ {2}export-asm <image> --store FILE \[--out DIR\] \[--ledger FILE\] \[--force\]$/m);
   assert.match(helpResult.stdout, /DOES NOT ASSEMBLE/);
   // The claim this verb must never make. `--help` is the only channel by which
   // a caller learns what the command does, so the absence has to hold there.
@@ -1663,7 +1668,7 @@ test("export-asm: --help lists the verb and states, in as many words, that it do
   );
 });
 
-test("export-asm: writes ACME source to the derived default path beside the STORE and exits 0", async () => {
+test("export-asm: writes an ACME source TREE to the derived default directory beside the STORE and exits 0", async () => {
   await withWorkspaceTempDir(async (ws) => {
     const { storePath, imagePath } = makeExportableProject(ws);
     const { result: code, stdout, stderr } = await withCapturedConsole(() =>
@@ -1671,28 +1676,36 @@ test("export-asm: writes ACME source to the derived default path beside the STOR
     );
     assert.equal(code, 0, stderr);
 
-    // The derived default: the IMAGE's basename with a `.a` extension, in the
-    // STORE's own directory.
-    const outPath = join(ws, "game.a");
-    assert.ok(existsSync(outPath), `expected the derived default output at ${outPath}; stdout: ${stdout}`);
+    // The derived default: the IMAGE's basename stem plus a fixed,
+    // extension-free suffix, in the STORE's own directory.
+    const outDir = join(ws, "game-src");
+    assert.ok(existsSync(outDir), `expected the derived default output directory at ${outDir}; stdout: ${stdout}`);
+    assert.ok(statSync(outDir).isDirectory(), `${outDir} must be a directory, not a file`);
 
-    const source = readFileSync(outPath, "utf8");
-    assert.equal(source.split("\n")[0], "!cpu 6510", "the first line is the CPU directive the exporter emits");
+    const rootSource = readFileSync(join(outDir, ROOT_FILE_NAME), "utf8");
+    assert.match(rootSource, /!cpu 6510/m, "root.a carries the CPU directive the exporter emits");
+    assert.match(rootSource, /!source "symbols\.a"/, "root.a sources symbols.a");
+
     // LOWERCASE since 2026-08-31 (30-REVIEW IN-03): `formatSymbolDefinition()`
     // used to emit uppercase while every other emitter in the document
     // (`hex2()`/`hex4()`/`hexExtent()`) emitted lowercase, so one generated
     // file carried two conventions. Case-sensitive here on purpose -- a
     // case-insensitive match would stop this assertion noticing a future
     // drift back.
-    assert.match(source, /^start = \$c000$/m, "the store's label reaches the source, in the document's one hex case");
+    const symbolsSource = readFileSync(join(outDir, SYMBOLS_FILE_NAME), "utf8");
+    assert.match(symbolsSource, /^start = \$c000$/m, "the store's label reaches symbols.a, in the document's one hex case");
 
-    // The summary line names the CONFINED path -- the file that is actually on
-    // disk, never whatever the caller typed.
+    // The summary line names the CONFINED directory -- the directory that is
+    // actually on disk, never whatever the caller typed.
     const lines = stdout.split("\n").filter((l) => l.length > 0);
     assert.equal(lines.length, 2, `expected exactly two printed lines, got ${JSON.stringify(lines)}`);
     assert.match(lines[0]!, /^export-asm: wrote /);
-    assert.ok(lines[0]!.includes(outPath), `the summary must name the confined path; got ${lines[0]}`);
-    assert.match(lines[0]!, /1 block\(s\), 1 symbol\(s\)/);
+    assert.ok(lines[0]!.includes(outDir), `the summary must name the confined directory; got ${lines[0]}`);
+    // One block with no scopes lands in unscoped.a: 3 files total
+    // (symbols.a, unscoped.a, root.a), 1 of which is a "data file" (every
+    // file except the two structural ones, symbols.a and root.a, that are
+    // always written).
+    assert.match(lines[0]!, /3 file\(s\), 1 data file\(s\), 1 block\(s\), 1 symbol\(s\)/);
 
     // The second line, asserted for its MEANING rather than as a slogan: the
     // command must state that it assembled nothing.
@@ -1722,115 +1735,155 @@ test("export-asm: the summary line reports excludedRangeCount, symmetric with ev
   });
 });
 
-test("export-asm: --out overrides the destination, and both runs produce byte-identical source", async () => {
+test("export-asm: --out overrides the destination directory, and two runs produce byte-identical trees", async () => {
   await withWorkspaceTempDir(async (ws) => {
     const { storePath, imagePath } = makeExportableProject(ws);
-    const chosen = join(ws, "chosen.a");
+    const chosen = join(ws, "chosen-dir");
     const first = await withCapturedConsole(() => runAnnoCli(["export-asm", imagePath, "--store", storePath, "--out", chosen]));
     assert.equal(first.result, 0, first.stderr);
-    const firstBytes = readFileSync(chosen);
+    const firstFiles = readdirSync(chosen).sort();
+    const firstRoot = readFileSync(join(chosen, ROOT_FILE_NAME));
 
-    // Re-running over an unchanged store and image writes the same bytes. The
-    // property is DETERMINISM, so it is asserted on the bytes rather than on a
-    // count that could coincide.
+    // Re-running over an unchanged store and image writes the same tree. The
+    // property is DETERMINISM, so it is asserted on the file SET and on
+    // root.a's bytes rather than on a count that could coincide --
+    // `anno-export-asm.test.ts` already proves full-tree byte identity in
+    // both directions; this is the CLI's own plumbing check.
     const second = await withCapturedConsole(() =>
       runAnnoCli(["export-asm", imagePath, "--store", storePath, "--out", chosen, "--force"]),
     );
     assert.equal(second.result, 0, second.stderr);
-    assert.deepEqual(readFileSync(chosen), firstBytes, "a second export over an unchanged store must be byte-identical");
+    assert.deepEqual(readdirSync(chosen).sort(), firstFiles, "a second export over an unchanged store must write the same file set");
+    assert.deepEqual(readFileSync(join(chosen, ROOT_FILE_NAME)), firstRoot, "a second export over an unchanged store must be byte-identical");
   });
 });
 
-test("export-asm: an existing destination is refused without --force, and the file is left untouched", async () => {
+test("export-asm: a non-empty destination directory is refused without --force, and every pre-existing file is left untouched", async () => {
   await withWorkspaceTempDir(async (ws) => {
     const { storePath, imagePath } = makeExportableProject(ws);
-    const outPath = join(ws, "occupied.a");
-    writeFileSync(outPath, "PRECIOUS\n");
+    const outDir = join(ws, "occupied");
+    mkdirSync(outDir);
+    writeFileSync(join(outDir, "PRECIOUS.txt"), "PRECIOUS\n");
 
     const { result: code, stderr } = await withCapturedConsole(() =>
-      runAnnoCli(["export-asm", imagePath, "--store", storePath, "--out", outPath]),
+      runAnnoCli(["export-asm", imagePath, "--store", storePath, "--out", outDir]),
     );
     assert.notEqual(code, 0);
-    assert.match(stderr, /refusing to overwrite the existing file/i);
-    assert.match(stderr, /--force/);
-    assert.equal(readFileSync(outPath, "utf8"), "PRECIOUS\n", "the refusal must not have touched the file it refused to replace");
+    assert.match(stderr, /already holds/i);
+    assert.match(stderr, /force/i);
+    assert.equal(readFileSync(join(outDir, "PRECIOUS.txt"), "utf8"), "PRECIOUS\n", "the refusal must not have touched the file it refused to replace");
+    assert.equal(existsSync(join(outDir, ROOT_FILE_NAME)), false, "no tree file may appear in a directory whose contract refused it");
+    // The library's own refusal reaches the user through this verb's single
+    // error line, never a thrown stack trace.
+    assert.equal(stderr.trim().split("\n").filter((l) => l.length > 0).length, 1, `expected exactly one error line, got: ${stderr}`);
+  });
+});
 
-    // And the opposite direction, so the refusal is a discrimination rather
-    // than a blanket one.
-    const forced = await withCapturedConsole(() =>
-      runAnnoCli(["export-asm", imagePath, "--store", storePath, "--out", outPath, "--force"]),
-    );
+test("export-asm: --force re-writes a previous export of the same store into the same directory and exits 0", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    const { storePath, imagePath } = makeExportableProject(ws);
+    const outDir = join(ws, "reused");
+    const first = await withCapturedConsole(() => runAnnoCli(["export-asm", imagePath, "--store", storePath, "--out", outDir]));
+    assert.equal(first.result, 0, first.stderr);
+
+    const forced = await withCapturedConsole(() => runAnnoCli(["export-asm", imagePath, "--store", storePath, "--out", outDir, "--force"]));
     assert.equal(forced.result, 0, forced.stderr);
-    assert.match(readFileSync(outPath, "utf8"), /^!cpu 6510/);
+    assert.match(readFileSync(join(outDir, ROOT_FILE_NAME), "utf8"), /!cpu 6510/);
   });
 });
 
 // ---------------------------------------------------------------------------
-// 30-REVIEW WR-05 -- `--out` was confined and overwrite-checked but never
-// COMPARED to `<image>` or `--store`, so with `--force` the export destroyed
-// its own input.
+// T-47-14, generalising 30-REVIEW WR-05's plain-equality refusal to
+// CONTAINMENT now that `--out` names a directory a whole tree is written
+// into.
 //
-// Reproduced against the committed code:
+// Reproduced against the committed (single-file) code before this promotion:
 //   anno export-asm game.raw --store g.annostore --out g.annostore --force
 //     -> the annotation store is replaced by ACME text, exit 0
-//   anno export-asm game.raw --store g.annostore --out game.raw --force
-//     -> the image is replaced by ACME text, exit 0
 //
-// `exportAsm()` has fully read both inputs before the write, so this was
-// user-directed rather than silent -- but a CLI whose header says "Every verb
-// takes EXISTING inputs and refuses rather than guess" should not let its own
-// output destination land on its own input.
+// The directory version of the same mistake is worse, not merely carried
+// over: `--out` naming a directory that CONTAINS an input, not only one that
+// IS an input, would let a whole tree's worth of writes land among that
+// input's own files.
 //
-// The refusal is UNCONDITIONAL: `--force` means "yes, replace the file I
-// named", and nobody types it meaning "yes, destroy my annotation store".
+// The refusal is UNCONDITIONAL: `--force` means "yes, replace the tree I
+// exported here before", and nobody types it meaning "yes, destroy my
+// annotation store".
 // ---------------------------------------------------------------------------
 
-test("export-asm: --out on the annotation store is refused, and --force does NOT lift it (30-REVIEW WR-05)", async () => {
+test("export-asm: --out that IS or CONTAINS the store, the image or the ledger is refused, and --force does NOT lift it (T-47-14)", async () => {
   await withWorkspaceTempDir(async (ws) => {
-    const { storePath, imagePath } = makeExportableProject(ws);
-    const before = readFileSync(storePath);
+    // Store, image and ledger each live in their OWN directory, so
+    // containment can be asserted per-input without one scenario's
+    // directory accidentally also containing a DIFFERENT input.
+    const storeDir = join(ws, "store-home");
+    const imageDir = join(ws, "image-home");
+    const ledgerDir = join(ws, "ledger-home");
+    mkdirSync(storeDir);
+    mkdirSync(imageDir);
+    mkdirSync(ledgerDir);
 
-    for (const argv of [
-      ["export-asm", imagePath, "--store", storePath, "--out", storePath],
-      ["export-asm", imagePath, "--store", storePath, "--out", storePath, "--force"],
-    ]) {
-      const { result: code, stderr } = await withCapturedConsole(() => runAnnoCli(argv));
-      assert.notEqual(code, 0, `argv=${JSON.stringify(argv)} must be refused`);
-      assert.match(stderr, /refusing to write the exported source/i, stderr);
-      assert.match(stderr, /annotation store/i, `the refusal must name WHICH input it would have destroyed: ${stderr}`);
-      assert.deepEqual(readFileSync(storePath), before, `argv=${JSON.stringify(argv)} modified the annotation store`);
+    const imagePath = join(imageDir, "game.prg");
+    writeFileSync(imagePath, Buffer.from([0x00, 0xc0, 0xa9, 0x01, 0x8d, 0x20, 0xd0, 0x60]));
+    const storePath = join(storeDir, "game.annostore");
+    const handle = openStore(storePath, { workspaceRoot: ws });
+    try {
+      setDataType(handle, { start: 0xc000, endInclusive: 0xc005, dataType: "code" });
+      setLabel(handle, { address: 0xc000, name: "start", kind: "User" });
+    } finally {
+      closeStore(handle);
     }
+    const ledgerPath = writeMinimalLedger(ledgerDir);
+
+    const beforeStore = readFileSync(storePath);
+    const beforeImage = readFileSync(imagePath);
+    const beforeLedger = readFileSync(ledgerPath, "utf8");
+
+    const cases: Array<{ out: string; expect: RegExp; label: string }> = [
+      { out: storePath, expect: /annotation store/i, label: "IS the store" },
+      { out: storeDir, expect: /annotation store/i, label: "CONTAINS the store" },
+      { out: imagePath, expect: /image/i, label: "IS the image" },
+      { out: imageDir, expect: /image/i, label: "CONTAINS the image" },
+      { out: ledgerPath, expect: /ledger/i, label: "IS the ledger" },
+      { out: ledgerDir, expect: /ledger/i, label: "CONTAINS the ledger" },
+    ];
+
+    for (const { out, expect, label } of cases) {
+      for (const force of [false, true]) {
+        const argv = [
+          "export-asm",
+          imagePath,
+          "--store",
+          storePath,
+          "--ledger",
+          ledgerPath,
+          "--out",
+          out,
+          ...(force ? ["--force"] : []),
+        ];
+        const { result: code, stderr } = await withCapturedConsole(() => runAnnoCli(argv));
+        assert.notEqual(code, 0, `${label} (force=${force}) must be refused`);
+        assert.match(stderr, /refusing to write the exported tree/i, `${label}: ${stderr}`);
+        assert.match(stderr, expect, `${label}: refusal must name WHICH input it would have destroyed -- ${stderr}`);
+      }
+    }
+
+    assert.deepEqual(readFileSync(storePath), beforeStore, "the annotation store must be untouched by every refused attempt");
+    assert.deepEqual(readFileSync(imagePath), beforeImage, "the image must be untouched by every refused attempt");
+    assert.equal(readFileSync(ledgerPath, "utf8"), beforeLedger, "the ledger must be untouched by every refused attempt");
   });
 });
 
-test("export-asm: --out on the image is refused, and --force does NOT lift it (30-REVIEW WR-05)", async () => {
+test("export-asm: PAIRED DIRECTION -- an --out that contains none of the inputs still writes (T-47-14 non-vacuity)", async () => {
+  // A verb that refused every --out would pass the test above too.
   await withWorkspaceTempDir(async (ws) => {
     const { storePath, imagePath } = makeExportableProject(ws);
-    const before = readFileSync(imagePath);
-
-    for (const argv of [
-      ["export-asm", imagePath, "--store", storePath, "--out", imagePath],
-      ["export-asm", imagePath, "--store", storePath, "--out", imagePath, "--force"],
-    ]) {
-      const { result: code, stderr } = await withCapturedConsole(() => runAnnoCli(argv));
-      assert.notEqual(code, 0, `argv=${JSON.stringify(argv)} must be refused`);
-      assert.match(stderr, /refusing to write the exported source/i, stderr);
-      assert.match(stderr, /image/i, `the refusal must name WHICH input it would have destroyed: ${stderr}`);
-      assert.deepEqual(readFileSync(imagePath), before, `argv=${JSON.stringify(argv)} modified the image`);
-    }
-  });
-});
-
-test("export-asm: PAIRED DIRECTION -- an --out that is NOT an input still writes (30-REVIEW WR-05 non-vacuity)", async () => {
-  // A verb that refused every --out would pass both tests above.
-  await withWorkspaceTempDir(async (ws) => {
-    const { storePath, imagePath } = makeExportableProject(ws);
-    const outPath = join(ws, "not-an-input.a");
+    const outDir = join(ws, "not-an-input-dir");
     const { result: code, stderr } = await withCapturedConsole(() =>
-      runAnnoCli(["export-asm", imagePath, "--store", storePath, "--out", outPath]),
+      runAnnoCli(["export-asm", imagePath, "--store", storePath, "--out", outDir]),
     );
     assert.equal(code, 0, stderr);
-    assert.match(readFileSync(outPath, "utf8"), /^!cpu 6510/);
+    assert.match(readFileSync(join(outDir, ROOT_FILE_NAME), "utf8"), /!cpu 6510/);
   });
 });
 
@@ -1841,7 +1894,7 @@ test("export-asm: a --store outside the workspace root is refused by the ONE sea
     await withWorkspaceTempDir(async (ws) => {
       const { imagePath } = makeExportableProject(ws);
       const escaped = join(outside, "escaped.annostore");
-      const escapedOut = join(outside, "escaped.a");
+      const escapedOut = join(outside, "escaped-dir");
       const { result: code, stderr } = await withCapturedConsole(() =>
         runAnnoCli(["export-asm", imagePath, "--store", escaped, "--out", escapedOut]),
       );
@@ -1853,20 +1906,20 @@ test("export-asm: a --store outside the workspace root is refused by the ONE sea
   });
 });
 
-test("export-asm: an --out outside the workspace root is refused even when both INPUTS are legal", async () => {
+test("export-asm: an --out outside the workspace root is refused even when both INPUTS are legal, and nothing is created there", async () => {
   await withTempDir(async (outside) => {
     await withWorkspaceTempDir(async (ws) => {
       const { storePath, imagePath } = makeExportableProject(ws);
-      const escapedOut = join(outside, "PRECIOUS.a");
-      writeFileSync(escapedOut, "PRECIOUS\n");
+      const escapedOut = join(outside, "escaped-dir");
       const { result: code, stderr } = await withCapturedConsole(() =>
         runAnnoCli(["export-asm", imagePath, "--store", storePath, "--out", escapedOut, "--force"]),
       );
       assert.notEqual(code, 0);
       assert.match(stderr, /outside the workspace root/i);
-      // T-30-02's exact shape: a pre-existing file outside the root must not be
-      // replaced, and `--force` must not be a way past the seam.
-      assert.equal(readFileSync(escapedOut, "utf8"), "PRECIOUS\n", "a file outside the workspace root must be untouched");
+      // T-30-02's exact shape, applied to a directory that does not exist yet:
+      // `--force` must not be a way past the seam, and nothing must appear
+      // outside the workspace root as a side effect of trying.
+      assert.equal(existsSync(escapedOut), false, "a directory outside the workspace root must not be created");
     });
   });
 });
@@ -1927,7 +1980,7 @@ test("export-asm: an unknown option is refused by checkAcceptedOptions() BEFORE 
     assert.match(stderr, /not accepted by this verb/);
     // Nothing was written: the shared pre-dispatch check runs before
     // `cmdExportAsm()` is ever entered.
-    assert.equal(existsSync(join(ws, "game.a")), false);
+    assert.equal(existsSync(join(ws, "game-src")), false);
   });
 });
 
@@ -1946,7 +1999,7 @@ test("export-asm: more than one positional is refused rather than silently ignor
 // BUILD-05 (phase 46 plan 01): `--ledger FILE`, the user-facing entry point
 // for the provenance carry. This section exercises the CLI's own PLUMBING --
 // parsing, the closed-option-set gate, confinement, existence, pass-through
-// to `exportAsm()` -- never the ledger's own parse/join behaviour, which
+// to `exportAsmTree()` -- never the ledger's own parse/join behaviour, which
 // `anno-export-asm.test.ts` already covers end to end against real
 // `renderLedger()` output. `writeMinimalLedger()` below is a hand-written
 // fixture for exactly that reason: it only needs to be SHAPED like a ledger,
@@ -1982,7 +2035,7 @@ function writeMinimalLedger(dir: string, name = "PROVENANCE.md"): string {
   return ledgerPath;
 }
 
-test("export-asm: --ledger FILE annotates the output with the ledger's verdict, and the run still exits 0", async () => {
+test("export-asm: --ledger FILE annotates the tree with the ledger's verdict, and the run still exits 0", async () => {
   await withWorkspaceTempDir(async (ws) => {
     const { storePath, imagePath } = makeExportableProject(ws);
     const ledgerPath = writeMinimalLedger(ws);
@@ -1990,18 +2043,20 @@ test("export-asm: --ledger FILE annotates the output with the ledger's verdict, 
       runAnnoCli(["export-asm", imagePath, "--store", storePath, "--ledger", ledgerPath]),
     );
     assert.equal(code, 0, stdout);
-    const written = readFileSync(join(ws, "game.a"), "utf8");
+    // The one block in this fixture lies inside no scope, so it lands in
+    // unscoped.a.
+    const written = readFileSync(join(ws, "game-src", UNSCOPED_FILE_NAME), "utf8");
     assert.match(written, /; PROVENANCE LEDGER: /);
     assert.match(written, /verdict=ORIGINAL/);
   });
 });
 
-test("export-asm: omitting --ledger still exits 0 and the output carries no PROVENANCE LEDGER text", async () => {
+test("export-asm: omitting --ledger still exits 0 and the tree carries no PROVENANCE LEDGER text", async () => {
   await withWorkspaceTempDir(async (ws) => {
     const { storePath, imagePath } = makeExportableProject(ws);
     const { result: code } = await withCapturedConsole(() => runAnnoCli(["export-asm", imagePath, "--store", storePath]));
     assert.equal(code, 0);
-    const written = readFileSync(join(ws, "game.a"), "utf8");
+    const written = readFileSync(join(ws, "game-src", UNSCOPED_FILE_NAME), "utf8");
     assert.doesNotMatch(written, /PROVENANCE LEDGER/);
   });
 });
@@ -2022,7 +2077,7 @@ test("export-asm: a missing --ledger value, and a flag-shaped one, are each refu
   });
 });
 
-test("export-asm: a nonexistent --ledger is refused by name, and no output file is written", async () => {
+test("export-asm: a nonexistent --ledger is refused by name, and no tree is written", async () => {
   await withWorkspaceTempDir(async (ws) => {
     const { storePath, imagePath } = makeExportableProject(ws);
     const missing = join(ws, "does-not-exist.md");
@@ -2031,7 +2086,7 @@ test("export-asm: a nonexistent --ledger is refused by name, and no output file 
     );
     assert.notEqual(code, 0);
     assert.match(stderr, /ledger not found/i);
-    assert.equal(existsSync(join(ws, "game.a")), false, "a refused --ledger must not still write an unannotated export");
+    assert.equal(existsSync(join(ws, "game-src")), false, "a refused --ledger must not still write an unannotated tree");
   });
 });
 
@@ -2045,22 +2100,8 @@ test("export-asm: a --ledger outside the workspace root is refused by the ONE se
       );
       assert.notEqual(code, 0);
       assert.match(stderr, /outside the workspace root/i);
-      assert.equal(existsSync(join(ws, "game.a")), false);
+      assert.equal(existsSync(join(ws, "game-src")), false);
     });
-  });
-});
-
-test("export-asm: --out landing on --ledger is refused, and --force does NOT lift it (WR-05, extended to the third input)", async () => {
-  await withWorkspaceTempDir(async (ws) => {
-    const { storePath, imagePath } = makeExportableProject(ws);
-    const ledgerPath = writeMinimalLedger(ws);
-    const originalLedgerText = readFileSync(ledgerPath, "utf8");
-    const { result: code, stderr } = await withCapturedConsole(() =>
-      runAnnoCli(["export-asm", imagePath, "--store", storePath, "--ledger", ledgerPath, "--out", ledgerPath, "--force"]),
-    );
-    assert.notEqual(code, 0);
-    assert.match(stderr, /ledger \(--ledger\)/);
-    assert.equal(readFileSync(ledgerPath, "utf8"), originalLedgerText, "--force must not lift the refusal for the ledger input");
   });
 });
 
