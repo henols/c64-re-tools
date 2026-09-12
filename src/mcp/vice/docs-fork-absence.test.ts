@@ -329,11 +329,11 @@ test("1. non-vacuity: the scanned population clears a floor, the forbidden-ident
   // The narrower population the prose-citation and stale-phrase checks (8
   // and 9, below) walk: README.md + CLAUDE.md + skill markdown, WITHOUT the
   // shipped TypeScript modules (see the scope-decision comment above test
-  // 8). The real count today is twenty files; the floor is set well under
-  // that with headroom so a deliberate pruning does not red this, but an
-  // absence guard whose scanned set is empty -- or whose token list is
-  // empty -- passes vacuously and protects nothing, which is the single
-  // most important predicate in this file.
+  // 8). The real count today is twenty files; the floor is set 2 files below
+  // today's count so a deliberate pruning does not red this, but an absence
+  // guard whose scanned set is empty -- or whose token list is empty --
+  // passes vacuously and protects nothing, which is the single most
+  // important predicate in this file.
   const proseScanned = proseCitationPopulation().length;
   assert.ok(
     proseScanned >= 18,
