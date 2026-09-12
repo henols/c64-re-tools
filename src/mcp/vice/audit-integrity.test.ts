@@ -85,6 +85,10 @@ const EXPECTED_GUARD_NAMES_FOR_ASSERTION = [
   // Added by the same commit that registers it in audit-gate.mjs, so the
   // mirror never lags the registry it mirrors.
   "docs-constraints-sync.test.ts",
+  // Added by the same commit that registers it in audit-gate.mjs, so the
+  // mirror never lags the registry it mirrors. docs-fork-absence.test.ts
+  // asserts the fork backend's removal stays removed.
+  "docs-fork-absence.test.ts",
 ];
 
 interface GateJsonResult {

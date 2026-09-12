@@ -217,6 +217,13 @@ export const EXPECTED_DOCS_GUARD_NAMES = Object.freeze([
   // the precedent of the two entries above: the floor is `>= 7` and there are
   // now 10 guards on disk.
   "docs-constraints-sync.test.ts",
+  // REGISTERED in the same commit that adds the guard file, per the
+  // instruction above. docs-fork-absence.test.ts asserts the fork backend's
+  // removal stays removed -- nine forbidden identifiers, a single surviving
+  // manifest, six deleted modules and the stock-hard-losses acceptance
+  // record. No floor change, on the precedent of the entries above: the
+  // floor is `>= 7` and there are now 11 guards on disk.
+  "docs-fork-absence.test.ts",
 ]);
 
 /** Every `docs-*.test.ts` guard basename in `viceDir`, sorted. Derived from
