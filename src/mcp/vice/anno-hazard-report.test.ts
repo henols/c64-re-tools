@@ -977,6 +977,40 @@ test("hazard crosscheck: the indexed-dispatch and cycle-exact-raster classes hav
   assert.deepEqual(new Set(CLASSES_WITH_NO_INDEPENDENT_POSITIVE), new Set(["indexed-dispatch", "cycle-exact-raster"]));
 });
 
+test("hazard crosscheck: CROSS-CHECK.md is consistent with the comparator's live output -- every fixture and class named in the expectation table appears in the document, and the document's own no-positive-example statement is present for exactly the classes with no positive row and absent for the classes with one", () => {
+  const doc = readFileSync(CROSS_CHECK_PATH, "utf8");
+  const lines = doc.split("\n");
+
+  for (const fixture of new Set(CROSS_CHECK_EXPECTATIONS.map((e) => e.fixture))) {
+    const basename = fixture.split("/").pop()!;
+    assert.ok(doc.includes(basename), `CROSS-CHECK.md must name the fixture "${basename}"`);
+  }
+  for (const cls of HAZARD_CLASSES) {
+    assert.ok(doc.includes(cls), `CROSS-CHECK.md must name the hazard class "${cls}" (its own table's class column)`);
+  }
+
+  for (const cls of HAZARD_CLASSES) {
+    const hasPositiveRow = CROSS_CHECK_EXPECTATIONS.some((e) => e.hazardClass === cls && e.kind === "positive");
+    // The document spells a class either hyphenated ("indexed-dispatch") or
+    // as two words ("indexed dispatch") in prose -- both must be tolerated.
+    const classPattern = cls.replace(/-/g, "[- ]");
+    const classLineRe = new RegExp(classPattern, "i");
+    const noExampleLines = lines.filter((line) => classLineRe.test(line) && /no independent positive example/i.test(line));
+    if (hasPositiveRow) {
+      assert.equal(
+        noExampleLines.length,
+        0,
+        `CROSS-CHECK.md must NOT carry a no-positive-example statement for "${cls}", which has a positive row in the expectation table`,
+      );
+    } else {
+      assert.ok(
+        noExampleLines.length > 0,
+        `CROSS-CHECK.md must state, on a line naming "${cls}", that it has no independent positive example`,
+      );
+    }
+  }
+});
+
 // ---------------------------------------------------------------------------
 // hazard evidence: runtime observation strengthens, never suppresses
 // ---------------------------------------------------------------------------
