@@ -5,16 +5,16 @@ milestone_name: The Rebuild Half
 current_phase: 48
 current_phase_name: The Movement-Hazard Report and Its Purpose-Built Subject
 status: executing
-stopped_at: Completed 48-01-PLAN.md
-last_updated: "2026-09-12T20:55:14.832Z"
+stopped_at: Completed 48-02-PLAN.md
+last_updated: "2026-09-12T21:23:42.666Z"
 last_activity: 2026-09-12
 last_activity_desc: Phase 48 execution started
-state_head: 2c3e470ff401fa998fd1dc2b08269984c3a183da
+state_head: f432455e154e4a68053f283d7e09511433805596
 progress:
   total_phases: 8
   completed_phases: 3
   total_plans: 28
-  completed_plans: 23
+  completed_plans: 24
   percent: 38
 ---
 
@@ -255,8 +255,8 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 48 (The Movement-Hazard Report and Its Purpose-Built Subject) — EXECUTING
-Plan: 2 of 6
-Status: Executing Phase 48 — 48-01 complete
+Plan: 3 of 6
+Status: Ready to execute
 Plans: not yet planned. Phase 47 closed with 6/6 plans across 5 waves, all
 verified 5/5 against real ACME 0.97; its one blocking decision checkpoint
 (promoting `anno export-asm --out` from a file path to a directory path, a
@@ -580,6 +580,7 @@ Last activity: 2026-09-12 — Phase 48 execution started
 | Phase 47 P04 | 35min | 3 tasks | 2 files |
 | Phase 47-multi-file-rebuildable-source P06 | 30min | 2 tasks | 2 files |
 | Phase 48 P01 | 38 min | 3 tasks | 18 files |
+| Phase 48 P02 | 62min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -1333,6 +1334,8 @@ Recent decisions affecting current work:
 - [Phase 48]: Phase 48 plan 01: hazard finding anchorAddress names the modified (host) instruction, not the writer, so two independent writers hitting the same host's opcode and operand bytes both anchor at one address with distinct, both-surviving mechanisms. — Lets execution-observation strengthening ask "was the modified code observed running" rather than "did the writer run" -- the more meaningful corroboration question.
 - [Phase 48]: Phase 48 plan 01: the class-2 self-modifying-code detector reads only absolute/absolute-indexed/zeropage/zeropage-indexed addressing; indirect and indirect-indexed modes are excluded by construction and the miss is a permanent, named limit rather than an attempted heuristic.
 - [Phase 48]: Phase 48 plan 01: two of the plan's own literal CLI verify commands named a JSON export sidecar as --store, which openStore() correctly refuses as not a real SQLite store; verified instead against a freshly created, real, empty .annostore file with the same images.
+- [Phase 48]: 48-02: the class-1 pairing crosses a source-file boundary by design -- the two split address tables live in the new hazard-subject-dispatch.a while the consuming routine lives in the already-existing root, so the scanner's cross-file resolution is genuinely exercised.
+- [Phase 48]: 48-02: the mis-aligned twin has no committed fourth root .a file -- its root is synthesized in memory by swapping one !source line, matching the plan's declared artifact list exactly while still producing a real, independently assembled program.
 
 ### Pending Todos
 
@@ -2410,8 +2413,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-12T20:55:14.474Z
-Stopped at: Completed 48-01-PLAN.md
+Last session: 2026-09-12T21:23:42.359Z
+Stopped at: Completed 48-02-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
