@@ -4,17 +4,17 @@ milestone: v1.0.0
 milestone_name: The Rebuild Half
 current_phase: 47
 current_phase_name: Multi-File Rebuildable Source
-status: executing
-stopped_at: Completed 47-04-PLAN.md
-last_updated: "2026-09-12T18:19:14.610Z"
+status: verifying
+stopped_at: Completed 47-06-PLAN.md
+last_updated: "2026-09-12T18:38:19.024Z"
 last_activity: 2026-09-12
 last_activity_desc: Phase 47 execution started
-state_head: 1ed8358dbf8954b4658a6db6a3f94844530493d9
+state_head: 1b6d17743d591d8f8afd860dc1215905e42a8af8
 progress:
   total_phases: 8
   completed_phases: 2
   total_plans: 22
-  completed_plans: 21
+  completed_plans: 22
   percent: 25
 ---
 
@@ -256,7 +256,7 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 Phase: 47 (Multi-File Rebuildable Source) — EXECUTING
 Plan: 6 of 6
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Plans: 6 (47-01 … 47-06) in 5 waves. Wave 2's 47-05 is `autonomous: false` —
 it carries the phase's one blocking decision checkpoint, because promoting
 `anno export-asm --out` from a file path to a directory path breaks a
@@ -577,6 +577,7 @@ Last activity: 2026-09-12 — Phase 47 execution started
 | Phase 47-multi-file-rebuildable-source P05 | 40min | 2 tasks | 7 files |
 | Phase 47 P03 | 17min | 2 tasks | 2 files |
 | Phase 47 P04 | 35min | 3 tasks | 2 files |
+| Phase 47-multi-file-rebuildable-source P06 | 30min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -1326,6 +1327,7 @@ Recent decisions affecting current work:
 - [Phase 47]: 47-03: The character-set swap demonstration uses the committed fixtures/ghidra/charset-phantom.prg's own $1000..$17ff bytes through a store this test builds itself (buildStoreOverImage()), never the committed charset-phantom.annostore.json, which Phase 37/45 tests depend on staying typed "code".
 - [Phase 47]: The in-tree symbol rule (BUILD-03) reads the SAME labelIndex/blocks the renderer already uses -- never a second index -- and refuses once, at the end, naming both addresses and the N-of-M count.
 - [Phase 47]: Task 3's zero-page ordering proof hand-substitutes a symbol into a zeropage operand in the WRITTEN tree files, since disasm-renderer.ts's own D-11 rule never lets the exporter do this on its own -- without the mutation, sourcing order cannot matter.
+- [Phase 47]: Split hi/lo ADDRESS tables now emit paired low-byte/high-byte symbol references (one symbol per entry), reusing 47-04's in-tree symbol rule and refusal machinery rather than building a second one; the two split WORD layouts stay unsymbolised by construction.
 
 ### Pending Todos
 
@@ -2403,8 +2405,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-12T18:19:14.353Z
-Stopped at: Completed 47-04-PLAN.md
+Last session: 2026-09-12T18:38:18.767Z
+Stopped at: Completed 47-06-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
