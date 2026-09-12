@@ -12,12 +12,13 @@
 //
 // DETERMINISM IS PART OF THE CONTRACT: running this script twice must leave
 // `git status --porcelain src/mcp/vice/fixtures/hazard-subject` empty. There
-// is no timestamp, no random value and no host-dependent path in the emitted
-// file -- ACME's `-f cbm` output is a pure function of the source tree.
+// is no timestamp, no random value and no host-dependent path in either
+// emitted file -- ACME's `-f cbm` output is a pure function of the source
+// tree.
 //
 // IT REFUSES RATHER THAN WRITING A PARTIAL FIXTURE. If the assembler is
 // missing, or exits non-zero, or writes no output file, this script prints
-// the reason and exits non-zero WITHOUT touching `hazard-subject.prg`. A
+// the reason and exits non-zero WITHOUT touching either committed `.prg`. A
 // generator that half-wrote its output on a broken toolchain would replace a
 // good fixture with a bad one and every test over it would then be testing
 // the failure.
@@ -35,8 +36,18 @@
 // nothing actually runs as one.
 //
 // THE WORKING DIRECTORY IS SET TO THIS DIRECTORY for the assembler child
-// process, so the root source's bare-filename `!source "hazard-subject-smc.a"`
-// resolves without a directory component anywhere in the source text.
+// process, so every root source's bare-filename `!source "..."` lines
+// resolve without a directory component anywhere in the source text.
+//
+// THE SECOND FIXTURE HAS NO COMMITTED ROOT SOURCE FILE OF ITS OWN. Its root
+// is SYNTHESIZED here, in memory, from the committed `hazard-subject.a` by
+// swapping its one `!source "hazard-subject-align.a"` line for
+// `!source "hazard-subject-align-misaligned.a"` -- every other planted
+// construction (the SMC entry, the dispatch entry) stays shared and
+// unmodified between the two builds. The synthesized text is written to a
+// throwaway file in the OS temp directory, never inside this fixture
+// directory, so a run never leaves a stray file behind for `git status` to
+// notice.
 //
 // Regenerate with:
 //   cd src/mcp/vice && node fixtures/hazard-subject/make-hazard-subject-fixtures.mjs
@@ -53,10 +64,30 @@ const HERE = dirname(fileURLToPath(import.meta.url));
  * binds. Never rename one side only. */
 const ACME_BIN = process.env.ACME_BIN ?? "acme";
 
-/** The one root fixture this script owns. Later parts are pulled in by the
- * root's own `!source` lines, never listed here as separate entries -- there
- * is exactly one assembled image for the whole subject tree. */
-const FIXTURES = [{ source: "hazard-subject.a", output: "hazard-subject.prg", format: "cbm" }];
+const ALIGNED_SOURCE_LINE = '!source "hazard-subject-align.a"';
+const MISALIGNED_SOURCE_LINE = '!source "hazard-subject-align-misaligned.a"';
+
+/** Builds the second build's root text by swapping the ONE `!source` line
+ * that pulls in the aligned construction for the mis-aligned twin's own
+ * file. Refuses (via the caller's `fail()`) rather than silently assembling
+ * the WRONG twin if the committed root ever stops containing that exact
+ * line. */
+function misalignedRootSource() {
+  const rootText = readFileSync(join(HERE, "hazard-subject.a"), "utf8");
+  if (!rootText.includes(ALIGNED_SOURCE_LINE)) {
+    fail(`hazard-subject.a no longer contains ${JSON.stringify(ALIGNED_SOURCE_LINE)} -- the mis-aligned twin's root substitution has nothing to replace`);
+  }
+  return rootText.replace(ALIGNED_SOURCE_LINE, MISALIGNED_SOURCE_LINE);
+}
+
+/** The two builds this script owns. The first assembles the committed root
+ * directly; the second assembles a synthesized root (see above) that pulls
+ * in every other planted construction UNCHANGED. Later parts of each build
+ * are pulled in by `!source`, never listed here as separate entries. */
+const FIXTURES = [
+  { rootSourceName: "hazard-subject.a", output: "hazard-subject.prg", format: "cbm" },
+  { buildRootText: misalignedRootSource, output: "hazard-subject-misaligned.prg", format: "cbm" },
+];
 
 function fail(reason) {
   process.stderr.write(`make-hazard-subject-fixtures: ${reason}\n`);
@@ -92,23 +123,37 @@ if (!probe.ok) {
 const workDir = mkdtempSync(join(tmpdir(), "make-hazard-subject-fixtures-"));
 try {
   for (const fixture of FIXTURES) {
-    const sourcePath = join(HERE, fixture.source);
     const outputPath = join(HERE, fixture.output);
     const tempOut = join(workDir, fixture.output);
 
-    if (!existsSync(sourcePath)) fail(`the ACME source ${JSON.stringify(sourcePath)} does not exist`);
+    // Either an existing committed root (`rootSourceName`, resolved relative
+    // to this directory so `!source` lines with no directory component
+    // work), or a root SYNTHESIZED into the same throwaway temp directory
+    // the output goes to (`buildRootText`). Exactly one of the two is set
+    // per entry.
+    let acmeSourceArg;
+    if (fixture.rootSourceName) {
+      const sourcePath = join(HERE, fixture.rootSourceName);
+      if (!existsSync(sourcePath)) fail(`the ACME source ${JSON.stringify(sourcePath)} does not exist`);
+      acmeSourceArg = fixture.rootSourceName;
+    } else {
+      const tempRootPath = join(workDir, `synthesized-root-${fixture.output}.a`);
+      writeFileSync(tempRootPath, fixture.buildRootText());
+      acmeSourceArg = tempRootPath;
+    }
 
-    // `cwd: HERE` is load-bearing: the root source's `!source` lines are
-    // bare filenames with no directory component, and ACME resolves a
-    // relative `!source` argument against the assembler's own working
-    // directory.
-    const r = spawnSync(ACME_BIN, ["--cpu", "6510", "-f", fixture.format, "-o", tempOut, fixture.source], {
+    // `cwd: HERE` is load-bearing regardless of which branch above ran: every
+    // `!source` line in either root (committed or synthesized) is a bare
+    // filename with no directory component, and ACME resolves a relative
+    // `!source` argument against the assembler's own working directory, not
+    // against the root file's own location.
+    const r = spawnSync(ACME_BIN, ["--cpu", "6510", "-f", fixture.format, "-o", tempOut, acmeSourceArg], {
       encoding: "utf8",
       timeout: 30_000,
       cwd: HERE,
     });
-    if (r.status !== 0) fail(`ACME refused ${fixture.source} (exit ${String(r.status)}):\n${r.stderr ?? ""}`);
-    if (!existsSync(tempOut)) fail(`ACME exited 0 for ${fixture.source} but wrote no output file`);
+    if (r.status !== 0) fail(`ACME refused ${fixture.output}'s root (exit ${String(r.status)}):\n${r.stderr ?? ""}`);
+    if (!existsSync(tempOut)) fail(`ACME exited 0 for ${fixture.output}'s root but wrote no output file`);
 
     // Written only after the assembly succeeded AND produced a file, so a
     // broken toolchain can never truncate the committed fixture.

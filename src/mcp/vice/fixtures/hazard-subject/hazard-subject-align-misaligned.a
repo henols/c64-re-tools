@@ -1,0 +1,105 @@
+; hazard-subject-align-misaligned.a -- the deliberately mis-aligned twin of
+; hazard-subject-align.a, and the class-3 observable negative control.
+;
+; THIS FILE DIFFERS FROM hazard-subject-align.a IN EXACTLY TWO PLACES: one
+; deliberate filler byte inserted immediately after each of the two
+; `!align` directives, before the label the alignment was meant to protect.
+; Every other line -- the routine, the derivations, the level and music
+; tables -- is copied UNCHANGED. Because the sprite pointer and the VIC
+; memory-control select bits are DERIVED from `align_sprite_base` and
+; `align_char_base` (never written as literals), the routine keeps computing
+; a byte and select bits that are individually correct arithmetic -- and
+; that now name the WRONG block, because the block itself moved one byte
+; off the boundary those values assume.
+;
+; THE ASSEMBLER EXITS ZERO ON THIS BUILD. Nothing about `!byte 0` is
+; malformed 6502 or malformed ACME source -- it is one ordinary data byte in
+; an ordinary place. No automated check anywhere in this repository can
+; tell this image apart from the aligned one BY BEHAVIOUR: both assemble,
+; both run, both write a pointer byte and both write select bits, and both
+; of those writes are individually exactly what their own arithmetic says.
+; The only thing that differs is what the VIC-II hardware actually reads
+; back at those indices -- a wrong sprite shape, a wrong character -- which
+; is visible only on an actual screen. That silent, undiagnosable failure
+; mode is the entire reason this hazard class exists, and is why this twin
+; is committed as something a human can look at rather than something a
+; comment merely asserts.
+;
+; This file is sourced from its OWN root (synthesized by
+; make-hazard-subject-fixtures.mjs, never committed), which pulls in this
+; file in place of hazard-subject-align.a -- everything else in the subject
+; (the SMC construction, the dispatch construction) is shared, unmodified,
+; with the aligned build.
+
+align_screen_offset = $0400
+
+hazard_align_entry
+        ; Select VIC bank 0 ($0000-$3fff) explicitly through $dd00, so the
+        ; 16K window every boundary below is relative to is STATED rather
+        ; than assumed. Bits #0-#1 are active LOW on this port; %11 selects
+        ; bank 0.
+        lda $dd00
+        and #%11111100
+        ora #%00000011
+        sta $dd00
+
+        ; The VIC memory-control register, derived from the two labels
+        ; below rather than written as a bare hex constant: bits #4-#7 name
+        ; the screen offset (the ordinary KERNAL default), bits #1-#3 name
+        ; the character-set offset.
+        lda #((align_screen_offset / 1024) << 4) | ((align_char_base / 2048) << 1)
+        sta $d018
+
+        ; Sprite pointer: the sprite base divided by 64, computed from the
+        ; label rather than written as a literal.
+        lda #(align_sprite_base / 64)
+        sta $07f8
+
+        ; Enable sprite 0 and place it on screen, so a mis-aligned build's
+        ; failure is something a human can actually see.
+        lda #%00000001
+        sta $d015
+        lda #100
+        sta $d000
+        lda #100
+        sta $d001
+
+        ; Print one character from the custom character set: screen code 0
+        ; addresses char_base's own first (and only committed) glyph.
+        lda #0
+        sta align_screen_offset
+        rts
+
+; --- Character set, DELIBERATELY MIS-ALIGNED: the `!align` below still
+; lands on the 2K boundary, but the one filler byte immediately after it
+; pushes `align_char_base` itself one byte PAST that boundary, on purpose.
+!align $7ff, 0
+        !byte 0 ; deliberate one-byte offset -- breaks the 2K boundary on purpose
+align_char_base
+        !byte %01111110
+        !byte %11111111
+        !byte %11100111
+        !byte %11100111
+        !byte %11111111
+        !byte %11111111
+        !byte %01111110
+        !byte %00000000
+
+; --- Sprite shape, DELIBERATELY MIS-ALIGNED the same way: the `!align`
+; below still lands on the 64-byte boundary, but the one filler byte
+; immediately after it pushes `align_sprite_base` one byte past it.
+!align $3f, 0
+        !byte 0 ; deliberate one-byte offset -- breaks the 64-byte boundary on purpose
+align_sprite_base
+        !fill 63, %11111111
+
+; --- Level table: a plain labelled byte table, no alignment constraint. It
+; exists so the multi-file export path has a real, ordinary data range to
+; extract that is not itself hazard-bearing.
+align_level_table
+        !byte 1, 2, 3, 4, 5, 6, 7, 8
+
+; --- Music table: the same role as the level table, with distinct,
+; recognisable content.
+align_music_table
+        !byte $c0, $90, $60, $40, $30, $20, $10, $08

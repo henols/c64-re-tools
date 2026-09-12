@@ -32,7 +32,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -47,7 +47,10 @@ const ROOT_SOURCE_PATH = join(FIXTURE_DIR, "hazard-subject.a");
 const ROOT_SOURCE_NAME = "hazard-subject.a";
 const DISPATCH_SOURCE_PATH = join(FIXTURE_DIR, "hazard-subject-dispatch.a");
 const ALIGN_SOURCE_PATH = join(FIXTURE_DIR, "hazard-subject-align.a");
+const ALIGN_MISALIGNED_SOURCE_PATH = join(FIXTURE_DIR, "hazard-subject-align-misaligned.a");
 const PRG_PATH = join(FIXTURE_DIR, "hazard-subject.prg");
+const MISALIGNED_PRG_PATH = join(FIXTURE_DIR, "hazard-subject-misaligned.prg");
+const REGENERATOR_PATH = join(FIXTURE_DIR, "make-hazard-subject-fixtures.mjs");
 
 const SKIP_REASON = acmeSkipReasonFor("hazard-subject-fixture.test.ts");
 
@@ -280,6 +283,130 @@ test("hazard subject: no planning-vocabulary string appears anywhere in the alig
   assert.ok(!/\bD-\d/.test(alignSource), "must not carry a bare D-NN decision id");
   assert.ok(!/\bBUILD-\d/.test(alignSource), "must not carry a BUILD-NN requirement id");
   assert.ok(!/\bPhase\s+\d/.test(alignSource), "must not carry a 'Phase N' citation");
+});
+
+// ---------------------------------------------------------------------------
+// hazard subject: class 3's observable negative control -- the deliberately
+// mis-aligned twin.
+// ---------------------------------------------------------------------------
+
+/** Re-derives the SAME text substitution `make-hazard-subject-fixtures.mjs`
+ * uses to build the mis-aligned twin's root: swap the one `!source
+ * "hazard-subject-align.a"` line for the mis-aligned file. Independent of the
+ * regenerator's own implementation -- this is a second, separately-written
+ * derivation of the same recipe, so a bug in one is not hidden by the other
+ * silently agreeing with itself. */
+function misalignedRootSourceText(): string {
+  const rootText = readFileSync(ROOT_SOURCE_PATH, "utf8");
+  const marker = '!source "hazard-subject-align.a"';
+  assert.ok(rootText.includes(marker), `precondition: the root must still contain ${JSON.stringify(marker)} for the substitution to apply`);
+  return rootText.replace(marker, '!source "hazard-subject-align-misaligned.a"');
+}
+
+/** Assembles the synthesized mis-aligned root fresh, with a symbol list,
+ * exactly like `assembleFreshWithSymbols()` but for a root that has no
+ * committed file of its own. */
+function assembleMisalignedFreshWithSymbols(): { bytes: Uint8Array; symbols: Map<string, number> } {
+  const dir = mkdtempSync(join(tmpdir(), "hazard-subject-fixture-mis-"));
+  try {
+    const rootPath = join(dir, "synthesized-misaligned-root.a");
+    writeFileSync(rootPath, misalignedRootSourceText());
+    const outPath = join(dir, "out.prg");
+    const symPath = join(dir, "out.sym");
+    const r = spawnSync(ACME_BIN, ["--cpu", "6510", "-f", "cbm", "-o", outPath, "--symbollist", symPath, rootPath], {
+      encoding: "utf8",
+      timeout: 30_000,
+      cwd: FIXTURE_DIR,
+    });
+    assert.equal(r.status, 0, `the synthesized mis-aligned root must assemble:\n  stderr: ${r.stderr ?? ""}`);
+    assert.equal(existsSync(outPath), true, "ACME must write an output file");
+    assert.equal(existsSync(symPath), true, "ACME must write a symbol list file");
+    const symbols = new Map<string, number>();
+    for (const line of readFileSync(symPath, "utf8").split("\n")) {
+      const m = line.match(/^\s*(\S+)\s*=\s*\$([0-9a-fA-F]+)/);
+      if (m) symbols.set(m[1]!, parseInt(m[2]!, 16));
+    }
+    return { bytes: new Uint8Array(readFileSync(outPath)), symbols };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("hazard subject: hazard-subject-misaligned.prg exists, is tracked, and differs from hazard-subject.prg", () => {
+  assert.ok(existsSync(MISALIGNED_PRG_PATH), "hazard-subject-misaligned.prg must be committed");
+  const ls = spawnSync("git", ["ls-files", "--error-unmatch", MISALIGNED_PRG_PATH], { encoding: "utf8", cwd: FIXTURE_DIR });
+  assert.equal(ls.status, 0, "hazard-subject-misaligned.prg must be a tracked file, not merely present on disk");
+  const aligned = readFileSync(PRG_PATH);
+  const misaligned = readFileSync(MISALIGNED_PRG_PATH);
+  assert.notDeepEqual([...aligned], [...misaligned], "the mis-aligned image must differ from the aligned one");
+});
+
+test("hazard subject: the mis-aligned source differs from the aligned source only in the two deliberate filler-byte insertions", () => {
+  const strip = (text: string) =>
+    text
+      .split("\n")
+      .map((line) => line.replace(/;.*$/, "").trimEnd())
+      .filter((line) => line.trim().length > 0);
+
+  const alignedLines = strip(readFileSync(ALIGN_SOURCE_PATH, "utf8"));
+  const misalignedLines = strip(readFileSync(ALIGN_MISALIGNED_SOURCE_PATH, "utf8"));
+
+  const extraLines = misalignedLines.filter((line) => line.trim() === "!byte 0").length;
+  assert.equal(extraLines, 2, "the mis-aligned source must add exactly two `!byte 0` filler lines and nothing else");
+  assert.equal(
+    misalignedLines.length,
+    alignedLines.length + 2,
+    "besides the two filler-byte insertions, the mis-aligned source's non-comment, non-blank lines must match the aligned source's exactly",
+  );
+
+  // With the two filler lines removed, every remaining non-comment,
+  // non-blank line must match the aligned source's, in order.
+  const withoutFillers = misalignedLines.filter((line) => line.trim() !== "!byte 0");
+  assert.deepEqual(withoutFillers, alignedLines, "removing the two filler-byte lines must leave the mis-aligned source identical to the aligned one, line for line");
+});
+
+test("hazard subject: the mis-aligned image's sprite shape base is not a multiple of 64, and its character-set base is not a multiple of 2048", { skip: SKIP_REASON }, () => {
+  const { symbols } = assembleMisalignedFreshWithSymbols();
+  const spriteBase = symbols.get("align_sprite_base");
+  const charBase = symbols.get("align_char_base");
+  assert.ok(spriteBase !== undefined, "align_sprite_base must be a real symbol in the mis-aligned image");
+  assert.ok(charBase !== undefined, "align_char_base must be a real symbol in the mis-aligned image");
+  assert.notEqual(spriteBase! % 64, 0, `the mis-aligned align_sprite_base ($${spriteBase!.toString(16)}) must NOT be 64-byte aligned`);
+  assert.notEqual(charBase! % 2048, 0, `the mis-aligned align_char_base ($${charBase!.toString(16)}) must NOT be 2048-byte aligned`);
+});
+
+test("hazard subject: the regenerator's fixture table declares two builds, and both refuse before writing if the assembler is unusable", () => {
+  const generatorSource = readFileSync(REGENERATOR_PATH, "utf8");
+  const outputMentions = generatorSource.match(/output:\s*"[^"]+\.prg"/g) ?? [];
+  assert.equal(outputMentions.length, 2, "the FIXTURES table must declare exactly two build entries, one per committed .prg");
+  assert.ok(generatorSource.includes('"hazard-subject.prg"'), "the aligned build's output name must be declared");
+  assert.ok(generatorSource.includes('"hazard-subject-misaligned.prg"'), "the mis-aligned build's output name must be declared");
+  assert.ok(generatorSource.includes("REFUSING to write a partial fixture"), "the shared refusal path must still cover both builds");
+});
+
+test("hazard subject: REGENERATOR AGREEMENT (mis-aligned twin) -- re-deriving the synthesized root reproduces the committed hazard-subject-misaligned.prg byte-for-byte", { skip: SKIP_REASON }, () => {
+  const { bytes } = assembleMisalignedFreshWithSymbols();
+  assert.deepEqual(
+    [...bytes],
+    [...new Uint8Array(readFileSync(MISALIGNED_PRG_PATH))],
+    "the synthesized mis-aligned root and hazard-subject-misaligned.prg have drifted apart; regenerate with " +
+      "`cd src/mcp/vice && node fixtures/hazard-subject/make-hazard-subject-fixtures.mjs`.",
+  );
+});
+
+test("hazard subject: the mis-aligned source's header states that the assembler exits zero and that no automated check here distinguishes the two images by behaviour", () => {
+  const misalignedSource = readFileSync(ALIGN_MISALIGNED_SOURCE_PATH, "utf8").toLowerCase();
+  assert.ok(misalignedSource.includes("exits zero"), "the header must state that the assembler exits zero on this build");
+  assert.ok(misalignedSource.includes("by behaviour"), "the header must state that no automated check here distinguishes the two images by behaviour");
+});
+
+test("hazard subject: no planning-vocabulary string appears anywhere in the mis-aligned fixture source", () => {
+  const misalignedSource = readFileSync(ALIGN_MISALIGNED_SOURCE_PATH, "utf8");
+  assert.ok(!misalignedSource.includes(".planning/"), "must not reference a .planning/ path");
+  assert.ok(!/\/gsd-/.test(misalignedSource), "must not reference a /gsd- command name");
+  assert.ok(!/\bD-\d/.test(misalignedSource), "must not carry a bare D-NN decision id");
+  assert.ok(!/\bBUILD-\d/.test(misalignedSource), "must not carry a BUILD-NN requirement id");
+  assert.ok(!/\bPhase\s+\d/.test(misalignedSource), "must not carry a 'Phase N' citation");
 });
 
 test("hazard subject: REGENERATOR AGREEMENT -- re-assembling the root reproduces the committed hazard-subject.prg byte-for-byte", { skip: SKIP_REASON }, () => {
