@@ -3,7 +3,18 @@ title: c64-memory-mapping's 623-line SKILL.md covers three jobs under a descript
 date: 2026-09-11
 priority: low
 source: /gsd-explore — skill redundancy audit
+resolved: 2026-09-12
 ---
+
+> **Resolved 2026-09-12** as a ride-along in phase 52 plan 08 (fork-backend removal), via the
+> body-restructure direction named as an option here — not the description-widening direction.
+> The description was left byte-identical to the copy in `CLAUDE.md`'s project-skills table (a
+> repo-wide invariant a description-widening edit would have broken); instead the two secondary
+> sections ("Classifying every region of an annotation project" and "What a symbol in the store
+> actually represents") were demoted from `##` to `###` under a new `## Reference material for
+> annotating` heading, making them explicitly subordinate to the lookup/annotate job the
+> description already promises. No content deleted, no skill split or merged. Not a Phase 52
+> success criterion; landed only because this page was already open in the same pass.
 
 # What
 

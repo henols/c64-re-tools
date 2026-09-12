@@ -3,7 +3,14 @@ title: routine-queue-walker paraphrases c64-program-recon's procedure and drops 
 date: 2026-09-11
 priority: medium
 source: /gsd-explore — skill redundancy audit
+resolved: 2026-09-12
 ---
+
+> **Resolved 2026-09-12** as a ride-along in phase 52 plan 08 (fork-backend removal). §2.2
+> "Walk it" now delegates to `c64-program-recon`'s "Documenting one routine, end to end"
+> procedure by reference — including the 4096-byte `anno_read_region` cap and the tail-call /
+> fall-through bounds rules this todo names — instead of paraphrasing it. Not a Phase 52 success
+> criterion; landed only because these pages were already open in the same pass.
 
 # What
 

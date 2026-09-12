@@ -224,7 +224,14 @@ for any other enum.** `anno_create_project_enum` defines the variants and `anno_
 binds one to the accessing instruction's address — see "Name it" and "Document it" below. That is
 manual where `gen-enums` was bulk, but it writes exactly the same rows into the store.
 
-## Classifying every region of an annotation project
+## Reference material for annotating
+
+Two deeper jobs feed the annotate/lookup job above, rather than standing apart from it: knowing
+what a whole region actually is (code, or one of eight kinds of data) before it can be annotated
+at all, and knowing what one of a program's own addresses represents when no published table can
+say. Both exist to serve a documented listing; neither is invoked as a job on its own.
+
+### Classifying every region of an annotation project
 
 Everything above answers *what does this published address mean*. This section
 answers a different question over the same map: **given a loaded binary in an
@@ -243,7 +250,7 @@ entry point and marks it **Code**. Everything else is **Undefined** — not
 "data", just unexplored. The job here is to walk the Undefined regions, work
 out what each one actually is, and set it.
 
-### The one mistake that matters more than the rest
+#### The one mistake that matters more than the rest
 
 **Never disassemble a region without concrete proof that it executes.** Random
 data routinely disassembles into plausible-looking instruction sequences, and
@@ -269,7 +276,7 @@ None of those? Leave it **Undefined**, or classify it as data — even when the
 bytes disassemble cleanly. "It looked like code" is how a sprite sheet becomes
 four hundred lines of fiction.
 
-### The order of the passes
+#### The order of the passes
 
 Work the Undefined blocks in four passes, in this order. Do not interleave
 them; each pass makes the next one cheaper.
@@ -287,7 +294,7 @@ them; each pass makes the next one cheaper.
    **Never** speculatively disassemble in this pass; by definition nothing here
    met the proof bar.
 
-### Scope, and reading a region
+#### Scope, and reading a region
 
 1. `anno_get_binary_info` first. Keep `origin`, `size`, `system`, `filename`,
    `description` and `may_contain_undocumented_opcodes`.
@@ -315,7 +322,7 @@ them; each pass makes the next one cheaper.
    classification; a 4096-byte hexdump is more than can be read carefully in
    one pass.
 
-### Applying the classification
+#### Applying the classification
 
 - **Code**: `anno_disassemble` from the entry-point address to READ, then
   `anno_set_data_type` with `"code"` to RECORD the range you verified.
@@ -357,7 +364,7 @@ then: anno_set_data_type start=2049 end=2303 data_type="code"
 then: anno_get_blocks max_results=500        # refresh
 ```
 
-### The block types
+#### The block types
 
 | Block type | `data_type` | When |
 |---|---|---|
@@ -374,7 +381,7 @@ then: anno_get_blocks max_results=500        # refresh
 | External file | `external_file` | Large blobs to export as-is: SID tunes, bitmaps, charsets |
 | Undefined | `undefined` | Reset to unknown. The honest answer for a region you cannot place |
 
-### Recognising each kind
+#### Recognising each kind
 
 **Byte data** — regular patterns that form no valid instruction sequence;
 addressed by `LDA addr,X` / `LDA addr,Y` table lookups; sprite data in 63-byte
@@ -413,7 +420,7 @@ in multiples of 64, or a bitmap. Export it rather than annotate it.
 it is passed to CHROUT, it is PETSCII. Getting this backwards produces text
 that renders as garbage in exactly one of the two places.
 
-### The adjacent-table limitation, and how it was closed
+#### The adjacent-table limitation, and how it was closed
 
 **Dated limitation, recorded 2026-08-24; CLOSED 2026-08-29 when the store
 changed underneath it.** The old store auto-merged two adjacent regions of the
@@ -440,7 +447,7 @@ So the working rules are now the ordinary ones:
 - **Do not** carry the old over-merge caveat into a report taken from this
   store. It was true of the retired one and is not true here.
 
-### Labelling, and the report
+#### Labelling, and the report
 
 Name what you classified — `anno_set_label_name` on entry points, tables and
 strings — and comment it with `anno_set_comment` (`"line"` above,
@@ -460,7 +467,7 @@ Then report, and mean it:
   own — so quoting the revision is how the report is pinned to an exact store
   state rather than to "after the pass".
 
-### What goes wrong
+#### What goes wrong
 
 | Symptom | What it actually is |
 |---|---|
@@ -471,7 +478,7 @@ Then report, and mean it:
 | Two tables you classified separately show up as one block | The adjacent-table limitation above. Not your error. |
 | Text renders as garbage on screen but fine through CHROUT | It is PETSCII, typed as screencode — or the reverse. |
 
-## What a symbol in the store actually represents
+### What a symbol in the store actually represents
 
 `lookup` at the top of this page answers what a **published** address means —
 a hardware register, a KERNAL entry point, an OS variable. That answer comes
@@ -483,7 +490,7 @@ When `lookup` returns a region-only answer — the dominant case for a game's ow
 code and variables, as noted above — this is the procedure that gets you a
 name.
 
-### 1. Target and context
+#### 1. Target and context
 
 - **Always start from an explicit address**, `$XXXX` or its decimal
   equivalent. There is no editor cursor in this project's route, and upstream's
@@ -497,7 +504,7 @@ name.
   remember that `LAX`, `SAX` and `DCP` have real read/write side effects that
   belong in the data-flow picture.
 
-### 2. Gather the usage
+#### 2. Gather the usage
 
 `anno_get_cross_references` on the address — naming the `store`, the `image` and
 a REQUIRED `max_results` — returns everywhere it is touched. Read the
@@ -519,7 +526,7 @@ order of likelihood:
 3. It is genuinely **dead**: unused variable, or code no longer reached. Say so
    in the report rather than inventing a purpose.
 
-### 3. Place it
+#### 3. Place it
 
 **A hardware register?** `lookup` it. If one of the four tables names it, take
 the published name and the per-bit breakdown with it — that reading rests on
@@ -557,7 +564,7 @@ define one (`0 = INIT`, `1 = TITLE`, `2 = GAMEPLAY`, `3 = GAME_OVER`) with a
 real `description` if none matches, then apply it to every instruction reading
 or writing the variable.
 
-### 4. Name it
+#### 4. Name it
 
 | Symbol kind | Convention | Example |
 |---|---|---|
@@ -578,7 +585,7 @@ or writing the variable.
 
 Apply it with `anno_set_label_name`.
 
-### 5. Document it
+#### 5. Document it
 
 - `anno_set_comment` `"line"` at the definition: the range it occupies, its
   purpose, its bitfield layout if it has one.
@@ -598,7 +605,7 @@ reconstruct the target by hand and put it in a side comment on both
 instructions — `; low byte of ptr_sprite_table ($C240)` — so the pointer is
 still readable even though the store cannot format it.
 
-### 6. Report
+#### 6. Report
 
 - **Address** and its current label.
 - **Classification**: flag, counter, pointer, hardware register, state

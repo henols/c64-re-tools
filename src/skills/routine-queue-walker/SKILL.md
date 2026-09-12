@@ -118,18 +118,17 @@ line comment. That is the only test; do not guess from the label name.
 
 ### 2.2 Walk it
 
-- **Always work from an explicit address** — `$XXXX`, or the decimal
-  equivalent. Never from "wherever we are"; there is no editor cursor in this
-  project's route, and upstream's own text forbids relying on one anyway. Read
-  the routine's bytes with `anno_read_region` over the explicit range.
-- Take **one** entry at a time, to completion, before starting the next.
-- For each entry, do the full job: rename the label (`anno_set_label_name`),
-  add a header line comment describing what the routine does and what it
-  leaves in the registers and memory, add side comments on the instructions
-  that carry the meaning (`anno_set_comment`), and record anything you are
-  unsure about rather than smoothing it over.
-- Record per entry: the address, the old label, the new label, a one-line
-  summary, and any uncertainty. That record is the report in Phase 4.
+Take **one** entry at a time, to completion, before starting the next — the
+queue discipline this section owns. For each entry, run `c64-program-recon`
+`SKILL.md`'s **"Documenting one routine, end to end"** procedure (steps 1-7)
+against the entry's explicit address — including its 4096-byte
+`anno_read_region` cap (consecutive ranges above it, never a raised cap) and
+its tail-call / fall-through bounds rules (`JMP shared_epilogue` still ends
+the routine; no return may mean fall-through — say so). Do not re-derive or
+paraphrase that procedure here.
+
+Record per entry, for Phase 4: the address, the old label, the new label, a
+one-line summary, and any uncertainty.
 
 ### 2.3 Refresh point
 
