@@ -1,12 +1,18 @@
 #!/usr/bin/env node
 // anno-hazard-report.test.ts
 //
-// HERMETIC except for reading three committed fixture images off disk
-// (`fixtures/export-asm/smc.prg`, `fixtures/dxa/tracer.prg`, this module's
-// own source text) -- no store, no VICE, no network.
+// HERMETIC except for reading committed fixture images and this module's own
+// (and `anno-coverage.ts`'s) source text off disk -- no store, no VICE, no
+// network.
 //
 // Behaviors covered, grouped by the stable name prefixes the plan declares:
 //
+//   hazard class-1:  the imported indexed-dispatch scanner, mapped onto this
+//                     module's finding shape -- stack-return dispatch,
+//                     indirect jump through a vector, a proven split table,
+//                     an advisory decline, mismatched index registers, and
+//                     the scanner's own truncation flag propagating through
+//   hazard reuse:    the exact-count call-site pin (criterion 3)
 //   hazard class-2:  the self-modifying-code detector -- opcode-byte hits,
 //                     operand-byte hits, read-modify-write instructions,
 //                     non-findings (hardware register / zp scratch / outside
@@ -37,6 +43,8 @@ const MODULE_PATH = join(HERE, "anno-hazard-report.ts");
 
 const SMC_PRG_PATH = join(HERE, "fixtures", "export-asm", "smc.prg");
 const TRACER_PRG_PATH = join(HERE, "fixtures", "dxa", "tracer.prg");
+const HAZARD_SUBJECT_PRG_PATH = join(HERE, "fixtures", "hazard-subject", "hazard-subject.prg");
+const COVERAGE_MODULE_PATH = join(HERE, "anno-coverage.ts");
 
 /** A committed `.prg`'s bytes and load address, split the same way every
  * caller in this tree splits a loaded image: the first two bytes are the
@@ -47,6 +55,159 @@ function loadPrg(path: string): { bytes: Uint8Array; origin: number } {
   const origin = raw[0]! | (raw[1]! << 8);
   return { bytes: new Uint8Array(raw.subarray(2)), origin };
 }
+
+// ---------------------------------------------------------------------------
+// hazard class-1: the imported indexed-dispatch scanner
+// ---------------------------------------------------------------------------
+
+test("hazard class-1: a stack-return (RTS-trick) dispatch is proven on the committed hazard-subject fixture and produces mechanism stack-return-dispatch", () => {
+  const { bytes, origin } = loadPrg(HAZARD_SUBJECT_PRG_PATH);
+  const report = buildHazardReport({ bytes, origin });
+  const dispatchFindings = report.findings.filter((f) => f.hazardClass === "indexed-dispatch" && f.mechanism === "stack-return-dispatch");
+  assert.ok(dispatchFindings.length >= 1, "the committed hazard-subject fixture must produce at least one stack-return-dispatch finding");
+  for (const f of dispatchFindings) {
+    assert.notEqual(f.blockedAddress, null, "a stack-return-dispatch finding must name a blocked table base");
+    assert.notEqual(f.blockedAddress, f.anchorAddress, "the blocked address must be the table base, never the dispatching instruction's own address");
+  }
+});
+
+test("hazard class-1: an indirect jump through a zero-page vector produces mechanism indirect-jump-through-vector, blocked at the vector address", () => {
+  // jmp ($00fb) -- pointer $fb is a zero-page vector, outside this tiny image.
+  const bytes = new Uint8Array([0x6c, 0xfb, 0x00]);
+  const report = buildHazardReport({ bytes, origin: 0x0800 });
+  const finding = report.findings.find((f) => f.hazardClass === "indexed-dispatch" && f.mechanism === "indirect-jump-through-vector");
+  assert.ok(finding, "an indirect jump must produce an indirect-jump-through-vector finding");
+  assert.equal(finding!.anchorAddress, 0x0800, "the anchor is the jmp instruction itself");
+  assert.equal(finding!.blockedAddress, 0x00fb, "the blocked address is the vector location the jump reads its target from");
+});
+
+test("hazard class-1: a proven split hi/lo address-table pairing gated by a zero-page-vector jump produces mechanism split-address-table, blocked at the table base -- never the dispatching instruction", () => {
+  // ldx #0 ; lda $0810,x ; sta $fc ; lda $0811,x ; sta $fb ; jmp ($00fb)
+  // Table at $0810 (hi byte)/$0811 (lo byte) encodes target $0812 (a nop).
+  const bytes = new Uint8Array([
+    0xa2, 0x00, // 0800 ldx #0
+    0xbd, 0x10, 0x08, // 0802 lda $0810,x
+    0x85, 0xfc, // 0805 sta $fc
+    0xbd, 0x11, 0x08, // 0807 lda $0811,x
+    0x85, 0xfb, // 080a sta $fb
+    0x6c, 0xfb, 0x00, // 080c jmp ($00fb)
+    0xea, // 080f nop (padding)
+    0x08, // 0810 tbl_hi = HI(target $0812)
+    0x12, // 0811 tbl_lo = LO(target $0812)
+    0xea, // 0812 target: nop
+  ]);
+  const origin = 0x0800;
+  const report = buildHazardReport({ bytes, origin });
+  const splitFindings = report.findings.filter((f) => f.hazardClass === "indexed-dispatch" && f.mechanism === "split-address-table");
+  assert.equal(splitFindings.length, 1, "exactly one proven split-address-table finding must be produced");
+  assert.equal(splitFindings[0]!.anchorAddress, 0x0802, "the anchor is the first indexed load, the dispatching instruction");
+  assert.equal(splitFindings[0]!.blockedAddress, 0x0810, "the blocked address is the table base ($0810), never the dispatching instruction's own address ($0802)");
+});
+
+test("hazard class-1: an advisory, ungated split-table pairing (mismatched index registers) produces NO entry in findings, and appears verbatim in unprovenDispatchCandidates", () => {
+  // ldx #0 ; lda $080d,x ; pha ; ldy #0 ; lda $080e,y ; pha ; rts
+  // Structurally the stack-return shape, but X on one load and Y on the
+  // other: class 4 declines (mismatched registers), and class 3 cannot
+  // resolve an orientation either -- purely advisory.
+  const bytes = new Uint8Array([
+    0xa2, 0x00, // 0800 ldx #0
+    0xbd, 0x0d, 0x08, // 0802 lda $080d,x
+    0x48, // 0805 pha
+    0xa0, 0x00, // 0806 ldy #0
+    0xb9, 0x0e, 0x08, // 0808 lda $080e,y
+    0x48, // 080b pha
+    0x60, // 080c rts
+    0x00, // 080d tbl_hi (arbitrary; advisory candidates carry no targets)
+    0x00, // 080e tbl_lo
+    0xea, // 080f trailing pad -- the scanner's own inImage() needs room for a
+    // full 2-byte word read at $080e, i.e. $080e+1 < effectiveEnd
+  ]);
+  const origin = 0x0800;
+  const report = buildHazardReport({ bytes, origin });
+  const dispatchFindings = report.findings.filter((f) => f.hazardClass === "indexed-dispatch");
+  assert.deepEqual(dispatchFindings, [], "a mismatched-register pairing must produce no proven class-1 finding");
+  assert.ok(report.unprovenDispatchCandidates.length >= 1, "the mismatched pairing must appear as an unproven candidate");
+  for (const candidate of report.unprovenDispatchCandidates) {
+    assert.equal(candidate.orientationResolved, false, "an advisory candidate carries no orientation claim");
+    assert.deepEqual(candidate.targets, [], "an advisory candidate reconstructs no targets");
+  }
+});
+
+test("hazard class-1: a byte stream with two indexed loads through different index registers produces no proven class-1 finding (same construction as the advisory case above)", () => {
+  const bytes = new Uint8Array([
+    0xa2, 0x00, 0xbd, 0x0d, 0x08, 0x48, 0xa0, 0x00, 0xb9, 0x0e, 0x08, 0x48, 0x60, 0x00, 0x00,
+  ]);
+  const report = buildHazardReport({ bytes, origin: 0x0800 });
+  assert.equal(report.findings.filter((f) => f.hazardClass === "indexed-dispatch").length, 0);
+});
+
+test("hazard class-1: the scanner's truncation flag propagates to the report's own truncation flag rather than being swallowed", () => {
+  const origin = 0x0800;
+  const tableEntries = 64; // MAX_TABLE_ENTRIES: the 65th check trips truncation
+  const bytes = new Uint8Array(3 + tableEntries * 2);
+  bytes[0] = 0x6c;
+  bytes[1] = 0x03;
+  bytes[2] = 0x08; // jmp ($0803)
+  for (let k = 0; k < tableEntries; k++) {
+    bytes[3 + k * 2] = origin & 0xff;
+    bytes[3 + k * 2 + 1] = (origin >> 8) & 0xff;
+  }
+  const report = buildHazardReport({ bytes, origin });
+  assert.equal(report.truncated, true, "a scan cut short by MAX_TABLE_ENTRIES must set the report's own truncated flag");
+});
+
+// ---------------------------------------------------------------------------
+// hazard reuse: the exact-count call-site pin (criterion 3)
+// ---------------------------------------------------------------------------
+
+/**
+ * `text` with its `//` and block comments removed, positions otherwise
+ * intact -- the same minimal shape `anno-coverage.test.ts`'s own
+ * `withoutComments()` uses for its own call-site pins against this SAME
+ * file. Deliberately does NOT also track quotes/template literals (unlike
+ * `anno-cli.test.ts`'s `stripCommentsAndLiterals()`): neither source file
+ * this pin reads ever spells `scanIndirectDispatch(` inside a real string or
+ * template literal (every occurrence outside a call site is inside a `//`
+ * or `/* *\/`-style doc comment), and a quote-tracking stripper desyncs on
+ * this file's own quote-heavy prose comments, undercounting real call
+ * sites -- measured directly against this file during authoring.
+ */
+function withoutComments(source: string): string {
+  let out = "";
+  let i = 0;
+  while (i < source.length) {
+    if (source[i] === "/" && source[i + 1] === "/") {
+      while (i < source.length && source[i] !== "\n") i++;
+      continue;
+    }
+    if (source[i] === "/" && source[i + 1] === "*") {
+      i += 2;
+      while (i < source.length && !(source[i] === "*" && source[i + 1] === "/")) i++;
+      i += 2;
+      continue;
+    }
+    out += source[i++];
+  }
+  return out;
+}
+
+test("hazard reuse: the scanner is declared exactly once and called from exactly two non-test source sites", () => {
+  const coverageText = withoutComments(readFileSync(COVERAGE_MODULE_PATH, "utf8"));
+  const hazardText = withoutComments(readFileSync(MODULE_PATH, "utf8"));
+  const combined = `${coverageText}\n${hazardText}`;
+  const declarations = (combined.match(/\bfunction scanIndirectDispatch\(/g) ?? []).length;
+  assert.equal(declarations, 1, "scanIndirectDispatch must be declared exactly once, in anno-coverage.ts");
+  const occurrences = (combined.match(/\bscanIndirectDispatch\(/g) ?? []).length;
+  const callSites = occurrences - declarations;
+  assert.equal(
+    callSites,
+    2,
+    `scanIndirectDispatch() has ${callSites} non-test call site(s) across anno-coverage.ts and anno-hazard-report.ts. The two ` +
+      "expected sites are the coverage report builder (anno-coverage.ts's buildCoverageReport()) and the hazard report " +
+      "(anno-hazard-report.ts's buildHazardReport()). A third site means either a new caller that must be recorded in this " +
+      "test's own comment, or a second implementation of the scan, which this phase forbids.",
+  );
+});
 
 // ---------------------------------------------------------------------------
 // hazard class-2: opcode-byte hit (hand-built)

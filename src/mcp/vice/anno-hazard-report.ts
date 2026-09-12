@@ -109,6 +109,7 @@
 import { decode, type Instruction } from "./disasm-decoder.ts";
 import { blockClassAt, type BlockEntry } from "./block-class.ts";
 import type { LabelRow, CommentRow, XrefRow, EvidExecRow } from "./anno-types.ts";
+import { scanIndirectDispatch, type IndirectDispatchScan, type SplitTableFinding } from "./anno-coverage.ts";
 
 // ---------------------------------------------------------------------------
 // The hazard-class vocabulary
@@ -215,6 +216,20 @@ export interface HazardLimit {
  */
 export const HAZARD_LIMITS: readonly HazardLimit[] = Object.freeze([
   {
+    hazardClass: "indexed-dispatch",
+    limit:
+      "the imported scanner's promotion gate accepts exactly two evidence " +
+      "shapes by design -- the stack-return (RTS-trick) idiom and a " +
+      "zero-page vector actually jumped through -- so a real-world " +
+      "computed-dispatch construction outside those two shapes is reported " +
+      "as an unproven candidate, never as a finding.",
+    consequence:
+      "an empty findings list for this class is never a claim that the " +
+      "program contains no computed dispatch; a declined candidate still " +
+      "appears in this report's unprovenDispatchCandidates collection, " +
+      "which this field's own absence would otherwise silently hide.",
+  },
+  {
     hazardClass: "self-modifying-code",
     limit:
       "a store through a runtime-computed zero-page pointer -- indirect or " +
@@ -268,12 +283,115 @@ export interface HazardReport {
    * here from the ranges' own inclusive extents, never copied from an
    * input. Zero for an empty `ranges` array; never a refusal. */
   denominator: number;
-  /** Which hazard classes this call actually ran a detector for. This
-   * plan's slice always reports exactly `["self-modifying-code"]`. */
+  /** Which hazard classes this call actually ran a detector for. */
   classesEvaluated: readonly HazardClass[];
-  /** Reserved for the indexed-dispatch class. Empty in this plan's slice. */
-  unprovenDispatchCandidates: number[];
+  /**
+   * The imported scanner's ADVISORY `splitTableCandidates` collection,
+   * carried through VERBATIM -- never converted to a finding, never
+   * renamed, never filtered and never sorted into `findings`. The
+   * scanner's own promotion gate is deliberately closed to two accepted
+   * evidence shapes (the stack-return idiom and a zero-page vector actually
+   * jumped through), so a real-world dispatch construction outside those
+   * two shapes lands here rather than being silently promoted on weaker
+   * evidence. Dropping this collection -- or folding it into `findings` --
+   * would make an honest decline indistinguishable from an absence, which
+   * is exactly the confusion this field exists to prevent. See
+   * `HAZARD_LIMITS`'s `indexed-dispatch` entry for the same point stated in
+   * the report's own emitted output.
+   */
+  unprovenDispatchCandidates: readonly SplitTableFinding[];
   truncated: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// The class-1 (indexed-dispatch) detector -- IMPORTED, never re-derived
+// ---------------------------------------------------------------------------
+//
+// This is the existing `scanIndirectDispatch()` scan (`anno-coverage.ts`),
+// called exactly once, mapped onto this module's own finding shape. No
+// opcode table, no table walk and no entry-point plausibility check is
+// written here -- every one of those already lives in the scanner, survived
+// a real false-positive incident there, and must not be rebuilt beside it.
+
+/**
+ * Maps the scanner's four PROVEN collections onto `HazardFinding`s.
+ * `anchorAddress` is always the dispatching instruction (the code that
+ * reads the table or vector); `blockedAddress` is always the table or
+ * vector BASE -- the thing that cannot move -- never the dispatching
+ * instruction's own address, because a report about movement must name
+ * what is pinned, not only where the pin is read from.
+ */
+function detectIndexedDispatch(scan: IndirectDispatchScan): HazardFinding[] {
+  const findings: HazardFinding[] = [];
+
+  for (const jump of scan.indirectJumps) {
+    findings.push({
+      hazardClass: "indexed-dispatch",
+      anchorAddress: jump.at,
+      blockedAddress: jump.pointer,
+      mechanism: "indirect-jump-through-vector",
+      strength: "static-shape-matched",
+      detail:
+        "this jmp reads its target from the vector address named here; " +
+        "relocating the vector itself, or whatever value is stored at it, " +
+        "without updating every indirect jump that reads it silently " +
+        "changes where control transfers.",
+      corroboration: "none",
+    });
+  }
+
+  for (const table of scan.multiEntryTables) {
+    findings.push({
+      hazardClass: "indexed-dispatch",
+      anchorAddress: table.at,
+      blockedAddress: table.base,
+      mechanism: "multi-entry-dispatch-table",
+      strength: "static-shape-matched",
+      detail:
+        "this indirect jump reads one of several consecutive table entries " +
+        "starting at the base named here; relocating the table without " +
+        "updating every jump that reads through it silently changes which " +
+        "entry -- and therefore which target -- a given index selects.",
+      corroboration: "none",
+    });
+  }
+
+  for (const stackReturn of scan.stackReturnDispatch) {
+    findings.push({
+      hazardClass: "indexed-dispatch",
+      anchorAddress: stackReturn.at,
+      // The lower of the two reconstructed table bases: the two tables sit
+      // back-to-back and this is the base of that combined region, not an
+      // arbitrary pick between them.
+      blockedAddress: Math.min(stackReturn.loBase, stackReturn.hiBase),
+      mechanism: "stack-return-dispatch",
+      strength: "static-shape-matched",
+      detail:
+        "this routine reconstructs a return address from a split hi/lo " +
+        "table pair via the RTS-trick idiom (push hi, push lo, rts); " +
+        "relocating either table without updating the loads that read it " +
+        "silently changes which address the trailing rts resumes at.",
+      corroboration: "none",
+    });
+  }
+
+  for (const splitTable of scan.splitTables) {
+    findings.push({
+      hazardClass: "indexed-dispatch",
+      anchorAddress: splitTable.at,
+      blockedAddress: Math.min(splitTable.loBase, splitTable.hiBase),
+      mechanism: "split-address-table",
+      strength: "static-shape-matched",
+      detail:
+        "this routine builds a jump vector from a split hi/lo table pair " +
+        "and dispatches through it; relocating either table without " +
+        "updating the loads that read it silently changes the vector the " +
+        "indirect jump reads and therefore where control transfers.",
+      corroboration: "none",
+    });
+  }
+
+  return findings;
 }
 
 // ---------------------------------------------------------------------------
@@ -489,9 +607,17 @@ export function buildHazardReport(input: HazardReportInput): HazardReport {
     if (row && isNonNegativeSafeInteger(row.address)) observedAddresses.add(row.address);
   }
 
-  const classesEvaluated: HazardClass[] = imageIsEmpty ? [] : ["self-modifying-code"];
+  const classesEvaluated: HazardClass[] = imageIsEmpty ? [] : ["indexed-dispatch", "self-modifying-code"];
 
-  const rawFindings = imageIsEmpty ? [] : detectSelfModifyingCode(instructions, instructionIndex, observedAddresses);
+  // The ONE new call site this plan adds. Same triple the existing consumer
+  // (`buildCoverageReport()`) passes: the already-decoded instruction stream,
+  // the raw bytes, and the origin -- see `hazard reuse:` in this module's
+  // own test file for why a second call site anywhere else is a defect.
+  const dispatchScan: IndirectDispatchScan | null = imageIsEmpty ? null : scanIndirectDispatch(instructions, bytes, origin);
+
+  const rawFindings = imageIsEmpty
+    ? []
+    : [...detectIndexedDispatch(dispatchScan!), ...detectSelfModifyingCode(instructions, instructionIndex, observedAddresses)];
   const findings = sortFindings(dedupeFindings(rawFindings));
 
   const findingAddresses = new Set<number>();
@@ -508,7 +634,11 @@ export function buildHazardReport(input: HazardReportInput): HazardReport {
     limits: HAZARD_LIMITS,
     denominator: computeDenominator(ranges),
     classesEvaluated,
-    unprovenDispatchCandidates: [],
-    truncated: false,
+    // Carried through VERBATIM -- never filtered, never converted to a
+    // finding. See this field's own doc comment on `HazardReport`.
+    unprovenDispatchCandidates: dispatchScan ? dispatchScan.splitTableCandidates : [],
+    // Propagated, never swallowed: a scan cut short by MAX_TABLE_ENTRIES
+    // must be visible on the report it feeds, not silently absorbed.
+    truncated: dispatchScan ? dispatchScan.truncated : false,
   };
 }
