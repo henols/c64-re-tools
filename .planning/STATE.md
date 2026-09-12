@@ -5,16 +5,16 @@ milestone_name: The Rebuild Half
 current_phase: 48
 current_phase_name: The Movement-Hazard Report and Its Purpose-Built Subject
 status: executing
-stopped_at: Completed 48-03-PLAN.md
-last_updated: "2026-09-12T22:03:24.406Z"
+stopped_at: Completed 48-04-PLAN.md
+last_updated: "2026-09-12T22:40:25.710Z"
 last_activity: 2026-09-12
 last_activity_desc: Phase 48 execution started
-state_head: 6f03b63b8639c02db36a2c98cfd17d469311c7de
+state_head: ea3cfefa7493abd83d6ae6474692dfe0d92d96bb
 progress:
   total_phases: 8
   completed_phases: 3
   total_plans: 28
-  completed_plans: 25
+  completed_plans: 26
   percent: 38
 ---
 
@@ -255,7 +255,7 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 48 (The Movement-Hazard Report and Its Purpose-Built Subject) — EXECUTING
-Plan: 4 of 6
+Plan: 5 of 6
 Status: Ready to execute
 Plans: not yet planned. Phase 47 closed with 6/6 plans across 5 waves, all
 verified 5/5 against real ACME 0.97; its one blocking decision checkpoint
@@ -582,6 +582,7 @@ Last activity: 2026-09-12 — Phase 48 execution started
 | Phase 48 P01 | 38 min | 3 tasks | 18 files |
 | Phase 48 P02 | 62min | 3 tasks | 8 files |
 | Phase 48 P03 | 74min | 3 tasks | 2 files |
+| Phase 48 P04 | 50min | 3 tasks | 19 files |
 
 ## Accumulated Context
 
@@ -1339,6 +1340,8 @@ Recent decisions affecting current work:
 - [Phase 48]: 48-02: the mis-aligned twin has no committed fourth root .a file -- its root is synthesized in memory by swapping one !source line, matching the plan's declared artifact list exactly while still producing a real, independently assembled program.
 - [Phase 48]: Class 3's VIC-II register recovery only recognises an immediate-load-then-store pair; a read-modify-write register write is left unrecovered, which is what makes plan 48-02's own hazard-subject-align.a exercise the undecided-region path for real.
 - [Phase 48]: Class 4 (cycle-exact-raster) is structural-signature-only: every finding is static-signature-only unless a runtime observation covers its own anchor address.
+- [Phase 48]: The timer-stabilised raster construction touches $D012 exactly once (initial arming only, outside the interrupt handler) and never re-arms it, keeping it structurally non-canonical.
+- [Phase 48]: anno-store-export.ts's generic JSON export/import format had no route for scopes at all; added an additive, schema-version-unchanged scopes field and backfilled all nine pre-existing committed fixtures.
 
 ### Pending Todos
 
@@ -2416,8 +2419,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-12T22:03:24.098Z
-Stopped at: Completed 48-03-PLAN.md
+Last session: 2026-09-12T22:40:25.398Z
+Stopped at: Completed 48-04-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
