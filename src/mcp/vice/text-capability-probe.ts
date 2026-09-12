@@ -80,8 +80,8 @@
 //     resolver here. This module takes its dial function and its identity
 //     as ARGUMENTS (`ProbeTextCapabilityOptions`); the only import anywhere
 //     in this file is a type-only import of ViceBackend, erased entirely by
-//     Node's type-stripping at runtime, matching capability-registry.ts's
-//     own "imports nothing at runtime" posture.
+//     Node's type-stripping at runtime -- this module imports nothing at
+//     runtime.
 //   - Never write a capability verdict to disk, in any form -- not under
 //     the tool-written root directory, not in the supervisor's backend
 //     record, not in a temp file. See the D-42-2 paragraph above.
@@ -106,11 +106,13 @@
 /** FORKRM-01 (plan 52-06): deliberately NOT `backend-detect.mts`'s
  * `ViceBackend` -- that type now has exactly one member ("stock"), since it
  * answers "which backend did THIS PROCESS just detect/launch". This
- * module's identity/cache-keying logic below is registry-shaped, not
- * detection-shaped (52-06's own objective names this file's fork
- * references out of its scope; plan 52-07 owns them), matching
- * capability-registry.ts's own `LegacyViceBackend` decoupling for the exact
- * same reason. */
+ * module's identity/cache-keying logic below answers a different, PERMANENT
+ * question: whether the identity a probe is keyed on agrees with what the
+ * broker independently reports -- a cross-check that stays two-valued on
+ * purpose so a genuine disagreement (this process resolved one binary, the
+ * broker reports another) is still detectable even though only "stock" is
+ * ever resolved today (plan 52-07 confirmed this decoupling; there was
+ * nothing importing a shared registry here to remove). */
 type LegacyViceBackend = "fork" | "stock";
 
 // ---------------------------------------------------------------------------
@@ -600,8 +602,8 @@ function chipDegradationLine(verdict: TextCapabilityVerdict, observedLine: strin
 /**
  * Renders one message over `verdicts`, in `TEXT_CAPABILITY_COMMANDS` order
  * (independent of the order `verdicts` was handed in), with three
- * distinguishable shapes -- never one wording reused for all three, per
- * `capability-registry.ts`'s own "keyed by reason shape" discipline:
+ * distinguishable shapes -- never one wording reused for all three, so a
+ * reader can tell which of the three failure classes they actually hit:
  *
  *   1. A MISSING build capability: command(s), capability name, binary
  *      path, one remedy sentence. Two or more verdicts sharing the same

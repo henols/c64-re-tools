@@ -14,9 +14,9 @@
 // symlinked reference directory -- and the failure mode of that divergence
 // is one CI gate passing while the other should have failed. This is
 // CLAUDE.md's own named "re-deriving a cross-cutting seam locally"
-// anti-pattern, committed in the very phase (08) that consolidated
-// capability data into `capability-registry.ts` to avoid exactly this
-// shape.
+// anti-pattern, committed in the very phase (08) that first consolidated
+// this kind of cross-cutting skill-corpus data into one shared module to
+// avoid exactly this shape.
 //
 // WHAT NOT TO DO: do not re-derive `walkSkills()` or either regex locally
 // in a third script (or a fourth). Import from here. If the corpus-walk

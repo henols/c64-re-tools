@@ -164,9 +164,6 @@ import { CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 // and every call site.
 import * as backendDetect from "./backend-detect.mts";
 import * as stockDispatch from "./stock-dispatch.ts";
-// The single per-backend capability lookup (BACK-05), consumed only inside
-// the CallToolRequestSchema override's tools[name] miss branch below.
-import { capabilityRefusalMessage } from "./capability-registry.ts";
 // Plan 29-01: the curated anno_* tool surface's DEFINITIONS, imported
 // STATICALLY -- registration below happens synchronously at module scope, so
 // a dynamic import cannot serve it. This costs nothing at module load: no
@@ -1628,16 +1625,11 @@ server.getServer().setRequestHandler(CallToolRequestSchema, async (request) => {
   const name = request.params.name;
   const tool = tools[name];
   if (!tool || !tool.execute) {
-    // Fires ONLY when the ACTIVE backend's trimmed manifest (D-07) never
-    // registered this name -- i.e. `tools` has no key for it. This lookup
-    // renders undefined for a genuinely unknown name (or a same-backend
-    // miss), so a real typo still falls through to the generic message
-    // below unchanged. capability-registry.ts is the ONE place to
-    // edit this data -- never hand-add a per-tool special case here.
-    const capabilityRefusal = capabilityRefusalMessage(name, "stock");
-    if (capabilityRefusal !== undefined) {
-      return { content: [{ type: "text", text: capabilityRefusal }], isError: true };
-    }
+    // Fires ONLY when the stock manifest (D-07) never registered this name
+    // -- i.e. `tools` has no key for it. There is one backend now, so an
+    // unrecognised name is simply unknown: no per-capability refusal lookup
+    // remains to distinguish "this tool exists on some other backend" from
+    // "this is a typo" -- there is nothing else it could be.
     return { content: [{ type: "text", text: `Unknown tool: ${name}` }], isError: true };
   }
   try {

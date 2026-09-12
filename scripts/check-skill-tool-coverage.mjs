@@ -26,17 +26,19 @@
 // how a coverage check rots into a permanent exemption (see the plan's own
 // D-05-05/T-05-08-02).
 //
-// D-E, ONE SOURCE OF TRUTH (Phase 8, plan 08-06): FORK_ONLY_UNRECOVERABLE
-// below is a PROJECTION of capability-registry.ts's CAPABILITY_REGISTRY
-// (the hardware-category, fork-provided entries), never a second
-// hand-maintained copy of the same three-tool set. If a reason reads wrong,
-// the fix is always in capability-registry.ts, never here.
+// FORK_ONLY_UNRECOVERABLE below used to be a PROJECTION of a per-backend
+// capability registry (Phase 8, plan 08-06), filtered to its hardware-
+// category, fork-provided entries. That registry is gone (plan 52-07: there
+// is one backend now, so a per-backend capability delta has nothing left to
+// record) and its six hardware-loss entries are the permanent record in
+// docs/stock-hard-losses.md; this array is now the one literal copy of that
+// same fact, kept in sync with that doc by hand, since there is no second
+// module left to derive it from.
 //
 // This script only ever readFileSync()s and regex-matches skill content, and
-// imports exactly one first-party TypeScript module from src/mcp/vice/
-// (capability-registry.ts, Node's native type-stripping resolves it with no
-// build step and no flag). That one new import does not weaken this script's
-// standing rule: it still never import()s, require()s, eval()s or spawns anything from src/skills/ --
+// imports first-party TypeScript modules from src/mcp/vice/ (Node's native
+// type-stripping resolves them with no build step and no flag); it still
+// never import()s, require()s, eval()s or spawns anything from src/skills/ --
 // skill content remains untrusted input that is matched, never executed.
 //
 // FLOW-01 (11.1-CONTEXT.md, D-11.1-02): everything above checks MCP TOOL
@@ -54,7 +56,6 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { CAPABILITY_REGISTRY } from "../src/mcp/vice/capability-registry.ts";
 import { CURATED_ANNO_TOOLS } from "../src/mcp/vice/anno-tools.ts";
 import { parseAnnoCliVerbs, verbsMissingFromSkills, ANNO_CLI_VERB_FLOOR } from "./lib/anno-cli-verbs.mjs";
 import { walkSkills, MCP_PREFIX_RE, extractToolNames, topLevelSkillDirs } from "./lib/skill-corpus.mjs";
@@ -72,7 +73,6 @@ const DEFAULT_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
  *  imports is what makes a future third import impossible to add without
  *  noticing that it belongs here too. */
 const STATICALLY_BOUND = [
-  { name: "CAPABILITY_REGISTRY", from: "../src/mcp/vice/capability-registry.ts" },
   { name: "CURATED_ANNO_TOOLS", from: "../src/mcp/vice/anno-tools.ts" },
 ];
 
@@ -87,12 +87,13 @@ const STATICALLY_BOUND = [
  *
  * WHAT THIS GATE ACTUALLY DOES WITH `--root`, AND WHY (`CR-03`): every PATH
  * below comes from the one root, but not every INPUT to this gate is a path.
- * `CAPABILITY_REGISTRY` and `CURATED_ANNO_TOOLS` -- the two tables the corpus
- * is measured AGAINST -- arrive through static imports at the top of this file,
- * and a static specifier is resolved against this file's own location, so no
- * argument can move them. This gate therefore does NOT support an arbitrary
- * `--root`: a resolved root that is not `DEFAULT_ROOT` is REFUSED outright,
- * below, rather than half-honoured.
+ * `CURATED_ANNO_TOOLS` -- one of the tables the corpus is measured AGAINST --
+ * arrives through a static import at the top of this file, and a static
+ * specifier is resolved against this file's own location, so no argument can
+ * move it (`FORK_ONLY_UNRECOVERABLE`, the other such table, is now a literal
+ * declared in this file, not an import, for the same reason). This gate
+ * therefore does NOT support an arbitrary `--root`: a resolved root that is
+ * not `DEFAULT_ROOT` is REFUSED outright, below, rather than half-honoured.
  *
  * A sentence forbidding a re-derived `DEFAULT_ROOT` path stood here until
  * 2026-09-01. It was deleted because this file contradicted it two lines above
@@ -367,24 +368,54 @@ const NOT_A_TOOL_NAMES = [
   ],
 ];
 
-// 4. Present on the fork, provably unrecoverable on stock. Asserted below to
-// be present in the fork manifest AND absent from the stock manifest.
+// 4. Permanently unrecoverable on stock -- a hardware or firmware property,
+// not a missing implementation. Asserted below to be absent from the stock
+// manifest (only 3 of these 6 are referenced by any shipped skill; see the
+// set-equality liveness assertion below).
 //
-// D-E consolidation (Phase 8, plan 08-06): this array is DERIVED from
-// capability-registry.ts's CAPABILITY_REGISTRY -- filtered to the "hardware"
-// category entries whose providedBy is "fork" -- rather than a second,
-// hand-typed copy of the same three-tool set. The registry's hardware set
-// currently has 6 members (only 3 of which any shipped skill references; see
-// the set-equality liveness assertion below), so this array now has 6
-// entries, up from the 3 it used to carry literally. Each reason is
-// capability-registry.ts's own user-facing refusal text: it deliberately
-// carries NO planning identifier (no BACK-05, no SKILL-01) -- those routing
-// annotations moved out of the reason text when the registry became the
-// source of truth. capability-registry.ts is now where a reason is edited,
-// never this file.
-const FORK_ONLY_UNRECOVERABLE = CAPABILITY_REGISTRY.filter(
-  (entry) => entry.category === "hardware" && entry.providedBy === "fork"
-).map((entry) => [entry.name, entry.reason]);
+// This used to be DERIVED from a per-backend capability registry (Phase 8,
+// plan 08-06), filtered to its "hardware" category entries whose providedBy
+// was "fork". That registry is gone (plan 52-07: there is one backend now)
+// and its six hardware entries are the permanent record in
+// docs/stock-hard-losses.md -- this literal is kept byte-identical to that
+// doc's reason text by hand. Each reason deliberately carries NO planning
+// identifier (no BACK-05, no SKILL-01): these are user-facing refusal prose,
+// not routing annotations. Edit docs/stock-hard-losses.md and this array
+// together; neither is the other's source of truth any more, both are the
+// same fact recorded twice.
+const FORK_ONLY_UNRECOVERABLE = [
+  [
+    "vice_sid_get_state",
+    "SID's $D400-$D418 registers are write-only in hardware, and the binary monitor exposes " +
+      "no SID read command.",
+  ],
+  [
+    "vice_keyboard_matrix",
+    "The binary monitor's KEYBOARD_FEED (0x72) only injects PETSCII buffer text; the emulator " +
+      "recomputes CIA port B from its own keyboard array on every read, so there is no wire " +
+      "command that can drive the raw matrix.",
+  ],
+  [
+    "vice_keyboard_restore",
+    "RESTORE pulses the NMI line directly; it is not part of the keyboard matrix, and " +
+      "KEYBOARD_FEED has no way to produce it.",
+  ],
+  [
+    "vice_keyboard_chord",
+    "KEYBOARD_FEED injects a whole string at a time; it has no primitive for holding multiple " +
+      "keys down together for a span of frames.",
+  ],
+  [
+    "vice_keyboard_key_press",
+    "KEYBOARD_FEED has no hold/release primitive -- it injects a complete string, not an " +
+      "individual key-down event.",
+  ],
+  [
+    "vice_keyboard_key_release",
+    "KEYBOARD_FEED has no hold/release primitive -- it injects a complete string, not an " +
+      "individual key-up event.",
+  ],
+];
 
 // 5. Not yet built on stock, scheduled for a later phase. Asserted below to
 // be ABSENT from the stock manifest -- the drift guard: when Phase 7 lands
@@ -443,17 +474,10 @@ for (const [name, reason] of NOT_A_TOOL_NAMES) {
 }
 
 // --- Assertion: FORK_ONLY_UNRECOVERABLE absent from stock ------------------
-// D-E consolidation: the old reason assertion required both "BACK-05" and
-// "SKILL-01" to appear in the reason text -- a check that can never hold
-// against capability-registry.ts's reasons, which are user-facing refusal
-// prose and deliberately carry no planning identifier. Replaced with two
-// checks that hold against the registry itself: the reason is non-empty and
-// long enough to be a real explanation, and (below, WR-06) a cardinality
-// assertion that the projection captured the registry's whole hardware/fork
-// set -- not the two per-member category/providedBy echoes this comment
-// used to claim as "three checks", which re-asserted the exact predicates
-// FORK_ONLY_UNRECOVERABLE was filtered on and so could never fail
-// (08-REVIEW.md WR-06).
+// The reason assertion requires the reason to be non-empty and long enough
+// to be a real explanation -- it deliberately carries no planning identifier
+// (no BACK-05, no SKILL-01), matching docs/stock-hard-losses.md's own
+// user-facing prose.
 for (const [name, reason] of FORK_ONLY_UNRECOVERABLE) {
   need(
     Boolean(reason) && reason.length >= 40,
@@ -461,19 +485,15 @@ for (const [name, reason] of FORK_ONLY_UNRECOVERABLE) {
   );
   need(!stockNames.has(name), `${name}: classified as FORK_ONLY_UNRECOVERABLE but present in the STOCK manifest -- it is no longer unrecoverable and this entry must be deleted`);
 }
-// Non-vacuous (WR-06): pins that the projection actually selected the
-// registry's whole hardware/fork set, so a category retag in
-// capability-registry.ts is visible here rather than silently shrinking
-// (or growing) this classification without this script noticing. The
-// floor is the actual measured count as of this fix, not an unchecked
-// import of a prior review's literal -- re-verify against
-// capability-registry.ts before raising or lowering it.
-const registryHardwareForkCount = CAPABILITY_REGISTRY.filter(
-  (e) => e.category === "hardware" && e.providedBy === "fork"
-).length;
+// Non-vacuous: pins the literal to the known permanent-loss count, so an
+// accidental deletion or duplication of an entry is caught here rather than
+// silently shrinking (or growing) this classification unnoticed. Re-verify
+// against docs/stock-hard-losses.md before raising or lowering this floor --
+// it is the one other place this exact fact is recorded.
 need(
-  FORK_ONLY_UNRECOVERABLE.length === registryHardwareForkCount && registryHardwareForkCount >= 6,
-  `FORK_ONLY_UNRECOVERABLE must project every hardware/fork registry entry (got ${FORK_ONLY_UNRECOVERABLE.length} of ${registryHardwareForkCount}, expected >= 6)`
+  FORK_ONLY_UNRECOVERABLE.length === 6,
+  `FORK_ONLY_UNRECOVERABLE must carry exactly the 6 permanent hardware losses recorded in ` +
+    `docs/stock-hard-losses.md (got ${FORK_ONLY_UNRECOVERABLE.length})`
 );
 
 // --- Assertion: PENDING_LATER_PHASE absent from stock (the drift guard) ---
@@ -505,20 +525,16 @@ for (const [name] of PENDING_LATER_PHASE) {
 // script exists to report while claiming they were "present in neither
 // manifest by design".
 //
-// WR-07: the D-E consolidation grew FORK_ONLY_UNRECOVERABLE from 3
-// hand-typed names to all 6 of the registry's hardware/fork entries, and
-// allowlisting it whole (as this used to do) silently made
-// vice_keyboard_chord/vice_keyboard_key_press/vice_keyboard_key_release
-// core-check-exempt as a refactor side effect, not a decision anyone made
-// -- no shipped skill references those three. Only the hardware/fork
-// entries a skill ACTUALLY mentions are allowlisted here, so the other
-// three stay under the core check below: a bare, unannotated mention of
-// one of them now fails exactly like an unclassified name would, instead
-// of being silently exempted. This also replaces the hand-typed set of
-// expected skill-referenced hardware tool names that used to live here (a
-// THIRD copy of the same three-tool fact, after capability-registry.ts and
-// ROADMAP.md's criterion-5 parenthetical) -- the exemption is now derived
-// from actual skill references, never re-typed.
+// WR-07: FORK_ONLY_UNRECOVERABLE grew from 3 hand-typed names to all 6
+// permanent hardware losses, and allowlisting it whole (as this used to do)
+// silently made vice_keyboard_chord/vice_keyboard_key_press/
+// vice_keyboard_key_release core-check-exempt as a refactor side effect, not
+// a decision anyone made -- no shipped skill references those three. Only
+// the hardware-loss entries a skill ACTUALLY mentions are allowlisted here,
+// so the other three stay under the core check below: a bare, unannotated
+// mention of one of them now fails exactly like an unclassified name would,
+// instead of being silently exempted. The exemption is derived from actual
+// skill references, never re-typed as a separate hand-maintained set.
 const allowlistedNames = new Set(
   [
     ...PROXY_LOCAL_TOOLS,
@@ -715,13 +731,12 @@ if (errors.length) {
 
 const categoryCount = (set) => [...set].filter(([name]) => extracted.has(name)).length;
 // FORK_ONLY_UNRECOVERABLE is reported by its full length, not categoryCount()'s
-// extracted-filtered count: since the D-E consolidation this array is the
-// registry's complete hardware/fork set (6), not only the subset a skill
-// happens to reference (3) -- the report now answers "how many entries does
-// this classification hold", matching what the other 5 non-liveness-checked
-// registry entries would report too, rather than conflating classification
-// size with skill-reference liveness (that is what the set-equality
-// assertion above already checks, precisely).
+// extracted-filtered count: this array is the complete permanent-hardware-loss
+// set (6), not only the subset a skill happens to reference (3) -- the report
+// answers "how many entries does this classification hold", matching what the
+// other 5 non-liveness-checked entries would report too, rather than
+// conflating classification size with skill-reference liveness (that is what
+// the set-equality assertion above already checks, precisely).
 console.log(
   `check-skill-tool-coverage: OK -- ${extracted.size} distinct vice_* names extracted from ${skillFiles.length} files across ${topLevelDirs.length} skill directories; ` +
     `${resolvedAdvertisedCount} resolved as advertised on the stock manifest (${stockNames.size} tools total). ` +

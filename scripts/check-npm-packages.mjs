@@ -202,7 +202,6 @@ const REQUIRED_DERIVED_MODULES = [
   ["stock-vicii.ts", "DERIV-05"],
   ["stock-cia.ts", "DERIV-05"],
   ["stock-sprites.ts", "DERIV-06"],
-  ["capability-registry.ts", "BACK-05"],
   ["version.ts", "D-5"],
   ["anno-cli.ts", "ANNO-09"],
 ];

@@ -24,8 +24,7 @@
 // This script only ever `readFileSync()`s and matches skill content, and
 // imports exactly one first-party TypeScript module from `src/mcp/vice/`
 // (`anno-cli.ts`, for its own exported `VERB_OPTIONS` -- Node's native
-// type-stripping resolves it with no build step and no flag, exactly as the
-// sibling gate already imports `capability-registry.ts`). It never
+// type-stripping resolves it with no build step and no flag). It never
 // `import()`s, `require()`s, `eval()`s or spawns anything from either skill
 // tree: skill content is untrusted input that is MATCHED, never executed
 // (T-29-16-03).

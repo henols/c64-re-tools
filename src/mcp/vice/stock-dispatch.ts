@@ -31,7 +31,6 @@
 import { resolve, join } from "node:path";
 
 import type { ToolInfo } from "./vice-errors.ts";
-import { capabilityRefusalMessage } from "./capability-registry.ts";
 import { type HeldLease } from "./vice-broker-client.ts";
 import { stockConnect, stockDisconnect, stockReconnect, type StockConnectSession, type StockConnectDeps } from "./stock-connect.ts";
 import {
@@ -864,31 +863,27 @@ export function stockHandlerFor(name: string): StockHandler | undefined {
 /**
  * The ONE dispatch entry point for the stock backend (D-09). On a hit,
  * delegates to the table entry, unchanged. On a miss, refuses EXPLICITLY --
- * naming the tool, stating the stock backend does not implement it, and
- * naming the fork as the backend that does -- WITHOUT reading `deps` at all
- * (no lease is ever requested for a tool that does not exist on this
- * backend). There is no third branch, and in particular NO fall-through to
- * the fork's HTTP-forwarding path anywhere in this file or anything it calls
- * -- that is D-09's whole point, grep-gated to zero occurrences of that
- * function's name in this file's own code lines.
+ * naming the tool and stating there is no dispatch entry for it -- WITHOUT
+ * reading `deps` at all (no lease is ever requested for a tool that does not
+ * exist on this backend). There is no third branch, and in particular NO
+ * fall-through to the fork's HTTP-forwarding path anywhere in this file or
+ * anything it calls -- that is D-09's whole point, grep-gated to zero
+ * occurrences of that function's name in this file's own code lines.
+ *
+ * FORKRM-05 (plan 52-07): this used to fall back to the deleted per-backend
+ * capability registry's refusal renderer first, naming the fork as the
+ * backend that provides the tool -- that renderer, and the fork it named,
+ * are both gone. A name reaching this branch is advertised on the stock
+ * manifest (so it passed vice-proxy.ts's own lookup) but has no dispatch
+ * entry: that is always an internal inconsistency now, never a capability
+ * gap with a second backend to point a caller at.
  */
 export async function dispatchStock(name: string, args: Record<string, unknown>, deps: StockDispatchDeps): Promise<StockToolResult> {
   const handler = stockHandlerFor(name);
   if (!handler) {
-    // WR-13: route through capability-registry.ts's ONE authoritative
-    // refusal renderer rather than a second, locally-composed wording --
-    // that renderer knows which backend ACTUALLY provides each name
-    // (avoiding the false "the fork backend provides this tool" claim for a
-    // stock-only-gain name) and never uses "wait for a later phase" framing
-    // for a hardware loss. Fall back to an internal-inconsistency message
-    // ONLY when the registry has no entry at all for `name` -- meaning the
-    // tool is advertised on the stock manifest (so it reached this branch)
-    // but stockHandlerFor() has no dispatch entry AND capability-registry.ts
-    // has no divergence entry either: a bug to report, not a capability gap.
     return isErrorText(
-      capabilityRefusalMessage(name, "stock") ??
-        `${name} is advertised on the stock backend's manifest but has no handler in the stock ` +
-          `dispatch table -- this is an internal inconsistency, not a capability gap; please file an issue.`,
+      `${name} is advertised on the stock backend's manifest but has no handler in the stock ` +
+        `dispatch table -- this is an internal inconsistency, not a capability gap; please file an issue.`,
     );
   }
   return handler(args, deps);

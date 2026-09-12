@@ -6300,30 +6300,24 @@ test("structural: SEAM_HAZARDS's checkpoint-arming detector and renderer never r
 });
 
 // -----------------------------------------------------------------------
-// Plan 08-02 (BACK-05): end-to-end proof that the CallToolRequestSchema
-// override's tools[name] miss branch renders a capability refusal -- naming
-// the tool and the reason -- rather than the generic "Unknown tool"
-// fallback, for a tool the trimmed manifest (D-07) never registered. None
-// of these tests needs an emulator, a stand-in HTTP server, or a broker.
+// Plan 08-02 (BACK-05), RETIRED BY FORKRM-05 (plan 52-07): the
+// CallToolRequestSchema override's tools[name] miss branch used to render a
+// per-capability refusal -- naming the tool, the reason, and the OTHER
+// backend that provided it -- for a tool the trimmed manifest (D-07) never
+// registered. That renderer and the per-backend capability registry behind
+// it are both deleted: there is one backend now, so "the other backend
+// provides this" is no longer a sentence that can be true. An unrecognised
+// tool name -- whether it is a hardware capability stock never had, or a
+// plain typo -- now gets the SAME plain "Unknown tool" fallback, which is
+// the honest answer in both cases: neither name exists anywhere this
+// process can dispatch to.
 //
 // FORKRM-01 (plan 52-06): the sibling test that used to sit here -- the
-// other backend refusing a capability that backend uniquely gained -- is
-// deleted whole. Its entire subject was vice-proxy.ts calling
-// capabilityRefusalMessage() with an active backend argument that could
-// vary; that call site now always passes the single literal value, so the
-// scenario it exercised (the other backend refusing a capability only it
-// had) can no longer occur.
-//
-// capability-registry.test.ts (plan 08-01) is the automated mirror for
-// these exact wordings, per test-gate.mjs's STANDING RULE (this file is
-// manual-only and therefore invisible to the automated gate) -- the
-// assertions below intentionally check only the distinguishing tokens
-// (tool name, "unrecoverable"), not the full verbatim string, so a wording
-// tweak reviewed against the registry's own test does not also require
-// touching this file.
+// other backend refusing a capability that backend uniquely gained -- was
+// already deleted for the identical reason one plan earlier.
 // -----------------------------------------------------------------------
 
-test("BACK-05: stock refuses vice_sid_get_state (a hardware capability stock cannot recover) by name and reason, not as Unknown tool", async () => {
+test("BACK-05/FORKRM-05: stock now falls through to the plain Unknown tool fallback for a former hardware-only capability, same as any other unregistered name", async () => {
   const proxy = startProxy({});
   try {
     await handshake(proxy);
@@ -6334,21 +6328,20 @@ test("BACK-05: stock refuses vice_sid_get_state (a hardware capability stock can
       params: { name: "vice_sid_get_state", arguments: {} },
     });
     const resp = await proxy.nextMessage();
-    assert.equal(resp.result.isError, true, "vice_sid_get_state must be refused on the stock backend");
-    const text = resp.result.content[0].text;
-    assert.match(text, /vice_sid_get_state/, "the refusal must name the tool");
-    assert.match(text, /unrecoverable/, "a hardware-category refusal must say unrecoverable");
-    assert.doesNotMatch(
-      text,
-      /Unknown tool/,
-      "REGRESSION GUARD: this is the exact bug this plan exists to fix -- a stock user must never see the generic unknown-tool fallback for a capability gap"
+    assert.equal(resp.result.isError, true, "vice_sid_get_state must still be refused -- it is not on the stock manifest");
+    assert.equal(
+      resp.result.content[0].text,
+      "Unknown tool: vice_sid_get_state",
+      "with the per-backend capability registry gone, an absent tool name -- hardware-only or not -- falls " +
+        "through to the same plain unknown-tool message a typo gets (FORKRM-05); see docs/stock-hard-losses.md " +
+        "for the permanent, human-readable record of why this specific tool has no stock route"
     );
   } finally {
     proxy.child.kill("SIGKILL");
   }
 });
 
-test("BACK-05: a genuine typo still gets the plain Unknown tool fallback, verbatim, unchanged by the capability lookup", async () => {
+test("BACK-05/FORKRM-05: a genuine typo gets the identical Unknown tool fallback, byte-for-byte, as a former hardware-only capability", async () => {
   const proxy = startProxy({});
   try {
     await handshake(proxy);
@@ -6363,7 +6356,8 @@ test("BACK-05: a genuine typo still gets the plain Unknown tool fallback, verbat
     assert.equal(
       resp.result.content[0].text,
       "Unknown tool: vice_totally_made_up_xyz",
-      "a genuinely unregistered name (no CAPABILITY_REGISTRY entry at all) must fall through to the pre-existing generic fallback, byte-for-byte"
+      "a genuinely unregistered name must fall through to the generic fallback, byte-for-byte -- the same " +
+        "wording the test above gets for a name that used to have its own distinct capability refusal"
     );
   } finally {
     proxy.child.kill("SIGKILL");
