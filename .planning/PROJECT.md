@@ -706,6 +706,7 @@ ceiling is explicitly recorded.
 | Cut scope by measured caller, not by judgment (2026-08-17) | Diffing the six skills' actual `vice_*` usage against both manifests answers "is this needed" mechanically | ✓ Good — 29 open requirements → 14, Phase 6 removed whole, and every cut names its requirements so reversal is a scope decision |
 | Trim the stock manifest instead of keeping surface shape uniform (D-07) | Advertising a tool the backend cannot serve is the dishonesty the milestone exists to remove | ✓ Good — and it forced `SKILL-01`: playbooks now name the stock route or the fork requirement at the point of use |
 | Run the walkthrough for real rather than assert it (Phase 8.1) | The one claim in the milestone with no witness was the install-to-capture flow | ✓ Good — and it **failed**, exposing the `Drive8Type=0` defect. Phase 8.2 fixed it and re-ran to a verified 65536-byte capture. The cheapest defect this milestone found came from refusing to assume |
+| Promote `anno export-asm --out` from a file path to a directory path (Phase 47) | Keeping both shapes would leave the single-file one silently unable to express part of the store's own vocabulary — a lone `.a` cannot carry a `!binary` sibling, so a store using the supported `external_file` type would export "successfully" into a file naming a data file nobody wrote | ✓ Good — confirmed by the owner at the phase's one blocking checkpoint before the break was made, not after; one output shape at every layer, and the degenerate no-scope store takes the same path rather than a special case. The cost is real and was accepted: an existing `--out game.a` now creates a *directory* named `game.a`, and both shipped skills plus the invocation gate were updated |
 | Make the assumption probe a standalone go/no-go **phase**, not a criterion inside one (v0.3.0, 2026-08-19) | `ANNO-16`'s failure mode is reconsider-the-milestone, not replan-the-phase. A phase boundary makes that gate structural rather than skippable | ✓ Good — and the gate fired for real: criterion 3(4) scored `partial`, rule `R4` selected `degrade`, and the input set narrowed to `.prg`/`.d64`/flat-64K. It also corrected three of its own research inputs (rustc floor, dual licence, a glibc mismatch). A probe that cannot say no is theatre |
 | Honour the `degrade` verdict rather than override it | The rule was written and its inputs recorded *before* the answer was known; overriding it would have made every future gate advisory | ✓ Good — cost one input format, kept the mechanism credible. `R4` specifically, not `R3`: the bootstrap was **not** the degraded element, so Phase 10 still delivered full automation |
 | Register the `anno_*` family proxy-locally via `buildViceTool()`, never through `forwardToVice()` | CLAUDE.md's derived-tool constraint says a tool behind `call()` receives host-translated paths and acts on them inside the container | ✓ Good — the constraint is satisfied **by construction**: neither `rewriteArguments()` call site is reachable from the family, so there is no interception to forget. Also makes the family backend-agnostic for free |
@@ -2196,8 +2197,29 @@ written).
 
 ---
 
-*Last updated: 2026-09-10 at the **start of milestone v1.0.0 — The Rebuild
-Half**. `## Current Milestone: v1.0.0 The Rebuild Half` added below
+*Last updated: 2026-09-12 after Phase 47 (Multi-File Rebuildable Source), which
+closed at 6/6 plans across 5 waves with verification `passed` 5/5 and all three
+of `BUILD-01`..`BUILD-03` Complete. **No Active bullet moved**, deliberately:
+v1.0.0's rebuild-half bullet spans `DECOMP-01`..`04`, `BUILD-01`..`07` and
+`EQUIV-01`..`04` as one hypothesis, and this project's convention is that a
+hypothesis spanning phases is audited whole at the milestone close — v1.0.0 is
+3/8 phases in. One Key Decisions row added, for the phase's single blocking
+checkpoint: promoting `anno export-asm --out` from a file to a directory on a
+published CLI surface, answered `promote` by the owner **before** the one-way
+break was made. Nothing moved to Out of Scope and "What This Is" is unchanged —
+the phase validated planned scope and discovered no new boundary. Named here so
+the milestone close finds it rather than inheriting it silently: **Phases 45, 46
+and 52 did not evolve this file at all** (no evolve commit exists for any of
+them; the last true evolution was Phase 44's, at the v0.9.0 close), so the
+rebuild-half bullet now carries three unaudited phases besides this one. The
+phase's code review closed 0 Critical / 2 Warning / 1 Info, all three dispositioned
+in `47-VERIFICATION.md` rather than left open: both warnings are advisory
+hardening gaps reachable only by hand-editing a store around its own write path,
+and neither touches any of the five success criteria. Two `phase.complete` write
+defects were repaired by hand rather than accepted — STATE.md's progress bar
+regressed to 25% against its own 3/8 parenthetical, and a Phase 48 heading was
+stamped over prose still describing Phase 47's plans. Previously 2026-09-10 at
+the **start of milestone v1.0.0 — The Rebuild Half**. `## Current Milestone: v1.0.0 The Rebuild Half` added below
 `## Shipped: v0.9.0`, carrying the milestone goal, the four target-feature
 groups, the two settled v0.5.0 bars (byte-identity is not the acceptance bar;
 committed synthetic fixtures only — the latter re-confirmed by measurement, not
