@@ -5675,3 +5675,190 @@ test("cross file: an auto-generated label name survives the split -- its symbols
   // backlog item as done.
   assert.ok(definitionLine!.includes("auto-generated name"), `the definition must still carry the backlog marker after the split:\n${definitionLine}`);
 });
+
+// ---------------------------------------------------------------------------
+// Phase 47, plan 47-04 (BUILD-03): the zero-page encoding, measured in both
+// directions -- criterion 5.
+//
+// The exporter's own mitigation for the zero-page-widening hazard is
+// TWO-FOLD, and the two halves are why this section runs THREE assemblies
+// rather than one: `disasm-renderer.ts` never substitutes a symbol into a
+// zeropage-mode operand at all (D-11), so nothing this exporter emits ON
+// ITS OWN is order-sensitive -- the hazard can only be exercised by hand,
+// exactly as `PLANTED VIOLATION 2` above already does for the single-file
+// case. The SECOND mitigation, sourcing `symbols.a` FIRST, is what this
+// section actually measures: with a symbol hand-substituted into a
+// zeropage-shaped reference (the artificial half every one of these tests
+// shares), sourcing order alone decides whether ACME encodes it in TWO
+// bytes or THREE.
+//
+// MEASURED live 2026-09-12, real ACME 0.97 "Zem": `zpf_90 = $90` substituted
+// into `lda $90` and sourced FIRST assembles as `a5 90` (two bytes). Swap
+// `root.a`'s two `!source` lines -- nothing else changed -- and the SAME
+// source fails at exit 1 with the block-end drift `!error`, the bracket
+// assertion catching exactly the hazard the sourcing order exists to
+// prevent. Strip the block's own two `!if * != ...` assertions on top of
+// that broken order (a second, deliberately UNSUPPORTED mutation, made only
+// to see what the bracket was catching) and the same source assembles at
+// exit 0, `lda zpf_90` widens to `ad 90 00` (three bytes), and ACME's own
+// stderr carries `Using oversized addressing mode.` -- the widening made
+// visible rather than merely caught.
+// ---------------------------------------------------------------------------
+
+/**
+ * Exports `plantedFixture()`'s own store as a TREE and applies the named
+ * mutations to the WRITTEN FILES, one at a time:
+ *  - `substitute` -- turns the raw `lda $90` zeropage literal in
+ *    `unscoped.a` into `lda zpf_90`, the substitution `disasm-renderer.ts`
+ *    itself never performs (D-11) -- without it, sourcing order cannot
+ *    matter at all, since nothing this exporter emits references the
+ *    symbol at that operand.
+ *  - `swap` -- rewrites `root.a` with its two `!source` lines in the
+ *    OPPOSITE order (`unscoped.a` before `symbols.a`).
+ *  - `stripBrackets` -- removes `unscoped.a`'s two `!if * != ...`
+ *    assertions. Applied only alongside `swap`, and never a supported
+ *    configuration on its own: it exists solely to make the widening the
+ *    bracket normally catches visible instead.
+ */
+async function zeropageOrderTree(tag: string, mutations: { substitute?: boolean; swap?: boolean; stripBrackets?: boolean } = {}) {
+  const { dir, storePath, imagePath } = plantedFixture(tag);
+  const outDir = join(dir, "tree");
+  const result = exportAsmTree({ storePath, imagePath, workspaceRoot: dir, outDir });
+
+  if (mutations.substitute) {
+    const before = readFileSync(join(outDir, UNSCOPED_FILE_NAME), "utf8");
+    const after = before.replace("        lda $90", "        lda zpf_90");
+    assert.notEqual(after, before, "the substitution must actually change unscoped.a, or this section tests nothing");
+    writeFileSync(join(outDir, UNSCOPED_FILE_NAME), after, "utf8");
+  }
+  if (mutations.stripBrackets) {
+    const before = readFileSync(join(outDir, UNSCOPED_FILE_NAME), "utf8");
+    const after = before
+      .split("\n")
+      .filter((line) => !line.startsWith("!if * != "))
+      .join("\n");
+    assert.notEqual(after, before, "stripping the brackets must actually change unscoped.a");
+    writeFileSync(join(outDir, UNSCOPED_FILE_NAME), after, "utf8");
+  }
+  if (mutations.swap) {
+    const rootLines = readFileSync(join(outDir, ROOT_FILE_NAME), "utf8").split("\n");
+    const symbolsLine = rootLines.find((l) => l.includes(`!source "${SYMBOLS_FILE_NAME}"`))!;
+    const unscopedLine = rootLines.find((l) => l.includes(`!source "${UNSCOPED_FILE_NAME}"`))!;
+    const swapped = rootLines.map((line) => {
+      if (line === symbolsLine) return unscopedLine;
+      if (line === unscopedLine) return symbolsLine;
+      return line;
+    });
+    assert.notEqual(swapped.join("\n"), rootLines.join("\n"), "the swap must actually change root.a");
+    writeFileSync(join(outDir, ROOT_FILE_NAME), swapped.join("\n"), "utf8");
+  }
+
+  const response = await runHostTool({ tool: "acme.build", args: { source: ROOT_FILE_NAME, format: "plain" } }, { repoRoot: outDir });
+  return { result, outDir, response };
+}
+
+/**
+ * The report listing's line for the instruction at `address` -- a
+ * line-number column, then the 4-hex-digit address, then the assembled
+ * bytes with NO separators, then the source text (measured against a real
+ * ACME 0.97 `-r` listing, 2026-09-12). Returns the BYTE COLUMN only, or
+ * `undefined` if no line for that address is present.
+ */
+function reportByteColumnAt(reportText: string, address: number): string | undefined {
+  const addressHex = address.toString(16).padStart(4, "0");
+  const re = new RegExp(`^\\s*\\d+\\s+${addressHex}\\s+([0-9a-f]+)\\s`);
+  for (const line of reportText.split("\n")) {
+    const m = re.exec(line);
+    if (m) return m[1];
+  }
+  return undefined;
+}
+
+test(
+  "zeropage order: the root sources symbols.a FIRST, and the report listing's line for that instruction shows the TWO-byte encoding",
+  { skip: SKIP_REASON },
+  async () => {
+    const { result, outDir, response } = await zeropageOrderTree("zporder-correct", { substitute: true });
+
+    assert.equal(response.ok, true, response.ok ? "" : response.message);
+    if (!response.ok) return;
+    assert.equal(response.exitStatus, 0, `the correctly-ordered tree must assemble:\n${response.stderrTail}`);
+    const producedBytes = new Uint8Array(readFileSync(response.results[0]!.path));
+    assert.deepEqual(producedBytes, result.expectedBytes, "substituting a symbol whose value equals the literal must not change the bytes");
+
+    const reportText = readFileSync(join(outDir, "root.rep"), "utf8");
+    assert.equal(
+      reportByteColumnAt(reportText, 0x0803),
+      "a590",
+      `the zeropage reference must encode as TWO bytes when symbols.a is sourced first:\n${reportText}`,
+    );
+  },
+);
+
+test(
+  "zeropage order: swapping root.a's two !source lines -- ONE documented mutation, nothing else changed -- makes the SAME reference assemble at a non-zero exit, caught by the block-end assertion",
+  { skip: SKIP_REASON },
+  async () => {
+    const { response } = await zeropageOrderTree("zporder-swapped", { substitute: true, swap: true });
+
+    assert.equal(response.ok, true, response.ok ? "" : response.message);
+    if (!response.ok) return;
+    assert.notEqual(response.exitStatus, 0, "the broken order must make real ACME refuse");
+    assert.ok(response.stderrTail.includes("block end drifted"), `the block-end assertion's own message must be what caught it:\n${response.stderrTail}`);
+  },
+);
+
+test(
+  "zeropage order: stripping the block's own bracket assertions on top of the broken order -- a SECOND, deliberately unsupported mutation -- lets the widening through, visibly",
+  { skip: SKIP_REASON },
+  async () => {
+    const { outDir, response } = await zeropageOrderTree("zporder-stripped", { substitute: true, swap: true, stripBrackets: true });
+
+    assert.equal(response.ok, true, response.ok ? "" : response.message);
+    if (!response.ok) return;
+    assert.equal(response.exitStatus, 0, `with no bracket left to catch it, the widened source must still assemble:\n${response.stderrTail}`);
+    assert.ok(
+      response.stderrTail.includes("Using oversized addressing mode."),
+      `ACME's own oversized-addressing warning must be present -- the widening, made visible rather than merely caught:\n${response.stderrTail}`,
+    );
+
+    const reportText = readFileSync(join(outDir, "root.rep"), "utf8");
+    assert.equal(
+      reportByteColumnAt(reportText, 0x0803),
+      "ad9000",
+      `with the brackets stripped and the definition sourced AFTER first use, the SAME reference must widen to THREE bytes:\n${reportText}`,
+    );
+  },
+);
+
+test(
+  "zeropage order: non-vacuity -- the correct-order and stripped-bracket report listings really do differ on that instruction's line",
+  { skip: SKIP_REASON },
+  async () => {
+    const correct = await zeropageOrderTree("zporder-nonvacuity-correct", { substitute: true });
+    const stripped = await zeropageOrderTree("zporder-nonvacuity-stripped", { substitute: true, swap: true, stripBrackets: true });
+
+    const correctReport = readFileSync(join(correct.outDir, "root.rep"), "utf8");
+    const strippedReport = readFileSync(join(stripped.outDir, "root.rep"), "utf8");
+
+    const correctBytes = reportByteColumnAt(correctReport, 0x0803);
+    const strippedBytes = reportByteColumnAt(strippedReport, 0x0803);
+    assert.notEqual(
+      strippedBytes,
+      correctBytes,
+      "a control that shows the SAME encoding in both runs would pass while proving nothing -- the two byte columns must genuinely differ",
+    );
+  },
+);
+
+test("zeropage order: symbols.a is first in sourceOrder, and first among root.a's own !source lines -- a property of the generator, not one fixture", () => {
+  const { dir, storePath, imagePath } = plantedFixture("zporder-property");
+  const outDir = join(dir, "tree");
+  const result = exportAsmTree({ storePath, imagePath, workspaceRoot: dir, outDir });
+
+  assert.equal(result.sourceOrder[0], SYMBOLS_FILE_NAME, "sourceOrder's own first entry must be symbols.a");
+
+  const rootText = readFileSync(join(outDir, ROOT_FILE_NAME), "utf8");
+  const sourceLines = rootText.split("\n").filter((line) => line.startsWith("!source "));
+  assert.equal(sourceLines[0], `!source "${SYMBOLS_FILE_NAME}"`, `root.a's own first !source line must name symbols.a:\n${rootText}`);
+});
