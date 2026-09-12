@@ -1,0 +1,153 @@
+; hazard-subject-raster.a -- the planted cycle-exact raster construction,
+; the fourth hazard class, PLANTED AS ITS NON-CANONICAL TIMER-BASED VARIANT.
+;
+; WHY CYCLE-EXACT RASTER CODE IS A MOVEMENT HAZARD AT ALL
+; ---------------------------------------------------------------------------
+; Moving this routine's start address changes nothing about which opcode
+; bytes it contains -- every byte stays identical -- but it CAN change which
+; of those bytes cross a 256-byte page boundary, because an indexed-addressing
+; access or a taken branch costs one extra cycle when its target crosses a
+; page. A routine whose whole reason for existing is landing on a specific
+; cycle can therefore be silently wrong after a relocation that changes not
+; one byte of its own body. No static check anywhere in this project
+; determines whether the timing is still correct after such a move; that is
+; not an oversight, it is a limit of what a byte-level analysis can ever know
+; about wall-clock timing.
+;
+; WHY THE TIMER-BASED VARIANT, NOT THE TEXTBOOK RASTER-COMPARE STABILISER
+; ---------------------------------------------------------------------------
+; The textbook double-interrupt stabiliser re-reads the raster line register
+; against itself to confirm cycle-exact entry, then burns the remaining
+; interrupt-latency jitter in a short run of no-operation instructions. This
+; routine deliberately does neither: it arms the raster line register exactly
+; ONCE, at setup, and never touches it again -- the VIC-II raster-compare
+; register keeps naming that same line every frame with no code re-arming it
+; -- and the timing scheme it actually uses is the FIRST CIA's own timer
+; hardware: the raster interrupt lands once, and rather than reading the
+; raster register a second time to confirm timing, it arms a one-shot CIA
+; timer whose reload value is chosen so the SECOND interrupt -- the timer's
+; own -- lands at a fixed cycle offset into the following raster line. This
+; is a structurally different mechanism, not a relabelling of the same one:
+; nothing here computes a cycle-exact instant by comparing a register against
+; itself.
+;
+; WHICH OF THE DETECTOR'S THREE SIGNALS THIS CONSTRUCTION PRESENTS
+; ---------------------------------------------------------------------------
+; A structural detector for this class can look for three separate things: a
+; raster-register access inside a routine an interrupt vector names, a
+; no-operation timing sled immediately following such an access, and a
+; one-shot timer reload written inside such a routine. This construction
+; presents the THIRD signal and only the third: the routine the interrupt
+; vector names contains a write to the first CIA's timer reload registers.
+; It deliberately does NOT present the first signal -- the raster-compare
+; register is armed once, from OUTSIDE the routine the interrupt vector
+; names, and the routine itself never reads or writes it again, which is
+; exactly what makes this the non-canonical variant rather than the textbook
+; one. It does NOT present the second signal either, and that absence is
+; deliberate rather than an oversight: padding this routine with idle cycles
+; just to make an unrelated signal fire would be manufacturing evidence for
+; a detector rather than planting a real, honest construction. A detector
+; that only recognises the raster-register signal has nothing to find here;
+; that is the point of planting the variant this way.
+;
+; Regenerate with:
+;   cd src/mcp/vice && node fixtures/hazard-subject/make-hazard-subject-fixtures.mjs
+
+; Zero-page phase flag: 0 while waiting for the raster interrupt, 1 while
+; waiting for the CIA timer interrupt that follows it. Both interrupt
+; sources vector through the SAME RAM-resident handler below, because both
+; a VIC-II raster interrupt and a CIA1 timer interrupt reach the CPU's one
+; maskable-interrupt line and the KERNAL's own hardware vector always jumps
+; indirectly through $0314/$0315 -- this flag is how the shared handler tells
+; the two entries apart.
+hazard_raster_phase = $fb
+
+hazard_raster_entry
+        sei
+
+        ; Hook the IRQ vector the KERNAL's own hardware vector jumps through
+        ; indirectly, rather than the hardware vector itself.
+        lda #<hazard_raster_irq
+        sta $0314
+        lda #>hazard_raster_irq
+        sta $0315
+
+        lda #0
+        sta hazard_raster_phase
+
+        ; Arm the raster interrupt at a known line. THIS IS THE ONLY PLACE
+        ; IN THIS FILE THE RASTER-COMPARE REGISTER IS TOUCHED: it is set once
+        ; here and never again, which is what keeps the raster-register
+        ; access signal out of the routine the interrupt vector names.
+        lda #$f0
+        sta $d012
+        lda $d011
+        and #%01111111
+        sta $d011
+
+        lda #%00000001
+        sta $d01a               ; enable the VIC-II raster interrupt
+
+        cli
+        rts
+
+; The shared interrupt handler both interrupt sources vector through.
+hazard_raster_irq
+        pha
+        txa
+        pha
+        tya
+        pha
+
+        lda hazard_raster_phase
+        bne hazard_raster_timer_phase
+
+        ; --- RASTER PHASE: the raster interrupt landed. Acknowledge it
+        ; through the VIC-II's own interrupt-flag register (never the raster
+        ; line register itself), then arm a ONE-SHOT reload on the first
+        ; CIA's Timer A so the SECOND interrupt -- the timer's own -- lands
+        ; at a fixed cycle offset into the following line. This is the
+        ; whole non-canonical stabiliser: no second raster-compare read
+        ; anywhere in this routine.
+        lda #%00000001
+        sta $d019
+
+        lda #<hazard_timer_reload_value
+        sta $dc04                ; CIA1 Timer A reload, low byte
+        lda #>hazard_timer_reload_value
+        sta $dc05                ; CIA1 Timer A reload, high byte
+        lda #%00011001
+        sta $dc0e                ; one-shot control value: START | RUNMODE(one-shot) | force LOAD
+
+        lda #1
+        sta hazard_raster_phase
+        jmp hazard_raster_irq_exit
+
+hazard_raster_timer_phase
+        ; --- TIMER PHASE: the CIA timer's own interrupt landed at the fixed
+        ; cycle offset the reload value above was chosen for. Do the
+        ; observable effect, acknowledge the CIA interrupt, and go back to
+        ; waiting for the raster phase -- the raster-compare register was
+        ; never touched, so it is still naming the same line for next frame
+        ; with no re-arming needed.
+        lda #$02
+        sta $d020                ; observable: border colour changes at this offset
+
+        lda $dc0d                ; acknowledge CIA1's interrupt (reading clears the ICR)
+
+        lda #0
+        sta hazard_raster_phase
+
+hazard_raster_irq_exit
+        pla
+        tay
+        pla
+        tax
+        pla
+        rti
+
+; The CIA Timer A reload value the routine above writes. Chosen only to be a
+; plausible one-shot latch value for this fixture -- the exact cycle count a
+; real stabiliser would need is a hardware-timing fact this project's own
+; limits already state cannot be verified statically.
+hazard_timer_reload_value = $0080

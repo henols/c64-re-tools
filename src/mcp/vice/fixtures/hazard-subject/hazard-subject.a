@@ -43,6 +43,7 @@ entry
         jsr hazard_smc_entry
         jsr hazard_dispatch_entry
         jsr hazard_align_entry
+        jsr hazard_raster_entry
         rts
 
 ; The routine that CONSUMES `hazard-subject-dispatch.a`'s two split address
@@ -64,3 +65,4 @@ hazard_dispatch_entry
 !source "hazard-subject-smc.a"
 !source "hazard-subject-dispatch.a"
 !source "hazard-subject-align.a"
+!source "hazard-subject-raster.a"

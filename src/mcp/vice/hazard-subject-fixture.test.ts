@@ -183,10 +183,10 @@ test("hazard subject: no fixture source in this tree names the scanner it is pla
   assert.ok(!stripped.includes("scanIndirectDispatch"), "the dispatch fixture source must never name the scanner it is planted against");
 });
 
-test("hazard subject: the root source carries exactly three bare-filename !source lines", () => {
+test("hazard subject: the root source carries exactly four bare-filename !source lines", () => {
   const rootSource = readFileSync(ROOT_SOURCE_PATH, "utf8");
   const sourceLines = rootSource.match(/^!source\s+"[^"/\\]+"\s*$/gm) ?? [];
-  assert.equal(sourceLines.length, 3, "the root must carry exactly three !source lines after the dispatch and alignment constructions are both added, each a bare filename");
+  assert.equal(sourceLines.length, 4, "the root must carry exactly four !source lines after the dispatch, alignment and raster constructions are all added, each a bare filename");
 });
 
 test("hazard subject: no planning-vocabulary string appears anywhere in the dispatch fixture source", () => {
@@ -283,6 +283,119 @@ test("hazard subject: no planning-vocabulary string appears anywhere in the alig
   assert.ok(!/\bD-\d/.test(alignSource), "must not carry a bare D-NN decision id");
   assert.ok(!/\bBUILD-\d/.test(alignSource), "must not carry a BUILD-NN requirement id");
   assert.ok(!/\bPhase\s+\d/.test(alignSource), "must not carry a 'Phase N' citation");
+});
+
+// ---------------------------------------------------------------------------
+// hazard subject: class 4 -- the planted timer-stabilised raster routine,
+// the non-canonical variant of the fourth hazard class.
+// ---------------------------------------------------------------------------
+
+const RASTER_SOURCE_PATH = join(FIXTURE_DIR, "hazard-subject-raster.a");
+
+/** Finds the store pair `lda #imm ; sta target` for `target`, immediately
+ * adjacent in the decoded stream -- the same adjacent-pair shape the report
+ * module's own recovery walk looks for, re-derived independently here so
+ * this fixture test does not depend on that module's implementation. */
+function findImmediateStore(instructions: readonly Instruction[], target: number): Instruction | undefined {
+  for (let i = 0; i + 1 < instructions.length; i++) {
+    const load = instructions[i]!;
+    if (load.mnemonic !== "lda" || load.operand?.role !== "immediate") continue;
+    const store = instructions[i + 1]!;
+    if (store.mnemonic === "sta" && store.operand?.role === "absolute" && store.operand.value === target) return store;
+  }
+  return undefined;
+}
+
+/** Walks forward from `startAddress` (an instruction START address) to the
+ * first `rti`/`rts`, inclusive -- the same bounded handler-window walk the
+ * class-4 detector itself uses, re-derived independently here. */
+function rasterHandlerWindow(instructions: readonly Instruction[], startAddress: number): Instruction[] {
+  const startIdx = instructions.findIndex((instr) => instr.address === startAddress);
+  assert.ok(startIdx >= 0, `precondition: $${startAddress.toString(16)} must be a real instruction start`);
+  const window: Instruction[] = [];
+  for (let i = startIdx; i < instructions.length; i++) {
+    const instr = instructions[i]!;
+    window.push(instr);
+    if (instr.opcode === 0x40 || instr.opcode === 0x60) break;
+  }
+  return window;
+}
+
+test("hazard subject: the image contains a store pair writing an in-image address into the interrupt vector", { skip: SKIP_REASON }, () => {
+  const fresh = assembleFresh(ROOT_SOURCE_NAME);
+  const origin = fresh[0]! | (fresh[1]! << 8);
+  const instructions = decode(fresh.subarray(2), origin);
+
+  const lowStore = findImmediateStore(instructions, 0x0314);
+  const highStore = findImmediateStore(instructions, 0x0315);
+  assert.ok(lowStore, "the image must store an immediate byte into $0314 (the RAM IRQ vector's low byte)");
+  assert.ok(highStore, "the image must store an immediate byte into $0315 (the RAM IRQ vector's high byte)");
+
+  const lowIdx = instructions.indexOf(lowStore!);
+  const highIdx = instructions.indexOf(highStore!);
+  const target = instructions[lowIdx - 1]!.operand!.value | (instructions[highIdx - 1]!.operand!.value << 8);
+  assert.ok(
+    isLegalInstructionStart(fresh.subarray(2), origin, target),
+    `the reconstructed interrupt-vector target $${target.toString(16)} must decode as a legal instruction start inside the image`,
+  );
+});
+
+test("hazard subject: the routine the interrupt vector names contains a write to the first CIA's timer reload registers", { skip: SKIP_REASON }, () => {
+  const fresh = assembleFresh(ROOT_SOURCE_NAME);
+  const origin = fresh[0]! | (fresh[1]! << 8);
+  const bytes = fresh.subarray(2);
+  const instructions = decode(bytes, origin);
+
+  const lowStore = findImmediateStore(instructions, 0x0314)!;
+  const highStore = findImmediateStore(instructions, 0x0315)!;
+  const lowIdx = instructions.indexOf(lowStore);
+  const highIdx = instructions.indexOf(highStore);
+  const target = instructions[lowIdx - 1]!.operand!.value | (instructions[highIdx - 1]!.operand!.value << 8);
+
+  const window = rasterHandlerWindow(instructions, target);
+  const timerReloadWrite = window.some(
+    (instr) =>
+      (instr.mnemonic === "sta" || instr.mnemonic === "stx" || instr.mnemonic === "sty") &&
+      instr.operand?.role === "absolute" &&
+      (instr.operand.value === 0xdc04 || instr.operand.value === 0xdc05),
+  );
+  assert.ok(timerReloadWrite, "the routine the interrupt vector names must write to $dc04 or $dc05 (CIA1 Timer A's reload registers)");
+});
+
+test("hazard subject: the routine the interrupt vector names contains no run of three or more consecutive no-operation instructions", { skip: SKIP_REASON }, () => {
+  const fresh = assembleFresh(ROOT_SOURCE_NAME);
+  const origin = fresh[0]! | (fresh[1]! << 8);
+  const bytes = fresh.subarray(2);
+  const instructions = decode(bytes, origin);
+
+  const lowStore = findImmediateStore(instructions, 0x0314)!;
+  const highStore = findImmediateStore(instructions, 0x0315)!;
+  const lowIdx = instructions.indexOf(lowStore);
+  const highIdx = instructions.indexOf(highStore);
+  const target = instructions[lowIdx - 1]!.operand!.value | (instructions[highIdx - 1]!.operand!.value << 8);
+
+  const window = rasterHandlerWindow(instructions, target);
+  let consecutiveNops = 0;
+  for (const instr of window) {
+    consecutiveNops = instr.opcode === 0xea ? consecutiveNops + 1 : 0;
+    assert.ok(consecutiveNops < 3, "no run of three or more consecutive no-operation instructions may exist in this routine -- that is the textbook jitter-compensation sled this variant must not carry");
+  }
+});
+
+test("hazard subject: the raster fixture's own header names which of the detector's three class-4 signals it presents and which it does not", () => {
+  const rasterSource = readFileSync(RASTER_SOURCE_PATH, "utf8").toLowerCase();
+  assert.ok(rasterSource.includes("presents the third signal and only the third"), "the header must state which signal is presented");
+  assert.ok(rasterSource.includes("deliberately does not present the first signal"), "the header must state the raster-register signal is deliberately absent");
+  assert.ok(rasterSource.includes("does not present the second signal"), "the header must state the timing-sled signal is deliberately absent");
+});
+
+test("hazard subject: no planning-vocabulary string appears anywhere in the raster fixture source", () => {
+  const rasterSource = readFileSync(RASTER_SOURCE_PATH, "utf8");
+  assert.ok(!rasterSource.includes(".planning/"), "must not reference a .planning/ path");
+  assert.ok(!/\/gsd-/.test(rasterSource), "must not reference a /gsd- command name");
+  assert.ok(!/\bD-\d/.test(rasterSource), "must not carry a bare D-NN decision id");
+  assert.ok(!/\bBUILD-\d/.test(rasterSource), "must not carry a BUILD-NN requirement id");
+  assert.ok(!/\bPhase\s+\d/.test(rasterSource), "must not carry a 'Phase N' citation");
 });
 
 // ---------------------------------------------------------------------------
