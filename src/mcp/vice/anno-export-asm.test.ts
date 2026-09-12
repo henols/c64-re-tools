@@ -5500,3 +5500,178 @@ test("a re-export into a directory holding a hand-swapped .bin refuses by name a
     "an explicit overwrite must replace the swapped .bin with the export's own bytes -- because that is the user asking",
   );
 });
+
+// ---------------------------------------------------------------------------
+// Phase 47, plan 47-04 (BUILD-03): a cross-file reference still resolves --
+// and the invariant that makes it safe is guarded, not merely claimed.
+//
+// ACME's default namespace is flat across every sourced file, so an
+// unprefixed name defined in one file resolves from another -- measured live
+// 2026-09-12, both forward and backward. That only holds because every name
+// this exporter emits is globally unique (`setLabel()` refuses a name
+// already bound to a different address, `anno-store.ts`) and carries no
+// leading dot (`assertLegalAcmeIdentifier()`'s anchored pattern accepts
+// none, so no emitted name is ever the kind of local label a `!zone`
+// directive would scope) -- BOTH properties of OTHER modules. A test that
+// only assembled a cross-file reference would rest on an unguarded claim,
+// so the uniqueness refusal is asserted directly below.
+// ---------------------------------------------------------------------------
+
+/**
+ * Two scopes, one code block each, each block's own `jsr` referencing the
+ * OTHER block's entry label -- a genuine cross-file reference in BOTH
+ * directions. Scope A (`$0801..$0804`) wholly contains block A; scope B
+ * (`$0805..$0808`) wholly contains block B, immediately adjacent so no
+ * filler bytes are needed.
+ */
+function crossFileRefFixture(tag: string): StoreFixture {
+  return buildStore(freshDir(tag), {
+    origin: 0x0801,
+    // Block A ($0801..$0804): jsr $0805 (b_entry) / rts.
+    // Block B ($0805..$0808): jsr $0801 (a_entry) / rts.
+    body: [0x20, 0x05, 0x08, 0x60, 0x20, 0x01, 0x08, 0x60],
+    ranges: [
+      { start: 0x0801, endInclusive: 0x0804, dataType: "code" },
+      { start: 0x0805, endInclusive: 0x0808, dataType: "code" },
+    ],
+    labels: [
+      { address: 0x0801, name: "a_entry" },
+      { address: 0x0805, name: "b_entry" },
+    ],
+    scopes: [
+      { start: 0x0801, endInclusive: 0x0804 },
+      { start: 0x0805, endInclusive: 0x0808 },
+    ],
+  });
+}
+
+test(
+  "cross file: a jsr in the FIRST scope's file (sourced first) resolves to a label defined by a block in the SECOND scope's file",
+  { skip: SKIP_REASON },
+  async () => {
+    const fixture = crossFileRefFixture("crossfile-forward");
+    const outDir = join(fixture.dir, "tree");
+    const result = exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir });
+
+    const scopeAText = readFileSync(join(outDir, scopeFileName(0x0801)), "utf8");
+    assert.ok(scopeAText.includes("jsr b_entry"), `the forward reference must render through the symbol:\n${scopeAText}`);
+
+    const response = await runHostTool({ tool: "acme.build", args: { source: ROOT_FILE_NAME, format: "plain", noReport: true } }, { repoRoot: outDir });
+    assert.equal(response.ok, true, response.ok ? "" : response.message);
+    if (!response.ok) return;
+    assert.equal(response.exitStatus, 0, "a forward cross-file reference must assemble at exit 0");
+    assert.equal(response.results.length, 1);
+    const producedBytes = new Uint8Array(readFileSync(response.results[0]!.path));
+    assert.deepEqual(producedBytes, result.expectedBytes, "the forward cross-file reference must reassemble byte-identically");
+  },
+);
+
+test(
+  "cross file: the mirror -- a jsr in the SECOND scope's file resolves to a label defined by a block in the FIRST scope's file",
+  { skip: SKIP_REASON },
+  async () => {
+    const fixture = crossFileRefFixture("crossfile-backward");
+    const outDir = join(fixture.dir, "tree");
+    const result = exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir });
+
+    const scopeBText = readFileSync(join(outDir, scopeFileName(0x0805)), "utf8");
+    assert.ok(scopeBText.includes("jsr a_entry"), `the backward reference must render through the symbol:\n${scopeBText}`);
+
+    const response = await runHostTool({ tool: "acme.build", args: { source: ROOT_FILE_NAME, format: "plain", noReport: true } }, { repoRoot: outDir });
+    assert.equal(response.ok, true, response.ok ? "" : response.message);
+    if (!response.ok) return;
+    assert.equal(response.exitStatus, 0, "a backward cross-file reference must assemble at exit 0");
+    assert.equal(response.results.length, 1);
+    const producedBytes = new Uint8Array(readFileSync(response.results[0]!.path));
+    assert.deepEqual(producedBytes, result.expectedBytes, "the backward cross-file reference must reassemble byte-identically");
+  },
+);
+
+test("cross file: non-vacuity -- the referring line and the target's own block really are in DIFFERENT emitted files", () => {
+  const fixture = crossFileRefFixture("crossfile-non-vacuity");
+  const outDir = join(fixture.dir, "tree");
+  exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir });
+
+  const scopeAText = readFileSync(join(outDir, scopeFileName(0x0801)), "utf8");
+  const scopeBText = readFileSync(join(outDir, scopeFileName(0x0805)), "utf8");
+
+  // A cross-file test where both halves landed in one file would prove
+  // nothing and would pass -- so both directions are checked explicitly,
+  // BEFORE either resolution test above is trusted.
+  assert.ok(scopeAText.includes("jsr b_entry"), "the forward-referring jsr must be in scope A's file");
+  assert.equal(scopeBText.includes("jsr b_entry"), false, "the forward-referring jsr must NOT also appear in scope B's file");
+  assert.ok(scopeBText.includes("* = $0805"), "block B's own origin (the forward reference's TARGET) must be in scope B's file");
+  assert.equal(scopeAText.includes("* = $0805"), false, "block B's origin must not appear in scope A's file");
+
+  assert.ok(scopeBText.includes("jsr a_entry"), "the backward-referring jsr must be in scope B's file");
+  assert.equal(scopeAText.includes("jsr a_entry"), false, "the backward-referring jsr must NOT also appear in scope A's file");
+  assert.ok(scopeAText.includes("* = $0801"), "block A's own origin (the backward reference's TARGET) must be in scope A's file");
+  assert.equal(scopeBText.includes("* = $0801"), false, "block A's origin must not appear in scope B's file");
+});
+
+test("cross file: PRECONDITION -- setLabel() refuses a second label name bound to a different address, the invariant the flat namespace rests on", () => {
+  // If the store ever permits one name at two addresses, ACME's flat
+  // namespace binds a cross-file reference to whichever definition it
+  // reached LAST -- silently, at exit 0 -- and only a byte-diff would ever
+  // notice. Asserted directly rather than left as a prose claim.
+  const dir = freshDir("crossfile-precondition");
+  const { storePath } = buildStore(dir, {
+    origin: 0x0801,
+    body: [...SHAPE_BODY],
+    ranges: [{ start: 0x0801, endInclusive: 0x0806, dataType: "code" }],
+    labels: [{ address: 0x0801, name: "shared_name" }],
+  });
+
+  const handle = openStore(storePath, { workspaceRoot: dir });
+  try {
+    assert.throws(
+      () => setLabel(handle, { address: 0x0802, name: "shared_name", kind: "User" }),
+      (e: unknown) => {
+        assert.ok(e instanceof Error);
+        assert.ok(e.message.includes("is already bound to address"), `setLabel() must refuse a name already bound elsewhere: ${e.message}`);
+        return true;
+      },
+    );
+  } finally {
+    closeStore(handle);
+  }
+});
+
+test("cross file: no ACME !zone directive appears in any emitted file of the tree", () => {
+  const fixture = crossFileRefFixture("crossfile-no-zone");
+  const outDir = join(fixture.dir, "tree");
+  const result = exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir });
+
+  // D47-E: the flat namespace is a deliberate choice backed by a live
+  // measurement, not an omission -- and a dot-prefixed local label, the
+  // only name a `!zone` directive would scope, is impossible here because
+  // `assertLegalAcmeIdentifier()`'s anchored pattern rejects a leading dot.
+  for (const file of result.files.filter((name) => name.endsWith(".a"))) {
+    const text = readFileSync(join(outDir, file), "utf8");
+    const zoneLines = text.split("\n").filter((line) => line.trimStart().startsWith("!zone"));
+    assert.deepEqual(zoneLines, [], `${file} must carry no !zone directive:\n${text}`);
+  }
+});
+
+test("cross file: an auto-generated label name survives the split -- its symbols.a definition still carries the backlog marker", () => {
+  const dir = freshDir("crossfile-automarker");
+  const { storePath, imagePath } = buildStore(dir, {
+    origin: 0x0801,
+    body: [...SHAPE_BODY],
+    ranges: [{ start: 0x0801, endInclusive: 0x0806, dataType: "code" }],
+    // `s_` is one of AUTO_NAME_PREFIX_RE's eleven real typed prefixes.
+    labels: [{ address: 0x0801, name: "s_0801" }],
+  });
+  assert.ok(AUTO_NAME_PREFIX_RE.test("s_0801"), "the fixture's own label name must actually match the auto-name vocabulary, or this test proves nothing");
+
+  const outDir = join(dir, "tree");
+  exportAsmTree({ storePath, imagePath, workspaceRoot: dir, outDir });
+
+  const symbolsText = readFileSync(join(outDir, SYMBOLS_FILE_NAME), "utf8");
+  const definitionLine = symbolsText.split("\n").find((line) => line.startsWith("s_0801 = "));
+  assert.ok(definitionLine !== undefined, `symbols.a must carry the definition:\n${symbolsText}`);
+  // `routine-queue-walker` reads this marker out of the generated artefact
+  // to build its backlog queue -- a split that detached it would report a
+  // backlog item as done.
+  assert.ok(definitionLine!.includes("auto-generated name"), `the definition must still carry the backlog marker after the split:\n${definitionLine}`);
+});
