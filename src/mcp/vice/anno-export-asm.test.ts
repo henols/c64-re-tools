@@ -4707,3 +4707,202 @@ test("exportAsmTree output-directory contract: root.a's modification time is >= 
     );
   }
 });
+
+// ---------------------------------------------------------------------------
+// Phase 47, plan 47-02, Task 3: the drift guard, and every empty and
+// ordering edge this phase owes. Modelled on resources-sync.test.ts's own
+// two-direction walk-and-compare discipline -- the domain here is a
+// generated tree instead of a committed one, but the discipline (nothing
+// produced that was not expected, nothing expected that was not produced)
+// is the same.
+// ---------------------------------------------------------------------------
+
+test("tree determinism: exporting one unchanged store twice into two different directories yields identical sorted file-name lists and byte-identical files, checked in BOTH directions", () => {
+  const fixture = twoScopeFixture("tree-determinism-base", { extraRanges: [{ start: 0x0807, endInclusive: 0x0808, dataType: "byte" }] });
+  const outDirA = join(fixture.dir, "tree-a");
+  const outDirB = join(fixture.dir, "tree-b");
+  const resultA = exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir: outDirA });
+  const resultB = exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir: outDirB });
+
+  const namesA = readdirSync(outDirA).sort();
+  const namesB = readdirSync(outDirB).sort();
+  assert.deepEqual(namesA, namesB, "two exports of an unchanged store must produce identical sorted file-name lists");
+  assert.deepEqual([...resultA.files].sort(), [...resultB.files].sort());
+
+  // Direction 1: every file A produced exists byte-identically in B.
+  for (const name of namesA) {
+    assert.deepEqual(readFileSync(join(outDirA, name)), readFileSync(join(outDirB, name)), `${name} must be byte-identical between the two exports (A -> B)`);
+  }
+  // Direction 2: every file B produced exists byte-identically in A. A guard
+  // that only walked A's own list could never see a file B invented that A
+  // never produced -- this direction is what catches that.
+  for (const name of namesB) {
+    assert.deepEqual(readFileSync(join(outDirB, name)), readFileSync(join(outDirA, name)), `${name} must be byte-identical between the two exports (B -> A)`);
+  }
+});
+
+test("tree determinism: non-vacuity -- corrupting one byte of one file in the second directory makes the two-direction comparison report a difference naming that file", () => {
+  const fixture = twoScopeFixture("tree-determinism-non-vacuity");
+  const outDirA = join(fixture.dir, "tree-a");
+  const outDirB = join(fixture.dir, "tree-b");
+  exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir: outDirA });
+  const resultB = exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir: outDirB });
+
+  const corruptedName = SYMBOLS_FILE_NAME;
+  const corruptedPath = join(outDirB, corruptedName);
+  writeFileSync(corruptedPath, `${readFileSync(corruptedPath, "utf8")}; CORRUPTED BY TEST\n`, "utf8");
+
+  const differing: string[] = [];
+  for (const name of resultB.files) {
+    if (!readFileSync(join(outDirA, name)).equals(readFileSync(join(outDirB, name)))) differing.push(name);
+  }
+  assert.deepEqual(differing, [corruptedName], "the comparison must report exactly, and only, the one file that was corrupted");
+});
+
+test("tree determinism: `files` equals the set computed from the store's own scope rows plus the always-present root, symbols and (here) unscoped names", () => {
+  // Every scope in this fixture holds at least one block, and its extra
+  // range is deliberately outside both scopes -- so the set computed purely
+  // from `result.scopes` (never a hardcoded name list) is the exact file
+  // set, with both a missing and an unexpected side asserted.
+  const fixture = twoScopeFixture("tree-determinism-fileset", { extraRanges: [{ start: 0x0807, endInclusive: 0x0808, dataType: "byte" }] });
+  const outDir = join(fixture.dir, "tree");
+  const result = exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir });
+
+  const expectedFromScopeRows = new Set([ROOT_FILE_NAME, SYMBOLS_FILE_NAME, UNSCOPED_FILE_NAME, ...result.scopes.map((scope) => scopeFileName(scope.start))]);
+  const actual = new Set(result.files);
+  const missing = [...expectedFromScopeRows].filter((name) => !actual.has(name));
+  const unexpected = [...actual].filter((name) => !expectedFromScopeRows.has(name));
+  assert.deepEqual(missing, [], `names computed from the store's own scope rows are missing from files: ${missing.join(", ") || "(none)"}`);
+  assert.deepEqual(unexpected, [], `files carries names the store's scope rows do not account for: ${unexpected.join(", ") || "(none)"}`);
+});
+
+test("tree ordering: sourceOrder is the symbols file, then each scope file ascending by scope start, then the unscoped file -- identical across two exports of the unchanged store", () => {
+  const fixture = twoScopeFixture("tree-ordering", { extraRanges: [{ start: 0x0807, endInclusive: 0x0808, dataType: "byte" }] });
+  const outDirA = join(fixture.dir, "tree-a");
+  const outDirB = join(fixture.dir, "tree-b");
+  const resultA = exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir: outDirA });
+  const resultB = exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir: outDirB });
+
+  const expectedOrder = [SYMBOLS_FILE_NAME, scopeFileName(0x0801), scopeFileName(0x0805), UNSCOPED_FILE_NAME];
+  assert.deepEqual(resultA.sourceOrder, expectedOrder);
+  assert.deepEqual(resultB.sourceOrder, expectedOrder);
+  assert.deepEqual(resultA.sourceOrder, resultB.sourceOrder, "sourceOrder must be identical across two exports of the unchanged store");
+});
+
+test("tree ordering: the !source sequence parsed from root.a's own text equals result.sourceOrder", () => {
+  const fixture = twoScopeFixture("tree-ordering-root-text", { extraRanges: [{ start: 0x0807, endInclusive: 0x0808, dataType: "byte" }] });
+  const outDir = join(fixture.dir, "tree");
+  const result = exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir });
+
+  const rootText = readFileSync(join(outDir, ROOT_FILE_NAME), "utf8");
+  const parsedOrder = [...rootText.matchAll(/^!source "([^"]*)"$/gm)].map((m) => m[1]!);
+  // The field a CALLER reads and the file ACME reads must agree -- a test
+  // that checked only one would let them disagree in silence.
+  assert.deepEqual(parsedOrder, result.sourceOrder);
+});
+
+test(
+  "tree empty: a store with zero scopes writes exactly root.a, symbols.a and unscoped.a, and that tree assembles to the expected bytes",
+  { skip: SKIP_REASON },
+  async () => {
+    const fixture = shapeFixture("tree-empty-zero-scopes");
+    const outDir = join(fixture.dir, "tree");
+    const result = exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir });
+    assert.deepEqual([...result.files].sort(), [ROOT_FILE_NAME, SYMBOLS_FILE_NAME, UNSCOPED_FILE_NAME].sort());
+
+    const response = await runHostTool({ tool: "acme.build", args: { source: ROOT_FILE_NAME, format: "plain", noReport: true } }, { repoRoot: outDir });
+    assert.equal(response.ok, true, response.ok ? "" : response.message);
+    if (!response.ok) return;
+    assert.equal(response.exitStatus, 0);
+    const producedBytes = new Uint8Array(readFileSync(response.results[0]!.path));
+    assert.deepEqual(producedBytes, result.expectedBytes);
+  },
+);
+
+/** One populated scope, plus a SECOND scope with no range inside it at all --
+ * scopes are validated only against the address space, never against the
+ * image, so an out-of-image-range scope is a legal, deliberately empty one. */
+function emptyScopeFixture(tag: string): StoreFixture {
+  return buildStore(freshDir(tag), {
+    origin: 0x0801,
+    body: SHAPE_BODY,
+    ranges: [{ start: 0x0801, endInclusive: 0x0806, dataType: "code" }],
+    labels: [{ address: 0x0801, name: "entry" }],
+    scopes: [
+      { start: 0x0801, endInclusive: 0x0806 },
+      { start: 0x0900, endInclusive: 0x0901 },
+    ],
+  });
+}
+
+test("tree empty: a scope containing no block produces no file and no !source line for it", () => {
+  const fixture = emptyScopeFixture("tree-empty-scope-no-block");
+  const outDir = join(fixture.dir, "tree");
+  const result = exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir });
+
+  const emptyScopeFileName = scopeFileName(0x0900);
+  assert.ok(!result.files.includes(emptyScopeFileName), "an empty scope must produce no file");
+  assert.ok(!existsSync(join(outDir, emptyScopeFileName)), "an empty scope's file must not exist on disk");
+  const rootText = readFileSync(join(outDir, ROOT_FILE_NAME), "utf8");
+  assert.ok(!rootText.includes(emptyScopeFileName), "root.a must carry no !source line for the empty scope");
+});
+
+test("tree empty: a store with zero labels still writes symbols.a and still sources it first", () => {
+  const fixture = buildStore(freshDir("tree-empty-zero-labels"), {
+    origin: 0x0801,
+    body: SHAPE_BODY,
+    ranges: [{ start: 0x0801, endInclusive: 0x0806, dataType: "code" }],
+    scopes: [{ start: 0x0801, endInclusive: 0x0806 }],
+  });
+  const outDir = join(fixture.dir, "tree");
+  const result = exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir });
+
+  assert.ok(result.files.includes(SYMBOLS_FILE_NAME), "symbols.a must exist even with zero labels");
+  assert.equal(result.sourceOrder[0], SYMBOLS_FILE_NAME, "symbols.a must still be sourced first");
+});
+
+test("tree empty: a store with zero ranges still raises the pre-existing zero-ranges refusal, unchanged, through the tree path", () => {
+  const dir = freshDir("tree-empty-zero-ranges");
+  const imagePath = join(dir, "game.prg");
+  writeFileSync(imagePath, Buffer.from([0x01, 0x08, 0x00]));
+  const storePath = join(dir, "anno.sqlite");
+  closeStore(openStore(storePath, { workspaceRoot: dir }));
+  const outDir = join(dir, "tree");
+
+  assert.throws(
+    () => exportAsmTree({ storePath, imagePath, workspaceRoot: dir, outDir }),
+    /holds no ranges -- refusing to emit an empty ACME source, because "nothing is annotated" and "the export produced nothing" must not read the same/,
+    "the tree path must raise the SAME message exportAsm() itself raises, matching the existing wording exactly",
+  );
+  assert.ok(!existsSync(outDir) || readdirSync(outDir).length === 0, "nothing must be written for a zero-range store's refusal");
+});
+
+test(
+  "tree determinism: the partition round-trip invariant at multi-scope scale -- every block's `lines` group appears exactly once across the tree, and the tree's own content lines equal exportAsm().source's lines (this phase's assumption-delta companion test, 47-01-PLAN.md)",
+  () => {
+    const fixture = twoScopeFixture("tree-partition-multiscale", { extraRanges: [{ start: 0x0807, endInclusive: 0x0808, dataType: "byte" }] });
+    const outDir = join(fixture.dir, "tree");
+    const result = exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir });
+
+    const treeFileNames = result.files.filter((name) => name.endsWith(".a") && name !== ROOT_FILE_NAME);
+    const fileLinesByName = new Map(treeFileNames.map((name) => [name, readFileSync(join(outDir, name), "utf8").split("\n")] as const));
+
+    for (const block of result.blocks) {
+      const originLine = block.lines[0]!;
+      const filesCarryingIt = treeFileNames.filter((name) => fileLinesByName.get(name)!.includes(originLine));
+      assert.equal(
+        filesCarryingIt.length,
+        1,
+        `block origin line "${originLine}" must appear in exactly one tree .a file, found in: ${filesCarryingIt.join(", ") || "(none)"}`,
+      );
+    }
+
+    const sourceLines = new Set(result.source.split("\n"));
+    for (const name of treeFileNames) {
+      for (const line of fileLinesByName.get(name)!) {
+        if (line === "" || line.startsWith("; ") || line.startsWith("!source ")) continue;
+        assert.ok(sourceLines.has(line), `${name}'s content line "${line}" does not appear in exportAsm()'s own source`);
+      }
+    }
+  },
+);
