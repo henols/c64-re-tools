@@ -19,6 +19,15 @@ backward-compatible argument shape, and the three capabilities stock provably
 cannot have (`vice_sid_get_state`, `vice_keyboard_matrix`,
 `vice_keyboard_restore`) refuse by name and say which backend provides them.
 
+***SUPERSEDED (2026-09-12, Phase 52 — Remove the Fork Backend):** the paragraph
+above is history. There is no longer a backend to select. The fork backend, its
+`-mcpserver` HTTP transport, its manifest and its probe are deleted, and stock
+upstream VICE is the only target — so "trimmed per backend" describes a
+selection mechanism that no longer exists. The three capabilities stock cannot
+have are no longer routed to a second backend: they are recorded as permanent,
+accepted losses in `docs/stock-hard-losses.md`. `CLAUDE.md` and
+`.planning/codebase/ARCHITECTURE.md` carry the current description.*
+
 **As of v0.3.0 recon findings are state, not prose.** the external analyser is a
 required, container-side, static-analysis-only prerequisite reached through **17
 curated `anno_*` tools** and a `vice-mcp anno <verb>` CLI. It holds a
