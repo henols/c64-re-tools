@@ -5,11 +5,11 @@ milestone_name: The Rebuild Half
 current_phase: 52
 current_phase_name: Remove the Fork Backend
 status: executing
-stopped_at: Completed 52-05-PLAN.md
-last_updated: "2026-09-12T08:23:58.161Z"
+stopped_at: Completed 52-06-PLAN.md
+last_updated: "2026-09-12T09:21:01.412Z"
 last_activity: 2026-09-11
 last_activity_desc: Phase 52 execution started
-state_head: bcc8f6b6cf01f5676ff8a10168767c49018856b8
+state_head: 3840094f266005182a59a7077889224927582e4c
 progress:
   total_phases: 8
   completed_phases: 2
@@ -255,8 +255,8 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 52 (Remove the Fork Backend) — EXECUTING
-Plan: 6 of 10
-Status: Executing (52-01 complete)
+Plan: 7 of 10
+Status: Executing (52-06 complete)
 
 **Planned OUT OF SEQUENCE.** Phase 52 was planned ahead of Phases 47-51, which
 remain unplanned, because Phase 52's own stated dependency — the open question
@@ -567,6 +567,7 @@ Last activity: 2026-09-11 — Phase 52 execution started
 | Phase 52 P03 | 75min | 3 tasks | 47 files |
 | Phase 52 P04 | 110min | 3 tasks | 14 files |
 | Phase 52 P05 | 165min | 3 tasks | 26 files |
+| Phase 52 P06 | long | 3 tasks | 26 files |
 
 ## Accumulated Context
 
@@ -1292,6 +1293,7 @@ Recent decisions affecting current work:
 - [Phase 52]: Phase 52 plan 04: handleRecycle()/handleDiagnose() kept as thin dispatchStockFor() delegations rather than deleted, to satisfy a structural oracle pinning handleRecycle's exact declaration form and the plan's own "still declared and registered" acceptance criteria.
 - [Phase 52]: Two whole mechanisms not individually named in the plan (D-13/D-14 replace-and-report, D-16 seam-hazard annotation) were deleted after confirming their sole caller (forwardToVice()) was gone -- generalising the plan's own "delete every helper that exists only to serve it" principle.
 - [Phase 52]: Phase 52 Plan 05: deleted vice.ts (fork transport, DENY_LIST, session-identity apparatus) and the fork manifest (tools-manifest.json, refresh-manifest.ts) whole. Traced the epoch-baseline cluster (ensureViceSession/viceSession/epochBaseline/checkEpochAndRebaseline) to zero external callers and deleted it entirely, correcting the orchestrator's own "LIVE" risk flag. Repaired five consumers beyond the plan's own file list (stock-dispatch.test.ts's three fork-manifest tests, package.json's stray refresh-manifest.ts files[] entry, generate-tool-support-table.mjs's DENY_LIST import breaking an unrelated test file). anno-tools.ts's inverted allowlist left byte-identical, comments rewritten in the abstract.
+- [Phase 52]: Deleted the broker/proxy backend cross-check outright (checkpoint answer A, 2026-09-12) with no lighter replacement; narrowed ViceBackend to a single literal rather than deleting it, since out-of-scope consumers (text-tools.ts/text-capability-probe.ts) still import it — Two processes can no longer disagree with one backend; the residual unresolved-binary signal still reaches the operator via vice_ping and the broker's own named launch failure
 
 ### Pending Todos
 
@@ -2369,8 +2371,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-12T08:23:57.956Z
-Stopped at: Completed 52-05-PLAN.md
+Last session: 2026-09-12T09:20:30.714Z
+Stopped at: Completed 52-06-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
