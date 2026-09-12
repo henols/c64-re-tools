@@ -158,16 +158,19 @@ match on the exporter's own output.
 **The live invocation:**
 
 ```bash
-npx -y @henols/vice-mcp anno export-asm game.prg --store game.annostore --out game.a
+npx -y @henols/vice-mcp anno export-asm game.prg --store game.annostore --out game-src
 node <plugin-root>/src/mcp/vice/vice-proxy.ts anno export-asm game.prg --store game.annostore
 ```
 
 `<image>` and `--store` are **two separate arguments and neither is derived from
 the other** — the image supplies the bytes, the store supplies the names, ranges,
-typed regions and comments, and naming one does not name the other. `--out`
-defaults to a `.a` beside the **store**, not beside the image, because the export
-is a generated view of the annotations. An existing destination is refused rather
-than overwritten unless you pass `--force`.
+typed regions and comments, and naming one does not name the other. `--out` names
+a **directory** the whole export is written into, defaulting to the image's
+basename stem beside the **store**, not beside the image, because the export is a
+generated view of the annotations. The directory holds a root file that sources
+the rest, one file per annotation scope, and an `unscoped.a` for anything inside
+no scope. A non-empty destination is refused rather than overwritten unless you
+pass `--force`.
 
 **The verb writes source text and runs no assembler.** Its own second output line
 says so, in as many words:

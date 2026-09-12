@@ -265,6 +265,32 @@ test("a synopsis placeholder positional is skipped rather than refused -- usage 
   assert.deepEqual(problemsFor("vice-mcp anno render-memmap <store> --provenance FILE --out FILE"), []);
 });
 
+/**
+ * The shape a `FLAG_KINDS` entry's kind is allowed to have: a lowercase
+ * dotted extension (`.annostore`), OR the single empty string meaning "a
+ * directory, which carries no extension" (phase 47 plan 47-05, D47-A --
+ * `export-asm`'s `--out` is the first flag to use it). Anything else --
+ * uppercase, no leading dot, or any other non-empty string that is not a
+ * real extension -- is still rejected; the widening adds exactly one new
+ * accepted shape, not "anything goes".
+ *
+ * Shared by the real-table assertion below and by its own dedicated shape
+ * test, so the two cannot drift into checking different things.
+ */
+function isValidFlagKind(kind: string): boolean {
+  return kind === "" || /^\.[a-z0-9]+$/.test(kind);
+}
+
+test("FLAG_KINDS kind shape: the empty string (a directory) is accepted, and anything else that is not a lowercase dotted extension is still rejected (phase 47 plan 47-05)", () => {
+  assert.ok(isValidFlagKind(""), 'the empty string must be accepted -- it means "a directory, which carries no extension"');
+  assert.ok(isValidFlagKind(".annostore"), "a real lowercase dotted extension must still be accepted -- the widening must not narrow this");
+  assert.ok(isValidFlagKind(".a"), "a single-letter lowercase extension must still be accepted");
+  assert.ok(!isValidFlagKind(".A"), "an uppercase extension must still be rejected -- the widening is not a case-insensitivity fix");
+  assert.ok(!isValidFlagKind("a"), "an extension with no leading dot must still be rejected");
+  assert.ok(!isValidFlagKind(" "), 'a single space is NOT the same as the empty string and must still be rejected');
+  assert.ok(!isValidFlagKind("."), "a bare dot with nothing after it must still be rejected");
+});
+
 /** A value the FLAG's own declared kinds accept, or a bare token where the
  * flag declares none (`--force`, `--check`, `--sample`). Derived from the
  * shipped table rather than hand-written, so a new flag kind cannot make the
@@ -487,7 +513,12 @@ test("WR-18 non-vacuity, the other direction: every VERB_OPTIONS verb has a FLAG
     for (const [flag, kinds] of Object.entries(byFlag)) {
       assert.ok(VERB_OPTIONS[verb]?.includes(flag), `${verb}: FLAG_KINDS names ${flag}, which is not in that verb's VERB_OPTIONS`);
       assert.ok(Array.isArray(kinds) && kinds.length > 0, `${verb} ${flag}: an entry with no kinds constrains nothing -- omit the flag instead`);
-      for (const kind of kinds) assert.match(kind, /^\.[a-z0-9]+$/, `${verb} ${flag}: ${kind} is not a lowercase dotted extension`);
+      for (const kind of kinds) {
+        assert.ok(
+          isValidFlagKind(kind),
+          `${verb} ${flag}: "${kind}" is not a lowercase dotted extension, and is not the empty string meaning "a directory, which carries no extension" either`,
+        );
+      }
     }
   }
   // Every REQUIRED flag is value-taking in this CLI, so each must also be in
@@ -687,6 +718,32 @@ test("WR-18: a NON-required value-taking flag with no value is caught too -- --o
   assert.match(problems[0]!, /takes a value and was documented with none/i);
 });
 
+// ---------------------------------------------------------------------------
+// Phase 47 plan 47-05, D47-A: `export-asm --out` is now a DIRECTORY, and
+// `FLAG_KINDS["export-asm"]["--out"]` declares the single empty-string kind
+// for it. These are the flag's own value-presence and value-kind cases,
+// mirroring the `--store`/`--provenance` ones above rather than a third
+// shape.
+// ---------------------------------------------------------------------------
+
+test("export-asm --out: a documented value with no value after it is still refused -- the value-presence check survived the file-to-directory promotion", () => {
+  const problems = problemsFor("vice-mcp anno export-asm game.prg --store game.annostore --out");
+  assert.equal(problems.length, 1, problems.join("; "));
+  assert.match(problems[0]!, /--out/);
+  assert.match(problems[0]!, /takes a value and was documented with none/i);
+});
+
+test("export-asm --out: a documented value naming a concrete extensionless directory passes", () => {
+  assert.deepEqual(problemsFor("vice-mcp anno export-asm game.prg --store game.annostore --out game-src"), []);
+});
+
+test("export-asm --out: a documented value naming a .a FILE is now reported -- the table describes what the flag really takes", () => {
+  const problems = problemsFor("vice-mcp anno export-asm game.prg --store game.annostore --out game.a");
+  assert.equal(problems.length, 1, problems.join("; "));
+  assert.match(problems[0]!, /--out/);
+  assert.match(problems[0]!, /game\.a/, "the problem must name the value the reader wrote");
+});
+
 test("WR-18 positive controls: the correctly-spelled sibling of every case above is sound", () => {
   for (const line of [
     "vice-mcp anno coverage game.prg --store game.annostore",
@@ -694,6 +751,7 @@ test("WR-18 positive controls: the correctly-spelled sibling of every case above
     "vice-mcp anno coverage game.prg --store game.annostore --out report.json",
     "vice-mcp anno render-memmap game.annostore --provenance sidecar.json",
     "vice-mcp anno render-memmap game.annostore --provenance sidecar.json --out memory-map.md",
+    "vice-mcp anno export-asm game.prg --store game.annostore --out game-src",
   ]) {
     assert.deepEqual(problemsFor(line), [], line);
   }

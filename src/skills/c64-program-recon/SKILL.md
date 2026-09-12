@@ -355,14 +355,17 @@ against the input** — never by an exit code and never by a string match on the
 output.
 
 ```bash
-npx -y @henols/vice-mcp anno export-asm game.prg --store game.annostore --out game.a
+npx -y @henols/vice-mcp anno export-asm game.prg --store game.annostore --out game-src
 node <plugin-root>/src/mcp/vice/vice-proxy.ts anno export-asm game.prg --store game.annostore
 ```
 
 `<image>` and `--store` are **two separate arguments and neither is derived from the other**: the
-image supplies the bytes, the store supplies the names, typed ranges and comments. `--out` defaults
-to a `.a` beside the **store** rather than beside the image, and an existing destination is refused
-rather than overwritten unless you pass `--force`.
+image supplies the bytes, the store supplies the names, typed ranges and comments. `--out` names a
+**directory** the whole export is written into, defaulting to the image's basename stem beside the
+**store** rather than beside the image, and a non-empty destination is refused rather than
+overwritten unless you pass `--force`. The directory holds a root file that sources the rest, one
+file per annotation scope, and an `unscoped.a` for any block that lies inside no scope — open the
+root file first to see how the tree fits together.
 
 **It writes source and runs no assembler**, and says so in its own second output line
 (`this file has NOT been assembled`). The real-ACME byte-diff is a **test-only** oracle in this

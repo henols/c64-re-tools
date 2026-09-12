@@ -254,16 +254,30 @@ export const REQUIRED_FLAGS = Object.freeze({
 //                             different slot, same two kinds and the same
 //                             shipped-CONVENTION caveat as `coverage --store`.
 //
-//   export-asm --out       -> ACME source text. `.a` is this repo's own
-//                             spelling for it -- `src/skills/acme-build/`
-//                             assembles `.a` files and the exporter's own
-//                             derived default is the image's basename with a
-//                             `.a` extension (`anno-cli.ts`,
-//                             `defaultExportAsmOut()`). `.asm` is accepted
-//                             alongside it because the acme-build playbook
-//                             names both spellings as sources it assembles, so
-//                             a documented `--out foo.asm` is a live command
-//                             rather than a mistake.
+//   export-asm --out       -> a DIRECTORY, not a file (phase 47 plan 47-05,
+//                             D47-A: `--out` promoted from a FILE to a
+//                             DIRECTORY a whole ACME source tree is written
+//                             into). A directory name carries no extension,
+//                             so the kind this flag declares is the SINGLE
+//                             EMPTY-STRING entry below -- "" IS a real,
+//                             checked kind here, not an absent one. Before
+//                             this plan the entry read `[".a", ".asm"]`,
+//                             because `--out` named the single ACME source
+//                             file this repo spells that way; that shape is
+//                             gone along with the file it described, not
+//                             merely widened.
+//
+//                             THE ENTRY IS KEPT RATHER THAN DELETED, on
+//                             purpose: `takesValue()` below is DERIVED from
+//                             membership in this table (`Object.hasOwn(
+//                             kindsByFlag, flag)`), so removing `--out` here
+//                             would silently drop the value-presence check
+//                             this table exists to add (WR-18 check 4) -- a
+//                             documented `--out` at end of line would stop
+//                             being refused. Deleting the entry to "simplify"
+//                             a directory-shaped flag back into having no
+//                             kind at all is exactly the hole this comment
+//                             exists to stop a later reader reopening.
 //
 // A FLAG WITH NO ENTRY IS A FLAG THIS MAP MAKES NO CLAIM ABOUT, and there are
 // two deliberate absences rather than oversights: `--force` and `--check` are
@@ -288,7 +302,13 @@ export const FLAG_KINDS = Object.freeze({
   }),
   "export-asm": Object.freeze({
     "--store": Object.freeze([".annostore", ".store"]),
-    "--out": Object.freeze([".a", ".asm"]),
+    // A DIRECTORY, never a file, as of phase 47 plan 47-05 -- see the long
+    // comment above this table for why the entry stays rather than being
+    // deleted. The single empty-string kind means "a directory, which
+    // carries no extension"; a documented `--out game.a` (the pre-promotion
+    // spelling) is now REPORTED, because that value names a file, not a
+    // directory.
+    "--out": Object.freeze([""]),
     // --ledger (phase 46 plan 01, BUILD-05) names the Markdown document
     // `renderLedger()` writes (`recovery/PROVENANCE.md`) -- `.md` is the only
     // extension a live invocation can name, since that function has exactly
