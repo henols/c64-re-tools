@@ -152,5 +152,5 @@ the exit code, is what decides success here.
 - **No direct binary spawn.** `c1541` runs host-side; this script only ever
   constructs a typed request and reads the produced files back off the
   shared workspace tree — the host-tool execution seam is the only route.
-- **No backend declaration.** This skill names no VICE emulator tool at
-  all — it is silent on fork vs. stock by construction.
+- **No emulator dependency.** This skill names no VICE emulator tool at
+  all — it works entirely on files, never on a running machine, by construction.

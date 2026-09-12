@@ -83,5 +83,5 @@ classifier, not the exit code, is what decides success here.
   argument is always reported as a named decline with `entrypoint: null` —
   never a fallback value, never an inline listing scan for "something that
   looks like an address".
-- **No backend declaration.** This skill names no VICE emulator tool at all
-  — it is silent on fork vs. stock by construction.
+- **No emulator dependency.** This skill names no VICE emulator tool at all
+  — it works entirely on files, never on a running machine, by construction.
