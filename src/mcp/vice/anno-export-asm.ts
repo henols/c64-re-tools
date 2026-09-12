@@ -1760,17 +1760,69 @@ export interface ExportAsmTreeResult extends ExportAsmResult {
 }
 
 /**
+ * Phase 47, plan 47-02: decides which file ONE block belongs to, given the
+ * store's own scopes -- the ONE containment predicate, applied ONCE, so the
+ * tree writer's placement answer can never drift from a second copy of this
+ * question (see `blocks`'s own `.map()` above for the sibling boundary this
+ * project already carries the same discipline for).
+ *
+ * A scope WHOLLY CONTAINS a block when `scope.start <= block.start` AND
+ * `block.endExclusive - 1 <= scope.endInclusive`. That subtraction is the
+ * inclusive/exclusive conversion, done HERE and only here -- a second
+ * conversion site elsewhere in this function is exactly how the two answers
+ * would drift.
+ *
+ * A block no scope contains, and that overlaps no scope AT ALL, belongs to
+ * the unscoped group (D47-D). This is a genuine "goes somewhere, never
+ * nowhere" answer rather than a refusal-in-disguise: `listScopes()` was read
+ * by nothing in the export path before this plan, so every store that exists
+ * today has zero scopes, and refusing here would make the tree export
+ * unreachable for every one of them. Losslessness is this project's
+ * governing constraint.
+ *
+ * A block that OVERLAPS a scope WITHOUT being wholly contained by it is
+ * REFUSED (D47-C) -- scopes cannot themselves overlap (`addScope()`'s own
+ * overlap refusal), so this is genuinely ambiguous rather than a case this
+ * function could resolve by trying harder. The export refuses to CHOOSE a
+ * file for it rather than guess what a straddling range means: `emitBlock()`
+ * brackets every block with a single `* =` origin and a single
+ * `!if * != ...` end assertion, and a block emitted in two pieces has no
+ * single extent for that pair to assert. The fix belongs to the user --
+ * move the scope boundary, or split the range -- never to this exporter.
+ */
+function placeBlockInScope(block: ExportBlock, sortedScopes: readonly ScopeRow[]): ScopeRow | "unscoped" {
+  const blockEndInclusive = block.endExclusive - 1;
+  for (const scope of sortedScopes) {
+    const whollyContained = scope.start <= block.start && blockEndInclusive <= scope.endInclusive;
+    if (whollyContained) return scope;
+
+    const overlaps = block.start <= scope.endInclusive && scope.start <= blockEndInclusive;
+    if (overlaps) {
+      throw new Error(
+        `exportAsmTree: the range ${hex4(block.start)}..${hex4(blockEndInclusive)} (inclusive) overlaps the scope ` +
+          `${hex4(scope.start)}..${hex4(scope.endInclusive)} (inclusive) without being wholly contained by it -- refusing to choose ` +
+          `which file it belongs in, because that would be this tool deciding what your range means. Splitting the range across two ` +
+          `files is not offered instead: emitBlock() brackets every block with a single \`* =\` origin and a single ` +
+          `\`!if * != ...\` end assertion, and a block emitted in two pieces has no single extent left for that pair to assert. ` +
+          `Move the scope boundary, or split the range -- the fix belongs to you, not this export.`,
+      );
+    }
+  }
+  return "unscoped";
+}
+
+/**
  * Writes `exportAsm()`'s already-proven emission as a TREE of real files on
  * disk, rather than emitting a second time through a second route --
  * `root.a` (D47-B order), `symbols.a`, one `scope_XXXX.a` per scope that
  * contains at least one block, and `unscoped.a` only when at least one block
  * lies inside no scope (D47-D).
  *
- * ASSIGNMENT RULE, THIS TASK ONLY (D47-C is plan 47-02's): a block goes to
- * the scope that WHOLLY contains it (`scope.start <= block.start` and
- * `block.endExclusive - 1 <= scope.endInclusive`), or to the unscoped group
- * when no scope contains it at all. A block that only PARTIALLY overlaps a
- * scope is neither case here; plan 47-02 turns that into a named refusal.
+ * ASSIGNMENT RULE (D47-C/D47-D, both now implemented): every block is placed
+ * by `placeBlockInScope()` above -- the scope that wholly contains it, the
+ * unscoped group when no scope contains it at all, or a thrown refusal when
+ * it overlaps a scope without being wholly contained. There is no fourth
+ * outcome and no path that silently discards a block.
  *
  * Every `!source` argument this function emits is a bare filename -- no
  * directory component, no absolute path, no host-machine path anywhere in
@@ -1798,18 +1850,23 @@ export function exportAsmTree(options: ExportAsmTreeOptions): ExportAsmTreeResul
   const sortedScopes = [...result.scopes].sort((a, b) => a.start - b.start);
   // Keyed by scope START (D47-B's own file-naming key), never by scope id --
   // the file name is a function of `start`, so the grouping key matches it.
+  //
+  // THIS WHOLE PASS RUNS BEFORE ANY FILE IS WRITTEN, on purpose: a refusal
+  // that has already written half a tree has left an artefact a later
+  // assemble might succeed on. `placeBlockInScope()` either returns a
+  // placement or throws; nothing below this loop runs until every block has
+  // been placed.
   const scopeBlocks = new Map<number, ExportBlock[]>();
   const unscopedBlocks: ExportBlock[] = [];
   for (const block of result.blocks) {
-    const blockEndInclusive = block.endExclusive - 1;
-    const containing = sortedScopes.find((scope) => scope.start <= block.start && blockEndInclusive <= scope.endInclusive);
-    if (containing === undefined) {
+    const placement = placeBlockInScope(block, sortedScopes);
+    if (placement === "unscoped") {
       unscopedBlocks.push(block);
       continue;
     }
-    const existing = scopeBlocks.get(containing.start);
+    const existing = scopeBlocks.get(placement.start);
     if (existing) existing.push(block);
-    else scopeBlocks.set(containing.start, [block]);
+    else scopeBlocks.set(placement.start, [block]);
   }
 
   const files: string[] = [];

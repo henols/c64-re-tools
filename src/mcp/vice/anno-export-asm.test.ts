@@ -93,6 +93,7 @@ import {
   exportAsmTree,
   ROOT_FILE_NAME,
   SYMBOLS_FILE_NAME,
+  UNSCOPED_FILE_NAME,
   scopeFileName,
   substituteImmediateEnum,
   type ExportAsmOptions,
@@ -4385,4 +4386,222 @@ test("anno-export-asm.ts imports nothing from node:child_process -- the exporter
   const raw = readFileSync(join(HERE, "anno-export-asm.ts"), "utf8");
   const stripped = codeOnly(raw);
   assert.ok(!stripped.includes("node:child_process"), "anno-export-asm.ts must not import node:child_process anywhere in its own source");
+});
+
+// ---------------------------------------------------------------------------
+// Phase 47, plan 47-02, Task 1: the partition across MANY scopes, the
+// unscoped remainder, and the boundary-crossing refusal. Plan 47-01's tree
+// tests above only ever exercised one scope; everything below is about what
+// changes once a second scope, an unscoped block, or a straddling range
+// enters the picture.
+// ---------------------------------------------------------------------------
+
+/**
+ * Three ranges over two DISJOINT scopes: scope1 (`0x0801..0x0804`) wholly
+ * contains ranges A (`0x0801..0x0802`) and B (`0x0803..0x0804`); scope2
+ * (`0x0805..0x0806`) wholly contains range C (`0x0805..0x0806`).
+ * `extraRanges`/`extraScopes` let a caller add the unscoped range or a
+ * second-scope adjacency case without a parallel fixture builder.
+ */
+function twoScopeFixture(tag: string, opts: { extraRanges?: StoreSpec["ranges"]; extraScopes?: StoreSpec["scopes"] } = {}): StoreFixture {
+  return buildStore(freshDir(tag), {
+    origin: 0x0801,
+    body: [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08],
+    ranges: [
+      { start: 0x0801, endInclusive: 0x0802, dataType: "byte" },
+      { start: 0x0803, endInclusive: 0x0804, dataType: "byte" },
+      { start: 0x0805, endInclusive: 0x0806, dataType: "byte" },
+      ...(opts.extraRanges ?? []),
+    ],
+    scopes: [
+      { start: 0x0801, endInclusive: 0x0804 },
+      { start: 0x0805, endInclusive: 0x0806 },
+      ...(opts.extraScopes ?? []),
+    ],
+  });
+}
+
+test("exportAsmTree: a three-range, two-scope store writes exactly two scope files, each holding exactly the blocks that scope contains", () => {
+  const fixture = twoScopeFixture("tree-multi-scope");
+  const outDir = join(fixture.dir, "tree");
+  const result = exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir });
+
+  const scope1File = scopeFileName(0x0801);
+  const scope2File = scopeFileName(0x0805);
+  assert.deepEqual(
+    [...result.files].sort(),
+    [ROOT_FILE_NAME, SYMBOLS_FILE_NAME, scope1File, scope2File].sort(),
+    "a three-range, two-scope store must write exactly root.a, symbols.a and one file per scope -- no unscoped.a",
+  );
+
+  const scope1Blocks = result.blocks.filter((b) => b.start >= 0x0801 && b.start <= 0x0804);
+  const scope2Blocks = result.blocks.filter((b) => b.start >= 0x0805 && b.start <= 0x0806);
+  assert.equal(scope1Blocks.length, 2, "scope1 wholly contains ranges A and B");
+  assert.equal(scope2Blocks.length, 1, "scope2 wholly contains range C");
+
+  const scope1Text = readFileSync(join(outDir, scope1File), "utf8");
+  const scope2Text = readFileSync(join(outDir, scope2File), "utf8");
+  for (const block of scope1Blocks) assert.ok(scope1Text.includes(block.lines[0]!), `scope1's file must hold the block starting ${block.lines[0]}`);
+  for (const block of scope2Blocks) assert.ok(scope2Text.includes(block.lines[0]!), `scope2's file must hold the block starting ${block.lines[0]}`);
+  // Cross-check: neither scope's blocks leaked into the other's file.
+  for (const block of scope1Blocks) assert.ok(!scope2Text.includes(block.lines[0]!), `scope1's block must NOT appear in scope2's file`);
+  for (const block of scope2Blocks) assert.ok(!scope1Text.includes(block.lines[0]!), `scope2's block must NOT appear in scope1's file`);
+});
+
+test("exportAsmTree: a block inside no scope lands in unscoped.a, and `files` grows by exactly that one name", () => {
+  const base = twoScopeFixture("tree-unscoped-base");
+  const baseOutDir = join(base.dir, "tree");
+  const baseResult = exportAsmTree({ storePath: base.storePath, imagePath: base.imagePath, workspaceRoot: base.dir, outDir: baseOutDir });
+  assert.ok(!baseResult.files.includes(UNSCOPED_FILE_NAME), "the base fixture (no unscoped block) must not write unscoped.a");
+
+  const fixture = twoScopeFixture("tree-unscoped", { extraRanges: [{ start: 0x0807, endInclusive: 0x0808, dataType: "byte" }] });
+  const outDir = join(fixture.dir, "tree");
+  const result = exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir });
+
+  assert.equal(result.files.length, baseResult.files.length + 1, "one added unscoped block must grow `files` by exactly one name");
+  assert.ok(result.files.includes(UNSCOPED_FILE_NAME), "the fourth, unscoped range must produce unscoped.a");
+
+  const unscopedText = readFileSync(join(outDir, UNSCOPED_FILE_NAME), "utf8");
+  const unscopedBlock = result.blocks.find((b) => b.start === 0x0807)!;
+  assert.ok(unscopedText.includes(unscopedBlock.lines[0]!), "unscoped.a must hold exactly the block that lies inside no scope");
+});
+
+test(
+  "ROUND TRIP: a multi-scope-plus-unscoped tree assembles through runHostTool() at exitStatus 0 and produces bytes deepEqual to expectedBytes",
+  { skip: SKIP_REASON },
+  async () => {
+    const fixture = twoScopeFixture("tree-multi-scope-roundtrip", { extraRanges: [{ start: 0x0807, endInclusive: 0x0808, dataType: "byte" }] });
+    const outDir = join(fixture.dir, "tree");
+    const result = exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir });
+
+    const response = await runHostTool({ tool: "acme.build", args: { source: ROOT_FILE_NAME, format: "plain", noReport: true } }, { repoRoot: outDir });
+    assert.equal(response.ok, true, response.ok ? "" : response.message);
+    if (!response.ok) return;
+    assert.equal(response.exitStatus, 0, "real ACME must exit 0 assembling the multi-scope-plus-unscoped tree");
+    assert.equal(response.results.length, 1);
+    const producedBytes = new Uint8Array(readFileSync(response.results[0]!.path));
+    assert.deepEqual(producedBytes, result.expectedBytes, "the produced bytes must be octet-identical to bytes taken from the image");
+  },
+);
+
+/** A single range (`0x0803..0x0806`) that starts inside a scope
+ * (`0x0801..0x0804`) and ends past that scope's last byte -- overlapping it
+ * without being wholly contained by it. The body's first byte (`0xc7`) is a
+ * distinctive marker for the content-leak test below; it carries no other
+ * significance since the range's `dataType` is `"byte"`, never decoded. */
+function boundaryCrossingFixture(tag: string): StoreFixture {
+  return buildStore(freshDir(tag), {
+    origin: 0x0801,
+    body: [0xc7, 0x02, 0x03, 0x04, 0x05, 0x06],
+    ranges: [{ start: 0x0803, endInclusive: 0x0806, dataType: "byte" }],
+    scopes: [{ start: 0x0801, endInclusive: 0x0804 }],
+  });
+}
+
+test("a range crossing a scope boundary makes exportAsmTree() refuse by name, naming both extents, and writes nothing", () => {
+  const fixture = boundaryCrossingFixture("tree-crossing");
+  const outDir = join(fixture.dir, "tree");
+  mkdirSync(outDir, { recursive: true });
+
+  assert.throws(
+    () => exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir }),
+    (err: unknown) => {
+      assert.ok(err instanceof Error);
+      assert.match(err.message, /\$0803\.\.\$0806/, `the message must name the range's extent: ${err.message}`);
+      assert.match(err.message, /\$0801\.\.\$0804/, `the message must name the scope's extent: ${err.message}`);
+      assert.match(err.message, /wholly contained/, `the message must state the containment rule that was violated: ${err.message}`);
+      return true;
+    },
+  );
+
+  // Test 7: the refusal happens BEFORE anything is written.
+  assert.deepEqual(readdirSync(outDir), [], "the output directory must still be empty after a refusal -- nothing was written before the throw");
+});
+
+test("BOUNDARY CROSSING: the refusal message contains no byte value drawn from the image and no store comment text", () => {
+  const fixture = boundaryCrossingFixture("tree-crossing-content-leak");
+  const handle = openStore(fixture.storePath, { workspaceRoot: fixture.dir });
+  try {
+    setComment(handle, { address: 0x0803, commentType: "line", text: "TOP SECRET STORE MARKER" });
+  } finally {
+    closeStore(handle);
+  }
+  const outDir = join(fixture.dir, "tree");
+
+  assert.throws(
+    () => exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir }),
+    (err: unknown) => {
+      assert.ok(err instanceof Error);
+      assert.ok(!err.message.includes("TOP SECRET STORE MARKER"), `the message must not echo store comment text: ${err.message}`);
+      assert.ok(!/\bc7\b/i.test(err.message), `the message must not quote the image's own byte value: ${err.message}`);
+      return true;
+    },
+  );
+});
+
+/**
+ * `tree adjacency:` fixtures -- one scope (`0x0801..0x0806`), one range
+ * (`0x0803..0x0806`) whose last byte is exactly the scope's last byte, and a
+ * second range (`0x0807..0x0808`) starting exactly one byte past the first
+ * scope's last byte. `includeSecondScope` adds a second scope starting
+ * exactly where the first ends, to exercise the two adjacency outcomes for
+ * that second range from one shared fixture.
+ */
+function adjacencyFixture(tag: string, opts: { includeSecondScope?: boolean } = {}): StoreFixture {
+  return buildStore(freshDir(tag), {
+    origin: 0x0801,
+    body: [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08],
+    ranges: [
+      { start: 0x0803, endInclusive: 0x0806, dataType: "byte" },
+      { start: 0x0807, endInclusive: 0x0808, dataType: "byte" },
+    ],
+    scopes: [{ start: 0x0801, endInclusive: 0x0806 }, ...(opts.includeSecondScope ? [{ start: 0x0807, endInclusive: 0x0808 }] : [])],
+  });
+}
+
+test("tree adjacency: a range whose last byte is exactly the scope's last byte is wholly contained and lands in that scope's file", () => {
+  const fixture = adjacencyFixture("tree-adjacency-exact-end");
+  const outDir = join(fixture.dir, "tree");
+  const result = exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir });
+
+  const scopeFile = scopeFileName(0x0801);
+  const scopeText = readFileSync(join(outDir, scopeFile), "utf8");
+  const block = result.blocks.find((b) => b.start === 0x0803)!;
+  assert.ok(scopeText.includes(block.lines[0]!), "a range ending exactly at the scope's last byte must be wholly contained by it");
+});
+
+test("tree adjacency: a range starting exactly one byte past a scope's last byte belongs to a second scope starting there, or to unscoped.a with none", () => {
+  // With a second scope starting exactly where the first ends + 1:
+  const withSecond = adjacencyFixture("tree-adjacency-second-scope", { includeSecondScope: true });
+  const outDirWithSecond = join(withSecond.dir, "tree");
+  const resultWithSecond = exportAsmTree({
+    storePath: withSecond.storePath,
+    imagePath: withSecond.imagePath,
+    workspaceRoot: withSecond.dir,
+    outDir: outDirWithSecond,
+  });
+  const secondScopeFile = scopeFileName(0x0807);
+  const secondScopeText = readFileSync(join(outDirWithSecond, secondScopeFile), "utf8");
+  const blockInSecondScope = resultWithSecond.blocks.find((b) => b.start === 0x0807)!;
+  assert.ok(
+    secondScopeText.includes(blockInSecondScope.lines[0]!),
+    "the range starting one byte past the first scope's end belongs to the SECOND scope, not the first",
+  );
+  assert.ok(
+    !resultWithSecond.files.includes(UNSCOPED_FILE_NAME),
+    "with a second scope claiming the range, it must not also fall through to unscoped.a",
+  );
+
+  // With no second scope, the same range falls through to unscoped.a:
+  const withoutSecond = adjacencyFixture("tree-adjacency-no-second-scope");
+  const outDirWithoutSecond = join(withoutSecond.dir, "tree");
+  const resultWithoutSecond = exportAsmTree({
+    storePath: withoutSecond.storePath,
+    imagePath: withoutSecond.imagePath,
+    workspaceRoot: withoutSecond.dir,
+    outDir: outDirWithoutSecond,
+  });
+  const unscopedText = readFileSync(join(outDirWithoutSecond, UNSCOPED_FILE_NAME), "utf8");
+  const blockUnscoped = resultWithoutSecond.blocks.find((b) => b.start === 0x0807)!;
+  assert.ok(unscopedText.includes(blockUnscoped.lines[0]!), "with no second scope, the same range must land in unscoped.a");
 });
