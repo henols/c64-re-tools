@@ -5,16 +5,16 @@ milestone_name: The Rebuild Half
 current_phase: 47
 current_phase_name: Multi-File Rebuildable Source
 status: executing
-stopped_at: Completed 47-03-PLAN.md
-last_updated: "2026-09-12T17:53:03.199Z"
+stopped_at: Completed 47-04-PLAN.md
+last_updated: "2026-09-12T18:19:14.610Z"
 last_activity: 2026-09-12
 last_activity_desc: Phase 47 execution started
-state_head: 3b558d3cea4eb287084fe24ed5b51fa1999f9713
+state_head: 1ed8358dbf8954b4658a6db6a3f94844530493d9
 progress:
   total_phases: 8
   completed_phases: 2
   total_plans: 22
-  completed_plans: 20
+  completed_plans: 21
   percent: 25
 ---
 
@@ -255,7 +255,7 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 47 (Multi-File Rebuildable Source) — EXECUTING
-Plan: 5 of 6
+Plan: 6 of 6
 Status: Ready to execute
 Plans: 6 (47-01 … 47-06) in 5 waves. Wave 2's 47-05 is `autonomous: false` —
 it carries the phase's one blocking decision checkpoint, because promoting
@@ -576,6 +576,7 @@ Last activity: 2026-09-12 — Phase 47 execution started
 | Phase 47 P02 | 25min | 3 tasks | 2 files |
 | Phase 47-multi-file-rebuildable-source P05 | 40min | 2 tasks | 7 files |
 | Phase 47 P03 | 17min | 2 tasks | 2 files |
+| Phase 47 P04 | 35min | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -1323,6 +1324,8 @@ Recent decisions affecting current work:
 - [Phase 47]: Phase 47 plan 05: FLAG_KINDS[export-asm][--out] kept (not deleted) and changed to the empty-string kind meaning a directory, so the invocation gate's value-presence check survives the file-to-directory promotion.
 - [Phase 47]: 47-03: The generic per-type DATA_TYPES round-trip loop excludes external_file -- its !binary line names a sibling file only exportAsmTree() writes, and acme-verify.ts (single-file by design) has no sibling to write. external_file's own round trip is proved separately through exportAsmTree() in the "binary emission:" suite.
 - [Phase 47]: 47-03: The character-set swap demonstration uses the committed fixtures/ghidra/charset-phantom.prg's own $1000..$17ff bytes through a store this test builds itself (buildStoreOverImage()), never the committed charset-phantom.annostore.json, which Phase 37/45 tests depend on staying typed "code".
+- [Phase 47]: The in-tree symbol rule (BUILD-03) reads the SAME labelIndex/blocks the renderer already uses -- never a second index -- and refuses once, at the end, naming both addresses and the N-of-M count.
+- [Phase 47]: Task 3's zero-page ordering proof hand-substitutes a symbol into a zeropage operand in the WRITTEN tree files, since disasm-renderer.ts's own D-11 rule never lets the exporter do this on its own -- without the mutation, sourcing order cannot matter.
 
 ### Pending Todos
 
@@ -2400,8 +2403,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-12T17:52:54.672Z
-Stopped at: Completed 47-03-PLAN.md
+Last session: 2026-09-12T18:19:14.353Z
+Stopped at: Completed 47-04-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
