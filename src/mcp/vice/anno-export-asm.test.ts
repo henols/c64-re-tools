@@ -4332,6 +4332,34 @@ test("exportAsmTree: every block's lines group appears exactly once across the t
 });
 
 test(
+  "cwd control: negative -- the SAME root.a text, assembled with no siblings and no tree directory as working directory, cannot open its own !source files",
+  { skip: SKIP_REASON },
+  () => {
+    // `acme-verify.ts` is used UNCHANGED here, never widened to a file tree
+    // (hard scope fence 3): it writes ONE source file into its OWN fresh
+    // temp directory, with no siblings and no tree directory as the child's
+    // working directory -- exactly the pre-fix world. That single-file
+    // design is precisely what makes it the right instrument for this
+    // control. The positive twin below deliberately goes through
+    // `runHostTool()` instead, because criterion 1 requires the byte-diff
+    // oracle be reached through that seam.
+    const { outDir, result } = treeFixture("cwd-control-negative");
+    const rootText = readFileSync(join(outDir, ROOT_FILE_NAME), "utf8");
+
+    // Non-vacuity FIRST: a control that passed because there was nothing to
+    // resolve would be an assertion nobody has ever seen fail.
+    assert.match(rootText, /^!source "/m, "the root text must carry at least one !source line before this control means anything");
+
+    const verdict = verifyAcmeAssembles({ source: rootText, expectedBytes: result.expectedBytes, expectedSegments: result.blocks });
+    assert.equal(verdict.outcome, "failed", context(result, verdict));
+    assert.ok(
+      verdict.diagnostics.some((line) => line.includes("Cannot open input file")),
+      `diagnostics must carry ACME's own could-not-open-file refusal text, got: ${verdict.diagnostics.join(" | ") || "(none)"}`,
+    );
+  },
+);
+
+test(
   "cwd control: positive twin -- the identical tree, assembled through runHostTool() with acme.build's new cwd, reaches exitStatus 0 and produces result.expectedBytes",
   { skip: SKIP_REASON },
   async () => {

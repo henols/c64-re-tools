@@ -465,6 +465,33 @@ test("buildHostToolArgv: acme.build's cwd equals the directory part of the resol
   assert.ok(!built.argv.includes(built.cwd as string), "cwd must never appear as any element of argv");
 });
 
+// ---------------------------------------------------------------------------
+// Phase 47, plan 47-01, Task 2: the `cwd` fix's wire-surface half -- proving
+// the working directory is host-derived and unreachable from the wire, on
+// the same posture that keeps `oracle.probe` from carrying a `command` key.
+// ---------------------------------------------------------------------------
+
+test('HOST_TOOL_ARG_KEYS/HOST_TOOL_PATH_ARG_KEYS: acme.build carries no "cwd" wire key in either census table -- a wire caller cannot choose the working directory, the same posture that keeps oracle.probe from carrying a "command" key', () => {
+  assert.ok(!HOST_TOOL_ARG_KEYS["acme.build"]!.includes("cwd"));
+  assert.ok(!HOST_TOOL_PATH_ARG_KEYS["acme.build"]!.includes("cwd"));
+});
+
+test("normaliseHostToolRequest: a wire request naming an explicit cwd key for acme.build is refused as an unknown key, never silently dropped", () => {
+  const result = normaliseHostToolRequest({ tool: "acme.build", args: { source: "root.a", cwd: "/etc" } });
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.match(result.message, /cwd/);
+});
+
+test("buildHostToolArgv: a non-acme.build tool (dxa.disassemble) returns no cwd property, and its argv is unchanged from before this field existed", () => {
+  const request = { tool: "dxa.disassemble", args: { image: "game.prg", imageKind: "prg" } };
+  const resolved = { imagePath: "/repo/tree/game.prg", outDirPath: "/repo/tree" };
+  const built = buildHostToolArgv(request, resolved);
+  assert.equal(built.ok, true);
+  if (!built.ok) return;
+  assert.equal(built.cwd, undefined);
+  assert.deepEqual(built.argv, ["-p", "all-nmos6502", "-d", "skip-scanning", "-t", "detect-internal", "-a", "dump", "/repo/tree/game.prg"]);
+});
+
 test("runHostTool: an acme.build request whose includes contains an escaping entry is refused with the workspace-escape message, and the log spy recorded zero lines", async () => {
   await withTempDir(async (dir) => {
     writeFileSync(join(dir, "a.a"), "; test source\n", "utf8");
