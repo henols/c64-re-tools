@@ -5,16 +5,16 @@ milestone_name: The Rebuild Half
 current_phase: 48
 current_phase_name: The Movement-Hazard Report and Its Purpose-Built Subject
 status: executing
-stopped_at: Phase 47 complete, ready to plan Phase 48
-last_updated: "2026-09-12T20:08:09.568Z"
+stopped_at: Completed 48-01-PLAN.md
+last_updated: "2026-09-12T20:55:14.832Z"
 last_activity: 2026-09-12
-last_activity_desc: Phase 47 complete, transitioned to Phase 48
-state_head: a55de46ad14ffbe474412b7dd7021c2b92b7305f
+last_activity_desc: Phase 48 execution started
+state_head: 2c3e470ff401fa998fd1dc2b08269984c3a183da
 progress:
   total_phases: 8
   completed_phases: 3
   total_plans: 28
-  completed_plans: 22
+  completed_plans: 23
   percent: 38
 ---
 
@@ -32,7 +32,7 @@ RAM, inspect chip state — and keep working when the emulator misbehaves.
 means — two concurrent monitor channels to one machine, with contention reported
 by name rather than misdiagnosed as a wedge — without moving the ONE thing.*
 
-**Current focus:** Phase 47 — Multi-File Rebuildable Source
+**Current focus:** Phase 48 — The Movement-Hazard Report and Its Purpose-Built Subject
 Milestone **v1.0.0 "The Rebuild Half"**, roadmap created 2026-09-10, Phases 45-50,
 15/15 requirements mapped. The presumptive scope recorded at the
 v0.9.0 close is now the committed one: `DECOMP-01..04`, `BUILD-01..07` (the text
@@ -254,16 +254,16 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 48 (The Movement-Hazard Report and Its Purpose-Built Subject) — READY TO EXECUTE
-Plan: Not started
-Status: Ready to execute
+Phase: 48 (The Movement-Hazard Report and Its Purpose-Built Subject) — EXECUTING
+Plan: 2 of 6
+Status: Executing Phase 48 — 48-01 complete
 Plans: not yet planned. Phase 47 closed with 6/6 plans across 5 waves, all
 verified 5/5 against real ACME 0.97; its one blocking decision checkpoint
 (promoting `anno export-asm --out` from a file path to a directory path, a
 published-surface break) was answered `promote` by the user.
 
 Progress: [████░░░░░░] 38% (3/8 phases complete in v1.0.0; per-phase plan counts in the ROADMAP Progress table)
-Last activity: 2026-09-12 — Phase 47 complete, transitioned to Phase 48
+Last activity: 2026-09-12 — Phase 48 execution started
 
 ## Performance Metrics
 
@@ -579,6 +579,7 @@ Last activity: 2026-09-12 — Phase 47 complete, transitioned to Phase 48
 | Phase 47 P03 | 17min | 2 tasks | 2 files |
 | Phase 47 P04 | 35min | 3 tasks | 2 files |
 | Phase 47-multi-file-rebuildable-source P06 | 30min | 2 tasks | 2 files |
+| Phase 48 P01 | 38 min | 3 tasks | 18 files |
 
 ## Accumulated Context
 
@@ -1329,6 +1330,9 @@ Recent decisions affecting current work:
 - [Phase 47]: The in-tree symbol rule (BUILD-03) reads the SAME labelIndex/blocks the renderer already uses -- never a second index -- and refuses once, at the end, naming both addresses and the N-of-M count.
 - [Phase 47]: Task 3's zero-page ordering proof hand-substitutes a symbol into a zeropage operand in the WRITTEN tree files, since disasm-renderer.ts's own D-11 rule never lets the exporter do this on its own -- without the mutation, sourcing order cannot matter.
 - [Phase 47]: Split hi/lo ADDRESS tables now emit paired low-byte/high-byte symbol references (one symbol per entry), reusing 47-04's in-tree symbol rule and refusal machinery rather than building a second one; the two split WORD layouts stay unsymbolised by construction.
+- [Phase 48]: Phase 48 plan 01: hazard finding anchorAddress names the modified (host) instruction, not the writer, so two independent writers hitting the same host's opcode and operand bytes both anchor at one address with distinct, both-surviving mechanisms. — Lets execution-observation strengthening ask "was the modified code observed running" rather than "did the writer run" -- the more meaningful corroboration question.
+- [Phase 48]: Phase 48 plan 01: the class-2 self-modifying-code detector reads only absolute/absolute-indexed/zeropage/zeropage-indexed addressing; indirect and indirect-indexed modes are excluded by construction and the miss is a permanent, named limit rather than an attempted heuristic.
+- [Phase 48]: Phase 48 plan 01: two of the plan's own literal CLI verify commands named a JSON export sidecar as --store, which openStore() correctly refuses as not a real SQLite store; verified instead against a freshly created, real, empty .annostore file with the same images.
 
 ### Pending Todos
 
@@ -2406,8 +2410,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-12T18:38:18.767Z
-Stopped at: Phase 47 complete, ready to plan Phase 48
+Last session: 2026-09-12T20:55:14.474Z
+Stopped at: Completed 48-01-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
