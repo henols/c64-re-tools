@@ -41,6 +41,8 @@ import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-
 import { decode, type Instruction } from "./disasm-decoder.ts";
 import { scanIndirectDispatch } from "./anno-coverage.ts";
 import { buildHazardReport } from "./anno-hazard-report.ts";
+import { openStore, closeStore, listRanges, listLabels, listScopes } from "./anno-store.ts";
+import { importStoreDocument, type StoreExportDocument } from "./anno-store-export.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURE_DIR = join(HERE, "fixtures", "hazard-subject");
@@ -603,4 +605,140 @@ test("hazard subject: REGENERATOR AGREEMENT -- re-assembling the root reproduces
     "hazard-subject.a (plus its !source parts) and hazard-subject.prg have drifted apart. The committed image is only evidence while it is EXACTLY what its " +
       "source assembles to; regenerate with `cd src/mcp/vice && node fixtures/hazard-subject/make-hazard-subject-fixtures.mjs`.",
   );
+});
+
+// ---------------------------------------------------------------------------
+// hazard subject: the committed store export -- the decomposition the
+// multi-file export path will read two plans later.
+// ---------------------------------------------------------------------------
+
+const ANNOSTORE_PATH = join(FIXTURE_DIR, "hazard-subject.annostore.json");
+
+function loadCommittedExport(): StoreExportDocument {
+  return JSON.parse(readFileSync(ANNOSTORE_PATH, "utf8")) as StoreExportDocument;
+}
+
+/** Imports the committed export into a throwaway store and returns its rows
+ * read back through the real query layer -- never the raw JSON -- so these
+ * tests prove the export against what a real import produces, the same
+ * substrate the multi-file export path reads from. */
+function importIntoFreshStore(): { ranges: ReturnType<typeof listRanges>; labels: ReturnType<typeof listLabels>; scopes: ReturnType<typeof listScopes> } {
+  const doc = loadCommittedExport();
+  const dir = mkdtempSync(join(tmpdir(), "hazard-subject-annostore-import-"));
+  try {
+    const storePath = join(dir, "hazard-subject.annostore");
+    const handle = openStore(storePath, { workspaceRoot: dir });
+    try {
+      importStoreDocument(handle, doc);
+      return { ranges: listRanges(handle), labels: listLabels(handle), scopes: listScopes(handle) };
+    } finally {
+      closeStore(handle);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("hazard subject: the committed store export imports cleanly into a fresh store", () => {
+  const { ranges, labels, scopes } = importIntoFreshStore();
+  assert.ok(ranges.length > 0, "the imported store must contain at least one range");
+  assert.ok(labels.length > 0, "the imported store must contain at least one label");
+  assert.ok(scopes.length > 0, "the imported store must contain at least one scope");
+});
+
+test("hazard subject: every address in the committed image is covered by exactly one range in the committed store export", { skip: SKIP_REASON }, () => {
+  const { bytes } = assembleFreshWithSymbols(ROOT_SOURCE_NAME);
+  const origin = bytes[0]! | (bytes[1]! << 8);
+  const imageEndInclusive = origin + bytes.length - 2 - 1;
+
+  const { ranges } = importIntoFreshStore();
+  const sorted = [...ranges].sort((a, b) => a.start - b.start);
+  let expected = origin;
+  for (const r of sorted) {
+    assert.equal(r.start, expected, `ranges must partition the image with no hole or overlap -- expected the next range to start at $${expected.toString(16)}, found $${r.start.toString(16)}`);
+    expected = r.endInclusive + 1;
+  }
+  assert.equal(expected - 1, imageEndInclusive, `the last range must end exactly at the image's own last byte $${imageEndInclusive.toString(16)}`);
+});
+
+test("hazard subject: exactly four ranges in the committed store export are typed as external files", () => {
+  const doc = loadCommittedExport();
+  const externalFileRanges = doc.ranges.filter((r) => r.dataType === "external_file");
+  assert.equal(externalFileRanges.length, 4, "the sprite shape, character set, level and music tables must be the only four external_file ranges");
+});
+
+test("hazard subject: every scope in the committed store export contains at least one range, and no range crosses a scope boundary", () => {
+  const { ranges, scopes } = importIntoFreshStore();
+  assert.ok(scopes.length >= 4, "at least four scopes must be declared -- one per hazard-bearing routine");
+  for (const scope of scopes) {
+    const contained = ranges.filter((r) => r.start >= scope.start && r.endInclusive <= scope.endInclusive);
+    assert.ok(contained.length >= 1, `scope $${scope.start.toString(16)}..$${scope.endInclusive.toString(16)} must contain at least one range`);
+    for (const r of ranges) {
+      const overlaps = r.start <= scope.endInclusive && scope.start <= r.endInclusive;
+      const wholeyContained = scope.start <= r.start && r.endInclusive <= scope.endInclusive;
+      assert.ok(!overlaps || wholeyContained, `range $${r.start.toString(16)}..$${r.endInclusive.toString(16)} must not cross scope $${scope.start.toString(16)}..$${scope.endInclusive.toString(16)}'s own boundary`);
+    }
+  }
+});
+
+test("hazard subject: every in-image branch, call, jump and data-reference target has a declared symbol in the committed store export", { skip: SKIP_REASON }, () => {
+  const { bytes: prgBytes } = assembleFreshWithSymbols(ROOT_SOURCE_NAME);
+  const origin = prgBytes[0]! | (prgBytes[1]! << 8);
+  const payload = prgBytes.subarray(2);
+  const imageEndInclusive = origin + payload.length - 1;
+  const instructions = decode(payload, origin);
+
+  // Scoped to CODE-typed ranges the committed export itself declares --
+  // `decode()` knows nothing about typing and happily produces a plausible
+  // "instruction" (and a resolved branch target) over raw DATA bytes too;
+  // a reference is only real when the instruction making it is itself real
+  // code, per this export's own decomposition.
+  const { ranges: codeCheckRanges } = importIntoFreshStore();
+  const codeRanges = codeCheckRanges.filter((r) => r.dataType === "code");
+  const isInCodeRange = (address: number) => codeRanges.some((r) => address >= r.start && address <= r.endInclusive);
+
+  const targets = new Set<number>();
+  for (const instr of instructions) {
+    if (!isInCodeRange(instr.address)) continue;
+    if (instr.resolvedTarget !== undefined) targets.add(instr.resolvedTarget);
+    if (instr.operand && (instr.operand.role === "absolute" || instr.operand.role === "zeropage") && (instr.mode === "absolute" || instr.mode === "absolute_x" || instr.mode === "absolute_y")) {
+      targets.add(instr.operand.value);
+    }
+  }
+
+  const scan = scanIndirectDispatch(instructions, payload, origin);
+  for (const t of scan.discoveredTargets) targets.add(t);
+
+  const lowStore = findImmediateStore(instructions, 0x0314);
+  const highStore = findImmediateStore(instructions, 0x0315);
+  if (lowStore && highStore) {
+    const lowIdx = instructions.indexOf(lowStore);
+    const highIdx = instructions.indexOf(highStore);
+    targets.add(instructions[lowIdx - 1]!.operand!.value | (instructions[highIdx - 1]!.operand!.value << 8));
+  }
+
+  const { labels } = importIntoFreshStore();
+  const labelledAddresses = new Set(labels.map((l) => l.address));
+
+  const inImageTargets = [...targets].filter((t) => t >= origin && t <= imageEndInclusive);
+  assert.ok(inImageTargets.length > 0, "precondition: this image must reference at least one in-image address");
+  for (const t of inImageTargets) {
+    assert.ok(labelledAddresses.has(t), `in-image reference target $${t.toString(16)} has no declared symbol in the committed store export`);
+  }
+});
+
+test("hazard subject: the two touching dispatch ranges are two ranges with adjacent inclusive bounds in the committed store export", () => {
+  const { bytes, symbols } = assembleFreshWithSymbols(ROOT_SOURCE_NAME);
+  void bytes;
+  const dispatchHi = symbols.get("dispatch_hi")!;
+  const dispatchLo = symbols.get("dispatch_lo")!;
+  assert.ok(dispatchHi !== undefined && dispatchLo !== undefined, "precondition: both table base symbols must exist");
+
+  const { ranges } = importIntoFreshStore();
+  const hiRange = ranges.find((r) => r.start === dispatchHi);
+  const loRange = ranges.find((r) => r.start === dispatchLo);
+  assert.ok(hiRange, "dispatch_hi must be the start of its own range");
+  assert.ok(loRange, "dispatch_lo must be the start of its own range");
+  assert.notEqual(hiRange, loRange, "the two tables must be two DISTINCT ranges, never coalesced into one");
+  assert.equal(hiRange!.endInclusive + 1, loRange!.start, "the two ranges' bounds must be exactly adjacent -- dispatch_hi's end plus one equals dispatch_lo's start");
 });

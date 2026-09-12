@@ -406,6 +406,7 @@ test("WR-02 Fix: a fixture whose image cannot be located reports imageUnavailabl
         enumUsage: [],
         xrefs: [{ fromAddress: 0x0810, toAddress: 0x1000, accessKind: "COMPUTED_JUMP", bank: null }],
         execObservations: [],
+        scopes: [],
       };
       importStoreDocument(handle, doc);
     } finally {

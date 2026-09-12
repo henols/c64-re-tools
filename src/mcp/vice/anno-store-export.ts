@@ -90,6 +90,7 @@ import {
   applyEnumUsage,
   putXref,
   insertExecObservations,
+  addScope,
   listRanges,
   listLabels,
   listComments,
@@ -97,6 +98,7 @@ import {
   listEnumUsage,
   listXrefs,
   listExecObservations,
+  listScopes,
 } from "./anno-store.ts";
 import type { AnnoStoreHandle } from "./anno-store.ts";
 import {
@@ -220,6 +222,25 @@ export interface StoreExportXrefRow {
   bank: number | null;
 }
 
+/** One lexical scope as the export document holds it. `id` omitted -- see
+ * `StoreExportRangeRow`'s own doc comment for why. A scope carries no `bank`
+ * and no `provenance`: `ScopeRow` (`anno-types.ts`) is a bare `{id, start,
+ * endInclusive}` -- a lexical region, not a memory view, and not itself
+ * derived from or authored over bytes the way a range or a comment is. Added
+ * for the multi-file export path (Phase 47): `exportAsmTree()` reads scopes
+ * straight off an open store handle via `listScopes()`, never from this
+ * document, so a scope this generic export omitted would silently vanish the
+ * moment a committed export got re-imported into a fresh store ahead of that
+ * export -- exactly the gap a purpose-built fixture whose whole point is
+ * exercising scoped, multi-file export would otherwise hit. Additive only:
+ * `STORE_EXPORT_SCHEMA_VERSION` does not change, and `importStoreDocument()`
+ * treats an absent `scopes` array (every export produced before this field
+ * existed) as empty, never as a schema violation. */
+export interface StoreExportScopeRow {
+  start: number;
+  endInclusive: number;
+}
+
 /** One runtime-execution observation as the export document holds it. `id`
  * omitted. */
 export interface StoreExportExecObservationRow {
@@ -231,11 +252,13 @@ export interface StoreExportExecObservationRow {
 }
 
 /** The full document `exportStoreDocument()` returns and
- * `importStoreDocument()` accepts. Every array is present even when empty
- * (never omitted), and every array is sorted by its own stated stable key so
- * two exports of the same store are byte-identical (Test 2). `store` is the
- * BASENAME only -- an absolute host path in a committed artifact is a
- * portability defect (T-45-08). */
+ * `importStoreDocument()` accepts. Every array `exportStoreDocument()` itself
+ * produces is present even when empty (never omitted), and every array is
+ * sorted by its own stated stable key so two exports of the same store are
+ * byte-identical (Test 2). `store` is the BASENAME only -- an absolute host
+ * path in a committed artifact is a portability defect (T-45-08). `scopes`
+ * is the one field a hand-written or older document may omit -- see its own
+ * doc comment. */
 export interface StoreExportDocument {
   schemaVersion: number;
   store: string;
@@ -246,6 +269,10 @@ export interface StoreExportDocument {
   enumUsage: StoreExportEnumUsageRow[];
   xrefs: StoreExportXrefRow[];
   execObservations: StoreExportExecObservationRow[];
+  /** Optional for backward compatibility with a document exported before this
+   * field existed -- `importStoreDocument()` treats an absent array as
+   * empty. `exportStoreDocument()` always populates it. */
+  scopes?: StoreExportScopeRow[];
 }
 
 /** Per-row-class counts of what `importStoreDocument()` wrote. */
@@ -257,6 +284,7 @@ export interface ImportSummary {
   enumUsage: number;
   xrefs: number;
   execObservations: number;
+  scopes: number;
 }
 
 /** This module's own refusal class for document-shape violations that are
@@ -406,6 +434,10 @@ export function exportStoreDocument(handle: AnnoStoreHandle, opts: { storeName?:
       sourceBank: row.sourceBank,
     }));
 
+  const scopes: StoreExportScopeRow[] = [...listScopes(handle)]
+    .sort((a, b) => a.start - b.start)
+    .map((row) => ({ start: row.start, endInclusive: row.endInclusive }));
+
   return {
     schemaVersion: STORE_EXPORT_SCHEMA_VERSION,
     store: storeName,
@@ -416,6 +448,7 @@ export function exportStoreDocument(handle: AnnoStoreHandle, opts: { storeName?:
     enumUsage,
     xrefs,
     execObservations,
+    scopes,
   };
 }
 
@@ -429,7 +462,8 @@ type PlannedWrite =
   | { kind: "projectEnum"; name: string; variants: Record<string, string>; description: string | null }
   | { kind: "enumUsage"; address: number; name: string }
   | { kind: "xref"; fromAddress: number; toAddress: number; accessKind: XrefAccessKind }
-  | { kind: "execObservationGroup"; imageSha256: string; argvDigest: string; seed: string; observations: { address: number; sourceBank: EvidSourceBank }[] };
+  | { kind: "execObservationGroup"; imageSha256: string; argvDigest: string; seed: string; observations: { address: number; sourceBank: EvidSourceBank }[] }
+  | { kind: "scope"; start: number; endInclusive: number };
 
 /**
  * Imports a `StoreExportDocument` into an already-open store handle.
@@ -529,10 +563,32 @@ export function importStoreDocument(handle: AnnoStoreHandle, doc: StoreExportDoc
     plan.push({ kind: "execObservationGroup", ...group });
   }
 
+  // `scopes` is OPTIONAL on the document -- see `StoreExportScopeRow`'s own
+  // doc comment. A document from before this field existed has `undefined`
+  // here, treated as empty, never as a schema violation.
+  const scopeRows = doc.scopes ?? [];
+  const sortedScopes = [...scopeRows].map((row, i) => ({ row, i })).sort((a, b) => a.row.start - b.row.start);
+  for (let s = 0; s < sortedScopes.length; s++) {
+    const { row, i } = sortedScopes[s]!;
+    assertRangeShape(row.start, row.endInclusive, "byte");
+    // OVERLAP IS REFUSED using `addScope()`'s own predicate, checked here
+    // against the DOCUMENT's own scopes before any write -- a document whose
+    // own scopes overlap must never partially apply.
+    const prev = s > 0 ? sortedScopes[s - 1]!.row : undefined;
+    if (prev && prev.endInclusive >= row.start) {
+      throw new AnnoStoreExportError(
+        `anno-store-export refused: scopes[${i}] (${row.start}..${row.endInclusive}) overlaps another scope in this same document -- ` +
+          `nested and overlapping scopes are unsupported by the schema this store mirrors, so the whole import is refused rather than ` +
+          `partially applied.`,
+      );
+    }
+    plan.push({ kind: "scope", start: row.start, endInclusive: row.endInclusive });
+  }
+
   // VALIDATION IS COMPLETE. Nothing above this line calls a `set*`/`put*`/
   // `insert*` function on `handle` -- everything from here on is applying
   // the already-validated plan.
-  const summary: ImportSummary = { ranges: 0, labels: 0, comments: 0, projectEnums: 0, enumUsage: 0, xrefs: 0, execObservations: 0 };
+  const summary: ImportSummary = { ranges: 0, labels: 0, comments: 0, projectEnums: 0, enumUsage: 0, xrefs: 0, execObservations: 0, scopes: 0 };
 
   for (const write of plan) {
     switch (write.kind) {
@@ -568,6 +624,10 @@ export function importStoreDocument(handle: AnnoStoreHandle, doc: StoreExportDoc
           observations: write.observations,
         });
         summary.execObservations += write.observations.length;
+        break;
+      case "scope":
+        addScope(handle, { start: write.start, endInclusive: write.endInclusive });
+        summary.scopes++;
         break;
     }
   }

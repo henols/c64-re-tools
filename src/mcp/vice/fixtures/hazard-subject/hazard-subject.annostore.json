@@ -1,0 +1,294 @@
+{
+  "schemaVersion": 1,
+  "store": "hazard-subject.annostore",
+  "ranges": [
+    {
+      "start": 2049,
+      "endInclusive": 2060,
+      "dataType": "byte",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2061,
+      "endInclusive": 2084,
+      "dataType": "code",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2085,
+      "endInclusive": 2098,
+      "dataType": "code",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2099,
+      "endInclusive": 2130,
+      "dataType": "code",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2131,
+      "endInclusive": 2148,
+      "dataType": "code",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2149,
+      "endInclusive": 2151,
+      "dataType": "byte",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2152,
+      "endInclusive": 2154,
+      "dataType": "byte",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2155,
+      "endInclusive": 2155,
+      "dataType": "byte",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2156,
+      "endInclusive": 2156,
+      "dataType": "byte",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2157,
+      "endInclusive": 2169,
+      "dataType": "code",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 2170,
+      "endInclusive": 4095,
+      "dataType": "code",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 4096,
+      "endInclusive": 4159,
+      "dataType": "external_file",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 4160,
+      "endInclusive": 4222,
+      "dataType": "external_file",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 4223,
+      "endInclusive": 4230,
+      "dataType": "external_file",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 4231,
+      "endInclusive": 4238,
+      "dataType": "external_file",
+      "bank": null,
+      "provenance": "derived"
+    },
+    {
+      "start": 4239,
+      "endInclusive": 4327,
+      "dataType": "code",
+      "bank": null,
+      "provenance": "derived"
+    }
+  ],
+  "labels": [
+    {
+      "address": 2061,
+      "name": "entry",
+      "kind": "User",
+      "bank": null
+    },
+    {
+      "address": 2074,
+      "name": "hazard_dispatch_entry",
+      "kind": "User",
+      "bank": null
+    },
+    {
+      "address": 2085,
+      "name": "hazard_smc_entry",
+      "kind": "User",
+      "bank": null
+    },
+    {
+      "address": 2099,
+      "name": "hazard_smc2_write",
+      "kind": "User",
+      "bank": null
+    },
+    {
+      "address": 2105,
+      "name": "hazard_smc2_entry",
+      "kind": "User",
+      "bank": null
+    },
+    {
+      "address": 2131,
+      "name": "dispatch_target_1",
+      "kind": "User",
+      "bank": null
+    },
+    {
+      "address": 2137,
+      "name": "dispatch_target_2",
+      "kind": "User",
+      "bank": null
+    },
+    {
+      "address": 2143,
+      "name": "dispatch_target_3",
+      "kind": "User",
+      "bank": null
+    },
+    {
+      "address": 2149,
+      "name": "dispatch_hi",
+      "kind": "User",
+      "bank": null
+    },
+    {
+      "address": 2152,
+      "name": "dispatch_lo",
+      "kind": "User",
+      "bank": null
+    },
+    {
+      "address": 2155,
+      "name": "decline_hi",
+      "kind": "User",
+      "bank": null
+    },
+    {
+      "address": 2156,
+      "name": "decline_lo",
+      "kind": "User",
+      "bank": null
+    },
+    {
+      "address": 2157,
+      "name": "dispatch_decline_entry",
+      "kind": "User",
+      "bank": null
+    },
+    {
+      "address": 2170,
+      "name": "hazard_align_entry",
+      "kind": "User",
+      "bank": null
+    },
+    {
+      "address": 4096,
+      "name": "align_char_base",
+      "kind": "User",
+      "bank": null
+    },
+    {
+      "address": 4160,
+      "name": "align_sprite_base",
+      "kind": "User",
+      "bank": null
+    },
+    {
+      "address": 4223,
+      "name": "align_level_table",
+      "kind": "User",
+      "bank": null
+    },
+    {
+      "address": 4231,
+      "name": "align_music_table",
+      "kind": "User",
+      "bank": null
+    },
+    {
+      "address": 4239,
+      "name": "hazard_raster_entry",
+      "kind": "User",
+      "bank": null
+    },
+    {
+      "address": 4274,
+      "name": "hazard_raster_irq",
+      "kind": "User",
+      "bank": null
+    },
+    {
+      "address": 4310,
+      "name": "hazard_raster_timer_phase",
+      "kind": "User",
+      "bank": null
+    },
+    {
+      "address": 4322,
+      "name": "hazard_raster_irq_exit",
+      "kind": "User",
+      "bank": null
+    }
+  ],
+  "comments": [
+    {
+      "address": 2085,
+      "commentType": "line",
+      "text": "DECLINED: this is the first self-modification's own opcode byte -- the NOP this routine's host instruction starts with, overwritten in place with $60 (the RTS opcode) by the STA instruction later in the same routine. Its effective opcode varies across passes through the routine (NOP on the first pass, RTS afterward) and there is no single correct symbol or value to name here.",
+      "bank": null,
+      "provenance": "authored"
+    },
+    {
+      "address": 2100,
+      "commentType": "line",
+      "text": "DECLINED: this is the second self-modification's own operand byte -- the immediate operand of the LDA at hazard_smc2_write, rewritten in place by an indirect-indexed store through a zero-page pointer built entirely at runtime. Its effective value varies across calls to hazard_smc2_write (one value before the patch, a different one after) and there is no single correct symbol or value to name here. No static operand anywhere in this image names this address, which is exactly why a report reading this program shows no self-modification finding at it.",
+      "bank": null,
+      "provenance": "authored"
+    }
+  ],
+  "projectEnums": [],
+  "enumUsage": [],
+  "xrefs": [],
+  "execObservations": [],
+  "scopes": [
+    {
+      "start": 2085,
+      "endInclusive": 2098
+    },
+    {
+      "start": 2099,
+      "endInclusive": 2130
+    },
+    {
+      "start": 2131,
+      "endInclusive": 2169
+    },
+    {
+      "start": 2170,
+      "endInclusive": 4095
+    },
+    {
+      "start": 4239,
+      "endInclusive": 4327
+    }
+  ]
+}

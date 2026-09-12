@@ -24651,5 +24651,6 @@
       "address": 65514,
       "sourceBank": "rom"
     }
-  ]
+  ],
+  "scopes": []
 }

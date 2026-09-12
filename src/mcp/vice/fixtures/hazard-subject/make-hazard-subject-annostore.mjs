@@ -1,0 +1,258 @@
+#!/usr/bin/env node
+// make-hazard-subject-annostore.mjs -- the reproducible generator for
+// hazard-subject.annostore.json, the committed store export describing the
+// subject.
+//
+// WHY THIS SCRIPT EXISTS AND WHY IT NEVER HAND-WRITES THE JSON: the
+// committed export is the input the multi-file export path and its
+// reassembly criterion run on two plans later. A hand-typed JSON document
+// would silently become the ground truth for that criterion regardless of
+// whether it actually matched what the source assembles to. This script
+// instead assembles the real root, reads back real ACME symbol addresses
+// (never hand-transcribed), decomposes the image into a fresh in-memory
+// store through this project's own write API, and exports that store with
+// the existing `exportStoreDocument()` entry point -- the same one every
+// other committed `.annostore.json` in this tree is produced through.
+//
+// HOW THE DECOMPOSITION IS DERIVED: every range boundary below is an ACME
+// symbol address read from a real `--symbollist` run, never a byte offset
+// this script computed by hand. The one place this script's OWN judgement
+// enters is which four spans are typed `external_file` (the four data
+// tables) and which spans belong to which scope (one per hazard-bearing
+// routine) -- everything else is a mechanical walk of symbols in address
+// order. A `decode()` sanity pass at the end confirms every declared range
+// boundary lands on a real instruction start, so a future source edit that
+// silently changes a boundary's meaning fails this script loudly rather than
+// producing a plausible-looking wrong export.
+//
+// Regenerate with:
+//   cd src/mcp/vice && node fixtures/hazard-subject/make-hazard-subject-annostore.mjs
+
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { openStore, closeStore, setDataType, setLabel, setComment, addScope } from "../../anno-store.ts";
+import { exportStoreDocument } from "../../anno-store-export.ts";
+import { decode } from "../../disasm-decoder.ts";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const ACME_BIN = process.env.ACME_BIN ?? "acme";
+const ROOT_SOURCE_NAME = "hazard-subject.a";
+const OUTPUT_PATH = join(HERE, "hazard-subject.annostore.json");
+
+function fail(reason) {
+  process.stderr.write(`make-hazard-subject-annostore: ${reason}\n`);
+  process.stderr.write("make-hazard-subject-annostore: REFUSING to write a partial export -- nothing was changed.\n");
+  process.exit(1);
+}
+
+// Same probe-then-refuse ladder every other regenerator and gate in this
+// tree uses: argv-array only, never a shell-interpreted command string.
+function probeAcmeBanner() {
+  let r = spawnSync(ACME_BIN, ["--version"], { encoding: "utf8", timeout: 30_000 });
+  let banner = `${r.stdout ?? ""}${r.stderr ?? ""}`;
+  if (r.error || !/acme/i.test(banner)) {
+    r = spawnSync(ACME_BIN, ["--help"], { encoding: "utf8", timeout: 30_000 });
+    banner = `${r.stdout ?? ""}${r.stderr ?? ""}`;
+  }
+  if (r.error) return { ok: false, detail: String(r.error.message) };
+  if (!/acme/i.test(banner)) return { ok: false, detail: `neither --version nor --help printed an ACME banner (exit ${String(r.status)})` };
+  return { ok: true, detail: "" };
+}
+
+const probe = probeAcmeBanner();
+if (!probe.ok) {
+  fail(`no usable ACME at ${JSON.stringify(ACME_BIN)} (set ACME_BIN, or put \`acme\` on PATH): ${probe.detail}`);
+}
+
+const workDir = mkdtempSync(join(tmpdir(), "make-hazard-subject-annostore-"));
+let bytes;
+let symbols;
+try {
+  const outPrg = join(workDir, "out.prg");
+  const outSym = join(workDir, "out.sym");
+  const r = spawnSync(ACME_BIN, ["--cpu", "6510", "-f", "cbm", "-o", outPrg, "--symbollist", outSym, ROOT_SOURCE_NAME], {
+    encoding: "utf8",
+    timeout: 30_000,
+    cwd: HERE,
+  });
+  if (r.status !== 0) fail(`ACME refused ${ROOT_SOURCE_NAME} (exit ${String(r.status)}):\n${r.stderr ?? ""}`);
+  if (!existsSync(outPrg) || !existsSync(outSym)) fail("ACME exited 0 but did not write both the output image and the symbol list");
+
+  bytes = new Uint8Array(readFileSync(outPrg));
+  symbols = new Map();
+  for (const line of readFileSync(outSym, "utf8").split("\n")) {
+    const m = line.match(/^\s*(\S+)\s*=\s*\$([0-9a-fA-F]+)/);
+    if (m) symbols.set(m[1], parseInt(m[2], 16));
+  }
+} finally {
+  rmSync(workDir, { recursive: true, force: true });
+}
+
+function sym(name) {
+  const v = symbols.get(name);
+  if (v === undefined) fail(`ACME's own symbol list does not contain ${JSON.stringify(name)} -- the source and this generator's boundary list have drifted apart`);
+  return v;
+}
+
+const origin = bytes[0] | (bytes[1] << 8);
+const payload = bytes.subarray(2);
+const imageEndInclusive = origin + payload.length - 1;
+
+// ---------------------------------------------------------------------------
+// The decomposition. Every boundary is a real ACME symbol address; the two
+// alignment-directive filler gaps (before the character set, and between the
+// character set and the sprite shape) are folded into the range that
+// PRECEDES each gap (the setup routine's own code, and the character set's
+// own external-file range respectively) rather than carved out separately --
+// both readings are honest (reserved padding belongs conceptually to
+// whichever construct asked for the alignment), and folding them in keeps
+// every boundary a plain symbol-to-symbol span.
+// ---------------------------------------------------------------------------
+
+const ranges = [
+  { start: origin, endInclusive: sym("entry") - 1, dataType: "byte" }, // BASIC loader stub
+  { start: sym("entry"), endInclusive: sym("hazard_smc_entry") - 1, dataType: "code" }, // root: entry dispatcher + hazard_dispatch_entry
+  { start: sym("hazard_smc_entry"), endInclusive: sym("hazard_smc2_write") - 1, dataType: "code" }, // first self-modification
+  { start: sym("hazard_smc2_write"), endInclusive: sym("dispatch_target_1") - 1, dataType: "code" }, // second self-modification
+  { start: sym("dispatch_target_1"), endInclusive: sym("dispatch_hi") - 1, dataType: "code" }, // the three dispatch targets
+  { start: sym("dispatch_hi"), endInclusive: sym("dispatch_lo") - 1, dataType: "byte" },
+  { start: sym("dispatch_lo"), endInclusive: sym("decline_hi") - 1, dataType: "byte" },
+  { start: sym("decline_hi"), endInclusive: sym("decline_lo") - 1, dataType: "byte" },
+  { start: sym("decline_lo"), endInclusive: sym("dispatch_decline_entry") - 1, dataType: "byte" },
+  { start: sym("dispatch_decline_entry"), endInclusive: sym("hazard_align_entry") - 1, dataType: "code" },
+  { start: sym("hazard_align_entry"), endInclusive: sym("align_char_base") - 1, dataType: "code" }, // register setup (+ its own alignment padding)
+  { start: sym("align_char_base"), endInclusive: sym("align_sprite_base") - 1, dataType: "external_file" }, // character set (+ its own alignment padding)
+  { start: sym("align_sprite_base"), endInclusive: sym("align_level_table") - 1, dataType: "external_file" }, // sprite shape
+  { start: sym("align_level_table"), endInclusive: sym("align_music_table") - 1, dataType: "external_file" }, // level table
+  { start: sym("align_music_table"), endInclusive: sym("hazard_raster_entry") - 1, dataType: "external_file" }, // music table
+  { start: sym("hazard_raster_entry"), endInclusive: imageEndInclusive, dataType: "code" }, // the timer-stabilised raster routine
+];
+
+// One scope per hazard-bearing routine. The root's own inline code and the
+// four data tables stay UNSCOPED -- they are not themselves a planted
+// hazard, and the multi-file export's own D47-D "goes somewhere, never
+// nowhere" rule already gives unscoped bytes a home (`unscoped.a`).
+const scopes = [
+  { start: sym("hazard_smc_entry"), endInclusive: sym("hazard_smc2_write") - 1 }, // smc scope (first construction)
+  { start: sym("hazard_smc2_write"), endInclusive: sym("dispatch_target_1") - 1 }, // smc2 scope (second construction)
+  { start: sym("dispatch_target_1"), endInclusive: sym("hazard_align_entry") - 1 }, // dispatch scope
+  { start: sym("hazard_align_entry"), endInclusive: sym("align_char_base") - 1 }, // align scope (setup code only)
+  { start: sym("hazard_raster_entry"), endInclusive: imageEndInclusive }, // raster scope
+];
+
+// Every address referenced by a branch, a subroutine call, a jump, or a
+// data reference from inside the image (the dispatch table entries and the
+// routines they name, the sprite shape base and the character-set base,
+// plus every other routine entry point for readability). The two
+// self-modified bytes below are deliberately ABSENT from this list -- see
+// the comments section.
+const LABELS = [
+  "entry",
+  "hazard_smc_entry",
+  "hazard_dispatch_entry",
+  "hazard_align_entry",
+  "hazard_raster_entry",
+  "hazard_smc2_write",
+  "hazard_smc2_entry",
+  "dispatch_target_1",
+  "dispatch_target_2",
+  "dispatch_target_3",
+  "dispatch_hi",
+  "dispatch_lo",
+  "decline_hi",
+  "decline_lo",
+  "dispatch_decline_entry",
+  "align_char_base",
+  "align_sprite_base",
+  "align_level_table",
+  "align_music_table",
+  "hazard_raster_irq",
+  "hazard_raster_timer_phase",
+  "hazard_raster_irq_exit",
+];
+
+// ---------------------------------------------------------------------------
+// Sanity pass: every declared range/scope boundary must be a real
+// instruction start, and the ranges must partition the image with no hole
+// and no overlap, before a single row is written.
+// ---------------------------------------------------------------------------
+
+const instructions = decode(payload, origin);
+const instructionStarts = new Set(instructions.map((i) => i.address));
+
+// Only CODE-typed range starts (and every scope start, which this script
+// only ever places at a code-range boundary) are checked against
+// `decode()`'s own instruction starts -- a data range's start is a symbol
+// address, not necessarily an address `decode()` (which knows nothing about
+// typing and reads data bytes as if they were instructions too) would ever
+// treat as one, so checking it there would fail for the wrong reason.
+for (const r of ranges) {
+  if (r.dataType !== "code") continue;
+  if (r.start !== origin && !instructionStarts.has(r.start)) {
+    fail(`code range boundary $${r.start.toString(16)} is not a real instruction start -- the source and this generator's boundary list have drifted apart`);
+  }
+}
+for (const s of scopes) {
+  if (!instructionStarts.has(s.start)) {
+    fail(`scope boundary $${s.start.toString(16)} is not a real instruction start -- the source and this generator's boundary list have drifted apart`);
+  }
+}
+
+let expected = origin;
+for (const r of ranges) {
+  if (r.start !== expected) fail(`range gap or overlap at $${expected.toString(16)}..$${(r.start - 1).toString(16)} -- the ranges must partition the image with no hole`);
+  if (r.endInclusive < r.start) fail(`range ${r.start}..${r.endInclusive} is inverted`);
+  expected = r.endInclusive + 1;
+}
+if (expected !== imageEndInclusive + 1) {
+  fail(`the declared ranges end at $${(expected - 1).toString(16)} but the image ends at $${imageEndInclusive.toString(16)} -- coverage is incomplete`);
+}
+
+// ---------------------------------------------------------------------------
+// Build the decomposition in a fresh, throwaway store, then export it.
+// ---------------------------------------------------------------------------
+
+const storeWorkDir = mkdtempSync(join(tmpdir(), "make-hazard-subject-annostore-store-"));
+const storePath = join(storeWorkDir, "hazard-subject.annostore");
+let doc;
+try {
+  const handle = openStore(storePath, { workspaceRoot: storeWorkDir });
+  try {
+    for (const scope of scopes) addScope(handle, { start: scope.start, endInclusive: scope.endInclusive });
+    for (const range of ranges) setDataType(handle, { start: range.start, endInclusive: range.endInclusive, dataType: range.dataType });
+    for (const name of LABELS) setLabel(handle, { address: sym(name), name, kind: "User" });
+
+    setComment(handle, {
+      address: sym("hazard_smc_entry"),
+      commentType: "line",
+      text:
+        "DECLINED: this is the first self-modification's own opcode byte -- the NOP this routine's host instruction starts with, " +
+        "overwritten in place with $60 (the RTS opcode) by the STA instruction later in the same routine. Its effective opcode " +
+        "varies across passes through the routine (NOP on the first pass, RTS afterward) and there is no single correct symbol or " +
+        "value to name here.",
+    });
+    setComment(handle, {
+      address: sym("smc2_operand_addr"),
+      commentType: "line",
+      text:
+        "DECLINED: this is the second self-modification's own operand byte -- the immediate operand of the LDA at " +
+        "hazard_smc2_write, rewritten in place by an indirect-indexed store through a zero-page pointer built entirely at " +
+        "runtime. Its effective value varies across calls to hazard_smc2_write (one value before the patch, a different one " +
+        "after) and there is no single correct symbol or value to name here. No static operand anywhere in this image names this " +
+        "address, which is exactly why a report reading this program shows no self-modification finding at it.",
+    });
+
+    doc = exportStoreDocument(handle, { storeName: "hazard-subject.annostore" });
+  } finally {
+    closeStore(handle);
+  }
+} finally {
+  rmSync(storeWorkDir, { recursive: true, force: true });
+}
+
+writeFileSync(OUTPUT_PATH, JSON.stringify(doc, null, 2) + "\n");
+process.stdout.write(`make-hazard-subject-annostore: wrote hazard-subject.annostore.json (${doc.ranges.length} ranges, ${doc.labels.length} labels, ${doc.comments.length} comments, ${doc.scopes.length} scopes)\n`);
