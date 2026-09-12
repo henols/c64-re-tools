@@ -277,7 +277,7 @@ milestone's sequential next phase is still **47 — Multi-File Rebuildable Sourc
 this frontmatter's `current_phase: 52` records where planning last landed, not a
 decision to execute 52 before 47.
 
-Progress: [███░░░░░░░] 25% (2/8 phases complete in v1.0.0; per-phase plan counts in the ROADMAP Progress table)
+Progress: [████░░░░░░] 38% (3/8 phases complete in v1.0.0; per-phase plan counts in the ROADMAP Progress table)
 Last activity: 2026-09-12 — Phase 52 complete, transitioned to Phase 47
 
 ## Performance Metrics
