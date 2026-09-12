@@ -72,7 +72,7 @@ state — and keep working when the emulator misbehaves.
 - `@modelcontextprotocol/sdk` `1.30.0` (transitive, via `@mastra/mcp`) - the official MCP TypeScript SDK
 - `MASTRA_TELEMETRY_DISABLED=1` is set everywhere the server is launched (`.mcp.json`, installer-generated `.mcp.json` entries) to disable Mastra's own telemetry.
 - Node's built-in test runner (`node --test`), no separate test framework. Run via `npm test` in `src/mcp/vice` (`package.json:58`: `node --test '*.test.*'`).
-- Test files are colocated `*.test.ts` / `*.test.mts` next to the module under test (e.g. `vice.ts` / no direct test file shown, but `vice-broker.mts` / `vice-broker.test.ts` pattern... see `src/mcp/vice/*.test.ts`).
+- Test files are colocated `*.test.ts` / `*.test.mts` next to the module under test (e.g. `stock-dispatch.ts` / `stock-dispatch.test.ts`).
 - TypeScript `7.0.2` (devDependency, typecheck-only — `tsc --noEmit`); no emitted `.js` from the TS sources at runtime (Node type-stripping runs the `.ts`/`.mts` files directly).
 - `src/mcp/vice/build.ts` - a custom build step that compiles the host-bound `.mts` launcher modules (`broker-control.mts`, `broker-epoch.mts`, `broker-kill.mts`, `broker-launch.mts`, `broker-state.mts`, `container-guard.mts`, `vice-broker.mts`) into plain `.mjs` files under `resources/`, since the **host** side (outside any container) cannot rely on Node's type-stripping the same way.
 - `@types/node` `24.13.3` - Node type definitions for the TypeScript build.
@@ -84,7 +84,7 @@ state — and keep working when the emulator misbehaves.
 - `@posthog/core` / `@posthog/types` - analytics client code inside Mastra (disabled via `MASTRA_TELEMETRY_DISABLED`)
 - `@modelcontextprotocol/ext-apps` `1.7.5`
 - `@isaacs/ttlcache`, `@lukeed/csprng`, `@lukeed/uuid`, `@sindresorhus/slugify` / `transliterate` - small utility libs
-- `x64sc` - a **custom/patched build** of the VICE emulator that exposes a non-upstream `-mcpserver` flag (`-mcpserver -mcpserverhost <ip> -mcpserverport <port>`) serving HTTP JSON-RPC at `/mcp`. This is the load-bearing external dependency the whole `vice` MCP tool surface is built on. See `docs/roadmap-stock-vice.md` for a documented plan to migrate off this custom build onto stock VICE's binary monitor protocol (`-binarymonitor`).
+- `x64sc` - stock upstream VICE, any unpatched build installable from a package manager, driven over its binary monitor and text channel — the load-bearing external dependency the whole `vice` MCP tool surface is built on. There is no non-upstream build and no backend to select. Three hardware-level capabilities have no route on stock at all and are recorded as permanent, accepted losses in `docs/stock-hard-losses.md`.
 ## Configuration
 - `.mcp.json` (repo root) - declares the `vice` MCP server, launched via `node ${CLAUDE_PLUGIN_ROOT}/src/mcp/vice/vice-proxy.ts`, `timeout: 150000`, `env.MASTRA_TELEMETRY_DISABLED=1`.
 - `.claude-plugin/plugin.json` - plugin manifest: points at `./src/skills/` and `./.mcp.json`, registers a `SessionStart` hook running `scripts/ensure-mcp-deps.sh`, `defaultEnabled: false`.
@@ -106,7 +106,7 @@ state — and keep working when the emulator misbehaves.
 ## Platform Requirements
 - Node.js >= 24 to run/test the MCP server; Node >= 18 to run the installer.
 - ACME cross-assembler on `$PATH` for the `acme-build` skill.
-- A reachable host running VICE (`x64sc`, custom `-mcpserver` build) for any live emulator interaction — the MCP server itself has no in-process emulator.
+- A reachable host running stock upstream VICE (`x64sc`) for any live emulator interaction — the MCP server itself has no in-process emulator.
 - Docker/devcontainer awareness baked in: code checks `isInsideContainer()` (`src/mcp/vice/container-guard.mts`) to decide between `host.docker.internal` and `127.0.0.1` as the default VICE host.
 - Published to the public npm registry as `@henols/vice-mcp` and `@henols/c64-re-tools`, installed via `npx` into consumer projects, or as a Claude Code plugin via `/plugin marketplace add`.
 - CI: GitHub Actions (`.github/workflows/ci.yml`) — typecheck, test, smoke-test, package validation, artifact build, GitHub Release creation on `v*` tags, and npm publishing via OIDC Trusted Publishing (no `NPM_TOKEN` secret required for release; a manual `check-npm-token.yml` workflow exists purely as a diagnostic).
@@ -145,7 +145,7 @@ state — and keep working when the emulator misbehaves.
 - Every relative import to a local TS/MTS module includes its real extension
 - One documented cross-extension constraint: same-module-to-sibling-module imports inside files
 ## Error Handling
-- Base: `class ViceError extends Error` (`src/mcp/vice/vice.ts:250`) carries an optional
+- Base: `class ViceError extends Error` (`src/mcp/vice/vice-errors.ts:158`) carries an optional
 - Specialized subclasses extend `ViceError` and add domain fields as plain public properties
 - Other one-off error classes are declared minimally, `class PathOutOfWorkspaceError extends
 - Constructor pattern: `constructor(message: string, { ...fields }: XOptions = {}) { super(message);
@@ -175,14 +175,14 @@ state — and keep working when the emulator misbehaves.
 | Stdio MCP entry point | Speaks MCP JSON-RPC to Claude Code over stdin/stdout; answers `initialize`/`tools/list` locally from the manifest, forwards `tools/call` | `src/mcp/vice/vice-proxy.ts` |
 | Stock transport (binary monitor) | The one place that performs the stock connect handshake and owns session setup, reconnect and teardown, over the length-prefixed binary framing | `src/mcp/vice/stock-connect.ts` (framing in `src/mcp/vice/stock-protocol.ts`) |
 | Broker client | Container-side half of the on-demand broker protocol: acquire/release/recycle over a TCP control session | `src/mcp/vice/vice-broker-client.ts` |
-| Repo root resolution | The one shared resolver for "where is the project root" / "where is `.vice-supervisor`" | `src/mcp/vice/repo-root.ts` |
-| Resource deployment | Deploys host launcher scripts (`tools/`) into the *consuming* project on first use | `src/mcp/vice/install-resources.ts` |
+| Repo root resolution | The one shared resolver for "where is the project root" / "where is `.c64-re-tools`" | `src/mcp/vice/repo-root.ts` |
+| Resource deployment | Deploys host launcher scripts (`.c64-re-tools/bin/`) into the *consuming* project on first use | `src/mcp/vice/install-resources.ts` |
 | Container detection | Five-signal container-vs-host detector, checked at broker process startup | `src/mcp/vice/container-guard.mts` |
 | Host/container path translation | Rewrites container paths (bind-mount) to host-reachable paths, and the inverse | `src/mcp/vice/hostpath.ts`, `src/mcp/vice/containerpath.ts` |
 | Incident capture | Writes a pre-kill incident record (snapshot/screenshot metadata) before any recycle/kill | `src/mcp/vice/incident-record.ts` |
 | Host broker daemon | Long-lived pool manager: port allocation, warm floor, crash supervision, TCP control listener | `src/mcp/vice/vice-broker.mts` (+ `broker-*.mts` siblings) |
 | Build step | Compiles host-bound `.mts` sources into committed, banner-marked `.mjs` under `resources/` | `src/mcp/vice/build.ts` |
-| Manifest refresh | Regenerates `tools-manifest.json` from the live host server's `tools/list` | `src/mcp/vice/refresh-manifest.ts` |
+| Advertised tool surface | The advertised tool surface is a committed snapshot read offline at `tools/list`; nothing regenerates it from a live host | `src/mcp/vice/tools-manifest.stock.json`, resolved through `src/mcp/vice/stock-dispatch.ts` |
 | Plugin manifest | Declares skills dir, mcpServers file, SessionStart hook | `.claude-plugin/plugin.json` |
 | MCP server wiring | The `vice` server entry Claude Code launches | `.mcp.json` |
 | npm installer | Non-plugin install path: copies skills + wires `.mcp.json` into any project | `installer/bin/cli.mjs` |
@@ -202,7 +202,7 @@ state — and keep working when the emulator misbehaves.
 - Used by: Claude Code directly, matched by `SKILL.md` frontmatter
 - Purpose: Presents a stable `vice_*` tool surface over stdio to Claude Code,
 - Location: `src/mcp/vice/*.ts` (authored TypeScript, no build step)
-- Contains: wire protocol (`vice-proxy.ts`), transport/deny-list
+- Contains: wire protocol (`vice-proxy.ts`), the binary-monitor transport (`stock-connect.ts`/`stock-protocol.ts`) and the dispatch seam (`stock-dispatch.ts`)
 - Depends on: `@mastra/mcp` / `@mastra/core` for stdio JSON-RPC framing,
 - Used by: Claude Code's MCP client, per `.mcp.json`.
 - Purpose: On-demand pool of `x64sc` instances; owns launch, warm floor,
@@ -218,8 +218,8 @@ state — and keep working when the emulator misbehaves.
 ### Primary tool-call path (emulator control)
 ### Recovery/incident path (recycle or crash)
 ### Skill-driven offline flow (e.g. `c64-provenance-diff`)
-- Host-synchronised state lives under `.vice-supervisor/` at the resolved
-- The MCP transport seam (`vice.ts`) holds mutable module-level state
+- Host-synchronised state lives under `.c64-re-tools/supervisor/` at the resolved
+- The stock dispatch seam (`stock-dispatch.ts`) holds the mutable module-level held-session state
 ## Key Abstractions
 - Purpose: Single definition of "where is the project this MCP instance is
 - Examples: `src/mcp/vice/repo-root.ts` (`repoRoot()`, `supervisorDir()`)
@@ -244,14 +244,13 @@ state — and keep working when the emulator misbehaves.
 - Triggers: A user running the installer against their own project.
 - Responsibilities: copy `installer/skills/` into `<target>/.claude/skills/`,
 - `src/mcp/vice/build.ts` — `node build.ts`, recompiles `.mts` →
-- `src/mcp/vice/refresh-manifest.ts` — regenerates `tools-manifest.json`
 - `scripts/package.sh` — validates manifests and builds the plugin release
 - `scripts/ensure-mcp-deps.sh` — SessionStart hook that runs `npm ci` for
 ## Architectural Constraints
 - **Container/host boundary is load-bearing everywhere:** any file that
 - **No build step for the shipped server:** `vice-proxy.ts` and its
 - **Single-owner launch guard:** `broker-launch.mts` keeps one
-- **Global state:** `vice.ts` holds mutable module-level transport state
+- **Global state:** `stock-dispatch.ts` holds mutable module-level transport state
 - **Module-cycle avoidance is deliberate and documented:** `repo-root.ts` →
 - **Threading:** single-threaded Node event loop throughout; the broker
 ## Anti-Patterns
@@ -260,7 +259,7 @@ state — and keep working when the emulator misbehaves.
 ## Error Handling
 - The stdio server registers global uncaught-exception/rejection handlers
 - Path/root resolution fallbacks emit a one-time stderr warning rather than
-- `MachineRestartedError` (`vice.ts`) is a distinct error type for
+- `MachineRestartedError` (`vice-errors.ts`) is a distinct error type for
 - Incident records are written **before** any destructive action
 ## Cross-Cutting Concerns
 <!-- GSD:architecture-end -->
