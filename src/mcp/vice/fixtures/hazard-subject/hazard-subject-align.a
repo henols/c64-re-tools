@@ -1,0 +1,106 @@
+; hazard-subject-align.a -- the planted VIC-II hardware alignment
+; dependency, plus the four data tables the subject must carry.
+;
+; WHY THIS IS A MOVEMENT HAZARD
+; ---------------------------------------------------------------------------
+; The VIC-II never reads a sprite shape's or a character set's address as an
+; address at all. The sprite pointer byte at $07f8 and the character-set
+; select bits inside $d018 are both a SCALED INDEX -- the sprite pointer
+; names a 64-byte block within the current 16K VIC bank, and the
+; character-set select bits name a 2K block within that same bank. Relocate
+; either table to a byte that does not satisfy that scaling, and the
+; pointer or select bits -- computed FROM THE LABEL below, not written as a
+; bare constant -- keeps naming the OLD block's index while the actual bytes
+; moved: the VIC-II reads whatever real bytes happen to sit at that index,
+; silently. There is no error, no exception and no diagnostic anywhere in
+; this chain -- the assembler accepts the relocation, the emulator runs it,
+; and the only visible symptom is the wrong shape or the wrong character on
+; an actual screen.
+;
+; WHY THIS IS A DIFFERENT CLAIM FROM A PROCESSOR-PORT STATE DEPENDENCY
+; ---------------------------------------------------------------------------
+; A routine whose behaviour depends on the VALUE currently held in the
+; 6510's own processor port ($01) is a different hazard: that dependency
+; changes what a FIXED address MEANS (RAM, ROM or I/O, depending on a
+; runtime value that can change between two reads of the very same
+; instruction), never WHERE data is permitted to live. The dependency here
+; is spatial and permanent -- a fact about the data's own address alone,
+; with no runtime state involved anywhere in the chain.
+;
+; Regenerate with:
+;   cd src/mcp/vice && node fixtures/hazard-subject/make-hazard-subject-fixtures.mjs
+
+; The KERNAL's own default screen offset within a VIC bank ($0400), named
+; here so the VIC memory-control derivation below reads from a label rather
+; than repeating the magic number.
+align_screen_offset = $0400
+
+hazard_align_entry
+        ; Select VIC bank 0 ($0000-$3fff) explicitly through $dd00, so the
+        ; 16K window every boundary below is relative to is STATED rather
+        ; than assumed. Bits #0-#1 are active LOW on this port; %11 selects
+        ; bank 0.
+        lda $dd00
+        and #%11111100
+        ora #%00000011
+        sta $dd00
+
+        ; The VIC memory-control register, derived from the two labels
+        ; below rather than written as a bare hex constant: bits #4-#7 name
+        ; the screen offset (the ordinary KERNAL default), bits #1-#3 name
+        ; the character-set offset.
+        lda #((align_screen_offset / 1024) << 4) | ((align_char_base / 2048) << 1)
+        sta $d018
+
+        ; Sprite pointer: the sprite base divided by 64, computed from the
+        ; label rather than written as a literal.
+        lda #(align_sprite_base / 64)
+        sta $07f8
+
+        ; Enable sprite 0 and place it on screen, so a mis-aligned build's
+        ; failure is something a human can actually see.
+        lda #%00000001
+        sta $d015
+        lda #100
+        sta $d000
+        lda #100
+        sta $d001
+
+        ; Print one character from the custom character set: screen code 0
+        ; addresses char_base's own first (and only committed) glyph.
+        lda #0
+        sta align_screen_offset
+        rts
+
+; --- Character set, 2K-ALIGNED within the current VIC bank. A real
+; character set occupies a full 2048-byte block, one glyph per 8 bytes; this
+; fixture commits one recognisable glyph at the boundary and states that
+; shortfall here rather than silently implying a full set exists.
+!align $7ff, 0
+align_char_base
+        !byte %01111110
+        !byte %11111111
+        !byte %11100111
+        !byte %11100111
+        !byte %11111111
+        !byte %11111111
+        !byte %01111110
+        !byte %00000000
+
+; --- Sprite shape, 64-BYTE-ALIGNED within the current VIC bank. A real
+; sprite occupies all 63 data bytes; this fixture fills every one of them so
+; the shape is a real, solid block rather than a stub.
+!align $3f, 0
+align_sprite_base
+        !fill 63, %11111111
+
+; --- Level table: a plain labelled byte table, no alignment constraint. It
+; exists so the multi-file export path has a real, ordinary data range to
+; extract that is not itself hazard-bearing.
+align_level_table
+        !byte 1, 2, 3, 4, 5, 6, 7, 8
+
+; --- Music table: the same role as the level table, with distinct,
+; recognisable content.
+align_music_table
+        !byte $c0, $90, $60, $40, $30, $20, $10, $08

@@ -46,6 +46,7 @@ const FIXTURE_DIR = join(HERE, "fixtures", "hazard-subject");
 const ROOT_SOURCE_PATH = join(FIXTURE_DIR, "hazard-subject.a");
 const ROOT_SOURCE_NAME = "hazard-subject.a";
 const DISPATCH_SOURCE_PATH = join(FIXTURE_DIR, "hazard-subject-dispatch.a");
+const ALIGN_SOURCE_PATH = join(FIXTURE_DIR, "hazard-subject-align.a");
 const PRG_PATH = join(FIXTURE_DIR, "hazard-subject.prg");
 
 const SKIP_REASON = acmeSkipReasonFor("hazard-subject-fixture.test.ts");
@@ -179,10 +180,10 @@ test("hazard subject: no fixture source in this tree names the scanner it is pla
   assert.ok(!stripped.includes("scanIndirectDispatch"), "the dispatch fixture source must never name the scanner it is planted against");
 });
 
-test("hazard subject: the root source carries exactly two bare-filename !source lines", () => {
+test("hazard subject: the root source carries exactly three bare-filename !source lines", () => {
   const rootSource = readFileSync(ROOT_SOURCE_PATH, "utf8");
   const sourceLines = rootSource.match(/^!source\s+"[^"/\\]+"\s*$/gm) ?? [];
-  assert.equal(sourceLines.length, 2, "the root must carry exactly two !source lines after the dispatch construction is added, each a bare filename");
+  assert.equal(sourceLines.length, 3, "the root must carry exactly three !source lines after the dispatch and alignment constructions are both added, each a bare filename");
 });
 
 test("hazard subject: no planning-vocabulary string appears anywhere in the dispatch fixture source", () => {
@@ -192,6 +193,93 @@ test("hazard subject: no planning-vocabulary string appears anywhere in the disp
   assert.ok(!/\bD-\d/.test(dispatchSource), "must not carry a bare D-NN decision id");
   assert.ok(!/\bBUILD-\d/.test(dispatchSource), "must not carry a BUILD-NN requirement id");
   assert.ok(!/\bPhase\s+\d/.test(dispatchSource), "must not carry a 'Phase N' citation");
+});
+
+/** Assembles `rootSourceName` fresh (same discipline as `assembleFresh()`)
+ * AND asks ACME for a symbol list, so a test can check a real label's
+ * ASSEMBLED address rather than reading it out of the source text. Returns
+ * `null` for a symbol name it did not find, never throws. */
+function assembleFreshWithSymbols(rootSourceName: string): { bytes: Uint8Array; symbols: Map<string, number> } {
+  const dir = mkdtempSync(join(tmpdir(), "hazard-subject-fixture-sym-"));
+  try {
+    const outPath = join(dir, "out.prg");
+    const symPath = join(dir, "out.sym");
+    const r = spawnSync(ACME_BIN, ["--cpu", "6510", "-f", "cbm", "-o", outPath, "--symbollist", symPath, rootSourceName], {
+      encoding: "utf8",
+      timeout: 30_000,
+      cwd: FIXTURE_DIR,
+    });
+    assert.equal(r.status, 0, `${rootSourceName} must assemble:\n  stderr: ${r.stderr ?? ""}`);
+    assert.equal(existsSync(outPath), true, "ACME must write an output file");
+    assert.equal(existsSync(symPath), true, "ACME must write a symbol list file");
+    const symbols = new Map<string, number>();
+    for (const line of readFileSync(symPath, "utf8").split("\n")) {
+      const m = line.match(/^\s*(\S+)\s*=\s*\$([0-9a-fA-F]+)/);
+      if (m) symbols.set(m[1]!, parseInt(m[2]!, 16));
+    }
+    return { bytes: new Uint8Array(readFileSync(outPath)), symbols };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// hazard subject: class 3 -- the planted VIC-II hardware alignment
+// dependency, and the four data tables the export path needs.
+// ---------------------------------------------------------------------------
+
+test("hazard subject: the sprite shape base address is a multiple of 64, and the character-set base address is a multiple of 2048 -- asserted against the assembled image", { skip: SKIP_REASON }, () => {
+  const { symbols } = assembleFreshWithSymbols(ROOT_SOURCE_NAME);
+  const spriteBase = symbols.get("align_sprite_base");
+  const charBase = symbols.get("align_char_base");
+  assert.ok(spriteBase !== undefined, "align_sprite_base must be a real symbol in the assembled image");
+  assert.ok(charBase !== undefined, "align_char_base must be a real symbol in the assembled image");
+  assert.equal(spriteBase! % 64, 0, `align_sprite_base ($${spriteBase!.toString(16)}) must be 64-byte aligned`);
+  assert.equal(charBase! % 2048, 0, `align_char_base ($${charBase!.toString(16)}) must be 2048-byte aligned`);
+});
+
+test("hazard subject: the byte written to $07f8 equals the sprite base divided by 64", { skip: SKIP_REASON }, () => {
+  const { bytes, symbols } = assembleFreshWithSymbols(ROOT_SOURCE_NAME);
+  const spriteBase = symbols.get("align_sprite_base")!;
+  const origin = bytes[0]! | (bytes[1]! << 8);
+  const payload = bytes.subarray(2);
+  const instructions = decode(payload, origin);
+  const storeIndex = instructions.findIndex((insn) => insn.mnemonic === "sta" && insn.operand?.value === 0x07f8);
+  assert.ok(storeIndex > 0, "the image must contain an `sta $07f8` instruction");
+  const loader = instructions[storeIndex - 1]!;
+  assert.equal(loader.mnemonic, "lda", "the instruction immediately before `sta $07f8` must be the `lda #imm` that loads the pointer byte");
+  assert.equal(loader.operand?.role, "immediate", "the sprite pointer must be loaded as an immediate value");
+  assert.equal(loader.operand!.value, Math.floor(spriteBase / 64), "the byte written to $07f8 must equal the sprite base divided by 64");
+});
+
+test("hazard subject: four distinct labelled data tables exist -- sprite shape, character set, level and music", () => {
+  const alignSource = readFileSync(ALIGN_SOURCE_PATH, "utf8");
+  for (const label of ["align_sprite_base", "align_char_base", "align_level_table", "align_music_table"]) {
+    assert.ok(new RegExp(`^${label}\\b`, "m").test(alignSource), `${label} must be declared as its own label in the alignment source`);
+  }
+  const dataDirectives = alignSource.match(/^\s*!(byte|fill)\b/gm) ?? [];
+  assert.ok(dataDirectives.length >= 4, "each of the four tables must carry at least one data directive");
+});
+
+test("hazard subject: the alignment source carries an explicit alignment directive for both the sprite shape block and the character-set block", () => {
+  const alignSource = readFileSync(ALIGN_SOURCE_PATH, "utf8");
+  const alignDirectives = alignSource.match(/^\s*!align\b/gm) ?? [];
+  assert.equal(alignDirectives.length, 2, "exactly two !align directives are expected -- one for the character set, one for the sprite shape");
+});
+
+test("hazard subject: the sprite pointer and the VIC memory-control bits are derived from their labels, never written as bare hex constants", () => {
+  const alignSource = readFileSync(ALIGN_SOURCE_PATH, "utf8");
+  assert.ok(alignSource.includes("align_sprite_base / 64"), "the $07f8 write must derive its value from align_sprite_base, not a literal");
+  assert.ok(alignSource.includes("align_char_base / 2048"), "the $d018 write must derive its value from align_char_base, not a literal");
+});
+
+test("hazard subject: no planning-vocabulary string appears anywhere in the alignment fixture source", () => {
+  const alignSource = readFileSync(ALIGN_SOURCE_PATH, "utf8");
+  assert.ok(!alignSource.includes(".planning/"), "must not reference a .planning/ path");
+  assert.ok(!/\/gsd-/.test(alignSource), "must not reference a /gsd- command name");
+  assert.ok(!/\bD-\d/.test(alignSource), "must not carry a bare D-NN decision id");
+  assert.ok(!/\bBUILD-\d/.test(alignSource), "must not carry a BUILD-NN requirement id");
+  assert.ok(!/\bPhase\s+\d/.test(alignSource), "must not carry a 'Phase N' citation");
 });
 
 test("hazard subject: REGENERATOR AGREEMENT -- re-assembling the root reproduces the committed hazard-subject.prg byte-for-byte", { skip: SKIP_REASON }, () => {
