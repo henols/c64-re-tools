@@ -8,10 +8,10 @@
 // hand-rolled an argv reader that matched only the exact token `--root` and
 // read `argv[i + 1]`, so the equals form, a valueless flag and any typo were
 // SILENTLY DISCARDED and the invocation fell back to the default root. On the
-// one consumer that WRITES, `node scripts/generate-tool-support-table.mjs
-// --root=/tmp/definitely-not-here` therefore overwrote the REAL
-// `docs/tool-support.md` and exited 0 while reporting success. This file is
-// that seam's first test, and it is written around the exact command the
+// one consumer that WRITES (a since-retired per-tool documentation generator,
+// plan 52-07) `--root=/tmp/definitely-not-here` therefore overwrote its REAL
+// committed output and exited 0 while reporting success. This file is that
+// seam's first test, and it is written around the exact command the
 // phase-32 verifier reproduced.
 //
 // WHAT NOT TO DO:
@@ -82,10 +82,11 @@ import { parseRootArg, resolveContainedRoot } from "../../../scripts/lib/audit-r
 
 const HERE = dirname(fileURLToPath(import.meta.url)); // <root>/src/mcp/vice
 const ROOT = resolve(HERE, "..", "..", ".."); // <root>
-const SCRIPT = join(ROOT, "scripts", "generate-tool-support-table.mjs");
-const TABLE = join(ROOT, "docs", "tool-support.md");
 
-const SCRIPT_NAME = "generate-tool-support-table";
+// A plain label, not a real script path: the unit tests below drive
+// parseRootArg() directly and only need a name to embed in a refusal
+// message. It never needs to resolve to a file on disk.
+const SCRIPT_NAME = "example-root-accepting-script";
 
 // ---------------------------------------------------------------------------
 // Helpers. `refusal()` returns the Error rather than asserting inside a
@@ -110,18 +111,6 @@ interface RunResult {
   status: number | null;
   stdout: string;
   stderr: string;
-}
-
-function run(args: string[]): RunResult {
-  const r = spawnSync(process.execPath, [SCRIPT, ...args], {
-    cwd: ROOT,
-    encoding: "utf8",
-  });
-  return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
-}
-
-function tableBytes(): Buffer {
-  return readFileSync(TABLE);
 }
 
 // ===========================================================================
@@ -425,71 +414,16 @@ test("resolveContainedRoot: a symlink inside the repository pointing OUTSIDE it 
   );
 });
 
-test("the equals form refuses and leaves the REAL table byte-identical", () => {
-  const before = tableBytes();
-  const r = run(["--root=/tmp/definitely-not-here"]);
-  assert.notEqual(r.status, 0, `expected a non-zero exit, got ${r.status}`);
-  assert.match(r.stderr, /BAD ARGUMENTS/);
-  assert.ok(
-    tableBytes().equals(before),
-    "docs/tool-support.md was modified by an invocation that must never have reached a write",
-  );
-});
-
-test("a mistyped flag refuses and names the token", () => {
-  const before = tableBytes();
-  const r = run(["--rooot", "/tmp"]);
-  assert.notEqual(r.status, 0, `expected a non-zero exit, got ${r.status}`);
-  assert.ok(
-    r.stderr.includes("--rooot"),
-    `stderr must quote the unrecognised token, got: ${r.stderr}`,
-  );
-  assert.ok(tableBytes().equals(before), "docs/tool-support.md was modified by a refused run");
-});
-
-test("a valueless --root refuses and names the flag", () => {
-  const before = tableBytes();
-  const r = run(["--root"]);
-  assert.notEqual(r.status, 0, `expected a non-zero exit, got ${r.status}`);
-  assert.match(r.stderr, /BAD ARGUMENTS/);
-  assert.match(r.stderr, /director/i);
-  assert.ok(tableBytes().equals(before), "docs/tool-support.md was modified by a refused run");
-});
-
-test("an out-of-repository --root is REFUSED", () => {
-  const before = tableBytes();
-  const outside = mkdtempSync(join(tmpdir(), "audit-root-args-"));
-  try {
-    const r = run(["--root", outside]);
-    assert.equal(r.status, 1, `expected exit 1, got ${r.status}`);
-    assert.match(r.stderr, /REFUSED/);
-    assert.ok(tableBytes().equals(before), "docs/tool-support.md was modified by a refused run");
-  } finally {
-    rmSync(outside, { recursive: true, force: true });
-  }
-});
-
-test("a sibling sharing the root's string prefix is REFUSED, not treated as a typo", () => {
-  const before = tableBytes();
-  const r = run(["--root", `${ROOT}-evil`]);
-  assert.equal(r.status, 1, `expected exit 1, got ${r.status}`);
-  assert.match(r.stderr, /REFUSED/);
-  assert.ok(
-    !/TYPO/.test(r.stderr),
-    `a containment refusal must not be reported as a typo, got: ${r.stderr}`,
-  );
-  assert.ok(tableBytes().equals(before), "docs/tool-support.md was modified by a refused run");
-});
-
-test("--root naming the repository root itself is accepted and writes identical bytes", () => {
-  const before = tableBytes();
-  const r = run(["--root", ROOT]);
-  assert.equal(r.status, 0, `expected exit 0, got ${r.status} (stderr: ${r.stderr})`);
-  assert.ok(
-    tableBytes().equals(before),
-    "an explicit --root naming the repository root must be identical to no flag at all",
-  );
-});
+// The six dedicated process-level tests that used to sit here exercised one
+// specific script end-to-end (spawning it, then diffing a generated file's
+// bytes before/after each refused or accepted invocation). That script and
+// its generated per-tool documentation file are both retired (plan 52-07,
+// no longer meaningful with one manifest and no capability registry). The
+// generic, per-script coverage every "refuses" MATRIX member
+// gets below -- the equals-form/out-of-repository/repo-root-spelling tests
+// driven by `runScript()` -- already exercises the remaining scripts in this
+// file's population; there is nothing left needing a dedicated pair of
+// helpers over a single script's own output file.
 
 // ===========================================================================
 // THE ROOT-ACCEPTING MATRIX -- `gaps[1].missing[2]`, stated verbatim: "At
@@ -578,7 +512,6 @@ interface MatrixRow {
 }
 
 const MATRIX: MatrixRow[] = [
-  { script: "generate-tool-support-table", contained: "refuses" },
   { script: "check-skill-tool-coverage", contained: "refuses" },
   { script: "check-skill-fork-honesty", contained: "refuses" },
   { script: "check-skill-cli-invocations", contained: "refuses" },
@@ -816,17 +749,17 @@ test("the matrix covers EVERY root-accepting script", () => {
   );
   // A NON-VACUITY FLOOR, to be RAISED and NEVER LOWERED BY ITSELF. It was six
   // while the population was keyed on the shared seam; the flag-derived
-  // population was eight. It reads six again, and the ONE admissible reason a
-  // floor like this moves down is recorded here rather than left to be
-  // reconstructed: `check-guard-fates.mjs` and `audit-mutation-harness.mjs`
-  // were RETIRED WITH THEIR SUBJECT, in the same commit that lowered this
-  // number -- they are gone from the tree, not excluded from measurement. No
-  // exclusion list, no skip, no unmigrated-scripts array was added. Lowering
-  // this for any other reason would silently re-admit the state this guard
-  // exists to report.
+  // population was eight, then six again after `check-guard-fates.mjs` and
+  // `audit-mutation-harness.mjs` were RETIRED WITH THEIR SUBJECT. It is five
+  // now for the same reason: the per-tool documentation generator was
+  // retired with its subject (plan 52-07, no longer meaningful with one
+  // manifest and no capability registry) -- gone from the tree, not
+  // excluded from measurement. No exclusion list, no skip, no
+  // unmigrated-scripts array was added. Lowering this for any other reason
+  // would silently re-admit the state this guard exists to report.
   assert.ok(
-    covered.length >= 6,
-    `expected at least the six known root-accepting scripts, measured ${covered.length}`,
+    covered.length >= 5,
+    `expected at least the five known root-accepting scripts, measured ${covered.length}`,
   );
 });
 
@@ -968,10 +901,11 @@ for (const { script, contained, extraArgs = [] } of MATRIX) {
 //
 // This is the one place this file's "no repeated end-to-end run" discipline is
 // deliberately widened, so the new budget is stated rather than quietly spent:
-// four scripts x four runs (one unflagged baseline plus three spellings) = 16
-// full runs, measured at 194/299/151/353 ms each, ~4 s in total. The rule's
-// purpose is to keep this file from becoming a slow re-run of the whole audit;
-// four seconds against a 6 s file is within that purpose. The one script with a
+// one run per "refuses" MATRIX member x four runs (one unflagged baseline
+// plus three spellings) -- three such scripts as of plan 52-07's retirement
+// of the per-tool documentation generator (previously four), a few seconds
+// in total. The rule's purpose is to keep this file from becoming a slow re-run
+// of the whole audit; that budget is within it. The one script with a
 // working-tree side effect under the default root -- the invocations gate,
 // which regenerates `installer/skills/` -- is idempotent, and the porcelain
 // check in plan 32-12's evidence record confirms the tree is byte-identical
@@ -1153,7 +1087,7 @@ test("no root-accepting script carries a NUL byte, so a text read of them loses 
   // root-accepting scripts go unseen here for a whole round.
   const population = scriptsAcceptingARoot();
   assert.ok(
-    population.length >= 6,
+    population.length >= 5,
     "the NUL sweep must cover the whole root-accepting population; it selected " +
       `${population.length}: ${population.join(", ")}`,
   );
@@ -1188,9 +1122,10 @@ test("split-read contract: every root-accepting script that binds ../src statica
   // matched nothing proves nothing -- the exact failure mode `CUT-03` exists to
   // forbid -- so the population the antecedent actually selected is asserted.
   assert.ok(
-    bound.length >= 4,
-    `the antecedent must select at least the four known split-read scripts; it selected ` +
-      `${bound.length}: ${bound.join(", ")}`,
+    bound.length >= 3,
+    `the antecedent must select at least the three known split-read scripts (the per-tool ` +
+      `documentation generator, the fourth, was retired with its subject in plan 52-07); ` +
+      `it selected ${bound.length}: ${bound.join(", ")}`,
   );
   for (const script of bound) {
     assert.ok(
@@ -1249,14 +1184,14 @@ test("split-read contract: the predicate REPORTS a planted violation, and clears
   // NON-VACUITY, NEGATIVE DIRECTION. Planted against the REAL predicate, per
   // this repository's convention -- text in place of a registry object.
   const planted =
-    '#!/usr/bin/env node\nimport { CAPABILITY_REGISTRY } from "../src/mcp/vice/capability-registry.ts";\n' +
+    '#!/usr/bin/env node\nimport { EXAMPLE_REGISTRY } from "../src/mcp/vice/example-registry.ts";\n' +
     'import { parseRootArg, resolveContainedRoot } from "./lib/audit-root.mjs";\n' +
     "const RESOLVED_ROOT = resolveContainedRoot(parseRootArg(process.argv.slice(2), {}).root, {});\n" +
-    "console.log(RESOLVED_ROOT, CAPABILITY_REGISTRY.length);\n";
+    "console.log(RESOLVED_ROOT, EXAMPLE_REGISTRY.length);\n";
 
   assert.deepEqual(
     staticSrcImports(planted),
-    ["../src/mcp/vice/capability-registry.ts"],
+    ["../src/mcp/vice/example-registry.ts"],
     "the planted text must be SELECTED by the antecedent, or the negative control proves " +
       "nothing about scripts that are",
   );
@@ -1268,7 +1203,7 @@ test("split-read contract: the predicate REPORTS a planted violation, and clears
   assert.equal(
     violatesSplitReadContract(planted),
     true,
-    "the predicate that clears all six real scripts must REPORT this planted violation; if it " +
+    "the predicate that clears all five real scripts must REPORT this planted violation; if it " +
       "does not, the pass above is vacuous",
   );
 
@@ -1281,7 +1216,7 @@ test("split-read contract: the predicate REPORTS a planted violation, and clears
   );
   assert.deepEqual(
     staticSrcImports(fixed),
-    ["../src/mcp/vice/capability-registry.ts"],
+    ["../src/mcp/vice/example-registry.ts"],
     "the fixed text must still be selected by the antecedent",
   );
   assert.equal(

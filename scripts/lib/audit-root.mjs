@@ -166,10 +166,11 @@ export function resolveContainedRoot(rootArg, { repoRoot } = {}) {
 // a valueless `--root` and any typo were all SILENTLY DISCARDED -- the loop
 // simply never fired and the invocation fell through to the default root. The
 // same defect therefore shipped six times, and on the one consumer that
-// WRITES it meant `--root=/tmp/definitely-not-here` overwrote the REAL
-// `docs/tool-support.md` and exited 0 while printing success. A parser that
-// guesses is what produced that, so this one never guesses: every malformed
-// form is a hard, named error.
+// WROTE anything (a since-retired per-tool documentation generator, plan
+// 52-07) `--root=/tmp/definitely-not-here` overwrote its REAL committed
+// output and exited 0 while printing success. A parser that guesses is
+// what produced that, so this one never guesses: every malformed form is a
+// hard, named error.
 //
 // PROVENANCE CORRECTION, 2026-09-01 (plan 32-17). What this paragraph used to
 // say, in reported speech -- deliberately NOT re-quoted verbatim, so that a

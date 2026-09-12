@@ -10,12 +10,13 @@
 // verified this wiring only by a human reading ci.yml's line 97 -- this file
 // makes that a mechanical, regression-tested assertion instead.
 //
-// WHY THIS FILE IS .mjs, NOT .ts (same reasoning as tool-support-table.test.mjs's
-// header): this package's tsconfig.json sets `allowJs: false` and `include`
-// covers only **/*.ts and **/*.mts, so a plain-text-parsing .mjs test that
-// touches no TypeScript source is invisible to `tsc --noEmit` either way --
-// keeping it .mjs matches tool-support-table.test.mjs's established
-// repo-root-reaching-guard-test precedent exactly.
+// WHY THIS FILE IS .mjs, NOT .ts: this package's tsconfig.json sets
+// `allowJs: false` and `include` covers only **/*.ts and **/*.mts, so a
+// plain-text-parsing .mjs test that touches no TypeScript source is
+// invisible to `tsc --noEmit` either way -- keeping it .mjs matches the
+// established repo-root-reaching, text-parsing guard-test precedent this
+// tree already uses for scripts that read another script's or workflow
+// file's plain text rather than importing its exports.
 //
 // SCOPE: this file parses ci.yml as plain text (regex/string split), NOT as
 // YAML -- the repo has zero runtime dependencies for its scripts and this
