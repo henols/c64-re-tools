@@ -1090,7 +1090,15 @@ bytes and real symbol names to emit
   4. Two exports from an unchanged store are **byte-identical**, file for file, with file ordering deterministic from address — asserted by a drift guard, so a re-export is a reviewable diff rather than an unreviewable full-tree churn.
   5. Zero-page symbols are declared in a file the root sources **first**, and ACME's `.rep` listing shows the two-byte encoding for a known zero-page reference — with the three-byte absolute fallback observed being **caught** when that ordering is deliberately broken.
 
-**Plans**: TBD
+**Plans**: 6 plans, 5 waves
+
+Plans:
+- [ ] 47-01-PLAN.md — tracer: thread a `cwd` through the `acme.build` spawn and make a store become a tree real ACME reassembles, with the `cwd` shown load-bearing
+- [ ] 47-02-PLAN.md — partition across many scopes, place the unscoped remainder, refuse a boundary-crossing range, and guard re-export determinism
+- [ ] 47-03-PLAN.md — `external_file` leaves as its own `!binary` file, demonstrated by swapping a real 2048-byte character set without touching code
+- [ ] 47-04-PLAN.md — every in-tree reference goes through a symbol or refuses by name; cross-file resolution proved; the zero-page encoding measured both ways
+- [ ] 47-05-PLAN.md — `anno export-asm --out` becomes a directory (one checkpoint: a published-surface change), with the invocation gate and shipped skill updated
+- [ ] 47-06-PLAN.md — split hi/lo address tables emit paired names from one symbol per entry, so both halves move together
 
 Notes:
 
