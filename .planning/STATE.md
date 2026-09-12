@@ -5,11 +5,11 @@ milestone_name: The Rebuild Half
 current_phase: 52
 current_phase_name: Remove the Fork Backend
 status: executing
-stopped_at: Completed 52-11-PLAN.md
-last_updated: "2026-09-12T13:33:27.460Z"
+stopped_at: Completed 52-12-PLAN.md
+last_updated: "2026-09-12T13:57:03.835Z"
 last_activity: 2026-09-12
 last_activity_desc: Phase 52 gap-closure round 1 planned (52-11..52-13)
-state_head: 86c6a8c3d4d43285b3670b43bc7456398a16e4d7
+state_head: 24262a88d01d1f8f84b05cc4f237c716d81fef58
 progress:
   total_phases: 8
   completed_phases: 2
@@ -255,7 +255,7 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 52 (Remove the Fork Backend) — EXECUTING (gap closure)
-Plan: 11 of 13 executed
+Plan: 12 of 13 executed
 Status: 52-01..52-11 executed; 52-11 corrected the stale-documentation gap
 (CLAUDE.md + ARCHITECTURE.md false fork-backend prose, and widened
 docs-fork-absence.test.ts to catch the class mechanically). 52-12 and 52-13
@@ -577,6 +577,7 @@ Last activity: 2026-09-12 — Phase 52 execution started
 | Phase 52 P09 | 35 min | 3 tasks | 13 files |
 | Phase 52 P10 | 55 min | 3 tasks | 6 files |
 | Phase 52 P11 | 55 min | 3 tasks | 3 files |
+| Phase 52 P12 | 70min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -1312,6 +1313,8 @@ Recent decisions affecting current work:
 - [Phase 52]: CLAUDE.md/PROJECT.md's Testing bullet was restated against stock-run-until.ts rather than removed: it honors the exactly-one-resume-per-wait invariant in event-driven, unit-tested form. The sibling poll-on-hit_count invariant was not restated as its own rule, since stock-diagnose.ts explicitly uses wall-clock timing instead by its own comment. — Plan instruction: check whether either invariant survives in a surviving module before deleting the bullet outright; one does, one does not, in the same shape.
 - [Phase 52]: Fixed two falsified fork-era symbol references discovered while reconciling Phase 52's closing criteria: CLAUDE.md/PROJECT.md's probeBackend() Constraints clause and CLAUDE.md's DENY_LIST Key Abstractions bullet. — Both named symbols deleted by earlier plans in this phase (52-05, 52-06); left uncorrected they would have been standing, checked-in false claims about the live codebase.
 - [Phase 52]: Widened docs-fork-absence.test.ts in place with a boundary-aware deleted-module-citation predicate rather than a sibling guard, since the check shares the existing population, exemption list, and question — Splitting one question (has the fork removal come back) across two files would produce two partial answers and two places to remember to widen
+- [Phase 52]: Corrected fork-backend prose in ARCHITECTURE.md, STACK.md and CONVENTIONS.md (52-12): resolved each stale component row individually by reading the tree (re-point where a successor exists, remove where none does) rather than by pattern.
+- [Phase 52]: Proved the CLAUDE.md projection self-consistent with a four-file census (CLAUDE.md plus its three declared sources): zero deleted-module citations and zero fork-flag mentions remain anywhere in the chain (52-12).
 
 ### Pending Todos
 
@@ -2389,8 +2392,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-12T13:33:27.258Z
-Stopped at: Completed 52-11-PLAN.md
+Last session: 2026-09-12T13:57:03.622Z
+Stopped at: Completed 52-12-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
