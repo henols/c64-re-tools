@@ -173,8 +173,7 @@ state — and keep working when the emulator misbehaves.
 | Component | Responsibility | File |
 |-----------|----------------|------|
 | Stdio MCP entry point | Speaks MCP JSON-RPC to Claude Code over stdin/stdout; answers `initialize`/`tools/list` locally from the manifest, forwards `tools/call` | `src/mcp/vice/vice-proxy.ts` |
-| Transport seam | The one place that speaks HTTP/MCP to the host VICE server; owns retry ladder, SSE parsing, deny-list enforcement, epoch/restart detection | `src/mcp/vice/vice.ts` |
-| Liveness probe | Deliberately fragile, no-retry 1500ms liveness check (distinct from `vice.ts`'s resilient path) | `src/mcp/vice/vice-probe.ts` |
+| Stock transport (binary monitor) | The one place that performs the stock connect handshake and owns session setup, reconnect and teardown, over the length-prefixed binary framing | `src/mcp/vice/stock-connect.ts` (framing in `src/mcp/vice/stock-protocol.ts`) |
 | Broker client | Container-side half of the on-demand broker protocol: acquire/release/recycle over a TCP control session | `src/mcp/vice/vice-broker-client.ts` |
 | Repo root resolution | The one shared resolver for "where is the project root" / "where is `.vice-supervisor`" | `src/mcp/vice/repo-root.ts` |
 | Resource deployment | Deploys host launcher scripts (`tools/`) into the *consuming* project on first use | `src/mcp/vice/install-resources.ts` |

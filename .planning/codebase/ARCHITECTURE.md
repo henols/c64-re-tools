@@ -85,7 +85,7 @@ map):
 |-----------|----------------|------|
 | Stdio MCP entry point | Speaks MCP JSON-RPC to Claude Code; answers `initialize`/`tools/list` from the backend-selected manifest, dispatches `tools/call` | `src/mcp/vice/vice-proxy.ts` |
 | Backend resolver | The ONE place that decides fork-vs-stock and the ONE reader of `VICE_BACKEND`; `--help` probe, memoised, resolved once per process | `src/mcp/vice/backend-detect.mts` |
-| Fork transport seam | The one place that speaks HTTP/MCP to the patched fork's server; retry ladder, SSE parsing, deny-list, epoch/restart detection | `src/mcp/vice/vice.ts` (`call()` at `:697`) |
+| Transport seam | The one place that speaks VICE's binary monitor wire, framed by `stock-protocol.ts`, with connect/reconnect/teardown owned by `stock-connect.ts`; no deny-list or refusal mechanism exists at this seam | `src/mcp/vice/stock-connect.ts`, `src/mcp/vice/stock-protocol.ts` |
 | Stock dispatch table | THE stock tool surface: manifest selection, the handler table, refuse-by-name, no fall-through to `forwardToVice()` | `src/mcp/vice/stock-dispatch.ts` |
 | Stock wire protocol | The ONE place that frames/parses/demuxes the binary-monitor wire; `ViceMonitorClient` over `net.Socket` | `src/mcp/vice/stock-protocol.ts` |
 | Stock connect handshake | Claims the monitor socket from the broker, asserts `api_version`, reads build identity via `VICE_INFO`, settles version-gated capabilities once per binary, detects machine identity across reconnect | `src/mcp/vice/stock-connect.ts` |

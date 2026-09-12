@@ -127,6 +127,56 @@ function scanTextForForbiddenIdentifiers(relPath: string, text: string): string[
   return findForbiddenIdentifiers(text);
 }
 
+// -- Deleted-module PROSE CITATIONS -----------------------------------------
+//
+// The identifier scan above catches a forbidden identifier surviving as CODE
+// or as a literal mention. It was never asked whether a deleted module's
+// FILENAME is cited in prose as if the module still exists and still owns a
+// live responsibility -- a table row like "Transport seam | ... | `vice.ts`"
+// passes the identifier scan untouched, because "vice.ts" alone is not one of
+// the nine FORBIDDEN_IDENTIFIERS strings. That gap is what let twelve false
+// sentences survive an entire phase inside CLAUDE.md. This predicate closes
+// it, for prose specifically (see this file's own comment on why the check
+// deliberately does not extend to shipped TypeScript modules, alongside the
+// checks that wire it over the real corpus, further down this file).
+
+/** Boundary-aware alternation built from `DELETED_MODULES`, with each
+ * filename's dot escaped. A match requires the character immediately before
+ * the filename to be either the start of the string or something other than
+ * a letter, digit, underscore, hyphen or dot -- this is not decoration: a
+ * naive substring test for the shortest entry in `DELETED_MODULES`
+ * (`vice.ts`) also matches a filename like `device.ts`, which shares the
+ * substring `vice.ts` starting at its second character. That is a measured
+ * false positive, and a false positive is precisely what gets a guard
+ * switched off rather than obeyed. Asserted non-empty by the non-vacuity
+ * test below, so an emptied pattern cannot make the citation checks
+ * vacuously pass. */
+const DELETED_MODULE_CITATION_SOURCE = `(?:^|[^A-Za-z0-9_.-])(${DELETED_MODULES.map((m) => m.replace(/\./g, "\\.")).join("|")})`;
+const DELETED_MODULE_CITATION_RE = new RegExp(DELETED_MODULE_CITATION_SOURCE, "g");
+
+/** Pure predicate: every deleted-module filename boundary-aware-cited in
+ * `text`, SORTED and DE-DUPLICATED so two runs over an unchanged corpus
+ * produce byte-identical output and any diff between runs means a real
+ * change rather than iteration order. Returns `[]` rather than asserting
+ * internally, exactly like `findForbiddenIdentifiers()` above, so the
+ * planted-violation tests below drive this EXACT function. */
+export function findDeletedModuleCitations(text: string): string[] {
+  const found = new Set<string>();
+  for (const match of text.matchAll(DELETED_MODULE_CITATION_RE)) {
+    found.add(match[1]!);
+  }
+  return [...found].sort();
+}
+
+/** Same predicate, but exempting `EXEMPT_RELATIVE_PATHS` by exact path
+ * first -- mirrors `scanTextForForbiddenIdentifiers()` above exactly, so the
+ * one sanctioned exception (`docs/stock-hard-losses.md`) is exercised by
+ * real callers here too, not only by its own planted test. */
+function scanTextForDeletedModuleCitations(relPath: string, text: string): string[] {
+  if (EXEMPT_RELATIVE_PATHS.includes(relPath)) return [];
+  return findDeletedModuleCitations(text);
+}
+
 /** Every `*.md` file under `src/skills/`, recursively, as paths relative to
  * `ROOT`. A raw `readdirSync` walk (not `files[]`-derived): skill markdown is
  * shipped as a directory tree, not enumerated in `package.json`. */
@@ -157,6 +207,11 @@ test("1. non-vacuity: the scanned population clears a floor, the forbidden-ident
     "FORBIDDEN_IDENTIFIERS must be non-empty -- an emptied set would make every other check in this file vacuously pass",
   );
   assert.ok(DELETED_MODULES.length > 0, "DELETED_MODULES must be non-empty");
+  assert.ok(
+    DELETED_MODULE_CITATION_SOURCE.length > 0,
+    "the deleted-module citation regex source must not be empty -- an emptied pattern would make the " +
+      "prose-citation checks vacuously pass",
+  );
 
   const shipped = shippedTsModules(HERE);
   const skillsMd = skillMarkdownFiles();
@@ -316,4 +371,35 @@ test("planted violation control: a body at the exempt path (docs/stock-hard-loss
 test("planted violation: the identical body at a non-exempt path IS reported", () => {
   const hits = scanTextForForbiddenIdentifiers("some/other/file.md", "export const DENY_LIST = [];");
   assert.deepEqual(hits, ["DENY_LIST"]);
+});
+
+// -- 9. Planted violations for the deleted-module CITATION predicate --------
+//
+// The boundary is the whole point: a real citation of a deleted module must
+// be reported, and a filename that only TOUCHES a deleted one as a substring
+// (`device.ts` contains `vice.ts` starting at its second character) must not
+// be merged with it.
+
+test("planted violation: an in-memory body citing a deleted module filename is reported", () => {
+  const hits = findDeletedModuleCitations("The transport seam lives in `src/mcp/vice/vice.ts`.");
+  assert.deepEqual(hits, ["vice.ts"]);
+});
+
+test("planted violation control: an in-memory body containing only `device.ts` -- a filename that merely touches a deleted one as a substring -- reports nothing", () => {
+  const hits = findDeletedModuleCitations("The disk-access family cross-references `src/mcp/vice/device.ts`.");
+  assert.deepEqual(hits, []);
+});
+
+test("planted violation control: a body at the exempt path (docs/stock-hard-losses.md) citing a deleted module filename is not reported", () => {
+  const hits = scanTextForDeletedModuleCitations(STOCK_HARD_LOSSES_RELATIVE, "See src/mcp/vice/vice.ts for history.");
+  assert.deepEqual(
+    hits,
+    [],
+    "the one exempt path must never be reported even if it cited a deleted module filename",
+  );
+});
+
+test("planted violation: the identical body at a non-exempt path IS reported", () => {
+  const hits = scanTextForDeletedModuleCitations("some/other/file.md", "See src/mcp/vice/vice.ts for history.");
+  assert.deepEqual(hits, ["vice.ts"]);
 });
