@@ -276,13 +276,13 @@
     {
       "number": "52",
       "name": "Remove the Fork Backend",
-      "status": "in_progress"
+      "status": "complete"
     }
   ],
   "next": {
     "command": "/gsd:progress --next",
-    "label": "Advance to the next step (plan phase 47)",
-    "reason": "Phase 47 of 8 — needs a plan"
+    "label": "Advance to the next step",
+    "reason": "Phase 47 of 8 · 25% · executing"
   },
-  "updated_at": "2026-09-12T14:33:27.078Z"
+  "updated_at": "2026-09-12T15:49:52.430Z"
 }

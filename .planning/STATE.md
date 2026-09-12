@@ -4,16 +4,16 @@ milestone: v1.0.0
 milestone_name: The Rebuild Half
 current_phase: 47
 current_phase_name: Multi-File Rebuildable Source
-status: planning
-stopped_at: Phase 52 complete, ready to plan Phase 47
-last_updated: "2026-09-12T14:33:27.041Z"
+status: executing
+stopped_at: Phase 47 planned — 6 plans in 5 waves, plan-checker passed
+last_updated: "2026-09-12T15:49:52.389Z"
 last_activity: 2026-09-12
-last_activity_desc: Phase 52 complete, transitioned to Phase 47
-state_head: 1672fbea69585b58ce80846b9fce0358e58a585c
+last_activity_desc: Phase 47 planned (6 plans, 5 waves)
+state_head: 275ae9ddf30cf1598c1e1851d3e758954fa9eff2
 progress:
   total_phases: 8
   completed_phases: 2
-  total_plans: 16
+  total_plans: 22
   completed_plans: 16
   percent: 25
 ---
@@ -254,31 +254,16 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 47 — Multi-File Rebuildable Source
+Phase: 47 (Multi-File Rebuildable Source) — READY TO EXECUTE
 Plan: Not started
-Status: Ready to plan
-gap (CLAUDE.md + ARCHITECTURE.md false fork-backend prose, and widened
-docs-fork-absence.test.ts to catch the class mechanically). 52-12 corrected
-the remaining fork-backend prose in ARCHITECTURE.md, STACK.md and
-CONVENTIONS.md — the three documents CLAUDE.md's own markers name as
-sources — and proved a four-file projection census at zero. 52-13 reworded
-PROJECT.md's two residual Key Decisions/Out-of-Scope rows still stating the
-superseded SID routing, annotated the four unprojected codebase snapshots
-with dated supersession notes, and closed the gap round: the test suite
-sits at the predicted 6-member shrink of the 7-member verification-report
-reference set, with the projection census reconfirmed at zero. This
-gap-closure round is now complete pending phase re-verification.
-
-**Planned OUT OF SEQUENCE.** Phase 52 was planned ahead of Phases 47-51, which
-remain unplanned, because Phase 52's own stated dependency — the open question
-"Does anything in the v1.0.0 rebuild half need stock's three hard losses?" — was
-discharged (answered **No**, 2026-09-11) and nothing in it waits on 47-51. The
-milestone's sequential next phase is still **47 — Multi-File Rebuildable Source**;
-this frontmatter's `current_phase: 52` records where planning last landed, not a
-decision to execute 52 before 47.
+Status: Ready to execute
+Plans: 6 (47-01 … 47-06) in 5 waves. Wave 2's 47-05 is `autonomous: false` —
+it carries the phase's one blocking decision checkpoint, because promoting
+`anno export-asm --out` from a file path to a directory path breaks a
+published CLI surface.
 
 Progress: [████░░░░░░] 38% (3/8 phases complete in v1.0.0; per-phase plan counts in the ROADMAP Progress table)
-Last activity: 2026-09-12 — Phase 52 complete, transitioned to Phase 47
+Last activity: 2026-09-12 — Phase 47 planned (6 plans, 5 waves); plans verified
 
 ## Performance Metrics
 

@@ -1093,11 +1093,25 @@ bytes and real symbol names to emit
 **Plans**: 6 plans, 5 waves
 
 Plans:
+**Wave 1**
+
 - [ ] 47-01-PLAN.md — tracer: thread a `cwd` through the `acme.build` spawn and make a store become a tree real ACME reassembles, with the `cwd` shown load-bearing
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 47-02-PLAN.md — partition across many scopes, place the unscoped remainder, refuse a boundary-crossing range, and guard re-export determinism
-- [ ] 47-03-PLAN.md — `external_file` leaves as its own `!binary` file, demonstrated by swapping a real 2048-byte character set without touching code
-- [ ] 47-04-PLAN.md — every in-tree reference goes through a symbol or refuses by name; cross-file resolution proved; the zero-page encoding measured both ways
 - [ ] 47-05-PLAN.md — `anno export-asm --out` becomes a directory (one checkpoint: a published-surface change), with the invocation gate and shipped skill updated
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 47-03-PLAN.md — `external_file` leaves as its own `!binary` file, demonstrated by swapping a real 2048-byte character set without touching code
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 47-04-PLAN.md — every in-tree reference goes through a symbol or refuses by name; cross-file resolution proved; the zero-page encoding measured both ways
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 47-06-PLAN.md — split hi/lo address tables emit paired names from one symbol per entry, so both halves move together
 
 Notes:
@@ -1628,7 +1642,7 @@ in a milestone archive.
 | 44. PROOF-04 — The Independent External Check | v0.9.0 | 3/3 | Complete | 2026-09-10 |
 | 45. Decomposition to Closure, Disagreement First | v1.0.0 | 10/10 | Complete | 2026-09-11 |
 | 46. The Lossless-Export Invariant and the Provenance Carry | v1.0.0 | 6/6 | Complete | 2026-09-11 |
-| 47. Multi-File Rebuildable Source | v1.0.0 | - | Not started | - |
+| 47. Multi-File Rebuildable Source | v1.0.0 | 0/6 | Not started | - |
 | 48. The Movement-Hazard Report and Its Purpose-Built Subject | v1.0.0 | - | Not started | - |
 | 49. The Reassembly Gate, Committed Before the Phase It Gates | v1.0.0 | - | Not started | - |
 | 50. Equivalence and Modifiability | v1.0.0 | - | Not started | - |
