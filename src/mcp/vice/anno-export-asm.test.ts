@@ -5062,3 +5062,239 @@ test("the .bin siblings are written before root.a -- root.a's modification time 
     assert.ok(binIndex >= 0 && binIndex < rootIndex, `${entry.name} must be reported in result.files, ordered before ${ROOT_FILE_NAME}`);
   }
 });
+
+// ---------------------------------------------------------------------------
+// Phase 47, plan 47-03 (BUILD-02): the swap demonstration itself. Research
+// emphasis #1 asked for an honest answer rather than a demonstration against a
+// table that does not exist -- both the researcher and the pattern mapper
+// independently read the committed bytes and found the same thing: no
+// committed fixture currently carries a store-typed data or graphics table
+// ready for a `!binary` swap. The bytes used here are the committed
+// `fixtures/ghidra/charset-phantom.prg`'s own real `$1000..$17ff` bytes --
+// that fixture's own header comment derives the range from its `$DD00`/
+// `$D018`/`$D011` writes as a 2048-byte character set. The store that types
+// this range `external_file` is built by THIS test, through
+// `buildStoreOverImage()`, and is never written to the committed
+// `charset-phantom.annostore.json`, which Phase 37/45 tests depend on staying
+// typed `code`.
+// ---------------------------------------------------------------------------
+
+const CHARSET_PHANTOM_PRG_PATH = join(HERE, "fixtures", "ghidra", "charset-phantom.prg");
+const CHARSET_PHANTOM_STORE_JSON_PATH = join(HERE, "fixtures", "ghidra", "charset-phantom.annostore.json");
+const CHARSET_START = 0x1000;
+const CHARSET_END_INCLUSIVE = 0x17ff;
+const CHARSET_SIZE = CHARSET_END_INCLUSIVE - CHARSET_START + 1;
+
+/** XOR-complements every byte. `b ^ 0xff !== b` for every 8-bit `b`, so the
+ * result is GUARANTEED to differ from the input at every single byte --
+ * non-vacuity does not depend on a random source this test would then have
+ * to seed, record or hardcode. */
+function complementBytes(bytes: Uint8Array): Uint8Array {
+  const out = new Uint8Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) out[i] = (bytes[i]! ^ 0xff) & 0xff;
+  return out;
+}
+
+/**
+ * A store built OVER the committed `charset-phantom.prg` (never over the
+ * committed `.annostore.json`) carrying the SAME four ranges that store
+ * declares, with only the last one's type changed to `external_file`. Labels
+ * at `$0810` and `$1000` name the fixture's own `jsr` into the character set
+ * -- a reference into an emitted block needs a name for the same reason plan
+ * 47-04 will enforce generally.
+ */
+function charsetSwapFixture(tag: string): StoreFixture {
+  return buildStoreOverImage(tag, CHARSET_PHANTOM_PRG_PATH, {
+    ranges: [
+      { start: 0x0801, endInclusive: 0x080f, dataType: "byte" },
+      { start: 0x0810, endInclusive: 0x0822, dataType: "code" },
+      { start: 0x0823, endInclusive: 0x0fff, dataType: "byte" },
+      { start: CHARSET_START, endInclusive: CHARSET_END_INCLUSIVE, dataType: "external_file" },
+    ],
+    labels: [
+      { address: 0x0810, name: "start" },
+      { address: CHARSET_START, name: "charset_start" },
+    ],
+  });
+}
+
+/** Lines of an ACME `-r` report listing that carry ASSEMBLED CODE for the
+ * `$0801..$0fff` region -- a line-number column followed by a 4-hex-digit
+ * address below `$1000`. The charset region at and above `$1000` is
+ * deliberately EXCLUDED: that is exactly the window this test swaps, so its
+ * report lines are expected to differ, and comparing them would prove
+ * nothing about whether the CODE changed. */
+function codeReportLinesBelowCharset(reportText: string): string[] {
+  return reportText.split("\n").filter((line) => {
+    const m = /^\s*\d+\s+([0-9a-f]{4})\s/.exec(line);
+    if (!m) return false;
+    return parseInt(m[1]!, 16) < CHARSET_START;
+  });
+}
+
+/**
+ * Runs the whole demonstration for a fresh, uniquely-tagged fixture: exports
+ * the tree, assembles the BASELINE through `runHostTool()`, replaces the
+ * written `.bin`'s bytes with `complementBytes()`'s output (same length,
+ * every byte different), and re-assembles WITHOUT re-exporting. Every
+ * `binary swap:`-prefixed test below calls this exactly once, under its own
+ * tag, and asserts its own slice of the returned shape -- never a second,
+ * divergent setup that could quietly drift from what the others see.
+ */
+async function runCharsetSwapDemo(tag: string) {
+  const fixture = charsetSwapFixture(tag);
+  const outDir = join(fixture.dir, "tree");
+  const result = exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir });
+
+  const binaryEntry = result.binaries.find((b) => b.start === CHARSET_START);
+  assert.ok(binaryEntry, "the store's external_file range must produce a result.binaries entry");
+  const binPath = join(outDir, binaryEntry!.name);
+
+  const aFileNames = result.files.filter((name) => name.endsWith(".a"));
+  const aFilesBefore = new Map(aFileNames.map((name) => [name, readFileSync(join(outDir, name))] as const));
+
+  const originalBinBytes = new Uint8Array(readFileSync(binPath));
+  const replacementBytes = complementBytes(originalBinBytes);
+
+  const before = await runHostTool({ tool: "acme.build", args: { source: ROOT_FILE_NAME, format: "plain" } }, { repoRoot: outDir });
+  if (!before.ok) throw new Error(`baseline assembly failed: ${before.message}`);
+  const beforeProducedBytes = new Uint8Array(readFileSync(before.results[0]!.path));
+  const beforeReportText = readFileSync(join(outDir, "root.rep"), "utf8");
+
+  writeFileSync(binPath, Buffer.from(replacementBytes));
+
+  const after = await runHostTool({ tool: "acme.build", args: { source: ROOT_FILE_NAME, format: "plain" } }, { repoRoot: outDir });
+  if (!after.ok) throw new Error(`post-swap assembly failed: ${after.message}`);
+  const afterProducedBytes = new Uint8Array(readFileSync(after.results[0]!.path));
+  const afterReportText = readFileSync(join(outDir, "root.rep"), "utf8");
+
+  const aFilesAfter = new Map(aFileNames.map((name) => [name, readFileSync(join(outDir, name))] as const));
+
+  const minStart = Math.min(...result.blocks.map((b) => b.start));
+  const expectedAfterBytes = new Uint8Array(result.expectedBytes);
+  expectedAfterBytes.set(replacementBytes, CHARSET_START - minStart);
+
+  return {
+    outDir,
+    result,
+    originalBinBytes,
+    replacementBytes,
+    before,
+    beforeProducedBytes,
+    beforeReportCodeLines: codeReportLinesBelowCharset(beforeReportText),
+    aFilesBefore,
+    after,
+    afterProducedBytes,
+    afterReportCodeLines: codeReportLinesBelowCharset(afterReportText),
+    aFilesAfter,
+    expectedAfterBytes,
+  };
+}
+
+test(
+  "binary swap: the setup -- a store typing the committed character-set region external_file assembles the baseline tree at exitStatus 0 with bytes equal to expectedBytes",
+  { skip: SKIP_REASON },
+  async () => {
+    const demo = await runCharsetSwapDemo("swap-setup");
+    assert.equal(demo.before.exitStatus, 0, "the baseline tree must assemble cleanly before any swap");
+    assert.deepEqual(demo.beforeProducedBytes, demo.result.expectedBytes, "the baseline produced bytes must equal expectedBytes before any swap");
+  },
+);
+
+test(
+  "binary swap: the demonstration -- replacing the written .bin's 2048 bytes and re-assembling WITHOUT re-exporting changes the produced bytes exactly in the $1000..$17ff window",
+  { skip: SKIP_REASON },
+  async () => {
+    const demo = await runCharsetSwapDemo("swap-demonstration");
+    assert.equal(demo.after.exitStatus, 0, "the post-swap tree must still assemble cleanly -- only the DATA changed, never the code");
+    assert.deepEqual(
+      demo.afterProducedBytes,
+      demo.expectedAfterBytes,
+      "the produced bytes after the swap must equal expectedBytes with EXACTLY the $1000..$17ff window replaced, nothing else changed",
+    );
+  },
+);
+
+test(
+  "binary swap: no code was touched -- every .a file in the tree is byte-identical before and after the swap",
+  { skip: SKIP_REASON },
+  async () => {
+    const demo = await runCharsetSwapDemo("swap-no-code-touched");
+    assert.deepEqual(
+      [...demo.aFilesBefore.keys()].sort(),
+      [...demo.aFilesAfter.keys()].sort(),
+      "the swap must not add or remove any .a file",
+    );
+    for (const [name, before] of demo.aFilesBefore) {
+      const afterBytes = demo.aFilesAfter.get(name);
+      assert.ok(afterBytes, `.a file "${name}" present before the swap must still be present after it`);
+      assert.deepEqual(afterBytes, before, `.a file "${name}" must be byte-identical before and after the swap -- the claim is "not one line of code touched"`);
+    }
+  },
+);
+
+test(
+  "binary swap: ACME agrees -- the two report listings' code lines for $0801..$0fff are identical",
+  { skip: SKIP_REASON },
+  async () => {
+    const demo = await runCharsetSwapDemo("swap-acme-agrees");
+    assert.ok(demo.beforeReportCodeLines.length > 0, "the report must carry at least one code line before this comparison means anything");
+    assert.deepEqual(
+      demo.afterReportCodeLines,
+      demo.beforeReportCodeLines,
+      "ACME's own report listing must show identical code lines across the two assemblies",
+    );
+  },
+);
+
+test("PRECONDITION: the replacement bytes really differ from the original, and the original .bin is exactly 2048 bytes", () => {
+  const fixture = charsetSwapFixture("swap-non-vacuity");
+  const outDir = join(fixture.dir, "tree");
+  const result = exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir });
+  const binaryEntry = result.binaries.find((b) => b.start === CHARSET_START)!;
+  const originalBytes = new Uint8Array(readFileSync(join(outDir, binaryEntry.name)));
+  assert.equal(originalBytes.length, CHARSET_SIZE, "the character-set region must be exactly 2048 bytes");
+
+  const replacementBytes = complementBytes(originalBytes);
+  assert.equal(replacementBytes.length, originalBytes.length, "the replacement must be the SAME length as the original");
+  assert.ok(
+    originalBytes.every((b, i) => replacementBytes[i] !== b),
+    "every byte of the replacement must differ from the original -- a swap test that swapped identical bytes would pass while proving nothing",
+  );
+});
+
+test("the committed charset-phantom.annostore.json is untouched -- its $1000..$17ff row still reads code", () => {
+  const stored = JSON.parse(readFileSync(CHARSET_PHANTOM_STORE_JSON_PATH, "utf8")) as {
+    ranges: Array<{ start: number; endInclusive: number; dataType: string }>;
+  };
+  const row = stored.ranges.find((r) => r.start === CHARSET_START);
+  assert.ok(row, `the committed store must carry a range starting at ${CHARSET_START}`);
+  assert.equal(row!.endInclusive, CHARSET_END_INCLUSIVE, "the committed row's own end must still be $17ff");
+  assert.equal(row!.dataType, "code", 'the committed store must still type the character-set range "code" -- Phase 37/45 tests depend on it');
+});
+
+test("a re-export into a directory holding a hand-swapped .bin refuses by name and leaves it intact; an explicit overwrite replaces it", () => {
+  const fixture = charsetSwapFixture("swap-overwrite-guard");
+  const outDir = join(fixture.dir, "tree");
+  const first = exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir });
+  const binaryEntry = first.binaries.find((b) => b.start === CHARSET_START)!;
+  const binPath = join(outDir, binaryEntry.name);
+
+  const originalBytes = new Uint8Array(readFileSync(binPath));
+  const swappedBytes = complementBytes(originalBytes);
+  writeFileSync(binPath, Buffer.from(swappedBytes));
+
+  assert.throws(
+    () => exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir }),
+    /already holds/,
+    "a re-export without force must refuse by name rather than silently destroy the human's hand-swapped file",
+  );
+  assert.deepEqual(new Uint8Array(readFileSync(binPath)), swappedBytes, "the swapped bytes must survive the refused re-export completely untouched");
+
+  exportAsmTree({ storePath: fixture.storePath, imagePath: fixture.imagePath, workspaceRoot: fixture.dir, outDir, force: true });
+  assert.deepEqual(
+    new Uint8Array(readFileSync(binPath)),
+    originalBytes,
+    "an explicit overwrite must replace the swapped .bin with the export's own bytes -- because that is the user asking",
+  );
+});
