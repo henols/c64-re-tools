@@ -1145,10 +1145,21 @@ imported, not re-derived
 **Plans**: 6 plans
 
 Plans:
+**Wave 1**
+
 - [ ] 48-01-PLAN.md — Tracer: one planted self-modification found from bytes alone, end to end — subject seed, pure read-only report module, MCP verb, CLI verb, registry entry
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 48-02-PLAN.md — Subject expansion A: the non-canonical indexed jump table and the shape the scanner must decline; the VIC-II alignment dependency, the four data tables, and the deliberately mis-aligned twin
 - [ ] 48-03-PLAN.md — Detectors: class 1 imported at an exact-pinned call-site count, class 3 reusing the existing VIC-II derivation, class 4 as structural signature only, plus the undecided third outcome reached and a boolean verdict shape refused
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 48-04-PLAN.md — Subject expansion B: the timer-stabilised raster split, the self-modification the detector cannot see, and the committed store export describing every byte
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 48-05-PLAN.md — Cross-check against four independently-sourced fixtures, the strengthen-never-suppress proof, and the committed record naming the two classes with no independent positive example
 - [ ] 48-06-PLAN.md — The fixture design document, and the subject through the multi-file export and a real-assembler reassembly byte-diff
 

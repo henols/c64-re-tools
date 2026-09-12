@@ -4,16 +4,16 @@ milestone: v1.0.0
 milestone_name: The Rebuild Half
 current_phase: 48
 current_phase_name: The Movement-Hazard Report and Its Purpose-Built Subject
-status: planning
+status: executing
 stopped_at: Phase 47 complete, ready to plan Phase 48
-last_updated: "2026-09-12T18:56:01.365Z"
+last_updated: "2026-09-12T20:08:09.568Z"
 last_activity: 2026-09-12
 last_activity_desc: Phase 47 complete, transitioned to Phase 48
-state_head: fe16262dffe8fcd1185f9689cacf9dfbeae29205
+state_head: a55de46ad14ffbe474412b7dd7021c2b92b7305f
 progress:
   total_phases: 8
   completed_phases: 3
-  total_plans: 22
+  total_plans: 28
   completed_plans: 22
   percent: 38
 ---
@@ -254,9 +254,9 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 48 — The Movement-Hazard Report and Its Purpose-Built Subject
+Phase: 48 (The Movement-Hazard Report and Its Purpose-Built Subject) — READY TO EXECUTE
 Plan: Not started
-Status: Ready to plan
+Status: Ready to execute
 Plans: not yet planned. Phase 47 closed with 6/6 plans across 5 waves, all
 verified 5/5 against real ACME 0.97; its one blocking decision checkpoint
 (promoting `anno export-asm --out` from a file path to a directory path, a
