@@ -1,0 +1,46 @@
+; hazard-subject.a -- ROOT of a program built ON PURPOSE to carry
+; movement-blocking constructions, so a hazard detector can be proven
+; against something it did not shape.
+;
+; WHY THIS FILE EXISTS
+; --------------------
+; A detector that only ever runs against a fixture its own author wrote in
+; the same sitting proves nothing about whether it generalises. The cheapest
+; defence against that is a subject nobody wrote to satisfy the detector: a
+; small, purpose-built C64 program whose planted constructions are chosen for
+; being the awkward, real-world case a naive detector misses, not for being
+; easy to find.
+;
+; THIS FILE IS THE ROOT ONLY. It carries the BASIC loader stub and the single
+; machine-code entry point; every planted construction lives in its own
+; `!source`-d part, appended below in the order the parts are added. That
+; split is deliberate: a later addition is a one-line append at the bottom of
+; this file, never a restructure of what is already here.
+;
+; Regenerate with:
+;   cd src/mcp/vice && node fixtures/hazard-subject/make-hazard-subject-fixtures.mjs
+
+!cpu 6510
+
+* = $0801
+
+; --- BASIC stub: "10 SYS <entry>", so LOAD"...",8,1 + RUN reaches the code.
+; The SYS digits are computed from `entry`, so inserting code above never
+; breaks the stub.
+        !word .eol, 10          ; link to next BASIC line, line number
+        !byte $9e                ; SYS token
+        !byte '0' + entry % 10000 / 1000
+        !byte '0' + entry %  1000 /  100
+        !byte '0' + entry %   100 /   10
+        !byte '0' + entry %    10
+        !byte 0                  ; end of BASIC line
+.eol    !word 0                  ; end of BASIC program
+
+; The one machine-code entry point every part below is reached from. Each
+; planted construction gets its own small routine with its own entry label;
+; this handover calls each one in turn and returns.
+entry
+        jsr hazard_smc_entry
+        rts
+
+!source "hazard-subject-smc.a"

@@ -1,0 +1,39 @@
+; hazard-subject-smc.a -- the planted self-modifying-code construction.
+;
+; WHY AN OPCODE-BYTE PATCH, NOT THE TEXTBOOK OPERAND PATCH
+; ---------------------------------------------------------
+; The obvious self-modifying idiom -- an `inc`/`dec` that rewrites the
+; immediate operand of a nearby `lda #` -- changes a VALUE. A detector that
+; only asks "did a store land on an operand byte" catches that shape and
+; nothing else. This routine plants the harder case on purpose: a store of a
+; literal opcode byte onto another instruction's OPCODE position, so the
+; failure mode is a CONTROL-FLOW change rather than a value change. Relocating
+; this routine by even one byte moves the address the store targets, and
+; nothing in a disassembly listing of either the original or the moved copy
+; shows that the two no longer agree -- the listings look identical; only the
+; runtime behaviour differs.
+;
+; THE SHAPE
+; ---------
+; `hazard_smc_entry` is a short self-terminating loop. On the first pass it
+; writes an observable value to the border-colour register (so the effect is
+; visible on a real screen and readable back out of memory, not dead code),
+; then arms itself by storing the literal byte $60 -- the 6510's `rts` opcode
+; -- directly over `smc_patch_target`, which is the OPCODE BYTE of the `nop`
+; immediately below this comment. On the second pass through the same loop,
+; the CPU no longer executes a `nop` at that address: it executes `rts`, and
+; the routine returns exactly where the first pass simply fell through to the
+; next instruction. The label `smc_patch_target` is defined as `*` on the line
+; immediately before its host instruction, so the address is nameable without
+; an absolute literal anywhere in this file.
+
+hazard_smc_entry
+smc_patch_target = *
+        nop                       ; host instruction: its own opcode byte is
+                                   ; overwritten with $60 (rts) below
+        lda #$01
+        sta $d020                 ; observable: border colour changes on every pass
+        lda #$60
+        sta smc_patch_target      ; arm: plant the rts opcode over the host
+                                   ; instruction's own opcode byte
+        jmp hazard_smc_entry
