@@ -48,11 +48,21 @@ criterion to the automated command that proves it.*
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| TBD | TBD | 1 | BUILD-04 (crit. 1) | — | N/A | integration | `cd src/mcp/vice && node --test anno-export-asm.test.ts` | ❌ W0 | ⬜ pending |
-| TBD | TBD | 1 | BUILD-04 (crit. 2) | — | Report refuses a write path | unit (structural) | `cd src/mcp/vice && node --test anno-hazard-report.test.ts` | ❌ W0 | ⬜ pending |
-| TBD | TBD | 2 | BUILD-04 (crit. 3) | — | N/A | unit | `cd src/mcp/vice && node --test anno-hazard-report.test.ts` | ❌ W0 | ⬜ pending |
-| TBD | TBD | 2 | BUILD-04 (crit. 4) | — | Undecided never renders as clean | unit | `cd src/mcp/vice && node --test anno-hazard-report.test.ts` | ❌ W0 | ⬜ pending |
-| TBD | TBD | 3 | BUILD-04 (crit. 5) | — | Never-observed never reads as safe | unit (fixture-driven) | `cd src/mcp/vice && node --test anno-hazard-report.test.ts` | ❌ W0 | ⬜ pending |
+| 48-01 T1 | 48-01 | 1 | BUILD-04 (crit. 1) | T-48-05 | Committed image is a pure function of committed source | integration | `cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && node fixtures/hazard-subject/make-hazard-subject-fixtures.mjs` | ❌ W0 | ⬜ pending |
+| 48-01 T2 | 48-01 | 1 | BUILD-04 (crit. 2) | T-48-01 | Report refuses a write path | unit (structural) | `cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && node --test anno-hazard-report.test.ts` | ❌ W0 | ⬜ pending |
+| 48-01 T3 | 48-01 | 1 | BUILD-04 (crit. 2) | T-48-03 | Store and image paths go through the existing confinement helper | integration (CLI) | `cd /home/henrik/dev/henrik/git/c64-re-tools && node scripts/check-skill-tool-coverage.mjs` | ❌ W0 | ⬜ pending |
+| 48-02 T1-T3 | 48-02 | 2 | BUILD-04 (crit. 1, 3) | T-48-07 | Planted constructions asserted at byte level, not via a detector | integration | `cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && node --test hazard-subject-fixture.test.ts` | ❌ W0 | ⬜ pending |
+| 48-03 T1 | 48-03 | 2 | BUILD-04 (crit. 3) | T-48-09 | Class-1 scanner imported, not re-derived; exact call-site count | unit | `cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && node --test anno-hazard-report.test.ts` | ❌ W0 | ⬜ pending |
+| 48-03 T2 | 48-03 | 2 | BUILD-04 (crit. 3) | T-48-02 | Existing VIC-II derivation reused; bounded walks | unit | `cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && node --test anno-hazard-report.test.ts anno-graphics.test.ts` | ❌ W0 | ⬜ pending |
+| 48-03 T3 | 48-03 | 2 | BUILD-04 (crit. 4) | T-48-04, T-48-08 | Undecided never renders as clean; no boolean verdict shape | unit | `cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && node --test anno-hazard-report.test.ts` | ❌ W0 | ⬜ pending |
+| 48-04 T1-T2 | 48-04 | 3 | BUILD-04 (crit. 1, 3) | T-48-07, T-48-10 | Nothing padded to make a signal fire; the deliberate miss is recorded | integration | `cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && node --test hazard-subject-fixture.test.ts` | ❌ W0 | ⬜ pending |
+| 48-04 T3 | 48-04 | 3 | BUILD-04 (crit. 1) | T-48-11 | Committed store export carries no planning vocabulary | integration | `cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && node --test hazard-subject-fixture.test.ts` | ❌ W0 | ⬜ pending |
+| 48-05 T1 | 48-05 | 4 | BUILD-04 (crit. 5) | T-48-07 | Zero false positives on every negative control | unit (fixture-driven) | `cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && node --test anno-hazard-report.test.ts` | ❌ W0 | ⬜ pending |
+| 48-05 T2 | 48-05 | 4 | BUILD-04 (crit. 5) | T-48-12 | Never-observed never reads as safe; evidence strengthens only | unit | `cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && node --test anno-hazard-report.test.ts` | ❌ W0 | ⬜ pending |
+| 48-05 T3 | 48-05 | 4 | BUILD-04 (crit. 5) | T-48-04 | Classes with no independent positive example are named as such | unit (doc-consistency) | `cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && node --test anno-hazard-report.test.ts` | ❌ W0 | ⬜ pending |
+| 48-06 T1 | 48-06 | 4 | BUILD-04 (crit. 1) | T-48-04 | Signature limit stated beside the capability, not behind it | doc-assertion | `cd /home/henrik/dev/henrik/git/c64-re-tools && grep -acE 'textbook\|canonical' src/mcp/vice/fixtures/hazard-subject/FIXTURE-DESIGN.md` | ❌ W0 | ⬜ pending |
+| 48-06 T2 | 48-06 | 4 | BUILD-04 (crit. 1) | T-48-13, T-48-14 | Assembler reached only through the host-tool seam; no host path in emitted source | integration (real ACME) | `cd /home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice && VICE_REQUIRE_ACME=1 node --test hazard-subject-reassembly.test.ts` | ❌ W0 | ⬜ pending |
+| 48-06 T3 | 48-06 | 4 | BUILD-04 (crit. 1) | T-48-15 | On-screen behaviour recorded against a stated prediction | manual (human-check) | see Manual-Only Verifications below | ❌ W0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -64,7 +74,10 @@ criterion to the automated command that proves it.*
 - [ ] `src/mcp/vice/anno-hazard-report.test.ts` — structural no-write test, per-class fire/decline tests, three-fixture cross-check
 - [ ] `src/mcp/vice/fixtures/hazard-subject/` — committed ACME source, assembled `.prg`, and `.annostore.json` export
 - [ ] The fixture design document criterion 1 requires — per-class variant choice and why it is not the textbook idiom
-- [ ] Registration sites for the report's own verb: `anno-tools.ts`, `anno-cli.ts`, `anno-register.ts`, plus skill-doc routing (precedent: Phase 46's `anno_exclude_range`/`anno_include_range`)
+- [ ] `src/mcp/vice/hazard-subject-fixture.test.ts` — the subject's own byte-level assertions and the regenerator-agreement byte-compare (plans 48-02, 48-04)
+- [ ] `src/mcp/vice/hazard-subject-reassembly.test.ts` — the multi-file export plus real-assembler round trip on the subject (plan 48-06)
+- [ ] `src/mcp/vice/fixtures/hazard-subject/CROSS-CHECK.md` — the committed cross-check record (plan 48-05)
+- [ ] Registration sites for the report's own verb. **Planner decision D48-D, recorded 2026-09-12: FOUR sites, including a CLI entry.** The three-site precedent measured here (`anno_exclude_range`/`anno_include_range`, zero `anno-cli.ts` entries) is the wrong analog — that pair is session state, and its own registry rationale says so. The right analog is `anno_evid_disagreements` / `evid-disagreements`, the one existing read-only computed query over already-fetched store data, which DOES carry a CLI verb because a CLI route runs the query against a real store. So: `anno-tools.ts` (definition, argument assertion, assertion-dispatch entry, verb-name list, dispatch arm), `anno-register.ts` (registry entry citing two real consumers and `BUILD-04`), `anno-cli.ts` (verb, closed option set, usage text, printer, command function), and the skill-doc routing entry — plus the two coupled sites a CLI verb drags with it: `ANNO_CLI_VERB_FLOOR` (5 → 6) in `scripts/lib/anno-cli-verbs.mjs` and `REAL_VERBS` in `anno-verb-coverage.test.ts`, which must move in the same commit or the deep-equal assertion reds.
 - Framework install: none — `node --test` is already wired
 
 ---

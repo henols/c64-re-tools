@@ -1142,7 +1142,15 @@ imported, not re-derived
   4. Every finding carries its **detection mechanism and a confidence**, and the third outcome `unclassified` is both reachable and reached: a region the detectors cannot decide is reported as undecided, never as clean. A boolean clean/dirty report shape is refused by test — a miss that reads as a guarantee is worse here than no detector.
   5. The detectors are cross-checked against the **independently-sourced** committed fixtures (`tracer.prg`, `bank.prg`, `smc.prg`), each result recorded as detected / missed / false-positive — so a detector that has only ever seen its own fixture is visible as such. `anno_evid_exec` is used only to **strengthen** a flag already raised by static evidence, never to suppress one; treating never-observed as evidence of safety is refused.
 
-**Plans**: TBD
+**Plans**: 6 plans
+
+Plans:
+- [ ] 48-01-PLAN.md — Tracer: one planted self-modification found from bytes alone, end to end — subject seed, pure read-only report module, MCP verb, CLI verb, registry entry
+- [ ] 48-02-PLAN.md — Subject expansion A: the non-canonical indexed jump table and the shape the scanner must decline; the VIC-II alignment dependency, the four data tables, and the deliberately mis-aligned twin
+- [ ] 48-03-PLAN.md — Detectors: class 1 imported at an exact-pinned call-site count, class 3 reusing the existing VIC-II derivation, class 4 as structural signature only, plus the undecided third outcome reached and a boolean verdict shape refused
+- [ ] 48-04-PLAN.md — Subject expansion B: the timer-stabilised raster split, the self-modification the detector cannot see, and the committed store export describing every byte
+- [ ] 48-05-PLAN.md — Cross-check against four independently-sourced fixtures, the strengthen-never-suppress proof, and the committed record naming the two classes with no independent positive example
+- [ ] 48-06-PLAN.md — The fixture design document, and the subject through the multi-file export and a real-assembler reassembly byte-diff
 
 **Research flag**: this phase needs a research pass at planning time. There is
 essentially **no reusable prior art** — 6502bench SourceGen tags the RTS trick
