@@ -37,3 +37,75 @@ smc_patch_target = *
         sta smc_patch_target      ; arm: plant the rts opcode over the host
                                    ; instruction's own opcode byte
         jmp hazard_smc_entry
+
+; --- SECOND, DELIBERATELY UNDETECTED SELF-MODIFICATION ----------------------
+;
+; WHY THIS CONSTRUCTION IS DELIBERATELY BEYOND WHAT A STATIC OPERAND MATCH
+; CAN SEE
+; ---------------------------------------------------------------------------
+; The construction above plants a self-modification a detector reading
+; decoded bytes CAN find: the store's target is a literal address encoded
+; directly in the instruction. This construction plants the opposite case on
+; purpose. The pointer used below is built entirely at runtime, by adding a
+; fixed, unrelated bias to a value derived from this file's own labels, and
+; the resulting store reaches its target through INDIRECT-INDEXED
+; addressing -- the one addressing mode a detector that only inspects literal
+; store operands has no address to read at all, because the byte pair that
+; actually reaches the target lives in zero page, computed, never spelled out
+; as this store instruction's own operand. A report reading this program will
+; therefore show a self-modification it did not find. That is recorded here
+; as a KNOWN LIMIT rather than left as a silent absence, because a limit a
+; reader knows about is worth more than a detector that pretends the case
+; does not exist.
+
+; Zero-page pointer this construction builds at runtime. Distinct from the
+; raster construction's own zero-page flag in the neighbouring file.
+smc2_ptr_lo = $fc
+smc2_ptr_hi = $fd
+
+; The bias every runtime computation below adds back. Neither immediate
+; operand that follows is the target address or a byte of it: each one is
+; the corresponding byte of (the real target address MINUS this bias),
+; computed by the assembler from this file's own label, and the real address
+; is only ever recovered by adding the bias back at runtime. No instruction
+; in this file's assembled bytes ever carries the real target address as an
+; operand.
+SMC2_BIAS = $0020
+
+; The host instruction: the byte that decides what gets written to the
+; border-colour register. `smc2_operand_addr` names the address of its own
+; IMMEDIATE OPERAND byte -- one past its opcode -- without ever appearing as
+; a literal operand anywhere in this file; every reference to it below goes
+; through the biased runtime computation instead.
+smc2_operand_addr = * + 1
+hazard_smc2_write
+        lda #$04
+        sta $d020
+        rts
+
+hazard_smc2_entry
+        ; First pass: the host instruction still carries its original
+        ; operand.
+        jsr hazard_smc2_write
+
+        ; Build the zero-page pointer. Each immediate below is (the real
+        ; operand address MINUS SMC2_BIAS), split into its low and high
+        ; byte -- neither one is the operand's real address.
+        lda #<(smc2_operand_addr - SMC2_BIAS)
+        clc
+        adc #<SMC2_BIAS
+        sta smc2_ptr_lo
+        lda #>(smc2_operand_addr - SMC2_BIAS)
+        adc #>SMC2_BIAS
+        sta smc2_ptr_hi
+
+        ; The indirect-indexed store: the pointer built above, never a
+        ; literal address, names where this byte lands.
+        ldy #0
+        lda #$05
+        sta (smc2_ptr_lo),y
+
+        ; Second pass: the SAME instruction now writes the patched value --
+        ; the self-modification actually took effect.
+        jsr hazard_smc2_write
+        rts

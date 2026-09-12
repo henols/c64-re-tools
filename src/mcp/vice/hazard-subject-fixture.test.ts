@@ -40,6 +40,7 @@ import { fileURLToPath } from "node:url";
 import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
 import { decode, type Instruction } from "./disasm-decoder.ts";
 import { scanIndirectDispatch } from "./anno-coverage.ts";
+import { buildHazardReport } from "./anno-hazard-report.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURE_DIR = join(HERE, "fixtures", "hazard-subject");
@@ -396,6 +397,78 @@ test("hazard subject: no planning-vocabulary string appears anywhere in the rast
   assert.ok(!/\bD-\d/.test(rasterSource), "must not carry a bare D-NN decision id");
   assert.ok(!/\bBUILD-\d/.test(rasterSource), "must not carry a BUILD-NN requirement id");
   assert.ok(!/\bPhase\s+\d/.test(rasterSource), "must not carry a 'Phase N' citation");
+});
+
+// ---------------------------------------------------------------------------
+// hazard subject: class 2's second, deliberately undetected self-modification
+// -- the indirect-indexed store the class-2 detector misses by construction.
+// ---------------------------------------------------------------------------
+
+test("hazard subject: the second self-modification's indirect-indexed store lands inside another decoded instruction's byte range, and no instruction in the image carries that target address as a literal operand", { skip: SKIP_REASON }, () => {
+  const { bytes, symbols } = assembleFreshWithSymbols(ROOT_SOURCE_NAME);
+  const origin = bytes[0]! | (bytes[1]! << 8);
+  const payload = bytes.subarray(2);
+  const instructions = decode(payload, origin);
+
+  const ptrLo = symbols.get("smc2_ptr_lo")!;
+  const target = symbols.get("smc2_operand_addr")!;
+  assert.ok(ptrLo !== undefined, "smc2_ptr_lo must be a real symbol in the assembled image");
+  assert.ok(target !== undefined, "smc2_operand_addr must be a real symbol in the assembled image");
+
+  const indirectStore = instructions.find(
+    (instr) => instr.mnemonic === "sta" && instr.mode === "indirect_y" && instr.operand?.value === ptrLo,
+  );
+  assert.ok(indirectStore, "the image must contain an sta (zp),y store through smc2_ptr_lo");
+
+  const host = instructions.find((instr) => target > instr.address && target < instr.address + instr.bytes.length);
+  assert.ok(host, "the target address must land strictly inside another decoded instruction's byte range");
+  assert.notEqual(host, indirectStore, "the host instruction must be a DIFFERENT instruction from the indirect store itself");
+
+  // "carries the target address as a literal operand" is checked against
+  // ABSOLUTE/ZEROPAGE-mode operands only -- the modes a static detector
+  // reads as a resolved address. A lone immediate BYTE coincidentally
+  // matching one half of the target is expected noise (this image's own
+  // BASIC loader stub, decoded as if it were instructions, produces exactly
+  // that kind of coincidence) and is not what this claim is about: no
+  // instruction anywhere resolves to this address as ITS OWN operand.
+  for (const instr of instructions) {
+    if (instr === indirectStore) continue; // its own operand is the ZP POINTER address, not the target
+    if (!instr.operand) continue;
+    if (instr.operand.role === "absolute" || instr.operand.role === "zeropage") {
+      assert.notEqual(instr.operand.value, target, `instruction at $${instr.address.toString(16)} must not carry the second self-modification's target as a literal operand`);
+    }
+  }
+});
+
+test("hazard subject: the report over the subject image finds the first self-modification, records the second as a limit, never as a finding, and every hazard class uses a distinct mechanism id", { skip: SKIP_REASON }, () => {
+  const { bytes, symbols } = assembleFreshWithSymbols(ROOT_SOURCE_NAME);
+  const origin = bytes[0]! | (bytes[1]! << 8);
+  const payload = bytes.subarray(2);
+
+  const report = buildHazardReport({ bytes: payload, origin });
+
+  const smcFindings = report.findings.filter((f) => f.hazardClass === "self-modifying-code");
+  assert.equal(smcFindings.length, 1, "exactly one class-2 finding must be reported for the whole subject -- the opcode-byte patch, and only it");
+  assert.equal(smcFindings[0]!.mechanism, "store-target-in-instruction-opcode-byte", "the one reported class-2 finding must be the first construction's opcode-byte patch");
+
+  const target = symbols.get("smc2_operand_addr")!;
+  const anchoredAtIndirectTarget = report.findings.some((f) => f.hazardClass === "self-modifying-code" && (f.anchorAddress === target || f.blockedAddress === target));
+  assert.equal(
+    anchoredAtIndirectTarget,
+    false,
+    "the report must contain NO class-2 finding anchored at the indirect store's target -- if this assertion ever fails because the detector improved, revisit HAZARD_LIMITS's own indirect-indexed entry and this fixture's header together; do NOT delete this assertion",
+  );
+
+  const missNamed = report.limits.some(
+    (l) => l.hazardClass === "self-modifying-code" && /runtime-computed/.test(l.limit) && /indirect/.test(l.limit),
+  );
+  assert.ok(missNamed, "the report's own emitted limits must contain the entry naming a store through a runtime-computed pointer as undetected");
+
+  const mechanismIds = new Set<string>();
+  for (const finding of report.findings) {
+    assert.ok(!mechanismIds.has(finding.mechanism), `mechanism id ${JSON.stringify(finding.mechanism)} is shared by more than one finding over the subject -- the four planted classes must use four distinct mechanisms`);
+    mechanismIds.add(finding.mechanism);
+  }
 });
 
 // ---------------------------------------------------------------------------
