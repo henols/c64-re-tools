@@ -44,10 +44,12 @@ const OWN_MODULE = HERE.replace(/text-capability-probe\.test\.ts$/, "text-capabi
 /** Splits a fixture sidecar's `capturedFrom` (e.g. "stock:/usr/bin/x64sc")
  * into a resolved TextCapabilityIdentity -- so the test's notion of which
  * binary answered comes from the real capture's own provenance, never a
- * hand-typed literal. */
+ * hand-typed literal. Every fixture this file loads is a stock capture
+ * (FORKRM-05, plan 52-07); narrowed to that one literal rather than left
+ * as a stub union no caller here ever exercises the other half of. */
 function identityFromCapturedFrom(capturedFrom: string): TextCapabilityIdentity {
   const idx = capturedFrom.indexOf(":");
-  const backend = capturedFrom.slice(0, idx) as "stock" | "fork";
+  const backend = capturedFrom.slice(0, idx) as "stock";
   const binPath = capturedFrom.slice(idx + 1);
   return { backend, binPath, resolved: true };
 }
@@ -212,16 +214,16 @@ test("probeTextCapability: an unkeyable (unresolved) identity is NOT cached -- t
   assert.equal(count(), 2);
 });
 
-test("probeTextCapability: a definite identity disagreement is NOT cached and names both observed identities -- two dials across two probes", async () => {
+test("probeTextCapability: a definite identity disagreement (differing binary path) is NOT cached and names both observed identities -- two dials across two probes", async () => {
   resetTextCapabilityCache();
   const { dial, count } = makeCountingDial("addr: IO  ROM RAM\n0000: --- --- rw-\n");
-  const brokerIdentity = { backend: "fork" as const, binPath: "/usr/local/bin/x64sc" };
+  const brokerIdentity = { backend: "stock" as const, binPath: "/usr/local/bin/x64sc" };
   const first = await probeTextCapability({ command: "memmapshow", identity: STOCK_IDENTITY, brokerIdentity, dial });
   const second = await probeTextCapability({ command: "memmapshow", identity: STOCK_IDENTITY, brokerIdentity, dial });
   assert.equal(count(), 2);
   assert.ok(first.identityDisagreement, "expected an identityDisagreement string");
   assert.match(first.identityDisagreement!, /stock:\/usr\/bin\/x64sc/);
-  assert.match(first.identityDisagreement!, /fork:\/usr\/local\/bin\/x64sc/);
+  assert.match(first.identityDisagreement!, /stock:\/usr\/local\/bin\/x64sc/);
   assert.equal(second.identityDisagreement !== undefined, true);
 });
 
@@ -324,7 +326,7 @@ test("textCapabilityVerdictFor: returns fromCache: false and never touches the c
 });
 
 test("textCapabilityVerdictFor: populates identityDisagreement on a definite mismatch, and omits the field entirely when identities agree", () => {
-  const disagreeing: TextCapabilityBrokerIdentity = { backend: "fork", binPath: "/usr/local/bin/x64sc" };
+  const disagreeing: TextCapabilityBrokerIdentity = { backend: "stock", binPath: "/usr/local/bin/x64sc" };
   const agreeing: TextCapabilityBrokerIdentity = { backend: "stock", binPath: "/usr/bin/x64sc" };
   const withDisagreement = textCapabilityVerdictFor({
     command: "io",
@@ -620,13 +622,15 @@ test("textCapabilityIdentityWarning: a differing binary path renders non-empty, 
   assert.match(message, /stock:\/usr\/local\/bin\/x64sc/);
 });
 
-test("textCapabilityIdentityWarning: a differing backend renders non-empty, naming both observed identities", () => {
-  const brokerIdentity: TextCapabilityBrokerIdentity = { backend: "fork", binPath: "/usr/bin/x64sc" };
-  const message = textCapabilityIdentityWarning(STOCK_IDENTITY, brokerIdentity);
-  assert.notEqual(message, "");
-  assert.match(message, /stock:\/usr\/bin\/x64sc/);
-  assert.match(message, /fork:\/usr\/bin\/x64sc/);
-});
+// FORKRM-05 (plan 52-07): the sibling test that used to sit here -- a
+// differing BACKEND value (as opposed to a differing binary path) renders
+// non-empty -- is deleted whole. Its entire subject was constructing a
+// TextCapabilityBrokerIdentity whose backend named the retired second
+// backend; the real source of a broker identity (vice-broker-client.ts's
+// hostState.backend) is typed ViceBackend | null since plan 52-06, so no
+// real caller can ever produce that value again. The differing-binary-path
+// test above already proves the disagreement renderer fires on a definite
+// mismatch.
 
 // WR-01's own stated test: a capable verdict carrying identityDisagreement
 // must produce a non-empty user-facing message from at least one handler.
@@ -634,7 +638,7 @@ test("textCapabilityIdentityWarning: a differing backend renders non-empty, nami
 // verdict was built from -- the renderer is what every handler calls.
 test("textCapabilityIdentityWarning (WR-01): a capable verdict alongside a disagreeing broker identity renders a non-empty message", async () => {
   resetTextCapabilityCache();
-  const brokerIdentity: TextCapabilityBrokerIdentity = { backend: "fork", binPath: "/usr/local/bin/x64sc" };
+  const brokerIdentity: TextCapabilityBrokerIdentity = { backend: "stock", binPath: "/usr/local/bin/x64sc" };
   const { dial } = makeCountingDial("some real backtrace output");
   const verdict = await probeTextCapability({ command: "bt", identity: STOCK_IDENTITY, brokerIdentity, dial });
   assert.equal(verdict.outcome, "capable");

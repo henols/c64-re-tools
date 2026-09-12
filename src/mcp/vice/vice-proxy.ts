@@ -557,7 +557,7 @@ const DIAGNOSE_TOOL: ToolDefinition = {
 // untouched: a missing or unreadable stock manifest still answers tools/list
 // with an empty array rather than crashing the server.
 function manifestPath(): string {
-  return stockDispatch.manifestPathForBackend("stock", HERE_DIR, process.env.VICE_TOOLS_MANIFEST);
+  return stockDispatch.manifestPathForBackend(HERE_DIR, process.env.VICE_TOOLS_MANIFEST);
 }
 
 function readManifestTools(): ToolInfo[] {
@@ -1576,10 +1576,10 @@ tools[RESULT_CONTINUE_TOOL.name] = buildViceTool(RESULT_CONTINUE_TOOL, (args) =>
 // WR-07 (plan 07-16): resolveAdvertisedToolDefinition() picks the corrected
 // stock manifest entry when one exists, falling back to the synthetic
 // RECYCLE_TOOL/DIAGNOSE_TOOL definition otherwise, so the advertised
-// tools/list entry stays correct regardless of which manifest currently
-// ships one.
-tools[RECYCLE_TOOL.name] = buildViceTool(stockDispatch.resolveAdvertisedToolDefinition(RECYCLE_TOOL, "stock", manifestTools), (args) => handleRecycle(args));
-tools[DIAGNOSE_TOOL.name] = buildViceTool(stockDispatch.resolveAdvertisedToolDefinition(DIAGNOSE_TOOL, "stock", manifestTools), (args) => handleDiagnose(args));
+// tools/list entry stays correct even if the manifest is ever missing or
+// malformed.
+tools[RECYCLE_TOOL.name] = buildViceTool(stockDispatch.resolveAdvertisedToolDefinition(RECYCLE_TOOL, manifestTools), (args) => handleRecycle(args));
+tools[DIAGNOSE_TOOL.name] = buildViceTool(stockDispatch.resolveAdvertisedToolDefinition(DIAGNOSE_TOOL, manifestTools), (args) => handleDiagnose(args));
 // Backend-INDEPENDENT by construction (plan 29-01): the anno_* family never
 // touches VICE at all -- it reaches a PROXY-LOCAL SQLite annotation store
 // this repo owns, opened and closed inside the runner itself, so there is no

@@ -28,7 +28,6 @@ import {
 } from "./stock-dispatch.ts";
 import type { DerivedPureHandler } from "./stock-derived.ts";
 import { encodeResponseFrame } from "./binmon-fixtures.ts";
-import { capabilityRefusalMessage } from "./capability-registry.ts";
 import { MachineRestartedError, type ToolInfo } from "./vice-errors.ts";
 import { MonitorOwnershipError } from "./vice-broker-client.ts";
 import type { HeldLease, BrokerControlSession } from "./vice-broker-client.ts";
@@ -110,15 +109,15 @@ const STOCK_ONLY_TOOLS = new Set([
 
 // Phase 7, plan 07-09: a THIRD named category, distinct from STOCK_ONLY_TOOLS
 // above. vice_diagnose/vice_recycle are served proxy-locally (RECYCLE_TOOL/
-// DIAGNOSE_TOOL in vice-proxy.ts) on BOTH backends -- buildBackendAwareTool()
-// routes them to dispatchStock() on stock and to their own fork handlers on
-// the fork, but neither is ever in tools-manifest.json, which is regenerated
-// from the host fork server's own tools/list and has no way to know about a
-// tool the PROXY itself serves. They are therefore neither "has a fork
-// manifest counterpart" (STOCK_ONLY_TOOLS's own test would wrongly demand
-// one) NOR genuinely stock-only (the fork backend serves them too, just not
-// via its manifest) -- a distinct category is the only correct label. The
-// D-03 name-coverage test below skips PROXY_LOCAL_TOOLS members in its
+// DIAGNOSE_TOOL in vice-proxy.ts): registered via buildViceTool() OUTSIDE the
+// generic manifest loop, through resolveAdvertisedToolDefinition() (which
+// picks up the stock manifest's own corrected entry when one exists, WR-07),
+// and routed to dispatchStock() rather than the ordinary per-manifest-entry
+// handler wiring. They ARE present in tools-manifest.stock.json -- the
+// distinct category is about REGISTRATION PATH, not manifest membership: a
+// name here is never mislabelled "stock-only" the way STOCK_ONLY_TOOLS's
+// members are, because that label describes tools with no synthetic
+// registration at all. The D-03 name-coverage test below skips PROXY_LOCAL_TOOLS members in its
 // fork-counterpart branch and asserts each is present in the stock manifest,
 // absent from the fork manifest, and NOT a member of STOCK_ONLY_TOOLS (never
 // mislabelled stock-only).
@@ -126,22 +125,12 @@ const PROXY_LOCAL_TOOLS = new Set(["vice_diagnose", "vice_recycle"]);
 
 // --------------------------------------------------------- manifestPathForBackend
 
-test("manifest/backend: fork with no override resolves to <hereDir>/tools-manifest.json", () => {
-  assert.equal(manifestPathForBackend("fork", HERE, undefined), join(HERE, "tools-manifest.json"));
+test("manifest/backend: with no override resolves to <hereDir>/tools-manifest.stock.json", () => {
+  assert.equal(manifestPathForBackend(HERE, undefined), join(HERE, "tools-manifest.stock.json"));
 });
 
-test("manifest/backend: stock with no override resolves to <hereDir>/tools-manifest.stock.json", () => {
-  assert.equal(manifestPathForBackend("stock", HERE, undefined), join(HERE, "tools-manifest.stock.json"));
-});
-
-test("manifest/backend: VICE_TOOLS_MANIFEST override wins for the fork backend, resolved", () => {
-  assert.equal(manifestPathForBackend("fork", HERE, "/tmp/custom.json"), join("/tmp/custom.json"));
-});
-
-test("manifest/backend: VICE_TOOLS_MANIFEST override wins for the stock backend too -- same override, same resolved path", () => {
-  const forkOverride = manifestPathForBackend("fork", HERE, "/tmp/custom.json");
-  const stockOverride = manifestPathForBackend("stock", HERE, "/tmp/custom.json");
-  assert.equal(stockOverride, forkOverride);
+test("manifest/backend: VICE_TOOLS_MANIFEST override wins, resolved", () => {
+  assert.equal(manifestPathForBackend(HERE, "/tmp/custom.json"), join("/tmp/custom.json"));
 });
 
 // --------------------------------------------------------- tools-manifest.stock.json shape
@@ -203,8 +192,8 @@ test("manifest/backend (D-03 name coverage): every STOCK_ONLY_TOOLS and PROXY_LO
 // corrected entries with the fork's literal (stale_read_path-bearing) text
 // on EVERY backend, so that source-level test passed while the advertised
 // schema was still wrong. These tests assert on the RESOLVED definition --
-// what resolveAdvertisedToolDefinition() actually hands to
-// buildBackendAwareTool() -- so a future re-introduction of an unconditional
+// what resolveAdvertisedToolDefinition() actually hands to buildViceTool()'s
+// registration call -- so a future re-introduction of an unconditional
 // overwrite fails here, not just at the source-text level.
 // ---------------------------------------------------------------------------
 
@@ -231,37 +220,29 @@ function stockManifestToolInfos(): ToolInfo[] {
   return readManifest(STOCK_MANIFEST_PATH).tools as unknown as ToolInfo[];
 }
 
-test("WR-07/resolveAdvertisedToolDefinition (stock, real manifest): vice_diagnose's resolved description drops stale_read_path and names monitor_held_elsewhere", () => {
-  const resolved = resolveAdvertisedToolDefinition(FORK_WORDED_DIAGNOSE_STANDIN, "stock", stockManifestToolInfos());
+test("WR-07/resolveAdvertisedToolDefinition (real manifest): vice_diagnose's resolved description drops stale_read_path and names monitor_held_elsewhere", () => {
+  const resolved = resolveAdvertisedToolDefinition(FORK_WORDED_DIAGNOSE_STANDIN, stockManifestToolInfos());
   const description = String(resolved.description ?? "");
   assert.ok(!description.includes("stale_read_path"), `resolved vice_diagnose description must not mention stale_read_path: ${description}`);
   assert.ok(description.includes("monitor_held_elsewhere"), `resolved vice_diagnose description must mention monitor_held_elsewhere: ${description}`);
 });
 
-test("WR-07/resolveAdvertisedToolDefinition (stock, real manifest): vice_diagnose's resolved outputSchema.verdict.enum is exactly D-03's five values, in order", () => {
-  const resolved = resolveAdvertisedToolDefinition(FORK_WORDED_DIAGNOSE_STANDIN, "stock", stockManifestToolInfos());
+test("WR-07/resolveAdvertisedToolDefinition (real manifest): vice_diagnose's resolved outputSchema.verdict.enum is exactly D-03's five values, in order", () => {
+  const resolved = resolveAdvertisedToolDefinition(FORK_WORDED_DIAGNOSE_STANDIN, stockManifestToolInfos());
   const outputSchema = resolved.outputSchema as { properties?: { verdict?: { enum?: unknown[] } } } | undefined;
   const verdictEnum = outputSchema?.properties?.verdict?.enum;
   assert.deepEqual(verdictEnum, ["restarted", "checkpoint_trap", "wedged", "monitor_held_elsewhere", "live"]);
 });
 
-test("WR-07/resolveAdvertisedToolDefinition (stock, real manifest): vice_recycle's resolved description states the stock incident record carries no screenshot (D-01)", () => {
-  const resolved = resolveAdvertisedToolDefinition(FORK_WORDED_RECYCLE_STANDIN, "stock", stockManifestToolInfos());
+test("WR-07/resolveAdvertisedToolDefinition (real manifest): vice_recycle's resolved description states the stock incident record carries no screenshot (D-01)", () => {
+  const resolved = resolveAdvertisedToolDefinition(FORK_WORDED_RECYCLE_STANDIN, stockManifestToolInfos());
   const description = String(resolved.description ?? "");
   assert.ok(/no screenshot/i.test(description), `resolved vice_recycle description must state no screenshot is captured on stock: ${description}`);
 });
 
-test("WR-07/resolveAdvertisedToolDefinition (fork): both names resolve to the synthetic stand-in, byte-identical -- the fork's advertised surface is untouched", () => {
-  const manifestTools = stockManifestToolInfos();
-  const resolvedDiagnose = resolveAdvertisedToolDefinition(FORK_WORDED_DIAGNOSE_STANDIN, "fork", manifestTools);
-  const resolvedRecycle = resolveAdvertisedToolDefinition(FORK_WORDED_RECYCLE_STANDIN, "fork", manifestTools);
-  assert.equal(resolvedDiagnose, FORK_WORDED_DIAGNOSE_STANDIN, "the fork backend must return the exact synthetic reference, never a manifest substitute");
-  assert.equal(resolvedRecycle, FORK_WORDED_RECYCLE_STANDIN, "the fork backend must return the exact synthetic reference, never a manifest substitute");
-});
-
-test("WR-07/resolveAdvertisedToolDefinition (stock, empty/malformed manifest): both names fall back to the synthetic stand-in rather than advertising nothing", () => {
-  const resolvedDiagnose = resolveAdvertisedToolDefinition(FORK_WORDED_DIAGNOSE_STANDIN, "stock", []);
-  const resolvedRecycle = resolveAdvertisedToolDefinition(FORK_WORDED_RECYCLE_STANDIN, "stock", []);
+test("WR-07/resolveAdvertisedToolDefinition (empty/malformed manifest): both names fall back to the synthetic stand-in rather than advertising nothing", () => {
+  const resolvedDiagnose = resolveAdvertisedToolDefinition(FORK_WORDED_DIAGNOSE_STANDIN, []);
+  const resolvedRecycle = resolveAdvertisedToolDefinition(FORK_WORDED_RECYCLE_STANDIN, []);
   assert.equal(resolvedDiagnose, FORK_WORDED_DIAGNOSE_STANDIN, "an empty manifest array (readManifestTools()'s own malformed-manifest fallback) must still yield a working tool");
   assert.equal(resolvedRecycle, FORK_WORDED_RECYCLE_STANDIN, "an empty manifest array (readManifestTools()'s own malformed-manifest fallback) must still yield a working tool");
 });
@@ -277,7 +258,7 @@ test("WR-07/resolveAdvertisedToolDefinition (guard): every PROXY_LOCAL_TOOLS nam
     assert.ok(manifestEntry, `the stock manifest must carry an entry named "${name}"`);
     const synthetic = standins[name];
     assert.ok(synthetic, `this guard needs a synthetic stand-in for "${name}"`);
-    const resolved = resolveAdvertisedToolDefinition(synthetic!, "stock", manifestTools);
+    const resolved = resolveAdvertisedToolDefinition(synthetic!, manifestTools);
     assert.equal(resolved, manifestEntry, `"${name}" must resolve to the stock manifest's OWN entry, not the synthetic stand-in -- a future unconditional overwrite would fail here`);
   }
 });
@@ -1189,18 +1170,19 @@ const DELIBERATELY_ABSENT_TOOL_NAMES = [
   "vice_machine_config_set",
 ];
 
-/** WR-13: derives the expected dispatchStock() miss-branch text from
- * capability-registry.ts's own renderer -- the same fallback dispatchStock()
- * itself uses -- rather than re-typing a wording literal, so this test
- * cannot drift from the source it is meant to verify. `vice_snapshot_list`
- * (absent from BOTH manifests, not just stock) is the one name in
- * DELIBERATELY_ABSENT_TOOL_NAMES with no registry entry, and is the only
- * one this file expects to hit the internal-inconsistency fallback. */
+/** FORKRM-05 (plan 52-07): dispatchStock()'s miss branch used to fall back
+ * to a per-backend capability registry's renderer first, naming the tool's
+ * category (hardware/descoped/stock-only-gain) and the other backend that
+ * provided it. That renderer, and the registry behind it, are both deleted -- every
+ * name in DELIBERATELY_ABSENT_TOOL_NAMES now gets the SAME internal-
+ * inconsistency wording, whether it is a permanent hardware loss
+ * (vice_sid_get_state), a descoped-but-buildable tool, or a name absent
+ * from the manifest entirely (vice_snapshot_list). This helper is kept only
+ * so the literal lives once. */
 function expectedStockMissMessage(name: string): string {
   return (
-    capabilityRefusalMessage(name, "stock") ??
     `${name} is advertised on the stock backend's manifest but has no handler in the stock ` +
-      `dispatch table -- this is an internal inconsistency, not a capability gap; please file an issue.`
+    `dispatch table -- this is an internal inconsistency, not a capability gap; please file an issue.`
   );
 }
 
@@ -1232,7 +1214,7 @@ test("dispatch: stockHandlerFor returns undefined for every deliberately-absent 
   }
 });
 
-test("dispatch: dispatchStock refuses every deliberately-absent tool with the exact message capabilityRefusalMessage() renders (WR-13), without reading deps", async () => {
+test("dispatch: dispatchStock refuses every deliberately-absent tool with the internal-inconsistency message (WR-13/FORKRM-05), without reading deps", async () => {
   for (const name of DELIBERATELY_ABSENT_TOOL_NAMES) {
     const deps = {
       ensureLease: () => {
@@ -1245,13 +1227,12 @@ test("dispatch: dispatchStock refuses every deliberately-absent tool with the ex
     assert.match(text, new RegExp(name));
     assert.ok(
       text.includes(JSON.stringify(expectedStockMissMessage(name)).slice(1, -1)),
-      `expected the miss-branch text for ${name} to equal capabilityRefusalMessage()'s rendering (or its ` +
-        `internal-inconsistency fallback), got: ${text}`,
+      `expected the miss-branch text for ${name} to equal the internal-inconsistency fallback, got: ${text}`,
     );
   }
 });
 
-test("refus: dispatchStock on a fork-only hardware tool (vice_sid_get_state) refuses with capabilityRefusalMessage()'s exact text, never calls forwardToVice, and never touches deps (WR-13)", async () => {
+test("refus: dispatchStock on a former fork-only hardware tool (vice_sid_get_state) refuses with the same internal-inconsistency text as any other miss, never calls forwardToVice, and never touches deps (WR-13/FORKRM-05)", async () => {
   let depsTouched = false;
   const emptyDeps = new Proxy({} as StockDispatchDeps, {
     get(target, prop) {
@@ -1265,7 +1246,7 @@ test("refus: dispatchStock on a fork-only hardware tool (vice_sid_get_state) ref
   assert.match(text, /vice_sid_get_state/);
   assert.ok(
     text.includes(JSON.stringify(expectedStockMissMessage("vice_sid_get_state")).slice(1, -1)),
-    `expected dispatchStock()'s miss text to equal capabilityRefusalMessage("vice_sid_get_state", "stock"), got: ${text}`,
+    `expected dispatchStock()'s miss text for vice_sid_get_state to equal the internal-inconsistency fallback, got: ${text}`,
   );
   assert.equal(depsTouched, false, "a miss must never read any field off deps");
 });
@@ -1637,12 +1618,17 @@ test("structure/proxy (plan 29-01): every curated anno_* name is absent from too
 });
 
 test("structure/proxy (CR-07): handleRecycle() and handleDiagnose() each delegate to dispatchStockFor(), with no per-backend branch left to route around", () => {
+  // FORKRM-05 (plan 52-07): this used to also assert the handler body never
+  // contained a literal per-backend comparison naming the retired backend --
+  // that assertion is gone along with the backend value it named. ViceBackend
+  // has exactly one literal now (backend-detect.mts, FORKRM-01), so no
+  // handler body can branch on a second value that no longer exists; the
+  // delegation check below is what remains meaningful.
   for (const handlerName of ["handleRecycle", "handleDiagnose"]) {
     const declStart = VICE_PROXY_SOURCE.indexOf(`function ${handlerName}(args`);
     assert.ok(declStart > 0, `${handlerName}() must still be declared in vice-proxy.ts`);
     const body = VICE_PROXY_SOURCE.slice(declStart, VICE_PROXY_SOURCE.indexOf("\n}", declStart));
     assert.match(body, /dispatchStockFor\(/, `${handlerName}() must delegate to dispatchStockFor() -- the one shared helper that reaches dispatchStock()`);
-    assert.doesNotMatch(body, /ACTIVE_BACKEND\.backend === "fork"/, `${handlerName}() must carry no per-backend branch of its own -- the per-backend registration seam is deleted, not moved inside the handler`);
   }
 });
 
@@ -3239,41 +3225,42 @@ test("CHAN-04: a second concurrent dispatch of a session-taking tool with a 1ms 
 });
 
 // ---------------------------------------------------------------------------
-// WR-13 single-source invariant: no shipped module outside
-// capability-registry.ts may carry a competing capability-refusal wording.
+// WR-13 single-source invariant, RETAINED AS A STANDING REGRESSION GUARD
+// after FORKRM-05 (plan 52-07) deleted the per-backend capability registry
+// that used to be this invariant's one exempted authoritative source.
 //
 // DISCOVERY, not enumeration: the scanned module set is derived from
 // package.json's files[] array -- the SHIPPED production .ts/.mts set --
 // via the shared shippedTsModules() helper in shipped-modules.ts, rather
 // than a hand-typed file list that could silently omit a future offender.
 //
-// capability-registry.ts:335-346 documents the ONE authoritative refusal
-// contract (BACK-05): a hardware loss gets NO "wait for a later phase"
-// framing (none is coming), and the providing backend is read from
-// entry.providedBy, never hardcoded. WR-13 found stock-dispatch.ts's OLD
-// miss branch violating both: it hardcoded "the fork backend provides this
-// tool" (false for a stock-only-gain name) and used exactly the forbidden
-// "wait for a later phase" framing. This test pins that fix as a standing
-// invariant across every shipped module, not just the one file this plan
-// touched.
+// WR-13 originally found stock-dispatch.ts's OLD miss branch hardcoding "the
+// fork backend provides this tool" (false for a stock-only-gain name). With
+// the registry gone there is no longer any authoritative source to exempt --
+// NO shipped module may carry that wording now, full stop; it describes a
+// two-backend concept this tree no longer has.
+//
+// The sibling invariant that used to sit here -- pairing a "wait for a later
+// phase" framing with an environment-variable backend-selection instruction
+// -- is deleted rather than kept as a permanently vacuous check: that
+// environment variable was removed from every shipped module in plan 52-06
+// (FORKRM-01), so nothing in the scanned population could ever carry it
+// again, and a check that can never fire is not a regression guard.
 
 /** Strips comment lines (a line whose first non-whitespace characters open a
- * `//`, `/*`, or `*` continuation line) before scanning -- capability-registry
- * .ts's OWN doc comment quotes both forbidden shapes as prose describing what
- * NOT to do (335-346), and this file's own comments quote WR-13's fixed
- * wording; neither is a live occurrence. Line-oriented, not the fuller
- * codeOnly() string-literal stripper in shipped-modules.ts -- no
- * shipped module's non-comment code has any legitimate reason to hold either
- * forbidden phrase inside a string literal either, so the simpler filter is
- * sufficient here. */
+ * `//`, `/*`, or `*` continuation line) before scanning -- this file's own
+ * comments above quote WR-13's fixed wording, and that is not a live
+ * occurrence. Line-oriented, not the fuller codeOnly() string-literal
+ * stripper in shipped-modules.ts -- no shipped module's non-comment code has
+ * any legitimate reason to hold the forbidden phrase inside a string
+ * literal either, so the simpler filter is sufficient here. */
 function nonCommentLines(src: string): string[] {
   return src.split("\n").filter((line) => !/^\s*(\/\/|\/\*|\*)/.test(line));
 }
 
-test("invariant (WR-13): no shipped module outside capability-registry.ts hardcodes a fork-provides refusal claim", () => {
+test("invariant (WR-13): no shipped module hardcodes a fork-provides refusal claim", () => {
   const offenders: string[] = [];
   for (const modulePath of shippedTsModules()) {
-    if (modulePath === "capability-registry.ts") continue; // the one authoritative source, see :335-346
     const lines = nonCommentLines(readFileSync(join(HERE, modulePath), "utf8"));
     for (const line of lines) {
       if (/\bbackend provides this tool\b/i.test(line)) {
@@ -3284,30 +3271,8 @@ test("invariant (WR-13): no shipped module outside capability-registry.ts hardco
   assert.deepEqual(
     offenders,
     [],
-    `capability-registry.ts:8-13/335-346 (WR-13) names it the ONE authoritative refusal source -- a second ` +
-      `hardcoded "<backend> provides this tool" claim is exactly the defect that survived a consolidation ` +
-      `unnoticed. Offending line(s): ${JSON.stringify(offenders)}`,
-  );
-});
-
-test("invariant (WR-13): no shipped module outside capability-registry.ts pairs future-phase framing with a VICE_BACKEND selection instruction", () => {
-  const offenders: string[] = [];
-  for (const modulePath of shippedTsModules()) {
-    if (modulePath === "capability-registry.ts") continue; // its own doc comment DESCRIBES the forbidden shape; :335-346 is prose, not a live instance
-    const lines = nonCommentLines(readFileSync(join(HERE, modulePath), "utf8"));
-    for (let i = 0; i < lines.length; i++) {
-      if (!/wait for a later phase/i.test(lines[i])) continue;
-      const window = lines.slice(i, i + 3).join(" ");
-      if (/VICE_BACKEND/.test(window)) {
-        offenders.push(`${modulePath}:~line ${i + 1}: ${lines[i].trim()}`);
-      }
-    }
-  }
-  assert.deepEqual(
-    offenders,
-    [],
-    `capability-registry.ts:335-346 (WR-13) forbids "wait for a later phase" framing for a hardware loss -- ` +
-      `none is coming. Paired with a VICE_BACKEND selection instruction it is exactly the wording WR-13 ` +
-      `removed from stock-dispatch.ts's miss branch. Offending line(s): ${JSON.stringify(offenders)}`,
+    `a hardcoded "<backend> provides this tool" claim describes a two-backend concept this tree no longer ` +
+      `has (FORKRM-05, plan 52-07) -- it is always wrong now, on every shipped module, with no exemption. ` +
+      `Offending line(s): ${JSON.stringify(offenders)}`,
   );
 });

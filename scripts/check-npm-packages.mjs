@@ -162,8 +162,8 @@ if (IS_ENTRY_POINT) {
 const vice = packFiles(join(ROOT, "src/mcp/vice"));
 need(vice.name === "@henols/vice-mcp", `vice-mcp: name is "${vice.name}", expected "@henols/vice-mcp"`);
 need(vice.files.includes("vice-proxy.ts"), "vice-mcp: missing vice-proxy.ts (bin entry)");
-need(vice.files.includes("tools-manifest.json"), "vice-mcp: missing tools-manifest.json");
-need(vice.files.includes("container-guard.mts"), "vice-mcp: missing container-guard.mts (imported by vice.ts)");
+need(vice.files.includes("tools-manifest.stock.json"), "vice-mcp: missing tools-manifest.stock.json");
+need(vice.files.includes("container-guard.mts"), "vice-mcp: missing container-guard.mts (imported by vice-errors.ts, stock-paths.ts, host-tool-client.ts)");
 need(vice.files.some((f) => f.startsWith("resources/")), "vice-mcp: missing resources/");
 // node_modules/, test-file, fixtures/ and test-corpus.mjs leak checks are
 // asserted structurally by assertLeanTarball() from inside packFiles() above.

@@ -89,33 +89,27 @@ export type { StockToolResult, StockOkResult, StockErrorResult };
 // manifestPathForBackend() -- the manifest selector.
 // ---------------------------------------------------------------------------
 
-/** FORKRM-01 (plan 52-06): deliberately NOT `backend-detect.mts`'s
- * `ViceBackend` -- that type now has exactly one member ("stock"), since it
- * answers "which backend did THIS PROCESS just detect/launch". This module's
- * manifest-selection and advertised-tool-definition logic below answers a
- * different, registry-shaped question this plan's own objective names
- * explicitly out of its scope (plan 52-07 owns it): which of the two
- * manifests/definitions that once both existed applies. Decoupling the two
- * types means collapsing detection does not force this module's own
- * fork/stock selection logic to be redesigned as a side effect. */
-type LegacyViceBackend = "fork" | "stock";
-
 /**
- * Resolves which manifest file backs a given backend's advertised tool
+ * Resolves the one manifest file backing the stock backend's advertised tool
  * surface, following the EXACT override precedence vice-proxy.ts's own
  * manifestPath() already establishes: an explicit VICE_TOOLS_MANIFEST value
  * (passed in as `envOverride`, never read from process.env directly here --
- * this function stays a pure, injectable seam) wins for either backend,
- * unchanged; otherwise the backend picks its own committed default file
- * beside `hereDir`. `envOverride` is deliberately a plain parameter, not a
- * process.env read, so this function has no hidden global dependency and a
- * test can drive every combination without mutating the real environment.
+ * this function stays a pure, injectable seam) wins, unchanged; otherwise the
+ * committed default file beside `hereDir` is used. `envOverride` is
+ * deliberately a plain parameter, not a process.env read, so this function
+ * has no hidden global dependency and a test can drive both cases without
+ * mutating the real environment.
+ *
+ * FORKRM-05 (plan 52-07): this used to take a `backend` parameter selecting
+ * between two committed manifest files -- there is one manifest now, so the
+ * parameter is gone rather than pinned to a literal no caller could ever
+ * vary.
  */
-export function manifestPathForBackend(backend: LegacyViceBackend, hereDir: string, envOverride: string | undefined): string {
+export function manifestPathForBackend(hereDir: string, envOverride: string | undefined): string {
   if (envOverride) {
     return resolve(envOverride);
   }
-  return backend === "stock" ? join(hereDir, "tools-manifest.stock.json") : join(hereDir, "tools-manifest.json");
+  return join(hereDir, "tools-manifest.stock.json");
 }
 
 /**
@@ -123,49 +117,38 @@ export function manifestPathForBackend(backend: LegacyViceBackend, hereDir: stri
  * is a name-keyed record: whichever assignment to a given key runs LAST
  * wins, and vice-proxy.ts's own registration order used to assign
  * RECYCLE_TOOL/DIAGNOSE_TOOL's literal (fork-worded) definitions
- * UNCONDITIONALLY, on both backends, straight after the backend-aware
- * manifest loop had already populated the same keys correctly. So on the
- * stock backend, `tools/list` served the fork's five-verdict vocabulary --
- * including `stale_read_path`, which stock cannot produce (D-03) -- and
- * omitted `monitor_held_elsewhere`, which stock can, even though the
- * corrected stock manifest entry sat right there in
+ * UNCONDITIONALLY, straight after the manifest loop had already populated
+ * the same keys correctly. `tools/list` served the fork's five-verdict
+ * vocabulary -- including `stale_read_path`, which stock cannot produce
+ * (D-03) -- and omitted `monitor_held_elsewhere`, which stock can, even
+ * though the corrected stock manifest entry sat right there in
  * tools-manifest.stock.json, unread. This function is the ONE place that
  * decision is now made, so the manifest loop's own per-tool selection and
  * the two synthetic tools' registration agree.
  *
- * Behaviour:
- *   - `backend === "fork"`: always returns `syntheticDef` unchanged, no
- *     matter what `manifestTools` contains. The fork's advertised surface
- *     is frozen at v0.1.x and this function must never be able to alter it.
- *   - `backend === "stock"`: returns the `manifestTools` entry whose `name`
- *     equals `syntheticDef.name`, if one exists. Falls back to
- *     `syntheticDef` when no match exists -- `readManifestTools()`'s own
- *     malformed/unreadable-manifest fallbacks answer `[]`, and in that case
- *     the proxy must still advertise a WORKING tool rather than none at all
- *     (T-07-16-02).
- *   - NEVER merges fields from the two definitions. Picking one whole
- *     definition keeps `description`, `inputSchema` and `outputSchema`
- *     internally consistent; a field-by-field merge could pair a fork
- *     description with a stock `outputSchema`, or the reverse.
+ * Behaviour: returns the `manifestTools` entry whose `name` equals
+ * `syntheticDef.name`, if one exists. Falls back to `syntheticDef` when no
+ * match exists -- `readManifestTools()`'s own malformed/unreadable-manifest
+ * fallbacks answer `[]`, and in that case the proxy must still advertise a
+ * WORKING tool rather than none at all (T-07-16-02). NEVER merges fields
+ * from the two definitions -- picking one whole definition keeps
+ * `description`, `inputSchema` and `outputSchema` internally consistent; a
+ * field-by-field merge could pair one definition's description with the
+ * other's `outputSchema`.
  *
  * Declared as a `function`, not a `const` arrow, per this module tree's own
  * standing rule: stock-dispatch.ts <-> stock-diagnose.ts <-> stock-recycle.ts
  * form a runtime import cycle, and the phase already reproduced a live
  * `ReferenceError` from a `const` handler export sitting in that cycle.
  *
- * `backend`'s type is `LegacyViceBackend`, not `backend-detect.mts`'s
- * `ViceBackend` -- see this file's own `LegacyViceBackend` doc comment
- * above. vice-proxy.ts's two call sites pass the literal `"stock"`, valid
- * under either type.
+ * FORKRM-05 (plan 52-07): this used to take a `backend` parameter and
+ * return `syntheticDef` unchanged when it was `"fork"` -- vice-proxy.ts's
+ * two call sites always passed the literal `"stock"`, so that branch was
+ * dead from the moment plan 52-06 collapsed backend detection. Removed
+ * rather than left as an unreachable branch a reader could mistake for live
+ * code.
  */
-export function resolveAdvertisedToolDefinition(
-  syntheticDef: ToolInfo,
-  backend: LegacyViceBackend,
-  manifestTools: ToolInfo[],
-): ToolInfo {
-  if (backend === "fork") {
-    return syntheticDef;
-  }
+export function resolveAdvertisedToolDefinition(syntheticDef: ToolInfo, manifestTools: ToolInfo[]): ToolInfo {
   const manifestEntry = manifestTools.find((t) => t.name === syntheticDef.name);
   return manifestEntry ?? syntheticDef;
 }
@@ -812,9 +795,9 @@ const STOCK_DISPATCH_TABLE: Record<string, StockHandler> = {
   vice_run_until: withDerivedTool("vice_run_until", { needsSession: true }, handleRunUntil),
 
   // derived (TIME-04) -- the two proxy-local synthetic tools (RECYCLE_TOOL/
-  // DIAGNOSE_TOOL in vice-proxy.ts), backend-routed to dispatchStock() by
-  // buildBackendAwareTool() rather than served from the fork's HTTP
-  // transport. Deliberate asymmetry, documented at this call site (see also
+  // DIAGNOSE_TOOL in vice-proxy.ts), registered via buildViceTool() and
+  // routed to this table's own dispatchStock() entry point, never to the
+  // deleted fork transport. Deliberate asymmetry, documented at this call site (see also
   // DerivedPureHandler's amended doc comment in stock-derived.ts):
   // vice_diagnose uses needsSession:false because its own handler acquires
   // the session itself (inside its own try/catch) so it can convert a

@@ -91,7 +91,7 @@ function makeStubBrokerControl(): StockConnectBrokerControl {
  * `capabilityIdentityFor()`'s broker-identity branch and exercise
  * `textCapabilityIdentityWarning()` end to end through a real handler. */
 function makeStubBrokerControlWithHostState(hostState: {
-  backend: "fork" | "stock" | null;
+  backend: "stock" | null;
   binPath: string;
 }): StockConnectBrokerControl {
   return {
@@ -146,7 +146,7 @@ function makeDeps(port: number, overrides: Partial<StockDispatchDeps> = {}): Sto
  * `textCapabilityIdentityWarning()` compares. */
 function makeDepsWithBrokerIdentity(
   port: number,
-  brokerHostState: { backend: "fork" | "stock" | null; binPath: string },
+  brokerHostState: { backend: "stock" | null; binPath: string },
   resolvedBinaryPath = "/usr/bin/x64sc",
 ): StockDispatchDeps {
   const lease: HeldLease = {
@@ -1193,7 +1193,7 @@ test("handleIoRegisters (CR-02): an indeterminate (empty) reply under a RESOLVED
 // capabilityIdentityFor(deps) already resolved, before any dial.
 // ---------------------------------------------------------------------------
 
-const DISAGREEING_BROKER_HOST_STATE = { backend: "fork" as const, binPath: "/usr/local/bin/x64sc" };
+const DISAGREEING_BROKER_HOST_STATE = { backend: "stock" as const, binPath: "/usr/local/bin/x64sc" };
 const AGREEING_BROKER_HOST_STATE = { backend: "stock" as const, binPath: "/usr/bin/x64sc" };
 
 test("handleMemmapShow: a success path with a disagreeing broker identity carries a non-empty identityWarning in the answer payload", async () => {

@@ -648,8 +648,8 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     verdict: "glue",
     basis: {
       consumers: [
-        { path: "src/mcp/vice/vice-proxy.ts", symbol: "runAnnoCli", line: 290 },
-        { path: "scripts/check-skill-tool-coverage.mjs", symbol: "parseAnnoCliVerbs", line: 59 },
+        { path: "src/mcp/vice/vice-proxy.ts", symbol: "runAnnoCli", line: 286 },
+        { path: "scripts/check-skill-tool-coverage.mjs", symbol: "parseAnnoCliVerbs", line: 60 },
         { path: "src/mcp/vice/anno-cli.test.ts", symbol: "runAnnoCli" },
       ],
       requirements: [],
@@ -832,7 +832,7 @@ export const MODULE_CLASSIFICATION: readonly ModuleClassificationEntry[] = [
     verdict: "glue",
     basis: {
       consumers: [
-        { path: "scripts/check-skill-tool-coverage.mjs", symbol: "parseAnnoCliVerbs", line: 59 },
+        { path: "scripts/check-skill-tool-coverage.mjs", symbol: "parseAnnoCliVerbs", line: 60 },
         { path: "src/mcp/vice/anno-verb-coverage.test.ts", symbol: "parseAnnoCliVerbs", line: 24 },
       ],
       requirements: ["CUT-04"],
