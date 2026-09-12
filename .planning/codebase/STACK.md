@@ -2,6 +2,16 @@
 
 **Analysis Date:** 2026-09-01
 
+**Fork-backend content corrected: 2026-09-12.** Every claim below about the
+removed fork backend, its HTTP transport, its manifest or its per-backend
+capability table was corrected against the tree on this date (phase
+`52-remove-the-fork-backend`, plan 52-12). The rest of this document remains
+a 2026-09-01 snapshot and carries its own, unrelated staleness — a reader
+wanting a current picture of anything else should re-run a mapping pass
+rather than trust these lines. See `docs/stock-hard-losses.md` for the
+permanent, accepted capability losses that replaced the deleted per-backend
+capability table.
+
 ## Project Type
 
 This is **not** a web/backend application. It is a **Claude Code plugin** (`.claude-plugin/plugin.json`) distributed two ways:
@@ -9,7 +19,7 @@ This is **not** a web/backend application. It is a **Claude Code plugin** (`.cla
 1. As a Claude Code plugin marketplace entry (`.claude-plugin/marketplace.json`).
 2. As two published npm packages (`@henols/vice-mcp`, `@henols/c64-re-tools`) installable via `npx` into any project.
 
-It bundles an MCP (Model Context Protocol) stdio server that drives a host-side VICE Commodore 64 emulator across **two interchangeable backends** (the custom `-mcpserver` fork, and stock upstream VICE's binary monitor), plus an **SQLite-backed annotation store** (`anno_*` tool family), plus **seven** Claude Code skills for 6502/6510 reverse-engineering and rebuilding.
+It bundles an MCP (Model Context Protocol) stdio server that drives a host-side stock upstream VICE Commodore 64 emulator over its binary monitor (there is no second backend and no per-project selection — FORKRM-01), plus an **SQLite-backed annotation store** (`anno_*` tool family), plus **seven** Claude Code skills for 6502/6510 reverse-engineering and rebuilding.
 
 ## Languages
 
@@ -46,8 +56,7 @@ It bundles an MCP (Model Context Protocol) stdio server that drives a host-side 
 - `node:sqlite` (`DatabaseSync`) - the annotation store. **Confined to exactly one module**, `src/mcp/vice/anno-store.ts`; `anno-seam.test.ts` fails the build if any second shipped module names the specifier (STORE-07). On-disk `SCHEMA_VERSION` is **3** (`src/mcp/vice/anno-types.ts`), with a `pragma integrity_check` + `anno_meta` row + version match on every open, and the default `delete` journal mode deliberately left unset.
 - `node:net` - raw TCP for both the stock binary-monitor socket (`src/mcp/vice/stock-protocol.ts`) and the broker control plane (`src/mcp/vice/vice-broker-client.ts`).
 - `node:zlib` - client-side PNG encoding for screenshots (`src/mcp/vice/prg-image.ts`), because stock's `DISPLAY_GET` is INDEXED8-only.
-- `node:http` - the fork backend's HTTP JSON-RPC transport (`src/mcp/vice/vice.ts`, `vice-probe.ts`).
-- `node:child_process` (`spawnSync`) - the `--help` backend probe (`src/mcp/vice/backend-detect.mts`) and host launches (`broker-launch.mts`).
+- `node:child_process` (`spawnSync`) - host launches (`broker-launch.mts`). The fork backend's HTTP transport and its `--help` backend probe are both deleted (FORKRM-01); `backend-detect.mts` no longer spawns anything.
 
 **Testing:**
 - Node's built-in test runner (`node --test`), no separate test framework.
@@ -55,14 +64,13 @@ It bundles an MCP (Model Context Protocol) stdio server that drives a host-side 
   - `npm run test:automated` → `node test-gate.mjs` (`src/mcp/vice/test-gate.mjs`, skips `MANUAL_ONLY_TESTS`)
   - `npm run test:manual` → `node test-gate.mjs --manual`
   - `npm run smoke` → `node smoke.mjs` (boots the server under type-stripping and completes an MCP handshake)
-- Test files are colocated `*.test.ts` / `*.test.mts` / `*.test.mjs` next to the module under test (e.g. `vice.ts` ↔ `vice.test.ts`, `anno-store.ts` ↔ `anno-store.test.ts`). ~150 test files under `src/mcp/vice/`.
+- Test files are colocated `*.test.ts` / `*.test.mts` / `*.test.mjs` next to the module under test (e.g. `stock-dispatch.ts` ↔ `stock-dispatch.test.ts`, `anno-store.ts` ↔ `anno-store.test.ts`). ~150 test files under `src/mcp/vice/`.
 - A large class of tests are **meta/guard tests** rather than unit tests — they assert repo invariants: `docs-linerefs.test.ts`, `resources-sync.test.ts`, `shipped-modules.test.ts`, `anno-seam.test.ts`, `hostpath-consumers.test.ts`, `ci-suite-coverage.test.ts`, `module-classification.test.ts`, `removal-gate.test.ts`.
-- Live-hardware tests (`fork-live.test.ts`, `stock-live.test.ts`, `stock-broker-live.test.ts`, `stock-live-triage.test.ts`, `stock-a4-checkpoint-flood.test.ts`) are gated behind `VICE_LIVE_*_BIN` env vars.
+- Live-hardware tests (`stock-live.test.ts`, `stock-broker-live.test.ts`, `stock-live-triage.test.ts`, `stock-a4-checkpoint-flood.test.ts`) are gated behind `VICE_LIVE_*_BIN` env vars. The fork backend's own live suite was deleted with the rest of the fork transport (FORKRM-01).
 
 **Build/Dev:**
 - TypeScript `7.0.2` (devDependency, typecheck-only — `tsc --noEmit`); no emitted `.js` from the TS sources at runtime (Node type-stripping runs the `.ts`/`.mts` files directly). `erasableSyntaxOnly: true` enforces type-strippability.
 - `src/mcp/vice/build.ts` (`npm run build`) - compiles the host-bound `.mts` modules into plain `.mjs` under `resources/`, since the **host** side (outside any container) may not have a type-stripping Node. Eight inputs per `tsconfig.build.json`: `vice-broker.mts`, `container-guard.mts`, `broker-state.mts`, `broker-launch.mts`, `broker-kill.mts`, `broker-epoch.mts`, `broker-control.mts`, and (new) **`backend-detect.mts`**. `resources-sync.test.ts` fails CI on drift.
-- `src/mcp/vice/refresh-manifest.ts` - regenerates `tools-manifest.json` from a live host server's `tools/list`.
 - `@types/node` `24.13.3` - Node type definitions.
 - ACME cross-assembler (external, not an npm package) - required on `$PATH` for the `acme-build` skill and for the DISASM-03 disassembler round-trip gate in CI; the skill probes `$ACME`, `/usr/local/share/acme`, `/usr/share/acme`, `/usr/lib/acme`, `~/.acme`. Gate/verify wrappers: `src/mcp/vice/acme-gate.ts`, `acme-verify.ts`.
 
@@ -77,10 +85,7 @@ It bundles an MCP (Model Context Protocol) stdio server that drives a host-side 
 - `@isaacs/ttlcache`, `@lukeed/csprng`, `@lukeed/uuid`, `@sindresorhus/slugify` / `transliterate`
 
 **Critical external binaries (not npm):**
-- `x64sc` — **two accepted shapes**, selected per project:
-  - **fork**: the custom/patched build exposing a non-upstream `-mcpserver -mcpserverhost <ip> -mcpserverport <port>` flag serving HTTP JSON-RPC at `/mcp` ([barryw/vice-mcp](https://github.com/barryw/vice-mcp)).
-  - **stock**: any upstream VICE build, driven over `-binarymonitor` (TCP, length-prefixed binary framing). `CPUHISTORY_GET` (0x86) additionally requires **VICE >= 3.10**; Debian trixie/forky/sid and current Ubuntu ship 3.9.
-  - Which one is in play is decided **once at broker startup** by a `--help` token probe in `src/mcp/vice/backend-detect.mts` (`classifyHelpOutput()`: `-mcpserver` → fork, else `-binarymonitor` → stock), overridable by `VICE_BACKEND`, cached to `backend.json`.
+- `x64sc` — stock upstream VICE, any unpatched build installable from a package manager, driven over `-binarymonitor` (TCP, length-prefixed binary framing). `CPUHISTORY_GET` (0x86) additionally requires **VICE >= 3.10**; Debian trixie/forky/sid and current Ubuntu ship 3.9. There is no second backend and no environment-variable backend selection (FORKRM-01): `src/mcp/vice/backend-detect.mts` only resolves the configured binary's own path/identity (`resolveBinPath()`) and caches its capability record (version quad, CPU-history support) once per binary, keyed off `resolvedPath`/`mtimeMs`/`sizeBytes`, in `backend.json`.
 - ACME cross-assembler (see above).
 
 ## Configuration
@@ -90,11 +95,9 @@ It bundles an MCP (Model Context Protocol) stdio server that drives a host-side 
 - `.claude-plugin/plugin.json` - plugin manifest: points at `./src/skills/` and `./.mcp.json`, registers a `SessionStart` hook running `scripts/ensure-mcp-deps.sh`, `defaultEnabled: false`.
 - `.claude-plugin/marketplace.json` - single-plugin marketplace manifest so `/plugin marketplace add` works directly against this repo.
 
-**Tool manifests (two, one per backend):**
-- `src/mcp/vice/tools-manifest.json` - the fork surface, **62** tools.
-- `src/mcp/vice/tools-manifest.stock.json` - the stock surface, **38** tools.
-- `src/mcp/vice/capability-registry.ts` - the single authoritative table of per-backend capability gaps and their reason text; `docs/tool-support.md` is generated from it. `vice_diagnose` / `vice_recycle` are synthetic proxy-local tools registered on **both** backends and appear in neither raw manifest.
-- The `anno_*` family (19 tools, `src/mcp/vice/anno-tools.ts`) is registered through `buildViceTool()` and never appears in either manifest JSON.
+**Tool manifest (one, a committed snapshot):**
+- `src/mcp/vice/tools-manifest.stock.json` - the whole advertised tool surface, **46** tools, read offline at `tools/list`; nothing regenerates it from a live host (FORKRM-01). `vice_diagnose` / `vice_recycle` are synthetic proxy-local tools and do not appear in the raw manifest either. Three capabilities stock cannot provide at all (`vice_sid_get_state`, `vice_keyboard_matrix`, `vice_keyboard_restore`) are recorded as permanent, accepted losses in `docs/stock-hard-losses.md` rather than in a per-backend capability table.
+- The `anno_*` family (`src/mcp/vice/anno-tools.ts`) is registered through `buildViceTool()` and never appears in the manifest JSON.
 
 **Build/TS config:**
 - `src/mcp/vice/tsconfig.json` - typecheck-only: `target: es2022`, `module`/`moduleResolution: nodenext`, `strict`, `isolatedModules`, `verbatimModuleSyntax`, `erasableSyntaxOnly`, `noEmit`, `allowImportingTsExtensions`, `types: ["node"]`, `skipLibCheck`.
@@ -102,13 +105,13 @@ It bundles an MCP (Model Context Protocol) stdio server that drives a host-side 
 
 **Environment variables (server behavior):**
 - Transport / endpoint: `VICE_MCP_URL`, `VICE_MCP_HOST`, `VICE_MCP_TIMEOUT_MS`, `VICE_PROBE_TIMEOUT_MS`, `VICE_MAX_RESULT_CHARS`.
-- Backend selection: `VICE_BACKEND` (read **only** by `backend-detect.mts`), `VICE_BIN`, `VICE_ARGS`, `VICE_API_VERSION`.
+- Binary resolution (no backend to select — FORKRM-01): `VICE_BIN`, `VICE_ARGS`, `VICE_API_VERSION`.
 - Broker/pool: `VICE_BROKER_STALE_MS`, `VICE_BROKER_ACQUIRE_TIMEOUT_MS`, `VICE_BROKER_RECYCLE_TIMEOUT_MS`, `VICE_BROKER_CONTROL_HOST`, `VICE_BROKER_CONTROL_DIAL_HOST`, `VICE_BROKER_CONTROL_PORT`, `VICE_BROKER_BASE_PORT`, `VICE_BROKER_MAX`, `VICE_BROKER_SPARES`, `VICE_BROKER_WARM_FLOOR`, `VICE_BROKER_HEARTBEAT_MS`, `VICE_BROKER_POLL_MS`, `VICE_BROKER_KILL_WAIT_S`, `VICE_BROKER_PROBE_TIMEOUT_S`, `VICE_BROKER_BINMON_HOST`, `VICE_BROKER_MCP_HOST`.
 - Supervision/recovery: `VICE_MAX_RESTARTS`, `VICE_CRASH_WINDOW_S`, `VICE_RESTART_BACKOFF_S`, `VICE_RESTART_BACKOFF_MAX_S`, `VICE_RECYCLE_CAPTURE_TIMEOUT_MS`, `VICE_INCIDENTS_DIR`.
 - State paths: `VICE_POOL_DIR`, `VICE_EPOCH_FILE`, `VICE_SUPERVISOR_DIR`, `VICE_SUPERVISOR_ALLOW_CONTAINER`, `VICE_DIR`, `VICE_TOOLS_MANIFEST`, `VICE_SKIP_RESOURCE_INSTALL`.
 - Stock diagnostics: `VICE_STOCK_DIAGNOSE_BRACKET_MS`, `VICE_STOCK_DIAGNOSE_SESSION_TIMEOUT_MS`.
 - Annotation store: `ANNO_READ_REGION_MAX_BYTES`, `ANNO_DERIVE_MAX_IMAGE_BYTES`, `ANNO_SEARCH_MAX_CORPUS_BYTES`, `ANNO_MAX_BATCH_DEPTH`.
-- Test gates (never read in production paths): `VICE_LIVE_FORK_BIN`, `VICE_LIVE_STOCK_BIN`, `VICE_LIVE_STOCK_BIN_39`, `VICE_LIVE_STOCK_BIN_310`, `VICE_LIVE_BROKER_BIN`, `VICE_LIVE_TRIAGE_BIN`, `VICE_LIVE_A4_FLOOD_BIN`, `VICE_REQUIRE_ACME`, `VICE_REQUIRE_ANNO`, `VICE_REQUIRE_ANNO_UPSTREAM`.
+- Test gates (never read in production paths): `VICE_LIVE_STOCK_BIN`, `VICE_LIVE_STOCK_BIN_39`, `VICE_LIVE_STOCK_BIN_310`, `VICE_LIVE_BROKER_BIN`, `VICE_LIVE_TRIAGE_BIN`, `VICE_LIVE_A4_FLOOD_BIN`, `VICE_REQUIRE_ACME`, `VICE_REQUIRE_ANNO`, `VICE_REQUIRE_ANNO_UPSTREAM`.
 - Claude Code-provided: `CLAUDE_PLUGIN_ROOT`, `CLAUDE_PLUGIN_DATA`, `CLAUDE_PROJECT_DIR`.
 - Path translation: `CONTAINER_WORKSPACE_PATH`, `HOST_WORKSPACE_PATH`.
 - Mastra: `MASTRA_TELEMETRY_DISABLED`.
@@ -126,7 +129,7 @@ It bundles an MCP (Model Context Protocol) stdio server that drives a host-side 
 **Development:**
 - Node.js **>= 24** to run/test the MCP server; Node >= 18 to run the installer.
 - ACME cross-assembler on `$PATH` for the `acme-build` skill and the CI round-trip gate.
-- A reachable host VICE (`x64sc`, either fork or stock) for any live emulator interaction — the MCP server has no in-process emulator.
+- A reachable host running stock upstream VICE (`x64sc`) for any live emulator interaction — the MCP server has no in-process emulator.
 - Container awareness baked in: `isInsideContainer()` (`src/mcp/vice/container-guard.mts`, five signals) decides between `host.docker.internal` and `127.0.0.1`. This repo itself is developed on the host, not in a devcontainer.
 
 **Production / Distribution:**
