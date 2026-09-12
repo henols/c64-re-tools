@@ -76,9 +76,9 @@ Stated once so no requirement below has to restate them.
 
 - [ ] **FORKRM-01**: `VICE_BACKEND`, `probeBackend()`, `resolvedBackend()`'s fork branch and `buildBackendAwareTool()` are gone, every `backend === "fork"` test branch is removed rather than skipped, and no module imports a fork transport. One backend means no backend selection.
 - [x] **FORKRM-02**: `.planning/PROJECT.md`'s `FORK-01` row and its `### Out of Scope` fork bullet state the REVERSAL with its date and basis, and `docs-fork-decision.test.ts` is rewritten to pin the new decision rather than deleted.
-- [ ] **FORKRM-03**: SID read-back, matrix keyboard and RESTORE/NMI are recorded as ACCEPTED, dated, with their evidence, in `docs/stock-hard-losses.md`, and they stop being routed to the fork anywhere in shipped skill text.
+- [x] **FORKRM-03**: SID read-back, matrix keyboard and RESTORE/NMI are recorded as ACCEPTED, dated, with their evidence, in `docs/stock-hard-losses.md`, and they stop being routed to the fork anywhere in shipped skill text.
 - [ ] **FORKRM-04**: `DENY_LIST` and `denyListRefusalMessage()` are gone along with their consumers, and `anno-tools.ts`'s inverted allowlist (`CURATED_ANNO_TOOLS`, `assertAnnoBatch`, `ANNO_MAX_BATCH_DEPTH`) is unchanged and still guarded.
-- [ ] **FORKRM-05**: `capability-registry.ts` is resolved by a recorded decision, not left half-referenced.
+- [x] **FORKRM-05**: `capability-registry.ts` is resolved by a recorded decision, not left half-referenced.
 - [ ] **FORKRM-06**: `tools-manifest.stock.json` is the only manifest; `refresh-manifest.ts` and `tools-manifest.json` are gone and nothing regenerates a manifest from a live host.
 - [ ] **FORKRM-07**: `npm run test:automated` is green at the documented failure-set floor, with every fork-conditional test branch removed rather than skipped.
 
@@ -155,9 +155,9 @@ Success-Criteria live in `.planning/ROADMAP.md` → "Phase Details".
 | EQUIV-04 | Phase 50 | Pending |
 | FORKRM-01 | Phase 52 | Pending |
 | FORKRM-02 | Phase 52 | Complete |
-| FORKRM-03 | Phase 52 | Pending |
+| FORKRM-03 | Phase 52 | Complete |
 | FORKRM-04 | Phase 52 | Pending |
-| FORKRM-05 | Phase 52 | Pending |
+| FORKRM-05 | Phase 52 | Complete |
 | FORKRM-06 | Phase 52 | Pending |
 | FORKRM-07 | Phase 52 | Pending |
 

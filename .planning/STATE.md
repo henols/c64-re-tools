@@ -5,11 +5,11 @@ milestone_name: The Rebuild Half
 current_phase: 52
 current_phase_name: Remove the Fork Backend
 status: executing
-stopped_at: Completed 52-08-PLAN.md
-last_updated: "2026-09-12T10:21:50.861Z"
+stopped_at: Completed 52-09-PLAN.md
+last_updated: "2026-09-12T10:53:32.658Z"
 last_activity: 2026-09-11
 last_activity_desc: Phase 52 execution started
-state_head: 051c543fabad5dbe9cf15da65965829445029e5e
+state_head: 8dcbb9b950ae2cb1a4a33631d1e67b421db1f50e
 progress:
   total_phases: 8
   completed_phases: 2
@@ -255,7 +255,7 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 52 (Remove the Fork Backend) — EXECUTING
-Plan: 9 of 10
+Plan: 10 of 10
 Status: Executing (52-08 complete)
 
 **Planned OUT OF SEQUENCE.** Phase 52 was planned ahead of Phases 47-51, which
@@ -570,6 +570,7 @@ Last activity: 2026-09-11 — Phase 52 execution started
 | Phase 52 P06 | long | 3 tasks | 26 files |
 | Phase 52 P07 | 210min | 3 tasks | 22 files |
 | Phase 52 P08 | 35min | 3 tasks | 13 files |
+| Phase 52 P09 | 35 min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -1300,6 +1301,9 @@ Recent decisions affecting current work:
 - [Phase 52]: The tool-support table (its generator and byte-identity drift guard) retired outright: with one manifest, tools-manifest.stock.json IS the full per-tool answer.
 - [Phase 52]: ViceBackend kept, narrowed to "stock" (confirmed by census, not re-decided): it is actively used across the broker/control-plane family, not a registry artifact.
 - [Phase 52]: Phase 52 Plan 08: all 27 fork-mentioning lines across 9 shipped skill files rewritten to stated permanent limitations or collapsed single-backend facts (0 remaining). c64-memory-mapping's ride-along scope fix used body restructure, not description-widening, after widening broke an out-of-scope CLAUDE.md invariant.
+- [Phase 52]: Inverted and renamed check-skill-fork-honesty.mjs to check-skill-capability-honesty.mjs rather than deleting it; every assertion re-pointed at the six permanent stock hard-losses instead of the deleted CAPABILITY_REGISTRY. — The gate is the mitigation for the stale-documentation threat; deleting it re-opens the class the phase's own threat model calls out.
+- [Phase 52]: audit-root-args.test.ts's MATRIX row for the renamed gate moved from contained:refuses to contained:synthetic-corpus, and its hardcoded bound/clean population assertions were updated (2 refusing scripts, 3 clean) to match. — The inversion removed the gate's only static ../src import, so there is no split-read hazard left to refuse; the test file's own hardcoded counts had to move with it or the suite would stay red.
+- [Phase 52]: CLAUDE.md/PROJECT.md's Testing bullet was restated against stock-run-until.ts rather than removed: it honors the exactly-one-resume-per-wait invariant in event-driven, unit-tested form. The sibling poll-on-hit_count invariant was not restated as its own rule, since stock-diagnose.ts explicitly uses wall-clock timing instead by its own comment. — Plan instruction: check whether either invariant survives in a surviving module before deleting the bullet outright; one does, one does not, in the same shape.
 
 ### Pending Todos
 
@@ -2377,8 +2381,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-12T10:21:01.962Z
-Stopped at: Completed 52-08-PLAN.md
+Last session: 2026-09-12T10:53:32.439Z
+Stopped at: Completed 52-09-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
