@@ -634,6 +634,16 @@ test("the data-type suite is driven from `DATA_TYPES` itself -- a thirteenth mem
 });
 
 for (const dataType of DATA_TYPES) {
+  // Phase 47, plan 47-03: `external_file` is EXCLUDED from this generic
+  // single-file loop. Its own emitted line is `!binary "data_XXXX.bin"`,
+  // naming a sibling file that only `exportAsmTree()` writes -- `acme-
+  // verify.ts` (which `verifyExport()` below calls) is single-file by design
+  // (hard scope fence 3) and never writes one, so this loop would see ACME's
+  // own "Cannot open input file" for this one type, every time, regardless
+  // of whether the emission itself is correct. Its round trip is proved
+  // separately, through `exportAsmTree()`, in the "binary emission:" suite
+  // below -- reached through the right verifier, never skipped.
+  if (dataType === "external_file") continue;
   test(`data type round trip: a \`${dataType}\` range reassembles byte-identically`, { skip: SKIP_REASON }, () => {
     const { dir, storePath, imagePath } = buildStore(freshDir(`dt-${dataType}`), {
       origin: 0x0801,
@@ -4906,3 +4916,149 @@ test(
     }
   },
 );
+
+// ---------------------------------------------------------------------------
+// Phase 47, plan 47-03 (BUILD-02): `external_file` finally leaves as its own
+// `.bin` sibling, referenced from its scope's `.a` file by a bare-filename
+// `!binary` line. Everything below is either about the SHAPE of that one new
+// branch (this section), or the end-to-end swap demonstration on a real
+// character set (the next section).
+// ---------------------------------------------------------------------------
+
+/** A one-block store whose sole range is typed `external_file`, over a
+ * synthetic image this test invents -- unlike the swap section below, which
+ * deliberately uses a committed fixture's own bytes, the shape tests here
+ * need no real character set, only SOME bytes of a known length. */
+function externalFileFixture(tag: string, bytes: readonly number[]): StoreFixture {
+  return buildStore(freshDir(tag), {
+    origin: 0x0801,
+    body: bytes,
+    ranges: [{ start: 0x0801, endInclusive: 0x0801 + bytes.length - 1, dataType: "external_file" }],
+    labels: [],
+  });
+}
+
+const EXTERNAL_FILE_BODY = [0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88] as const;
+
+test("binary emission: an external_file range emits exactly one !binary line with a bare-filename argument, and no !byte line for it", () => {
+  const { dir, storePath, imagePath } = externalFileFixture("binemit-shape", EXTERNAL_FILE_BODY);
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+
+  const binaryLines = result.source.split("\n").filter((line) => /^\s*!binary\b/.test(line));
+  assert.equal(binaryLines.length, 1, `an external_file block must emit exactly ONE !binary line, covering its whole extent:\n${result.source}`);
+  const byteLines = result.source.split("\n").filter((line) => /^\s*!byte\b/.test(line));
+  assert.deepEqual(byteLines, [], `an external_file block must emit no !byte line at all:\n${result.source}`);
+
+  const m = /^\s*!binary "([^"]*)"/.exec(binaryLines[0]!);
+  assert.ok(m, `the !binary line must carry a quoted filename argument:\n${binaryLines[0]}`);
+  const filename = m![1]!;
+  assert.ok(
+    !filename.includes("/") && !filename.includes("\\"),
+    `the !binary filename argument must be a bare filename with no directory component, got ${JSON.stringify(filename)}`,
+  );
+  assert.ok(result.source.includes("; external_file"), `the type must still be named verbatim in the trailing comment:\n${result.source}`);
+});
+
+test("binary emission: result.binaries carries the block's own image bytes, octet-identical to bytes read independently from the image", () => {
+  const { dir, storePath, imagePath } = externalFileFixture("binemit-bytes", EXTERNAL_FILE_BODY);
+  const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
+
+  assert.equal(result.binaries.length, 1, "exactly one external_file block must produce exactly one result.binaries entry");
+  const entry = result.binaries[0]!;
+  assert.equal(entry.start, 0x0801);
+  assert.equal(entry.endExclusive, 0x0801 + EXTERNAL_FILE_BODY.length);
+
+  // Read independently from the image file itself -- never from the export
+  // -- stripping the 2-byte little-endian load address every .prg carries.
+  const imageBytesForRange = new Uint8Array(readFileSync(imagePath)).subarray(2);
+  assert.deepEqual(new Uint8Array(entry.bytes), imageBytesForRange, "result.binaries' bytes must be octet-identical to the image's own bytes for this extent");
+});
+
+test("binary emission: exportAsmTree() writes the .bin beside the tree with exactly those bytes and that length", () => {
+  const { dir, storePath, imagePath } = externalFileFixture("binemit-write", EXTERNAL_FILE_BODY);
+  const outDir = join(dir, "tree");
+  const result = exportAsmTree({ storePath, imagePath, workspaceRoot: dir, outDir });
+
+  assert.equal(result.binaries.length, 1);
+  const entry = result.binaries[0]!;
+  assert.ok(result.files.includes(entry.name), `result.files must include the written .bin's own name "${entry.name}"`);
+  const onDisk = new Uint8Array(readFileSync(join(outDir, entry.name)));
+  assert.deepEqual(onDisk, new Uint8Array(entry.bytes), "the written .bin must hold exactly those bytes");
+  assert.equal(onDisk.length, EXTERNAL_FILE_BODY.length, "the written .bin must be exactly that length");
+});
+
+test(
+  "binary emission: the tree assembles through runHostTool() at exitStatus 0 and the produced bytes deepEqual result.expectedBytes",
+  { skip: SKIP_REASON },
+  async () => {
+    const { dir, storePath, imagePath } = externalFileFixture("binemit-roundtrip", EXTERNAL_FILE_BODY);
+    const outDir = join(dir, "tree");
+    const result = exportAsmTree({ storePath, imagePath, workspaceRoot: dir, outDir });
+
+    const response = await runHostTool({ tool: "acme.build", args: { source: ROOT_FILE_NAME, format: "plain", noReport: true } }, { repoRoot: outDir });
+    assert.equal(response.ok, true, response.ok ? "" : response.message);
+    if (!response.ok) return;
+    assert.equal(response.exitStatus, 0, "a tree carrying an external_file block must assemble cleanly");
+    assert.equal(response.results.length, 1);
+    const producedBytes = new Uint8Array(readFileSync(response.results[0]!.path));
+    assert.deepEqual(producedBytes, result.expectedBytes, "the produced bytes must be octet-identical to bytes taken from the image");
+  },
+);
+
+test("dataByteCount for an external_file range equals what the same extent typed byte would have produced", () => {
+  const extFixture = externalFileFixture("binemit-databytecount-ext", EXTERNAL_FILE_BODY);
+  const extResult = exportAsm({ storePath: extFixture.storePath, imagePath: extFixture.imagePath, workspaceRoot: extFixture.dir });
+
+  const byteFixture = buildStore(freshDir("binemit-databytecount-byte"), {
+    origin: 0x0801,
+    body: EXTERNAL_FILE_BODY,
+    ranges: [{ start: 0x0801, endInclusive: 0x0801 + EXTERNAL_FILE_BODY.length - 1, dataType: "byte" }],
+    labels: [],
+  });
+  const byteResult = exportAsm({ storePath: byteFixture.storePath, imagePath: byteFixture.imagePath, workspaceRoot: byteFixture.dir });
+
+  assert.equal(
+    extResult.dataByteCount,
+    byteResult.dataByteCount,
+    "an external_file range must count the same number of bytes a byte-typed range of the same extent would",
+  );
+  assert.equal(extResult.dataByteCount, EXTERNAL_FILE_BODY.length, "every byte of the range went out through the data path");
+});
+
+test(
+  "a .bin truncated by one byte makes real ACME exit non-zero, with the block-end drift !error text on stderr",
+  { skip: SKIP_REASON },
+  async () => {
+    const { dir, storePath, imagePath } = externalFileFixture("binemit-truncate", EXTERNAL_FILE_BODY);
+    const outDir = join(dir, "tree");
+    const result = exportAsmTree({ storePath, imagePath, workspaceRoot: dir, outDir });
+    const entry = result.binaries[0]!;
+    const truncated = (entry.bytes as Uint8Array).slice(0, entry.bytes.length - 1);
+    writeFileSync(join(outDir, entry.name), Buffer.from(truncated));
+
+    const response = await runHostTool({ tool: "acme.build", args: { source: ROOT_FILE_NAME, format: "plain", noReport: true } }, { repoRoot: outDir });
+    assert.equal(response.ok, true, response.ok ? "" : response.message);
+    if (!response.ok) return;
+    assert.notEqual(response.exitStatus, 0, "a truncated .bin must make real ACME fail -- the bracket assertion must bite, not silently shift every byte after it");
+    assert.ok(
+      response.stderrTail.includes("block end drifted"),
+      `stderr must carry the block-end drift text emitBlock()'s own !error emits, got: ${response.stderrTail}`,
+    );
+  },
+);
+
+test("the .bin siblings are written before root.a -- root.a's modification time is >= every written .bin's, and every .bin precedes it in the reported file set", () => {
+  const { dir, storePath, imagePath } = externalFileFixture("binemit-write-order", EXTERNAL_FILE_BODY);
+  const outDir = join(dir, "tree");
+  const result = exportAsmTree({ storePath, imagePath, workspaceRoot: dir, outDir });
+
+  const rootMtime = statSync(join(outDir, ROOT_FILE_NAME)).mtimeMs;
+  const rootIndex = result.files.indexOf(ROOT_FILE_NAME);
+  assert.ok(result.binaries.length > 0, "precondition: this fixture must carry at least one binary for the assertion below to mean anything");
+  for (const entry of result.binaries) {
+    const binMtime = statSync(join(outDir, entry.name)).mtimeMs;
+    assert.ok(rootMtime >= binMtime, `root.a's mtime (${rootMtime}) must be >= ${entry.name}'s mtime (${binMtime})`);
+    const binIndex = result.files.indexOf(entry.name);
+    assert.ok(binIndex >= 0 && binIndex < rootIndex, `${entry.name} must be reported in result.files, ordered before ${ROOT_FILE_NAME}`);
+  }
+});

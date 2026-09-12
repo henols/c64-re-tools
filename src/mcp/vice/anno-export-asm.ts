@@ -53,10 +53,12 @@
 //     so the substitution changes both the bytes and the instruction length. A
 //     non-immediate operand is REFUSED by name below, never rendered and hoped
 //     for.
-//   - Never compare a `dataType` string in this module beyond the TWO places
-//     that already do, each of which says so in its own comment:
-//     `CODE_DATA_TYPE`'s decoder-or-dump branch, and `WORD_PAIR_DATA_TYPES`'s
-//     `!word` eligibility check. Both are questions about the emitted TEXT.
+//   - Never compare a `dataType` string in this module beyond the THREE
+//     places that already do, each of which says so in its own comment:
+//     `CODE_DATA_TYPE`'s decoder-or-dump branch, `WORD_PAIR_DATA_TYPES`'s
+//     `!word` eligibility check, and (phase 47, plan 47-03)
+//     `EXTERNAL_FILE_DATA_TYPE`'s `!binary`-versus-inline branch inside
+//     `emitDataLines()`. All three are questions about the emitted TEXT.
 //     `block-class.ts` is the one place in this tree allowed to INTERPRET that
 //     column -- what the data means -- and everywhere else here the string is
 //     copied VERBATIM onto the emitted block and its trailing comment.
@@ -136,6 +138,18 @@ import { provenanceForRange, readProvenanceLedger, type ProvenanceLedger } from 
  * a decoder or dump bytes, and it is the only one. */
 const CODE_DATA_TYPE = "code";
 
+/** The store's own spelling for a large binary blob exported AS ITS OWN
+ * FILE rather than inline (phase 47, plan 47-03; `anno_set_data_type`'s
+ * schema calls this "large binary blob to export as-is") -- the eleventh of
+ * `DATA_TYPES`' twelve members, the one vocabulary this module imports
+ * rather than restates. The SAME discipline `CODE_DATA_TYPE` above already
+ * follows: one named constant carries the literal ONCE, so every comparison
+ * below reads the NAME and this is the only place the spelling itself is
+ * written down. `dataType` is never COMPARED anywhere else in this module
+ * for this purpose -- `emitDataLines()`'s `!binary`-versus-inline branch is
+ * the only one. */
+const EXTERNAL_FILE_DATA_TYPE = "external_file";
+
 /** One block as this module emitted it. */
 export interface ExportBlock {
   /** First address the block covers. */
@@ -160,6 +174,29 @@ export interface ExportBlock {
    * `endExclusive` a second time. Populated by `exportAsm()` at the same
    * point it calls `emitBlock()`; empty only before that call runs. */
   lines: string[];
+}
+
+/**
+ * Phase 47, plan 47-03 (BUILD-02): one `external_file`-typed block's own
+ * `.bin` sibling. `bytes` is the block's own slice of the IMAGE, carried
+ * verbatim -- never a copy that passed through any conversion, on the same
+ * terms `expectedBytes` is derived from the image and never from `source`.
+ *
+ * A caller that writes `source` (or a tree's `.a` files) and not these
+ * bytes to their named files has written a source tree that names files
+ * nobody produced: every `!binary "..."` line `emitDataLines()` emits names
+ * exactly one of these entries, and `exportAsmTree()`'s whole tree-writing
+ * contract exists because of that obligation.
+ */
+export interface ExportBinary {
+  /** The bare file name the emitted `!binary` line names -- `binaryFileName(start)`, never a store-supplied string. */
+  name: string;
+  /** First address the block covers -- same field as `ExportBlock.start`. */
+  start: number;
+  /** One past the last address the block covers -- same field as `ExportBlock.endExclusive`. */
+  endExclusive: number;
+  /** The block's own slice of the image, verbatim. `bytes.length === endExclusive - start`. */
+  bytes: Uint8Array;
 }
 
 export interface ExportAsmOptions {
@@ -253,6 +290,15 @@ export interface ExportAsmResult {
    * block whose `dataType` is not `code`. A code block contributes nothing
    * here, however many bytes it decoded. */
   dataByteCount: number;
+  /** Phase 47, plan 47-03 (BUILD-02): every `external_file`-typed block's
+   * own sibling data file, ascending by `start`. `dataByteCount` above still
+   * counts these bytes -- they went out through the data path exactly as an
+   * inline `!byte`-typed range's bytes would have, only to a different
+   * destination file, and a count whose name stops matching what it counts
+   * is the WR-01 lesson this module already learned once. See
+   * `ExportBinary`'s own doc-comment for the obligation a caller that reads
+   * this field takes on. */
+  binaries: ExportBinary[];
   /** How many store comments the source carries. Always the store's FULL
    * comment count when this function returns: a comment with no emitted line
    * to attach to is refused by name rather than left out of this number. */
@@ -356,6 +402,18 @@ interface DataLine {
  * table is NOT invented here; that would be the same drift hazard wearing a
  * local name.
  *
+ * `external_file` (phase 47, plan 47-03) IS THE OPPOSITE CASE from `!text`
+ * above, and for the identical reason. `!text` is refused because ACME's
+ * conversion table is outside this exporter's control; `!binary` is used
+ * here because it applies NO table at all -- the bytes written to the
+ * sibling `.bin` file are the image's own octets for the extent, verbatim,
+ * so nothing can drift between this host's ACME build and anyone else's.
+ * One `!binary` line covers the block's WHOLE extent (never split across
+ * several, the way `!byte`/`!word` chunk at `BYTES_PER_DATA_LINE`/
+ * `WORDS_PER_DATA_LINE`), so a stored comment anywhere in the range attaches
+ * to that one line through the same `withComments()` call every other data
+ * line already goes through.
+ *
  * OVERLAP: `--strict-segments` is in the verify argv, which promotes ACME's
  * "Segment starts inside another one, overwriting it." from a Warning to an
  * Error (measured, exit 1). Without it a store holding two overlapping ranges
@@ -363,6 +421,16 @@ interface DataLine {
  * against whichever won.
  */
 function emitDataLines(slice: Uint8Array, dataType: string, blockStart: number): DataLine[] {
+  if (dataType === EXTERNAL_FILE_DATA_TYPE) {
+    return [
+      {
+        text: `${INDENT}!binary "${binaryFileName(blockStart)}"  ; ${dataType}`,
+        start: blockStart,
+        endExclusive: blockStart + slice.length,
+      },
+    ];
+  }
+
   const out: DataLine[] = [];
 
   if (WORD_PAIR_DATA_TYPES.includes(dataType) && slice.length % 2 === 0) {
@@ -1116,6 +1184,11 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
   let unexpressibleCount = 0;
   let dataByteCount = 0;
   let enumDecompositionCount = 0;
+  /** Phase 47, plan 47-03 (BUILD-02): every `external_file`-typed block's
+   * own `.bin` sibling, populated at the same point `dataByteCount` above
+   * is incremented for that block -- see `ExportAsmResult.binaries`'s own
+   * doc-comment for what a caller reading this field is obliged to do. */
+  const binaries: ExportBinary[] = [];
 
   // AUTO-GENERATED NAMES ARE MARKED, not filtered. Every store label reaches
   // the source either way; the marker is the backlog signal, carried into the
@@ -1508,14 +1581,22 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
     } else {
       // The `dataType` reaching `emitDataLines()` is the store's own string,
       // copied off the row and passed through -- this module never branches on
-      // it beyond the code/not-code test above and the `!word` eligibility
-      // check inside the emitter.
+      // it beyond the code/not-code test above, the `!word` eligibility check,
+      // and the `!binary` check, all three inside the emitter.
       for (const dataLine of emitDataLines(slice, block.dataType, block.start)) {
         const emitted = withComments(dataLine.text, dataLine.start, dataLine.endExclusive, placement);
         content.push(...emitted);
         block.lineCount += emitted.length;
       }
       dataByteCount += slice.length;
+
+      // Phase 47, plan 47-03 (BUILD-02): an `external_file` block's bytes
+      // also go out as their own sibling data file. `bytes` is `slice`
+      // itself -- the same bytes `dataByteCount` above just counted, carried
+      // verbatim and never re-read from anywhere else.
+      if (block.dataType === EXTERNAL_FILE_DATA_TYPE) {
+        binaries.push({ name: binaryFileName(block.start), start: block.start, endExclusive: block.endExclusive, bytes: slice });
+      }
     }
 
     // BUILD-05 (phase 46 plan 01): when ledger mode is on, every block gets a
@@ -1689,6 +1770,7 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
     headerDefinitionCount: headerLines.length,
     unexpressibleCount,
     dataByteCount,
+    binaries: [...binaries].sort((a, b) => a.start - b.start),
     commentCount: placement.placed.size,
     midInstructionLabelCount,
     autoNamedSymbolCount,
@@ -1728,6 +1810,25 @@ export const UNSCOPED_FILE_NAME = "unscoped.a";
  */
 export function scopeFileName(start: number): string {
   return `scope_${(start & 0xffff).toString(16).padStart(4, "0")}.a`;
+}
+
+/**
+ * Phase 47, plan 47-03 (BUILD-02): the `.bin` sibling file name for the
+ * `external_file`-typed block starting at `start` -- `data_XXXX.bin`, four
+ * LOWERCASE hex digits, no `$`, no store free text anywhere in it. Module-
+ * private: nothing outside this file needs the name computed independently
+ * of `ExportBinary.name`/`emitDataLines()`'s own emitted `!binary` argument,
+ * both of which already carry it.
+ *
+ * DERIVED FROM `start`, an integer this project already controls, on
+ * exactly the same terms `scopeFileName()` above already states for `.a`
+ * siblings (T-47-01) -- never from a label name, a comment or any other
+ * store free text. This is what makes the emitted `!binary "..."` argument
+ * safe to trust: it can only ever be four hex digits and a fixed prefix/
+ * suffix, never a string a store row supplied.
+ */
+function binaryFileName(start: number): string {
+  return `data_${(start & 0xffff).toString(16).padStart(4, "0")}.bin`;
 }
 
 export interface ExportAsmTreeOptions extends ExportAsmOptions {
@@ -1882,10 +1983,17 @@ export function exportAsmTree(options: ExportAsmTreeOptions): ExportAsmTreeResul
   // never a guess revised after the fact.
   const populatedScopeStarts = [...scopeBlocks.keys()].sort((a, b) => a - b);
   const hasUnscoped = unscopedBlocks.length > 0;
+  // Phase 47, plan 47-03 (T-47-08): every `.bin` sibling this call will write
+  // joins the SAME name set the directory contract below evaluates, so a
+  // re-export with `force: true` may replace a previously-exported `.bin`
+  // exactly as it may replace a previously-exported `.a` file -- and, without
+  // `force`, a directory holding one is refused by name like anything else.
+  const binaryNames = result.binaries.map((binary) => binary.name);
   const namesToWrite = [
     SYMBOLS_FILE_NAME,
     ...populatedScopeStarts.map((start) => scopeFileName(start)),
     ...(hasUnscoped ? [UNSCOPED_FILE_NAME] : []),
+    ...binaryNames,
     ROOT_FILE_NAME,
   ];
 
@@ -1968,6 +2076,19 @@ export function exportAsmTree(options: ExportAsmTreeOptions): ExportAsmTreeResul
     writeFileSync(join(outDir, UNSCOPED_FILE_NAME), `${fileLines.join("\n")}\n`, "utf8");
     files.push(UNSCOPED_FILE_NAME);
     sourceOrder.push(UNSCOPED_FILE_NAME);
+  }
+
+  // .bin siblings (T-47-08/T-47-09/T-47-10, phase 47 plan 47-03) -- one per
+  // `external_file`-typed block, written in the SAME pass as every `.a`
+  // file above and, like them, BEFORE root.a: data files precede the root
+  // for the identical interruption-safety reason the `.a` files already do
+  // -- a partial tree must have no root an assembler could start from.
+  // These are NOT `!source`d, so `sourceOrder` is untouched; they are only
+  // ever reached through the `!binary` line `emitDataLines()` already wrote
+  // into their owning scope/unscoped `.a` file.
+  for (const binary of result.binaries) {
+    writeFileSync(join(outDir, binary.name), Buffer.from(binary.bytes.buffer, binary.bytes.byteOffset, binary.bytes.byteLength));
+    files.push(binary.name);
   }
 
   // root.a -- LAST, and atomically: a temp name in the SAME directory (so
