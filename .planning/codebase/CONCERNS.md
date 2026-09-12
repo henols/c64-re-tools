@@ -17,6 +17,16 @@ does not carry its debt in code comments; it carries it in
 `.planning/todos/pending/` and in the per-phase `*-REVIEW.md` ledgers, which is where the
 entries below come from.
 
+**SUPERSEDED note (2026-09-12):** This document's description of the emulator
+backend, that backend's transport, its manifest, its probe, its per-backend
+selection and its capability table is superseded as of this date — the fork
+backend (`barryw/vice-mcp`, `-mcpserver`, `tools-manifest.json`) named
+throughout the section below no longer exists. One emulator target remains:
+stock VICE, driven over its binary monitor and text channel. The capabilities
+that have no route on it are recorded in `docs/stock-hard-losses.md`. The
+rest of this document remains a snapshot of its stated Analysis Date above
+and has not been re-verified.
+
 ---
 
 ## Resolved Since The Last Audit

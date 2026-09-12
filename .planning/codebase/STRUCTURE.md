@@ -2,6 +2,17 @@
 
 **Analysis Date:** 2026-09-01
 
+**SUPERSEDED note (2026-09-12):** This document's description of the emulator
+backend, that backend's transport, its manifest, its probe, its per-backend
+selection and its capability table is superseded as of this date — the
+fork-backend files it lists below (`vice.ts`, `vice-probe.ts`,
+`capability-registry.ts`, `fork-deleted-tools.ts`, `tools-manifest.json`)
+have been deleted. One emulator target remains: stock VICE, driven over its
+binary monitor and text channel. The capabilities that have no route on it
+are recorded in `docs/stock-hard-losses.md`. The rest of this document
+remains a snapshot of its stated Analysis Date above and has not been
+re-verified.
+
 ## Directory Layout
 
 ```

@@ -2,6 +2,16 @@
 
 **Analysis Date:** 2026-09-01
 
+**SUPERSEDED note (2026-09-12):** This document's description of the emulator
+backend, that backend's transport, its manifest, its probe, its per-backend
+selection and its capability table is superseded as of this date — any
+fork-backend test fixtures or per-backend test framing described below refer
+to a backend that no longer exists. One emulator target remains: stock
+VICE, driven over its binary monitor and text channel. The capabilities
+that have no route on it are recorded in `docs/stock-hard-losses.md`. The
+rest of this document remains a snapshot of its stated Analysis Date above
+and has not been re-verified.
+
 ## Test Framework
 
 **Runner:**

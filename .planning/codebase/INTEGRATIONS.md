@@ -2,6 +2,16 @@
 
 **Analysis Date:** 2026-09-01
 
+**SUPERSEDED note (2026-09-12):** This document's description of the emulator
+backend, that backend's transport, its manifest, its probe, its per-backend
+selection and its capability table is superseded as of this date — the
+"two backends" framing below (fork over HTTP/`-mcpserver`, stock over the
+binary monitor) is no longer accurate. One emulator target remains: stock
+VICE, driven over its binary monitor and text channel. The capabilities
+that have no route on it are recorded in `docs/stock-hard-losses.md`. The
+rest of this document remains a snapshot of its stated Analysis Date above
+and has not been re-verified.
+
 This project has **no cloud services, no SaaS integrations, and no server-hosted database**. Its integrations are: a locally/host-run emulator process (VICE) reached over **two alternative transports**, a local **SQLite** file (via `node:sqlite`) holding the annotation store, and the npm registry plus GitHub for distribution. There is no user-facing auth and no incoming or outgoing webhooks.
 
 ## Core Integration: VICE Emulator — two backends
