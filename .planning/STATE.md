@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: The Rebuild Half
-current_phase: 52
-current_phase_name: Remove the Fork Backend
-status: executing
-stopped_at: Completed 52-13-PLAN.md
-last_updated: "2026-09-12T14:07:14.590Z"
+current_phase: 47
+current_phase_name: Multi-File Rebuildable Source
+status: planning
+stopped_at: Phase 52 complete, ready to plan Phase 47
+last_updated: "2026-09-12T14:33:27.041Z"
 last_activity: 2026-09-12
-last_activity_desc: Phase 52 gap-closure round 1 planned (52-11..52-13)
-state_head: b711a40defb7bc4ead0e4ec633ec9bee68f556cc
+last_activity_desc: Phase 52 complete, transitioned to Phase 47
+state_head: 1672fbea69585b58ce80846b9fce0358e58a585c
 progress:
   total_phases: 8
   completed_phases: 2
@@ -254,9 +254,9 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 52 (Remove the Fork Backend) — EXECUTING (gap closure)
-Plan: 13 of 13 executed
-Status: 52-01..52-13 all executed. 52-11 corrected the stale-documentation
+Phase: 47 — Multi-File Rebuildable Source
+Plan: Not started
+Status: Ready to plan
 gap (CLAUDE.md + ARCHITECTURE.md false fork-backend prose, and widened
 docs-fork-absence.test.ts to catch the class mechanically). 52-12 corrected
 the remaining fork-backend prose in ARCHITECTURE.md, STACK.md and
@@ -278,13 +278,13 @@ this frontmatter's `current_phase: 52` records where planning last landed, not a
 decision to execute 52 before 47.
 
 Progress: [███░░░░░░░] 25% (2/8 phases complete in v1.0.0; per-phase plan counts in the ROADMAP Progress table)
-Last activity: 2026-09-12 — Phase 52 execution started
+Last activity: 2026-09-12 — Phase 52 complete, transitioned to Phase 47
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 387
+- Total plans completed: 400
 - Average duration: —
 - Total execution time: —
 
@@ -333,6 +333,7 @@ Last activity: 2026-09-12 — Phase 52 execution started
 | 44 | 3 | - | - |
 | 45 | 10 | - | - |
 | 46 | 6 | - | - |
+| 52 | 13 | - | - |
 
 **Recent Trend:**
 
@@ -2402,7 +2403,7 @@ and are v1.0.0's inheritance.
 ## Session Continuity
 
 Last session: 2026-09-12T14:07:14.374Z
-Stopped at: Completed 52-13-PLAN.md
+Stopped at: Phase 52 complete, ready to plan Phase 47
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md

@@ -1625,7 +1625,7 @@ in a milestone archive.
 | 49. The Reassembly Gate, Committed Before the Phase It Gates | v1.0.0 | - | Not started | - |
 | 50. Equivalence and Modifiability | v1.0.0 | - | Not started | - |
 | 51. Planning Vocabulary Out of the Shipped Server | v1.0.0 | - | Not started | - |
-| 52. Remove the Fork Backend | v1.0.0 | 13/13 | In Progress | - |
+| 52. Remove the Fork Backend | v1.0.0 | 13/13 | Complete | 2026-09-12 |
 
 **Milestone roll-up:** v0.2.0 — 9 phases, 87 plans, 51/51 in-scope requirements,
 shipped 2026-08-19 (audit round 4 `tech_debt`; 13 deferred items at close).
