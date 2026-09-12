@@ -57,7 +57,7 @@ Stated once so no requirement below has to restate them.
 
 ### Rebuildable Source
 
-- [ ] **BUILD-01**: Export emits one ACME source file per annotation-store scope, wired by `acme-build`'s `!source` and assembling to a single output
+- [x] **BUILD-01**: Export emits one ACME source file per annotation-store scope, wired by `acme-build`'s `!source` and assembling to a single output
 - [ ] **BUILD-02**: Data tables are extracted to their own files, so graphics, levels and music can be swapped without touching code
 - [ ] **BUILD-03**: Every branch, `JSR`/`JMP` and data reference goes through a symbol, so code can move
 - [ ] **BUILD-04**: A hazard report enumerates what blocks movement across four classes — indexed jump tables including the RTS-trick idiom, self-modifying code, page-alignment dependence, and cycle-exact raster code. It reports and never acts. The purpose-built synthetic subject carrying all four classes is delivered **in this same phase**, so fixture and detector are reviewed together against a non-vacuity bar rather than the fixture being written to match the detector
@@ -142,7 +142,7 @@ Success-Criteria live in `.planning/ROADMAP.md` → "Phase Details".
 | DECOMP-02 | Phase 45 | Complete |
 | DECOMP-03 | Phase 45 | Complete |
 | DECOMP-04 | Phase 45 | Complete |
-| BUILD-01 | Phase 47 | Pending |
+| BUILD-01 | Phase 47 | Complete |
 | BUILD-02 | Phase 47 | Pending |
 | BUILD-03 | Phase 47 | Pending |
 | BUILD-04 | Phase 48 | Pending |

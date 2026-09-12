@@ -5,16 +5,16 @@ milestone_name: The Rebuild Half
 current_phase: 47
 current_phase_name: Multi-File Rebuildable Source
 status: executing
-stopped_at: Completed 47-02-PLAN.md
-last_updated: "2026-09-12T16:41:42.923Z"
+stopped_at: Completed 47-05-PLAN.md
+last_updated: "2026-09-12T17:33:14.630Z"
 last_activity: 2026-09-12
 last_activity_desc: Phase 47 execution started
-state_head: a11c86765aa41bff0f34333d4413b894f605740c
+state_head: 0b4656ebce395e4e33cfd31631cb6b7dda7edcaf
 progress:
   total_phases: 8
   completed_phases: 2
   total_plans: 22
-  completed_plans: 18
+  completed_plans: 19
   percent: 25
 ---
 
@@ -255,7 +255,7 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 47 (Multi-File Rebuildable Source) — EXECUTING
-Plan: 3 of 6
+Plan: 4 of 6
 Status: Ready to execute
 Plans: 6 (47-01 … 47-06) in 5 waves. Wave 2's 47-05 is `autonomous: false` —
 it carries the phase's one blocking decision checkpoint, because promoting
@@ -574,6 +574,7 @@ Last activity: 2026-09-12 — Phase 47 execution started
 | Phase 52-remove-the-fork-backend P13 | 35 min | 3 tasks | 5 files |
 | Phase 47 P01 | 45min | 2 tasks | 5 files |
 | Phase 47 P02 | 25min | 3 tasks | 2 files |
+| Phase 47-multi-file-rebuildable-source P05 | 40min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -1316,6 +1317,9 @@ Recent decisions affecting current work:
 - [Phase 47]: exportAsmTree()'s block-to-scope assignment handles only wholly-contained and no-scope-at-all cases in plan 47-01; a boundary-crossing block falls through to unscoped.a here, with D47-C's named refusal deferred to plan 47-02 — the plan text explicitly scopes the boundary-crossing refusal and adjacency edges to plan 47-02, so implementing them here would be scope creep ahead of that plan's own tests
 - [Phase 47]: placeBlockInScope() is the ONE containment predicate a block's file placement is decided by (wholly-contained scope, unscoped, or a thrown boundary-crossing refusal) -- never a second copy of the containment question.
 - [Phase 47]: exportAsmTree()'s output-directory contract computes the full set of names it will write BEFORE touching the directory: without force any pre-existing entry refuses by name, with force only names in that computed set may be overwritten and any other entry is a named refusal, never a deletion.
+- [Phase 47]: Phase 47 plan 05: anno export-asm --out promoted from a FILE to a DIRECTORY (checkpoint resolved: promote, option A). The derived default's fixed suffix is -src, extension-free.
+- [Phase 47]: Phase 47 plan 05: the single-file input-collision refusal generalised to path-segment containment (pathIsOrContains()) -- the output directory may not BE or CONTAIN the store, image or ledger, and --force does not lift it.
+- [Phase 47]: Phase 47 plan 05: FLAG_KINDS[export-asm][--out] kept (not deleted) and changed to the empty-string kind meaning a directory, so the invocation gate's value-presence check survives the file-to-directory promotion.
 
 ### Pending Todos
 
@@ -2393,8 +2397,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-12T16:41:42.684Z
-Stopped at: Completed 47-02-PLAN.md
+Last session: 2026-09-12T17:33:14.396Z
+Stopped at: Completed 47-05-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
