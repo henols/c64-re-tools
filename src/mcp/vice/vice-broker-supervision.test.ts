@@ -213,8 +213,8 @@ test("CR-01: a crash-respawn installed through the REAL superviseDepsFor() relau
 // warm floor was the second). The behavioural test above proves the BUILDER
 // threads what it is given; this proves the CALLERS give it something, which
 // is the half a
-// signature change alone could still regress (e.g. a literal "fork" typed in
-// at a stock call site).
+// signature change alone could still regress (e.g. a stray hardcoded literal
+// typed in at a call site, rather than the resolved value).
 // ===========================================================================
 
 test("structural: every superviseDepsFor() call site in vice-broker.mts passes the resolved backend, never the two-argument form CR-01 shipped", () => {

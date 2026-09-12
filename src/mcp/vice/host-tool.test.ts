@@ -36,6 +36,12 @@ import { startControlListener, type StartControlListenerResult, type AcquireOutc
 import { hostToolOverControlPlane, hostToolRequestTimeoutMs } from "./host-tool-client.ts";
 import { brokerJsonPath, CONTROL_CONNECT_TIMEOUT_MS } from "./vice-broker-client.ts";
 import { acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
+// FORKRM-01 (plan 52-06): resolvedBackend()'s own environment-variable
+// backend override was the ONLY path that bypassed its module-level memo --
+// deleted along with the override itself, so withFakeC1541() below now
+// resets the memo directly instead, to force a fresh resolution honouring
+// the VICE_BIN it just set.
+import { resetResolvedBackendForTests } from "./backend-detect.mts";
 // Gap G-40-1 (plan 40-08/40-09): the physical Ghidra runs location and its
 // non-dotted, broker-minted handle -- imported so this file's own
 // assertions below cannot drift from ghidra-project.mts's one authoritative
@@ -930,7 +936,7 @@ async function startListenerWithSpies(repoRootForHostTool: string): Promise<{ li
     },
     onHostState: (): HostStateFields => {
       spies.onHostState.push(true);
-      return { pid: process.pid, startedAt: "2026-01-01T00:00:00Z", nodeVersion: process.version, viceBin: "x64sc", maxInstances: 1, basePort: 6600, backend: "fork" };
+      return { pid: process.pid, startedAt: "2026-01-01T00:00:00Z", nodeVersion: process.version, viceBin: "x64sc", maxInstances: 1, basePort: 6600, backend: "stock" };
     },
     onMonitorClaim: (): MonitorClaimOutcome => {
       spies.onMonitorClaim.push(true);
@@ -2394,15 +2400,16 @@ test("CLI entry point: HOST_TOOL_TEST_FORCE_CLI_REJECT=1 forces runHostTool() to
 // never a configurable override this test could point elsewhere directly).
 // These tests redirect the SIBLING probe instead, by pointing VICE_BIN at a
 // throwaway file whose own directory holds fake, controllable c1541/petcat
-// stand-ins. VICE_BACKEND=fork takes resolvedBackend()'s own UN-MEMOISED
-// override branch (backend-detect.mts), which re-reads VICE_BIN fresh on
-// every call -- so this redirection survives that module's own
-// module-level memo. findSiblingBinary()'s OWN per-binary-name memo
-// (host-tool.mts) is shared across every test in THIS file, so every
-// c1541.*/petcat.decode case below must use the SAME fakes -- created once,
-// at module scope, since no earlier test in this file ever exercises either
-// tool (the first call therefore determines the memo for the rest of the
-// run).
+// stand-ins. FORKRM-01 (plan 52-06) deleted resolvedBackend()'s own
+// environment-variable backend override branch -- the ONE path that used to
+// bypass its module-level memo -- so withFakeC1541() below calls
+// resetResolvedBackendForTests() directly instead, forcing a fresh
+// resolution that honours the VICE_BIN it just set. findSiblingBinary()'s
+// OWN per-binary-name memo (host-tool.mts) is shared across every test in
+// THIS file, so every c1541.*/petcat.decode case below must use the SAME
+// fakes -- created once, at module scope, since no earlier test in this
+// file ever exercises either tool (the first call therefore determines the
+// memo for the rest of the run).
 // ---------------------------------------------------------------------------
 
 const FAKE_C1541_DIR = mkdtempSync(join(tmpdir(), "host-tool-fake-c1541-"));
@@ -2472,17 +2479,15 @@ writeFileSync(
 chmodSync(FAKE_PETCAT_PATH, 0o755);
 
 async function withFakeC1541<T>(fn: () => Promise<T> | T): Promise<T> {
-  const previousBackend = process.env.VICE_BACKEND;
   const previousBin = process.env.VICE_BIN;
-  process.env.VICE_BACKEND = "fork";
   process.env.VICE_BIN = FAKE_X64SC_PATH;
+  resetResolvedBackendForTests();
   try {
     return await fn();
   } finally {
-    if (previousBackend === undefined) delete process.env.VICE_BACKEND;
-    else process.env.VICE_BACKEND = previousBackend;
     if (previousBin === undefined) delete process.env.VICE_BIN;
     else process.env.VICE_BIN = previousBin;
+    resetResolvedBackendForTests();
   }
 }
 

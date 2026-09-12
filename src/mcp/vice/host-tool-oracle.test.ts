@@ -55,6 +55,13 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { build } from "./build.ts";
+// FORKRM-01 (plan 52-06): resolvedBackend()'s own environment-variable
+// backend override was the ONLY path that bypassed its module-level memo --
+// deleted along with the override itself, so withFakeHostTools() below
+// calls resetResolvedBackendForTests() directly instead, forcing a fresh
+// resolution that honours the VICE_BIN it just set (same fix as
+// host-tool.test.ts's own withFakeC1541()).
+import { resetResolvedBackendForTests } from "./backend-detect.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -143,8 +150,9 @@ const PETCAT_NOT_BASIC_TEXT = ";not-basic.prg {stop}{$0a}{down}{CTRL-X}{blu}&-4;
 // host-tool.test.ts's own fakes) -- findSiblingBinary()'s per-binary-name
 // memo is per-PROCESS, and `node --test` runs each file in its own process,
 // so there is no cross-file interference. c1541 has no env-var override of
-// its own (D-13/D-14/D-15); VICE_BACKEND=fork + VICE_BIN redirection is the
-// same mechanism host-tool.test.ts's own withFakeC1541() uses.
+// its own (D-13/D-14/D-15); a VICE_BIN redirection plus a forced
+// resolvedBackend() memo reset is the same mechanism host-tool.test.ts's own
+// withFakeC1541() uses.
 
 const FAKE_DIR = realpathSync(mkdtempSync(join(tmpdir(), "host-tool-oracle-fake-")));
 const FAKE_X64SC_PATH = join(FAKE_DIR, "fake-x64sc");
@@ -176,17 +184,15 @@ writeFileSync(
 chmodSync(FAKE_PETCAT_PATH, 0o755);
 
 async function withFakeHostTools<T>(fn: () => Promise<T> | T): Promise<T> {
-  const previousBackend = process.env.VICE_BACKEND;
   const previousBin = process.env.VICE_BIN;
-  process.env.VICE_BACKEND = "fork";
   process.env.VICE_BIN = FAKE_X64SC_PATH;
+  resetResolvedBackendForTests();
   try {
     return await fn();
   } finally {
-    if (previousBackend === undefined) delete process.env.VICE_BACKEND;
-    else process.env.VICE_BACKEND = previousBackend;
     if (previousBin === undefined) delete process.env.VICE_BIN;
     else process.env.VICE_BIN = previousBin;
+    resetResolvedBackendForTests();
   }
 }
 

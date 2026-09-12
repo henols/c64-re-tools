@@ -155,7 +155,7 @@ async function startTestListener(deps: StubDeps = {}): Promise<{
     onStatus: deps.onStatus ?? (() => []),
     onHostState:
       deps.onHostState ??
-      (() => ({ pid: process.pid, startedAt: "2026-01-01T00:00:00Z", nodeVersion: process.version, viceBin: "x64sc", maxInstances: 16, basePort: 6600, backend: "fork" as const })),
+      (() => ({ pid: process.pid, startedAt: "2026-01-01T00:00:00Z", nodeVersion: process.version, viceBin: "x64sc", maxInstances: 16, basePort: 6600, backend: "stock" as const })),
     onMonitorClaim: (requestId, targetId, channel) => {
       monitorClaimCalls.push(targetId);
       monitorClaimChannels.push(channel);
@@ -329,7 +329,7 @@ test("status: one entry per instance, carrying port, url, state, reason, epoch a
 
 test("host_state: carries the broker pid, node version, resolved emulator binary, instance ceiling and band base", async () => {
   const { listener, token } = await startTestListener({
-    onHostState: () => ({ pid: 12345, startedAt: "2026-08-04T00:00:00Z", nodeVersion: "v24.0.0", viceBin: "/usr/bin/x64sc", maxInstances: 16, basePort: 6600, backend: "fork" as const }),
+    onHostState: () => ({ pid: 12345, startedAt: "2026-08-04T00:00:00Z", nodeVersion: "v24.0.0", viceBin: "/usr/bin/x64sc", maxInstances: 16, basePort: 6600, backend: "stock" as const }),
   });
   const client = makeClient(listener.port);
   try {
@@ -353,29 +353,28 @@ test("host_state: carries the broker pid, node version, resolved emulator binary
   }
 });
 
-test("WR-04 host_state: carries the broker's OWN backend verdict, so the container-side proxy can detect a disagreement", async () => {
-  for (const backend of ["fork", "stock"] as const) {
-    const { listener, token } = await startTestListener({
-      onHostState: () => ({
-        pid: 12345,
-        startedAt: "2026-08-13T00:00:00Z",
-        nodeVersion: "v24.0.0",
-        viceBin: "/usr/bin/x64sc",
-        maxInstances: 16,
-        basePort: 6600,
-        backend,
-      }),
-    });
-    const client = makeClient(listener.port);
-    try {
-      client.send({ op: "host_state", token });
-      const resp = await client.next();
-      assert.equal(resp.kind, "host_state");
-      assert.equal(resp.backend, backend, "the wire must carry the verdict that actually decided the emulator's launch argv");
-    } finally {
-      client.close();
-      listener.server.close();
-    }
+test("WR-04 host_state: carries the broker's OWN backend verdict on the wire", async () => {
+  const backend = "stock" as const;
+  const { listener, token } = await startTestListener({
+    onHostState: () => ({
+      pid: 12345,
+      startedAt: "2026-08-13T00:00:00Z",
+      nodeVersion: "v24.0.0",
+      viceBin: "/usr/bin/x64sc",
+      maxInstances: 16,
+      basePort: 6600,
+      backend,
+    }),
+  });
+  const client = makeClient(listener.port);
+  try {
+    client.send({ op: "host_state", token });
+    const resp = await client.next();
+    assert.equal(resp.kind, "host_state");
+    assert.equal(resp.backend, backend, "the wire must carry the verdict that actually decided the emulator's launch argv");
+  } finally {
+    client.close();
+    listener.server.close();
   }
 });
 
@@ -1541,17 +1540,13 @@ test("a bind failure whose cause is NOT address-in-use produces its own loud fai
  * `undefined` is a real, distinguishable entry (profile-less), which is why
  * this is an array of the optional type and not a single nullable value.
  *
- * The backend defaults to "stock" (33 review WR-03). The profile maps to
- * stock-only launch flags -- `buildViceArgs()` emits `-warp`/`-console` only
- * inside its `backend === "stock"` branch -- so "stock" is the only backend on
- * which a profile-bearing acquire is a COHERENT scenario. These arrival
- * assertions used to run against the shared fork-backed default stub, which
- * is precisely the combination the boundary now refuses: on fork the profile
- * could only be accepted and ignored. Overridable so the refusal itself can
- * be driven on fork. */
-async function startProfileRecordingListener(
-  backend: "fork" | "stock" = "stock",
-): Promise<{
+ * FORKRM-01 (plan 52-06): the 33-review WR-03 profile-is-stock-only refusal
+ * this fixture used to also drive (on the fork backend) is deleted -- there
+ * is only one backend now, and it always has the `-warp`/`-console` route,
+ * so the condition that refusal existed for can no longer occur. The
+ * `backend` parameter is dropped along with it -- a fixed "stock" fixture is
+ * hardcoded below rather than left as a parameter with one legal value. */
+async function startProfileRecordingListener(): Promise<{
   listener: StartControlListenerResult;
   token: string;
   received: Array<LaunchProfile | undefined>;
@@ -1569,7 +1564,7 @@ async function startProfileRecordingListener(
       viceBin: "x64sc",
       maxInstances: 16,
       basePort: 6600,
-      backend,
+      backend: "stock",
     }),
   });
   return { listener, token, received };
@@ -1662,103 +1657,23 @@ test("acquire profile (33-06, edge: empty): an acquire with NO profile key reach
 });
 
 // ---------------------------------------------------------------------------
-// 33 review WR-03: the profile is STOCK-ONLY -- refused on fork, not ignored
+// FORKRM-01 (plan 52-06): the 33-review WR-03 profile-is-stock-only refusal
+// used to live here -- a `profile.warp`/`profile.headless` request was
+// refused `bad_request` when the broker's OWN resolved backend had no
+// `-warp`/`-console` route at all. There is only one backend now and it
+// always has that route, so the condition this refused can no longer occur;
+// the three tests that drove the refusal on the (now-deleted) fork backend
+// are removed, not merely skipped. What survives: profile.warp/headless
+// must still arrive at onAcquire unchanged.
 // ---------------------------------------------------------------------------
-//
-// buildViceArgs()'s whole profile handling sits inside its `backend ===
-// "stock"` branch, so on fork neither -warp nor -console is ever emitted. It
-// used to be accepted anyway: the caller got a confident grant and an
-// unwarped machine with no field saying so, and spawnAndRecordInstance()
-// mirrored the profile onto the InstanceRecord regardless of backend, so the
-// record claimed a knob its own viceArgs did not carry -- which
-// profileEligible() would then treat as a match for a later warp request.
-// That is D-16's undetectable lie, one backend over, on the branch that is
-// still the sole production backend across v0.1.x.
 
-test("acquire profile (33 review WR-03): profile.warp on the FORK backend is REFUSED bad_request, not accepted and ignored", async () => {
-  const { listener, token, received } = await startProfileRecordingListener("fork");
+test("acquire profile: profile.warp/profile.headless are accepted and arrive at onAcquire unchanged", async () => {
+  const { listener, token, received } = await startProfileRecordingListener();
   const client = makeClient(listener.port);
   try {
-    client.send({ op: "acquire", id: "req-fork-warp", token, profile: { warp: true } });
-    const reply = await client.next();
-    assert.equal(reply.kind, "error", `expected a refusal, got ${JSON.stringify(reply)}`);
-    assert.equal(reply.code, "bad_request");
-    assert.match(String(reply.message), /stock-only/);
-    assert.match(String(reply.message), /"fork"/, "the refusal names the backend that cannot honour it");
-    assert.match(String(reply.message), /warp/, "and names which key was asked for");
-    assert.match(String(reply.message), /accepted and IGNORED|Refused rather than accepted/);
-
-    // The refusal happens at the narrowing site, BEFORE onAcquire -- so no
-    // port is allocated, nothing is spawned, and no record is written that
-    // could claim a profile its argv does not carry.
-    assert.deepEqual(received, [], "a refused profile must never reach onAcquire");
-  } finally {
-    client.close();
-    listener.server.close();
-  }
-});
-
-test("acquire profile (33 review WR-03): profile.headless on fork is refused too, and both keys are named together", async () => {
-  const { listener, token } = await startProfileRecordingListener("fork");
-  const client = makeClient(listener.port);
-  try {
-    client.send({ op: "acquire", id: "req-fork-headless", token, profile: { headless: true } });
-    const reply = await client.next();
-    assert.equal(reply.kind, "error");
-    assert.equal(reply.code, "bad_request");
-    assert.match(String(reply.message), /headless/);
-  } finally {
-    client.close();
-    listener.server.close();
-  }
-
-  const both = await startProfileRecordingListener("fork");
-  const client2 = makeClient(both.listener.port);
-  try {
-    client2.send({ op: "acquire", id: "req-fork-both", token: both.token, profile: { warp: true, headless: true } });
-    const reply = await client2.next();
-    assert.equal(reply.kind, "error");
-    assert.match(String(reply.message), /warp, headless/, "both requested keys are named in one refusal");
-  } finally {
-    client2.close();
-    both.listener.server.close();
-  }
-});
-
-test("acquire profile (33 review WR-03): on fork, an EMPTY profile and an all-false profile still GRANT -- they ask for nothing fork cannot deliver", async () => {
-  // The refusal is scoped to `=== true`, deliberately: turning a no-op into
-  // an error would break profile-less callers that pass `{}` and would make
-  // `{warp:false}` -- a request for exactly fork's behaviour -- an error.
-  const { listener, token, received } = await startProfileRecordingListener("fork");
-  const client = makeClient(listener.port);
-  try {
-    client.send({ op: "acquire", id: "req-fork-empty", token, profile: {} });
-    assert.equal((await client.next()).kind, "grant", "an empty profile asks for nothing stock-only");
-    assert.deepEqual(received[0], {});
-  } finally {
-    client.close();
-    listener.server.close();
-  }
-
-  const second = await startProfileRecordingListener("fork");
-  const client2 = makeClient(second.listener.port);
-  try {
-    client2.send({ op: "acquire", id: "req-fork-false", token: second.token, profile: { warp: false, headless: false } });
-    assert.equal((await client2.next()).kind, "grant", "explicit false is fork's own behaviour, not a stock-only request");
-    assert.deepEqual(second.received[0], { warp: false, headless: false });
-  } finally {
-    client2.close();
-    second.listener.server.close();
-  }
-});
-
-test("acquire profile (33 review WR-03): the SAME profile that fork refuses is granted on stock -- the gate is the backend, not the shape", async () => {
-  const { listener, token, received } = await startProfileRecordingListener("stock");
-  const client = makeClient(listener.port);
-  try {
-    client.send({ op: "acquire", id: "req-stock-warp", token, profile: { warp: true, headless: true } });
+    client.send({ op: "acquire", id: "req-warp", token, profile: { warp: true, headless: true } });
     assert.equal((await client.next()).kind, "grant");
-    assert.deepEqual(received[0], { warp: true, headless: true }, "on stock the profile still arrives unchanged");
+    assert.deepEqual(received[0], { warp: true, headless: true }, "the profile arrives unchanged");
   } finally {
     client.close();
     listener.server.close();

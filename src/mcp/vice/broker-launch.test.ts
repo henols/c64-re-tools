@@ -275,6 +275,7 @@ test("tryLaunchOne: records a launching instance and returns it, spawning exactl
     state,
     supervisorDir: "/tmp/6600",
     epochFile: "/tmp/6600/epoch.json",
+    remoteMonitorPort: 6650,
     spawn: (cmd, args) => {
       spawnCount++;
       assert.equal(cmd, "x64sc");
@@ -298,6 +299,7 @@ test("tryLaunchOne: a launch that rejects still clears the in-flight owner so a 
       state,
       supervisorDir: "/tmp/6600",
       epochFile: "/tmp/6600/epoch.json",
+      remoteMonitorPort: 6650,
       spawn: () => {
         throw new Error("spawn failed");
       },
@@ -309,6 +311,7 @@ test("tryLaunchOne: a launch that rejects still clears the in-flight owner so a 
     state,
     supervisorDir: "/tmp/6601",
     epochFile: "/tmp/6601/epoch.json",
+    remoteMonitorPort: 6651,
     spawn: () => stubChild(1234),
   });
   assert.ok(record, "a following launch request must succeed once the guard has cleared");
@@ -398,7 +401,7 @@ test("probeReady: the timeout default is 1000ms, and the seconds-valued knob sti
 // while still counting toward countTotal()/atCapacity().
 // ---------------------------------------------------------------------------
 
-test("WR-01 probeReady: the fork route is unchanged, including when backend is omitted entirely", async () => {
+test("WR-01 probeReady: an omitted backend still takes the HTTP route, unchanged", async () => {
   let httpCalls = 0;
   let binmonCalls = 0;
   const deps = {
@@ -412,8 +415,7 @@ test("WR-01 probeReady: the fork route is unchanged, including when backend is o
     },
   };
   assert.equal(await probeReady(6600, deps), true);
-  assert.equal(await probeReady(6600, { ...deps, backend: "fork" as const }), true);
-  assert.equal(httpCalls, 2, "an omitted backend and an explicit fork must both take the HTTP route");
+  assert.equal(httpCalls, 1, "an omitted backend must take the HTTP route");
   assert.equal(binmonCalls, 0);
 });
 
@@ -697,7 +699,9 @@ test("promoteLaunchingInstances (plan 41-05): a cold-launched launching record i
   const coldResult = await acquirePortAndLaunch("acquire", {
     state,
     stateDir: "/tmp/promote-no-floor-6600",
+    backend: "stock",
     allocatePort: async () => ({ ok: true, port: 6600 }),
+    allocateRemoteMonitorPort: async () => ({ ok: true, port: 6650 }),
     spawn: () => stubChild(9002),
     now: () => 1000,
   });
@@ -811,11 +815,15 @@ test("criterion C: two concurrent launch requests against a stubbed, deferred po
     releaseGate = resolve;
   });
 
+  const stubAllocateRemoteMonitorPort = async (): Promise<PortAllocationResult> => ({ ok: true, port: 6650 });
+
   const request1 = gate.then(() =>
     acquirePortAndLaunch("acquire", {
       state,
       stateDir: "/tmp/race-cold",
+      backend: "stock",
       allocatePort: stubAllocatePort,
+      allocateRemoteMonitorPort: stubAllocateRemoteMonitorPort,
       spawn: stubSpawn,
     })
   );
@@ -823,7 +831,9 @@ test("criterion C: two concurrent launch requests against a stubbed, deferred po
     acquirePortAndLaunch("spare", {
       state,
       stateDir: "/tmp/race-warm",
+      backend: "stock",
       allocatePort: stubAllocatePort,
+      allocateRemoteMonitorPort: stubAllocateRemoteMonitorPort,
       spawn: stubSpawn,
     })
   );
@@ -937,7 +947,9 @@ test("D-07: an in-flight boot is never preempted -- no kill of any kind is issue
   const inFlightLaunch = acquirePortAndLaunch("spare", {
     state,
     stateDir: "/tmp/d07-nopreempt-inflight",
+    backend: "stock",
     allocatePort: deferredAllocatePort,
+    allocateRemoteMonitorPort: async () => ({ ok: true, port: 6650 }),
     spawn: stubSpawn,
   });
 
@@ -945,7 +957,9 @@ test("D-07: an in-flight boot is never preempted -- no kill of any kind is issue
   const arriving = await acquirePortAndLaunch("acquire", {
     state,
     stateDir: "/tmp/d07-nopreempt-arriving",
+    backend: "stock",
     allocatePort: dynamicAllocatePort,
+    allocateRemoteMonitorPort: async () => ({ ok: true, port: 6651 }),
     spawn: stubSpawn,
   });
   assert.equal(arriving.ok, false, "an acquire arriving while a boot is in flight must be refused (queued elsewhere), never preempt it");
@@ -1047,7 +1061,7 @@ test("superviseChild: a stub child that exits on its own is respawned, and the i
         return spawnCount === 1 ? realSpawn("/bin/true", []) : realSpawn("/bin/sleep", ["300"]);
       },
     });
-    const record = superviseChild("acquire", 6600, deps);
+    const record = superviseChild("acquire", 6600, deps, 6650);
     assert.ok(record, "the initial launch must succeed");
     assert.equal(record!.epoch, 1, "the first launch records epoch 1");
 
@@ -1089,7 +1103,7 @@ test("superviseChild: a stub child whose instance carries the deliberate-kill ma
     const deps = makeSuperviseDeps(dir, {
       spawn: () => realSpawn("/bin/sleep", ["300"]),
     });
-    const record = superviseChild("acquire", 6600, deps);
+    const record = superviseChild("acquire", 6600, deps, 6650);
     assert.ok(record, "the initial launch must succeed");
     const pid = record!.pid as number;
 
@@ -1135,7 +1149,7 @@ test("superviseChild: the first respawn waits the configured initial backoff; th
       },
     });
 
-    superviseChild("acquire", 6600, deps);
+    superviseChild("acquire", 6600, deps, 6650);
     assert.equal(spawnedChildren.length, 1, "the initial launch must spawn exactly one child");
 
     // Crash #1 -> respawn #1 (initial backoff).
@@ -1172,7 +1186,7 @@ test("superviseChild: an instance crashing one more than the configured maximum 
       },
     });
 
-    superviseChild("acquire", 6600, deps);
+    superviseChild("acquire", 6600, deps, 6650);
     assert.equal(spawnedChildren.length, 1);
 
     // Crash #1 (count 1, <3 -> respawn), crash #2 (count 2, <3 -> respawn),
@@ -1218,7 +1232,7 @@ test("superviseChild: a crash whose timestamp falls outside the configured windo
       },
     });
 
-    superviseChild("acquire", 6600, deps);
+    superviseChild("acquire", 6600, deps, 6650);
     assert.equal(spawnedChildren.length, 1);
 
     // Crash #1 at t=0 -- crashTimes=[0], length 1 < maxRestarts(2) -> respawn.
@@ -1267,7 +1281,7 @@ test("superviseChild: for every spawn and respawn in a test run, the captured lo
       },
     });
 
-    superviseChild("acquire", 6600, deps);
+    superviseChild("acquire", 6600, deps, 6650);
     (spawnedChildren[0] as unknown as EventEmitter).emit("exit", 1, null);
     await waitFor(() => (spawnedChildren.length >= 2 ? true : null));
     (spawnedChildren[1] as unknown as EventEmitter).emit("exit", 1, null);
@@ -1276,7 +1290,7 @@ test("superviseChild: for every spawn and respawn in a test run, the captured lo
     const launchLines = logs.filter((l) => /^vice-broker: launching x64sc /.test(l));
     assert.equal(launchLines.length, 3, "every spawn AND every respawn must log its own resolved command line");
     for (const line of launchLines) {
-      assert.match(line, /-mcpserverport 6600/, "the logged line must name the full resolved argument vector");
+      assert.match(line, /-binarymonitoraddress ip4:\/\/127\.0\.0\.1:6600/, "the logged line must name the full resolved argument vector");
     }
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -1289,7 +1303,7 @@ test("superviseChild: after a spawn, a file exists inside that instance's logs d
     const deps = makeSuperviseDeps(dir, {
       spawn: () => realSpawn("/bin/true", []),
     });
-    const record = superviseChild("acquire", 6600, deps);
+    const record = superviseChild("acquire", 6600, deps, 6650);
     assert.ok(record);
     assert.ok(record!.logPath, "the record must carry a logPath");
 
@@ -1330,7 +1344,7 @@ test("superviseChild: a broker-ordered death carrying the respawn-after-kill mar
       },
     });
 
-    const record = superviseChild("acquire", 6600, deps);
+    const record = superviseChild("acquire", 6600, deps, 6650);
     assert.ok(record, "the initial launch must succeed");
     assert.equal(record!.epoch, 1, "the first launch records epoch 1");
 
@@ -1375,7 +1389,7 @@ test("superviseChild: a recycle consumes no crash budget and waits no crash back
       },
     });
 
-    const record = superviseChild("acquire", 6600, deps);
+    const record = superviseChild("acquire", 6600, deps, 6650);
     assert.ok(record, "the initial launch must succeed");
 
     // Recycle more times than maxRestarts(3) -- if a recycle were misread
@@ -1410,7 +1424,7 @@ test("superviseChild: a recycled instance that was granted comes back granted, n
       },
     });
 
-    const record = superviseChild("acquire", 6600, deps);
+    const record = superviseChild("acquire", 6600, deps, 6650);
     assert.ok(record, "the initial launch must succeed");
 
     // Simulate a grant, exactly like vice-broker.mts's handleAcquire() does
@@ -1448,7 +1462,7 @@ test("superviseChild: a recycle updates the matching grant's own recorded pid to
       },
     });
 
-    const record = superviseChild("acquire", 6600, deps);
+    const record = superviseChild("acquire", 6600, deps, 6650);
     assert.ok(record, "the initial launch must succeed");
     const preRecyclePid = record!.pid as number;
 
@@ -1490,7 +1504,7 @@ test("superviseChild: a broker-ordered death WITHOUT the respawn-after-kill mark
       },
     });
 
-    const record = superviseChild("acquire", 6600, deps);
+    const record = superviseChild("acquire", 6600, deps, 6650);
     assert.ok(record, "the initial launch must succeed");
 
     const before = deps.state.instances.get(6600)!;
@@ -1522,7 +1536,7 @@ test("invariant: a replacement follows a broker-ordered death if and only if its
         return child;
       },
     });
-    superviseChild("acquire", 6600, depsA);
+    superviseChild("acquire", 6600, depsA, 6650);
     const recA = depsA.state.instances.get(6600)!;
     recA.deliberateKill = true;
     recA.respawnAfterKill = true;
@@ -1540,7 +1554,7 @@ test("invariant: a replacement follows a broker-ordered death if and only if its
         return child;
       },
     });
-    superviseChild("acquire", 6600, depsB);
+    superviseChild("acquire", 6600, depsB, 6650);
     const recB = depsB.state.instances.get(6600)!;
     recB.deliberateKill = true;
     (spawnedB[0] as unknown as EventEmitter).emit("exit", null, "SIGTERM");
@@ -1568,7 +1582,7 @@ test("superviseChild: the give-up path leaves no live child pid, asserted by a z
       },
     });
 
-    const record = superviseChild("acquire", 6600, deps);
+    const record = superviseChild("acquire", 6600, deps, 6650);
     assert.ok(record);
 
     const gone = await waitFor(() => (deps.state.instances.has(6600) ? null : true), { timeoutMs: 10000 });
@@ -1600,20 +1614,7 @@ test("superviseChild: the give-up path leaves no live child pid, asserted by a z
 // spawned in this section.
 // ===========================================================================
 
-// DO NOT update this expected value. The fork branch's argv byte-identity is a
-// Validated v0.2.0 requirement, not merely a test: the fork's advertised tool
-// list and launch shape are frozen from v0.1.x, and every skill written against
-// the full fork surface depends on it. If a change to buildViceArgs() makes this
-// assertion fail, the change is wrong -- this is not an ordinary
-// expected-value-update site (33-05, D-15).
-test("buildViceArgs: fork backend returns the exact byte-identical pre-Phase-2 argv", () => {
-  const args = buildViceArgs(6510, { backend: "fork", mcpHost: "0.0.0.0" });
-  assert.deepEqual(args, ["-mcpserver", "-mcpserverhost", "0.0.0.0", "-mcpserverport", "6510"]);
-});
-
-test("buildViceArgs: the VICE_ARGS override short-circuits before either backend branch, unchanged for both backends", () => {
-  const forkArgs = buildViceArgs(6510, { backend: "fork", viceArgsEnv: "/bin/sleep 600" });
-  assert.deepEqual(forkArgs, ["/bin/sleep", "600"]);
+test("buildViceArgs: the VICE_ARGS override short-circuits before the stock branch", () => {
   const stockArgs = buildViceArgs(6510, { backend: "stock", viceArgsEnv: "/bin/sleep 600" });
   assert.deepEqual(stockArgs, ["/bin/sleep", "600"]);
 });
@@ -1779,25 +1780,6 @@ test("spawnAndRecordInstance (I-1 rider, via tryLaunchOne): a stock launch's inj
   assert.ok(scratchDir && scratchDir.startsWith(tmpdir()), "the scratch dir must live under os.tmpdir()");
 });
 
-test("spawnAndRecordInstance (I-1 rider, via tryLaunchOne): a fork launch's injected spawn stub receives NO third argument at all", () => {
-  const state = createBrokerState();
-  const spawnArgsSeen: unknown[][] = [];
-  const record = tryLaunchOne("acquire", 6701, {
-    state,
-    supervisorDir: "/tmp/i1-fork-seam",
-    epochFile: "/tmp/i1-fork-seam/epoch.json",
-    backend: "fork",
-    spawn: (command: string, args: string[], options?: SpawnOptionsWithoutStdio) => {
-      spawnArgsSeen.push([command, args, options]);
-      return stubChild(4244);
-    },
-  });
-  assert.ok(record, "the fork launch must succeed");
-  assert.equal(spawnArgsSeen.length, 1);
-  const [, , options] = spawnArgsSeen[0] as [string, string[], SpawnOptionsWithoutStdio | undefined];
-  assert.equal(options, undefined, "the fork path must neither receive nor need the new options parameter");
-});
-
 // MUST run before any later test in this file passes a non-loopback
 // binmonHost to buildViceArgs() -- the widened-bind note is gated by a
 // module-level flag with no test-facing reset, so this is the one place in
@@ -1873,16 +1855,6 @@ test("buildViceArgs (D-13): stock backend WITHOUT a remoteMonitorPort appends no
     "-binarymonitoraddress",
     "ip4://127.0.0.1:6600",
   ]);
-});
-
-// DO NOT update this expected value either -- same reason as the fork assertion
-// near the top of this section: fork argv byte-identity is a Validated v0.2.0
-// requirement, not merely a test (33-05, D-15). Phase 33 adds the determinism
-// block and the profile knobs to the STOCK branch only, and this assertion is
-// what proves the fork branch did not move with it.
-test("buildViceArgs (D-13): fork backend is byte-identical, unaffected by this plan", () => {
-  const args = buildViceArgs(6600, { backend: "fork", mcpHost: "0.0.0.0" });
-  assert.deepEqual(args, ["-mcpserver", "-mcpserverhost", "0.0.0.0", "-mcpserverport", "6600"]);
 });
 
 test("buildViceArgs (D-13): stock backend WITH a remoteMonitorPort appends -remotemonitor and its address, same host as the binmon bind", () => {
@@ -2014,26 +1986,6 @@ test("grep gate (D-16): broker-launch.mts's source no longer carries the removed
   assert.ok(!source.includes("nothing in Phase 3 dials the text-monitor port"), "the removed degrade log's own phrase must not survive anywhere in the source");
   assert.ok(!source.includes("launching WITHOUT -remotemonitor"), "the removed degrade log's own phrase must not survive anywhere in the source");
   assert.ok(!source.includes("Degrade, never fail"), "the removed degrade branch's own comment must not survive anywhere in the source");
-});
-
-test("acquirePortAndLaunch (D-13): a fork launch never calls allocateRemoteMonitorPort, and the record carries no remoteMonitorPort", async () => {
-  const state = createBrokerState();
-  let secondAllocationCalls = 0;
-  const result = await acquirePortAndLaunch("acquire", {
-    state,
-    stateDir: "/tmp/d13-fork-no-second-port",
-    backend: "fork",
-    allocatePort: async () => ({ ok: true, port: 6600 }),
-    allocateRemoteMonitorPort: async () => {
-      secondAllocationCalls++;
-      return { ok: true, port: 6601 };
-    },
-    spawn: () => stubChild(4242),
-  });
-  assert.ok(result.ok);
-  assert.equal(secondAllocationCalls, 0, "a fork launch must never call allocateRemoteMonitorPort");
-  const record = (result as { ok: true; record: InstanceRecord }).record;
-  assert.equal(record.remoteMonitorPort, undefined);
 });
 
 // ===========================================================================
@@ -2215,12 +2167,11 @@ test("deleteInstanceRecord: releases only a record's OWN second port, never an u
   assert.equal(state.blockedPorts.has(6650), true, "and must still leave every unrelated block in place");
 });
 
-// The env-reading VICE_BACKEND function that used to live here is RETIRED as
-// of plan 02-07 -- backend-detect.mts's resolvedBackend() is now the ONE
-// reader of VICE_BACKEND in this tree (its own test file,
-// backend-detect.test.ts, covers the override precedence, cache lifecycle,
-// and classification logic that removal leaves this file with nothing
-// further to assert about VICE_BACKEND reading).
+// The env-reading backend-override function that used to live here was
+// retired as of plan 02-07 (moved to backend-detect.mts's resolvedBackend()),
+// and that override itself was deleted outright by FORKRM-01 (plan 52-06) --
+// there is nothing left in this file to assert about environment-driven
+// backend selection.
 
 // ===========================================================================
 // 33-05-PLAN.md, Task 2: REPRO-01 / REPRO-05 / D-15 -- the profile knobs, the
@@ -2347,19 +2298,9 @@ test("buildViceArgs (33-05, edge: concurrency): two stock instances on different
   assert.equal(b[differing[0]!], "ip4://127.0.0.1:6601");
 });
 
-// DO NOT update this expected value: fork argv byte-identity is a Validated
-// v0.2.0 requirement, not merely a test (33-05, D-15). This is the third fork
-// whole-argv site, added by 33-05 to prove `profile` has no path to it at all.
-test("buildViceArgs (33-05, D-15): the fork branch ignores profile entirely and stays byte-identical", () => {
-  const args = buildViceArgs(6510, { backend: "fork", mcpHost: "0.0.0.0", profile: { warp: true, headless: true } });
-  assert.deepEqual(args, ["-mcpserver", "-mcpserverhost", "0.0.0.0", "-mcpserverport", "6510"]);
-});
-
-test("buildViceArgs (33-05, T-33-04): VICE_ARGS still short-circuits ahead of BOTH branches with a profile present -- profile must never become a second whole-argv override", () => {
+test("buildViceArgs (33-05, T-33-04): VICE_ARGS still short-circuits ahead of the stock branch with a profile present -- profile must never become a second whole-argv override", () => {
   const stockArgs = buildViceArgs(6510, { backend: "stock", viceArgsEnv: "/bin/sleep 600", profile: { warp: true, headless: true } });
   assert.deepEqual(stockArgs, ["/bin/sleep", "600"], "the deliberate operator-only override must win over the profile, not be merged with it");
-  const forkArgs = buildViceArgs(6510, { backend: "fork", viceArgsEnv: "/bin/sleep 600", profile: { warp: true, headless: true } });
-  assert.deepEqual(forkArgs, ["/bin/sleep", "600"]);
   assert.ok(!stockArgs.includes("-console") && !stockArgs.includes("-warp"), "no profile flag may leak past the VICE_ARGS short-circuit");
 });
 

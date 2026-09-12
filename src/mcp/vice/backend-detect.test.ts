@@ -1,50 +1,43 @@
 // backend-detect.test.ts
 //
-// This file drives ONE of FOUR tested surfaces: (1) the explicit
-// VICE_BACKEND override path, (2) the on-disk cache's
-// read/write/invalidate/staleness lifecycle, (3) classifyHelpOutput()'s pure
-// STRING-PARSING logic against ASSUMED, author-constructed fixture strings,
-// and (4) a REAL HARDWARE block, added by EXTV-02, that drives the same
-// classifyHelpOutput()/probeBackend() surface against two verbatim `--help`
-// transcripts actually captured from real x64sc builds. No test in this
-// file spawns, launches, or interrogates a real VICE binary itself --
-// `probeBackend()`'s own spawn seam (`spawnHelp`) is ALWAYS injected with a
-// stub in every test that reaches it, including the real-hardware block
-// below, which feeds a committed transcript through the stub rather than
-// spawning anything.
+// FORKRM-01 (plan 52-06) removed two of the three code paths this file used
+// to drive: the explicit environment-variable backend override and the
+// `--help` probe that used to classify a binary as fork or stock. Both are
+// gone from backend-detect.mts, not merely unreachable, so the tests
+// exercising them are gone too, structurally -- see this plan's SUMMARY for
+// the removal record.
 //
-// Fixture class 1 -- ASSUMED (below, unchanged by EXTV-02): every fixture
-// string fed to classifyHelpOutput() in the sections immediately following
-// this header is labelled ASSUMED -- an author-constructed guess at what a
-// real build's --help output might contain (per D-02's discriminator
-// tokens), NOT a captured transcript from any real binary.
+// What SURVIVES, and what this file now covers:
+//   (1) WR-05 binary-path resolution (`binPath`/`binPathResolved`) --
+//       unaffected by the collapse, since it never depended on which
+//       backend was detected.
+//   (2) The on-disk identity cache's read/write/invalidate lifecycle --
+//       still real, still worth testing, but now keyed on identity alone
+//       (resolvedPath/mtimeMs/sizeBytes) rather than on a backend verdict
+//       there is no longer anything to determine.
+//   (3) Once-per-process memoisation -- resolvedBackend() still resolves at
+//       most once per process; there is no longer a one-time "detected
+//       backend" note to pin, since there is nothing left to detect.
+//   (4) readCapabilityRecord()/writeCapabilityRecord() -- BACK-04's round
+//       trip, unaffected by the collapse (it never encoded a backend
+//       verdict of its own).
 //
-// Fixture class 2 -- REAL HARDWARE (own section, own banner, far below):
-// verbatim `--help` transcripts of two real x64sc builds, read from disk
-// under fixtures/backend-detect/. See fixtures/backend-detect/README.md for
-// the provenance table and
-// .planning/phases/13-external-verification/13-HELP-DISCRIMINATOR-EVIDENCE.md
-// for the full live probeBackend()/resolvedBackend() run these transcripts
-// are the fixture-driven regression pin for. D-13-03 requires the two
-// classes stay visibly separate: no shared array, no shared helper, no test
-// name that omits which class a fixture belongs to.
+// The REAL HARDWARE (EXTV-02) fixture class -- verbatim `--help` transcripts
+// under fixtures/backend-detect/ -- is deleted along with the probe it
+// pinned as a regression; see this plan's SUMMARY for that removal too.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 import {
-  classifyHelpOutput,
-  probeBackend,
   resolvedBackend,
   resetResolvedBackendForTests,
   readCapabilityRecord,
   writeCapabilityRecord,
   CAPABILITY_SCHEMA_VERSION,
   type ResolvedBackendDeps,
-  type SpawnHelpResult,
 } from "./backend-detect.mts";
 
 function withScratchDir<T>(fn: (dir: string) => T): T {
@@ -57,143 +50,27 @@ function withScratchDir<T>(fn: (dir: string) => T): T {
 }
 
 /** A fully-injected ResolvedBackendDeps fixture with every dependency
- * stubbed -- no real filesystem stat, no real PATH walk, no real spawn.
- * Every test overrides only the fields its own scenario cares about. */
+ * stubbed -- no real filesystem stat, no real PATH walk. Every test
+ * overrides only the fields its own scenario cares about. */
 function stubDeps(overrides: Partial<ResolvedBackendDeps> = {}): ResolvedBackendDeps {
   return {
     env: {},
     viceBin: "/fake/x64sc",
     resolveBinPath: (bin) => bin,
     stat: () => ({ mtimeMs: 1000, sizeBytes: 5000 }),
-    probe: () => "stock",
     now: () => 1700000000000,
-    log: () => {},
     ...overrides,
   };
 }
 
 // ===========================================================================
-// classifyHelpOutput() -- pure string classification. Every fixture string
-// below is an ASSUMED shape, authored for this test, never a real --help
-// transcript (see this file's own header comment).
+// resolvedBackend(): backend is always "stock" -- there is nothing left to
+// detect between (FORKRM-01, plan 52-06).
 // ===========================================================================
 
-test("classifyHelpOutput: returns 'fork' when the ASSUMED fixture text contains -mcpserver", () => {
-  const assumedForkHelpText = "usage: x64sc [options]\n  -mcpserver          Enable MCP server\n";
-  assert.equal(classifyHelpOutput(assumedForkHelpText), "fork");
-});
-
-test("classifyHelpOutput: returns 'stock' when the ASSUMED fixture text contains -binarymonitor but not -mcpserver", () => {
-  const assumedStockHelpText = "usage: x64sc [options]\n  -binarymonitor      Enable binary monitor\n";
-  assert.equal(classifyHelpOutput(assumedStockHelpText), "stock");
-});
-
-test("classifyHelpOutput: returns 'unknown' when the ASSUMED fixture text contains neither discriminator token", () => {
-  const assumedUnrelatedHelpText = "usage: x64sc [options]\n  -help               Show this help\n";
-  assert.equal(classifyHelpOutput(assumedUnrelatedHelpText), "unknown");
-});
-
-test("classifyHelpOutput: returns 'unknown' for empty text (a probe that spawned nothing usable)", () => {
-  assert.equal(classifyHelpOutput(""), "unknown");
-});
-
-test("classifyHelpOutput: 'fork' wins when an ASSUMED fixture text contains both tokens", () => {
-  const assumedBothHelpText = "usage: x64sc [options]\n  -mcpserver\n  -binarymonitor\n";
-  assert.equal(classifyHelpOutput(assumedBothHelpText), "fork");
-});
-
-// ===========================================================================
-// probeBackend() -- the --help fallback ladder, driven entirely through the
-// injected spawnHelp seam. No real binary is ever spawned.
-// ===========================================================================
-
-test("probeBackend: uses --help's output directly when it exits zero", () => {
-  const calls: string[] = [];
-  const result = probeBackend("/fake/x64sc", {
-    spawnHelp: (bin, flag): SpawnHelpResult => {
-      calls.push(flag);
-      return { text: "-binarymonitor", exitedZero: true };
-    },
-  });
-  assert.equal(result, "stock");
-  assert.deepEqual(calls, ["--help"], "must not fall back once --help succeeds with output");
-});
-
-test("probeBackend: falls back to -help then -? only when a run exits non-zero with EMPTY output", () => {
-  const calls: string[] = [];
-  const result = probeBackend("/fake/x64sc", {
-    spawnHelp: (bin, flag): SpawnHelpResult => {
-      calls.push(flag);
-      if (flag === "-?") return { text: "-mcpserver", exitedZero: false };
-      return { text: "", exitedZero: false };
-    },
-  });
-  assert.equal(result, "fork");
-  assert.deepEqual(calls, ["--help", "-help", "-?"]);
-});
-
-test("probeBackend: does NOT fall back when a run exits non-zero but still produced output", () => {
-  const calls: string[] = [];
-  const result = probeBackend("/fake/x64sc", {
-    spawnHelp: (bin, flag): SpawnHelpResult => {
-      calls.push(flag);
-      return { text: "-binarymonitor", exitedZero: false };
-    },
-  });
-  assert.equal(result, "stock");
-  assert.deepEqual(calls, ["--help"], "non-zero exit with usable output must not trigger a fallback");
-});
-
-test("probeBackend: a spawn failure (ENOENT-shaped, reported as empty output) on every flag never throws and classifies as 'unknown'", () => {
-  assert.doesNotThrow(() => {
-    // Mirrors defaultSpawnHelp's own internal try/catch contract: a spawn
-    // failure is reported as { text: "", exitedZero: false }, never a thrown
-    // error out of the spawnHelp seam itself.
-    const result = probeBackend("/fake/x64sc", {
-      spawnHelp: (): SpawnHelpResult => ({ text: "", exitedZero: false }),
-    });
-    assert.equal(result, "unknown");
-  });
-});
-
-test("probeBackend: three empty, non-zero runs never throw and classify as 'unknown'", () => {
-  const result = probeBackend("/fake/x64sc", {
-    spawnHelp: (): SpawnHelpResult => ({ text: "", exitedZero: false }),
-  });
-  assert.equal(result, "unknown");
-});
-
-// ===========================================================================
-// resolvedBackend(): the VICE_BACKEND override path -- checked first, never
-// spawns, never touches the cache.
-// ===========================================================================
-
-test("resolvedBackend: override branch returns 'stock' for VICE_BACKEND=stock without spawning anything", () => {
+test("resolvedBackend: always returns backend 'stock', with no supervisorDir and no cache interaction", () => {
   resetResolvedBackendForTests();
-  let probeCalls = 0;
-  const result = resolvedBackend(
-    stubDeps({ env: { VICE_BACKEND: "stock" }, probe: () => { probeCalls++; return "fork"; } }),
-  );
-  assert.equal(result.backend, "stock");
-  assert.equal(result.source, "override");
-  assert.equal(probeCalls, 0);
-});
-
-test("resolvedBackend: override branch returns 'fork' for VICE_BACKEND=fork without spawning anything", () => {
-  resetResolvedBackendForTests();
-  let probeCalls = 0;
-  const result = resolvedBackend(
-    stubDeps({ env: { VICE_BACKEND: "fork" }, probe: () => { probeCalls++; return "stock"; } }),
-  );
-  assert.equal(result.backend, "fork");
-  assert.equal(result.source, "override");
-  assert.equal(probeCalls, 0);
-});
-
-test("resolvedBackend: override is exact-string-matched -- an unrecognised VICE_BACKEND value falls through to detection instead", () => {
-  resetResolvedBackendForTests();
-  const result = resolvedBackend(stubDeps({ env: { VICE_BACKEND: "bogus" }, probe: () => "stock" }));
-  assert.equal(result.source, "probe");
+  const result = resolvedBackend(stubDeps());
   assert.equal(result.backend, "stock");
 });
 
@@ -206,149 +83,93 @@ test("resolvedBackend: override is exact-string-matched -- an unrecognised VICE_
 // a container names nothing at all.
 // ===========================================================================
 
-test("WR-05: a resolvable binary yields the RESOLVED absolute path, flagged resolved, on the probe path", () => {
+test("WR-05: a resolvable binary yields the RESOLVED absolute path, flagged resolved", () => {
   resetResolvedBackendForTests();
   const result = resolvedBackend(
-    stubDeps({ viceBin: "x64sc", resolveBinPath: () => "/usr/local/bin/x64sc", probe: () => "stock" }),
+    stubDeps({ viceBin: "x64sc", resolveBinPath: () => "/usr/local/bin/x64sc" }),
   );
-  assert.equal(result.source, "probe");
   assert.equal(result.binPath, "/usr/local/bin/x64sc", "the configured name must not be reported as the path when a real one is known");
   assert.equal(result.binPathResolved, true);
 });
 
 test("WR-05: an UNRESOLVABLE binary falls back to the configured name and is flagged unresolved", () => {
   resetResolvedBackendForTests();
-  const result = resolvedBackend(stubDeps({ viceBin: "x64sc", resolveBinPath: () => null, probe: () => "stock" }));
+  const result = resolvedBackend(stubDeps({ viceBin: "x64sc", resolveBinPath: () => null }));
   assert.equal(result.binPath, "x64sc", "the configured name is still reported -- it is the only information available");
   assert.equal(result.binPathResolved, false, "and it must never claim to be resolved");
 });
 
-test("WR-05: the override path resolves too -- an explicit VICE_BACKEND does not mean an unresolved path", () => {
-  resetResolvedBackendForTests();
-  const resolved = resolvedBackend(
-    stubDeps({ env: { VICE_BACKEND: "stock" }, viceBin: "x64sc", resolveBinPath: () => "/opt/vice/bin/x64sc" }),
-  );
-  assert.equal(resolved.source, "override");
-  assert.equal(resolved.binPath, "/opt/vice/bin/x64sc");
-  assert.equal(resolved.binPathResolved, true);
-
-  resetResolvedBackendForTests();
-  const unresolved = resolvedBackend(stubDeps({ env: { VICE_BACKEND: "stock" }, viceBin: "x64sc", resolveBinPath: () => null }));
-  assert.equal(unresolved.binPath, "x64sc");
-  assert.equal(unresolved.binPathResolved, false);
-});
-
-test("WR-05: the override path still spawns nothing while resolving the path", () => {
-  resetResolvedBackendForTests();
-  let probeCalls = 0;
-  const result = resolvedBackend(
-    stubDeps({
-      env: { VICE_BACKEND: "fork" },
-      viceBin: "x64sc",
-      resolveBinPath: () => "/usr/bin/x64sc",
-      probe: () => {
-        probeCalls++;
-        return "stock";
-      },
-    }),
-  );
-  assert.equal(result.binPath, "/usr/bin/x64sc");
-  assert.equal(probeCalls, 0, "resolution is a filesystem lookup, never a spawn -- the override path must stay spawn-free");
-});
-
-test("WR-05: the indeterminate outcome carries the resolved path too, not the bare name", () => {
-  resetResolvedBackendForTests();
-  const result = resolvedBackend(
-    stubDeps({ viceBin: "x64sc", resolveBinPath: () => "/usr/bin/x64sc", probe: () => "unknown" }),
-  );
-  assert.equal(result.source, "indeterminate");
-  assert.equal(result.binPath, "/usr/bin/x64sc");
-  assert.equal(result.binPathResolved, true);
-});
-
-test("WR-05: probeBackend still receives the UNRESOLVED configured name, so the OS's own PATH search happens as it would for a real invocation", () => {
-  resetResolvedBackendForTests();
-  const probedWith: string[] = [];
-  const result = resolvedBackend(
-    stubDeps({
-      viceBin: "x64sc",
-      resolveBinPath: () => "/usr/bin/x64sc",
-      probe: (bin) => {
-        probedWith.push(bin);
-        return "stock";
-      },
-    }),
-  );
-  assert.deepEqual(probedWith, ["x64sc"], "the probe target is deliberately the configured name, not the resolved path");
-  assert.equal(result.binPath, "/usr/bin/x64sc", "while the REPORTED path is the resolved one");
-});
-
 // ===========================================================================
-// resolvedBackend(): the on-disk cache -- hit, miss (each identity field),
-// malformed file, absent file.
+// resolvedBackend(): the on-disk identity cache -- (re)initialised on a
+// fresh or changed identity, left untouched on a matching one, tolerant of
+// a malformed/wrong-shaped/absent file, and skipped entirely with no
+// supervisorDir.
 // ===========================================================================
 
-test("resolvedBackend: cache hit returns the cached backend without spawning when resolvedPath/mtimeMs/sizeBytes all match", () => {
+test("resolvedBackend: a fresh identity (no prior cache) writes an identity record", () => {
   withScratchDir((dir) => {
     resetResolvedBackendForTests();
-    let probeCalls = 0;
-    // Prime the cache via a real probe first.
-    const first = resolvedBackend(
-      stubDeps({ supervisorDir: dir, probe: () => { probeCalls++; return "stock"; } }),
-    );
-    assert.equal(first.source, "probe");
-    assert.equal(probeCalls, 1);
+    resolvedBackend(stubDeps({ supervisorDir: dir }));
+    const finalPath = join(dir, "backend.json");
+    assert.ok(existsSync(finalPath), "backend.json must exist after a fresh resolution with a supervisorDir");
+    const parsed = JSON.parse(readFileSync(finalPath, "utf8"));
+    assert.equal(parsed.resolvedPath, "/fake/x64sc");
+    assert.equal(parsed.mtimeMs, 1000);
+    assert.equal(parsed.sizeBytes, 5000);
+  });
+});
+
+test("resolvedBackend: a matching identity on a later process leaves the existing record untouched (no unnecessary rewrite)", () => {
+  withScratchDir((dir) => {
+    resetResolvedBackendForTests();
+    resolvedBackend(stubDeps({ supervisorDir: dir, now: () => 1000 }));
+    const firstProbedAt = JSON.parse(readFileSync(join(dir, "backend.json"), "utf8")).probedAt;
 
     resetResolvedBackendForTests(); // clear only the in-process memo -- the ON-DISK cache survives
-    const second = resolvedBackend(
-      stubDeps({ supervisorDir: dir, probe: () => { probeCalls++; return "fork"; } }),
-    );
-    assert.equal(second.source, "cache");
-    assert.equal(second.backend, "stock", "the cached verdict, not whatever the (never-called) probe stub would have said");
-    assert.equal(probeCalls, 1, "the second resolution must not have spawned a second probe");
+    resolvedBackend(stubDeps({ supervisorDir: dir, now: () => 2000 }));
+    const secondProbedAt = JSON.parse(readFileSync(join(dir, "backend.json"), "utf8")).probedAt;
+
+    assert.equal(secondProbedAt, firstProbedAt, "a matching identity must not trigger a rewrite -- probedAt must not move");
   });
 });
 
-test("resolvedBackend: changing the binary's mtimeMs invalidates the cache and forces a re-probe", () => {
+test("resolvedBackend: changing the binary's mtimeMs invalidates the cache and forces a fresh identity record", () => {
   withScratchDir((dir) => {
     resetResolvedBackendForTests();
-    let probeCalls = 0;
-    resolvedBackend(stubDeps({ supervisorDir: dir, stat: () => ({ mtimeMs: 1000, sizeBytes: 5000 }), probe: () => { probeCalls++; return "stock"; } }));
-    assert.equal(probeCalls, 1);
+    resolvedBackend(stubDeps({ supervisorDir: dir, stat: () => ({ mtimeMs: 1000, sizeBytes: 5000 }), now: () => 1000 }));
 
     resetResolvedBackendForTests();
-    const second = resolvedBackend(
-      stubDeps({ supervisorDir: dir, stat: () => ({ mtimeMs: 9999, sizeBytes: 5000 }), probe: () => { probeCalls++; return "fork"; } }),
-    );
-    assert.equal(probeCalls, 2, "a changed mtimeMs must force a fresh probe");
-    assert.equal(second.source, "probe");
-    assert.equal(second.backend, "fork");
+    resolvedBackend(stubDeps({ supervisorDir: dir, stat: () => ({ mtimeMs: 9999, sizeBytes: 5000 }), now: () => 2000 }));
+
+    const parsed = JSON.parse(readFileSync(join(dir, "backend.json"), "utf8"));
+    assert.equal(parsed.mtimeMs, 9999, "a changed mtimeMs must force a fresh identity record");
+    assert.equal(parsed.probedAt, new Date(2000).toISOString(), "the fresh record must be re-stamped, not reused");
   });
 });
 
-test("resolvedBackend: changing the binary's sizeBytes invalidates the cache and forces a re-probe", () => {
+test("resolvedBackend: changing the binary's sizeBytes invalidates the cache and forces a fresh identity record", () => {
   withScratchDir((dir) => {
     resetResolvedBackendForTests();
-    let probeCalls = 0;
-    resolvedBackend(stubDeps({ supervisorDir: dir, stat: () => ({ mtimeMs: 1000, sizeBytes: 5000 }), probe: () => { probeCalls++; return "stock"; } }));
-    assert.equal(probeCalls, 1);
+    resolvedBackend(stubDeps({ supervisorDir: dir, stat: () => ({ mtimeMs: 1000, sizeBytes: 5000 }) }));
 
     resetResolvedBackendForTests();
-    resolvedBackend(stubDeps({ supervisorDir: dir, stat: () => ({ mtimeMs: 1000, sizeBytes: 6001 }), probe: () => { probeCalls++; return "fork"; } }));
-    assert.equal(probeCalls, 2, "a changed sizeBytes must force a fresh probe");
+    resolvedBackend(stubDeps({ supervisorDir: dir, stat: () => ({ mtimeMs: 1000, sizeBytes: 6001 }) }));
+
+    const parsed = JSON.parse(readFileSync(join(dir, "backend.json"), "utf8"));
+    assert.equal(parsed.sizeBytes, 6001, "a changed sizeBytes must force a fresh identity record");
   });
 });
 
-test("resolvedBackend: changing the resolved binary path invalidates the cache and forces a re-probe", () => {
+test("resolvedBackend: changing the resolved binary path invalidates the cache and forces a fresh identity record", () => {
   withScratchDir((dir) => {
     resetResolvedBackendForTests();
-    let probeCalls = 0;
-    resolvedBackend(stubDeps({ supervisorDir: dir, resolveBinPath: () => "/fake/x64sc-v1", probe: () => { probeCalls++; return "stock"; } }));
-    assert.equal(probeCalls, 1);
+    resolvedBackend(stubDeps({ supervisorDir: dir, resolveBinPath: () => "/fake/x64sc-v1" }));
 
     resetResolvedBackendForTests();
-    resolvedBackend(stubDeps({ supervisorDir: dir, resolveBinPath: () => "/fake/x64sc-v2", probe: () => { probeCalls++; return "fork"; } }));
-    assert.equal(probeCalls, 2, "a different resolved path (e.g. VICE_BIN repointed) must force a fresh probe");
+    resolvedBackend(stubDeps({ supervisorDir: dir, resolveBinPath: () => "/fake/x64sc-v2" }));
+
+    const parsed = JSON.parse(readFileSync(join(dir, "backend.json"), "utf8"));
+    assert.equal(parsed.resolvedPath, "/fake/x64sc-v2", "a different resolved path (e.g. VICE_BIN repointed) must force a fresh identity record");
   });
 });
 
@@ -356,21 +177,19 @@ test("resolvedBackend: a malformed cache file is treated as a miss, not an error
   withScratchDir((dir) => {
     writeFileSync(join(dir, "backend.json"), "{ not valid json ][");
     resetResolvedBackendForTests();
-    let probeCalls = 0;
-    const result = resolvedBackend(stubDeps({ supervisorDir: dir, probe: () => { probeCalls++; return "stock"; } }));
-    assert.equal(result.source, "probe");
-    assert.equal(probeCalls, 1);
+    assert.doesNotThrow(() => resolvedBackend(stubDeps({ supervisorDir: dir })));
+    const parsed = JSON.parse(readFileSync(join(dir, "backend.json"), "utf8"));
+    assert.equal(parsed.resolvedPath, "/fake/x64sc");
   });
 });
 
 test("resolvedBackend: a wrong-shaped cache file (missing required fields) is treated as a miss, not an error", () => {
   withScratchDir((dir) => {
-    writeFileSync(join(dir, "backend.json"), JSON.stringify({ version: 1, backend: "stock" }));
+    writeFileSync(join(dir, "backend.json"), JSON.stringify({ version: 1 }));
     resetResolvedBackendForTests();
-    let probeCalls = 0;
-    const result = resolvedBackend(stubDeps({ supervisorDir: dir, probe: () => { probeCalls++; return "fork"; } }));
-    assert.equal(result.source, "probe");
-    assert.equal(probeCalls, 1);
+    assert.doesNotThrow(() => resolvedBackend(stubDeps({ supervisorDir: dir })));
+    const parsed = JSON.parse(readFileSync(join(dir, "backend.json"), "utf8"));
+    assert.equal(parsed.resolvedPath, "/fake/x64sc");
   });
 });
 
@@ -378,20 +197,18 @@ test("resolvedBackend: an absent cache file is treated as a miss, not an error",
   withScratchDir((dir) => {
     assert.equal(existsSync(join(dir, "backend.json")), false);
     resetResolvedBackendForTests();
-    const result = resolvedBackend(stubDeps({ supervisorDir: dir, probe: () => "stock" }));
-    assert.equal(result.source, "probe");
+    assert.doesNotThrow(() => resolvedBackend(stubDeps({ supervisorDir: dir })));
   });
 });
 
 test("cache write is atomic: the committed backend.json round-trips through JSON exactly once written, with no leftover tmp sibling", () => {
   withScratchDir((dir) => {
     resetResolvedBackendForTests();
-    resolvedBackend(stubDeps({ supervisorDir: dir, probe: () => "stock" }));
+    resolvedBackend(stubDeps({ supervisorDir: dir }));
 
     const finalPath = join(dir, "backend.json");
-    assert.ok(existsSync(finalPath), "backend.json must exist after a successful probe+cache-write");
+    assert.ok(existsSync(finalPath), "backend.json must exist after a fresh resolution");
     const parsed = JSON.parse(readFileSync(finalPath, "utf8"));
-    assert.equal(parsed.backend, "stock");
     assert.equal(parsed.resolvedPath, "/fake/x64sc");
 
     const leftovers = readdirSync(dir).filter((f) => f.includes(".tmp-"));
@@ -402,88 +219,45 @@ test("cache write is atomic: the committed backend.json round-trips through JSON
 test("resolvedBackend: when supervisorDir is omitted, the cache is skipped entirely -- no backend.json is ever written", () => {
   withScratchDir((dir) => {
     resetResolvedBackendForTests();
-    resolvedBackend(stubDeps({ supervisorDir: undefined, probe: () => "stock" }));
+    resolvedBackend(stubDeps({ supervisorDir: undefined }));
     assert.equal(existsSync(join(dir, "backend.json")), false);
   });
 });
 
 // ===========================================================================
-// resolvedBackend(): the indeterminate outcome -- never throws, degrades to
-// "fork", writes no cache entry, and emits its own note.
+// resolvedBackend(): once-per-process memoisation -- the "resolves exactly
+// once at startup" guarantee this file's own module-level memo exists to
+// enforce.
 // ===========================================================================
 
-test("resolvedBackend: an indeterminate outcome (classification 'unknown') never throws and returns backend 'fork'", () => {
-  withScratchDir((dir) => {
-    resetResolvedBackendForTests();
-    assert.doesNotThrow(() => {
-      const result = resolvedBackend(stubDeps({ supervisorDir: dir, probe: () => "unknown" }));
-      assert.equal(result.backend, "fork");
-      assert.equal(result.source, "indeterminate");
-      assert.ok(result.note && result.note.includes("VICE_BACKEND"), "the indeterminate note must tell the user how to override explicitly");
-    });
-  });
-});
-
-test("resolvedBackend: an indeterminate outcome writes NO cache entry, so a later, working probe is not shadowed by a stale non-answer", () => {
-  withScratchDir((dir) => {
-    resetResolvedBackendForTests();
-    resolvedBackend(stubDeps({ supervisorDir: dir, probe: () => "unknown" }));
-    assert.equal(existsSync(join(dir, "backend.json")), false);
-  });
-});
-
-test("resolvedBackend: an indeterminate outcome still returns a startable configuration (backend 'fork', a valid binPath, no thrown error)", () => {
+test("resolvedBackend: memoises the answer once resolved -- calling it many times in one process stats the binary only once", () => {
   resetResolvedBackendForTests();
-  const result = resolvedBackend(stubDeps({ probe: () => "unknown" }));
-  assert.equal(result.backend, "fork");
-  assert.equal(typeof result.binPath, "string");
-  assert.ok(result.binPath.length > 0);
+  let statCalls = 0;
+  const deps = stubDeps({ stat: () => { statCalls++; return { mtimeMs: 1000, sizeBytes: 5000 }; } });
+  resolvedBackend(deps);
+  resolvedBackend(deps);
+  resolvedBackend(deps);
+  assert.equal(statCalls, 1, "a broker that resolves once at startup and reuses the answer for every later launch must never re-stat the binary");
 });
 
-// ===========================================================================
-// resolvedBackend(): once-per-process memoisation and the D-06 one-time
-// note -- the "resolves exactly once at startup" guarantee this file's own
-// module-level memo exists to enforce.
-// ===========================================================================
-
-test("resolvedBackend: memoises the answer once resolved -- calling it many times in one process triggers the probe only once (startup)", () => {
+test("resolvedBackend: repeated calls return the exact same result object (in-process memo, not merely equal values)", () => {
   resetResolvedBackendForTests();
-  let probeCalls = 0;
-  const deps = stubDeps({ probe: () => { probeCalls++; return "stock"; } });
-  resolvedBackend(deps);
-  resolvedBackend(deps);
-  resolvedBackend(deps);
-  assert.equal(probeCalls, 1, "a broker that resolves the backend once at startup and reuses the answer for every later launch must never probe twice");
-});
-
-test("resolvedBackend: emits exactly one detected-backend note per process, however many times it is called (D-06, once unset)", () => {
-  resetResolvedBackendForTests();
-  const notes: string[] = [];
-  const deps = stubDeps({ probe: () => "stock", log: (line) => notes.push(line) });
-  resolvedBackend(deps);
-  resolvedBackend(deps);
-  resolvedBackend(deps);
-  const detectedNotes = notes.filter((n) => n.includes("detected backend"));
-  assert.equal(detectedNotes.length, 1, `expected exactly one detected-backend note, got ${detectedNotes.length}: ${JSON.stringify(notes)}`);
-  assert.ok(detectedNotes[0].includes("VICE_BACKEND=stock") && detectedNotes[0].includes("VICE_BACKEND=fork"));
-});
-
-test("resolvedBackend: the override path never consults or populates the memo, so a test process can freely alternate scenarios", () => {
-  resetResolvedBackendForTests();
-  const first = resolvedBackend(stubDeps({ env: { VICE_BACKEND: "stock" } }));
-  const second = resolvedBackend(stubDeps({ env: { VICE_BACKEND: "fork" } }));
-  assert.equal(first.backend, "stock");
-  assert.equal(second.backend, "fork");
+  const deps = stubDeps();
+  const first = resolvedBackend(deps);
+  const second = resolvedBackend(deps);
+  assert.equal(first, second);
 });
 
 // ===========================================================================
 // readCapabilityRecord()/writeCapabilityRecord() -- BACK-04's round trip.
+// Unaffected by FORKRM-01: neither function ever encoded a backend verdict
+// of its own.
 // ===========================================================================
 
-test("readCapabilityRecord/writeCapabilityRecord: round-trip versionQuad and cpuHistoryAvailable against an existing backend verdict", () => {
+test("readCapabilityRecord/writeCapabilityRecord: round-trip versionQuad and cpuHistoryAvailable against an existing identity record", () => {
   withScratchDir((dir) => {
     resetResolvedBackendForTests();
-    resolvedBackend(stubDeps({ supervisorDir: dir, probe: () => "stock" }));
+    resolvedBackend(stubDeps({ supervisorDir: dir }));
 
     writeCapabilityRecord(
       "/fake/x64sc",
@@ -502,7 +276,7 @@ test("readCapabilityRecord/writeCapabilityRecord: round-trip versionQuad and cpu
 test("readCapabilityRecord: a stored versionQuad differing from the observed one is reported as stale", () => {
   withScratchDir((dir) => {
     resetResolvedBackendForTests();
-    resolvedBackend(stubDeps({ supervisorDir: dir, probe: () => "stock" }));
+    resolvedBackend(stubDeps({ supervisorDir: dir }));
     writeCapabilityRecord(
       "/fake/x64sc",
       { versionQuad: "3.9.0.0", cpuHistoryAvailable: false },
@@ -527,7 +301,7 @@ test("readCapabilityRecord: a stored versionQuad differing from the observed one
 test("readCapabilityRecord: a record written by a DIFFERENT client capability schema is stale even when the version quad matches (CR-01)", () => {
   withScratchDir((dir) => {
     resetResolvedBackendForTests();
-    resolvedBackend(stubDeps({ supervisorDir: dir, probe: () => "stock" }));
+    resolvedBackend(stubDeps({ supervisorDir: dir }));
     writeCapabilityRecord(
       "/fake/x64sc",
       { versionQuad: "3.10.0.0", cpuHistoryAvailable: false },
@@ -556,7 +330,7 @@ test("readCapabilityRecord: a record written by a DIFFERENT client capability sc
 test("readCapabilityRecord: a record with NO capabilitySchema at all (written before the field existed) is stale (CR-01)", () => {
   withScratchDir((dir) => {
     resetResolvedBackendForTests();
-    resolvedBackend(stubDeps({ supervisorDir: dir, probe: () => "stock" }));
+    resolvedBackend(stubDeps({ supervisorDir: dir }));
     writeCapabilityRecord(
       "/fake/x64sc",
       { versionQuad: "3.10.0.0", cpuHistoryAvailable: false },
@@ -578,7 +352,7 @@ test("readCapabilityRecord: a record with NO capabilitySchema at all (written be
   });
 });
 
-test("writeCapabilityRecord: a no-op when no matching backend verdict is on record yet -- never invents one", () => {
+test("writeCapabilityRecord: a no-op when no matching identity record is on record yet -- never invents one", () => {
   withScratchDir((dir) => {
     writeCapabilityRecord(
       "/fake/x64sc",
@@ -592,86 +366,8 @@ test("writeCapabilityRecord: a no-op when no matching backend verdict is on reco
 test("readCapabilityRecord: returns null when nothing has been recorded for this binary yet", () => {
   withScratchDir((dir) => {
     resetResolvedBackendForTests();
-    resolvedBackend(stubDeps({ supervisorDir: dir, probe: () => "stock" }));
+    resolvedBackend(stubDeps({ supervisorDir: dir }));
     const record = readCapabilityRecord("/fake/x64sc", { supervisorDir: dir, resolveBinPath: () => "/fake/x64sc" });
     assert.equal(record, null);
   });
 });
-
-// ===========================================================================
-// REAL HARDWARE (EXTV-02) -- every fixture string in this section is a
-// VERBATIM `--help` transcript actually captured from a real x64sc binary,
-// read from disk under fixtures/backend-detect/ -- see
-// fixtures/backend-detect/README.md for the provenance table and
-// .planning/phases/13-external-verification/13-HELP-DISCRIMINATOR-EVIDENCE.md
-// for the full live probeBackend()/resolvedBackend() run this block pins as
-// a regression test. This section is kept DELIBERATELY SEPARATE from the
-// ASSUMED, author-constructed fixtures above: no array, object, or helper
-// function below is shared with them, and no test name in this section
-// omits that its fixture is a captured transcript. Reading the fixtures
-// from disk (rather than inlining their text) is deliberate too -- an
-// inlined copy would be an author-typed string again, exactly the class of
-// evidence this section must not be.
-// ===========================================================================
-
-const FIXTURES_DIR = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "backend-detect");
-
-interface RealHardwareSidecar {
-  capturedFrom: string;
-  binaryPath: string;
-  viceVersion: string;
-  capturedAt: string;
-  command: string;
-  exitCode: number;
-  backendExpected: "stock" | "fork";
-}
-
-function readRealHardwareTranscript(kind: "stock" | "fork"): string {
-  return readFileSync(join(FIXTURES_DIR, `${kind}-help-transcript.txt`), "utf8");
-}
-
-function readRealHardwareSidecar(kind: "stock" | "fork"): RealHardwareSidecar {
-  return JSON.parse(readFileSync(join(FIXTURES_DIR, `${kind}-help-transcript.json`), "utf8")) as RealHardwareSidecar;
-}
-
-for (const kind of ["stock", "fork"] as const) {
-  test(`EXTV-02: the committed ${kind} real-hardware --help transcript file exists and is non-empty (a deleted fixture must fail this test, not shrink silently)`, () => {
-    const text = readRealHardwareTranscript(kind);
-    assert.ok(text.length > 0, `${kind}-help-transcript.txt must be non-empty`);
-  });
-
-  test(`EXTV-02: classifyHelpOutput() fed the committed real-hardware ${kind} transcript returns "${kind}"`, () => {
-    const text = readRealHardwareTranscript(kind);
-    assert.equal(classifyHelpOutput(text), kind);
-  });
-
-  test(`EXTV-02: the committed ${kind} transcript's sidecar backendExpected matches what its OWN transcript classifies to (so a re-captured transcript from a different build cannot silently keep a stale expectation)`, () => {
-    const text = readRealHardwareTranscript(kind);
-    const sidecar = readRealHardwareSidecar(kind);
-    assert.equal(
-      classifyHelpOutput(text),
-      sidecar.backendExpected,
-      `sidecar backendExpected ("${sidecar.backendExpected}") must equal what the transcript beside it actually classifies to`,
-    );
-  });
-
-  test(`EXTV-02: the committed ${kind} sidecar carries capturedFrom "real hardware" and non-empty binaryPath/viceVersion (so a hand-written stand-in cannot pass as a real capture)`, () => {
-    const sidecar = readRealHardwareSidecar(kind);
-    assert.equal(sidecar.capturedFrom, "real hardware", "capturedFrom must be the literal real-hardware label");
-    assert.ok(sidecar.binaryPath.length > 0, "binaryPath must be non-empty");
-    assert.ok(sidecar.viceVersion.length > 0, "viceVersion must be non-empty");
-  });
-
-  test(`EXTV-02: probeBackend() driven through an injected spawnHelp returning the committed real-hardware ${kind} transcript for --help returns "${kind}" from exactly one spawn`, () => {
-    const text = readRealHardwareTranscript(kind);
-    const calls: string[] = [];
-    const result = probeBackend("/fake/x64sc", {
-      spawnHelp: (bin, flag): SpawnHelpResult => {
-        calls.push(flag);
-        return { text, exitedZero: true };
-      },
-    });
-    assert.equal(result, kind);
-    assert.deepEqual(calls, ["--help"], "the ladder must stop at --help, matching what both real builds actually do (exit 0, non-empty output)");
-  });
-}

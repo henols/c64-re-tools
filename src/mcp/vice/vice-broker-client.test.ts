@@ -343,7 +343,7 @@ async function startFullBrokerListener(deps: FullBrokerDeps = {}): Promise<{
     onStatus: deps.onStatus ?? (() => []),
     onHostState:
       deps.onHostState ??
-      (() => ({ pid: process.pid, startedAt: "2026-01-01T00:00:00Z", nodeVersion: process.version, viceBin: "x64sc", warmFloor: 3, maxInstances: 16, basePort: 6600, backend: "fork" as const })),
+      (() => ({ pid: process.pid, startedAt: "2026-01-01T00:00:00Z", nodeVersion: process.version, viceBin: "x64sc", warmFloor: 3, maxInstances: 16, basePort: 6600, backend: "stock" as const })),
     onMonitorClaim: deps.onMonitorClaim ?? (() => ({ ok: false, code: "internal" })),
     onMonitorRelease: deps.onMonitorRelease ?? (() => ({ ok: false, code: "internal" })),
     // Phase 34, plan 34-01: a required field on StartControlListenerOptions
@@ -417,8 +417,8 @@ test("openBrokerControl(): opens a session and drives all five request kinds, ev
     assert.equal(hostStateResult.hostState.vice_bin, "x64sc");
     assert.equal(hostStateResult.hostState.max_instances, 16);
     // WR-04: the broker's own backend verdict crosses the wire, narrowed at the
-    // boundary to the two known values or null.
-    assert.equal(hostStateResult.hostState.backend, "fork");
+    // boundary to the one known value or null.
+    assert.equal(hostStateResult.hostState.backend, "stock");
 
     const recycled = await session.recycle(acquired.grant.id);
     assert.equal(recycled.ok, true, `recycle must succeed: ${JSON.stringify(recycled)}`);

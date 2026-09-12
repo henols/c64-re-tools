@@ -213,7 +213,7 @@ async function waitForProcessExit(pid: number, timeoutMs = 2000): Promise<void> 
   }
 }
 
-test("handleAcquire cold acquire (real makeLoggingSpawn + withCrashSupervision composition, buildColdSpawnFactory OMITTED): a stock launch's real nodeSpawn call gets a fresh scratch XDG_CONFIG_HOME, and a fork launch gets none (BACK-02)", async () => {
+test("handleAcquire cold acquire (real makeLoggingSpawn + withCrashSupervision composition, buildColdSpawnFactory OMITTED): a stock launch's real nodeSpawn call gets a fresh scratch XDG_CONFIG_HOME (BACK-02)", async () => {
   const { handleAcquire } = await loadBrokerModule();
   const stateDir = mkdtempSync(join(tmpdir(), "vice-broker-acquire-i1-state-"));
   const savedViceBin = process.env.VICE_BIN;
@@ -252,29 +252,6 @@ test("handleAcquire cold acquire (real makeLoggingSpawn + withCrashSupervision c
 
     killTestInstance(stockState, stockOutcome.grant.port);
     await waitForProcessExit(stockRecord!.pid!);
-
-    // --- fork case (BACK-02 standing gate): the fork path receives no
-    // options object at all, so the recorded value must stay unset ---
-    const forkState = createState();
-    const forkScript = writeRecorderScript();
-    scratchDirs.push(forkScript.scriptDir);
-    const forkOutDir = mkdtempSync(join(tmpdir(), "vice-broker-acquire-i1-out-"));
-    scratchDirs.push(forkOutDir);
-    const forkOutFile = join(forkOutDir, "fork.txt");
-    process.env.VICE_BIN = forkScript.scriptPath;
-    process.env.VICE_BROKER_TEST_RECORD_FILE = forkOutFile;
-
-    const forkOutcome = await handleAcquire("i1-fork", stateDir, forkState, { backend: "fork" });
-    assert.equal(forkOutcome.ok, true, `expected a successful grant, got ${JSON.stringify(forkOutcome)}`);
-    if (!forkOutcome.ok) return;
-    const forkRecord = forkState.instances.get(forkOutcome.grant.port);
-    assert.ok(forkRecord, "the cold-launched fork record must be present in state");
-
-    const forkRecorded = await waitForFile(forkOutFile);
-    assert.equal(forkRecorded, "<unset>", "the fork path must receive no options object -- XDG_CONFIG_HOME must stay unset");
-
-    killTestInstance(forkState, forkOutcome.grant.port);
-    if (forkRecord!.pid) await waitForProcessExit(forkRecord!.pid);
   } finally {
     if (savedViceBin === undefined) delete process.env.VICE_BIN;
     else process.env.VICE_BIN = savedViceBin;
@@ -378,6 +355,8 @@ test("handleAcquire: a failed grant-time probe with no other ready record drops+
       return Promise.resolve("sigterm" as KillStage);
     },
     buildColdSpawnFactory: stubColdSpawnFactory(spawnCalls),
+    backend: "stock",
+    allocateRemoteMonitorPort: stubAllocateRemoteMonitorPort(),
   });
 
   assert.equal(spawnCalls.length, 1, "exactly one cold launch must follow the exhausted walk");
@@ -425,6 +404,8 @@ test("handleAcquire: an instance released through handleRelease() is never promo
   const outcome = await handleAcquire("req-5", "/tmp/vice-broker-acquire-test", state, {
     probe: alwaysReadyProbe(), // would succeed if (incorrectly) offered a candidate -- there must be none
     buildColdSpawnFactory: stubColdSpawnFactory(spawnCalls),
+    backend: "stock",
+    allocateRemoteMonitorPort: stubAllocateRemoteMonitorPort(),
   });
 
   assert.equal(spawnCalls.length, 1, "with no ready candidate left, the acquire must cold-launch exactly once");
@@ -581,11 +562,15 @@ test("CR-01: two overlapping selectWarmInstance() walks over one shared ready ca
     probe: sharedProbe,
     kill: sharedKill,
     buildColdSpawnFactory: keyedColdSpawnFactory(spawnCallsA),
+    backend: "stock",
+    allocateRemoteMonitorPort: stubAllocateRemoteMonitorPort(),
   });
   const outcomeBPromise = acquireWithRetryOnLaunchInFlight("race-b", {
     probe: sharedProbe,
     kill: sharedKill,
     buildColdSpawnFactory: keyedColdSpawnFactory(spawnCallsB),
+    backend: "stock",
+    allocateRemoteMonitorPort: stubAllocateRemoteMonitorPort(),
   });
 
   // Resolve the FIRST invocation's deferred to `false` (the drop path).
@@ -668,6 +653,8 @@ test("handleAcquire: the grant-time-probe-failure log line is distinct from brok
     kill: () => Promise.resolve("sigterm" as KillStage),
     buildColdSpawnFactory: stubColdSpawnFactory([]),
     log: (line: string) => logs.push(line),
+    backend: "stock",
+    allocateRemoteMonitorPort: stubAllocateRemoteMonitorPort(),
   });
   assert.equal(outcome.ok, true);
 
@@ -718,6 +705,8 @@ test("handleAcquire: WR-02 -- falls through to a cold launch without ever awaiti
       return killDeferred;
     },
     buildColdSpawnFactory: stubColdSpawnFactory([]),
+    backend: "stock",
+    allocateRemoteMonitorPort: stubAllocateRemoteMonitorPort(),
   });
   order.push("acquire-settled");
 
@@ -756,6 +745,8 @@ test("handleAcquire: WR-02 -- once the fire-and-forget kill settles, a separate 
     kill: () => killDeferred,
     buildColdSpawnFactory: stubColdSpawnFactory([]),
     log: (line: string) => logs.push(line),
+    backend: "stock",
+    allocateRemoteMonitorPort: stubAllocateRemoteMonitorPort(),
   });
   assert.equal(outcome.ok, true);
 
@@ -859,6 +850,8 @@ test("handleAcquire: a cold-launched child that never receives a pid reports int
         return { pid: undefined } as unknown as ChildProcess; // spawn() failed to fork -- no real pid
       };
     },
+    backend: "stock",
+    allocateRemoteMonitorPort: stubAllocateRemoteMonitorPort(),
   });
 
   assert.equal(outcome.ok, false, `expected an internal failure, got ${JSON.stringify(outcome)}`);

@@ -95,7 +95,7 @@ function baseListenerOptions(onHostTool: (raw: unknown) => Promise<unknown>) {
       viceBin: "x64sc",
       maxInstances: 1,
       basePort: 6600,
-      backend: "fork" as const,
+      backend: "stock" as const,
     }),
     onMonitorClaim: (): MonitorClaimOutcome => ({ ok: false, code: "internal" }) as MonitorClaimOutcome,
     onMonitorRelease: (): MonitorReleaseOutcome => ({ ok: false, code: "internal" }) as MonitorReleaseOutcome,
