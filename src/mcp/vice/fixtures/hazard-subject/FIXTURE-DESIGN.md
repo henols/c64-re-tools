@@ -340,13 +340,139 @@ detectors into a real, independent test of them.
 
 ## On-screen observations
 
-Both runs below were prepared entirely by the person writing this document:
-each committed image was loaded into a real stock emulator, run, and its
-screen captured, with no step asking anyone to launch, type or run anything.
-The prediction is stated first, from the source; the observation is recorded
-second, verbatim, so the two can disagree.
+**Instrument.** Every capture in this section was taken in this pass against
+genuine stock `/usr/bin/x64sc` (reports `x64sc (VICE 3.9)`), launched as
+`timeout 180 /usr/bin/x64sc -default -warp -limitcycles <N> [-autostart
+<file>] -exitscreenshot <path>`, with `-default` first; a `-limitcycles` run
+that terminates with process exit status 1 is the normal path, not a
+failure. Every image and an evidence manifest recording each capture's md5,
+byte size, exit status and full argv line live under this project's own
+gitignored tool-written root; no captured PNG is committed here, because
+nothing in this repository's automated suite renders or inspects a screen,
+so a committed screenshot would be a binary artifact no check could
+regenerate or falsify -- the md5 plus the argv line is the regenerable
+residue instead.
+
+The positive control -- booting with no `-autostart` at all (capture
+`A-positive-control`, md5 `3f91057a6e973bd21b1ae0c177ca7bc5`) -- was opened
+and visually inspected: a readable, ordinary BASIC start-up screen, `****
+COMMODORE 64 BASIC V2 ****` / `READY.` in the default colours with a
+blinking cursor. This establishes that the rig renders and captures a real,
+inspectable screen, by inspection rather than by file size alone.
+
+The negative control -- an unrelated committed program (`petcat`'s
+`computed-sys.prg`) pushed through the identical `-autostart`/cycle-limit/
+`-exitscreenshot` route as the aligned build below -- produced the SAME md5
+(`e7e70b082a4a6ec247e66bfa8e0c128a`) as the aligned build captured the same
+way. That equality is the most important fact in this section, not a
+footnote to it: this route cannot distinguish the hazard subject from an
+unrelated program, and therefore cannot license any claim about what either
+program specifically put on screen.
+
+Investigating that equality rather than stopping at it found the actual
+cause, recorded rather than left as a surface correlation: every
+`-autostart` invocation taken in this pass, against every one of five
+distinct `.prg` files tried (the aligned build, the mis-aligned build, the
+unrelated negative control, and both builds' pre-amendment predecessors --
+see below), failed identically at the emulator level, logging `AUTOSTART:
+Error - No idea what disk image format to use`, `AUTOSTART: Error -
+'<path>' is not a valid file`, and `Error - Failed to autostart '<path>'`.
+No program was ever loaded by any `-autostart` capture taken in this pass;
+the identical bytes across them are not evidence of identical on-screen
+behaviour -- they are evidence of an autostart mechanism that did not run
+anything at all on this installation. A second, independent attempt to load
+and run the aligned build through the binary monitor's own `AUTOSTART` wire
+command, rather than the CLI flag, refused with the same failure (monitor
+error code `0x8f`), confirming this is not a CLI-argument quirk; a first
+attempt to combine the CLI flag with the binary monitor found the CLI
+autostart failure itself terminates the whole emulator process, closing the
+monitor port before any session was possible. This installation's own
+`Drive8Type=0` and missing drive ROM images are consistent with -- though
+not separately tested here as -- the specific mechanism behind an autostart
+path that depends on disk-image infrastructure this installation does not
+have configured; no claim beyond consistency is made.
 
 **ALIGNED build (`hazard-subject.prg`).**
+
+PREDICTION, from the amended source: a recognisable sprite in its intended
+solid shape, driven by a sprite pointer computed from the sprite data's own
+label; a recognisable custom glyph drawn from a custom character set now
+selected through an immediate load of `$1b` into VIC-II control register 1
+(`$d011`), alongside the VIC-II bank now selected through an immediate load
+of `$3f` into CIA2 port A (`$dd00`) -- the two registers the amendment
+described earlier in this document made statically visible; a horizontal
+colour split drawn by the timer-stabilised raster routine; and the border
+colour differing from the default as the self-modifying routine runs.
+
+OBSERVATION: capture `B-aligned` (md5 `e7e70b082a4a6ec247e66bfa8e0c128a`),
+taken via `-autostart hazard-subject.prg -limitcycles 20000000
+-exitscreenshot`, is a uniformly black frame -- no readable text, no sprite,
+no character, no colour split, no border distinguishable from any other
+pixel in the frame. Given the instrument finding above, this is not read as
+"the four predicted effects failed to render" -- it is read as "the program
+was never loaded to attempt rendering them at all," because this exact
+invocation's own log records the identical autostart failure every other
+`-autostart` capture in this pass recorded. No claim is made here about the
+four predicted effects one way or the other; the instrument that would have
+to make that claim did not run the program.
+
+**MIS-ALIGNED build (`hazard-subject-misaligned.prg`).**
+
+PREDICTION, from the amended source: the same program, running the same
+way -- same split, same border behaviour -- but with the sprite garbled or
+wrongly shaped, and the custom-set characters garbled, because the hardware
+reads from the address the scaled pointers name rather than from where the
+data actually sits.
+
+OBSERVATION: capture `D-misaligned` (md5
+`e7e70b082a4a6ec247e66bfa8e0c128a` -- the identical bytes as capture
+`B-aligned` above), taken via `-autostart hazard-subject-misaligned.prg
+-limitcycles 20000000 -exitscreenshot`, is the same uniformly black frame,
+for the same reason: this invocation's own log records the identical
+autostart failure. The two captures agreeing here is not evidence that the
+mis-alignment failed to land or that it did -- neither build was ever
+loaded to have on-screen behaviour to observe. The mis-aligned twin's own
+byte-level proof, that its sprite and character-set base addresses are
+provably not multiples of their required boundaries checked against the
+actual assembled image, remains established independently in this fixture's
+own test file and never rested on a screen capture alone; nothing in this
+pass changes that.
+
+**Post-amendment versus pre-amendment, as measured.** The pre-amendment
+aligned and mis-aligned images -- extracted from commit `758d7df6` into a
+scratch location outside this repository's tracked tree, source md5s
+`aa5dac7abde9c544ae1f0f54a6f7533e` and `df74e46627b83ace861c93076683b1d8`
+respectively, each distinct from the post-amendment committed images' own
+bytes -- were pushed through the identical `-autostart`/cycle-limit/
+`-exitscreenshot` harness used for the aligned and mis-aligned builds above.
+Both produced the SAME screenshot md5 (`e7e70b082a4a6ec247e66bfa8e0c128a`)
+as every other `-autostart` capture taken in this pass. Given the instrument
+finding above -- that this route never loaded any of the five distinct
+programs pushed through it in this pass -- this equality is worth nothing as
+evidence that the amendment left on-screen behaviour unchanged. It cannot be
+worth more than that: no capture in this comparison ever ran a program to
+have behaviour to compare in the first place. This is recorded as measured,
+not reasoned from source, and it is recorded precisely because it is worth
+so little.
+
+The isolated single-construction builds described in the superseded
+observations below -- the self-modifying routine and the alignment routine
+built and run alone, without the raster construction -- were NOT rebuilt or
+re-run in this pass. Nothing below should be mistaken for a fresh
+measurement of those isolated builds.
+
+### Superseded observations (pre-amendment bytes, commit `758d7df6`)
+
+The two observations below were recorded before the two-register amendment
+described earlier in this document was made. Commit `758d7df6` is the last
+commit carrying the un-amended bytes of `hazard-subject.prg` and
+`hazard-subject-misaligned.prg`; both committed images were regenerated when
+the amendment landed, so these observations describe bytes that are no
+longer what is committed. They are preserved verbatim, exactly as first
+recorded, as history rather than as a current claim about the images
+committed today.
+
+**ALIGNED build (`hazard-subject.prg`), pre-amendment.**
 
 PREDICTION: a recognisable sprite in its intended solid shape; a recognisable
 custom glyph drawn from the custom character set; a horizontal colour split
@@ -375,7 +501,7 @@ reproducible, is not present without the raster construction, and prevents
 capturing a single settled screen where all four predicted effects are
 visible together on the real, committed image.
 
-**MIS-ALIGNED build (`hazard-subject-misaligned.prg`).**
+**MIS-ALIGNED build (`hazard-subject-misaligned.prg`), pre-amendment.**
 
 PREDICTION: the same program, running the same way -- same split, same
 border behaviour -- but with the sprite garbled or wrongly shaped, and the
@@ -403,4 +529,8 @@ automated suite renders a screen and inspects it. The assembler exits zero on
 both builds, every byte-level assertion in this fixture's own test file
 passes on both builds, and the emulator reports no error on either -- that is
 exactly why this property is recorded here, by direct observation, rather
-than left to be inferred from a passing test suite.
+than left to be inferred from a passing test suite. This pass adds a second,
+independent example of the same limit: the autostart failure documented
+above was itself only found by direct inspection of the emulator's own log
+output, not by any check this repository runs automatically -- nothing here
+parses an emulator log for a failed autostart either.
