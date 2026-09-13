@@ -568,9 +568,34 @@ export function importStoreDocument(handle: AnnoStoreHandle, doc: StoreExportDoc
   // here, treated as empty, never as a schema violation.
   const scopeRows = doc.scopes ?? [];
   const sortedScopes = [...scopeRows].map((row, i) => ({ row, i })).sort((a, b) => a.row.start - b.row.start);
+  // EXISTING-STORE OVERLAP IS ALSO REFUSED HERE, before any write -- not just
+  // overlap among the document's own scopes (checked below). `addScope()`
+  // itself refuses a scope that overlaps a scope ALREADY IN THE TARGET STORE,
+  // via a live query inside its own transaction, and that refusal used to
+  // fire only after ranges/labels/comments/enums/xrefs/exec-observations from
+  // this same plan had already been committed -- contradicting the
+  // "VALIDATION IS COMPLETE" claim below and the document-internal refusal's
+  // own "whole import is refused rather than partially applied" guarantee.
+  // Mirroring `addScope()`'s predicate (and its identical-scope idempotence:
+  // a byte-identical repeat is an accepted no-op, never an overlap) up here
+  // closes that gap without touching `anno-store.ts`'s transaction model.
+  const existingScopes = listScopes(handle);
   for (let s = 0; s < sortedScopes.length; s++) {
     const { row, i } = sortedScopes[s]!;
     assertRangeShape(row.start, row.endInclusive, "byte");
+    const conflict = existingScopes.find(
+      (existing) =>
+        !(existing.start === row.start && existing.endInclusive === row.endInclusive) &&
+        existing.start <= row.endInclusive &&
+        existing.endInclusive >= row.start,
+    );
+    if (conflict) {
+      throw new AnnoStoreExportError(
+        `anno-store-export refused: scopes[${i}] (${row.start}..${row.endInclusive}) overlaps a scope already present in the target ` +
+          `store (id=${conflict.id} ${conflict.start}..${conflict.endInclusive}) -- nested and overlapping scopes are unsupported by ` +
+          `the schema this store mirrors, so the whole import is refused rather than partially applied.`,
+      );
+    }
     // OVERLAP IS REFUSED using `addScope()`'s own predicate, checked here
     // against the DOCUMENT's own scopes before any write -- a document whose
     // own scopes overlap must never partially apply.

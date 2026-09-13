@@ -21,7 +21,7 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { openStore, closeStore, setDataType, setLabel, setComment, createProjectEnum, applyEnumUsage, putXref, insertExecObservations } from "./anno-store.ts";
+import { openStore, closeStore, setDataType, setLabel, setComment, createProjectEnum, applyEnumUsage, putXref, insertExecObservations, addScope, listScopes } from "./anno-store.ts";
 import type { AnnoStoreHandle } from "./anno-store.ts";
 import {
   STORE_EXPORT_SCHEMA_VERSION,
@@ -226,6 +226,118 @@ test("Test 6: a comment whose text starts with DECLINED: round-trips with proven
       assert.equal(provenanceForComment(text), "authored");
     } finally {
       closeStore(handle);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 48-REVIEW CR-02 (fixed): a `scopes` import that overlaps a scope ALREADY IN
+// THE TARGET STORE must be refused in full, before any write from the same
+// plan -- not partway through, after ranges/labels/etc from the same plan
+// have already been committed. Distinct from the document-internal overlap
+// check (which only covers two scope rows overlapping each other inside the
+// SAME document), and distinct from `addScope()`'s own overlap refusal
+// (which threw mid-loop, after earlier plan entries had already landed).
+// ---------------------------------------------------------------------------
+
+test("CR-02 Fix: a scope import that overlaps a pre-existing scope in the target store is refused before any write, never partially applied", () => {
+  inTempDir((dir) => {
+    const target = freshStore(dir);
+    try {
+      addScope(target, { start: 0x1000, endInclusive: 0x1010 });
+
+      const doc: StoreExportDocument = {
+        schemaVersion: STORE_EXPORT_SCHEMA_VERSION,
+        store: "x.annostore",
+        ranges: [{ start: 0x0800, endInclusive: 0x080f, dataType: "byte", bank: null, provenance: "derived" }],
+        labels: [{ address: 0x0810, name: "start", kind: "User", bank: null }],
+        comments: [],
+        projectEnums: [],
+        enumUsage: [],
+        xrefs: [],
+        execObservations: [],
+        scopes: [{ start: 0x1005, endInclusive: 0x1020 }], // overlaps the existing 0x1000..0x1010
+      };
+
+      assert.throws(
+        () => importStoreDocument(target, doc),
+        (err: unknown) => {
+          assert.ok(err instanceof AnnoStoreExportError, "must be an AnnoStoreExportError, not a silent drop or a bare AnnoRangeShapeError from addScope()");
+          assert.ok(
+            (err as Error).message.includes("overlaps a scope already present in the target"),
+            `must name the target-store overlap: ${(err as Error).message}`,
+          );
+          return true;
+        },
+      );
+
+      // NON-VACUITY: the ranges/labels rows that PRECEDE `scopes` in the plan
+      // must NOT have been committed either -- this is exactly CR-02. Before
+      // the fix, `addScope()` threw only after these earlier plan entries had
+      // already landed, leaving the store with everything but the scopes.
+      const reexported = exportStoreDocument(target);
+      assert.equal(reexported.ranges.length, 0, "a refused scope import must leave earlier plan entries (ranges) unwritten too");
+      assert.equal(reexported.labels.length, 0, "a refused scope import must leave earlier plan entries (labels) unwritten too");
+      assert.equal(listScopes(target).length, 1, "the pre-existing scope must be untouched by the refused import");
+    } finally {
+      closeStore(target);
+    }
+  });
+});
+
+test("CR-02 Fix non-vacuity control: a scope import genuinely disjoint from the target store's existing scopes still imports cleanly", () => {
+  inTempDir((dir) => {
+    const target = freshStore(dir);
+    try {
+      addScope(target, { start: 0x1000, endInclusive: 0x1010 });
+
+      const doc: StoreExportDocument = {
+        schemaVersion: STORE_EXPORT_SCHEMA_VERSION,
+        store: "x.annostore",
+        ranges: [],
+        labels: [],
+        comments: [],
+        projectEnums: [],
+        enumUsage: [],
+        xrefs: [],
+        execObservations: [],
+        scopes: [{ start: 0x2000, endInclusive: 0x2010 }], // disjoint from 0x1000..0x1010
+      };
+
+      assert.doesNotThrow(() => importStoreDocument(target, doc));
+      assert.equal(listScopes(target).length, 2, "both the pre-existing and the newly imported scope must be present");
+    } finally {
+      closeStore(target);
+    }
+  });
+});
+
+test("CR-02 Fix non-vacuity control: a scope import BYTE-IDENTICAL to an existing target-store scope is an accepted no-op, not an overlap refusal", () => {
+  inTempDir((dir) => {
+    const target = freshStore(dir);
+    try {
+      addScope(target, { start: 0x1000, endInclusive: 0x1010 });
+
+      const doc: StoreExportDocument = {
+        schemaVersion: STORE_EXPORT_SCHEMA_VERSION,
+        store: "x.annostore",
+        ranges: [],
+        labels: [],
+        comments: [],
+        projectEnums: [],
+        enumUsage: [],
+        xrefs: [],
+        execObservations: [],
+        scopes: [{ start: 0x1000, endInclusive: 0x1010 }], // byte-identical repeat of the existing scope
+      };
+
+      assert.doesNotThrow(
+        () => importStoreDocument(target, doc),
+        "a byte-identical scope repeat must mirror addScope()'s own idempotence, not be refused as an overlap",
+      );
+      assert.equal(listScopes(target).length, 1, "the identical repeat must not create a second row");
+    } finally {
+      closeStore(target);
     }
   });
 });
