@@ -261,7 +261,7 @@
     {
       "number": "49",
       "name": "The Reassembly Gate, Committed Before the Phase It Gates",
-      "status": "pending"
+      "status": "complete"
     },
     {
       "number": "50",
@@ -281,8 +281,8 @@
   ],
   "next": {
     "command": "/gsd:progress --next",
-    "label": "Advance to the next step",
-    "reason": "Phase 49 of 8 · 50% · executing"
+    "label": "Advance to the next step (plan phase 50)",
+    "reason": "Phase 50 of 8 — needs a plan"
   },
-  "updated_at": "2026-09-13T08:12:18.302Z"
+  "updated_at": "2026-09-13T11:38:04.275Z"
 }
