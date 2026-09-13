@@ -307,6 +307,81 @@ export async function gatherStockWedgeEvidence(session: StockConnectSession, dep
  * per-outcome vocabulary is the same one. Redeclared locally rather than
  * imported: importing it would mean importing vice-proxy.ts, which this
  * module must never do. */
+const DEFAULT_RECYCLE_EPOCH_POLL_TIMEOUT_MS = 3000;
+const RECYCLE_EPOCH_POLL_INTERVAL_MS = 50;
+
+/** Read fresh on EVERY call -- same load-time-vs-call-time reasoning as
+ * stockCaptureStepTimeoutMs() above: a static `import` is hoisted ahead of
+ * any top-level statement in the importing file, so a module-level constant
+ * computed once at load time could never be retuned by a test that sets
+ * `process.env` afterwards. Deliberately its OWN environment variable,
+ * distinct from `VICE_RECYCLE_CAPTURE_TIMEOUT_MS` -- that knob bounds one
+ * evidence-gathering step before the kill; this one bounds the epoch poll
+ * after it, and a single shared knob would let retuning one silently retune
+ * the other. Exported so the test file can assert the default directly. */
+export function stockRecycleEpochPollTimeoutMs(): number {
+  const raw = process.env.VICE_RECYCLE_EPOCH_POLL_TIMEOUT_MS;
+  if (raw === undefined || raw === "") return DEFAULT_RECYCLE_EPOCH_POLL_TIMEOUT_MS;
+  const parsed = Number(raw);
+  // A non-positive deadline would make the poll finish before it ever reads,
+  // so every confirmed kill would record a null epoch_after -- and the field
+  // would look present (the producer ran) while carrying no information at
+  // all, which is worse than the missing producer this poll exists to fix.
+  if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  console.error(
+    `VICE_RECYCLE_EPOCH_POLL_TIMEOUT_MS=${JSON.stringify(raw)} is not a positive number of milliseconds -- ignoring it and using the ` +
+      `default ${DEFAULT_RECYCLE_EPOCH_POLL_TIMEOUT_MS}ms. A value of 0 would end the post-kill epoch poll before its first read, so a ` +
+      "confirmed kill would always record a null epoch_after, indistinguishable from a genuine stall.",
+  );
+  return DEFAULT_RECYCLE_EPOCH_POLL_TIMEOUT_MS;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** The ONE predicate that may promote a post-kill read into the record. A
+ * present-but-unchanged value must stay out: a pair of equal before/after
+ * numbers reads to a future investigator as a confirmed no-turnover, which is
+ * a false claim for a kill the guard above this call already established
+ * succeeded. Absence of a pre-kill epoch (a lease that never had one) makes
+ * the first present read count as an advance -- there is nothing higher than
+ * "nothing" to compare against. */
+function epochAdvanced(before: number | null, after: ReturnType<typeof readEpoch>): boolean {
+  if (!after.present || after.epoch === null) return false;
+  return before === null || after.epoch > before;
+}
+
+/**
+ * Bounded post-kill epoch poll. Reuses the SAME dependency-injected reader
+ * and file path the pre-kill read above already used, so the before and
+ * after values come from one source. Loops until either the epoch has
+ * advanced (epochAdvanced() above) or its own wall-clock deadline passes,
+ * clamping the final sleep so the loop cannot overshoot that deadline. A
+ * lease with no epoch file polls nothing and resolves null immediately --
+ * there is nothing to read. A throw from the reader is treated as a read
+ * that did not advance, never as a fatal error on a path that runs after a
+ * destructive action has already happened.
+ */
+async function pollEpochAfter(readEpochFn: typeof readEpoch, epochFile: string, epochBefore: number | null): Promise<number | null> {
+  if (!epochFile) return null;
+  const deadline = Date.now() + stockRecycleEpochPollTimeoutMs();
+  for (;;) {
+    let result: ReturnType<typeof readEpoch> | null;
+    try {
+      result = readEpochFn(epochFile);
+    } catch {
+      result = null;
+    }
+    if (result && epochAdvanced(epochBefore, result)) {
+      return result.epoch;
+    }
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return null;
+    await sleep(Math.min(RECYCLE_EPOCH_POLL_INTERVAL_MS, remaining));
+  }
+}
+
 function recycleAckOutcomeMessage(ack: { outcome: string; kill_stage: string; reason: string }): string {
   const stage = ack.kill_stage || "unknown";
   const reasonSuffix = ack.reason ? ` (${ack.reason})` : "";
@@ -472,7 +547,13 @@ export async function handleRecycleStock(args: Record<string, unknown>, session:
       return isErrorText(`vice_recycle: ${recycleAckOutcomeMessage(ack)} Incident record: ${recordPath}.`);
     }
 
-    finaliseIncidentRecord(recordPath, { outcome: "ok", kill_stage: killStage });
+    // Post-kill epoch poll -- the record's own `epoch_after` producer. Only
+    // reached on a confirmed kill: a refusal, a timeout or a broker-gone
+    // outcome each leave the machine's state unknown, and polling for an
+    // epoch advance on any of those would invent a fact this handler has no
+    // basis for.
+    const epochAfter = await pollEpochAfter(readEpochFn, lease.epochFile, epochBefore);
+    finaliseIncidentRecord(recordPath, { outcome: "ok", kill_stage: killStage, epoch_after: epochAfter });
 
     // stockAnswer() stamps runState from session.client -- read BEFORE the
     // teardown below disconnects it, so the answer reports the machine's
