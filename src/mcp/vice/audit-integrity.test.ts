@@ -362,6 +362,30 @@ test("planted violation: a synthetic tree with a red guard and an audit declarin
   }
 });
 
+test("attribution: exactly one red guard among many is named by basename, and no others (measured RED against parseRedGuardNames()'s output-parsing fallback)", () => {
+  // `redGuardIndex` is deliberately NOT 0 here -- the planted-violation test
+  // above already asserts against index 0's own basename, so a fix that
+  // merely special-cased "always report the first guard" would still pass
+  // that test. Index 2 forces the attribution to be genuine.
+  const RED_INDEX = 2;
+  const { root, cleanup } = buildSyntheticTree({ redGuardIndex: RED_INDEX, auditStatus: "passed" });
+  try {
+    const { status, json } = runGate(root);
+    assert.equal(status, 1, `expected exit 1; got json: ${JSON.stringify(json)}`);
+    assert.equal(json.allowed, false);
+    // Deep equality on the FULL array, not a `>= 1` floor -- a floor is
+    // exactly what let `parseRedGuardNames()`'s "found nothing, fall
+    // through to every guard" behaviour look like a correct attribution.
+    assert.deepEqual(
+      json.redGuards,
+      [EXPECTED_GUARD_NAMES_FOR_ASSERTION[RED_INDEX]],
+      `expected redGuards to name exactly the one planted-red guard; got: ${JSON.stringify(json.redGuards)}`,
+    );
+  } finally {
+    cleanup();
+  }
+});
+
 test("planted false-negative: the same synthetic audit with all guards green is allowed (D-12-16)", () => {
   const { root, cleanup } = buildSyntheticTree({ redGuardIndex: null, auditStatus: "passed" });
   try {

@@ -248,22 +248,53 @@ function truncate(text, max) {
 }
 
 /** Runs the given guard files live, under this same Node binary's own
- * `--test` runner, as a subprocess (D-12-10: guards are re-run live on
- * every invocation, never read from a recorded artifact). The argv is
- * always an array -- `process.execPath` plus `--test` plus the guard
- * basenames themselves -- constructed exclusively from `docsGuardFiles()`'s
- * own return value, never from CLI argv, stdin, or any scanned document
- * text (T-12-03). This deliberately diverges from `test-gate.mjs`'s
- * `stdio: "inherit"` shape: D-12-15's refusal message needs the captured
- * assertion text itself, which inherited stdio does not hand back to the
- * caller at all. */
-/** WR-01 (12-REVIEW.md): bounds the guard subprocess below. Chosen well
- * under the hook's own 30-second budget (`.claude/settings.json`'s
- * PreToolUse `timeout`) and far above the ~215ms the four real guards
- * actually cost, measured while building this fix. `spawnSync` already
- * reports a timeout through `result.error` (`ETIMEDOUT`), and the existing
- * `result.error` branch below already maps that to `status: 1`, which every
- * caller already reads as red -- fail-closed behaviour comes for free. */
+ * `--test` runner (D-12-10: guards are re-run live on every invocation,
+ * never read from a recorded artifact) -- as ONE SUBPROCESS PER FILE, never
+ * a single multi-file spawn.
+ *
+ * MEASURED, not assumed (this replaces a prior single-spawn design whose own
+ * header claimed the opposite): a single `node --test <file1> <file2> ...`
+ * invocation does NOT surface a per-file top-level entry under either
+ * reporter this runner supports. Under the default (spec) reporter, stdout
+ * carries no `not ok ` line and no `# Subtest:` line at all. Forcing
+ * `--test-reporter=tap` does not help either -- its column-zero entries are
+ * individual TEST NAMES, flattened across every file in the invocation, with
+ * no per-file boundary anywhere in the stream. A verdict-by-output-parsing
+ * design (`parseRedGuardNames()`, deleted by this change) therefore always
+ * found zero parseable lines and fell through to its own safety-net
+ * fallback -- "report every guard red" -- on every single call. That
+ * fallback was not a rare edge case; it was the only code path this runner
+ * ever took, and it is what misled the investigation that first diagnosed
+ * this gate's attribution as broken.
+ *
+ * Spawning one subprocess per file sidesteps the whole problem: attribution
+ * is read from each file's OWN process exit status, which needs no output
+ * parsing of any kind.
+ *
+ * The argv for every spawn is still an ARRAY -- `process.execPath`, `--test`,
+ * one basename -- built exclusively from `docsGuardFiles()`'s own return
+ * value, never from CLI argv, stdin, or any scanned document text (T-12-03).
+ * This still diverges from `test-gate.mjs`'s `stdio: "inherit"` shape:
+ * D-12-15's refusal message needs the captured assertion text itself, which
+ * inherited stdio does not hand back to the caller at all.
+ *
+ * Returns `{ status, stdout, stderr, perFile }`: `status` is 0 only when
+ * every file's own status is 0 (so no existing caller of the aggregate shape
+ * breaks); `stdout` concatenates every file's own stdout, each preceded by a
+ * marker line naming the file it came from, so a refusal reason can still
+ * quote the failing assertion text verbatim; `perFile` is the new per-file
+ * record (`{ file, status, stdout, stderr }`) that attribution is actually
+ * read from. */
+/** `GUARD_RUN_TIMEOUT_MS` is a TOTAL budget for the WHOLE loop below, not a
+ * per-file allowance -- ten sequential 15-second per-file timeouts would
+ * allow up to 150s, blowing past the 30-second PreToolUse budget this
+ * constant was originally chosen to sit well under
+ * (`.claude/settings.json`'s hook `timeout`). Each spawn gets only the time
+ * remaining in the shared budget; once the budget is exhausted, every
+ * not-yet-run guard is marked RED with an explicit reason rather than run
+ * with a shrinking or zero timeout -- fail-CLOSED, and the 30-second
+ * contract holds by construction. Measured: all ten real guards complete in
+ * about 1.7s total, far under this budget. */
 const GUARD_RUN_TIMEOUT_MS = 15000;
 
 export function runGuardsLive(viceDir, files) {
@@ -272,10 +303,10 @@ export function runGuardsLive(viceDir, files) {
   // what audit-integrity.test.ts does, and exactly what a future CI step
   // running the whole suite under `--test` would do), Node sets
   // `NODE_TEST_CONTEXT` in the parent's own process.env; inherited
-  // unmodified, the NESTED `node --test` below silently switches its
+  // unmodified, a NESTED `node --test` below silently switches its
   // reporter to the parent-child IPC/v8-serialization protocol instead of
-  // TAP on stdout, so a genuinely failing guard is reported here as if it
-  // had produced no output at all -- exit code 0, empty parsed output --
+  // TAP/spec on stdout, so a genuinely failing guard is reported here as if
+  // it had produced no output at all -- exit code 0, empty parsed output --
   // which is precisely the "green when it should be red" failure GATE-01
   // exists to make impossible. Measured directly while building this file,
   // not assumed: see audit-integrity.test.ts's planted-violation test,
@@ -285,28 +316,56 @@ export function runGuardsLive(viceDir, files) {
   for (const key of Object.keys(env)) {
     if (key.startsWith("NODE_TEST_")) delete env[key];
   }
-  const result = spawnSync(process.execPath, ["--test", ...files], {
-    cwd: viceDir,
-    encoding: "utf8",
-    env,
-    timeout: GUARD_RUN_TIMEOUT_MS,
-    killSignal: "SIGKILL",
-  });
-  if (result.error) {
-    let stderr = `${result.stderr ?? ""}\n${result.error.message ?? String(result.error)}`.trim();
-    if (result.error.code === "ETIMEDOUT") {
-      stderr = (
-        `${stderr}\nguard run was killed after exceeding the ${GUARD_RUN_TIMEOUT_MS}ms timeout ` +
-        "(GUARD_RUN_TIMEOUT_MS) -- treated as red rather than hanging the caller."
-      ).trim();
+
+  const deadline = Date.now() + GUARD_RUN_TIMEOUT_MS;
+  const perFile = [];
+  for (const file of files) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      perFile.push({
+        file,
+        status: 1,
+        stdout: "",
+        stderr:
+          `guard was not run: the ${GUARD_RUN_TIMEOUT_MS}ms total budget (GUARD_RUN_TIMEOUT_MS) for the ` +
+          "whole guard run was already exhausted by earlier guards in this same call -- treated as red " +
+          "rather than run with no time left, or silently skipped.",
+      });
+      continue;
     }
-    return { status: 1, stdout: result.stdout ?? "", stderr };
+    const result = spawnSync(process.execPath, ["--test", file], {
+      cwd: viceDir,
+      encoding: "utf8",
+      env,
+      timeout: remaining,
+      killSignal: "SIGKILL",
+    });
+    if (result.error) {
+      let stderr = `${result.stderr ?? ""}\n${result.error.message ?? String(result.error)}`.trim();
+      if (result.error.code === "ETIMEDOUT") {
+        stderr = (
+          `${stderr}\nguard run was killed after exceeding its remaining share of the ${GUARD_RUN_TIMEOUT_MS}ms ` +
+          "total budget (GUARD_RUN_TIMEOUT_MS) -- treated as red rather than hanging the caller."
+        ).trim();
+      }
+      perFile.push({ file, status: 1, stdout: result.stdout ?? "", stderr });
+      continue;
+    }
+    perFile.push({
+      file,
+      status: result.status ?? 1,
+      stdout: result.stdout ?? "",
+      stderr: result.stderr ?? "",
+    });
   }
-  return {
-    status: result.status ?? 1,
-    stdout: result.stdout ?? "",
-    stderr: result.stderr ?? "",
-  };
+
+  const status = perFile.every((f) => f.status === 0) ? 0 : 1;
+  const stdout = perFile.map((f) => `=== ${f.file} ===\n${f.stdout}`).join("\n");
+  const stderr = perFile
+    .map((f) => f.stderr)
+    .filter((s) => s.length > 0)
+    .join("\n");
+  return { status, stdout, stderr, perFile };
 }
 
 /** The two statuses D-12-12 requires gated. Deliberately stricter than
@@ -427,30 +486,13 @@ export function milestoneAuditFiles(planningDir) {
   return results.sort();
 }
 
-/** Parses `not ok <n> - <name>` TAP lines out of a guard run's own stdout to
- * name the specific red guard(s), per D-12-15 part (a). When `node --test`
- * is invoked with multiple file arguments, each file surfaces as its own
- * top-level (column-zero) test, so a top-level `not ok` line whose name
- * matches one of the guard basenames identifies exactly which file broke.
- * Falls back to the full guard list when the parse finds nothing, so a
- * refusal is never silently unnamed even if the TAP shape ever changes. */
-function parseRedGuardNames(guardResult, guardFiles) {
-  const lines = `${guardResult.stdout ?? ""}`.split("\n");
-  const found = new Set();
-  for (const line of lines) {
-    const m = /^not ok \d+ - (.+)$/.exec(line);
-    if (m) {
-      const candidate = m[1].trim();
-      if (guardFiles.includes(candidate)) found.add(candidate);
-    }
-  }
-  if (found.size === 0) {
-    for (const line of lines) {
-      const m = /^# Subtest: (.+)$/.exec(line);
-      if (m && guardFiles.includes(m[1].trim())) found.add(m[1].trim());
-    }
-  }
-  return found.size > 0 ? [...found].sort() : [...guardFiles];
+/** Derives the red-guard basename list from `runGuardsLive()`'s own
+ * `perFile` records -- each file's own exit status, never output parsing.
+ * The ONE seam both `checkAuditGate()` and `hookGuardVerdict()` read this
+ * through (D-12-01's one-seam rule applies here as much as it does to the
+ * guard list itself); neither may grow its own copy. */
+function redGuardNamesFrom(guardResult) {
+  return guardResult.perFile.filter((f) => f.status !== 0).map((f) => f.file).sort();
 }
 
 /** The single check point (D-12-01). Accumulates structural errors (a
@@ -495,24 +537,27 @@ export function checkAuditGate({ viceDir, planningDir }) {
   // Re-run live on every call where a guard set exists at all -- D-12-10 is
   // still intact for every non-degenerate tree. WR-02 (12-REVIEW.md): the
   // one exception is a structurally-invalid guard set, short-circuited here
-  // BEFORE the spawn, mirroring hookGuardVerdict()'s early return below. With
-  // an empty derived guard set, runGuardsLive(viceDir, []) becomes a
-  // zero-positional `node --test`, which Node reads as "auto-discover every
-  // test file in the tree" -- measured: this does not finish within 15
-  // seconds in this repo's real src/mcp/vice directory -- so the one
-  // path meant to fail fast and loudly would instead run the whole suite
-  // first. The verdict here was already correct before this fix (a
-  // structural failure); only the TIME was wrong.
+  // BEFORE the spawn, mirroring hookGuardVerdict()'s early return below. This
+  // was written against the OLD single multi-file `node --test <files...>`
+  // spawn, where an empty guard set became a zero-positional invocation that
+  // Node reads as "auto-discover every test file in the tree" -- measured
+  // not to finish within 15 seconds in this repo's real src/mcp/vice
+  // directory. `runGuardsLive()`'s per-file loop (below) no longer has that
+  // failure mode at all -- an empty `files` array simply runs zero spawns --
+  // but the short-circuit stays as defense in depth: a structural failure
+  // should report as one immediately, never spend any time running guards
+  // first only to report the same verdict slower.
   const guardResult =
     structuralErrors.length > 0
       ? {
           status: 1,
           stdout: "",
           stderr: "guard run skipped because the guard set is structurally invalid (see structuralErrors).",
+          perFile: [],
         }
       : runGuardsLive(viceDir, guardFiles);
   const guardsRed = guardResult.status !== 0;
-  const redGuards = guardsRed ? parseRedGuardNames(guardResult, guardFiles) : [];
+  const redGuards = structuralErrors.length > 0 ? [] : redGuardNamesFrom(guardResult);
 
   const allowed = structuralErrors.length === 0 && !(guardsRed && gatedAudits.length > 0);
 
@@ -971,7 +1016,7 @@ function hookGuardVerdict(root) {
 
   const guardResult = runGuardsLive(viceDir, guardFiles);
   const guardsRed = guardResult.status !== 0;
-  const redGuards = guardsRed ? parseRedGuardNames(guardResult, guardFiles) : [];
+  const redGuards = redGuardNamesFrom(guardResult);
   return { allowed: !guardsRed, redGuards, guardFiles, guardOutput: guardResult, structuralErrors: [] };
 }
 
