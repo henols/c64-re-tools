@@ -459,20 +459,59 @@ test("structural: the broker's argument parser recognises exactly --repo-root, -
   assert.deepEqual(flags, ["--check-container", "--dry-run", "--repo-root", "--state-dir"]);
 });
 
-test("structural: the broker never re-executes itself -- process.execPath is never passed to a spawn/exec/fork construct in vice-broker.mts", () => {
+// TIGHTENED (node-interpreter-pinning quick task): this used to be a single
+// assertion banning the bare substring "execPath" outright, which blocked a
+// legitimate, unrelated use -- recording the broker's own process.execPath in
+// broker.json's node_exec_path field, purely for a later triage session to
+// read. A single substring ban is unbypassable but blunt (it cannot
+// distinguish that legitimate use from a self-respawn); a single
+// spawn-construct regex is legible but bypassable (one variable of
+// indirection -- `const self = process.execPath; nodeSpawn(self, ...)` --
+// defeats it silently). Two independent assertions get both properties at
+// once instead of trading one for the other:
+//
+//   1. Occurrence pinning (the unbypassable half): comment-strip the source,
+//      count every remaining `process.execPath` occurrence, and require
+//      there be EXACTLY ONE, sitting on the one permitted line
+//      (`node_exec_path: process.execPath`). Any new use anywhere in the
+//      file -- direct, via a variable, a destructure, an alias, whatever --
+//      moves the count to 2 and reds this test. There is no regex to defeat
+//      here; the count itself is the guard.
+//   2. The spawn-construct regex (the legible half): states the actual
+//      hazard in readable form -- process.execPath reaching a
+//      spawn/exec/fork call -- so a reader learns WHY the rule exists, not
+//      just that it exists. Not redundant with assertion 1: it gives a
+//      precise, named failure for the direct form even if assertion 1 is
+//      ever loosened.
+//
+// D-25 is what both assertions protect: detaching stays the operator's own
+// choice, never an automatic self-respawn.
+test("structural: the broker never re-executes itself -- process.execPath appears exactly once (the node_exec_path record field) and is never passed to a spawn/exec/fork construct", () => {
   const source = readFileSync(join(HERE, "vice-broker.mts"), "utf8");
-  // NARROWED (node-interpreter-pinning quick task): this used to ban the bare
-  // substring "execPath" outright, which blocked a legitimate, unrelated use
-  // -- recording the broker's own process.execPath in broker.json's
-  // node_exec_path field, purely for a later triage session to read. That is
-  // not a self-spawn: nothing in this file passes process.execPath to a
-  // spawn/exec/fork call, so this assertion is now precise about the actual
-  // hazard (D-25: detaching stays the operator's own choice, never an
-  // automatic self-respawn) instead of over-broad about the substring.
+  const stripped = stripCommentsForRetiredNameGate(source);
+
+  const execPathLines = stripped
+    .split("\n")
+    .map((line, idx) => ({ line, idx }))
+    .filter(({ line }) => /\bprocess\.execPath\b/.test(line));
+
+  assert.equal(
+    execPathLines.length,
+    1,
+    `expected exactly one comment-stripped occurrence of process.execPath in vice-broker.mts, found ${execPathLines.length}: ` +
+      `${JSON.stringify(execPathLines.map((e) => ({ line: e.idx + 1, text: e.line.trim() })))} -- ` +
+      "a second occurrence means something new is reading the interpreter path, which this gate exists to catch before it becomes a self-respawn",
+  );
+  assert.match(
+    execPathLines[0]!.line,
+    /node_exec_path\s*:\s*process\.execPath/,
+    `the one permitted process.execPath occurrence must be the node_exec_path record field, got: ${execPathLines[0]!.line.trim()}`,
+  );
+
   const selfReexecPattern = /\b(?:nodeSpawn|spawn|execFile(?:Sync)?|fork)\s*\(\s*process\.execPath\b/;
   assert.ok(
     !selfReexecPattern.test(source),
-    "no self-spawn/re-exec construct may pass process.execPath to a child-process spawning function -- detaching stays the operator's own choice (D-25)",
+    "no self-spawn/re-exec construct may pass process.execPath directly to a child-process spawning function -- detaching stays the operator's own choice (D-25)",
   );
 });
 
