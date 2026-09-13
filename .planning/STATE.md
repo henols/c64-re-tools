@@ -5,16 +5,17 @@ milestone_name: The Rebuild Half
 current_phase: 50
 current_phase_name: Equivalence and Modifiability
 status: planning
-stopped_at: Completed quick task 260913-jgv (classify the unclassified VIC-II region)
-last_updated: "2026-09-13T12:33:13.432Z"
+stopped_at: Completed quick task 260913-u1i (CI no longer claims to be a container)
+last_updated: "2026-09-13T20:11:08.073Z"
 last_activity: 2026-09-13
-state_head: e28e56b73890585aacd4c937ac5127648019e668
+last_activity_desc: "Completed quick task 260913-u1i: CI's build job no longer declares itself a container (removed the workflow-wide env block after converting the five test cases that depended on it to inject the signal directly)"
+state_head: a6f53fd04bbcfa3a009c200ac3cfe307f7211457
 progress:
-  total_phases: 8
+  total_phases: 10
   completed_phases: 6
   total_plans: 48
   completed_plans: 48
-  percent: 75
+  percent: 60
 ---
 
 # Project State
@@ -615,6 +616,7 @@ Last activity: 2026-09-13 - Completed quick task 260913-o1w: pin the host broker
 | Phase 49 P06 | 50min | 2 tasks | 1 files |
 | Phase 49 P07 | 55 min | 3 tasks | 9 files |
 | Phase quick-260913-jgv P01 | 55min | 3 tasks | 12 files |
+| Phase quick-260913-u1i P01 | 25min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -1390,6 +1392,7 @@ Recent decisions affecting current work:
 - [Phase 49]: Extracted the movement plan's subject into a new shared, non-test module (reassembly-gate-movement-subject.ts) rather than importing the .test.ts file directly, to avoid re-running its registered tests as an import side effect.
 - [Phase 49]: HAZARD_DISPOSITION recorded as blocked (not acknowledged): the frozen array acknowledges only the 3 real findings, per the plan's own instruction, leaving the subject's 1 permanently-unclassified region unacknowledged.
 - [Phase 50]: Quick task 260913-jgv: classified the previously-undecided VIC-II region by stating two register dependencies statically in the hazard-subject fixture; Phase 49 reassembly-gate verdict re-measured from red/R7 to acknowledged/R10.
+- [Phase 50]: Kept vice-proxy.test.ts's WORKSPACE_ENV gate rather than converting it -- its four gated cases FAIL (not pass) under the only environment that runs them, so converting would trade a named skip for an unattributable failure ahead of its scheduled re-baseline.
 
 ### Pending Todos
 
@@ -1669,6 +1672,7 @@ ledger table row below were both updated in the same change as this one.
 | 260913-o78 | Close the quick-sized half of the CI-only test gap: `broker-e2e.test.ts`'s probe-answering stub still read its port from the retired fork `-mcpserverport` flag, so `indexOf` returned -1, `Number(args[0])` gave NaN, the OS assigned a random port, the binary-monitor probe could never reach `record.port`, and a CORRECT respawn path looked broken. Repointed onto `-binarymonitoraddress ip4://host:port`, resolved by flag name (a positional `ip4://` scan would bind the text-monitor port and rebuild the same defect), echoing the request id, with a loud named refusal instead of a NaN fallback — proven by a planted-violation test. Does NOT unblock the push: `vice-proxy.test.ts` is still red and is phase-sized | 2026-09-13 | c0d6bed2, 7c0968bd |  | [260913-o78-close-the-ci-only-test-gap-vice-proxy-an](./quick/260913-o78-close-the-ci-only-test-gap-vice-proxy-an/) |
 | 260913-p6b | Make `vice-proxy.test.ts` measurable rather than hanging: `makeControllableRecycle()`'s `waitForCall()` (11 call sites) and `makeControllableRecycleSequence().next()` (2) awaited a promise the drifted `vice_recycle` path can no longer settle, so the file stalled at test 71 of 117 and 46 tests had never run once. Bounded in the helper, not the call site — no caller depends on pendency, so a healthy wait is unchanged and only an unsatisfiable one turns from a hang into a named failure. Measurement only: no failure repaired, no test skipped or deleted. Census went from 71/31/36 + hang to 122 run / 45 pass / 73 fail / 0 cancelled in ~2m16s | 2026-09-13 | 5ec87df9 |  | [260913-p6b-bound-the-unbounded-await-in-vice-proxy-](./quick/260913-p6b-bound-the-unbounded-await-in-vice-proxy-/) |
 | 260913-t43 | Unblock CI's first substantive step, red since the acme skill moved onto the host-tool seam and skipping every step behind it (including `npm test` and all three release jobs). Root cause was not the seam: `ci.yml` sets `CONTAINER_WORKSPACE_PATH` job-wide as a path-translation fixture, and `container-guard.mts` reads that same variable as proof of being INSIDE a container — so CI misidentified the machine and every host-side invocation routed to a control plane with no broker. 11 failures under CI's own env, not 1. Pinned the affected tests to the host route and ran the scaffold gate as the test file it already mirrored; `acme.mjs` untouched and `buildHostToolArgv()` still the sole argv owner | 2026-09-13 | 3f69ab4d, f7ef5a05, 54a6be56 |  | [260913-t43-unblock-ci-s-acme-scaffold-step-which-dr](./quick/260913-t43-unblock-ci-s-acme-scaffold-step-which-dr/) |
+| 260913-u1i | Stop CI declaring itself a container. `ci.yml` set `CONTAINER_WORKSPACE_PATH` workflow-wide as a path-translation fixture, which `container-guard.mts` reads as signal 3 — proof of containment — so a runner that is a host claimed otherwise and never exercised the host route at all. The variable is gone; the five broker cases that relied on it now inject it into the child process they drive, the pattern `container-guard.test.ts` and `repo-root.test.ts` already used. Conversions committed BEFORE the removal so the tree was never missing both. `vice-proxy.test.ts`'s gate deliberately left: measured, its four gated cases FAIL under that env (73 -> 77), so the block bought failures, not coverage | 2026-09-13 | 21f2a596, efc0c3a1, a6f53fd0 |  | [260913-u1i-stop-ci-claiming-to-be-a-container-injec](./quick/260913-u1i-stop-ci-claiming-to-be-a-container-injec/) |
 | 260913-o1w | Pin the host broker launcher's Node interpreter. `vice-launcher.sh` exec'd a bare `node`, so the broker ran under whatever the launching context exposed -- measured on this host as v24.20.0 interactively but v20.19.2 from any stripped environment, across four installed versions, with nothing checking or recording which. It now resolves `VICE_BROKER_NODE` then PATH, gates the result against a floor mirrored from `engines.node` (drift-tested, so the bash and package halves cannot diverge), refuses by name with exit 4 BEFORE exec naming path/version/floor/remedy, and records `node_exec_path` in `broker.json`. Accepted consequence: a stripped-environment launch that silently worked on Node 20 now refuses, by design | 2026-09-13 | 321b0804, 05a7d4b0, 4ca6c3d4, 15e9d5a7, ab0e15e1 | passed (verifier GOAL_ACHIEVED 8/8, every check driven live; orchestrator independently re-proved the self-reexec guard non-vacuous in both dot and bracket spellings) | [260913-o1w-pin-the-host-broker-s-node-interpreter-i](./quick/260913-o1w-pin-the-host-broker-s-node-interpreter-i/) |
 
 ### Blockers/Concerns
@@ -2493,8 +2497,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-13T12:33:12.948Z
-Stopped at: Completed quick task 260913-jgv (classify the unclassified VIC-II region)
+Last session: 2026-09-13T20:11:07.538Z
+Stopped at: Completed quick task 260913-u1i (CI no longer claims to be a container)
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
