@@ -1195,7 +1195,27 @@ real — green, or explicitly acknowledged — before Phase 50 begins**
   4. **Movement is exercised on every run, not optionally.** At least one symbol is relocated from its original address and the rebuild reassembled and diffed at the new layout; a same-address-only round trip is refused as a pass. Moving one half of a split hi/lo address table without the other is caught.
   5. A non-clean hazard report either blocks the gate or passes only with an **explicit, recorded, per-finding acknowledgement** visible in the verdict artifact — there is no path from "hazard found" to "silently green".
 
-**Plans**: TBD
+**Plans**: 7 plans, 4 waves
+
+Plans:
+**Wave 1**
+
+- [ ] 49-01-PLAN.md — the pre-commitment: the outcome-line schema and the ordered rule table, committed alone, before anything measures anything
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 49-02-PLAN.md — tracer: a tree-aware entry point on the existing byte-diff oracle, the gate module with its required inputs and rule table, and one real end-to-end run on the committed subject
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 49-03-PLAN.md — the three planted RED controls: a wrong byte under an exit-zero assembler, a stale artifact with exactly the right bytes, and a clean diff over a scope that stopped covering a hazard-anchored range
+- [ ] 49-04-PLAN.md — movement: relocate a symbol in the store and image together, rebuild at the new layout, refuse a same-address round trip, and catch a split table's half left behind
+- [ ] 49-05-PLAN.md — hazard acknowledgement keyed on class, anchor and mechanism, with an exhaustive check that no non-clean report reaches green
+- [ ] 49-06-PLAN.md — the seam guard: frozen, reasoned, both-directions sets for every assembler launch site and every produced-versus-expected comparison
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 49-07-PLAN.md — the real run, the five evidence files, the git-derived ordering proof, and the machine-readable verdict Phase 50 reads as a precondition
 
 Notes:
 
