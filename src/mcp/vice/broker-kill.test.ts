@@ -471,12 +471,18 @@ test("structural: the broker's argument parser recognises exactly --repo-root, -
 // once instead of trading one for the other:
 //
 //   1. Occurrence pinning (the unbypassable half): comment-strip the source,
-//      count every remaining `process.execPath` occurrence, and require
+//      count every remaining occurrence of `process`'s `execPath` property
+//      being READ -- dot access (`process.execPath`) or bracket access with
+//      any of the three quote characters (`process["execPath"]`,
+//      `process['execPath']`, `` process[`execPath`] ``) -- and require
 //      there be EXACTLY ONE, sitting on the one permitted line
-//      (`node_exec_path: process.execPath`). Any new use anywhere in the
-//      file -- direct, via a variable, a destructure, an alias, whatever --
-//      moves the count to 2 and reds this test. There is no regex to defeat
-//      here; the count itself is the guard.
+//      (`node_exec_path: process.execPath`). Stated precisely so this
+//      comment cannot overstate its own guarantee: it covers those two
+//      spellings of the property read, at this one call site; it does NOT
+//      by itself prove no *other* string could still smuggle the value out
+//      through, say, a dynamically-computed property name -- assertion 2
+//      below covers the ordinary hazard (the value reaching a spawn/exec/
+//      fork call) for exactly that reason.
 //   2. The spawn-construct regex (the legible half): states the actual
 //      hazard in readable form -- process.execPath reaching a
 //      spawn/exec/fork call -- so a reader learns WHY the rule exists, not
@@ -486,6 +492,17 @@ test("structural: the broker's argument parser recognises exactly --repo-root, -
 //
 // D-25 is what both assertions protect: detaching stays the operator's own
 // choice, never an automatic self-respawn.
+// Matches a READ of process's execPath property in either JS spelling:
+// dot access (`process.execPath`) or bracket access with any of the three
+// quote characters (`process["execPath"]`, `process['execPath']`,
+// `process[`execPath`]`), tolerating whitespace around the dot/brackets. The
+// backreference (`\1`) requires the SAME quote character to open and close
+// the bracketed literal, so it does not falsely match a mismatched pair.
+// Deliberately NOT `/g`: every call site below uses it with `.test()` on one
+// line at a time, and a global flag's `lastIndex` state would corrupt a
+// reused instance across calls.
+const PROCESS_EXEC_PATH_ACCESS = /process\s*(?:\.\s*execPath\b|\[\s*(['"`])execPath\1\s*\])/;
+
 test("structural: the broker never re-executes itself -- process.execPath appears exactly once (the node_exec_path record field) and is never passed to a spawn/exec/fork construct", () => {
   const source = readFileSync(join(HERE, "vice-broker.mts"), "utf8");
   const stripped = stripCommentsForRetiredNameGate(source);
@@ -493,7 +510,7 @@ test("structural: the broker never re-executes itself -- process.execPath appear
   const execPathLines = stripped
     .split("\n")
     .map((line, idx) => ({ line, idx }))
-    .filter(({ line }) => /\bprocess\.execPath\b/.test(line));
+    .filter(({ line }) => PROCESS_EXEC_PATH_ACCESS.test(line));
 
   assert.equal(
     execPathLines.length,
