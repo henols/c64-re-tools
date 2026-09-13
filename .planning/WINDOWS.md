@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 41
+open_count: 42
 waived_count: 14
 fixed_count: 9
-total_count: 64
-last_updated: 2026-09-13T12:31:18.832Z
+total_count: 65
+last_updated: 2026-09-13T14:56:52.250Z
 ---
 
 # Broken Windows Ledger
@@ -79,6 +79,7 @@ last_updated: 2026-09-13T12:31:18.832Z
 | 62 | 48 | deviation | src/mcp/vice/hazard-subject-fixture.test.ts |  | decode() over the whole image (data included) produces coincidental instruction-shaped matches over non-code bytes; narrowed the second-self-modification and reference-resolution tests to ABSOLUTE/ZEROPAGE literal operands and to CODE-typed ranges only, to avoid false positives from data misdecoded as instructions. | open |  | 2026-09-12T22:38:18.118Z |  |
 | 63 | 49 | deviation | docs/phase49-the-reassembly-gate-findings.md |  | This plan's own Task 2 verify command asserts 7 total bare outcome-line matches across the 5 evidence files, but SCHEMA.md's dual-file design for DIFF_SCOPE_COVERAGE makes the schema-correct total 8; both DIFF_SCOPE_COVERAGE occurrences were written per SCHEMA.md rather than one omitted to force the count. | open |  | 2026-09-13T11:16:21.461Z |  |
 | 64 | quick-260913-jgv | deviation | src/mcp/vice |  | Full automated suite carries 7 pre-existing, unrelated failures (REQUIREMENTS.md/REVIEW.md disposition tracking, STATE.md Deferred Items) present before this quick task's first edit and identical name-for-name after -- out of scope, not fixed, documented in the quick task's SUMMARY. | open |  | 2026-09-13T12:31:18.832Z |  |
+| 65 | quick-260913-mql | deviation | src/mcp/vice/broker-e2e.test.ts | 403 | Pre-existing, out-of-scope failure discovered while measuring the 12 MANUAL_ONLY_TESTS CI delta: 'wired warm-hit (plan 41-05)' fails deterministically (reproduced twice) on a real broker crash-respawn deadline, unrelated to any file this quick task touched. | open |  | 2026-09-13T14:56:52.250Z |  |
 
 ````json
 [
@@ -848,6 +849,18 @@ last_updated: 2026-09-13T12:31:18.832Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-13T12:31:18.832Z",
+    "resolved_at": null
+  },
+  {
+    "id": 65,
+    "kind": "deviation",
+    "phase": "quick-260913-mql",
+    "file": "src/mcp/vice/broker-e2e.test.ts",
+    "line": 403,
+    "description": "Pre-existing, out-of-scope failure discovered while measuring the 12 MANUAL_ONLY_TESTS CI delta: 'wired warm-hit (plan 41-05)' fails deterministically (reproduced twice) on a real broker crash-respawn deadline, unrelated to any file this quick task touched.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-13T14:56:52.250Z",
     "resolved_at": null
   }
 ]
