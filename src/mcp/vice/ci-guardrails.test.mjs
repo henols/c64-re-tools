@@ -670,3 +670,75 @@ test(`ci-guardrails: ${SCAFFOLD_TEST_FILE} (the file the scaffold step names) re
       "suite must genuinely run this file for the scaffold gate's coverage claim to hold.",
   );
 });
+
+// ---------------------------------------------------------------------------
+// The workflow used to set a devcontainer-only variable job-wide as a
+// path-translation fixture. The container detector reads that same variable
+// as proof of being inside a container, and a runner that claims
+// container-ness routes every host-side invocation to a control plane that
+// does not exist there -- which broke the job's first substantive step and
+// skipped every step behind it, including the test run and all three release
+// paths, for months. The two cases below hold open the pairing that fixes
+// that: the declaration is gone, AND exactly one file still wants it.
+// ---------------------------------------------------------------------------
+
+/** Returns whether workflow YAML text declares CONTAINER_WORKSPACE_PATH or
+ * HOST_WORKSPACE_PATH as an env assignment at any level. Comment lines are
+ * dropped first (this file's own prose mentions both names, and an
+ * unfiltered match would let a comment invalidate the check), then surviving
+ * lines are tested for an assignment shape: leading whitespace, the
+ * variable name, optional whitespace, a colon. */
+function declaresContainerWorkspaceEnv(yamlText) {
+  const lines = yamlText.split("\n").filter((line) => !/^\s*#/.test(line));
+  return lines.some((line) => /^\s*(CONTAINER_WORKSPACE_PATH|HOST_WORKSPACE_PATH)\s*:/.test(line));
+}
+
+test("ci-guardrails: ci.yml declares no CONTAINER_WORKSPACE_PATH or HOST_WORKSPACE_PATH at any level -- a runner is a host, and the detector's third signal is a devcontainer-only variable", () => {
+  const fixtureWithBlock = [
+    "name: fixture",
+    "env:",
+    "  CONTAINER_WORKSPACE_PATH: /whatever",
+    "  HOST_WORKSPACE_PATH: /host/whatever",
+    "jobs:",
+    "  build:",
+    "    runs-on: ubuntu-latest",
+  ].join("\n");
+  assert.equal(
+    declaresContainerWorkspaceEnv(fixtureWithBlock),
+    true,
+    "the fixture declares both keys -- if the detector returns false here it has stopped detecting, and a " +
+      "passing real-file assertion below would be meaningless",
+  );
+
+  const realYaml = readFileSync(CI_YAML_PATH, "utf8");
+  assert.equal(
+    declaresContainerWorkspaceEnv(realYaml),
+    false,
+    "ci.yml declares CONTAINER_WORKSPACE_PATH or HOST_WORKSPACE_PATH -- a GitHub runner is a host, and this " +
+      "variable is exactly what routes every host-side invocation in the job to a control plane that does not " +
+      "exist there. Reintroducing it (even as a single-step env: block) must fail this assertion.",
+  );
+});
+
+test("ci-guardrails: exactly one MCP test file still gates cases on an inherited container-workspace signal, and it is named vice-proxy.test.ts", () => {
+  const selfBasename = fileURLToPath(import.meta.url).split("/").pop();
+  const candidates = [...new Set([...automatedTestFiles(HERE), ...MANUAL_ONLY_TESTS])]
+    .filter((f) => f !== selfBasename)
+    .filter((f) => existsSync(join(HERE, f)));
+
+  const gated = candidates
+    .filter((f) => new RegExp("\\bWORKSPACE_ENV\\b").test(readFileSync(join(HERE, f), "utf8")))
+    .sort();
+
+  assert.deepStrictEqual(
+    gated,
+    ["vice-proxy.test.ts"],
+    "the set of files gating cases on the WORKSPACE_ENV idiom must be exactly [\"vice-proxy.test.ts\"] -- an " +
+      "unexpected extra member means a new file gates cases on a container signal that no job supplies any " +
+      "more, so those cases will skip silently everywhere; a missing member means vice-proxy.test.ts's gate " +
+      "was resolved (its wholesale re-baseline) and this ledger must be updated in the same change. This " +
+      "detector binds the gate idiom BY NAME (the literal identifier WORKSPACE_ENV), so a differently-named " +
+      "future gate escapes it -- the case above (the workflow declaration itself) is the airtight half of " +
+      "this pair.",
+  );
+});

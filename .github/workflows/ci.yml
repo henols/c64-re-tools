@@ -13,15 +13,6 @@ on:
         required: true
         type: string
 
-# Path translation in the MCP tests reads these; on GitHub's runner the
-# workspace IS the checkout dir, so CONTAINER_WORKSPACE_PATH must equal it.
-# HOST_WORKSPACE_PATH is an arbitrary host-side mirror (the tests only need it
-# set and consistent). The runner is non-root, so the read-only-deployment
-# tests are enforced correctly here.
-env:
-  CONTAINER_WORKSPACE_PATH: ${{ github.workspace }}
-  HOST_WORKSPACE_PATH: /host${{ github.workspace }}
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -112,14 +103,20 @@ jobs:
         # this step gates every later step including both publish paths, and
         # a fast dedicated failure is worth the second second.
         #
-        # The measured cause of the long-standing break: the workspace
-        # variables this job sets for path translation are also read by the
-        # container detector as proof of being inside a container, which
-        # routed this host-side invocation to a control plane that has no
-        # broker behind it on a runner. The workspace variables are left in
-        # place for this step deliberately, so it runs under the exact
-        # ambient environment that broke it and would catch the same
-        # regression again.
+        # The measured cause of the long-standing break: this job used to set
+        # workspace variables for path translation job-wide, and those same
+        # variables were also read by the container detector as proof of
+        # being inside a container, which routed this host-side invocation to
+        # a control plane that has no broker behind it on a runner. The job
+        # no longer declares a container environment at all -- the
+        # detector's third signal is a devcontainer-only variable and a
+        # runner is a host, so this step now runs under an environment that
+        # matches the machine it actually is. What still guards the original
+        # break: this step's own test file's host-route child-environment
+        # helper (hostRouteChildEnv()), which carries its own never-skipped
+        # contract case, plus the workflow assertions in
+        # ci-guardrails.test.mjs that fail if the container-workspace
+        # declaration ever returns.
         working-directory: src/mcp/vice
         env:
           VICE_REQUIRE_ACME: "1"
@@ -146,6 +143,12 @@ jobs:
       - name: Test
         working-directory: src/mcp/vice
         env:
+          # This runner is non-root, which is why install-resources.test.ts's
+          # read-only-deployment cases (part of this step's full glob) are
+          # enforced here rather than vacuous -- a root process ignores a
+          # read-only file mode entirely, so the same assertion would pass
+          # for the wrong reason on a root-run CI job.
+          #
           # Second half of the loud-failure gate: with this set,
           # disasm-roundtrip.test.ts turns "ACME absent" from a named SKIP
           # into a hard FAIL. This step runs `npm test`, the full `*.test.*`
