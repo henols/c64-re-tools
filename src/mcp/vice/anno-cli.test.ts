@@ -2207,6 +2207,21 @@ test('hazard-report: the rendered (non --json) report also shows "truncated" in 
   });
 });
 
+test("hazard-report: the rendered report carries an UNPROVEN DISPATCH CANDIDATES heading (48-REVIEW WR-03)", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    const { storePath, imagePath } = makeExportableProject(ws, "ordinary.prg");
+    const { result: code, stdout, stderr } = await withCapturedConsole(() =>
+      runAnnoCli(["hazard-report", "--store", storePath, "--image", imagePath]),
+    );
+    assert.equal(code, 0, stderr);
+    assert.match(
+      stdout,
+      /UNPROVEN DISPATCH CANDIDATES \(\d+\)/,
+      "the human-readable report must render unprovenDispatchCandidates under its own heading, not only in --json output",
+    );
+  });
+});
+
 test("hazard-report: an ordinary run with no dispatch table reports truncated: false via the real CLI verb (non-vacuity control)", async () => {
   await withWorkspaceTempDir(async (ws) => {
     const { storePath, imagePath } = makeExportableProject(ws, "ordinary.prg");

@@ -164,6 +164,7 @@ import { reconcileObservedExecution } from "./evid-reconcile.ts";
 // the anno_hazard_report MCP tool calls -- reached here directly (a static
 // import, never lazy) because this module IS the CLI.
 import { buildHazardReport } from "./anno-hazard-report.ts";
+import type { HazardReport } from "./anno-hazard-report.ts";
 import type { EvidReconciliation } from "./evid-reconcile.ts";
 // The derived half of STORE-06: cross-references are DERIVED from the bytes
 // plus the store's typed ranges plus the few rows that cannot be recovered
@@ -2781,26 +2782,7 @@ function parseHazardReportArgs(rest: string[]): HazardReportParsedArgs {
  * detection is not evidence that a region is safe to move -- so that
  * sentence is never left to a reader's inference.
  */
-function printHazardReport(
-  storePath: string,
-  imagePath: string,
-  r: {
-    findings: readonly {
-      hazardClass: string;
-      anchorAddress: number;
-      blockedAddress: number | null;
-      mechanism: string;
-      strength: string;
-      detail: string;
-    }[];
-    regions: readonly { start: number; endInclusive: number; outcome: string; reason?: string }[];
-    limits: readonly { hazardClass: string | null; limit: string; consequence: string }[];
-    denominator: number;
-    matched: number;
-    returned: number;
-    truncated: boolean;
-  },
-): void {
+function printHazardReport(storePath: string, imagePath: string, r: HazardReport & { matched: number; returned: number }): void {
   console.log(`hazard-report: ${storePath}`);
   console.log(`  image: ${imagePath}`);
   console.log("");
@@ -2836,6 +2818,28 @@ function printHazardReport(
   console.log(`  UNCLASSIFIED REGIONS (${unclassified.length} of ${r.denominator})`);
   if (unclassified.length === 0) console.log("    none");
   else for (const region of unclassified) console.log(`    ${hexAddr(region.start)}..${hexAddr(region.endInclusive)}  (${region.reason ?? "no reason recorded"})`);
+  console.log("");
+
+  // WR-03: rendered here so an operator reading ONLY the human-readable
+  // report (never --json) still sees the declined dispatch candidates
+  // HazardReport's own doc comment insists must never be silently dropped --
+  // "an honest decline indistinguishable from an absence" is exactly the
+  // confusion `HAZARD_LIMITS`'s `indexed-dispatch` entry warns against.
+  console.log(
+    `  UNPROVEN DISPATCH CANDIDATES (${r.unprovenDispatchCandidates.length}) -- declined by the imported scanner's promotion gate; ` +
+      "a decline here is not a claim that no computed dispatch exists in this region, see LIMITS below",
+  );
+  if (r.unprovenDispatchCandidates.length === 0) {
+    console.log("    none");
+  } else {
+    for (const c of r.unprovenDispatchCandidates) {
+      const targets = c.orientationResolved ? addressList(c.targets) : "unresolved -- byte-swap orientation unknown, not printed as addresses";
+      console.log(
+        `    ${hexAddr(c.at)}  lo=${hexAddr(c.loBase)}  hi=${hexAddr(c.hiBase)}  entries=${c.entries}${c.truncated ? "  truncated" : ""}`,
+      );
+      console.log(`      targets: ${targets}`);
+    }
+  }
   console.log("");
 
   console.log("  LIMITS");
@@ -2946,6 +2950,12 @@ async function cmdHazardReport(rest: string[]): Promise<number> {
     closeStore(handle);
   }
 
+  // `matched`/`returned` always equal `report.findings.length` here -- this
+  // verb has no `--max-results`/pagination option (unlike the MCP tool's
+  // `anno_hazard_report`, which genuinely slices `report.findings` against
+  // one). They are kept only to mirror that tool's JSON shape; a future
+  // `--max-results` flag on THIS verb would need to make these two diverge
+  // again, the same way the MCP tool's `dispatchHazardReport` already does.
   if (json) {
     console.log(JSON.stringify({ store: storePath, image: imagePath, ...report, returned: report.findings.length, matched: report.findings.length }, null, 2));
     return 0;
