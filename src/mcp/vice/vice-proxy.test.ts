@@ -1301,10 +1301,18 @@ test("the _meta cap stamp and the actual chunk boundary never drift apart", asyn
 // when the caller expected an answer.
 // -----------------------------------------------------------------------
 
+// Plan 55-05: cases 1-5 need no successful call at all -- a malformed line,
+// a bare value, a method-less object, an unknown method name, and a
+// tools/call missing its required name all draw their answer (or their
+// deliberate silence) before any tool ever runs. Only case 6 needs one to
+// actually succeed, and VICE_MCP_URL forwarding is dead (MEASURED,
+// ensureStockSession() refuses outright the instant it is set) -- so this
+// rewrite drops the VICE_MCP_URL stand-in entirely and proves case 6
+// against the proxy-local anno route instead (seedAnnoWorkspace(),
+// Plan 55-01), same as the tracer above.
 test("never-throw: malformed and hostile input is answered, not fatal", async () => {
-  const { server } = startStandInServer();
-  const port = await listen(server);
-  const proxy = startProxy({ VICE_MCP_URL: `http://127.0.0.1:${port}/mcp` });
+  const { ws, storePath } = seedAnnoWorkspace(1);
+  const proxy = startProxy({ CLAUDE_PROJECT_DIR: ws });
 
   try {
     proxy.send({
@@ -1372,7 +1380,12 @@ test("never-throw: malformed and hostile input is answered, not fatal", async ()
 
     // 6. Finally: a genuinely valid tools/call, proving the process is
     //    still fully functional after five consecutive hostile inputs.
-    proxy.send({ jsonrpc: "2.0", id: 13, method: "tools/call", params: { name: "vice_ping", arguments: {} } });
+    proxy.send({
+      jsonrpc: "2.0",
+      id: 13,
+      method: "tools/call",
+      params: { name: "anno_get_symbols", arguments: { store: storePath, max_results: 10 } },
+    });
     const okResp = await proxy.nextMessage();
     assert.equal(okResp.result.isError, false, "a valid call after five hostile inputs must still succeed");
 
@@ -1380,7 +1393,7 @@ test("never-throw: malformed and hostile input is answered, not fatal", async ()
     assert.equal(proxy.child.killed, false);
   } finally {
     proxy.child.kill("SIGKILL");
-    await new Promise((resolve) => server.close(resolve));
+    rmSync(ws, { recursive: true, force: true });
   }
 });
 
@@ -1433,58 +1446,26 @@ function reserveFreePort(): Promise<number> {
   });
 }
 
-test("never-cache: host down then up succeeds without a restart", async () => {
-  const port = await reserveFreePort();
-  // Nothing is listening on `port` yet -- the very first call must observe
-  // a refused connection, not a cached assumption from some earlier check.
-  const proxy = startProxy({ VICE_MCP_URL: `http://127.0.0.1:${port}/mcp` });
-  let server: Server | undefined;
-
-  try {
-    proxy.send({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "initialize",
-      params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } },
-    });
-    await proxy.nextMessage();
-
-    const pidBefore = proxy.child.pid;
-
-    // Call 1: nothing listening -- must come back as a well-formed
-    // isError:true RESULT (Pattern 2's two-category model: a failed tool
-    // call is still an answer, never a crash and never a JSON-RPC error
-    // object). Generous timeout: with no pre-flight probe yet in place this
-    // exhausts the full ~50s reconnect ladder before failing; once task 2's
-    // probe lands this same assertion resolves in about a second instead --
-    // either way it must eventually come back as isError:true.
-    proxy.send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "vice_ping", arguments: {} } });
-    const down = await proxy.nextMessage(65000);
-    assert.equal(down.result.isError, true, "a call against nothing listening must fail as isError:true, not crash");
-
-    // Now start the real stand-in server ON THE SAME PORT.
-    const standIn = startStandInServer();
-    const standInServer = standIn.server;
-    server = standInServer;
-    await new Promise<void>((resolveListen, rejectListen) => {
-      standInServer.listen(port, "127.0.0.1", () => resolveListen());
-      standInServer.once("error", rejectListen);
-    });
-
-    // Call 2, same child process, no restart: must succeed now, proving the
-    // previous failure was never cached anywhere in the proxy.
-    proxy.send({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "vice_ping", arguments: {} } });
-    const up = await proxy.nextMessage(15000);
-    assert.equal(up.result.isError, false, "the very next call on the SAME process must succeed once the host is up");
-
-    assert.equal(proxy.child.pid, pidBefore, "both calls must have gone through the same child process -- no restart");
-    assert.equal(proxy.child.exitCode, null);
-  } finally {
-    proxy.child.kill("SIGKILL");
-    const finalServer = server;
-    if (finalServer) await new Promise((resolve) => finalServer.close(resolve));
-  }
-});
+// Plan 55-05, ladder rung 3: RETIRED. This test drove "host down then up,
+// same process, no restart" entirely over VICE_MCP_URL forwarding to an
+// HTTP stand-in -- MEASURED that this route cannot observe either state any
+// more: `ensureStockSession()` returns its one fixed VICE_MCP_URL-override
+// refusal the instant the env var is set, unconditionally, whether or not
+// anything is listening on the target port at all. There is no "down" vs
+// "up" left to distinguish through this mechanism; the two calls this test
+// used to make would both now produce the byte-identical fixed message,
+// regardless of the stand-in server's own lifecycle in between.
+//
+// The property itself -- a negative result is never cached, and the very
+// next call on the SAME process succeeds once the target becomes reachable,
+// no restart -- is still real and still tested, through the mechanism that
+// actually mediates reachability today: the broker control plane. Named,
+// green successor: "broker never-cache: absent-then-alive-and-granted
+// succeeds on the SAME process, no restart" (this file), confirmed passing.
+// That test drives the identical shape -- a first call against an absent
+// broker, then a second call on the SAME process against a real, granted
+// control connection, with no restart between them -- through the one route
+// that can still produce it.
 
 test("never-throw: a broken stdout pipe does not kill the process", async () => {
   const { server } = startStandInServer();
@@ -1534,188 +1515,41 @@ test("never-throw: a broken stdout pipe does not kill the process", async () => 
   }
 });
 
-// -----------------------------------------------------------------------
-// Plan 01.1-03 task 2: an unreachable emulator produces one of exactly three
-// distinct, evidence-carrying diagnoses within about a second -- never a
-// blocking wait on withReconnect()'s ~50s ladder, never a generic message
-// that sends the reader to the wrong fix.
-// -----------------------------------------------------------------------
-
-test("three states: each unreachable shape gets its own message and fix", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "vice-proxy-3states-"));
-
-  // ---- Never started: refused, and no restart-epoch record exists at all. ----
-  const neverStartedEpochFile = join(dir, "never-written-epoch.json"); // deliberately never written
-  const refusedPort1 = await reserveFreePort();
-  const proxy1 = startProxy({
-    VICE_MCP_URL: `http://127.0.0.1:${refusedPort1}/mcp`,
-    VICE_EPOCH_FILE: neverStartedEpochFile,
-  });
-  let neverStartedText;
-  try {
-    proxy1.send({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "initialize",
-      params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } },
-    });
-    await proxy1.nextMessage();
-
-    const startedAt = Date.now();
-    proxy1.send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "vice_ping", arguments: {} } });
-    const resp = await proxy1.nextMessage(10000);
-    const elapsedMs = Date.now() - startedAt;
-
-    assert.equal(resp.result.isError, true, "an unreachable host must fail as isError:true");
-    neverStartedText = resp.result.content[0].text;
-    assert.match(neverStartedText, /never.*started/i, "the never-started shape must say the emulator was never started");
-    assert.ok(
-      elapsedMs < 10000,
-      `the never-started diagnosis must be fail-fast, not the ~50s reconnect ladder -- took ${elapsedMs}ms`
-    );
-  } finally {
-    proxy1.child.kill("SIGKILL");
-  }
-
-  // ---- Dead or hung: refused, but a restart-epoch record DOES exist. ----
-  const deadOrHungEpochFile = join(dir, "epoch.json");
-  writeFileSync(deadOrHungEpochFile, JSON.stringify({ epoch: 5, pid: 4242, spawned_at: "2026-07-31T00:00:00.000Z" }), "utf8");
-  const refusedPort2 = await reserveFreePort();
-  const proxy2 = startProxy({
-    VICE_MCP_URL: `http://127.0.0.1:${refusedPort2}/mcp`,
-    VICE_EPOCH_FILE: deadOrHungEpochFile,
-  });
-  let deadOrHungText;
-  try {
-    proxy2.send({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "initialize",
-      params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } },
-    });
-    await proxy2.nextMessage();
-
-    proxy2.send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "vice_ping", arguments: {} } });
-    const resp = await proxy2.nextMessage(10000);
-    assert.equal(resp.result.isError, true);
-    deadOrHungText = resp.result.content[0].text;
-    assert.match(deadOrHungText, /dead or hung/i);
-    assert.match(deadOrHungText, /4242/, "the pid read from the epoch file must appear in the dead-or-hung message");
-  } finally {
-    proxy2.child.kill("SIGKILL");
-  }
-
-  // ---- Alive, but the operation itself failed. ----
-  function startAliveButFailingServer(): StandInServer {
-    const requests: (JsonRpcMessage | null)[] = [];
-    const server = createServer((req, res) => {
-      let body = "";
-      req.setEncoding("utf8");
-      req.on("data", (c: string) => (body += c));
-      req.on("end", () => {
-        let msg: JsonRpcMessage | null;
-        try {
-          msg = JSON.parse(body);
-        } catch {
-          msg = null;
-        }
-        requests.push(msg);
-        if (msg && msg.method === "initialize") {
-          res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              jsonrpc: "2.0",
-              id: msg.id,
-              result: { protocolVersion: "2024-11-05", capabilities: {}, serverInfo: { name: "stand-in", version: "0" } },
-            })
-          );
-          return;
-        }
-        if (msg && msg.method === "tools/call" && msg.params && msg.params.name === "vice_ping") {
-          const payload = { version: "3.10", machine: "C64SC", execution: "paused" };
-          res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { content: [{ type: "text", text: JSON.stringify(payload) }] } })
-          );
-          return;
-        }
-        if (msg && msg.method === "tools/call") {
-          // Any OTHER tool call is rejected with a genuine JSON-RPC error --
-          // "reachable, but this particular request failed".
-          res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(
-            JSON.stringify({
-              jsonrpc: "2.0",
-              id: msg.id,
-              error: { code: -32000, message: "no such memory range mapped: $FFFF-$FFFF" },
-            })
-          );
-          return;
-        }
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(
-          JSON.stringify({ jsonrpc: "2.0", id: msg && "id" in msg ? msg.id : null, error: { code: -32601, message: "unsupported" } })
-        );
-      });
-    });
-    return { server, requests };
-  }
-
-  const { server: aliveServer } = startAliveButFailingServer();
-  const alivePort = await listen(aliveServer);
-  const proxy3 = startProxy({ VICE_MCP_URL: `http://127.0.0.1:${alivePort}/mcp` });
-  let aliveButFailedText;
-  try {
-    proxy3.send({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "initialize",
-      params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } },
-    });
-    await proxy3.nextMessage();
-
-    proxy3.send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "vice_memory_read", arguments: {} } });
-    const resp = await proxy3.nextMessage(10000);
-    assert.equal(resp.result.isError, true);
-    aliveButFailedText = resp.result.content[0].text;
-    assert.match(
-      aliveButFailedText,
-      /no such memory range mapped: \$FFFF-\$FFFF/,
-      "the host's own error text must be relayed verbatim, not paraphrased"
-    );
-    assert.doesNotMatch(
-      aliveButFailedText,
-      /restart/i,
-      "the alive-but-failed message must NOT carry a host-restart instruction"
-    );
-  } finally {
-    proxy3.child.kill("SIGKILL");
-    await new Promise((resolve) => aliveServer.close(resolve));
-  }
-
-  // ---- Cross-cutting assertions across all three shapes. ----
-  assert.notEqual(neverStartedText, deadOrHungText, "never-started and dead-or-hung messages must be pairwise distinct");
-  assert.notEqual(neverStartedText, aliveButFailedText, "never-started and alive-but-failed messages must be pairwise distinct");
-  assert.notEqual(deadOrHungText, aliveButFailedText, "dead-or-hung and alive-but-failed messages must be pairwise distinct");
-
-  for (const text of [neverStartedText, deadOrHungText, aliveButFailedText]) {
-    assert.match(text, /(^|\s)\/\S+/, "every unreachable-adjacent message must quote an absolute path");
-    assert.match(text, /only route/i, "every unreachable-adjacent message must state this is the only route");
-    // 01.6.2-09 (T-01.6.2-54): all three host-unreachable messages used to
-    // quote the retiring per-instance supervisor (tools/vice-supervisor.sh);
-    // each now quotes the surviving launcher instead. Whether any quoted
-    // invocation carries a subcommand the launcher doesn't accept is
-    // checked structurally, against the SOURCE (see "structural: no message
-    // quotes the launcher with a subcommand" below) -- the fully-assembled,
-    // multi-sentence runtime text here legitimately has more prose after
-    // the path, which a text-level "nothing follows" check cannot tell
-    // apart from an appended subcommand.
-    assert.match(text, /vice-launcher\.sh/, "every unreachable-adjacent message must name the surviving launcher");
-    assert.doesNotMatch(text, /vice-supervisor\.sh/, "no unreachable-adjacent message may still name the retiring per-instance supervisor");
-  }
-
-  rmSync(dir, { recursive: true, force: true });
-});
+// Plan 55-05, ladder rung 3/6: RETIRED. This test drove three distinct
+// unreachable-classification diagnoses (never-started, dead-or-hung,
+// alive-but-failed) entirely over VICE_MCP_URL forwarding to an HTTP
+// stand-in. MEASURED (and confirmed by vice-proxy.ts's own comment above
+// ONLY_ROUTE_NOTE) that this whole classifying mechanism is deleted source:
+// "the host-unreachable triple ... is deleted along with the fork-only
+// generic forwarding function ... stock has no equivalent probe-then-
+// classify step of its own." ensureStockSession()'s VICE_MCP_URL branch
+// returns exactly ONE fixed message today regardless of epoch-file state or
+// target-port reachability, so the three states this test used to produce
+// have collapsed into one -- there is nothing left to classify.
+//
+// The two claims that survive decompose to two different, currently-green
+// successors:
+//
+//   - never-started / dead-or-hung, same vocabulary (brokerNeverStartedMessage()/
+//     brokerDeadOrHungMessage()), now driven by the BROKER's own broker.json
+//     liveness classification rather than a VICE_MCP_URL probe: "broker three
+//     states: each broker-absent shape gets its own message and fix" (this
+//     file), confirmed passing.
+//   - alive-but-failed (a reachable session's own operation fails and is
+//     reported distinctly, never a generic message): the mechanism that used
+//     to classify this over the fork's HTTP transport is gone; the modern
+//     equivalent -- a real per-protocol-error-code conversion into distinct,
+//     non-generic result text, covering StockProtocolError/StockFramingError/
+//     StockResponseMismatchError and the plain-Error fallback -- is unit-tested
+//     directly against stock-handler.ts's own convertWireError() in
+//     stock-handler.test.ts ("convertWireError: ObjectMissing and CmdFailure
+//     produce distinct, non-generic text" and its siblings), confirmed
+//     passing. This is a narrower, more precise successor than the retired
+//     claim of "the host's error text relayed verbatim" -- stock's own wire
+//     protocol carries typed error codes, not the fork's free-form JSON-RPC
+//     error strings, so "distinct per error code" is the honest modern
+//     restatement of "not a generic message", not a relocation of the old
+//     claim unchanged.
 
 // -----------------------------------------------------------------------
 // Plan 01.1-03 task 3: an absolute container path inside the workspace
@@ -1963,21 +1797,40 @@ test("path translation: relative paths resolve for declared path arguments only"
   }
 });
 
-// Regression: the workspace boundary must be checked against a NORMALIZED
-// path. Before this, isInsideWorkspace() compared the raw string, so any value
-// merely beginning with the root's characters passed -- and hostPath() does not
-// refuse a normalizing-outward path either (it falls through to mount-based
-// translation by design), so the check here was the only boundary and a lexical
-// ".." walked straight through it into a real host path outside the workspace.
+// Plan 55-05: rewritten against the proxy-local anno_* route. The mechanism
+// this test used to exercise -- isInsideWorkspace()/hostPath() applied to a
+// generic stock tool's own `path` argument, forwarded to a VICE_MCP_URL
+// stand-in -- is only reachable through the two WORKSPACE_ENV-gated siblings
+// immediately above, both already skipped pending this file's own later
+// re-baseline (see this file's header note on WORKSPACE_ENV), and even THEY
+// drive the now-dead VICE_MCP_URL forwarding path this plan's tracer rewrite
+// found cannot succeed. There is no live route left to that specific
+// mechanism at all.
 //
-// Both directions matter, which is why one test covers both: refuse what
-// escapes, and still accept what merely LOOKS like it escapes but resolves back
-// inside. A fix that only refused any string containing ".." would pass the
-// first assertion and fail the second.
-test("path translation: a lexical .. cannot escape the workspace, and one that resolves back inside still translates", async () => {
-  const { server, requests } = startStandInServer();
-  const port = await listen(server);
-  const proxy = startProxy({ VICE_MCP_URL: `http://127.0.0.1:${port}/mcp` });
+// A DIFFERENT confinement check is still live on every call through this
+// file's own proven proxy-local route: `anno_get_symbols`'s `store` argument
+// is resolved against `repoRoot()` (here, `CLAUDE_PROJECT_DIR`) through
+// `storePathWithinWorkspace()` (anno-types.ts), which carries the exact same
+// "both directions" property this test's own header comment states -- refuse
+// what escapes, still accept what merely LOOKS like it escapes but resolves
+// back inside -- MEASURED live at this plan's own planning time (a spawned
+// proxy, `store` pointed first at a lexical `..` escaping the seeded
+// workspace, refused; then at one that resolves back inside it, accepted and
+// answered with the seeded content). `storePathWithinWorkspace()`'s own unit
+// coverage of this identical shape lives in `anno-confinement.test.ts` ("18.
+// workspaceRelativePath: a path OUTSIDE the root is refused BY NAME rather
+// than spelled with `..`, while a `..` that normalises back INSIDE is
+// accepted") -- this rewrite keeps the property live at the INTEGRATION
+// layer (through a real spawned proxy) rather than retiring it down to that
+// unit already covering the underlying function directly.
+//
+// The rename drops "translates": anno store paths are never routed through
+// host/container path translation at all (anno-types.ts's own header comment
+// states this explicitly) -- claiming a translation that does not happen on
+// this route would be the same kind of standing lie this phase removes.
+test("path confinement: a lexical .. cannot escape the workspace, and one that resolves back inside is still accepted", async () => {
+  const { ws, storePath } = seedAnnoWorkspace(1);
+  const proxy = startProxy({ CLAUDE_PROJECT_DIR: ws });
 
   try {
     proxy.send({
@@ -1988,58 +1841,54 @@ test("path translation: a lexical .. cannot escape the workspace, and one that r
     });
     await proxy.nextMessage();
 
-    const root = repoRoot();
-
     // Built by string concatenation, NOT join()/resolve() -- both would collapse
     // the ".." here and destroy the very thing under test.
-    const escaping = `${root}/../../../etc/passwd`;
-    assert.ok(escaping.startsWith(root), "the probe must lexically start with the root, or it proves nothing");
+    const escaping = `${ws}/../../../etc/passwd`;
+    assert.ok(escaping.startsWith(ws), "the probe must lexically start with the workspace root, or it proves nothing");
 
     proxy.send({
       jsonrpc: "2.0",
       id: 2,
       method: "tools/call",
-      params: { name: "vice_ping", arguments: { path: escaping } },
+      params: { name: "anno_get_symbols", arguments: { store: escaping, max_results: 10 } },
     });
     const refused = await proxy.nextMessage();
-    assert.equal(refused.result.isError, true, "a path that resolves outside the workspace must be refused");
-    assert.match(refused.result.content[0].text, /arguments\.path/, "the refusal must name the argument position");
-    assert.ok(
-      !requests.some(
-        (r) =>
-          r &&
-          r.method === "tools/call" &&
-          r.params &&
-          r.params.arguments &&
-          typeof r.params.arguments.path === "string" &&
-          /etc\/passwd/.test(r.params.arguments.path)
-      ),
-      "nothing naming /etc/passwd may reach the host -- in translated or untranslated form"
+    assert.equal(refused.result.isError, true, "a store path that resolves outside the workspace must be refused");
+    assert.match(refused.result.content[0].text, /outside the workspace root/, "the refusal must name the boundary it enforced");
+    assert.doesNotMatch(
+      refused.result.content[0].text,
+      /\.\./,
+      "the refusal must name the RESOLVED path, never hand back the .. spelling it declined"
     );
 
     // The complement: ".." that resolves back inside is legitimate and must be
-    // normalized and translated, not refused.
-    const insideViaDotDot = `${root}/subdir/../CLAUDE.md`;
-    const expected = hostPath(join(root, "CLAUDE.md"));
+    // normalized and accepted, not refused.
+    const insideViaDotDot = `${ws}/subdir/../project.annostore`;
     proxy.send({
       jsonrpc: "2.0",
       id: 3,
       method: "tools/call",
-      params: { name: "vice_ping", arguments: { path: insideViaDotDot } },
+      params: { name: "anno_get_symbols", arguments: { store: insideViaDotDot, max_results: 10 } },
     });
     const accepted = await proxy.nextMessage();
     assert.equal(accepted.result.isError, false, "a .. that resolves back inside the workspace must not be refused");
-    const forwarded = requests.find(
-      (r) => r && r.method === "tools/call" && r.params && r.params.arguments && r.params.arguments.path === expected
+    assert.match(
+      accepted.result.content[0].text,
+      /label_0_/,
+      "the seeded label must be answered, proving the normalized path actually opened the real store"
     );
-    assert.ok(forwarded, "the normalized path must be forwarded as its host form");
     assert.ok(
-      !forwarded.params.arguments.path.includes(".."),
-      "the host must never be handed a path still carrying a .. segment"
+      !accepted.result.content[0].text.includes(".."),
+      "the answer must never carry a .. segment -- the store field reports the resolved path"
+    );
+    assert.equal(
+      JSON.parse(accepted.result.content[0].text).store,
+      storePath,
+      "the normalized store path must equal the seeded store's own path exactly"
     );
   } finally {
     proxy.child.kill("SIGKILL");
-    await new Promise((resolve) => server.close(resolve));
+    rmSync(ws, { recursive: true, force: true });
   }
 });
 
@@ -2354,6 +2203,16 @@ test("acquiring twice sends exactly one acquire request, asserted by a test list
   }
 });
 
+// Plan 55-05: MEASURED that ensureStockSession() now refuses OUTRIGHT the
+// instant VICE_MCP_URL is set (there is no broker-managed instance and no
+// broker control session to claim a monitor socket through), so the call
+// itself can no longer succeed -- the old `isError: false` assertion here
+// asserted a route that no longer exists. The test's own NAME states its
+// actual point precisely, though: an explicit endpoint override must never
+// contact the control listener at all, succeeding or failing. That property
+// is untouched by the forwarding path's removal and is asserted below
+// exactly as before (acquireCount stays 0) -- only the now-impossible
+// "still usable" assertion is replaced with today's real, fixed outcome.
 test("with an explicit endpoint override set, the control listener receives no connection at all", async () => {
   const { server } = startStandInServer();
   const port = await listen(server);
@@ -2370,7 +2229,12 @@ test("with an explicit endpoint override set, the control listener receives no c
     await handshake(proxy);
     proxy.send({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "vice_ping", arguments: {} } });
     const resp = await proxy.nextMessage();
-    assert.equal(resp.result.isError, false, "the override endpoint must still be usable");
+    assert.equal(resp.result.isError, true, "VICE_MCP_URL now refuses outright before any dial is attempted");
+    assert.match(
+      resp.result.content[0].text,
+      /VICE_MCP_URL is set, so there is no broker-managed instance/,
+      "the refusal must be the fixed VICE_MCP_URL-override message, not some other failure"
+    );
     assert.equal(acquireCount, 0, "an explicit VICE_MCP_URL override must never contact the control listener");
   } finally {
     proxy.child.kill("SIGKILL");
@@ -3140,36 +3004,37 @@ test("containerize safety net: a grant whose url port disagrees with the granted
 // -----------------------------------------------------------------------
 // Quick task 260801-ccn task 3 (D-5): a broker-GRANTED unreachable instance
 // names the broker and its launcher, never the retired fixed-port route --
-// and a FIXED-PORT unreachable instance (no lease held) still produces the
-// unchanged 01.1 triple. The pre-existing "three states" test above (line
-// ~1078) is left byte-identical -- these are two NEW, narrower tests
-// proving the routing fix is a branch, not a blanket rename.
+// and a FIXED-PORT unreachable instance (no lease held) used to still
+// produce the unchanged 01.1 never-started/dead-or-hung/alive-but-failed
+// triple, quoting vice-launcher.sh. The pre-existing "three states" test
+// this comment used to point at (the old host-side VICE_MCP_URL-classifying
+// test, once at "line ~1078") is GONE from this file: its own vocabulary is
+// deleted source (vice-proxy.ts's own comment above ONLY_ROUTE_NOTE states
+// this explicitly -- "the host-unreachable triple ... is deleted along with
+// the fork-only generic forwarding function ... stock has no equivalent
+// probe-then-classify step of its own"). The distinction the test below
+// used to prove (fixed-port routing is a BRANCH, not a blanket rename) is
+// gone with it: there is no "01.1 triple" left to be routed AWAY from --
+// ensureStockSession()'s VICE_MCP_URL branch returns exactly ONE fixed
+// message today, regardless of whether anything is listening on the fixed
+// port, and it never mentions "never started", never mentions
+// "vice-launcher.sh", and never contacts the broker at all.
+//
+// RETIRED (ladder rung 3/6): that one fixed message, and the fact that it
+// never touches the control listener, is exactly what "with an explicit
+// endpoint override set, the control listener receives no connection at
+// all" (this plan's Task 2, above in this file) now asserts -- MEASURED
+// identical outcome for a fixed-port override whether or not anything is
+// listening on the target port, since ensureLease() short-circuits before
+// ever attempting a connection. This test's own two claims (a fixed-port
+// override gets ITS OWN message, and never the broker's never-started/
+// dead-or-hung/launch-denied vocabulary) are fully subsumed by that
+// surviving sibling; keeping both would duplicate one assertion under two
+// names for a property that used to be two DIFFERENT diagnoses and no
+// longer is. Named, green successor: "with an explicit endpoint override
+// set, the control listener receives no connection at all", confirmed
+// passing above in this same file.
 // -----------------------------------------------------------------------
-
-test("fixed-port unreachable is unchanged: no lease held still produces the 01.1 never-started message naming the surviving launcher", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "vice-proxy-ccn-fixedport-"));
-  const neverStartedEpochFile = join(dir, "never-written-epoch.json"); // deliberately never written
-  const refusedPort = await reserveFreePort();
-
-  const proxy = startProxy({
-    VICE_MCP_URL: `http://127.0.0.1:${refusedPort}/mcp`, // fixed-port override -- broker never contacted, no lease ever held
-    VICE_EPOCH_FILE: neverStartedEpochFile,
-  });
-  try {
-    await handshake(proxy);
-    proxy.send({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "vice_ping", arguments: {} } });
-    const resp = await proxy.nextMessage(10000);
-    assert.equal(resp.result.isError, true);
-    const text = resp.result.content[0].text;
-
-    assert.match(text, /never.*started/i, "a fixed-port instance with no lease held must still produce the 01.1 never-started message");
-    assert.match(text, /vice-launcher\.sh/, "the message must name the surviving launcher");
-    assert.doesNotMatch(text, /on-demand VICE broker/i, "a fixed-port (no-lease) instance must never be answered by the broker-granted message");
-  } finally {
-    proxy.child.kill("SIGKILL");
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
 
 // ---------------------------------------------------------------------------
 // Plan 01.6.2-09 (T-01.6.2-54 -- T-01.6.2-59): eight agent-facing messages
