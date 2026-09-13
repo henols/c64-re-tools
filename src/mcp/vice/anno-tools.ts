@@ -1733,12 +1733,17 @@ function assertHazardReportArgs(args: unknown, batchIndex?: number): void {
 // the disassembly view at the cap is the worst case, since the hexdump view of
 // the same byte count renders far less text.
 //
-// THE CAP IS THE ONLY BOUND THERE IS FOR THIS FAMILY. `vice-proxy.ts`'s
-// `wrapPossiblyChunked()` splits an oversized answer across a continuation
-// sequence, but `buildViceTool()` calls `run` DIRECTLY, so nothing on this
-// surface is chunked; and the client's own inline-response ceiling was measured
-// at 40-60 KB, far below the proxy's 500,000-character output cap. That is why
-// the second mitigation -- `max_results` REQUIRED with no default on every
+// THIS CAP IS NOT THE ONLY BOUND FOR THIS FAMILY, BUT IT REMAINS THE
+// LOAD-BEARING ONE. `vice-proxy.ts`'s `wrapPossiblyChunked()` runs at the
+// proxy's single tools/call choke point -- the one place every registered
+// tool's result is checked before it reaches the wire -- so an over-cap
+// answer from this family crosses that same override exactly like any
+// other tool's, and is split across a continuation sequence rather than
+// delivered whole. That does not make this cap redundant: the client's own
+// inline-response ceiling was measured at 40-60 KB, far below the proxy's
+// 500,000-character output cap, so a result that never trips the proxy's
+// split can still be far too large to be useful. That is why the second
+// mitigation -- `max_results` REQUIRED with no default on every
 // list-returning verb, with the true total returned beside the truncated list
 // -- is not optional either.
 // ---------------------------------------------------------------------------

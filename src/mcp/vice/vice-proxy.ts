@@ -629,7 +629,8 @@ function isErrorText(text: string): ErrorTextResult {
 
 /** The shape every tools/call outcome takes (Pattern 2): success or failure,
  * never a JSON-RPC `error` object. Shared by handleRecycle(), handleDiagnose(),
- * handleResultContinue(), wrapPossiblyChunked() and handleToolsCall() itself. */
+ * handleResultContinue(), wrapPossiblyChunked() and the CallToolRequestSchema
+ * override itself (near the bottom of this file). */
 interface OkTextResult {
   content: { type: "text"; text: string }[];
   isError: false;
