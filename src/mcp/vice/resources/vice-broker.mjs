@@ -1084,13 +1084,21 @@ async function run(args) {
     registerShutdownHandlers({ state });
     // A successful bind writes the record UNCONDITIONALLY, overwriting
     // whatever was there -- the bind itself is the proof of singleton status
-    // (D-17). The thirteen-field set (D-27, criterion G; narrowed from
-    // fourteen by plan 41-05): the lease time-to-live field the bash original
-    // carried is gone -- the connection is the lease now (D-12) -- `warm_floor`
-    // is likewise gone (plan 41-05: there is no warm floor left to echo a
+    // (D-17). The fourteen-field set (D-27, criterion G; narrowed from
+    // fourteen to thirteen by plan 41-05, then widened back to fourteen to add
+    // node_exec_path): the lease time-to-live field the bash original carried
+    // is gone -- the connection is the lease now (D-12) -- `warm_floor` is
+    // likewise gone (plan 41-05: there is no warm floor left to echo a
     // configured value for) -- and every other config-echo field survives
     // even though no consumer parses it beyond a status message, because a
     // human reading this file by hand benefits from the full echo.
+    //
+    // node_exec_path is process.execPath, not something threaded in from
+    // outside: exec() replaces the process image, so whatever interpreter the
+    // launcher resolved and gated IS this process's own execPath by the time
+    // this line runs -- the record tells the truth without either side having
+    // to pass anything, and it stays truthful even when this broker was
+    // started directly, bypassing the launcher entirely.
     let record = {
         version: 1,
         written_by: WRITTEN_BY,
@@ -1098,6 +1106,7 @@ async function run(args) {
         started_at: startedAt,
         heartbeat_at: new Date().toISOString(),
         node_version: process.version,
+        node_exec_path: process.execPath,
         control_host: listener.host,
         control_port: listener.port,
         control_token: token, // never logged -- T-01.6.2-02
@@ -1107,7 +1116,7 @@ async function run(args) {
         dry_run: args.dryRun,
     };
     writeBrokerRecordFile(args.stateDir, record);
-    process.stderr.write(`vice-broker: wrote ${finalPath} (node ${record.node_version}); control listener bound on ${listener.host}:${listener.port}\n`);
+    process.stderr.write(`vice-broker: wrote ${finalPath} (node ${record.node_version} at ${record.node_exec_path}); control listener bound on ${listener.host}:${listener.port}\n`);
     const heartbeatMs = Number(process.env.VICE_BROKER_HEARTBEAT_MS) || 30000;
     setInterval(() => {
         // The refresh path goes through the SAME atomic tmp-then-rename choke

@@ -148,9 +148,10 @@ export function parseArgs(argv: string[]): ParsedArgs {
   return { repoRoot: repoRoot ?? "", stateDir: resolvedStateDir, checkContainer, dryRun };
 }
 
-// The final thirteen-field set (plan 05, D-27, G/K; NARROWED to thirteen by
-// plan 41-05, folded todo): version, written_by, pid, started_at,
-// heartbeat_at, node_version, control_host, control_port, control_token,
+// The final fourteen-field set (plan 05, D-27, G/K; NARROWED to thirteen by
+// plan 41-05, folded todo; WIDENED back to fourteen to add node_exec_path --
+// see below): version, written_by, pid, started_at, heartbeat_at,
+// node_version, node_exec_path, control_host, control_port, control_token,
 // max_instances, base_port, poll_ms, dry_run. The bash original's
 // `ttl_seconds` field is DELETED, not merely renamed -- it is one of
 // criterion F's six retiring lease mechanisms; the connection is the lease
@@ -163,6 +164,13 @@ export function parseArgs(argv: string[]): ParsedArgs {
 // (readBrokerLiveness() reads only `pid` and `heartbeat_at`) -- a human
 // reading this file by hand benefits from the full configuration echo,
 // which is why the bash version carried it and why this port keeps it.
+//
+// `node_exec_path` (added alongside `node_version`): the version alone does
+// not say WHICH of several installed interpreters a given broker actually
+// ran under, and a triage session needs the path, not just the version, to
+// answer that. Named distinctly from `NODE_PATH` (an unrelated Node
+// module-resolution environment variable) so a reader of this record is
+// never left wondering which one it is.
 export interface BrokerRecord {
   version: number;
   written_by: string;
@@ -170,6 +178,7 @@ export interface BrokerRecord {
   started_at: string;
   heartbeat_at: string;
   node_version: string;
+  node_exec_path: string;
   control_host: string;
   control_port: number;
   control_token: string;
@@ -1279,13 +1288,21 @@ async function run(args: ParsedArgs): Promise<void> {
 
   // A successful bind writes the record UNCONDITIONALLY, overwriting
   // whatever was there -- the bind itself is the proof of singleton status
-  // (D-17). The thirteen-field set (D-27, criterion G; narrowed from
-  // fourteen by plan 41-05): the lease time-to-live field the bash original
-  // carried is gone -- the connection is the lease now (D-12) -- `warm_floor`
-  // is likewise gone (plan 41-05: there is no warm floor left to echo a
+  // (D-17). The fourteen-field set (D-27, criterion G; narrowed from
+  // fourteen to thirteen by plan 41-05, then widened back to fourteen to add
+  // node_exec_path): the lease time-to-live field the bash original carried
+  // is gone -- the connection is the lease now (D-12) -- `warm_floor` is
+  // likewise gone (plan 41-05: there is no warm floor left to echo a
   // configured value for) -- and every other config-echo field survives
   // even though no consumer parses it beyond a status message, because a
   // human reading this file by hand benefits from the full echo.
+  //
+  // node_exec_path is process.execPath, not something threaded in from
+  // outside: exec() replaces the process image, so whatever interpreter the
+  // launcher resolved and gated IS this process's own execPath by the time
+  // this line runs -- the record tells the truth without either side having
+  // to pass anything, and it stays truthful even when this broker was
+  // started directly, bypassing the launcher entirely.
   let record: BrokerRecord = {
     version: 1,
     written_by: WRITTEN_BY,
@@ -1293,6 +1310,7 @@ async function run(args: ParsedArgs): Promise<void> {
     started_at: startedAt,
     heartbeat_at: new Date().toISOString(),
     node_version: process.version,
+    node_exec_path: process.execPath,
     control_host: listener.host,
     control_port: listener.port,
     control_token: token, // never logged -- T-01.6.2-02
@@ -1302,7 +1320,9 @@ async function run(args: ParsedArgs): Promise<void> {
     dry_run: args.dryRun,
   };
   writeBrokerRecordFile(args.stateDir, record);
-  process.stderr.write(`vice-broker: wrote ${finalPath} (node ${record.node_version}); control listener bound on ${listener.host}:${listener.port}\n`);
+  process.stderr.write(
+    `vice-broker: wrote ${finalPath} (node ${record.node_version} at ${record.node_exec_path}); control listener bound on ${listener.host}:${listener.port}\n`,
+  );
 
   const heartbeatMs = Number(process.env.VICE_BROKER_HEARTBEAT_MS) || 30000;
   setInterval(() => {
