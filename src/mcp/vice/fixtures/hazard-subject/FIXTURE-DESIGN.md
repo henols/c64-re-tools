@@ -341,11 +341,15 @@ detectors into a real, independent test of them.
 ## On-screen observations
 
 **Instrument.** Every capture in this section was taken in this pass against
-genuine stock `/usr/bin/x64sc` (reports `x64sc (VICE 3.9)`), launched as
-`timeout 180 /usr/bin/x64sc -default -warp -limitcycles <N> [-autostart
-<file>] -exitscreenshot <path>`, with `-default` first; a `-limitcycles` run
-that terminates with process exit status 1 is the normal path, not a
-failure. Every image and an evidence manifest recording each capture's md5,
+genuine stock `/usr/bin/x64sc` (reports `x64sc (VICE 3.9)`, Debian package
+`vice 3.9+dfsg-1`), launched as `timeout 180 /usr/bin/x64sc -default
+[-autostartprgmode 1] -warp -limitcycles <N> [-autostart <file>]
+-exitscreenshot <path>`, with `-default` first; a `-limitcycles` run that
+terminates with process exit status 1 is the normal path, not a failure.
+Two distinct autostart routes appear below: the DEFAULT route (the flag
+omitted) and the WORKING route (`-autostartprgmode 1`) -- the difference
+between them is exactly the subject of the correction this section now
+carries. Every image and an evidence manifest recording each capture's md5,
 byte size, exit status and full argv line live under this project's own
 gitignored tool-written root; no captured PNG is committed here, because
 nothing in this repository's automated suite renders or inspects a screen,
@@ -354,43 +358,69 @@ regenerate or falsify -- the md5 plus the argv line is the regenerable
 residue instead.
 
 The positive control -- booting with no `-autostart` at all (capture
-`A-positive-control`, md5 `3f91057a6e973bd21b1ae0c177ca7bc5`) -- was opened
+`p2-positive-control`, md5 `3f91057a6e973bd21b1ae0c177ca7bc5`) -- was opened
 and visually inspected: a readable, ordinary BASIC start-up screen, `****
 COMMODORE 64 BASIC V2 ****` / `READY.` in the default colours with a
 blinking cursor. This establishes that the rig renders and captures a real,
 inspectable screen, by inspection rather than by file size alone.
 
-The negative control -- an unrelated committed program (`petcat`'s
-`computed-sys.prg`) pushed through the identical `-autostart`/cycle-limit/
-`-exitscreenshot` route as the aligned build below -- produced the SAME md5
-(`e7e70b082a4a6ec247e66bfa8e0c128a`) as the aligned build captured the same
-way. That equality is the most important fact in this section, not a
-footnote to it: this route cannot distinguish the hazard subject from an
-unrelated program, and therefore cannot license any claim about what either
-program specifically put on screen.
+Investigating rather than stopping at an early equality found the actual
+cause. Every DEFAULT-route `-autostart` invocation taken in this pass --
+against the aligned build, the mis-aligned build, and an unrelated
+committed program (`petcat`'s `computed-sys.prg`) -- failed identically at
+the emulator level (captures `p2-default-aligned`, `p2-default-misaligned`
+and `p2-default-control`, all md5 `e7e70b082a4a6ec247e66bfa8e0c128a`),
+logging `AUTOSTART: Loading PRG file '<path>' with autostart disk image.`,
+`AUTOSTART: Error - No idea what disk image format to use.`, `AUTOSTART:
+Error - '<path>' is not a valid file.` and `Error - Failed to autostart
+'<path>'`. The DEFAULT route's own log line names the mechanism it is
+trying and failing at -- "with autostart disk image" -- and this build's
+own `-help` output enumerates that same route as mode 2 of
+`-autostartprgmode` (`Set autostart mode for PRG files (0: VirtualFS, 1:
+Inject, 2: Disk image)`), confirming this is a MODE DEFAULT, not an absence
+of loading capability. This installation has no disk-image infrastructure
+configured for that mode, so the mode fails the same way regardless of
+which file is named.
 
-Investigating that equality rather than stopping at it found the actual
-cause, recorded rather than left as a surface correlation: every
-`-autostart` invocation taken in this pass, against every one of five
-distinct `.prg` files tried (the aligned build, the mis-aligned build, the
-unrelated negative control, and both builds' pre-amendment predecessors --
-see below), failed identically at the emulator level, logging `AUTOSTART:
-Error - No idea what disk image format to use`, `AUTOSTART: Error -
-'<path>' is not a valid file`, and `Error - Failed to autostart '<path>'`.
-No program was ever loaded by any `-autostart` capture taken in this pass;
-the identical bytes across them are not evidence of identical on-screen
-behaviour -- they are evidence of an autostart mechanism that did not run
-anything at all on this installation. A second, independent attempt to load
-and run the aligned build through the binary monitor's own `AUTOSTART` wire
-command, rather than the CLI flag, refused with the same failure (monitor
-error code `0x8f`), confirming this is not a CLI-argument quirk; a first
-attempt to combine the CLI flag with the binary monitor found the CLI
-autostart failure itself terminates the whole emulator process, closing the
-monitor port before any session was possible. This installation's own
-`Drive8Type=0` and missing drive ROM images are consistent with -- though
-not separately tested here as -- the specific mechanism behind an autostart
-path that depends on disk-image infrastructure this installation does not
-have configured; no claim beyond consistency is made.
+A working route exists and loads this program: `-autostartprgmode 1`,
+direct RAM injection. Capture `p2-work-aligned`'s own log records
+`AUTOSTART: Loading PRG file '<path>' with direct RAM injection.` followed
+by `AUTOSTART: Injecting program data at $0801 (size $08e7)` and
+`AUTOSTART: Starting program.` -- an unambiguous injection and run, not a
+failed attempt; the identical injection line, at the identical address and
+size, appears in the mis-aligned and control builds' own logs taken through
+the same route. Without this log line the correction would itself be an
+assumption, which is the failure being corrected.
+
+Checked directly in this pass rather than assumed: `-autostartprgmode` is
+NOT absent from this build's own `-help` output. `/usr/bin/x64sc -help`
+(full stdout captured, 1828 lines, exit status 0) lists `-autostartprgmode
+<Mode>` with its three modes spelled out verbatim, on this genuine stock
+build. A prior assumption that the flag was missing from `-help` on this
+build did not survive this pass's own check; recorded here as measured, so
+a future reader who greps this build's help text for the flag finds it
+rather than concluding it does not exist.
+
+The drive-configuration explanation this section previously offered for
+the DEFAULT route's failure is retired: the plain 1541 ROM this
+installation's default drive type actually wants (`Drive8Type=0`) is
+present (`1541-c000.325302-01.bin` and `1541-e000.901229-05.bin` under this
+user's VICE data directory), and every DEFAULT-route capture's own log
+complains only about the 1540, 1541-II, 1570, 1571, 1581, 2000, 4000,
+CMDHD, 2031, 2040, 3040, 4040, 1001/8050/8250 and D9090/9060 drive ROMs --
+never about the plain 1541 -- so an absent drive ROM was never a sound
+explanation for what these captures show. This is a correction of the
+record: the mechanism was the mode default, not the drive configuration.
+
+A second, independent attempt to load and run the aligned build through the
+binary monitor's own `AUTOSTART` wire command, rather than the CLI flag,
+refused with the same failure (monitor error code `0x8f`); a first attempt
+to combine the CLI flag with the binary monitor found the CLI autostart
+failure itself terminates the whole emulator process, closing the monitor
+port before any session was possible. Both of these are observations of
+the DEFAULT-mode route specifically -- the working route was never put
+through the binary monitor in either pass -- and no longer read as evidence
+about loading capability in general.
 
 **ALIGNED build (`hazard-subject.prg`).**
 
@@ -404,17 +434,20 @@ described earlier in this document made statically visible; a horizontal
 colour split drawn by the timer-stabilised raster routine; and the border
 colour differing from the default as the self-modifying routine runs.
 
-OBSERVATION: capture `B-aligned` (md5 `e7e70b082a4a6ec247e66bfa8e0c128a`),
-taken via `-autostart hazard-subject.prg -limitcycles 20000000
--exitscreenshot`, is a uniformly black frame -- no readable text, no sprite,
-no character, no colour split, no border distinguishable from any other
-pixel in the frame. Given the instrument finding above, this is not read as
-"the four predicted effects failed to render" -- it is read as "the program
-was never loaded to attempt rendering them at all," because this exact
-invocation's own log records the identical autostart failure every other
-`-autostart` capture in this pass recorded. No claim is made here about the
-four predicted effects one way or the other; the instrument that would have
-to make that claim did not run the program.
+OBSERVATION: DEFAULT-route capture `p2-default-aligned` (md5
+`e7e70b082a4a6ec247e66bfa8e0c128a`) is a uniformly black frame -- per the
+cause established above, this is read as the program never having been
+loaded to attempt rendering anything, not as evidence about the four
+predicted effects one way or the other. WORKING-route capture
+`p2-work-aligned` (md5 `e9578287a77c2337fee0c73a63be2fe6`, taken via
+`-autostartprgmode 1 -limitcycles 20000000`), through which the program
+genuinely ran (per the injection log line above), shows the ordinary
+settled BASIC `READY.` prompt in default colours -- no sprite, no custom
+glyph, no colour split, and no border difference from default anywhere in
+the frame. None of the four predicted effects is visible in this capture.
+This is the same reversion this document's superseded observations already
+recorded for the isolated builds, now confirmed through a route that
+actually ran the program rather than one that never loaded it.
 
 **MIS-ALIGNED build (`hazard-subject-misaligned.prg`).**
 
@@ -424,42 +457,99 @@ wrongly shaped, and the custom-set characters garbled, because the hardware
 reads from the address the scaled pointers name rather than from where the
 data actually sits.
 
-OBSERVATION: capture `D-misaligned` (md5
-`e7e70b082a4a6ec247e66bfa8e0c128a` -- the identical bytes as capture
-`B-aligned` above), taken via `-autostart hazard-subject-misaligned.prg
--limitcycles 20000000 -exitscreenshot`, is the same uniformly black frame,
-for the same reason: this invocation's own log records the identical
-autostart failure. The two captures agreeing here is not evidence that the
-mis-alignment failed to land or that it did -- neither build was ever
-loaded to have on-screen behaviour to observe. The mis-aligned twin's own
-byte-level proof, that its sprite and character-set base addresses are
-provably not multiples of their required boundaries checked against the
-actual assembled image, remains established independently in this fixture's
-own test file and never rested on a screen capture alone; nothing in this
-pass changes that.
+OBSERVATION: DEFAULT-route capture `p2-default-misaligned` (md5
+`e7e70b082a4a6ec247e66bfa8e0c128a` -- identical to the aligned build's own
+default-route capture) is the same uniformly black frame, for the same
+reason: the program was never loaded. WORKING-route capture
+`p2-work-misaligned` (md5 `e9578287a77c2337fee0c73a63be2fe6` -- identical
+to the aligned build's own working-route capture, taken at the same
+`-limitcycles 20000000`) shows the identical settled `READY.` prompt, no
+sprite, no custom glyph, no colour split, no border difference. The two
+builds agreeing here, through a route that genuinely ran both, is not
+evidence that the mis-alignment failed to land or that it did -- the
+settled screen this route captures is program-blind by construction (see
+the restated conclusion below), so it never had a chance to show the
+difference the mis-aligned twin's own source predicts. The mis-aligned
+twin's own byte-level proof, that its sprite and character-set base
+addresses are provably not multiples of their required boundaries checked
+against the actual assembled image, remains established independently in
+this fixture's own test file (`hazard-subject-fixture.test.ts`) and never
+rested on a screen capture alone; nothing in this pass changes that.
+
+**The surviving conclusion, restated on this run's own evidence.** Through
+the WORKING route -- the one that actually loads and runs a program -- the
+hazard subject and an unrelated committed program produced byte-identical
+captures at 20,000,000 cycles (`p2-work-aligned`, `p2-work-misaligned` and
+`p2-work-control`, all md5 `e9578287a77c2337fee0c73a63be2fe6`), at
+6,000,000 cycles (`p2-mid-6000000-aligned`, `p2-mid-6000000-control` and
+`p2-mid-6000000-misaligned`, all md5 `5b86f08792a5480d320dc6d802aca633`),
+and at 2,000,000 cycles (`p2-mid-2000000-aligned` and
+`p2-mid-2000000-control`, both md5 `e7e70b082a4a6ec247e66bfa8e0c128a`). At a
+fourth cycle count tried, 12,000,000, the aligned build (md5
+`e9578287a77c2337fee0c73a63be2fe6`) and the control (md5
+`5b86f08792a5480d320dc6d802aca633`) differ -- but visual inspection of both
+frames side by side shows the identical settled `READY.` prompt in both,
+with no sprite, no custom glyph, no colour split and no border change in
+either; the sole pixel difference is whether the blinking text cursor is
+drawn at that instant, because the two unrelated programs return control to
+BASIC after a different number of cycles. That is a cursor-blink-phase
+artefact of when each program finishes running, not a rendering of any of
+the four predicted effects, and not a per-program on-screen difference this
+fixture's predictions are about.
+
+The md5 varying across cycle counts for a single build --
+`e7e70b082a4a6ec247e66bfa8e0c128a` at 2,000,000, then
+`5b86f08792a5480d320dc6d802aca633` at 6,000,000, then
+`e9578287a77c2337fee0c73a63be2fe6` at 12,000,000 and 20,000,000 -- is what
+proves the capture moment genuinely moved across this pass; that the
+subject and the control never differ from each other in a way that
+reflects the four predicted effects at any of the moments tried is the
+separate fact that carries the conclusion. Keeping the two apart matters:
+the first shows the instrument samples different points in time; the
+second shows none of those points, on this route, ever renders a
+per-program difference this fixture's predictions are about.
+
+The honest reading goes no further than this. A capture taken after a
+program has returned to BASIC shows the settled BASIC screen, which is the
+same screen for any program that returns -- so a settled-screen capture is
+program-blind BY CONSTRUCTION, not by accident. Whether some mid-execution
+capture, at some cycle count not tried here, could catch the four predicted
+effects before they revert or before the program returns, was probed at
+four distinct cycle counts and did not turn up such a capture; that is a
+bounded negative result, not a proof that no such capture exists. This
+capture route licenses no per-program on-screen claim about this subject --
+for a construction reason now measured directly, rather than because the
+route never loaded anything.
 
 **Post-amendment versus pre-amendment, as measured.** The pre-amendment
-aligned and mis-aligned images -- extracted from commit `758d7df6` into a
-scratch location outside this repository's tracked tree, source md5s
-`aa5dac7abde9c544ae1f0f54a6f7533e` and `df74e46627b83ace861c93076683b1d8`
-respectively, each distinct from the post-amendment committed images' own
-bytes -- were pushed through the identical `-autostart`/cycle-limit/
-`-exitscreenshot` harness used for the aligned and mis-aligned builds above.
-Both produced the SAME screenshot md5 (`e7e70b082a4a6ec247e66bfa8e0c128a`)
-as every other `-autostart` capture taken in this pass. Given the instrument
-finding above -- that this route never loaded any of the five distinct
-programs pushed through it in this pass -- this equality is worth nothing as
-evidence that the amendment left on-screen behaviour unchanged. It cannot be
-worth more than that: no capture in this comparison ever ran a program to
-have behaviour to compare in the first place. This is recorded as measured,
-not reasoned from source, and it is recorded precisely because it is worth
-so little.
+aligned and mis-aligned images -- extracted from commit `758d7df6` into the
+session scratchpad, source md5s `aa5dac7abde9c544ae1f0f54a6f7533e` and
+`df74e46627b83ace861c93076683b1d8` respectively, each distinct from the
+post-amendment committed images' own bytes -- were pushed through the
+identical WORKING-route harness (`-autostartprgmode 1 -limitcycles
+20000000`) used for the post-amendment aligned and mis-aligned builds
+above. `p2-pre-aligned` produced md5 `5b86f08792a5480d320dc6d802aca633` and
+`p2-pre-misaligned` produced md5 `e9578287a77c2337fee0c73a63be2fe6` -- the
+SAME two values already seen among the post-amendment captures above, for
+the identical cursor-blink-phase reason: both settle to the ordinary
+`READY.` prompt, differing only in whether the cursor is drawn at that
+instant. Given the conclusion above -- that a settled screen through this
+route is program-blind by construction -- this comparison is still worth
+little as evidence that the amendment left on-screen behaviour unchanged,
+but now for the stated construction reason rather than because nothing
+loaded.
 
 The isolated single-construction builds described in the superseded
 observations below -- the self-modifying routine and the alignment routine
 built and run alone, without the raster construction -- were NOT rebuilt or
 re-run in this pass. Nothing below should be mistaken for a fresh
 measurement of those isolated builds.
+
+**Further screen-capture investment on this fixture is not recommended.**
+The route is program-blind by construction at a settled screen, as
+established above; and this fixture's alignment claims rest on byte-level
+assertions in `hazard-subject-fixture.test.ts`, which never depended on a
+screen and are not weakened by anything in this section.
 
 ### Superseded observations (pre-amendment bytes, commit `758d7df6`)
 
