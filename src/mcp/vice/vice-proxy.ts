@@ -1642,6 +1642,26 @@ server.getServer().setRequestHandler(CallToolRequestSchema, async (request) => {
         isError: true,
       };
     }
+    // Restores wrapPossiblyChunked()'s only call site. buildViceTool() stamps
+    // OUTPUT_CHAR_CAP onto EVERY tool's `_meta` unconditionally, so the
+    // ceiling has to be honoured for every tool -- and this override is the
+    // one place all four registration families (the manifest loop,
+    // vice_recycle/vice_diagnose, the anno_* loop, and vice_result_continue
+    // itself) converge on a single result before it reaches the wire. A
+    // previous edit deleted this function's only caller and left the
+    // function itself in place: for the whole life of one release a
+    // registered continuation tool could only ever refuse an unknown token,
+    // and an oversized result -- MEASURED at 23,290 characters under a
+    // 200-character advertised cap -- crossed the wire whole, unchunked.
+    // Only a single-item text success is a candidate for the split: an
+    // `isError: true` result carries a refusal or a diagnostic, never a
+    // payload, and a result already carrying a marker item (this tool's own
+    // continuation replies, or any future multi-item producer) must never be
+    // wrapped a second time -- this one condition keeps both out without
+    // naming either by name.
+    if (raw.isError === false && raw.content.length === 1 && raw.content[0].type === "text" && typeof raw.content[0].text === "string") {
+      return toolCallResultToWire(wrapPossiblyChunked(raw.content[0].text));
+    }
     return toolCallResultToWire(raw);
   } catch (e) {
     // The never-throw discipline this file already lives by (matching the
