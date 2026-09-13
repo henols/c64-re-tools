@@ -239,10 +239,12 @@ its phase details live in `ROADMAP.md` under
 `## v0.6.0 Own the substrate — CLOSED INCOMPLETE (Phase Details)`, below v0.7.0's,
 because Phases 24 and 26 are held with live requirement text.
 
-The Deferred Items ledger below reads **7 open** pending todos, computed
+The Deferred Items ledger below reads **10 open** pending todos, computed
 directly from the count of files in `.planning/todos/pending/` rather than by
 subtraction from a prior figure (it read 0 at the v0.4.0 close; eleven were
-filed after it). Five were closed before this update — CR-05 by Phase 34 plan
+filed after it, then two more since — `capability-registry-manifest-claim-stale`
+and `2026-09-13-vice-proxy-test-leaks-scratch-dirs-into-planning-root`). Five
+were closed before this update — CR-05 by Phase 34 plan
 34-11, and the Ghidra one-command decompile-wrapper proposal by Phase 36 — and
 **Phase 40 plan 40-07 closed three more**: the `host-tool.mts` never-throws
 contract's two holes (`WR-03`), consolidating every tool-written file under
@@ -253,7 +255,12 @@ own commit. One more pending todo was filed during this same gap-closure
 round's own diagnosis — a guard proving Ghidra still accepts the
 broker-minted symlink handle, explicitly blocked on gap `G-40-1` landing
 first — and was closed by plan 40-11 once `G-40-1` landed, so the count moved
-7 → 8 → 7 within this round rather than silently reading correct again. The
+7 → 8 → 7 within this round rather than silently reading correct again. Since
+that round closed, three more were filed and none closed — the
+MCP-surface-via-stateless-broker proposal (2026-09-11), the
+`capability-registry-manifest-claim-stale` finding, and the
+`2026-09-13-vice-proxy-test-leaks-scratch-dirs-into-planning-root` finding —
+bringing the count from 7 to the current 10. The
 suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
@@ -1386,11 +1393,13 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-8 pending (8 files in `.planning/todos/pending/` + 0 UAT-gap rows = 8) — see
-`.planning/todos/pending/` (`/gsd-capture --list`). This line read 11 against a
-real tree of 7 before 2026-09-11; the drift predates that day's `/gsd-capture`
-(which filed the eighth, `2026-09-11-remove-anno-from-the-mcp-surface-…`) and was
-corrected by counting the tree, not by arithmetic on the stale figure. The count
+10 pending (10 files in `.planning/todos/pending/` + 0 UAT-gap rows = 10) — see
+`.planning/todos/pending/` (`/gsd-capture --list`). This line read 8 against a
+real tree of 10 before this update; two todos filed since 2026-09-11
+(`capability-registry-manifest-claim-stale` and
+`2026-09-13-vice-proxy-test-leaks-scratch-dirs-into-planning-root`) had no
+Deferred Items row until this commit, and the count was corrected by counting
+the tree, not by arithmetic on the stale figure. The count
 is authoritative in `## Deferred Items` below, which is derived from the todo
 tree and guarded in both directions by `docs-deferred-ledger.test.ts`. This
 section previously read 18 (set at the phase 13 close) before rising and
@@ -2125,6 +2134,8 @@ regression and not this inheritance.
 | testing | 2026-09-07-move-all-tests-into-a-separate-test-folder | minor | Pending |
 | broker | 2026-09-07-remove-pre-warm-launch-vice-on-first-request | minor | Pending |
 | broker | 2026-09-11-remove-anno-from-the-mcp-surface-reach-it-via-a-stateless-br | minor | Pending |
+| mcp | capability-registry-manifest-claim-stale | minor | Pending |
+| testing | 2026-09-13-vice-proxy-test-leaks-scratch-dirs-into-planning-root | minor | Pending |
 
 *The ledger was empty at the v0.4.0 close; every row above was filed after that
 close (one on 2026-08-24, five on 2026-08-26, three on 2026-08-28, one on 2026-08-31, two on
