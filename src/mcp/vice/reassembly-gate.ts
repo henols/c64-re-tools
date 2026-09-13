@@ -44,7 +44,7 @@
 //     is one published-file-list edit away from shipping and a consumer has
 //     no planning tree to resolve a citation against.
 import type { AcmeOutcome } from "./acme-verify.ts";
-import type { HazardFinding } from "./anno-hazard-report.ts";
+import type { HazardFinding, HazardRegionDisposition } from "./anno-hazard-report.ts";
 
 /** The three verdict tokens, and there are exactly three. There is no fourth
  * "could not resolve" token: every reachable combination of the seven inputs
@@ -207,27 +207,54 @@ export function movementRebuildFromResult(movement: MovementResult | null): Move
 }
 
 /**
- * Given a hazard report's findings and the half-open byte extent an export
- * run actually diffed, returns the `DIFF_SCOPE_COVERAGE` token together with
- * every finding whose anchor address, or non-null blocked address, falls
- * OUTSIDE that extent.
+ * Given a hazard report's findings, the half-open byte extent an export run
+ * actually diffed, and (optionally) that same report's region dispositions,
+ * returns the `DIFF_SCOPE_COVERAGE` token together with every finding whose
+ * anchor address, or non-null blocked address, falls OUTSIDE that extent,
+ * AND every region left `unclassified` -- carried forward in the return
+ * value rather than silently dropped, because a region the hazard report
+ * itself could not classify is not evidence that the scope covering it is
+ * clean.
  *
  * MEMBERSHIP IS HALF-OPEN: `extent.start` is INSIDE, `extent.endExclusive`
  * is OUTSIDE. An off-by-one here would silently narrow what the gate
  * actually checked -- a byte-diff over a narrowed scope can be perfectly
  * clean while a hazard-anchored range was never compared at all.
+ *
+ * `extent` MUST be non-empty (`extent.start < extent.endExclusive`): a
+ * zero-length or inverted extent cannot cover anything, and scoring it
+ * `"complete"` for a finding-free, region-free call would be a clean result
+ * over nothing. Refused by name, before either input is even read, rather
+ * than silently accepted.
+ *
+ * `undecidedRegions` is OPTIONAL and defaults to empty, so every existing
+ * call site (this file's own real-path cases, which never had a region list
+ * to pass) keeps its exact prior behaviour.
  */
 export function hazardCoverageOutsideDiffScope(
   findings: readonly HazardFinding[],
-  extent: DiffScopeExtent
-): { coverage: DiffScopeCoverage; outside: readonly HazardFinding[] } {
+  extent: DiffScopeExtent,
+  undecidedRegions: readonly HazardRegionDisposition[] = []
+): { coverage: DiffScopeCoverage; outside: readonly HazardFinding[]; undecided: readonly HazardRegionDisposition[] } {
+  if (extent.start >= extent.endExclusive) {
+    throw new Error(
+      `hazardCoverageOutsideDiffScope: extent ${extent.start}..${extent.endExclusive} (exclusive) is empty or inverted -- an ` +
+        `empty extent cannot cover anything, and scoring it "complete" would be a clean result over nothing. This is a caller ` +
+        `error, refused by name rather than silently accepted.`
+    );
+  }
   const outside = findings.filter((finding) => {
     const anchorOutside = finding.anchorAddress < extent.start || finding.anchorAddress >= extent.endExclusive;
     const blockedOutside =
       finding.blockedAddress !== null && (finding.blockedAddress < extent.start || finding.blockedAddress >= extent.endExclusive);
     return anchorOutside || blockedOutside;
   });
-  return { coverage: outside.length === 0 ? "complete" : "incomplete", outside };
+  const undecided = undecidedRegions.filter((region) => region.outcome === "unclassified");
+  return {
+    coverage: outside.length === 0 && undecided.length === 0 ? "complete" : "incomplete",
+    outside,
+    undecided,
+  };
 }
 
 /**
