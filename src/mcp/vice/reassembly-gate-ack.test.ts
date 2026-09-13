@@ -211,6 +211,33 @@ test("gate hazard: an acknowledgement whose key matches no finding disposes bloc
 });
 
 // ---------------------------------------------------------------------------
+// gate hazard: multi-match acknowledgement, reported separately from a
+// zero-match and never resolved in the acknowledger's favor
+// ---------------------------------------------------------------------------
+
+test("gate hazard: an acknowledgement matching more than one finding is reported as a multi-match, distinct from a zero-match, and every such finding is treated as unacknowledged", () => {
+  // Two findings sharing the identical (class, anchor, mechanism) triple --
+  // possible here only because this is a hand-assembled findings array, not
+  // a real buildHazardReport() output (which de-duplicates on this exact
+  // triple). One acknowledgement's key therefore matches BOTH.
+  const dupA = sampleFinding({ detail: "duplicate finding A" });
+  const dupB = sampleFinding({ detail: "duplicate finding B" });
+  const ack = ackFor(dupA, "reason");
+
+  const matchResult = matchHazardAcknowledgements([dupA, dupB], [], [ack], []);
+  assert.equal(matchResult.multiMatchAcknowledgements.length, 1);
+  assert.equal(matchResult.multiMatchAcknowledgements[0], ack);
+  assert.equal(matchResult.zeroMatchAcknowledgements.length, 0, "a multi-match acknowledgement must never also be counted as a zero-match");
+  assert.equal(matchResult.matched.length, 0, "an ambiguous match is never resolved in the acknowledger's favor");
+  assert.equal(matchResult.unacknowledgedFindings.length, 2, "both findings sharing the ambiguous key are treated as unacknowledged");
+
+  const report: HazardReport = { ...emptyReport(), findings: [dupA, dupB] };
+  const disposal = disposeHazardReport(report, [ack], []);
+  assert.equal(disposal.disposition, "blocked", disposal.reason);
+  assert.equal(disposal.ambiguousAcknowledgements.length, 2, "disposeHazardReport must surface the ambiguous findings distinctly");
+});
+
+// ---------------------------------------------------------------------------
 // gate hazard: duplicate acknowledgement keys refused
 // ---------------------------------------------------------------------------
 
