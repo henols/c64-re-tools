@@ -18,11 +18,12 @@ import { CommandType, type ResolvedResponse, type ViceMonitorClient } from "./st
 import type { StockConnectSession, CpuHistoryCapability } from "./stock-connect.ts";
 import type { StockDispatchDeps } from "./stock-dispatch.ts";
 import type { HeldLease, ControlRecycleResult } from "./vice-broker-client.ts";
+import type { EpochResult } from "./vice-errors.ts";
 import { resetTimingStateForTest } from "./stock-timing.ts";
 import { resetRegisterCatalogsForTest } from "./stock-registers.ts";
 import { resetCheckpointStateForTest } from "./stock-checkpoints.ts";
 import { incidentsDir } from "./incident-record.ts";
-import { handleRecycleStock, gatherStockWedgeEvidence, stockCaptureStepTimeoutMs } from "./stock-recycle.ts";
+import { handleRecycleStock, gatherStockWedgeEvidence, stockCaptureStepTimeoutMs, stockRecycleEpochPollTimeoutMs } from "./stock-recycle.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -134,6 +135,9 @@ interface FakeSessionOptions {
   cpuHistoryValues?: bigint[];
   /** CPUHISTORY_GET never resolves -- the capture-step deadline fixture. */
   neverResolveCpuHistory?: boolean;
+  /** Injected epoch reader (session.deps.readEpochFn) -- stock-diagnose.test.ts's
+   * own idiom for driving the epoch-poll producer without a real file. */
+  readEpochFn?: (path?: string) => EpochResult;
 }
 
 interface FakeSession {
@@ -222,7 +226,7 @@ function makeFakeSession(opts: FakeSessionOptions = {}): FakeSession {
     port: 6502,
     targetId: opts.targetId ?? "target-1",
     brokerControl: { claimMonitor: async () => ({ ok: true as const }), releaseMonitor: async () => ({ ok: true as const }) } as unknown as StockConnectSession["brokerControl"],
-    deps: {},
+    deps: { ...(opts.readEpochFn !== undefined ? { readEpochFn: opts.readEpochFn } : {}) },
     baselineEpoch: null,
   };
 
@@ -283,6 +287,39 @@ function okAck(overrides: Partial<{ outcome: string; kill_stage: string; reason:
 function outcomeFrontmatter(recordText: string): string | null {
   const m = recordText.match(/^outcome: '?([^'\n]*)'?$/m);
   return m ? m[1]!.replace(/^'|'$/g, "") : null;
+}
+
+function frontmatterField(recordText: string, field: string): string | null {
+  const m = recordText.match(new RegExp(`^${field}: '?([^'\\n]*)'?$`, "m"));
+  return m ? m[1]!.replace(/^'|'$/g, "") : null;
+}
+
+/** A present epoch, matching readEpoch()'s own EpochResult shape. */
+function fakeEpoch(epoch: number): EpochResult {
+  return { present: true, epoch, spawned_at: null, pid: null, path: "/fake/epoch.json" };
+}
+
+const ABSENT_EPOCH: EpochResult = { present: false, epoch: null, spawned_at: null, pid: null, path: "/fake/epoch.json" };
+
+/** Scripts session.deps.readEpochFn against a fixed sequence: call N gets
+ * `sequence[N-1]`, and once the sequence is exhausted every further call
+ * repeats its last entry -- the epoch-poll counterpart to this file's own
+ * nextFromQueue() sticking-on-length-1 convention above, needed here because
+ * the poll's own call count is not known in advance. A "throw" entry raises
+ * a synthetic error instead of returning, driving the "a throwing reader is
+ * treated as a read that did not advance" case without disturbing whichever
+ * other call in the sequence is a real EpochResult. */
+function scriptedEpochReader(sequence: Array<EpochResult | "throw">): { fn: (path?: string) => EpochResult; callCount: () => number } {
+  let calls = 0;
+  return {
+    fn: (_path?: string) => {
+      calls += 1;
+      const step = sequence[Math.min(calls - 1, sequence.length - 1)]!;
+      if (step === "throw") throw new Error("synthetic epoch read failure");
+      return step;
+    },
+    callCount: () => calls,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -618,6 +655,186 @@ test("handleRecycleStock: already_exited and sigkill are also successful-kill st
       assert.equal(disconnectCallCount(), 1);
     });
   }
+});
+
+// ---------------------------------------------------------------------------
+// Task 1/2 (55-02): the post-kill epoch poll's producer, both branches.
+// Every case below sets VICE_RECYCLE_EPOCH_POLL_TIMEOUT_MS to a small
+// positive number first, so the stall/never-present/throwing cases cannot
+// approach the production default -- bounding this whole section well under
+// one second regardless of how many such cases it grows to.
+// ---------------------------------------------------------------------------
+
+function withEpochPollTimeout<T>(ms: string, fn: () => Promise<T>): Promise<T> {
+  const prev = process.env.VICE_RECYCLE_EPOCH_POLL_TIMEOUT_MS;
+  process.env.VICE_RECYCLE_EPOCH_POLL_TIMEOUT_MS = ms;
+  return Promise.resolve()
+    .then(fn)
+    .finally(() => {
+      if (prev === undefined) delete process.env.VICE_RECYCLE_EPOCH_POLL_TIMEOUT_MS;
+      else process.env.VICE_RECYCLE_EPOCH_POLL_TIMEOUT_MS = prev;
+    });
+}
+
+test("stockRecycleEpochPollTimeoutMs(): defaults to 3000 and reads VICE_RECYCLE_EPOCH_POLL_TIMEOUT_MS", () => {
+  const prev = process.env.VICE_RECYCLE_EPOCH_POLL_TIMEOUT_MS;
+  try {
+    delete process.env.VICE_RECYCLE_EPOCH_POLL_TIMEOUT_MS;
+    assert.equal(stockRecycleEpochPollTimeoutMs(), 3000);
+    process.env.VICE_RECYCLE_EPOCH_POLL_TIMEOUT_MS = "42";
+    assert.equal(stockRecycleEpochPollTimeoutMs(), 42);
+  } finally {
+    if (prev === undefined) delete process.env.VICE_RECYCLE_EPOCH_POLL_TIMEOUT_MS;
+    else process.env.VICE_RECYCLE_EPOCH_POLL_TIMEOUT_MS = prev;
+  }
+});
+
+test("stockRecycleEpochPollTimeoutMs(): 0, negative, and non-numeric overrides all fall back to the default, with the rejection logged", () => {
+  const previous = process.env.VICE_RECYCLE_EPOCH_POLL_TIMEOUT_MS;
+  const originalConsoleError = console.error;
+  const captured: string[] = [];
+  console.error = (...args: unknown[]) => {
+    captured.push(args.map(String).join(" "));
+  };
+  const defaultMs = (() => {
+    delete process.env.VICE_RECYCLE_EPOCH_POLL_TIMEOUT_MS;
+    return stockRecycleEpochPollTimeoutMs();
+  })();
+  try {
+    for (const bad of ["0", "-1", "abc", "NaN", "Infinity"]) {
+      process.env.VICE_RECYCLE_EPOCH_POLL_TIMEOUT_MS = bad;
+      assert.equal(stockRecycleEpochPollTimeoutMs(), defaultMs, `must reject ${JSON.stringify(bad)}`);
+    }
+    process.env.VICE_RECYCLE_EPOCH_POLL_TIMEOUT_MS = "25";
+    assert.equal(stockRecycleEpochPollTimeoutMs(), 25, "a positive override is still honoured -- this file's own tests need a short deadline");
+  } finally {
+    console.error = originalConsoleError;
+    if (previous === undefined) delete process.env.VICE_RECYCLE_EPOCH_POLL_TIMEOUT_MS;
+    else process.env.VICE_RECYCLE_EPOCH_POLL_TIMEOUT_MS = previous;
+  }
+  assert.ok(
+    captured.some((line) => line.includes("VICE_RECYCLE_EPOCH_POLL_TIMEOUT_MS") && line.includes("null epoch_after")),
+    `the rejection must be logged, naming what a non-positive value would cause: ${JSON.stringify(captured)}`,
+  );
+});
+
+test("handleRecycleStock: a confirmed kill whose epoch reader advances finalises the record with the new epoch_after", async () => {
+  await withTempIncidentsDir(async (dir) => {
+    await withEpochPollTimeout("200", async () => {
+      const reader = scriptedEpochReader([fakeEpoch(5), fakeEpoch(9)]);
+      const { session } = makeFakeSession({ readEpochFn: reader.fn });
+      const { deps } = makeLeaseDeps({ epochFile: "/fake/epoch.json", recycleImpl: async () => okAck({ kill_stage: "sigkill" }) });
+      const result = await handleRecycleStock({ reason: "epoch advance case" }, session, deps);
+      assert.equal(result.isError, false);
+      const text = readRecord(dir);
+      assert.equal(frontmatterField(text, "epoch_before"), "5");
+      assert.equal(frontmatterField(text, "epoch_after"), "9");
+      assert.equal(text.includes("(not yet known)"), false, "the prose body must no longer render the not-yet-known phrase once an epoch_after is known");
+    });
+  });
+});
+
+test("handleRecycleStock: a confirmed kill whose epoch never advances finalises the record with epoch_after null, never the stale epoch_before value", async () => {
+  await withTempIncidentsDir(async (dir) => {
+    await withEpochPollTimeout("30", async () => {
+      const reader = scriptedEpochReader([fakeEpoch(5)]); // sticks on 5 forever -- never advances
+      const { session } = makeFakeSession({ readEpochFn: reader.fn });
+      const { deps } = makeLeaseDeps({ epochFile: "/fake/epoch.json", recycleImpl: async () => okAck({ kill_stage: "sigkill" }) });
+      const started = Date.now();
+      const result = await handleRecycleStock({ reason: "epoch stall case" }, session, deps);
+      const elapsed = Date.now() - started;
+      assert.equal(result.isError, false);
+      const text = readRecord(dir);
+      assert.equal(frontmatterField(text, "epoch_before"), "5");
+      assert.equal(frontmatterField(text, "epoch_after"), "null");
+      assert.notEqual(frontmatterField(text, "epoch_after"), "5", "epoch_after must never equal the stale epoch_before value");
+      assert.ok(elapsed < 1000, `expected the poll deadline to cut the stall off quickly, took ${elapsed}ms`);
+    });
+  });
+});
+
+test("handleRecycleStock: a confirmed kill whose pre-kill read found no epoch and whose post-kill read finds one present records that value (first appearance counts as an advance)", async () => {
+  await withTempIncidentsDir(async (dir) => {
+    await withEpochPollTimeout("200", async () => {
+      const reader = scriptedEpochReader([ABSENT_EPOCH, fakeEpoch(11)]);
+      const { session } = makeFakeSession({ readEpochFn: reader.fn });
+      const { deps } = makeLeaseDeps({ epochFile: "/fake/epoch.json", recycleImpl: async () => okAck({ kill_stage: "already_exited" }) });
+      const result = await handleRecycleStock({ reason: "first appearance case" }, session, deps);
+      assert.equal(result.isError, false);
+      const text = readRecord(dir);
+      assert.equal(frontmatterField(text, "epoch_before"), "null");
+      assert.equal(frontmatterField(text, "epoch_after"), "11");
+    });
+  });
+});
+
+test("handleRecycleStock: an epoch reader that never reports a present epoch finalises with epoch_after null", async () => {
+  await withTempIncidentsDir(async (dir) => {
+    await withEpochPollTimeout("30", async () => {
+      const reader = scriptedEpochReader([ABSENT_EPOCH]);
+      const { session } = makeFakeSession({ readEpochFn: reader.fn });
+      const { deps } = makeLeaseDeps({ epochFile: "/fake/epoch.json", recycleImpl: async () => okAck({ kill_stage: "sigterm" }) });
+      const result = await handleRecycleStock({ reason: "never present case" }, session, deps);
+      assert.equal(result.isError, false);
+      assert.equal(frontmatterField(readRecord(dir), "epoch_after"), "null");
+    });
+  });
+});
+
+test("handleRecycleStock: a lease with no epoch file path polls nothing and finalises with epoch_after null, without throwing", async () => {
+  await withTempIncidentsDir(async (dir) => {
+    await withEpochPollTimeout("30", async () => {
+      const reader = scriptedEpochReader([fakeEpoch(5)]);
+      const { session } = makeFakeSession({ readEpochFn: reader.fn });
+      const { deps } = makeLeaseDeps({ epochFile: "", recycleImpl: async () => okAck({ kill_stage: "sigterm" }) });
+      const result = await handleRecycleStock({ reason: "no epoch file case" }, session, deps);
+      assert.equal(result.isError, false);
+      assert.equal(frontmatterField(readRecord(dir), "epoch_after"), "null");
+      assert.equal(reader.callCount(), 0, "no epoch file path means neither the pre-kill read nor the poll ever calls the reader");
+    });
+  });
+});
+
+test("handleRecycleStock: an epoch reader that always throws is treated as a read that did not advance, not a fatal error", async () => {
+  await withTempIncidentsDir(async (dir) => {
+    await withEpochPollTimeout("30", async () => {
+      // Call 1 (pre-kill) returns a real epoch; every subsequent call (the
+      // poll) throws -- proving the throw is caught inside the poll itself,
+      // not merely that the pre-kill read never throws.
+      const reader = scriptedEpochReader([fakeEpoch(5), "throw"]);
+      const { session } = makeFakeSession({ readEpochFn: reader.fn });
+      const { deps } = makeLeaseDeps({ epochFile: "/fake/epoch.json", recycleImpl: async () => okAck({ kill_stage: "sigterm" }) });
+      const result = await handleRecycleStock({ reason: "throwing reader case" }, session, deps);
+      assert.equal(result.isError, false, "the handler must still return a well-formed result");
+      const text = readRecord(dir);
+      assert.equal(outcomeFrontmatter(text), "ok", "the record must still be finalised");
+      assert.equal(frontmatterField(text, "epoch_after"), "null");
+    });
+  });
+});
+
+test("handleRecycleStock: a refused (non-killing) ack makes no additional epoch reads -- the poll never runs when the machine's state is unknown", async () => {
+  await withTempIncidentsDir(async (dir) => {
+    const reader = scriptedEpochReader([fakeEpoch(5)]);
+    const { session } = makeFakeSession({ readEpochFn: reader.fn });
+    const { deps } = makeLeaseDeps({ epochFile: "/fake/epoch.json", recycleImpl: async () => okAck({ outcome: "identity_refused", kill_stage: "none" }) });
+    const result = await handleRecycleStock({ reason: "refused, no poll" }, session, deps);
+    assert.equal(result.isError, true);
+    assert.equal(frontmatterField(readRecord(dir), "epoch_after"), "null");
+    assert.equal(reader.callCount(), 1, "only the pre-kill read may run; the poll itself must never be invoked here");
+  });
+});
+
+test("handleRecycleStock: a broker_gone recycle outcome makes no additional epoch reads -- the poll never runs when the machine's state is unknown", async () => {
+  await withTempIncidentsDir(async (dir) => {
+    const reader = scriptedEpochReader([fakeEpoch(5)]);
+    const { session } = makeFakeSession({ readEpochFn: reader.fn });
+    const { deps } = makeLeaseDeps({ epochFile: "/fake/epoch.json", recycleImpl: async () => ({ ok: false, kind: "broker_gone", message: "connection dropped" }) });
+    const result = await handleRecycleStock({ reason: "broker gone, no poll" }, session, deps);
+    assert.equal(result.isError, true);
+    assert.equal(frontmatterField(readRecord(dir), "epoch_after"), "null");
+    assert.equal(reader.callCount(), 1, "only the pre-kill read may run; the poll itself must never be invoked here");
+  });
 });
 
 // ---------------------------------------------------------------------------
