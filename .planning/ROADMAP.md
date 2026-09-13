@@ -1195,7 +1195,7 @@ real — green, or explicitly acknowledged — before Phase 50 begins**
   4. **Movement is exercised on every run, not optionally.** At least one symbol is relocated from its original address and the rebuild reassembled and diffed at the new layout; a same-address-only round trip is refused as a pass. Moving one half of a split hi/lo address table without the other is caught.
   5. A non-clean hazard report either blocks the gate or passes only with an **explicit, recorded, per-finding acknowledgement** visible in the verdict artifact — there is no path from "hazard found" to "silently green".
 
-**Plans**: 1/7 plans executed, 4 waves
+**Plans**: 2/7 plans executed, 4 waves
 
 Plans:
 **Wave 1**
@@ -1204,7 +1204,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 49-02-PLAN.md — tracer: a tree-aware entry point on the existing byte-diff oracle, the gate module with its required inputs and rule table, and one real end-to-end run on the committed subject
+- [x] 49-02-PLAN.md — tracer: a tree-aware entry point on the existing byte-diff oracle, the gate module with its required inputs and rule table, and one real end-to-end run on the committed subject
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -1683,7 +1683,7 @@ in a milestone archive.
 | 46. The Lossless-Export Invariant and the Provenance Carry | v1.0.0 | 6/6 | Complete | 2026-09-11 |
 | 47. Multi-File Rebuildable Source | v1.0.0 | 6/6 | Complete | 2026-09-12 |
 | 48. The Movement-Hazard Report and Its Purpose-Built Subject | v1.0.0 | 6/6 | Complete | 2026-09-13 |
-| 49. The Reassembly Gate, Committed Before the Phase It Gates | v1.0.0 | 1/7 | In Progress | - |
+| 49. The Reassembly Gate, Committed Before the Phase It Gates | v1.0.0 | 2/7 | In Progress | - |
 | 50. Equivalence and Modifiability | v1.0.0 | - | Not started | - |
 | 51. Planning Vocabulary Out of the Shipped Server | v1.0.0 | - | Not started | - |
 | 52. Remove the Fork Backend | v1.0.0 | 13/13 | Complete | 2026-09-12 |

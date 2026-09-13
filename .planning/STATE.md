@@ -5,16 +5,16 @@ milestone_name: The Rebuild Half
 current_phase: 49
 current_phase_name: The Reassembly Gate, Committed Before the Phase It Gates
 status: executing
-stopped_at: Completed 49-01-PLAN.md
-last_updated: "2026-09-13T08:37:17.534Z"
+stopped_at: Completed 49-02-PLAN.md
+last_updated: "2026-09-13T09:04:36.349Z"
 last_activity: 2026-09-13
 last_activity_desc: Phase 49 execution started
-state_head: 1b389ed48d49f57a330a7d12346d002e13a6378f
+state_head: 989cd08d375a2155e173729496807d2c1ca93c95
 progress:
   total_phases: 8
   completed_phases: 4
   total_plans: 35
-  completed_plans: 29
+  completed_plans: 30
   percent: 50
 ---
 
@@ -260,7 +260,7 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 49 (The Reassembly Gate, Committed Before the Phase It Gates) — EXECUTING
-Plan: 2 of 7
+Plan: 3 of 7
 Status: Ready to execute
 Plans: none yet — Phase 49 has not been planned.
 
@@ -601,6 +601,7 @@ Last activity: 2026-09-13 — Phase 49 execution started
 | Phase 48 P05 | 55min | 3 tasks | 3 files |
 | Phase 48 P06 | 62min | 3 tasks | 4 files |
 | Phase 49 P01 | 6min | 3 tasks | 2 files |
+| Phase 49 P02 | 31min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -1365,6 +1366,9 @@ Recent decisions affecting current work:
 - [Phase 48]: Phase 48-06: A real defect the reassembly path surfaced on first contact -- a declining comment recorded at a mid-instruction address with no store label -- was fixed by re-anchoring it to the host instruction's own start address, since no generic export can attach a comment to an address that is neither an instruction start nor an existing label.
 - [Phase 48]: Phase 48-06: The raster construction's on-screen persistence did not match its stated prediction across extensive live-emulator testing (including a direct entry point that never returns to BASIC), and this was recorded honestly as a disclosed disagreement in FIXTURE-DESIGN.md rather than reconciled -- isolated testing confirms the self-modifying and alignment constructions' effects do persist and are visible.
 - [Phase 49]: Phase 49 plan 01: checkpoint auto-selected freeze-as-proposed — froze the reassembly gate's seven inputs (TREE_REBUILD, MOVEMENT_REBUILD, HAZARD_DISPOSITION, DIFF_SCOPE_COVERAGE, RED_CONTROLS, SECOND_PATH_GUARD, ORDERING_PROOF) and three verdict tokens (green/acknowledged/red) exactly as drafted, over collapse-guards and rename-verdicts. — SECOND_PATH_GUARD and ORDERING_PROOF stay gate inputs because their breach is what makes every other input untrustworthy; degrade would mislabel a fully-correct acknowledged-hazard rebuild as a reduced capability.
+- [Phase 49]: Extracted verifyAcmeAssembles()'s inline body into one shared assembleAndDiff() function and added verifyAcmeAssemblesTree(), so the tree entry point funds the same six ordered rules as the single-source path rather than a second implementation. — D49-B: the tree-aware entry point must be additive with one shared verdict body.
+- [Phase 49]: A tree's real per-segment ACME output follows !source file-inclusion order, not address order -- discovered live against the committed hazard-subject fixture. Both gate tree: test files reorder expectedSegments to tree emission order before asserting unanimity. — The hazard-subject fixture has an unscoped block sourced last with the lowest address of the whole image; the positional unanimity rule needs expectedSegments in emission order, not address order.
+- [Phase 49]: reassembly-gate.ts's GateInput fields are spelled exactly as the committed schema's outcome-line names (TREE_REBUILD, MOVEMENT_REBUILD, ...) rather than camelCased, and MovementResult/HazardAcknowledgementResult are declared with no producer in this plan -- a stub of the producers, not of the architecture. — Keeps one vocabulary visible at the type, the runtime absence check, and the verdict's echoed inputs; the producers land in later plans in this same phase as an import, not a redesign.
 
 ### Pending Todos
 
@@ -2456,8 +2460,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-13T08:37:17.115Z
-Stopped at: Completed 49-01-PLAN.md
+Last session: 2026-09-13T09:04:35.856Z
+Stopped at: Completed 49-02-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
