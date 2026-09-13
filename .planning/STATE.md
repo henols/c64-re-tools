@@ -5,16 +5,16 @@ milestone_name: The Rebuild Half
 current_phase: 49
 current_phase_name: The Reassembly Gate, Committed Before the Phase It Gates
 status: executing
-stopped_at: Completed 49-04-PLAN.md
-last_updated: "2026-09-13T10:08:00.002Z"
+stopped_at: Completed 49-05-PLAN.md
+last_updated: "2026-09-13T10:25:58.981Z"
 last_activity: 2026-09-13
 last_activity_desc: Phase 49 execution started
-state_head: 55cc0f05f9e3eee0861a8323658a00e6ffb9b5d3
+state_head: 352314f21aa7763d9363d01de8ef3f2ba195c10a
 progress:
   total_phases: 8
   completed_phases: 4
   total_plans: 35
-  completed_plans: 32
+  completed_plans: 33
   percent: 50
 ---
 
@@ -260,9 +260,9 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 49 (The Reassembly Gate, Committed Before the Phase It Gates) — EXECUTING
-Plan: 5 of 7
-Status: Executing
-Plans: 4/7 executed (49-01 through 49-04 complete; 49-05, 49-06, 49-07 remain).
+Plan: 6 of 7
+Status: Ready to execute
+Plans: 5/7 executed (49-01 through 49-05 complete; 49-06, 49-07 remain).
 
 Carried in from Phase 48 (complete, verified, UAT passed 2026-09-13): the
 purpose-built subject carries all four planted hazard classes, the pure
@@ -604,6 +604,7 @@ Last activity: 2026-09-13 — Phase 49 execution started
 | Phase 49 P02 | 31min | 2 tasks | 4 files |
 | Phase 49 P03 | 50min | 3 tasks | 4 files |
 | Phase 49 P04 | ~20min | 3 tasks | 2 files |
+| Phase 49 P05 | 45min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -1372,6 +1373,8 @@ Recent decisions affecting current work:
 - [Phase 49]: A tree's real per-segment ACME output follows !source file-inclusion order, not address order -- discovered live against the committed hazard-subject fixture. Both gate tree: test files reorder expectedSegments to tree emission order before asserting unanimity. — The hazard-subject fixture has an unscoped block sourced last with the lowest address of the whole image; the positional unanimity rule needs expectedSegments in emission order, not address order.
 - [Phase 49]: reassembly-gate.ts's GateInput fields are spelled exactly as the committed schema's outcome-line names (TREE_REBUILD, MOVEMENT_REBUILD, ...) rather than camelCased, and MovementResult/HazardAcknowledgementResult are declared with no producer in this plan -- a stub of the producers, not of the architecture. — Keeps one vocabulary visible at the type, the runtime absence check, and the verdict's echoed inputs; the producers land in later plans in this same phase as an import, not a redesign.
 - [Phase 49]: Plan 49-03: planted all three phase-required red controls (wrong-byte, stale-artifact, narrowed-scope) with honest controls and gate-verdict companions; added a bounded test-only outputDir seam to verifyAcmeAssemblesTree() and extended hazardCoverageOutsideDiffScope() (additive) to read undecided regions and refuse a zero-length extent.
+- [Phase 49]: disposeHazardReport() is the real producer for HazardAcknowledgementResult (declared by plan 49-02 with no producer) rather than a new result shape. — This plan is the producer 49-02 anticipated, not a redesign.
+- [Phase 49]: The exhaustive gate-input enumeration drives runReassemblyGate() over bare GateInput tokens directly, not producer objects (MovementResult/HazardAcknowledgementResult). — None of GateInput's seven fields is anything other than a bare token by its own type declaration, so enumerating token domains directly is already exhaustive over everything the gate function reads.
 
 ### Pending Todos
 
@@ -2463,8 +2466,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-13T10:07:59.563Z
-Stopped at: Completed 49-04-PLAN.md
+Last session: 2026-09-13T10:25:58.415Z
+Stopped at: Completed 49-05-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
