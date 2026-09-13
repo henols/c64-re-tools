@@ -5,10 +5,10 @@ milestone_name: The Rebuild Half
 current_phase: 50
 current_phase_name: Equivalence and Modifiability
 status: planning
-stopped_at: Phase 49 complete, ready to plan Phase 50
-last_updated: "2026-09-13T11:39:45.307Z"
+stopped_at: Completed quick task 260913-jgv (classify the unclassified VIC-II region)
+last_updated: "2026-09-13T12:33:13.432Z"
 last_activity: 2026-09-13
-state_head: 71b2b567b84282198c48ec557559ba95831870d8
+state_head: e28e56b73890585aacd4c937ac5127648019e668
 progress:
   total_phases: 8
   completed_phases: 6
@@ -276,7 +276,7 @@ artifact — it did not retract the finding. Phase 49 gates reassembly, so
 that subject is the thing it will gate on.
 
 Progress: [████████░░] 75% (6/8 phases complete in v1.0.0; per-phase plan counts in the ROADMAP Progress table)
-Last activity: 2026-09-13
+Last activity: 2026-09-13 - Completed quick task 260913-jgv: classify the unclassified VIC-II region in the hazard subject, then re-run the reassembly gate and update the findings verdict
 
 ## Performance Metrics
 
@@ -607,6 +607,7 @@ Last activity: 2026-09-13
 | Phase 49 P05 | 45min | 2 tasks | 2 files |
 | Phase 49 P06 | 50min | 2 tasks | 1 files |
 | Phase 49 P07 | 55 min | 3 tasks | 9 files |
+| Phase quick-260913-jgv P01 | 55min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -1381,6 +1382,7 @@ Recent decisions affecting current work:
 - [Phase 49]: Reassembly gate run for real: verdict red under R7 (DIFF_SCOPE_COVERAGE incomplete on the baseline occurrence, from a permanent unclassified VIC-II region), never re-measured to obtain a better result.
 - [Phase 49]: Extracted the movement plan's subject into a new shared, non-test module (reassembly-gate-movement-subject.ts) rather than importing the .test.ts file directly, to avoid re-running its registered tests as an import side effect.
 - [Phase 49]: HAZARD_DISPOSITION recorded as blocked (not acknowledged): the frozen array acknowledges only the 3 real findings, per the plan's own instruction, leaving the subject's 1 permanently-unclassified region unacknowledged.
+- [Phase 50]: Quick task 260913-jgv: classified the previously-undecided VIC-II region by stating two register dependencies statically in the hazard-subject fixture; Phase 49 reassembly-gate verdict re-measured from red/R7 to acknowledged/R10.
 
 ### Pending Todos
 
@@ -1651,6 +1653,7 @@ ledger table row below were both updated in the same change as this one.
 | 260902-tkg | Anchor `scripts/package.sh`'s leak guard — `tools/` to the archive root, `node_modules/` at any depth — unblocking the release build, RED on every push since 2026-08-29 on a false positive against nine phase-23 `evidence/tools/` files | 2026-09-02 | 5071e24 |  | [260902-tkg-anchor-tools-leak-guard-to-archive-root](./quick/260902-tkg-anchor-tools-leak-guard-to-archive-root/) |
 | 260908-m4k | Codify the owner's standing no-auto-install constraint for external tools as a `- **Dependency**:` bullet in CLAUDE.md's `### Constraints` list, mirrored byte-identically into `.planning/PROJECT.md` (the GSD-managed block's declared source, so a CLAUDE.md-only edit would have been wiped on the next regeneration). Documents the permitted detect-then-refuse-by-name pattern per tool and names the three deliberate out-of-scope cases (`ensure-mcp-deps.sh`'s own `npm ci`, CI's `apt install acme`, the installer's `--vendor` opt-in). No behavioural change — the tree already complied | 2026-09-08 | 6df87285, 4384ecec |  | [260908-m4k-document-the-no-auto-install-constraint-](./quick/260908-m4k-document-the-no-auto-install-constraint-/) |
 | 260911-syq | Answer the v1.0.0 three-hard-losses research question to unblock Phase 52 | 2026-09-11 | 3c21ce6b |  | [260911-syq-answer-the-v1-0-0-three-hard-losses-rese](./quick/260911-syq-answer-the-v1-0-0-three-hard-losses-rese/) |
+| 260913-jgv | Classify the hazard subject's one undecided VIC-II region (`$087A..$0FFF`, missing `bank-select`/`control-register-1`) by stating both registers as immediate-load-then-store in the alignment routine and its mis-aligned twin — surfacing the fourth planted hazard class, which the incomplete register recovery had kept invisible. Re-ran the reassembly gate and re-transcribed the findings verdict from `red`/`R7` to `acknowledged`/`R10`; frozen rule table and schema untouched, both runs left on the record | 2026-09-13 | 55c5a35c, 54fac054, e28e56b7 |  | [260913-jgv-classify-the-unclassified-vic-ii-region-](./quick/260913-jgv-classify-the-unclassified-vic-ii-region-/) |
 
 ### Blockers/Concerns
 
@@ -2472,8 +2475,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-13T11:17:01.168Z
-Stopped at: Phase 49 complete, ready to plan Phase 50
+Last session: 2026-09-13T12:33:12.948Z
+Stopped at: Completed quick task 260913-jgv (classify the unclassified VIC-II region)
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
