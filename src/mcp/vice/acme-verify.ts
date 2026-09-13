@@ -163,11 +163,14 @@ export type SpawnClassifier = (r: SpawnShape) => SpawnClassification;
  * (which is the whole reason `"skipped"` exists as a third outcome) would
  * silently absorb a crashing assembler.
  *
- * MEASURED on this host, the two ran-and-died shapes:
+ * MEASURED on this host, the two ran-and-died shapes (each a `spawnSync`
+ * call, written here without the literal call syntax so a whole-module count
+ * of ACTUAL child-spawn call sites -- there is exactly one, in
+ * `assembleAndDiff()` below -- is not inflated by a documentation example):
  *
- *   spawnSync("/bin/sh", ["-c", "kill -SEGV $$"])
+ *   /bin/sh -c 'kill -SEGV $$'
  *     -> status null, signal "SIGSEGV", error undefined
- *   spawnSync("/bin/sleep", ["5"], { timeout: 200 })
+ *   /bin/sleep 5, with a 200ms timeout
  *     -> status null, signal "SIGTERM", error ETIMEDOUT
  *
  * The crash row is caught by `signal`; the timeout row carries BOTH a signal
@@ -214,9 +217,9 @@ const MEASURED_MISSING_BINARY_SPAWNS: readonly SpawnShape[] = Object.freeze([
  * measured field values.
  *
  * THE THIRD ROW IS 30-REVIEW WR-06's: a stdout OVERFLOW. Measured the same
- * way (`spawnSync(..., { maxBuffer: 1024 })` over a child printing 200 000
- * bytes): `status null, signal "SIGTERM", error.code "ENOBUFS"`. `spawnSync`
- * KILLS the child on overflow, so the signal rule already classifies it
+ * way (a spawn call with `{ maxBuffer: 1024 }` over a child printing 200 000
+ * bytes): `status null, signal "SIGTERM", error.code "ENOBUFS"`. The child
+ * process is KILLED on overflow, so the signal rule already classifies it
  * `"ran"` -- which is right, because it did: the verdict then proceeds on
  * truncated evidence rather than reporting an absent binary. It is pinned
  * here so a future change to the signal rule cannot silently reopen WR-06's
@@ -372,6 +375,40 @@ export interface AcmeVerifyResult {
   byteDiff: AcmeByteDiff | null;
   /** Why the outcome is what it is, in words a human can act on. */
   reason: string;
+}
+
+/**
+ * Options for verifying a whole TREE a caller already wrote to disk --
+ * `anno-export-asm.ts`'s `exportAsmTree()`'s own `outDir`, most commonly --
+ * rather than a single in-memory source string.
+ *
+ * This is the ADDITIVE sibling of `AcmeVerifyOptions`: it exists because the
+ * tree's own root file `!source`s its siblings by BARE FILENAME with no
+ * directory component (by design -- `anno-export-asm.ts`'s `exportAsmTree()`
+ * doc comment), so ACME can only resolve them when its OWN working directory
+ * is the tree's directory. `AcmeVerifyOptions.source` has no directory at
+ * all, so that dependence never arises for the single-source path, and
+ * `verifyAcmeAssembles()` keeps its exact existing signature and behaviour.
+ */
+export interface AcmeVerifyTreeOptions {
+  /** The directory an already-written tree lives in -- e.g.
+   * `exportAsmTree()`'s own `outDir`. This module reads from it (as the
+   * child's working directory) and NEVER removes it: the tree belongs to the
+   * caller, exactly as `exportAsmTree()`'s own doc comment states for the
+   * directory it writes into. */
+  treeDir: string;
+  /** The tree's root file's BARE name (e.g. `anno-export-asm.ts`'s
+   * `ROOT_FILE_NAME`, `"root.a"`) -- resolved to an absolute path under
+   * `treeDir` by this function, never accepted as an absolute path itself. */
+  rootFileName: string;
+  /** Same field, same contract as `AcmeVerifyOptions.expectedBytes`. */
+  expectedBytes: Uint8Array;
+  /** Same field, same contract as `AcmeVerifyOptions.expectedSegments`. */
+  expectedSegments: readonly AcmeExpectedSegment[];
+  /** Same field, same contract as `AcmeVerifyOptions.format`. */
+  format?: "plain" | "cbm";
+  /** Same field, same contract as `AcmeVerifyOptions.acmeBin`. */
+  acmeBin?: string;
 }
 
 /**
@@ -709,32 +746,223 @@ function compareBytes(expected: Buffer, actual: Buffer): AcmeByteDiff {
 }
 
 /**
- * Assembles `options.source` with a real ACME and returns a three-outcome
- * verdict settled by a byte-diff.
+ * THE SHARED VERDICT BODY -- extracted, not rewritten, from what used to be
+ * `verifyAcmeAssembles()`'s own inline implementation. Both the single-source
+ * entry point below and the
+ * tree-aware entry point (`verifyAcmeAssemblesTree()`) fund this ONE function,
+ * so there is exactly one place in this module that turns a spawn into an
+ * outcome -- never a second, parallel copy of the six rules for the tree
+ * case.
  *
  * REASON PRECEDENCE -- the order the rules run, and therefore which refusal
  * wins when several apply:
  *
- *   1. `classifySpawn()` reports `"unavailable"` -- the spawn never ran =>
+ *   1. `expectedBytes` is empty => THROWS, before the spawn. Two empty
+ *      buffers compare equal under `Buffer.compare()` (`compareBytes()`
+ *      below), so an empty expected buffer would score a "pass" on a program
+ *      that assembled to nothing. That is a caller error, not a clean result,
+ *      and is refused by name rather than silently reaching rule 7.
+ *   2. `classifySpawn()` reports `"unavailable"` -- the spawn never ran =>
  *      `"skipped"`. Reached before any exit-status arithmetic exists.
- *   2. ACME reported an `Error` or `Serious error` => `"failed"`, quoting the
+ *   3. ACME reported an `Error` or `Serious error` => `"failed"`, quoting the
  *      FIRST such diagnostic verbatim. ACME's own words about why it stopped
  *      are more use to a human than the downstream consequence, which is why
- *      this wins over rule 4's absent output file.
- *   3. More than one aggregate `Saving ...` line => `"failed"`, naming the
+ *      this wins over rule 6's absent output file.
+ *   4. More than one aggregate `Saving ...` line => `"failed"`, naming the
  *      disagreement. The module refuses to pick between competing
  *      authoritative lines.
- *   4. ACME's per-segment result lines disagree with `expectedSegments` (in
+ *   5. ACME's per-segment result lines disagree with `expectedSegments` (in
  *      count, or in the start/exclusive-end of any pair) => `"failed"`, naming
  *      the FIRST mismatch. Runs unconditionally: `expectedSegments` is
  *      required, so there is no omitted case.
- *   5. No output file exists after the spawn => `"failed"`.
- *   6. The output file's bytes equal `expectedBytes` AND the path was absent
+ *   6. No output file exists after the spawn => `"failed"`.
+ *   7. The output file's bytes equal `expectedBytes` AND the path was absent
  *      before the spawn => `"ok"`. Anything else => `"failed"`, naming the
  *      first differing byte offset and both lengths.
  *
- * Every failing path leaves `byteDiff` `null` except rule 6's: nothing was
+ * Every failing path leaves `byteDiff` `null` except rule 7's: nothing was
  * read, so nothing can be reported as compared.
+ *
+ * `cwd` IS THE ONLY THING THIS EXTRACTION ADDED to the child's spawn options,
+ * and it is why the extraction happened at all: `undefined` (the single-
+ * source caller's own value, unchanged) leaves the child's INHERITED working
+ * directory in place, exactly as before this field existed. A caller that
+ * supplies one -- `verifyAcmeAssemblesTree()` below -- gets it passed
+ * straight through to the child spawn call. That matters because a multi-file
+ * tree's root source `!source`s its siblings by BARE FILENAME with no
+ * directory component, BY DESIGN (`anno-export-asm.ts`'s `exportAsmTree()`
+ * doc comment): ACME resolves a bare filename against its OWN working
+ * directory and nothing else -- MEASURED live against ACME 0.97 "Zem" -- so a
+ * tree assembled with the child's cwd anywhere but the tree's own directory
+ * fails to open files that visibly exist beside the root, with ACME's own
+ * `Cannot open input file` diagnostic. A single in-memory source has no
+ * siblings and no directory of its own, so this dependence never arises for
+ * it and `verifyAcmeAssembles()`'s behaviour is unchanged.
+ */
+function assembleAndDiff(
+  assemblerBin: string,
+  format: "plain" | "cbm",
+  srcPath: string,
+  outPath: string,
+  cwd: string | undefined,
+  expectedBytes: Uint8Array,
+  expectedSegments: readonly AcmeExpectedSegment[]
+): AcmeVerifyResult {
+  if (expectedBytes.length === 0) {
+    throw new Error(
+      `assembleAndDiff: expectedBytes is empty. Two empty buffers compare equal under Buffer.compare(), so an ` +
+        `empty expected buffer would score a pass on a program that assembled to nothing. An empty expected ` +
+        `buffer is a caller error, not a clean result -- refused here rather than scored "ok".`
+    );
+  }
+
+  // "Did THIS run create it" is the property, not "does a file exist".
+  const absentBeforeSpawn = existsSync(outPath) === false;
+
+  const r = spawnSync(assemblerBin, buildArgv(format, outPath, srcPath), {
+    encoding: "utf8",
+    timeout: 30_000,
+    // AN EXPLICIT, GENEROUS maxBuffer (30-REVIEW WR-06, added 2026-08-31).
+    // Node's default is 1 MiB. `-v2` emits ONE per-segment result line per
+    // block, so a store with enough ranges (roughly 17 000 at ~60 bytes per
+    // line) overflowed stdout, at which point `spawnSync` sets
+    // `error.code = "ENOBUFS"` and kills the child -- and before CR-03's
+    // fix that landed in `"unavailable"` -> `"skipped"`, the same false
+    // "no assembler ran" report as CR-03 from a different cause. Worse,
+    // `refuseOnCompetingAggregates()` and `firstResultLineDisagreement()`
+    // -- the two rules that READ stdout -- would then never run at all, so
+    // a truncated stream could not disagree with anything.
+    //
+    // 64 MiB is chosen to be far past any plausible real store rather than
+    // tuned: this is a test-only oracle run once per verification, and the
+    // cost of a buffer that is never filled is nothing, while the cost of
+    // one that overflows is a verdict about the wrong thing.
+    //
+    // ENOBUFS IS NOW `"ran"` REGARDLESS, via `classifySpawn()`'s
+    // signal/timeout rules: `spawnSync` kills the child on overflow, which
+    // sets `signal`. So an overflow that somehow still happened is a real
+    // observation with truncated evidence, not an absent binary.
+    maxBuffer: 64 * 1024 * 1024,
+    // The working directory the CALLER supplied, or none at all. See this
+    // function's own doc comment for the measured, load-bearing reason a
+    // tree assembly needs one and a single-source assembly never has.
+    // Leaving the key out of the options object entirely when `cwd` is
+    // `undefined` is what keeps the child's INHERITED directory exactly as
+    // it was before this field existed.
+    ...(cwd !== undefined ? { cwd } : {}),
+  });
+
+  // Assigned ONCE. Read by nothing below.
+  const exitStatus: number | null = r.status;
+
+  // Rule 2, through the ONE classifier. Nothing else in this module decides
+  // availability, and nothing below reads the exit status for any purpose.
+  if (classifySpawn(r) === "unavailable") {
+    const code = r.error !== undefined ? ((r.error as NodeJS.ErrnoException).code ?? r.error.name) : "no exit status";
+    return {
+      outcome: "skipped",
+      exitStatus,
+      acmeResultLines: [],
+      aggregateLines: [],
+      diagnostics: [],
+      byteDiff: null,
+      reason:
+        `ACME never ran: spawning ${JSON.stringify(assemblerBin)} failed with ${code}. ` +
+        `No assembler ran, so no claim about the bytes exists -- this is "skipped", which is neither a pass nor a byte-level failure.`,
+    };
+  }
+
+  // Every rule below is one of the five named pure helpers above, called in
+  // the documented precedence order. The body decides NOTHING itself: each
+  // rule has its own name, its own JSDoc stating which property it carries,
+  // and its own test driving it directly with real ACME output.
+  const stdout = r.stdout ?? "";
+  const segmentLines = parseAcmeResultLines(stdout);
+  const aggregateLines = parseAcmeAggregateLines(stdout);
+  const acmeResultLines = segmentLines.map((s) => s.raw);
+
+  const parsed = parseAcmeDiagnostics(r.stderr ?? "");
+  const diagnostics = stderrLines(r.stderr ?? "");
+
+  const expected = expectedSegments;
+  const base = { exitStatus, acmeResultLines, aggregateLines, diagnostics, byteDiff: null } as const;
+
+  // Rule 3 (verdict rule 5 of the five): ACME's own errors win. Warnings never fail.
+  const firstFatal = parsed.find(isFatal);
+  if (firstFatal !== undefined) {
+    return {
+      ...base,
+      outcome: "failed",
+      reason: `ACME reported a fatal diagnostic: ${firstFatal.raw}`,
+    };
+  }
+
+  // Rule 4 (verdict rule 3 of the five): competing authoritative aggregates. Refuse to guess.
+  const competing = refuseOnCompetingAggregates(aggregateLines);
+  if (competing !== undefined) {
+    return { ...base, outcome: "failed", reason: competing };
+  }
+
+  // Rule 5 (verdict rules 1 and 4 of the five): unanimity against the
+  // exporter's own blocks, over ACME's own parsed result lines. Unconditional.
+  const disagreement = firstResultLineDisagreement(segmentLines, expected);
+  if (disagreement !== undefined) {
+    return { ...base, outcome: "failed", reason: disagreement };
+  }
+
+  // Rule 6: no output file at all.
+  if (existsSync(outPath) === false) {
+    return {
+      ...base,
+      outcome: "failed",
+      reason:
+        `ACME produced no output file at ${JSON.stringify(outPath)}. ` +
+        `A pre-existing output file is left UNTOUCHED by a failing ACME run, which is why this module ` +
+        `assembles into a fresh directory every time and requires the path to have been absent before the spawn.`,
+    };
+  }
+
+  // Rule 7: the byte-diff IS the verdict.
+  const actual = readFileSync(outPath);
+  const byteDiff = compareBytes(Buffer.from(expectedBytes), actual);
+  if (byteDiff.equal && absentBeforeSpawn) {
+    return {
+      exitStatus,
+      acmeResultLines,
+      aggregateLines,
+      diagnostics,
+      byteDiff,
+      outcome: "ok",
+      reason:
+        `the output file this run created is byte-identical to the expected bytes ` +
+        `(${byteDiff.actualLength} byte(s) across ${expected.length} segment(s)).`,
+    };
+  }
+  return {
+    exitStatus,
+    acmeResultLines,
+    aggregateLines,
+    diagnostics,
+    byteDiff,
+    outcome: "failed",
+    reason: absentBeforeSpawn
+      ? `assembled bytes differ from the expected bytes: first differing byte offset ${String(byteDiff.firstDifferingOffset)}, ` +
+        `expected length ${byteDiff.expectedLength}, actual length ${byteDiff.actualLength}.`
+      : `the output path was ALREADY PRESENT before the spawn, so these bytes cannot be attributed to this run ` +
+        `(expected length ${byteDiff.expectedLength}, actual length ${byteDiff.actualLength}).`,
+  };
+}
+
+/**
+ * Assembles `options.source` with a real ACME and returns a three-outcome
+ * verdict settled by a byte-diff. UNCHANGED signature and behaviour after the
+ * extraction above -- this function is now a thin caller of
+ * `assembleAndDiff()`, passing no working directory, exactly as its own
+ * inline body always did.
+ *
+ * See `assembleAndDiff()`'s own doc comment for the six ordered rules and
+ * their precedence; this function contributes only the fresh-directory
+ * discipline around them.
  */
 export function verifyAcmeAssembles(options: AcmeVerifyOptions): AcmeVerifyResult {
   const format = options.format ?? "plain";
@@ -749,135 +977,49 @@ export function verifyAcmeAssembles(options: AcmeVerifyOptions): AcmeVerifyResul
     const outPath = join(dir, "export.bin");
     writeFileSync(srcPath, options.source, "utf8");
 
-    // "Did THIS run create it" is the property, not "does a file exist".
-    const absentBeforeSpawn = existsSync(outPath) === false;
-
-    const r = spawnSync(assemblerBin, buildArgv(format, outPath, srcPath), {
-      encoding: "utf8",
-      timeout: 30_000,
-      // AN EXPLICIT, GENEROUS maxBuffer (30-REVIEW WR-06, added 2026-08-31).
-      // Node's default is 1 MiB. `-v2` emits ONE per-segment result line per
-      // block, so a store with enough ranges (roughly 17 000 at ~60 bytes per
-      // line) overflowed stdout, at which point `spawnSync` sets
-      // `error.code = "ENOBUFS"` and kills the child -- and before CR-03's
-      // fix that landed in `"unavailable"` -> `"skipped"`, the same false
-      // "no assembler ran" report as CR-03 from a different cause. Worse,
-      // `refuseOnCompetingAggregates()` and `firstResultLineDisagreement()`
-      // -- the two rules that READ stdout -- would then never run at all, so
-      // a truncated stream could not disagree with anything.
-      //
-      // 64 MiB is chosen to be far past any plausible real store rather than
-      // tuned: this is a test-only oracle run once per verification, and the
-      // cost of a buffer that is never filled is nothing, while the cost of
-      // one that overflows is a verdict about the wrong thing.
-      //
-      // ENOBUFS IS NOW `"ran"` REGARDLESS, via `classifySpawn()`'s
-      // signal/timeout rules: `spawnSync` kills the child on overflow, which
-      // sets `signal`. So an overflow that somehow still happened is a real
-      // observation with truncated evidence, not an absent binary.
-      maxBuffer: 64 * 1024 * 1024,
-    });
-
-    // Assigned ONCE. Read by nothing below.
-    const exitStatus: number | null = r.status;
-
-    // Rule 1, through the ONE classifier. Nothing else in this module decides
-    // availability, and nothing below reads the exit status for any purpose.
-    if (classifySpawn(r) === "unavailable") {
-      const code = r.error !== undefined ? ((r.error as NodeJS.ErrnoException).code ?? r.error.name) : "no exit status";
-      return {
-        outcome: "skipped",
-        exitStatus,
-        acmeResultLines: [],
-        aggregateLines: [],
-        diagnostics: [],
-        byteDiff: null,
-        reason:
-          `ACME never ran: spawning ${JSON.stringify(assemblerBin)} failed with ${code}. ` +
-          `No assembler ran, so no claim about the bytes exists -- this is "skipped", which is neither a pass nor a byte-level failure.`,
-      };
-    }
-
-    // Every rule below is one of the five named pure helpers above, called in
-    // the documented precedence order. The body decides NOTHING itself: each
-    // rule has its own name, its own JSDoc stating which property it carries,
-    // and its own test driving it directly with real ACME output.
-    const stdout = r.stdout ?? "";
-    const segmentLines = parseAcmeResultLines(stdout);
-    const aggregateLines = parseAcmeAggregateLines(stdout);
-    const acmeResultLines = segmentLines.map((s) => s.raw);
-
-    const parsed = parseAcmeDiagnostics(r.stderr ?? "");
-    const diagnostics = stderrLines(r.stderr ?? "");
-
-    const expected = options.expectedSegments;
-    const base = { exitStatus, acmeResultLines, aggregateLines, diagnostics, byteDiff: null } as const;
-
-    // Rule 2 (verdict rule 5 of the five): ACME's own errors win. Warnings never fail.
-    const firstFatal = parsed.find(isFatal);
-    if (firstFatal !== undefined) {
-      return {
-        ...base,
-        outcome: "failed",
-        reason: `ACME reported a fatal diagnostic: ${firstFatal.raw}`,
-      };
-    }
-
-    // Rule 3 (verdict rule 3 of the five): competing authoritative aggregates. Refuse to guess.
-    const competing = refuseOnCompetingAggregates(aggregateLines);
-    if (competing !== undefined) {
-      return { ...base, outcome: "failed", reason: competing };
-    }
-
-    // Rule 4 (verdict rules 1 and 4 of the five): unanimity against the
-    // exporter's own blocks, over ACME's own parsed result lines. Unconditional.
-    const disagreement = firstResultLineDisagreement(segmentLines, expected);
-    if (disagreement !== undefined) {
-      return { ...base, outcome: "failed", reason: disagreement };
-    }
-
-    // Rule 5: no output file at all.
-    if (existsSync(outPath) === false) {
-      return {
-        ...base,
-        outcome: "failed",
-        reason:
-          `ACME produced no output file at ${JSON.stringify(outPath)}. ` +
-          `A pre-existing output file is left UNTOUCHED by a failing ACME run, which is why this module ` +
-          `assembles into a fresh directory every time and requires the path to have been absent before the spawn.`,
-      };
-    }
-
-    // Rule 6: the byte-diff IS the verdict.
-    const actual = readFileSync(outPath);
-    const byteDiff = compareBytes(Buffer.from(options.expectedBytes), actual);
-    if (byteDiff.equal && absentBeforeSpawn) {
-      return {
-        exitStatus,
-        acmeResultLines,
-        aggregateLines,
-        diagnostics,
-        byteDiff,
-        outcome: "ok",
-        reason:
-          `the output file this run created is byte-identical to the expected bytes ` +
-          `(${byteDiff.actualLength} byte(s) across ${expected.length} segment(s)).`,
-      };
-    }
-    return {
-      exitStatus,
-      acmeResultLines,
-      aggregateLines,
-      diagnostics,
-      byteDiff,
-      outcome: "failed",
-      reason: absentBeforeSpawn
-        ? `assembled bytes differ from the expected bytes: first differing byte offset ${String(byteDiff.firstDifferingOffset)}, ` +
-          `expected length ${byteDiff.expectedLength}, actual length ${byteDiff.actualLength}.`
-        : `the output path was ALREADY PRESENT before the spawn, so these bytes cannot be attributed to this run ` +
-          `(expected length ${byteDiff.expectedLength}, actual length ${byteDiff.actualLength}).`,
-    };
+    return assembleAndDiff(assemblerBin, format, srcPath, outPath, undefined, options.expectedBytes, options.expectedSegments);
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * The TREE-AWARE entry point, ADDITIVE beside `verifyAcmeAssembles()` above.
+ * It exists because a multi-file tree's own
+ * root file cannot resolve its siblings unless the assembler's working
+ * directory is the tree's own directory -- see `assembleAndDiff()`'s doc
+ * comment for the measured mechanism. This function supplies exactly that
+ * one thing `verifyAcmeAssembles()` cannot: a working directory for the
+ * child.
+ *
+ * The output file this call produces deliberately does NOT live inside
+ * `options.treeDir`: `exportAsmTree()` refuses a directory entry that is not
+ * one of its own file names, so an output artifact dropped beside the tree
+ * would break the NEXT export into that same directory. This function
+ * therefore creates its OWN fresh directory for the output file only,
+ * computes the output path inside it, and removes only that directory in its
+ * `finally` block. `options.treeDir` belongs to the caller and is NEVER
+ * removed here, on exactly the same terms `exportAsmTree()`'s own doc
+ * comment states for the directory it writes into.
+ *
+ * The verdict is the SAME byte-diff rule `verifyAcmeAssembles()` uses --
+ * never the exit status, never a summary line, never a pre-existing output
+ * file -- because both entry points fund the one shared `assembleAndDiff()`
+ * body above.
+ */
+export function verifyAcmeAssemblesTree(options: AcmeVerifyTreeOptions): AcmeVerifyResult {
+  const format = options.format ?? "plain";
+  const assemblerBin = options.acmeBin ?? ACME_BIN;
+
+  // This call's OWN fresh directory, for its output file alone -- never
+  // inside options.treeDir. See this function's own doc comment above.
+  const outDir = mkdtempSync(join(tmpdir(), "acme-verify-tree-"));
+  try {
+    const outPath = join(outDir, "export.bin");
+    const rootPath = join(options.treeDir, options.rootFileName);
+
+    return assembleAndDiff(assemblerBin, format, rootPath, outPath, options.treeDir, options.expectedBytes, options.expectedSegments);
+  } finally {
+    rmSync(outDir, { recursive: true, force: true });
   }
 }

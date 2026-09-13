@@ -62,10 +62,10 @@
 // This file is deliberately never added to `MANUAL_ONLY_TESTS`: `test-gate.mjs`'s
 // `automatedTestFiles()` auto-discovers every on-disk `*.test.*`, and
 // `test-gate.test.ts`'s drift guard fails the build if a file escapes both sets.
-import { test } from "node:test";
+import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -82,11 +82,14 @@ import {
   parseAcmeResultLines,
   refuseOnCompetingAggregates,
   verifyAcmeAssembles,
+  verifyAcmeAssemblesTree,
   type AcmeOutcome,
   type SpawnClassifier,
 } from "./acme-verify.ts";
-import { exportAsm } from "./anno-export-asm.ts";
+import { exportAsm, exportAsmTree, ROOT_FILE_NAME, type ExportBlock } from "./anno-export-asm.ts";
 import { openStore, closeStore, setDataType, setLabel } from "./anno-store.ts";
+import { importStoreDocument, type StoreExportDocument } from "./anno-store-export.ts";
+import type { ScopeRow } from "./anno-types.ts";
 import { repoRoot } from "./repo-root.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -759,6 +762,213 @@ test("TRACER: store -> export -> real ACME 0.97 -> byte-diff -> ok", { skip: SKI
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// gate tree: the tree-aware entry point on this same oracle.
+// One committed subject (the purpose-built hazard-subject store this
+// project already carries), one real multi-file reassembly, one byte-diff
+// through the SAME shared verdict body the tracer above already proved --
+// never a second implementation of the six ordered rules for the tree case.
+//
+// DIVISION OF LABOUR: `hazard-subject-reassembly.test.ts` walks the same
+// subject through the exporter's own tree-writing properties (file set,
+// bare-filename !source arguments, cross-file symbol resolution). This file
+// reuses that subject and the same load-into-a-throwaway-store,
+// export-into-a-fresh-directory shapes -- never a second way to load it --
+// to prove the VERIFY layer's own two entry points instead: the tree
+// verifies, the same text fails without the tree's directory as the child's
+// working directory, an empty expected-bytes buffer is refused by name, and
+// two verifications of the same tree directory do not interfere with each
+// other's own output directory.
+// ---------------------------------------------------------------------------
+
+const GATE_TREE_FIXTURE_DIR = join(HERE, "fixtures", "hazard-subject");
+const GATE_TREE_PRG_PATH = join(GATE_TREE_FIXTURE_DIR, "hazard-subject.prg");
+const GATE_TREE_ANNOSTORE_PATH = join(GATE_TREE_FIXTURE_DIR, "hazard-subject.annostore.json");
+
+let gateTreeWorkDir: string | undefined;
+let gateTreeDirCounter = 0;
+
+function gateTreeFreshDir(tag: string): string {
+  if (!gateTreeWorkDir) gateTreeWorkDir = mkdtempSync(join(tmpdir(), "acme-verify-gate-tree-"));
+  const dir = join(gateTreeWorkDir, `${tag}-${gateTreeDirCounter++}`);
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+after(() => {
+  if (gateTreeWorkDir) rmSync(gateTreeWorkDir, { recursive: true, force: true });
+});
+
+/**
+ * `result.blocks` (`anno-export-asm.ts`'s own contract) is ascending by
+ * START -- the order a SINGLE source file emits them in, and therefore the
+ * order ACME's own per-segment stdout lines come back in for the
+ * single-source path. A TREE does not preserve that order: `exportAsmTree()`
+ * sources `symbols.a` first, then each POPULATED SCOPE ascending by scope
+ * start, then `unscoped.a` LAST regardless of address (D47-D) -- and this
+ * subject was built with an unscoped block ($0801) that sits BEFORE every
+ * scope's own address range, so its tree places that block's file LAST while
+ * its address is lowest. ACME's own segment lines follow FILE INCLUSION
+ * order, never address order, so the unanimity rule
+ * (`firstResultLineDisagreement()`) needs `expectedSegments` reordered to
+ * match -- this function does that reordering, and ONLY that: it uses the
+ * exact wholly-contained-in-scope arithmetic `anno-export-asm.ts`'s own
+ * `placeBlockInScope()` doc comment already states as this project's public
+ * contract for the question "which file does this block belong to", never a
+ * re-derivation of anything hidden. Safe to rely on here only because
+ * `exportAsmTree()` already succeeded when this is called -- a block
+ * overlapping a scope without being wholly contained would have thrown
+ * before a result ever existed to reorder.
+ */
+function blocksInTreeSourceOrder(result: { scopes: readonly ScopeRow[]; blocks: readonly ExportBlock[] }): ExportBlock[] {
+  const sortedScopes = [...result.scopes].sort((a, b) => a.start - b.start);
+  const byScopeStart = new Map<number, ExportBlock[]>();
+  const unscoped: ExportBlock[] = [];
+  for (const block of result.blocks) {
+    const blockEndInclusive = block.endExclusive - 1;
+    const owningScope = sortedScopes.find((scope) => scope.start <= block.start && blockEndInclusive <= scope.endInclusive);
+    if (owningScope === undefined) {
+      unscoped.push(block);
+      continue;
+    }
+    const existing = byScopeStart.get(owningScope.start);
+    if (existing) existing.push(block);
+    else byScopeStart.set(owningScope.start, [block]);
+  }
+  const ordered: ExportBlock[] = [];
+  for (const scope of sortedScopes) {
+    const blocksInScope = byScopeStart.get(scope.start);
+    if (blocksInScope) ordered.push(...[...blocksInScope].sort((a, b) => a.start - b.start));
+  }
+  ordered.push(...[...unscoped].sort((a, b) => a.start - b.start));
+  return ordered;
+}
+
+/** Loads the committed hazard-subject store export into a fresh, throwaway
+ * store file -- through `importStoreDocument()`, the store's own public
+ * import verb, never raw SQL -- then exports it as a tree into a fresh
+ * subdirectory. The same shape `hazard-subject-reassembly.test.ts`'s own
+ * `freshStoreFromCommittedExport()` / `exportSubjectTree()` already use,
+ * reused here rather than re-derived. */
+function gateTreeExportSubject(tag: string): { treeDir: string; result: ReturnType<typeof exportAsmTree> } {
+  const dir = gateTreeFreshDir(tag);
+  const storePath = join(dir, "hazard-subject.annostore");
+  const handle = openStore(storePath, { workspaceRoot: dir });
+  try {
+    const doc = JSON.parse(readFileSync(GATE_TREE_ANNOSTORE_PATH, "utf8")) as StoreExportDocument;
+    importStoreDocument(handle, doc);
+  } finally {
+    closeStore(handle);
+  }
+  const treeDir = join(dir, "tree");
+  const result = exportAsmTree({ storePath, imagePath: GATE_TREE_PRG_PATH, workspaceRoot: dir, outDir: treeDir });
+  return { treeDir, result };
+}
+
+test(
+  "gate tree: a real tree verification of the committed hazard-subject store returns the pass outcome, an equal byte-diff with a null first differing offset, and at least one parsed per-segment result line",
+  { skip: SKIP_REASON },
+  () => {
+    const { treeDir, result } = gateTreeExportSubject("pass");
+    const verdict = verifyAcmeAssemblesTree({
+      treeDir,
+      rootFileName: ROOT_FILE_NAME,
+      expectedBytes: result.expectedBytes,
+      // Reordered to the tree's own file-inclusion order -- see
+      // `blocksInTreeSourceOrder()`'s own doc comment for why `result.blocks`
+      // itself (address order) is the wrong order for a TREE's per-segment
+      // unanimity check.
+      expectedSegments: blocksInTreeSourceOrder(result),
+    });
+    const context = `\n  reason: ${verdict.reason}\n  diagnostics: ${verdict.diagnostics.join(" | ") || "(none)"}`;
+    assert.equal(verdict.outcome, "ok", `the tree entry point must round-trip the committed subject through a real ACME:${context}`);
+    assert.equal(verdict.byteDiff?.equal, true, `the byte-diff IS the verdict, and it must be equal:${context}`);
+    assert.equal(verdict.byteDiff?.firstDifferingOffset, null, `an equal byte-diff has no first differing offset:${context}`);
+    assert.ok(
+      verdict.acmeResultLines.length >= 1,
+      `ACME's own per-segment result lines must have been parsed and recorded -- proving the verbose -v2 argv survived the extraction:${context}`
+    );
+    assert.notEqual(verdict.exitStatus, undefined, "exitStatus is recorded, never consulted for the verdict");
+  }
+);
+
+test(
+  "gate tree: the same root file's text handed to the single-source entry point, which runs in a directory holding no siblings, fails with the assembler's own could-not-open-input-file diagnostic",
+  { skip: SKIP_REASON },
+  () => {
+    const { treeDir, result } = gateTreeExportSubject("cwd-negative-control");
+    const rootText = readFileSync(join(treeDir, ROOT_FILE_NAME), "utf8");
+    const verdict = verifyAcmeAssembles({ source: rootText, expectedBytes: result.expectedBytes, expectedSegments: result.blocks });
+    assert.equal(
+      verdict.outcome,
+      "failed",
+      `the single-source entry point runs with no siblings present and must fail, got "${verdict.outcome}"`
+    );
+    assert.ok(
+      verdict.diagnostics.some((line) => line.includes("Cannot open input file")),
+      `diagnostics must carry the assembler's own could-not-open-file refusal text, got: ${verdict.diagnostics.join(" | ") || "(none)"}`
+    );
+  }
+);
+
+test("gate tree: verifyAcmeAssemblesTree refuses a zero-length expected-bytes buffer by name rather than scoring an empty-buffer comparison a pass", () => {
+  // No assembler runs here -- the refusal fires in `assembleAndDiff()` before
+  // any spawn, so this case is deliberately NOT skip-gated: `treeDir` and
+  // `rootFileName` name nothing that ever gets opened.
+  assert.throws(
+    () =>
+      verifyAcmeAssemblesTree({
+        treeDir: tmpdir(),
+        rootFileName: "root.a",
+        expectedBytes: new Uint8Array(0),
+        expectedSegments: [],
+      }),
+    /assembleAndDiff: expectedBytes is empty/,
+    "an empty expected-bytes buffer must be refused by name -- two empty buffers compare equal under Buffer.compare(), so it would " +
+      "otherwise score a pass on a program that assembled to nothing"
+  );
+});
+
+test(
+  "gate tree: two consecutive tree verifications against the same tree directory each get their own output directory, clean up after themselves, and both pass",
+  { skip: SKIP_REASON },
+  () => {
+    const { treeDir, result } = gateTreeExportSubject("run-isolation");
+    const opts = {
+      treeDir,
+      rootFileName: ROOT_FILE_NAME,
+      expectedBytes: result.expectedBytes,
+      expectedSegments: blocksInTreeSourceOrder(result),
+    };
+
+    // Isolation is observable because neither call's cleanup can be read by
+    // the other: each call's own `finally` block removes ITS OWN fresh
+    // `acme-verify-tree-*` directory (never `treeDir`, which both calls
+    // share) before returning, so the count of such directories left behind
+    // in the OS temp directory must return to the pre-call baseline after
+    // EACH call, not only after both.
+    const before = readdirSync(tmpdir()).filter((name) => name.startsWith("acme-verify-tree-")).length;
+    const first = verifyAcmeAssemblesTree(opts);
+    const afterFirst = readdirSync(tmpdir()).filter((name) => name.startsWith("acme-verify-tree-")).length;
+    const second = verifyAcmeAssemblesTree(opts);
+    const afterSecond = readdirSync(tmpdir()).filter((name) => name.startsWith("acme-verify-tree-")).length;
+
+    assert.equal(first.outcome, "ok", `first call: ${first.reason}`);
+    assert.equal(second.outcome, "ok", `second call: ${second.reason}`);
+    assert.equal(
+      afterFirst,
+      before,
+      "the first call's own output directory must already be removed by the time this assertion runs"
+    );
+    assert.equal(
+      afterSecond,
+      before,
+      "the second call's own output directory must likewise be removed -- proving the second call's success did not depend on, and " +
+        "did not collide with, whatever directory the first call used and had already cleaned up"
+    );
+  }
+);
 
 // ---------------------------------------------------------------------------
 // The exporter's own refusals and emission rules. These need no assembler: they
