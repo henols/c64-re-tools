@@ -1,7 +1,7 @@
 ---
 phase: 48-the-movement-hazard-report-and-its-purpose-built-subject
 verified: 2026-09-13T00:00:00Z
-status: human_needed
+status: passed
 score: 4/5 must-haves verified
 behavior_unverified: 0
 overrides_applied: 0
@@ -18,7 +18,7 @@ coincidental_reliance_items: []
 **Phase Goal:** One synthetic C64 program that deliberately carries all four movement-blocking classes, and a report that enumerates what blocks movement across those four classes — delivered and reviewed together against a non-vacuity bar so neither is written to match the other, and acting on nothing it finds.
 
 **Verified:** 2026-09-13
-**Status:** human_needed
+**Status:** passed (human verification resolved 2026-09-13 via `48-UAT.md` test 1)
 **Re-verification:** No — initial verification
 
 ## Goal Achievement
@@ -120,6 +120,20 @@ None blocking. No `TBD`/`FIXME`/`XXX`/`TODO`/`HACK`/`PLACEHOLDER` markers in any
 No FAILED must-haves, no MISSING/STUB artifacts, no NOT_WIRED key links, and no blocking anti-patterns were found. All code review findings (2 Critical, 3 Warning, 1 Info) were either fixed and independently re-verified, or disposed with an explicit, reviewer-sanctioned no-change rationale (IN-01). A regression introduced during the fix pass (a stale line citation) was independently confirmed found and repaired. All 111 phase-specific tests (64 + 36 + 11) plus the 99 CLI tests and 12 store-export tests independently re-run in this verification pass, all green; typecheck exits 0.
 
 The one open item is not a code gap but a disclosed empirical finding: the full, combined synthetic subject does not show its predicted on-screen effects in a settled emulator capture, though each of its four constructions independently does. This is routed to human verification rather than scored as a pass or a fail, per the explicit instruction accompanying this verification task. Because this item exists, overall status is `human_needed` rather than `passed` — no other finding in this phase would have prevented a `passed` verdict.
+
+### Human Verification Resolution — 2026-09-13
+
+That open item was put to a human as `48-UAT.md` test 1 and **passed**. The reviewer judged
+the disclosed, investigated disagreement sufficient against roadmap Success Criterion 1 for
+the delivered subject: each of the four constructions is independently proven to take visible
+effect, the combined-image reversion was narrowed rather than hand-waved, and it is recorded
+in `FIXTURE-DESIGN.md` rather than smoothed away. Status is therefore `passed`.
+
+The finding itself is **not** retracted by that judgment. The combined image still settles to
+a plain `READY.` prompt and the root cause of the reversion is still unknown. What the human
+decided is that this is an acceptable, honestly-disclosed limitation of the delivered artifact
+— not that the artifact behaves as originally predicted. `behavior_unverified_items` above is
+kept intact for that reason.
 
 ---
 
