@@ -3240,7 +3240,13 @@ test("structural: no message quotes the launcher with a subcommand -- vice-launc
   // concatenates a literal subcommand token (e.g. "start", "[N]") onto the
   // call's own result.
   const callSites = [...src.matchAll(/\$\{brokerHostPath\(\)\}/g), ...src.matchAll(/brokerHostPath\(\)\.split\("\\n"\)\[0\]/g)];
-  assert.ok(callSites.length >= 6, `expected at least 6 brokerHostPath() call sites, found ${callSites.length}`);
+  // Plan 55-04: re-measured. `node -e` over vice-proxy.ts's own matchAll
+  // scan (the exact regexes above) counts 4 call sites today -- the fork-era
+  // replaced-machine/D-13 message family (deleted in Plan 55-03) used to
+  // carry two more. This is a non-vacuity floor, not an equality: its job is
+  // only to fail if the scan ever matches nothing, so an unrelated future
+  // message edit that adds or removes a call site must not red this test.
+  assert.ok(callSites.length >= 4, `expected at least 4 brokerHostPath() call sites, found ${callSites.length}`);
   // Confirm none is followed, within the same statement, by a string
   // concatenation carrying a bare word or bracketed argument -- the actual
   // shape the retired install-resources.ts paragraph used to have
@@ -3628,7 +3634,7 @@ test("vice_recycle: with the endpoint override set returns a well-formed error r
 // the only-permitted-route rule (criteria 5, 8, 9 in 01.3-VALIDATION.md).
 // ---------------------------------------------------------------------------
 
-test("structural: the set of source files under src/mcp/vice/ containing a network-call construct is exactly broker-launch.mts, vice-probe.ts and vice.ts", () => {
+test("structural: the set of source files under src/mcp/vice/ containing a network-call construct is exactly broker-launch.mts", () => {
   // Directory-enumerating, matching skill-docs.test.mjs's own idiom -- a
   // future module joining this directory is covered the moment it lands on
   // disk, with no test file to remember to update. A "network-call
@@ -3668,19 +3674,67 @@ test("structural: the set of source files under src/mcp/vice/ containing a netwo
     .sort();
   assert.ok(files.length > 0, "module directory enumerated as empty -- glob or path resolution is broken");
 
+  // Plan 55-04: re-measured (`node -e` over this exact enumerate-then-filter
+  // pair, run directly against the checked-out tree). `vice-probe.ts` and
+  // `vice.ts` are both gone from disk entirely (confirmed separately: `ls
+  // vice-probe.ts vice.ts` reports "No such file or directory" for both),
+  // so a three-name expectation naming them can never pass again -- it is
+  // not a style break, it is asserting against files that do not exist.
+  // This guard's own subject, per its name and the comment above, is the
+  // set of files "under src/mcp/vice/" -- the ON-DISK directory tree, not
+  // the npm-published shipped-module subset shipped-modules.ts derives from
+  // package.json's `files[]` (used by other guards, e.g. spawn-seam.test.ts,
+  // for a different property: what actually ships, not what exists on
+  // disk) -- so this stays a directory enumeration, unchanged, with only
+  // the expected set corrected.
+  //
+  // The equality below is still a full two-directional set equality, never
+  // relaxed to a subset/containment check: a new file joining this
+  // directory with an unsanctioned `fetch(` call must still fail this test
+  // by name, exactly as it did before this measurement.
   const offenders = files.filter((f) => NETWORK_CALL_PATTERN.test(readFileSync(join(HERE, f), "utf8")));
   assert.deepEqual(
     offenders.sort(),
-    ["broker-launch.mts", "vice-probe.ts", "vice.ts"],
-    `the network-call module set changed -- expected exactly ["broker-launch.mts", "vice-probe.ts", "vice.ts"], got ${JSON.stringify(offenders)}. ` +
+    ["broker-launch.mts"],
+    `the network-call module set changed -- expected exactly ["broker-launch.mts"], got ${JSON.stringify(offenders)}. ` +
       "A module reaching the host outside the sanctioned transport is the violation, not merely a style break."
   );
 });
 
-test("structural: neither synthetic tool name appears in tools-manifest.stock.json, and both appear in a live tools/list response", async () => {
-  const manifestText = readFileSync(join(HERE, "tools-manifest.stock.json"), "utf8");
-  assert.ok(!manifestText.includes("vice_recycle"), "vice_recycle must never be added to the committed manifest -- it is served proxy-local");
-  assert.ok(!manifestText.includes("vice_result_continue"), "vice_result_continue must never be added to the committed manifest either");
+test("structural: of the three proxy-local synthetic tools, only vice_result_continue is absent from tools-manifest.stock.json; all three appear in a live tools/list response", async () => {
+  // Plan 55-04: re-measured. vice-proxy.ts registers exactly THREE tool
+  // definitions outside the plain manifest-loop registration --
+  // RESULT_CONTINUE_TOOL, RECYCLE_TOOL, DIAGNOSE_TOOL -- not two. This test
+  // used to assume vice_recycle was, like vice_result_continue, never added
+  // to the committed manifest; that assumption is now false: `vice_recycle`
+  // and `vice_diagnose` are BOTH present in tools-manifest.stock.json today
+  // (their schema is manifest-derived; only their RUNNER is still the
+  // proxy-local handleRecycle()/handleDiagnose() pair, wired via
+  // `stockDispatch.resolveAdvertisedToolDefinition()` after the manifest
+  // loop already registered them -- see vice-proxy.ts's own registration
+  // order). vice_result_continue is the one synthetic that remains served
+  // ENTIRELY proxy-local, absent from the manifest by design (D-E).
+  //
+  // The three names are extracted from the source's own object literals
+  // rather than hand-typed, so this guard cannot drift the same way twice:
+  // a fourth synthetic definition, or a rename of any of the three, is
+  // picked up automatically the next time this test runs.
+  const proxySrc = readFileSync(join(HERE, "vice-proxy.ts"), "utf8");
+  const SYNTHETIC_TOOL_CONSTS = ["RESULT_CONTINUE_TOOL", "RECYCLE_TOOL", "DIAGNOSE_TOOL"];
+  const syntheticNames = SYNTHETIC_TOOL_CONSTS.map((constName) => {
+    const m = proxySrc.match(new RegExp(`const ${constName}: ToolDefinition = \\{[\\s\\S]*?name: "([^"]+)"`));
+    assert.ok(m, `expected to find ${constName}'s own name field in vice-proxy.ts`);
+    return m![1];
+  });
+
+  const manifest = JSON.parse(readFileSync(join(HERE, "tools-manifest.stock.json"), "utf8"));
+  const manifestNames = new Set(manifest.tools.map((t: any) => t.name));
+  const absentFromManifest = syntheticNames.filter((n) => !manifestNames.has(n));
+  assert.deepEqual(
+    absentFromManifest.sort(),
+    ["vice_result_continue"],
+    `expected only vice_result_continue absent from tools-manifest.stock.json among the proxy-local synthetics ${JSON.stringify(syntheticNames)}; got ${JSON.stringify(absentFromManifest)} absent`
+  );
 
   const { server } = startStandInServer();
   const port = await listen(server);
@@ -3690,8 +3744,9 @@ test("structural: neither synthetic tool name appears in tools-manifest.stock.js
     proxy.send({ jsonrpc: "2.0", id: 3, method: "tools/list", params: {} });
     const resp = await proxy.nextMessage();
     const names = resp.result.tools.map((t: any) => t.name);
-    assert.ok(names.includes("vice_recycle"), "vice_recycle must be present in a live tools/list response");
-    assert.ok(names.includes("vice_result_continue"), "vice_result_continue must be present in a live tools/list response");
+    for (const n of syntheticNames) {
+      assert.ok(names.includes(n), `${n} must be present in a live tools/list response`);
+    }
   } finally {
     proxy.child.kill("SIGKILL");
     await new Promise((resolve) => server.close(resolve));
