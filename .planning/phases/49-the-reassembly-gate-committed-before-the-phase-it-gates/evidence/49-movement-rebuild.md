@@ -96,3 +96,48 @@ outcomes. The findings document records the corresponding override.
 <!-- The two bare lines this file declares are already quoted verbatim in
      the code fence above -- not repeated a second time here, for the same
      reason `evidence/49-tree-rebuild.md` states. -->
+
+## Re-measurement (2026-09-13, after the alignment subject was amended)
+
+**This is a re-measurement, not the original run.** Same amendment
+`evidence/49-tree-rebuild.md`'s own re-measurement section names: the
+alignment subject's two VIC-II registers (`$dd00`, `$d011`) are now stated
+statically. The movement rebuild's own subject
+(`src/mcp/vice/reassembly-gate-movement-subject.ts`) is untouched by that
+amendment -- it is a separate, purpose-built relocation subject, not the
+hazard-bearing committed one -- so this occurrence was already `complete`
+before the amendment and is re-measured here for the same reason
+`SCHEMA.md` requires all seven inputs re-measured together in one
+invocation: the subject changed, so a value carried forward from a run
+against the OLD subject would be asserting a property of a run that no
+longer exists.
+
+### Command and raw output (re-measurement)
+
+```
+$ date -u +"%Y-%m-%d"
+2026-09-13
+
+$ cd src/mcp/vice && node --test acme-seam.test.ts acme-verify.test.ts reassembly-gate.test.ts reassembly-gate-ack.test.ts reassembly-gate-movement.test.ts reassembly-gate-run.test.ts
+[...]
+movement rebuild:
+MOVEMENT_REBUILD: ok
+DIFF_SCOPE_COVERAGE: complete
+[...]
+context: movement-subject=routine_a movement-delta=261 ($0105) movement-original-address=$080B movement-relocated-address=$0910
+context: movement-outcome-reason="the output file this run created is byte-identical to the expected bytes (272 byte(s) across 4 segment(s))." movement-byte-length=272 movement-segment-count=4 movement-diff-scope-extent=$0801..$0911 (exclusive)
+[...]
+ℹ tests 121
+ℹ pass 121
+ℹ fail 0
+```
+
+Exit code of the full `node --test` invocation, read directly on the same
+line (never through a pipe): `0`.
+
+### Reading the re-measured lines
+
+Both lines are unchanged from the prior run: `MOVEMENT_REBUILD: ok` and
+`DIFF_SCOPE_COVERAGE: complete`. The movement subject and its relocation
+delta are independent of the hazard-subject amendment, so no change was
+expected here -- and none was found.

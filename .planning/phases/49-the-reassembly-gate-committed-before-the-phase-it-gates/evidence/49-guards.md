@@ -159,7 +159,86 @@ document's claim about itself.
 <!-- Bare column-0 outcome lines. Final occurrence wins. Already quoted in
      the two "Reading the line(s)" sections above are prose references, not
      the bare lines themselves -- these two are each's sole physical
-     occurrence. -->
+     occurrence, superseded by the re-measurement section below. -->
+
+SECOND_PATH_GUARD: held
+ORDERING_PROOF: held
+
+## Re-measurement (2026-09-13, after the alignment subject was amended)
+
+**This is a re-measurement, not the original run.** Neither guard is a
+property of the hazard-subject fixture: `SECOND_PATH_GUARD` is a property
+of which modules spawn the assembler and which modules compare produced
+bytes to expected bytes, and `ORDERING_PROOF` is a property of git commit
+order for the two frozen pre-commitment files. Re-measured together with
+the other six inputs, in the same single invocation, because the subject
+changed and `SCHEMA.md` requires all seven re-measured as a set rather than
+five moved and two carried forward from a run against the old subject.
+
+### Part 1 — `SECOND_PATH_GUARD` (re-measurement)
+
+```
+$ date -u +"%Y-%m-%d"
+2026-09-13
+$ cd src/mcp/vice && node --test acme-seam.test.ts acme-verify.test.ts reassembly-gate.test.ts reassembly-gate-ack.test.ts reassembly-gate-movement.test.ts reassembly-gate-run.test.ts
+✔ acme seam: the module walk returns every source module under the server tree and none from the dependency, compiled-output or fixture directories (6.961404ms)
+✔ acme seam: the scan reports the launch function and the identifier launched for each flagged module (518.682793ms)
+✔ acme seam: every module the scan flags appears in the frozen declared set (384.527221ms)
+✔ acme seam: every module in the frozen declared set that the scan is capable of finding is actually found by it (372.040314ms)
+✔ acme seam: a synthetic module source containing a raw assembler launch is flagged (0.207562ms)
+✔ acme seam: a synthetic module source containing a launch of an unrelated binary is not flagged (0.12006ms)
+✔ acme seam: no module whose name identifies it as part of this phase's gate appears in the scan's result or in the frozen spawn-site set (343.372634ms)
+✔ acme seam: the assembler oracle contains exactly one launch call site and exactly one function body returning an outcome token (2.462119ms)
+✔ acme seam: a module that reads an assembler-produced artifact and compares it against an export's expected bytes is flagged (354.882724ms)
+✔ acme seam: a module that merely constructs or asserts on an export's expected bytes without comparing an assembled artifact to them is not flagged (0.215772ms)
+✔ acme seam: every flagged module appears in the frozen comparison set, and every member of that set is flagged (339.596003ms)
+✔ acme seam: no gate module is flagged as an expected-bytes comparison site, and adding one to the frozen set is not how the assertion is satisfied (342.880793ms)
+✔ acme seam: a synthetic source performing a produced-versus-expected comparison is flagged; one performing an unrelated deep comparison is not (0.198037ms)
+✔ acme seam: two runs of the scan over an unchanged tree produce the same two sets, in the same order (1385.630559ms)
+[...]
+ℹ tests 121
+ℹ pass 121
+ℹ fail 0
+```
+
+Exit code, read directly on the same line (never through a pipe): `0`. All
+14 `acme seam:` cases pass, unchanged from the original run.
+`SECOND_PATH_GUARD` re-derives to `held`.
+
+### Part 2 — `ORDERING_PROOF` (re-measurement)
+
+```
+$ date -u +"%Y-%m-%d"
+2026-09-13
+$ cd .planning/phases/49-the-reassembly-gate-committed-before-the-phase-it-gates/evidence
+$ git log --diff-filter=A --format=%H -- SCHEMA.md
+b6953618c972a0a88d92f84d9e5a015367f61601
+$ git log --diff-filter=A --format=%H -- DECISION-RULE.md
+4df0f567a7a980ae64985c65061fe5968761f625
+$ git show --name-only --format="%H %ci" b6953618c972a0a88d92f84d9e5a015367f61601
+b6953618c972a0a88d92f84d9e5a015367f61601 2026-09-13 10:35:07 +0200
+
+.planning/phases/49-the-reassembly-gate-committed-before-the-phase-it-gates/evidence/SCHEMA.md
+$ git show --name-only --format="%H %ci" 4df0f567a7a980ae64985c65061fe5968761f625
+4df0f567a7a980ae64985c65061fe5968761f625 2026-09-13 10:35:14 +0200
+
+.planning/phases/49-the-reassembly-gate-committed-before-the-phase-it-gates/evidence/DECISION-RULE.md
+$ cd /home/henrik/dev/henrik/git/c64-re-tools && git log --oneline -3
+55c5a35c fix(quick-260913-jgv): state the two VIC-II dependencies the alignment subject left invisible
+de01c90c docs(quick-260913-jgv): plan classifying the unclassified VIC-II region
+758d7df6 chore(49): sync tracking state after phase completion
+```
+
+Exit code of every `git log`/`git show` invocation above, each read
+directly on its own line: `0`. Both add-commits (`b6953618`, `4df0f567`)
+are unchanged and still the first two commits touching this phase's
+evidence tree; the amendment that changed five of the seven inputs landed
+in `55c5a35c`, itself a later commit than both. Neither add-commit's own
+file list contains a measurement evidence file or the verdict document.
+`ORDERING_PROOF` re-derives to `held`, checked against real git history
+rather than either document's own word about itself.
+
+<!-- Bare column-0 outcome lines, second (re-measured) occurrence. -->
 
 SECOND_PATH_GUARD: held
 ORDERING_PROOF: held

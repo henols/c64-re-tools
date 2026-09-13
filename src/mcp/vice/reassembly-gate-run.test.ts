@@ -207,12 +207,32 @@ function exportMovementTree(dir: string, doc: StoreExportDocument, image: Uint8A
 // The frozen acknowledgement array -- a recorded human acceptance of each
 // named movement constraint the committed subject's real hazard report
 // carries, written out individually because a blanket acceptance would hide
-// the decision from the reader. One entry per FINDING only, on the plan's
-// own terms: the committed subject also carries one undecided
-// ("unclassified") region this array does not acknowledge, so the
-// disposition below is expected to come back `blocked` rather than
-// `acknowledged` -- that is the honest measurement, not a bug in this
-// array, and no entry is added here to turn it into a pass.
+// the decision from the reader. One entry per FINDING, keyed to the subject
+// as it stands after the alignment routine was amended to state its VIC-II
+// bank-select and character-mode registers statically (both are now an
+// immediate load directly followed by its store, never a read-modify-write
+// or an unwritten register) -- the amended subject's report now carries FIVE
+// findings, including two `page-alignment` findings the previous report
+// could not derive at all (the character-set range depended on a register
+// combination this report could not recover, and the block spanning the
+// routine and its own padding reported as an undecided region rather than a
+// ruled-out one). Every one of the five gets its own entry below, on the
+// SAME ground the other three already stood on: this run's baseline rebuild
+// reproduces the subject at its ORIGINAL layout, and the rebuild's own
+// byte-diff against the exporter's expected bytes is what proves nothing
+// moved. Acknowledging the first three on that ground while refusing the two
+// new ones on identical ground would be inconsistent, not conservative --
+// and the reason text below is scoped exactly as narrowly as the first
+// three: it says this run does not relocate the thing the finding names, and
+// nothing more. It does NOT say the page-alignment dependency is harmless in
+// general -- the mis-aligned twin (`hazard-subject-align-misaligned.a`) is
+// the standing, committed proof that it is not. With all five findings
+// acknowledged and the report carrying zero undecided regions after the
+// amendment, the disposition below is expected to come back `acknowledged`
+// -- not `clean` (a human accepted five named movement constraints for a
+// rebuild that relocates nothing) and not `blocked` (nothing here is left
+// unacknowledged) -- and that is the honest measurement this array now
+// supports.
 // ---------------------------------------------------------------------------
 
 const HAZARD_ACKNOWLEDGEMENTS: readonly HazardAcknowledgement[] = Object.freeze([
@@ -231,6 +251,24 @@ const HAZARD_ACKNOWLEDGEMENTS: readonly HazardAcknowledgement[] = Object.freeze(
     reason:
       "the opcode-byte write targets a fixed, unrelocated address in this run; the instruction it patches is not moved by this " +
       "rebuild, so the write still lands on the intended opcode byte.",
+  },
+  {
+    hazardClass: "page-alignment",
+    anchorAddress: 0x0881,
+    mechanism: "charset-base-pinned-by-register",
+    reason:
+      "the character-set selector is now stated as a fixed immediate value naming the committed character-set base; this run does " +
+      "not relocate the character set (the baseline rebuild reproduces the subject at its original layout), so the register value " +
+      "still names the correct 2048-byte-aligned block.",
+  },
+  {
+    hazardClass: "page-alignment",
+    anchorAddress: 0x088b,
+    mechanism: "sprite-pointer-names-aligned-base",
+    reason:
+      "the sprite pointer is stated as a fixed immediate value naming the committed sprite-shape base; this run does not relocate " +
+      "the sprite shape (the baseline rebuild reproduces the subject at its original layout), so the pointer byte still names the " +
+      "correct 64-byte-aligned block.",
   },
   {
     hazardClass: "cycle-exact-raster",

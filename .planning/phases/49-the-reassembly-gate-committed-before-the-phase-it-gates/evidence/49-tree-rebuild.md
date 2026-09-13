@@ -118,3 +118,58 @@ incomplete`) — deliberately not repeated a second time in a separate
 footer section, since a second physical occurrence of either line would
 itself add to the very count this file's own `ACCEPTED LIMIT` above already
 discusses, without changing either line's value.
+
+## Re-measurement (2026-09-13, after the alignment subject was amended)
+
+**This is a re-measurement, not the original run.** Between the run quoted
+above and this section, a separate quick task amended
+`src/mcp/vice/fixtures/hazard-subject/hazard-subject-align.a` (and its
+mis-aligned twin) so the two VIC-II registers the page-alignment
+derivation needs (the bank-select register at `$dd00` and control register
+1 at `$d011`) are stated as an immediate load directly followed by its
+store, never a read-modify-write and never left unwritten. Neither the
+diff-scope rule (`hazardCoverageOutsideDiffScope()`) nor this file's own
+declaration changed; only the subject's own bytes did, and the two
+committed images were regenerated through their existing generator
+scripts. The prior run's own section above is left in place as history,
+superseded per this document's own final-occurrence-wins rule (`SCHEMA.md`
+§1), not deleted.
+
+### Command and raw output (re-measurement)
+
+```
+$ date -u +"%Y-%m-%d"
+2026-09-13
+
+$ cd src/mcp/vice && node --test acme-seam.test.ts acme-verify.test.ts reassembly-gate.test.ts reassembly-gate-ack.test.ts reassembly-gate-movement.test.ts reassembly-gate-run.test.ts
+[...]
+baseline rebuild:
+TREE_REBUILD: ok
+DIFF_SCOPE_COVERAGE: complete
+[...]
+context: subject=hazard-subject.prg baseline-outcome-reason="the output file this run created is byte-identical to the expected bytes (2279 byte(s) across 16 segment(s))." baseline-byte-length=2279 baseline-segment-count=16 baseline-diff-scope-extent=$0801..$10E8 (exclusive)
+context: hazard-report-findings=5 hazard-report-unclassified-regions=0
+[...]
+ℹ tests 121
+ℹ pass 121
+ℹ fail 0
+```
+
+Exit code of the full `node --test` invocation, read directly on the same
+line (never through a pipe): `0`.
+
+### Reading the re-measured lines
+
+`TREE_REBUILD: ok` is unchanged from the prior run -- the amendment touched
+only the alignment routine's register writes, never the byte length or the
+tree's own 16-segment shape, and the byte-diff is still clean.
+
+`DIFF_SCOPE_COVERAGE` moved from `incomplete` to `complete`. The context
+line `hazard-report-findings=5 hazard-report-unclassified-regions=0`
+records why: the amended subject's real hazard report now derives the
+character-set and sprite-pointer ranges the previous run's incomplete VIC-II
+register recovery blocked, so the region that used to report
+`"unclassified"` now reports `hazard-reported`, and
+`hazardCoverageOutsideDiffScope()`'s own unchanged rule (no undecided
+region anywhere in scope) now reads `complete`. Nothing about the rule
+moved; the subject's own recoverable facts did.
