@@ -1602,11 +1602,11 @@ Notes:
   phase number into shipped source besides. The operator's folder complaint and a
   live section 21 gap are the same defect.
 - **MEASURED 2026-09-13.** 21 of 27 files in `docs/` are `phase*`-named. 20 of the 21
-  map onto a live phase directory; `phase0` is the single orphan. **102 citation occurrences
-  across 42 files** under `src/` and `tools/`. Of those, **39 occurrences in 15
+  map onto a live phase directory; `phase0` is the single orphan. **89 hand-edit citation
+  occurrences across 37 files**, after separating three file classes that a raw
+  grep conflates (see the file-class note below). Of the 89, **39 occurrences in 15
   files fall inside Phase 51's scope** (published by
-  `src/mcp/vice/package.json`'s `files[]`) and **64 occurrences in 27 files fall
-  outside it** — tests, `.mts` sources, skill scripts, and the gitignored `tools/`
+  `src/mcp/vice/package.json`'s `files[]`) and the rest fall outside it — tests, `.mts` sources, skill scripts, and the gitignored `tools/`
   deployment copies. Re-measure at planning time; these are dated.
 - **The ordering is load-bearing and runs opposite to intuition.** The citations
   must be rewritten BEFORE the files move. Moving first leaves 42 files pointing
@@ -1635,10 +1635,26 @@ Notes:
   files sit where 51 never looks — tests, `.mts` sources, skill scripts, the
   gitignored `tools/` copies. Whichever runs first, the second must RE-GREP rather
   than trust any count written here.
-- **The `tools/` copies are generated, not sources.** `tools/*.mjs` are the
-  gitignored host deployment artifacts built from `src/mcp/vice/*.mts`. Fix the
-  `.mts` source; do not hand-edit the copies, and confirm the build regenerates them
-  clean rather than assuming it.
+- **THREE FILE CLASSES, and a raw grep conflates them.** MEASURED 2026-09-13:
+  - **Canonical, 37 files / 89 occurrences** — hand-rewrite each. These are the
+    phase's actual work.
+  - **Generated, 4 files / 9 occurrences** — `src/mcp/vice/resources/broker-launch.mjs`
+    and `host-tool.mjs` (compiled from the `.mts` by `build.ts`), plus
+    `installer/skills/routine-queue-walker/`'s two files (copied from `src/skills/`
+    by `sync-skills.mjs`, and untracked). Fix the SOURCE and regenerate; hand-editing
+    these is how the copy silently diverges from what `resources-sync.test.ts` pins.
+  - **Dead, 3 files / 8 occurrences** — `tools/broker-launch.mjs`, `tools/host-tool.mjs`,
+    `tools/backend-detect.mjs`. DELETE, do not rewrite. `.gitignore` states it
+    outright: "tools/ itself is now vestigial -- git ls-files tools/ is empty." The
+    directory is pre-consolidation layout, superseded by `.c64-re-tools/bin/` in the
+    2026-09-08 clean break, and nothing reads it. Rewriting a citation in a dead file
+    is pure waste, and counting it inflates the phase.
+- **Delete the stale layout tree while here.** `tools/` (12 files), `.vice-snapshots/`
+  (4) and `.vice-supervisor/` (40) are the pre-consolidation locations `.gitignore`
+  says are "left on disk, unread, for the user to delete by hand". They are the only
+  untracked directories in `git status` and they are what makes the tree read as
+  scattered. Confirm nothing reads them at plan time rather than trusting this note,
+  then remove them.
 
 ## Sequencing Rationale (v1.0.0)
 
