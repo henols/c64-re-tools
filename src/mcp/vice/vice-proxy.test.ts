@@ -4207,6 +4207,34 @@ function writeEpochFileFixture(
   );
 }
 
+/** Race `pending` against a deadline, so a wait that can never be satisfied
+ * fails honestly with a named cause instead of hanging the whole file. A
+ * recycle stub's promise only resolves from inside onRecycle(), which the
+ * broker control listener invokes only when a recycle request actually
+ * arrives -- if the request never arrives (a drifted wording/path in the
+ * caller, for instance), the wait sits pending forever. A frozen test file
+ * with no verdict for anything after it is strictly worse than a failure:
+ * it destroys the ability to measure every test that follows. Both pieces
+ * of timer hygiene below are mandatory for the same reason a bare timer is
+ * itself capable of holding the event loop open and recreating the very
+ * stall this exists to convert into a verdict: `.unref()` so a deadline
+ * that never fires leaves no trace, and `clearTimeout` in a `.finally()` so
+ * a wait that resolves normally cleans up after itself. */
+function withUnsettleableWaitDeadline<T>(
+  pending: Promise<T>,
+  timeoutMs: number,
+  what: string
+): Promise<T> {
+  let timer!: ReturnType<typeof setTimeout>;
+  const deadline = new Promise<T>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(`timed out after ${timeoutMs}ms waiting for ${what}`));
+    }, timeoutMs);
+    timer.unref();
+  });
+  return Promise.race([pending, deadline]).finally(() => clearTimeout(timer));
+}
+
 /** A single controllable recycle stub for a control listener started via
  * startControlBroker(): captures the targetId the FIRST time onRecycle is
  * invoked (resolving waitForCall()), then holds the connection open until
@@ -4235,7 +4263,12 @@ function makeControllableRecycle(): {
   };
   return {
     onRecycle,
-    waitForCall: () => called,
+    waitForCall: () =>
+      withUnsettleableWaitDeadline(
+        called,
+        8000,
+        "onRecycle() to fire -- the proxy never sent a recycle request to the broker, so nothing can ever resolve this wait; check the proxy's own response and stderr to see why the request never arrived"
+      ),
     respond(outcome: RecycleOutcome) {
       assert.ok(respondResolve, "respond() called before onRecycle() was invoked by a real recycle request");
       respondResolve!(outcome);
@@ -4264,11 +4297,16 @@ function makeControllableRecycleSequence(): {
     });
   };
   function next(): Promise<Entry> {
-    return new Promise((resolveConsumer) => {
+    const pending = new Promise<Entry>((resolveConsumer) => {
       const entry = readyEntries.shift();
       if (entry) resolveConsumer(entry);
       else waitingConsumers.push(resolveConsumer);
     });
+    return withUnsettleableWaitDeadline(
+      pending,
+      8000,
+      "onRecycle() to fire for the NEXT recycle request in arrival order -- the proxy never sent it to the broker, so nothing can ever resolve this wait; check the proxy's own response and stderr to see why the request never arrived"
+    );
   }
   return { onRecycle, next };
 }
