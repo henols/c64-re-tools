@@ -60,7 +60,7 @@ Stated once so no requirement below has to restate them.
 - [x] **BUILD-01**: Export emits one ACME source file per annotation-store scope, wired by `acme-build`'s `!source` and assembling to a single output
 - [x] **BUILD-02**: Data tables are extracted to their own files, so graphics, levels and music can be swapped without touching code
 - [x] **BUILD-03**: Every branch, `JSR`/`JMP` and data reference goes through a symbol, so code can move
-- [ ] **BUILD-04**: A hazard report enumerates what blocks movement across four classes — indexed jump tables including the RTS-trick idiom, self-modifying code, page-alignment dependence, and cycle-exact raster code. It reports and never acts. The purpose-built synthetic subject carrying all four classes is delivered **in this same phase**, so fixture and detector are reviewed together against a non-vacuity bar rather than the fixture being written to match the detector
+- [x] **BUILD-04**: A hazard report enumerates what blocks movement across four classes — indexed jump tables including the RTS-trick idiom, self-modifying code, page-alignment dependence, and cycle-exact raster code. It reports and never acts. The purpose-built synthetic subject carrying all four classes is delivered **in this same phase**, so fixture and detector are reviewed together against a non-vacuity bar rather than the fixture being written to match the detector
 - [x] **BUILD-05**: The rebuild is provenance-aware: `c64-provenance-diff`'s verdict is carried to point of use so that for any range the operator can see what the evidence says about it. **What gets reversed, kept or left out is the end-user's decision, never the tool's** — the export emits every byte in scope by default, and any exclusion is one the user asked for, made explicit and recorded rather than silently applied
 - [ ] **BUILD-06**: Reassembly plus a clean hazard report is a gate that exists before the phase it gates runs, not after
 - [x] **BUILD-07**: The export path is lossless by default — no range is dropped, filtered, or omitted on the tool's own judgement, and a user-requested exclusion is emitted as a recorded excluded range rather than a hole. Proven by a planted control: a fixture where a heuristic *would* want to drop a range, showing the range survives
@@ -145,7 +145,7 @@ Success-Criteria live in `.planning/ROADMAP.md` → "Phase Details".
 | BUILD-01 | Phase 47 | Complete |
 | BUILD-02 | Phase 47 | Complete |
 | BUILD-03 | Phase 47 | Complete |
-| BUILD-04 | Phase 48 | Pending |
+| BUILD-04 | Phase 48 | Complete |
 | BUILD-05 | Phase 46 | Complete |
 | BUILD-06 | Phase 49 | Pending |
 | BUILD-07 | Phase 46 | Complete |

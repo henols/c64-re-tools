@@ -4,17 +4,17 @@ milestone: v1.0.0
 milestone_name: The Rebuild Half
 current_phase: 48
 current_phase_name: The Movement-Hazard Report and Its Purpose-Built Subject
-status: executing
-stopped_at: Completed 48-05-PLAN.md
-last_updated: "2026-09-12T23:10:36.563Z"
+status: verifying
+stopped_at: Completed 48-06-PLAN.md — Phase 48 complete, ready for verification
+last_updated: "2026-09-13T00:19:55.234Z"
 last_activity: 2026-09-12
 last_activity_desc: Phase 48 execution started
-state_head: 8cac27286984e987a997cef448448d8840d658b8
+state_head: 2599de1bb0b74962220850a693da44f162c497c2
 progress:
   total_phases: 8
   completed_phases: 3
   total_plans: 28
-  completed_plans: 27
+  completed_plans: 28
   percent: 38
 ---
 
@@ -254,13 +254,19 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 48 (The Movement-Hazard Report and Its Purpose-Built Subject) — EXECUTING
+Phase: 48 (The Movement-Hazard Report and Its Purpose-Built Subject) — COMPLETE
 Plan: 6 of 6
-Status: Ready to execute
-Plans: not yet planned. Phase 47 closed with 6/6 plans across 5 waves, all
-verified 5/5 against real ACME 0.97; its one blocking decision checkpoint
-(promoting `anno export-asm --out` from a file path to a directory path, a
-published-surface break) was answered `promote` by the user.
+Status: Phase complete — ready for verification
+Plans: 6/6 executed. The purpose-built subject carries all four planted
+hazard classes, the pure read-only report module detects three of them and
+declines the deliberately undetected self-modification by name, the
+cross-check against four independently-sourced fixtures is committed, and
+the subject reassembles through the real multi-file export path with a real
+assembler. One disclosed, unresolved finding: the raster construction's
+on-screen persistence did not match its stated prediction in a live
+emulator capture, recorded honestly in `FIXTURE-DESIGN.md` rather than
+smoothed over — not a blocker, since the report's own class-4 detector never
+claims to verify cycle-exactness or on-screen persistence.
 
 Progress: [████░░░░░░] 38% (3/8 phases complete in v1.0.0; per-phase plan counts in the ROADMAP Progress table)
 Last activity: 2026-09-12 — Phase 48 execution started
@@ -584,6 +590,7 @@ Last activity: 2026-09-12 — Phase 48 execution started
 | Phase 48 P03 | 74min | 3 tasks | 2 files |
 | Phase 48 P04 | 50min | 3 tasks | 19 files |
 | Phase 48 P05 | 55min | 3 tasks | 3 files |
+| Phase 48 P06 | 62min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -1345,6 +1352,8 @@ Recent decisions affecting current work:
 - [Phase 48]: anno-store-export.ts's generic JSON export/import format had no route for scopes at all; added an additive, schema-version-unchanged scopes field and backfilled all nine pre-existing committed fixtures.
 - [Phase 48]: The hazard cross-check comparator joins on blockedAddress only, never anchorAddress -- an early draft that added both produced a real, measured false positive on the smc.prg and charset-phantom.prg positive rows (a real detection's anchor legitimately differs from the address it blocks).
 - [Phase 48]: Two of the four hazard classes (indexed-dispatch, cycle-exact-raster) have no independently-sourced positive example among the four cross-check fixtures, recorded plainly in CROSS-CHECK.md rather than smoothed over.
+- [Phase 48]: Phase 48-06: A real defect the reassembly path surfaced on first contact -- a declining comment recorded at a mid-instruction address with no store label -- was fixed by re-anchoring it to the host instruction's own start address, since no generic export can attach a comment to an address that is neither an instruction start nor an existing label.
+- [Phase 48]: Phase 48-06: The raster construction's on-screen persistence did not match its stated prediction across extensive live-emulator testing (including a direct entry point that never returns to BASIC), and this was recorded honestly as a disclosed disagreement in FIXTURE-DESIGN.md rather than reconciled -- isolated testing confirms the self-modifying and alignment constructions' effects do persist and are visible.
 
 ### Pending Todos
 
@@ -2422,8 +2431,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-12T23:10:15.731Z
-Stopped at: Completed 48-05-PLAN.md
+Last session: 2026-09-13T00:19:32.101Z
+Stopped at: Completed 48-06-PLAN.md — Phase 48 complete, ready for verification
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
