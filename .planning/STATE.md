@@ -2,28 +2,33 @@
 gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: The Rebuild Half
-current_phase: 48
-current_phase_name: The Movement-Hazard Report and Its Purpose-Built Subject
-status: verifying
-stopped_at: Completed 48-06-PLAN.md — Phase 48 complete, ready for verification
-last_updated: "2026-09-13T00:19:55.234Z"
-last_activity: 2026-09-12
-last_activity_desc: Phase 48 execution started
-state_head: 2599de1bb0b74962220850a693da44f162c497c2
+current_phase: 49
+current_phase_name: The Reassembly Gate, Committed Before the Phase It Gates
+status: planning
+stopped_at: Phase 48 complete, ready to plan Phase 49
+last_updated: "2026-09-13T07:05:15.440Z"
+last_activity: 2026-09-13
+last_activity_desc: Phase 48 complete, transitioned to Phase 49
+state_head: 7b2d4e30a99c7c2b12c0a4b025be4b95042cd2e1
 progress:
   total_phases: 8
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 28
   completed_plans: 28
-  percent: 38
+  percent: 50
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-10 at the v0.9.0 close — full
-evolution review)
+See: .planning/PROJECT.md (updated 2026-09-13 after Phase 48 — one Key
+Decisions row and a footer; the last full evolution review was the v0.9.0 close
+on 2026-09-10)
+
+**Current focus:** Phase 49 — The Reassembly Gate, Committed Before the Phase It
+Gates. It runs against Phase 48's purpose-built subject; see the Phase 48 entry
+under Blockers/Concerns before interpreting that subject's emulator behaviour.
 
 **Core value:** A Claude session can reliably drive a real C64 emulator to
 reverse-engineer a program — read and write memory, set checkpoints, capture
@@ -254,28 +259,31 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 48 (The Movement-Hazard Report and Its Purpose-Built Subject) — COMPLETE
-Plan: 6 of 6
-Status: Phase complete — ready for verification
-Plans: 6/6 executed. The purpose-built subject carries all four planted
-hazard classes, the pure read-only report module detects three of them and
-declines the deliberately undetected self-modification by name, the
-cross-check against four independently-sourced fixtures is committed, and
-the subject reassembles through the real multi-file export path with a real
-assembler. One disclosed, unresolved finding: the raster construction's
-on-screen persistence did not match its stated prediction in a live
-emulator capture, recorded honestly in `FIXTURE-DESIGN.md` rather than
-smoothed over — not a blocker, since the report's own class-4 detector never
-claims to verify cycle-exactness or on-screen persistence.
+Phase: 49 — The Reassembly Gate, Committed Before the Phase It Gates
+Plan: Not started
+Status: Ready to plan
+Plans: none yet — Phase 49 has not been planned.
 
-Progress: [████░░░░░░] 38% (3/8 phases complete in v1.0.0; per-phase plan counts in the ROADMAP Progress table)
-Last activity: 2026-09-12 — Phase 48 execution started
+Carried in from Phase 48 (complete, verified, UAT passed 2026-09-13): the
+purpose-built subject carries all four planted hazard classes, the pure
+read-only report module detects three of them and declines the deliberately
+undetected self-modification by name, the cross-check against four
+independently-sourced fixtures is committed, and the subject reassembles
+through the real multi-file export path with a real assembler. One finding
+stays open and disclosed rather than closed: the combined image's on-screen
+effects revert before the screen settles, root cause unknown, recorded in
+`FIXTURE-DESIGN.md`. Human UAT judged that acceptable for the delivered
+artifact — it did not retract the finding. Phase 49 gates reassembly, so
+that subject is the thing it will gate on.
+
+Progress: [█████░░░░░] 50% (4/8 phases complete in v1.0.0; per-phase plan counts in the ROADMAP Progress table)
+Last activity: 2026-09-13 — Phase 48 complete, transitioned to Phase 49
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 406
+- Total plans completed: 412
 - Average duration: —
 - Total execution time: —
 
@@ -326,6 +334,7 @@ Last activity: 2026-09-12 — Phase 48 execution started
 | 46 | 6 | - | - |
 | 52 | 13 | - | - |
 | 47 | 6 | - | - |
+| 48 | 6 | - | - |
 
 **Recent Trend:**
 
@@ -2152,6 +2161,20 @@ named the wrong function) is no longer carried here — Phase 15 plan 15-05
 fixed it at source (commit `9849224`) and pinned it with a derived test; see
 `.planning/todos/completed/` for the Resolution.
 
+- ⚠️ [Phase 48] The purpose-built subject's COMBINED image reverts its on-screen
+  effects before the screen settles, and the root cause is not known. Each of the
+  four planted constructions takes visible effect when built in isolation; only
+  the combination lands on a plain `READY.` prompt. The investigation narrowed it
+  to the timer-stabilised raster construction's shared IRQ vector and VIC-II/CIA1
+  state being reverted during normal execution, across multiple load paths and an
+  entry point that never returns to BASIC. Human UAT (2026-09-13) accepted the
+  artifact with this disclosed — it did **not** retract the finding, which stays
+  open in `48-VERIFICATION.md`'s `behavior_unverified_items` and in
+  `FIXTURE-DESIGN.md`. Carried because Phase 49's reassembly gate runs against
+  this same subject: the gate inherits the unexplained behaviour rather than
+  retiring it. Anyone who later sees this subject "not working" in an emulator
+  should read this first rather than diagnosing it as fresh breakage.
+
 ### Acknowledged at the v0.4.0 close (2026-08-23)
 
 The pre-close artifact audit reported **16** open items. None is a requirement
@@ -2432,7 +2455,7 @@ and are v1.0.0's inheritance.
 ## Session Continuity
 
 Last session: 2026-09-13T00:19:32.101Z
-Stopped at: Completed 48-06-PLAN.md — Phase 48 complete, ready for verification
+Stopped at: Phase 48 complete, ready to plan Phase 49
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
