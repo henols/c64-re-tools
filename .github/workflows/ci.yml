@@ -91,30 +91,39 @@ jobs:
 
       - name: Assemble the acme-build scaffold (library-free)
         # The banner grep above only ever proved a binary named `acme` exists --
-        # it never proved the scaffold this repo ships can actually be
-        # assembled. `template.a` used to source <cbm/c64/vic.a> and friends,
-        # and neither documented ACME provisioning route (a bare
-        # ~/.local/bin/acme build, or the Debian trixie apt package installed
-        # above) ships that library, so the scaffold could not assemble on
-        # either route and nothing in CI noticed
-        # (.planning/todos/pending/2026-08-19-acme-build-scaffold-library-missing-on-both-provisioning-routes.md).
-        # This step scaffolds and assembles for real with $ACME explicitly
-        # cleared, so a zero-byte or wrong-origin output -- or a regression
-        # back to a library dependency -- fails the build.
-        run: |
-          set -euo pipefail
-          SCAFFOLD="${RUNNER_TEMP}/acme-build-scaffold-check.a"
-          rm -f "${SCAFFOLD}" "${SCAFFOLD%.a}.prg"
-          ACME= node src/skills/acme-build/scripts/acme.mjs new "${SCAFFOLD}"
-          ACME= node src/skills/acme-build/scripts/acme.mjs build "${SCAFFOLD}"
-          PRG="${SCAFFOLD%.a}.prg"
-          test -s "${PRG}"
-          LOAD_BYTES=$(od -An -tx1 -N2 "${PRG}" | tr -d ' ')
-          if [ "${LOAD_BYTES}" != "0108" ]; then
-            echo "expected load address 01 08 (\$0801), got: ${LOAD_BYTES}" >&2
-            exit 1
-          fi
-          echo "scaffold assembled: ${PRG} loads at \$0801"
+        # it never proved the scaffold this repo ships can be assembled at
+        # all. The scaffold once sourced angle-bracket hardware-register
+        # library files that neither documented provisioning route ships --
+        # not a bare local build and not the distribution package installed
+        # in the step above -- so it could not assemble on either route and
+        # nothing here noticed.
+        #
+        # The assembler is provisioned by the step above; the library path is
+        # explicitly cleared by the invoked case; and a regression back to a
+        # library dependency, a zero-byte output, or a program not loading at
+        # $0801 each fail this step.
+        #
+        # This step now runs a test file instead of a standalone shell block.
+        # The previous shell block existed only here, so when it started
+        # failing it stayed failing across many merges with no developer ever
+        # running it. The file it now invokes is part of the ordinary suite,
+        # so the same break surfaces on a developer machine before it reaches
+        # this job. It still runs here as well, early and separately, because
+        # this step gates every later step including both publish paths, and
+        # a fast dedicated failure is worth the second second.
+        #
+        # The measured cause of the long-standing break: the workspace
+        # variables this job sets for path translation are also read by the
+        # container detector as proof of being inside a container, which
+        # routed this host-side invocation to a control plane that has no
+        # broker behind it on a runner. The workspace variables are left in
+        # place for this step deliberately, so it runs under the exact
+        # ambient environment that broke it and would catch the same
+        # regression again.
+        working-directory: src/mcp/vice
+        env:
+          VICE_REQUIRE_ACME: "1"
+        run: node --test skill-acme-build-cli.test.ts
 
       # Phase 31 gap closure (31-04, verification gap 1 / code review CR-01):
       # `installer/skills/` is a GENERATED, GITIGNORED tree -- `git ls-files
