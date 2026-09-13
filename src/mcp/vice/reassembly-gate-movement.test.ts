@@ -21,6 +21,7 @@ import { openStore, closeStore } from "./anno-store.ts";
 import { importStoreDocument, STORE_EXPORT_SCHEMA_VERSION, type StoreExportDocument } from "./anno-store-export.ts";
 import { runReassemblyGate, movementRebuildFromResult, type GateInput } from "./reassembly-gate.ts";
 import { relocateSubject, buildMovementResult, refusedMovement, type RelocationRequest, type RelocationSite, type RelocatedSubject } from "./reassembly-gate-movement.ts";
+import { MOVEMENT_ORIGIN, movementDocument, movementImage, ROUTINE_A_SITES, MOVEMENT_DELTA } from "./reassembly-gate-movement-subject.ts";
 
 const SKIP_REASON = acmeSkipReasonFor("reassembly-gate-movement.test.ts");
 
@@ -360,71 +361,11 @@ test("gate movement: the sibling refusal builder produces a refused movement res
 // Task 2/3 fixture: a small, fully understood movement subject -- NOT the
 // committed hazard-subject, which deliberately carries constructions whose
 // whole point is that they cannot move (relocating inside it would test the
-// wrong thing). Origin $0801:
-//   - an entry block ($0801-$0806): `ldx #$00` / `lda table,x` / `rts` --
-//     an absolute-INDEXED load that reads the split-address table by name;
-//   - the table itself ($0807-$080A, `lo_hi_address`), labelled `table`,
-//     holding both routines' addresses low-then-high;
-//   - two one-byte `rts` routines, `routine_a` ($080B) and `routine_b`
-//     ($080C), each its own range.
+// wrong thing). Its document, image, delta and declared reference sites are
+// declared once in `reassembly-gate-movement-subject.ts` (imported above)
+// rather than here, so a later real end-to-end run reuses the identical
+// subject instead of inventing a second one.
 // ---------------------------------------------------------------------------
-
-const MOVEMENT_ORIGIN = 0x0801;
-
-function movementDocument(): StoreExportDocument {
-  return {
-    schemaVersion: STORE_EXPORT_SCHEMA_VERSION,
-    store: "movement-subject.annostore",
-    ranges: [
-      { start: 0x0801, endInclusive: 0x0806, dataType: "code", bank: null, provenance: "derived" },
-      { start: 0x0807, endInclusive: 0x080a, dataType: "lo_hi_address", bank: null, provenance: "derived" },
-      { start: 0x080b, endInclusive: 0x080b, dataType: "code", bank: null, provenance: "derived" },
-      { start: 0x080c, endInclusive: 0x080c, dataType: "code", bank: null, provenance: "derived" },
-    ],
-    labels: [
-      { address: 0x0807, name: "table", kind: "User", bank: null },
-      { address: 0x080b, name: "routine_a", kind: "User", bank: null },
-      { address: 0x080c, name: "routine_b", kind: "User", bank: null },
-    ],
-    comments: [],
-    projectEnums: [],
-    enumUsage: [],
-    xrefs: [],
-    execObservations: [],
-    scopes: [],
-  };
-}
-
-/** `ldx #$00` / `lda $0807,x` / `rts` / tbl_lo (`<routine_a, <routine_b`) /
- * tbl_hi (`>routine_a, >routine_b`) / `rts` (routine_a) / `rts` (routine_b).
- * $0807 is `table`'s own address -- an in-tree absolute-indexed reference,
- * resolved through the SAME symbol/in-tree rule the code path already uses. */
-function movementImage(): Uint8Array {
-  return new Uint8Array([
-    0xa2, 0x00, // ldx #$00
-    0xbd, 0x07, 0x08, // lda $0807,x  (table)
-    0x60, // rts
-    0x0b, 0x0c, // tbl_lo: <routine_a ($0b), <routine_b ($0c)
-    0x08, 0x08, // tbl_hi: >routine_a ($08), >routine_b ($08)
-    0x60, // routine_a: rts
-    0x60, // routine_b: rts
-  ]);
-}
-
-/** The two declared reference sites for `routine_a` inside the table:
- * its low octet at $0807 (the table's first byte) and its high octet at
- * $0809 (the table's third byte, the start of the high run). Both DECLARED,
- * never derived from the exporter's own symbolisation. */
-const ROUTINE_A_SITES: readonly RelocationSite[] = [
-  { address: 0x0807, encoding: "lowByte", symbolName: "routine_a" },
-  { address: 0x0809, encoding: "highByte", symbolName: "routine_a" },
-];
-
-/** A delta that changes BOTH octets of `routine_a`'s address: $080B -> $0910
- * (low $0B -> $10, high $08 -> $09). A whole multiple of 256 would leave the
- * low half unchanged and make a half-move in that direction undetectable --
- * asserted directly in the cases below rather than assumed from this comment. */
-const MOVEMENT_DELTA = 0x0910 - 0x080b;
 
 function exportMovementTree(dir: string, doc: StoreExportDocument, image: Uint8Array): ReturnType<typeof exportAsmTree> {
   const prgPath = join(dir, "subject.prg");
