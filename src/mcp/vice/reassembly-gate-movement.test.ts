@@ -556,3 +556,166 @@ test(
     assert.equal(refusedGateVerdict.rule, "R5");
   },
 );
+
+// ---------------------------------------------------------------------------
+// Task 3: the half-moved split table -- the control that catches the half
+// left behind. Reuses the movement subject and delta from Task 2 unchanged;
+// the only thing that varies between the honest control and each red is
+// exactly ONE declared reference site.
+// ---------------------------------------------------------------------------
+
+/** `routine_a`'s table position: its low octet lives at the table's own
+ * start, its high octet at the start of the table's high run (half the
+ * table's length further on) -- computed from the EXPORTED subject's own
+ * declared layout, never written as a bare number. */
+function routineATablePositions(result: ReturnType<typeof exportAsmTree>): { lowOffset: number; highOffset: number } {
+  const tableBlock = result.blocks.find((b) => b.dataType === "lo_hi_address");
+  assert.ok(tableBlock, "precondition: the exported subject must carry a lo_hi_address block, or this control proves nothing");
+  const half = (tableBlock!.endExclusive - tableBlock!.start) / 2;
+  const expectedBytesStart = Math.min(...result.blocks.map((b) => b.start));
+  return {
+    lowOffset: tableBlock!.start - expectedBytesStart, // routine_a is listed FIRST in both runs
+    highOffset: tableBlock!.start + half - expectedBytesStart,
+  };
+}
+
+test(
+  "gate movement: the honest direction, with both of routine_a's table sites declared, verifies to the pass outcome with an equal byte-diff before either red is attempted",
+  { skip: SKIP_REASON },
+  () => {
+    const dir = freshDir("movement-half-honest");
+    const subject = relocateSubject({
+      document: movementDocument(),
+      image: movementImage(),
+      origin: MOVEMENT_ORIGIN,
+      symbolName: "routine_a",
+      delta: MOVEMENT_DELTA,
+      sites: ROUTINE_A_SITES,
+    });
+    const relocatedResult = exportMovementTree(dir, subject.document, subject.image);
+    const verdict = verifyAcmeAssemblesTree({
+      treeDir: relocatedResult.outDir,
+      rootFileName: ROOT_FILE_NAME,
+      expectedBytes: relocatedResult.expectedBytes,
+      expectedSegments: relocatedResult.blocks,
+    });
+    assert.equal(verdict.outcome, "ok", verdict.reason);
+    assert.equal(verdict.byteDiff?.equal, true);
+  },
+);
+
+/**
+ * Both half-move reds below verify the HALF-patched tree's own assembled
+ * output against the HONEST relocation's `expectedBytes` -- never against
+ * the half-patched export's OWN self-derived `expectedBytes`.
+ *
+ * WHY: `emitSplitAddressLines()`'s per-entry reconstruction (task 1's
+ * `read_first`, `anno-export-asm.ts`) recomputes a table entry's target
+ * address FROM THE SAME IMAGE BYTES it is about to render, then either
+ * substitutes a symbol whose real address IS that reconstructed target by
+ * definition, or falls back to the identical raw bytes. Either way, the
+ * emitted source and the image it was read from are TAUTOLOGICALLY
+ * self-consistent -- self-diffing a half-patched export can never disagree
+ * with itself, symbol-substituted or not, measured directly against this
+ * subject before this file's own red cases were written. A half-move is
+ * therefore only OBSERVABLE by comparing the half-patched tree's real
+ * assembled bytes against the bytes the FULL, correct relocation produces --
+ * exactly the comparison a real reassembly gate needs, since "expected
+ * bytes" for a relocation is properly the fully-relocated image, never the
+ * suspect input's own account of itself.
+ */
+test(
+  "gate movement: relocating routine_a with only its LOW-octet table site declared fails the byte-diff at the table's high-octet entry for the moved routine",
+  { skip: SKIP_REASON },
+  () => {
+    const honestDir = freshDir("movement-half-low-honest-baseline");
+    const honestSubject = relocateSubject({
+      document: movementDocument(),
+      image: movementImage(),
+      origin: MOVEMENT_ORIGIN,
+      symbolName: "routine_a",
+      delta: MOVEMENT_DELTA,
+      sites: ROUTINE_A_SITES,
+    });
+    const honestResult = exportMovementTree(honestDir, honestSubject.document, honestSubject.image);
+
+    const halfDir = freshDir("movement-half-low-only");
+    const halfSubject = relocateSubject({
+      document: movementDocument(),
+      image: movementImage(),
+      origin: MOVEMENT_ORIGIN,
+      symbolName: "routine_a",
+      delta: MOVEMENT_DELTA,
+      sites: [ROUTINE_A_SITES[0]!], // low-octet site only
+    });
+    const halfResult = exportMovementTree(halfDir, halfSubject.document, halfSubject.image);
+
+    const verdict = verifyAcmeAssemblesTree({
+      treeDir: halfResult.outDir,
+      rootFileName: ROOT_FILE_NAME,
+      expectedBytes: honestResult.expectedBytes, // the ground truth: the FULL, correct relocation
+      expectedSegments: halfResult.blocks,
+    });
+
+    assert.equal(verdict.outcome, "failed", "the assembler emitted both halves from the one symbol it was told moved; the image carried only one");
+    assert.equal(verdict.byteDiff?.equal, false);
+    const { highOffset } = routineATablePositions(halfResult);
+    assert.equal(
+      verdict.byteDiff?.firstDifferingOffset,
+      highOffset,
+      `the first differing offset must name the table's HIGH-octet entry for routine_a (offset ${highOffset}) -- the half that was left behind`,
+    );
+
+    const gateVerdict = runReassemblyGate(passingGateInputExceptMovement(movementRebuildFromResult(buildMovementResult(verdict.outcome, halfSubject))));
+    assert.equal(gateVerdict.outcome, "red");
+    assert.equal(gateVerdict.rule, "R6", "a byte-diff mismatch against the exporter's own expected bytes is a failed-movement rule, not the catch-all");
+  },
+);
+
+test(
+  "gate movement: relocating routine_a with only its HIGH-octet table site declared fails the byte-diff at the table's low-octet entry for the moved routine",
+  { skip: SKIP_REASON },
+  () => {
+    const honestDir = freshDir("movement-half-high-honest-baseline");
+    const honestSubject = relocateSubject({
+      document: movementDocument(),
+      image: movementImage(),
+      origin: MOVEMENT_ORIGIN,
+      symbolName: "routine_a",
+      delta: MOVEMENT_DELTA,
+      sites: ROUTINE_A_SITES,
+    });
+    const honestResult = exportMovementTree(honestDir, honestSubject.document, honestSubject.image);
+
+    const halfDir = freshDir("movement-half-high-only");
+    const halfSubject = relocateSubject({
+      document: movementDocument(),
+      image: movementImage(),
+      origin: MOVEMENT_ORIGIN,
+      symbolName: "routine_a",
+      delta: MOVEMENT_DELTA,
+      sites: [ROUTINE_A_SITES[1]!], // high-octet site only
+    });
+    const halfResult = exportMovementTree(halfDir, halfSubject.document, halfSubject.image);
+
+    const verdict = verifyAcmeAssemblesTree({
+      treeDir: halfResult.outDir,
+      rootFileName: ROOT_FILE_NAME,
+      expectedBytes: honestResult.expectedBytes, // the ground truth: the FULL, correct relocation
+      expectedSegments: halfResult.blocks,
+    });
+
+    assert.equal(verdict.outcome, "failed", "the assembler emitted both halves from the one symbol it was told moved; the image carried only one");
+    assert.equal(verdict.byteDiff?.equal, false);
+    const { lowOffset } = routineATablePositions(halfResult);
+    assert.equal(
+      verdict.byteDiff?.firstDifferingOffset,
+      lowOffset,
+      `the first differing offset must name the table's LOW-octet entry for routine_a (offset ${lowOffset}) -- the half that was left behind`,
+    );
+
+    const gateVerdict = runReassemblyGate(passingGateInputExceptMovement(movementRebuildFromResult(buildMovementResult(verdict.outcome, halfSubject))));
+    assert.equal(gateVerdict.outcome, "red");
+    assert.equal(gateVerdict.rule, "R6");
+  },
+);
