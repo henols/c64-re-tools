@@ -34,21 +34,46 @@
 align_screen_offset = $0400
 
 hazard_align_entry
-        ; Select VIC bank 0 ($0000-$3fff) explicitly through $dd00, so the
-        ; 16K window every boundary below is relative to is STATED rather
-        ; than assumed. Bits #0-#1 are active LOW on this port; %11 selects
-        ; bank 0.
-        lda $dd00
-        and #%11111100
-        ora #%00000011
+        ; Select VIC bank 0 ($0000-$3fff) through a single immediate load
+        ; followed directly by its store -- not the read-modify-write this
+        ; routine used to carry. A read-modify-write's result depends on
+        ; whatever the CIA2 port A register already held at runtime, which
+        ; is a runtime fact a static report cannot recover: it is exactly
+        ; the shape `recoverImmediateStoreFacts()` in `anno-hazard-report.ts`
+        ; correctly declines to treat as known, so a subject that depends on
+        ; this register's value and never states it statically is asking a
+        ; static report to guess. $3f mirrors the value
+        ; `fixtures/ghidra/charset-phantom.a` already uses for the same
+        ; purpose: bits #0-#1 = %11 select VIC bank 0 (active low). THE
+        ; COST: this bare store also drives the CIA2 port A bits the old
+        ; read-modify-write preserved -- the serial-bus lines (ATN/CLK/DATA)
+        ; among them -- to $3f's own fixed state (all of bits #2-#7 set)
+        ; rather than leaving them at whatever this program's own earlier
+        ; serial-bus activity had set them to. That preservation is given up
+        ; here so the bank select is statically recoverable.
+        lda #$3f
         sta $dd00
 
         ; The VIC memory-control register, derived from the two labels
         ; below rather than written as a bare hex constant: bits #4-#7 name
         ; the screen offset (the ordinary KERNAL default), bits #1-#3 name
-        ; the character-set offset.
+        ; the character-set offset. This was already an immediate load
+        ; directly followed by its store -- no read-modify-write was ever
+        ; needed here, and none is added.
         lda #((align_screen_offset / 1024) << 4) | ((align_char_base / 2048) << 1)
         sta $d018
+
+        ; VIC-II control register 1: name character (text) mode explicitly,
+        ; bit 5 clear, through the same immediate-load-then-store shape as
+        ; the bank select above. This register was never written at all
+        ; before this edit, which is the second reason the page-alignment
+        ; dependency below could not be recovered statically: a static
+        ; report can only tell character mode from bitmap mode if the
+        ; program itself states which one it is using. $1b mirrors the same
+        ; model fixture's own control-register-1 value (extended-colour and
+        ; bitmap bits both clear, screen enabled).
+        lda #$1b
+        sta $d011
 
         ; Sprite pointer: the sprite base divided by 64, computed from the
         ; label rather than written as a literal.

@@ -172,6 +172,52 @@ is a separate hazard this subject and its detector do not evaluate at all,
 and it is named explicitly, not silently absorbed into this class, in the
 section below on what this subject deliberately excludes.
 
+**Amendment (2026-09-13): the two VIC-II dependencies this subject left
+unstated, and what stating them cost.** The setup routine originally selected
+the VIC-II bank through a read-modify-write on $dd00 (`lda $dd00` / `and` /
+`ora` / `sta $dd00`, preserving whatever the CIA2 port A register already
+held) and never wrote VIC-II control register 1 ($d011) at all. Both
+omissions were invisible to the fixture's own claim, not merely to a casual
+reading of it: `anno-graphics.ts`'s register recovery only ever accepts a
+register value stated as an immediate load directly followed by its store --
+a read-modify-write's result is a runtime fact about whatever the port held
+at the moment the CPU actually ran it, not a static one, and a static report
+correctly declines to guess it; a register never written at all carries no
+value to recover in the first place. The consequence was structural, not
+cosmetic: `deriveGraphicsRanges()` omits every range depending on a missing
+register rather than defaulting it, so the character-set range this class's
+whole dependency is ABOUT was never derived, and the block spanning the
+alignment routine and its own padding reported as a region no detector could
+decide either way -- not as a hazard ruled out, but as a hazard never
+evaluated.
+
+The setup routine now states both registers exactly the way the sprite
+pointer and the character-set selector already did -- an immediate load,
+directly followed by its store, so the value is present in the image bytes
+rather than assembled at runtime from prior state. The bank-select write
+became `lda #$3f` / `sta $dd00` (mirroring the same literal
+`fixtures/ghidra/charset-phantom.a` already uses for an identical bank-0
+selection); the control-register-1 write is new, `lda #$1b` / `sta $d011`
+(the same fixture's own value, naming character mode with bit 5 clear).
+Both are the SAME literal that fixture already commits to disk, not a value
+invented for this subject.
+
+**What was given up, stated as a cost and not as an improvement.** The
+read-modify-write this subject used to carry existed to preserve the CIA2
+port A bits it did not care about -- among them the serial-bus ATN, CLK and
+DATA lines, both the output-enable and output-level bits for each. A bare
+immediate store to $dd00 no longer preserves whatever this program's own
+earlier serial-bus activity had left those bits at; $3f drives them to a
+fixed state (all of bits #2-#7 set) regardless of what came before. That is
+a real loss of behaviour, not a refinement of it, and it is recorded here
+rather than left for a reader to discover by diffing the routine against its
+own history. The detector's decision to decline a read-modify-write result
+is correct, not a gap to route around: the register value it would have
+recovered from this subject's OLD form was never a static fact in the first
+place, and recovering "a value" from an operation whose result depends on
+prior runtime state would have been indistinguishable from recovering the
+wrong one.
+
 ## Class 4: cycle-exact raster code
 
 **The textbook idiom.** A routine that must execute a specific block of code
