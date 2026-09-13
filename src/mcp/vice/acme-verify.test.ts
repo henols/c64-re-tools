@@ -91,6 +91,7 @@ import { openStore, closeStore, setDataType, setLabel } from "./anno-store.ts";
 import { importStoreDocument, type StoreExportDocument } from "./anno-store-export.ts";
 import type { ScopeRow } from "./anno-types.ts";
 import { repoRoot } from "./repo-root.ts";
+import { runReassemblyGate, type GateInput } from "./reassembly-gate.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const VERIFY_MODULE_PATH = join(HERE, "acme-verify.ts");
@@ -967,6 +968,120 @@ test(
       "the second call's own output directory must likewise be removed -- proving the second call's success did not depend on, and " +
         "did not collide with, whatever directory the first call used and had already cleaned up"
     );
+  }
+);
+
+// ---------------------------------------------------------------------------
+// gate red: the two mandatory controls, reproduced for the TREE entry point.
+//
+// The phase's own success criterion 3 requires the gate to be observed going
+// red on three planted shapes before any green result from it is trusted.
+// MANDATORY RED 2 above already proved the wrong-byte shape for the
+// SINGLE-SOURCE entry point; the two cases below reproduce it, and the
+// stale-output-path shape, for the TREE entry point `verifyAcmeAssemblesTree()`
+// -- the one this phase's own gate actually calls. Each red is paired with an
+// honest control against the SAME tree, so the red is a change of exactly one
+// named thing and nothing else.
+// ---------------------------------------------------------------------------
+
+/** Every gate input EXCEPT the rebuild one, all at their passing value --
+ * shared by every `gate red:` companion case below, each of which supplies
+ * its own corrupted `TREE_REBUILD` token. Duplicated from
+ * `reassembly-gate.test.ts`'s own `passingInput()` on the same terms this
+ * file already duplicates `blocksInTreeSourceOrder()`: neither file ships,
+ * and a shared non-test module for two call sites is new surface this
+ * project's own convention already declines. */
+function passingGateInputExceptRebuild(): Omit<GateInput, "TREE_REBUILD"> {
+  return {
+    MOVEMENT_REBUILD: "ok",
+    HAZARD_DISPOSITION: "clean",
+    DIFF_SCOPE_COVERAGE: "complete",
+    RED_CONTROLS: "all-observed",
+    SECOND_PATH_GUARD: "held",
+    ORDERING_PROOF: "held",
+  };
+}
+
+test(
+  "gate red: a corrupted byte in the tree entry point's expected bytes fails the byte-diff while ACME itself exits 0",
+  { skip: SKIP_REASON },
+  () => {
+    const { treeDir, result } = gateTreeExportSubject("wrong-byte");
+    const expectedSegments = blocksInTreeSourceOrder(result);
+
+    // 1. The honest control FIRST, so the red below is a change of exactly
+    //    one byte against the SAME tree and nothing else.
+    const honest = verifyAcmeAssemblesTree({ treeDir, rootFileName: ROOT_FILE_NAME, expectedBytes: result.expectedBytes, expectedSegments });
+    assert.equal(honest.outcome, "ok", `the honest control must pass before the corruption means anything: ${honest.reason}`);
+    assert.ok(
+      honest.acmeResultLines.length >= 1,
+      "the honest control must have produced at least one parsed per-segment result line, or the control could silently " +
+        "degrade into one where the assembler never really spoke"
+    );
+
+    // 2. Flip ONE byte at a named, asserted index. The committed
+    //    hazard-subject fixture's own first exported byte (the address-2049
+    //    range's own first byte, the BASIC line-link low byte) is $0b --
+    //    asserted before it is changed, so a fixture edit that moved this
+    //    byte fails this case loudly rather than silently corrupting a
+    //    different byte.
+    const CORRUPTED_INDEX = 0;
+    assert.equal(
+      result.expectedBytes[CORRUPTED_INDEX],
+      0x0b,
+      "the fixture's own first exported byte must be known before it is corrupted"
+    );
+    const corrupted = Uint8Array.from(result.expectedBytes);
+    corrupted[CORRUPTED_INDEX] = (corrupted[CORRUPTED_INDEX]! + 1) & 0xff;
+
+    // 3. The red -- the SAME tree directory, verified again with the
+    //    corrupted expected bytes.
+    const red = verifyAcmeAssemblesTree({ treeDir, rootFileName: ROOT_FILE_NAME, expectedBytes: corrupted, expectedSegments });
+    const recorded = JSON.stringify(
+      { outcome: red.outcome, exitStatus: red.exitStatus, byteDiff: red.byteDiff, reason: red.reason },
+      null,
+      2
+    );
+    assert.equal(red.outcome, "failed", `a wrong expected byte must FAIL:\n${recorded}`);
+    assert.equal(red.byteDiff?.equal, false, `the byte-diff is the verdict and it must disagree:\n${recorded}`);
+    assert.equal(
+      red.byteDiff?.firstDifferingOffset,
+      CORRUPTED_INDEX,
+      `the first differing offset must name the byte that was flipped:\n${recorded}`
+    );
+    assert.equal(
+      red.exitStatus,
+      0,
+      "ACME REPORTED SUCCESS -- exit status 0 -- AND THE BYTE-DIFF CAUGHT IT ANYWAY. That co-occurrence is the whole " +
+        `content of this red: an exit status cannot see a wrong byte, so it can never be the verdict, not even when it is zero:\n${recorded}`
+    );
+  }
+);
+
+test(
+  "gate red: the gate reads that wrong-byte verdict as red under the failed-rebuild rule, not the catch-all and not the no-assembler rule",
+  { skip: SKIP_REASON },
+  () => {
+    const { treeDir, result } = gateTreeExportSubject("wrong-byte-gate");
+    const corrupted = Uint8Array.from(result.expectedBytes);
+    corrupted[0] = (corrupted[0]! + 1) & 0xff;
+    const red = verifyAcmeAssemblesTree({
+      treeDir,
+      rootFileName: ROOT_FILE_NAME,
+      expectedBytes: corrupted,
+      expectedSegments: blocksInTreeSourceOrder(result),
+    });
+    assert.equal(red.outcome, "failed", `precondition -- this must be the same failed rebuild the paired case observed: ${red.reason}`);
+
+    const verdict = runReassemblyGate({ ...passingGateInputExceptRebuild(), TREE_REBUILD: red.outcome });
+    assert.equal(verdict.outcome, "red", verdict.reason);
+    assert.equal(
+      verdict.rule,
+      "R6",
+      "a failed rebuild must be read through the byte-comparison (failed) rule, never the catch-all and never the no-assembler rule"
+    );
+    assert.notEqual(verdict.rule, "R12");
+    assert.notEqual(verdict.rule, "R4");
   }
 );
 
