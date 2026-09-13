@@ -110,6 +110,34 @@ proposed and explicitly rejected -- confining the contamination is not removing 
   ZERO and calls the rule mechanically enforced, so the rule is currently violated
   and the enforcement reports otherwise. Fix the PATTERN, not only the 7 sites.
 
+### Restoring the Fork Removal's Dropped Capabilities (Phase 55)
+
+Phase 52's fork-only deletion cut the only caller of two capabilities without
+cutting the capabilities themselves, and `vice-proxy.test.ts` -- a
+`MANUAL_ONLY_TESTS` entry no narrowed suite runs -- was never re-baselined against
+the 58% of `vice-proxy.ts` that deletion removed. Both were invisible because CI
+had been failing upstream of its own Test step since Phase 34.
+
+- [ ] **PROXY-01**: The shipped server enforces the result ceiling it advertises.
+  An over-cap success splits across a real continuation sequence, `vice_result_continue`
+  returns the chunks, reassembly is byte-exact, and the advertisement and the
+  enforcement are one read of one constant. MEASURED 2026-09-13 at the wire: a
+  `tools/call` returned 23,290 characters in a single unchunked item under a
+  200-character advertised cap.
+- [ ] **PROXY-02**: A confirmed kill's incident record carries a real `epoch_after`
+  on turnover and an honest `null` otherwise -- never the stale `epoch_before`
+  value -- from a wall-clock-bounded poll, pinned in the automated gate.
+- [ ] **PROXY-03**: Every removed assertion is DELETED with its reason and its named
+  successor suite in the commit message. Nothing is `skip`-ed, and nothing whose
+  behaviour is live but covered nowhere else is removed.
+- [ ] **PROXY-04**: Every remaining test in the file can fail. Each identified
+  vacuous passer is re-pointed at real behaviour or deleted with a successor named.
+- [ ] **PROXY-05**: The surviving-behaviour set asserts post-fork-removal reality,
+  with no guard weakened to reach green.
+- [ ] **PROXY-06**: `npm test` -- the full `*.test.*` glob CI actually runs -- exits
+  0, every stale ledger claim about the file is corrected, and `npm run test:automated`
+  stays at 0 failures / 9 skips with the file outside it.
+
 ## Departures from the v0.5.0 text
 
 Recorded explicitly, because these 14 requirements had stood byte-identical
@@ -192,14 +220,22 @@ Success-Criteria live in `.planning/ROADMAP.md` → "Phase Details".
 | DOCS-02 | Phase 53 | Pending |
 | DOCS-03 | Phase 53 | Pending |
 | DOCS-04 | Phase 53 | Pending |
+| PROXY-01 | Phase 55 | Pending |
+| PROXY-02 | Phase 55 | Pending |
+| PROXY-03 | Phase 55 | Pending |
+| PROXY-04 | Phase 55 | Pending |
+| PROXY-05 | Phase 55 | Pending |
+| PROXY-06 | Phase 55 | Pending |
 
 **Coverage:**
 
-- v1.0.0 requirements: 22 total
-- Mapped to phases: 22
+- v1.0.0 requirements: 32 total
+- Mapped to phases: 32
 - Unmapped: 0
 
-Seven phases carry requirements above: 45-50 plus 52. (Phase 51 also carries a
+Nine phases carry requirements above: 45-50 plus 52, 53 and 55. (The count read
+22 against 26 declared rows until 2026-09-14 -- `DOCS-01..04` were declared
+without updating this block; corrected here alongside `PROXY-01..06`.) (Phase 51 also carries a
 `TBD` requirements line in `.planning/ROADMAP.md`, but declaring or renumbering
 anything for Phase 51 is that phase's own planning job — doing it here would
 make these Coverage totals wrong the moment 51 is planned. The 22/22 figure
@@ -235,4 +271,4 @@ Phase 47 rather than retrofitted onto it.
 
 ---
 *Requirements defined: 2026-09-10*
-*Last updated: 2026-09-12 — FORKRM-01..07 declared and traced to Phase 52 (22/22 mapped); Phase 51's TBD line remains unaddressed by design*
+*Last updated: 2026-09-14 — PROXY-01..06 declared and traced to Phase 55 (32/32 mapped); the Coverage block's stale 22 corrected against 26 already-declared rows (DOCS-01..04 had been added without it); Phase 51's TBD line remains unaddressed by design*
