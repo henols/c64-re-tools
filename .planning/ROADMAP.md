@@ -1548,9 +1548,9 @@ reasons they stood for, and a guard prevents the precedent recurring.
 
 **Requirements**: `DOCS-01`, `DOCS-02`, `DOCS-03`, `DOCS-04`
 
-**Depends on**: **Phase 51**, partially and for a hard reason — see the ordering
-note below. Phase 51 clears the 15 citing files inside its `files[]` scope; this
-phase must clear the other 27 before anything moves.
+**Depends on**: Nothing. **Should run BEFORE Phase 51** — see "the guard hole"
+below. Phase 51 plans to widen this exact guard's file set, and widening it over
+a pattern hole ships a guard that is green on the citations it was built to catch.
 
 **Success Criteria** (what must be TRUE):
 
@@ -1602,21 +1602,39 @@ Notes:
   phase number into shipped source besides. The operator's folder complaint and a
   live section 21 gap are the same defect.
 - **MEASURED 2026-09-13.** 21 of 27 files in `docs/` are `phase*`-named. 20 of the 21
-  map onto a live phase directory; `phase0` is the single orphan. **42 files** under
-  `src/` and `tools/` cite `docs/phase*.md`. Of those 42, **15 fall inside Phase 51's
-  scope** (published by `src/mcp/vice/package.json`'s `files[]`) and **27 fall
+  map onto a live phase directory; `phase0` is the single orphan. **102 citation occurrences
+  across 42 files** under `src/` and `tools/`. Of those, **39 occurrences in 15
+  files fall inside Phase 51's scope** (published by
+  `src/mcp/vice/package.json`'s `files[]`) and **64 occurrences in 27 files fall
   outside it** — tests, `.mts` sources, skill scripts, and the gitignored `tools/`
   deployment copies. Re-measure at planning time; these are dated.
 - **The ordering is load-bearing and runs opposite to intuition.** The citations
   must be rewritten BEFORE the files move. Moving first leaves 42 files pointing
   into `.planning/`, which is a straight section 21 violation and precisely the
   "one hop along" failure criterion 4 forbids. Rewrite, verify zero, then `git mv`.
-- **Phase 51 does not subsume this phase, and neither subsumes the other.** 51 is
-  scoped to what npm publishes and covers 15 of the 42; the remaining 27 sit in
-  files 51 never looks at. If 51 runs first this phase inherits 27 sites instead of
-  42; if this phase runs first it does 42 and shrinks 51's count by 15. Either order
-  works — what must not happen is either phase assuming the other cleared its sites.
-  Re-grep rather than trusting a count written here.
+- **THE GUARD HOLE — MEASURED 2026-09-13, and it reverses the phase order.**
+  `src/skills/**` carries **7** `docs/phase45-*.md` citations:
+  `routine-queue-walker/scripts/completeness-report.mjs:79`, `SKILL.md:92` and
+  `:163`, and `scripts/completeness-report.test.mjs:22`, `:468`, `:491`, `:512`.
+  ENGINEERING_RULES section 21.1 declares that tree must be at ZERO, calls the rule
+  "mechanically enforced", and grants no by-path exemption. Yet
+  `skills-planning-vocabulary.test.ts` passes 5/5 green with all seven in place:
+  **its category patterns do not match the `docs/phase*` path form.** The rule is
+  violated and the enforcement reports otherwise. Fix the PATTERN here, not just
+  the seven sites — a sweep that cleans the sites and leaves the hole re-arms
+  nothing.
+- **This is why Phase 53 runs before Phase 51, not after.** Phase 51's guard
+  strategy is to widen this same file's `shippedSkillFiles()` from the skills tree
+  to `package.json`'s `files[]`. Widening the FILE SET over an unfixed PATTERN hole
+  inherits the hole: the widened guard would be green across all 102 `docs/phase*`
+  occurrences, and Phase 51's own criterion 5 — a planted citation reds the widened
+  guard — would pass while this entire form goes uncaught. Close the pattern first,
+  then let 51 widen the set.
+- **Neither phase subsumes the other.** 51 is scoped to what npm publishes: 39 of
+  the 102 occurrences, in 15 of the 42 files. The other 64 occurrences across 27
+  files sit where 51 never looks — tests, `.mts` sources, skill scripts, the
+  gitignored `tools/` copies. Whichever runs first, the second must RE-GREP rather
+  than trust any count written here.
 - **The `tools/` copies are generated, not sources.** `tools/*.mjs` are the
   gitignored host deployment artifacts built from `src/mcp/vice/*.mts`. Fix the
   `.mts` source; do not hand-edit the copies, and confirm the build regenerates them

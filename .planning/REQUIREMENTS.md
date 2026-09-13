@@ -102,10 +102,13 @@ proposed and explicitly rejected -- confining the contamination is not removing 
   never repointed at a `.planning/` path, which that rule's criterion 4 names as the
   same defect one hop along. Measured 2026-09-13: 42 citing files, of which 15 fall
   inside Phase 51's `files[]` scope and 27 fall outside it.
-- [ ] **DOCS-04**: A guard fails the build when a `docs/phase*` path appears in
-  `src/**` or `tools/**`, and is proven non-vacuous by a planted citation. Without
-  it the pattern returns at the next phase -- it has recurred at every phase since
-  2026-08-11 purely by precedent.
+- [ ] **DOCS-04**: `skills-planning-vocabulary.test.ts`'s category patterns are
+  widened to match the `docs/phase*` path form, and a guard fails the build when
+  that form appears in `src/**` or `tools/**`. Proven non-vacuous by a planted
+  citation. MEASURED 2026-09-13: the shipped skills tree carries 7 such citations
+  while that guard passes 5/5 green -- section 21.1 declares that tree must be at
+  ZERO and calls the rule mechanically enforced, so the rule is currently violated
+  and the enforcement reports otherwise. Fix the PATTERN, not only the 7 sites.
 
 ## Departures from the v0.5.0 text
 
