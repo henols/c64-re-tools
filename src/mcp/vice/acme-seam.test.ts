@@ -391,11 +391,168 @@ test("acme seam: the assembler oracle contains exactly one launch call site and 
 });
 
 // ============================================================================
-// 4. Determinism backstop.
+// 4. Scan 2: modules that derive a verdict by comparing produced bytes to
+//    expected bytes.
 // ============================================================================
 
-test("acme seam: two runs of the scan over an unchanged tree produce the same set, in the same order", () => {
+/** A module is flagged when its blanked source contains a deep or octet
+ * comparison, one of whose operands mentions an export's `expectedBytes`
+ * field and the other names a local this module itself bound from
+ * `readFileSync(...)` -- i.e. a value read back from a file on disk, which in
+ * every real member below is an assembler-produced artifact.
+ *
+ * A LOOSER definition -- flagging any mention of `expectedBytes` at all --
+ * is deliberately rejected: the exporter's own tests legitimately build and
+ * assert on that field (comparing one export's `expectedBytes` against
+ * another's, or against a literal byte array) without ever assembling
+ * anything, and flagging every such mention would make this set meaningless.
+ * Requiring BOTH operands narrows the set to genuine round-trip assertions. */
+const COMPARE_CALL_RE = /\b(?:assert\.deepEqual|assert\.deepStrictEqual|Buffer\.compare|compareBytes)\s*\(/g;
+
+const READBACK_DECL_RE = /\b(?:const|let|var)\s+(\w+)\s*=\s*[^;\n]*readFileSync\s*\(/g;
+
+function readbackIdentifiers(codeOnlySrc: string): Set<string> {
+  const idents = new Set<string>();
+  for (const m of codeOnlySrc.matchAll(READBACK_DECL_RE)) idents.add(m[1]!);
+  return idents;
+}
+
+/** The balanced-paren argument text of a call whose opening `(` sits at
+ * `openParenIndex`. */
+function extractBalancedParenArgs(codeOnlySrc: string, openParenIndex: number): string {
+  let depth = 1;
+  let i = openParenIndex + 1;
+  for (; i < codeOnlySrc.length && depth > 0; i++) {
+    if (codeOnlySrc[i] === "(") depth++;
+    else if (codeOnlySrc[i] === ")") depth--;
+  }
+  return codeOnlySrc.slice(openParenIndex + 1, i - 1);
+}
+
+interface ExpectedBytesComparisonMatch {
+  fn: string;
+  args: string;
+}
+
+export interface ExpectedBytesComparisonReport {
+  file: string;
+  matches: ExpectedBytesComparisonMatch[];
+}
+
+function scanModuleForExpectedBytesComparisonSites(rawSrc: string, file: string): ExpectedBytesComparisonReport | undefined {
+  const codeOnlySrc = codeOnly(rawSrc);
+  const readbackIdents = readbackIdentifiers(codeOnlySrc);
+  const matches: ExpectedBytesComparisonMatch[] = [];
+
+  for (const m of codeOnlySrc.matchAll(COMPARE_CALL_RE)) {
+    const openParenIndex = m.index! + m[0].length - 1;
+    const args = extractBalancedParenArgs(codeOnlySrc, openParenIndex);
+    if (!/\bexpectedBytes\b/.test(args)) continue;
+    const mentionsReadback = [...readbackIdents].some((ident) => new RegExp(`\\b${ident}\\b`).test(args));
+    if (!mentionsReadback) continue;
+    matches.push({ fn: m[0].replace(/\s*\($/, ""), args });
+  }
+
+  if (matches.length === 0) return undefined;
+  return { file, matches };
+}
+
+/** Every module under the server tree that derives a verdict by comparing an
+ * assembler-produced artifact's bytes against an export's expected bytes. */
+export function scanExpectedBytesComparisonSites(): ExpectedBytesComparisonReport[] {
+  const reports: ExpectedBytesComparisonReport[] = [];
+  for (const file of serverTreeModules()) {
+    const rawSrc = readFileSync(join(HERE, file), "utf8");
+    const report = scanModuleForExpectedBytesComparisonSites(rawSrc, file);
+    if (report) reports.push(report);
+  }
+  return reports;
+}
+
+/** The frozen declared set. Membership MUST be derived by RUNNING
+ * `scanExpectedBytesComparisonSites()` against the real tree and reading what
+ * it reports -- never assumed. Declared EMPTY here first, deliberately: the
+ * set-equality test below must fail against the real tree before this set is
+ * filled in, so the failure itself is the measurement that drives what gets
+ * declared. */
+export const EXPECTED_BYTES_COMPARISON_SITES: Readonly<Record<string, string>> = Object.freeze({});
+
+test("acme seam: a module that reads an assembler-produced artifact and compares it against an export's expected bytes is flagged", () => {
+  const discovered = new Set(scanExpectedBytesComparisonSites().map((r) => r.file));
+  for (const f of Object.keys(EXPECTED_BYTES_COMPARISON_SITES)) {
+    assert.ok(discovered.has(f), `${f} is a declared expected-bytes comparison site but was not discovered by the scan`);
+  }
+});
+
+test("acme seam: a module that merely constructs or asserts on an export's expected bytes without comparing an assembled artifact to them is not flagged", () => {
+  const src =
+    `export function check(a: { expectedBytes: Uint8Array }, b: { expectedBytes: Uint8Array }) {\n` +
+    `  assert.deepEqual([...a.expectedBytes], [...b.expectedBytes]);\n` +
+    `}\n`;
+  const report = scanModuleForExpectedBytesComparisonSites(src, "scratch-expected-bytes-only.ts");
+  assert.equal(
+    report,
+    undefined,
+    "comparing two expectedBytes values to each other (never an assembled artifact) must not be flagged as a comparison site"
+  );
+});
+
+test("acme seam: every flagged module appears in the frozen comparison set, and every member of that set is flagged", () => {
+  const discovered = scanExpectedBytesComparisonSites().map((r) => r.file);
+  const discoveredSet = new Set(discovered);
+  const extra = discovered.filter((f) => !(f in EXPECTED_BYTES_COMPARISON_SITES));
+  const missing = Object.keys(EXPECTED_BYTES_COMPARISON_SITES).filter((f) => !discoveredSet.has(f));
+
+  assert.deepEqual(
+    extra,
+    [],
+    `an expected-bytes comparison site was discovered that is NOT in EXPECTED_BYTES_COMPARISON_SITES -- a new, ` +
+      `independent byte-comparison path has appeared and is a design question to answer before the set is edited: ${extra.join(", ")}`
+  );
+  assert.deepEqual(
+    missing,
+    [],
+    `declared expected-bytes comparison site(s) no longer discovered -- the declaration is now stale: ${missing.join(", ")}`
+  );
+});
+
+test("acme seam: no gate module is flagged as an expected-bytes comparison site, and adding one to the frozen set is not how the assertion is satisfied", () => {
+  const discovered = scanExpectedBytesComparisonSites().map((r) => r.file);
+  for (const f of discovered) {
+    assert.ok(!GATE_MODULE_NAME_RE.test(f), `a gate module (${f}) was discovered performing a produced-versus-expected byte comparison -- the gate's own verdict must come only from the byte-diff oracle, never a second comparison minted inside the gate's own modules`);
+  }
+  for (const f of Object.keys(EXPECTED_BYTES_COMPARISON_SITES)) {
+    assert.ok(!GATE_MODULE_NAME_RE.test(f), `a gate module (${f}) must never be added to EXPECTED_BYTES_COMPARISON_SITES`);
+  }
+});
+
+test("acme seam: a synthetic source performing a produced-versus-expected comparison is flagged; one performing an unrelated deep comparison is not", () => {
+  const violating =
+    `import { readFileSync } from "node:fs";\n` +
+    `export function check(path: string, result: { expectedBytes: Uint8Array }) {\n` +
+    `  const producedBytes = readFileSync(path);\n` +
+    `  assert.deepEqual(producedBytes, result.expectedBytes);\n` +
+    `}\n`;
+  const violatingReport = scanModuleForExpectedBytesComparisonSites(violating, "scratch-produced-vs-expected.ts");
+  assert.ok(violatingReport, "a produced-versus-expected comparison must be discovered as a real comparison site");
+  assert.equal(violatingReport!.matches.length, 1);
+
+  const unrelated =
+    `export function check(a: number[], b: number[]) {\n` + `  assert.deepEqual(a, b);\n` + `}\n`;
+  const unrelatedReport = scanModuleForExpectedBytesComparisonSites(unrelated, "scratch-unrelated-deep-equal.ts");
+  assert.equal(unrelatedReport, undefined, "an unrelated deep comparison must never be discovered as an expected-bytes comparison site");
+});
+
+// ============================================================================
+// 5. Determinism backstop, shared by both scans.
+// ============================================================================
+
+test("acme seam: two runs of the scan over an unchanged tree produce the same two sets, in the same order", () => {
   const spawnFirst = scanAcmeSpawnSites().map((r) => r.file);
   const spawnSecond = scanAcmeSpawnSites().map((r) => r.file);
   assert.deepEqual(spawnSecond, spawnFirst, "scanAcmeSpawnSites() must be deterministic across repeated runs");
+
+  const comparisonFirst = scanExpectedBytesComparisonSites().map((r) => r.file);
+  const comparisonSecond = scanExpectedBytesComparisonSites().map((r) => r.file);
+  assert.deepEqual(comparisonSecond, comparisonFirst, "scanExpectedBytesComparisonSites() must be deterministic across repeated runs");
 });
