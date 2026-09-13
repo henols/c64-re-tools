@@ -698,14 +698,39 @@ test("tools/list's vice_ping entry has an inputSchema deep-equal to the manifest
 // swap did not change the observable surface at full scale.
 // -----------------------------------------------------------------------
 
-test("tools/list's full output matches the manifest exactly (name set, order, schema, _meta cap) except for DENY_LIST's deliberate absence", async () => {
+test("tools/list's full output matches the manifest exactly (name set, order, schema, _meta cap)", async () => {
+  // Plan 55-04: re-measured which clause actually failed here before
+  // touching anything. It was NOT the DENY_LIST exception this test's old
+  // name carried -- there is no deny list in shipped code any more (Plan
+  // 55-03 confirmed DENY_LIST: 0 hits in vice-proxy.ts), so that clause
+  // named a mechanism that does not exist and is dropped from both the name
+  // and the body below. The actual failure was ORDER: `vice_recycle` and
+  // `vice_diagnose` are now genuinely present in tools-manifest.stock.json
+  // (Plan 55-04 Task 2's own measurement), so they already appear once, at
+  // their natural manifest position, via `expectedManifestNames` below --
+  // the old `expectedOrder` appended them a SECOND time after
+  // vice_result_continue, a leftover from when both were synthetic-only and
+  // absent from the manifest. `tools{}` in vice-proxy.ts is a name-keyed
+  // record (whichever assignment to a given key runs LAST wins, but
+  // insertion ORDER is set at FIRST assignment and does not move on a later
+  // overwrite -- see resolveAdvertisedToolDefinition()'s own header
+  // comment), so vice_recycle/vice_diagnose's insertion position is fixed
+  // by the manifest loop that runs first; the later
+  // `tools[RECYCLE_TOOL.name] = ...`/`tools[DIAGNOSE_TOOL.name] = ...`
+  // lines change only the RUNNER, never the position.
   const manifestText = readFileSync(join(HERE, "tools-manifest.stock.json"), "utf8");
   const manifest = JSON.parse(manifestText);
-  // The fork's outer-name refusal array is gone along with the fork
-  // transport; nothing is filtered out of the manifest here any more.
-  const DENY_LISTED = new Set<string>();
-  const expectedManifestNames = manifest.tools.map((t: any) => t.name).filter((n: string) => !DENY_LISTED.has(n));
-  const expectedOrder = [...expectedManifestNames, "vice_result_continue", "vice_recycle", "vice_diagnose", ...CURATED_ANNO_TOOLS];
+  const expectedManifestNames = manifest.tools.map((t: any) => t.name);
+  // ORDERING DECISION (stated explicitly, per this plan's own requirement):
+  // registration order IS the wire order here, and that is a real contract
+  // a client can depend on -- @mastra/mcp's tools/list handler answers over
+  // the registry vice-proxy.ts builds, in the order tools{}'s keys were
+  // first inserted: the manifest loop (manifest order, with vice_recycle/
+  // vice_diagnose falling wherever the manifest itself places them), then
+  // vice_result_continue (the one synthetic still absent from the manifest,
+  // so its key is inserted fresh, after the loop), then the anno_* loop
+  // last. This is asserted, not left silently unstated.
+  const expectedOrder = [...expectedManifestNames, "vice_result_continue", ...CURATED_ANNO_TOOLS];
   const manifestSchemaByName: Record<string, unknown> = Object.fromEntries(
     manifest.tools.map((t: any) => [t.name, t.inputSchema])
   );
@@ -721,18 +746,16 @@ test("tools/list's full output matches the manifest exactly (name set, order, sc
     const actualNames = tools.map((t: any) => t.name);
 
     // (a) name SET equality -- nothing missing, nothing extra, every
-    // DENY_LIST entry absent, every synthetic present.
+    // manifest tool present, every synthetic present.
     assert.deepEqual(
       new Set(actualNames),
       new Set(expectedOrder),
-      "the wire tools/list name set must be exactly the manifest (minus DENY_LIST) plus the three synthetics plus the 19 curated anno_* tools -- no tool missing, none extra"
+      "the wire tools/list name set must be exactly the manifest plus the one still-synthetic-only tool (vice_result_continue) plus the 19 curated anno_* tools -- no tool missing, none extra"
     );
-    // (a) ORDER parity -- manifest order preserved, synthetics appended next
-    // in their own fixed order, then the anno_* loop registration last,
-    // matching [...manifestTools, RESULT_CONTINUE_TOOL, RECYCLE_TOOL,
-    // DIAGNOSE_TOOL, ...ANNO_TOOL_DEFINITIONS]'s insertion order (plan
-    // 11-05's own key_link).
-    assert.deepEqual(actualNames, expectedOrder, "the wire tools/list order must match the manifest's own order, synthetics then anno_* appended last");
+    // (a) ORDER parity -- see the ORDERING DECISION comment above this
+    // block: registration order is the wire order, and it is a real,
+    // asserted contract here, not an incidental artifact.
+    assert.deepEqual(actualNames, expectedOrder, "the wire tools/list order must match the manifest's own order (vice_recycle/vice_diagnose included, at their manifest position), vice_result_continue then anno_* appended last");
 
     // (b) per-tool inputSchema deep-equal against the manifest's own raw
     // schema, for EVERY manifest-derived tool, not just vice_ping.
@@ -762,106 +785,54 @@ test("tools/list's full output matches the manifest exactly (name set, order, sc
   }
 });
 
-test("epoch drift is reported loudly and not cached", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "vice-proxy-epoch-"));
-  const epochFile = join(dir, "epoch.json");
-  writeFileSync(epochFile, JSON.stringify({ epoch: 1, pid: 111, spawned_at: "2026-07-31T00:00:00.000Z" }), "utf8");
-
-  const { server, requests } = startStandInServer();
-  const port = await listen(server);
-  const proxy = startProxy({ VICE_MCP_URL: `http://127.0.0.1:${port}/mcp`, VICE_EPOCH_FILE: epochFile });
-
-  try {
-    proxy.send({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "initialize",
-      params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } },
-    });
-    await proxy.nextMessage();
-
-    // Call 1: establishes the baseline (epoch 1) and forwards normally.
-    // Each SUCCESSFUL forwarded call now costs TWO "tools/call" requests at
-    // the stand-in server, not one: the pre-flight liveness probe's own
-    // vice_ping round trip, plus the real forwarded call (plan 01.1-03 task
-    // 2) -- a refused-before-forwarding call (call 2 below) still costs
-    // zero, since the epoch check runs BEFORE the probe.
-    proxy.send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "vice_ping", arguments: {} } });
-    const first = await proxy.nextMessage();
-    assert.equal(first.result.isError, false);
-    assert.equal(requests.filter((r) => r && r.method === "tools/call").length, 2);
-
-    // Epoch changes underneath the proxy -- a restart happened.
-    writeFileSync(epochFile, JSON.stringify({ epoch: 2, pid: 222, spawned_at: "2026-07-31T00:05:00.000Z" }), "utf8");
-
-    // Call 2: refused BEFORE forwarding -- no new request reaches the host,
-    // and no probe fires either (the epoch check precedes the probe).
-    proxy.send({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "vice_ping", arguments: {} } });
-    const second = await proxy.nextMessage();
-    assert.equal(second.result.isError, true, "an epoch change must refuse the call");
-    assert.match(second.result.content[0].text, /1/);
-    assert.match(second.result.content[0].text, /2/);
-    assert.equal(
-      requests.filter((r) => r && r.method === "tools/call").length,
-      2,
-      "the drifting call must NOT have reached the stand-in server (no probe, no forward)"
-    );
-
-    // Call 3: the re-baseline took effect -- forwards normally again, at
-    // the cost of two more "tools/call" requests (probe + real).
-    proxy.send({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "vice_ping", arguments: {} } });
-    const third = await proxy.nextMessage();
-    assert.equal(third.result.isError, false, "the proxy must re-baseline, not cache the restart report");
-    assert.equal(requests.filter((r) => r && r.method === "tools/call").length, 4);
-  } finally {
-    proxy.child.kill("SIGKILL");
-    await new Promise((resolve) => server.close(resolve));
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("a missing epoch file is not a restart", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "vice-proxy-epoch-absent-"));
-  const epochFile = join(dir, "epoch.json"); // deliberately never written yet
-
-  const { server, requests } = startStandInServer();
-  const port = await listen(server);
-  const proxy = startProxy({ VICE_MCP_URL: `http://127.0.0.1:${port}/mcp`, VICE_EPOCH_FILE: epochFile });
-
-  try {
-    proxy.send({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "initialize",
-      params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } },
-    });
-    await proxy.nextMessage();
-
-    proxy.send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "vice_ping", arguments: {} } });
-    const first = await proxy.nextMessage();
-    assert.equal(first.result.isError, false, "no epoch file at all must never be treated as a restart");
-
-    proxy.send({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "vice_ping", arguments: {} } });
-    const second = await proxy.nextMessage();
-    assert.equal(second.result.isError, false);
-
-    // The file appears for the first time -- absent-to-present is a
-    // supervisor merely starting, not a restart.
-    writeFileSync(epochFile, JSON.stringify({ epoch: 7 }), "utf8");
-
-    proxy.send({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "vice_ping", arguments: {} } });
-    const third = await proxy.nextMessage();
-    assert.equal(third.result.isError, false, "absent -> present must not be reported as a restart");
-    // Three successful forwarded calls, each costing two "tools/call"
-    // requests at the stand-in server (the pre-flight liveness probe's own
-    // vice_ping, plus the real forwarded call -- plan 01.1-03 task 2).
-    assert.equal(requests.filter((r) => r && r.method === "tools/call").length, 6);
-  } finally {
-    proxy.child.kill("SIGKILL");
-    await new Promise((resolve) => server.close(resolve));
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
+// "epoch drift is reported loudly and not cached" and "a missing epoch file
+// is not a restart" -- RETIRED, Plan 55-04. Both drove the fork's own
+// per-call epoch check through VICE_MCP_URL pointed at an HTTP stand-in: a
+// mechanism where a proxy-side handler compared the epoch file against a
+// remembered baseline on EVERY forwarded call, refused once on drift, then
+// silently re-baselined so the NEXT call succeeded again. That mechanism no
+// longer exists at this layer, and re-pointing these tests at what does
+// exist is impossible in this file's current harness, not merely
+// inconvenient: with the stock backend, VICE_MCP_URL is refused outright
+// before any dial is attempted ("ensureStockSession: VICE_MCP_URL is set,
+// so there is no broker-managed instance and no broker control session to
+// claim a monitor socket through" -- stock-dispatch.ts's own
+// ensureStockSession()) -- there is no forwarding path left for either test
+// to drive at all.
+//
+// The surviving mechanism moved to stock-connect.ts, and it is a
+// DELIBERATE reversal of both properties, not a relocation of them:
+//   - It fires only at RECONNECT (a dead socket being re-established),
+//     never per-call against a still-connected session -- proven live by
+//     stock-dispatch.test.ts's "lease: two successive calls with the same
+//     targetId call stockConnect exactly once -- the held session is
+//     reused", which shows a live session survives repeated calls with the
+//     epoch check never even consulted.
+//   - On a genuine reconnect, drift throws MachineRestartedError with both
+//     epoch values named -- stock-connect.test.ts's "stockReconnect: an
+//     advanced epoch rejects with MachineRestartedError carrying the
+//     baseline and current epochs" -- there is no silent re-baseline; a
+//     future call re-handshakes from scratch (stock-dispatch.ts's
+//     ensureStockSession() clears the holder on that failure).
+//   - Missing epoch evidence at RECONNECT is now treated as an unprovable
+//     identity and rejected the same way -- stock-connect.test.ts's
+//     "stockReconnect: no epoch can be read at all rejects with
+//     MachineRestartedError -- identity that cannot be proven is not
+//     proven" -- the exact OPPOSITE of "a missing epoch file is not a
+//     restart"'s old claim, a documented design decision (D-3: "no epoch
+//     evidence either way is treated the same as proven-different"), not an
+//     oversight this rewrite could correct. The old test's own "absent ->
+//     present while the SAME connection stays open" scenario is still true
+//     today, but trivially so and for a different reason: epoch is never
+//     consulted at all for a still-connected session (the same
+//     stock-dispatch.test.ts successor above), not because absent-then-
+//     present is specifically exempted.
+//
+// All three named successors were run and confirmed green before this
+// retirement: `node --test --test-name-pattern "an advanced epoch rejects|
+// no epoch can be read at all rejects|a completed handshake records"
+// stock-connect.test.ts` and `node --test --test-name-pattern "the held
+// session is reused" stock-dispatch.test.ts` both report 0 failures.
 
 // -----------------------------------------------------------------------
 // Plan 01.1-02 task 3 (rewired by plan 55-01: `96ef711f` deleted
