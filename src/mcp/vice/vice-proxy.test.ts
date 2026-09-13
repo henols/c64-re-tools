@@ -846,82 +846,19 @@ test("tools/list's full output matches the manifest exactly (name set, order, sc
 // result larger than the declared cap comes back in FULL across an
 // explicit continuation sequence -- reassembled byte-for-byte, never
 // silently truncated. The retired forwardToVice() path drove this fixture
-// through an in-process HTTP stand-in (startBigPayloadServer() just below);
-// that path is gone, and the four tests in this section no longer reach it.
-// They drive a real registered tool instead: `anno_get_symbols` against a
-// seeded local store (seedAnnoWorkspace(), further below), which produces a
-// real oversized payload with no emulator, no broker and no stand-in
-// server, deterministically, on every platform -- exactly the route that
-// was silently unchunked for the whole life of one release.
+// through an in-process HTTP stand-in; that path is gone, and the four
+// tests in this section no longer reach it. They drive a real registered
+// tool instead: `anno_get_symbols` against a seeded local store
+// (seedAnnoWorkspace(), just below), which produces a real oversized
+// payload with no emulator, no broker and no stand-in server,
+// deterministically, on every platform -- exactly the route that was
+// silently unchunked for the whole life of one release.
+//
+// Plan 55-05 orphan sweep: the old stand-in this section used to drive
+// (`startBigPayloadServer()`) had zero remaining call sites -- confirmed by
+// grep, per Plan 55-01's own note flagging it as a later plan's question --
+// and was removed. `seedAnnoWorkspace()` below is its full replacement.
 // -----------------------------------------------------------------------
-
-/**
- * A stand-in server that answers `initialize` normally, `vice_ping`
- * specifically with a small, recognisable ping payload, and `targetTool`
- * with the oversized `payloadText` fixture. `vice_ping` MUST be answered
- * distinctly from `targetTool`: plan 01.1-03 task 2's pre-flight liveness
- * probe always calls `vice_ping` before any real forwarded call, and if it
- * received the same oversized non-JSON blob the target tool returns, it
- * would fail probeInstance()'s "recognisable ping result" check and report
- * the host unreachable -- short-circuiting every test in this section
- * before the oversized-result logic is ever exercised.
- *
- * Unused by the chunking tests below as of plan 55-01 -- they seed a real
- * anno_* store instead (seedAnnoWorkspace()) rather than dialling this
- * stand-in through the retired VICE_MCP_URL forwarding path. Left in place;
- * whether it still has a caller anywhere else is a later plan's question.
- */
-function startBigPayloadServer(payloadText: string, { targetTool = "vice_memory_read" }: { targetTool?: string } = {}): StandInServer {
-  const requests: (JsonRpcMessage | null)[] = [];
-  const server = createServer((req, res) => {
-    let body = "";
-    req.setEncoding("utf8");
-    req.on("data", (chunk) => (body += chunk));
-    req.on("end", () => {
-      let msg: JsonRpcMessage | null;
-      try {
-        msg = JSON.parse(body);
-      } catch {
-        msg = null;
-      }
-      requests.push(msg);
-
-      if (msg && msg.method === "initialize") {
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(
-          JSON.stringify({
-            jsonrpc: "2.0",
-            id: msg.id,
-            result: { protocolVersion: "2024-11-05", capabilities: {}, serverInfo: { name: "stand-in-vice", version: "0.0.0" } },
-          })
-        );
-        return;
-      }
-      if (msg && msg.method === "tools/call" && msg.params && msg.params.name === "vice_ping") {
-        const pingPayload = { version: "3.10", machine: "C64SC", execution: "paused" };
-        const result = { content: [{ type: "text", text: JSON.stringify(pingPayload) }] };
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result }));
-        return;
-      }
-      if (msg && msg.method === "tools/call" && msg.params && msg.params.name === targetTool) {
-        const result = { content: [{ type: "text", text: payloadText }] };
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result }));
-        return;
-      }
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(
-        JSON.stringify({
-          jsonrpc: "2.0",
-          id: msg && "id" in msg ? msg.id : null,
-          error: { code: -32601, message: "unsupported in this test's stand-in server" },
-        })
-      );
-    });
-  });
-  return { server, requests };
-}
 
 /**
  * Seeds a fresh temp workspace with a `project.annostore` holding
@@ -937,7 +874,7 @@ function startBigPayloadServer(payloadText: string, { targetTool = "vice_memory_
  * `anno_get_symbols` needs no emulator, no broker and no stand-in server --
  * a seeded store with enough labels already produces a real oversized
  * result deterministically, which is what makes it a working replacement
- * for the retired startBigPayloadServer()-driven fixture above.
+ * for the fixture this section used to drive through an HTTP stand-in.
  */
 function seedAnnoWorkspace(labelCount: number): { ws: string; storePath: string } {
   const ws = mkdtempSync(join(tmpdir(), "vice-proxy-anno-"));
@@ -1432,19 +1369,6 @@ test("never-throw: a notification draws no response", async () => {
     await new Promise((resolve) => server.close(resolve));
   }
 });
-
-/** Reserve a free TCP port and release it immediately, so a proxy can be
- * pointed at "nothing listening here yet" before something real starts. */
-function reserveFreePort(): Promise<number> {
-  return new Promise<number>((resolvePort, reject) => {
-    const probe = createServer();
-    probe.on("error", reject);
-    probe.listen(0, "127.0.0.1", () => {
-      const { port } = probe.address() as AddressInfo;
-      probe.close(() => resolvePort(port));
-    });
-  });
-}
 
 // Plan 55-05, ladder rung 3: RETIRED. This test drove "host down then up,
 // same process, no restart" entirely over VICE_MCP_URL forwarding to an
