@@ -469,13 +469,25 @@ export function scanExpectedBytesComparisonSites(): ExpectedBytesComparisonRepor
   return reports;
 }
 
-/** The frozen declared set. Membership MUST be derived by RUNNING
+/** The frozen declared set. Membership was derived by RUNNING
  * `scanExpectedBytesComparisonSites()` against the real tree and reading what
- * it reports -- never assumed. Declared EMPTY here first, deliberately: the
- * set-equality test below must fail against the real tree before this set is
- * filled in, so the failure itself is the measurement that drives what gets
- * declared. */
-export const EXPECTED_BYTES_COMPARISON_SITES: Readonly<Record<string, string>> = Object.freeze({});
+ * it reported (the set-equality test below named exactly these three files
+ * when this set was still empty), not assumed.
+ *
+ * ACCEPTED LIMIT, recorded here rather than resolved: the two test-file
+ * members below PREDATE the byte-diff oracle's own tree support -- they are
+ * assertions written before this project had any other way to prove a
+ * multi-file export reassembles, kept as declared members rather than
+ * migrated onto the oracle in this pass. Their presence here is NOT a
+ * licence for a third one: the property this set enforces from this point
+ * forward is that no NEW second comparison path appears, not that these two
+ * are somehow correct to keep growing. Closing them onto the oracle is
+ * separate work this set does not itself claim to have done. */
+export const EXPECTED_BYTES_COMPARISON_SITES: Readonly<Record<string, string>> = Object.freeze({
+  "anno-export-asm.test.ts": "the exporter's own pre-existing round-trip assertions -- predate the byte-diff oracle's tree support; ACCEPTED LIMIT, not a licence for a new comparison path",
+  "hazard-subject-reassembly.test.ts": "the purpose-built subject's own round-trip assertion -- predates the byte-diff oracle's tree support on this particular subject; ACCEPTED LIMIT, not a licence for a new comparison path",
+  "acme-verify.ts": "the byte-diff oracle itself -- the ONE module whose comparison produces an outcome token, via its own compareBytes() helper",
+});
 
 test("acme seam: a module that reads an assembler-produced artifact and compares it against an export's expected bytes is flagged", () => {
   const discovered = new Set(scanExpectedBytesComparisonSites().map((r) => r.file));
