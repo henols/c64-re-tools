@@ -5,16 +5,16 @@ milestone_name: The Rebuild Half
 current_phase: 49
 current_phase_name: The Reassembly Gate, Committed Before the Phase It Gates
 status: executing
-stopped_at: Completed 49-02-PLAN.md
-last_updated: "2026-09-13T09:04:36.349Z"
+stopped_at: Completed 49-03-PLAN.md
+last_updated: "2026-09-13T09:35:00.801Z"
 last_activity: 2026-09-13
 last_activity_desc: Phase 49 execution started
-state_head: 989cd08d375a2155e173729496807d2c1ca93c95
+state_head: 2dbc9cab4329d383f520f80d894ef72b75e921dd
 progress:
   total_phases: 8
   completed_phases: 4
   total_plans: 35
-  completed_plans: 30
+  completed_plans: 31
   percent: 50
 ---
 
@@ -260,7 +260,7 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 49 (The Reassembly Gate, Committed Before the Phase It Gates) — EXECUTING
-Plan: 3 of 7
+Plan: 4 of 7
 Status: Ready to execute
 Plans: none yet — Phase 49 has not been planned.
 
@@ -602,6 +602,7 @@ Last activity: 2026-09-13 — Phase 49 execution started
 | Phase 48 P06 | 62min | 3 tasks | 4 files |
 | Phase 49 P01 | 6min | 3 tasks | 2 files |
 | Phase 49 P02 | 31min | 2 tasks | 4 files |
+| Phase 49-the-reassembly-gate-committed-before-the-phase-it-gates P03 | 50min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -1369,6 +1370,7 @@ Recent decisions affecting current work:
 - [Phase 49]: Extracted verifyAcmeAssembles()'s inline body into one shared assembleAndDiff() function and added verifyAcmeAssemblesTree(), so the tree entry point funds the same six ordered rules as the single-source path rather than a second implementation. — D49-B: the tree-aware entry point must be additive with one shared verdict body.
 - [Phase 49]: A tree's real per-segment ACME output follows !source file-inclusion order, not address order -- discovered live against the committed hazard-subject fixture. Both gate tree: test files reorder expectedSegments to tree emission order before asserting unanimity. — The hazard-subject fixture has an unscoped block sourced last with the lowest address of the whole image; the positional unanimity rule needs expectedSegments in emission order, not address order.
 - [Phase 49]: reassembly-gate.ts's GateInput fields are spelled exactly as the committed schema's outcome-line names (TREE_REBUILD, MOVEMENT_REBUILD, ...) rather than camelCased, and MovementResult/HazardAcknowledgementResult are declared with no producer in this plan -- a stub of the producers, not of the architecture. — Keeps one vocabulary visible at the type, the runtime absence check, and the verdict's echoed inputs; the producers land in later plans in this same phase as an import, not a redesign.
+- [Phase 49-the-reassembly-gate-committed-before-the-phase-it-gates]: Plan 49-03: planted all three phase-required red controls (wrong-byte, stale-artifact, narrowed-scope) with honest controls and gate-verdict companions; added a bounded test-only outputDir seam to verifyAcmeAssemblesTree() and extended hazardCoverageOutsideDiffScope() (additive) to read undecided regions and refuse a zero-length extent.
 
 ### Pending Todos
 
@@ -2460,8 +2462,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-13T09:04:35.856Z
-Stopped at: Completed 49-02-PLAN.md
+Last session: 2026-09-13T09:34:37.622Z
+Stopped at: Completed 49-03-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
