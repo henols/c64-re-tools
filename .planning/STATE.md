@@ -2145,6 +2145,8 @@ regression and not this inheritance.
 | broker | 2026-09-11-remove-anno-from-the-mcp-surface-reach-it-via-a-stateless-br | minor | Pending |
 | mcp | capability-registry-manifest-claim-stale | minor | Pending |
 | testing | 2026-09-13-vice-proxy-test-leaks-scratch-dirs-into-planning-root | minor | Pending |
+| proxy | 2026-09-13-result-chunking-orphaned-by-the-fork-removal | major | Pending |
+| broker | 2026-09-13-incident-record-epoch-after-has-no-producer | major | Pending |
 
 *The ledger was empty at the v0.4.0 close; every row above was filed after that
 close (one on 2026-08-24, five on 2026-08-26, three on 2026-08-28, one on 2026-08-31, two on
