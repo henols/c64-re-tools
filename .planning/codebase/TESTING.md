@@ -373,9 +373,14 @@ lesson is recorded at `scripts/check-no-analyser.mjs:149-154`.
 9. package validation via `scripts/check-npm-packages.mjs` and the structural guards under
    `scripts/`.
 
-It sets `CONTAINER_WORKSPACE_PATH: ${{ github.workspace }}` and
-`HOST_WORKSPACE_PATH: /host${{ github.workspace }}` at the workflow level, because the path
-translation tests read them.
+It declares no `CONTAINER_WORKSPACE_PATH` / `HOST_WORKSPACE_PATH` at any level — a GitHub-hosted
+runner is a host, and the container detector's third signal is a devcontainer-only variable, so a
+job-wide declaration made the job wrongly claim container-ness. The broker container-guard cases
+(`broker-e2e.test.ts`, `vice-broker-launch.test.ts`) inject the signal directly into the child
+process they spawn instead of inheriting it ambiently. One file, `vice-proxy.test.ts`, still gates
+four cases on the inherited variables (its path-translation code runs in-process and cannot take
+an injected signal the same way); it is enumerated by name in `ci-guardrails.test.mjs`, which fails
+if that set ever drifts.
 
 ## Common Patterns
 

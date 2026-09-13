@@ -69,16 +69,37 @@ import { startControlListener, newControlToken, type AcquireOutcome, type Recycl
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PROXY_PATH = join(HERE, "vice-proxy.ts");
 
-// Plan 03-15 task 2: env-gated skip. A handful of tests below only exercise
-// real container-path-translation behaviour when CONTAINER_WORKSPACE_PATH
-// and HOST_WORKSPACE_PATH are set (exactly as .github/workflows/ci.yml sets
-// them) -- on a bare host with neither set they used to fail anonymously
-// (an assertion error with no hint of why) instead of skipping with a named
-// reason. Local to this file by design (see plan -- no shared module, and
-// this list does not belong in test-gate.mjs either).
+// Env-gated skip. The four tests below only exercise real
+// container-path-translation behaviour when CONTAINER_WORKSPACE_PATH and
+// HOST_WORKSPACE_PATH are both set -- on a bare host with neither set they
+// used to fail anonymously (an assertion error with no hint of why) instead
+// of skipping with a named reason. Local to this file by design (no shared
+// module, and this list does not belong in test-gate.mjs either).
+//
+// No job supplies this ambient environment any more -- CI's workflow-wide
+// `env:` block that used to set both variables was removed once the other
+// two broker files stopped depending on it, because that same block made a
+// GitHub-hosted runner (a host) claim to be a container. These four cases
+// call hostPath()/repoRoot() IN-PROCESS, and containerpath.ts caches its
+// workspace root at MODULE scope, so an in-test env mutation cannot reach
+// it -- unlike the broker files' cases, these cannot be converted to inject
+// the signal into a child process. They were measured, at the point the
+// ambient block was removed, to FAIL (not skip) under the only environment
+// that runs them: with both variables set this file reports 122 tests, 45
+// pass, 77 fail, 0 skipped, and all four of these are among the 77 failures
+// (module beneath them was deleted by a later phase, pending a wholesale
+// re-baseline of this file). Converting them now would trade a named skip
+// for an unattributable failure, so the gate stays and this reason names the
+// exact local command that satisfies it: run this file directly with both
+// variables set in this process's own environment. That conversion is part
+// of the re-baseline's scope, not this change's. The set of files still
+// gating on this WORKSPACE_ENV idiom is enumerated by name (this file, and
+// only this file) in ci-guardrails.test.mjs, which fails if that ledger and
+// this file's actual state ever drift apart.
 const WORKSPACE_ENV = Boolean(process.env.CONTAINER_WORKSPACE_PATH && process.env.HOST_WORKSPACE_PATH);
 const WORKSPACE_ENV_SKIP_REASON =
-  "requires CONTAINER_WORKSPACE_PATH and HOST_WORKSPACE_PATH to be set (see README.md's Development section, or .github/workflows/ci.yml lines 22-23)";
+  "requires CONTAINER_WORKSPACE_PATH and HOST_WORKSPACE_PATH set in this process's own environment, running " +
+  "this file directly (node --test vice-proxy.test.ts) -- no job supplies this ambient signal any more";
 
 // ---------------------------------------------------------------------------
 // Shared test-local types. vice-proxy.ts exports nothing (it is a stdio

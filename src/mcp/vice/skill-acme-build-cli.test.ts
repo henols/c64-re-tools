@@ -70,14 +70,15 @@ test("acme.mjs is resolved at the expected relative path", () => {
 //
 // hostRouteChildEnv() additionally strips CONTAINER_WORKSPACE_PATH from the
 // copy. This file asserts that a REAL assembler on THIS machine produced a
-// real program file on disk -- a host-route claim. An ambient devcontainer
-// workspace variable inherited from a job that only SIMULATES a container
-// (this repo's own CI job sets it as a path-translation fixture, not as a
-// statement about the runner) would route the child to a control plane with
-// no broker behind it, turning every assembling case into a transport
-// refusal rather than a build result. The container-route behaviour of the
-// seam is already covered by the real-control-plane cases in
-// host-tool-transport.test.ts and is not this file's subject.
+// real program file on disk -- a host-route claim, and the variable can
+// still arrive ambiently from a genuine devcontainer or a developer's own
+// exported shell. If it did, it would route the child to a control plane
+// with no broker behind it, turning every assembling case into a transport
+// refusal rather than a build result. Stripping it removes ONE spoofable
+// signal and cannot mask a genuine container, which fires four others. The
+// container-route behaviour of the seam is already covered by the
+// real-control-plane cases in host-tool-transport.test.ts and is not this
+// file's subject.
 // ---------------------------------------------------------------------------
 
 function hostRouteChildEnv(opts: { libraryFree?: boolean } = {}): NodeJS.ProcessEnv {
