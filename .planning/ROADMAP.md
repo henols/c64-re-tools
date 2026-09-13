@@ -661,6 +661,7 @@ v1.0.0 to the rebuild half alone.
 - [ ] **Phase 50: Equivalence and Modifiability** - The rebuild shown behaving like the original in a real emulator and shown being changed, with committed transcripts as the artifacts of record rather than described walkthroughs — and the comparison observed failing before it is trusted
 - [ ] **Phase 51: Planning Vocabulary Out of the Shipped Server** - The 2384 planning citations still in the 88 modules npm ships verbatim are replaced by the reasoning each one stands for, and the guard that already holds `src/skills/**` at zero is widened to hold the server there too
 - [ ] **Phase 53: Operator-Owned `docs/`** - The 21 phase-evidence documents squatting in the operator's own `docs/` tree go back to the phase artifact tree, the citations that pinned them there become the reasons they stood for, and a guard stops the precedent that has quietly recurred at every phase since 2026-08-11
+- [ ] **Phase 54: Remove Every Byte-Identical Assertion** - Owner decision: byte-identical checks are unproductive and go. 148 assertion sites across 60 test files -- 72 tests that exist only to assert byte-identity, and 76 assertions inside tests that do other work and keep it
 
 **Phase details, the dependency edges and the sequencing rationale** are in the
 two v1.0.0 sections further below, placed after v0.6.0's and v0.9.0's for the
@@ -1656,6 +1657,68 @@ Notes:
   scattered. Confirm nothing reads them at plan time rather than trusting this note,
   then remove them.
 
+### Phase 54: Remove Every Byte-Identical Assertion
+
+**Goal**: No byte-identical assertion remains anywhere in the test suite. Owner decision
+2026-09-13: they are unproductive and are removed, including the three tree-sync guards.
+
+**Requirements**: TBD -- declare at planning time
+
+**Depends on**: Nothing.
+
+**Success Criteria** (what must be TRUE):
+
+  1. Zero byte-identical assertions remain. Measured by the same census that scoped this phase,
+     re-run at verification time rather than trusting the counts below.
+  2. **No unrelated coverage was deleted as collateral.** A test that merely CONTAINED a
+     byte-identical assertion among others keeps every other assertion it had. Only tests whose
+     entire purpose was asserting byte-identity are removed outright. The phase reports both
+     numbers separately.
+  3. `npm run test:automated` is green, and the test COUNT drop is accounted for -- stated as a
+     number and reconciled against the 72 deletions, so a silently broken file cannot hide
+     inside the expected decrease.
+  4. No test file is left empty, and none is left with only setup and no assertions.
+  5. `node build.ts` is run and `resources/` committed if any `.mts` is touched.
+
+**Plans**: TBD
+
+Notes:
+
+- **MEASURED 2026-09-13.** 60 files carry the phrase. 62 occurrences are comment-only and need
+  no code change. **76 sit inside an assertion; 72 are whole `test()` titles.** Re-measure at
+  planning time; these are dated.
+- **The collateral trap, and why criterion 2 exists.** A title-based sweep would delete tests
+  that merely USE the phrase while testing something else entirely. Two measured examples:
+  `anno-store.test.ts:3848` is "a retained snapshot TRUNCATED to zero bytes is REFUSED by name"
+  -- a data-corruption guard; `containerpath.test.ts:126` is the loopback-rewrite matrix for
+  the host/container path seam. Neither is a byte-identity test. Deleting them would remove
+  coverage the decision never targeted. Read each of the 72 before removing it.
+- **What is knowingly given up.** Most of the 148 are determinism and idempotence assertions
+  about the product: the exporter producing identical source across two runs over an unchanged
+  store (`anno-export-asm.test.ts`, 22 sites), argv stability across successive
+  `buildHostToolArgv()` calls, string-path and object-path producing the same output for the
+  same logical condition. After this phase, a change that makes any of those non-deterministic
+  is not caught by the suite. That is the accepted cost of the decision, recorded so it is not
+  rediscovered as a surprise.
+- **`resources-sync.test.ts` is the one removal with a deploy consequence.** `resources/*.mjs`
+  is committed BUILD OUTPUT, and that test was what made a stale committed build a failure
+  rather than a silent bad deploy -- its own header names the scenario: "developer edits .mts,
+  forgets to rebuild, commits the stale resources/ tree". That path is exercised routinely. The
+  replacement does not need a byte-identical assertion: run `node build.ts` in CI and fail on a
+  dirty tree (`git diff --exit-code -- src/mcp/vice/resources/`). Recorded with its ordering
+  constraint in `.planning/seeds/replace-resources-sync-with-a-ci-build-step.md`. Do this in
+  THIS phase or explicitly decide not to -- do not leave the hole undocumented.
+- **`anno-verb-coverage.test.ts:451` is the one removal with no downside at all.** It compares
+  `installer/skills/` against `src/skills/`, but that tree has ZERO files tracked in git and
+  `installer/package.json` regenerates it on `prepack`, so the test cannot protect what ships.
+  It only ever failed on a stale or polluted local copy -- which it did, twice on 2026-09-13,
+  once nearly derailing a push.
+- **`docs-constraints-sync.test.ts` removal has a documented consequence**: CLAUDE.md's
+  Constraints block is regenerated from `.planning/PROJECT.md`, so a CLAUDE.md-only edit is
+  silently wiped on the next regeneration. Nothing will warn after this phase.
+- **Ordering: do the census FIRST, in one pass, and commit it** before deleting anything. A
+  sweep that re-greps after each edit measures a moving tree and cannot reconcile criterion 3.
+
 ## Sequencing Rationale (v1.0.0)
 
 **Why decomposition is first, and why it does not wait for the new subject.**
@@ -1806,6 +1869,7 @@ in a milestone archive.
 | 51. Planning Vocabulary Out of the Shipped Server | v1.0.0 | - | Not started | - |
 | 52. Remove the Fork Backend | v1.0.0 | 13/13 | Complete | 2026-09-12 |
 | 53. Operator-Owned `docs/` | v1.0.0 | - | Not started | - |
+| 54. Remove Every Byte-Identical Assertion | v1.0.0 | - | Not started | - |
 
 **Milestone roll-up:** v0.2.0 — 9 phases, 87 plans, 51/51 in-scope requirements,
 shipped 2026-08-19 (audit round 4 `tech_debt`; 13 deferred items at close).
