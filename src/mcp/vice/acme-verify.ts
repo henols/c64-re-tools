@@ -409,6 +409,29 @@ export interface AcmeVerifyTreeOptions {
   format?: "plain" | "cbm";
   /** Same field, same contract as `AcmeVerifyOptions.acmeBin`. */
   acmeBin?: string;
+  /**
+   * TEST-ONLY seam (plan 49-03). A caller may supply its own directory for
+   * the assembled output file instead of this function's own fresh one.
+   * Its SINGLE purpose is to make the already-present-output-path refusal
+   * (`assembleAndDiff()` rule 7's `absentBeforeSpawn` conjunct) reachable
+   * for the TREE entry point: this function's own fresh directory is, by
+   * construction, always empty, and a property nothing can ever observe is
+   * a property nobody is checking.
+   *
+   * THE BOUND, stated for this seam the same way `AcmeVerifyOptions.acmeBin`
+   * states its own: nothing passed through `outputDir` can reach the `"ok"`
+   * outcome unless the run itself created the output file inside it --
+   * `absentBeforeSpawn` runs against it completely unchanged, so a directory
+   * that already holds the output file at `VERIFY_OUTPUT_FILE_NAME` is
+   * refused even when its bytes are byte-identical to `expectedBytes`.
+   *
+   * When a caller supplies this directory, this function does NOT remove it
+   * afterward -- the caller created it and the caller owns it, exactly as
+   * `treeDir` itself is never removed here. Omitted, the behaviour is
+   * UNCHANGED from before this option existed: a fresh `mkdtemp`'d directory
+   * is created and removed in this call's own `finally` block.
+   */
+  outputDir?: string;
 }
 
 /**
@@ -953,6 +976,14 @@ function assembleAndDiff(
   };
 }
 
+/** The output file name BOTH entry points assemble into, inside their own
+ * fresh (or, for the tree entry point's test-only `outputDir` seam, a
+ * caller-supplied) directory. Exported so a test can plant a file at the
+ * EXACT path the "did THIS run create it" check (`assembleAndDiff()` rule 7's
+ * `absentBeforeSpawn` conjunct) will test, without hard-coding a private
+ * literal a future rename could silently invalidate. */
+export const VERIFY_OUTPUT_FILE_NAME = "export.bin";
+
 /**
  * Assembles `options.source` with a real ACME and returns a three-outcome
  * verdict settled by a byte-diff. UNCHANGED signature and behaviour after the
@@ -974,7 +1005,7 @@ export function verifyAcmeAssembles(options: AcmeVerifyOptions): AcmeVerifyResul
   const dir = mkdtempSync(join(tmpdir(), "acme-verify-"));
   try {
     const srcPath = join(dir, "export.a");
-    const outPath = join(dir, "export.bin");
+    const outPath = join(dir, VERIFY_OUTPUT_FILE_NAME);
     writeFileSync(srcPath, options.source, "utf8");
 
     return assembleAndDiff(assemblerBin, format, srcPath, outPath, undefined, options.expectedBytes, options.expectedSegments);
@@ -1011,15 +1042,19 @@ export function verifyAcmeAssemblesTree(options: AcmeVerifyTreeOptions): AcmeVer
   const format = options.format ?? "plain";
   const assemblerBin = options.acmeBin ?? ACME_BIN;
 
-  // This call's OWN fresh directory, for its output file alone -- never
-  // inside options.treeDir. See this function's own doc comment above.
-  const outDir = mkdtempSync(join(tmpdir(), "acme-verify-tree-"));
+  // `options.outputDir`'s own doc comment states the seam and its bound.
+  // This call's OWN fresh directory is used ONLY when the caller supplied
+  // none -- never inside options.treeDir either way. A caller-supplied
+  // directory is never removed below; this call's own is, exactly as
+  // before this option existed.
+  const callerSuppliedOutputDir = options.outputDir !== undefined;
+  const outDir = options.outputDir ?? mkdtempSync(join(tmpdir(), "acme-verify-tree-"));
   try {
-    const outPath = join(outDir, "export.bin");
+    const outPath = join(outDir, VERIFY_OUTPUT_FILE_NAME);
     const rootPath = join(options.treeDir, options.rootFileName);
 
     return assembleAndDiff(assemblerBin, format, rootPath, outPath, options.treeDir, options.expectedBytes, options.expectedSegments);
   } finally {
-    rmSync(outDir, { recursive: true, force: true });
+    if (!callerSuppliedOutputDir) rmSync(outDir, { recursive: true, force: true });
   }
 }

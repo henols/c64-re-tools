@@ -73,6 +73,7 @@ import { dirname, join } from "node:path";
 import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
 import {
   ACME_VERIFY_ARGV_FLAGS,
+  VERIFY_OUTPUT_FILE_NAME,
   classifySpawn,
   deadAssemblerIsNeverASkip,
   firstResultLineDisagreement,
@@ -1082,6 +1083,98 @@ test(
     );
     assert.notEqual(verdict.rule, "R12");
     assert.notEqual(verdict.rule, "R4");
+  }
+);
+
+test(
+  "gate red: a previous run's artifact sitting at the tree entry point's own output path is refused even though its bytes are byte-identical to the expected bytes",
+  { skip: SKIP_REASON },
+  () => {
+    const { treeDir, result } = gateTreeExportSubject("stale-artifact");
+    const expectedSegments = blocksInTreeSourceOrder(result);
+
+    // 1. The honest direction through the seam, with an EMPTY planted
+    //    directory -- proving the seam does not change the verdict on its
+    //    own.
+    const honestOutputDir = gateTreeFreshDir("stale-honest-outputdir");
+    const honest = verifyAcmeAssemblesTree({
+      treeDir,
+      rootFileName: ROOT_FILE_NAME,
+      expectedBytes: result.expectedBytes,
+      expectedSegments,
+      outputDir: honestOutputDir,
+    });
+    assert.equal(honest.outcome, "ok", `the honest direction through the seam must still verify cleanly: ${honest.reason}`);
+
+    // 2. The planted direction: a SECOND directory, already holding, at the
+    //    entry point's own output file name, a copy of the exporter's
+    //    expected bytes -- content that would compare byte-identical.
+    const plantedOutputDir = gateTreeFreshDir("stale-planted-outputdir");
+    writeFileSync(join(plantedOutputDir, VERIFY_OUTPUT_FILE_NAME), Buffer.from(result.expectedBytes));
+
+    // Verified again with the assembler binary pointed at a harmless binary
+    // that spawns cleanly, prints nothing and writes nothing -- so this
+    // direction never depends on real ACME running at all, only on the
+    // absentBeforeSpawn conjunct. `expectedSegments` is deliberately EMPTY
+    // here, not the real tree's 16 blocks: `/bin/true` prints no per-segment
+    // lines at all, and the unconditional unanimity rule (rule 5) runs
+    // AHEAD of the absentBeforeSpawn check this case exists to observe --
+    // a non-empty `expectedSegments` would fail on a segment-COUNT
+    // disagreement (16 expected, 0 parsed) before rule 7 is ever reached,
+    // for a reason unrelated to what this case is testing.
+    const planted = verifyAcmeAssemblesTree({
+      treeDir,
+      rootFileName: ROOT_FILE_NAME,
+      expectedBytes: result.expectedBytes,
+      expectedSegments: [],
+      outputDir: plantedOutputDir,
+      acmeBin: "/bin/true",
+    });
+    const recorded = JSON.stringify({ outcome: planted.outcome, reason: planted.reason }, null, 2);
+    assert.equal(
+      planted.outcome,
+      "failed",
+      `bytes on disk that are exactly right must still be refused when the path was already present before the spawn:\n${recorded}`
+    );
+    assert.notEqual(planted.outcome, "ok", "a previous run's artifact must never be reported as this run's pass");
+    assert.match(
+      planted.reason,
+      /ALREADY PRESENT before the spawn/,
+      `the reason must name the output path as already present before the spawn:\n${recorded}`
+    );
+    assert.doesNotMatch(
+      planted.reason,
+      /differ from the expected bytes/,
+      `the reason must not read as a byte disagreement -- the bytes on disk are exactly right, and that is the whole point:\n${recorded}`
+    );
+  }
+);
+
+test(
+  "gate red: the gate reads that refused-artifact verdict as red under the failed-rebuild rule",
+  { skip: SKIP_REASON },
+  () => {
+    const { treeDir, result } = gateTreeExportSubject("stale-artifact-gate");
+    const plantedOutputDir = gateTreeFreshDir("stale-artifact-gate-outputdir");
+    writeFileSync(join(plantedOutputDir, VERIFY_OUTPUT_FILE_NAME), Buffer.from(result.expectedBytes));
+
+    // `expectedSegments` is empty for the same reason the paired case above
+    // states: `/bin/true` prints no per-segment lines, and a non-empty
+    // expectation would trip the unconditional unanimity rule before the
+    // absentBeforeSpawn check this case depends on is ever reached.
+    const verdict = verifyAcmeAssemblesTree({
+      treeDir,
+      rootFileName: ROOT_FILE_NAME,
+      expectedBytes: result.expectedBytes,
+      expectedSegments: [],
+      outputDir: plantedOutputDir,
+      acmeBin: "/bin/true",
+    });
+    assert.equal(verdict.outcome, "failed", `precondition: ${verdict.reason}`);
+
+    const gateVerdict = runReassemblyGate({ ...passingGateInputExceptRebuild(), TREE_REBUILD: verdict.outcome });
+    assert.equal(gateVerdict.outcome, "red", gateVerdict.reason);
+    assert.equal(gateVerdict.rule, "R6");
   }
 );
 
