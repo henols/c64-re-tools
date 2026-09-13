@@ -20,6 +20,7 @@ import { fileURLToPath } from "node:url";
 import { closeStore, currentRevision, listComments, listXrefs, openStore } from "./anno-store.ts";
 import { ANNO_TOOL_DEFINITIONS } from "./anno-tools.ts";
 import { annoRegisterEntryFor } from "./anno-register.ts";
+import { declaredRequirementIds } from "./requirement-ids.ts";
 import {
   AnnoImportError,
   CONST_WRITE_WATCHED_ADDRESSES,
@@ -350,7 +351,12 @@ test("ANNO_TOOL_DEFINITIONS: contains both new tool names, and the surface grew 
 });
 
 test("annoRegisterEntryFor(): both new tools have a register entry citing a real consumer path and a declared requirement id", () => {
-  const requirementsText = readFileSync(join(HERE, "..", "..", "..", ".planning", "REQUIREMENTS.md"), "utf8");
+  // Membership is checked against `requirement-ids.ts`'s union of the live
+  // requirements document and every archived milestone snapshot -- not the
+  // live document alone -- so a cited id from a since-closed milestone still
+  // resolves. See that module's header for why a live-only read is wrong.
+  const root = join(HERE, "..", "..", "..");
+  const { ids: declaredIds, sources } = declaredRequirementIds(root);
   for (const verb of ["anno_import_ghidra_export", "anno_join_memmap"]) {
     const entry = annoRegisterEntryFor(verb);
     assert.ok(entry, `${verb} has no register entry`);
@@ -361,7 +367,10 @@ test("annoRegisterEntryFor(): both new tools have a register entry citing a real
       assert.ok(existsSync(consumerPath), `${verb}'s cited consumer path does not exist: ${consumer.path}`);
     }
     for (const reqId of entry!.requirements) {
-      assert.ok(requirementsText.includes(reqId), `${verb} cites requirement ${reqId}, not found in REQUIREMENTS.md`);
+      assert.ok(
+        declaredIds.has(reqId),
+        `${verb} cites requirement ${reqId}, not declared in any of: ${sources.join(", ")}`,
+      );
     }
   }
 });

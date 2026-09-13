@@ -38,7 +38,7 @@
 // guards that pinned totals and reddened on correct trees.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -46,6 +46,7 @@ import { ANNO_VERB_REGISTER, annoRegisterEntryFor } from "./anno-register.ts";
 import type { AnnoVerbRegisterEntry } from "./anno-register.ts";
 import { ANNO_TOOL_DEFINITIONS, CURATED_ANNO_TOOLS } from "./anno-tools.ts";
 import { repoRoot } from "./repo-root.ts";
+import { declaredRequirementIds as resolveDeclaredRequirementIds } from "./requirement-ids.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = repoRoot({ from: HERE });
@@ -54,43 +55,6 @@ const MANIFEST_PATH = resolve(
   HERE,
   "../../../.planning/phases/19-absorbed-procedures-and-the-coverage-instrument/upstream-procedure-manifest.json",
 );
-/**
- * The requirements document this register's ids are checked against.
- *
- * WHY THE FALLBACK: `/gsd-complete-milestone` **deletes** `.planning/REQUIREMENTS.md`
- * at every milestone close (`git rm`, so the history is kept) and a fresh one is
- * only written when the next milestone opens. Between those two events the live
- * document does not exist, and this guard's DIRECTION 5 read of it threw ENOENT —
- * observed at the v0.7.0 close on 2026-09-01, reddening four tests in this file.
- *
- * The archived copy is the same document: `milestone complete` writes
- * `.planning/milestones/<version>-REQUIREMENTS.md` from the live file before
- * removing it, so the id set is identical. Falling back to the NEWEST archive
- * (lexicographic max of the `v*-REQUIREMENTS.md` names) keeps the membership
- * check real across the gap instead of turning it off.
- *
- * Do NOT "fix" this by relaxing the membership assertion to a shape check — the
- * whole basis of this register is that a cited id is a REAL one, which is
- * precisely the rubber stamp D-08's prohibition names.
- */
-function requirementsPath(): string {
-  const live = resolve(HERE, "../../../.planning/REQUIREMENTS.md");
-  if (existsSync(live)) return live;
-  const archiveDir = resolve(HERE, "../../../.planning/milestones");
-  const archived = existsSync(archiveDir)
-    ? readdirSync(archiveDir).filter((n) => /^v.*-REQUIREMENTS\.md$/.test(n)).sort()
-    : [];
-  if (archived.length === 0) {
-    throw new Error(
-      `no requirements document found: ${live} is absent and ${archiveDir} holds no v*-REQUIREMENTS.md. ` +
-        "One of the two must exist -- an absent set would make DIRECTION 5's membership check vacuous.",
-    );
-  }
-  return join(archiveDir, archived[archived.length - 1]);
-}
-
-const REQUIREMENTS_PATH = requirementsPath();
-
 /** The surface, as names. Taken from the definition table rather than from
  * `CURATED_ANNO_TOOLS` in the scan below, so the ordering direction can drive
  * the same code path against a reversed copy of the table. */
@@ -207,17 +171,17 @@ function collisionProblems(
 /** A requirement id in this project's own FAMILY-NN shape. */
 const REQUIREMENT_ID_RE = /^[A-Z][A-Z0-9]*(?:-[0-9]+)+$/;
 
-/** Every requirement id the requirements document declares, read from its own
- * bolded declarations. Membership is checked as well as shape here -- unlike
- * `module-classification.test.ts`, which checks shape only -- because this
- * register's whole basis rests on the id being real: an entry citing a
+/** Every requirement id declared, read via `requirement-ids.ts` -- the live
+ * `.planning/REQUIREMENTS.md` UNION every archived
+ * `.planning/milestones/v*-REQUIREMENTS.md` snapshot, so an id from a
+ * closed milestone still resolves after a later milestone rotates the live
+ * document out from under it. Membership is checked as well as shape here --
+ * unlike `module-classification.test.ts`, which checks shape only -- because
+ * this register's whole basis rests on the id being real: an entry citing a
  * plausible-looking id that no requirement document declares is precisely the
  * rubber stamp D-08's prohibition names. */
-function declaredRequirementIds(path: string = REQUIREMENTS_PATH): Set<string> {
-  const source = readFileSync(path, "utf8");
-  const ids = new Set<string>();
-  for (const match of source.matchAll(/\*\*([A-Z][A-Z0-9]*(?:-[0-9]+)+)\*\*/g)) ids.add(match[1]);
-  return ids;
+function declaredRequirementIds(root: string = ROOT): Set<string> {
+  return new Set(resolveDeclaredRequirementIds(root).ids);
 }
 
 /**
@@ -259,7 +223,8 @@ function basisProblems(
     }
     if (!declaredIds.has(id)) {
       problems.push(
-        `${entry.verb}: requirement id ${id} is well-shaped but is NOT declared in .planning/REQUIREMENTS.md -- ` +
+        `${entry.verb}: requirement id ${id} is well-shaped but is NOT declared in .planning/REQUIREMENTS.md ` +
+          "or any archived .planning/milestones/v*-REQUIREMENTS.md snapshot -- " +
           "a plausible-looking id nothing declares is the rubber stamp this register exists to prevent",
       );
     }
@@ -384,7 +349,11 @@ test("DIRECTION 4 (collision): a verb classified by BOTH the manifest and the re
 
 test("DIRECTION 5 (basis integrity): every entry cites at least one consumer AND at least one requirement id, every path exists, and every id is declared in .planning/REQUIREMENTS.md", () => {
   const declaredIds = declaredRequirementIds();
-  assert.ok(declaredIds.size > 0, "no requirement ids were parsed out of .planning/REQUIREMENTS.md -- the membership check would pass vacuously");
+  assert.ok(
+    declaredIds.size > 0,
+    "no requirement ids were parsed out of .planning/REQUIREMENTS.md or any archived " +
+      ".planning/milestones/v*-REQUIREMENTS.md snapshot -- the membership check would pass vacuously",
+  );
   const problems = ANNO_VERB_REGISTER.flatMap((entry) => basisProblems(entry, ROOT, declaredIds));
   assert.deepEqual(problems, [], `basis problems:\n  ${problems.join("\n  ")}`);
 });
