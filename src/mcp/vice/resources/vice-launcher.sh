@@ -15,7 +15,10 @@
 # --check-container is now forwarded through to the Node entry point, which
 # answers it, preserving the exact same exit-code contract this launcher
 # always had: 2 when the guard refuses, 3 for the report path, 0 for
-# --print-paths.
+# --print-paths, and (new below) 4 when no interpreter this launcher is
+# willing to exec into could be resolved -- distinct from 2/3 so a triage
+# reader can tell "no usable interpreter" from "container guard refused"
+# at a glance.
 #
 # Copies vice-broker.sh's own opening shape: SELF_PATH/SELF_DIR resolution,
 # resolve_repo_root(). Plan 11 INLINES resolve_repo_root() here (it used to
@@ -131,12 +134,105 @@ REPO_ROOT="$(resolve_repo_root "$SELF_DIR")"
 # deployed tools/ copy that may be stale or hand-edited.
 BROKER_ARTIFACT="$SELF_DIR/vice-broker.mjs"
 
+# ---------------------------------------------------------------- interpreter resolution
+#
+# WHY THIS EXISTS: this launcher used to `exec node ...`, trusting whatever
+# `node` a shell's PATH resolved first. On a development host with several
+# Node majors installed side by side that is an accident waiting to happen,
+# and a service environment (a systemd unit's own PATH, carrying no
+# interactive-shell version-manager entry) resolves a DIFFERENT one than an
+# interactive shell -- the same script started two different ways running
+# two different interpreters, with no record of which. Nothing spawns this
+# script (the broker never spawns itself; the only thing that ever prints
+# this path is a message telling a HUMAN to run it), so there is no parent
+# process whose own interpreter this launcher could inherit or receive as an
+# argument -- the ladder below, plus a refusal, is the whole of it.
+#
+# NODE_FLOOR_MAJOR mirrors src/mcp/vice/package.json's `engines.node` --
+# pinned to that single number by a test (host-scripts.test.ts) precisely so
+# this floor cannot silently drift into a second, disagreeing number, which
+# is the same failure class as the bare-interpreter exec this section
+# replaces.
+NODE_FLOOR_MAJOR=24
+
+# probe_node_version <candidate-path>
+#
+# On success, sets NODE_RESOLVED_VERSION (the raw "vX.Y.Z" string) and
+# NODE_RESOLVED_MAJOR (just the leading number) and returns 0. On any
+# failure -- not executable, crashes, or prints something this launcher
+# cannot parse as a version -- returns 1 and sets neither. Called only from
+# inside an `if`, so a failure here becomes a named refusal downstream
+# rather than aborting the whole script under `set -e`.
+probe_node_version() {
+  local candidate="$1" raw major
+  if ! raw="$("$candidate" --version 2>/dev/null)"; then
+    return 1
+  fi
+  case "$raw" in
+    v[0-9]*) : ;;
+    *) return 1 ;;
+  esac
+  major="${raw#v}"
+  major="${major%%.*}"
+  case "$major" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  NODE_RESOLVED_VERSION="$raw"
+  NODE_RESOLVED_MAJOR="$major"
+  return 0
+}
+
+# Resolution ladder -- exactly two rungs, then a refusal. There is no third
+# rung to invent: see the WHY note above for why the broker's own
+# interpreter can never be threaded in as a candidate.
+#
+#   1. VICE_BROKER_NODE, an absolute-path override, accepted only when it
+#      names an executable file -- this is the rung that fixes a service
+#      unit whose PATH carries no usable node at all: point it at one
+#      directly instead of depending on PATH.
+#   2. `node` as found on PATH.
+NODE_BIN=""
+NODE_VERSION=""
+NODE_MAJOR=""
+NODE_RESOLUTION_ERROR=""
+
+if [ -n "${VICE_BROKER_NODE:-}" ]; then
+  if [ -f "${VICE_BROKER_NODE}" ] && [ -x "${VICE_BROKER_NODE}" ]; then
+    if probe_node_version "$VICE_BROKER_NODE"; then
+      NODE_BIN="$VICE_BROKER_NODE"
+      NODE_VERSION="$NODE_RESOLVED_VERSION"
+      NODE_MAJOR="$NODE_RESOLVED_MAJOR"
+    else
+      NODE_RESOLUTION_ERROR="VICE_BROKER_NODE is set to '$VICE_BROKER_NODE', but running it with --version failed or produced output this launcher could not parse. Set VICE_BROKER_NODE to an absolute path to a working node executable, or unset it to fall back to node on PATH."
+    fi
+  else
+    NODE_RESOLUTION_ERROR="VICE_BROKER_NODE is set to '$VICE_BROKER_NODE', which does not resolve to an executable file. Set VICE_BROKER_NODE to an absolute path to an executable node interpreter, or unset it to fall back to node on PATH."
+  fi
+else
+  NODE_CANDIDATE="$(command -v node 2>/dev/null || true)"
+  if [ -n "$NODE_CANDIDATE" ]; then
+    if probe_node_version "$NODE_CANDIDATE"; then
+      NODE_BIN="$NODE_CANDIDATE"
+      NODE_VERSION="$NODE_RESOLVED_VERSION"
+      NODE_MAJOR="$NODE_RESOLVED_MAJOR"
+    else
+      NODE_RESOLUTION_ERROR="Resolved 'node' on PATH at '$NODE_CANDIDATE', but running it with --version failed or produced output this launcher could not parse. Install a working Node >= v${NODE_FLOOR_MAJOR} and put it on PATH, or set VICE_BROKER_NODE to an absolute path to one."
+    fi
+  else
+    NODE_RESOLUTION_ERROR="No 'node' executable was found on PATH and VICE_BROKER_NODE is not set. Install Node >= v${NODE_FLOOR_MAJOR} and put it on PATH, or set VICE_BROKER_NODE to an absolute path to one."
+  fi
+fi
+
 # ---------------------------------------------------------------- --print-paths
 #
-# Prints already-resolved variables only -- writes no state, spawns nothing,
-# so (like vice-broker.sh's own --print-paths) it needs no guard enforcement
-# to report what this launcher would use. Checked BEFORE --check-container is
-# forwarded, since --print-paths needs no guard verdict at all.
+# Prints already-resolved variables only -- writes no state and spawns
+# nothing beyond the version probe above, so (like vice-broker.sh's own
+# --print-paths) it needs no guard enforcement to report what this launcher
+# would use. Checked BEFORE --check-container is forwarded, since
+# --print-paths needs no guard verdict at all, and BEFORE the floor is
+# enforced below: this diagnostic reports what it found, or reports it
+# found nothing, but never refuses -- a diagnostic that dies exactly when
+# the thing it diagnoses is broken is worthless.
 PRINT_PATHS=0
 for arg in "$@"; do
   case "$arg" in
@@ -150,7 +246,27 @@ if [ "$PRINT_PATHS" -eq 1 ]; then
   echo "repo_root=$REPO_ROOT"
   echo "self_dir=$SELF_DIR"
   echo "broker_artifact=$BROKER_ARTIFACT"
+  echo "node_bin=$NODE_BIN"
+  echo "node_version=$NODE_VERSION"
   exit 0
+fi
+
+# ---------------------------------------------------------------- interpreter gate
+#
+# Refuses BEFORE exec, by name, with a remedy -- a below-floor or
+# unresolvable interpreter must never reach the broker artifact, because
+# once it does, whatever fails next presents as a wedge with no obvious
+# cause. This project detects and refuses by name; it never installs
+# anything and never shells out to a package manager.
+if [ -z "$NODE_BIN" ]; then
+  printf 'vice-launcher: refusing to start -- %s\n' "$NODE_RESOLUTION_ERROR" >&2
+  exit 4
+fi
+
+if [ "$NODE_MAJOR" -lt "$NODE_FLOOR_MAJOR" ]; then
+  printf 'vice-launcher: refusing to start -- resolved node interpreter %s reports %s, which is below the required floor v%s.x. Install a Node >= v%s and put it on PATH, or set VICE_BROKER_NODE to an absolute path to one that satisfies the floor.\n' \
+    "$NODE_BIN" "$NODE_VERSION" "$NODE_FLOOR_MAJOR" "$NODE_FLOOR_MAJOR" >&2
+  exit 4
 fi
 
 # ---------------------------------------------------------------- exec
@@ -161,9 +277,11 @@ fi
 # enforcement path (exit 2, refusal) are the broker's own job now. This
 # launcher forwards every argument, including --repo-root, unchanged, and
 # no longer inspects --check-container itself; the exit-code contract this
-# launcher always exposed (2/3/0) is preserved because the guard functions
-# ported into container-guard.mts return the SAME codes
+# launcher always exposed (2/3/0, now also 4) is preserved because the guard
+# functions ported into container-guard.mts return the SAME codes
 # container_guard_enforce()/container_guard_report() always did. Signal
 # delivery still passes straight through to the broker process with no bash
-# trap in between.
-exec node "$BROKER_ARTIFACT" --repo-root "$REPO_ROOT" "$@"
+# trap in between -- exec replaces the process image with the RESOLVED
+# interpreter, never a bare command name, so the interpreter this launcher
+# actually gated is the one that actually runs.
+exec "$NODE_BIN" "$BROKER_ARTIFACT" --repo-root "$REPO_ROOT" "$@"

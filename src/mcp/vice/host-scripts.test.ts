@@ -16,9 +16,21 @@
 // `--dry-run`/`--print-paths`/`-n`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import {
+  existsSync,
+  readFileSync,
+  readdirSync,
+  mkdtempSync,
+  writeFileSync,
+  chmodSync,
+  symlinkSync,
+  rmSync,
+  accessSync,
+  constants as fsConstants,
+} from "node:fs";
 import { join, dirname } from "node:path";
-import { execFile } from "node:child_process";
+import { tmpdir } from "node:os";
+import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
@@ -86,16 +98,196 @@ const REPO_ROOT = findRepoRoot(HERE);
 //     the one surviving script's syntax.
 // ============================================================================
 
-test("structural: vice-launcher.sh execs into the node entry point, so signal delivery passes straight through to the broker process with no bash trap of its own needed", () => {
+test("structural: vice-launcher.sh execs the RESOLVED interpreter variable, never a bare 'node' command, so signal delivery passes straight through to the broker process with no bash trap of its own needed", () => {
   const src = readFileSync(join(HERE, "resources", "vice-launcher.sh"), "utf8");
   // exec REPLACES the process image in place (same pid), so INT/TERM/HUP/
-  // EXIT are delivered straight to the node process with no bash trap in
-  // between. This is the one assertion the retiring trap-registration loop
-  // carried whose subject survives the deletion -- the other two entries
-  // (the retiring bash broker and per-instance supervisor) registered their
-  // own traps, which have no equivalent shape to keep once neither script
-  // exists.
-  assert.match(src, /\bexec\s+node\b/, "vice-launcher.sh must exec into node so signal delivery passes through unchanged");
+  // EXIT are delivered straight to whichever interpreter this launcher
+  // resolved, with no bash trap in between. Originally this assertion
+  // pinned `exec node ...` -- a bare command name that trusted whatever
+  // `node` PATH happened to resolve first. It must now exec the resolved
+  // variable so the interpreter that was version-gated is the one that
+  // actually runs.
+  const stripped = stripShellCommentsForDaemonGate(src);
+  const trimmed = stripped.replace(/\n+$/, "");
+  const lines = trimmed.split("\n").filter((line) => line.trim().length > 0);
+  const lastLine = lines[lines.length - 1];
+  assert.match(
+    lastLine,
+    /^exec\s+"\$NODE_BIN"(\s|$)/,
+    `vice-launcher.sh's final line must exec the resolved-interpreter variable ($NODE_BIN), got: ${lastLine}`,
+  );
+
+  const bareExecCount = (stripped.match(/\bexec\s+node\b/g) ?? []).length;
+  assert.equal(
+    bareExecCount,
+    0,
+    "the comment-filtered body of vice-launcher.sh must contain zero occurrences of the bare-interpreter exec form -- the interpreter this launcher gated must be the one it execs, never whatever 'node' happens to resolve on PATH",
+  );
+});
+
+// ============================================================================
+// Interpreter resolution: the launcher no longer trusts PATH blindly. It
+// resolves an explicit interpreter (VICE_BROKER_NODE override, then `node`
+// on PATH), gates the result against a floor mirroring package.json's
+// `engines.node`, and refuses by name -- before exec -- when nothing usable
+// resolved. Every case below is safe by construction: cases that refuse do
+// so BEFORE exec (they can never start a broker), and the --print-paths
+// cases spawn no broker either -- they only run a `--version` probe on a
+// candidate binary.
+// ============================================================================
+
+const LAUNCHER_PATH = join(HERE, "resources", "vice-launcher.sh");
+
+// Resolved once, at module load, rather than assumed as "bash"/"dirname"/
+// "basename" bare names -- the whole point of the tests below is to control
+// PATH precisely, so the harness invoking the launcher (and the harness's
+// own stub interpreters) must not itself depend on the ambient PATH the
+// test runner happens to have.
+const BASH_BIN = execFileSync("sh", ["-c", "command -v bash"], { encoding: "utf8" }).trim();
+const DIRNAME_BIN = execFileSync("sh", ["-c", "command -v dirname"], { encoding: "utf8" }).trim();
+const BASENAME_BIN = execFileSync("sh", ["-c", "command -v basename"], { encoding: "utf8" }).trim();
+
+async function runLauncher(
+  args: string[],
+  env: NodeJS.ProcessEnv,
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  try {
+    const { stdout, stderr } = await execFileP(BASH_BIN, [LAUNCHER_PATH, ...args], { env });
+    return { code: 0, stdout, stderr };
+  } catch (err) {
+    const e = err as { code?: number; stdout?: string; stderr?: string };
+    return { code: typeof e.code === "number" ? e.code : 1, stdout: e.stdout ?? "", stderr: e.stderr ?? "" };
+  }
+}
+
+/** Writes a fake `node` that always prints a fixed `--version` string,
+ * regardless of any argument it's called with -- enough to drive the
+ * launcher's own version probe without a real Node interpreter. */
+function writeStubNode(dir: string, version: string): string {
+  const stubPath = join(dir, "node");
+  writeFileSync(stubPath, `#!${BASH_BIN}\necho "${version}"\n`);
+  chmodSync(stubPath, 0o755);
+  return stubPath;
+}
+
+const RE_META = /[.*+?^${}()|[\]\\]/g;
+function escapeForRegExp(s: string): string {
+  return s.replace(RE_META, "\\$&");
+}
+
+test("drift guard: vice-launcher.sh's NODE_FLOOR_MAJOR literal equals the major of package.json's engines.node floor", () => {
+  const launcherSrc = readFileSync(LAUNCHER_PATH, "utf8");
+  const floorMatch = launcherSrc.match(/^NODE_FLOOR_MAJOR=(\d+)$/m);
+  assert.ok(floorMatch, "vice-launcher.sh must declare a NODE_FLOOR_MAJOR=<int> literal");
+  const launcherFloor = Number(floorMatch![1]);
+
+  const pkg = JSON.parse(readFileSync(join(HERE, "package.json"), "utf8")) as { engines?: { node?: string } };
+  const engineRange = pkg.engines?.node;
+  assert.ok(engineRange, "src/mcp/vice/package.json must declare engines.node");
+  const engineMatch = engineRange!.match(/(\d+)/);
+  assert.ok(engineMatch, `could not parse a major version out of engines.node ("${engineRange}")`);
+  const engineFloor = Number(engineMatch![1]);
+
+  assert.equal(
+    launcherFloor,
+    engineFloor,
+    `vice-launcher.sh's NODE_FLOOR_MAJOR (${launcherFloor}) must equal package.json's engines.node major (${engineFloor}) -- ` +
+      "two numbers answering one question is how the bare-interpreter defect happened in the first place",
+  );
+});
+
+test("below-floor override: refuses before exec, naming the stub's path, its reported version, the floor, and the override variable", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "vice-launcher-test-stub-"));
+  try {
+    const stubPath = writeStubNode(dir, "v20.0.0");
+
+    const { code, stdout, stderr } = await runLauncher([], {
+      PATH: process.env.PATH,
+      VICE_BROKER_NODE: stubPath,
+    });
+
+    assert.notEqual(code, 0, "a below-floor interpreter must be refused, not started");
+    assert.match(stderr, new RegExp(escapeForRegExp(stubPath)), "refusal must name the stub's own path");
+    assert.match(stderr, /v20\.0\.0/, "refusal must name the version the stub reported");
+    assert.match(stderr, /24/, "refusal must name the floor");
+    assert.match(stderr, /VICE_BROKER_NODE/, "refusal must name the override variable");
+    assert.doesNotMatch(stdout, /vice-broker\.mjs/, "the broker artifact must never be named on stdout -- it was never reached");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("override points at nothing: refuses, naming the variable, the path, and requiring an absolute path to an executable", async () => {
+  const missingPath = join(tmpdir(), "vice-launcher-test-does-not-exist", "node");
+  const { code, stderr } = await runLauncher([], {
+    PATH: process.env.PATH,
+    VICE_BROKER_NODE: missingPath,
+  });
+
+  assert.notEqual(code, 0);
+  assert.match(stderr, /VICE_BROKER_NODE/);
+  assert.match(stderr, new RegExp(escapeForRegExp(missingPath)));
+  assert.match(stderr, /executable/);
+});
+
+test("nothing resolvable: a PATH with only dirname/basename (no node, no override) refuses, naming both remedies", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "vice-launcher-test-minpath-"));
+  try {
+    symlinkSync(DIRNAME_BIN, join(dir, "dirname"));
+    symlinkSync(BASENAME_BIN, join(dir, "basename"));
+
+    const { code, stderr } = await runLauncher([], { PATH: dir });
+
+    assert.notEqual(code, 0, "with no node resolvable at all, the launcher must refuse rather than proceed");
+    assert.match(stderr, /install/i, "refusal must name the install remedy");
+    assert.match(stderr, /VICE_BROKER_NODE/, "refusal must name the override remedy");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("--print-paths stays total: exits 0 reporting a below-floor stub, and separately exits 0 reporting nothing found, rather than ever refusing", async () => {
+  const stubDir = mkdtempSync(join(tmpdir(), "vice-launcher-test-stub-"));
+  const minDir = mkdtempSync(join(tmpdir(), "vice-launcher-test-minpath-"));
+  try {
+    const stubPath = writeStubNode(stubDir, "v20.0.0");
+    symlinkSync(DIRNAME_BIN, join(minDir, "dirname"));
+    symlinkSync(BASENAME_BIN, join(minDir, "basename"));
+
+    const withStub = await runLauncher(["--print-paths"], {
+      PATH: minDir,
+      VICE_BROKER_NODE: stubPath,
+    });
+    assert.equal(withStub.code, 0, "the diagnostic must not refuse even when the resolved interpreter is below the floor");
+    assert.match(withStub.stdout, /^node_bin=.*node$/m);
+    assert.match(withStub.stdout, /^node_version=v20\.0\.0$/m);
+
+    const withNothing = await runLauncher(["--print-paths"], { PATH: minDir });
+    assert.equal(withNothing.code, 0, "the diagnostic must not refuse when nothing at all resolved");
+    assert.match(withNothing.stdout, /^node_bin=$/m);
+    assert.match(withNothing.stdout, /^node_version=$/m);
+  } finally {
+    rmSync(stubDir, { recursive: true, force: true });
+    rmSync(minDir, { recursive: true, force: true });
+  }
+});
+
+test("happy path: --print-paths with the real environment prints an absolute, executable node_bin and a node_version matching that binary's own --version", async () => {
+  const { code, stdout } = await runLauncher(["--print-paths"], process.env);
+  assert.equal(code, 0);
+
+  const binMatch = stdout.match(/^node_bin=(.+)$/m);
+  assert.ok(binMatch, "expected a node_bin= line in --print-paths output");
+  const nodeBin = binMatch![1];
+  assert.ok(nodeBin.startsWith("/"), "node_bin must be an absolute path");
+  assert.doesNotThrow(() => accessSync(nodeBin, fsConstants.X_OK), "node_bin must be an executable file");
+
+  const versionMatch = stdout.match(/^node_version=(.+)$/m);
+  assert.ok(versionMatch, "expected a node_version= line in --print-paths output");
+  const reportedVersion = versionMatch![1];
+
+  const { stdout: ownVersion } = await execFileP(nodeBin, ["--version"]);
+  assert.equal(reportedVersion, ownVersion.trim(), "node_version= must match the resolved binary's own --version output");
 });
 
 // ============================================================================
