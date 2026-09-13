@@ -667,6 +667,21 @@ v1.0.0 to the rebuild half alone.
 two v1.0.0 sections further below, placed after v0.6.0's and v0.9.0's for the
 window-slicing reason recorded there.
 
+### Phase 55: Restore the Fork Removal's Dropped Capabilities and Re-Baseline the Proxy Test
+
+**Goal**: Two capabilities the fork-only deletion left without a producer are
+either restored or consciously withdrawn on the record, and `vice-proxy.test.ts`
+stops asserting mechanisms that no longer exist — so the full `*.test.*` glob CI
+actually runs goes green, with every removed assertion either covered by a named
+successor suite or deleted with its reason stated.
+**Requirements**: TBD
+**Depends on:** Phase 52 (whose fork-only deletion is what dropped both capabilities)
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 55 to break down)
+
 ## v0.6.0 Own the substrate — CLOSED INCOMPLETE (Phase Details)
 
 *v0.6.0's phase details, kept in place rather than archived. Phase 23 is
@@ -1870,6 +1885,7 @@ in a milestone archive.
 | 52. Remove the Fork Backend | v1.0.0 | 13/13 | Complete | 2026-09-12 |
 | 53. Operator-Owned `docs/` | v1.0.0 | - | Not started | - |
 | 54. Remove Every Byte-Identical Assertion | v1.0.0 | - | Not started | - |
+| 55. Restore the Fork Removal's Dropped Capabilities and Re-Baseline the Proxy Test | v1.0.0 | - | Not started | - |
 
 **Milestone roll-up:** v0.2.0 — 9 phases, 87 plans, 51/51 in-scope requirements,
 shipped 2026-08-19 (audit round 4 `tech_debt`; 13 deferred items at close).
