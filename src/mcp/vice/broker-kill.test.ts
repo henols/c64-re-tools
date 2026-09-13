@@ -459,9 +459,21 @@ test("structural: the broker's argument parser recognises exactly --repo-root, -
   assert.deepEqual(flags, ["--check-container", "--dry-run", "--repo-root", "--state-dir"]);
 });
 
-test("structural: the broker never re-executes itself -- no reference to its own executable path anywhere in vice-broker.mts", () => {
+test("structural: the broker never re-executes itself -- process.execPath is never passed to a spawn/exec/fork construct in vice-broker.mts", () => {
   const source = readFileSync(join(HERE, "vice-broker.mts"), "utf8");
-  assert.ok(!source.includes("execPath"), "no self-spawn/re-exec construct (process.execPath or similar) may appear -- detaching stays the operator's own choice (D-25)");
+  // NARROWED (node-interpreter-pinning quick task): this used to ban the bare
+  // substring "execPath" outright, which blocked a legitimate, unrelated use
+  // -- recording the broker's own process.execPath in broker.json's
+  // node_exec_path field, purely for a later triage session to read. That is
+  // not a self-spawn: nothing in this file passes process.execPath to a
+  // spawn/exec/fork call, so this assertion is now precise about the actual
+  // hazard (D-25: detaching stays the operator's own choice, never an
+  // automatic self-respawn) instead of over-broad about the substring.
+  const selfReexecPattern = /\b(?:nodeSpawn|spawn|execFile(?:Sync)?|fork)\s*\(\s*process\.execPath\b/;
+  assert.ok(
+    !selfReexecPattern.test(source),
+    "no self-spawn/re-exec construct may pass process.execPath to a child-process spawning function -- detaching stays the operator's own choice (D-25)",
+  );
 });
 
 test("structural: no clean-shutdown marker file is ever referenced in broker-kill.mts or vice-broker.mts", () => {
