@@ -2837,7 +2837,22 @@ test("broker warming: an acquire deadline with no grant or error is a warming-an
 // derivation.
 // -----------------------------------------------------------------------
 
-test("containerize: a loopback grant url is rewritten so the forwarded call actually reaches a stub bound off loopback", async () => {
+test("containerize: a loopback grant url is rewritten to the alias, proven from the seam's own adoption record (not a forwarded call)", async () => {
+  // Plan 55-04: the forwarding path this test used to drive a call through
+  // (the fork's own HTTP dispatch) is gone -- every advertised tool now
+  // reaches stockDispatch.dispatchStock(), which claims the monitor socket
+  // over the control connection BEFORE ever dialling the containerized url.
+  // The fixture control broker below never wires onMonitorClaim (it is a
+  // proxy-focused fixture that "never exercises monitor_claim/
+  // monitor_release itself" -- see startControlBroker()'s own comment), so
+  // that claim always fails and the forwarded call can never complete no
+  // matter what the containerized url resolves to. MEASURED: the call
+  // returns in ~10ms with isError:true and a monitor-claim-failed message
+  // that names neither host nor port. Proving the url was rewritten to the
+  // eth0 alias therefore has to come from the seam's own adoption record --
+  // the one stderr line containerizeGrant() emits, which is also the exact
+  // value useInstance() adopts as this session's active instance -- rather
+  // than from round-tripping a request to a stub bound off loopback.
   const dir = mkdtempSync(join(tmpdir(), "vice-proxy-ccn-url-"));
   const eth0 = firstNonInternalIPv4();
   assert.ok(eth0, "this environment must expose a non-internal IPv4 address for this test to be meaningful");
@@ -2854,6 +2869,9 @@ test("containerize: a loopback grant url is rewritten so the forwarded call actu
   try {
     const standIn = startStandInServer();
     server = standIn.server;
+    // Still a REAL bound port -- the grant's own port field is validated as
+    // an integer before anything else, so this keeps the fixture's shape
+    // honest even though nothing will ever actually dial it (see above).
     const stubPort = await listenOn(server, eth0);
 
     proxy = startProxy({
@@ -2871,9 +2889,9 @@ test("containerize: a loopback grant url is rewritten so the forwarded call actu
       VICE_BROKER_CONTROL_DIAL_HOST: "127.0.0.1",
     });
     await handshake(proxy);
-    // A loopback url on the stub's port -- nothing listens on loopback at
-    // this port (the stub is bound ONLY to eth0), so a successful response
-    // is only possible if the containerization inverse rewrote the url.
+    // A loopback url on the stub's port -- the adoption record must show
+    // this rewritten to the eth0 alias, regardless of what happens to any
+    // later dial attempt.
     const acquired = await startControlBroker(dir, {
       onAcquire: async () => ({
         ok: true,
@@ -2887,18 +2905,20 @@ test("containerize: a loopback grant url is rewritten so the forwarded call actu
     });
     controlServer = acquired.server;
 
+    // Drives the acquire-and-containerize sequence. The response itself is
+    // not asserted on (see the comment above this test) -- only that ONE
+    // response arrives, proving the call ran the full adoption sequence
+    // before the (expected) monitor-claim refusal.
     proxy.send({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "vice_ping", arguments: {} } });
+    await proxy.nextMessage(10000);
 
-    const resp = await proxy.nextMessage(10000);
-    assert.equal(
-      resp.result.isError,
-      false,
-      "the forwarded call must succeed -- only possible if the loopback url was rewritten to the alias the stub actually listens on"
+    const translationLines = proxy.stderr.join("").split("\n").filter((l) => l.includes("containerized grant"));
+    assert.equal(translationLines.length, 1, "exactly one adoption-record line must be emitted");
+    assert.match(
+      translationLines[0],
+      new RegExp(`url: "http://127\\.0\\.0\\.1:${stubPort}/mcp" -> "http://${eth0}:${stubPort}/mcp"`),
+      "the adopted url must be rewritten from the loopback grant value to the eth0 alias the stub actually listens on"
     );
-    const payload = JSON.parse(resp.result.content[0].text);
-    assert.equal(payload.version, "3.10");
-
-    assert.match(proxy.stderr.join(""), /containerized grant/, "the one translation stderr line must be emitted");
   } finally {
     if (proxy) proxy.child.kill("SIGKILL");
     if (server) await new Promise((resolveClose) => server!.close(resolveClose));
@@ -3027,6 +3047,13 @@ test("containerize: an already-container-shaped grant (tmpdir VICE_POOL_DIR) is 
 });
 
 test("containerize safety net: a grant whose epoch_file translates outside the workspace is refused, falling back to the port-derived path", async () => {
+  // Plan 55-04: as with the loopback-rewrite test above, the fixture control
+  // broker never wires onMonitorClaim, so the forwarded call below always
+  // fails at the monitor-claim step regardless of which epoch_file the
+  // session ends up holding. The refusal-plus-fallback this safety net
+  // performs is proven from the seam's own adoption-record stderr line --
+  // the exact value it substitutes is also the exact value useInstance()
+  // adopts -- rather than from the forwarded call's own outcome.
   const dir = mkdtempSync(join(tmpdir(), "vice-proxy-ccn-safetynet-epoch-"));
   const { server } = startStandInServer();
   const port = await listen(server);
@@ -3044,6 +3071,10 @@ test("containerize safety net: a grant whose epoch_file translates outside the w
     // once containerPath() constructs the container form.
     const realHostRoot = hostPath(repoRoot());
     const escapingHostPath = `${realHostRoot}/../../../../../../etc/passwd`;
+    // containerizeGrant()'s own fallback construction (brokerRootDir()
+    // resolves to VICE_POOL_DIR when set, exactly as this proxy invocation
+    // sets it): `join(brokerRootDir(), String(port), "epoch.json")`.
+    const fallbackEpochFile = join(dir, String(port), "epoch.json");
 
     const acquired = await startControlBroker(dir, {
       onAcquire: async () => ({
@@ -3059,20 +3090,15 @@ test("containerize safety net: a grant whose epoch_file translates outside the w
     controlServer = acquired.server;
 
     proxy.send({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "vice_ping", arguments: {} } });
-
-    const resp = await proxy.nextMessage(10000);
-    assert.equal(
-      resp.result.isError,
-      false,
-      "the session must still be usable -- the safety net substitutes a coordinate, it does not fail the call"
-    );
+    await proxy.nextMessage(10000);
 
     const translationLines = proxy.stderr.join("").split("\n").filter((l) => l.includes("containerized grant"));
     assert.equal(translationLines.length, 1);
-    assert.match(
-      translationLines[0],
-      /epoch_file: SUBSTITUTED/,
-      "the escaping epoch_file must be reported as substituted, not silently adopted"
+    assert.ok(
+      translationLines[0].includes(
+        `epoch_file: SUBSTITUTED ${JSON.stringify(escapingHostPath)} -> ${JSON.stringify(fallbackEpochFile)} (port-derived fallback)`
+      ),
+      `the escaping epoch_file must be substituted with the port-derived fallback path, not silently adopted -- got: ${translationLines[0]}`
     );
   } finally {
     proxy.child.kill("SIGKILL");
@@ -3083,6 +3109,11 @@ test("containerize safety net: a grant whose epoch_file translates outside the w
 });
 
 test("containerize safety net: a grant whose url port disagrees with the granted port is refused, falling back to the port-derived url", async () => {
+  // Plan 55-04: same disposition as the sibling safety-net test above -- the
+  // forwarded call below cannot complete regardless of which url the session
+  // ends up holding (the fixture control broker never wires onMonitorClaim),
+  // so the refusal-plus-fallback property is proven from the seam's own
+  // adoption-record stderr line.
   const dir = mkdtempSync(join(tmpdir(), "vice-proxy-ccn-safetynet-url-"));
   const { server } = startStandInServer();
   const port = await listen(server);
@@ -3095,12 +3126,15 @@ test("containerize safety net: a grant whose url port disagrees with the granted
   let controlServer: NetServer | null = null;
   try {
     await handshake(proxy);
+    const mismatchedUrl = `http://127.0.0.1:${wrongPort}/mcp`; // disagrees with the granted port
+    // containerizeGrant()'s own fallback construction: `http://${alias}:${port}/mcp`.
+    const fallbackUrl = `http://127.0.0.1:${port}/mcp`;
     const acquired = await startControlBroker(dir, {
       onAcquire: async () => ({
         ok: true,
         grant: {
           port,
-          url: `http://127.0.0.1:${wrongPort}/mcp`, // disagrees with the granted port
+          url: mismatchedUrl,
           epochFile: join(dir, "unused-epoch.json"),
           supervisorDir: join(dir, "unused-supervisor-dir"),
         },
@@ -3109,18 +3143,15 @@ test("containerize safety net: a grant whose url port disagrees with the granted
     controlServer = acquired.server;
 
     proxy.send({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "vice_ping", arguments: {} } });
-
-    const resp = await proxy.nextMessage(10000);
-    assert.equal(resp.result.isError, false, "the session must still be usable via the port-derived fallback url");
-    const payload = JSON.parse(resp.result.content[0].text);
-    assert.equal(payload.version, "3.10");
+    await proxy.nextMessage(10000);
 
     const translationLines = proxy.stderr.join("").split("\n").filter((l) => l.includes("containerized grant"));
     assert.equal(translationLines.length, 1);
-    assert.match(
-      translationLines[0],
-      /url: SUBSTITUTED/,
-      "the port-mismatched url must be reported as substituted, not silently adopted"
+    assert.ok(
+      translationLines[0].includes(
+        `url: SUBSTITUTED ${JSON.stringify(mismatchedUrl)} -> ${JSON.stringify(fallbackUrl)} (port-derived fallback)`
+      ),
+      `the port-mismatched url must be substituted with the port-derived fallback url, not silently adopted -- got: ${translationLines[0]}`
     );
   } finally {
     proxy.child.kill("SIGKILL");
