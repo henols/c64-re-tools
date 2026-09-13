@@ -56,6 +56,21 @@ import { storePathWithinWorkspace, AnnoStorePathError } from "./anno-types.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
+// This file's "END TO END" / "two overlapping ... requests" cases dial a
+// control-plane listener THIS test file itself started moments earlier, on
+// loopback -- so loopback is the only address that can ever be right for
+// them. Without this pin, resolveControlTarget() falls through to
+// mcpHost()'s bridge-alias default, and an ambient devcontainer workspace
+// variable (this repo's own CI job sets CONTAINER_WORKSPACE_PATH/
+// HOST_WORKSPACE_PATH as a path-translation fixture, not as a statement
+// about the runner) makes isInsideContainer() report true, so the client
+// resolves the container-side bridge alias instead of loopback and the case
+// dies in DNS resolution (`getaddrinfo ENOTFOUND host.docker.internal`)
+// before any assertion runs. This is not a CI-only accommodation: the pin is
+// unconditional and was measured green with the workspace variables both set
+// and unset. Mirrors the existing, committed idiom at broker-e2e.test.ts:47.
+process.env.VICE_BROKER_CONTROL_DIAL_HOST = "127.0.0.1";
+
 // Reach ACME only through the shared seam -- never a second hand-rolled probe.
 const SKIP_REASON: string | false = acmeSkipReasonFor("host-tool.test.ts");
 

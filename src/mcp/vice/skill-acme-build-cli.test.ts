@@ -67,14 +67,51 @@ test("acme.mjs is resolved at the expected relative path", () => {
 // Subprocess helper. `libraryFree: true` clears ACME in the child env,
 // mirroring CI's `ACME= node ...` invocation and findAcmeLib()'s own
 // "falsy env var -> not tried" semantics.
+//
+// hostRouteChildEnv() additionally strips CONTAINER_WORKSPACE_PATH from the
+// copy. This file asserts that a REAL assembler on THIS machine produced a
+// real program file on disk -- a host-route claim. An ambient devcontainer
+// workspace variable inherited from a job that only SIMULATES a container
+// (this repo's own CI job sets it as a path-translation fixture, not as a
+// statement about the runner) would route the child to a control plane with
+// no broker behind it, turning every assembling case into a transport
+// refusal rather than a build result. The container-route behaviour of the
+// seam is already covered by the real-control-plane cases in
+// host-tool-transport.test.ts and is not this file's subject.
 // ---------------------------------------------------------------------------
 
-function runAcme(args: string[], opts: { libraryFree?: boolean } = {}): { status: number | null; stdout: string; stderr: string } {
+function hostRouteChildEnv(opts: { libraryFree?: boolean } = {}): NodeJS.ProcessEnv {
   const env = { ...process.env };
   if (opts.libraryFree) env.ACME = "";
+  delete env.CONTAINER_WORKSPACE_PATH;
+  return env;
+}
+
+function runAcme(args: string[], opts: { libraryFree?: boolean } = {}): { status: number | null; stdout: string; stderr: string } {
+  const env = hostRouteChildEnv(opts);
   const r = spawnSync(process.execPath, [SCRIPT_PATH, ...args], { encoding: "utf8", env });
   return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
 }
+
+test(
+  "hostRouteChildEnv() strips CONTAINER_WORKSPACE_PATH from the child environment even when the PARENT process has it set, while leaving an unrelated inherited key untouched (so the helper cannot degrade into returning an empty environment)",
+  () => {
+    const previous = process.env.CONTAINER_WORKSPACE_PATH;
+    process.env.CONTAINER_WORKSPACE_PATH = "/synthetic-parent-workspace";
+    try {
+      const env = hostRouteChildEnv({ libraryFree: true });
+      assert.equal(
+        Object.prototype.hasOwnProperty.call(env, "CONTAINER_WORKSPACE_PATH"),
+        false,
+        "hostRouteChildEnv() must remove CONTAINER_WORKSPACE_PATH from the returned environment",
+      );
+      assert.equal(env.PATH, process.env.PATH, "an unrelated inherited key (PATH) must still be present and unchanged");
+    } finally {
+      if (previous === undefined) delete process.env.CONTAINER_WORKSPACE_PATH;
+      else process.env.CONTAINER_WORKSPACE_PATH = previous;
+    }
+  },
+);
 
 function withTempDir<T>(fn: (dir: string) => T): T {
   const dir = mkdtempSync(join(tmpdir(), "acme-cli-test-"));
