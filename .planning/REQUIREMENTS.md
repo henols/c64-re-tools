@@ -82,6 +82,31 @@ Stated once so no requirement below has to restate them.
 - [x] **FORKRM-06**: `tools-manifest.stock.json` is the only manifest; `refresh-manifest.ts` and `tools-manifest.json` are gone and nothing regenerates a manifest from a live host.
 - [x] **FORKRM-07**: `npm run test:automated` is green at the documented failure-set floor, with every fork-conditional test branch removed rather than skipped.
 
+### Operator-Owned `docs/` (Phase 53)
+
+Owner ruling, 2026-09-13: `docs/` is the operator's own documentation tree.
+Generated phase artifacts do not belong in it. A `docs/evidence/` subfolder was
+proposed and explicitly rejected -- confining the contamination is not removing it.
+
+- [ ] **DOCS-01**: No GSD-generated artifact is written under `docs/`. The 21
+  `docs/phase*.md` files are relocated to the phase artifact tree, matching the
+  `evidence/` convention 17 phase directories already follow. Stock GSD prescribes
+  no evidence directory, so the destination is this project's existing one:
+  `.planning/phases/NN-<slug>/evidence/`.
+- [ ] **DOCS-02**: `docs/phase0-binmon-findings.md` gets a recorded home decision.
+  It predates `.planning/` by one day (committed 2026-08-11; the roadmap landed
+  2026-08-12), has no phase directory to return to, and is the most-cited file of
+  the set. Whatever is decided is written down rather than left implicit.
+- [ ] **DOCS-03**: Zero `docs/phase*.md` citations remain in `src/**` or `tools/**`.
+  Each is replaced by the REASON it stood for, per ENGINEERING_RULES section 21.2 --
+  never repointed at a `.planning/` path, which that rule's criterion 4 names as the
+  same defect one hop along. Measured 2026-09-13: 42 citing files, of which 15 fall
+  inside Phase 51's `files[]` scope and 27 fall outside it.
+- [ ] **DOCS-04**: A guard fails the build when a `docs/phase*` path appears in
+  `src/**` or `tools/**`, and is proven non-vacuous by a planted citation. Without
+  it the pattern returns at the next phase -- it has recurred at every phase since
+  2026-08-11 purely by precedent.
+
 ## Departures from the v0.5.0 text
 
 Recorded explicitly, because these 14 requirements had stood byte-identical
@@ -160,6 +185,10 @@ Success-Criteria live in `.planning/ROADMAP.md` → "Phase Details".
 | FORKRM-05 | Phase 52 | Complete |
 | FORKRM-06 | Phase 52 | Complete |
 | FORKRM-07 | Phase 52 | Complete |
+| DOCS-01 | Phase 53 | Pending |
+| DOCS-02 | Phase 53 | Pending |
+| DOCS-03 | Phase 53 | Pending |
+| DOCS-04 | Phase 53 | Pending |
 
 **Coverage:**
 

@@ -660,6 +660,7 @@ v1.0.0 to the rebuild half alone.
 - [x] **Phase 49: The Reassembly Gate, Committed Before the Phase It Gates** - A gate that says whether an exported tree really rebuilds — byte-diffed against the image, hazard report attached, movement exercised on every run — with its rules in git before its first real run and its verdict read as a precondition by Phase 50 (completed 2026-09-13)
 - [ ] **Phase 50: Equivalence and Modifiability** - The rebuild shown behaving like the original in a real emulator and shown being changed, with committed transcripts as the artifacts of record rather than described walkthroughs — and the comparison observed failing before it is trusted
 - [ ] **Phase 51: Planning Vocabulary Out of the Shipped Server** - The 2384 planning citations still in the 88 modules npm ships verbatim are replaced by the reasoning each one stands for, and the guard that already holds `src/skills/**` at zero is widened to hold the server there too
+- [ ] **Phase 53: Operator-Owned `docs/`** - The 21 phase-evidence documents squatting in the operator's own `docs/` tree go back to the phase artifact tree, the citations that pinned them there become the reasons they stood for, and a guard stops the precedent that has quietly recurred at every phase since 2026-08-11
 
 **Phase details, the dependency edges and the sequencing rationale** are in the
 two v1.0.0 sections further below, placed after v0.6.0's and v0.9.0's for the
@@ -1538,6 +1539,89 @@ Notes:
   half is **27** fork-mentioning lines across 9 files, of which the 9 routing
   sites are a subset.
 
+### Phase 53: Operator-Owned `docs/`
+
+**Goal**: `docs/` contains only what the operator put there. The 21
+`docs/phase*.md` evidence documents return to the phase artifact tree, the
+`src/**` and `tools/**` citations that kept them outside `.planning/` become the
+reasons they stood for, and a guard prevents the precedent recurring.
+
+**Requirements**: `DOCS-01`, `DOCS-02`, `DOCS-03`, `DOCS-04`
+
+**Depends on**: **Phase 51**, partially and for a hard reason — see the ordering
+note below. Phase 51 clears the 15 citing files inside its `files[]` scope; this
+phase must clear the other 27 before anything moves.
+
+**Success Criteria** (what must be TRUE):
+
+  1. `ls docs/` shows only operator-authored documents. No `phase*`-named file
+     remains, and no `docs/evidence/` or equivalent subfolder was created to hold
+     them — the owner rejected that route by name on 2026-09-13.
+  2. Each relocated document sits at `.planning/phases/NN-<slug>/evidence/`,
+     matching the convention 17 phase directories already follow. `git mv` is used
+     so history survives.
+  3. `docs/phase0-binmon-findings.md`'s destination is decided and RECORDED. It has
+     no phase directory — it was committed 2026-08-11, a day before
+     `.planning/ROADMAP.md` existed — and it is the most-cited of the 21.
+  4. A grep for `docs/phase` across `src/**` and `tools/**` returns zero. Every
+     replaced site states the REASON, per ENGINEERING_RULES section 21.2. A site
+     repointed at a `.planning/` path FAILS this criterion — that rule's own
+     criterion 4 calls it "the same defect one hop along."
+  5. A diff whose net effect is deleting explanatory comments FAILS this phase,
+     on the same terms Phase 51 sets. The WHY headers are house style and must
+     survive the rewrite.
+  6. A guard reds on a `docs/phase*` path appearing in `src/**` or `tools/**`, runs
+     in `npm run test:automated`, and is proven non-vacuous by a planted citation.
+
+**Plans**: TBD
+
+Notes:
+
+- **This is not GSD's doing, and the fix is not a GSD setting.** Nothing in the
+  vendored `gsd-core/` tree writes to `docs/`; every one of these files was written
+  by a plan that named the path. Stock GSD prescribes no evidence directory at all
+  — there is no `.planning/phases/*/evidence/` string anywhere in it. The
+  `evidence/` subdirectory is this project's own convention layered inside GSD's
+  phase artifact directory, and it is already the majority practice: 17 phase
+  directories use it.
+- **How the precedent started.** `docs/phase0-binmon-findings.md` was committed
+  2026-08-11 (`68b0a799`); `.planning/ROADMAP.md` first appeared 2026-08-12. At that
+  moment `docs/` was the repository's only documentation directory, so the first
+  phase's evidence landed there because there was nowhere else. Every later phase
+  copied it — the rest are all `docs(NN-NN):` commits. Nothing re-examined the
+  choice for thirteen months of phases, which is exactly why criterion 6 exists.
+- **What kept it alive is a rule whose justification has since expired.**
+  ENGINEERING_RULES section 21 bars `.planning/` paths from product source, so
+  evidence that `src/**` cited could not live in `.planning/` and `docs/` was the
+  only alternative. Section 21.2 was then tightened on 2026-09-11 on the
+  measurement that `docs/` ships in the plugin zip but in NEITHER npm tarball — so
+  a `docs/`-qualified citation "looks like a working cross-reference and sends the
+  reader after a file they do not have." That tightening banned the decision ID
+  form but left the `docs/phaseNN-*.md` PATH form standing. The paths dangle for
+  every `npx` consumer exactly as the banned form did, and the filename smuggles a
+  phase number into shipped source besides. The operator's folder complaint and a
+  live section 21 gap are the same defect.
+- **MEASURED 2026-09-13.** 21 of 27 files in `docs/` are `phase*`-named. 20 of the 21
+  map onto a live phase directory; `phase0` is the single orphan. **42 files** under
+  `src/` and `tools/` cite `docs/phase*.md`. Of those 42, **15 fall inside Phase 51's
+  scope** (published by `src/mcp/vice/package.json`'s `files[]`) and **27 fall
+  outside it** — tests, `.mts` sources, skill scripts, and the gitignored `tools/`
+  deployment copies. Re-measure at planning time; these are dated.
+- **The ordering is load-bearing and runs opposite to intuition.** The citations
+  must be rewritten BEFORE the files move. Moving first leaves 42 files pointing
+  into `.planning/`, which is a straight section 21 violation and precisely the
+  "one hop along" failure criterion 4 forbids. Rewrite, verify zero, then `git mv`.
+- **Phase 51 does not subsume this phase, and neither subsumes the other.** 51 is
+  scoped to what npm publishes and covers 15 of the 42; the remaining 27 sit in
+  files 51 never looks at. If 51 runs first this phase inherits 27 sites instead of
+  42; if this phase runs first it does 42 and shrinks 51's count by 15. Either order
+  works — what must not happen is either phase assuming the other cleared its sites.
+  Re-grep rather than trusting a count written here.
+- **The `tools/` copies are generated, not sources.** `tools/*.mjs` are the
+  gitignored host deployment artifacts built from `src/mcp/vice/*.mts`. Fix the
+  `.mts` source; do not hand-edit the copies, and confirm the build regenerates them
+  clean rather than assuming it.
+
 ## Sequencing Rationale (v1.0.0)
 
 **Why decomposition is first, and why it does not wait for the new subject.**
@@ -1687,6 +1771,7 @@ in a milestone archive.
 | 50. Equivalence and Modifiability | v1.0.0 | - | Not started | - |
 | 51. Planning Vocabulary Out of the Shipped Server | v1.0.0 | - | Not started | - |
 | 52. Remove the Fork Backend | v1.0.0 | 13/13 | Complete | 2026-09-12 |
+| 53. Operator-Owned `docs/` | v1.0.0 | - | Not started | - |
 
 **Milestone roll-up:** v0.2.0 — 9 phases, 87 plans, 51/51 in-scope requirements,
 shipped 2026-08-19 (audit round 4 `tech_debt`; 13 deferred items at close).
