@@ -674,13 +674,28 @@ either restored or consciously withdrawn on the record, and `vice-proxy.test.ts`
 stops asserting mechanisms that no longer exist — so the full `*.test.*` glob CI
 actually runs goes green, with every removed assertion either covered by a named
 successor suite or deleted with its reason stated.
-**Requirements**: TBD
+**Requirements**: PROXY-01, PROXY-02, PROXY-03, PROXY-04, PROXY-05, PROXY-06
 **Depends on:** Phase 52 (whose fork-only deletion is what dropped both capabilities)
-**Plans:** 0 plans
+**Success Criteria** (what must be TRUE):
+
+  1. The shipped server enforces the result ceiling it advertises. A successful `tools/call` result above `OUTPUT_CHAR_CAP` arrives as a pure payload chunk plus a marker naming the exact next call; `vice_result_continue` returns real chunks for a token the same process issued rather than only its unknown-or-expired refusal; and concatenating the chunks reproduces the unchunked text byte-for-byte with no truncation branch anywhere on the path. MEASURED live at planning time, 2026-09-13, through a real spawned proxy: a 23,290-character result crossed the wire as ONE content item under a 200-character advertised cap. Either that stops happening, or the `_meta` advertisement is withdrawn and the continuation tool unregistered as an accepted loss on the record. Both dispositions are acceptable; leaving the advertisement standing over a mechanism with no caller is not.
+  2. An incident record written for a confirmed kill carries the new epoch when the machine turned over within the poll deadline, and an honest `null` when it did not — never the stale value equal to `epoch_before`, which reads to a future investigation as a confirmed no-turnover. Both branches are pinned by tests inside `npm run test:automated`, not only inside a manual-only file. The poll is wall-clock bounded in every branch, since it runs after the instance is already dead.
+  3. Every assertion removed from `vice-proxy.test.ts` is DELETED, never `skip`-ed, and its commit message names either the successor suite that covers the behaviour — `stock-recycle.test.ts`, `stock-diagnose.test.ts`, `incident-record.test.ts` or `stock-connect.test.ts` — or the owner's settled decision that no successor is owed. The file's `skip` count at the end of the phase is no higher than at the start. A test whose behaviour still exists and is covered nowhere else is ported, not retired; if no successor can be named, it is left in place and reported as an uncovered property.
+  4. Every test still present in `vice-proxy.test.ts` can fail. Each vacuous passer identified at planning time — the disk-list absence pair, the two surviving checkpoint-arming seam cases, the disabled-checkpoint diagnose case, and the JSON-RPC method-name refusal cases now served by the plain unknown-tool fallback — is either re-pointed at a live subject or deleted with its successor named.
+  5. No structural guard was weakened to go green. The network-call module-set guard is still a set equality failing in BOTH directions, the launcher-message guard's two subcommand assertions are byte-identical to their pre-phase form, and every re-pointed expectation carries in its commit message the command that measured it. A guard changed without a recorded measurement is indistinguishable from one relaxed to pass.
+  6. `npm test` — the FULL `*.test.*` glob CI actually runs, with no `continue-on-error` — exits 0 from `src/mcp/vice`, measured with no broker or emulator process running, with output redirected and the exit code read on the SAME line. The result is reported as the SET of failing test names with their owning files, never as a bare count. Any remaining failure outside `vice-proxy.test.ts` is named and reported as a finding rather than patched inside this phase.
+  7. Nothing in the tree still claims `vice-proxy.test.ts` hangs or must never be run; every figure in its environment-gate comment was measured during this phase and is dated; and `test-gate.mjs` records the real reason it stays manual-only — a two-minute-plus suite spawning a child process per case, not a host dependency — with the declined promotion into the narrowed gate stated as a decision rather than left as an omission. `npm run test:automated` reports 0 failures and 9 skips with the file still outside that set, its test-count delta from 4407 attributable entirely to the recycle-producer cases `PROXY-02` adds.
+
+**Plans:** 6 plans
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 55 to break down)
+- [ ] 55-01-PLAN.md — Re-wire result chunking into the surviving tools/call choke point and rewrite its four tests against a live route
+- [ ] 55-02-PLAN.md — Restore the bounded post-kill epoch poll in `stock-recycle.ts` and pin both branches in the automated gate
+- [ ] 55-03-PLAN.md — Retire the four fork-era regions of `vice-proxy.test.ts` and the vacuous passers, each deletion citing its successor
+- [ ] 55-04-PLAN.md — Re-point the surviving-behaviour set: containerization, three structural guards, the manifest contract, the epoch-drift pair
+- [ ] 55-05-PLAN.md — Resolve the seven tests needing a successful call, restore the file's tracer, reconcile against the origin census
+- [ ] 55-06-PLAN.md — Correct the ledger's stale claims, re-measure the environment gates, prove the full glob green
 
 ## v0.6.0 Own the substrate — CLOSED INCOMPLETE (Phase Details)
 
