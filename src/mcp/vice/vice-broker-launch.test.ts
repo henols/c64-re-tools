@@ -28,15 +28,21 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const BROKER_ARTIFACT = join(HERE, "resources", "vice-broker.mjs");
 const LAUNCHER = join(HERE, "resources", "vice-launcher.sh");
 
-// Plan 03-15 task 2: env-gated skip. The four container-guard tests below
-// only exercise the real in-container refusal path when CONTAINER_WORKSPACE_PATH
-// and HOST_WORKSPACE_PATH are set (exactly as .github/workflows/ci.yml sets
-// them) -- without them they used to fail anonymously instead of skipping
-// with a named reason. Local to this file by design (see plan -- no shared
-// module, and this list does not belong in test-gate.mjs either).
-const WORKSPACE_ENV = Boolean(process.env.CONTAINER_WORKSPACE_PATH && process.env.HOST_WORKSPACE_PATH);
-const WORKSPACE_ENV_SKIP_REASON =
-  "requires CONTAINER_WORKSPACE_PATH and HOST_WORKSPACE_PATH to be set (see README.md's Development section, or .github/workflows/ci.yml lines 22-23)";
+// The four container-guard tests below hand their spawned process ONE
+// simulated container signal instead of inheriting one ambiently. The only
+// thing that used to supply this signal was a CI job declaring itself a
+// container on a machine that was a host -- that mislabelling routed every
+// host-side invocation in that job to a control plane with no broker behind
+// it, broke its first substantive step, and skipped every step behind it for
+// months. An ambient source must not be reintroduced. Injecting one signal
+// is all the guard needs to prove itself: containerGuardEnforce()/
+// containerGuardReport() refuse on ANY signal firing. The injected value is
+// this file's own directory precisely BECAUSE it contains
+// resources/vice-launcher.sh, so the launcher's repo-root resolution takes
+// its first branch and emits no fallback warning -- a synthetic path outside
+// the tree would still produce the right exit code but would print a
+// resolution note that means nothing to a reader of the log.
+const SIMULATED_CONTAINER_ENV = { CONTAINER_WORKSPACE_PATH: HERE };
 
 /** Copies EVERY emitted host-bound artifact (the broker plus its sibling
  * .mjs modules -- container-guard.mjs, broker-state.mjs, etc.) into a fresh
@@ -388,15 +394,17 @@ test("missing --repo-root exits non-zero with a usage line, writing nothing, nev
 
 // -------------------------------------------------------- container guard
 //
-// PD-03: the guard now runs at the BROKER PROCESS's own startup (not only
-// inside the launcher's shell wrapper) -- these two exercise the emitted
-// artifact DIRECTLY, bypassing vice-launcher.sh entirely, closing the
-// invocation-scoped hole recorded in RE-FINDINGS.md 2026-08-03.
+// The guard runs at the BROKER PROCESS's own startup (not only inside the
+// launcher's shell wrapper) -- these two exercise the emitted artifact
+// DIRECTLY, bypassing vice-launcher.sh entirely, closing the
+// invocation-scoped hole recorded in RE-FINDINGS.md 2026-08-03. Each case
+// hands its own process SIMULATED_CONTAINER_ENV rather than relying on an
+// ambient signal, so it runs identically on a bare host and on a CI runner.
 
-test("running the emitted broker artifact directly (no launcher) inside this container, with no escape hatch, exits 2 and names the fired signals", { skip: WORKSPACE_ENV ? false : WORKSPACE_ENV_SKIP_REASON }, () => {
+test("running the emitted broker artifact directly (no launcher) with the container signal injected and no escape hatch, exits 2 and names the fired signals", () => {
   const deployDir = freshDeployDir();
   try {
-    const result = runBrokerSync(deployDir, ["--repo-root", "/tmp/fake-repo-root", "--state-dir", join(deployDir, "state")]);
+    const result = runBrokerSync(deployDir, ["--repo-root", "/tmp/fake-repo-root", "--state-dir", join(deployDir, "state")], SIMULATED_CONTAINER_ENV);
     assert.equal(result.status, 2);
     assert.match(result.stderr, /FATAL: vice-broker refuses to run inside a container/);
     assert.match(result.stderr, /Signals that fired/);
@@ -405,10 +413,10 @@ test("running the emitted broker artifact directly (no launcher) inside this con
   }
 });
 
-test("running the emitted broker artifact directly (no launcher) with --check-container exits 3 and prints one report line per signal", { skip: WORKSPACE_ENV ? false : WORKSPACE_ENV_SKIP_REASON }, () => {
+test("running the emitted broker artifact directly (no launcher) with the container signal injected and --check-container exits 3 and prints one report line per signal", () => {
   const deployDir = freshDeployDir();
   try {
-    const result = runBrokerSync(deployDir, ["--check-container"]);
+    const result = runBrokerSync(deployDir, ["--check-container"], SIMULATED_CONTAINER_ENV);
     assert.equal(result.status, 3);
     assert.match(result.stderr, /verdict: CONTAINER/);
   } finally {
@@ -423,14 +431,14 @@ test("bash -n exits 0 for the launcher (syntax check only, no execution)", () =>
   assert.equal(result.status, 0, result.stderr);
 });
 
-test("running the launcher inside this container exits 2 (container guard refusal, now answered by the Node entry point)", { skip: WORKSPACE_ENV ? false : WORKSPACE_ENV_SKIP_REASON }, () => {
-  const result = spawnSync(LAUNCHER, [], { encoding: "utf8" });
+test("running the launcher with the container signal injected exits 2 (container guard refusal, now answered by the Node entry point)", () => {
+  const result = spawnSync(LAUNCHER, [], { encoding: "utf8", env: { ...process.env, ...SIMULATED_CONTAINER_ENV } });
   assert.equal(result.status, 2);
   assert.match(result.stderr, /refuses to run inside a container/);
 });
 
-test("running the launcher with --check-container exits 3 (container verdict, reporting only, now answered by the Node entry point)", { skip: WORKSPACE_ENV ? false : WORKSPACE_ENV_SKIP_REASON }, () => {
-  const result = spawnSync(LAUNCHER, ["--check-container"], { encoding: "utf8" });
+test("running the launcher with the container signal injected and --check-container exits 3 (container verdict, reporting only, now answered by the Node entry point)", () => {
+  const result = spawnSync(LAUNCHER, ["--check-container"], { encoding: "utf8", env: { ...process.env, ...SIMULATED_CONTAINER_ENV } });
   assert.equal(result.status, 3);
 });
 

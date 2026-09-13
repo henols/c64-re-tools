@@ -24,14 +24,17 @@ import { verifiedKill } from "./broker-kill.mts";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BROKER_ARTIFACT = join(HERE, "resources", "vice-broker.mjs");
 
-// Plan 03-15 task 2: env-gated skip. The container-guard refusal test below
-// only exercises the real in-container code path when CONTAINER_WORKSPACE_PATH
-// and HOST_WORKSPACE_PATH are set (exactly as .github/workflows/ci.yml sets
-// them) -- without them it used to fail anonymously instead of skipping with
-// a named reason. Local to this file by design (see plan -- no shared module).
-const WORKSPACE_ENV = Boolean(process.env.CONTAINER_WORKSPACE_PATH && process.env.HOST_WORKSPACE_PATH);
-const WORKSPACE_ENV_SKIP_REASON =
-  "requires CONTAINER_WORKSPACE_PATH and HOST_WORKSPACE_PATH to be set (see README.md's Development section, or .github/workflows/ci.yml lines 22-23)";
+// The container-guard refusal test below hands its spawned child ONE
+// simulated container signal instead of inheriting one ambiently. The only
+// thing that used to supply this signal was a CI job declaring itself a
+// container on a machine that was a host -- that mislabelling routed every
+// host-side invocation in that job to a control plane with no broker behind
+// it, broke its first substantive step, and skipped every step behind it for
+// months. An ambient source must not be reintroduced. Injecting one signal
+// is all the guard needs to prove itself: containerGuardEnforce()/
+// containerGuardReport() refuse on ANY signal firing, so this single key is
+// as real a test of the wiring as a genuine multi-signal container would be.
+const SIMULATED_CONTAINER_ENV = { CONTAINER_WORKSPACE_PATH: HERE };
 
 // quick-260805-9ha: the broker this file spawns (startBroker() below) binds
 // its control listener INSIDE this container -- nothing here may ever dial
@@ -1075,20 +1078,23 @@ test("a control request with no token, and one with a wrong token, both return t
 });
 
 // ---------------------------------------------------------------------------
-// 01.6.2-10-PLAN.md ledger row 35 (RE-OBSERVED): the retiring bash suite's
-// "bash -n exits 0; start still refuses in-container with exit 2;
-// --check-container still exits 3" structural test asserted the container
-// guard's exit-code contract directly against resources/vice-broker.sh. The
-// new broker wires the SAME container-guard.mts functions
-// (containerGuardEnforce()/containerGuardReport(), pre-existing and unchanged
-// -- vice-broker.mts:650/654) but no test spawned the real emitted artifact
-// to prove the wiring itself (as opposed to the guard functions in
-// isolation, which container-guard.test.ts already covers). This container
-// genuinely fires container signals (the retiring test's own comment already
-// establishes that), so this is a real, not simulated, in-container run.
+// The retiring bash suite's "bash -n exits 0; start still refuses in-container
+// with exit 2; --check-container still exits 3" structural test asserted the
+// container guard's exit-code contract directly against
+// resources/vice-broker.sh. The new broker wires the SAME container-guard.mts
+// functions (containerGuardEnforce()/containerGuardReport(), pre-existing and
+// unchanged -- vice-broker.mts:650/654) but no test spawned the real emitted
+// artifact to prove the wiring itself (as opposed to the guard functions in
+// isolation, which container-guard.test.ts already covers). This run now
+// simulates a container by handing the child ONE real signal
+// (SIMULATED_CONTAINER_ENV) rather than inheriting one ambiently -- that is
+// the right shape here because the assertion under test is the emitted
+// artifact's exit-code contract, which fires identically on any single
+// signal. Simulating it is what lets this check run on a bare host and on a
+// CI runner instead of only inside a devcontainer.
 // ---------------------------------------------------------------------------
 
-test("the emitted broker artifact refuses to start in-container without the escape hatch (exit 2), and --check-container reports the same verdict without refusing (exit 3)", { timeout: 20000, skip: WORKSPACE_ENV ? false : WORKSPACE_ENV_SKIP_REASON }, async () => {
+test("the emitted broker artifact refuses to start with the container signal injected and no escape hatch (exit 2), and --check-container reports the same verdict without refusing (exit 3)", { timeout: 20000 }, async () => {
   build();
   const stateDir = mkdtempSync(join(tmpdir(), "broker-e2e-guard-"));
   try {
@@ -1096,7 +1102,7 @@ test("the emitted broker artifact refuses to start in-container without the esca
     // the opposite of every other test in this file, which sets it via
     // startBroker()'s own env block.
     const refused = spawn(process.execPath, [BROKER_ARTIFACT, "--repo-root", "/tmp/fake-repo-root-e2e", "--state-dir", stateDir], {
-      env: { ...process.env, VICE_SUPERVISOR_ALLOW_CONTAINER: "", VICE_BIN: "/bin/sleep", VICE_ARGS: "600" },
+      env: { ...process.env, ...SIMULATED_CONTAINER_ENV, VICE_SUPERVISOR_ALLOW_CONTAINER: "", VICE_BIN: "/bin/sleep", VICE_ARGS: "600" },
     });
     const refusedCode = await new Promise<number | null>((resolvePromise) => {
       refused.once("exit", (code) => resolvePromise(code));
@@ -1105,7 +1111,7 @@ test("the emitted broker artifact refuses to start in-container without the esca
     assert.equal(existsSync(join(stateDir, "broker.json")), false, "a refused start must never write broker.json");
 
     const reported = spawn(process.execPath, [BROKER_ARTIFACT, "--check-container"], {
-      env: { ...process.env, VICE_SUPERVISOR_ALLOW_CONTAINER: "" },
+      env: { ...process.env, ...SIMULATED_CONTAINER_ENV, VICE_SUPERVISOR_ALLOW_CONTAINER: "" },
     });
     const reportedCode = await new Promise<number | null>((resolvePromise) => {
       reported.once("exit", (code) => resolvePromise(code));
