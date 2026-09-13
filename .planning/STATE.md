@@ -602,7 +602,7 @@ Last activity: 2026-09-13 — Phase 49 execution started
 | Phase 48 P06 | 62min | 3 tasks | 4 files |
 | Phase 49 P01 | 6min | 3 tasks | 2 files |
 | Phase 49 P02 | 31min | 2 tasks | 4 files |
-| Phase 49-the-reassembly-gate-committed-before-the-phase-it-gates P03 | 50min | 3 tasks | 4 files |
+| Phase 49 P03 | 50min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -1370,7 +1370,7 @@ Recent decisions affecting current work:
 - [Phase 49]: Extracted verifyAcmeAssembles()'s inline body into one shared assembleAndDiff() function and added verifyAcmeAssemblesTree(), so the tree entry point funds the same six ordered rules as the single-source path rather than a second implementation. — D49-B: the tree-aware entry point must be additive with one shared verdict body.
 - [Phase 49]: A tree's real per-segment ACME output follows !source file-inclusion order, not address order -- discovered live against the committed hazard-subject fixture. Both gate tree: test files reorder expectedSegments to tree emission order before asserting unanimity. — The hazard-subject fixture has an unscoped block sourced last with the lowest address of the whole image; the positional unanimity rule needs expectedSegments in emission order, not address order.
 - [Phase 49]: reassembly-gate.ts's GateInput fields are spelled exactly as the committed schema's outcome-line names (TREE_REBUILD, MOVEMENT_REBUILD, ...) rather than camelCased, and MovementResult/HazardAcknowledgementResult are declared with no producer in this plan -- a stub of the producers, not of the architecture. — Keeps one vocabulary visible at the type, the runtime absence check, and the verdict's echoed inputs; the producers land in later plans in this same phase as an import, not a redesign.
-- [Phase 49-the-reassembly-gate-committed-before-the-phase-it-gates]: Plan 49-03: planted all three phase-required red controls (wrong-byte, stale-artifact, narrowed-scope) with honest controls and gate-verdict companions; added a bounded test-only outputDir seam to verifyAcmeAssemblesTree() and extended hazardCoverageOutsideDiffScope() (additive) to read undecided regions and refuse a zero-length extent.
+- [Phase 49]: Plan 49-03: planted all three phase-required red controls (wrong-byte, stale-artifact, narrowed-scope) with honest controls and gate-verdict companions; added a bounded test-only outputDir seam to verifyAcmeAssemblesTree() and extended hazardCoverageOutsideDiffScope() (additive) to read undecided regions and refuse a zero-length extent.
 
 ### Pending Todos
 
