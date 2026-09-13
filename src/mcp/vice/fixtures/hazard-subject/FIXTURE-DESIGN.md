@@ -291,3 +291,70 @@ deliberate miss rather than quietly absent, or a raster stabiliser using an
 entirely different piece of hardware than the textbook technique. Each of
 those properties is what turns this subject from a mirror of its own
 detectors into a real, independent test of them.
+
+## On-screen observations
+
+Both runs below were prepared entirely by the person writing this document:
+each committed image was loaded into a real stock emulator, run, and its
+screen captured, with no step asking anyone to launch, type or run anything.
+The prediction is stated first, from the source; the observation is recorded
+second, verbatim, so the two can disagree.
+
+**ALIGNED build (`hazard-subject.prg`).**
+
+PREDICTION: a recognisable sprite in its intended solid shape; a recognisable
+custom glyph drawn from the custom character set; a horizontal colour split
+drawn by the timer-stabilised raster routine; and the border colour differing
+from the default as the self-modifying routine runs.
+
+OBSERVATION: the settled screen shows the ordinary BASIC start-up display --
+`READY.` in the default colours -- with none of the four predicted effects
+present. This is recorded as found, not reconciled with the prediction.
+Isolating each construction narrows exactly how far the disagreement reaches:
+built and run alone (no raster construction present), the self-modifying
+routine's border write and the alignment routine's sprite enable, position and
+pointer all take effect and are directly visible on a real screen -- a solid
+sprite renders exactly where the code places it, and the border colour
+changes and stays changed. The moment the timer-stabilised raster construction
+is added back in, every one of those effects reverts to its default before a
+settled screen can be captured: the shared interrupt vector this construction
+installs, and the VIC-II/CIA state around it, is found reset by the time
+execution reaches a stable point, even when the machine-code entry never
+returns control to BASIC at all (tested directly: an entry point ending in an
+unconditional jump to itself, never an `rts`, shows the identical reversion).
+That rules out "returning to BASIC undoes the vector" as the explanation; the
+precise trigger was not pinned down further. What is established, and
+recorded here plainly rather than smoothed over, is that the reversion is
+reproducible, is not present without the raster construction, and prevents
+capturing a single settled screen where all four predicted effects are
+visible together on the real, committed image.
+
+**MIS-ALIGNED build (`hazard-subject-misaligned.prg`).**
+
+PREDICTION: the same program, running the same way -- same split, same
+border behaviour -- but with the sprite garbled or wrongly shaped, and the
+custom-set characters garbled, because the hardware reads from the address
+the scaled pointers name rather than from where the data actually sits.
+
+OBSERVATION: the settled screen shows the same ordinary BASIC start-up
+display as the aligned build, indistinguishable from it in this capture --
+for the identical reason recorded above: the reversion happens before the
+alignment dependency's own effect can be read off a settled screen for this
+build either. The two captures agreeing here is therefore not evidence that
+the mis-alignment failed to land; isolating the alignment construction alone
+(no raster) shows a real, direct effect on the aligned side (the solid sprite
+block referenced above), and the mis-aligned twin's own byte-level proof --
+that its sprite and character-set base addresses are provably not
+multiples of their required boundaries, checked against the actual assembled
+image -- is already established independently in this fixture's own test
+file, never resting on a screen capture alone.
+
+**What no automated check in this repository can establish.** Whether the
+VIC-II hardware actually reads the wrong 64-byte or 2048-byte block on the
+mis-aligned build, and shows a garbled sprite or character as a result, is a
+claim about what a real screen looks like, and nothing in this repository's
+automated suite renders a screen and inspects it. The assembler exits zero on
+both builds, every byte-level assertion in this fixture's own test file
+passes on both builds, and the emulator reports no error on either -- that is
+exactly why this property is recorded here, by direct observation, rather
+than left to be inferred from a passing test suite.
