@@ -284,7 +284,8 @@ test(
 );
 
 // ---------------------------------------------------------------------------
-// D49-E's own guard for this module: test-only, never published.
+// This module's own guard: test-only, never published, mirroring the
+// byte-diff oracle's identical absence assertion in acme-verify.test.ts.
 // ---------------------------------------------------------------------------
 
 test("reassembly-gate.ts and reassembly-gate.test.ts are absent from package.json's files[] array (test-only, mechanically enforced)", () => {
