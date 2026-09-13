@@ -138,10 +138,17 @@ async function waitForBrokerJson(stateDir: string, deadlineMs = 5000): Promise<R
 // ---------------------------------------------------------------------------
 
 /** Writes a probe-answering stub emulator to `dir` -- a small executable
- * script standing in for x64sc in the two tests below that need an
+ * script standing in for x64sc in the one test below that needs an
  * instance to actually reach `ready` through the surviving probe mechanism,
  * rather than merely existing as a long-lived pid the way /bin/sleep does
- * for every other test in this file.
+ * for every other test in this file. (quick task 260913-o78: this used to
+ * say "the two tests below" -- the warm-floor test that made that true was
+ * removed along with the warm floor itself, per this file's own comment
+ * above the "wired supervision" test; grep confirms exactly one caller of
+ * this function remains, in the "wired warm-hit (plan 41-05)" test below.
+ * A second, planted-violation test below also calls this function, but
+ * only to spawn the emitted stub directly and assert its refusal -- it
+ * never drives it through a real broker.)
  *
  * It is a Node-shebang script (mode 0755) so the broker's own
  * `spawn(viceBin, viceArgs)` runs it directly, and verifiedKill()'s
@@ -152,30 +159,46 @@ async function waitForBrokerJson(stateDir: string, deadlineMs = 5000): Promise<R
  * element).
  *
  * It reads its own allocated port out of its OWN argument vector -- the
- * named `-mcpserverport <port>` flag buildViceArgs() (broker-launch.mts)
- * constructs. THE ONE NON-OBVIOUS COUPLING, stated here per this task's
- * own instruction: a test using this stub must leave VICE_ARGS UNSET in
- * its own startBroker() call. buildViceArgs() takes its AS-IS branch
- * (using VICE_ARGS verbatim, WITHOUT ever appending a port) whenever
- * VICE_ARGS is set in the environment, and only takes its CONSTRUCTING
- * branch (which builds the `-mcpserverport <port>` flag from the actually
- * allocated port) when VICE_ARGS is unset -- if VICE_ARGS stayed set (as
- * every other test in this file leaves it, at "600" for /bin/sleep), this
- * stub would receive "600" as its sole argument and have no port to read.
+ * `-binarymonitoraddress ip4://<host>:<port>` flag buildViceArgs()'s stock
+ * branch (broker-launch.mts) constructs, resolved BY NAME (never by a
+ * positional scan for the first `ip4://` argument: the same branch can
+ * append a SECOND `ip4://` URL for `-remotemonitoraddress`, and a
+ * positional scan would bind that port instead). THE ONE NON-OBVIOUS
+ * COUPLING, stated here per this task's own instruction: a test using this
+ * stub must leave VICE_ARGS UNSET in its own startBroker() call.
+ * buildViceArgs() takes its AS-IS branch (using VICE_ARGS verbatim,
+ * WITHOUT ever appending a monitor flag) whenever VICE_ARGS is set in the
+ * environment, and only takes its CONSTRUCTING branch (which builds the
+ * `-binarymonitoraddress` flag from the actually allocated port) when
+ * VICE_ARGS is unset -- if VICE_ARGS stayed set (as every other test in
+ * this file leaves it, at "600" for /bin/sleep), this stub would receive
+ * "600" as its sole argument and have no port to read. If the flag is
+ * missing, malformed, or its port does not parse into 1..65535, the stub
+ * refuses loudly (non-zero exit, stderr naming the flag and the argv it
+ * received) rather than falling back to a default, a random OS-assigned
+ * port, or NaN -- exactly that silent fallback is what let a broken probe
+ * coupling masquerade as a broker regression for an unknown number of
+ * commits (quick task 260913-o78).
  *
- * It binds a LOOPBACK HTTP listener on that port and answers every request
- * with a JSON body carrying both substrings defaultHttpProbe()
- * (broker-launch.mts) requires ("version" and "machine"), then stays alive
- * indefinitely -- exactly like /bin/sleep did for the retiring
- * probe-command fixture this replaces. Rebinding after a kill relies on
- * the OS's own default listen-socket reuse behaviour for a fresh process;
- * the tests using this stub POLL for the respawned instance (this file's
- * own waitFor() idiom) rather than assuming an instant rebind, per the
- * project's no-wall-clock-sleep rule.
+ * It binds a `node:net` listener on that port and answers a binary-monitor
+ * PING (0x81) with a well-formed reply -- STX, api version, zero body
+ * length, response type, error code, and the request id echoed from the
+ * request just received -- satisfying `defaultBinmonProbe()`'s frame
+ * walker (broker-launch.mts), which is the readiness route the stock
+ * backend actually uses; the retired JSON/HTTP substring contract this
+ * stub used to answer no longer applies anywhere on this route. It ignores
+ * any other command (the probe's own follow-up EXIT among them) without
+ * replying or closing, and stays alive indefinitely after answering --
+ * exactly like /bin/sleep did for the retiring probe-command fixture this
+ * replaces.
+ * Rebinding after a kill relies on the OS's own default listen-socket
+ * reuse behaviour for a fresh process; the test using this stub POLLS for
+ * the respawned instance (this file's own waitFor() idiom) rather than
+ * assuming an instant rebind, per the project's no-wall-clock-sleep rule.
  *
  * Written as `.cjs` deliberately -- this package's nearest package.json
  * sets `"type": "module"`, which would force a same-named `.js` file into
- * ESM (breaking the plain `require("node:http")` below); `.cjs` is always
+ * ESM (breaking the plain `require("node:net")` below); `.cjs` is always
  * CommonJS regardless of the nearest package.json.
  *
  * NOT a rule violation, stated explicitly per this task's own instruction:
@@ -260,6 +283,41 @@ function writeProbeAnsweringStub(dir: string): string {
   chmodSync(stubPath, 0o755);
   return stubPath;
 }
+
+// Quick task 260913-o78: the planted-violation gate for the stub's loud
+// refusal. Without this, "refuses loudly instead of falling back" is prose
+// nobody runs -- a control nothing exercises is exactly the class of defect
+// this whole quick task exists to close. Spawns the emitted stub directly
+// (never through startBroker()/the real broker) with an argv that
+// deliberately carries no binary-monitor endpoint flag -- mirroring the
+// VICE_ARGS="600" shape every other test in this file leaves set, which is
+// the real-world argv that would reach this path if VICE_ARGS were ever
+// left set for a test using this stub.
+test(
+  "probe-answering stub refuses loudly (non-zero exit, stderr names the flag) when its argv carries no binary-monitor endpoint flag",
+  { timeout: 5000 },
+  async () => {
+    const dir = mkdtempSync(join(tmpdir(), "broker-e2e-stub-refusal-"));
+    try {
+      const stubPath = writeProbeAnsweringStub(dir);
+      const child = spawn(process.execPath, [stubPath, "600"]);
+      let stderr = "";
+      child.stderr.on("data", (chunk: Buffer) => {
+        stderr += chunk.toString("utf8");
+      });
+      const exitCode = await new Promise<number | null>((resolvePromise) => {
+        child.on("exit", (code) => resolvePromise(code));
+      });
+      assert.notEqual(exitCode, 0, `stub must exit non-zero when it cannot resolve a binary-monitor port, got ${exitCode}`);
+      assert.ok(
+        stderr.includes("-binarymonitoraddress"),
+        `stderr must name the flag the stub looked for, got: ${JSON.stringify(stderr)}`,
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
 
 /** Sends one raw acquire request, bypassing acquireOverControlPlane() --
  * used for the token-refusal cases, which need to control (or omit) the
