@@ -363,14 +363,38 @@ function startProxy(env: Record<string, string>): ProxyHandle {
   return { child, send, sendRaw, messages, nextMessage, stderr: stderrChunks };
 }
 
+// Plan 55-05: rewritten against the proxy-local annotation route.
+// VICE_MCP_URL no longer forwards a `tools/call` to an HTTP stand-in at all
+// -- MEASURED (this plan, and stock-dispatch.ts's own `ensureStockSession`)
+// that setting it makes the stock backend refuse outright before dialling
+// anything ("VICE_MCP_URL is set, so there is no broker-managed instance
+// and no broker control session to claim a monitor socket through"), because
+// the stock backend claims the monitor socket through a broker-managed
+// instance before it ever dials. The old `vice_ping`-through-`startStandInServer()`
+// shape this test used to drive is therefore not a route this proxy has any
+// more; it is not merely stale, it cannot succeed under the code as it
+// ships today. `anno_get_symbols` against a seeded, real `project.annostore`
+// (`seedAnnoWorkspace()`, plan 55-01) crosses the exact same layers a
+// tracer needs to prove -- stdio JSON-RPC framing in, the tools/call
+// override, the proxy's own tool registry, a registered tool's own runner,
+// the result-shape check, and framing back out -- with no emulator, no
+// broker and no stand-in server, MEASURED live at planning time (a spawned
+// child, `CLAUDE_PROJECT_DIR` pointed at a seeded temp workspace, answered
+// `anno_get_symbols` with `isError: false`).
+//
+// This tracer deliberately does NOT prove the broker-mediated route (a real
+// broker granting a real emulator instance, then a forwarded stock tool
+// call reaching it) -- that end-to-end proof, with a genuine spawned broker
+// and genuine stock VICE, lives in `stock-broker-live.test.ts`, the
+// project's manual-only live suite. A tracer that quietly narrowed its own
+// scope without saying so would be worse than one that states the boundary.
 test("tracer: one real tool call round-trips end to end", async () => {
-  const { server, requests } = startStandInServer();
-  const port = await listen(server);
-  const proxy = startProxy({ VICE_MCP_URL: `http://127.0.0.1:${port}/mcp` });
+  const { ws, storePath } = seedAnnoWorkspace(1);
+  const proxy = startProxy({ CLAUDE_PROJECT_DIR: ws });
 
   try {
-    // 1. initialize -- must echo the requested protocolVersion, declare a
-    //    tools capability, and touch the host ZERO times.
+    // 1. initialize -- must echo the requested protocolVersion and declare
+    //    a tools capability. No host, no broker, nothing to touch yet.
     proxy.send({
       jsonrpc: "2.0",
       id: 1,
@@ -388,56 +412,37 @@ test("tracer: one real tool call round-trips end to end", async () => {
       initResp.result.capabilities && initResp.result.capabilities.tools,
       "initialize result must declare a tools capability"
     );
-    assert.equal(requests.length, 0, "initialize must make zero requests to the stand-in host");
 
-    // 2. notifications/initialized -- a notification: no response at all.
-    proxy.send({ jsonrpc: "2.0", method: "notifications/initialized" });
-
-    // 3. tools/list -- still zero host requests, per criterion 4 (tracer scope).
-    proxy.send({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
-    const listResp = await proxy.nextMessage();
-    assert.equal(listResp.id, 2);
-    assert.ok(Array.isArray(listResp.result.tools), "tools/list result must carry a tools array");
-    assert.equal(
-      requests.length,
-      0,
-      "initialize AND tools/list together must make zero requests to the stand-in host"
-    );
-
-    // 4. tools/call for vice_ping -- the one real round trip this tracer proves.
+    // 2. tools/call for anno_get_symbols -- the one real round trip this
+    //    tracer proves: a proxy-local tool, seeded with real content, run
+    //    through the registry and answered whole (the store holds exactly
+    //    one label, well under any chunking cap).
     proxy.send({
       jsonrpc: "2.0",
-      id: 3,
+      id: 2,
       method: "tools/call",
-      params: { name: "vice_ping", arguments: {} },
+      params: { name: "anno_get_symbols", arguments: { store: storePath, max_results: 10 } },
     });
     const callResp = await proxy.nextMessage();
-    assert.equal(callResp.id, 3);
+    assert.equal(callResp.id, 2);
+    assert.equal(callResp.jsonrpc, "2.0");
     assert.equal(callResp.result.isError, false, "a successful tool call must report isError: false");
+    assert.equal(callResp.result.content.length, 1, "one label must not trip chunking");
     assert.equal(callResp.result.content[0].type, "text");
-    const payload = JSON.parse(callResp.result.content[0].text);
-    assert.equal(payload.version, "3.10", "the stand-in server's own payload must round-trip back out");
-
-    // Two tools/call requests reach the stand-in server, not one: plan
-    // 01.1-03's pre-flight liveness probe (probeInstance()) does its own
-    // vice_ping round trip BEFORE the real forwarded call -- see that
-    // plan's SUMMARY for the coverage-affecting change this represents.
-    const toolCallsSeen = requests.filter((r) => r && r.method === "tools/call") as JsonRpcMessage[];
-    assert.equal(
-      toolCallsSeen.length,
-      2,
-      "the stand-in server must have received the liveness probe's ping plus the one real forwarded tools/call"
+    assert.match(
+      callResp.result.content[0].text,
+      /label_0_/,
+      "the seeded label this tracer wrote into the store must round-trip back out"
     );
-    assert.ok(toolCallsSeen.every((r) => r.params.name === "vice_ping"));
 
-    // 5. The proxy process must still be alive and answering -- this is the
+    // 3. The proxy process must still be alive and answering -- this is the
     //    whole point of the never-throw discipline (finding 7: a dead stdio
     //    server is never reconnected).
     assert.equal(proxy.child.exitCode, null, "the proxy process must still be running");
     assert.equal(proxy.child.killed, false);
   } finally {
     proxy.child.kill("SIGKILL");
-    await new Promise((resolve) => server.close(resolve));
+    rmSync(ws, { recursive: true, force: true });
   }
 });
 
