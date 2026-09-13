@@ -4,12 +4,12 @@ milestone: v1.0.0
 milestone_name: The Rebuild Half
 current_phase: 49
 current_phase_name: The Reassembly Gate, Committed Before the Phase It Gates
-status: executing
-stopped_at: Completed 49-06-PLAN.md
-last_updated: "2026-09-13T10:50:56.842Z"
+status: verifying
+stopped_at: Completed 49-07-PLAN.md
+last_updated: "2026-09-13T11:17:01.600Z"
 last_activity: 2026-09-13
 last_activity_desc: Phase 49 execution started
-state_head: ce23de24b4dc79f78bc69ed0c0708abd5b63ced5
+state_head: e11b0da47da878306b936eeee9e5885bdbc61135
 progress:
   total_phases: 8
   completed_phases: 4
@@ -261,7 +261,7 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 Phase: 49 (The Reassembly Gate, Committed Before the Phase It Gates) — EXECUTING
 Plan: 7 of 7
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Plans: 5/7 executed (49-01 through 49-05 complete; 49-06, 49-07 remain).
 
 Carried in from Phase 48 (complete, verified, UAT passed 2026-09-13): the
@@ -606,6 +606,7 @@ Last activity: 2026-09-13 — Phase 49 execution started
 | Phase 49 P04 | ~20min | 3 tasks | 2 files |
 | Phase 49 P05 | 45min | 2 tasks | 2 files |
 | Phase 49 P06 | 50min | 2 tasks | 1 files |
+| Phase 49 P07 | 55 min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -1377,6 +1378,9 @@ Recent decisions affecting current work:
 - [Phase 49]: disposeHazardReport() is the real producer for HazardAcknowledgementResult (declared by plan 49-02 with no producer) rather than a new result shape. — This plan is the producer 49-02 anticipated, not a redesign.
 - [Phase 49]: The exhaustive gate-input enumeration drives runReassemblyGate() over bare GateInput tokens directly, not producer objects (MovementResult/HazardAcknowledgementResult). — None of GateInput's seven fields is anything other than a bare token by its own type declaration, so enumerating token domains directly is already exhaustive over everything the gate function reads.
 - [Phase 49]: acme-seam.test.ts freezes both a whole-server-tree ACME spawn-site set and a produced-versus-expected byte-comparison set, in both directions, with the parameter-scan anchored to a genuine parameter list after an unanchored version produced a real false positive against skill-acme-build-cli.test.ts.
+- [Phase 49]: Reassembly gate run for real: verdict red under R7 (DIFF_SCOPE_COVERAGE incomplete on the baseline occurrence, from a permanent unclassified VIC-II region), never re-measured to obtain a better result.
+- [Phase 49]: Extracted the movement plan's subject into a new shared, non-test module (reassembly-gate-movement-subject.ts) rather than importing the .test.ts file directly, to avoid re-running its registered tests as an import side effect.
+- [Phase 49]: HAZARD_DISPOSITION recorded as blocked (not acknowledged): the frozen array acknowledges only the 3 real findings, per the plan's own instruction, leaving the subject's 1 permanently-unclassified region unacknowledged.
 
 ### Pending Todos
 
@@ -2468,8 +2472,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-13T10:50:50.037Z
-Stopped at: Completed 49-06-PLAN.md
+Last session: 2026-09-13T11:17:01.168Z
+Stopped at: Completed 49-07-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md

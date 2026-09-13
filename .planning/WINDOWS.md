@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 39
+open_count: 40
 waived_count: 14
 fixed_count: 9
-total_count: 62
-last_updated: 2026-09-12T22:38:18.118Z
+total_count: 63
+last_updated: 2026-09-13T11:16:21.461Z
 ---
 
 # Broken Windows Ledger
@@ -77,6 +77,7 @@ last_updated: 2026-09-12T22:38:18.118Z
 | 60 | 52 | deviation | src/mcp/vice/vice-proxy.test.ts |  | MANUAL_ONLY test file still references deleted DENY_LIST via a raw readFileSync of the now-deleted vice.ts; would throw if the file were ever executed (it is excluded from npm run test:automated by design, so this never surfaces in CI). No plan explicitly closed this out after vice.ts's deletion. | open |  | 2026-09-12T11:14:19.640Z |  |
 | 61 | 48 | deviation | src/mcp/vice/anno-store-export.ts |  | Store export/import document format had no route for scopes at all; added an additive, backward-compatible scopes field and backfilled 9 pre-existing fixtures rather than working around the gap. | open |  | 2026-09-12T22:38:12.654Z |  |
 | 62 | 48 | deviation | src/mcp/vice/hazard-subject-fixture.test.ts |  | decode() over the whole image (data included) produces coincidental instruction-shaped matches over non-code bytes; narrowed the second-self-modification and reference-resolution tests to ABSOLUTE/ZEROPAGE literal operands and to CODE-typed ranges only, to avoid false positives from data misdecoded as instructions. | open |  | 2026-09-12T22:38:18.118Z |  |
+| 63 | 49 | deviation | docs/phase49-the-reassembly-gate-findings.md |  | This plan's own Task 2 verify command asserts 7 total bare outcome-line matches across the 5 evidence files, but SCHEMA.md's dual-file design for DIFF_SCOPE_COVERAGE makes the schema-correct total 8; both DIFF_SCOPE_COVERAGE occurrences were written per SCHEMA.md rather than one omitted to force the count. | open |  | 2026-09-13T11:16:21.461Z |  |
 
 ````json
 [
@@ -822,6 +823,18 @@ last_updated: 2026-09-12T22:38:18.118Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-12T22:38:18.118Z",
+    "resolved_at": null
+  },
+  {
+    "id": 63,
+    "kind": "deviation",
+    "phase": "49",
+    "file": "docs/phase49-the-reassembly-gate-findings.md",
+    "line": null,
+    "description": "This plan's own Task 2 verify command asserts 7 total bare outcome-line matches across the 5 evidence files, but SCHEMA.md's dual-file design for DIFF_SCOPE_COVERAGE makes the schema-correct total 8; both DIFF_SCOPE_COVERAGE occurrences were written per SCHEMA.md rather than one omitted to force the count.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-13T11:16:21.461Z",
     "resolved_at": null
   }
 ]
