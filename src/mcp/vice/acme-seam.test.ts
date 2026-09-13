@@ -207,13 +207,21 @@ export function scanAcmeSpawnSites(): AcmeSpawnSiteReport[] {
  * false. */
 const NAME_SCAN_BLIND_MEMBERS: ReadonlySet<string> = new Set(["host-tool.mts"]);
 
-/** The frozen declared set. Membership MUST be derived by RUNNING
- * `scanAcmeSpawnSites()` against the real tree and reading what it reports --
- * never assumed. Declared EMPTY here first, deliberately: the two set-
- * equality directions below must fail against the real tree before this set
- * is filled in, so the failure itself is the measurement that drives what
- * gets declared. */
-export const ACME_SPAWN_SITES: Readonly<Record<string, string>> = Object.freeze({});
+/** The frozen declared set. Membership was derived by RUNNING
+ * `scanAcmeSpawnSites()` against the real tree and reading what it reported
+ * (the set-equality test below named exactly these seven files when this set
+ * was still empty), not assumed. Each member carries a one-line reason a
+ * module legitimately launches the assembler. */
+export const ACME_SPAWN_SITES: Readonly<Record<string, string>> = Object.freeze({
+  "acme-gate.ts": "the availability probe -- spawns the configured binary with `--version`, falling back to `--help`, to decide whether a real assembler is on PATH at all",
+  "acme-verify.ts": "the byte-diff oracle's own single launch call site, inside its shared verdict body -- the ONE place this whole gate turns an assembly into a pass/fail",
+  "acme-verify.test.ts": "a direct, real-ACME reproduction of the stale-output-file trap (a failing ACME run leaves a pre-existing output path completely untouched) -- reproduced against the real binary directly rather than through the oracle so the test can plant a known pre-existing file first and observe the raw behaviour",
+  "absorbed-answer-key.test.ts": "assembles a committed fixture source directly to rebuild an answer key against a real assembler, predating the byte-diff oracle",
+  "disasm-roundtrip.test.ts": "the original round-trip probe that established the ACME_BIN/VICE_REQUIRE_ACME availability convention every ACME-gated test file in this tree now shares",
+  "hazard-subject-fixture.test.ts": "assembles the purpose-built hazard-subject fixture directly, to produce the committed program image the reassembly gate's own subjects are built from -- independent of the export/reassembly path the gate itself exercises",
+  "anno-export-asm.test.ts": "the exporter's own pre-existing round-trip assertions, which predate the byte-diff oracle's tree support and spawn the assembler directly to prove single-source and early tree exports reassemble",
+  "host-tool.mts": "the typed host-tool control op's build branch -- its own launch passes a RESOLVED GENERIC TOOL PATH covering several different external tools through one shared spawn call, never an assembler-named identifier, so this member is invisible to this scan's name-based identifier resolution and must be declared here by hand",
+});
 
 /** Every module name that identifies it as belonging to this gate's own
  * implementation, never a legitimate spawn or comparison site: the gate's
