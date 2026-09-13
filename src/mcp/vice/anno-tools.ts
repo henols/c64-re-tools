@@ -3037,7 +3037,7 @@ async function dispatchHazardReport(handle: AnnoStoreHandle, args: unknown): Pro
     findings,
     returned: findings.length,
     matched: report.findings.length,
-    truncated: report.findings.length > findings.length,
+    truncated: report.truncated || report.findings.length > findings.length,
   };
 }
 

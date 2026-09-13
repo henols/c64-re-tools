@@ -2947,10 +2947,10 @@ async function cmdHazardReport(rest: string[]): Promise<number> {
   }
 
   if (json) {
-    console.log(JSON.stringify({ store: storePath, image: imagePath, ...report, returned: report.findings.length, matched: report.findings.length, truncated: false }, null, 2));
+    console.log(JSON.stringify({ store: storePath, image: imagePath, ...report, returned: report.findings.length, matched: report.findings.length }, null, 2));
     return 0;
   }
-  printHazardReport(storePath, imagePath, { ...report, returned: report.findings.length, matched: report.findings.length, truncated: false });
+  printHazardReport(storePath, imagePath, { ...report, returned: report.findings.length, matched: report.findings.length });
   return 0;
 }
 
