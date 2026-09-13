@@ -276,7 +276,7 @@ artifact — it did not retract the finding. Phase 49 gates reassembly, so
 that subject is the thing it will gate on.
 
 Progress: [████████░░] 75% (6/8 phases complete in v1.0.0; per-phase plan counts in the ROADMAP Progress table)
-Last activity: 2026-09-13 - Completed quick task 260913-kwg: re-record the hazard subject's on-screen observations against the committed images on real stock VICE
+Last activity: 2026-09-13 - Completed quick task 260913-m5s: correct the on-screen instrument finding in the hazard subject design doc
 
 ## Performance Metrics
 
@@ -1655,6 +1655,7 @@ ledger table row below were both updated in the same change as this one.
 | 260911-syq | Answer the v1.0.0 three-hard-losses research question to unblock Phase 52 | 2026-09-11 | 3c21ce6b |  | [260911-syq-answer-the-v1-0-0-three-hard-losses-rese](./quick/260911-syq-answer-the-v1-0-0-three-hard-losses-rese/) |
 | 260913-jgv | Classify the hazard subject's one undecided VIC-II region (`$087A..$0FFF`, missing `bank-select`/`control-register-1`) by stating both registers as immediate-load-then-store in the alignment routine and its mis-aligned twin — surfacing the fourth planted hazard class, which the incomplete register recovery had kept invisible. Re-ran the reassembly gate and re-transcribed the findings verdict from `red`/`R7` to `acknowledged`/`R10`; frozen rule table and schema untouched, both runs left on the record | 2026-09-13 | 55c5a35c, 54fac054, e28e56b7 |  | [260913-jgv-classify-the-unclassified-vic-ii-region-](./quick/260913-jgv-classify-the-unclassified-vic-ii-region-/) |
 | 260913-kwg | Re-record the hazard subject's on-screen observations against the committed images. Qualified the instrument first and disqualified it: an unrelated program pushed through the identical `-autostart` route yields a byte-identical capture, and every one of five distinct `.prg` files failed to load at the emulator level (confirmed independently via the binary monitor's own `AUTOSTART`, error `0x8f`). The section now records that no per-program on-screen claim can be made, keeps the prior observations verbatim as superseded pre-amendment history, and states that the isolation builds were not re-run | 2026-09-13 | cbfebae4 |  | [260913-kwg-re-record-the-hazard-subject-s-on-screen](./quick/260913-kwg-re-record-the-hazard-subject-s-on-screen/) |
+| 260913-m5s | Correct the hazard subject's on-screen instrument finding. The prior pass's stated cause was false: `-autostart` failure was VICE's default disk-image PRG mode, not an absence of loading capability — `-autostartprgmode 1` injects and runs the program. The conclusion (no per-program on-screen claim is licensed) survives on a better-understood reason: a settled-screen capture is program-blind by construction. Retired the drive-ROM insinuation on evidence (the plain 1541 ROM is present); bounded the negative result to the four cycle counts actually probed | 2026-09-13 | 14c12ce1 |  | [260913-m5s-correct-the-on-screen-instrument-finding](./quick/260913-m5s-correct-the-on-screen-instrument-finding/) |
 
 ### Blockers/Concerns
 
