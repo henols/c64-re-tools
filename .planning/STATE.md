@@ -5,16 +5,16 @@ milestone_name: The Rebuild Half
 current_phase: 49
 current_phase_name: The Reassembly Gate, Committed Before the Phase It Gates
 status: executing
-stopped_at: Phase 48 complete, ready to plan Phase 49
-last_updated: "2026-09-13T08:12:18.260Z"
+stopped_at: Completed 49-01-PLAN.md
+last_updated: "2026-09-13T08:37:17.534Z"
 last_activity: 2026-09-13
-last_activity_desc: Phase 48 complete, transitioned to Phase 49
-state_head: 791847a9815a9d8025759934c517593011b7e9fd
+last_activity_desc: Phase 49 execution started
+state_head: 1b389ed48d49f57a330a7d12346d002e13a6378f
 progress:
   total_phases: 8
   completed_phases: 4
   total_plans: 35
-  completed_plans: 28
+  completed_plans: 29
   percent: 50
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-09-13 after Phase 48 — one Key
 Decisions row and a footer; the last full evolution review was the v0.9.0 close
 on 2026-09-10)
 
-**Current focus:** Phase 49 — The Reassembly Gate, Committed Before the Phase It
+**Current focus:** Phase 49 — The Reassembly Gate, Committed Before the Phase It Gates
 Gates. It runs against Phase 48's purpose-built subject; see the Phase 48 entry
 under Blockers/Concerns before interpreting that subject's emulator behaviour.
 
@@ -259,8 +259,8 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 49 (The Reassembly Gate, Committed Before the Phase It Gates) — READY TO EXECUTE
-Plan: Not started
+Phase: 49 (The Reassembly Gate, Committed Before the Phase It Gates) — EXECUTING
+Plan: 2 of 7
 Status: Ready to execute
 Plans: none yet — Phase 49 has not been planned.
 
@@ -277,7 +277,7 @@ artifact — it did not retract the finding. Phase 49 gates reassembly, so
 that subject is the thing it will gate on.
 
 Progress: [█████░░░░░] 50% (4/8 phases complete in v1.0.0; per-phase plan counts in the ROADMAP Progress table)
-Last activity: 2026-09-13 — Phase 48 complete, transitioned to Phase 49
+Last activity: 2026-09-13 — Phase 49 execution started
 
 ## Performance Metrics
 
@@ -600,6 +600,7 @@ Last activity: 2026-09-13 — Phase 48 complete, transitioned to Phase 49
 | Phase 48 P04 | 50min | 3 tasks | 19 files |
 | Phase 48 P05 | 55min | 3 tasks | 3 files |
 | Phase 48 P06 | 62min | 3 tasks | 4 files |
+| Phase 49 P01 | 6min | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -1363,6 +1364,7 @@ Recent decisions affecting current work:
 - [Phase 48]: Two of the four hazard classes (indexed-dispatch, cycle-exact-raster) have no independently-sourced positive example among the four cross-check fixtures, recorded plainly in CROSS-CHECK.md rather than smoothed over.
 - [Phase 48]: Phase 48-06: A real defect the reassembly path surfaced on first contact -- a declining comment recorded at a mid-instruction address with no store label -- was fixed by re-anchoring it to the host instruction's own start address, since no generic export can attach a comment to an address that is neither an instruction start nor an existing label.
 - [Phase 48]: Phase 48-06: The raster construction's on-screen persistence did not match its stated prediction across extensive live-emulator testing (including a direct entry point that never returns to BASIC), and this was recorded honestly as a disclosed disagreement in FIXTURE-DESIGN.md rather than reconciled -- isolated testing confirms the self-modifying and alignment constructions' effects do persist and are visible.
+- [Phase 49]: Phase 49 plan 01: checkpoint auto-selected freeze-as-proposed — froze the reassembly gate's seven inputs (TREE_REBUILD, MOVEMENT_REBUILD, HAZARD_DISPOSITION, DIFF_SCOPE_COVERAGE, RED_CONTROLS, SECOND_PATH_GUARD, ORDERING_PROOF) and three verdict tokens (green/acknowledged/red) exactly as drafted, over collapse-guards and rename-verdicts. — SECOND_PATH_GUARD and ORDERING_PROOF stay gate inputs because their breach is what makes every other input untrustworthy; degrade would mislabel a fully-correct acknowledged-hazard rebuild as a reduced capability.
 
 ### Pending Todos
 
@@ -2454,8 +2456,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-13T00:19:32.101Z
-Stopped at: Phase 48 complete, ready to plan Phase 49
+Last session: 2026-09-13T08:37:17.115Z
+Stopped at: Completed 49-01-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
