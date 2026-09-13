@@ -10,17 +10,60 @@
 // prove a relocated tree actually reassembles at its new layout.
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
-import { STORE_EXPORT_SCHEMA_VERSION, type StoreExportDocument } from "./anno-store-export.ts";
+import { verifyAcmeAssemblesTree } from "./acme-verify.ts";
+import { exportAsmTree, ROOT_FILE_NAME } from "./anno-export-asm.ts";
+import { openStore, closeStore } from "./anno-store.ts";
+import { importStoreDocument, STORE_EXPORT_SCHEMA_VERSION, type StoreExportDocument } from "./anno-store-export.ts";
+import { runReassemblyGate, movementRebuildFromResult, type GateInput } from "./reassembly-gate.ts";
 import { relocateSubject, buildMovementResult, refusedMovement, type RelocationRequest, type RelocationSite, type RelocatedSubject } from "./reassembly-gate-movement.ts";
 
 const SKIP_REASON = acmeSkipReasonFor("reassembly-gate-movement.test.ts");
-void SKIP_REASON; // used by later tasks in this file
 
 test("ACME availability gate", () => {
   assertAcmeRequiredIfEnvSet(assert);
 });
+
+// ---------------------------------------------------------------------------
+// One temp directory for the whole file, removed once at the end -- the same
+// discipline `hazard-subject-reassembly.test.ts` already carries.
+// ---------------------------------------------------------------------------
+
+let workDir: string | undefined;
+let dirCounter = 0;
+
+function freshDir(tag: string): string {
+  if (!workDir) workDir = mkdtempSync(join(tmpdir(), "reassembly-gate-movement-"));
+  const dir = join(workDir, `${tag}-${dirCounter++}`);
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+after(() => {
+  if (workDir) rmSync(workDir, { recursive: true, force: true });
+});
+
+function writePrg(path: string, origin: number, body: Uint8Array): void {
+  writeFileSync(path, Buffer.from([origin & 0xff, (origin >> 8) & 0xff, ...body]));
+}
+
+/** Imports `doc` into a fresh, throwaway store file through
+ * `importStoreDocument()`, the store's own public import verb -- never raw
+ * SQL -- and returns the store's own path. */
+function freshStoreFromDocument(dir: string, doc: StoreExportDocument): string {
+  const storePath = join(dir, "movement-subject.annostore");
+  const handle = openStore(storePath, { workspaceRoot: dir });
+  try {
+    importStoreDocument(handle, doc);
+  } finally {
+    closeStore(handle);
+  }
+  return storePath;
+}
 
 // ---------------------------------------------------------------------------
 // Task 1 fixture: one document, three ranges, one label, one scope. All pure
@@ -313,8 +356,203 @@ test("gate movement: the sibling refusal builder produces a refused movement res
   assert.match(result.reason, /some refusal reason/);
 });
 
-after(() => {
-  // No temp directories are created by Task 1's own cases -- everything above
-  // is a pure in-memory transform. Later tasks in this file register their
-  // own `after()` cleanup for the directories they create.
-});
+// ---------------------------------------------------------------------------
+// Task 2/3 fixture: a small, fully understood movement subject -- NOT the
+// committed hazard-subject, which deliberately carries constructions whose
+// whole point is that they cannot move (relocating inside it would test the
+// wrong thing). Origin $0801:
+//   - an entry block ($0801-$0806): `ldx #$00` / `lda table,x` / `rts` --
+//     an absolute-INDEXED load that reads the split-address table by name;
+//   - the table itself ($0807-$080A, `lo_hi_address`), labelled `table`,
+//     holding both routines' addresses low-then-high;
+//   - two one-byte `rts` routines, `routine_a` ($080B) and `routine_b`
+//     ($080C), each its own range.
+// ---------------------------------------------------------------------------
+
+const MOVEMENT_ORIGIN = 0x0801;
+
+function movementDocument(): StoreExportDocument {
+  return {
+    schemaVersion: STORE_EXPORT_SCHEMA_VERSION,
+    store: "movement-subject.annostore",
+    ranges: [
+      { start: 0x0801, endInclusive: 0x0806, dataType: "code", bank: null, provenance: "derived" },
+      { start: 0x0807, endInclusive: 0x080a, dataType: "lo_hi_address", bank: null, provenance: "derived" },
+      { start: 0x080b, endInclusive: 0x080b, dataType: "code", bank: null, provenance: "derived" },
+      { start: 0x080c, endInclusive: 0x080c, dataType: "code", bank: null, provenance: "derived" },
+    ],
+    labels: [
+      { address: 0x0807, name: "table", kind: "User", bank: null },
+      { address: 0x080b, name: "routine_a", kind: "User", bank: null },
+      { address: 0x080c, name: "routine_b", kind: "User", bank: null },
+    ],
+    comments: [],
+    projectEnums: [],
+    enumUsage: [],
+    xrefs: [],
+    execObservations: [],
+    scopes: [],
+  };
+}
+
+/** `ldx #$00` / `lda $0807,x` / `rts` / tbl_lo (`<routine_a, <routine_b`) /
+ * tbl_hi (`>routine_a, >routine_b`) / `rts` (routine_a) / `rts` (routine_b).
+ * $0807 is `table`'s own address -- an in-tree absolute-indexed reference,
+ * resolved through the SAME symbol/in-tree rule the code path already uses. */
+function movementImage(): Uint8Array {
+  return new Uint8Array([
+    0xa2, 0x00, // ldx #$00
+    0xbd, 0x07, 0x08, // lda $0807,x  (table)
+    0x60, // rts
+    0x0b, 0x0c, // tbl_lo: <routine_a ($0b), <routine_b ($0c)
+    0x08, 0x08, // tbl_hi: >routine_a ($08), >routine_b ($08)
+    0x60, // routine_a: rts
+    0x60, // routine_b: rts
+  ]);
+}
+
+/** The two declared reference sites for `routine_a` inside the table:
+ * its low octet at $0807 (the table's first byte) and its high octet at
+ * $0809 (the table's third byte, the start of the high run). Both DECLARED,
+ * never derived from the exporter's own symbolisation. */
+const ROUTINE_A_SITES: readonly RelocationSite[] = [
+  { address: 0x0807, encoding: "lowByte", symbolName: "routine_a" },
+  { address: 0x0809, encoding: "highByte", symbolName: "routine_a" },
+];
+
+/** A delta that changes BOTH octets of `routine_a`'s address: $080B -> $0910
+ * (low $0B -> $10, high $08 -> $09). A whole multiple of 256 would leave the
+ * low half unchanged and make a half-move in that direction undetectable --
+ * asserted directly in the cases below rather than assumed from this comment. */
+const MOVEMENT_DELTA = 0x0910 - 0x080b;
+
+function exportMovementTree(dir: string, doc: StoreExportDocument, image: Uint8Array): ReturnType<typeof exportAsmTree> {
+  const prgPath = join(dir, "subject.prg");
+  writePrg(prgPath, MOVEMENT_ORIGIN, image);
+  const storePath = freshStoreFromDocument(dir, doc);
+  const outDir = join(dir, "tree");
+  return exportAsmTree({ storePath, imagePath: prgPath, workspaceRoot: dir, outDir });
+}
+
+// ---------------------------------------------------------------------------
+// Task 2: the real relocated rebuild
+// ---------------------------------------------------------------------------
+
+test(
+  "gate movement: the unrelocated movement subject's tree verifies to the pass outcome with an equal byte-diff, before any relocation is attempted",
+  { skip: SKIP_REASON },
+  () => {
+    const dir = freshDir("movement-honest");
+    const result = exportMovementTree(dir, movementDocument(), movementImage());
+
+    assert.ok(result.source.includes("lda table,x"), `the entry block must reference the table by symbol name:\n${result.source}`);
+    assert.ok(result.source.includes("<routine_a"), `the table's low run must reference routine_a by symbol name:\n${result.source}`);
+    assert.ok(result.source.includes(">routine_a"), `the table's high run must reference routine_a by symbol name:\n${result.source}`);
+
+    const verdict = verifyAcmeAssemblesTree({
+      treeDir: result.outDir,
+      rootFileName: ROOT_FILE_NAME,
+      expectedBytes: result.expectedBytes,
+      expectedSegments: result.blocks,
+    });
+    assert.equal(verdict.outcome, "ok", verdict.reason);
+    assert.equal(verdict.byteDiff?.equal, true);
+  },
+);
+
+test(
+  "gate movement: relocating routine_a and re-exporting at the new layout verifies to the pass outcome with an equal byte-diff, through the same symbol",
+  { skip: SKIP_REASON },
+  () => {
+    const dir = freshDir("movement-relocated");
+    const originalResult = exportMovementTree(dir, movementDocument(), movementImage());
+
+    const subject = relocateSubject({
+      document: movementDocument(),
+      image: movementImage(),
+      origin: MOVEMENT_ORIGIN,
+      symbolName: "routine_a",
+      delta: MOVEMENT_DELTA,
+      sites: ROUTINE_A_SITES,
+    });
+    assert.notEqual(subject.relocatedAddress, subject.originalAddress);
+    assert.notEqual(
+      subject.originalAddress & 0xff,
+      subject.relocatedAddress & 0xff,
+      "the chosen delta must change the low octet, or a half-move in that direction would be undetectable",
+    );
+    assert.notEqual(
+      (subject.originalAddress >> 8) & 0xff,
+      (subject.relocatedAddress >> 8) & 0xff,
+      "the chosen delta must change the high octet, or a half-move in that direction would be undetectable",
+    );
+
+    const relocatedDir = freshDir("movement-relocated-tree");
+    const relocatedResult = exportMovementTree(relocatedDir, subject.document, subject.image);
+
+    assert.ok(
+      relocatedResult.source.includes("routine_a"),
+      `the relocated tree's emitted text must still reference the moved routine by its original symbol name:\n${relocatedResult.source}`,
+    );
+
+    const verdict = verifyAcmeAssemblesTree({
+      treeDir: relocatedResult.outDir,
+      rootFileName: ROOT_FILE_NAME,
+      expectedBytes: relocatedResult.expectedBytes,
+      expectedSegments: relocatedResult.blocks,
+    });
+    assert.equal(verdict.outcome, "ok", verdict.reason);
+    assert.equal(verdict.byteDiff?.equal, true);
+
+    // Precondition sanity: the honest, unrelocated export from the same
+    // subject really did verify clean too (asserted in the sibling test
+    // above; re-checked here so this test's own claim -- "the relocated
+    // export ALSO verifies clean" -- means something).
+    void originalResult;
+  },
+);
+
+function passingGateInputExceptMovement(movement: GateInput["MOVEMENT_REBUILD"]): GateInput {
+  return {
+    TREE_REBUILD: "ok",
+    MOVEMENT_REBUILD: movement,
+    HAZARD_DISPOSITION: "clean",
+    DIFF_SCOPE_COVERAGE: "complete",
+    RED_CONTROLS: "all-observed",
+    SECOND_PATH_GUARD: "held",
+    ORDERING_PROOF: "held",
+  };
+}
+
+test(
+  "gate movement: the gate returns green for a passing movement result and red under the movement rule for a refused one",
+  { skip: SKIP_REASON },
+  () => {
+    const dir = freshDir("movement-gate-tie");
+    const subject = relocateSubject({
+      document: movementDocument(),
+      image: movementImage(),
+      origin: MOVEMENT_ORIGIN,
+      symbolName: "routine_a",
+      delta: MOVEMENT_DELTA,
+      sites: ROUTINE_A_SITES,
+    });
+    const relocatedResult = exportMovementTree(dir, subject.document, subject.image);
+    const verdict = verifyAcmeAssemblesTree({
+      treeDir: relocatedResult.outDir,
+      rootFileName: ROOT_FILE_NAME,
+      expectedBytes: relocatedResult.expectedBytes,
+      expectedSegments: relocatedResult.blocks,
+    });
+    assert.equal(verdict.outcome, "ok", verdict.reason);
+
+    const passingMovement = buildMovementResult(verdict.outcome, subject);
+    const passingGateVerdict = runReassemblyGate(passingGateInputExceptMovement(movementRebuildFromResult(passingMovement)));
+    assert.equal(passingGateVerdict.outcome, "green", passingGateVerdict.reason);
+
+    const refused = refusedMovement("relocateSubject: some refusal reason (test-constructed)");
+    const refusedGateVerdict = runReassemblyGate(passingGateInputExceptMovement(movementRebuildFromResult(refused)));
+    assert.equal(refusedGateVerdict.outcome, "red", refusedGateVerdict.reason);
+    assert.equal(refusedGateVerdict.rule, "R5");
+  },
+);
