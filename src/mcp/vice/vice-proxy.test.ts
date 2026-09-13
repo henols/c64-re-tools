@@ -51,6 +51,10 @@ import { repoRoot } from "./repo-root.ts";
 // derived the same way (from ANNO_TOOL_DEFINITIONS) and carrying the renamed
 // anno_* surface.
 import { CURATED_ANNO_TOOLS } from "./anno-tools.ts";
+// The chunking tests below (plan 55-01) seed a real anno_* store rather than
+// dialling the retired HTTP stand-in -- see seedAnnoWorkspace() near the
+// first of those tests for why.
+import { openStore, closeStore, setLabel } from "./anno-store.ts";
 // Read-only import for test assertions only -- this test file does not
 // modify vice-broker-client.ts's own content; ACQUIRE_TIMEOUT_MS (the
 // control-plane client's own acquire deadline, replacing the retiring
@@ -1016,9 +1020,19 @@ test("a missing epoch file is not a restart", async () => {
 });
 
 // -----------------------------------------------------------------------
-// Plan 01.1-02 task 3: a result larger than the declared cap comes back in
-// FULL across an explicit continuation sequence -- reassembled byte-for-byte,
-// served with no extra host traffic, never silently truncated.
+// Plan 01.1-02 task 3 (rewired by plan 55-01: `96ef711f` deleted
+// forwardToVice(), the only caller of wrapPossiblyChunked() -- the split
+// function itself survived with no call site until 55-01 restored one). A
+// result larger than the declared cap comes back in FULL across an
+// explicit continuation sequence -- reassembled byte-for-byte, never
+// silently truncated. The retired forwardToVice() path drove this fixture
+// through an in-process HTTP stand-in (startBigPayloadServer() just below);
+// that path is gone, and the four tests in this section no longer reach it.
+// They drive a real registered tool instead: `anno_get_symbols` against a
+// seeded local store (seedAnnoWorkspace(), further below), which produces a
+// real oversized payload with no emulator, no broker and no stand-in
+// server, deterministically, on every platform -- exactly the route that
+// was silently unchunked for the whole life of one release.
 // -----------------------------------------------------------------------
 
 /**
@@ -1031,6 +1045,11 @@ test("a missing epoch file is not a restart", async () => {
  * would fail probeInstance()'s "recognisable ping result" check and report
  * the host unreachable -- short-circuiting every test in this section
  * before the oversized-result logic is ever exercised.
+ *
+ * Unused by the chunking tests below as of plan 55-01 -- they seed a real
+ * anno_* store instead (seedAnnoWorkspace()) rather than dialling this
+ * stand-in through the retired VICE_MCP_URL forwarding path. Left in place;
+ * whether it still has a caller anywhere else is a later plan's question.
  */
 function startBigPayloadServer(payloadText: string, { targetTool = "vice_memory_read" }: { targetTool?: string } = {}): StandInServer {
   const requests: (JsonRpcMessage | null)[] = [];
@@ -1084,13 +1103,39 @@ function startBigPayloadServer(payloadText: string, { targetTool = "vice_memory_
   return { server, requests };
 }
 
+/**
+ * Seeds a fresh temp workspace with a `project.annostore` holding
+ * `labelCount` distinct labels, and returns the workspace root plus the
+ * store's absolute path. Modelled on anno-tools.test.ts's own withStore()
+ * helper, adapted for a SPAWNED child rather than an in-process call: the
+ * child reads `CLAUDE_PROJECT_DIR` from its own environment at dispatch
+ * time (repoRoot()'s branch 0), so this helper hands the workspace root to
+ * the caller to pass into startProxy()'s env, rather than mutating this
+ * (parent) process's environment the way withStore() does for its
+ * in-process runAnnoTool() calls.
+ *
+ * `anno_get_symbols` needs no emulator, no broker and no stand-in server --
+ * a seeded store with enough labels already produces a real oversized
+ * result deterministically, which is what makes it a working replacement
+ * for the retired startBigPayloadServer()-driven fixture above.
+ */
+function seedAnnoWorkspace(labelCount: number): { ws: string; storePath: string } {
+  const ws = mkdtempSync(join(tmpdir(), "vice-proxy-anno-"));
+  const storePath = join(ws, "project.annostore");
+  const handle = openStore(storePath, { workspaceRoot: ws });
+  try {
+    for (let i = 0; i < labelCount; i++) {
+      setLabel(handle, { address: 0xc000 + i, name: `label_${i}_${"x".repeat(20)}`, kind: "User" });
+    }
+  } finally {
+    closeStore(handle);
+  }
+  return { ws, storePath };
+}
+
 test("an oversized result is recoverable in full across continuations", async () => {
-  // NOT valid JSON, so call()'s own JSON.parse-or-verbatim fallback hands it
-  // back exactly as sent -- the cleanest possible byte-for-byte fixture.
-  const bigPayload = "PAYLOAD-START-" + "abcdefghij".repeat(500) + "-PAYLOAD-END"; // 5026 chars
-  const { server, requests } = startBigPayloadServer(bigPayload);
-  const port = await listen(server);
-  const proxy = startProxy({ VICE_MCP_URL: `http://127.0.0.1:${port}/mcp`, VICE_MAX_RESULT_CHARS: "1000" });
+  const { ws, storePath } = seedAnnoWorkspace(30);
+  const proxy = startProxy({ CLAUDE_PROJECT_DIR: ws, VICE_MAX_RESULT_CHARS: "1000" });
 
   try {
     proxy.send({
@@ -1101,7 +1146,12 @@ test("an oversized result is recoverable in full across continuations", async ()
     });
     await proxy.nextMessage();
 
-    proxy.send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "vice_memory_read", arguments: {} } });
+    proxy.send({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/call",
+      params: { name: "anno_get_symbols", arguments: { store: storePath, max_results: 40 } },
+    });
     const first = await proxy.nextMessage();
     assert.equal(first.result.isError, false);
     assert.equal(first.result.content.length, 2, "an oversized result carries a chunk item plus a marker item");
@@ -1130,37 +1180,46 @@ test("an oversized result is recoverable in full across continuations", async ()
     }
     assert.match(nextMarker, /\(last chunk\)/, "the sequence must terminate with a last-chunk marker");
 
-    assert.equal(reassembled, bigPayload, "reassembly must equal the original payload BYTE FOR BYTE");
-    // Two "tools/call" requests reach the host, not one: the pre-flight
-    // liveness probe's own vice_ping round trip, plus the one real forwarded
-    // vice_memory_read call (plan 01.1-03 task 2) -- every continuation
-    // chunk after that is served entirely from the proxy's local store.
-    const toolCallsSeen = requests.filter((r) => r && r.method === "tools/call") as JsonRpcMessage[];
-    assert.equal(
-      toolCallsSeen.length,
-      2,
-      "continuations must be served from the proxy's store, never re-forwarded -- exactly the probe plus one real host request"
-    );
-    assert.ok(toolCallsSeen.some((r) => r.params.name === "vice_ping"), "the liveness probe's own ping must have reached the host");
-    assert.ok(
-      toolCallsSeen.some((r) => r.params.name === "vice_memory_read"),
-      "the real oversized call must have reached the host exactly once"
-    );
-    assert.ok(
-      !requests.some((r) => r && r.method === "tools/call" && r.params && r.params.name === "vice_result_continue"),
-      "vice_result_continue must never appear in a request the stand-in server receives"
-    );
+    // Byte-exactness, proven against a SECOND run of the identical query
+    // rather than a hand-written expected string: a second proxy, pointed
+    // at the SAME seeded store with a cap large enough that this same
+    // payload never splits, must answer with the exact unchunked text this
+    // reassembly is supposed to equal.
+    const unchunkedProxy = startProxy({ CLAUDE_PROJECT_DIR: ws, VICE_MAX_RESULT_CHARS: "500000" });
+    try {
+      unchunkedProxy.send({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } },
+      });
+      await unchunkedProxy.nextMessage();
+      unchunkedProxy.send({
+        jsonrpc: "2.0",
+        id: 2,
+        method: "tools/call",
+        params: { name: "anno_get_symbols", arguments: { store: storePath, max_results: 40 } },
+      });
+      const unchunked = await unchunkedProxy.nextMessage();
+      assert.equal(unchunked.result.isError, false);
+      assert.equal(unchunked.result.content.length, 1, "the comparison run must be small enough to stay a single item");
+      assert.equal(
+        reassembled,
+        unchunked.result.content[0].text,
+        "reassembly must equal the unchunked run of the SAME query BYTE FOR BYTE"
+      );
+    } finally {
+      unchunkedProxy.child.kill("SIGKILL");
+    }
   } finally {
     proxy.child.kill("SIGKILL");
-    await new Promise((resolve) => server.close(resolve));
+    rmSync(ws, { recursive: true, force: true });
   }
 });
 
 test("an exhausted continuation token fails loudly", async () => {
-  const bigPayload = "Z".repeat(3000);
-  const { server } = startBigPayloadServer(bigPayload);
-  const port = await listen(server);
-  const proxy = startProxy({ VICE_MCP_URL: `http://127.0.0.1:${port}/mcp`, VICE_MAX_RESULT_CHARS: "1000" });
+  const { ws, storePath } = seedAnnoWorkspace(30);
+  const proxy = startProxy({ CLAUDE_PROJECT_DIR: ws, VICE_MAX_RESULT_CHARS: "1000" });
 
   try {
     proxy.send({
@@ -1171,7 +1230,12 @@ test("an exhausted continuation token fails loudly", async () => {
     });
     await proxy.nextMessage();
 
-    proxy.send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "vice_memory_read", arguments: {} } });
+    proxy.send({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/call",
+      params: { name: "anno_get_symbols", arguments: { store: storePath, max_results: 40 } },
+    });
     const first = await proxy.nextMessage();
     const tokenMatch = first.result.content[1].text.match(/"token":"([^"]+)"/);
     const token = tokenMatch[1];
@@ -1204,7 +1268,7 @@ test("an exhausted continuation token fails loudly", async () => {
     assert.equal(proxy.child.exitCode, null, "the proxy must still be alive after an exhausted-token error");
   } finally {
     proxy.child.kill("SIGKILL");
-    await new Promise((resolve) => server.close(resolve));
+    rmSync(ws, { recursive: true, force: true });
   }
 });
 
@@ -1253,9 +1317,14 @@ test("tools/list declares the same cap it enforces", async () => {
 // never handed out -- so this closes that gap rather than duplicating the
 // exhausted-token case.
 test("an unknown continuation token (never issued by this proxy) fails loudly, not silently or opaquely", async () => {
-  const { server } = startStandInServer();
-  const port = await listen(server);
-  const proxy = startProxy({ VICE_MCP_URL: `http://127.0.0.1:${port}/mcp` });
+  // This test never needed a payload -- what the retired harness forced was
+  // `vice_ping` as the "proxy is still alive" follow-up call, which reached
+  // through `VICE_MCP_URL` to a stand-in "host" that no longer exists on
+  // this path. `anno_get_symbols` proves the same thing (the proxy answers
+  // a real registered tool normally right after the bogus token) without a
+  // host, a broker or any stand-in server.
+  const { ws, storePath } = seedAnnoWorkspace(1);
+  const proxy = startProxy({ CLAUDE_PROJECT_DIR: ws });
 
   try {
     proxy.send({
@@ -1278,14 +1347,18 @@ test("an unknown continuation token (never issued by this proxy) fails loudly, n
     assert.match(resp.result.content[0].text, /narrower range/);
     assert.equal(proxy.child.exitCode, null, "the proxy must still be alive after an unknown-token error");
 
-    // The failure must not have gone anywhere near the host -- served
-    // entirely inside this proxy, exactly like the exhausted-token case.
-    proxy.send({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "vice_ping", arguments: {} } });
-    const pingResp = await proxy.nextMessage();
-    assert.equal(pingResp.result.isError, false, "the proxy must remain fully functional after the bogus token");
+    // The failure must not have wedged the proxy.
+    proxy.send({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "tools/call",
+      params: { name: "anno_get_symbols", arguments: { store: storePath, max_results: 10 } },
+    });
+    const followUp = await proxy.nextMessage();
+    assert.equal(followUp.result.isError, false, "the proxy must remain fully functional after the bogus token");
   } finally {
     proxy.child.kill("SIGKILL");
-    await new Promise((resolve) => server.close(resolve));
+    rmSync(ws, { recursive: true, force: true });
   }
 });
 
@@ -1297,13 +1370,17 @@ test("an unknown continuation token (never issued by this proxy) fails loudly, n
 // The two tests above exercise each half separately with DIFFERENT cap
 // values (1000 and 12345) -- this test ties them together with ONE cap
 // value, so a future edit that lets the two drift apart fails here even if
-// it left each half's own test green.
+// it left each half's own test green. Rewired by plan 55-01 onto
+// anno_get_symbols (see the section header above for why the retired
+// stand-in server is gone); the payload is now a store seeded with
+// several chunks' worth of labels rather than a hand-written string, so the
+// final byte-exactness check compares against a second, unchunked run of
+// the identical query instead of a literal fixture -- the same discipline
+// the "recoverable in full" test above uses.
 test("the _meta cap stamp and the actual chunk boundary never drift apart", async () => {
   const CAP = 777;
-  const bigPayload = "PAYLOAD-" + "x".repeat(CAP * 3 + 42) + "-END"; // several chunks' worth, not a clean multiple
-  const { server } = startBigPayloadServer(bigPayload);
-  const port = await listen(server);
-  const proxy = startProxy({ VICE_MCP_URL: `http://127.0.0.1:${port}/mcp`, VICE_MAX_RESULT_CHARS: String(CAP) });
+  const { ws, storePath } = seedAnnoWorkspace(50); // several chunks' worth at CAP, not a clean multiple
+  const proxy = startProxy({ CLAUDE_PROJECT_DIR: ws, VICE_MAX_RESULT_CHARS: String(CAP) });
 
   try {
     proxy.send({
@@ -1324,7 +1401,12 @@ test("the _meta cap stamp and the actual chunk boundary never drift apart", asyn
       );
     }
 
-    proxy.send({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "vice_memory_read", arguments: {} } });
+    proxy.send({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "tools/call",
+      params: { name: "anno_get_symbols", arguments: { store: storePath, max_results: 60 } },
+    });
     const first = await proxy.nextMessage();
     assert.equal(first.result.isError, false);
     assert.equal(
@@ -1359,10 +1441,36 @@ test("the _meta cap stamp and the actual chunk boundary never drift apart", asyn
       reassembled += cont.result.content[0].text;
       nextMarker = cont.result.content[1].text;
     }
-    assert.equal(reassembled, bigPayload, "reassembly must equal the original payload byte for byte");
+
+    // Byte-exactness against a second, unchunked run of the identical query.
+    const unchunkedProxy = startProxy({ CLAUDE_PROJECT_DIR: ws, VICE_MAX_RESULT_CHARS: "500000" });
+    try {
+      unchunkedProxy.send({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } },
+      });
+      await unchunkedProxy.nextMessage();
+      unchunkedProxy.send({
+        jsonrpc: "2.0",
+        id: 2,
+        method: "tools/call",
+        params: { name: "anno_get_symbols", arguments: { store: storePath, max_results: 60 } },
+      });
+      const unchunked = await unchunkedProxy.nextMessage();
+      assert.equal(unchunked.result.content.length, 1);
+      assert.equal(
+        reassembled,
+        unchunked.result.content[0].text,
+        "reassembly must equal the unchunked run of the SAME query byte for byte"
+      );
+    } finally {
+      unchunkedProxy.child.kill("SIGKILL");
+    }
   } finally {
     proxy.child.kill("SIGKILL");
-    await new Promise((resolve) => server.close(resolve));
+    rmSync(ws, { recursive: true, force: true });
   }
 });
 
