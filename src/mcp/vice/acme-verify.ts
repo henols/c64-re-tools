@@ -410,7 +410,7 @@ export interface AcmeVerifyTreeOptions {
   /** Same field, same contract as `AcmeVerifyOptions.acmeBin`. */
   acmeBin?: string;
   /**
-   * TEST-ONLY seam (plan 49-03). A caller may supply its own directory for
+   * TEST-ONLY seam. A caller may supply its own directory for
    * the assembled output file instead of this function's own fresh one.
    * Its SINGLE purpose is to make the already-present-output-path refusal
    * (`assembleAndDiff()` rule 7's `absentBeforeSpawn` conjunct) reachable

@@ -808,7 +808,7 @@ after(() => {
  * order ACME's own per-segment stdout lines come back in for the
  * single-source path. A TREE does not preserve that order: `exportAsmTree()`
  * sources `symbols.a` first, then each POPULATED SCOPE ascending by scope
- * start, then `unscoped.a` LAST regardless of address (D47-D) -- and this
+ * start, then `unscoped.a` LAST regardless of address -- and this
  * subject was built with an unscoped block ($0801) that sits BEFORE every
  * scope's own address range, so its tree places that block's file LAST while
  * its address is lowest. ACME's own segment lines follow FILE INCLUSION
