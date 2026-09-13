@@ -2151,6 +2151,90 @@ test("hazard-report: the unknown-verb refusal now names SIX verbs, not five", as
   );
 });
 
+// ---------------------------------------------------------------------------
+// 48-REVIEW WR-01/CR-01: `hazard-report` had exactly one test above this
+// point, and it only checked the unknown-verb error message -- it never ran
+// the real verb end to end, which is exactly why CR-01 (both real consumers
+// discarding `buildHazardReport()`'s own `truncated` signal) shipped
+// undetected. These tests run `cmdHazardReport` for real, against a store +
+// image pair that actually trips MAX_TABLE_ENTRIES.
+// ---------------------------------------------------------------------------
+
+/** A store (empty of annotations) plus a `.prg` image whose only content is a
+ * 6502 indirect jump through a table of exactly MAX_TABLE_ENTRIES (64) 2-byte
+ * entries -- the SAME construction `anno-hazard-report.test.ts`'s own
+ * "scanner's truncation flag propagates" unit test uses, reused here at the
+ * real CLI boundary rather than only against the pure module. */
+function makeMaxTableEntriesDispatchProject(dir: string, imageName = "dispatch.prg"): { storePath: string; imagePath: string } {
+  const origin = 0x0800;
+  const tableEntries = 64; // MAX_TABLE_ENTRIES -- the 65th table check would trip truncation
+  const payload = new Uint8Array(3 + tableEntries * 2);
+  payload[0] = 0x6c;
+  payload[1] = 0x03;
+  payload[2] = 0x08; // jmp ($0803)
+  for (let k = 0; k < tableEntries; k++) {
+    payload[3 + k * 2] = origin & 0xff;
+    payload[3 + k * 2 + 1] = (origin >> 8) & 0xff;
+  }
+  const imagePath = join(dir, imageName);
+  writeFileSync(imagePath, Buffer.concat([Buffer.from([origin & 0xff, (origin >> 8) & 0xff]), Buffer.from(payload)]));
+  const storePath = join(dir, "dispatch.annostore");
+  const handle = openStore(storePath, { workspaceRoot: dir });
+  closeStore(handle);
+  return { storePath, imagePath };
+}
+
+test("hazard-report: --json reports truncated: true end to end when the scan trips MAX_TABLE_ENTRIES", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    const { storePath, imagePath } = makeMaxTableEntriesDispatchProject(ws);
+    const { result: code, stdout, stderr } = await withCapturedConsole(() =>
+      runAnnoCli(["hazard-report", "--store", storePath, "--image", imagePath, "--json"]),
+    );
+    assert.equal(code, 0, stderr);
+    const parsed = JSON.parse(stdout) as { truncated: unknown };
+    assert.equal(parsed.truncated, true, "the CLI's --json output must surface the scanner's own truncation signal, never a hard-coded false");
+  });
+});
+
+test('hazard-report: the rendered (non --json) report also shows "truncated" in its FINDINGS heading when the scan trips MAX_TABLE_ENTRIES', async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    const { storePath, imagePath } = makeMaxTableEntriesDispatchProject(ws);
+    const { result: code, stdout, stderr } = await withCapturedConsole(() =>
+      runAnnoCli(["hazard-report", "--store", storePath, "--image", imagePath]),
+    );
+    assert.equal(code, 0, stderr);
+    assert.match(stdout, /, truncated\)/, "the human-readable FINDINGS heading must show truncation when the scan actually truncated");
+  });
+});
+
+test("hazard-report: an ordinary run with no dispatch table reports truncated: false via the real CLI verb (non-vacuity control)", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    const { storePath, imagePath } = makeExportableProject(ws, "ordinary.prg");
+    const { result: code, stdout, stderr } = await withCapturedConsole(() =>
+      runAnnoCli(["hazard-report", "--store", storePath, "--image", imagePath, "--json"]),
+    );
+    assert.equal(code, 0, stderr);
+    const parsed = JSON.parse(stdout) as { truncated: unknown };
+    assert.equal(
+      parsed.truncated,
+      false,
+      "an ordinary run must not read as truncated -- proves the fix propagates the real signal rather than hard-coding true",
+    );
+  });
+});
+
+test("hazard-report: --store/--image confinement and missing-file refusals still work through the real CLI verb", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    const { storePath } = makeMaxTableEntriesDispatchProject(ws);
+    const missingImage = join(ws, "does-not-exist.prg");
+    const { result: code, stderr } = await withCapturedConsole(() =>
+      runAnnoCli(["hazard-report", "--store", storePath, "--image", missingImage]),
+    );
+    assert.notEqual(code, 0);
+    assert.match(stderr, /hazard-report: image not found/);
+  });
+});
+
 test(
   "evid-disagreements: three planted stores render three distinguishable states -- disagreement rows FIRST, " +
     "agreement as a count only, silence stating plainly that absence proves nothing",
