@@ -530,3 +530,143 @@ test("ci-guardrails: bash scripts/package.sh appears in exactly ONE ci.yml step 
       "package.sh only through scripts/release-assets.sh now.",
   );
 });
+
+// ---------------------------------------------------------------------------
+// quick-260913-t43: the "Assemble the acme-build scaffold (library-free)"
+// step used to be a standalone shell block reachable only from this workflow
+// file, so when it started routing to a control plane with no broker behind
+// it (CONTAINER_WORKSPACE_PATH read by the container detector as proof of
+// being inside a container), it stayed broken across many merges with no
+// developer ever running it. The step now runs a test file that is also
+// part of the ordinary suite. These assertions hold that property open:
+// the step must still exist, exactly once, unconditionally blocking, and
+// the file it invokes must genuinely be part of the suite every developer
+// runs -- reusing this file's own splitIntoStepBlocks()/
+// blockHasContinueOnError() helpers and its existing MANUAL_ONLY_TESTS
+// import, never a second copy of either.
+// ---------------------------------------------------------------------------
+
+const SCAFFOLD_STEP_NAME = "Assemble the acme-build scaffold (library-free)";
+const SCAFFOLD_TEST_FILE = "skill-acme-build-cli.test.ts";
+
+/** Finds step blocks whose `name:` line matches the scaffold step's exact
+ * name -- same shape as findRunStepBlocksFor() above, just keyed on `name:`
+ * instead of `run:`. */
+function findStepBlocksNamed(blocks, stepName) {
+  const escaped = stepName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`^ {6}- name: ${escaped}\\s*$`, "m");
+  return blocks.filter((b) => re.test(b));
+}
+
+const FIXTURE_SCAFFOLD_BLOCKING = `
+name: CI
+jobs:
+  build:
+    steps:
+      - uses: actions/checkout@v4
+      - name: ${SCAFFOLD_STEP_NAME}
+        working-directory: src/mcp/vice
+        env:
+          VICE_REQUIRE_ACME: "1"
+        run: node --test ${SCAFFOLD_TEST_FILE}
+      - name: Build
+        run: bash scripts/package.sh
+`;
+
+const FIXTURE_SCAFFOLD_NON_BLOCKING = `
+name: CI
+jobs:
+  build:
+    steps:
+      - uses: actions/checkout@v4
+      - name: ${SCAFFOLD_STEP_NAME}
+        working-directory: src/mcp/vice
+        continue-on-error: true
+        env:
+          VICE_REQUIRE_ACME: "1"
+        run: node --test ${SCAFFOLD_TEST_FILE}
+      - name: Build
+        run: bash scripts/package.sh
+`;
+
+const FIXTURE_SCAFFOLD_MISSING = `
+name: CI
+jobs:
+  build:
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: bash scripts/package.sh
+`;
+
+test("ci-guardrails fixture: a scaffold step with no continue-on-error is classified blocking (proves the classifier can pass)", () => {
+  const blocks = splitIntoStepBlocks(FIXTURE_SCAFFOLD_BLOCKING);
+  const matches = findStepBlocksNamed(blocks, SCAFFOLD_STEP_NAME);
+  assert.equal(matches.length, 1, "fixture parser must find exactly one step block named for the scaffold step");
+  assert.equal(blockHasContinueOnError(matches[0]), false, "fixture parser must not see continue-on-error where none exists");
+});
+
+test("ci-guardrails fixture: a scaffold step carrying continue-on-error is classified non-blocking (proves the check can fail)", () => {
+  const blocks = splitIntoStepBlocks(FIXTURE_SCAFFOLD_NON_BLOCKING);
+  const matches = findStepBlocksNamed(blocks, SCAFFOLD_STEP_NAME);
+  assert.equal(matches.length, 1, "fixture parser must find exactly one step block named for the scaffold step");
+  assert.equal(blockHasContinueOnError(matches[0]), true, "fixture parser must detect continue-on-error inside the matched step's own block");
+});
+
+test("ci-guardrails fixture: a deleted scaffold step yields zero matches, never a silent pass (proves the check is never vacuous)", () => {
+  const blocks = splitIntoStepBlocks(FIXTURE_SCAFFOLD_MISSING);
+  const matches = findStepBlocksNamed(blocks, SCAFFOLD_STEP_NAME);
+  assert.equal(matches.length, 0, "fixture parser must find no matching step block once the step is deleted");
+});
+
+test(`ci-guardrails: the "${SCAFFOLD_STEP_NAME}" step exists exactly once in ci.yml, scopes itself to the MCP package directory, runs ${SCAFFOLD_TEST_FILE}, and carries no continue-on-error`, () => {
+  const source = readFileSync(CI_YAML_PATH, "utf8");
+  const blocks = splitIntoStepBlocks(source);
+  const matches = findStepBlocksNamed(blocks, SCAFFOLD_STEP_NAME);
+
+  assert.equal(
+    matches.length,
+    1,
+    `expected exactly one ci.yml step named "${SCAFFOLD_STEP_NAME}", found ${matches.length} -- ` +
+      "if 0: the step was deleted or renamed; if >1: an unexpected duplicate step exists. Either one means " +
+      "the scaffold gate this test binds to no longer exists as the single named, blocking step it must be.",
+  );
+
+  const block = matches[0];
+  assert.match(
+    block,
+    /working-directory:\s*src\/mcp\/vice\b/,
+    `the scaffold step no longer scopes itself to the MCP package directory. Offending block:\n${block}`,
+  );
+  assert.match(
+    block,
+    new RegExp(`run:\\s*node --test ${SCAFFOLD_TEST_FILE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`),
+    `the scaffold step no longer runs "node --test ${SCAFFOLD_TEST_FILE}". Offending block:\n${block}`,
+  );
+  assert.equal(
+    blockHasContinueOnError(block),
+    false,
+    `the scaffold step carries continue-on-error -- a step that cannot fail is worse than the break it was ` +
+      `written to catch. Offending block:\n${block}`,
+  );
+});
+
+test(`ci-guardrails: ${SCAFFOLD_TEST_FILE} (the file the scaffold step names) really exists on disk under the MCP package directory and is NOT a MANUAL_ONLY_TESTS entry -- a check reachable only from a workflow file is one nobody runs, which is exactly how this step stayed broken across many merges`, () => {
+  const testFilePath = join(REPO_ROOT, "src/mcp/vice", SCAFFOLD_TEST_FILE);
+  assert.ok(
+    existsSync(testFilePath),
+    `expected ${testFilePath} to exist -- the scaffold step names a test file that must genuinely be on disk`,
+  );
+  assert.ok(
+    !MANUAL_ONLY_TESTS.includes(SCAFFOLD_TEST_FILE),
+    `${SCAFFOLD_TEST_FILE} is listed in test-gate.mjs's MANUAL_ONLY_TESTS -- that would mean the ordinary ` +
+      "developer suite (npm run test:automated) never runs the very file the CI scaffold gate depends on to " +
+      "surface a break before it reaches CI, reopening the exact blind spot this guard exists to close.",
+  );
+  const automated = automatedTestFiles(HERE);
+  assert.ok(
+    automated.includes(SCAFFOLD_TEST_FILE),
+    `${SCAFFOLD_TEST_FILE} does not appear in automatedTestFiles()'s narrowed set -- the ordinary developer ` +
+      "suite must genuinely run this file for the scaffold gate's coverage claim to hold.",
+  );
+});
