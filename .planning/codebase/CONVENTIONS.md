@@ -22,9 +22,8 @@ Code lives in three places, and all three share one hand-maintained style:
 - **Skills** — `src/skills/<skill>/SKILL.md` plus `scripts/*.mjs` (plain ESM JavaScript).
 - **Installer** — `installer/bin/cli.mjs`, `installer/scripts/sync-skills.mjs` (plain ESM).
 
-Repo-level guards live in `scripts/*.mjs` (`check-npm-packages.mjs`, `check-guard-fates.mjs`,
-`check-no-analyser.mjs`, `check-skill-*.mjs`, `audit-gate.mjs`) and are proven by test
-files under `src/mcp/vice/`.
+Repo-level guards live in `scripts/*.mjs`: `check-npm-packages.mjs` and
+`check-no-skill-external-spawn.mjs` are the two that remain.
 
 Note: `src/mcp/vice/anno-memmap-render.ts` contains a NUL byte, so plain `grep` treats it as
 binary and silently skips it. Always use `grep -a` for any content census over this tree.
@@ -193,35 +192,7 @@ modules and nearly every test file open with a multi-paragraph block covering:
 - **WHAT NOT TO DO**, naming the specific past mistake — e.g. "do not re-list these nine file
   names in a CI workflow, an npm script, or a second test runner anywhere else"
   (`test-gate.mjs`), "do not reintroduce a fixed `\"..\"`" (`repo-root.ts`).
-- What the file deliberately does NOT do, and why the cheaper alternative was rejected (see
-  `ci-suite-coverage.test.ts` on not parsing YAML).
-
-**Planning vocabulary does NOT belong in these comments.** `.planning/*` paths, `/gsd-*`
-command names, phase and plan numbers, `D-NN` / `G-NN-N` ids and `ROADMAP`/`REQUIREMENTS`/
-`RE-FINDINGS` cross-references stay inside `.planning/`. `src/mcp/vice/*.ts` ships verbatim to
-npm and `src/skills/**` ships to every plugin user; neither reader has a planning tree. See
-`.planning/ENGINEERING_RULES.md` § 21 for the full rule, its measured justification, and the
-two named exemptions. `src/skills/**` is mechanically enforced by
-`skills-planning-vocabulary.test.ts`.
-
-The one citation that survives is a decision id that resolves OUTSIDE `.planning/`, cited with
-its document named so a consumer can follow it: `` `docs/stock-vice-parity.md` D-03 ``. A bare
-`D-03` resolves nowhere for a reader who has only the package.
-
-NOTE FOR A FUTURE `/gsd-map-codebase` RUN: this section is normative, not descriptive. A large
-population of legacy `Phase N` / `plan NN-NN` / `D-NN` comments still exists in
-`src/mcp/vice/**` (1659 occurrences across 95 of the 103 shipped modules, MEASURED
-2026-09-11); it is a known backlog, not the house style, and must not be re-described as one.
-
-**Comments are mechanically checked.** Several test files assert on comment content and on line
-references, so a careless comment edit fails the build:
-- `docs-linerefs.test.ts` — verifies every `vice-proxy.ts:<N>` citation in `CLAUDE.md` AND
-  `.planning/PROJECT.md` actually points at the claimed construct.
-- `comment-phase-pointers.test.ts` — no stale phase pointers in shipped comments.
-- `hop-chain-comments.test.ts` — path-reference correctness in hop-chain comments.
-- `assumption-label-discipline.test.ts` — an `[ASSUMED]` row's label must be consistent at every
-  source site that names it.
-See TESTING.md for the full documentation-guard set.
+- What the file deliberately does NOT do, and why the cheaper alternative was rejected.
 
 **JSDoc** (`/** ... */`) on every exported function, type, and class, written as prose explaining
 purpose, parameter semantics, and edge-case behaviour — not terse `@param`/`@returns` tags.
