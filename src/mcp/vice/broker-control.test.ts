@@ -1089,7 +1089,7 @@ test("structural: the destroyed-socket pre-check appears before the launch callb
 
 test("structural: attemptAcquire()'s own comment names which half bounds which failure, and does not claim the race is eliminated", () => {
   const source = readFileSync(join(HERE, "broker-control.mts"), "utf8");
-  const startIdx = source.indexOf("Gap closure (plan 14, WR-03/T-01.6.2-87/-88)");
+  const startIdx = source.indexOf("Two destroyed-socket checks guard a grant against outliving the");
   const endIdx = source.indexOf("function attemptAcquire(requestId: string, profile?: LaunchProfile): Promise<boolean> {");
   assert.ok(startIdx !== -1 && endIdx !== -1 && startIdx < endIdx, "the gap-closure comment must precede attemptAcquire()'s own definition");
   const comment = source.slice(startIdx, endIdx);

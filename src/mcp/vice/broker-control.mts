@@ -1,42 +1,39 @@
 // broker-control.mts
 //
-// N / D-01 (plan 01, tracer): the framing, the token gate, and acquire/
-// release. Plan 05 (task 1) completed the message set: recycle, status,
+// The framing, the token gate, acquire/release, recycle, status,
 // host_state, the arrival-ordered pending-acquire structure, and the
-// kernel-enforced singleton guard's low-level bind primitive. THIS PLAN's
-// task 2 adds a SEVENTH and EIGHTH op, `monitor_claim`/`monitor_release`
-// (BROK-02/PROTO-08, D-13): exclusive ownership of an instance's raw binmon
-// socket, enforced here rather than left to a client-side heuristic --
-// stock VICE services exactly one binmon client, and a second connect()
-// produces no reply and no EOF, so the refusal must happen BEFORE any
-// second dial is ever attempted. The subsystem's FIRST network listener: a
-// TCP control plane replacing the bash broker's requests/grants/denials/
-// leases directory tree entirely. One JSON object per line; the connection
-// open IS the claim, connection close IS the release (T-01.6.2-01 through
-// -09).
+// kernel-enforced singleton guard's low-level bind primitive. Also adds
+// `monitor_claim`/`monitor_release`: exclusive ownership of an instance's
+// raw binmon socket, enforced here rather than left to a client-side
+// heuristic -- stock VICE services exactly one binmon client, and a second
+// connect() produces no reply and no EOF, so the refusal must happen
+// BEFORE any second dial is ever attempted. The subsystem's FIRST network
+// listener: a TCP control plane replacing the bash broker's
+// requests/grants/denials/leases directory tree entirely. One JSON object
+// per line; the connection open IS the claim, connection close IS the
+// release (T-01.6.2-01 through -09).
 //
-// Wire format confirmed at plan 01's blocking checkpoint:decision
-// (2026-08-03, `as-specified`, no amendments -- see .planning/RE-FINDINGS.md
-// for the full record, including the two accepted residual risks and the
-// unix-domain-socket dead end). Auth: per-boot capability token compared
-// constant-time, checked BEFORE any state read or write. Bind: 0.0.0.0
-// explicitly, never 127.0.0.1 -- host.docker.internal is the bridge
-// address, not loopback, so a loopback-only listener is structurally
-// unreachable from the container. Port: 19510 default via
-// VICE_BROKER_CONTROL_PORT.
+// Wire format confirmed at a blocking checkpoint decision (2026-08-03,
+// `as-specified`, no amendments), which accepted some residual risk and
+// considered and rejected a unix-domain-socket alternative. Auth: per-boot
+// capability token compared constant-time, checked BEFORE any state read
+// or write. Bind: 0.0.0.0 explicitly, never 127.0.0.1 --
+// host.docker.internal is the bridge address, not loopback, so a
+// loopback-only listener is structurally unreachable from the container.
+// Port: 19510 default via VICE_BROKER_CONTROL_PORT.
 import { createServer, type Server, type Socket } from "node:net";
 import { timingSafeEqual, randomBytes } from "node:crypto";
-// TYPE-ONLY import (Phase 33, plan 33-06) -- the SAME discipline
-// broker-launch.mts and broker-state.mts already use for each other: fully
-// erased under this project's verbatimModuleSyntax/isolatedModules settings,
+// TYPE-ONLY import -- the SAME discipline broker-launch.mts and
+// broker-state.mts already use for each other: fully erased under this
+// project's verbatimModuleSyntax/isolatedModules settings,
 // so the ".mjs" specifier never becomes a real runtime resolution and this
 // module stays importable unbuilt. `LaunchProfile` is IMPORTED, never
 // redeclared -- broker-launch.mts is the one definition of the profile shape,
 // and a second local copy here is exactly how the wire boundary and the argv
 // builder would drift apart.
 import type { LaunchProfile } from "./broker-launch.mjs";
-// TYPE-ONLY import (plan 41-03, D-14) -- same discipline as the LaunchProfile
-// import directly above: fully erased under this project's
+// TYPE-ONLY import -- same discipline as the LaunchProfile import directly
+// above: fully erased under this project's
 // verbatimModuleSyntax/isolatedModules settings, so this module stays
 // importable unbuilt. MonitorChannel is the two-value channel contract
 // ("binary" | "text"); broker-state.mts is its one canonical declaration for
@@ -44,26 +41,26 @@ import type { LaunchProfile } from "./broker-launch.mjs";
 // by channel-lock.ts and vice-broker-client.ts.
 import type { MonitorChannel } from "./broker-state.mjs";
 // TYPE-ONLY import, same discipline as the two imports directly above --
-// backend-detect.mts is the type's one home (narrowed to a single literal by
-// FORKRM-01, plan 52-06).
+// backend-detect.mts is the type's one home (narrowed to a single literal
+// now that the fork backend has been removed).
 import type { ViceBackend } from "./backend-detect.mjs";
 
-// Phase 34, plan 34-01 (A-01): STILL ONE OP PER SUBSYSTEM. `host_tool` is the
-// EIGHTH member -- and the whole host-tool subsystem, not one member per
-// tool. Its per-tool typing (which tool ids exist, which argument keys each
-// accepts) lives in host-tool.mts's own allowlist, never in this union, and
-// this union is never widened again per-tool: a second host tool (dxa,
-// Ghidra, c1541, petcat, cartconv, ...) is a new entry in host-tool.mts's
-// HOST_TOOL_IDS, not a ninth ControlRequestKind member. This mirrors D-15's
-// own reasoning one op-family over: adding a ninth kind per tool would mean
-// a new dispatch path to keep in sync with every other tool's, forever.
+// STILL ONE OP PER SUBSYSTEM. `host_tool` is the EIGHTH member -- and the
+// whole host-tool subsystem, not one member per tool. Its per-tool typing
+// (which tool ids exist, which argument keys each accepts) lives in
+// host-tool.mts's own allowlist, never in this union, and this union is
+// never widened again per-tool: a second host tool (dxa, Ghidra, c1541,
+// petcat, cartconv, ...) is a new entry in host-tool.mts's HOST_TOOL_IDS,
+// not a ninth ControlRequestKind member. This mirrors the same reasoning
+// one op-family over: adding a ninth kind per tool would mean a new
+// dispatch path to keep in sync with every other tool's, forever.
 export type ControlRequestKind = "acquire" | "release" | "recycle" | "status" | "host_state" | "monitor_claim" | "monitor_release" | "host_tool";
-// Plan 41-05 (D-16, checkpoint option B): `no_free_text_port` joins the
-// vocabulary as its OWN code -- a stock acquire that fails only on the
-// SECOND (`-remotemonitor`) allocation is reported distinctly from
-// `no_free_port` (which still means the FIRST/primary allocation failed, or
-// the fork's single allocation failed), so a port-starved host's exact
-// failure cause is legible at the control plane, not only in the broker log.
+// `no_free_text_port` joins the vocabulary as its OWN code -- a stock
+// acquire that fails only on the SECOND (`-remotemonitor`) allocation is
+// reported distinctly from `no_free_port` (which still means the
+// FIRST/primary allocation failed, or the fork's single allocation
+// failed), so a port-starved host's exact failure cause is legible at the
+// control plane, not only in the broker log.
 export type ControlErrorCode =
   | "unauthorized"
   | "bad_request"
@@ -87,14 +84,14 @@ export interface AcquireGrant {
   url: string;
   epochFile: string;
   supervisorDir: string;
-  /** Plan 41-01 (D-15); made mandatory-on-stock by plan 41-05 (D-16): the
-   * broker-allocated port stock's `-remotemonitor` text monitor binds.
-   * Optional here only for the fork case -- a stock instance record always
-   * carries it, because a stock launch that cannot bind one now fails the
-   * whole acquire (broker-launch.mts's acquirePortAndLaunch()) rather than
-   * ever producing a grant without it. `handleAcquire()` omits this key
-   * entirely when the record has none, the same key-omitted-when-undefined
-   * idiom `spawnAndRecordInstance()` already uses for this same field. */
+  /** The broker-allocated port stock's `-remotemonitor` text monitor binds,
+   * mandatory on every stock launch. Optional here only for the fork case
+   * -- a stock instance record always carries it, because a stock launch
+   * that cannot bind one now fails the whole acquire
+   * (broker-launch.mts's acquirePortAndLaunch()) rather than ever producing
+   * a grant without it. `handleAcquire()` omits this key entirely when the
+   * record has none, the same key-omitted-when-undefined idiom
+   * `spawnAndRecordInstance()` already uses for this same field. */
   remoteMonitorPort?: number;
 }
 
@@ -108,11 +105,11 @@ export interface AcquireGrant {
  * below) apart from a genuine `internal` fault. */
 export type AcquireOutcome =
   | { ok: true; grant: AcquireGrant }
-  // Plan 41-05 (D-16, checkpoint option B): `no_free_text_port` -- the
-  // stock-only failure of the SECOND (`-remotemonitor`) allocation, distinct
-  // from `no_free_port` (the primary/only allocation failing). See
-  // ControlErrorCode's own comment for why this is a separate code rather
-  // than collapsing into the existing `no_free_port` reason.
+  // `no_free_text_port` -- the stock-only failure of the SECOND
+  // (`-remotemonitor`) allocation, distinct from `no_free_port` (the
+  // primary/only allocation failing). See ControlErrorCode's own comment
+  // for why this is a separate code rather than collapsing into the
+  // existing `no_free_port` reason.
   | { ok: false; reason: "no_free_port" | "no_free_text_port" | "at_capacity" | "launch_in_flight" | "internal" };
 
 /** The recycle acknowledgement's business fields, field-for-field the same
@@ -140,21 +137,20 @@ export interface StatusInstanceEntry {
   state: string;
   reason: string;
   epoch: number | null;
-  /** Plan 05: whether this instance currently has a claimed monitor client
-   * on ANY channel (InstanceRecord.monitorClients has at least one entry),
+  /** Whether this instance currently has a claimed monitor client on ANY
+   * channel (InstanceRecord.monitorClients has at least one entry),
    * computed on demand from the SAME in-memory map every other status field
-   * reads. Byte-identical wire shape since plan 05 (D-15) -- promoted by
-   * plan 41-03 (D-14) to a per-channel holder map, this field's own MEANING
+   * reads. Byte-identical wire shape since this field was introduced --
+   * later promoted to a per-channel holder map, this field's own MEANING
    * is now stated explicitly rather than left inferable: "at least one
    * channel is claimed", never "the binary channel is claimed" alone. */
   hasMonitorClient: boolean;
 }
 
-/** The claim conflict's refusal payload (plan 05, T-02-18; gains `channel`
- * in plan 41-03, D-14): names the holding grant, its claim timestamp and
- * NOW which channel is contended, so a refusal is reported as an ownership
- * conflict, never as a wedged or unresponsive emulator. `pid` mirrors
- * GrantRecord.pid's own convention -- broker-state.mts's
+/** The claim conflict's refusal payload -- names the holding grant, its
+ * claim timestamp and which channel is contended, so a refusal is reported
+ * as an ownership conflict, never as a wedged or unresponsive emulator.
+ * `pid` mirrors GrantRecord.pid's own convention -- broker-state.mts's
  * InstanceRecord.monitorClients' own header comment explains why. */
 export interface MonitorHolder {
   grantId: string;
@@ -163,13 +159,13 @@ export interface MonitorHolder {
   channel: MonitorChannel;
 }
 
-/** Discriminated outcome for `monitor_claim` (plan 05, D-13): resolved by
- * vice-broker.mts's own handleMonitorClaim(), which is the SOLE writer of
- * an entry in InstanceRecord.monitorClients on a successful claim.
- * `monitor_owned` is a distinct outcome from every other error -- it
- * carries the holder's own identity, because a refusal answered "someone
- * else has it, and here is who" is what makes this an ownership conflict
- * rather than an unexplained hang. */
+/** Discriminated outcome for `monitor_claim`: resolved by vice-broker.mts's
+ * own handleMonitorClaim(), which is the SOLE writer of an entry in
+ * InstanceRecord.monitorClients on a successful claim. `monitor_owned` is a
+ * distinct outcome from every other error -- it carries the holder's own
+ * identity, because a refusal answered "someone else has it, and here is
+ * who" is what makes this an ownership conflict rather than an unexplained
+ * hang. */
 export type MonitorClaimOutcome = { ok: true } | { ok: false; code: "monitor_owned"; holder: MonitorHolder } | { ok: false; code: "bad_request" | "internal" };
 
 /** Discriminated outcome for `monitor_release` (plan 05, T-02-01): `denied`
@@ -179,10 +175,9 @@ export type MonitorClaimOutcome = { ok: true } | { ok: false; code: "monitor_own
  * documented tolerance for releasing twice. */
 export type MonitorReleaseOutcome = { ok: true } | { ok: false; code: "denied" | "bad_request" | "internal" };
 
-// Plan 41-05 (folded todo): `warmFloor` is DELETED, not merely renamed --
-// the warm floor itself is retired, and a published field whose knob no
-// longer exists is false documentation, so it goes rather than reporting a
-// constant.
+// `warmFloor` is DELETED, not merely renamed -- the warm floor itself is
+// retired, and a published field whose knob no longer exists is false
+// documentation, so it goes rather than reporting a constant.
 export interface HostStateFields {
   pid: number;
   startedAt: string;
@@ -190,12 +185,11 @@ export interface HostStateFields {
   viceBin: string;
   maxInstances: number;
   basePort: number;
-  /** FORKRM-01 (plan 52-06): narrowed from `"fork" | "stock"` to the single
-   * literal `ViceBackend` now has. Kept on the wire (rather than deleted
-   * outright) because text-tools.ts's own broker-identity cross-check
-   * (D-42-2, out of this plan's scope -- plan 52-07 owns it) still reads
-   * this field; the broker/proxy cross-check this field ALSO used to serve
-   * is what plan 52-06 deletes, in vice-proxy.ts, not this field itself. */
+  /** Narrowed from `"fork" | "stock"` to the single literal `ViceBackend`
+   * now has. Kept on the wire (rather than deleted outright) because
+   * text-tools.ts's own broker-identity cross-check still reads this
+   * field; the broker/proxy cross-check this field ALSO used to serve was
+   * deleted separately, in vice-proxy.ts, not this field itself. */
   backend: ViceBackend;
 }
 
@@ -206,15 +200,14 @@ export interface StartControlListenerOptions {
   /** Called on `acquire`, AFTER the token check has already passed. See
    * AcquireOutcome's own header comment for the discriminated shape.
    *
-   * Phase 33, plan 33-06 (REPRO-05, D-15): widened with an OPTIONAL SECOND
-   * PARAMETER carrying the already-narrowed launch profile
-   * (normaliseLaunchProfile() above has run and succeeded by the time this
-   * is called; a refusal never reaches here). Optional on purpose, in the
-   * same register as TryLaunchDeps.spawn's own widening: JS/TS
-   * function-type compatibility lets a one-argument implementation satisfy
-   * a type that offers two, so every pre-existing implementation and every
-   * pre-existing test stub keeps compiling AND keeps behaving identically.
-   * `undefined` means profile-less. */
+   * Widened with an OPTIONAL SECOND PARAMETER carrying the already-narrowed
+   * launch profile (normaliseLaunchProfile() above has run and succeeded by
+   * the time this is called; a refusal never reaches here). Optional on
+   * purpose, in the same register as TryLaunchDeps.spawn's own widening:
+   * JS/TS function-type compatibility lets a one-argument implementation
+   * satisfy a type that offers two, so every pre-existing implementation
+   * and every pre-existing test stub keeps compiling AND keeps behaving
+   * identically. `undefined` means profile-less. */
   onAcquire: (requestId: string, profile?: LaunchProfile) => Promise<AcquireOutcome>;
   /** Called on an explicit `release` request AND on connection close
    * (whichever happens first) -- the kernel enforces the release including
@@ -228,7 +221,7 @@ export interface StartControlListenerOptions {
    * target. */
   onRecycle: (targetId: string) => Promise<RecycleOutcome>;
   /** Called on `status` -- answers the question the dropped
-   * broker-instances.json projection used to answer (D-24), computed on
+   * broker-instances.json projection used to answer, computed on
    * demand. Synchronous: this broker holds every instance in one in-memory
    * map already (C4), so there is nothing to await. */
   onStatus: () => StatusInstanceEntry[];
@@ -239,33 +232,31 @@ export interface StartControlListenerOptions {
   onHostState: () => HostStateFields;
   /** Called on `monitor_claim`, AFTER the token check has already passed --
    * the SAME gate every other op runs, checked before any state is read or
-   * written (plan 05, T-02-16). `requestId` is this specific claim request's
-   * own correlation id; `targetId` both resolves which instance is being
-   * claimed (the same way onRecycle's targetId resolves its own target) AND
-   * is the claiming identity compared against a conflicting holder;
-   * `channel` (plan 41-03, D-14) is the resolved channel this request named
-   * -- see vice-broker.mts's handleMonitorClaim() for the resolution and
-   * idempotency rules. */
+   * written. `requestId` is this specific claim request's own correlation
+   * id; `targetId` both resolves which instance is being claimed (the same
+   * way onRecycle's targetId resolves its own target) AND is the claiming
+   * identity compared against a conflicting holder; `channel` is the
+   * resolved channel this request named -- see vice-broker.mts's
+   * handleMonitorClaim() for the resolution and idempotency rules. */
   onMonitorClaim: (requestId: string, targetId: string, channel: MonitorChannel) => MonitorClaimOutcome;
   /** Called on `monitor_release`, under the same token gate. Clearing is
    * refused (not silently accepted) when `targetId` names a grant that is
    * NOT the current holder of `channel` -- see MonitorReleaseOutcome's own
    * header comment for the already-cleared tolerance. */
   onMonitorRelease: (requestId: string, targetId: string, channel: MonitorChannel) => MonitorReleaseOutcome;
-  /** Phase 34, plan 34-01 (SEAM-01): called on `host_tool`, AFTER the token
-   * check has already passed -- the SAME gate every other op runs. Handed
-   * its OWN function, declared alongside these seven and NEVER composed
-   * from any of them -- that is what gives the `host_tool` branch zero
-   * reachability into lease state: it cannot call onAcquire/onRelease/
-   * onRecycle/onStatus/onHostState/onMonitorClaim/onMonitorRelease because
-   * nothing hands it a reference to any of them. `raw` is the FULL,
-   * un-narrowed request object; host-tool.mts's own normaliseHostToolRequest()
-   * is the one place it is narrowed -- this listener never inspects its
-   * shape beyond the `op`/`token` fields every op already reads. Never
-   * rejects in production (host-tool.mts's runHostTool() resolves on every
-   * failure path), but the dispatch branch below treats a rejection as a
-   * genuine possibility anyway and answers `internal` rather than letting it
-   * escape uncaught. */
+  /** Called on `host_tool`, AFTER the token check has already passed --
+   * the SAME gate every other op runs. Handed its OWN function, declared
+   * alongside these seven and NEVER composed from any of them -- that is
+   * what gives the `host_tool` branch zero reachability into lease state:
+   * it cannot call onAcquire/onRelease/onRecycle/onStatus/onHostState/
+   * onMonitorClaim/onMonitorRelease because nothing hands it a reference
+   * to any of them. `raw` is the FULL, un-narrowed request object;
+   * host-tool.mts's own normaliseHostToolRequest() is the one place it is
+   * narrowed -- this listener never inspects its shape beyond the
+   * `op`/`token` fields every op already reads. Never rejects in production
+   * (host-tool.mts's runHostTool() resolves on every failure path), but the
+   * dispatch branch below treats a rejection as a genuine possibility
+   * anyway and answers `internal` rather than letting it escape uncaught. */
   onHostTool: (raw: unknown) => Promise<unknown>;
 }
 
@@ -275,12 +266,12 @@ export interface StartControlListenerResult {
   host: string;
   /** The arrival-ordered pending-acquire structure for THIS listener
    * instance -- append-on-receipt, drain-from-the-front, nothing sorts or
-   * re-orders it (D-08's mechanism; the direct FIFO fairness PROOF is
-   * deliberately left to Phase 01.6.2.1, per this module's own comment on
-   * drainPendingAcquires() below). Exposed so the real broker's own
-   * periodic evaluation pass (vice-broker.mts's runBrokerPass) can drain it
-   * -- this is what plan 02's `serveAcquires: () => {}` no-op placeholder
-   * comment was reserving room for. */
+   * re-orders it (see drainPendingAcquires()'s own comment below for the
+   * direct FIFO fairness property, which this module deliberately does not
+   * itself prove). Exposed so the real broker's own periodic evaluation
+   * pass (vice-broker.mts's runBrokerPass) can drain it -- this is what an
+   * earlier `serveAcquires: () => {}` no-op placeholder comment was
+   * reserving room for. */
   pendingAcquires: PendingAcquireQueue;
 }
 
@@ -329,23 +320,22 @@ export function newControlToken(): string {
 
 const MAX_LINE_BYTES = 65536;
 
-/** CR-03: the one refusal wording for a target-naming op whose `target_id` is
+/** The one refusal wording for a target-naming op whose `target_id` is
  * not the grant the asking connection itself holds. Deliberately worded as an
  * authorisation refusal and NOT as an ownership conflict between two
  * legitimate holders (`monitor_owned`, which names a holder) and never as an
  * emulator fault -- see attachControlProtocol()'s own ownsTarget() comment,
- * and T-02-18's prohibition on wedge/hang vocabulary in this file's
+ * and this file's own prohibition on wedge/hang vocabulary in its
  * monitor-op refusals. */
 const MONITOR_OWNERSHIP_DENIAL =
   "monitor_claim/monitor_release may only target the grant this connection itself holds";
 
 /** Resolves the `channel` field on a `monitor_claim`/`monitor_release`
- * request line (plan 41-03, D-14): an ABSENT field means `binary`
- * deliberately -- a broker restarted mid-phase against a client that
- * predates this field keeps working (backward compatibility, this plan's
- * own must-have). An unrecognised NON-EMPTY value is `bad_request`, never a
- * silent fallback and never cast -- the caller below names both accepted
- * values in the refusal message. */
+ * request line: an ABSENT field means `binary` deliberately -- a broker
+ * restarted mid-upgrade against a client that predates this field keeps
+ * working (backward compatibility). An unrecognised NON-EMPTY value is
+ * `bad_request`, never a silent fallback and never cast -- the caller
+ * below names both accepted values in the refusal message. */
 function resolveMonitorChannel(raw: unknown): MonitorChannel | "bad_request" {
   if (raw === undefined) return "binary";
   if (raw === "binary" || raw === "text") return raw;
@@ -353,8 +343,7 @@ function resolveMonitorChannel(raw: unknown): MonitorChannel | "bad_request" {
 }
 
 // ---------------------------------------------------------------------------
-// Phase 33, plan 33-06 (REPRO-05, D-15, T-33-03/T-33-04): the launch-profile
-// narrowing site.
+// The launch-profile narrowing site.
 //
 // THIS IS THE ONE PLACE `profile` IS NARROWED. Do not re-derive this check
 // anywhere else -- not in vice-broker.mts, not in broker-launch.mts, not in
@@ -369,10 +358,11 @@ function resolveMonitorChannel(raw: unknown): MonitorChannel | "bad_request" {
 //
 // WHY UNKNOWN KEYS ARE REFUSED BY NAME rather than dropped: a silently
 // accepted typo means a caller asked for warp, got an unwarped instance, and
-// received a confident success. That is the same undetectable-lie failure
-// D-16 exists to prevent one layer down, and it is why the message below
-// names the offending key -- the by-name unexpected-argument discipline the
-// tool handlers already use (RUN_UNTIL_KEYS' own convention).
+// received a confident success -- the same undetectable-lie failure a
+// mismatched grant-and-request eligibility check exists to prevent one
+// layer down, and it is why the message below names the offending key --
+// the by-name unexpected-argument discipline the tool handlers already use
+// (RUN_UNTIL_KEYS' own convention).
 //
 // WHAT MUST NEVER BE ADDED HERE: a passthrough string, an `extraArgs`, or any
 // key whose VALUE reaches argv. `profile` maps to exactly two literal flag
@@ -452,16 +442,15 @@ function writeLine(socket: Socket, obj: ControlResponse): void {
   }
 }
 
-/** Phase 34, plan 34-01: writes a `host_tool` SUCCESS response line -- the
- * object host-tool.mts's runHostTool() produced, whatever shape that is
- * (`{ ok: true, ... }` or its own `{ ok: false, message }` refusal). This is
- * deliberately NOT `writeLine()`/`ControlResponse`: the host-tool response
- * shape is host-tool.mts's own contract, not one more `ControlResponse`
- * variant this module would otherwise have to keep in sync with a sibling
- * module's allowlist. A REJECTED onHostTool() promise never reaches this
- * function -- it is answered through the ordinary `writeLine()`/`error`
- * path instead, so every protocol-level failure still goes through one
- * shape. */
+/** Writes a `host_tool` SUCCESS response line -- the object host-tool.mts's
+ * runHostTool() produced, whatever shape that is (`{ ok: true, ... }` or
+ * its own `{ ok: false, message }` refusal). This is deliberately NOT
+ * `writeLine()`/`ControlResponse`: the host-tool response shape is
+ * host-tool.mts's own contract, not one more `ControlResponse` variant this
+ * module would otherwise have to keep in sync with a sibling module's
+ * allowlist. A REJECTED onHostTool() promise never reaches this function --
+ * it is answered through the ordinary `writeLine()`/`error` path instead,
+ * so every protocol-level failure still goes through one shape. */
 function writeHostToolLine(socket: Socket, obj: unknown): void {
   if (socket.writable) {
     socket.write(`${JSON.stringify(obj)}\n`);
@@ -473,8 +462,8 @@ function defaultRequestId(prefix: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Arrival-ordered pending-acquire structure (D-08's mechanism, not its
-// fairness proof -- see drainPendingAcquires()'s own header comment).
+// Arrival-ordered pending-acquire structure (not its fairness proof -- see
+// drainPendingAcquires()'s own header comment).
 // ---------------------------------------------------------------------------
 
 export interface PendingAcquireEntry {
@@ -506,9 +495,10 @@ export function enqueueAcquire(queue: PendingAcquireQueue, entry: PendingAcquire
  * to stay correct; a genuinely adversarial retry pattern could still starve
  * an entry across MULTIPLE passes, which is exactly the direct fairness
  * proof this module deliberately does not author -- injecting N acquires
- * and asserting grants return in that order is Phase 01.6.2.1's D-08
- * deliverable. The original defect this queue replaces (a lexical iteration
- * over `req-<pid>-<ms>-<hex>` filenames) cannot exist here regardless: there
+ * and asserting grants return in that order is left as a property for a
+ * future test to prove, not this module's own deliverable. The original
+ * defect this queue replaces (a lexical iteration over
+ * `req-<pid>-<ms>-<hex>` filenames) cannot exist here regardless: there
  * is no file, and no re-ordering call of any kind anywhere in this region. */
 export async function drainPendingAcquires(queue: PendingAcquireQueue): Promise<void> {
   const snapshot = queue.splice(0, queue.length);
@@ -594,9 +584,9 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
     });
 
     /**
-     * CR-03 (code review 2026-08-13). THE per-connection ownership predicate
-     * every target-naming op is gated on -- the same rule `recycle` has
-     * enforced since T-01.6.2-31, now shared rather than copied.
+     * THE per-connection ownership predicate every target-naming op is
+     * gated on -- the same rule `recycle` has enforced since this
+     * protocol's earliest version, now shared rather than copied.
      *
      * Before this existed, `monitor_claim`/`monitor_release` took `target_id`
      * from the request and passed it straight through, so any connection
@@ -608,8 +598,8 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
      * session B could lock session A out of its own monitor socket, or
      * RELEASE A's live claim, after which a third client was free to dial the
      * same single-client binmon socket. That is precisely the unserviced-
-     * backlog state D-13 exists to prevent and that CLAUDE.md says must never
-     * be reachable.
+     * backlog state this ownership check exists to prevent and that
+     * CLAUDE.md says must never be reachable.
      *
      * WHAT NOT TO DO: never add another op that acts on a caller-supplied
      * `target_id` without gating it here first. The grant a connection holds
@@ -627,10 +617,9 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
      * `drainPendingAcquires()` drives, so the two paths can never answer
      * differently for the same requestId.
      *
-     * Gap closure (plan 14, WR-03/T-01.6.2-87/-88): two destroyed-socket
-     * checks guard a grant against outliving the connection that owns it,
-     * and they bound TWO DIFFERENT failures -- do not conflate them into one
-     * claim.
+     * Two destroyed-socket checks guard a grant against outliving the
+     * connection that owns it, and they bound TWO DIFFERENT failures -- do
+     * not conflate them into one claim.
      *
      * Half one -- the pre-check immediately below, BEFORE onAcquire() is
      * ever called -- closes the ALWAYS-REACHABLE leak: a client that
@@ -657,8 +646,8 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
       // launch.
       if (socket.destroyed) return Promise.resolve(true);
       return opts
-        // Phase 33, plan 33-06: the profile is threaded through THIS shared
-        // helper, which both the immediate first attempt and every later
+        // The profile is threaded through THIS shared helper, which both
+        // the immediate first attempt and every later
         // drainPendingAcquires() retry go through -- so a request that
         // queued behind an in-flight launch is retried later with the
         // profile it was MADE with, never with a profile-less one.
@@ -682,12 +671,12 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
               url: outcome.grant.url,
               epoch_file: outcome.grant.epochFile,
               supervisor_dir: outcome.grant.supervisorDir,
-              // D-15; tightened by plan 41-05 (D-16): key omitted entirely
-              // when absent -- the fork case only now. A stock grant whose
-              // second (text-monitor) port allocation failed never reaches
-              // this line at all: acquirePortAndLaunch() fails the WHOLE
-              // acquire (`no_free_text_port`) before any grant is produced,
-              // so "absent" no longer needs to cover that case. Never a
+              // Key omitted entirely when absent -- the fork case only now.
+              // A stock grant whose second (text-monitor) port allocation
+              // failed never reaches this line at all:
+              // acquirePortAndLaunch() fails the WHOLE acquire
+              // (`no_free_text_port`) before any grant is produced, so
+              // "absent" no longer needs to cover that case. Never a
               // fabricated 0 or null standing in for "no port".
               ...(outcome.grant.remoteMonitorPort === undefined ? {} : { remote_monitor_port: outcome.grant.remoteMonitorPort }),
             });
@@ -735,14 +724,14 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
         return;
       }
 
-      // Phase 34, plan 34-01 (SEAM-01): dispatched FIRST in the chain, before
-      // "acquire" -- so the ordering reads as the requirement does. Dispatch
-      // here is on EXACT STRING EQUALITY, never fallthrough, so branch order
-      // does not itself change which requests reach attemptAcquire() -- what
-      // actually makes this branch unable to touch lease state is that
-      // opts.onHostTool is its OWN callback (see StartControlListenerOptions'
-      // own comment), never composed from onAcquire/onRelease/onRecycle/
-      // onStatus/onHostState/onMonitorClaim/onMonitorRelease.
+      // Dispatched FIRST in the chain, before "acquire" -- so the ordering
+      // reads clearly. Dispatch here is on EXACT STRING EQUALITY, never
+      // fallthrough, so branch order does not itself change which requests
+      // reach attemptAcquire() -- what actually makes this branch unable to
+      // touch lease state is that opts.onHostTool is its OWN callback (see
+      // StartControlListenerOptions' own comment), never composed from
+      // onAcquire/onRelease/onRecycle/onStatus/onHostState/onMonitorClaim/
+      // onMonitorRelease.
       if (req.op === "host_tool") {
         opts
           .onHostTool(req)
@@ -756,24 +745,23 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
           });
       } else if (req.op === "acquire") {
         const requestId = typeof req.id === "string" && req.id !== "" ? req.id : defaultRequestId("req");
-        // Phase 33, plan 33-06 (T-33-03): narrow BEFORE attemptAcquire, so a
-        // malformed profile never reaches onAcquire and therefore never
-        // reaches the port allocator, a spawn, or argv construction. A
-        // refusal also does NOT enqueue -- the request is answered and
-        // dropped, never retried on a later drain pass with the same bad
-        // shape.
+        // Narrow BEFORE attemptAcquire, so a malformed profile never
+        // reaches onAcquire and therefore never reaches the port allocator,
+        // a spawn, or argv construction. A refusal also does NOT enqueue --
+        // the request is answered and dropped, never retried on a later
+        // drain pass with the same bad shape.
         const normalised = normaliseLaunchProfile(req.profile);
         if (!normalised.ok) {
           writeLine(socket, { kind: "error", code: "bad_request" as ControlErrorCode, message: normalised.message });
           return;
         }
         const profile = normalised.profile;
-        // 33 review WR-03's profile-is-stock-only refusal lived here: it
-        // refused `profile.warp`/`profile.headless` when this broker's
-        // resolved backend had no `-warp`/`-console` route at all, so a
-        // caller learned a knob would be silently ignored rather than
-        // getting a confident grant with no effect. FORKRM-01 (plan 52-06):
-        // there is one backend now and it always has that route, so the
+        // A profile-is-stock-only refusal used to live here: it refused
+        // `profile.warp`/`profile.headless` when this broker's resolved
+        // backend had no `-warp`/`-console` route at all, so a caller
+        // learned a knob would be silently ignored rather than getting a
+        // confident grant with no effect. Now that the fork backend is
+        // gone, there is one backend and it always has that route, so the
         // condition this refused can no longer occur -- deleted rather than
         // left as a check against a value that can never disagree.
         void attemptAcquire(requestId, profile).then((settled) => {
@@ -796,7 +784,7 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
         // called, so a mismatched target never reaches the kill discipline
         // and never signals anything -- an injected signal recorder stays
         // empty for this case. Now expressed through the SAME ownsTarget()
-        // predicate monitor_claim/monitor_release use (CR-03), so the three
+        // predicate monitor_claim/monitor_release use, so the three
         // target-naming ops cannot drift apart.
         if (!ownsTarget(targetId)) {
           writeLine(socket, {
@@ -863,12 +851,11 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
         if (outcome.ok) {
           writeLine(socket, { kind: "monitor_claimed" });
         } else if (outcome.code === "monitor_owned") {
-          // Ownership conflict, named by holder AND channel (plan 41-03,
-          // D-14) -- deliberately worded to never suggest the emulator
-          // itself has stopped answering (T-02-18; the plan's own grep gate
-          // polices this).
+          // Ownership conflict, named by holder AND channel -- deliberately
+          // worded to never suggest the emulator itself has stopped
+          // answering.
           //
-          // WR-08 (broker side): `holder` is REQUIRED by MonitorClaimOutcome for
+          // `holder` is REQUIRED by MonitorClaimOutcome for
           // this code, but this handler runs inside socket.on("data") with no
           // try/catch above it, so a producer that ever omitted it would throw a
           // TypeError out of the control listener and take the broker process

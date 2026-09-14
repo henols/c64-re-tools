@@ -6,13 +6,12 @@
 // rebuild.
 // broker-epoch.mts
 //
-// B / D-04: the per-instance epoch.json writer, held to the frozen
-// eight-field contract captured in fixtures/ (task 1, before the bash
-// writer that produced them is deleted later in this phase). Ports
-// write_epoch()'s exact field shape and its atomic tmp-sibling-then-rename
-// discipline -- the tmp file is created empty, mode tightened to
-// owner-read-write BEFORE any content reaches it, content written, then
-// renamed -- matching writeBrokerRecord()'s own choke point in
+// The per-instance epoch.json writer, held to the frozen eight-field
+// contract captured in fixtures/ before the bash writer that produced them
+// was deleted. Ports write_epoch()'s exact field shape and its atomic
+// tmp-sibling-then-rename discipline -- the tmp file is created empty, mode
+// tightened to owner-read-write BEFORE any content reaches it, content
+// written, then renamed -- matching writeBrokerRecord()'s own choke point in
 // vice-broker.mts exactly.
 //
 // Plan 03, Task 1 completes this module: the path derivations
