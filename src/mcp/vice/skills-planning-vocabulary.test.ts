@@ -296,7 +296,6 @@ const RATCHET: readonly RatchetEntry[] = Object.freeze([
   { file: "src/mcp/vice/anno-bank.ts", family: "annotation store / CLI", count: 16 },
   { file: "src/mcp/vice/anno-coverage.ts", family: "annotation store / CLI", count: 51 },
   { file: "src/mcp/vice/anno-enum-gen.ts", family: "annotation store / CLI", count: 66 },
-  { file: "src/mcp/vice/anno-export-asm.ts", family: "annotation store / CLI", count: 146 },
   { file: "src/mcp/vice/anno-graphics.ts", family: "annotation store / CLI", count: 18 },
   { file: "src/mcp/vice/anno-hazard-report.ts", family: "annotation store / CLI", count: 2 },
   { file: "src/mcp/vice/anno-import.ts", family: "annotation store / CLI", count: 21 },

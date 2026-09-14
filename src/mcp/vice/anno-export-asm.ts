@@ -1,17 +1,17 @@
 // anno-export-asm.ts -- the ONE place annotation-store rows plus image bytes
-// become ACME source text (EXPORT-01).
+// become ACME source text.
 //
 // ---------------------------------------------------------------------------
 // WHY THIS FILE EXISTS
 // ---------------------------------------------------------------------------
-// The previous export route was WITHDRAWN in Phase 29 rather than left
+// The previous export route was WITHDRAWN rather than left
 // standing, because it made a reassembly claim nothing verified: it produced
 // something that looked like ACME source and asserted, in effect, that
 // assembling it would reproduce the program. No assembler ever ran. Withdrawing
 // it was the right call and the withdrawal notices in both skill trees are the
 // record that the capability was missing.
 //
-// This module is the rebuild, over the Phase 28 annotation store, and it is
+// This module is the rebuild, over this project's own annotation store, and it is
 // allowed to exist only because the claim is now settled somewhere else: a real
 // ACME 0.97 assembles this module's output and the resulting bytes are diffed
 // against the IMAGE bytes. Nothing in this file verifies this file. Re-reading,
@@ -36,7 +36,7 @@
 //     against a real assembler across all 256 opcodes. Decoding here happens
 //     through `decode()` and nowhere else.
 //   - Never write a second `!byte` / `+2` / hex emitter. `disasm-renderer.ts`
-//     owns D-09's `!byte` substitution and D-11's width invariant, both
+//     owns the `!byte` substitution rule and the operand-width invariant, both
 //     verified against real ACME. A second emitter would be a second answer to
 //     "how wide is this operand", and the two would drift silently.
 //   - Never restate the eleven auto-name prefixes here. `anno-types.ts:93-99`
@@ -56,9 +56,9 @@
 //   - Never compare a `dataType` string in this module beyond the FOUR
 //     places that already do, each of which says so in its own comment:
 //     `CODE_DATA_TYPE`'s decoder-or-dump branch, `WORD_PAIR_DATA_TYPES`'s
-//     `!word` eligibility check, (phase 47, plan 47-03)
+//     `!word` eligibility check,
 //     `EXTERNAL_FILE_DATA_TYPE`'s `!binary`-versus-inline branch inside
-//     `emitDataLines()`, and (phase 47, plan 47-06) `isSplitAddressDataType()`'s
+//     `emitDataLines()`, and `isSplitAddressDataType()`'s
 //     paired-symbol-versus-raw-byte branch in the block loop. All four are
 //     questions about the emitted TEXT. `block-class.ts` is the one place in
 //     this tree allowed to INTERPRET that column -- what the data means -- and
@@ -72,7 +72,7 @@
 //   - Never interpolate a read file's own bytes into an error message. A path,
 //     an address and a length are facts ABOUT a file; its contents are not, and
 //     an error text that quotes them turns a refusal into a content-disclosure
-//     oracle (CR-03). Every throw below carries paths, addresses and counts and
+//     oracle. Every throw below carries paths, addresses and counts and
 //     nothing read out of the image or the store.
 //   - Never sanitise a label name. `assertLegalAcmeIdentifier()`'s contract is
 //     REJECT: a space-to-underscore substitution silently merges two distinct
@@ -114,13 +114,12 @@ import { assertLegalAcmeIdentifier } from "./anno-acme-ident.ts";
 //
 // WHAT NOT TO DO: do not restate the eleven here, in any form -- not as an
 // array, not as a second regex, not as a doc comment listing them.
-// `anno-types.ts:93-99` forbids it by name, and `EXPORT-02` names the failure
-// mode: a five-prefix copy under-counts silently.
+// `anno-types.ts:93-99` forbids it by name: a five-prefix copy under-counts silently.
 import { AUTO_NAME_PREFIX_RE } from "./anno-coverage.ts";
-// THE ONE OWNING DECODER (D-16, plan 45-03). This module decodes NOTHING
+// THE ONE OWNING DECODER. This module decodes NOTHING
 // itself -- `decomposeRegisterValue()` is the ONLY place a register value is
-// split into named bit-fields, and `anno_disassemble` (plan 45-05, the other
-// D-16 renderer) calls the SAME function. Never re-derive a per-field bit
+// split into named bit-fields, and `anno_disassemble` (the other renderer sharing
+// this decoder) calls the SAME function. Never re-derive a per-field bit
 // mask in this file -- a phase-45 verification gate greps this file's own
 // text for that shape and must find none.
 import { decomposeRegisterValue, hasRegBitsEntry, type RegisterDecomposition } from "./anno-enum-gen.ts";
@@ -128,7 +127,7 @@ import { decode } from "./disasm-decoder.ts";
 import type { Instruction } from "./disasm-decoder.ts";
 import { renderLine } from "./disasm-renderer.ts";
 import { parsePrg, flatImageOrigin } from "./prg-image.ts";
-// BUILD-05 (phase 46 plan 01): the ONE reader of `recovery/PROVENANCE.md`'s
+// the ONE reader of `recovery/PROVENANCE.md`'s
 // generated tier. This module never recomputes a verdict -- see
 // `anno-provenance-ledger.ts`'s own header for why reading and recomputing
 // are deliberately kept apart.
@@ -142,7 +141,7 @@ import { provenanceForRange, readProvenanceLedger, type ProvenanceLedger } from 
 const CODE_DATA_TYPE = "code";
 
 /** The store's own spelling for a large binary blob exported AS ITS OWN
- * FILE rather than inline (phase 47, plan 47-03; `anno_set_data_type`'s
+ * FILE rather than inline (`anno_set_data_type`'s
  * schema calls this "large binary blob to export as-is") -- the eleventh of
  * `DATA_TYPES`' twelve members, the one vocabulary this module imports
  * rather than restates. The SAME discipline `CODE_DATA_TYPE` above already
@@ -167,7 +166,7 @@ export interface ExportBlock {
   /** How many CONTENT lines the block emitted -- not its `* =` origin line and
    * not the two `!if * != ...` assertions that bracket it. */
   lineCount: number;
-  /** Phase 47, plan 47-01: exactly what `emitBlock()` returned for this block
+  /** exactly what `emitBlock()` returned for this block
    * -- the `* =` origin line, both `!if * != ...` bracket assertions, and
    * every content line between them, in emitted order. This is FOR a tree
    * writer to partition an emission that is already proven, rather than a
@@ -180,7 +179,7 @@ export interface ExportBlock {
 }
 
 /**
- * Phase 47, plan 47-03 (BUILD-02): one `external_file`-typed block's own
+ * one `external_file`-typed block's own
  * `.bin` sibling. `bytes` is the block's own slice of the IMAGE, carried
  * verbatim -- never a copy that passed through any conversion, on the same
  * terms `expectedBytes` is derived from the image and never from `source`.
@@ -226,8 +225,8 @@ export interface ExportAsmOptions {
   /**
    * The provenance ledger to annotate every emitted block from -- `c64-
    * provenance-diff`'s generated `recovery/PROVENANCE.md`, read (never
-   * re-derived) through `readProvenanceLedger()`. OPTIONAL (assumption A1,
-   * `46-01-PLAN.md`): every existing caller that omits it keeps exporting
+   * re-derived) through `readProvenanceLedger()`. OPTIONAL: every existing
+   * caller that omits it keeps exporting
    * exactly as before, byte for byte and comment for comment. NOTHING
    * CONFINES THIS PATH INSIDE THIS MODULE, on the same terms as `imagePath`
    * above -- the CALLER owns its confinement. Supplying it and having the
@@ -240,14 +239,14 @@ export interface ExportAsmOptions {
 export interface ExportAsmResult {
   /** The ACME source text. */
   source: string;
-  /** Phase 47, plan 47-01: the symbol-definition block VERBATIM -- every
+  /** the symbol-definition block VERBATIM -- every
    * enum-variant definition line followed by every store label's own
    * definition line, in exactly the order `source` carries them. This is FOR
    * `exportAsmTree()` to write `symbols.a` from, never re-derived: `source`
    * is still `["!cpu 6510", ...headerLines, ...blockLines].join("\n")` plus
    * the trailing newline, byte for byte unchanged by this field's addition. */
   headerLines: string[];
-  /** Phase 47, plan 47-01: every scope the store holds, read by `listScopes()`
+  /** every scope the store holds, read by `listScopes()`
    * as a SEVENTH call inside this function's existing store handle -- there
    * is still exactly one handle opened for the whole export. `exportAsmTree()`
    * uses this to decide which scope (or none) each block belongs to; nothing
@@ -267,7 +266,7 @@ export interface ExportAsmResult {
    * i.e. `sortedLabels.length`, one per `anno_label` row in range.
    *
    * THIS DOC USED TO SAY "how many symbol definitions the header carries",
-   * AND THAT WAS NOT WHAT IT COUNTED (30-REVIEW WR-01, corrected 2026-08-31).
+   * AND THAT WAS NOT WHAT IT COUNTED (corrected 2026-08-31).
    * The two readings diverge in BOTH directions: a mid-instruction label is
    * defined inline and skipped by the header loop yet still counted here,
    * and every `enumDefinitionLines` entry IS a header definition yet is not.
@@ -283,7 +282,7 @@ export interface ExportAsmResult {
   /** How many definition lines the HEADER block actually carries -- enum
    * variant definitions plus every store label NOT defined inline. Computed
    * from `headerLines` itself, so it cannot drift from the emitted text the
-   * way a separately-maintained count did (30-REVIEW WR-01). */
+   * way a separately-maintained count did. */
   headerDefinitionCount: number;
   /** How many decoded instructions ACME's `!cpu 6510` cannot express, and
    * which therefore went out as `!byte` directives with their mnemonic moved
@@ -293,12 +292,12 @@ export interface ExportAsmResult {
    * block whose `dataType` is not `code`. A code block contributes nothing
    * here, however many bytes it decoded. */
   dataByteCount: number;
-  /** Phase 47, plan 47-03 (BUILD-02): every `external_file`-typed block's
+  /** every `external_file`-typed block's
    * own sibling data file, ascending by `start`. `dataByteCount` above still
    * counts these bytes -- they went out through the data path exactly as an
    * inline `!byte`-typed range's bytes would have, only to a different
    * destination file, and a count whose name stops matching what it counts
-   * is the WR-01 lesson this module already learned once. See
+   * is the same lesson this module already learned once. See
    * `ExportBinary`'s own doc-comment for the obligation a caller that reads
    * this field takes on. */
   binaries: ExportBinary[];
@@ -313,8 +312,8 @@ export interface ExportAsmResult {
    * header definition block, because such a label is defined inline and
    * defining it twice is ACME's `Symbol already defined.`
    *
-   * COUNTED PER EMITTED DEFINITION, NOT PER ADDRESS (30-REVIEW WR-02,
-   * corrected 2026-08-31). It used to be `midInstructionLabelAddresses.size`,
+   * COUNTED PER EMITTED DEFINITION, NOT PER ADDRESS (corrected 2026-08-31).
+   * It used to be `midInstructionLabelAddresses.size`,
    * a set of ADDRESSES, while the inline loop emits one line per LABEL.
    * `anno_label` is `unique` on `name` only and `setLabel()` refuses only a
    * name already bound to a DIFFERENT address, so two names at one address is
@@ -334,7 +333,7 @@ export interface ExportAsmResult {
    * two named figures, never one combined figure). */
   enumSubstitutionCount: number;
   /** How many of `enumSubstitutionCount`'s substitutions were rendered as an
-   * OR-ed multi-bit decomposition (D-16/D-17) rather than a single whole-value
+   * OR-ed multi-bit decomposition rather than a single whole-value
    * variant name -- one register key `regbits` entry with two or more
    * fields, decoded through `decomposeRegisterValue()`. A single-field
    * register, or an enum usage whose name is not a register key at all,
@@ -342,10 +341,11 @@ export interface ExportAsmResult {
   enumDecompositionCount: number;
   /** How many RECORDS from `anno_excluded_range` the export emitted a marker
    * for -- at least one of their addresses overlapping at least one emitted
-   * block. `BUILD-07` (phase 46 plan 05).
+   * block. This is the marker for a user-requested exclusion, recorded rather
+   * than silently dropped.
    *
    * COUNTS RECORDS, NOT MARKER LINES AND NOT EXCLUDED BYTES -- the same
-   * WR-01 lesson this file already learned once about `symbolCount`: a count
+   * lesson this file already learned once about `symbolCount`: a count
    * whose name does not match what it counts gets printed to a user
    * verbatim. One exclusion record spanning two emitted blocks emits TWO
    * marker lines (one per block) and counts ONCE here. And no byte is ever
@@ -376,7 +376,7 @@ const WORDS_PER_DATA_LINE = 8;
 const WORD_PAIR_DATA_TYPES: readonly string[] = Object.freeze(["word", "address"]);
 
 /**
- * Phase 47, plan 47-06 (BUILD-03): true iff `dataType` is one of the TWO split
+ * true iff `dataType` is one of the TWO split
  * layouts that denote ADDRESSES -- `lo_hi_address` / `hi_lo_address` -- as
  * opposed to the two that denote WORDS (`lo_hi_word` / `hi_lo_word`), which
  * stay on the raw-`!byte` fallback below unchanged. This is the branch that
@@ -425,7 +425,7 @@ interface DataLine {
  * table is NOT invented here; that would be the same drift hazard wearing a
  * local name.
  *
- * `external_file` (phase 47, plan 47-03) IS THE OPPOSITE CASE from `!text`
+ * `external_file` IS THE OPPOSITE CASE from `!text`
  * above, and for the identical reason. `!text` is refused because ACME's
  * conversion table is outside this exporter's control; `!binary` is used
  * here because it applies NO table at all -- the bytes written to the
@@ -486,7 +486,7 @@ function emitDataLines(slice: Uint8Array, dataType: string, blockStart: number):
   return out;
 }
 
-/** Phase 47, plan 47-06 (BUILD-03): one split-address block's own contribution
+/** one split-address block's own contribution
  * to the export's shared in-tree-reference bookkeeping -- the SAME
  * `unresolvedReferences`/`inTreeReferenceCount` totals the code path's in-tree
  * symbol rule feeds inside `exportAsm()`'s block loop. Returned rather than
@@ -638,8 +638,7 @@ function hex4(value: number): string {
 /**
  * `$XXXX` FOR A BLOCK'S EXCLUSIVE END, WHICH IS `hex4()` -- MASKED, NOT PADDED.
  *
- * THIS FUNCTION USED TO DO THE OPPOSITE, AND IT WAS WRONG (30-REVIEW WR-04,
- * corrected 2026-08-31). It padded without masking, so a range ending at
+ * THIS FUNCTION USED TO DO THE OPPOSITE, AND IT WAS WRONG (corrected 2026-08-31). It padded without masking, so a range ending at
  * `$ffff` produced the end assertion `!if * != $10000`. Its doc justified that
  * by asserting that `hex4()`'s mask "would render that as `$0000` -- an
  * assertion no assembly can ever satisfy, firing on a correct export". That
@@ -761,7 +760,7 @@ function loadImage(imagePath: string): { origin: number; bytes: Uint8Array } {
  * incorrect.
  *
  * THE HEX CASE IS LOWER, MATCHING EVERY OTHER EMITTER IN THIS DOCUMENT
- * (30-REVIEW IN-03, corrected 2026-08-31). This function used to emit
+ * (corrected 2026-08-31). This function used to emit
  * uppercase (`start = $C000`) while `hex2()`, `hex4()` and `hexExtent()` all
  * emit lowercase (`* = $0801`, `!byte $a9`), so one generated file carried two
  * conventions. Both assemble identically -- ACME is case-insensitive for hex
@@ -781,10 +780,9 @@ function formatSymbolDefinition(name: string, address: number): string {
 /**
  * One mid-instruction label definition, in the golden witness's own compact
  * spelling -- no spaces around the `=`, the offset in two hex digits:
- * `f_0900 =*+$01` [`.planning/notes/dxa-ghidra-pivot-evidence/anno.asm:202`].
- * That witness carries SIX such labels (lines 51, 81, 135, 145, 202 and 205);
- * the ROADMAP note saying four is documentation drift, corrected in
- * `30-RESEARCH.md`.
+ * `f_0900 =*+$01`. That witness carries SIX such labels; an earlier note
+ * claiming four was documentation drift, corrected after a recount against
+ * the witness disassembly itself.
  *
  * `offset` is `label.address - instr.address`, so it is 1 or 2 for every
  * 6502/6510 instruction -- the value is rendered rather than bounded here
@@ -811,7 +809,7 @@ const AUTO_NAME_MARKER = "  ; auto-generated name -- still in the annotation bac
 
 /**
  * The fixed trailing comment that marks a definition at an address carrying
- * MORE THAN ONE store label (30-REVIEW WR-02). ONE spelling, in one place, for
+ * MORE THAN ONE store label. ONE spelling, in one place, for
  * the same reason `AUTO_NAME_MARKER` is: a second wording makes it ungreppable
  * for the only reader it exists for.
  *
@@ -823,7 +821,7 @@ const ALIAS_MARKER_PREFIX = "  ; ALIAS: this address also carries ";
 
 /**
  * The fixed leading comment on every line carrying a provenance ledger row's
- * Verdict and Confidence (BUILD-05, phase 46 plan 01). ONE spelling, in one
+ * Verdict and Confidence. ONE spelling, in one
  * place, for the same reason `AUTO_NAME_MARKER` and `ALIAS_MARKER_PREFIX`
  * are: a second wording makes it ungreppable for the only reader it exists
  * for.
@@ -832,10 +830,10 @@ const ALIAS_MARKER_PREFIX = "  ; ALIAS: this address also carries ";
  * `renderLedger()` header prose mentions `; PROVENANCE:` once, as an
  * unwired, forward-looking remark about THIS PROJECT'S OWN documentation
  * provenance conventions -- it names no writer, no reader and no format, and
- * `.planning/ARCHITECTURE.md` (the real one, not `.planning/research/
- * ARCHITECTURE.md`) never uses the word "provenance" at all. Reusing that
+ * this project's own architecture document (the current one, not an early
+ * research-phase draft of the same name) never uses the word "provenance" at all. Reusing that
  * string silently would attribute intent to it that it does not carry
- * (`46-RESEARCH.md` Pitfall 6). `PROVENANCE_MARKER_PREFIX` is therefore a
+ * (a pitfall caught before this constant shipped). `PROVENANCE_MARKER_PREFIX` is therefore a
  * deliberately DIFFERENT, prefix-distinct spelling: `; PROVENANCE LEDGER:`,
  * never `; PROVENANCE:`.
  */
@@ -852,7 +850,7 @@ const PROVENANCE_AMBIGUITY_MARKER_PREFIX = "  ; PROVENANCE LEDGER AMBIGUITY: ";
 
 /**
  * The fixed leading comment on every line naming a user-requested exclusion
- * (`BUILD-07`, phase 46 plan 05). ONE spelling, in one place, for the same
+ * ONE spelling, in one place, for the same
  * reason `AUTO_NAME_MARKER`, `ALIAS_MARKER_PREFIX` and `PROVENANCE_MARKER_PREFIX`
  * are: a second wording would make it ungreppable for the only reader it
  * exists for, and criterion 2's own readback -- recovering what was excluded
@@ -860,8 +858,8 @@ const PROVENANCE_AMBIGUITY_MARKER_PREFIX = "  ; PROVENANCE LEDGER AMBIGUITY: ";
  * one spelling to anchor on.
  *
  * THIS IS HOW A USER'S REQUEST TO LEAVE A SPAN OUT APPEARS IN THE ARTEFACT,
- * and it is deliberately a MARKER rather than an OMISSION: `BUILD-07` requires
- * the export be lossless by default, and any exclusion be "emitted as a
+ * and it is deliberately a MARKER rather than an OMISSION: the export is
+ * REQUIRED to be lossless by default, and any exclusion be "emitted as a
  * recorded excluded range rather than a hole". The failure this constant's
  * existence prevents is the obvious wrong implementation -- skipping the
  * block would satisfy the word "exclude" and lose the bytes, and the
@@ -886,7 +884,8 @@ const MAX_IMMEDIATE_VARIANT_VALUE = 0xff;
 /**
  * The SHAPE `registerKeyFor(address).slice(1)` always produces (uppercase,
  * exactly four hex digits) -- the SAME string `planEnumsForPairing()` uses as
- * a project enum's own `enumName` (`anno-enum-gen.ts`, D-15). An enum usage
+ * a project enum's own `enumName` (`anno-enum-gen.ts`'s own naming rule).
+ * An enum usage
  * whose `enumName` matches this shape is a CANDIDATE for
  * `decomposeRegisterValue()`; one that does not (a hand-authored name like
  * `viccolor`) is never a candidate at all -- this module holds no second
@@ -896,7 +895,7 @@ const MAX_IMMEDIATE_VARIANT_VALUE = 0xff;
  * convention (`registerKeyFor()`) emits uppercase, and matching lowercase too
  * would accept a shape nothing in this codebase produces.
  *
- * SHAPE ALONE IS NOT ENOUGH (45-REVIEW CR-01, fixed 2026-09-11): a candidate
+ * SHAPE ALONE IS NOT ENOUGH (fixed 2026-09-11): a candidate
  * is only ATTEMPTED once `hasRegBitsEntry()` also confirms `anno-regbits.json`
  * has a table entry for it. `$D020`/`$D021` -- among the most commonly
  * hand-annotated C64 registers -- are register-shaped and absent from the
@@ -910,7 +909,7 @@ const REGISTER_ENUM_NAME_RE = /^[0-9A-F]{4}$/;
  * Replaces the `#$XX` immediate literal `renderLine()` produced with `#symbol`.
  *
  * WHY A TARGETED TEXT SUBSTITUTION RATHER THAN A `RenderOptions` WIDENING.
- * D-11 forbids `renderLine()` from substituting a symbol into an immediate
+ * This module's own invariant forbids `renderLine()` from substituting a symbol into an immediate
  * operand at all, because of the `#<`/`#>` high/low-byte ambiguity, and that
  * rule is verified against a real assembler in `disasm-roundtrip.test.ts`. It
  * is not relaxed here. What an ENUM adds is a caller-supplied fact the renderer
@@ -925,7 +924,7 @@ const REGISTER_ENUM_NAME_RE = /^[0-9A-F]{4}$/;
  * substitution happened.
  *
  * THE SEARCH IS CONFINED TO THE DIRECTIVE HALF OF THE LINE, AND THAT IS THE
- * SECOND HALF OF 30-REVIEW CR-01's FIX (2026-08-31). `renderLine()` emits a
+ * SECOND HALF OF THIS MODULE'S OWN 2026-08-31 FIX. `renderLine()` emits a
  * trailing `"  ; "` comment for notes, and for an instruction whose
  * `acmeExpressible` is false it emits the whole thing as a `!byte` directive
  * with the mnemonic AND its `#$xx` operand moved INTO that comment
@@ -993,7 +992,7 @@ const [LINE_COMMENT, SIDE_COMMENT] = COMMENT_TYPES;
  * The store validator's own message is deliberately DISCARDED and replaced.
  * That message interpolates the offending text for one of its four cases, and
  * an exporter error that quotes a file's contents back is a content-disclosure
- * oracle (CR-03). What survives is the address and which rule fired -- facts
+ * oracle. What survives is the address and which rule fired -- facts
  * ABOUT the comment, never the comment.
  */
 export function assertExportableCommentText(text: string, address: number): string {
@@ -1012,7 +1011,7 @@ export function assertExportableCommentText(text: string, address: number): stri
 
 /**
  * Re-checks, at the EXPORT boundary, that a stored range's `dataType` is one
- * the store's own vocabulary defines (30-REVIEW WR-03).
+ * the store's own vocabulary defines.
  *
  * The sibling of `assertExportableCommentText()` below, on the same terms and
  * for the same reason: `listRanges()` casts the column with no validator, so
@@ -1067,7 +1066,7 @@ interface CommentPlacement {
  * the order they were written in rather than an order this module invented.
  *
  * A COMMENT ON A MULTI-ADDRESS LINE IS QUALIFIED WITH ITS OWN ADDRESS
- * (30-REVIEW IN-02, added 2026-08-31). The CODE path calls this with a span of
+ * (added 2026-08-31). The CODE path calls this with a span of
  * exactly ONE address (`[instr.address, instr.address + 1)`), so a comment
  * there is unambiguous and is emitted unchanged -- nothing about the existing
  * output moves. The DATA path calls it with a span of up to
@@ -1086,7 +1085,7 @@ interface CommentPlacement {
  * with an address it already sits next to is noise, and it would rewrite every
  * existing expected line in the test suite for nothing.
  *
- * `generatedSuffix` (D-17, plan 45-05) is this module's OWN mechanical text --
+ * `generatedSuffix` is this module's OWN mechanical text --
  * today, only `decomposeRegisterValue()`'s decoded-field comment for an OR-ed
  * multi-bit enum substitution -- never a second stored comment. It is NEVER
  * DROPPED and NEVER REORDERED BEHIND authored text: when a stored SIDE
@@ -1140,7 +1139,7 @@ function withComments(text: string, start: number, endExclusive: number, ctx: Co
 }
 
 /**
- * Phase 47, plan 47-04 (BUILD-03): the address one decoded instruction's
+ * the address one decoded instruction's
  * operand REFERENCES, for the in-tree symbol rule below -- the SAME address
  * a substitution would substitute, extracted through `resolvedTarget` FIRST
  * (`disasm-decoder.ts` rule 5 for every relative branch, rule 6 for absolute
@@ -1153,7 +1152,7 @@ function withComments(text: string, start: number, endExclusive: number, ctx: Co
  * immediate is a BYTE VALUE, not an address: project enums (the
  * `usageByAddress` branch above) are what give one a name, and treating it as
  * an address is how `lda #$08` would start demanding a label be recorded at
- * `$0008`. `disasm-renderer.ts`'s own D-11 comment states the same exclusion
+ * `$0008`. `disasm-renderer.ts`'s own comment states the same exclusion
  * for the identical reason, on the substitution side of this same boundary.
  */
 function referencedAddress(instr: Instruction): number | undefined {
@@ -1164,7 +1163,7 @@ function referencedAddress(instr: Instruction): number | undefined {
 }
 
 /**
- * Phase 47, plan 47-04 (BUILD-03, D47-F): true iff `address` falls inside
+ * true iff `address` falls inside
  * `[block.start, block.endExclusive)` for SOME block this export emitted --
  * the half-open interval every other boundary test in this module already
  * uses. Tested against the `blocks` array `exportAsm()` already built at the
@@ -1222,12 +1221,12 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
     comments = listComments(handle);
     projectEnums = listProjectEnums(handle);
     enumUsage = listEnumUsage(handle);
-    // BUILD-07 (phase 46 plan 05): a sixth read in the SAME handle and the
+    // a sixth read in the SAME handle and the
     // SAME `try`, mirroring the discipline the five siblings above already
     // follow -- one handle for the whole export, closed once in the
     // `finally` below. There is no second store opened for this.
     excludedRanges = listExcludedRanges(handle);
-    // Phase 47, plan 47-01: a SEVENTH read in the SAME handle and the SAME
+    // a SEVENTH read in the SAME handle and the SAME
     // `try`, on the same terms as the sixth above -- still one handle for
     // the whole export, closed once in the `finally` below. There is no
     // second store opened for this either.
@@ -1251,8 +1250,8 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
   const blocks: ExportBlock[] = sortedRanges.map((row) => ({
     start: row.start,
     endExclusive: row.endInclusive + 1,
-    // THE STORE'S `dataType` IS RE-CHECKED AT THIS BOUNDARY (30-REVIEW WR-03,
-    // fixed 2026-08-31), for exactly the reason `withComments()` re-checks
+    // THE STORE'S `dataType` IS RE-CHECKED AT THIS BOUNDARY (fixed 2026-08-31),
+    // for exactly the reason `withComments()` re-checks
     // `commentType` a few functions up: "Unreachable through the type, and
     // reachable through a store file somebody edited. Refusing beats
     // guessing." That reasoning applies here and had not been applied.
@@ -1293,7 +1292,7 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
     }
   }
 
-  // BUILD-05 (phase 46 plan 01): ONE read for the whole export, mirroring the
+  // ONE read for the whole export, mirroring the
   // one-store-handle discipline directly above. `ledgerPath === undefined` is
   // the ONLY question asked of the caller's intent here -- everything after
   // this line either has a ledger to join against or does not, and no branch
@@ -1312,7 +1311,7 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
   for (const label of sortedLabels) {
     assertLegalAcmeIdentifier(label.name, `exportAsm: label at ${hex4(label.address)}`);
     // TWO NAMES AT ONE ADDRESS IS RECORDED IN THE EMITTED SOURCE, NOT RESOLVED
-    // IN SILENCE (30-REVIEW WR-02, second half, fixed 2026-08-31).
+    // IN SILENCE (fixed 2026-08-31).
     //
     // `labelIndex` is a `Map<number, string>` while `anno_label` is `unique`
     // on NAME only -- `setLabel()` refuses only a name already bound to a
@@ -1352,7 +1351,7 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
    * only the first name at each, so an ALIASED label would be invisible to a
    * collision check reading it. ACME has ONE symbol namespace, so an enum
    * variant symbol colliding with any of these is `Symbol already defined.`
-   * (30-REVIEW WR-10). */
+   */
   const labelSymbolNames = new Set(sortedLabels.map((label) => label.name));
 
   // Comments indexed by the address they annotate, each address's list left in
@@ -1379,7 +1378,7 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
    * They join the header block for the same reason label definitions do. */
   const enumDefinitionLines: string[] = [];
   /** Every emitted enum-derived symbol name (single-value or OR-ed term) to
-   * the ONE value it was defined with. A Map, not a Set (D-17, plan 45-05):
+   * the ONE value it was defined with. A Map, not a Set:
    * a term name defined by one instruction with one value and referenced by a
    * SECOND instruction with a DIFFERENT value is a genuine collision in
    * ACME's one symbol namespace, and the value is what makes that collision
@@ -1389,13 +1388,13 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
   let unexpressibleCount = 0;
   let dataByteCount = 0;
   let enumDecompositionCount = 0;
-  /** Phase 47, plan 47-03 (BUILD-02): every `external_file`-typed block's
+  /** every `external_file`-typed block's
    * own `.bin` sibling, populated at the same point `dataByteCount` above
    * is incremented for that block -- see `ExportAsmResult.binaries`'s own
    * doc-comment for what a caller reading this field is obliged to do. */
   const binaries: ExportBinary[] = [];
 
-  /** Phase 47, plan 47-04 (BUILD-03): one in-tree reference this export could
+  /** one in-tree reference this export could
    * not resolve to a symbol -- collected across the WHOLE block loop and
    * refused ONCE at the end, in the shape the unapplied-enum-usage and
    * unplaced-comment refusals below already use. */
@@ -1423,8 +1422,8 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
     return `${line}${AUTO_NAME_MARKER}`;
   };
 
-  // THE ALIAS PICK IS MADE VISIBLE IN THE SOURCE (30-REVIEW WR-02, second
-  // half). Two store labels at one address are BOTH defined -- ACME accepts
+  // THE ALIAS PICK IS MADE VISIBLE IN THE SOURCE (second half of the same fix
+  // above). Two store labels at one address are BOTH defined -- ACME accepts
   // two symbols with one value and the bytes are unaffected -- but a
   // REFERENCE to that address can render through only one of them. Which one
   // was previously invisible. Marking both definitions with the same fixed
@@ -1446,7 +1445,7 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
   // or ACME refuses the whole source with `Symbol already defined.`
   const midInstructionLabelAddresses = new Set<number>();
 
-  // ONE PER EMITTED INLINE DEFINITION, not one per address (30-REVIEW WR-02).
+  // ONE PER EMITTED INLINE DEFINITION, not one per address.
   // The set above answers the HEADER's question ("is this address defined
   // inline already?"), which is per-address by nature. This counter answers
   // the RESULT's question ("how many inline definitions does the source
@@ -1469,11 +1468,11 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
     const content: string[] = [];
 
     if (block.dataType === CODE_DATA_TYPE) {
-      // D-11 is inherited UNCHANGED: `renderLine()` decides operand width and
+      // That invariant is inherited UNCHANGED: `renderLine()` decides operand width and
       // refuses to substitute a symbol into an immediate or zeropage-family
       // operand. Do not widen `RenderOptions` and do not bypass `renderLine()`.
       // `end` IS INCLUSIVE, SO IT IS HANDED AN INCLUSIVE VALUE (30-REVIEW
-      // WR-07, corrected 2026-08-31). This used to pass `block.endExclusive`.
+      // corrected 2026-08-31). This used to pass `block.endExclusive`.
       // `DecodeOptions.end` is compared with `if (end !== undefined && address
       // > end) break` and documented as "an instruction starting past `end` is
       // dropped ... an instruction starting AT OR BEFORE `end` is emitted in
@@ -1556,7 +1555,7 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
 
         let rendered = renderLine(instr, { showSymbols: true, symbolFor });
 
-        // Phase 47, plan 47-04 (BUILD-03): THE IN-TREE SYMBOL RULE, beside
+        // THE IN-TREE SYMBOL RULE, beside
         // the `renderLine()` call it has to agree with. `rendered` above
         // already went through `symbolFor` -- the SAME `labelIndex` map read
         // here -- so a reference this check calls unresolved is a reference
@@ -1578,7 +1577,7 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
           }
         }
 
-        // The mechanical decode text (D-17), set only by the OR-ed
+        // The mechanical decode text, set only by the OR-ed
         // decomposition branch below and merged into this instruction's
         // trailing comment by `withComments()` after the enum-substitution
         // block finishes.
@@ -1598,7 +1597,7 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
           }
 
           // ROLE IS NOT ENOUGH: THE OPERAND MUST ALSO BE ASSEMBLER-VISIBLE
-          // (30-REVIEW CR-02, fixed 2026-08-31). `decode()` assigns
+          // (fixed 2026-08-31). `decode()` assigns
           // `role: "immediate"` from the ADDRESSING MODE alone, independently
           // of `acmeExpressible`. Six opcodes in `disasm-opcodes.ts` are
           // `mode: "immediate"` AND `acmeExpressible: false` -- $2b (`anc`),
@@ -1622,9 +1621,9 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
           //   !byte $eb, $00  ; sbc #viccolor_BLACK  [illegal opcode | ...]
           //   === enumSubstitutionCount: 1
           //
-          // This is D-30's "an annotation the exporter cannot express is
-          // REFUSED loudly and by name, never silently dropped while the
-          // export reports success" exactly inverted. It is refused now.
+          // This inverts, exactly, the rule that an annotation the exporter cannot
+          // express is REFUSED loudly and by name, never silently dropped while
+          // the export reports success. It is refused now.
           if (!instr.acmeExpressible) {
             throw new Error(
               `exportAsm: enum ${JSON.stringify(usage.enumName)} is bound to the immediate operand at ${hex4(usage.address)}, but that ` +
@@ -1647,8 +1646,8 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
             );
           }
 
-          // D-16 (plan 45-05): THE ONE OWNING DECODER. Attempted ONLY when
-          // BOTH (45-REVIEW CR-01, fixed 2026-09-11):
+          // THE ONE OWNING DECODER. Attempted ONLY when
+          // BOTH (fixed 2026-09-11):
           //   1. `usage.enumName` has the exact shape `registerKeyFor().slice(1)`
           //      produces -- see `REGISTER_ENUM_NAME_RE`'s own comment for why a
           //      name that does not have this shape (e.g. `viccolor`) is never
@@ -1679,7 +1678,7 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
           }
 
           if (decomposition !== undefined && decomposition.multiField) {
-            // D-17: OR-ED NAMED CONSTANTS AND THE DECODED COMMENT -- BOTH,
+            // OR-ED NAMED CONSTANTS AND THE DECODED COMMENT -- BOTH,
             // never either alone. A bare hex constant with a comment still
             // "emits one hex constant"; bare constants with no comment are
             // not readable.
@@ -1700,11 +1699,11 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
                   );
                 }
                 // Same name, same value, already defined by an earlier
-                // instruction -- no second definition line (30-REVIEW WR-10's
+                // instruction -- no second definition line, the same
                 // own "only what the source references" discipline, extended
                 // to terms).
               } else {
-                // THE SAME LABEL COLLISION CHECK 30-REVIEW WR-10 ADDED FOR A
+                // THE SAME LABEL COLLISION CHECK ADDED FOR A
                 // SINGLE ENUM SYMBOL, EXTENDED HERE -- not a second check.
                 if (labelSymbolNames.has(term.name)) {
                   throw new Error(
@@ -1726,9 +1725,9 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
             enumDecompositionCount++;
             decompositionComment = decomposition.comment;
           } else {
-            // THE EXISTING SINGLE-SYMBOL PATH (D-16: unchanged, not
+            // THE EXISTING SINGLE-SYMBOL PATH (unchanged, not
             // replaced) -- a single-field register, an enum usage whose name
-            // is not register-shaped at all, OR (45-REVIEW CR-01) a
+            // is not register-shaped at all, OR a
             // register-shaped name for a register `anno-regbits.json` simply
             // has no entry for (e.g. `D020`) -- reached here with no
             // substitution counted above, never a throw.
@@ -1771,7 +1770,7 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
             assertLegalAcmeIdentifier(symbol, `exportAsm: enum variant symbol for ${hex4(usage.address)}`);
 
             // THE COLLISION THE COMMENT BELOW NAMES IS NOW CHECKED FOR
-            // (30-REVIEW WR-10, fixed 2026-08-31). That comment identified the
+            // (fixed 2026-08-31). That comment identified the
             // hazard exactly -- "every extra emitted symbol is one more chance to
             // collide with a label name and turn a correct export into ACME's
             // `Symbol already defined.`" -- and then did not look.
@@ -1822,7 +1821,7 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
         block.lineCount += emitted.length;
       }
     } else if (isSplitAddressDataType(block.dataType)) {
-      // Phase 47, plan 47-06 (BUILD-03): the two split ADDRESS layouts get
+      // the two split ADDRESS layouts get
       // PAIRED symbol emission, never the raw-`!byte` fallback -- see
       // `emitSplitAddressLines()`'s own doc-comment for the orientation and
       // the one-symbol-per-entry rule. Read the SAME `blocks`/`labelIndex`
@@ -1851,7 +1850,7 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
       }
       dataByteCount += slice.length;
 
-      // Phase 47, plan 47-03 (BUILD-02): an `external_file` block's bytes
+      // an `external_file` block's bytes
       // also go out as their own sibling data file. `bytes` is `slice`
       // itself -- the same bytes `dataByteCount` above just counted, carried
       // verbatim and never re-read from anywhere else.
@@ -1860,7 +1859,7 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
       }
     }
 
-    // BUILD-05 (phase 46 plan 01): when ledger mode is on, every block gets a
+    // when ledger mode is on, every block gets a
     // provenance comment BEFORE it is bracketed -- never as a threshold, never
     // gating which blocks reach `emitBlock()` below. The only conditionals
     // here are "is ledger mode on", "did zero rows come back" (refuse) and
@@ -1903,7 +1902,7 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
       content.unshift(...provenanceLines);
     }
 
-    // BUILD-07 (phase 46 plan 05): every recorded exclusion overlapping this
+    // every recorded exclusion overlapping this
     // block gets a marker naming ITS OWN extent (never the block's) and its
     // checked reason -- NEVER a skipped block, a shortened slice, or a
     // shrunk `expectedBytes`. `block.start`/`block.endExclusive` above are
@@ -1950,7 +1949,7 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
 
     // EVERY block goes through `emitBlock()`, code and data alike, so there is
     // exactly one place that brackets a block and no route that emits an
-    // unbracketed one. Captured onto `block.lines` (Phase 47, plan 47-01) at
+    // unbracketed one. Captured onto `block.lines` at
     // the SAME point it is pushed onto `blockLines` -- one call, two
     // destinations, never a second bracketing.
     const emittedBlockLines = emitBlock(block.start, block.endExclusive, content);
@@ -1958,7 +1957,7 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
     blockLines.push(...emittedBlockLines);
   }
 
-  // Phase 47, plan 47-04 (BUILD-03): an in-tree reference this export could
+  // an in-tree reference this export could
   // not resolve to a symbol is REFUSED BY NAME, once, across the whole
   // export -- never emitted as a hex literal that freezes the target's
   // address into the source while the export reports success. In the same
@@ -2070,7 +2069,7 @@ export function exportAsm(options: ExportAsmOptions): ExportAsmResult {
 }
 
 // ---------------------------------------------------------------------------
-// Phase 47, plan 47-01: the TREE writer (D47-A). `exportAsm()` above stays the
+// the TREE writer (D47-A). `exportAsm()` above stays the
 // proven EMITTER -- this is the primary shape a caller reaches for, built by
 // PARTITIONING `exportAsm()`'s already-proven emission, never by emitting a
 // second time through a second route. See `exportAsmTree()`'s own doc-comment
@@ -2102,7 +2101,7 @@ export function scopeFileName(start: number): string {
 }
 
 /**
- * Phase 47, plan 47-03 (BUILD-02): the `.bin` sibling file name for the
+ * the `.bin` sibling file name for the
  * `external_file`-typed block starting at `start` -- `data_XXXX.bin`, four
  * LOWERCASE hex digits, no `$`, no store free text anywhere in it. Module-
  * private: nothing outside this file needs the name computed independently
@@ -2127,13 +2126,13 @@ export interface ExportAsmTreeOptions extends ExportAsmOptions {
    * absent comment beside a present one is itself a claim, and a silently-
    * undocumented path field is what a prior review named as the mechanism of
    * a real defect. The CALLER owns confining it (the CLI does, through
-   * `storePathWithinWorkspace()`, plan 47-05). Within the directory, every
+   * `storePathWithinWorkspace()`). Within the directory, every
    * name this function writes is DERIVED (`scopeFileName()`, the three fixed
    * constants above), so nothing the caller supplies can escape it a second
    * time. */
   outDir: string;
   /**
-   * Phase 47, plan 47-02, Task 2: what the CALLER IS ASKING FOR, not a
+   * What the CALLER IS ASKING FOR, not a
    * switch that widens what this function is willing to destroy. Set, it
    * means "this directory already holds a tree I exported before -- replace
    * it." It deliberately does NOT mean "remove whatever is in my way": a
@@ -2157,7 +2156,7 @@ export interface ExportAsmTreeResult extends ExportAsmResult {
 }
 
 /**
- * Phase 47, plan 47-02: decides which file ONE block belongs to, given the
+ * decides which file ONE block belongs to, given the
  * store's own scopes -- the ONE containment predicate, applied ONCE, so the
  * tree writer's placement answer can never drift from a second copy of this
  * question (see `blocks`'s own `.map()` above for the sibling boundary this
@@ -2272,7 +2271,7 @@ export function exportAsmTree(options: ExportAsmTreeOptions): ExportAsmTreeResul
   // never a guess revised after the fact.
   const populatedScopeStarts = [...scopeBlocks.keys()].sort((a, b) => a - b);
   const hasUnscoped = unscopedBlocks.length > 0;
-  // Phase 47, plan 47-03 (T-47-08): every `.bin` sibling this call will write
+  // every `.bin` sibling this call will write
   // joins the SAME name set the directory contract below evaluates, so a
   // re-export with `force: true` may replace a previously-exported `.bin`
   // exactly as it may replace a previously-exported `.a` file -- and, without
@@ -2287,7 +2286,7 @@ export function exportAsmTree(options: ExportAsmTreeOptions): ExportAsmTreeResul
   ];
 
   // ---------------------------------------------------------------------
-  // Phase 47, plan 47-02, Task 2: the output-directory contract. Two rules,
+  // The output-directory contract. Two rules,
   // both evaluated BEFORE the first write below -- a refusal that has
   // already written half a tree has left an artefact a later assemble might
   // succeed on (the same reason the placement pass above runs to completion
@@ -2367,7 +2366,7 @@ export function exportAsmTree(options: ExportAsmTreeOptions): ExportAsmTreeResul
     sourceOrder.push(UNSCOPED_FILE_NAME);
   }
 
-  // .bin siblings (T-47-08/T-47-09/T-47-10, phase 47 plan 47-03) -- one per
+  // .bin siblings (T-47-08/T-47-09/T-47-10) -- one per
   // `external_file`-typed block, written in the SAME pass as every `.a`
   // file above and, like them, BEFORE root.a: data files precede the root
   // for the identical interruption-safety reason the `.a` files already do
