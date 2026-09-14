@@ -5,11 +5,11 @@ milestone_name: The Rebuild Half
 current_phase: 50
 current_phase_name: Equivalence and Modifiability
 status: planning
-stopped_at: Phase 55 complete and the suite made host-independent — the full glob is green with the dxa binary present AND absent
-last_updated: "2026-09-13T20:11:08.073Z"
+stopped_at: Phase 51 context gathered
+last_updated: "2026-09-14T06:32:49.666Z"
 last_activity: 2026-09-13
 last_activity_desc: "Completed quick task 260913-u1i: CI's build job no longer declares itself a container (removed the workflow-wide env block after converting the five test cases that depended on it to inject the signal directly)"
-state_head: a6f53fd04bbcfa3a009c200ac3cfe307f7211457
+state_head: bc7c094fb3abcb032cb1d762b74c4c4b4d74b274
 progress:
   total_phases: 10
   completed_phases: 7
@@ -2500,9 +2500,9 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-13T20:11:07.538Z
-Stopped at: Completed quick task 260913-u1i (CI no longer claims to be a container)
-Resume file: None
+Last session: 2026-09-14T06:32:47.712Z
+Stopped at: Phase 51 context gathered
+Resume file: .planning/phases/51-planning-vocabulary-out-of-the-shipped-server/51-CONTEXT.md
 
 Earlier: Completed 43-06-PLAN.md
 Earlier: Completed 42-16-PLAN.md (gap-closure round 2 — CR-02 closed, proven live, PARSE-04 restored)
