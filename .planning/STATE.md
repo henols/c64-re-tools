@@ -5,16 +5,16 @@ milestone_name: The Rebuild Half
 current_phase: 51
 current_phase_name: Planning Vocabulary Out of the Shipped Server
 status: executing
-stopped_at: Completed 51-02-PLAN.md
-last_updated: "2026-09-14T11:32:23.468Z"
+stopped_at: Completed 51-03-PLAN.md
+last_updated: "2026-09-14T12:22:48.198Z"
 last_activity: 2026-09-14
 last_activity_desc: Phase 51 execution started
-state_head: 083a3557d2b561ca5d14361a22a748f1ecb16105
+state_head: a973e4457e6d7c10ee4e03215628c5aee8c0da66
 progress:
   total_phases: 11
   completed_phases: 7
   total_plans: 71
-  completed_plans: 56
+  completed_plans: 57
   percent: 64
 ---
 
@@ -267,9 +267,9 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 51 (Planning Vocabulary Out of the Shipped Server) — EXECUTING
-Plan: 3 of 17
+Plan: 4 of 17
 Status: Ready to execute
-Plans: 2/17 executed. 51-01 is complete: it widened skills-planning-vocabulary.test.ts's scan surface to four sources, added a count-pinned RATCHET ledger and comment-byte budget. It also proved installer/bin/cli.mjs clean end to end. 51-02 is complete: it built CITATION-RESOLUTION.md (five sections, re-derived dangling set at 30 tokens/76 occurrences, down from CONTEXT.md's inherited 33/~135). It also minted VOCAB-01..06 with traceability rows in REQUIREMENTS.md (38/38 mapped). 51-03 through 51-17 remain.
+Plans: 3/17 executed. 51-01 is complete: it widened skills-planning-vocabulary.test.ts's scan surface to four sources, added a count-pinned RATCHET ledger and comment-byte budget. It also proved installer/bin/cli.mjs clean end to end. 51-02 is complete: it built CITATION-RESOLUTION.md (five sections, re-derived dangling set at 30 tokens/76 occurrences, down from CONTEXT.md's inherited 33/~135). It also minted VOCAB-01..06 with traceability rows in REQUIREMENTS.md (38/38 mapped). 51-03 is complete: it swept host-tool.mts's 325 citations to zero, regenerated resources/host-tool.mjs, and finalized COMMENT_BUDGET_SLACK at 1650 from that file's own real diff. 51-04 through 51-17 remain.
 
 Carried in from Phase 48 (complete, verified, UAT passed 2026-09-13): the
 purpose-built subject carries all four planted hazard classes, the pure
@@ -284,7 +284,7 @@ artifact — it did not retract the finding. Phase 49 gates reassembly, so
 that subject is the thing it will gate on.
 
 Progress: [████████░░] 75% (6/8 phases complete in v1.0.0; per-phase plan counts in the ROADMAP Progress table)
-Last activity: 2026-09-14 — Phase 51 execution started (51-01 complete)
+Last activity: 2026-09-14 — Phase 51 execution in progress (51-01, 51-02, 51-03 complete)
 
 ## Performance Metrics
 
@@ -619,6 +619,7 @@ Last activity: 2026-09-14 — Phase 51 execution started (51-01 complete)
 | Phase quick-260913-u1i P01 | 25min | 3 tasks | 9 files |
 | Phase 51 P01 | 46min | 3 tasks | 8 files |
 | Phase 51 P02 | 24 min | 2 tasks | 2 files |
+| Phase 51 P03 | 62 min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -1399,6 +1400,8 @@ Recent decisions affecting current work:
 - [Phase 51]: hop-chain-comments.test.ts's own separate extractCommentSpans() copy stays untouched, deliberately, per Task 1's explicit scope -- leaving this plan's success criterion 4 not literally satisfied and disclosed as a known discrepancy for a later plan.
 - [Phase 51]: Section C splits requirement-id-shaped tokens into two groups: 107 are genuinely global, 43 share the shape but are phase-scoped code-review finding ids (CR-NN/WR-NN/IN-NN, plus DIRECT-06/AUDIT-01) needing the tier-3 git-blame walk.
 - [Phase 51]: The re-derived dangling set (30 tokens, 76 occurrences) traces to one root cause: an 01.x sub-phase-numbering scheme and four quick-task ids that predate this repo's own first commit, absorbed from a donor GSD-managed project.
+- [Phase 51]: COMMENT_BUDGET_SLACK finalized at 1650 (was provisional 20), derived from host-tool.mts's real complete sweep (comment bytes lost 4073, citation characters removed 2478).
+- [Phase 51]: host-tool.mts (325 citations, the densest file in Phase 51) swept to zero with zero unrecoverable tier-4 sites; every citation resolved to a real, findable phase per CITATION-RESOLUTION.md.
 
 ### Pending Todos
 
@@ -2506,8 +2509,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-14T11:32:22.318Z
-Stopped at: Completed 51-02-PLAN.md
+Last session: 2026-09-14T12:22:46.671Z
+Stopped at: Completed 51-03-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
