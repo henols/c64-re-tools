@@ -1,14 +1,14 @@
 // anno-provenance-ledger.ts -- the ONE place `recovery/PROVENANCE.md`'s
-// generated tier is turned back into typed rows (BUILD-05, phase 46 plan 01).
+// generated tier is turned back into typed rows.
 //
 // ---------------------------------------------------------------------------
 // WHY THIS FILE EXISTS
 // ---------------------------------------------------------------------------
 // Nothing in this repository has ever READ the provenance ledger. It has one
 // writer -- `renderLedger()` in `src/skills/c64-provenance-diff/scripts/
-// diff-images.mjs` -- and zero readers, because BUILD-05's own text requires
-// the verdict be READ from the existing ledger, "never re-derived"
-// (assumption A2, `46-01-PLAN.md`). Recomputing it in-process would force the
+// diff-images.mjs` -- and zero readers, because the requirement governing this
+// module requires the verdict be READ from the existing ledger, "never
+// re-derived". Recomputing it in-process would force the
 // exporter to import a registry-resolution path it has no other reason to
 // know about, and would make "ledger absent" ambiguous between three
 // different missing things. This module exists so "read" has an implementation

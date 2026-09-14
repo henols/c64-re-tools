@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // anno-memmap-render.ts -- the ONE authoritative place in this repo that
 // renders the human-readable Markdown memory map from this project's own
-// annotation store (D-24) plus a validated run-scoped provenance sidecar
-// (D-27's reconciliation, recorded in 11-10-PLAN.md's objective).
+// annotation store plus a validated run-scoped provenance sidecar, using
+// the reconciliation between those two sources this file implements.
 //
-// WHY THIS MODULE EXISTS (D-24): the store is canonical; the Markdown memory
+// WHY THIS MODULE EXISTS: the store is canonical; the Markdown memory
 // map becomes a rendered VIEW. Criterion 1 says findings must be queryable
 // "instead of re-deriving from Markdown prose" -- that is only true by
 // construction if the prose is GENERATED from the queryable thing. Nothing
@@ -13,7 +13,8 @@
 // `listRanges()`/`listLabels()`/`listComments()` readers, never from a
 // human editing the output file directly.
 //
-// THE D-24/D-27 RECONCILIATION THIS FILE IMPLEMENTS: run-scoped facts (the
+// THE RECONCILIATION THIS FILE IMPLEMENTS, BETWEEN THE STORE AND THE
+// RUN-SCOPED SIDECAR: run-scoped facts (the
 // capture's SHA-256, `$01`, `$DD00`, the derived graphics chain, the video
 // standard, the live vector pair, observed raster positions) are facts about
 // a RUN, not about an address -- the store is address-keyed and has no shape
@@ -24,8 +25,8 @@
 // `<placeholder>` for one.
 //
 // WHY THE LAYOUT IS EMBEDDED IN TYPESCRIPT RATHER THAN READ FROM A TEMPLATE
-// FILE AT RUNTIME (the second decision this plan records): Phase 10's D-06
-// established that `.claude/mcp/vice/*.ts` exists as files on disk only
+// FILE AT RUNTIME (the second decision this plan records): an earlier
+// finding established that `.claude/mcp/vice/*.ts` exists as files on disk only
 // under the Claude Code plugin route -- both npm-installer routes launch via
 // `npx`. A renderer that resolved a template path into the skills tree at
 // runtime would silently fail to resolve for an npm-installed user. The
@@ -41,7 +42,7 @@
 //   - drift detection (`checkRenderedMemoryMap()`) -- the one place a
 //     rendered file on disk is compared against what the store (plus the
 //     sidecar) would produce right now;
-//   - Markdown-cell escaping (`escapeMarkdownCell()`, WR-04, closed) --
+//   - Markdown-cell escaping (`escapeMarkdownCell()`) --
 //     every store-derived text interpolation in the generated document
 //     (comment evidence, symbol names) is escaped through this one
 //     function, never a second ad hoc `.replace()` at a call site.
@@ -50,7 +51,7 @@
 //   - Never hand-edit the rendered output. The banner exists precisely so a
 //     human editor is caught by `checkRenderedMemoryMap()` -- see the
 //     `render_digest` comment below for exactly what it covers.
-//   - Never read the layout from the skills tree at runtime (Phase 10 D-06).
+//   - Never read the layout from the skills tree at runtime (see the module header for why).
 //     This module's own non-vacuity test asserts a zero-count grep for the
 //     recon skill's template filename -- if you are tempted to add a
 //     `readFileSync()` call reaching into `.claude/skills/`, don't; the
@@ -101,14 +102,14 @@ function errMsg(err: unknown): string {
  * offset at which parsing stopped, as ` (at byte offset N)`, or `""` when the
  * runtime did not name one.
  *
- * WHY THIS IS A DIGIT EXTRACTOR AND NOT A MESSAGE PASS-THROUGH (CR-03). V8's
+ * WHY THIS IS A DIGIT EXTRACTOR AND NOT A MESSAGE PASS-THROUGH. V8's
  * JSON `SyntaxError` embeds a SNIPPET OF THE INPUT in its own message --
  * `Unexpected token 'Q', "QQZZORACLE"... is not valid JSON` -- so any code
  * that forwards `err.message` from a JSON parse over caller-supplied bytes is
  * a content-disclosure oracle. The capture group here is `(\d+)` and nothing
  * else, so no byte of the parsed file can reach the returned string however
  * the runtime words its message. Widening this regex to capture anything but
- * digits reopens CR-03.
+ * digits reopens the same content-disclosure risk.
  *
  * Returns `""` rather than guessing when no position is present (`Unexpected
  * end of JSON input` carries none) -- an absent offset is reported by absence,
@@ -280,9 +281,9 @@ export function parseProvenanceHeader(json: unknown): ProvenanceHeader {
  * distinguishable from drift under the same one.
  *
  * Version 2 (260821-a86) escaped Markdown table cells via
- * `escapeMarkdownCell()` -- WR-04, an output-shape change.
+ * `escapeMarkdownCell()`, an output-shape change.
  *
- * Version 3 (D-17) is an INPUT change: `computeRenderDigest()` canonicalises
+ * Version 3 is an INPUT change: `computeRenderDigest()` canonicalises
  * this store's own `RangeRow`/`LabelRow`/`CommentRow` instead of the three
  * wire shapes recorded above, so the same underlying annotations hash
  * differently either side of it. Leaving the version at "2" across that
@@ -298,7 +299,7 @@ export const RENDERER_VERSION = "3";
  * other leg), because comment `evidence` legitimately contains `|` and
  * embedded newlines (`anno_set_comment`'s own schema documents multi-line
  * support) -- refusing here would refuse valid data, not an attack. Closes
- * WR-04 / T-11-NAME-INJECT's render leg: an unescaped `|` or newline in
+ * this control's own render leg of T-11-NAME-INJECT: an unescaped `|` or newline in
  * store text used to be able to inject an extra table cell or split a row
  * across lines in the generated Markdown. A plain string or an empty string
  * is returned unchanged. */
@@ -348,7 +349,7 @@ export interface RenderMemoryMapOptions {
    *  reaching an equally real `readFileSync`, carried nothing -- so a reader
    *  comparing the two would reasonably conclude the difference was
    *  deliberate. It was not: the CLI read this argument raw, making it an
-   *  arbitrary-file read oracle (`29-REVIEW.md` CR-03). An absent comment
+   *  arbitrary-file read oracle. An absent comment
    *  beside a present one is a claim, and this one was false. */
   provenancePath: string;
   /** The workspace root both confinement checks are taken against. REQUIRED
@@ -396,7 +397,7 @@ export async function renderMemoryMap(opts: RenderMemoryMapOptions): Promise<Ren
   try {
     sidecarJson = JSON.parse(sidecarBytes);
   } catch (err) {
-    // NEVER INTERPOLATE THE UNDERLYING PARSE ERROR HERE (CR-03). Node's
+    // NEVER INTERPOLATE THE UNDERLYING PARSE ERROR HERE. Node's
     // SyntaxError quotes a snippet of the input it choked on -- e.g.
     // `Unexpected token 'Q', "QQZZORACLE"... is not valid JSON` -- so passing
     // it through turns a read refusal into a CONTENT-DISCLOSURE ORACLE. That
@@ -410,7 +411,7 @@ export async function renderMemoryMap(opts: RenderMemoryMapOptions): Promise<Ren
     // where parsing stopped and not about what the file contains.
     throw new Error(
       `renderMemoryMap: provenance sidecar at "${provenancePath}" is not valid JSON${jsonParsePosition(err)}. ` +
-        "The underlying parser message is deliberately NOT included -- it quotes the file's own bytes (CR-03).",
+        "The underlying parser message is deliberately NOT included -- it quotes the file's own bytes.",
     );
   }
   const provenance = parseProvenanceHeader(sidecarJson);
@@ -460,7 +461,7 @@ export async function renderMemoryMap(opts: RenderMemoryMapOptions): Promise<Ren
   // load-bearing detail rather than a formatting preference: every byte below
   // is re-rendered and compared BYTE FOR BYTE by `checkRenderedMemoryMap()`,
   // so an absolute path here would make the drift verdict a function of where
-  // the checkout sits (CR-01). `workspaceRelativePath()` is the one definition
+  // the checkout sits. `workspaceRelativePath()` is the one definition
   // of that spelling; it computes a location and refuses one that escapes the
   // root. It is NOT a confinement check -- this module still performs no
   // confinement of its own, exactly as `RenderMemoryMapOptions` documents.
@@ -587,13 +588,13 @@ export interface CheckRenderedMemoryMapOptions {
   /** See `RenderMemoryMapOptions.provenancePath` -- same argument, one layer
    *  up. The CALLER (`anno-cli.ts`'s `cmdRenderMemmap()`) confines it through
    *  `storePathWithinWorkspace()`; this module performs no confinement of its
-   *  own (CR-03). */
+   *  own. */
   provenancePath: string;
   /** The rendered file to compare against, read RAW by `readFileSync` below.
    *  The CALLER confines it through `storePathWithinWorkspace()` -- the SAME
    *  resolution that produces the write path on the non-`--check` branch, so
    *  the drift check and the write are one confined value rather than two
-   *  rules. This module performs no confinement of its own (CR-02). */
+   *  rules. This module performs no confinement of its own. */
   renderedPath: string;
   /** See `RenderMemoryMapOptions.workspaceRoot`. */
   workspaceRoot: string;
@@ -626,8 +627,8 @@ export type CheckRenderedMemoryMapResult =
  *     the workspace root;
  *   - a renderer change (output shape, or a `RENDERER_VERSION` bump).
  *
- * AND THE NEGATIVE, which is the defect this list was corrected for (CR-01,
- * `29-VERIFICATION.md` gap 1): relocating the checkout -- the same tree at a
+ * AND THE NEGATIVE, which is the defect this list was corrected for: relocating
+ * the checkout -- the same tree at a
  * different absolute path -- does NOT drift. The banner records
  * workspace-relative locations, so no compared byte is a function of where the
  * checkout sits. Before that fix this returned `drifted` for a byte-identical

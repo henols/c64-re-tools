@@ -233,8 +233,8 @@ export interface HazardLimit {
 }
 
 /**
- * The two limits this plan's slice seeds. Plan 48-03 and plan 48-05 add the
- * remaining entries; this array only ever grows.
+ * The two limits seeded here; later work adds the
+ * remaining entries -- this array only ever grows.
  */
 export const HAZARD_LIMITS: readonly HazardLimit[] = Object.freeze([
   {
