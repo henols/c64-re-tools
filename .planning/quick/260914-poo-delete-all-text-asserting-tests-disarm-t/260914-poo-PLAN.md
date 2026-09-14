@@ -14,7 +14,9 @@ files_modified:
   - .planning/codebase/CONVENTIONS.md
 
 files_deleted:
-  # Set A: 43 test files (17,534 lines, 597 test declarations)
+  # Set A: 44 test files (18,324 lines, 618 test declarations) -- widened from
+  # 43/17,534/597 mid-execution to add src/mcp/vice/textmon-seam.test.ts (790
+  # lines, 21 declarations), a third late addition. See measured_baseline.
   - src/mcp/vice/docs-absorbed-decisions.test.ts
   - src/mcp/vice/docs-constraints-sync.test.ts
   - src/mcp/vice/docs-core-value-decision.test.ts
@@ -58,6 +60,7 @@ files_deleted:
   - src/mcp/vice/test-gate.test.ts
   - src/mcp/vice/anno-cli-invocations.test.ts
   - src/mcp/vice/d64-single-route.test.ts
+  - src/mcp/vice/textmon-seam.test.ts
   # Set B: the one module whose sole consumer was in set A
   - src/mcp/vice/module-classification.ts
   # Set C: the four text-scanning skill checkers
@@ -115,7 +118,7 @@ Two of them are red right now against a correct tree. The user has decided that
 no test may assert on text at all, and that only data-driven tests of production
 code survive.
 
-Output: 59 files deleted with `git rm`, 3 files edited, and a suite that exits 0
+Output: 60 files deleted with `git rm`, 3 files edited, and a suite that exits 0
 with an empty failing-test set.
 
 Production code, for this plan, means exactly: the entries of
@@ -177,10 +180,11 @@ rule, doc note, seed, weaker assertion, or any successor document.
 Measured by the planner against the live tree on 2026-09-14, at commit
 `f3fe0567`. Re-check anything you act on.
 
-**Set A, measured.** 43 files, 17,534 lines, 597 test declarations (every
-`test(` or `it(` at any indent). Twenty-six of them assert on the TEXT of
-documents, comments or CI scripts (D-1). The rest have a subject that is not
-production code (D-2).
+**Set A, measured.** 44 files, 18,324 lines, 618 test declarations (every
+`test(` or `it(` at any indent), after a third late addition found and
+resolved mid-execution (see below). Of the original 43, twenty-six assert on
+the TEXT of documents, comments or CI scripts (D-1). The rest have a subject
+that is not production code (D-2).
 
 **Suite baseline.** `npm run test:automated` from `src/mcp/vice`:
 `tests 4432 | pass 4421 | fail 2 | skipped 9 | duration ~145s | EXIT=1`.
@@ -192,7 +196,7 @@ The failing SET is exactly these two names, and both live in set A:
 Expected after this plan: EXIT=0 and an EMPTY failing set. Compare the SET.
 Never compare a count, and never pin a count in an assertion.
 
-**Why the two late additions to set A qualify.**
+**Why the three late additions to set A qualify.**
 - `anno-cli-invocations.test.ts` (769 lines, 45 declarations): `spawnSync` count
   0, `SKILL.md` read count 7. It extracts documented `anno <verb> --flag`
   strings out of Markdown and asserts against them, which is a text assertion
@@ -203,11 +207,31 @@ Never compare a count, and never pin a count in an assertion.
   `SKILL.md` count 0. It walks shipped modules and skill scripts looking for a
   SOURCE PATTERN with planted synthetic violations. That is source-text
   scanning, and it executes no production code.
+- `textmon-seam.test.ts` (790 lines, 21 declarations), found by direct
+  execution after Task 1's first commit: it declared
+  `textmon-fixtures.test.ts` (a set-A deletion) as a literal consumer in a
+  hand-pinned owner map, and the deletion tripped its own exact-set-equality
+  assertion. Measured directly rather than patched: its complete import list
+  is `node:test`, `node:assert/strict`, `node:fs`, `node:url`, `node:path` —
+  it imports no production module. It executes no parser. It reads the five
+  `textmon-*` parser modules' SOURCE with `readFileSync` and asserts on that
+  text against a hand-declared owner map and a hand-pinned
+  `TEXTMON_MODULE_FLOOR`. It carries 67 registry/pinned/declared/OWNERS/
+  consumers mentions across 790 lines, against 12 in its closest sibling,
+  `anno-seam.test.ts`. Same shape as `module-classification.test.ts`, already
+  in set A: a pinned registry compared against disk. Fails D-1 (asserts on
+  text) and D-2 (executes no production code). Deleting it, rather than
+  patching around it, ends the coupling, so no surviving file needs an
+  edit.
 
 **Severability.** A full scan of every surviving `src/mcp/vice/*.test.*` found
-no file that imports any set-A test file. Set A is severable. After the two late
-additions, no surviving test reads any deleted artifact from disk either, so
-this plan contains NO partial edit of a surviving test file.
+no file that imports any set-A test file. Set A is severable. After the three
+late additions, no surviving test reads any deleted artifact from disk
+either, so this plan contains NO partial edit of a surviving test file. (The
+one apparent counter-case, `textmon-seam.test.ts` naming the deleted
+`textmon-fixtures.test.ts` in a pinned literal-consumer list, is resolved by
+deleting `textmon-seam.test.ts` itself as the third late addition above,
+rather than by editing it.)
 
 **Set E, each entry measured to zero surviving consumers.**
 - `audit-root`, `skill-descriptions`, `skill-honesty-checks`: their only
@@ -709,7 +733,7 @@ Applied after every task, verbatim:
 </verification>
 
 <success_criteria>
-- 59 files deleted with `git rm`: 43 tests, 1 module, 4 checkers, 1 audit gate,
+- 60 files deleted with `git rm`: 44 tests, 1 module, 4 checkers, 1 audit gate,
   10 orphan-cascade files.
 - 3 files edited: `.github/workflows/ci.yml`, `CLAUDE.md`,
   `.planning/codebase/CONVENTIONS.md`. No surviving test file is edited.
