@@ -73,7 +73,7 @@ import { startControlListener, newControlToken, type AcquireOutcome, type Recycl
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PROXY_PATH = join(HERE, "vice-proxy.ts");
 
-// Env-gated skip. The four tests below only exercise real
+// Env-gated skip. The three tests below only exercise real
 // container-path-translation behaviour when CONTAINER_WORKSPACE_PATH and
 // HOST_WORKSPACE_PATH are both set -- on a bare host with neither set they
 // used to fail anonymously (an assertion error with no hint of why) instead
@@ -83,23 +83,52 @@ const PROXY_PATH = join(HERE, "vice-proxy.ts");
 // No job supplies this ambient environment any more -- CI's workflow-wide
 // `env:` block that used to set both variables was removed once the other
 // two broker files stopped depending on it, because that same block made a
-// GitHub-hosted runner (a host) claim to be a container. These four cases
+// GitHub-hosted runner (a host) claim to be a container. These three cases
 // call hostPath()/repoRoot() IN-PROCESS, and containerpath.ts caches its
 // workspace root at MODULE scope, so an in-test env mutation cannot reach
 // it -- unlike the broker files' cases, these cannot be converted to inject
-// the signal into a child process. They were measured, at the point the
-// ambient block was removed, to FAIL (not skip) under the only environment
-// that runs them: with both variables set this file reports 122 tests, 45
-// pass, 77 fail, 0 skipped, and all four of these are among the 77 failures
-// (module beneath them was deleted by a later phase, pending a wholesale
-// re-baseline of this file). Converting them now would trade a named skip
-// for an unattributable failure, so the gate stays and this reason names the
-// exact local command that satisfies it: run this file directly with both
-// variables set in this process's own environment. That conversion is part
-// of the re-baseline's scope, not this change's. The set of files still
-// gating on this WORKSPACE_ENV idiom is enumerated by name (this file, and
-// only this file) in ci-guardrails.test.mjs, which fails if that ledger and
-// this file's actual state ever drift apart.
+// the signal into a child process.
+//
+// RE-MEASURED 2026-09-14 (phase 55 re-baseline): this file's default run is
+// 56 tests, 53 pass, 0 fail, 3 skipped (these three). Run a second time with
+// both variables set in this process's own environment (the only thing that
+// lifts the skip), the file is 56 tests, 52 pass, 4 fail, 0 skipped -- all
+// three of these are among the 4 failures, and all three fail on the SAME
+// precondition, before any of their own translated-forwarding assertions
+// run: `assert.notEqual(hostPath(containerPath), containerPath, "hostPath()
+// must actually translate in this environment for this test to be
+// meaningful")`. The reason is structural, not a missing env var:
+// repoRoot()'s branch-1 containment check (repo-root.ts) requires THIS
+// MODULE'S OWN on-disk location to resolve inside CONTAINER_WORKSPACE_PATH,
+// which is only true running inside an actual devcontainer whose bind mount
+// root literally IS that path. Exporting the two variables from a bare-host
+// shell does not satisfy that containment check -- `from` still resolves to
+// this real checkout, not under /workspace -- so repoRoot() falls through to
+// its `.git`-ancestor branch and returns the unchanged host path, hostPath()
+// finds nothing to translate, and the precondition above is what fails
+// first. Running these three unattended would take an actual devcontainer
+// bind-mounting this checkout at the path CONTAINER_WORKSPACE_PATH names --
+// not merely exporting the two variables -- and this project has no such
+// devcontainer (host-developed by design). The fourth failure observed in
+// that same gated run ("containerize safety net: a grant whose epoch_file
+// translates outside the workspace is refused...", :2813, NOT one of these
+// three and not itself gated) is corroborating evidence for the identical
+// mechanism one level removed: containerpath.ts's own module-scope-cached
+// WORKSPACE_ROOT can't resolve inside the fictional /workspace either, so
+// its host-root heuristic stops recognising the real host root as a match
+// at all. That test is correct and unchanged in every run this suite
+// actually performs (default, and `npm run test:automated`); it is named
+// here only as evidence, not as a new gate.
+//
+// The gate therefore stays, and this reason names the exact local command
+// that satisfies it: run this file directly with both variables set in this
+// process's own environment (`CONTAINER_WORKSPACE_PATH=... HOST_WORKSPACE_
+// PATH=... node --test vice-proxy.test.ts`), from inside a real devcontainer
+// -- which still fails today's precondition on a bare host, for the reason
+// measured above. The set of files still gating on this WORKSPACE_ENV idiom
+// is enumerated by name (this file, and only this file) in
+// ci-guardrails.test.mjs, which fails if that ledger and this file's actual
+// state ever drift apart.
 const WORKSPACE_ENV = Boolean(process.env.CONTAINER_WORKSPACE_PATH && process.env.HOST_WORKSPACE_PATH);
 const WORKSPACE_ENV_SKIP_REASON =
   "requires CONTAINER_WORKSPACE_PATH and HOST_WORKSPACE_PATH set in this process's own environment, running " +
