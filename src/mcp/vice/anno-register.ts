@@ -62,20 +62,6 @@
 // `module-classification.ts` gives: importing a `.test.ts` module for its
 // exports also re-runs every `test(...)` it registers, as an import side effect.
 // This module imports nothing at all.
-//
-// NOT LISTED IN `package.json`'s `files[]`, and therefore never published in
-// either npm tarball. This register's whole reason to exist is a mechanically
-// checked, per-verb requirement-id traceability matrix -- every entry names a
-// real, currently-declared requirement id, and the enforcing test in
-// `anno-register.test.ts` fails the moment an id is not one this project's own
-// requirements documents declare. That check is only meaningful maintainer-side,
-// against a live requirements tree, and it would dangle for any consumer who
-// installed the package: a requirement id is a token with no document to
-// resolve it once it leaves this repository. `module-classification.ts` already
-// carries the identical shape (a requirement-cited traceability record, kept out
-// of `files[]` for the same reason) and this module follows that established
-// pattern rather than inventing a second one. The verbs this file explains
-// remain fully shipped, unaffected -- only the WHY-record stays internal.
 
 /** One cited consumer of a registered verb. See the header's citation
  * discipline: `path` is repository-root-relative, `symbol` is a citation and

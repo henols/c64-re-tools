@@ -87,6 +87,7 @@
     "anno-tools.ts",
     "anno-derive.ts",
     "anno-details.ts",
+    "anno-register.ts",
     "anno-import.ts",
     "anno-join.ts",
     "anno-bank.ts",
