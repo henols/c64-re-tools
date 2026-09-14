@@ -271,7 +271,7 @@
     {
       "number": "51",
       "name": "Planning Vocabulary Out of the Shipped Server",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "number": "52",
@@ -299,5 +299,5 @@
     "label": "Advance to the next step",
     "reason": "Phase 51 of 11 · 64% · executing"
   },
-  "updated_at": "2026-09-14T11:00:31.855Z"
+  "updated_at": "2026-09-14T11:29:25.339Z"
 }
