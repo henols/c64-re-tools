@@ -240,11 +240,13 @@ its phase details live in `ROADMAP.md` under
 `## v0.6.0 Own the substrate — CLOSED INCOMPLETE (Phase Details)`, below v0.7.0's,
 because Phases 24 and 26 are held with live requirement text.
 
-The Deferred Items ledger below reads **10 open** pending todos, computed
+The Deferred Items ledger below reads **14 open** pending todos, computed
 directly from the count of files in `.planning/todos/pending/` rather than by
 subtraction from a prior figure (it read 0 at the v0.4.0 close; eleven were
-filed after it, then two more since — `capability-registry-manifest-claim-stale`
-and `2026-09-13-vice-proxy-test-leaks-scratch-dirs-into-planning-root`). Five
+filed after it, then `capability-registry-manifest-claim-stale` and
+`2026-09-13-vice-proxy-test-leaks-scratch-dirs-into-planning-root`, and on
+2026-09-14 two more from the skill-installer route survey —
+`installer-skill-provenance-stamp` and `stale-six-skills-count`). Five
 were closed before this update — CR-05 by Phase 34 plan
 34-11, and the Ghidra one-command decompile-wrapper proposal by Phase 36 — and
 **Phase 40 plan 40-07 closed three more**: the `host-tool.mts` never-throws
@@ -2159,6 +2161,8 @@ regression and not this inheritance.
 | testing | 2026-09-13-vice-proxy-test-leaks-scratch-dirs-into-planning-root | minor | Pending |
 | proxy | 2026-09-13-result-chunking-orphaned-by-the-fork-removal | major | Pending |
 | broker | 2026-09-13-incident-record-epoch-after-has-no-producer | major | Pending |
+| installer | installer-skill-provenance-stamp | medium | Pending |
+| docs | stale-six-skills-count | low | Pending |
 
 *The ledger was empty at the v0.4.0 close; every row above was filed after that
 close (one on 2026-08-24, five on 2026-08-26, three on 2026-08-28, one on 2026-08-31, two on
