@@ -17,9 +17,9 @@
 // renderer does.
 //
 // TWO planted-control tests near the end of this file (controls 1 and 2,
-// below) are PERMANENT regression pins for the two automatable refusals
-// recorded (with their own real-store transcripts)
-// in docs/phase45-planted-control-evidence.md. They assert the exit code and
+// below) are PERMANENT regression pins for the two automatable refusals,
+// each one captured once against a real store and pinned rather than
+// re-derived. They assert the exit code and
 // the named literal string, and are deliberately NOT derived from the code
 // path they test -- a future edit that quietly softens either refusal reds
 // this suite.
@@ -464,9 +464,9 @@ test("a full survivor list, non-empty entry-point/referenced-address failures an
 
 // ---------------------------------------------------------------------------
 // PLANTED CONTROLS -- permanent
-// regression pins for the two automatable RED observations recorded, with
-// their own real-store transcripts, in docs/phase45-planted-control-
-// evidence.md. Deliberately NOT derived from the code path they test (the
+// regression pins for the two automatable RED observations, each one
+// captured once against its own real-store transcript. Deliberately NOT
+// derived from the code path they test (the
 // FROZEN-REGISTRY posture this file's own header states): each asserts the
 // exit code and the named literal string a human reading the source would
 // expect, not a re-derivation of `main()`'s own internals. A future edit
@@ -488,9 +488,8 @@ test("PLANTED CONTROL 1 (permanent): omitting --disagreements refuses by name wi
   try {
     // Deliberately a NONEXISTENT store path: control 1's own refusal fires
     // on the ABSENCE of --disagreements, before any file-existence check --
-    // see docs/phase45-planted-control-evidence.md's own captured
-    // transcript, reproduced here as a permanent pin. No real store is
-    // needed for THIS control.
+    // this reproduces a real captured transcript as a permanent pin. No real
+    // store is needed for THIS control.
     exitCode = main(["--store", "/nonexistent/whatever.annostore", "--manifest", "/nonexistent/whatever.json"]);
   } finally {
     console.error = originalError;
@@ -509,8 +508,8 @@ test("PLANTED CONTROL 2 (permanent, anti-vacuity): a fabricated run identity is 
   // no broker: the store is node:sqlite
   // in-process) and non-vacuous: a store with ZERO recorded runs makes
   // EVERY complete-but-non-matching runIdentity a genuine anti-vacuity
-  // refusal, exactly like docs/phase45-planted-control-evidence.md's own
-  // real-store transcript for this same control.
+  // refusal, exactly like this same control's own captured real-store
+  // transcript.
   const { openStore, closeStore, setDataType } = await import("../../../mcp/vice/anno-store.ts");
 
   await withWorkspaceTempDir(async (dir) => {

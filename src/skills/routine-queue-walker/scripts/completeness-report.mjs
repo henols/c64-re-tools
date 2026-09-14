@@ -75,13 +75,15 @@ export class MissingDisagreementInputError extends Error {
 
 /**
  * The frozen survivor prefix set, MIRRORED from
- * `src/mcp/vice/anno-cli.ts`'s own frozen set -- see
- * docs/phase45-wave0-measurements.md for the MEASURED label population this
- * was frozen against. Exported here, separately from the verb's own copy,
- * because this script's own tests must be able to assert on the predicate in
- * isolation, without a live store or a subprocess -- and because this
- * script's own header forbids it from reading a store directly, so it
- * cannot import the verb's copy through anything but a duplicate literal.
+ * `src/mcp/vice/anno-cli.ts`'s own frozen set -- frozen from a real
+ * derivation run (dxa disassemble, then Ghidra import) that measured ZERO
+ * labels written by import alone, confirming the eleven prefixes had
+ * nothing populated to positively test against rather than contradicting
+ * them. Exported here, separately from the verb's own copy, because this
+ * script's own tests must be able to assert on the predicate in isolation,
+ * without a live store or a subprocess -- and because this script's own
+ * header forbids it from reading a store directly, so it cannot import the
+ * verb's copy through anything but a duplicate literal.
  *
  * WHAT NOT TO DO: if the frozen set in `anno-cli.ts` ever changes, this copy
  * moves in the SAME commit, or the two renderers silently disagree about

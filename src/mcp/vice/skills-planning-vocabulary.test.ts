@@ -19,14 +19,26 @@
 // from whatever the tree currently looks like, so a prose repeal alone decays.
 // See `.planning/ENGINEERING_RULES.md` § 21.
 //
-// WHAT THIS GUARD IS NOT. It does not scan `src/mcp/vice/**`. That tree still
-// holds a large legacy population of the same vocabulary in its comments
-// (1659 occurrences across 95 of the 103 shipped modules, MEASURED
-// 2026-09-11). Those are a known, recorded backlog; widening this guard to
-// cover them today would make it red on arrival, and a guard that is red on
-// arrival gets switched off rather than obeyed. It is scoped to the surface
-// where the reference is unresolvable FOR THE READER and where the population
-// is already at zero, so it can hold that line from the first commit.
+// WHAT THIS GUARD SCANS, AS OF THIS WIDENING. It now unions FOUR sources
+// through `shippedScanSurface()` (defined once in `shipped-modules.ts` and
+// shared with `comment-phase-pointers.test.ts`'s own scan): the
+// `src/mcp/vice/` package's `files[]` (directory entries walked recursively,
+// file entries taken directly); the host-bound `.mts` sources behind the
+// generated `resources/` artifacts (`HOST_BOUND_ARTIFACTS`, imported from
+// `build.ts`, never hand-listed); the installer package's `files[]`, with its
+// generated `installer/skills/` mirror skipped -- that directory is
+// regenerated from source 4 below by `installer/scripts/sync-skills.mjs` on
+// every pack, is gitignored and absent on a fresh clone, and every byte it
+// would contain is already scanned at its origin, so no content escapes the
+// scan; and `src/skills/`, this guard's original surface, preserved rather
+// than replaced. `src/mcp/vice/**` was a large legacy population of this
+// same vocabulary in its comments (1659 occurrences across 95 of the 103
+// shipped modules, MEASURED 2026-09-11) that would have made a naive
+// widening red on arrival. The RATCHET below is the mechanism that let this
+// widening land green anyway: every currently-dirty file is pinned at its
+// EXACT measured count rather than exempted, and the pin must fall to zero
+// -- never rise -- as later plans clean each one. It is temporary scaffolding
+// the phase drives to empty, not a permanent carve-out.
 //
 // WHY NOT REUSE docs-dangling-refs.test.ts's FLOW-02 CHECK: that guard is
 // deliberately, permanently scoped to shipped STRING and TEMPLATE LITERALS,
@@ -83,15 +95,17 @@
 // passing suite could mean "the predicate matches nothing at all".
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { dirname, join, relative, sep } from "node:path";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 import { repoRoot } from "./repo-root.ts";
+import { commentByteTotal, extractCommentSpans, shippedScanSurface } from "./shipped-modules.ts";
+import { HOST_BOUND_ARTIFACTS } from "./build.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = repoRoot({ from: HERE });
-const SKILLS_DIR = join(ROOT, "src", "skills");
 
 /** Shipped tests that reach an OPERATOR-SUPPLIED external resource, named by
  * environment variable rather than by a repository path. They are listed here
@@ -116,9 +130,6 @@ const OPERATOR_SUPPLIED_RESOURCE_READERS = Object.freeze([
   },
 ]);
 
-/** Extensions worth reading. Everything a human or an agent reads as text. */
-const TEXT_EXTENSIONS = Object.freeze([".md", ".mjs", ".js", ".ts", ".mts", ".json", ".a", ".asm", ".txt"]);
-
 /** One detected violation. */
 export interface PlanningVocabularyHit {
   readonly line: number;
@@ -140,6 +151,16 @@ const CATEGORIES: readonly Category[] = Object.freeze([
   {
     name: ".planning path",
     pattern: /\.planning\b/g,
+  },
+  {
+    name: "phase evidence document path",
+    // `docs/phase45-wave0-measurements.md`, `docs/phase45-planted-control-
+    // evidence.md` -- a phase-numbered evidence document dangles for every
+    // install just like a bare `.planning/` path: that directory is packed
+    // into the plugin zip (by `git archive HEAD`) but sits in NEITHER npm
+    // tarball, and it smuggles a phase number into a shipped file inside
+    // what reads as a working cross-reference rather than an internal token.
+    pattern: /\bdocs\/phase\d+[a-z0-9-]*(?:\.md)?/gi,
   },
   {
     name: "gsd command or product name",
@@ -228,47 +249,586 @@ export function scanForPlanningVocabulary(content: string): PlanningVocabularyHi
   return hits;
 }
 
-/** Every readable text file under `src/skills/`, repo-relative with POSIX
- * separators. Throws rather than returning empty if the tree is missing -- a
- * silently empty scan is a guard that passes by scanning nothing. */
-function shippedSkillFiles(): string[] {
-  const out: string[] = [];
-  const walk = (dir: string): void => {
-    for (const entry of readdirSync(dir)) {
-      const full = join(dir, entry);
-      if (statSync(full).isDirectory()) {
-        // Scratch directories are written by other tests running concurrently
-        // against the real tree; they are not shipped content.
-        if (entry.startsWith("zz-scratch") || entry === "node_modules") continue;
-        walk(full);
-        continue;
-      }
-      if (TEXT_EXTENSIONS.some((e) => entry.endsWith(e))) out.push(relative(ROOT, full).split(sep).join("/"));
-    }
-  };
-  walk(SKILLS_DIR);
-  return out.sort();
+/** One module-family partition a RATCHET entry belongs to -- the same seven
+ * names this phase's sweep plans partition by (module family, never by
+ * file and never by citation category; see D-06). */
+type RatchetFamily =
+  | "annotation store / CLI"
+  | "protocol / transport"
+  | "broker"
+  | "host tools"
+  | "other"
+  | "proxy / tool surface"
+  | "installer";
+
+export interface RatchetEntry {
+  readonly file: string;
+  readonly family: RatchetFamily;
+  readonly count: number;
 }
 
-test("the shipped skills tree is non-empty and every SKILL.md is scanned", () => {
-  const files = shippedSkillFiles();
-  assert.ok(files.length >= 40, `expected the skills tree to hold at least 40 text files, found ${files.length} -- a shrunken scan set means this guard is checking less than it reports`);
-  const skillDocs = files.filter((f) => f.endsWith("/SKILL.md"));
-  assert.ok(skillDocs.length >= 9, `expected at least 9 SKILL.md files, found ${skillDocs.length}`);
-});
+/**
+ * TEMPORARY SCAFFOLDING -- must reach EMPTY. One entry per file that carried
+ * planning vocabulary the moment this guard's scan surface widened past
+ * `src/skills/**`, measured through the guard's own predicate
+ * (`scanForPlanningVocabulary()` over `shippedScanSurface()`), never by a
+ * hand-rolled grep and never copied from a planning document.
+ *
+ * THIS IS NOT AN EXEMPTION LIST. Every entry's live hit count is asserted
+ * EQUAL to its pinned count below (see the ratchet test), so an entry here
+ * can neither absorb a NEW citation as collateral (a rise reds) nor keep a
+ * stale allowance after a citation is removed (a fall reds too, unless the
+ * entry is edited in the SAME commit that lowered the file).
+ *
+ * THE ONE RULE FOR EDITING THIS ARRAY: lower a count only together with the
+ * commit that lowered the file; delete the entry the moment its count
+ * reaches zero; never raise one. A path exemption was tried once for a
+ * different guard in this file and withdrawn after it silently covered five
+ * unrelated citations as collateral (ENGINEERING_RULES.md § 21.1) -- pinning
+ * an exact COUNT per file is what a by-path exemption cannot do: it cannot
+ * be satisfied by leaving the file otherwise untouched.
+ *
+ * `family` is one of the seven module-family partitions this phase's sweep
+ * plans work through, never a citation category and never a lone file.
+ */
+const RATCHET: readonly RatchetEntry[] = Object.freeze([
+  { file: "installer/bin/cli.mjs", family: "installer", count: 4 },
+  { file: "src/mcp/vice/THIRD-PARTY-NOTICES.md", family: "other", count: 11 },
+  { file: "src/mcp/vice/anno-bank.ts", family: "annotation store / CLI", count: 16 },
+  { file: "src/mcp/vice/anno-cli.ts", family: "annotation store / CLI", count: 164 },
+  { file: "src/mcp/vice/anno-confidence.ts", family: "annotation store / CLI", count: 2 },
+  { file: "src/mcp/vice/anno-coverage.ts", family: "annotation store / CLI", count: 51 },
+  { file: "src/mcp/vice/anno-derive.ts", family: "annotation store / CLI", count: 6 },
+  { file: "src/mcp/vice/anno-details.ts", family: "annotation store / CLI", count: 3 },
+  { file: "src/mcp/vice/anno-enum-gen.ts", family: "annotation store / CLI", count: 66 },
+  { file: "src/mcp/vice/anno-export-asm.ts", family: "annotation store / CLI", count: 146 },
+  { file: "src/mcp/vice/anno-graphics.ts", family: "annotation store / CLI", count: 18 },
+  { file: "src/mcp/vice/anno-hazard-report.ts", family: "annotation store / CLI", count: 2 },
+  { file: "src/mcp/vice/anno-import.ts", family: "annotation store / CLI", count: 21 },
+  { file: "src/mcp/vice/anno-index.ts", family: "annotation store / CLI", count: 6 },
+  { file: "src/mcp/vice/anno-join.ts", family: "annotation store / CLI", count: 50 },
+  { file: "src/mcp/vice/anno-memmap-render.ts", family: "annotation store / CLI", count: 25 },
+  { file: "src/mcp/vice/anno-provenance-ledger.ts", family: "annotation store / CLI", count: 4 },
+  { file: "src/mcp/vice/anno-regbits-gen.ts", family: "annotation store / CLI", count: 13 },
+  { file: "src/mcp/vice/anno-register.ts", family: "annotation store / CLI", count: 63 },
+  { file: "src/mcp/vice/anno-store-export.ts", family: "annotation store / CLI", count: 12 },
+  { file: "src/mcp/vice/anno-store.ts", family: "annotation store / CLI", count: 126 },
+  { file: "src/mcp/vice/anno-symbols.ts", family: "annotation store / CLI", count: 11 },
+  { file: "src/mcp/vice/anno-tools.ts", family: "annotation store / CLI", count: 85 },
+  { file: "src/mcp/vice/anno-types.ts", family: "annotation store / CLI", count: 50 },
+  { file: "src/mcp/vice/backend-detect.mts", family: "broker", count: 28 },
+  { file: "src/mcp/vice/block-class.ts", family: "other", count: 3 },
+  { file: "src/mcp/vice/broker-control.mts", family: "broker", count: 80 },
+  { file: "src/mcp/vice/broker-epoch.mts", family: "broker", count: 2 },
+  { file: "src/mcp/vice/broker-kill.mts", family: "broker", count: 31 },
+  { file: "src/mcp/vice/broker-launch.mts", family: "broker", count: 186 },
+  { file: "src/mcp/vice/broker-state.mts", family: "broker", count: 43 },
+  { file: "src/mcp/vice/build.ts", family: "other", count: 2 },
+  { file: "src/mcp/vice/capture-predicate.ts", family: "other", count: 14 },
+  { file: "src/mcp/vice/channel-lock.ts", family: "protocol / transport", count: 3 },
+  { file: "src/mcp/vice/container-guard.mts", family: "broker", count: 3 },
+  { file: "src/mcp/vice/containerpath.ts", family: "other", count: 7 },
+  { file: "src/mcp/vice/disasm-decoder.ts", family: "other", count: 21 },
+  { file: "src/mcp/vice/disasm-opcodes.ts", family: "other", count: 20 },
+  { file: "src/mcp/vice/disasm-renderer.ts", family: "other", count: 22 },
+  { file: "src/mcp/vice/evid-ingest.ts", family: "annotation store / CLI", count: 9 },
+  { file: "src/mcp/vice/evid-reconcile.ts", family: "annotation store / CLI", count: 14 },
+  { file: "src/mcp/vice/ghidra-project.mts", family: "host tools", count: 64 },
+  { file: "src/mcp/vice/host-tool-client.ts", family: "host tools", count: 11 },
+  { file: "src/mcp/vice/host-tool.mts", family: "host tools", count: 325 },
+  { file: "src/mcp/vice/hostpath.ts", family: "other", count: 2 },
+  { file: "src/mcp/vice/incident-record.ts", family: "other", count: 12 },
+  { file: "src/mcp/vice/install-resources.ts", family: "other", count: 22 },
+  { file: "src/mcp/vice/memmap-lookup.ts", family: "other", count: 21 },
+  { file: "src/mcp/vice/prg-image.ts", family: "other", count: 7 },
+  { file: "src/mcp/vice/repo-root.ts", family: "other", count: 12 },
+  { file: "src/mcp/vice/resources/backend-detect.mjs", family: "broker", count: 16 },
+  { file: "src/mcp/vice/resources/broker-control.mjs", family: "broker", count: 38 },
+  { file: "src/mcp/vice/resources/broker-epoch.mjs", family: "broker", count: 1 },
+  { file: "src/mcp/vice/resources/broker-kill.mjs", family: "broker", count: 30 },
+  { file: "src/mcp/vice/resources/broker-launch.mjs", family: "broker", count: 138 },
+  { file: "src/mcp/vice/resources/broker-state.mjs", family: "broker", count: 8 },
+  { file: "src/mcp/vice/resources/container-guard.mjs", family: "broker", count: 3 },
+  { file: "src/mcp/vice/resources/ghidra-project.mjs", family: "host tools", count: 59 },
+  { file: "src/mcp/vice/resources/host-tool.mjs", family: "host tools", count: 238 },
+  { file: "src/mcp/vice/resources/vice-broker.mjs", family: "broker", count: 126 },
+  { file: "src/mcp/vice/stock-address.ts", family: "other", count: 20 },
+  { file: "src/mcp/vice/stock-checkpoints.ts", family: "other", count: 28 },
+  { file: "src/mcp/vice/stock-cia.ts", family: "other", count: 26 },
+  { file: "src/mcp/vice/stock-condition.ts", family: "other", count: 13 },
+  { file: "src/mcp/vice/stock-connect.ts", family: "protocol / transport", count: 42 },
+  { file: "src/mcp/vice/stock-derived.ts", family: "other", count: 59 },
+  { file: "src/mcp/vice/stock-diagnose.ts", family: "other", count: 49 },
+  { file: "src/mcp/vice/stock-disassemble.ts", family: "other", count: 21 },
+  { file: "src/mcp/vice/stock-dispatch.ts", family: "proxy / tool surface", count: 101 },
+  { file: "src/mcp/vice/stock-execution.ts", family: "other", count: 24 },
+  { file: "src/mcp/vice/stock-handler.ts", family: "proxy / tool surface", count: 12 },
+  { file: "src/mcp/vice/stock-input.ts", family: "other", count: 8 },
+  { file: "src/mcp/vice/stock-machine.ts", family: "other", count: 19 },
+  { file: "src/mcp/vice/stock-memory-search.ts", family: "other", count: 24 },
+  { file: "src/mcp/vice/stock-memory.ts", family: "other", count: 20 },
+  { file: "src/mcp/vice/stock-paths.ts", family: "other", count: 12 },
+  { file: "src/mcp/vice/stock-petscii.ts", family: "other", count: 2 },
+  { file: "src/mcp/vice/stock-protocol.ts", family: "protocol / transport", count: 102 },
+  { file: "src/mcp/vice/stock-recycle.ts", family: "other", count: 15 },
+  { file: "src/mcp/vice/stock-registers.ts", family: "other", count: 11 },
+  { file: "src/mcp/vice/stock-reproducible-run.ts", family: "other", count: 9 },
+  { file: "src/mcp/vice/stock-run-until.ts", family: "other", count: 23 },
+  { file: "src/mcp/vice/stock-runstate.ts", family: "other", count: 13 },
+  { file: "src/mcp/vice/stock-sprites.ts", family: "other", count: 20 },
+  { file: "src/mcp/vice/stock-symbols.ts", family: "other", count: 16 },
+  { file: "src/mcp/vice/stock-timing.ts", family: "other", count: 23 },
+  { file: "src/mcp/vice/stock-vicii.ts", family: "other", count: 7 },
+  { file: "src/mcp/vice/stop-oracle.ts", family: "other", count: 5 },
+  { file: "src/mcp/vice/text-capability-probe.ts", family: "protocol / transport", count: 23 },
+  { file: "src/mcp/vice/text-connect.ts", family: "protocol / transport", count: 13 },
+  { file: "src/mcp/vice/text-protocol.ts", family: "protocol / transport", count: 43 },
+  { file: "src/mcp/vice/text-tools.ts", family: "protocol / transport", count: 31 },
+  { file: "src/mcp/vice/textmon-backtrace.ts", family: "protocol / transport", count: 10 },
+  { file: "src/mcp/vice/textmon-cpuhistory.ts", family: "protocol / transport", count: 10 },
+  { file: "src/mcp/vice/textmon-memmap.ts", family: "protocol / transport", count: 9 },
+  { file: "src/mcp/vice/textmon-profile.ts", family: "protocol / transport", count: 14 },
+  { file: "src/mcp/vice/textmon-registers.ts", family: "protocol / transport", count: 26 },
+  { file: "src/mcp/vice/tools-manifest.stock.json", family: "proxy / tool surface", count: 34 },
+  { file: "src/mcp/vice/version.ts", family: "other", count: 10 },
+  { file: "src/mcp/vice/vice-broker-client.ts", family: "proxy / tool surface", count: 99 },
+  { file: "src/mcp/vice/vice-broker.mts", family: "broker", count: 147 },
+  { file: "src/mcp/vice/vice-proxy.ts", family: "proxy / tool surface", count: 107 },
+  { file: "src/mcp/vice/vsf-slice.ts", family: "other", count: 4 },
+]);
 
-test("no shipped skill file contains GSD planning vocabulary (ENGINEERING_RULES § 21.1)", () => {
+/** Sum of every RATCHET entry's pinned count -- reported alongside the
+ * entry count in the failure message below, so a reader sees both how many
+ * files are still dirty and how many citations remain across all of them. */
+const RATCHET_TOTAL = RATCHET.reduce((sum, r) => sum + r.count, 0);
+
+export interface CommentBudgetEntry {
+  readonly file: string;
+  readonly charsInCitations: number;
+  readonly commentBytes: number;
+}
+
+/**
+ * Frozen ONCE, at the moment this guard's scan surface widened -- one entry
+ * per RATCHET file whose extension is `.ts`, `.mts`, `.mjs` or `.js` (the
+ * extensions `extractCommentSpans()` finds real spans in). `resources/*.mjs`
+ * is excluded: those files are rewritten wholesale by the build, so a byte
+ * delta there measures the compiler, not an author. Non-source extensions
+ * (`.md`, `.json`) are excluded too -- the extractor finds no spans there and
+ * the check would be vacuous.
+ *
+ * `charsInCitations` is the sum of `hit.match.length` over that file's scan
+ * AT FREEZE TIME; `commentBytes` is `commentByteTotal(content)`, also at
+ * freeze time. Both stay fixed for the file's remaining time in this array --
+ * they are the BASELINE a later diff is measured against, not a live
+ * re-scan. A file's entry here OUTLIVES its own RATCHET entry once the
+ * ratchet count reaches zero (Task 3 of this plan is the first
+ * demonstration): the budget keeps checking the file exactly when the check
+ * matters most, the moment after its citations are gone and nothing but
+ * discipline stops the NEXT edit from cutting the explanation along with
+ * them. This array is NOT an exemption list either -- it grants no
+ * allowance to anything it names; it is the yardstick a later diff is held
+ * to.
+ */
+const COMMENT_BUDGET_BASELINE: readonly CommentBudgetEntry[] = Object.freeze([
+  { file: "installer/bin/cli.mjs", charsInCitations: 38, commentBytes: 3505 },
+  { file: "src/mcp/vice/anno-bank.ts", charsInCitations: 103, commentBytes: 6620 },
+  { file: "src/mcp/vice/anno-cli.ts", charsInCitations: 1101, commentBytes: 63447 },
+  { file: "src/mcp/vice/anno-confidence.ts", charsInCitations: 8, commentBytes: 6885 },
+  { file: "src/mcp/vice/anno-coverage.ts", charsInCitations: 302, commentBytes: 50526 },
+  { file: "src/mcp/vice/anno-derive.ts", charsInCitations: 40, commentBytes: 14928 },
+  { file: "src/mcp/vice/anno-details.ts", charsInCitations: 18, commentBytes: 4621 },
+  { file: "src/mcp/vice/anno-enum-gen.ts", charsInCitations: 396, commentBytes: 28796 },
+  { file: "src/mcp/vice/anno-export-asm.ts", charsInCitations: 1108, commentBytes: 89492 },
+  { file: "src/mcp/vice/anno-graphics.ts", charsInCitations: 107, commentBytes: 10296 },
+  { file: "src/mcp/vice/anno-hazard-report.ts", charsInCitations: 20, commentBytes: 29241 },
+  { file: "src/mcp/vice/anno-import.ts", charsInCitations: 133, commentBytes: 13799 },
+  { file: "src/mcp/vice/anno-index.ts", charsInCitations: 45, commentBytes: 5123 },
+  { file: "src/mcp/vice/anno-join.ts", charsInCitations: 305, commentBytes: 13158 },
+  { file: "src/mcp/vice/anno-memmap-render.ts", charsInCitations: 148, commentBytes: 17683 },
+  { file: "src/mcp/vice/anno-provenance-ledger.ts", charsInCitations: 34, commentBytes: 15842 },
+  { file: "src/mcp/vice/anno-regbits-gen.ts", charsInCitations: 76, commentBytes: 11096 },
+  { file: "src/mcp/vice/anno-register.ts", charsInCitations: 497, commentBytes: 6737 },
+  { file: "src/mcp/vice/anno-store-export.ts", charsInCitations: 63, commentBytes: 15255 },
+  { file: "src/mcp/vice/anno-store.ts", charsInCitations: 834, commentBytes: 143111 },
+  { file: "src/mcp/vice/anno-symbols.ts", charsInCitations: 82, commentBytes: 10095 },
+  { file: "src/mcp/vice/anno-tools.ts", charsInCitations: 533, commentBytes: 53988 },
+  { file: "src/mcp/vice/anno-types.ts", charsInCitations: 432, commentBytes: 67082 },
+  { file: "src/mcp/vice/backend-detect.mts", charsInCitations: 207, commentBytes: 14206 },
+  { file: "src/mcp/vice/block-class.ts", charsInCitations: 20, commentBytes: 9802 },
+  { file: "src/mcp/vice/broker-control.mts", charsInCitations: 586, commentBytes: 29679 },
+  { file: "src/mcp/vice/broker-epoch.mts", charsInCitations: 8, commentBytes: 4750 },
+  { file: "src/mcp/vice/broker-kill.mts", charsInCitations: 177, commentBytes: 20920 },
+  { file: "src/mcp/vice/broker-launch.mts", charsInCitations: 1430, commentBytes: 67489 },
+  { file: "src/mcp/vice/broker-state.mts", charsInCitations: 307, commentBytes: 24756 },
+  { file: "src/mcp/vice/build.ts", charsInCitations: 32, commentBytes: 6770 },
+  { file: "src/mcp/vice/capture-predicate.ts", charsInCitations: 75, commentBytes: 17142 },
+  { file: "src/mcp/vice/channel-lock.ts", charsInCitations: 22, commentBytes: 10725 },
+  { file: "src/mcp/vice/container-guard.mts", charsInCitations: 19, commentBytes: 4993 },
+  { file: "src/mcp/vice/containerpath.ts", charsInCitations: 34, commentBytes: 7346 },
+  { file: "src/mcp/vice/disasm-decoder.ts", charsInCitations: 157, commentBytes: 6507 },
+  { file: "src/mcp/vice/disasm-opcodes.ts", charsInCitations: 144, commentBytes: 12588 },
+  { file: "src/mcp/vice/disasm-renderer.ts", charsInCitations: 109, commentBytes: 7824 },
+  { file: "src/mcp/vice/evid-ingest.ts", charsInCitations: 112, commentBytes: 7588 },
+  { file: "src/mcp/vice/evid-reconcile.ts", charsInCitations: 111, commentBytes: 11963 },
+  { file: "src/mcp/vice/ghidra-project.mts", charsInCitations: 480, commentBytes: 27319 },
+  { file: "src/mcp/vice/host-tool-client.ts", charsInCitations: 81, commentBytes: 10538 },
+  { file: "src/mcp/vice/host-tool.mts", charsInCitations: 2478, commentBytes: 88550 },
+  { file: "src/mcp/vice/hostpath.ts", charsInCitations: 34, commentBytes: 7058 },
+  { file: "src/mcp/vice/incident-record.ts", charsInCitations: 102, commentBytes: 4060 },
+  { file: "src/mcp/vice/install-resources.ts", charsInCitations: 109, commentBytes: 16792 },
+  { file: "src/mcp/vice/memmap-lookup.ts", charsInCitations: 152, commentBytes: 8071 },
+  { file: "src/mcp/vice/prg-image.ts", charsInCitations: 42, commentBytes: 5755 },
+  { file: "src/mcp/vice/repo-root.ts", charsInCitations: 92, commentBytes: 13809 },
+  { file: "src/mcp/vice/stock-address.ts", charsInCitations: 133, commentBytes: 4789 },
+  { file: "src/mcp/vice/stock-checkpoints.ts", charsInCitations: 187, commentBytes: 13224 },
+  { file: "src/mcp/vice/stock-cia.ts", charsInCitations: 139, commentBytes: 12057 },
+  { file: "src/mcp/vice/stock-condition.ts", charsInCitations: 58, commentBytes: 11059 },
+  { file: "src/mcp/vice/stock-connect.ts", charsInCitations: 341, commentBytes: 20739 },
+  { file: "src/mcp/vice/stock-derived.ts", charsInCitations: 422, commentBytes: 8172 },
+  { file: "src/mcp/vice/stock-diagnose.ts", charsInCitations: 314, commentBytes: 29314 },
+  { file: "src/mcp/vice/stock-disassemble.ts", charsInCitations: 112, commentBytes: 4900 },
+  { file: "src/mcp/vice/stock-dispatch.ts", charsInCitations: 724, commentBytes: 33858 },
+  { file: "src/mcp/vice/stock-execution.ts", charsInCitations: 159, commentBytes: 7806 },
+  { file: "src/mcp/vice/stock-handler.ts", charsInCitations: 65, commentBytes: 7412 },
+  { file: "src/mcp/vice/stock-input.ts", charsInCitations: 42, commentBytes: 5529 },
+  { file: "src/mcp/vice/stock-machine.ts", charsInCitations: 99, commentBytes: 6510 },
+  { file: "src/mcp/vice/stock-memory-search.ts", charsInCitations: 142, commentBytes: 7153 },
+  { file: "src/mcp/vice/stock-memory.ts", charsInCitations: 115, commentBytes: 8818 },
+  { file: "src/mcp/vice/stock-paths.ts", charsInCitations: 64, commentBytes: 7263 },
+  { file: "src/mcp/vice/stock-petscii.ts", charsInCitations: 28, commentBytes: 3933 },
+  { file: "src/mcp/vice/stock-protocol.ts", charsInCitations: 1123, commentBytes: 50548 },
+  { file: "src/mcp/vice/stock-recycle.ts", charsInCitations: 103, commentBytes: 17611 },
+  { file: "src/mcp/vice/stock-registers.ts", charsInCitations: 92, commentBytes: 9156 },
+  { file: "src/mcp/vice/stock-reproducible-run.ts", charsInCitations: 53, commentBytes: 25175 },
+  { file: "src/mcp/vice/stock-run-until.ts", charsInCitations: 143, commentBytes: 13870 },
+  { file: "src/mcp/vice/stock-runstate.ts", charsInCitations: 56, commentBytes: 5542 },
+  { file: "src/mcp/vice/stock-sprites.ts", charsInCitations: 107, commentBytes: 12542 },
+  { file: "src/mcp/vice/stock-symbols.ts", charsInCitations: 92, commentBytes: 10553 },
+  { file: "src/mcp/vice/stock-timing.ts", charsInCitations: 182, commentBytes: 14343 },
+  { file: "src/mcp/vice/stock-vicii.ts", charsInCitations: 39, commentBytes: 5617 },
+  { file: "src/mcp/vice/stop-oracle.ts", charsInCitations: 28, commentBytes: 6302 },
+  { file: "src/mcp/vice/text-capability-probe.ts", charsInCitations: 127, commentBytes: 21964 },
+  { file: "src/mcp/vice/text-connect.ts", charsInCitations: 81, commentBytes: 4505 },
+  { file: "src/mcp/vice/text-protocol.ts", charsInCitations: 253, commentBytes: 24836 },
+  { file: "src/mcp/vice/text-tools.ts", charsInCitations: 212, commentBytes: 19773 },
+  { file: "src/mcp/vice/textmon-backtrace.ts", charsInCitations: 60, commentBytes: 7187 },
+  { file: "src/mcp/vice/textmon-cpuhistory.ts", charsInCitations: 58, commentBytes: 6936 },
+  { file: "src/mcp/vice/textmon-memmap.ts", charsInCitations: 52, commentBytes: 10064 },
+  { file: "src/mcp/vice/textmon-profile.ts", charsInCitations: 129, commentBytes: 10584 },
+  { file: "src/mcp/vice/textmon-registers.ts", charsInCitations: 167, commentBytes: 15010 },
+  { file: "src/mcp/vice/version.ts", charsInCitations: 30, commentBytes: 7681 },
+  { file: "src/mcp/vice/vice-broker-client.ts", charsInCitations: 749, commentBytes: 36869 },
+  { file: "src/mcp/vice/vice-broker.mts", charsInCitations: 1069, commentBytes: 53275 },
+  { file: "src/mcp/vice/vice-proxy.ts", charsInCitations: 861, commentBytes: 68226 },
+  { file: "src/mcp/vice/vsf-slice.ts", charsInCitations: 27, commentBytes: 17182 },
+]);
+
+/**
+ * Provisional slack allowance for the comment-byte-budget inequality below,
+ * in characters. PROVISIONAL: chosen from this task's own diff (the
+ * `routine-queue-walker` sweep earlier in this same commit measured a
+ * worst-case single file losing 129 comment characters while removing 149
+ * citation characters -- already inside a zero-slack margin) plus a small
+ * round-number margin for a rewrite that legitimately needs a few characters
+ * of connective prose the citation itself did not carry. This value is
+ * finalised in a later task of this same plan against `installer/bin/cli.mjs`
+ * -- the densest real diff in the phase -- and is not yet the LAST word on
+ * the number; treat it as a floor for what "the reason survives" enforces,
+ * not a target.
+ */
+const COMMENT_BUDGET_SLACK = 20;
+
+/** Every planning-vocabulary offender across the widened scan surface,
+ * formatted one line per hit -- the single assertion body BOTH the real
+ * scan test and the planted control below call, so that control proves the
+ * real code path rather than a parallel one. Unfiltered by RATCHET: this is
+ * every hit `scanForPlanningVocabulary()` reports, not the mismatches
+ * against the ledger (see `ratchetMismatches()` below for that). */
+export function planningVocabularyOffenders(root: string): string[] {
   const offenders: string[] = [];
-  for (const file of shippedSkillFiles()) {
-    const hits = scanForPlanningVocabulary(readFileSync(join(ROOT, file), "utf8"));
+  for (const file of shippedScanSurface(root)) {
+    const hits = scanForPlanningVocabulary(readFileSync(join(root, file), "utf8"));
     for (const h of hits) offenders.push(`${file}:${h.line}: [${h.category}] "${h.match}" -- ${h.text}`);
   }
+  return offenders;
+}
+
+/** One file whose live planning-vocabulary hit count disagrees with its
+ * RATCHET pin (or, for a file with no entry, is non-zero). `correction` is a
+ * ready-to-paste `RATCHET` entry line carrying the file's CURRENT measured
+ * values -- printed so a sweep plan's executor pastes a number the guard
+ * itself reported, never one guessed or copied from a planning document. */
+interface RatchetMismatch {
+  readonly file: string;
+  readonly pinned: number;
+  readonly live: number;
+  readonly family: RatchetFamily;
+  readonly correction: string;
+}
+
+/** Computes every RATCHET disagreement for `root`, against `ratchet` --
+ * `ratchet` is a parameter (not always the module-level `RATCHET`) so the
+ * exactness test below can drive this against a synthetic ledger without
+ * touching the real frozen array. For every file `shippedScanSurface(root)`
+ * returns: a RATCHET entry's live count must EQUAL its pin; a file with NO
+ * entry must scan at zero. Both directions are checked by the same equality,
+ * which is the point -- a pin can neither absorb a new citation (equality
+ * fails when live > pinned) nor carry stale slack after a site clears
+ * (equality fails when live < pinned too). */
+function ratchetMismatches(root: string, ratchet: readonly RatchetEntry[]): RatchetMismatch[] {
+  const byFile = new Map(ratchet.map((r) => [r.file, r]));
+  const mismatches: RatchetMismatch[] = [];
+  for (const file of shippedScanSurface(root)) {
+    const hits = scanForPlanningVocabulary(readFileSync(join(root, file), "utf8"));
+    const entry = byFile.get(file);
+    const pinned = entry?.count ?? 0;
+    if (hits.length === pinned) continue;
+    const family = entry?.family ?? "other";
+    mismatches.push({
+      file,
+      pinned,
+      live: hits.length,
+      family,
+      correction: `  { file: ${JSON.stringify(file)}, family: ${JSON.stringify(family)}, count: ${hits.length} },`,
+    });
+  }
+  return mismatches;
+}
+
+/** One file whose live comment-byte total lost more than the citation
+ * characters removed from it (plus slack), against its COMMENT_BUDGET_BASELINE
+ * entry. `correction` is a ready-to-paste `COMMENT_BUDGET_BASELINE` line
+ * carrying the file's CURRENT measured values. */
+interface BudgetViolation {
+  readonly file: string;
+  readonly baselineCitationChars: number;
+  readonly baselineCommentBytes: number;
+  readonly liveCitationChars: number;
+  readonly liveCommentBytes: number;
+  readonly commentBytesLost: number;
+  readonly citationCharsRemoved: number;
+  readonly correction: string;
+}
+
+/** Computes every comment-budget violation for `root`, against `baseline` --
+ * a parameter for the same reason `ratchetMismatches()` takes one. For every
+ * baseline entry: `entry.commentBytes - commentByteTotal(now)` (comment
+ * characters LOST) must be `<=` `entry.charsInCitations - charsInCitations(now)
+ * + slack` (citation characters REMOVED, plus slack). One-directional by
+ * construction: a file whose comments GREW trivially satisfies this; only a
+ * file that lost MORE comment volume than the citations it shed is a
+ * violation. */
+function commentBudgetViolations(
+  root: string,
+  baseline: readonly CommentBudgetEntry[],
+  slack: number,
+): BudgetViolation[] {
+  const violations: BudgetViolation[] = [];
+  for (const entry of baseline) {
+    const content = readFileSync(join(root, entry.file), "utf8");
+    const liveCommentBytes = commentByteTotal(content);
+    const liveHits = scanForPlanningVocabulary(content);
+    const liveCitationChars = liveHits.reduce((sum, h) => sum + h.match.length, 0);
+    const commentBytesLost = entry.commentBytes - liveCommentBytes;
+    const citationCharsRemoved = entry.charsInCitations - liveCitationChars;
+    if (commentBytesLost <= citationCharsRemoved + slack) continue;
+    violations.push({
+      file: entry.file,
+      baselineCitationChars: entry.charsInCitations,
+      baselineCommentBytes: entry.commentBytes,
+      liveCitationChars,
+      liveCommentBytes,
+      commentBytesLost,
+      citationCharsRemoved,
+      correction: `  { file: ${JSON.stringify(entry.file)}, charsInCitations: ${liveCitationChars}, commentBytes: ${liveCommentBytes} },`,
+    });
+  }
+  return violations;
+}
+
+test("the widened scan surface is non-empty across all four contributing sources", () => {
+  const surface = shippedScanSurface(ROOT);
+  // Floor set BELOW what this task actually measured (158 paths) -- never a
+  // floor equal to a number nobody measured (ENGINEERING_RULES.md § 6).
+  assert.ok(surface.length >= 150, `expected at least 150 paths in the widened surface, got ${surface.length}`);
+  assert.ok(surface.some((f) => f.startsWith("src/skills/")), "the skills-tree source must be represented");
+  assert.ok(surface.some((f) => f.startsWith("installer/")), "the installer source must be represented");
+  assert.ok(
+    surface.includes("src/mcp/vice/vice-broker.mts"),
+    "a host-bound .mts source that is NOT in vice/package.json's files[] must be unioned in from HOST_BOUND_ARTIFACTS",
+  );
+  assert.ok(
+    surface.includes("src/mcp/vice/README.md"),
+    "a non-.ts files[] entry (shippedTsModules() would drop this) must be present",
+  );
+});
+
+test("no shipped file carries planning vocabulary beyond its pinned ratchet allowance", () => {
+  const mismatches = ratchetMismatches(ROOT, RATCHET);
   assert.deepEqual(
-    offenders,
+    mismatches,
     [],
-    `shipped skills must not reference this project's GSD planning artifacts -- the installing reader has no .planning/ tree and cannot act on any of it.\n` +
-      `Rewrite the fact into plain prose, or drop it. See .planning/ENGINEERING_RULES.md § 21.\n\n` +
-      offenders.join("\n"),
+    `shipped files must not carry planning vocabulary beyond their pinned RATCHET allowance ` +
+      `(pinned total: ${RATCHET_TOTAL} across ${RATCHET.length} files). A file below disagrees with its ` +
+      `pin -- paste its "correction" line into RATCHET verbatim (never guess or copy a number from a ` +
+      `planning document):\n\n` +
+      mismatches
+        .map((m) => `  ${m.file}: pinned ${m.pinned}, live ${m.live}\n${m.correction}`)
+        .join("\n"),
+  );
+});
+
+test("the ratchet pin is exact: a cleared site must be recorded, not left as slack", () => {
+  // Drives ratchetMismatches() -- the SAME function the real assertion above
+  // calls -- against a synthetic tree, never against the real frozen RATCHET
+  // (mutating that array here would be exactly the kind of hand-guessed edit
+  // this whole ledger exists to prevent). One planted citation, pinned at
+  // its correct count first (clean), then pinned one too HIGH and one too
+  // LOW, proving the equality reds in both directions.
+  withSyntheticShippedTree(
+    {
+      skillFiles: {
+        "some-skill/SKILL.md": ["# A skill page", "Findings tracked via ROADMAP.md.", ""].join("\n"),
+      },
+    },
+    (root) => {
+      const correctlyPinned: RatchetEntry[] = [
+        { file: "src/skills/some-skill/SKILL.md", family: "other", count: 1 },
+      ];
+      assert.deepEqual(
+        ratchetMismatches(root, correctlyPinned),
+        [],
+        "a pin exactly matching the live count must produce no mismatch",
+      );
+
+      const pinnedTooHigh: RatchetEntry[] = [
+        { file: "src/skills/some-skill/SKILL.md", family: "other", count: 2 },
+      ];
+      const highMismatches = ratchetMismatches(root, pinnedTooHigh);
+      assert.equal(highMismatches.length, 1, "a pin one HIGHER than the live count must still mismatch");
+      assert.equal(highMismatches[0]!.live, 1);
+      assert.equal(highMismatches[0]!.pinned, 2);
+
+      const pinnedTooLow: RatchetEntry[] = [
+        { file: "src/skills/some-skill/SKILL.md", family: "other", count: 0 },
+      ];
+      const lowMismatches = ratchetMismatches(root, pinnedTooLow);
+      assert.equal(lowMismatches.length, 1, "a pin one LOWER than the live count -- a cleared site left unrecorded -- must still mismatch");
+      assert.equal(lowMismatches[0]!.live, 1);
+      assert.equal(lowMismatches[0]!.pinned, 0);
+    },
+  );
+});
+
+test("comment volume lost per file stays inside the citation characters removed", () => {
+  const violations = commentBudgetViolations(ROOT, COMMENT_BUDGET_BASELINE, COMMENT_BUDGET_SLACK);
+  assert.deepEqual(
+    violations,
+    [],
+    `a file lost more comment volume than the citation characters removed from it (slack ${COMMENT_BUDGET_SLACK}). ` +
+      `The reason must survive; only the citation goes. Paste the "correction" line into ` +
+      `COMMENT_BUDGET_BASELINE verbatim:\n\n` +
+      violations
+        .map(
+          (v) =>
+            `  ${v.file}: baseline(citations=${v.baselineCitationChars}, comments=${v.baselineCommentBytes}) ` +
+            `live(citations=${v.liveCitationChars}, comments=${v.liveCommentBytes}) ` +
+            `commentBytesLost=${v.commentBytesLost} citationCharsRemoved=${v.citationCharsRemoved}\n${v.correction}`,
+        )
+        .join("\n"),
+  );
+});
+
+/** Builds a throwaway root shaped like `shippedScanSurface()` expects --
+ * `src/mcp/vice/` with a minimal real `package.json` `files[]`, every real
+ * `HOST_BOUND_ARTIFACTS` `.mts` stubbed so source 2 never throws,
+ * `installer/` with a minimal `files[]`, and `src/skills/` populated from
+ * `spec.skillFiles` (a map of repo-relative-to-`src/skills/` path to
+ * content). This is the ONE synthetic-root idiom this guard uses to prove
+ * itself against a real file rather than a string -- the planted control below and
+ * the ratchet-exactness test above both drive through it. `mkdtempSync` +
+ * `try/finally rmSync`, matching this repository's own synthetic-tree
+ * convention (`shipped-modules.test.ts`'s `withSyntheticShippedRoot()`). */
+function withSyntheticShippedTree<T>(
+  spec: { skillFiles: Record<string, string> },
+  fn: (root: string) => T,
+): T {
+  const root = mkdtempSync(join(tmpdir(), "planning-vocab-synthetic-"));
+  try {
+    const viceDir = join(root, "src", "mcp", "vice");
+    mkdirSync(viceDir, { recursive: true });
+    writeFileSync(join(viceDir, "package.json"), JSON.stringify({ files: ["alpha.ts"] }), "utf8");
+    writeFileSync(join(viceDir, "alpha.ts"), "// synthetic\n", "utf8");
+    for (const mjsName of HOST_BOUND_ARTIFACTS) {
+      const mtsAbs = join(viceDir, mjsName.replace(/\.mjs$/, ".mts"));
+      mkdirSync(dirname(mtsAbs), { recursive: true });
+      writeFileSync(mtsAbs, "// synthetic host-bound source\n", "utf8");
+    }
+
+    const installerDir = join(root, "installer");
+    mkdirSync(installerDir, { recursive: true });
+    writeFileSync(join(installerDir, "package.json"), JSON.stringify({ files: ["README.md"] }), "utf8");
+    writeFileSync(join(installerDir, "README.md"), "synthetic installer readme\n", "utf8");
+
+    const skillsDir = join(root, "src", "skills");
+    mkdirSync(skillsDir, { recursive: true });
+    for (const [rel, text] of Object.entries(spec.skillFiles)) {
+      const abs = join(skillsDir, rel);
+      mkdirSync(dirname(abs), { recursive: true });
+      writeFileSync(abs, text, "utf8");
+    }
+
+    return fn(root);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+test("PLANTED CONTROL 3: a citation in a shipped-module-shaped file at a synthetic root reds the real assertion", () => {
+  withSyntheticShippedTree(
+    {
+      skillFiles: {
+        "some-skill/SKILL.md": [
+          "# A skill page",
+          "",
+          "This routine's home is documented in `.planning/RE-FINDINGS.md` -- a",
+          "realistic WHY-header sentence a maintainer could plausibly write, planted",
+          "inside a file named and shaped exactly like a real shipped module.",
+          "",
+        ].join("\n"),
+      },
+    },
+    (root) => {
+      const offenders = planningVocabularyOffenders(root);
+      assert.ok(
+        offenders.some((o) => o.includes("some-skill/SKILL.md") && o.includes(".planning")),
+        `the planted control found nothing -- the widened guard is vacuous on its own scan surface: ${JSON.stringify(offenders)}`,
+      );
+    },
+  );
+});
+
+test("PLANTED CONTROL 3 (negative): the same synthetic tree, clean, reds nothing", () => {
+  withSyntheticShippedTree(
+    {
+      skillFiles: {
+        "some-skill/SKILL.md": [
+          "# A skill page",
+          "",
+          "This routine's home is documented in the project's own notes, kept",
+          "alongside the code that implements it.",
+          "",
+        ].join("\n"),
+      },
+    },
+    (root) => {
+      assert.deepEqual(
+        planningVocabularyOffenders(root),
+        [],
+        "the negative control must report zero offenders -- otherwise the guard is finding something in every synthetic tree regardless of content",
+      );
+    },
   );
 });
 
@@ -300,6 +860,7 @@ test("PLANTED CONTROL 1: a synthetic skill page carrying each category is caught
     "# A skill page",
     "Findings go in `.planning/RE-FINDINGS.md` at the moment you find them.",
     "File-changing work enters through a GSD command (`/gsd-quick`).",
+    "See docs/phase45-wave0-measurements.md for the measurement this rests on.",
     "This was withdrawn in Phase 34, plan 34-08.",
     "Per D-05 the bytes are never edited, and G-40-1 reopened it.",
     "The seam contract is SEAM-02.",

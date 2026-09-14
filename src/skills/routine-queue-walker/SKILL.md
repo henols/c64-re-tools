@@ -89,8 +89,8 @@ line comment. That is the only test; do not guess from the label name.
    list with `anno_get_cross_references` (a generous `max_results` — this is
    also the call that fills in "called from" when the entry is written up in
    Phase 2.2). Every one of these targets is a routine candidate **regardless
-   of whether it carries any label at all**. `docs/phase45-wave0-
-   measurements.md`'s own MEASUREMENT A found that a purely dxa/Ghidra-derived
+   of whether it carries any label at all**. A real measured derivation run
+   (dxa disassemble, then Ghidra import) found that a purely dxa/Ghidra-derived
    store carries ZERO labels of any shape — derivation writes typed ranges and
    cross-references, never names — so a queue built only from Candidate source
    B below finds nothing to do on such a store and silently reports a clean,
@@ -160,7 +160,7 @@ OS variable).
    per that data type's own schema distinction), OR referenced from a code
    range while NOT itself sitting inside one. Every one of these is a symbol
    candidate **regardless of whether it carries any label at all**.
-   `docs/phase45-wave0-measurements.md`'s own MEASUREMENT A found that a
+   The same measured derivation run found that a
    purely dxa/Ghidra-derived store carries ZERO labels of any shape, so
    Candidate source B below finds nothing to do on such a store and silently
    reports a clean, empty queue on a program nothing has been named in yet.
