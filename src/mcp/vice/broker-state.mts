@@ -1,11 +1,11 @@
 // broker-state.mts
 //
-// C4 (complete, plan 02): the in-process state that replaces six on-disk
-// locations -- two Maps plus a process-scoped Set, the 6600 port band
-// (D-18), the full port-scan allocator, and the three running counts
-// (countReady/countTotal/countLaunching) every launch path consults. Plan
-// 01 left this module minimal (state shape + a single-candidate port probe
-// only); this completes it.
+// The in-process state that replaces six on-disk
+// locations -- two Maps plus a process-scoped Set, the 6600 port band,
+// the full port-scan allocator, and the three running counts
+// (countReady/countTotal/countLaunching) every launch path consults. An
+// earlier revision of this module was minimal (state shape + a
+// single-candidate port probe only); this completes it.
 //
 // BrokerDeps is the injectable spawn/clock/readiness-probe/port-probe seam
 // every launch, kill and probe test uses -- an architectural feature from
@@ -22,7 +22,7 @@ import { createServer } from "node:net";
 import type { LaunchProfile } from "./broker-launch.mjs";
 
 // ---------------------------------------------------------------------------
-// MonitorChannel (plan 41-03, D-14): exactly two channels exist -- stock VICE
+// MonitorChannel: exactly two channels exist -- stock VICE
 // exposes precisely the binary monitor and the `-remotemonitor` text
 // channel -- and this project has no plan to add a third. Frozen so a
 // consumer cannot accidentally push a third value onto it at runtime.
@@ -54,14 +54,14 @@ export interface InstanceRecord {
   viceArgs: string[];
   dryRun: boolean;
   // ------------------------------------------------------------------
-  // Plan 03 (C2/D-23): the per-child supervisor's own bookkeeping fields.
+  // The per-child supervisor's own bookkeeping fields.
   // Optional -- a record created through a path that does not supervise
   // (e.g. a caller with its own lifecycle) remains a valid InstanceRecord
   // without them; broker-launch.mts's superviseChild() is the one writer
   // that always sets all five together, immediately after every launch.
   // ------------------------------------------------------------------
   /** The current epoch integer for this instance -- mirrored into the
-   * epoch.json record broker-epoch.mts writes (D-04). */
+   * epoch.json record broker-epoch.mts writes. */
   epoch?: number;
   /** Set BEFORE any signal is sent to this instance's child (T-01.6.2-21)
    * -- the exit handler reads this to distinguish a broker-ordered death
@@ -110,9 +110,8 @@ export interface InstanceRecord {
    * field is derived from, so the two can never disagree. */
   logPath?: string;
   // ------------------------------------------------------------------
-  // Plan 05 (BROK-02/PROTO-08, D-13/D-15), PROMOTED to a per-channel map by
-  // plan 41-03 (D-14): exclusive monitor-socket ownership, enforced
-  // broker-side, now keyed by MonitorChannel. NON-OPTIONAL -- every record
+  // Exclusive monitor-socket ownership, promoted to a per-channel map,
+  // enforced broker-side, keyed by MonitorChannel. NON-OPTIONAL -- every record
   // carries a `monitorClients` object from construction
   // (spawnAndRecordInstance() in broker-launch.mts defaults it to `{}`), so
   // "no claim on any channel" is an EMPTY MAP, never an absent field --
@@ -138,16 +137,16 @@ export interface InstanceRecord {
   // existing grant as already solving exclusive monitor-client ownership is
   // the mistake this comment exists to head off.
   //
-  // MONITOR-OWNERSHIP DECISION (plan 41-03, D-14): the holder map is keyed
+  // MONITOR-OWNERSHIP DECISION: the holder map is keyed
   // by channel ("binary" | "text", MonitorChannel above). Both channels may
   // be claimed SIMULTANEOUSLY by the SAME grant, and claiming one channel
   // never evicts, and is never refused by, the other channel's holder. This
   // map is bookkeeping for SOCKET OWNERSHIP ONLY -- no halting operation
   // anywhere in this tree consults it; cross-channel serialization of
-  // halting operations is entirely channel-lock.ts's in-process mutex's job
-  // (Phase 39's `go` verdict, rule R15), never this map's. The
+  // halting operations is entirely channel-lock.ts's in-process mutex's job,
+  // never this map's. The
   // `-remotemonitor` text-monitor port IS dialed (text-connect.ts's
-  // textConnect(), plan 41-01) -- this comment hands no further
+  // textConnect()) -- this comment hands no further
   // discriminator work to a future phase.
   // ------------------------------------------------------------------
   /** Keyed by channel; an entry is set by a successful `monitor_claim` for
@@ -157,8 +156,8 @@ export interface InstanceRecord {
    * client's pid, which this broker cannot observe over TCP. */
   monitorClients: Partial<Record<MonitorChannel, { grantId: string; claimedAt: number; pid: number | null }>>;
   // ------------------------------------------------------------------
-  // Plan 03-04 (DIRECT-06, D-13); made MANDATORY on every stock record by
-  // plan 41-05 (D-16): the SECOND, broker-allocated port stock's
+  // Made MANDATORY on every stock record: the SECOND, broker-allocated
+  // port stock's
   // `-remotemonitor` text monitor binds, alongside `-binarymonitor` on
   // `port` above. PRESENT on every stock record, ABSENT ONLY on the fork --
   // a stock launch that cannot bind a text-monitor port now fails the WHOLE
@@ -169,17 +168,17 @@ export interface InstanceRecord {
   // structural type, not a discriminated union keyed on backend) -- the
   // stock invariant is enforced as a runtime assertion at the one
   // construction site (broker-launch.mts's spawnAndRecordInstance()), not a
-  // type-level claim the fork case would violate. Dialed since plan 41-01
-  // (text-connect.ts's textConnect()) -- see the MONITOR-OWNERSHIP DECISION
+  // type-level claim the fork case would violate. Dialed by
+  // text-connect.ts's textConnect() -- see the MONITOR-OWNERSHIP DECISION
   // banner above for the ownership discipline now governing this socket.
   // ------------------------------------------------------------------
   /** The second, broker-allocated port stock's `-remotemonitor` text
    * monitor binds -- present on every stock record, absent only on the
-   * fork (D-16). See the banner above for the ownership discipline
+   * fork. See the banner above for the ownership discipline
    * governing this socket. */
   remoteMonitorPort?: number;
   // ------------------------------------------------------------------
-  // Phase 33, plan 33-06 (REPRO-05, D-15/D-16): the launch profile this
+  // The launch profile this
   // instance was actually SPAWNED with -- the two additive launch knobs
   // (`warp`, `headless`) buildViceArgs() turned into `-warp` / `-console`.
   // Optional, in exactly the register the Plan 03 block above uses, and for
@@ -187,12 +186,11 @@ export interface InstanceRecord {
   //
   //   1. A record created through a path that requests no profile remains a
   //      valid InstanceRecord without this field -- every pre-33-06 caller
-  //      and every fork launch (plan 41-05, folded todo: the warm-floor
+  //      and every fork launch (the warm-floor
   //      spare this comment used to name here is retired -- there is no
   //      longer a speculative launch path to be profile-less by omission).
   //   2. A broker restarted mid-phase reads state-directory records written
-  //      BEFORE this field existed (33-RESEARCH.md § Runtime State
-  //      Inventory). ABSENT MEANS PROFILE-LESS, so such a broker degrades to
+  //      BEFORE this field existed. ABSENT MEANS PROFILE-LESS, so such a broker degrades to
   //      today's semantics rather than to an error.
   //
   // DO NOT give this field a default value. An explicit `{}` and an absent
@@ -203,7 +201,7 @@ export interface InstanceRecord {
   // an eligibility rule that distinguishes them would refuse warm instances
   // for no reason a caller could see.
   //
-  // WHY IT IS ON THE RECORD AT ALL (D-16): warp is fixed at spawn -- there
+  // WHY IT IS ON THE RECORD AT ALL: warp is fixed at spawn -- there
   // is no runtime `WarpMode` resource on stock at all (vsync.c:220-241,
   // deliberately; measured `err=0x01` OBJECT_MISSING over RESOURCE_GET on
   // 3.9), so a pre-warmed interactive instance CANNOT be retro-warped. The
@@ -244,8 +242,8 @@ export interface GrantRecord {
   /** The pid of the process THIS grant was actually issued for, recorded at
    * grant time (handleAcquire()'s own single state.grants.set() call site,
    * vice-broker.mts). REQUIRED, not optional -- a grant with no identity to
-   * check against is exactly the gap CR-01's blast radius exploited:
-   * handleRelease() used to resolve its kill target purely by CURRENT port
+   * check against is exactly the gap a cross-session-kill blast radius
+   * exploited: handleRelease() used to resolve its kill target purely by CURRENT port
    * occupant (state.instances.get(grant.port)), which is unsafe against ANY
    * event that swaps a port's occupant without also clearing the grant (a
    * concurrent-acquire race, an ordinary crash-and-respawn that frees the
@@ -270,7 +268,7 @@ export interface BrokerState {
    * 2. The second (`-remotemonitor`) port of a live stock instance, added by
    *    broker-launch.mts's acquirePortAndLaunch() -- this one IS released,
    *    by that module's deleteInstanceRecord(), the moment the instance
-   *    holding it is torn down for good (CR-02, 03-REVIEW.md). It survives a
+   *    holding it is torn down for good. It survives a
    *    crash-respawn or a recycle, because the replacement instance reuses the
    *    same second port exactly as it reuses the same primary port.
    *
@@ -304,9 +302,9 @@ export function createBrokerState(): BrokerState {
 // broker-instances.json -- the pure projection of grants+warm instances that
 // write_instances()/read_instance_field() (resources/vice-broker.sh:958-
 // 1043) rebuilt every single pass, with no confirmed consumer outside the
-// bash daemon's own `status` subcommand -- is DROPPED ENTIRELY per D-24.
-// With state in-process and a control plane in place (Phase 01.6.2 plan 01),
-// "what instances exist" becomes a control-plane query plan 05 adds
+// bash daemon's own `status` subcommand -- is DROPPED ENTIRELY.
+// With state in-process and a control plane in place,
+// "what instances exist" becomes a control-plane query that
 // (status/host_state), answered on demand from this exact Map -- strictly
 // better than a file that can go stale between passes.
 // ---------------------------------------------------------------------------
@@ -339,7 +337,7 @@ export interface StateSnapshot {
  * trip. */
 export function _snapshotState(state: BrokerState): StateSnapshot {
   return {
-    // Phase 33, plan 33-06: `profile` is the SECOND nested object on an
+    // `profile` is the SECOND nested object on an
     // InstanceRecord (after `viceArgs`), so it needs its own copy for this
     // function's documented "deep, plain-object copy" contract to stay true --
     // a spread alone would hand a caller a reference into live broker state,
@@ -358,8 +356,8 @@ export function _snapshotState(state: BrokerState): StateSnapshot {
   };
 }
 
-/** VICE_BROKER_BASE_PORT's default (D-18): the broker's port band moves
- * from 6510 to 6600 in this phase -- 6510-6599 stays reserved by convention
+/** VICE_BROKER_BASE_PORT's default: the broker's port band moved
+ * from 6510 to 6600 -- 6510-6599 stays reserved by convention
  * for an x64sc a human launches for their own work. */
 export const DEFAULT_BASE_PORT = 6600;
 
@@ -436,7 +434,7 @@ export function blockPort(state: BrokerState, port: number): void {
 export interface NextFreePortOptions {
   basePort?: number;
   portInUse?: PortInUseProbe;
-  /** Plan 03-04 (D-13): ports to skip that are NOT yet reflected in
+  /** Ports to skip that are NOT yet reflected in
    * `state.instances` -- the primary port allocated for a stock launch's
    * `-binarymonitor` bind has already been decided by the moment the SECOND
    * (`-remotemonitor`) port is allocated, but its `InstanceRecord` does not
@@ -448,8 +446,8 @@ export interface NextFreePortOptions {
   exclude?: ReadonlySet<number>;
 }
 
-/** Allocates the lowest free port at or above the base port (default 6600
- * per D-18, overridable via VICE_BROKER_BASE_PORT -- the same env var name
+/** Allocates the lowest free port at or above the base port (default 6600,
+ * overridable via VICE_BROKER_BASE_PORT -- the same env var name
  * the bash daemon used), scanning up to PORT_SCAN_CEILING candidates.
  * "Free" means: not already recorded in the instance map (granted,
  * launching or ready all occupy their port), not already in the
@@ -459,8 +457,7 @@ export interface NextFreePortOptions {
  * set before scanning continues, so it is never re-offered or re-probed by
  * this process again. Never throws -- returns a typed failure naming
  * exhaustion when every candidate in the window is taken. */
-// Gap closure (plan 14, discovered live during Task 2's own end-to-end
-// proof -- see RE-FINDINGS.md's dated entry for the full account):
+// Discovered live during an end-to-end proof of this allocator:
 // EADDRINUSE is delivered to defaultPortInUse()'s `error` listener without
 // ever yielding to libuv's poll phase, so a scan running against MANY
 // already-bound candidates in a row does not merely take longer -- for its
@@ -518,8 +515,8 @@ export function countTotal(state: BrokerState): number {
   return state.instances.size;
 }
 
-/** Counts instances currently "launching". Plan 41-05 (folded todo) retired
- * the warm floor and its own maintainWarmFloor() -- the SECOND launch path
+/** Counts instances currently "launching". The warm floor and its own
+ * maintainWarmFloor() were retired -- that was the SECOND launch path
  * that used to read this counter as a pre-check before starting a new
  * launch, alongside the cold-acquire arm's own equivalent check. With only
  * one launch path left (vice-broker.mts's handleAcquire(), guarded by

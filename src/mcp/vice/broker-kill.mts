@@ -1,6 +1,6 @@
 // broker-kill.mts
 //
-// D (complete, this plan -- 01.6.2-04): the identity-verified kill discipline,
+// The identity-verified kill discipline,
 // ported from resources/vice-broker.sh's signal_recorded_pid()/
 // signal_vice_child_pid(): zero-signal liveness check, identity check against
 // the process's own argument string, SIGTERM, poll-then-SIGKILL. The
@@ -24,13 +24,13 @@
 //     unconditionally (kill-never-recycle). The uncatchable signals (SIGKILL,
 //     SIGSTOP) are deliberately unhandled -- see registerShutdownHandlers()'s
 //     own comment.
-//   - reapOrphanedInstances(): the unconditional startup reap (criterion I,
-//     D-15) that reaches instances this broker process has no in-memory
+//   - reapOrphanedInstances(): the unconditional startup reap that reaches
+//     instances this broker process has no in-memory
 //     record of, derived from the emulator port band plus this broker's OWN
 //     on-disk allocation record (epoch.json) -- never a host process
-//     listing or a scan of another process's argv (02-03-PLAN.md/D-14/D-15;
+//     listing or a scan of another process's argv --
 //     see reapOrphanedInstances()'s own header comment for the incident
-//     this revision closes).
+//     this revision closes.
 import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -116,7 +116,7 @@ function defaultLog(line: string): void {
  * signal_vice_child_pid() do. An empty/null/non-positive pid, or a pid
  * already gone, returns "already_exited" without ever signalling -- "the
  * machine being gone is the goal", per the bash version's own comment. An
- * EMPTY expectedIdentity is REFUSED outright (CR-04 -- see the guard's own
+ * EMPTY expectedIdentity is REFUSED outright (see the guard's own
  * comment below), as is a live pid whose OWN argument string does not contain
  * expectedIdentity: both return "identity_refused" without ever signalling,
  * the one outcome a caller must be able to tell apart from every other stage
@@ -137,7 +137,7 @@ export async function verifiedKill({ pid, expectedIdentity, deps = {} }: Verifie
     return "already_exited";
   }
 
-  // CR-04 (code review 2026-08-13): an EMPTY expectedIdentity REFUSES, it
+  // An EMPTY expectedIdentity REFUSES, it
   // never permits. `"".includes` is vacuously satisfied by every process's
   // argv, so the guard below was unconditionally true for the empty string --
   // which disabled it entirely and let the caller SIGTERM (then SIGKILL)
@@ -180,7 +180,7 @@ export async function verifiedKill({ pid, expectedIdentity, deps = {} }: Verifie
 }
 
 // ============================================================================
-// Shutdown: every catchable teardown path converges here (C5, D-25).
+// Shutdown: every catchable teardown path converges here.
 // ============================================================================
 
 export interface ShutdownDeps {
@@ -384,18 +384,19 @@ export function registerShutdownHandlers(deps: RegisterShutdownHandlersDeps): ()
   };
 }
 
-/** D-25's mandatory start-time banner: printed unconditionally, before the
+/** The mandatory start-time banner: printed unconditionally, before the
  * control listener begins accepting, naming exactly what a keyboard
  * interrupt or a closed terminal destroys. On 2026-08-02 a `^C` produced
  * "reap saw 4 recorded instance(s), terminated 4" and killed a live
  * session -- the incident was not caused by missing machinery, it was
  * caused by nobody being told. Detaching stays the operator's own
- * nohup/setsid/systemd choice (D-25) -- this banner names that choice
+ * nohup/setsid/systemd choice -- this banner names that choice
  * rather than offering a flag; the launcher stays thin.
  *
- * D-25/P-13 (01.6.2.1-05-PLAN.md): the one place naming the retired
- * warm-floor environment variable does not weaken D-10/D-11's clean break --
- * the line added below reports the variable's mere PRESENCE, never its
+ * The one place naming the retired
+ * warm-floor environment variable does not weaken the clean break made when
+ * the warm floor was retired -- the line added below reports the variable's
+ * mere PRESENCE, never its
  * value, and no reader anywhere in this broker still consults it (the
  * structural gate in broker-kill.test.ts proves that). Without it, an
  * operator with the retired variable set in a shell profile would silently
@@ -414,9 +415,9 @@ export function startupBanner(): string {
     "vice-broker: to run this broker outside the current terminal session, use your own",
     "vice-broker: nohup/setsid/systemd -- this launcher does not offer a --detach flag.",
   ];
-  if (process.env.VICE_BROKER_SPARES !== undefined) { // banner-only presence check (D-25/P-13) -- never reads the value
+  if (process.env.VICE_BROKER_SPARES !== undefined) { // banner-only presence check -- never reads the value
     lines.push(
-      // Plan 41-05 (folded todo): this note's own former "use the warm-floor
+      // This note's own former "use the warm-floor
       // knob instead" replacement is ITSELF retired along with the warm
       // floor -- pointing an operator at a second dead knob would be worse
       // than pointing at none. VICE now launches strictly on demand, on the
@@ -428,21 +429,18 @@ export function startupBanner(): string {
 }
 
 // ============================================================================
-// Startup reap: unconditional, file-free... but no longer PROCESS-TABLE-free
-// (criterion I, D-15, as revised by 02-03-PLAN.md/D-14/D-15).
+// Startup reap: unconditional, file-free... but no longer PROCESS-TABLE-free.
 //
-// 02-03-PLAN.md (BROK-03) retires this section's entire former identity
-// mechanism -- the two functions it lived in are gone from this tree
+// This section's entire former identity
+// mechanism is retired -- the two functions it lived in are gone from this tree
 // outright, not merely unused -- which used to select kill targets by
 // scanning EVERY host process's own argument string for a plain substring
 // match on the configured emulator binary path, gated only by "some bare
-// integer token >= basePort appears somewhere in that same string" -- folded
-// todo
-// `.planning/todos/pending/2026-08-12-broker-orphan-reap-substring-identity-match.md`,
+// integer token >= basePort appears somewhere in that same string". This was
 // observed killing two unrelated orchestrator shell processes on a
 // developer's host (a long scratchpad path supplied the qualifying integer;
-// a short VICE_BIN like `/bin/sleep` supplied the substring). D-15 replaces
-// that heuristic with the broker's OWN allocation record: this reap now
+// a short VICE_BIN like `/bin/sleep` supplied the substring). The replacement
+// uses the broker's OWN allocation record: this reap now
 // enumerates the instance directories under `stateDir` (which THIS broker,
 // or a same-machine predecessor, created) and kills only the pid each
 // directory's own epoch.json actually recorded launching. A host process
@@ -555,8 +553,9 @@ function bumpEpochForInstanceDir(deps: EpochWriterDeps, stateDir: string, port: 
   deps.writeEpochRecord({ supervisorDir, record });
 }
 
-/** The unconditional startup reap (criterion I, D-15, kill-target identity
- * revised by 02-03-PLAN.md/D-14/D-15). Runs on every broker start, before the
+/** The unconditional startup reap (kill-target identity
+ * revised to use the broker's own allocation record instead of a process-table
+ * scan). Runs on every broker start, before the
  * control listener accepts and before anything is launched -- unconditional
  * because a broker killed with SIGKILL never runs a shutdown path, so "was
  * the last shutdown clean" is unanswerable, and a marker file recording that
@@ -566,14 +565,14 @@ function bumpEpochForInstanceDir(deps: EpochWriterDeps, stateDir: string, port: 
  * Enumerates the on-disk instance directories under `stateDir` in the
  * allocation band (`port >= basePort` -- the 6510-6599 range below it stays
  * reserved by convention for an emulator a human launched for their own
- * work, D-18), and for each one reads its OWN `epoch.json` -- never a host
+ * work), and for each one reads its OWN `epoch.json` -- never a host
  * process listing, never an argv scan. A directory whose record is absent,
  * unparseable, or carries no finite positive `pid` contributes nothing to
  * `found`/`killed` and is skipped by the kill half entirely, but the epoch
  * bump below still runs for it: a registry-free restart must still void
  * every in-band instance directory it finds, including one it has no usable
- * pid for, which is the exact case this seed
- * (.planning/seeds/broker-restart-reaps-and-voids.md) flags -- the void has
+ * pid for, which is the exact case a registry-free restart must handle --
+ * the void has
  * to reach instances a registry-free restart never heard of. A record that
  * DOES carry a usable pid AND a non-empty `vice_bin` is killed via
  * verifiedKill() with `expectedIdentity` set to THAT record's own `vice_bin`
@@ -581,7 +580,7 @@ function bumpEpochForInstanceDir(deps: EpochWriterDeps, stateDir: string, port: 
  * does not match what THIS broker itself recorded launching there is refused
  * (`identity_refused`), exactly like every other verifiedKill() call site in
  * this module. A record carrying a usable pid but NO `vice_bin` is NOT a kill
- * candidate at all (CR-04): it contributes nothing to `found`/`killed`, the
+ * candidate at all: it contributes nothing to `found`/`killed`, the
  * kill dep is never invoked, and only the epoch bump runs -- an unidentifiable
  * pid is refused, never killed on the strength of the pid alone.
  *
@@ -611,7 +610,7 @@ export async function reapOrphanedInstances(options: ReapOrphanedInstancesOption
     if (typeof pid === "number" && Number.isFinite(pid) && pid > 0) {
       const expectedIdentity = typeof epochFields?.vice_bin === "string" ? epochFields.vice_bin : "";
       if (expectedIdentity === "") {
-        // CR-04: a record with a usable pid but NO recorded identity is not a
+        // A record with a usable pid but NO recorded identity is not a
         // kill candidate at all -- it is not counted in `found` and the kill
         // dep is never invoked. verifiedKill() refuses an empty identity too
         // (second layer, deliberately: removing either leaves the other

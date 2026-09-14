@@ -6,8 +6,8 @@
 // rebuild.
 // vice-broker.mts
 //
-// The long-lived host broker entry point (Phase 01.6.2). Extends the Phase
-// 01.6 tracer in place rather than replacing it: parseArgs(),
+// The long-lived host broker entry point. Extends an earlier write-once
+// tracer script in place rather than replacing it: parseArgs(),
 // readBrokerRecordMaybe() and the atomic tmp-sibling-then-rename write
 // discipline all survive; main() grows a real control listener, a
 // heartbeat and a real acquire/release path spawning a real child.
@@ -29,23 +29,26 @@ import { join, basename, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn as nodeSpawn } from "node:child_process";
 import { containerGuardReport, containerGuardEnforce } from "./container-guard.mjs";
-// Plan 41-05 (folded todo): countReady/countTotal/countLaunching are DROPPED
-// from this import -- they were used only as maintainWarmFloorForRealBroker()'s
-// own deps for the now-retired maintainWarmFloor(), passed through by
-// shorthand property (`countReady,` etc.), never called directly in this
-// file. atCapacity() is the one survivor actually called here (its own
-// cold-launch-arm gate, below).
+// countReady/countTotal/countLaunching are DROPPED from this import -- they
+// were used only as maintainWarmFloorForRealBroker()'s own deps for the
+// now-retired maintainWarmFloor() (the warm floor itself was retired once
+// the connection became the lease, with no separate expiry left to
+// maintain), passed through by shorthand property (`countReady,` etc.),
+// never called directly in this file. atCapacity() is the one survivor
+// actually called here (its own cold-launch-arm gate, below).
 import { createBrokerState, nextFreePort, atCapacity, resolveBasePort, clearMonitorClient, } from "./broker-state.mjs";
 import { acquirePortAndLaunch, deleteInstanceRecord, 
-// Plan 41-05 (folded todo): replaces maintainWarmFloor -- the warm floor
-// itself is retired; this is ONLY the launching -> ready promotion sweep
-// the floor used to carry as its own step 1.
+// Replaces maintainWarmFloor -- the warm floor itself is retired (the
+// connection is the lease now, so there is no separate floor left to
+// keep warm); this is ONLY the launching -> ready promotion sweep the
+// floor used to carry as its own step 1.
 promoteLaunchingInstances, probeReady, runBrokerPass, withCrashSupervision, } from "./broker-launch.mjs";
-// Plan 02-07: resolvedBackend() resolves the emulator binary's identity --
-// ViceBackend's own definition lives in backend-detect.mts too (narrowed to
-// a single literal by FORKRM-01, plan 52-06), so broker-launch.mjs's own
-// (type-only) re-import of it and this file's VALUE import both name the
-// same one home. A real value import is safe here (unlike inside
+// resolvedBackend() resolves the emulator binary's identity -- ViceBackend's
+// own definition lives in backend-detect.mts too (narrowed to a single
+// literal now that the fork backend has been removed entirely), so
+// broker-launch.mjs's own (type-only) re-import of it and this file's VALUE
+// import both name the same one home. A real value import is safe here
+// (unlike inside
 // broker-launch.mts) because vice-broker.mts is ALWAYS run from its own
 // compiled resources/ form -- both modules are compiled together in the
 // same build.ts pass, so "./backend-detect.mjs" always exists as a real
@@ -53,19 +56,18 @@ promoteLaunchingInstances, probeReady, runBrokerPass, withCrashSupervision, } fr
 import { resolvedBackend } from "./backend-detect.mjs";
 import { verifiedKill, registerShutdownHandlers, startupBanner, reapOrphanedInstances } from "./broker-kill.mjs";
 import { writeEpochRecord, epochPathFor, nextEpochFor, instanceLogDirFor } from "./broker-epoch.mjs";
-// Phase 34, plan 34-01 (SEAM-01): a VALUE import of the host-tool executor --
-// safe here for the SAME reason every other sibling value import above is:
+// A VALUE import of the host-tool executor -- safe here for the SAME reason
+// every other sibling value import above is:
 // this file is ALWAYS run from its own compiled resources/ form, and
 // "./host-tool.mjs" is compiled into that same directory by the same build.ts
 // pass (host-tool.mts is added to HOST_BOUND_ARTIFACTS/tsconfig.build.json's
 // include[] in this same commit).
 import { runHostTool } from "./host-tool.mjs";
-// Gap G-40-1, requirement R2 (plan 40-09): a VALUE import of the same
-// handle-minting function for the SAME reason as the host-tool.mjs import
-// immediately above -- this file is always run from its own compiled
-// resources/ form, and "./ghidra-project.mjs" is compiled into that same
-// directory by the same build.ts pass (both source and target are already
-// listed in HOST_BOUND_ARTIFACTS, since plan 40-08 landed the module).
+// A VALUE import of the same handle-minting function for the SAME reason as
+// the host-tool.mjs import immediately above -- this file is always run
+// from its own compiled resources/ form, and "./ghidra-project.mjs" is
+// compiled into that same directory by the same build.ts pass (both source
+// and target are already listed in HOST_BOUND_ARTIFACTS).
 import { ensureGhidraRunsHandle } from "./ghidra-project.mjs";
 import { startControlListener, newControlToken, drainPendingAcquires, resolveControlPort, } from "./broker-control.mjs";
 const USAGE = "usage: vice-broker.mjs --repo-root <path> [--state-dir <path>] [--check-container] [--dry-run]";
@@ -73,8 +75,8 @@ const USAGE = "usage: vice-broker.mjs --repo-root <path> [--state-dir <path>] [-
  * container guard needs no paths at all, matching the bash launcher's own
  * `--check-container` handling (answered before any path resolution).
  * `--state-dir` defaults to VICE_POOL_DIR from the environment when set,
- * otherwise `.c64-re-tools/supervisor` under the repo root (moved 2026-09-08,
- * D-33 -- was `.vice-supervisor`; the three-tier chain itself -- explicit
+ * otherwise `.c64-re-tools/supervisor` under the repo root (moved 2026-09-08
+ * from `.vice-supervisor`; the three-tier chain itself -- explicit
  * `--state-dir`, then `VICE_POOL_DIR`, then this default -- is unchanged,
  * only the default's location moved). This module is host-bound and compiled
  * by `build.ts`, so it must not import the container-side `repo-root.ts`;
@@ -108,10 +110,9 @@ export function parseArgs(argv) {
         (repoRoot ? join(repoRoot, ".c64-re-tools", "supervisor") : join(".c64-re-tools", "supervisor"));
     return { repoRoot: repoRoot ?? "", stateDir: resolvedStateDir, checkContainer, dryRun };
 }
-/** The deployed JavaScript broker artifact's own name -- D-26's entire
- * point: this field used to read "vice-broker.sh" (the retiring bash
- * daemon), which was false the moment a real TypeScript broker existed.
- * It now names itself. */
+/** The deployed JavaScript broker artifact's own name. This field used to
+ * read "vice-broker.sh" (the retiring bash daemon), which was false the
+ * moment a real TypeScript broker existed. It now names itself. */
 export const WRITTEN_BY = "vice-broker.mjs";
 // ---------------------------------------------------------------------------
 // Small, locally-duplicated env-var reader (plan 05) -- the SAME pattern
@@ -123,11 +124,11 @@ export const WRITTEN_BY = "vice-broker.mjs";
 // env-var read this file can duplicate exactly as cheaply). Mirrors
 // broker-launch.mts's own default precisely (VICE_BROKER_MAX/16) so
 // broker.json's config echo and host_state's own answer can never disagree
-// with what atCapacity() itself actually enforces. Plan 41-05 (folded todo):
-// this used to be a PAIR with resolveWarmFloorForRecord() (VICE_BROKER_WARM_
-// FLOOR/1), kept in lockstep with broker-launch.mts's own matching pair
-// (01.6.2.1-03-PLAN.md, D-06) so the two numbers could never disagree. The
-// warm-floor half of that pair is RETIRED along with the floor itself -- the
+// with what atCapacity() itself actually enforces. This used to be a PAIR
+// with resolveWarmFloorForRecord() (VICE_BROKER_WARM_FLOOR/1), kept in
+// lockstep with broker-launch.mts's own matching pair so the two numbers
+// could never disagree. The warm-floor half of that pair is RETIRED along
+// with the floor itself -- the
 // ceiling's own default (16) is untouched, since it is a separate concern
 // (VICE_BROKER_MAX / atCapacity()) this plan does not touch.
 // ---------------------------------------------------------------------------
@@ -203,21 +204,21 @@ function writeBrokerRecordFile(stateDir, record) {
     return finalPath;
 }
 /** Builds a spawn function that redirects the child's stdout/stderr into a
- * FRESH per-launch log file under logDir (D-23: per-instance boot/crash
- * logs survive under .c64-re-tools/supervisor/<port>/logs/, same paths, same
+ * FRESH per-launch log file under logDir (so per-instance boot/crash logs
+ * survive under .c64-re-tools/supervisor/<port>/logs/, same paths, same
  * format as the retiring bash supervisor), returning both the spawn
  * closure and the log's path relative to supervisorDir (the epoch
  * record's own `log` field). Shared by both launch paths -- a cold
  * acquire and warm-floor maintenance -- so there is exactly one place that
  * opens a launch log fd.
  *
- * I-1 rider (08.2-06-PLAN.md, Task 2): the returned `spawn` now also
- * forwards a caller options object (audit item I-1), MERGING it into the
- * object handed to nodeSpawn() -- caller options spread FIRST, `stdio` set
- * LAST, so the launch log fd always wins over any caller-supplied `stdio`.
- * Merging in the other order would silently redirect a launch's output
- * away from the per-instance log file the epoch record names, breaking
- * D-23's forensic logs while appearing to work. */
+ * The returned `spawn` now also forwards a caller options object, MERGING
+ * it into the object handed to nodeSpawn() -- caller options spread FIRST,
+ * `stdio` set LAST, so the launch log fd always wins over any
+ * caller-supplied `stdio`. Merging in the other order would silently
+ * redirect a launch's output away from the per-instance log file the
+ * epoch record names, breaking the per-instance forensic logs while
+ * appearing to work. */
 function makeLoggingSpawn(logDir) {
     mkdirSync(logDir, { recursive: true });
     const viceBinForLog = basename(process.env.VICE_BIN ?? "x64sc");
@@ -229,8 +230,9 @@ function makeLoggingSpawn(logDir) {
     };
 }
 /** Writes the epoch record for a just-launched instance -- shared by both
- * launch paths so D-04's contract (format, location, atomic-write
- * discipline, all unchanged -- only the writer moves) is discharged from
+ * launch paths so the epoch record's own contract (format, location,
+ * atomic-write discipline, all unchanged -- only the writer moves) is
+ * discharged from
  * exactly one place regardless of WHY the instance was launched. A
  * granted instance and a still-warm instance are equally real processes; both
  * need a real epoch.json the moment they exist, or plan 04's grant-time
@@ -259,19 +261,20 @@ function writeEpochForLaunch(record, logRelPath) {
 }
 /** Builds the supervision dependency object for withCrashSupervision(),
  * once per launch, so the real launch path (handleAcquire's own cold arm,
- * here -- plan 41-05 retires the second real launch path this comment used
- * to name, the warm floor) passes a structurally identical SuperviseChildDeps
- * object into the shared wrapper. Deliberately does
- * NOT set spawnFactory: on a respawn, launchSupervised() (broker-launch.mts)
- * derives its own per-instance log path from instanceLogDirFor and names
- * that same path in the epoch record it writes -- supplying a competing
- * spawn factory here would produce two log files per respawn with the
- * epoch record naming the wrong one. Leaving it unset means a respawn's
- * output lands in the supervision module's own log file under the same
- * per-instance logs directory D-23 requires, and the epoch record names
- * the file that actually received the output.
+ * here -- the second real launch path this comment used to name, the warm
+ * floor, was retired once the connection became the lease) passes a
+ * structurally identical SuperviseChildDeps object into the shared wrapper.
+ * Deliberately does NOT set spawnFactory: on a respawn, launchSupervised()
+ * (broker-launch.mts) derives its own per-instance log path from
+ * instanceLogDirFor and names that same path in the epoch record it writes
+ * -- supplying a competing spawn factory here would produce two log files
+ * per respawn with the epoch record naming the wrong one. Leaving it unset
+ * means a respawn's output lands in the supervision module's own log file
+ * under the same per-instance logs directory the epoch record already
+ * requires, and the epoch record names the file that actually received the
+ * output.
  *
- * CR-01 (03-REVIEW.md): `backend` is a REQUIRED positional parameter, not an
+ * `backend` is a REQUIRED positional parameter, not an
  * optional field a call site may quietly omit. Before this, both real call
  * sites built their deps here WITHOUT it, so `spawnAndRecordInstance()`'s own
  * unset-parameter default silently took over the moment crash supervision
@@ -301,8 +304,8 @@ function superviseDepsFor(stateDir, state, backend, binmonHost) {
 /** Exported ONLY so a test can install withCrashSupervision() through the
  * REAL deps object this module actually uses in production, rather than a
  * hand-built SuperviseChildDeps that can (and did) diverge from it -- the
- * exact blind spot CR-01 (03-REVIEW.md) lived in: broker-launch.test.ts's own
- * respawn/recycle tests each construct their deps inline and therefore pass
+ * exact blind spot the backend-argv bug above lived in: broker-launch.test.ts's
+ * own respawn/recycle tests each construct their deps inline and therefore pass
  * `backend: "stock"` directly, so the production builder's missing field was
  * invisible to the whole suite. Same discipline as broker-kill.mts's
  * `_HANDLED_SIGNALS`: an underscore-prefixed alias, never called by any
@@ -321,8 +324,7 @@ function markDeliberateDeath(instance, respawnAfterKill) {
     instance.respawnAfterKill = respawnAfterKill;
 }
 // ---------------------------------------------------------------------------
-// Phase 33, plan 33-06 (REPRO-05, D-16, T-33-23/T-33-24): the warm-instance
-// PROFILE-ELIGIBILITY rule.
+// THE WARM-INSTANCE PROFILE-ELIGIBILITY RULE.
 //
 // THE DECISION, stated out loud because two of the three available answers
 // are wrong in ways the CALLER CANNOT DETECT:
@@ -332,7 +334,7 @@ function markDeliberateDeath(instance, respawnAfterKill) {
 //   - Serve the request with the mismatched instance -> the caller asked for
 //     warp, got an unwarped machine, and received a confident grant. The knob
 //     is a lie and nothing in the response says so.
-//   - D-16, what this implements: the mismatched instance is INELIGIBLE. The
+//   - What this implements: the mismatched instance is INELIGIBLE. The
 //     walk skips it and the acquire falls through to the cold arm, which
 //     launches a DEDICATED instance for that grant.
 //
@@ -364,34 +366,32 @@ export function profileEligible(record, requested) {
 /** Walks `state.instances` for probe-live `ready` candidates, in iteration
  * order, and returns the first that answers a grant-time re-probe (P-02) --
  * or `null` once every candidate has been tried and none answered, letting
- * the caller fall through to a cold launch (P-03). Regardless of
- * `record.reason`: per D-07, a waiting request takes an instance whichever
- * reason booted it, so a warm-floor instance and a not-yet-granted instance are
- * equally eligible. Kill-never-recycle needs no separate guard here --
+ * the caller fall through to a cold launch. Regardless of `record.reason`:
+ * a waiting request takes an instance whichever reason booted it, so a
+ * warm-floor instance and a not-yet-granted instance are equally eligible.
+ * Kill-never-recycle needs no separate guard here --
  * handleRelease() below already deletes a released instance's record
  * outright, so a released instance is structurally absent from
  * `state.instances` and can never be a candidate.
  *
  * A candidate whose grant-time probe FAILS is dropped -- de-registered from
  * `state.instances` -- and identity-verified-killed BEFORE the walk
- * continues to the next candidate, but per WR-02
- * (`.planning/todos/pending/2026-08-05-wr-02-*`, decision: fix now rather
- * than defer further) the kill itself is fire-and-forget, matching
- * handleRelease()'s own posture a few hundred lines below
- * (`verifiedKill(...).catch(...)`, never awaited by that call site either):
- * the acquiring request must not wait up to `VICE_BROKER_KILL_WAIT_S`
- * (default 5s) of SIGTERM-then-poll-then-SIGKILL PER DEAD CANDIDATE before
- * the walk can move on -- that wait is exactly what turns a warm floor's
- * fast, in-memory grant into a multi-second serial teardown on a single
- * request's hot path once the warm floor is configured above its default
- * of 1 (WR-02's own bounding condition). The drop -- `markDeliberateDeath()`
+ * continues to the next candidate, but the kill itself is deliberately
+ * fire-and-forget, matching handleRelease()'s own posture a few hundred
+ * lines below (`verifiedKill(...).catch(...)`, never awaited by that call
+ * site either): the acquiring request must not wait up to
+ * `VICE_BROKER_KILL_WAIT_S` (default 5s) of SIGTERM-then-poll-then-SIGKILL
+ * PER DEAD CANDIDATE before the walk can move on -- that wait is exactly
+ * what turns a warm floor's fast, in-memory grant into a multi-second
+ * serial teardown on a single request's hot path once the warm floor is
+ * configured above its default of 1. The drop -- `markDeliberateDeath()`
  * plus `state.instances.delete()` -- still happens SYNCHRONOUSLY, in the
  * same tick as the probe failure, before `deps.kill(...)` is even invoked;
- * only the kill's own SETTLEMENT is decoupled from this walk. This is
- * WR-02's fix option 1, not option 2 (capping how many failed candidates a
- * single acquire will wait through): option 1 matches an idiom the file
- * already uses elsewhere rather than inventing a new bound, and removes the
- * wait entirely rather than merely capping it. The grant-time-probe-failure
+ * only the kill's own SETTLEMENT is decoupled from this walk. This matches
+ * an idiom the file already uses elsewhere rather than inventing a new
+ * bound, and removes the wait entirely rather than merely capping it, by
+ * design: capping how many failed candidates a single acquire will wait
+ * through was the alternative considered and rejected. The grant-time-probe-failure
  * log line's own ordering is decoupled accordingly (see below) -- it can no
  * longer name the kill's resolved stage synchronously, since nothing here
  * waits for it to resolve. The marker is set BEFORE any signal reaches the
@@ -404,24 +404,23 @@ export function profileEligible(record, requested) {
  * immediately after every `await` (the probe call itself) and BEFORE ever
  * treating a probe-live candidate as the winner -- this is what makes the
  * caller's own "no await between selection and the grant-recording step"
- * property (T-01.6.2.1-03) actually hold under two concurrent acquires. A
- * candidate's own probe response cannot change because a sibling acquire
- * granted it first, but its RECORDED state does, the instant that sibling's
- * synchronous grant step runs -- recorded state alone catches that case.
- * It does NOT catch a sibling that has already DROPPED this exact candidate
- * (a failed grant-time probe: markDeliberateDeath() + state.instances.delete(),
- * which never touches record.state -- the drop path a few lines below) --
- * 01.6.2.1-VERIFICATION.md's CR-01 finding, re-confirmed here: a state-only
- * recheck is blind to a concurrent drop, letting a second caller's stale
- * object reference win a grant for a record that is no longer in
- * state.instances at all, orphaning the grant. Rechecking
+ * property actually hold under two concurrent acquires. A candidate's own
+ * probe response cannot change because a sibling acquire granted it first,
+ * but its RECORDED state does, the instant that sibling's synchronous grant
+ * step runs -- recorded state alone catches that case. It does NOT catch a
+ * sibling that has already DROPPED this exact candidate (a failed
+ * grant-time probe: markDeliberateDeath() + state.instances.delete(), which
+ * never touches record.state -- the drop path a few lines below) -- a
+ * state-only recheck is blind to a concurrent drop, letting a second
+ * caller's stale object reference win a grant for a record that is no
+ * longer in state.instances at all, orphaning the grant. Rechecking
  * `state.instances.get(record.port) === record` (identity, not merely a
  * port-number lookup) closes that case too. */
 async function selectWarmInstance(state, deps) {
     for (const record of Array.from(state.instances.values())) {
         if (record.state !== "ready")
             continue;
-        // Phase 33, plan 33-06 (D-16, T-33-23): a SYNCHRONOUS `continue`, sitting
+        // A SYNCHRONOUS `continue`, sitting
         // immediately beside the `record.state !== "ready"` filter directly
         // above and BEFORE the readiness probe below. That placement is
         // load-bearing twice over, and neither reason is stylistic:
@@ -448,7 +447,7 @@ async function selectWarmInstance(state, deps) {
         // while this probe was in flight. "Granted" changes record.state;
         // "dropped" removes the record from state.instances outright and never
         // touches record.state -- so map membership must be rechecked too, not
-        // merely the state field (CR-01, 01.6.2.1-REVIEW.md/01.6.2.1-VERIFICATION.md).
+        // merely the state field.
         if (record.state !== "ready" || state.instances.get(record.port) !== record) {
             continue;
         }
@@ -456,27 +455,27 @@ async function selectWarmInstance(state, deps) {
             return record;
         }
         // Drop and de-register FIRST, synchronously, before the kill is even
-        // invoked -- this is what CR-01's identity recheck above depends on:
-        // the record must already be gone from state.instances by the time a
-        // concurrent sibling's own probe on this same candidate resolves.
-        // WR-02 only changes what happens to the kill's own PROMISE next, never
-        // this ordering.
+        // invoked -- this is what the identity recheck above depends on: the
+        // record must already be gone from state.instances by the time a
+        // concurrent sibling's own probe on this same candidate resolves. The
+        // fire-and-forget kill below only changes what happens to the kill's
+        // own PROMISE next, never this ordering.
         markDeliberateDeath(record, false);
-        // CR-02 (03-REVIEW.md): dropping a record is also where its second
+        // Dropping a record is also where its second
         // (`-remotemonitor`) port stops being spoken for -- deleteInstanceRecord()
         // is the ONE place both mutations happen together, so a drop can never
         // leak a port out of the fixed allocation band.
         deleteInstanceRecord(state, record.port);
         // Distinct wording from shutdown()'s own "shutdown complete" line
         // (broker-kill.mts) and from handleRecycleForRealBroker's own log-free
-        // path -- D-07's standing constraint that a lifecycle decision must be
+        // path -- the standing constraint that a lifecycle decision must be
         // reconstructable from the log after an incident (both 2026-08-01 and
         // 2026-08-02 were diagnosed from broker log lines). Logged BEFORE the
-        // kill settles (WR-02): the walk does not wait for deps.kill(...) to
+        // kill settles: the walk does not wait for deps.kill(...) to
         // resolve, so this line can no longer name the kill's resolved stage --
         // that gets its own, separately-logged line once the kill settles,
         // below.
-        deps.log(`vice-broker: grant-time probe failed for port ${record.port} (pid ${record.pid ?? "null"}) -- dropped the record and kicked off an identity-verified kill of the pid (not awaited by the acquire walk, WR-02)`);
+        deps.log(`vice-broker: grant-time probe failed for port ${record.port} (pid ${record.pid ?? "null"}) -- dropped the record and kicked off an identity-verified kill of the pid (not awaited by the acquire walk)`);
         // Fire-and-forget, matching handleRelease()'s own posture
         // (`verifiedKill(...).catch(...)`, a few hundred lines below in this
         // same file) -- the acquire walk moves on to the next candidate (or
@@ -503,8 +502,8 @@ async function selectWarmInstance(state, deps) {
  * The warm-instance selection arm (selectWarmInstance(), P-01) runs BEFORE
  * the cold-launch arm; `atCapacity()` gates ONLY the cold-launch arm --
  * checked only once selectWarmInstance() has already answered `null` (no
- * probe-live candidate available) -- NOT before either arm (WR-01,
- * 01.6.2.1-REVIEW.md). A full host still refuses a fresh cold launch before
+ * probe-live candidate available) -- NOT before either arm. A full host
+ * still refuses a fresh cold launch before
  * ever touching the port allocator, but a ready, probe-live warm candidate
  * is grantable even when the ceiling is already reached: granting it
  * creates no NEW instance and does not raise `countTotal()`, so refusing to
@@ -523,14 +522,14 @@ async function selectWarmInstance(state, deps) {
  * control.mts's own attemptAcquire()/enqueueAcquire() queue the request and
  * retry it later rather than refusing it. */
 export async function handleAcquire(requestId, stateDir, state, deps = {}) {
-    // WR-01: the readiness probe is backend-aware, from the SAME threaded-down
+    // The readiness probe is backend-aware, from the SAME threaded-down
     // verdict handleAcquire already uses for buildViceArgs() -- on stock the port
     // speaks the binary monitor, so an HTTP POST there can never succeed.
     const backend = deps.backend ?? "stock";
     const probe = deps.probe ?? ((port) => probeReady(port, { backend }));
     // Textually a verifiedKill( call site, not merely a reference -- reused
-    // UNCHANGED from broker-kill.mts (Phase 01.6.2 criterion 6), never
-    // re-derived, and never replaced by a bare process.kill().
+    // UNCHANGED from broker-kill.mts, never re-derived, and never replaced by
+    // a bare process.kill().
     const kill = deps.kill ?? ((opts) => verifiedKill(opts));
     const log = deps.log ?? ((line) => process.stderr.write(`${line}\n`));
     const winner = await selectWarmInstance(state, { probe, kill, log, requestedProfile: deps.profile });
@@ -556,13 +555,13 @@ export async function handleAcquire(requestId, stateDir, state, deps = {}) {
             state,
             stateDir,
             allocatePort: nextFreePort,
-            // CR-01 (03-REVIEW.md): the SAME local `backend` const resolved at the
+            // The SAME local `backend` const resolved at the
             // top of this function feeds BOTH the initial argv (here) and the
             // supervision deps below, so a crash-respawn of this instance can never
             // build a different backend's argv than the launch it replaces.
             backend,
             allocateRemoteMonitorPort: deps.allocateRemoteMonitorPort,
-            // Phase 33, plan 33-06 (D-15/D-16): the profile the warm arm just
+            // The profile the warm arm just
             // refused to compromise on reaches buildViceArgs() here, and is
             // mirrored onto the fresh InstanceRecord by spawnAndRecordInstance()
             // in the SAME step -- so this instance's recorded profile and its real
@@ -579,7 +578,7 @@ export async function handleAcquire(requestId, stateDir, state, deps = {}) {
                 }),
         });
         if (!result.ok) {
-            // Plan 41-05 (D-16, checkpoint option B): `result.reason` passes
+            // `result.reason` passes
             // straight through -- `AcquireLaunchResult`'s reason union
             // ("launch_in_flight" | "no_free_port" | "no_free_text_port") is a
             // subset of `AcquireOutcome`'s, so a failed text-port allocation's own
@@ -589,30 +588,29 @@ export async function handleAcquire(requestId, stateDir, state, deps = {}) {
             return { ok: false, reason: result.reason };
         }
         if (result.record.pid === null) {
-            // WR-03 (01.6.2.1-REVIEW.md): the spawn never forked a real process
-            // (e.g. a bad VICE_BIN path), so there is nothing to signal -- the
-            // fix is deleting the just-created broken record alone. Without this,
-            // a configuration failure would silently occupy a port slot and count
-            // toward countTotal()/atCapacity() until crash supervision's own
-            // delayed respawn/give-up machinery eventually noticed and freed it,
-            // even though the caller was already told "internal" right now.
-            // CR-02: deleteInstanceRecord(), not a bare map delete -- a stock launch
-            // that failed this way already had its second port allocated and
-            // blocked by acquirePortAndLaunch(), and deleteInstanceRecord() hands
-            // that second port back to the allocator (via state.blockedPorts) in
-            // the SAME step as it removes the broken record -- confirmed still
-            // true after plan 41-05 (D-16): this branch is reached only once a
-            // record already exists, i.e. only once BOTH allocations already
-            // succeeded (a failed second allocation now fails the acquire before
-            // any record -- and before this `pid === null` check -- is ever
-            // reached at all).
+            // The spawn never forked a real process (e.g. a bad VICE_BIN path),
+            // so there is nothing to signal -- the fix is deleting the
+            // just-created broken record alone. Without this, a configuration
+            // failure would silently occupy a port slot and count toward
+            // countTotal()/atCapacity() until crash supervision's own delayed
+            // respawn/give-up machinery eventually noticed and freed it, even
+            // though the caller was already told "internal" right now.
+            // deleteInstanceRecord(), not a bare map delete -- a stock launch that
+            // failed this way already had its second port allocated and blocked
+            // by acquirePortAndLaunch(), and deleteInstanceRecord() hands that
+            // second port back to the allocator (via state.blockedPorts) in the
+            // SAME step as it removes the broken record -- this branch is reached
+            // only once a record already exists, i.e. only once BOTH allocations
+            // already succeeded (a failed second allocation now fails the acquire
+            // before any record -- and before this `pid === null` check -- is
+            // ever reached at all).
             deleteInstanceRecord(state, result.record.port);
             return { ok: false, reason: "internal" };
         }
         record = result.record;
         // Only the cold-launch arm ever writes a FRESH epoch record here --
-        // selectWarmInstance()'s own winner already has one. Plan 41-05 (folded
-        // todo) changes WHY that is true without changing that it IS true: a
+        // selectWarmInstance()'s own winner already has one. WHY that is true
+        // changed without changing that it IS true: a
         // ready, ungranted candidate no longer comes from a warm-floor pass's
         // own onLaunched hook (retired along with the floor) -- it comes from
         // broker-launch.mts's own crash-supervision respawn path
@@ -626,7 +624,7 @@ export async function handleAcquire(requestId, stateDir, state, deps = {}) {
     // THE single grant-recording step, fed by both arms above -- no `await`
     // between resolving `record` (whichever arm produced it) and this
     // synchronous pair, so two concurrent acquires can never both grant the
-    // SAME record (T-01.6.2.1-03; see selectWarmInstance()'s own re-check for
+    // SAME record (see selectWarmInstance()'s own re-check for
     // the other half of that guarantee).
     state.grants.set(requestId, { id: requestId, port: record.port, grantedAt: Date.now(), pid: record.pid });
     record.state = "granted";
@@ -637,7 +635,7 @@ export async function handleAcquire(requestId, stateDir, state, deps = {}) {
             url: record.url,
             epochFile: record.epochFile,
             supervisorDir: record.supervisorDir,
-            // Plan 41-01 (D-15): key omitted entirely when the record has none --
+            // Key omitted entirely when the record has none --
             // the fork case, and (until a later plan closes the port-allocation
             // degrade path) a stock instance whose second port allocation itself
             // failed. Same key-omitted-when-undefined idiom
@@ -649,7 +647,7 @@ export async function handleAcquire(requestId, stateDir, state, deps = {}) {
 /** Answers the `status` control-plane request: one entry per instance,
  * computed on demand from the SAME in-memory map every other count reads --
  * strictly better than the dropped broker-instances.json projection, which
- * could go stale between passes (D-24). */
+ * could go stale between passes. */
 function handleStatus(state) {
     return Array.from(state.instances.values()).map((r) => ({
         port: r.port,
@@ -657,9 +655,9 @@ function handleStatus(state) {
         state: r.state,
         reason: r.reason,
         epoch: typeof r.epoch === "number" ? r.epoch : null,
-        // Plan 41-03 (D-14): "at least one channel is claimed" -- promoted from
+        // "at least one channel is claimed" -- promoted from
         // a single-field check, byte-identical wire shape, meaning stated
-        // explicitly (D-15).
+        // explicitly.
         hasMonitorClient: Object.keys(r.monitorClients).length > 0,
     }));
 }
@@ -667,17 +665,16 @@ function handleStatus(state) {
  * handleRelease() and handleRecycleForRealBroker() already resolve theirs:
  * `targetId` is a grant id, looked up in state.grants for its port, then
  * the instance at that port. Returns `null` for an unknown target_id/port
- * so callers answer `bad_request`, never `internal` (plan 05's own
- * acceptance criterion). */
+ * so callers answer `bad_request`, never `internal`. */
 function resolveInstanceForMonitorTarget(targetId, state) {
     const grant = state.grants.get(targetId);
     if (!grant)
         return null;
     return state.instances.get(grant.port) ?? null;
 }
-/** Answers `monitor_claim` (plan 05, BROK-02/PROTO-08, D-13; per-channel
- * since plan 41-03, D-14): exclusive monitor-socket ownership enforced
- * HERE, broker-side, PER CHANNEL, so a conflicting claim is refused by name
+/** Answers `monitor_claim` (per-channel): exclusive monitor-socket
+ * ownership enforced HERE, broker-side, PER CHANNEL, so a conflicting
+ * claim is refused by name
  * before any second `connect()` is ever attempted -- the one state stock
  * VICE cannot report and no client-side heuristic can diagnose. `targetId`
  * doubles as both "which instance" (resolved via the SAME grant lookup
@@ -705,11 +702,11 @@ export function handleMonitorClaim(requestId, targetId, channel, state) {
     }
     return { ok: false, code: "monitor_owned", holder: { grantId: existing.grantId, claimedAt: existing.claimedAt, pid: existing.pid, channel } };
 }
-/** Answers `monitor_release` (plan 05, T-02-01; per-channel since plan
- * 41-03, D-14): clears ONLY the named channel's entry, ONLY when `targetId`
- * names that channel's CURRENT holder -- a non-holder is refused, not
- * silently accepted (spoofing a release is exactly T-02-01's own
- * disposition). A channel with no current holder at all tolerates the
+/** Answers `monitor_release` (per-channel): clears ONLY the named
+ * channel's entry, ONLY when `targetId` names that channel's CURRENT
+ * holder -- a non-holder is refused, not silently accepted (spoofing a
+ * release is a deliberately refused case). A channel with no current
+ * holder at all tolerates the
  * release as a success, matching the container-side client's own documented
  * tolerance for releasing a socket the broker already cleared. */
 export function handleMonitorRelease(requestId, targetId, channel, state) {
@@ -801,10 +798,11 @@ async function handleRecycleForRealBroker(targetId, state) {
     const reason = killStage === "identity_refused" ? "process identity did not match the recorded emulator binary -- the target was NOT signalled and is still running" : "";
     return { port: instance.port, pid: instance.pid, viceBin: instance.viceBin, killStage, epochBefore, outcome, reason };
 }
-/** Plan 41-05 (folded todo): the second concern of the fixed-order
- * evaluation pass, RENAMED from the retired warm-floor maintenance function
- * this replaces (D-24 drops the projection write; the grant sweep does not
- * appear -- D-12's connection-is-the-lease). Unlike the function it
+/** The second concern of the fixed-order evaluation pass, RENAMED from the
+ * retired warm-floor maintenance function this replaces (the projection
+ * write is dropped, and the grant sweep does not appear -- the connection
+ * is the lease now, so there is nothing left to sweep for expiry). Unlike
+ * the function it
  * replaces, this one never launches anything -- it wires only
  * broker-launch.mjs's real promoteLaunchingInstances() against this
  * broker's own state and the backend-aware readiness probe, so a
@@ -815,7 +813,7 @@ function promoteLaunchingForRealBroker(state, backend) {
     return promoteLaunchingInstances({
         state,
         backend,
-        // WR-01: same backend-aware probe route as handleAcquire's, from the
+        // Same backend-aware probe route as handleAcquire's, from the
         // SAME resolved verdict this function already receives.
         probe: (port) => probeReady(port, { backend }),
         log: (line) => process.stderr.write(`${line}\n`),
@@ -825,9 +823,9 @@ function promoteLaunchingForRealBroker(state, backend) {
  * when the port's CURRENT occupant is proven to be the SAME process this
  * grant was actually issued for (its own recorded `pid`, set at grant time
  * by handleAcquire()'s single state.grants.set() call site), not merely
- * "whatever now holds this port number." This is Task 2's own closure of
- * CR-01's cross-session-kill blast radius (T-01.6.2.1-28): even after Task
- * 1 closes the specific concurrent-acquire race, this lookup was ALREADY
+ * "whatever now holds this port number." This closes a cross-session-kill
+ * blast radius: even after the specific concurrent-acquire race above is
+ * closed, this lookup was ALREADY
  * unsafe against any OTHER event that swaps a port's occupant without also
  * clearing the grant -- the clearest independent example being an ordinary
  * (non-deliberate) crash of a GRANTED instance that hits the give-up
@@ -851,7 +849,7 @@ function promoteLaunchingForRealBroker(state, backend) {
  * grant's own recorded pid, and the current occupant's pid (or "none" when
  * the port is empty), worded distinctly from both the shutdown-complete
  * line (broker-kill.mts) and the grant-time-probe-failure line this same
- * file already emits (D-07's standing constraint that a lifecycle decision
+ * file already emits (the standing constraint that a lifecycle decision
  * must be reconstructable from the log after an incident).
  *
  * A legitimate recycle (broker-launch.mts's handleExit() recycle branch)
@@ -874,7 +872,7 @@ export function handleRelease(requestId, state) {
         // depend on silently continuing to hold.
         clearMonitorClient(instance);
         state.grants.delete(requestId);
-        // CR-02: kill-never-recycle means this instance is gone for good, so its
+        // Kill-never-recycle means this instance is gone for good, so its
         // second (`-remotemonitor`) port must go back to the allocator with it.
         deleteInstanceRecord(state, grant.port);
         verifiedKill({ pid: instance.pid, expectedIdentity: instance.expectedIdentity }).catch(() => {
@@ -892,7 +890,7 @@ export function handleRelease(requestId, state) {
 }
 async function run(args) {
     const finalPath = join(args.stateDir, "broker.json");
-    // Plan 05 (criterion K, D-17): the tracer/plan-04-era "refuse to overwrite
+    // An early tracer-era "refuse to overwrite
     // a record naming a currently-live pid" pre-check is GONE -- REPLACED by
     // the bind-before-write singleton guard below, not merely extended
     // alongside it (this phase's own plan-time note is explicit: the
@@ -905,7 +903,7 @@ async function run(args) {
     // port itself already held" -- and broker.json becomes a pure ARBITER of
     // that question's two possible causes, never a gate in its own right.
     //
-    // D-25: the mandatory start-time banner, printed unconditionally and
+    // The mandatory start-time banner, printed unconditionally and
     // BEFORE anything else in this function runs -- an operator must be told
     // what a Ctrl-C costs before there is anything running for them to Ctrl-C.
     process.stderr.write(`${startupBanner()}\n`);
@@ -915,17 +913,17 @@ async function run(args) {
     const startedAt = new Date().toISOString(); // FIXED across every heartbeat refresh -- see writeBrokerRecordFile()'s callers below
     const pollMs = Number(process.env.VICE_BROKER_POLL_MS) || 500;
     const controlPort = resolveControlPort();
-    // Criterion I / D-15: the unconditional startup reap runs BEFORE the
+    // The unconditional startup reap runs BEFORE the
     // control listener accepts and before anything is launched. A SIGKILLed
     // prior broker never ran a shutdown path, so this is the only place the
     // "every emulator this project's port band could be squatting is either
     // ours or a human's own work" guarantee can be enforced -- no marker file
     // is consulted, per this reap's own header comment in broker-kill.mts.
     //
-    // NOTE (plan 05): this reap runs UNCONDITIONALLY, before the bind attempt
+    // NOTE: this reap runs UNCONDITIONALLY, before the bind attempt
     // below -- including for a process that goes on to LOSE the singleton
     // race a moment later (see the EADDRINUSE handling below). That ordering
-    // is D-15's own, already established and tested by plan 04
+    // is deliberate and already established and tested
     // (broker-kill.test.ts's own structural source-order check); this task
     // does not change it. A losing second broker's own reap pass is an
     // accepted, pre-existing consequence of "the reap is unconditional" --
@@ -936,7 +934,7 @@ async function run(args) {
         nextEpochFor,
         writeEpochRecord,
     });
-    // Plan 02-07 (D-01, D-03): resolved ONCE here, after the unconditional
+    // Resolved ONCE here, after the unconditional
     // startup reap and BEFORE the control listener binds -- never re-read per
     // launch, and never called from inside broker-launch.mts's `inFlight`
     // single-owner guard (this call sits entirely outside it; no launch is
@@ -946,14 +944,14 @@ async function run(args) {
     // directory repo-root.ts's supervisorDir() would resolve to, without this
     // host-bound module ever importing that container-side resolver directly
     // (backend-detect.mts's own header comment explains why it cannot).
-    // FORKRM-01 (plan 52-06): there is nothing left to detect -- the resolved
+    // There is nothing left to detect -- the resolved
     // `backend` is always `"stock"`; what this call still does is resolve the
     // binary's own identity for the log line below and initialise the
-    // capability cache backend-detect.mts's own BACK-04 record depends on.
+    // capability cache backend-detect.mts's own record depends on.
     const backendResult = resolvedBackend({ supervisorDir: args.stateDir });
     const backend = backendResult.backend;
     process.stderr.write(`vice-broker: backend "${backend}" (binary: ${backendResult.binPath})\n`);
-    // Gap G-40-1, requirement R2 (plan 40-09): THE BROKER mints/verifies the
+    // THE BROKER mints/verifies the
     // Ghidra runs-root handle here -- after the unconditional startup reap
     // above, and BEFORE the control listener below accepts a single
     // connection -- so a container-side MCP server with no host tooling of
@@ -982,7 +980,7 @@ async function run(args) {
     else {
         process.stderr.write(`vice-broker: ghidra runs handle refused: ${ghidraHandleResult.message} -- ghidra.analyze will refuse by name until this is fixed by hand; every other tool id is unaffected\n`);
     }
-    // D-18: the singleton guarantee holds only while the control port keeps its default -- two brokers deliberately configured onto different ports are two brokers, and no code prevents that.
+    // The singleton guarantee holds only while the control port keeps its default -- two brokers deliberately configured onto different ports are two brokers, and no code prevents that.
     let listener;
     try {
         listener = await startControlListener({
@@ -991,11 +989,11 @@ async function run(args) {
             token,
             onAcquire: (requestId, profile) => handleAcquire(requestId, args.stateDir, state, {
                 backend,
-                // Plan 03-04 (DIRECT-06, D-13): threaded down to
+                // Threaded down to
                 // acquirePortAndLaunch()'s own gate (backend === "stock"); this
                 // callback does not re-read any environment variable itself.
                 allocateRemoteMonitorPort: (s, exclude) => nextFreePort(s, { exclude }),
-                // Phase 33, plan 33-06 (REPRO-05, D-15): the ALREADY-NARROWED
+                // The ALREADY-NARROWED
                 // profile broker-control.mts handed this callback. Nothing here
                 // re-validates it and nothing here reads a raw wire field --
                 // normaliseLaunchProfile() is the single narrowing site, and it ran
@@ -1005,11 +1003,11 @@ async function run(args) {
             onRelease: (requestId) => handleRelease(requestId, state),
             onRecycle: (targetId) => handleRecycleForRealBroker(targetId, state),
             onStatus: () => handleStatus(state),
-            // Phase 34, plan 34-01 (SEAM-01): its OWN callback, wired alongside
+            // Its OWN callback, wired alongside
             // (never derived from) the other six above -- handed only
             // `args.repoRoot` and a stderr logger, never this broker's `state` map,
             // so it structurally cannot reach lease state through this closure.
-            // 34-09 (CR-04): deliberately supplies no timeout, and that is
+            // Deliberately supplies no timeout, and that is
             // authoritative here, not an omission -- the per-tool budget table
             // inside runHostTool()/hostToolTimeoutMs() (host-tool.mts) is the ONE
             // place a budget is decided, and no wire field carries one across the
@@ -1031,7 +1029,7 @@ async function run(args) {
                 viceBin: resolveViceBinForHostState(),
                 maxInstances: resolveCeilingForRecord(),
                 basePort: resolveBasePort(),
-                // FORKRM-01 (plan 52-06): the verdict THIS process resolved once, at
+                // The verdict THIS process resolved once, at
                 // startup, above -- kept on the wire because text-tools.ts's own
                 // broker-identity cross-check (out of this plan's scope) still reads
                 // it. Never a second resolvedBackend() call.
@@ -1040,7 +1038,7 @@ async function run(args) {
         });
     }
     catch (e) {
-        // Criterion K / D-17 / D-18: CR-01 closes here. A well-known TCP port
+        // The singleton race closes here. A well-known TCP port
         // cannot be bound twice, so EADDRINUSE is the kernel enforcing the
         // singleton -- but the guarantee holds only while the control port
         // keeps its default (two brokers deliberately configured onto
@@ -1075,7 +1073,7 @@ async function run(args) {
         process.exitCode = 1;
         return;
     }
-    // C5: every catchable shutdown path (SIGTERM/SIGINT/SIGHUP, an uncaught
+    // Every catchable shutdown path (SIGTERM/SIGINT/SIGHUP, an uncaught
     // exception, an unhandled rejection, normal exit) converges on ONE
     // re-entrant-safe teardown that identity-verified-kills every instance
     // this broker launched and clears the map unconditionally
@@ -1083,13 +1081,13 @@ async function run(args) {
     // nothing to tear down before that point.
     registerShutdownHandlers({ state });
     // A successful bind writes the record UNCONDITIONALLY, overwriting
-    // whatever was there -- the bind itself is the proof of singleton status
-    // (D-17). The fourteen-field set (D-27, criterion G; narrowed from
-    // fourteen to thirteen by plan 41-05, then widened back to fourteen to add
-    // node_exec_path): the lease time-to-live field the bash original carried
-    // is gone -- the connection is the lease now (D-12) -- `warm_floor` is
-    // likewise gone (plan 41-05: there is no warm floor left to echo a
-    // configured value for) -- and every other config-echo field survives
+    // whatever was there -- the bind itself is the proof of singleton status.
+    // The fourteen-field set (narrowed to thirteen once the warm floor was
+    // retired, then widened back to fourteen to add node_exec_path): the
+    // lease time-to-live field the bash original carried is gone -- the
+    // connection is the lease now, so there is no separate expiry left to
+    // track -- `warm_floor` is likewise gone (there is no warm floor left to
+    // echo a configured value for) -- and every other config-echo field survives
     // even though no consumer parses it beyond a status message, because a
     // human reading this file by hand benefits from the full echo.
     //
@@ -1128,15 +1126,15 @@ async function run(args) {
     }, heartbeatMs);
     // The fixed-order evaluation pass (runBrokerPass, broker-launch.mts):
     // serve pending acquires, then promote launching -> ready -- mirroring
-    // vice-broker.sh's own broker_once() ordering (plan 41-05, folded todo:
-    // the warm floor this pass used to maintain as its second concern is
-    // RETIRED; see runBrokerPass()'s own comment in broker-launch.mts for what
-    // the fixed order still buys now that only serveAcquires() ever launches
-    // anything). Ticks on VICE_BROKER_POLL_MS (default 500, the SAME env var
-    // name and semantics the bash daemon used). serveAcquires now drains the
+    // the retiring bash daemon's own broker_once() ordering (the warm floor
+    // this pass used to maintain as its second concern is RETIRED; see
+    // runBrokerPass()'s own comment in broker-launch.mts for what the fixed
+    // order still buys now that only serveAcquires() ever launches anything).
+    // Ticks on VICE_BROKER_POLL_MS (default 500, the SAME env var name and
+    // semantics the bash daemon used). serveAcquires now drains the
     // arrival-ordered pending-acquire structure this listener instance owns
-    // (D-08's mechanism; plan 02's own `serveAcquires: () => {}` comment
-    // reserved exactly this room) -- an acquire queued because a launch was
+    // (an early stubbed `serveAcquires: () => {}` comment reserved exactly
+    // this room) -- an acquire queued because a launch was
     // already in flight is retried here, on the SAME pass that also promotes
     // any newly-ready instance, so a stalled pass shows up as a stale record
     // rather than a silently wrong one. Re-entrancy guarded: a pass that is
@@ -1160,8 +1158,8 @@ async function run(args) {
     }, pollMs);
 }
 /** Parses argv, evaluates the container guard FIRST -- before any state
- * directory is read or written and before anything is spawned (PD-03) --
- * then runs the long-lived broker. Never calls process.exit(); always sets
+ * directory is read or written and before anything is spawned -- then
+ * runs the long-lived broker. Never calls process.exit(); always sets
  * process.exitCode so pending I/O flushes first. */
 export function main(argv = process.argv.slice(2)) {
     let args;

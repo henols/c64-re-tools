@@ -6,7 +6,7 @@
 // rebuild.
 import { createServer } from "node:net";
 // ---------------------------------------------------------------------------
-// MonitorChannel (plan 41-03, D-14): exactly two channels exist -- stock VICE
+// MonitorChannel: exactly two channels exist -- stock VICE
 // exposes precisely the binary monitor and the `-remotemonitor` text
 // channel -- and this project has no plan to add a third. Frozen so a
 // consumer cannot accidentally push a third value onto it at runtime.
@@ -47,7 +47,7 @@ export function createBrokerState() {
  * trip. */
 export function _snapshotState(state) {
     return {
-        // Phase 33, plan 33-06: `profile` is the SECOND nested object on an
+        // `profile` is the SECOND nested object on an
         // InstanceRecord (after `viceArgs`), so it needs its own copy for this
         // function's documented "deep, plain-object copy" contract to stay true --
         // a spread alone would hand a caller a reference into live broker state,
@@ -65,8 +65,8 @@ export function _snapshotState(state) {
         blockedPorts: Array.from(state.blockedPorts).sort((a, b) => a - b),
     };
 }
-/** VICE_BROKER_BASE_PORT's default (D-18): the broker's port band moves
- * from 6510 to 6600 in this phase -- 6510-6599 stays reserved by convention
+/** VICE_BROKER_BASE_PORT's default: the broker's port band moved
+ * from 6510 to 6600 -- 6510-6599 stays reserved by convention
  * for an x64sc a human launches for their own work. */
 export const DEFAULT_BASE_PORT = 6600;
 /** Scan ceiling matching vice-broker.sh's own next_free_port(): exactly one
@@ -117,8 +117,8 @@ export function isPortBlocked(state, port) {
 export function blockPort(state, port) {
     state.blockedPorts.add(port);
 }
-/** Allocates the lowest free port at or above the base port (default 6600
- * per D-18, overridable via VICE_BROKER_BASE_PORT -- the same env var name
+/** Allocates the lowest free port at or above the base port (default 6600,
+ * overridable via VICE_BROKER_BASE_PORT -- the same env var name
  * the bash daemon used), scanning up to PORT_SCAN_CEILING candidates.
  * "Free" means: not already recorded in the instance map (granted,
  * launching or ready all occupy their port), not already in the
@@ -128,8 +128,7 @@ export function blockPort(state, port) {
  * set before scanning continues, so it is never re-offered or re-probed by
  * this process again. Never throws -- returns a typed failure naming
  * exhaustion when every candidate in the window is taken. */
-// Gap closure (plan 14, discovered live during Task 2's own end-to-end
-// proof -- see RE-FINDINGS.md's dated entry for the full account):
+// Discovered live during an end-to-end proof of this allocator:
 // EADDRINUSE is delivered to defaultPortInUse()'s `error` listener without
 // ever yielding to libuv's poll phase, so a scan running against MANY
 // already-bound candidates in a row does not merely take longer -- for its
@@ -186,8 +185,8 @@ export function countReady(state) {
 export function countTotal(state) {
     return state.instances.size;
 }
-/** Counts instances currently "launching". Plan 41-05 (folded todo) retired
- * the warm floor and its own maintainWarmFloor() -- the SECOND launch path
+/** Counts instances currently "launching". The warm floor and its own
+ * maintainWarmFloor() were retired -- that was the SECOND launch path
  * that used to read this counter as a pre-check before starting a new
  * launch, alongside the cold-acquire arm's own equivalent check. With only
  * one launch path left (vice-broker.mts's handleAcquire(), guarded by

@@ -255,9 +255,9 @@ test("structural: every superviseDepsFor() call site in vice-broker.mts passes t
  * the real source -- used to EXTRACT the block for the planted-violation
  * copies below, never to assert anything by themselves. */
 const GHIDRA_HANDLE_BLOCK_START =
-  "  // Gap G-40-1, requirement R2 (plan 40-09): THE BROKER mints/verifies the";
+  "  // THE BROKER mints/verifies the";
 const GHIDRA_HANDLE_BLOCK_END =
-  "  // D-18: the singleton guarantee holds only while the control port keeps its default";
+  "  // The singleton guarantee holds only while the control port keeps its default";
 
 /** Extracts the handle-minting block (comment + code) from a source string
  * carrying both anchors, or null if either anchor is missing or out of
