@@ -3,7 +3,7 @@
 //
 // The ONE module in this repo that names `node:sqlite`. Nothing else may open,
 // query or write an annotation store file; every other module reaches the
-// store through the functions below (STORE-07).
+// store through the functions below.
 //
 // ---------------------------------------------------------------------------
 // WHY THIS FILE EXISTS
@@ -54,7 +54,7 @@
 // module is not yet reachable from the published entry point's import closure,
 // and `scripts/check-npm-packages.mjs` asserts only one direction -- every
 // REACHABLE module must be listed -- never the converse. The real reason to
-// list it: `STORE-07`'s assertion scans `shippedTsModules()`, which is derived
+// list it: the shipped-module assertion scans `shippedTsModules()`, which is derived
 // from `files[]`, so an unlisted module makes that assertion VACUOUS. It would
 // pass by scanning a set this file is not in. Copying the reachability sentence
 // here would plant a false claim in a brand-new seam header, which is the
@@ -85,7 +85,7 @@
 //      `LIKE 'prefix%'` is 2.02 ms against FTS5 `MATCH`'s 2.99 ms, with a
 //      121.8 ms index rebuild, over 20,000 rows. Adding FTS5 later is
 //      ADDITIVE; removing it is a schema migration. The search surface belongs
-//      to `STORE-06` and this module must simply not foreclose it.
+//      elsewhere and this module must simply not foreclose it.
 //   6. NEVER add an explicit save or flush verb. Durability is this module's
 //      responsibility, not the caller's: every accepted write commits before it
 //      returns. A save verb is a way for a caller to lose data by forgetting.
@@ -103,9 +103,9 @@
 //      look like tightening and are the opposite. A REFUSAL would push a caller
 //      toward deleting the comment to get the retype through, converting a
 //      reported loss into a silent one -- the exact outcome the report exists to
-//      prevent (`STORE-03`). A WIDENED rule would fire on every retype of a
+//      prevent. A WIDENED rule would fire on every retype of a
 //      commented range, and a report that fires every time is a report nobody
-//      reads, so the one case that matters stops being noticed (`STORE-01`).
+//      reads, so the one case that matters stops being noticed.
 //  10. NEVER prune the snapshot ring INSIDE the write transaction, and never
 //      let a revert fall back to the nearest retained revision. A filesystem
 //      unlink is not part of the transaction, so pruning inside it means a
@@ -125,7 +125,7 @@
 //      conclusion. And a revert that SUBSTITUTES the nearest
 //      retained revision for the one asked for changes the caller's intent with
 //      nothing recording that it happened, so a revert past the bound is
-//      refused BY NAME instead (`STORE-04`).
+//      refused BY NAME instead.
 import { randomUUID } from "node:crypto";
 import { closeSync, copyFileSync, existsSync, fsyncSync, mkdirSync, openSync, readdirSync, renameSync, rmSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
@@ -216,8 +216,8 @@ export interface AnnoWriteResult {
  * the very first write. The SECOND half became false: `anno_snapshot` carried a
  * `path text not null` column holding the snapshot's ABSOLUTE location, and two
  * destructive consequences were reproduced against committed code -- two stores
- * in one directory sharing one ring (CR-01) and a directory rename plus one
- * write destroying the whole revert history (CR-03). The column is DROPPED at
+ * in one directory sharing one ring and a directory rename plus one
+ * write destroying the whole revert history. The column is DROPPED at
  * `SCHEMA_VERSION` 2 and the location is computed from the handle by
  * `snapshotDirFor()` at every read and every delete, so there is no persisted
  * absolute string left for a second namespace -- a bind mount seen from the
@@ -230,7 +230,7 @@ export interface AnnoWriteResult {
  * was byte-identical to version 1's.
  *
  * THAT SENTENCE IS KEPT AND SCOPED RATHER THAN DELETED, because at
- * `SCHEMA_VERSION` 3 it stopped being the whole truth: D-15 (2026-08-29) ADDS
+ * `SCHEMA_VERSION` 3 it stopped being the whole truth: version 3 (2026-08-29) ADDS
  * one table, `anno_enum_usage`, and its index. It changes no existing table's
  * column list, so the scoped claim above still holds of every table version 2
  * had. The version 3 table associates ONE address with ONE `anno_enum` row by
@@ -239,7 +239,7 @@ export interface AnnoWriteResult {
  * the day that cost was accepted.
  *
  * `anno_xref` and its `access_kind` column exist from the very first write.
- * Two requirement texts look like they conflict here and do not: `STORE-05`
+ * Two requirement texts look like they conflict here and do not: one
  * requires the column, while the cross-reference criterion forbids CACHING a
  * DERIVED cross-reference on disk. Both hold at once -- the table exists, and
  * only non-derivable references (hand-asserted, or resolved from something
@@ -252,7 +252,7 @@ export interface AnnoWriteResult {
  * mapper in `listRanges()`. It is reserved, and every row written today has it
  * null.
  *
- * AT `SCHEMA_VERSION` 4 (EVID-01/EVID-02), ONE MORE TABLE IS ADDED:
+ * AT `SCHEMA_VERSION` 4, ONE MORE TABLE IS ADDED:
  * `anno_evid_exec`, the durable runtime-execution evidence table. See
  * `anno-types.ts`'s `SCHEMA_VERSION` doc comment for what the bump buys and
  * the decided, dated fate of an existing version-3 store (`reaffirm-refusal`
@@ -260,11 +260,11 @@ export interface AnnoWriteResult {
  * nullable column at all: unlike the annotation tables above, every field on
  * a row here is a fact the runtime evidence layer is licensed to assert, or
  * the row does not exist. Its run-identity key is the bare triple
- * `(image_sha256, argv_digest, seed)`, selected by plan 43-01's live A/B
- * (`docs/phase43-instrumentation-perturbation-ab.md`, verdict
- * `no-perturbation`) -- there is deliberately no `run_class` column.
+ * `(image_sha256, argv_digest, seed)`, selected by a live A/B that measured
+ * `no-perturbation` from instrumentation -- there is deliberately no
+ * `run_class` column.
  *
- * AT `SCHEMA_VERSION` 5 (`BUILD-07`), ONE MORE TABLE IS ADDED:
+ * AT `SCHEMA_VERSION` 5, ONE MORE TABLE IS ADDED:
  * `anno_excluded_range`, the durable record of a user-requested exclusion --
  * its extent and the reason the user gave. See `anno-types.ts`'s
  * `SCHEMA_VERSION` doc comment for what the bump buys, why a table was chosen
@@ -378,7 +378,7 @@ export interface AnnoStoreHandle {
   /**
    * THIS CONNECTION'S TRANSACTION STATE IS UNKNOWN: a housekeeping sweep run on
    * it reported that its own `rollback` threw, so it may still hold an open
-   * transaction and the store's write lock (WR-18).
+   * transaction and the store's write lock.
    *
    * THE REMEDY IS THE ONE THE COMMIT HANDLER ALREADY PRINTS, in the same words:
    * CLOSE IT AND REOPEN rather than reusing it. Node 22's `DatabaseSync` exposes
@@ -393,7 +393,7 @@ export interface AnnoStoreHandle {
    * what prohibition 28-11 P5 forbids, and would send a caller to retry an
    * additive verb. So the accepted write returns its revision unchanged and it
    * is the NEXT call on this connection that refuses BY NAME -- which is what
-   * turns CR-07's bare `cannot start a transaction within a transaction` into a
+   * turns the bare `cannot start a transaction within a transaction` error into a
    * diagnosis.
    *
    * `false` on every freshly opened handle, set in `openStore` at the one place
@@ -440,7 +440,7 @@ function fsyncPath(path: string): void {
  *
  * A `workspaceRoot` IS REQUIRED unless the caller explicitly asks for the
  * unconfined path with `unconfinedModuleDerivedPath: true`, and the inversion is
- * deliberate (WR-25). Confinement used to be opt-IN, which made the mitigation
+ * deliberate. Confinement used to be opt-IN, which made the mitigation
  * for the one unvalidated input this module's own header calls out the one a
  * caller could forget -- and two of this store's recorded blockers were confinement
  * escapes. The escape exists for exactly one shape: a path THIS MODULE derived
@@ -486,12 +486,12 @@ export function openStore(
   path: string,
   opts: { workspaceRoot?: string; mustExist?: boolean; unconfinedModuleDerivedPath?: boolean } = {},
 ): AnnoStoreHandle {
-  // CONFINEMENT IS THE DEFAULT, AND THE ESCAPE IS A WORD A GREP CAN FIND
-  // (WR-25). `anno-types.ts`'s header names the three things nothing upstream
+  // CONFINEMENT IS THE DEFAULT, AND THE ESCAPE IS A WORD A GREP CAN FIND.
+  // `anno-types.ts`'s header names the three things nothing upstream
   // validates -- "an address of 65536, a misspelled data type, and a store path
   // pointing outside the workspace all look identical to the transport" -- and
   // this was the only one of the three whose mitigation a caller could simply
-  // forget. Two of this phase's blockers (CR-03, CR-04) were confinement
+  // forget. Two of this project's own review findings were confinement
   // escapes.
   //
   // REFUSED BEFORE THE PATH IS RESOLVED AND LONG BEFORE `new DatabaseSync`, for
@@ -592,8 +592,7 @@ export function openStore(
 
   if (meta.schema_version !== SCHEMA_VERSION) {
     db.close();
-    // NAMES THE REMEDY AND DENIES NOTHING IS LOST (EVID-02's checkpoint,
-    // condition 2). This build refuses rather than upgrades -- see
+    // NAMES THE REMEDY AND DENIES NOTHING IS LOST. This build refuses rather than upgrades -- see
     // `anno-types.ts`'s `SCHEMA_VERSION` doc comment for the decided,
     // dated reason -- and the refusal happens BEFORE any write, so the
     // file on disk is exactly what it was a moment ago: its labels,
@@ -607,7 +606,7 @@ export function openStore(
     );
   }
 
-  // WR-04, THE LAST KNOWN FAMILY ESCAPE IN THIS FUNCTION. The two blocks either
+  // THE LAST KNOWN FAMILY ESCAPE IN THIS FUNCTION. The two blocks either
   // side of this one are already wrapped, and for the same two reasons: an
   // unwrapped failure here leaks the CONNECTION as well as escaping the
   // `ViceError` family, so the caller loses the file handle with no way to
@@ -648,14 +647,14 @@ export function currentRevision(handle: AnnoStoreHandle): number {
  * The suffix appended to the store FILENAME to name its snapshot ring
  * directory. Appended to the FILENAME rather than being a fixed directory name
  * (`<dir>/snapshots`, which is what this was), and the distinction is the whole
- * of CR-01's fix: two distinct store files in one directory have distinct
+ * of the fix: two distinct store files in one directory have distinct
  * basenames by definition of a filesystem, so distinct basenames give distinct
  * rings BY CONSTRUCTION rather than by an ownership predicate layered over a
  * shared location.
  *
  * THE PREDICATE ROUTE WAS ALREADY TRIED AND COULD NOT SEE THE DEFECT. Plan
  * 28-07 added a per-revision ownership check over the shared `<dir>/snapshots`
- * ring; it was structurally blind to CR-01 because revision numbers are not
+ * ring; it was structurally blind to the collision because revision numbers are not
  * unique ACROSS stores -- two stores in one directory both write `r1.db`, and
  * every per-revision predicate says "yes, revision 1 is mine" to both of them.
  * A location that cannot collide has no such blind spot to test for.
@@ -669,12 +668,12 @@ const SNAPSHOT_DIR_SUFFIX = ".snapshots";
  * `<dir>/proj.annostore.snapshots`.
  *
  * THE RESIDUAL, STATED RATHER THAN CLAIMED CLOSED -- AND RESTATED AFTER THIS
- * PARAGRAPH'S EARLIER VERSION WAS FALSIFIED BY DRIVING THE CODE (CR-05). What
+ * PARAGRAPH'S EARLIER VERSION WAS FALSIFIED BY DRIVING THE CODE. What
  * it got RIGHT and keeps: the location is a pure function of the handle, the
  * sweep only ever reads `snapshotDirFor(handle)` so it cannot see a ring it
  * does not name, and renaming the containing DIRECTORY is not a residual at all
- * -- the ring moves with the directory, so nothing is lost (pinned by the CR-03
- * rename test). What became FALSE: it claimed the old ring was never deleted at
+ * -- the ring moves with the directory, so nothing is lost, confirmed by a
+ * directory-rename test. What became FALSE: it claimed the old ring was never deleted at
  * all and that `retainedRevisions()` reporting an empty list was therefore a
  * truthful under-claim. That was true of the FILES and false of the ROWS -- so
  * the claim is not repeated here even to disown it, because the next reader
@@ -687,7 +686,7 @@ const SNAPSHOT_DIR_SUFFIX = ".snapshots";
  * a SYMLINK ALIAS, or a store-file rename (`mv proj.annostore
  * other.annostore`) -- names a DIFFERENT ring, so a handle opened under it
  * publishes into a SECOND ring. The first ring's files are never deleted, and
- * since CR-05 its pointer rows are never deleted BY THE SWEEP -- but
+ * since the fix above its pointer rows are never deleted BY THE SWEEP -- but
  * `pruneSnapshots`' doomed loop still deletes every row below
  * `currentRevision() - MAX_SNAPSHOT_REVISIONS`, so restoring the original name
  * restores the floor ONLY while the wrong-spelling handle has not advanced past
@@ -737,8 +736,8 @@ export const NO_RETAINED_REVISION = -1;
  * reconciliation below derives from a filename alone.
  *
  * ANCHORED ON PURPOSE, and the anchoring is load-bearing rather than tidy:
- * plan 28-08 introduces per-attempt STAGING files in this same directory under
- * a different suffix, and a sweep that matched them would delete another
+ * this module's own staging mechanism writes per-attempt STAGING files in this
+ * same directory under a different suffix, and a sweep that matched them would delete another
  * writer's in-flight snapshot -- the exact loss this reconciliation exists to
  * prevent, committed by the repair itself.
  *
@@ -757,7 +756,7 @@ const SNAPSHOT_FILE_PATTERN = /^r(\d+)\.db$/;
  *
  * IT REPLACED A PRESENCE TEST AT BOTH OF THE TWO SITES THAT CARRIED ONE -- the
  * filter inside `retainedRevisions` and `revertTo`'s step-2 gate -- and the
- * promotion is the whole of CR-08's supporting half. Presence was never a
+ * promotion is the whole of the supporting half of this fix. Presence was never a
  * witness that a file is a store: this module's FIRST MEASURED FACT (header,
  * `:22-31`) is that a ZERO-LENGTH FILE OPENS as a SQLite database and reports
  * `integrity_check ok`. So the store advertised a revision whose image was not a
@@ -854,7 +853,7 @@ function claimedRevisions(handle: AnnoStoreHandle): number[] {
  * one file are two things that can disagree. They did, twice, both reproduced:
  * a directory rename invalidated every persisted path at once, after which this
  * function reported NO retained revisions while the files sat there on disk, and
- * the next write's prune destroyed them (CR-03). The same shape covers every
+ * the next write's prune destroyed them. The same shape covers every
  * adjacent case rather than just that one repro -- a bind mount seen from two
  * namespaces (this repo's entire architecture is built around that boundary), a
  * symlinked ancestor, a container/host path pair, a case-insensitive filesystem,
@@ -880,8 +879,8 @@ function claimedRevisions(handle: AnnoStoreHandle): number[] {
  * `begin immediate` would have opened up to 32 databases with the store's write
  * lock held. Every remaining consumer reads this function rather than deciding
  * for itself what "retained" means: three independent decisions is precisely how
- * the three answers came to disagree, CR-08 was the gap between two of them, and
- * a fourth would also hide the row-only regression from the proofs that exist to
+ * the three answers came to disagree -- that was the gap between two of them --
+ * and a fourth would also hide the row-only regression from the proofs that exist to
  * catch it.
  */
 export function retainedRevisions(handle: AnnoStoreHandle): number[] {
@@ -907,7 +906,7 @@ export function retainedRevisions(handle: AnnoStoreHandle): number[] {
  * the first element of `retainedRevisions()` -- and that reading was then one
  * step short a SECOND time, in the same direction: an existence check published
  * `0` on a store whose `r0.db` was present but was not a database, and
- * following THAT floor destroyed the live store (CR-08). The floor now requires
+ * following THAT floor destroyed the live store. The floor now requires
  * the image to OPEN, not merely to exist, so the store still cannot publish a
  * number it will then refuse -- in either direction.
  */
@@ -925,8 +924,8 @@ export function oldestRetainedRevision(handle: AnnoStoreHandle): number {
  *
  *   * AN ORPHAN ROW (a pointer row whose file is gone) IS NO LONGER SWEPT AT
  *     ALL, and the reversal is recorded here rather than left to be inferred
- *     from an absence. This function used to delete every such row. CR-05
- *     reproduced, twice, what that costs: the ring is named from
+ *     from an absence. This function used to delete every such row. A live
+ *     reproduction showed, twice, what that costs: the ring is named from
  *     `basename(handle.path)` -- a PATH SPELLING -- so a SYMLINK ALIAS of the
  *     store file, or a store-file rename (`mv proj.annostore
  *     other.annostore`), makes `retainedRevisions()` report every EXISTING
@@ -954,11 +953,11 @@ export function oldestRetainedRevision(handle: AnnoStoreHandle): number {
  *     ring. That is no longer true: the keep-set below reads
  *     `claimedRevisions`, so this sweep now looks at rows the advertisement
  *     ignores. THE NEW BASIS IS BETTER RATHER THAN WEAKER, and it is the
- *     conclusion CR-08 forced: a row the sweep KEEPS is precisely what makes a
+ *     conclusion that promotion forced: a row the sweep KEEPS is precisely what makes a
  *     corrupt image survive on disk as EVIDENCE instead of being unlinked. A
  *     sweep that deleted the image of a failure would be destroying the only
  *     record of the failure that has to be diagnosed -- a second destruction
- *     dressed as a repair. The CR-05 conclusion is unchanged: the row direction
+ *     dressed as a repair. That conclusion is unchanged: the row direction
  *     stays abandoned, for the ownership reason above.
  *
  *     THE KEEP-SET QUERY RUNS ON THE CONNECTION ALREADY IN HAND, and that is
@@ -1002,7 +1001,7 @@ export function oldestRetainedRevision(handle: AnnoStoreHandle): number {
  * over a ring with no half-states). It must NOT run from `openStore`:
  * `anno-durability.test.ts:291-347` asserts that an orphan snapshot file left
  * in the kill window SURVIVES a reopen and is identified by its revision, and
- * that is a verified truth of plan 28-06 -- merely LOOKING at a store must not
+ * that is a verified truth -- merely LOOKING at a store must not
  * change it, and the orphan a kill window leaves is deliberately the harmless
  * direction. Reconciling on open would redden that test, and rightly. BOTH
  * SITES ARE OUTSIDE ANY OPEN TRANSACTION, which is now a REQUIREMENT rather
@@ -1010,7 +1009,7 @@ export function oldestRetainedRevision(handle: AnnoStoreHandle): number {
  * own, so calling it from inside one is not supported.
  *
  * IT NOW TAKES THE STORE'S WRITE LOCK BEFORE IT DECIDES ANYTHING, and the
- * reason is a reproduced defect (CR-02) rather than caution. A snapshot becomes
+ * reason is a reproduced defect rather than caution. A snapshot becomes
  * a FILESYSTEM fact (the `renameSync` inside `publishSnapshot`) before it
  * becomes a TRANSACTIONAL one (the pointer-row insert), so a sweep reading only
  * its own committed view sees a live writer's published file as unowned and
@@ -1065,7 +1064,7 @@ export function oldestRetainedRevision(handle: AnnoStoreHandle): number {
  * NO SECOND DISCRIMINATOR WAS ADDED FOR `deferred`'s TWO CAUSES, and the reason
  * is not economy. Its only consumer, `pruneSnapshots`, returns early
  * identically in both cases, so a discriminator would have no reader -- and
- * CR-07's actual complaint, that a LEAKED transaction makes every later sweep
+ * the actual complaint here, that a LEAKED transaction makes every later sweep
  * report `deferred` indistinguishably from contention, is removed AT ITS SOURCE
  * by the handler rather than papered over with a label. A field describing a
  * state this code can no longer reach would be exactly the kind of comment
@@ -1077,7 +1076,7 @@ export function oldestRetainedRevision(handle: AnnoStoreHandle): number {
  * for up to the connection's five-second `busy_timeout` before it proceeds --
  * at BOTH of the two call sites: every accepted write (through `pruneSnapshots`
  * at `runWriteSequence` step 9) and every `revertTo` (through its own step-6
- * sweep on the restored handle). Phase 29 puts both on an MCP tool path. Each is
+ * sweep on the restored handle). Both sit on an MCP tool path. Each is
  * bounded at ONE timeout and not two, because `pruneSnapshots` returns early
  * when this function reports `deferred` rather than running its own autocommit
  * deletes into the same contention. An honest cost stated at the seam is worth
@@ -1089,8 +1088,8 @@ export function oldestRetainedRevision(handle: AnnoStoreHandle): number {
  * left (see the ORPHAN ROW bullet above), so what the ordering now guarantees is
  * narrower and is stated narrowly: an interruption between the commit and the
  * unlinks leaves extra FILES, never a pointer row aimed at a deleted file.
- * Pinned by a source-order control in `anno-store.test.ts`, which since CR-05
- * asserts the ABSENCE of any pointer-row delete in this body as well as the
+ * Pinned by a source-order control in `anno-store.test.ts`, which since the fix
+ * above asserts the ABSENCE of any pointer-row delete in this body as well as the
  * surviving commit-before-unlink order -- a presence assertion cannot see
  * either.
  */
@@ -1119,12 +1118,12 @@ export function reconcileSnapshotRing(handle: AnnoStoreHandle): { droppedFiles: 
   const orphanFiles: string[] = [];
 
   // EVERYTHING FROM HERE TO THE COMMIT IS BRACKETED, AND THE BRACKET IS THE
-  // FIX (CR-07). `begin immediate` above has already opened a transaction on
+  // FIX. `begin immediate` above has already opened a transaction on
   // the CALLER's connection. Before this handler existed, any throw between
   // that statement and the commit -- `readdirSync` on a ring directory that
   // became unreadable, a failure of the keep-set `select`, anything --
   // propagated out with the transaction still
-  // OPEN. Step 9's WR-02 wrap then swallowed it, so an ordinary `setDataType`
+  // OPEN. Step 9's own error-swallowing wrap then swallowed it, so an ordinary `setDataType`
   // reported SUCCESS while leaving the handle permanently inside a transaction:
   // every later write failed with "cannot start a transaction within a
   // transaction", and every later sweep reported `deferred` indistinguishably
@@ -1132,8 +1131,8 @@ export function reconcileSnapshotRing(handle: AnnoStoreHandle): { droppedFiles: 
   // path-dependent: there is no route out of this block that does not either
   // commit or roll back.
   try {
-    // STEP 2. With the lock held, compute the drop set -- which since CR-05 has
-    // exactly ONE direction, the FILE direction -- before changing anything.
+    // STEP 2. With the lock held, compute the drop set -- which since the fix
+    // above has exactly ONE direction, the FILE direction -- before changing anything.
     //
     // THE KEEP-SET IS THE POINTER-ROW SET, AND THAT IS A DIFFERENT QUESTION
     // rather than a fourth answer to "what is retained". This resolver still
@@ -1145,12 +1144,12 @@ export function reconcileSnapshotRing(handle: AnnoStoreHandle): { droppedFiles: 
     // WHY THE QUESTION IS GENUINELY DIFFERENT, AND WHY THE ANSWERS ONLY DIVERGE
     // NOW. A sweep over FILES asks "is this file claimed by a pointer row";
     // `retainedRevisions` asks "can a caller revert to this revision". Before
-    // CR-08's promotion those two were identical for every reachable input,
+    // that promotion those two were identical for every reachable input,
     // because the presence half of the old definition is trivially true of a
     // file `readdirSync` just returned. The promotion is what separates them,
     // and the separation runs in the SAFE direction: an image that fails to open
     // but that a row still claims is kept on disk as EVIDENCE. Leaving this
-    // keep-set on `retainedRevisions` would have made the CR-08 fix its own
+    // keep-set on `retainedRevisions` would have made that fix its own
     // second destroyer -- the sweep would unlink exactly the corrupt image whose
     // refusal has to be diagnosed, one ordinary write after the refusal.
     //
@@ -1183,7 +1182,7 @@ export function reconcileSnapshotRing(handle: AnnoStoreHandle): { droppedFiles: 
       }
     }
 
-    // STEP 3 IS GONE ON PURPOSE, and its absence is the fix for CR-05. It
+    // STEP 3 IS GONE ON PURPOSE, and its absence is the fix described above. It
     // deleted every pointer row this handle's spelling of the ring could not
     // vouch for; under a second spelling of the same store file that was every
     // row it had. The whole argument is in the ORPHAN ROW bullet above.
@@ -1198,7 +1197,7 @@ export function reconcileSnapshotRing(handle: AnnoStoreHandle): { droppedFiles: 
   } catch {
     // ROLLED BACK INSIDE ITS OWN SWALLOWING `try`: there is nothing useful to
     // do with a second error here, and reporting it would replace the first.
-    // WHAT IS NEW IS THAT THE OUTCOME IS RECORDED RATHER THAN ASSUMED (WR-16).
+    // WHAT IS NEW IS THAT THE OUTCOME IS RECORDED RATHER THAN ASSUMED.
     // Node 22's `DatabaseSync` exposes no transaction-state accessor, so this
     // boolean is the only thing that can tell a caller which of the two
     // happened -- and this function cannot tell it by throwing, because
@@ -1212,7 +1211,7 @@ export function reconcileSnapshotRing(handle: AnnoStoreHandle): { droppedFiles: 
       rolledBack = false;
     }
     // AND DELIBERATELY NOT RETHROWN. A throw from here is swallowed by step 9's
-    // WR-02 wrap anyway, so rethrowing would buy nothing on the write path --
+    // own error-swallowing wrap anyway, so rethrowing would buy nothing on the write path --
     // and on `revertTo`'s own step-6 call site it would convert a COMMITTED
     // write into a caller-visible failure, which prohibition 28-11 P5 forbids.
     // The sweep changed nothing, which is precisely what `deferred` reports --
@@ -1306,7 +1305,7 @@ export function pruneSnapshots(handle: AnnoStoreHandle): boolean {
   // revision number, and the same direction a deferred sweep already accepts.
   //
   // AND ITS `rollbackFailed` IS CONSUMED FOR THE SAME REASON, RETURNED RATHER
-  // THAN DISCARDED (WR-18). The argument recorded above for consuming
+  // THAN DISCARDED. The argument recorded above for consuming
   // `.deferred` is the argument for consuming this one, so it is extended here
   // rather than restated: a fact this function throws away is a fact its caller
   // cannot act on, and `rollbackFailed` reports the ONE state the sweep's own
@@ -1345,7 +1344,7 @@ export function pruneSnapshots(handle: AnnoStoreHandle): boolean {
     // an orphan FILE -- which the reconciliation at the top of the NEXT prune
     // can still see and retry. Under the earlier arrangement the row was
     // deleted unconditionally after a swallowed failure, so the file became
-    // invisible to the bound forever (WR-01's secondary point).
+    // invisible to the bound forever.
     try {
       // THE PATH IS COMPUTED HERE, at the delete, from the handle -- never read
       // from the row. A persisted absolute path is environment-controlled input
@@ -1391,7 +1390,7 @@ export function pruneSnapshots(handle: AnnoStoreHandle): boolean {
  * because `vacuum into` refuses an existing target and because two writers
  * filling one file is the very collision this staging exists to remove.
  *
- * AND THE IMAGE IS FSYNCED BEFORE THIS FUNCTION RETURNS (WR-13). The pointer row
+ * AND THE IMAGE IS FSYNCED BEFORE THIS FUNCTION RETURNS. The pointer row
  * that names this file is inserted inside the write transaction and committed by
  * SQLite, WHICH DOES FSYNC -- so without the `fsyncPath` below the ROW is
  * durable and the FILE it names is not. Trap 10's durability premise covers a
@@ -1399,7 +1398,7 @@ export function pruneSnapshots(handle: AnnoStoreHandle): boolean {
  * anyway; it does NOT cover a host crash, which loses the cache. The consequence
  * is not an extra file: it is a PRESENT, PARTIAL snapshot that
  * `retainedRevisions()` would advertise as revertible, which is exactly the input
- * CR-08 was reproduced with. 28-16's step-2 and step-3b gates make that input a
+ * this defect was reproduced with. 28-16's step-2 and step-3b gates make that input a
  * REFUSAL rather than a destruction; this call removes the input at its source
  * rather than relying on the refusal, because a refusal on the only route back
  * is still a lost history.
@@ -1443,7 +1442,7 @@ export function stageSnapshot(handle: AnnoStoreHandle, revision: number): string
  * store that has been reverted and written forward again, rather than leaving
  * it as an argument.
  *
- * AND THE RING DIRECTORY IS FSYNCED AFTER THE RENAME (WR-13). A rename is
+ * AND THE RING DIRECTORY IS FSYNCED AFTER THE RENAME. A rename is
  * VISIBLE immediately and DURABLE only after the directory is fsynced -- the
  * distinction `fsyncPath`'s own doc sentence records. The pointer row that names
  * this file is inserted inside the write transaction a few statements below and
@@ -1454,7 +1453,7 @@ export function stageSnapshot(handle: AnnoStoreHandle, revision: number): string
  * `SIGKILL` and NOT of a host crash, which loses the page cache; the surviving
  * half-state there is a durable row naming a file whose bytes never reached
  * disk, i.e. the PRESENT, PARTIAL snapshot `retainedRevisions()` would advertise
- * and the exact input CR-08 was reproduced with. 28-16 made that input a refusal
+ * and the exact input this defect was reproduced with. 28-16 made that input a refusal
  * rather than a destruction; this call removes the input at its source instead of
  * relying on that refusal. The order is the same as `revertTo`'s steps 3 and 5
  * and uses the same helper, deliberately -- a second durability idiom in one
@@ -1474,7 +1473,7 @@ export function stageSnapshot(handle: AnnoStoreHandle, revision: number): string
  * half-state for a store that cannot be written at all: `openSync(dir, "r")`
  * needs the ring directory READABLE, so a writable-but-unreadable ring (mode
  * 0300 -- measured) would make every `setDataType` throw, and that is also the
- * precondition CR-07's only behavioural control is built from. So the two
+ * precondition this fix's only behavioural control is built from. So the two
  * reachable outcomes after an interruption stay exactly the two this module
  * bounds them to -- a missing entry, or an entry whose contents ARE durable --
  * and the failure of this call moves the outcome from the second to the first
@@ -1500,7 +1499,7 @@ function publishSnapshot(stagingPath: string, snapPath: string): void {
  * are on.
  *
  * AND IT IS THE ONE PLACE A STAGING FILE IS REMOVED, which is why `revertTo`'s
- * three cleanup exits route through it too (WR-24 / WR-11). Those three used to
+ * three cleanup exits route through it too. Those three used to
  * be bare `rmSync(staging, { force: true })` calls, so the module had two
  * answers to "where does a staging file get removed" and a later reader looking
  * for the one place found only half of them. The swallowing semantics below are
@@ -1575,12 +1574,12 @@ function runWriteSequence<T>(
   doCommit: boolean,
   baseRevision?: number,
 ): { revision: number; result: T } {
-  // BEFORE `begin immediate`, AND BEFORE ANYTHING IS READ (WR-18). A previous
+  // BEFORE `begin immediate`, AND BEFORE ANYTHING IS READ. A previous
   // write's housekeeping sweep ran on THIS connection and reported that its own
   // `rollback` threw, so the connection may still hold an open transaction and
   // the store's write lock. Without this refusal the next `begin immediate`
   // surfaces SQLite's bare `cannot start a transaction within a transaction` --
-  // CR-07's exact reported symptom, outside the `ViceError` family, with nothing
+  // the exact reported symptom, outside the `ViceError` family, with nothing
   // naming the cause or the remedy.
   //
   // AN EXISTING IN-FAMILY CLASS, NOT A NEW ONE: this is the same fact the commit
@@ -1607,7 +1606,7 @@ function runWriteSequence<T>(
     );
   }
 
-  // WR-01, THE PRE-LOCK ARM. `stageSnapshot` runs BEFORE `begin immediate`, so
+  // THE PRE-LOCK ARM. `stageSnapshot` runs BEFORE `begin immediate`, so
   // it gets its own handler rather than sharing the outer one below: there is
   // no transaction to roll back yet and no staged file to discard, so the two
   // arms genuinely differ in what they have to undo. The reachable input is a
@@ -1626,7 +1625,7 @@ function runWriteSequence<T>(
     );
   }
 
-  // WR-01, THE MAIN WINDOW: `begin immediate`, the compare-and-swap, the
+  // THE MAIN WINDOW: `begin immediate`, the compare-and-swap, the
   // publication and the pointer-row insert, wrapped as ONE region. Its catch
   // undoes both kinds of state this region can leave behind -- an open
   // transaction with the compare-and-swap applied, and a staged `.tmp` -- and
@@ -1635,7 +1634,7 @@ function runWriteSequence<T>(
   // keeps the family closed.
   //
   // THE INNER ROLLBACK AND DISCARD IN THE CAS-FAILURE BRANCH BELOW ARE NOT
-  // REDUNDANT AND MUST NOT BE "SIMPLIFIED" AWAY. `anno-store.test.ts`'s WR-11
+  // REDUNDANT AND MUST NOT BE "SIMPLIFIED" AWAY. `anno-store.test.ts`'s own
   // control extracts the slice between `cas.changes` and `publishSnapshot` and
   // asserts a `rollback` is present inside it, positioned after the
   // `select revision from anno_meta` read -- that positioning is a VERIFIED
@@ -1679,7 +1678,7 @@ function runWriteSequence<T>(
     // claims (see `retainedRevisions`).
     handle.db.prepare("insert into anno_snapshot(revision) values (?)").run(rev);
   } catch (e) {
-    // THE ROLLBACK'S OUTCOME IS RECORDED, NOT ASSUMED (WR-16). The message below
+    // THE ROLLBACK'S OUTCOME IS RECORDED, NOT ASSUMED. The message below
     // used to state the rollback as a fact after this `catch` had swallowed that
     // rollback's own failure, so the one case in which the claim is false is
     // exactly the case in which it was printed. Node 22's `DatabaseSync` exposes
@@ -1753,7 +1752,7 @@ function runWriteSequence<T>(
   }
 
   if (doCommit) {
-    // CR-06, THE COMMIT ARM. This is the ONE statement in the sequence whose
+    // THE COMMIT ARM. This is the ONE statement in the sequence whose
     // failure leaves the transaction OPEN with everything already applied -- the
     // compare-and-swap, the caller's mutation and the pointer-row insert -- and
     // it was outside every handler until this arm was added. A concurrent READER
@@ -1763,7 +1762,7 @@ function runWriteSequence<T>(
     // transaction: a bare `Error: database is locked` after the connection's
     // 5000 ms `busy_timeout`, outside the `ViceError` family, with the write
     // lock still held and `currentRevision()` on this connection reporting the
-    // ADVANCED revision for a write that never landed. On the Phase 29 tool
+    // ADVANCED revision for a write that never landed. On the MCP tool
     // path a handle lives as long as the session, so the leaked write lock
     // locks every other connection out for that long.
     //
@@ -1785,18 +1784,18 @@ function runWriteSequence<T>(
     // accepted write's sweep reclaims.
     //
     // The refusal carries `code` from the underlying error when it has one
-    // (IN-05's cheap half, on this wrap only), so a caller can ask whether the
+    // (the cheap half of that, on this wrap only), so a caller can ask whether the
     // failure was lock contention without substring-matching the message.
     // `cause` is deliberately NOT added: that needs a new field on
     // `ViceErrorOptions` in `vice.ts`, a shared module outside this phase.
     try {
       commitTransaction(handle.db);
     } catch (e) {
-      // RECORDED, NOT ASSERTED (WR-16). "the transaction has been rolled back"
+      // RECORDED, NOT ASSERTED. "the transaction has been rolled back"
       // was stated as a fact directly under a `catch` that swallowed the
       // rollback's own failure -- so on the one path where the claim is false it
-      // was still printed, and a refusal that reports the CR-06 state as its own
-      // repair sends the caller straight back into reusing a connection that may
+      // was still printed, and a refusal that reports that half-committed state
+      // as its own repair sends the caller straight back into reusing a connection that may
       // still hold the store's write lock. There is no cheap check available:
       // Node 22's `DatabaseSync` exposes no transaction-state accessor (surface
       // measured on this host: `open, close, prepare, exec, function, location,
@@ -1826,8 +1825,8 @@ function runWriteSequence<T>(
           // The wording here is FREE. It used to be constrained: the
           // single-commit-site control in `anno-seam.test.ts` counted the WORD
           // `commit` over this module's stripped source, so a `step` value
-          // reading "commit ..." reddened a control in a different file. WR-15
-          // replaced that count with a match on `exec()` calls carrying a bare
+          // reading "commit ..." reddened a control in a different file. A later
+          // revision replaced that count with a match on `exec()` calls carrying a bare
           // statement literal, which no error message can satisfy, and the
           // constraint went with it -- this value is unchanged only because
           // changing it would be a gratuitous behaviour change.
@@ -1840,12 +1839,12 @@ function runWriteSequence<T>(
     // branch because a sequence that never commits has no accepted write to
     // bound.
     //
-    // WR-02: WRAPPED, AND DELIBERATELY NOT RETHROWN. By this line the
+    // WRAPPED, AND DELIBERATELY NOT RETHROWN. By this line the
     // transaction has already returned, so THE WRITE HAPPENED -- the mutation
     // and the pointer row are durable. A housekeeping failure that threw from
     // here would report a write that succeeded as a failure, and the caller
-    // would retry an ADDITIVE verb and produce a second row. That is WR-02's
-    // exact complaint, and it became more likely rather than less once the
+    // would retry an ADDITIVE verb and produce a second row. That is exactly
+    // the failure this wrap exists to prevent, and it became more likely rather than less once the
     // sweep started taking the write lock.
     //
     // The consequence of swallowing is an UN-PRUNED RING -- extra files, the
@@ -1855,7 +1854,7 @@ function runWriteSequence<T>(
     // one here would be new surface with its own stdio hazards on an MCP
     // transport.
     //
-    // AND ITS REPORT IS CONSUMED (WR-18). `pruneSnapshots` returns the sweep's
+    // AND ITS REPORT IS CONSUMED. `pruneSnapshots` returns the sweep's
     // `rollbackFailed` -- the one state the sweep's own handler cannot fix --
     // and it is RECORDED ON THE HANDLE rather than thrown or logged. Not thrown,
     // because by this line the write is committed and 28-11 P5 forbids reporting
@@ -1907,7 +1906,7 @@ export function applyWriteWithoutCommit<T>(
 
 /**
  * The module's ONE range insert. `bank` is a parameter rather than a hardcoded
- * `null` (IN-06): a remainder re-inserted by split-and-preserve carries the
+ * `null`: a remainder re-inserted by split-and-preserve carries the
  * overlapped row's own `bank` forward, and a newly typed range carries `null`.
  * `bank` is reserved and interpreted by nothing today, which is exactly why a
  * write path that silently dropped it would be an unobservable loss a future
@@ -1996,7 +1995,7 @@ function entryPairKey(pair: readonly [number, number]): string {
 
 /**
  * What fragmenting `row` at the caller's range COSTS, or `null` when it costs
- * nothing this record could describe (CR-10).
+ * nothing this record could describe.
  *
  * `null` in exactly two cases, both of them honest:
  *   * the row is not a split-table layout -- asked through `isSplitDataType`,
@@ -2097,15 +2096,14 @@ function splitReinterpretation(
  * signal that distinguishes a no-op, and the revision is never that signal.
  *
  * ---------------------------------------------------------------------------
- * DECISION 1: THE SPLIT-ROW REMAINDER RULE -- TWO OUTCOMES, NEITHER SILENT
- * (CR-09 and CR-10).
+ * DECISION 1: THE SPLIT-ROW REMAINDER RULE -- TWO OUTCOMES, NEITHER SILENT.
  * ---------------------------------------------------------------------------
  * A split-table row has TWO things that can go wrong when a caller's range
  * fragments it, and this function answers them differently on purpose. The
  * comment and the code below state ONE rule, and both halves of it are here.
  *
- * (1) THE ODD REMAINDER IS REFUSED, and the whole retype is refused with it
- * (CR-09). A remainder that is not a legal shape for its OWN type -- the
+ * (1) THE ODD REMAINDER IS REFUSED, and the whole retype is refused with it.
+ * A remainder that is not a legal shape for its OWN type -- the
  * odd-byte-count tail of a fragmented split table is the reachable case -- is a
  * row `setDataType` would decline to create and `resolveSplitTargets()` cannot
  * decode. The store never persists a range row it would refuse at its own entry
@@ -2117,7 +2115,7 @@ function splitReinterpretation(
  * outward to an entry boundary is forbidden outright by `anno-types.ts` trap 7.
  *
  * (2) THE EVEN REMAINDER IS ACCEPTED **WITH A REPORT** -- never accepted
- * silently (CR-10). Parity is not the only thing a fragment can break. A split
+ * silently. Parity is not the only thing a fragment can break. A split
  * table pairs byte `i` with byte `n + i`, so an entry's partner is a function of
  * the row's START and its LENGTH, and changing either end re-pairs EVERY entry.
  *
@@ -2156,17 +2154,17 @@ function splitReinterpretation(
  * `delete`, and the ordering is the guarantee, not a tidiness preference: a
  * refusal must cost nothing observable, and leaning on the transaction's
  * rollback to undo a half-applied mutation would make that depend on a rollback
- * that the CR-06 arm's own `rollbackFailed` handling shows can itself fail.
+ * that the commit handler's own `rollbackFailed` handling shows can itself fail.
  * Compute, refuse, then mutate. The parity check runs FIRST and is untouched by
  * the disclosure: a refusing retype returns no report because it returns nothing
  * at all.
  *
  * ---------------------------------------------------------------------------
- * DECISION 2: THE UNION COLLAPSE IS INTENDED (STORE-02, round-3 WR-08).
+ * DECISION 2: THE UNION COLLAPSE IS INTENDED.
  * ---------------------------------------------------------------------------
  * A caller range that SPANS several existing rows deletes all of them and
- * inserts one row. That is intended, and it does not contradict STORE-02:
- * STORE-02 forbids the store joining adjacent ranges OF ITS OWN ACCORD, and
+ * inserts one row. That is intended, and it does not contradict the store's
+ * own adjacency rule: that rule forbids the store joining adjacent ranges OF ITS OWN ACCORD, and
  * here the caller asked for exactly one range and got exactly one range. The
  * store still never joins two rows nobody asked about -- see the behavioural
  * and structural adjacency controls.
@@ -2213,7 +2211,7 @@ function retype(
   // for a split row that survives that question, what the fragmentation COSTS.
   //
   // WHAT THIS GATE DOES NOT ASK, said here because "THE GATE" reads absolute
-  // and a reader will otherwise take it for one (WR-31, 28-21 P1 / 28-07 P3):
+  // and a reader will otherwise take it for one (28-21 P1 / 28-07 P3):
   // the shape question is asked of REMAINDERS, never of the overlapped row
   // itself. A row the caller's range covers in full has no head and no tail,
   // so neither branch below runs and its shape is never examined -- correctly,
@@ -2462,7 +2460,7 @@ export function listRanges(handle: AnnoStoreHandle): RangeRow[] {
  *     retained for it", with the oldest retained revision, the bound and the
  *     available list.
  *   * A ROW CLAIMS IT BUT ITS IMAGE WILL NOT OPEN as an annotation store (step
- *     2, second arm) -- the arm CR-08 added, covering an absent image and a
+ *     2, second arm) -- the arm added to cover an absent image and a
  *     present-but-unusable one alike, with the underlying reason quoted so the
  *     caller can tell which. This is the arm the old presence-only gate did not
  *     have, and its absence is what let the store be destroyed installing an
@@ -2485,7 +2483,7 @@ export function listRanges(handle: AnnoStoreHandle): RangeRow[] {
  */
 /**
  * The one gate on a revision-shaped argument, and it exists because ONE
- * unvalidated value lands in TWO places that can then disagree (WR-22): a bound
+ * unvalidated value lands in TWO places that can then disagree: a bound
  * SQL parameter, and a snapshot FILENAME.
  *
  * Accepts a non-negative safe integer and nothing else. A numeric STRING is
@@ -2496,9 +2494,9 @@ export function listRanges(handle: AnnoStoreHandle): RangeRow[] {
  * ring, which is the confusion `AnnoRevisionArgumentError`'s doc comment records
  * in full.
  *
- * DELIBERATELY NOT REUSED FOR `baseRevision`. The round-5 review's WR-22 sketch
- * suggests it; that is WR-06, which the round-5 verification does not route to
- * this round, so the declination is recorded here rather than left looking like
+ * DELIBERATELY NOT REUSED FOR `baseRevision`. An earlier round's review sketch
+ * suggested it, but that suggestion is a separate finding the same round's
+ * verification did not route to this round, so the declination is recorded here rather than left looking like
  * an omission -- `runWriteSequence`'s existing `baseRevision` staleness refusal
  * is this validator's SIBLING, not its client.
  */
@@ -2521,10 +2519,10 @@ function assertRevisionArgument(value: unknown, parameter: string): number {
 }
 
 export function revertTo(handle: AnnoStoreHandle, revision: number): AnnoStoreHandle {
-  // STEP 0, AND IT IS FIRST FOR THE REASON WR-22 RECORDS: this argument reaches
+  // STEP 0, AND IT IS FIRST FOR THE REASON RECORDED ABOVE: this argument reaches
   // a bound SQL parameter AND a filename, so it is judged before either exists.
   // Before this line, `revertTo(handle, "1")` silently reverted the store and
-  // `revertTo(handle, "0001")` refused with CR-08's CORRUPTION message.
+  // `revertTo(handle, "0001")` refused with a CORRUPTION message.
   assertRevisionArgument(revision, "revision");
 
   // STEP 1. The pointer row -- the INDEX half of "retained". An EXISTENCE check
@@ -2542,8 +2540,8 @@ export function revertTo(handle: AnnoStoreHandle, revision: number): AnnoStoreHa
   //
   // THE FILE HALF NOW READS `snapshotOpenFailure` -- the same witness
   // `retainedRevisions` reads, in its other position. It used to read
-  // `existsSync` and nothing more, which is CR-08: a present image that was not
-  // a database passed this gate, and the store was destroyed installing it. The
+  // `existsSync` and nothing more, which let a present image that was not
+  // a database pass this gate, and the store was destroyed installing it. The
   // "oldest retained" and "available revisions" figures are built from
   // `retainedRevisions()` and never from the raw rows, so a refusal cannot
   // steer the caller at a revision the very next call would also refuse.
@@ -2551,8 +2549,8 @@ export function revertTo(handle: AnnoStoreHandle, revision: number): AnnoStoreHa
   // THE ARMS SPLIT ON THE ROW, NOT ON THE FILE'S PRESENCE, and that is
   // deliberate rather than an omission. Asking "is the image absent" separately
   // from "does the image open" would put a SECOND predicate back on a snapshot
-  // path -- a second truth about one file, which is how CR-03 and CR-08 both
-  // happened. The two file-half sub-cases are distinguished by the QUOTED
+  // path -- a second truth about one file, which is exactly how two of this
+  // store's past defects happened. The two file-half sub-cases are distinguished by the QUOTED
   // REASON instead: an absent image quotes "the file does not exist", a corrupt
   // one quotes what SQLite or `openStore` said. One witness, one message, and
   // the caller can still tell them apart.
@@ -2585,7 +2583,7 @@ export function revertTo(handle: AnnoStoreHandle, revision: number): AnnoStoreHa
 
   const storePath = handle.path;
   const dir = handle.dir;
-  // THE STAGING NAME IS UNIQUE PER ATTEMPT, NOT PER (PID, REVISION) (WR-24),
+  // THE STAGING NAME IS UNIQUE PER ATTEMPT, NOT PER (PID, REVISION),
   // and it is built from `randomUUID` -- the SAME primitive `stageSnapshot`
   // uses, so there is ONE answer in this module to "how is a staging name made
   // unique" rather than two that can drift. `stageSnapshot`'s own doc comment
@@ -2602,12 +2600,12 @@ export function revertTo(handle: AnnoStoreHandle, revision: number): AnnoStoreHa
   // addressed the same path.
   //
   // AND WHAT IT DOES NOT CLOSE, stated because a comment that implied otherwise
-  // would be prohibition 28-07 P3's exact shape: THE LEAK HALF STAYS OPEN UNDER
-  // WR-11. A process killed between the copy and any of the three cleanups
+  // would be prohibition 28-07 P3's exact shape: THE LEAK HALF STAYS OPEN.
+  // A process killed between the copy and any of the three cleanups
   // still leaves this file behind, and it sits beside the store rather than
   // inside the ring directory, so `reconcileSnapshotRing`'s sweep -- anchored on
   // `r<digits>.db` inside `snapshotDirFor()` -- does not and must not match it.
-  // Nothing reclaims it. That is WR-11's other half and it is not closed here.
+  // Nothing reclaims it. That is the other half of this gap and it is not closed here.
   //
   // THE PID IS KEPT deliberately: it is the diagnostic that lets a human finding
   // a leaked file say which process produced it, and the `.revert-` marker is
@@ -2618,8 +2616,8 @@ export function revertTo(handle: AnnoStoreHandle, revision: number): AnnoStoreHa
   // failure reachable here -- `ENOENT`, `ENOSPC`, `EACCES` -- therefore leaves
   // the caller a USABLE handle: nothing has been replaced yet, so
   // `currentRevision(handle)` and `listRanges(handle)` still answer and the
-  // caller can decide what to do. That is WR-02's entire complaint, and it is
-  // fixed by ordering rather than by a rescue path.
+  // caller can decide what to do. That is exactly the failure this ordering
+  // exists to prevent, and it is fixed by ordering rather than by a rescue path.
   try {
     copyFileSync(snapPath, staging);
     fsyncPath(staging);
@@ -2633,7 +2631,7 @@ export function revertTo(handle: AnnoStoreHandle, revision: number): AnnoStoreHa
     );
   }
 
-  // STEP 3b, AND ITS POSITION IS THE GUARANTEE (CR-08). OPEN THE STAGED IMAGE
+  // STEP 3b, AND ITS POSITION IS THE GUARANTEE. OPEN THE STAGED IMAGE
   // BEFORE ANYTHING IS CLOSED AND BEFORE ANYTHING IS RENAMED. Until this step
   // existed the only witness that the image about to be installed was a store at
   // all was `existsSync` -- and this module's own FIRST MEASURED FACT (see the
@@ -2698,8 +2696,8 @@ export function revertTo(handle: AnnoStoreHandle, revision: number): AnnoStoreHa
   // function. The image just restored carries `anno_snapshot` rows for
   // revisions whose files an earlier prune removed, and it leaves every
   // snapshot taken AFTER `revision` unclaimed by any row. ONLY THE FILE HALF IS
-  // RESOLVED HERE, and the ROW half is deliberately left: since CR-05 the sweep
-  // abstains from the pointer-row direction entirely, because it cannot
+  // RESOLVED HERE, and the ROW half is deliberately left: since the fix above
+  // the sweep abstains from the pointer-row direction entirely, because it cannot
   // establish ownership of a row under a second spelling of the store file, so
   // the restored image's stale rows are TOLERATED rather than deleted. This
   // sentence previously claimed BOTH halves were resolved here -- the reversal
@@ -2733,7 +2731,7 @@ export function revertTo(handle: AnnoStoreHandle, revision: number): AnnoStoreHa
   // sweep below can itself stall for up to the connection's five-second
   // `busy_timeout` before `revertTo` returns.
   //
-  // CR-07's THIRD PROPERTY: THE SWEEP IS HOUSEKEEPING AND MUST NEVER COST THE
+  // THE THIRD PROPERTY: THE SWEEP IS HOUSEKEEPING AND MUST NEVER COST THE
   // CALLER A HANDLE. By this line the revert has ALREADY SUCCEEDED ON DISK --
   // step 5's rename and directory fsync have returned, so the store file at
   // `storePath` IS the reverted image whatever happens next. Round 3 observed
@@ -2762,7 +2760,7 @@ export function revertTo(handle: AnnoStoreHandle, revision: number): AnnoStoreHa
   // thing in both of its controls rather than letting a green test imply a
   // behavioural proof it does not carry.
   //
-  // AND THE REOPEN IS NOW INSIDE THE SAME GUARANTEE (WR-17), WHICH IS WHERE IT
+  // AND THE REOPEN IS NOW INSIDE THE SAME GUARANTEE, WHICH IS WHERE IT
   // BELONGED. The sentence above -- "a housekeeping failure never costs the
   // caller a handle" -- used to hold only for the branch that CANNOT fire. The
   // sweep call was guarded and is unreachable; the two `openStore` calls were
@@ -2804,14 +2802,14 @@ export function revertTo(handle: AnnoStoreHandle, revision: number): AnnoStoreHa
     );
   }
   //
-  // AND THE SWEEP'S RESULT IS BOUND RATHER THAN DISCARDED (WR-18), WHICH IS THE
+  // AND THE SWEEP'S RESULT IS BOUND RATHER THAN DISCARDED, WHICH IS THE
   // ARM THE `catch` ABOVE CANNOT SEE. `reconcileSnapshotRing` does not throw
   // when its own `rollback` fails -- rethrowing there is forbidden by 28-11 P5,
   // because on this very call site it would convert a LANDED revert into a
   // caller-visible failure -- so it REPORTS the fact in `rollbackFailed`
   // instead. Reaching that state WITHOUT a throw is exactly why the existing
   // catch arm alone was not enough: `revertTo` would hand back a connection that
-  // may still hold the store's write lock, which is CR-07's reported symptom
+  // may still hold the store's write lock, which is the same reported symptom
   // re-created on the revert path.
   //
   // THE REMEDY IS THE SAME BLOCK, REUSED RATHER THAN COPIED: close the
@@ -3016,7 +3014,7 @@ export function listComments(handle: AnnoStoreHandle): CommentRow[] {
  * the existing one's id and two ends. Before that refusal existed this comment
  * and `ScopeRow`'s made a claim the code did not honour, which is exactly the
  * shape prohibition 28-07 P3 forbids. Adjacency is NOT overlap: two scopes that
- * merely touch at a boundary are two scopes, consistent with STORE-02's
+ * merely touch at a boundary are two scopes, consistent with this store's own
  * treatment of ranges.
  *
  * A BYTE-IDENTICAL REPEAT IS AN ACCEPTED NO-OP reporting `changed: false`, and
@@ -3028,7 +3026,7 @@ export function listComments(handle: AnnoStoreHandle): CommentRow[] {
  * `AnnoWriteResult`'s own doc comment states that `changed` is the ONLY signal
  * distinguishing a no-op from a real edit -- and for scopes it could never say
  * no-op, so the module already had the policy and simply could not express it
- * here. Second, Phase 29's success criterion 5 requires a repeated edit to
+ * here. Second, the MCP surface's own success criterion requires a repeated edit to
  * SUCCEED reporting no change, so the surface this store mirrors does have the
  * policy after all. The repeat is therefore accepted rather than refused, and
  * the revision still advances by one, exactly like every other write entry
@@ -3049,7 +3047,7 @@ export function addScope(
       // read the existing row inside the transaction and return `false`. It has
       // to run before the overlap check, because a byte-identical scope
       // overlaps itself and would otherwise be refused rather than accepted as
-      // the no-op Phase 29's criterion 5 requires.
+      // the no-op that surface's own criterion requires.
       const identical = db.prepare("select id from anno_scope where start = ? and end_inclusive = ?").get(start, endInclusive) as
         | { id: number }
         | undefined;
@@ -3099,10 +3097,10 @@ export function listScopes(handle: AnnoStoreHandle): ScopeRow[] {
  * `changed: false` when no scope has that span.
  *
  * WHY THIS EXISTS, and why it is not an omission being corrected quietly.
- * `28-VERIFICATION.md`'s `WR-28` recorded that `addScope`'s overlap refusal had
- * no inverse and carried the finding to Phase 29 in as many words, "which puts
+ * A prior verification round recorded that `addScope`'s overlap refusal had
+ * no inverse and carried the finding forward in as many words, "which puts
  * `addScope` on an agent-driven surface where a mistyped span is likelier".
- * `28-REVIEW.md:1788-1814` spells out the consequence: one transposed end --
+ * The review that raised it spells out the consequence: one transposed end --
  * `addScope($1000, $ffff)` -- makes every future scope from `$1000` upward
  * permanently unaddable, recoverable only through `revertTo` inside the
  * 32-revision ring, after which the mistake is permanent for the life of the
@@ -3158,13 +3156,12 @@ export function removeScope(
 
 /**
  * Records a user-requested exclusion of `start..endInclusive`, with `reason`
- * stating WHY the user asked for it -- added at `SCHEMA_VERSION` 5
- * (`BUILD-07`).
+ * stating WHY the user asked for it -- added at `SCHEMA_VERSION` 5.
  *
  * RECORDING AN EXCLUSION CHANGES NOTHING ABOUT WHICH BYTES THE EXPORT EMITS.
  * The exporter still walks this range's full byte span and emits a real
  * block, tagged with a visible marker comment, rather than a hole -- that is
- * `BUILD-07`'s whole invariant. An exporter implementation that skipped the
+ * this feature's whole invariant. An exporter implementation that skipped the
  * block on seeing an exclusion row would satisfy the word "exclude" and fail
  * the requirement outright: this table is a RECORD, never a filter, and the
  * store answers "what did the user record", never "should this range be
@@ -3206,7 +3203,7 @@ export function addExcludedRange(
   if (reason.trim() === "") {
     throw new AnnoCommentError(
       `exclusion reason is empty or whitespace-only -- a "reason" column satisfied by an empty string records that something was excluded ` +
-        `and loses WHY, which is precisely the half of BUILD-07's criterion 2 this record exists to carry. Supply the reason the user gave.`,
+        `and loses WHY, which is precisely the half of criterion 2 this record exists to carry. Supply the reason the user gave.`,
       { reason: "empty reason" },
     );
   }
@@ -3528,7 +3525,7 @@ export function listProjectEnums(handle: AnnoStoreHandle): ProjectEnumRow[] {
 
 /**
  * Associates ONE address with ONE project enum, so the address's operand is
- * formatted through that enum's variants (`SCHEMA_VERSION` 3, D-15).
+ * formatted through that enum's variants (`SCHEMA_VERSION` 3).
  *
  * THE ASSOCIATION IS BY `anno_enum.id`, NEVER BY NAME, and that is the whole
  * design of the table. `updateProjectEnum` renames an enum in place, keeping
@@ -3552,8 +3549,8 @@ export function listProjectEnums(handle: AnnoStoreHandle): ProjectEnumRow[] {
  *
  * Every argument is validated through `anno-types.ts`'s own assertions before
  * any SQL runs. `parseStoreAddress` in particular refuses an UNPREFIXED numeric
- * string such as `"53280"` outright rather than guessing a base -- WR-22's
- * recorded failure, in which a JSON `"1"` arrived verbatim and SQLite's column
+ * string such as `"53280"` outright rather than guessing a base -- a recorded
+ * failure in which a JSON `"1"` arrived verbatim and SQLite's column
  * affinity turned an argument error into a corruption refusal.
  */
 export function applyEnumUsage(
@@ -3663,7 +3660,7 @@ export function listEnumUsage(handle: AnnoStoreHandle): EnumUsageRow[] {
 }
 
 // ---------------------------------------------------------------------------
-// THE RUNTIME EVIDENCE TABLE (`anno_evid_exec`, `SCHEMA_VERSION` 4, EVID-01).
+// THE RUNTIME EVIDENCE TABLE (`anno_evid_exec`, `SCHEMA_VERSION` 4).
 // One raw shape used by all three functions below.
 // ---------------------------------------------------------------------------
 
@@ -3701,9 +3698,9 @@ function toEvidExecRow(row: RawEvidExecRow): EvidExecRow {
 
 /**
  * Inserts one or more runtime-execution observations for one run identity,
- * keyed `(imageSha256, argvDigest, seed, address, sourceBank)` -- the
- * `no-change` composite plan 43-01's live A/B selected, with no `run_class`
- * discriminator (`docs/phase43-instrumentation-perturbation-ab.md`).
+ * keyed `(imageSha256, argvDigest, seed, address, sourceBank)` -- a live A/B
+ * measured `no-perturbation` from instrumentation, so there is deliberately
+ * no `run_class` discriminator.
  *
  * EVERY FIELD IS VALIDATED BEFORE THE FIRST STATEMENT RUNS, and every
  * refusal is a named `AnnoTypeError`/`AnnoAddressError` carrying the
@@ -3720,8 +3717,7 @@ function toEvidExecRow(row: RawEvidExecRow): EvidExecRow {
  * transaction that `commitTransaction` commits, so a kill mid-ingest leaves
  * the set fully committed or fully absent, never a partial row set.
  *
- * AN OBSERVATION ALREADY PRESENT IS SKIPPED, NOT RE-INSERTED (EVID-01's
- * idempotent re-ingest): the existing row is selected first, by the full
+ * AN OBSERVATION ALREADY PRESENT IS SKIPPED, NOT RE-INSERTED: the existing row is selected first, by the full
  * unique key, and the insert only runs when it is absent. `changed` is
  * `false` exactly when every observation in this call was already present --
  * the same `changed`-is-the-only-no-op-signal contract `AnnoWriteResult`
@@ -3729,7 +3725,7 @@ function toEvidExecRow(row: RawEvidExecRow): EvidExecRow {
  * advances by exactly one on every accepted call, no-op or not, for the same
  * reason.
  *
- * `insertedCount` (WR-02) IS COUNTED INSIDE THIS SAME TRANSACTION, never
+ * `insertedCount` IS COUNTED INSIDE THIS SAME TRANSACTION, never
  * derived from a separate read taken before `applyWrite` opens it: a caller
  * that wants "how many of these rows were actually new" must not be handed a
  * number computed from a `listExecObservations()` snapshot that a concurrent
@@ -3857,12 +3853,11 @@ export function listExecObservations(
 
 /**
  * Every distinct run identity with an `anno_evid_exec` row, its accumulated
- * observation count, and the `denominator` those counts are a fraction of
- * (EVID-04).
+ * observation count, and the `denominator` those counts are a fraction of.
  *
  * WHY A DENOMINATOR IS RETURNED AT ALL, AND WHY IT NEVER FORMS A PERCENTAGE
  * ITSELF. A bare count invites the reading "the rest is data" -- exactly the
- * soundness violation EVID-04 forbids (see `RuntimeExecClass`'s own doc
+ * soundness violation this table's own discipline forbids (see `RuntimeExecClass`'s own doc
  * comment in `anno-types.ts`). `denominator` is `ADDRESS_MAX - ADDRESS_MIN +
  * 1`, read from `anno-types.ts`'s own constants rather than the literal
  * `65536` -- a caller comparing a run's `observationCount` against it forms
@@ -3889,7 +3884,7 @@ export function listObservedRuns(handle: AnnoStoreHandle): { runs: ObservedRunRo
 
 /**
  * Deletes every `anno_evid_exec` row for one run identity -- a bracket
- * reset (EVID-05). A run identity holding no rows returns `changed: false`
+ * reset. A run identity holding no rows returns `changed: false`
  * and is NOT an error: resetting an empty bracket is the ordinary thing,
  * matching `clearEnumUsage`'s own direction for the identical case.
  *
@@ -3927,13 +3922,13 @@ export function deleteExecObservationsForRun(
  *
  * THIS IS THE C-5 RECONCILIATION, written down here for a reader of the code
  * rather than left in a plan. Two requirement texts look like they conflict:
- * `STORE-05` requires cross-reference rows to carry their access kind from the
+ * one requires cross-reference rows to carry their access kind from the
  * first write, while the cross-reference criterion requires references to be
  * DERIVED on every query and never cached on disk. Both hold at once, and this
  * entry point is where:
  *
  *   * the table and its `access_kind` column exist from the first write (the
- *     `DDL` above), so `STORE-05` is satisfied structurally;
+ *     `DDL` above), so that requirement is satisfied structurally;
  *   * the only rows ever written here are references that CANNOT be recovered
  *     from the bytes -- hand-asserted, or resolved from something outside the
  *     program image. The `COMPUTED_JUMP` case is exactly that: a computed
