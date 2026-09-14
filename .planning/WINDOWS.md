@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 42
+open_count: 43
 waived_count: 14
 fixed_count: 9
-total_count: 65
-last_updated: 2026-09-13T14:56:52.250Z
+total_count: 66
+last_updated: 2026-09-14T16:02:40.848Z
 ---
 
 # Broken Windows Ledger
@@ -80,6 +80,7 @@ last_updated: 2026-09-13T14:56:52.250Z
 | 63 | 49 | deviation | docs/phase49-the-reassembly-gate-findings.md |  | This plan's own Task 2 verify command asserts 7 total bare outcome-line matches across the 5 evidence files, but SCHEMA.md's dual-file design for DIFF_SCOPE_COVERAGE makes the schema-correct total 8; both DIFF_SCOPE_COVERAGE occurrences were written per SCHEMA.md rather than one omitted to force the count. | open |  | 2026-09-13T11:16:21.461Z |  |
 | 64 | quick-260913-jgv | deviation | src/mcp/vice |  | Full automated suite carries 7 pre-existing, unrelated failures (REQUIREMENTS.md/REVIEW.md disposition tracking, STATE.md Deferred Items) present before this quick task's first edit and identical name-for-name after -- out of scope, not fixed, documented in the quick task's SUMMARY. | open |  | 2026-09-13T12:31:18.832Z |  |
 | 65 | quick-260913-mql | deviation | src/mcp/vice/broker-e2e.test.ts | 403 | Pre-existing, out-of-scope failure discovered while measuring the 12 MANUAL_ONLY_TESTS CI delta: 'wired warm-hit (plan 41-05)' fails deterministically (reproduced twice) on a real broker crash-respawn deadline, unrelated to any file this quick task touched. | open |  | 2026-09-13T14:56:52.250Z |  |
+| 66 | 51 | deviation | src/mcp/vice/anno-register.ts |  | 63 requirement-id citations left unresolved: the file's requirements[] traceability data is mechanically validated against real, declared REQUIREMENTS.md ids by anno-register.test.ts, and removing the ids would gut the only thing the file exists to check; unshipping it breaks anno-seam.test.ts's completeness guard. Genuine architectural decision (Rule 4), deferred rather than resolved unilaterally. | open |  | 2026-09-14T16:02:40.848Z |  |
 
 ````json
 [
@@ -861,6 +862,18 @@ last_updated: 2026-09-13T14:56:52.250Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-13T14:56:52.250Z",
+    "resolved_at": null
+  },
+  {
+    "id": 66,
+    "kind": "deviation",
+    "phase": "51",
+    "file": "src/mcp/vice/anno-register.ts",
+    "line": null,
+    "description": "63 requirement-id citations left unresolved: the file's requirements[] traceability data is mechanically validated against real, declared REQUIREMENTS.md ids by anno-register.test.ts, and removing the ids would gut the only thing the file exists to check; unshipping it breaks anno-seam.test.ts's completeness guard. Genuine architectural decision (Rule 4), deferred rather than resolved unilaterally.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-14T16:02:40.848Z",
     "resolved_at": null
   }
 ]
