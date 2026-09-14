@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// anno-confidence.ts -- the ONE authoritative place in this repo for D-25's
+// anno-confidence.ts -- the ONE authoritative place in this repo for the
 // confidence-grade convention: a machine-readable bracket-token prefix inside
 // an anno line comment (e.g. `[confirmed-code] observed executing at $0810`).
 //
@@ -10,7 +10,7 @@
 // "reachable via a JSR, never run" -- that distinction is
 // `memory-map.template.md`'s most deliberate feature, and its own text
 // forbids promoting a row by editing its grade (re-verify and restate the
-// evidence instead). Measured (D-25): anno line comments persist through
+// evidence instead). Measured: anno line comments persist through
 // save/reload (`user_line_comments`), and both `anno_get_comments` and
 // `anno_search_disassembly` (which searches comments by default) can filter
 // on a leading token -- so "show me everything still [unknown]" is a real

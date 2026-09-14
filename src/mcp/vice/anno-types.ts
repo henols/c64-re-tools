@@ -3,7 +3,7 @@
 //
 // The ONE place that writes down the annotation store's data-type vocabulary,
 // its range row shape, and every validator the store runs before a caller's
-// argument is allowed anywhere near SQL (STORE-01).
+// argument is allowed anywhere near SQL.
 //
 // ---------------------------------------------------------------------------
 // WHY THIS FILE EXISTS
@@ -58,8 +58,8 @@
 //      path lands outside the root once symbolic links are followed, and that
 //      is a filesystem question that no string comparison can answer -- the
 //      earlier pure-string version accepted a symlinked subdirectory and let a
-//      store file be created outside the workspace root (`28-VERIFICATION.md`
-//      gap 3 / `28-REVIEW.md` CR-03, reproduced). Every OTHER export is still
+//      store file be created outside the workspace root, confirmed by a live
+//      symlink reproduction. Every OTHER export is still
 //      a pure function of its arguments and still unit-testable with no file
 //      on disk. The exception is named here, in `storePathWithinWorkspace`'s
 //      own doc comment, and in `anno-types.test.ts`'s mutable-state assertion
@@ -68,7 +68,7 @@
 //      `parseStoreAddress()` takes an integer, a `$hex` string and a
 //      `0x`/`0X` string, and refuses `"1024"`. This is a REAL, user-visible
 //      divergence from `stock-address.ts:155-160`, which accepts the bare
-//      decimal form AS DECIMAL under its own decision `D-04` and says so at
+//      decimal form AS DECIMAL and says so at
 //      `:89-105`. The reason the store diverges: a mis-based address written
 //      into the store is PERSISTENT and silently wrong -- every later reader
 //      inherits it -- whereas a mis-based memory read is transient and the
@@ -92,19 +92,21 @@
 //      sanitized or quoted."
 //   8. NEVER restate the eleven auto-generated-name prefixes here. They live in
 //      exactly one place, `anno-coverage.ts`'s `AUTO_NAME_PREFIX_RE`, and
-//      `EXPORT-02` names the exact failure a short reimplementation causes: a
-//      five-prefix copy silently under-counts, which breaks the
+//      a short reimplementation causes the exact failure this project has
+//      already measured: a five-prefix copy silently under-counts, which breaks the
 //      `routine-queue-walker` skill's backlog construction while every test
 //      keeps passing. The store separates the two namespaces with its label
 //      `kind` field, not with a name pattern.
 //   9. NEVER build a mnemonic-to-access-kind classifier here. Nothing derivable
 //      is stored (see `anno-store.ts`'s `putXref`), `OpcodeEntry` carries no
-//      access/reads/writes field at all, and `REQUIREMENTS.md` records the
-//      analysis built on such a field as deferred with a named trigger. A
+//      access/reads/writes field at all, and analysis built on such a field is
+//      deliberately deferred until a named future consumer exists: the field
+//      is stored because it is free now and unrecoverable later, but no
+//      shipped caller reads it yet. A
 //      classifier written now would have no caller and no way to be wrong
 //      observably.
-//  10. NEVER measure comment length in code units. `String.length` counts UTF-16
-//      code units, so a multi-byte comment passes a code-unit check and then
+//  10. NEVER measure comment length in code units. `String.length` counts
+//      16-bit code units, so a multi-byte comment passes a code-unit check and then
 //      exceeds the byte bound on disk. `assertCommentText()` measures with a
 //      `TextEncoder`.
 import { existsSync, lstatSync, readlinkSync, realpathSync } from "node:fs";
@@ -133,26 +135,26 @@ import { ViceError, type ViceErrorOptions } from "./vice-errors.ts";
  *
  *   * TWO STORES IN ONE DIRECTORY SHARED ONE RING under the same
  *     `r<revision>.db` filenames, so `revertTo` on one store restored the
- *     OTHER store's whole database, silently and with no error (CR-01).
+ *     OTHER store's whole database, silently and with no error.
  *   * RENAMING THE CONTAINING DIRECTORY invalidated every persisted absolute
  *     path at once, after which `retainedRevisions()` reported none and the
- *     next accepted write's prune destroyed the entire revert history (CR-03).
+ *     next accepted write's prune destroyed the entire revert history.
  *
  * Version 2 drops `anno_snapshot.path` -- there is no persisted string left for
  * a second namespace to disagree with -- and derives the location from the
  * handle at every read and every delete via `snapshotDirFor()`.
  *
  * A VERSION-1 STORE IS REFUSED, NOT UPGRADED, and the reason is that the
- * version-1 ring's OWNERSHIP is not recoverable: CR-01 means two stores may
+ * version-1 ring's OWNERSHIP is not recoverable: two stores may
  * both have written into `<dir>/snapshots`, and nothing recorded which file
  * belonged to which store. Any migration would have to guess, attributing one
- * store's history to another -- CR-01 again with a new cause and no test
- * watching. The legacy directory is therefore left on disk untouched: never
+ * store's history to another -- the same failure shape recurring with a new
+ * cause and no test watching. The legacy directory is therefore left on disk untouched: never
  * adopted, never migrated, never deleted, so the bytes stay recoverable by
  * hand.
  *
  * ---------------------------------------------------------------------------
- * VERSION 3, 2026-08-29 (D-15) -- AND THE COST IS NAMED HERE RATHER THAN LEFT
+ * VERSION 3, 2026-08-29 -- AND THE COST IS NAMED HERE RATHER THAN LEFT
  * IN A PLANNING DIRECTORY, because a version number whose rationale lives
  * somewhere else is a number the next reader has no way to weigh.
  *
@@ -184,7 +186,7 @@ import { ViceError, type ViceErrorOptions } from "./vice-errors.ts";
  * impossibility.
  *
  * ---------------------------------------------------------------------------
- * VERSION 4, 2026-09-10 (EVID-02) -- THE DECISION IS `reaffirm-refusal`, AND
+ * VERSION 4, 2026-09-10 -- THE DECISION IS `reaffirm-refusal`, AND
  * THE FACTUAL BASIS IS TRANSCRIBED HERE RATHER THAN LEFT IN A PLANNING
  * DIRECTORY, for the same reason VERSION 3's paragraph gives.
  *
@@ -205,7 +207,7 @@ import { ViceError, type ViceErrorOptions } from "./vice-errors.ts";
  *   1. `find / -xdev -name '*.annostore'`, with `.git` directories excluded --
  *      empty. The broader `find "$HOME" -name '*.annostore'` (closing the `-xdev`
  *      mount-boundary gap) found five hits, all inside a dated (2026-08-27)
- *      scratch probe cache (`~/.cache/gsd-probe/c4/...`), with
+ *      scratch probe cache directory, with
  *      fixture-pattern names (`t-half`, `t-zero`, `t-tail-100`, `p`, `proj`)
  *      and one file zero bytes -- synthetic test fixtures, not a real
  *      project's store.
@@ -259,7 +261,7 @@ import { ViceError, type ViceErrorOptions } from "./vice-errors.ts";
  * refusal stays the default.
  *
  * ---------------------------------------------------------------------------
- * VERSION 5, 2026-09-11 (BUILD-07) -- THE DECISION IS `reaffirm-refusal`, THE
+ * VERSION 5, 2026-09-11 -- THE DECISION IS `reaffirm-refusal`, THE
  * SAME OPTION VERSION 4 SELECTED, AND THE FACTUAL BASIS IS TRANSCRIBED HERE
  * RATHER THAN LEFT IN A PLANNING DIRECTORY, for the same reason every prior
  * version's paragraph gives.
@@ -267,7 +269,7 @@ import { ViceError, type ViceErrorOptions } from "./vice-errors.ts";
  * WHAT THE BUMP BUYS: `anno_excluded_range`, the durable record of a
  * user-requested exclusion -- its extent AND the reason the user gave -- so
  * the export can emit the range's real bytes tagged with a visible marker
- * comment instead of a hole, which is `BUILD-07`'s whole invariant: an
+ * comment instead of a hole, which is this feature's whole invariant: an
  * exclusion is a RECORDED, VISIBLE fact, never a silent drop. See
  * `anno-store.ts`'s `DDL` and its three verbs, `addExcludedRange` /
  * `listExcludedRanges` / `removeExcludedRange`.
@@ -289,7 +291,7 @@ import { ViceError, type ViceErrorOptions } from "./vice-errors.ts";
  *      NEW since VERSION 4's check: `.c64-re-tools/phase45-scratch/
  *      tracer.annostore`, inside THIS repository's own gitignored scratch
  *      directory, timestamped 2026-09-10 -- its path and name identify it as
- *      Phase 45's own tracer/scratch fixture, not a real consuming project's
+ *      this project's own tracer/scratch fixture, not a real consuming project's
  *      store. Six real files, zero real stores.
  *   2. `git log --oneline --diff-filter=A -- '*.annostore'` -- still empty.
  *      No `.annostore` has ever been added to this repository's tracked
@@ -343,8 +345,7 @@ export const ADDRESS_MAX = 0xffff;
  * (`anno-store.ts`'s `snapshotDirFor()` -- a sibling named after the store
  * FILE, not the fixed `<dir>/snapshots` version 1 used) may hold before the
  * oldest is pruned. Declared here because the bound is a property of the
- * store's format; the pruning that enforces it belongs to the revert surface
- * (`STORE-04`). */
+ * store's format; the pruning that enforces it belongs to the revert surface. */
 export const MAX_SNAPSHOT_REVISIONS = 32;
 
 /**
@@ -451,7 +452,8 @@ export type LabelKind = (typeof LABEL_KINDS)[number];
  * is written down, and its provenance needs stating precisely so a later reader
  * does not over-trust it: these four spellings are CITED from an external
  * analyser's reference documentation, flowed through this project's own research
- * notes, and fixed by `STORE-05`'s requirement text. They are NOT read from any
+ * notes, and fixed by this project's own requirement that cross-reference rows
+ * carry their access kind. They are NOT read from any
  * code in this repository, and no comment may present them as verified project
  * vocabulary.
  *
@@ -520,7 +522,7 @@ export interface CommentRow {
 }
 
 /**
- * One stored comment that a retype has just made FALSE (STORE-03).
+ * One stored comment that a retype has just made FALSE.
  *
  * The caller needs all four facts to act on the report without a second query:
  * WHERE the comment is, WHAT it says, WHICH grade fired, and WHICH data type
@@ -539,7 +541,7 @@ export interface ContradictedComment {
 }
 
 /**
- * One entry-address pairing of a split table (STORE-03, CR-10).
+ * One entry-address pairing of a split table.
  *
  * `pairs[i]` is the two ADDRESSES whose bytes form entry `i`, in table order:
  * the first-half address and its second-half partner. `entryCount` is
@@ -552,8 +554,8 @@ export interface SplitEntryPairs {
 }
 
 /**
- * One surviving fragment of a split table that a partial overwrite left behind
- * (CR-10). `entryPairs` is what that fragment reads NOW -- not what the addresses
+ * One surviving fragment of a split table that a partial overwrite left behind.
+ * `entryPairs` is what that fragment reads NOW -- not what the addresses
  * in it used to be paired with.
  */
 export interface SplitTableSurvivor {
@@ -565,7 +567,7 @@ export interface SplitTableSurvivor {
 
 /**
  * What one accepted partial overwrite of a split table COST, reported as data on
- * a successful `setDataType()` result (STORE-03, CR-10). Documented in the same
+ * a successful `setDataType()` result. Documented in the same
  * register as `ContradictedComment` above, and for the same reason: a caller
  * needs every fact it would otherwise have to re-query for.
  *
@@ -615,14 +617,14 @@ export interface ScopeRow {
 }
 
 /** One user-requested exclusion as the store holds it, added at
- * `SCHEMA_VERSION` 5 (`BUILD-07`). Both ends are INCLUSIVE, matching every
+ * `SCHEMA_VERSION` 5. Both ends are INCLUSIVE, matching every
  * other range-shaped row this store persists. There is no `bank` column,
  * because an exclusion is a statement about a span of the SUBJECT PROGRAM the
  * user asked to leave out of the rebuild -- not a memory view -- and there is
  * no confidence, verdict, grade or severity column, because this row holds
  * WHAT THE USER ASKED FOR and nothing the tool concluded about it. A
  * judgement column here would be the exact "tool is the decider" shape
- * `BUILD-05`'s 2026-09-10 rewording removed: the store answers "what did the
+ * this project's own 2026-09-10 requirement rewording removed: the store answers "what did the
  * user record", never "should this range be excluded". */
 export interface ExcludedRangeRow {
   id: number;
@@ -643,7 +645,7 @@ export interface ProjectEnumRow {
 
 /**
  * One enum usage as the store holds it: the association between ONE address
- * and ONE project enum, added at `SCHEMA_VERSION` 3 (D-15).
+ * and ONE project enum, added at `SCHEMA_VERSION` 3.
  *
  * `enumId` IS WHAT THE STORE PERSISTS; `enumName` is resolved through the join
  * at read time and is never a second on-disk copy of the name. A row that
@@ -674,7 +676,7 @@ export interface XrefRow {
 
 /**
  * The three memory regions `memmapshow` reports an execute observation
- * against, `SCHEMA_VERSION` 4 (EVID-01). This is the ONE place this
+ * against, `SCHEMA_VERSION` 4. This is the ONE place this
  * vocabulary is written down.
  *
  * ALL THREE ARE INCLUDED DELIBERATELY, not for symmetry: `AccessFlags`
@@ -690,7 +692,7 @@ export type EvidSourceBank = (typeof EVID_SOURCE_BANKS)[number];
 
 /**
  * The runtime evidence layer's own classification of an address, `SCHEMA_VERSION`
- * 4 (EVID-04). This is a TYPE-LEVEL control, not a runtime check: the union has
+ * 4. This is a TYPE-LEVEL control, not a runtime check: the union has
  * exactly two members and NO `"data"` member exists for a caller to return,
  * mistakenly or otherwise.
  *
@@ -713,11 +715,10 @@ export type RuntimeExecClass = "code" | "unobserved";
 /**
  * One runtime-execution observation as the store holds it (`anno_evid_exec`,
  * `SCHEMA_VERSION` 4). Keyed by the bare run-identity triple
- * `(imageSha256, argvDigest, seed)` plus `address` plus `sourceBank` -- the
- * `no-change` assumption-delta decision plan 43-01's live A/B selected
- * (`docs/phase43-instrumentation-perturbation-ab.md`): there is no
- * `run_class` discriminator column, because instrumentation was measured
- * `no-perturbation` at anchor hit depths 10 and 50.
+ * `(imageSha256, argvDigest, seed)` plus `address` plus `sourceBank` -- there is
+ * no `run_class` discriminator column: a live A/B measured `no-perturbation`
+ * from instrumentation at anchor hit depths 10 and 50, so a run-class
+ * distinction would encode a difference nothing observed.
  *
  * A row here asserts exactly ONE fact: this address was observed executing,
  * in this source bank, during this run. There is no `bank`-reserved column
@@ -737,8 +738,8 @@ export interface EvidExecRow {
  * One distinct run identity's accumulated observation count, as
  * `listObservedRuns()` reports it. `observationCount` is a COUNT, never a
  * percentage or rate -- see `listObservedRuns`'s own doc comment in
- * `anno-store.ts` for the denominator this count is a fraction of (EVID-04:
- * a count with no denominator invites the reading "the rest is data").
+ * `anno-store.ts` for the denominator this count is a fraction of (a count
+ * with no denominator invites the reading "the rest is data").
  */
 export interface ObservedRunRow {
   imageSha256: string;
@@ -828,7 +829,7 @@ export interface AnnoRevisionArgumentErrorOptions {
  * path is built, so nothing has been read and nothing has been written.
  *
  * WHY THIS IS NOT `AnnoStoreCorruptError`, WHICH IS THE WHOLE REASON THE CLASS
- * EXISTS (WR-22). Until this class existed, `revertTo(handle, "0001")` matched
+ * EXISTS. Until this class existed, `revertTo(handle, "0001")` matched
  * revision 1's pointer row through SQLite's INTEGER affinity on a bound TEXT
  * operand, while `snapshotPathFor` built `r0001.db` from the raw string -- so
  * the two disagreed and the caller was told its snapshot was "not a readable
@@ -1082,7 +1083,8 @@ export interface AnnoCommentGradeErrorOptions {
  *
  * It is NEVER correct to swallow the original and treat the comment as ungraded:
  * that would quietly exempt a malformed comment from contradiction reporting,
- * which is the same silent un-documenting `STORE-03` exists to prevent.
+ * which is the same silent-un-documenting failure this store's contradiction
+ * reporting exists to prevent.
  */
 export class AnnoCommentGradeError extends AnnoStoreError {
   comment?: string;
@@ -1216,7 +1218,7 @@ const MAX_SYMLINK_HOPS = 40;
  * Does the path ENTRY `p` exist -- that is, does this NAME exist in its
  * directory?
  *
- * THIS IS THE WHOLE OF `CR-04`, in two sentences. `existsSync` answers a
+ * THE WHOLE OF THE DISTINCTION, IN TWO SENTENCES. `existsSync` answers a
  * different question: "does this path RESOLVE to something?", which follows
  * symbolic links and therefore reports `false` for a dangling one. `lstat`
  * answers "does this NAME exist?", which does not follow the link. The two
@@ -1226,8 +1228,7 @@ const MAX_SYMLINK_HOPS = 40;
  *
  * `throwIfNoEntry: false` makes the ABSENT case a value rather than an
  * exception, so the caller has one branch instead of a `try` around a
- * predicate. That option suppresses `ENOENT` AND NOTHING ELSE, which is the
- * whole of `WR-12`.
+ * predicate. That option suppresses `ENOENT` AND NOTHING ELSE.
  *
  * REVERSED 2026-08-28, and the reversal is the record rather than a deletion
  * (this module's header discipline, 28-07 P3). The premise that was RIGHT and
@@ -1247,7 +1248,7 @@ const MAX_SYMLINK_HOPS = 40;
  *   * `ELOOP`  -- a symlink cycle in an ANCESTOR position, where the kernel
  *     refuses at `lstat` before the manual hop counter below ever runs.
  *
- * `28-REVIEW.md` WR-12 has the before/after transcript. The `try` restores the
+ * The `try` restores the
  * family WITHOUT restoring the old blindness: the absent case is still a value
  * and still one branch, and everything else is a decision naming both the entry
  * the walk stopped on and the path being confined.
@@ -1294,8 +1295,7 @@ function pathEntryExists(p: string, resolved: string): boolean {
  * /tmp/annosym-XXXX/ws/p.annostore`) and `openStore` created the store file
  * OUTSIDE the workspace root (`A) file created OUTSIDE workspace: true`);
  * separately, a dangling DIRECTORY link was accepted at the predicate
- * (`B dangling dir -> ACCEPTED`). `28-VERIFICATION.md` gap 2 / `28-REVIEW.md`
- * CR-04. The walk now stops on `pathEntryExists`, which is `lstat` and does not
+ * (`B dangling dir -> ACCEPTED`). The walk now stops on `pathEntryExists`, which is `lstat` and does not
  * follow the link.
  *
  * THE DANGLING STOPPING ENTRY IS RESOLVED BY HAND, because nothing else will:
@@ -1404,8 +1404,8 @@ function realpathOfNearestExisting(p: string): string {
  *   * The PATH must be a real path, because `resolve()` normalises `..` but
  *     does NOT follow symbolic links. The pure-string version accepted a
  *     symlinked subdirectory inside the workspace and the store file was
- *     created outside the root (`28-REVIEW.md` CR-03, reproduced by the phase
- *     verifier). A confinement check has to compare what the filesystem will
+ *     created outside the root, confirmed by a live symlink reproduction.
+ *     A confinement check has to compare what the filesystem will
  *     actually do.
  *   * The ROOT must go through the SAME walk, for two independent reasons. A
  *     workspace root that does not exist is a legitimate input -- the pinned
@@ -1454,8 +1454,7 @@ export function storePathWithinWorkspace(path: string, workspaceRoot: string): s
  * WHY THIS IS A SEAM RATHER THAN AN INLINE `relative()` AT ITS ONE CALL SITE.
  * The spelling this returns goes into a **compared** artifact: the memory
  * map's banner is re-rendered and diffed BYTE FOR BYTE by
- * `checkRenderedMemoryMap()`. The defect it closes (`CR-01`, gap 1 in
- * `.planning/phases/29-the-mcp-surface/29-VERIFICATION.md`) is that machine
+ * `checkRenderedMemoryMap()`. The defect it closes is that machine
  * identity leaked into that content comparison: the banner recorded the
  * absolute realpaths, so the same store, the same sidecar and the same
  * rendered file reported `drifted` as soon as the checkout sat at a different
@@ -1565,7 +1564,7 @@ export function assertRunIdentityDigest(value: unknown, what: string): string {
 }
 
 /** A non-empty string. `seed` is not a digest and carries no shape beyond
- * that -- REPRO-04's run-identity composite treats it as an opaque token. */
+ * that -- this store's run-identity composite treats it as an opaque token. */
 export function assertRunIdentitySeed(value: unknown): string {
   if (typeof value === "string" && value.length > 0) {
     return value;
@@ -1846,7 +1845,8 @@ export function resolveSplitTargets(bytes: Uint8Array | readonly number[], dataT
  *
  * A resolver and a writer that each kept their own copy of this arithmetic could
  * disagree about what an entry IS, and the disagreement would be silent: both
- * copies produce legal, decodable rows. That is CR-10's whole class, so the rule
+ * copies produce legal, decodable rows. That is exactly the class of bug a
+ * second implementation would risk, so the rule
  * has one home. `anno-types.test.ts`'s worked-arithmetic pin is the control --
  * changing the couples here to an interleaved `[2i, 2i + 1]` reddens it.
  *

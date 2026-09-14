@@ -21,7 +21,7 @@
 //     ON-DISK TRUTH that can disagree with the range table it came from".
 //   * `anno-types.ts`'s `XrefRow` type doc: "Only NON-DERIVABLE references live
 //     here".
-//   * `COV-01`'s derived-from-bytes byte-coverage census, whose whole
+//   * the derived-from-bytes byte-coverage census, whose whole
 //     discipline is that coverage is computed from bytes rather than recorded
 //     beside them.
 //
@@ -57,11 +57,11 @@
 //     no index file, no memoised store column, no snapshot. That means: no SQL
 //     write statement, no `node:fs` write call, and no naming of the
 //     persistence builtin `node:sqlite` -- the store is reached ONLY through
-//     `anno-store.ts`'s own read entry points (STORE-07).
+//     `anno-store.ts`'s own read entry points.
 //   - Never import `hostpath.ts`, `containerpath.ts` or `container-guard.mts`.
 //     This module is proxy-local; a host/container-translated path would point
 //     the derivation at bytes on the wrong side of the container boundary
-//     (MCP-02, and `hostpath-consumers.test.ts` names this module as forbidden).
+//     (`hostpath-consumers.test.ts` names this module as forbidden).
 //   - Never add a second address parser, a second range validator or a second
 //     data-type vocabulary. `parseStoreAddress`, `assertRangeShape` and
 //     `assertDataType` are imported from `anno-types.ts` for exactly that
@@ -189,7 +189,7 @@ function currentCorpusByteCap(): number {
 function assertImage(image: unknown): Uint8Array {
   if (!(image instanceof Uint8Array)) {
     throw new AnnoDeriveArgumentError(
-      'the program "image" must be a Uint8Array of the bytes to derive from -- the store holds NO program image (D-07), so every ' +
+      'the program "image" must be a Uint8Array of the bytes to derive from -- the store holds NO program image, so every ' +
         "derived answer is computed from bytes the caller names.",
       { argument: "image", value: typeof image },
     );
@@ -281,7 +281,7 @@ function referencedAddress(instruction: Instruction): number | undefined {
 }
 
 // ---------------------------------------------------------------------------
-// Derived cross-references (STORE-06)
+// Derived cross-references
 // ---------------------------------------------------------------------------
 
 /** What `crossReferencesTo()` returns: the target, every address that reaches
@@ -363,7 +363,7 @@ export function crossReferencesTo(
 }
 
 // ---------------------------------------------------------------------------
-// Search (STORE-06)
+// Search
 // ---------------------------------------------------------------------------
 
 /** The three corpora this surface has. Frozen and derived from, never

@@ -792,35 +792,40 @@ test("anno-types.ts declares no module-level mutable binding, and its import spe
 // Deriving `3` from the constant would make the pin read its own subject.
 // ---------------------------------------------------------------------------
 
-test("SCHEMA_VERSION is 5, and the constant's own doc comment records BUILD-07's reaffirm-refusal decision by name and by date -- the bump is a decision on the record, not a number that drifted", () => {
+test("SCHEMA_VERSION is 5, and the constant's own doc comment records the reaffirm-refusal decision by table name and by date -- the bump is a decision on the record, not a number that drifted", () => {
   assert.equal(
     SCHEMA_VERSION,
     5,
-    "version 5 is BUILD-07's deliberate one-way bump: it buys the anno_excluded_range table, and it strands every version 4 store on disk " +
+    "version 5 is a deliberate one-way bump: it buys the anno_excluded_range table, and it strands every version 4 store on disk " +
       "because the checkpoint decision was reaffirm-refusal -- no migration arm was written. An edit to this number must be a decision, " +
       "which is why the expectation is typed out here by hand rather than derived from the constant it is checking.",
   );
 
+  // NOTE (Phase 51): this pin used to require the shipped doc comment to cite
+  // decision/requirement ids (D-15, EVID-02, BUILD-07) by name. Per
+  // `.planning/ENGINEERING_RULES.md` section 21.2 those ids no longer belong
+  // in a shipped file at all -- the reasoning is stated in prose instead, so
+  // this pin now anchors on the TABLE each version adds and the version's own
+  // date, which is what the prose states directly.
   const src = readFileSync(join(HERE, "anno-types.ts"), "utf8");
   assert.match(
     src,
-    /D-15/,
-    "the SCHEMA_VERSION doc comment must still cite D-15 by name for the version 2 -> 3 bump beside the later paragraphs: a version " +
-      "bump whose rationale lives only in a planning directory is a number the next reader has no way to weigh",
+    /anno_enum_usage/,
+    "the SCHEMA_VERSION doc comment must still name the anno_enum_usage table for the version 2 -> 3 bump: a version " +
+      "bump whose rationale is not stated in the file is a number the next reader has no way to weigh",
   );
   assert.match(
     src,
     /2026-08-29/,
-    "and it must still carry D-15's own dated record, matching the dated-record discipline the version 1 paragraph beside it already uses",
+    "and it must still carry the version 3 bump's own dated record, matching the dated-record discipline the version 1 paragraph beside it already uses",
   );
   assert.match(
     src,
     /no migration arm/i,
-    "and it must state D-15's accepted COST in the same voice: no migration arm was written, so every version 2 store is unopenable",
+    "and it must state the version 3 bump's accepted COST in the same voice: no migration arm was written, so every version 2 store is unopenable",
   );
-  assert.match(src, /EVID-02/, "the version 4 paragraph must still cite EVID-02 by name, the same discipline D-15 established for version 3");
+  assert.match(src, /anno_evid_exec/, "the version 4 paragraph must still name the anno_evid_exec table it adds, the same discipline the version 3 paragraph established");
   assert.match(src, /2026-09-10/, "and it must still carry the version 4 decision's own date");
-  assert.match(src, /BUILD-07/, "the version 5 paragraph must cite BUILD-07 by name, the same discipline every prior version's paragraph uses");
   assert.match(src, /2026-09-11/, "and it must carry the version 5 decision's own date");
   assert.match(
     src,

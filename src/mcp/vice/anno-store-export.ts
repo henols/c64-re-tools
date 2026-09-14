@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // anno-store-export.ts
 //
-// Phase 45, plan 45-02 (D-02): the general JSON export/import module for a
+// The general JSON export/import module for a
 // per-fixture `.annostore` -- NOT Ghidra-shaped (that is `anno-import.ts`'s
 // job, and it writes cross-references only). No general store-JSON round
 // trip exists anywhere else in this tree today (RESEARCH.md Section 5,
@@ -16,7 +16,7 @@
 //
 // WHAT THIS IS THE ONE AUTHORITATIVE PLACE FOR:
 //   - The JSON schema for a full store export: typed ranges, labels,
-//     comments (tagged `provenance: "derived" | "authored"` per D-03),
+//     comments (tagged `provenance: "derived" | "authored"`),
 //     project enums and their usage bindings, cross-references, and
 //     runtime-execution-observation rows.
 //   - The three decline/provenance comment-text conventions
@@ -33,7 +33,7 @@
 //     successfully (`anno-import.ts`'s own rule, copied deliberately: a
 //     partial import must never leave the store in a state that is neither
 //     the old nor the new content).
-//   - Never collapse the derived/authored provenance tag (D-03) -- the
+//   - Never collapse the derived/authored provenance tag -- the
 //     export schema exists specifically so a diff shows an authored
 //     purpose-comment change, which a binary `.annostore` cannot.
 //   - Never resolve a workspace path here -- the caller does, through
@@ -41,11 +41,11 @@
 //   - Never persist `provenance` as a real store column. It is NOT one:
 //     `RangeRow`/`CommentRow` (`anno-types.ts`) carry no such field, and
 //     `setDataType()`/`setComment()` accept no such argument. Ranges are
-//     ALWAYS the derived half (D-03: "block types ... regenerate
+//     ALWAYS the derived half ("block types ... regenerate
 //     deterministically from the bytes") -- there is no per-row fact in the
 //     schema that could ever make one authored instead, so `"derived"` is a
 //     constant for every exported range, not a per-row classification.
-//     Comments are ALWAYS the authored half (D-03, confirmed again by
+//     Comments are ALWAYS the authored half (confirmed again by
 //     RESEARCH.md Section 5: "labels/comments/(and ... decline-comments) are
 //     the authored half") -- `provenanceForComment()` is written as a
 //     function of the comment's own text (rather than a bare constant) only
@@ -123,7 +123,7 @@ import type { DataType, CommentType, LabelKind, XrefAccessKind, EvidSourceBank }
  * standing decline-by-name pattern), never best-effort imported. */
 export const STORE_EXPORT_SCHEMA_VERSION = 1;
 
-/** The two provenance classes D-03 splits the store into. See this file's
+/** The two provenance classes the store is split into (derived vs authored). See this file's
  * own header for why this is never a real store column. */
 export type RowProvenance = "derived" | "authored";
 
@@ -137,7 +137,7 @@ export const DECLINE_COMMENT_PREFIX = "DECLINED:";
  * reviewed and chose to accept rather than reclassify. */
 export const DISAGREEMENT_ACCEPTED_COMMENT_PREFIX = "DISAGREEMENT-ACCEPTED:";
 
-/** D-10's per-range authored marker: an explicit statement that a range's
+/** The per-range authored marker: an explicit statement that a range's
  * typing rests on authored judgement rather than derivation or runtime
  * observation. */
 export const AUTHORED_PROVENANCE_COMMENT_PREFIX = "PROVENANCE: authored";
@@ -227,7 +227,7 @@ export interface StoreExportXrefRow {
  * and no `provenance`: `ScopeRow` (`anno-types.ts`) is a bare `{id, start,
  * endInclusive}` -- a lexical region, not a memory view, and not itself
  * derived from or authored over bytes the way a range or a comment is. Added
- * for the multi-file export path (Phase 47): `exportAsmTree()` reads scopes
+ * for the multi-file export path: `exportAsmTree()` reads scopes
  * straight off an open store handle via `listScopes()`, never from this
  * document, so a scope this generic export omitted would silently vanish the
  * moment a committed export got re-imported into a fresh store ahead of that
@@ -314,7 +314,7 @@ function assertRowProvenance(value: unknown, what: string): RowProvenance {
 }
 
 /**
- * 45-REVIEW WR-01's fix: `bank` is exported faithfully by `exportStoreDocument()`
+ * This fix: `bank` is exported faithfully by `exportStoreDocument()`
  * for every row kind (`StoreExportRangeRow.bank`, `StoreExportLabelRow.bank`,
  * `StoreExportCommentRow.bank`, `StoreExportEnumUsageRow.bank`,
  * `StoreExportXrefRow.bank`), but no write call on `anno-store.ts`'s current
@@ -322,8 +322,8 @@ function assertRowProvenance(value: unknown, what: string): RowProvenance {
  * accepts a `bank` argument -- every fresh insert hard-codes `bank: null`
  * (`anno-store.ts:1890`). Threading a real value through five write calls with
  * no bank-carrying writer anywhere in the codebase to prove it against would be
- * exactly the kind of speculative widening this project's other modules refuse
- * (D-10's "narrower than the review's own sketch" pattern). Refusing a non-null
+ * exactly the kind of speculative widening this project's other modules refuse.
+ * Refusing a non-null
  * `bank` BY NAME instead -- this project's standing "refuse by name, never
  * silently drop" convention (`enumUsage[i]` naming an undefined enum, above, is
  * the same shape) -- means the moment a real writer starts producing a
