@@ -294,7 +294,6 @@ export interface RatchetEntry {
 const RATCHET: readonly RatchetEntry[] = Object.freeze([
   { file: "src/mcp/vice/THIRD-PARTY-NOTICES.md", family: "other", count: 11 },
   { file: "src/mcp/vice/anno-bank.ts", family: "annotation store / CLI", count: 16 },
-  { file: "src/mcp/vice/anno-cli.ts", family: "annotation store / CLI", count: 164 },
   { file: "src/mcp/vice/anno-confidence.ts", family: "annotation store / CLI", count: 2 },
   { file: "src/mcp/vice/anno-coverage.ts", family: "annotation store / CLI", count: 51 },
   { file: "src/mcp/vice/anno-derive.ts", family: "annotation store / CLI", count: 6 },

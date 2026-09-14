@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// anno-cli.ts -- the thin CLI ergonomics layer over the annotation store
-// (D-06). Reached as `vice-mcp anno <verb>` because that bin is the only
+// anno-cli.ts -- the thin CLI ergonomics layer over the annotation store.
+// Reached as `vice-mcp anno <verb>` because that bin is the only
 // surface that resolves identically across the Claude Code plugin route and
 // both npm-installer routes: `installer/bin/cli.mjs`'s `viceServerEntry()`
 // always launches this server via `npx` in BOTH npm-installer modes, and
@@ -8,18 +8,17 @@
 // consuming project for some other filesystem-path-resolving design to find.
 //
 // ---------------------------------------------------------------------------
-// FIVE VERBS. THAT IS THE WHOLE SURFACE (D-14, 2026-08-29 -- FOUR at the
-// time; third verb landed 2026-08-31; fourth verb, `evid-disagreements`,
-// landed by phase 43 plan 43-06 -- the CLI route for EVID-03's disagreement
-// query, so a planted test has three RENDERED, textually-distinguishable
-// states to compare rather than only the MCP tool's JSON, which a test can
-// only inspect structurally; fifth verb, `decomp-completeness`, landed by
-// phase 45 plan 45-01 -- the CLI route for the decomposition-completeness
-// report's ONLY data path into a real store (D-07). D-14's original
-// "FOUR VERBS. THAT IS THE WHOLE SURFACE" framing is DELIBERATELY
-// SUPERSEDED by D-07, exactly as plan 43-06 (three -> four) already
-// superseded it once before -- this is the second raise over the same
-// decision, not a silent reopening of it).
+// FIVE VERBS. THAT IS THE WHOLE SURFACE -- narrowed to two, then grown back
+// one verb at a time as each earned a real route over this project's own
+// annotation store: a third verb landed first; a fourth, `evid-disagreements`,
+// followed as the CLI route for the disagreement query, so a planted test has
+// three RENDERED, textually-distinguishable states to compare rather than
+// only the MCP tool's JSON, which a test can only inspect structurally; a
+// fifth, `decomp-completeness`, followed as the CLI route for the
+// decomposition-completeness report's ONLY data path into a real store. Each
+// raise of the count DELIBERATELY SUPERSEDES the prior "THAT IS THE WHOLE
+// SURFACE" framing rather than silently reopening it -- this is the second
+// raise over that framing, not the first.
 // ---------------------------------------------------------------------------
 // This file used to carry eight. Six were removed in one commit because they
 // were delivery paths for the retired external analyser this project used to
@@ -43,15 +42,14 @@
 //     requirement and no success criterion of the phase that rebuilt
 //     `export-asm` covers any of them, and NO PHASE CURRENTLY OWNS THEM, so
 //     the symbol round trip still has NO route at all. That is recorded as a
-//     withdrawal in `.planning/PROJECT.md`'s shipped-capability list rather
-//     than left for a reader to discover by running it. The exact wording of
-//     those withdrawal notices across both skill trees is re-pointed in one
-//     place, by the plan that owns the tree-wide sweep (30-06); this file
-//     states the code fact and does not restate their text, so the two edits
-//     cannot contradict each other.
+//     withdrawal in this project's own capability record rather than left for
+//     a reader to discover by running it. The exact wording of those
+//     withdrawal notices across both skill trees is kept in exactly one
+//     place; this file states the code fact and does not restate their text,
+//     so the two edits cannot contradict each other.
 //
 // WHAT NOT TO DO, named concretely:
-//   - Never auto-pick an input when the caller does not name one (D-02). A
+//   - Never auto-pick an input when the caller does not name one. A
 //     silent auto-pick would happily analyse a cracktro or loader stub's
 //     bytes instead of the actual game -- precisely the failure
 //     `c64-provenance-diff` exists to prevent elsewhere in this project.
@@ -67,9 +65,9 @@
 //     confinement escape waiting to be written.
 //
 //     THIS PARAGRAPH WAS FALSE WHEN IT WAS FIRST WRITTEN, and that is why it
-//     now names the mechanism that keeps it. `29-VERIFICATION.md` gap 3 /
-//     `29-REVIEW.md` CR-02 and CR-03 reproduced three escapes on this very
-//     tree, on arguments the shipped playbooks tell an agent to compose in a
+//     now names the mechanism that keeps it. An independent verification pass
+//     reproduced three escapes on this very tree, on arguments the shipped
+//     playbooks tell an agent to compose in a
 //     Bash invocation: `render-memmap --out` and `coverage --out` reached
 //     `writeFileSync` as raw caller strings (the first silently replacing a
 //     pre-existing file OUTSIDE the workspace root and exiting 0), and
@@ -95,7 +93,7 @@
 //     noticing.
 //
 //     AND WHAT IT DOES NOT CHECK, stated in terms so the limit can be closed
-//     deliberately rather than discovered (WR-02): it does not associate a
+//     deliberately rather than discovered: it does not associate a
 //     particular argument with a particular call site. "Six arguments each
 //     confined once" and "five confined with one of them confined twice" read
 //     the same to it. That association needs per-argument dataflow through
@@ -119,16 +117,16 @@
 //
 // Import nothing from `hostpath.ts` or `containerpath.ts`. Every path this
 // CLI handles is already container-side, and translating any of these
-// arguments would be the mirror image of the DERIV-07 screenshot-path trap,
-// where a client-side-derived path was wrongly translated a second time.
-// This absence is asserted structurally by `hostpath-consumers.test.ts`
-// (D-08), not merely stated here.
+// arguments would be the mirror image of a screenshot-path trap this project
+// hit before, where a client-side-derived path was wrongly translated a
+// second time. This absence is asserted structurally by
+// `hostpath-consumers.test.ts`, not merely stated here.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { renderMemoryMap, checkRenderedMemoryMap } from "./anno-memmap-render.ts";
-// The ACME source emitter (EXPORT-01). It reads the store and the image and
+// The ACME source emitter. It reads the store and the image and
 // returns text plus counts; it starts no assembler and knows nothing about
 // one. `acme-verify.ts` -- the module that DOES spawn ACME -- is deliberately
 // NOT imported here and must never be: it is test-only (it is absent from
@@ -136,7 +134,7 @@ import { renderMemoryMap, checkRenderedMemoryMap } from "./anno-memmap-render.ts
 // would drag it into the published closure `check-npm-packages.mjs` walks.
 import { exportAsmTree } from "./anno-export-asm.ts";
 import type { ExportAsmTreeResult } from "./anno-export-asm.ts";
-// The coverage instrument (COV-01/COV-02). It declares its own input shapes
+// The coverage instrument. It declares its own input shapes
 // and never reads a store, a file or a tool on its own behalf -- a caller
 // fetches and hands the data in, which is exactly what makes the store
 // re-point below a CALLER-side change and nothing more.
@@ -147,14 +145,14 @@ import type { CoverageReport, LoadedProject, AnnoComment, AnnoCrossReference, An
 import type { BlockEntry } from "./block-class.ts";
 import { openStore, closeStore, listLabels, listComments, listRanges, listExecObservations, listObservedRuns, listXrefs } from "./anno-store.ts";
 import type { AnnoStoreHandle } from "./anno-store.ts";
-// The shared 6502/6510 decoder (DISASM-01 et al.). `decomp-completeness`'s
-// entry-point and referenced-address censuses (phase 45 plan 45-04) walk the
+// The shared 6502/6510 decoder. `decomp-completeness`'s
+// entry-point and referenced-address censuses walk the
 // SAME code-range decode `anno_disassemble` and `anno-enum-gen.ts`'s
 // `fetchRegisterSearchRows()` already use -- never a second decoder, never a
 // regex over rendered text.
 import { decode } from "./disasm-decoder.ts";
 import type { Instruction } from "./disasm-decoder.ts";
-// The disagreement query's own pure join (EVID-03/EVID-04, plan 43-06). This
+// The disagreement query's own pure join. This
 // is the SAME reconcileObservedExecution() the anno_evid_disagreements MCP
 // tool calls -- reached here directly (a static import, never lazy) because
 // this module IS the CLI, not a startup-cost-sensitive MCP server entry
@@ -166,7 +164,7 @@ import { reconcileObservedExecution } from "./evid-reconcile.ts";
 import { buildHazardReport } from "./anno-hazard-report.ts";
 import type { HazardReport } from "./anno-hazard-report.ts";
 import type { EvidReconciliation } from "./evid-reconcile.ts";
-// The derived half of STORE-06: cross-references are DERIVED from the bytes
+// The derived half of the cross-reference union: cross-references are DERIVED from the bytes
 // plus the store's typed ranges plus the few rows that cannot be recovered
 // from bytes at all. There is exactly one definition of that union and this
 // file calls it rather than restating it.
@@ -174,9 +172,9 @@ import { crossReferencesTo } from "./anno-derive.ts";
 import { storePathWithinWorkspace, isSplitDataType } from "./anno-types.ts";
 import type { CommentRow, LabelRow, RangeRow, DataType } from "./anno-types.ts";
 import { repoRoot } from "./repo-root.ts";
-// D-03's three comment-text conventions (plan 45-02), declared once in
+// The three comment-text conventions, declared once in
 // anno-store-export.ts and imported everywhere they are matched -- never
-// restated as a second literal (T-45-15's own mitigation).
+// restated as a second literal.
 import { DECLINE_COMMENT_PREFIX, DISAGREEMENT_ACCEPTED_COMMENT_PREFIX, AUTHORED_PROVENANCE_COMMENT_PREFIX } from "./anno-store-export.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -189,7 +187,7 @@ usage (plugin/in-repo): ${PLUGIN_INVOCATION}
 verbs:
   render-memmap <store> --provenance FILE [--out FILE] [--force] [--check]
       Generates the Markdown memory map from an annotation store plus a
-      validated provenance sidecar (D-24: the store is canonical, this
+      validated provenance sidecar (the store is canonical; this
       output is a GENERATED VIEW -- never hand-edit it). Without --check,
       writes --out (default: memory-map.md beside the STORE -- in the
       store's own directory), refusing to overwrite an existing file there
@@ -213,7 +211,7 @@ verbs:
 
   coverage <image> --store FILE [--out FILE] [--force] [--sample N]
       Measures how far a program has actually been reverse-engineered
-      (COV-01/COV-02), through anno-coverage.ts. <image> supplies the
+      through anno-coverage.ts. <image> supplies the
       PAYLOAD BYTES and the load origin; --store names the ANNOTATION STORE
       holding the labels, comments and typed ranges. Those are two separate
       files on purpose: the store holds annotations and never bytes, so a
@@ -222,14 +220,14 @@ verbs:
       <image> is dispatched IN THIS ORDER, and the order is load-bearing:
       first, a .raw or .bin is read as a flat capture BY EXTENSION, before
       any length check, so a truncated capture is refused BY NAME instead
-      of falling through to the .prg parser (WR-07: a 4096-byte .raw once
+      of falling through to the .prg parser (a 4096-byte .raw once
       had its first two bytes read as a load address and reported a
       complete-looking measurement); then any file that is NOT a .prg and
       is exactly 65536 bytes is read as a flat capture, which is the one
       branch that does dispatch on byte length; then a .prg, whose first
       two bytes are the load address. The retired JSON project form
       survives as a TRAILING LEGACY branch, reached only when none of
-      those matched -- its only producer was deleted (D-14) and it is kept
+      those matched -- its only producer was deleted, and it is kept
       solely so an existing file on disk is not broken.
       Prints three separately named measures -- the structural byte census,
       the two label figures, and the sampled reproducibility result -- plus
@@ -279,7 +277,7 @@ verbs:
       room.
       --ledger names c64-provenance-diff's generated recovery/PROVENANCE.md.
       Supplying it makes the export carry each covered range's recorded
-      Verdict and Confidence as inline comments (BUILD-05). It is OPTIONAL:
+      Verdict and Confidence as inline comments. It is OPTIONAL:
       omitting it exports exactly as before. The flag changes COMMENT TEXT
       ONLY -- it never changes which bytes or which blocks are emitted, and a
       range the supplied ledger does not cover is refused by name rather than
@@ -318,15 +316,15 @@ verbs:
 
   decomp-completeness --store FILE --disagreements FILE --manifest FILE [--json]
       The decomposition-closure completeness answer for ONE
-      per-fixture store (D-07). Three REQUIRED arguments, none defaulted from
+      per-fixture store. Three REQUIRED arguments, none defaulted from
       another: --store names the annotation store; --disagreements names the
       JSON "anno evid-disagreements --store <same store> --json" wrote for
-      THIS store's own run; --manifest names the execution manifest (D-13)
+      THIS store's own run; --manifest names the execution manifest
       recording which committed fixtures were actually run. Omitting ANY of
       the three refuses BY NAME with exit 1 -- there is no default and no
       empty-array substitute for a missing disagreement input, because an
       omitted query and a query that found nothing must never render the
-      same report (D-09 mechanism 1).
+      same report.
       The supplied --disagreements document is refused, by name, when it is
       missing any EvidReconciliation field, and when its own recorded
       runIdentity (image_sha256/argv_digest/seed) matches no row in the
@@ -342,9 +340,9 @@ verbs:
       candidate queue uses), the fixture's own execution disposition read
       from --manifest (a NOT EXECUTED fixture renders that fact by name,
       never a clean bill of health), and the disagreement input verbatim.
-      Never prints a percentage, rate or combined figure (D-05's own rule,
-      applied here too). --json prints the raw JSON answer instead of the
-      rendered report.
+      Never prints a percentage, rate or combined figure -- the same rule
+      this CLI applies to every verb's own report. --json prints the raw
+      JSON answer instead of the rendered report.
       Requires an EXISTING annotation store, an EXISTING --disagreements
       document and an EXISTING --manifest file; creates none and writes
       nothing.
@@ -370,7 +368,7 @@ verbs:
 
 Every verb requires inputs that already exist. None creates a project, a
 store or a sidecar, and none derives one path from another -- this CLI
-never guesses (D-02).
+never guesses.
 `;
 
 function errMsg(err: unknown): string {
@@ -378,7 +376,7 @@ function errMsg(err: unknown): string {
 }
 
 /**
- * IN-06 (D-11.1-04): the ONE declared verb-to-accepted-options fact in this
+ * The ONE declared verb-to-accepted-options fact in this
  * file. Every option every verb's own code actually reads is listed here --
  * ground truth, not merely what USAGE happens to say.
  *
@@ -396,8 +394,8 @@ function errMsg(err: unknown): string {
  *
  * `export-asm` deliberately carries NO assembler-facing option. It writes
  * source and runs no assembler, so there is no binary to name, no exit status
- * to surface and no flag that could imply either. `--ledger` (BUILD-05,
- * phase 46 plan 01) does not weaken that claim: it is an EVIDENCE-CARRYING
+ * to surface and no flag that could imply either. `--ledger` does not weaken
+ * that claim: it is an EVIDENCE-CARRYING
  * INPUT, exactly like `--store`, never an assembler-facing option -- it names
  * a file to READ, not a way to run or configure an assembler.
  */
@@ -411,7 +409,7 @@ export const VERB_OPTIONS: Readonly<Record<string, readonly string[]>> = Object.
 });
 
 /**
- * The one shared refusal check IN-06 generalises to every verb (WR-08's
+ * The one shared refusal check generalises to every verb (the same
  * closed-option-set posture, applied uniformly rather than verb by verb).
  * Scans `rest` for any `--flag`-shaped token not in `verb`'s accepted set
  * from `VERB_OPTIONS` and returns a one-line refusal naming the flag and the
@@ -421,8 +419,8 @@ export const VERB_OPTIONS: Readonly<Record<string, readonly string[]>> = Object.
  * message). Never throws -- this file's never-throw posture applies here
  * too.
  *
- * THE LOOKUP IS AN OWN-PROPERTY READ, AND THAT IS THE WHOLE POINT (30-REVIEW
- * CR-01, fixed 2026-08-31). `VERB_OPTIONS` is an object literal, so it
+ * THE LOOKUP IS AN OWN-PROPERTY READ, AND THAT IS THE WHOLE POINT (fixed
+ * 2026-08-31, after a real crash reproduced it). `VERB_OPTIONS` is an object literal, so it
  * inherits from `Object.prototype`; a bare `VERB_OPTIONS[verb]` resolved
  * `hasOwnProperty`, `toString`, `constructor`, `valueOf` and `__proto__` to
  * TRUTHY inherited FUNCTIONS. Those sailed past the `if (!accepted) return
@@ -461,17 +459,17 @@ export function checkAcceptedOptions(verb: string, rest: string[]): string | und
  * passed `--force`. Called by the TWO verbs that write a single output FILE
  * -- `cmdRenderMemmap()` (non-`--check` branch only; `--check` never writes)
  * and `cmdCoverage()` -- so overwrite safety is uniform across both rather
- * than one verb accreting a check the other lacks (CR-01/CR-02).
+ * than one verb accreting a check the other lacks.
  *
  * "SHARED BY EVERY VERB THAT WRITES AN OUTPUT FILE" IS WHAT THIS DOC USED TO
  * SAY, AND IT WAS NOT TRUE. `render-memmap` wrote an output file and had
  * neither `--force` in its option set nor a call to this function anywhere on
- * its path; `29-REVIEW.md` CR-02 reproduced it destroying a pre-existing file
+ * its path; an independent review reproduced it destroying a pre-existing file
  * silently, exit code 0. The claim is now stated as the TWO call sites it
  * actually has, because a count is checkable where "every" is not.
  *
  * "THE TWO CALL SITES" IS WHAT THIS SENTENCE SAID UNTIL 2026-08-31, AFTER
- * `cmdExportAsm()` BECAME THE THIRD (30-REVIEW WR-08). The paragraph directly
+ * `cmdExportAsm()` BECAME THE THIRD. The paragraph directly
  * above had been updated to name all three; this one, whose entire point is
  * that a COUNT is checkable where "every" is not, was left carrying a stale
  * count -- the failure mode it exists to argue against, reproduced in
@@ -480,10 +478,10 @@ export function checkAcceptedOptions(verb: string, rest: string[]): string | und
  * confinement seam, so the next verb to write an output file cannot leave this
  * number behind again.
  *
- * BACK DOWN TO TWO, phase 47 plan 47-05: `export-asm`'s `--out` was promoted
- * from a FILE to a DIRECTORY (D47-A). A directory's overwrite question --
+ * BACK DOWN TO TWO, after `export-asm`'s `--out` was promoted
+ * from a FILE to a DIRECTORY. A directory's overwrite question --
  * does this directory already hold something, and may `force` replace it --
- * is `exportAsmTree()`'s own output-directory contract (phase 47 plan 47-02),
+ * is `exportAsmTree()`'s own output-directory contract,
  * never this function's single-file question, so `cmdExportAsm()` dropped its
  * call here rather than reshaping a file-shaped check to fit a directory. The
  * count this doc states, and the count `anno-cli.test.ts` checks mechanically,
@@ -506,7 +504,7 @@ function refuseOverwrite(outPath: string, force: boolean | undefined, verbLabel:
 
 /**
  * THE ONE "is this token a value, or the next flag?" TEST, shared by all THREE
- * option parsers below (30-REVIEW WR-09, fixed 2026-08-31).
+ * option parsers below (fixed 2026-08-31, after a real failure reproduced it).
  *
  * The `*MissingValue` mechanism exists precisely to avoid "silently swallowing
  * the next token" when an option is given without its value. Until this
@@ -545,7 +543,7 @@ interface RenderMemmapParsedArgs {
 }
 
 /** Fixed, closed option set for render-memmap -- exactly `--provenance`,
- * `--out`, `--force` and `--check`. Per WR-08's posture (do not silently
+ * `--out`, `--force` and `--check`. Per this file's closed-option-set posture (do not silently
  * accept a flag a verb does not implement, or a flag missing its value), any
  * OTHER `--flag`-shaped token is refused as `unknownOption`, and
  * `--provenance`/`--out` with no value (or a flag-shaped "value") is refused
@@ -597,25 +595,25 @@ function parseRenderMemmapArgs(rest: string[]): RenderMemmapParsedArgs {
 
 /**
  * `render-memmap <store> --provenance FILE [--out FILE] [--force] [--check]`
- * -- D-24's generated-view verb, via `anno-memmap-render.ts`'s
+ * -- the generated-view verb, via `anno-memmap-render.ts`'s
  * `renderMemoryMap()`/`checkRenderedMemoryMap()`. Never writes a file when
  * `--check` is given -- that mode only reads and reports.
  *
  * ALL THREE OF THIS VERB'S PATHS ARE CONFINED, and the reason each one is
  * named here rather than left to a reader to infer is that two of them were
- * NOT, and shipped that way. `29-VERIFICATION.md` gap 3 / `29-REVIEW.md`
- * CR-02 and CR-03 reproduced both on this tree:
+ * NOT, and shipped that way. An independent verification pass
+ * reproduced both on this tree:
  *
  *   - `--out` reached `writeFileSync` as the RAW caller string. Pointed
  *     outside the workspace root it exited 0, printed `wrote /tmp/.../
  *     PRECIOUS.md` and replaced that pre-existing file's bytes. `--force`
  *     was not in this verb's option set at all, so `refuseOverwrite()` --
  *     whose own doc claims the safety is uniform across every verb that
- *     writes an output file -- was never reached from here (CR-02).
+ *     writes an output file -- was never reached from here.
  *   - `--provenance` reached `readFileSync` as the RAW caller string, making
  *     it an arbitrary-file read oracle; the sidecar parse failure then
  *     interpolated Node's own parse error, which carries a snippet of the
- *     file, so the oracle DISCLOSED CONTENT (CR-03). Confining it here also
+ *     file, so the oracle DISCLOSED CONTENT. Confining it here also
  *     confines it for `anno-memmap-render.ts`, which reads it with no check
  *     of its own.
  *
@@ -635,7 +633,7 @@ function parseRenderMemmapArgs(rest: string[]): RenderMemmapParsedArgs {
  * fails when the inventory and the surface disagree in either direction, or
  * when this file's confinement call sites number fewer than the inventory's
  * entries. It does not associate a particular argument with a particular call
- * site (WR-02), so six arguments confined once each and five confined with one
+ * site, so six arguments confined once each and five confined with one
  * of them confined twice read the same to it; that limit is named here rather
  * than papered over. A header that asserts a property must point at the
  * mechanism that keeps it, and must claim no more than the mechanism checks.
@@ -699,7 +697,7 @@ async function cmdRenderMemmap(rest: string[]): Promise<number> {
     return 1;
   }
 
-  // CR-03. The sidecar is confined BEFORE the existence check, so a path
+  // The sidecar is confined BEFORE the existence check, so a path
   // outside the workspace root never reaches the filesystem at all -- not as
   // an `existsSync` probe (which is itself an oracle: it answers "does this
   // file exist" for any path the process can stat) and not as the
@@ -718,7 +716,7 @@ async function cmdRenderMemmap(rest: string[]): Promise<number> {
     return 1;
   }
 
-  // CR-02. The default is applied FIRST and the result confined AFTER, so the
+  // The default is applied FIRST and the result confined AFTER, so the
   // derived path and a caller-supplied one are confined by the same rule --
   // rather than the default being trusted because this verb computed it.
   let outPath: string;
@@ -751,7 +749,7 @@ async function cmdRenderMemmap(rest: string[]): Promise<number> {
     return 1;
   }
 
-  // CR-02, the second half. `--check` never writes, so the overwrite refusal
+  // The second half of that same fix. `--check` never writes, so the overwrite refusal
   // belongs on THIS branch only -- and it runs against the CONFINED path, so
   // the file it protects is the file that would actually be written.
   if (!refuseOverwrite(outPath, force, "render-memmap")) {
@@ -768,7 +766,7 @@ async function cmdRenderMemmap(rest: string[]): Promise<number> {
   try {
     writeFileSync(outPath, rendered.markdown);
   } catch (err) {
-    // WR-09 (D-11.1-04): the same shape as bootstrapProject()'s write above,
+    // The same shape as bootstrapProject()'s write above,
     // one verb over -- an ordinary write failure (missing parent directory,
     // permissions, full disk) must not throw past this verb's own
     // never-throw contract.
@@ -795,7 +793,7 @@ interface CoverageParsedArgs {
 }
 
 /** Fixed, closed option set for coverage -- exactly `--store`, `--out`,
- * `--force` and `--sample`. Same WR-08 posture as `parseRenderMemmapArgs()`
+ * `--force` and `--sample`. Same closed-option-set posture as `parseRenderMemmapArgs()`
  * above: an unimplemented flag is refused as `unknownOption`, and
  * `--store`/`--out`/`--sample` with a missing or flag-shaped value are refused
  * through their own `*MissingValue` fields rather than silently swallowing the
@@ -986,7 +984,7 @@ function addressList(addresses: readonly number[], cap = 12): string {
 /**
  * Renders the report as separately-headed sections.
  *
- * THE ONE RULE THIS FUNCTION EXISTS TO HOLD (COV-01, and the reason the
+ * THE ONE RULE THIS FUNCTION EXISTS TO HOLD (and the reason the
  * rendering lives here rather than being a generic pretty-printer): print
  * every measure's own numbers under its own heading, and never compute a
  * combined figure at the point of display. `anno-coverage.ts`'s report
@@ -1106,21 +1104,21 @@ function printCoverageReport(report: CoverageReport): void {
 
 /**
  * `coverage <image> --store FILE [--out FILE] [--force] [--sample N]` --
- * COV-01's delivery path: the instrument from `anno-coverage.ts`, run against
+ * This verb's delivery path: the instrument from `anno-coverage.ts`, run against
  * a real program and a real annotation store.
  *
  * TWO PATHS, NEITHER DERIVED FROM THE OTHER. `<image>` carries the payload
  * bytes and the load origin; `--store` names the annotation store holding the
  * labels, comments and typed ranges. The store holds annotations and never
  * bytes, so a derived measure has to be told which bytes it is measuring, and
- * guessing one path from the other is exactly the auto-pick D-02 forbids.
+ * guessing one path from the other is exactly the auto-pick this file forbids.
  *
  * Two properties this function must keep:
  *   - NO SECOND PATH VALIDATOR (T-19-22 / T-29-28), over ALL THREE of this
  *     verb's caller-supplied paths -- the positional, `--store` and `--out`.
  *     The count is stated because it was WRONG: this doc said "both" and meant
  *     it, while `--out` reached `refuseOverwrite()` and `writeFileSync()` as
- *     the raw caller string. `29-REVIEW.md` CR-02 reproduced the escape --
+ *     the raw caller string. An independent review reproduced the escape --
  *     `coverage <project> --store <store> --out /tmp/...` wrote the report
  *     outside the workspace root. All three now go through
  *     `storePathWithinWorkspace()` against `repoRoot()` -- the one seam, the
@@ -1133,7 +1131,7 @@ function printCoverageReport(report: CoverageReport): void {
  *     synopsis line -- and fails when that inventory and the surface disagree
  *     either way, or when this file's confinement call sites number fewer
  *     than the inventory's entries. It does not associate a given argument
- *     with a given call site (WR-02), so it cannot tell six arguments
+ *     with a given call site, so it cannot tell six arguments
  *     confined once each from five confined with one confined twice.
  *   - THE STORE IS OPENED ONCE, read-only, for the whole verb, and closed in a
  *     `finally`. `mustExist` is what makes "the annotations are gone" and
@@ -1189,10 +1187,10 @@ async function cmdCoverage(rest: string[]): Promise<number> {
     return 1;
   }
 
-  // T-19-22 / T-29-28 / CR-02: the ONE confinement seam, for ALL THREE
+  // The ONE confinement seam, for ALL THREE
   // caller-supplied paths. Never a second hand-rolled one, and never a
   // different rule for the store than for the program it annotates -- or, as
-  // CR-02 found, no rule at all for the report this verb writes.
+  // an earlier review found, no rule at all for the report this verb writes.
   const workspaceRoot = repoRoot();
   let projectPath: string;
   let storePath: string;
@@ -1284,7 +1282,7 @@ async function cmdCoverage(rest: string[]): Promise<number> {
   if (!report.project.payloadDecoded) {
     // Not a low measurement -- an unreadable payload means every byte-side
     // measure above was computed over nothing. Reported as the caller-facing
-    // failure it is, AFTER the report, so the reason is on screen (COV-02).
+    // failure it is, AFTER the report, so the reason is on screen.
     console.error(`coverage: the project's payload was UNAVAILABLE -- ${report.project.reason ?? "reason not recorded"}`);
     return 1;
   }
@@ -1297,7 +1295,7 @@ interface ExportAsmParsedArgs {
   storeMissingValue?: boolean;
   out?: string;
   outMissingValue?: boolean;
-  /** BUILD-05 (phase 46 plan 01): the ledger `c64-provenance-diff` generates
+  /** The ledger `c64-provenance-diff` generates
    * (`recovery/PROVENANCE.md`). OPTIONAL -- see `ExportAsmOptions.ledgerPath`
    * in `anno-export-asm.ts` for why. */
   ledger?: string;
@@ -1307,7 +1305,7 @@ interface ExportAsmParsedArgs {
 }
 
 /** Fixed, closed option set for export-asm -- exactly `--store`, `--out`,
- * `--ledger` and `--force`. The SAME WR-08 posture, and deliberately the same
+ * `--ledger` and `--force`. The SAME closed-option-set posture, and deliberately the same
  * SHAPE, as `parseRenderMemmapArgs()` and `parseCoverageArgs()` above rather
  * than a third convention: an unimplemented flag is refused as
  * `unknownOption`, and `--store`/`--out`/`--ledger` with a missing or
@@ -1370,8 +1368,8 @@ function parseExportAsmArgs(rest: string[]): ExportAsmParsedArgs {
  * is a GENERATED VIEW of the annotations, so it belongs beside the artefact it
  * was generated from. The image is an input this verb only reads.
  *
- * NO EXTENSION, on purpose (phase 47 plan 47-05: `--out` was promoted from a
- * FILE to a DIRECTORY, D47-A). This names a directory the tree is written
+ * NO EXTENSION, on purpose (`--out` was promoted from a
+ * FILE to a DIRECTORY). This names a directory the tree is written
  * INTO, never a file -- a name ending in `.a` would read as a file to every
  * human and every tool that inspects it, and the tree this verb writes is
  * not one. The stem is derived the same way it always was (whatever
@@ -1410,15 +1408,15 @@ function pathIsOrContains(containerPath: string, candidate: string): boolean {
 /**
  * `export-asm <image> --store FILE [--out DIR] [--ledger FILE] [--force]` --
  * a TREE of ACME source files for a program, emitted from its annotation
- * store by `anno-export-asm.ts`'s `exportAsmTree()` (phase 47 plan 47-05,
- * D47-A: `--out` promoted from a FILE to a DIRECTORY, decided at this plan's
- * own checkpoint rather than left to fall out of implementation).
+ * store by `anno-export-asm.ts`'s `exportAsmTree()` (`--out` promoted from a
+ * FILE to a DIRECTORY, a decision made deliberately at a checkpoint rather
+ * than left to fall out of implementation).
  *
  * EVERY ONE OF THIS VERB'S PATHS IS CONFINED, and the ORDER each step happens
  * in is the load-bearing part rather than the mere presence of the calls. It
  * follows `cmdRenderMemmap()`'s chain deliberately, because that chain is the
- * corrected shape of three reproduced escapes (`29-VERIFICATION.md` gap 3 /
- * `29-REVIEW.md` CR-02 and CR-03) on exactly the argument shapes this verb
+ * corrected shape of three reproduced escapes (an independent verification
+ * pass) on exactly the argument shapes this verb
  * has:
  *
  *   - `<image>` and `--store` go through `storePathWithinWorkspace()` BEFORE
@@ -1426,12 +1424,12 @@ function pathIsOrContains(containerPath: string, candidate: string): boolean {
  *     this file exist" for any path this process can reach -- so probing first
  *     and confining second would leak that answer for a path the seam is about
  *     to refuse.
- *   - `--ledger` (BUILD-05, phase 46 plan 01) joins that SAME confinement
+ *   - `--ledger` joins that SAME confinement
  *     block, on the SAME terms, WHEN SUPPLIED -- it is a third input this run
  *     reads, not a second-class one confined later or not at all.
  *   - `--out`'s DEFAULT is applied FIRST and the result confined AFTER, so a
  *     path this verb computed is confined by the same rule as one a caller
- *     supplied, rather than trusted because this verb computed it (CR-02).
+ *     supplied, rather than trusted because this verb computed it.
  *     This is unchanged by the file-to-directory promotion: the confined
  *     result now NAMES A DIRECTORY rather than a file, but it is confined by
  *     the exact same call.
@@ -1441,8 +1439,9 @@ function pathIsOrContains(containerPath: string, candidate: string): boolean {
  *     and `exportAsmTree()` -- so every printed line names the file or
  *     directory that is actually on disk.
  *   - The output directory may not BE, and may not CONTAIN, any of the three
- *     inputs (T-47-14, generalised from the single-file version's plain
- *     equality check, 30-REVIEW WR-05). `pathIsOrContains()` runs against
+ *     inputs -- generalised from the single-file version's plain
+ *     equality check, once this verb started writing a directory rather than
+ *     a file. `pathIsOrContains()` runs against
  *     the CONFINED destination and each CONFINED input, so what it protects
  *     is the input that would actually be read and the directory that would
  *     actually be written into -- and `--force` does not lift this refusal,
@@ -1451,7 +1450,7 @@ function pathIsOrContains(containerPath: string, candidate: string): boolean {
  *     writing".
  *   - The output-directory's own overwrite question -- does it already hold
  *     something, and may `--force` replace it -- is `exportAsmTree()`'s own
- *     contract (phase 47 plan 47-02), not a second check grown here. This
+ *     contract, not a second check grown here. This
  *     verb adds no overwrite rule of its own for the directory as a whole.
  *
  * WHAT THIS VERB DOES NOT DO, stated here as well as in `USAGE` because a
@@ -1502,7 +1501,7 @@ async function cmdExportAsm(rest: string[]): Promise<number> {
     return 1;
   }
 
-  // T-30-15 / CR-03: the ONE confinement seam, on both input paths, BEFORE any
+  // The ONE confinement seam, on both input paths, BEFORE any
   // filesystem probe. `openStore()` downstream is handed this same workspace
   // root, so its own confinement agrees by construction rather than by a
   // second rule. `--ledger` joins this SAME block, WHEN SUPPLIED -- confined
@@ -1541,7 +1540,7 @@ async function cmdExportAsm(rest: string[]): Promise<number> {
     return 1;
   }
 
-  // T-30-02 / CR-02. The default is applied FIRST and the RESULT confined,
+  // The default is applied FIRST and the RESULT confined,
   // so the derived path and a caller-supplied one are confined by the same
   // rule.
   let outPath: string;
@@ -1553,8 +1552,8 @@ async function cmdExportAsm(rest: string[]): Promise<number> {
   }
 
   // THE OUTPUT DIRECTORY MAY NOT BE, AND MAY NOT CONTAIN, AN INPUT, AND
-  // `--force` DOES NOT OVERRIDE THIS (T-47-14, generalising 30-REVIEW WR-05's
-  // plain-equality refusal to containment now that `--out` names a directory
+  // `--force` DOES NOT OVERRIDE THIS (generalising an earlier plain-equality
+  // refusal to containment now that `--out` names a directory
   // a whole tree is written into). The single-file version of this refusal
   // existed because `outPath` was confined and overwrite-checked but never
   // COMPARED to the inputs, so `anno export-asm game.raw --store g.annostore
@@ -1563,7 +1562,7 @@ async function cmdExportAsm(rest: string[]): Promise<number> {
   // same mistake from one file to everything the directory would hold, so the
   // check widens from equality to containment with it: the directory may not
   // itself BE an input's own path, and no input may live INSIDE it.
-  // `--ledger` (BUILD-05, phase 46 plan 01) joins this SAME check: it is a
+  // `--ledger` joins this SAME check: it is a
   // THIRD input this run reads, and `--force` must not lift the refusal for
   // it any more than it lifts it for the store or the image.
   //
@@ -1594,8 +1593,8 @@ async function cmdExportAsm(rest: string[]): Promise<number> {
 
   // The output-directory contract itself -- create when missing, refuse a
   // non-empty directory without `--force`, and with `--force` replace only
-  // the names this export produces -- lives entirely in `exportAsmTree()`
-  // (phase 47 plan 47-02). This verb adds no second overwrite rule of its
+  // the names this export produces -- lives entirely in `exportAsmTree()`.
+  // This verb adds no second overwrite rule of its
   // own: it forwards the request and reports the library's own refusal
   // through this same single-line error path every other exporter refusal
   // already takes.
@@ -1638,7 +1637,7 @@ interface EvidDisagreementsParsedArgs {
 }
 
 /** Fixed, closed option set for evid-disagreements -- exactly `--store` and
- * `--json`. Same WR-08 posture as every other verb's own parser: an
+ * `--json`. Same closed-option-set posture as every other verb's own parser: an
  * unimplemented flag is refused as `unknownOption`, and `--store` with a
  * missing or flag-shaped value is refused through its own `*MissingValue`
  * field rather than silently swallowing the next token. `--json` is a plain
@@ -1709,8 +1708,8 @@ function printEvidDisagreementsReport(storePath: string, r: EvidReconciliation):
 }
 
 /**
- * `evid-disagreements --store FILE [--json]` -- the CLI route for EVID-03's
- * disagreement query (`43-RESEARCH.md` Open Question 3): the criterion that
+ * `evid-disagreements --store FILE [--json]` -- the CLI route for the
+ * disagreement query: the criterion that
  * settles the question is that a planted test needs the disagreement,
  * agreement and silence states rendered as three DIFFERENT pieces of TEXT
  * it can tell apart, which an MCP tool's JSON answer can only be inspected
@@ -1769,10 +1768,10 @@ async function cmdEvidDisagreements(rest: string[]): Promise<number> {
     return 1;
   }
   let reconciliation: EvidReconciliation;
-  // Rule 2 (missing critical functionality), phase 45 plan 45-01: `runIdentity`
+  // Rule 2 (missing critical functionality): `runIdentity`
   // is NOT an `EvidReconciliation` field -- it rides alongside the spread
   // reconciliation in the JSON envelope, exactly like `store` already does.
-  // Added so `decomp-completeness` (D-09 mechanism 1/2) has a run identity to
+  // Added so `decomp-completeness` has a run identity to
   // validate this document against the SAME store's own `anno_evid_runs`
   // table, rather than accepting a fabricated or foreign empty document as
   // this run's own answer. `null` when the store holds zero or more than one
@@ -1804,15 +1803,15 @@ async function cmdEvidDisagreements(rest: string[]): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
-// decomp-completeness (D-07, phase 45 plan 45-01) -- the fifth verb.
+// decomp-completeness -- the fifth verb.
 // ---------------------------------------------------------------------------
 
 /**
- * The frozen survivor prefix set (phase 45 plan 45-01 task 2), measured
+ * The frozen survivor prefix set, measured
  * against a real dxa+Ghidra-derived store rather than against roadmap prose
- * alone -- see docs/phase45-wave0-measurements.md for the MEASURED label
- * population (zero labels; derivation writes typed ranges and xrefs, never
- * names) and the reasoning this set was frozen against. `AUTO_NAME_PREFIX_RE`
+ * alone -- MEASURED against a zero-label population (derivation writes typed
+ * ranges and xrefs, never names) and the reasoning this set was frozen
+ * against. `AUTO_NAME_PREFIX_RE`
  * (imported from anno-coverage.ts, NEVER restated as a second literal here --
  * a census over this file for any of its own eleven prefix strings returns
  * zero, proving that) covers the eleven upstream-analyser-shaped
@@ -1837,8 +1836,8 @@ function isSurvivorLabelName(name: string): boolean {
   return AUTO_NAME_PREFIX_RE.test(name) || SURVIVOR_EXTRA_RE.test(name);
 }
 
-/** One row of the manifest `anno decomp-completeness --manifest FILE` reads
- * (D-13). `path` is relative to `src/mcp/vice/fixtures`; `reason` is
+/** One row of the manifest `anno decomp-completeness --manifest FILE` reads.
+ * `path` is relative to `src/mcp/vice/fixtures`; `reason` is
  * required (non-empty) when `execution` is `"not-executed"` and `null`
  * otherwise. */
 interface DecompExecutionManifestEntry {
@@ -1863,16 +1862,16 @@ function fixtureStem(path: string): string {
   return base.replace(/\.[^./]+$/, "");
 }
 
-/** The subset of `EvidReconciliation` (verbatim field names, never renamed --
- * D-10) that a `--disagreements` document must carry for
+/** The subset of `EvidReconciliation` (verbatim field names, never renamed)
+ * that a `--disagreements` document must carry for
  * `decomp-completeness` to accept it as real, plus the `runIdentity` this
  * verb (via `cmdEvidDisagreements`'s own `--json` branch) adds alongside it.
  * `disagreementInput` in the `--json` answer below is exactly this shape. */
 interface DecompDisagreementInput extends EvidReconciliation {
-  // Phase 45, plan 45-06 (Rule 1 fix, disclosed): `null` is a THIRD, LEGITIMATE
+  // (Rule 1 fix, disclosed): `null` is a THIRD, LEGITIMATE
   // value here -- `anno evid-disagreements --json`'s own `runIdentity` field
   // reads `null` when the store holds zero observed runs (listObservedRuns()),
-  // which is exactly the real, non-fabricated answer a D-13 non-executed
+  // which is exactly the real, non-fabricated answer a non-executed
   // fixture's store produces. Refusing null unconditionally made a real
   // `anno evid-disagreements --json` answer for a non-executed fixture
   // unusable by this verb, contradicting this phase's own must_haves ("a
@@ -1899,28 +1898,28 @@ const EVID_RECONCILIATION_FIELDS = [
 /**
  * Validates a parsed `--disagreements` document has every `EvidReconciliation`
  * field AND a complete `runIdentity` -- refusing BY NAME, never silently
- * treating a missing field as an empty answer (D-09 mechanism 2: a required
+ * treating a missing field as an empty answer (a required
  * output-schema field only the real `--disagreements` input can populate).
  * Returns the validated document (typed as `DecompDisagreementInput`) or a
  * refusal message string. Never throws.
  */
 function validateDisagreementDocumentShape(doc: unknown): DecompDisagreementInput | string {
   if (typeof doc !== "object" || doc === null) {
-    return "decomp-completeness: the --disagreements document is not a JSON object -- refusing to render (D-09)";
+    return "decomp-completeness: the --disagreements document is not a JSON object -- refusing to render";
   }
   const bag = doc as Record<string, unknown>;
   for (const field of EVID_RECONCILIATION_FIELDS) {
     if (!(field in bag)) {
       return (
         `decomp-completeness: the --disagreements document is missing the "${field}" field -- ` +
-        "this is not a real anno evid-disagreements --json answer, refusing to render (D-09)"
+        "this is not a real anno evid-disagreements --json answer, refusing to render"
       );
     }
   }
   const runIdentity = bag.runIdentity;
-  // Rule 1 fix (disclosed, plan 45-06): `null` is accepted HERE as a
+  // Rule 1 fix (disclosed): `null` is accepted HERE as a
   // well-formed shape -- it is `anno evid-disagreements --json`'s own real
-  // answer for a store with zero observed runs (a D-13 non-executed
+  // answer for a store with zero observed runs (a non-executed
   // fixture). It is NOT yet accepted as a legitimate ANSWER: cmdDecompCompleteness's
   // own match-check below still refuses a null identity unless the store's
   // evid-runs table is ALSO genuinely empty, so a store that DOES carry real
@@ -1935,7 +1934,7 @@ function validateDisagreementDocumentShape(doc: unknown): DecompDisagreementInpu
       return (
         "decomp-completeness: the --disagreements document carries no complete runIdentity " +
         "(image_sha256/argv_digest/seed) -- an empty or ambiguous-run document is refused rather than " +
-        "rendered as \"no disagreements\" (D-09 mechanism 2, RESEARCH.md Pitfall 9)"
+        "rendered as \"no disagreements\""
       );
     }
   }
@@ -1943,12 +1942,12 @@ function validateDisagreementDocumentShape(doc: unknown): DecompDisagreementInpu
 }
 
 // ---------------------------------------------------------------------------
-// The full measure set (phase 45 plan 45-04, task 1) -- rangeProvenance
-// (D-10), entryPoints, referencedAddresses (criterion 4) and
-// disagreementResolution (D-09's own gate-vs-bulletin distinction).
+// The full measure set -- rangeProvenance
+// (typed by evidence, never inferred), entryPoints, referencedAddresses and
+// disagreementResolution (the gate-vs-bulletin distinction).
 // ---------------------------------------------------------------------------
 
-/** One typed range's provenance classification (D-10 mechanism 2). Always
+/** One typed range's provenance classification. Always
  * one of the three named values -- never a fourth, never a boolean. */
 type RangeTypedBy = "observed-executing" | "byte-derived" | "authored";
 
@@ -1957,7 +1956,7 @@ interface RangeProvenanceRow {
   endInclusive: number;
   dataType: DataType;
   /** `dataType` unless it is one of the four `SPLIT_DATA_TYPES` members, in
-   * which case it renders as `"table"` (D-11) -- read from `anno-types.ts`'s
+   * which case it renders as `"table"` -- read from `anno-types.ts`'s
    * own `isSplitDataType()`, NEVER a restated literal, so the four split
    * spellings never appear in this file's own source as strings. */
   renderedType: string;
@@ -2100,7 +2099,7 @@ function commentReasonAfterPrefix(comments: readonly CommentRow[], address: numb
   return found ? found.text.slice(prefix.length).trim() : null;
 }
 
-/** D-10 mechanism 2: how ONE typed range was typed. Evidence beats
+/** How ONE typed range was typed. Evidence beats
  * inference, stated as a fixed precedence that must never be reordered:
  * `observed-executing` (at least one real execute observation falls inside
  * the range) beats `authored` (the range's start address carries an
@@ -2112,7 +2111,7 @@ function typedByFor(hasObservation: boolean, hasAuthoredComment: boolean): Range
   return "byte-derived";
 }
 
-/** Builds `rangeProvenance` (D-10 mechanism 2): one row per typed range,
+/** Builds `rangeProvenance`: one row per typed range,
  * sorted ascending by `start` then `endInclusive` (ranges never overlap, so
  * this is already the input order once `ranges` itself is pre-sorted, but
  * the sort is restated here so this function's OWN output contract does not
@@ -2145,7 +2144,7 @@ function buildRangeProvenance(
  * address (`image.origin`) -- the fixture's own natural entry point.
  * Sorted ascending by address.
  *
- * `image === null` (45-REVIEW WR-02, fixed 2026-09-11) means the fixture's
+ * `image === null` (fixed 2026-09-11) means the fixture's
  * own bytes could not be located: no instructions are decoded and NO
  * `image.origin` candidate is added -- a missing image degrades this to
  * whatever the store's own stored `xrefs` already establish, never a
@@ -2204,7 +2203,7 @@ function buildEntryPoints(
  * decline's own reason), or `unresolved` (neither) -- sorted ascending by
  * address within each bucket.
  *
- * `image === null` (45-REVIEW WR-02, fixed 2026-09-11): no instructions are
+ * `image === null` (fixed 2026-09-11): no instructions are
  * decoded, so this degrades to whatever the store's own stored `xrefs`
  * establish -- never fabricated from a placeholder image's bytes. */
 function buildReferencedAddresses(
@@ -2243,7 +2242,7 @@ function buildReferencedAddresses(
   return { resolved, declined, unresolved, denominator: resolved.length + declined.length + unresolved.length };
 }
 
-/** Builds `disagreementResolution` (D-09's gate-vs-bulletin distinction,
+/** Builds `disagreementResolution` (the gate-vs-bulletin distinction,
  * criterion 2): one row per disagreement the supplied `--disagreements`
  * document carries, `accepted` when the address carries a
  * `DISAGREEMENT_ACCEPTED_COMMENT_PREFIX` comment, `resolved` identically (the
@@ -2331,8 +2330,7 @@ function parseDecompCompletenessArgs(rest: string[]): DecompCompletenessParsedAr
  * unknown option -> refuse missing value -> refuse missing required argument
  * BY NAME -> `storePathWithinWorkspace()` every caller-supplied path -> open
  * the store `mustExist: true` -> gather -> `--json` branch or rendered
- * branch. Three required arguments, none defaulted from another (D-09
- * mechanism 1).
+ * branch. Three required arguments, none defaulted from another.
  */
 async function cmdDecompCompleteness(rest: string[]): Promise<number> {
   const { store, storeMissingValue, disagreements, disagreementsMissingValue, manifest, manifestMissingValue, json, unknownOption } =
@@ -2366,7 +2364,7 @@ async function cmdDecompCompleteness(rest: string[]): Promise<number> {
   if (!disagreements) {
     console.error(
       "decomp-completeness: --disagreements FILE is required -- there is no default and no empty-array " +
-        "substitute; omitting the disagreement input must never render the same report as a real, empty answer (D-09).\n",
+        "substitute; omitting the disagreement input must never render the same report as a real, empty answer.\n",
     );
     console.log(USAGE);
     return 1;
@@ -2374,7 +2372,7 @@ async function cmdDecompCompleteness(rest: string[]): Promise<number> {
   if (!manifest) {
     console.error(
       "decomp-completeness: --manifest FILE is required -- a fixture absent from the manifest is refused, " +
-        "never defaulted to \"executed\" (D-13).\n",
+        "never defaulted to \"executed\".\n",
     );
     console.log(USAGE);
     return 1;
@@ -2445,7 +2443,7 @@ async function cmdDecompCompleteness(rest: string[]): Promise<number> {
   if (!manifestEntry) {
     console.error(
       `decomp-completeness: no fixture matching store ${JSON.stringify(basename(storePath))} (stem ${JSON.stringify(stem)}) ` +
-        `is listed in the manifest ${manifestPath} -- an unlisted fixture is refused, never defaulted to "executed" (D-13).`,
+        `is listed in the manifest ${manifestPath} -- an unlisted fixture is refused, never defaulted to "executed".`,
     );
     return 1;
   }
@@ -2466,7 +2464,7 @@ async function cmdDecompCompleteness(rest: string[]): Promise<number> {
     byteCensus: { byType: Record<string, number>; undefinedCount: number; denominator: number; undefinedRanges: { start: number; endInclusive: number }[] };
     survivors: { address: number; name: string }[];
     rangeProvenance: RangeProvenanceRow[];
-    // 45-REVIEW WR-02 (fixed 2026-09-11): true when the fixture's own image
+    // Fixed 2026-09-11: true when the fixture's own image
     // bytes could not be located -- see the fallback below. `entryPoints`/
     // `referencedAddresses` are DEGRADED (never fabricated) when this is
     // true: no synthetic `$0000` entry point is manufactured from a
@@ -2480,9 +2478,9 @@ async function cmdDecompCompleteness(rest: string[]): Promise<number> {
   try {
     const ranges = listRanges(handle);
     const { runs } = listObservedRuns(handle);
-    // Rule 1 fix (disclosed, plan 45-06): a `null` runIdentity is accepted
+    // Rule 1 fix (disclosed): a `null` runIdentity is accepted
     // ONLY when the store's own evid-runs table is ALSO genuinely empty --
-    // the real, honest answer for a D-13 non-executed fixture. A store that
+    // the real, honest answer for a non-executed fixture. A store that
     // DOES carry real runs must still supply a real, matching identity; the
     // anti-vacuity property this whole check exists for is unaffected.
     if (disagreementInput.runIdentity === null) {
@@ -2543,14 +2541,14 @@ async function cmdDecompCompleteness(rest: string[]): Promise<number> {
       .map((l) => ({ address: l.address, name: l.name }))
       .sort((a, b) => a.address - b.address);
 
-    // The full measure set (phase 45 plan 45-04). All four use the SAME
+    // The full measure set. All four use the SAME
     // fixture bytes the derivation route itself read -- the fixtures-relative
     // manifest path, resolved beside this module (`fixtures/<manifestEntry.path>`),
     // never a second guess at where the image lives. An image that cannot be
     // located (never expected for a committed fixture, but never fabricated
     // either) degrades entryPoints/referencedAddresses to EMPTY -- never a
     // synthetic zero-length placeholder whose own `origin` (0) would read as
-    // a real `$0000` entry point (45-REVIEW WR-02, fixed 2026-09-11: the
+    // a real `$0000` entry point (fixed 2026-09-11: the
     // placeholder's origin was previously unioned into the candidate set
     // unconditionally, fabricating a plausible-looking but fictitious
     // finding). `imageUnavailable` reports the condition BY NAME instead.
@@ -2598,8 +2596,8 @@ async function cmdDecompCompleteness(rest: string[]): Promise<number> {
  * Copies `printEvidDisagreementsReport()`'s rendering discipline exactly:
  * every measure under its own heading, disagreements first, `denominator`
  * beside every count, an explicit sentence stating what absence does NOT
- * prove, and never a percentage, rate or combined figure (D-05's own rule,
- * applied here too). This is the FALLBACK text renderer for a direct CLI
+ * prove, and never a percentage, rate or combined figure -- the same rule
+ * this CLI applies everywhere else. This is the FALLBACK text renderer for a direct CLI
  * invocation without `--json`; `completeness-report.mjs`'s
  * `renderCompletenessReport()` is the report the routine-queue-walker skill
  * actually reads, built from this same verb's `--json` answer.
@@ -2623,7 +2621,7 @@ function printDecompCompletenessReport(r: {
   if (r.executionDisposition === "not-executed") {
     console.log(`  NOT EXECUTED: ${r.notExecutedReason ?? "(no reason recorded)"}`);
   } else {
-    console.log("  EXECUTED: this fixture was run under the reproducible-run protocol (REPRO-02).");
+    console.log("  EXECUTED: this fixture was run under the reproducible-run protocol.");
   }
   console.log("");
   console.log(`  BYTE CENSUS (denominator ${r.byteCensus.denominator})`);
@@ -2674,7 +2672,7 @@ function printDecompCompletenessReport(r: {
   }
   console.log("");
 
-  // 45-REVIEW WR-02 (fixed 2026-09-11): named BY NAME, not inferred from a
+  // Fixed 2026-09-11: named BY NAME, not inferred from a
   // suspiciously-empty entryPoints/referencedAddresses census.
   if (r.imageUnavailable) {
     console.log("  IMAGE UNAVAILABLE: the fixture's own image bytes could not be located -- entryPoints and referencedAddresses below are degraded to what the store's own stored xrefs establish, never fabricated from a placeholder image.");
@@ -2730,7 +2728,7 @@ interface HazardReportParsedArgs {
 }
 
 /** Fixed, closed option set for hazard-report -- exactly `--store`,
- * `--image` and `--json`. Same WR-08 posture as every other verb's own
+ * `--image` and `--json`. Same closed-option-set posture as every other verb's own
  * parser: an unimplemented flag is refused as `unknownOption`, and an
  * option with a missing or flag-shaped value is refused through its own
  * `*MissingValue` field rather than silently swallowing the next token. */
@@ -2820,7 +2818,7 @@ function printHazardReport(storePath: string, imagePath: string, r: HazardReport
   else for (const region of unclassified) console.log(`    ${hexAddr(region.start)}..${hexAddr(region.endInclusive)}  (${region.reason ?? "no reason recorded"})`);
   console.log("");
 
-  // WR-03: rendered here so an operator reading ONLY the human-readable
+  // Rendered here so an operator reading ONLY the human-readable
   // report (never --json) still sees the declined dispatch candidates
   // HazardReport's own doc comment insists must never be silently dropped --
   // "an honest decline indistinguishable from an absence" is exactly the
@@ -2981,13 +2979,13 @@ export async function runAnnoCli(argv: string[]): Promise<number> {
   }
 
   try {
-    // IN-06 (D-11.1-04): the single call site for the shared verb-options
+    // The single call site for the shared verb-options
     // check, run BEFORE dispatch so a refused option never reaches any cmd*
     // function -- one place enforces the closed option set for every verb,
     // rather than seven places each doing (or, as `verify` proved, NOT doing)
     // it themselves.
     //
-    // INSIDE the try since 2026-08-31 (30-REVIEW CR-01, defence in depth).
+    // INSIDE the try since 2026-08-31, as defence in depth.
     // It used to sit above this block, so a throw from it escaped
     // `runAnnoCli()` entirely -- which is exactly what a prototype-key verb
     // did. `checkAcceptedOptions()` is now own-property-safe and cannot
@@ -3015,12 +3013,12 @@ export async function runAnnoCli(argv: string[]): Promise<number> {
       case "hazard-report":
         return await cmdHazardReport(rest);
       default:
-        // WR-14 site 2, corrected 2026-08-30 (plan 29-16). This prefix read
-        // `anno:` -- the subcommand renamed to `anno` on 2026-08-29 (29-09)
+        // Corrected 2026-08-30. This prefix read
+        // `anno:` -- the subcommand renamed to `anno` on 2026-08-29
         // -- so a user who mistyped a verb was answered by a subcommand that
         // no longer dispatches. Only the STRING moved: the enclosing function
         // keeps its current name, so no consumer, test or record entry moves
-        // with it (see the plan's <wr14_scope_decision>).
+        // with it.
         console.error(
           `anno: unknown verb "${verb}" -- this CLI has exactly six: render-memmap, coverage, export-asm, ` +
             "evid-disagreements, decomp-completeness and hazard-report\n",
@@ -3032,8 +3030,8 @@ export async function runAnnoCli(argv: string[]): Promise<number> {
     // A last-resort net: every expected failure path above already returns its
     // own code with its own message, so anything arriving here is unexpected
     // and is reported verbatim rather than swallowed. The loud failure is the
-    // point (D-07).
-    // WR-14 site 2, second half -- same correction, same reason.
+    // point.
+    // Second half of that same fix -- same correction, same reason.
     console.error(`anno: ${errMsg(err)}`);
     return 1;
   }
