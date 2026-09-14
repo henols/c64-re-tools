@@ -1320,7 +1320,7 @@ the rebuild work gates it.
   5. A planted citation in a shipped module reds the widened guard, proving it
      is not vacuous on the new surface.
 
-**Plans**: 7/17 plans executed, 16 waves
+**Plans**: 8/17 plans executed, 16 waves
 
 Plans:
 **Wave 1**
@@ -1350,7 +1350,7 @@ Plans:
 
 **Wave 7** *(blocked on Wave 6)*
 
-- [ ] 51-08-PLAN.md — annotation store: the export path and seven siblings, including the file an ordinary text search silently skips
+- [x] 51-08-PLAN.md — annotation store: the export path and seven siblings, including the file an ordinary text search silently skips
 
 **Wave 8** *(blocked on Wave 7)*
 
@@ -2001,7 +2001,7 @@ in a milestone archive.
 | 48. The Movement-Hazard Report and Its Purpose-Built Subject | v1.0.0 | 6/6 | Complete | 2026-09-13 |
 | 49. The Reassembly Gate, Committed Before the Phase It Gates | v1.0.0 | 7/7 | Complete | 2026-09-13 |
 | 50. Equivalence and Modifiability | v1.0.0 | - | Not started | - |
-| 51. Planning Vocabulary Out of the Shipped Server | v1.0.0 | 7/17 | In Progress | - |
+| 51. Planning Vocabulary Out of the Shipped Server | v1.0.0 | 8/17 | In Progress | - |
 | 52. Remove the Fork Backend | v1.0.0 | 13/13 | Complete | 2026-09-12 |
 | 53. Operator-Owned `docs/` | v1.0.0 | - | Not started | - |
 | 54. Remove Every Byte-Identical Assertion | v1.0.0 | - | Not started | - |

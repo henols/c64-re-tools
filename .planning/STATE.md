@@ -5,17 +5,17 @@ milestone_name: The Rebuild Half
 current_phase: 51
 current_phase_name: Planning Vocabulary Out of the Shipped Server
 status: executing
-stopped_at: Completed 51-06-PLAN.md
-last_updated: "2026-09-14T15:23:07.665Z"
+stopped_at: Completed 51-08-PLAN.md
+last_updated: "2026-09-14T16:08:33.505Z"
 last_activity: 2026-09-14
 last_activity_desc: Phase 51 execution started
-state_head: 377ab25aa1329c6ae080da66af3effa529a08a1a
+state_head: faf7565af25bd202a78f7ee911edf385e9e18581
 progress:
   total_phases: 11
-  completed_phases: 7
-  total_plans: 71
-  completed_plans: 61
-  percent: 64
+  completed_phases: 5
+  total_plans: 58
+  completed_plans: 49
+  percent: 45
 ---
 
 # Project State
@@ -271,9 +271,9 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 51 (Planning Vocabulary Out of the Shipped Server) — EXECUTING
-Plan: 8 of 17
+Plan: 9 of 17
 Status: Ready to execute
-Plans: 7/17 executed. 51-01 is complete: it widened skills-planning-vocabulary.test.ts's scan surface to four sources, added a count-pinned RATCHET ledger and comment-byte budget. It also proved installer/bin/cli.mjs clean end to end. 51-02 is complete: it built CITATION-RESOLUTION.md (five sections, re-derived dangling set at 30 tokens/76 occurrences, down from CONTEXT.md's inherited 33/~135). It also minted VOCAB-01..06 with traceability rows in REQUIREMENTS.md (38/38 mapped). 51-03 is complete: it swept host-tool.mts's 325 citations to zero, regenerated resources/host-tool.mjs, and finalized COMMENT_BUDGET_SLACK at 1650 from that file's own real diff. 51-04 is complete: it swept broker-launch.mts (186), broker-control.mts (80) and broker-epoch.mts (2) to zero, 268 citations across the broker's launch-and-control-plane family. It also regenerated all three resources/*.mjs siblings and deleted all six RATCHET entries. 51-05 is complete: it swept vice-broker.mts (147), vice-broker-client.ts (99), broker-state.mts (43) and broker-kill.mts (31) to zero, 320 citations across the broker's daemon/client/state/kill-path family. It also regenerated all three resources/*.mjs siblings, deleted all seven RATCHET entries, and confirmed the lease-model and incident-before-kill comments survive intact. 51-06 is complete: it swept anno-cli.ts (164), anno-join.ts (50), anno-symbols.ts (11), anno-index.ts (6) and anno-details.ts (3) to zero, 234 citations across the annotation-store CLI and its helpers. It is the first sweep in this phase to find and fix user-visible output (18 sites in anno-cli.ts's printed --help text and runtime messages), and it repointed three structural line citations in module-classification.ts that its own edits drifted. 51-07 is complete: it swept anno-store.ts (126), anno-types.ts (50), anno-store-export.ts (12), anno-derive.ts (6) and anno-confidence.ts (2) to zero, 196 citations across the store's core and type declarations. It resolved the phase's technical-token collision (UTF-16 -> "16-bit code units") without an exemption, named one genuinely unrecoverable (tier-4) citation, repointed a structural test (anno-types.test.ts) that pinned the exact vocabulary this phase removes, and confirmed the workspace-confinement and revert-history explanations survive intact. 51-08 through 51-17 remain.
+Plans: 8/17 executed. 51-01 is complete: it widened skills-planning-vocabulary.test.ts's scan surface to four sources, added a count-pinned RATCHET ledger and comment-byte budget. It also proved installer/bin/cli.mjs clean end to end. 51-02 is complete: it built CITATION-RESOLUTION.md (five sections, re-derived dangling set at 30 tokens/76 occurrences, down from CONTEXT.md's inherited 33/~135). It also minted VOCAB-01..06 with traceability rows in REQUIREMENTS.md (38/38 mapped). 51-03 is complete: it swept host-tool.mts's 325 citations to zero, regenerated resources/host-tool.mjs, and finalized COMMENT_BUDGET_SLACK at 1650 from that file's own real diff. 51-04 is complete: it swept broker-launch.mts (186), broker-control.mts (80) and broker-epoch.mts (2) to zero, 268 citations across the broker's launch-and-control-plane family. It also regenerated all three resources/*.mjs siblings and deleted all six RATCHET entries. 51-05 is complete: it swept vice-broker.mts (147), vice-broker-client.ts (99), broker-state.mts (43) and broker-kill.mts (31) to zero, 320 citations across the broker's daemon/client/state/kill-path family. It also regenerated all three resources/*.mjs siblings, deleted all seven RATCHET entries, and confirmed the lease-model and incident-before-kill comments survive intact. 51-06 is complete: it swept anno-cli.ts (164), anno-join.ts (50), anno-symbols.ts (11), anno-index.ts (6) and anno-details.ts (3) to zero, 234 citations across the annotation-store CLI and its helpers. It is the first sweep in this phase to find and fix user-visible output (18 sites in anno-cli.ts's printed --help text and runtime messages), and it repointed three structural line citations in module-classification.ts that its own edits drifted. 51-07 is complete: it swept anno-store.ts (126), anno-types.ts (50), anno-store-export.ts (12), anno-derive.ts (6) and anno-confidence.ts (2) to zero, 196 citations across the store's core and type declarations. It resolved the phase's technical-token collision (UTF-16 -> "16-bit code units") without an exemption, named one genuinely unrecoverable (tier-4) citation, repointed a structural test (anno-types.test.ts) that pinned the exact vocabulary this phase removes, and confirmed the workspace-confinement and revert-history explanations survive intact. 51-08 is complete: it swept anno-export-asm.ts (146), anno-import.ts (21), anno-graphics.ts (18), anno-regbits-gen.ts (13), anno-memmap-render.ts (25), anno-provenance-ledger.ts (4) and anno-hazard-report.ts (2) to zero, 229 citations across the export path and six sibling modules. anno-register.ts's 63 citations are NOT resolved -- its requirements[] traceability data is real, mechanically-checked ids, and unshipping it (attempted, reverted) reddens anno-seam.test.ts's own completeness guard; documented as a Rule 4 architectural decision for a follow-up plan. 51-09 through 51-17 remain.
 
 Carried in from Phase 48 (complete, verified, UAT passed 2026-09-13): the
 purpose-built subject carries all four planted hazard classes, the pure
@@ -628,6 +628,7 @@ Last activity: 2026-09-14 — Phase 51 execution in progress (51-01, 51-02, 51-0
 | Phase 51 P05 | 130min | 3 tasks | 10 files |
 | Phase 51 P06 | 95min | 2 tasks | 7 files |
 | Phase 51 P07 | 105 min | 2 tasks | 7 files |
+| Phase 51 P08 | 65min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -1414,6 +1415,7 @@ Recent decisions affecting current work:
 - [Phase 51]: Phase 51 Plan 05: confirmed three donor-family-shaped citations (02-03-PLAN.md, 33-RESEARCH.md, a .planning/todos/pending path) individually resolve to real documents rather than assuming them dangling from shape alone -- three genuine resolutions found among otherwise-dangling-looking tokens. — Prevents over-classifying tier-4 (unrecoverable) sites when a citation merely shares the donor project's dangling-token shape; each candidate needs its own find/git-blame check.
 - [Phase 51]: anno-cli.test.ts needed no edit for plan 51-06 despite being in files_modified: no test pins the exact string content of any of the 18 user-visible strings rewritten in anno-cli.ts.
 - [Phase 51]: Plan 51-06's Task 2 text described a soundness-asymmetry comment for anno-join.ts that does not exist there; that description matches evid-reconcile.ts (already swept in 51-05). Disclosed rather than fabricated.
+- [Phase 51]: Swept anno-export-asm.ts, anno-import.ts, anno-graphics.ts, anno-regbits-gen.ts, anno-memmap-render.ts, anno-provenance-ledger.ts and anno-hazard-report.ts (229 citations) to planning-vocabulary zero. anno-register.ts's 63 citations are NOT resolved: its requirements[] traceability data is mechanically validated by anno-register.test.ts against real REQUIREMENTS.md ids, and unshipping it (module-classification.ts's precedent) reddens a separate guard, anno-seam.test.ts, because the file's anno-* name pulls it into that guard's shipped-completeness check. Documented as a Rule 4 architectural decision, logged in WINDOWS.md, deferred to a follow-up plan.
 
 ### Pending Todos
 
@@ -1950,6 +1952,7 @@ ledger table row below were both updated in the same change as this one.
   limits, entry 1.
 
 - ABS-02 reads Complete in REQUIREMENTS.md (line 131, checkbox line 46), set by 19-07's metadata commit 354bbfa via the automatic requirements.mark-complete step — a requirement marked complete by the run that fixed it. 19-09 reported it rather than editing (read-only over REQUIREMENTS.md by must_haves and threat T-19G-09-03). Phase 19 re-verification must treat ABS-02's Complete as unearned and re-decide it on the evidence.
+- anno-register.ts (63 planning-vocabulary citations, RATCHET-pinned) needs a scoped follow-up plan: its requirements[] traceability data is real, mechanically-checked ids (anno-register.test.ts Direction 5), but no shipped file may carry a requirement id. Unshipping it (module-classification.ts's precedent) reddens anno-seam.test.ts's completeness guard because the file's anno-* name is in scope for that check. See 51-08-SUMMARY.md's Deviations section for the three options considered.
 
 ## Deferred Items
 
@@ -2524,8 +2527,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-14T14:27:46.624Z
-Stopped at: Completed 51-06-PLAN.md
+Last session: 2026-09-14T16:08:32.047Z
+Stopped at: Completed 51-08-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
