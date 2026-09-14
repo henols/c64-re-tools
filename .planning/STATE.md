@@ -5,17 +5,17 @@ milestone_name: The Rebuild Half
 current_phase: 51
 current_phase_name: Planning Vocabulary Out of the Shipped Server
 status: executing
-stopped_at: Completed 51-04-PLAN.md
-last_updated: "2026-09-14T13:06:33.115Z"
+stopped_at: Completed 51-05-PLAN.md
+last_updated: "2026-09-14T13:47:55.470Z"
 last_activity: 2026-09-14
 last_activity_desc: Phase 51 execution started
-state_head: 6ed5cff48151d50e20c8816de30306c7d33cdd81
+state_head: 127ef545b69766112f006b9c1750427c2e896946
 progress:
   total_phases: 11
-  completed_phases: 7
-  total_plans: 71
-  completed_plans: 58
-  percent: 64
+  completed_phases: 5
+  total_plans: 58
+  completed_plans: 46
+  percent: 45
 ---
 
 # Project State
@@ -269,9 +269,9 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 51 (Planning Vocabulary Out of the Shipped Server) — EXECUTING
-Plan: 5 of 17
+Plan: 6 of 17
 Status: Ready to execute
-Plans: 4/17 executed. 51-01 is complete: it widened skills-planning-vocabulary.test.ts's scan surface to four sources, added a count-pinned RATCHET ledger and comment-byte budget. It also proved installer/bin/cli.mjs clean end to end. 51-02 is complete: it built CITATION-RESOLUTION.md (five sections, re-derived dangling set at 30 tokens/76 occurrences, down from CONTEXT.md's inherited 33/~135). It also minted VOCAB-01..06 with traceability rows in REQUIREMENTS.md (38/38 mapped). 51-03 is complete: it swept host-tool.mts's 325 citations to zero, regenerated resources/host-tool.mjs, and finalized COMMENT_BUDGET_SLACK at 1650 from that file's own real diff. 51-04 is complete: it swept broker-launch.mts (186), broker-control.mts (80) and broker-epoch.mts (2) to zero, 268 citations across the broker's launch-and-control-plane family. It also regenerated all three resources/*.mjs siblings and deleted all six RATCHET entries. 51-05 through 51-17 remain.
+Plans: 5/17 executed. 51-01 is complete: it widened skills-planning-vocabulary.test.ts's scan surface to four sources, added a count-pinned RATCHET ledger and comment-byte budget. It also proved installer/bin/cli.mjs clean end to end. 51-02 is complete: it built CITATION-RESOLUTION.md (five sections, re-derived dangling set at 30 tokens/76 occurrences, down from CONTEXT.md's inherited 33/~135). It also minted VOCAB-01..06 with traceability rows in REQUIREMENTS.md (38/38 mapped). 51-03 is complete: it swept host-tool.mts's 325 citations to zero, regenerated resources/host-tool.mjs, and finalized COMMENT_BUDGET_SLACK at 1650 from that file's own real diff. 51-04 is complete: it swept broker-launch.mts (186), broker-control.mts (80) and broker-epoch.mts (2) to zero, 268 citations across the broker's launch-and-control-plane family. It also regenerated all three resources/*.mjs siblings and deleted all six RATCHET entries. 51-05 is complete: it swept vice-broker.mts (147), vice-broker-client.ts (99), broker-state.mts (43) and broker-kill.mts (31) to zero, 320 citations across the broker's daemon/client/state/kill-path family. It also regenerated all three resources/*.mjs siblings, deleted all seven RATCHET entries, and confirmed the lease-model and incident-before-kill comments survive intact. 51-06 through 51-17 remain.
 
 Carried in from Phase 48 (complete, verified, UAT passed 2026-09-13): the
 purpose-built subject carries all four planted hazard classes, the pure
@@ -286,7 +286,7 @@ artifact — it did not retract the finding. Phase 49 gates reassembly, so
 that subject is the thing it will gate on.
 
 Progress: [████████░░] 75% (6/8 phases complete in v1.0.0; per-phase plan counts in the ROADMAP Progress table)
-Last activity: 2026-09-14 — Phase 51 execution in progress (51-01, 51-02, 51-03, 51-04 complete)
+Last activity: 2026-09-14 — Phase 51 execution in progress (51-01, 51-02, 51-03, 51-04, 51-05 complete)
 
 ## Performance Metrics
 
@@ -623,6 +623,7 @@ Last activity: 2026-09-14 — Phase 51 execution in progress (51-01, 51-02, 51-0
 | Phase 51 P02 | 24 min | 2 tasks | 2 files |
 | Phase 51 P03 | 62 min | 3 tasks | 3 files |
 | Phase 51 P04 | 100min | 2 tasks | 8 files |
+| Phase 51 P05 | 130min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -1406,6 +1407,7 @@ Recent decisions affecting current work:
 - [Phase 51]: COMMENT_BUDGET_SLACK finalized at 1650 (was provisional 20), derived from host-tool.mts's real complete sweep (comment bytes lost 4073, citation characters removed 2478).
 - [Phase 51]: host-tool.mts (325 citations, the densest file in Phase 51) swept to zero with zero unrecoverable tier-4 sites; every citation resolved to a real, findable phase per CITATION-RESOLUTION.md.
 - [Phase 51]: Plan 51-04 confirmed via git blame that every genuinely dangling citation in the broker launch-and-control-plane family traces to the repository's own initial import commit (donor-project sub-phase numbering), settling tier-3 vs tier-4 without guesswork. — Blaming the introducing commit is cheaper and more reliable than inferring dangling status from a citation's shape alone, and it reuses the same finding CITATION-RESOLUTION.md's Section E already established for this donor-phase family.
+- [Phase 51]: Phase 51 Plan 05: confirmed three donor-family-shaped citations (02-03-PLAN.md, 33-RESEARCH.md, a .planning/todos/pending path) individually resolve to real documents rather than assuming them dangling from shape alone -- three genuine resolutions found among otherwise-dangling-looking tokens. — Prevents over-classifying tier-4 (unrecoverable) sites when a citation merely shares the donor project's dangling-token shape; each candidate needs its own find/git-blame check.
 
 ### Pending Todos
 
@@ -2515,8 +2517,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-14T13:06:31.734Z
-Stopped at: Completed 51-04-PLAN.md
+Last session: 2026-09-14T13:47:24.653Z
+Stopped at: Completed 51-05-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
