@@ -1291,7 +1291,14 @@ Every planning citation in a module `package.json`'s `files[]` publishes is
 replaced by the reason it stands for, and `skills-planning-vocabulary.test.ts`
 is widened from the skills tree to the shipped module set so the surface cannot
 drift back.
-**Requirements**: TBD — none declared yet; declare them at planning time
+**Requirements**: `VOCAB-01`, `VOCAB-02`, `VOCAB-03`, `VOCAB-04`, `VOCAB-05`,
+`VOCAB-06` — minted at planning time (2026-09-14), one per success criterion
+below plus `VOCAB-06`, which closes the guard-pattern hole named under "the guard
+hole" in Phase 53's notes. Plan `51-02` writes them into
+`.planning/REQUIREMENTS.md` with Traceability rows. `VOCAB-06` overlaps `DOCS-04`
+in EFFECT but not in id: this phase adds the category and drives that form to
+zero across its OWN scan surface, while Phase 53 retains the relocation and the
+same form in test files, skill scripts and the vestigial deployment copies.
 **Depends on**: Nothing in this milestone. `.planning/ENGINEERING_RULES.md` § 21
 and the guard it is enforced by both already exist (2026-09-11), so this phase
 can run in any slot. It is numbered last because it was found last, not because
@@ -1313,7 +1320,73 @@ the rebuild work gates it.
   5. A planted citation in a shipped module reds the widened guard, proving it
      is not vacuous on the new surface.
 
-**Plans**: TBD
+**Plans**: 17 plans, 16 waves
+
+Plans:
+**Wave 1**
+
+- [ ] 51-01-PLAN.md — TRACER: hoist the comment extractor to its single seam, build the four-source scan enumerator, widen the guard, freeze the count-pinned ratchet and the comment-byte baseline, add the third planted control, repoint `comment-phase-pointers.test.ts`, and take `installer/bin/cli.mjs` to zero end to end
+- [ ] 51-02-PLAN.md — the citation-resolution index every sweep plan consumes, and the `VOCAB-01..06` minting
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 51-03-PLAN.md — host tools: `host-tool.mts` to zero, artifact regenerated, and the comment-byte slack term finalised against the phase's densest real diff
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 51-04-PLAN.md — broker: `broker-launch.mts`, `broker-control.mts`, `broker-epoch.mts` and their three artifacts
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [ ] 51-05-PLAN.md — broker: `vice-broker.mts`, `vice-broker-client.ts`, `broker-state.mts`, `broker-kill.mts` and their three artifacts
+
+**Wave 5** *(blocked on Wave 4)*
+
+- [ ] 51-06-PLAN.md — annotation store: `anno-cli.ts` plus four helpers, separating comment sites from user-visible output
+
+**Wave 6** *(blocked on Wave 5)*
+
+- [ ] 51-07-PLAN.md — annotation store: `anno-store.ts`, `anno-types.ts` and three helpers, plus the first technical-token collision
+
+**Wave 7** *(blocked on Wave 6)*
+
+- [ ] 51-08-PLAN.md — annotation store: the export path and seven siblings, including the file an ordinary text search silently skips
+
+**Wave 8** *(blocked on Wave 7)*
+
+- [ ] 51-09-PLAN.md — annotation store: the tool surface, the enum generator, the coverage gate and the bank helper
+
+**Wave 9** *(blocked on Wave 8)*
+
+- [ ] 51-10-PLAN.md — protocol: `stock-dispatch.ts`, `stock-protocol.ts`, `stock-derived.ts`, plus the second technical-token collision
+
+**Wave 10** *(blocked on Wave 9)*
+
+- [ ] 51-11-PLAN.md — protocol: the text channel's four modules, the connect and diagnosis paths, and the container detector with its artifact
+
+**Wave 11** *(blocked on Wave 10)*
+
+- [ ] 51-12-PLAN.md — protocol: the checkpoint, condition and execution group
+
+**Wave 12** *(blocked on Wave 11)*
+
+- [ ] 51-13-PLAN.md — protocol: the remaining eleven transport modules
+
+**Wave 13** *(blocked on Wave 12)*
+
+- [ ] 51-14-PLAN.md — cross-cutting: the version rules and their runtime refusal message, the shipped third-party notices, the root and path seams, and nine more modules
+
+**Wave 14** *(blocked on Wave 13)*
+
+- [ ] 51-15-PLAN.md — cross-cutting: the five text-monitor parsers and the disassembly and memory-map tables
+
+**Wave 15** *(blocked on Wave 14)*
+
+- [ ] 51-16-PLAN.md — proxy: the server entry point and every advertised tool description
+
+**Wave 16** *(blocked on Wave 15)*
+
+- [ ] 51-17-PLAN.md — FINAL: the last two sources, the ledger emptied and asserted empty, the guard's last stale paragraph rewritten, and all six requirements verified with recorded evidence
 
 Notes:
 
@@ -1364,6 +1437,38 @@ Notes:
 - **The skills tree stays at zero throughout.** It reached zero on 2026-09-11 and
   the existing guard holds it there. This phase must not regress it, and the
   widened guard must keep the skills surface covered rather than replacing it.
+- **PLANNING DEVIATION, recorded 2026-09-14, from "this is why Phase 53 runs
+  before Phase 51".** Phase 53 has not run, and this phase was planned anyway. The
+  hole that ordering existed to close is closed HERE instead, as `VOCAB-06`:
+  the guard gains a ninth category matching the `docs/phase*` path form, scoped to
+  this phase's own scan surface. MEASURED 2026-09-14: 46 hand-edit occurrences of
+  that form fall inside this surface (39 in the server tree, 7 in
+  `src/skills/**`), and 16 of the 19 files carrying them are files this phase
+  already opens — about 1.5% of the phase. This also removes a live § 21.1
+  violation: that section declares the skills tree must be at ZERO and calls the
+  rule mechanically enforced, while seven such citations sit there with the guard
+  green. Phase 53 keeps `DOCS-01`, `DOCS-02`, `DOCS-03` and the remainder of
+  `DOCS-04`'s pattern work outside this surface; it must RE-GREP rather than trust
+  any count here.
+- **A LOCKED DECISION'S PREMISE WAS CORRECTED, not its structure.** `D-07`'s
+  tiered recovery ladder stands. What moved is membership: `D-NN` decision ids are
+  phase-scoped, not globally unique (`D-13` alone is independently DEFINED in six
+  unrelated contexts across 188 files), so they resolve by a history walk like the
+  code-review ids rather than by a single search. Real requirement ids and gap ids
+  stay cheap. `Plan NN-MM` citations are cheaper still and get their own tier.
+  Plan `51-02` publishes the corrected partition and the per-file originating-phase
+  map that makes a phase-scoped id resolvable at all.
+- **CONTEXT.md's dangling-citation list is WRONG for its two largest entries.**
+  `Plan 41-05` (about 35 occurrences) and `plan 40-03` (about 20) both resolve
+  cleanly to real plan and summary documents whose content matches what the citing
+  comments say — together roughly 41% of that list's claimed population. Plan
+  `51-02` re-derives the set against the real tree rather than inheriting the
+  33-token figure.
+- **The spec-less probe took its documented visible skip.** No `*-SPEC.md` exists
+  for this phase, so there was no edge-coverage or prohibition section to lift
+  predicates from, and the probe ran before any requirement id existed. It is not
+  re-run now that `VOCAB-01..06` are declared; the plans' `must_haves` are derived
+  from the five success criteria above and the locked decisions instead.
 
 ### Phase 52: Remove the Fork Backend
 
