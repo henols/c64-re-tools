@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: The Rebuild Half
-current_phase: 50
-current_phase_name: Equivalence and Modifiability
-status: planning
-stopped_at: Phase 51 context gathered
-last_updated: "2026-09-14T06:32:49.666Z"
+current_phase: 51
+current_phase_name: Planning Vocabulary Out of the Shipped Server
+status: executing
+stopped_at: Phase 51 planned — 17 plans in 16 waves, ready to execute
+last_updated: "2026-09-14T08:48:49.754Z"
 last_activity: 2026-09-13
 last_activity_desc: "Completed quick task 260913-u1i: CI's build job no longer declares itself a container (removed the workflow-wide env block after converting the five test cases that depended on it to inject the signal directly)"
-state_head: bc7c094fb3abcb032cb1d762b74c4c4b4d74b274
+state_head: 6ee0f1cf3ecfda99f79018208a46440cd614410d
 progress:
-  total_phases: 10
+  total_phases: 11
   completed_phases: 7
-  total_plans: 54
+  total_plans: 71
   completed_plans: 54
-  percent: 70
+  percent: 64
 ---
 
 # Project State
@@ -266,9 +266,9 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 50 — Equivalence and Modifiability
+Phase: 51 (Planning Vocabulary Out of the Shipped Server) — READY TO EXECUTE
 Plan: Not started
-Status: Ready to plan
+Status: Ready to execute
 Plans: 5/7 executed (49-01 through 49-05 complete; 49-06, 49-07 remain).
 
 Carried in from Phase 48 (complete, verified, UAT passed 2026-09-13): the
