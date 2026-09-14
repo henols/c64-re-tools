@@ -6,16 +6,16 @@ current_phase: 51
 current_phase_name: Planning Vocabulary Out of the Shipped Server
 status: executing
 stopped_at: Completed 51-08-PLAN.md
-last_updated: "2026-09-14T16:08:33.505Z"
+last_updated: "2026-09-14T16:13:06.954Z"
 last_activity: 2026-09-14
 last_activity_desc: Phase 51 execution started
-state_head: faf7565af25bd202a78f7ee911edf385e9e18581
+state_head: 9c8b42e996975f84f42ecb12f1902d892c92a5fb
 progress:
   total_phases: 11
-  completed_phases: 5
-  total_plans: 58
-  completed_plans: 49
-  percent: 45
+  completed_phases: 7
+  total_plans: 71
+  completed_plans: 62
+  percent: 64
 ---
 
 # Project State
@@ -1416,6 +1416,7 @@ Recent decisions affecting current work:
 - [Phase 51]: anno-cli.test.ts needed no edit for plan 51-06 despite being in files_modified: no test pins the exact string content of any of the 18 user-visible strings rewritten in anno-cli.ts.
 - [Phase 51]: Plan 51-06's Task 2 text described a soundness-asymmetry comment for anno-join.ts that does not exist there; that description matches evid-reconcile.ts (already swept in 51-05). Disclosed rather than fabricated.
 - [Phase 51]: Swept anno-export-asm.ts, anno-import.ts, anno-graphics.ts, anno-regbits-gen.ts, anno-memmap-render.ts, anno-provenance-ledger.ts and anno-hazard-report.ts (229 citations) to planning-vocabulary zero. anno-register.ts's 63 citations are NOT resolved: its requirements[] traceability data is mechanically validated by anno-register.test.ts against real REQUIREMENTS.md ids, and unshipping it (module-classification.ts's precedent) reddens a separate guard, anno-seam.test.ts, because the file's anno-* name pulls it into that guard's shipped-completeness check. Documented as a Rule 4 architectural decision, logged in WINDOWS.md, deferred to a follow-up plan.
+- [Phase 51]: anno-register.ts is unshipped rather than redesigned: remove it from src/mcp/vice/package.json files[] and give anno-seam.test.ts a reasoned exemption for a test-only register (or rename it off the anno-* prefix). Owner decision 2026-09-14, taken at plan 51-08's escalation; executed by plan 51-17. — The file has ZERO runtime consumers -- only anno-register.test.ts, anno-import.test.ts and anno-derivation.test.ts import it -- yet it ships to npm carrying a per-verb requirement-id traceability matrix. Shipping it is precisely the defect this phase exists to remove. The slug-indirection alternative would keep shipping the same bookkeeping to consumers, only obfuscated, at the cost of redesigning a mechanically-enforced contract. Unshipping keeps anno-register.test.ts's id validation exactly as it is, because that guard runs against the repo, not the tarball. The only thing that blocked it at 51-08 was anno-seam.test.ts's naming heuristic that any non-test anno-* file must be in files[] -- a rule about names, not a runtime constraint.
 
 ### Pending Todos
 
