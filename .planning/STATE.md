@@ -5,16 +5,16 @@ milestone_name: The Rebuild Half
 current_phase: 51
 current_phase_name: Planning Vocabulary Out of the Shipped Server
 status: executing
-stopped_at: Completed 51-01-PLAN.md
-last_updated: "2026-09-14T11:01:12.972Z"
+stopped_at: Completed 51-02-PLAN.md
+last_updated: "2026-09-14T11:32:23.468Z"
 last_activity: 2026-09-14
 last_activity_desc: Phase 51 execution started
-state_head: cabaa21988f7b42dab1f24d42eba0d66c667d795
+state_head: 083a3557d2b561ca5d14361a22a748f1ecb16105
 progress:
   total_phases: 11
   completed_phases: 7
   total_plans: 71
-  completed_plans: 55
+  completed_plans: 56
   percent: 64
 ---
 
@@ -267,9 +267,9 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 51 (Planning Vocabulary Out of the Shipped Server) — EXECUTING
-Plan: 2 of 17
-Status: Executing
-Plans: 1/17 executed. 51-01 is complete: it widened skills-planning-vocabulary.test.ts's scan surface to four sources, added a count-pinned RATCHET ledger and comment-byte budget. It also proved installer/bin/cli.mjs clean end to end. 51-02 through 51-17 remain.
+Plan: 3 of 17
+Status: Ready to execute
+Plans: 2/17 executed. 51-01 is complete: it widened skills-planning-vocabulary.test.ts's scan surface to four sources, added a count-pinned RATCHET ledger and comment-byte budget. It also proved installer/bin/cli.mjs clean end to end. 51-02 is complete: it built CITATION-RESOLUTION.md (five sections, re-derived dangling set at 30 tokens/76 occurrences, down from CONTEXT.md's inherited 33/~135). It also minted VOCAB-01..06 with traceability rows in REQUIREMENTS.md (38/38 mapped). 51-03 through 51-17 remain.
 
 Carried in from Phase 48 (complete, verified, UAT passed 2026-09-13): the
 purpose-built subject carries all four planted hazard classes, the pure
@@ -618,6 +618,7 @@ Last activity: 2026-09-14 — Phase 51 execution started (51-01 complete)
 | Phase quick-260913-jgv P01 | 55min | 3 tasks | 12 files |
 | Phase quick-260913-u1i P01 | 25min | 3 tasks | 9 files |
 | Phase 51 P01 | 46min | 3 tasks | 8 files |
+| Phase 51 P02 | 24 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -1396,6 +1397,8 @@ Recent decisions affecting current work:
 - [Phase 50]: Kept vice-proxy.test.ts's WORKSPACE_ENV gate rather than converting it -- its four gated cases FAIL (not pass) under the only environment that runs them, so converting would trade a named skip for an unattributable failure ahead of its scheduled re-baseline.
 - [Phase 51]: Widened skills-planning-vocabulary.test.ts to a four-source shipped surface (vice package files[], HOST_BOUND_ARTIFACTS .mts sources, installer package files[], src/skills/) and arrived green by pinning every dirty file's exact count in a RATCHET ledger (102 entries, 3876 hits) plus a per-file COMMENT_BUDGET_BASELINE (91 entries).
 - [Phase 51]: hop-chain-comments.test.ts's own separate extractCommentSpans() copy stays untouched, deliberately, per Task 1's explicit scope -- leaving this plan's success criterion 4 not literally satisfied and disclosed as a known discrepancy for a later plan.
+- [Phase 51]: Section C splits requirement-id-shaped tokens into two groups: 107 are genuinely global, 43 share the shape but are phase-scoped code-review finding ids (CR-NN/WR-NN/IN-NN, plus DIRECT-06/AUDIT-01) needing the tier-3 git-blame walk.
+- [Phase 51]: The re-derived dangling set (30 tokens, 76 occurrences) traces to one root cause: an 01.x sub-phase-numbering scheme and four quick-task ids that predate this repo's own first commit, absorbed from a donor GSD-managed project.
 
 ### Pending Todos
 
@@ -2503,8 +2506,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-14T11:01:11.517Z
-Stopped at: Completed 51-01-PLAN.md
+Last session: 2026-09-14T11:32:22.318Z
+Stopped at: Completed 51-02-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
