@@ -7,13 +7,19 @@
 // import-and-cast shape (tsconfig.json excludes `resources`, which is why
 // the cast below exists).
 //
-// NEVER REQUIRES THE REAL VENDORED BINARY. The one case that needs a
-// spawned child to actually complete (the success-response shape case)
-// plants a throwaway, self-cleaning executable at the FIRST location
-// findDxaBinary() (host-tool.mts) probes -- resources/vendor/dxa/dxa, which
-// this repository never populates itself -- so it wins over the real
-// vendor/dxa/dxa (the SECOND candidate) without ever touching it. Removed
-// in a `finally` unconditionally.
+// NEVER REQUIRES THE REAL VENDORED BINARY -- true for the WHOLE file, not
+// merely the one case that spawns a child to actually complete (the
+// success-response-shape case). Until this restructuring (quick-260914-9n4),
+// that was true in name only: the four `buildHostToolArgv()` argv-shape
+// cases below call straight into production code that refuses BEFORE
+// assembling any argv when the real vendored binary is absent at either
+// candidate path (host-tool.mts's own `dxaFound.path === null` refusal), so
+// they silently depended on this developer's own built `vendor/dxa/dxa`
+// without the header ever saying so -- exactly the gap CI's Test-step
+// failure exposed. All five cases that need a resolvable dxa (the four argv
+// cases plus the success-response-shape case) now share the ONE
+// `withPlantedDxa()` wrapper below, so the file has exactly one plant idiom
+// and the header's claim is true for the first time.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -69,77 +75,154 @@ function censusAbsoluteValue(): string {
 const DXA_PATH_KEYS = ["image", "entrypointsPath", "datablocksPath", "labelsPath", "outDir"] as const;
 
 // ---------------------------------------------------------------------------
+// FIXTURE: the one plant idiom this file uses for every case that needs a
+// resolvable dxa (Phase 35's own plant, restructured under quick-260914-9n4
+// to be shared rather than duplicated).
+// ---------------------------------------------------------------------------
+
+/** Plants a throwaway, deterministic fake `dxa` at the FIRST location
+ * findDxaBinary() (host-tool.mts) probes -- resources/vendor/dxa/dxa, which
+ * this repository never populates itself -- so this case never touches the
+ * real vendor/dxa/dxa (the SECOND candidate) and never requires it to have
+ * been built.
+ *
+ * D-27 (40-05) ASSESSMENT -- why this site does NOT take the unique-directory
+ * idiom skill-honesty-checks.test.ts's runCiScriptWithScratchFile() moved to:
+ *
+ * findDxaBinary(here)'s candidate list is `[join(here, "vendor", "dxa",
+ * "dxa"), join(here, "..", "vendor", "dxa", "dxa")]` -- a FIXED,
+ * project-vendored path computed from the executing module's own directory
+ * (host-tool.mts's own header explicitly contrasts this with the c1541/petcat
+ * probe's per-call COMPUTED candidate). There is no env var or test-injected
+ * override consulted before that fixed list, unlike findAcmeLib()'s
+ * `process.env.ACME`-first candidate. So this case cannot plant its fixture
+ * under a unique per-invocation directory and still reach the code path under
+ * test -- the binary must exist at exactly the first candidate path, because
+ * that is the one production code will actually probe. Redirecting it would
+ * mean adding a new override to host-tool.mts itself (mirroring
+ * findAcmeLib()'s ACME-env pattern), which is a production-code change this
+ * doc/test-hygiene plan does not make.
+ *
+ * What observes the planted subtree, checked directly rather than assumed:
+ * `resources-sync.test.ts` walks the whole committed `resources/` tree, but
+ * filters to `GENERATED_EXTENSIONS = [".mjs"]` before comparing anything --
+ * this planted file is named `dxa`, carries no extension, and is filtered out
+ * before either of its two comparisons runs, so it cannot flip that test's
+ * verdict. `dxa-build-gate.test.ts` scans `src/mcp/vice/vendor/dxa/*.c` (the
+ * SOURCE vendor tree), a different directory tree entirely, not
+ * `resources/vendor/dxa/`. No committed test file's own walk reads this exact
+ * path and branches on its presence, so -- unlike the fixed-name scratch file
+ * in `src/skills/acme-build/` -- this site has no currently-measured
+ * concurrent-scanner hazard. */
+function plantFakeDxaBinary(): { binPath: string; cleanupDir: string } {
+  const vendorDir = join(HERE, "resources", "vendor", "dxa");
+  mkdirSync(vendorDir, { recursive: true });
+  const binPath = join(vendorDir, "dxa");
+  writeFileSync(binPath, `#!/usr/bin/env bash\nprintf '0801 0b 08 0a \\t.byt \\$0b,\\$08,\\$0a\\n'\n`, "utf8");
+  spawnSync("chmod", ["+x", binPath]);
+  return { binPath, cleanupDir: join(HERE, "resources", "vendor") };
+}
+
+/** Plants the fake dxa, runs `fn`, and removes the planted directory in a
+ * `finally` -- so a thrown assertion inside `fn` still cleans up. Cases in a
+ * single file run SEQUENTIALLY under `node --test` (Node runs one file's
+ * `test()` registrations one after another within that file's own process),
+ * so nesting a plant/remove pair five times within THIS file races nothing;
+ * the hazard this project has actually measured is only ACROSS files that
+ * import the same compiled artifact and therefore resolve the same fixed
+ * plant path concurrently (see host-tool.test.ts's own gated case for that
+ * measurement). This file keeps the plant owned by itself alone -- it is
+ * the only file with the plant/remove pair, so no other file's `finally` can
+ * delete this file's fixture mid-run. */
+async function withPlantedDxa<T>(fn: () => T | Promise<T>): Promise<T> {
+  const fake = plantFakeDxaBinary();
+  try {
+    return await fn();
+  } finally {
+    rmSync(fake.cleanupDir, { recursive: true, force: true });
+  }
+}
+
+// ---------------------------------------------------------------------------
 // buildHostToolArgv() -- deterministic, typed argv construction.
 // ---------------------------------------------------------------------------
 
-test('dxa.disassemble with imageKind: "flat64k": argv contains -g immediately followed by 0000', () => {
-  const resolved = { imagePath: "/ws/x.bin", outDirPath: "/ws" };
-  const built = buildHostToolArgv({ tool: "dxa.disassemble", args: { image: "x.bin", imageKind: "flat64k" } }, resolved);
-  assert.equal(built.ok, true, built.ok ? "" : (built as { ok: false; message: string }).message);
-  if (!built.ok) return;
-  const gIdx = built.argv.indexOf("-g");
-  assert.notEqual(gIdx, -1, "expected -g in the flat64k argv");
-  assert.equal(built.argv[gIdx + 1], "0000", "expected -g immediately followed by 0000");
+test('dxa.disassemble with imageKind: "flat64k": argv contains -g immediately followed by 0000', async () => {
+  await withPlantedDxa(() => {
+    const resolved = { imagePath: "/ws/x.bin", outDirPath: "/ws" };
+    const built = buildHostToolArgv({ tool: "dxa.disassemble", args: { image: "x.bin", imageKind: "flat64k" } }, resolved);
+    assert.equal(built.ok, true, built.ok ? "" : (built as { ok: false; message: string }).message);
+    if (!built.ok) return;
+    const gIdx = built.argv.indexOf("-g");
+    assert.notEqual(gIdx, -1, "expected -g in the flat64k argv");
+    assert.equal(built.argv[gIdx + 1], "0000", "expected -g immediately followed by 0000");
+  });
 });
 
-test('dxa.disassemble with imageKind: "prg": argv contains NO -g at all', () => {
-  const resolved = { imagePath: "/ws/x.prg", outDirPath: "/ws" };
-  const built = buildHostToolArgv({ tool: "dxa.disassemble", args: { image: "x.prg", imageKind: "prg" } }, resolved);
-  assert.equal(built.ok, true, built.ok ? "" : (built as { ok: false; message: string }).message);
-  if (!built.ok) return;
-  // Explicit ABSENCE, not merely "the flat64k case has it" -- the two
-  // directions are asserted by two separate cases (this file's own
-  // acceptance criterion).
-  assert.equal(built.argv.includes("-g"), false, "expected NO -g flag anywhere in the prg-kind argv");
+test('dxa.disassemble with imageKind: "prg": argv contains NO -g at all', async () => {
+  await withPlantedDxa(() => {
+    const resolved = { imagePath: "/ws/x.prg", outDirPath: "/ws" };
+    const built = buildHostToolArgv({ tool: "dxa.disassemble", args: { image: "x.prg", imageKind: "prg" } }, resolved);
+    assert.equal(built.ok, true, built.ok ? "" : (built as { ok: false; message: string }).message);
+    if (!built.ok) return;
+    // Explicit ABSENCE, not merely "the flat64k case has it" -- the two
+    // directions are asserted by two separate cases (this file's own
+    // acceptance criterion).
+    assert.equal(built.argv.includes("-g"), false, "expected NO -g flag anywhere in the prg-kind argv");
+  });
 });
 
-test("dxa.disassemble argv is byte-identical across two successive buildHostToolArgv() calls on the same request", () => {
-  const request = { tool: "dxa.disassemble", args: { image: "x.prg", imageKind: "prg" as const, entrypointsPath: "/ws/e.txt" } };
-  const resolved = { imagePath: "/ws/x.prg", outDirPath: "/ws", entrypointsPath: "/ws/e.txt" };
-  const first = buildHostToolArgv(request, resolved);
-  const second = buildHostToolArgv(request, resolved);
-  assert.equal(first.ok, true);
-  assert.equal(second.ok, true);
-  if (first.ok && second.ok) {
-    assert.deepEqual(first.argv, second.argv, "two successive calls on the same request must yield deepEqual argv arrays");
-    assert.deepEqual(first.outputs, second.outputs);
-  }
+test("dxa.disassemble argv is byte-identical across two successive buildHostToolArgv() calls on the same request", async () => {
+  await withPlantedDxa(() => {
+    const request = { tool: "dxa.disassemble", args: { image: "x.prg", imageKind: "prg" as const, entrypointsPath: "/ws/e.txt" } };
+    const resolved = { imagePath: "/ws/x.prg", outDirPath: "/ws", entrypointsPath: "/ws/e.txt" };
+    const first = buildHostToolArgv(request, resolved);
+    const second = buildHostToolArgv(request, resolved);
+    assert.equal(first.ok, true);
+    assert.equal(second.ok, true);
+    if (first.ok && second.ok) {
+      assert.deepEqual(first.argv, second.argv, "two successive calls on the same request must yield deepEqual argv arrays");
+      assert.deepEqual(first.outputs, second.outputs);
+    }
+  });
 });
 
-test("dxa.disassemble argv orders fixed flags first, -R/-B/-l for present optional paths in that order, then -a dump, then the image path last", () => {
-  const resolved = {
-    imagePath: "/ws/x.prg",
-    outDirPath: "/ws",
-    entrypointsPath: "/ws/entries.txt",
-    datablocksPath: "/ws/blocks.txt",
-    labelsPath: "/ws/labels.txt",
-  };
-  const built = buildHostToolArgv(
-    { tool: "dxa.disassemble", args: { image: "x.prg", imageKind: "prg", entrypointsPath: "e", datablocksPath: "b", labelsPath: "l" } },
-    resolved,
-  );
-  assert.equal(built.ok, true, built.ok ? "" : (built as { ok: false; message: string }).message);
-  if (!built.ok) return;
-  assert.deepEqual(
-    built.argv,
-    [
-      "-p",
-      "all-nmos6502",
-      "-d",
-      "skip-scanning",
-      "-t",
-      "detect-internal",
-      "-R",
-      "/ws/entries.txt",
-      "-B",
-      "/ws/blocks.txt",
-      "-l",
-      "/ws/labels.txt",
-      "-a",
-      "dump",
-      "/ws/x.prg",
-    ],
-  );
+test("dxa.disassemble argv orders fixed flags first, -R/-B/-l for present optional paths in that order, then -a dump, then the image path last", async () => {
+  await withPlantedDxa(() => {
+    const resolved = {
+      imagePath: "/ws/x.prg",
+      outDirPath: "/ws",
+      entrypointsPath: "/ws/entries.txt",
+      datablocksPath: "/ws/blocks.txt",
+      labelsPath: "/ws/labels.txt",
+    };
+    const built = buildHostToolArgv(
+      { tool: "dxa.disassemble", args: { image: "x.prg", imageKind: "prg", entrypointsPath: "e", datablocksPath: "b", labelsPath: "l" } },
+      resolved,
+    );
+    assert.equal(built.ok, true, built.ok ? "" : (built as { ok: false; message: string }).message);
+    if (!built.ok) return;
+    assert.deepEqual(
+      built.argv,
+      [
+        "-p",
+        "all-nmos6502",
+        "-d",
+        "skip-scanning",
+        "-t",
+        "detect-internal",
+        "-R",
+        "/ws/entries.txt",
+        "-B",
+        "/ws/blocks.txt",
+        "-l",
+        "/ws/labels.txt",
+        "-a",
+        "dump",
+        "/ws/x.prg",
+      ],
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -191,54 +274,8 @@ test("HOST_TOOL_PATH_ARG_KEYS[dxa.disassemble]: every declared path key refuses 
 // runHostTool() success-response shape -- no listing text on the wire, ever.
 // ---------------------------------------------------------------------------
 
-/** Plants a throwaway, deterministic fake `dxa` at the FIRST location
- * findDxaBinary() (host-tool.mts) probes -- resources/vendor/dxa/dxa, which
- * this repository never populates itself -- so this case never touches the
- * real vendor/dxa/dxa (the SECOND candidate) and never requires it to have
- * been built.
- *
- * D-27 (40-05) ASSESSMENT -- why this site does NOT take the unique-directory
- * idiom skill-honesty-checks.test.ts's runCiScriptWithScratchFile() moved to:
- *
- * findDxaBinary(here)'s candidate list is `[join(here, "vendor", "dxa",
- * "dxa"), join(here, "..", "vendor", "dxa", "dxa")]` -- a FIXED,
- * project-vendored path computed from the executing module's own directory
- * (host-tool.mts's own header explicitly contrasts this with the c1541/petcat
- * probe's per-call COMPUTED candidate). There is no env var or test-injected
- * override consulted before that fixed list, unlike findAcmeLib()'s
- * `process.env.ACME`-first candidate. So this case cannot plant its fixture
- * under a unique per-invocation directory and still reach the code path under
- * test -- the binary must exist at exactly the first candidate path, because
- * that is the one production code will actually probe. Redirecting it would
- * mean adding a new override to host-tool.mts itself (mirroring
- * findAcmeLib()'s ACME-env pattern), which is a production-code change this
- * doc/test-hygiene plan does not make.
- *
- * What observes the planted subtree, checked directly rather than assumed:
- * `resources-sync.test.ts` walks the whole committed `resources/` tree, but
- * filters to `GENERATED_EXTENSIONS = [".mjs"]` before comparing anything --
- * this planted file is named `dxa`, carries no extension, and is filtered out
- * before either of its two comparisons runs, so it cannot flip that test's
- * verdict. `dxa-build-gate.test.ts` scans `src/mcp/vice/vendor/dxa/*.c` (the
- * SOURCE vendor tree), a different directory tree entirely, not
- * `resources/vendor/dxa/`. No committed test file's own walk reads this exact
- * path and branches on its presence, so -- unlike the fixed-name scratch file
- * in `src/skills/acme-build/` -- this site has no currently-measured
- * concurrent-scanner hazard. Cleanup already runs on an assertion failure as
- * well as on success below: the `try` wraps the assertions themselves, not
- * only the plant call, so a thrown `assert` still reaches the `finally`. */
-function plantFakeDxaBinary(): { binPath: string; cleanupDir: string } {
-  const vendorDir = join(HERE, "resources", "vendor", "dxa");
-  mkdirSync(vendorDir, { recursive: true });
-  const binPath = join(vendorDir, "dxa");
-  writeFileSync(binPath, `#!/usr/bin/env bash\nprintf '0801 0b 08 0a \\t.byt \\$0b,\\$08,\\$0a\\n'\n`, "utf8");
-  spawnSync("chmod", ["+x", binPath]);
-  return { binPath, cleanupDir: join(HERE, "resources", "vendor") };
-}
-
 test("dxa.disassemble success response carries results[].path/.sha256/.byteLength and NO field holding listing text -- the response object's own key set is asserted", async () => {
-  const fake = plantFakeDxaBinary();
-  try {
+  await withPlantedDxa(async () => {
     await withTempDir(async (dir) => {
       writeFileSync(join(dir, "tracer.prg"), "tiny\n", "utf8");
       const response = await runHostTool({ tool: "dxa.disassemble", args: { image: "tracer.prg", imageKind: "prg" } }, { repoRoot: dir });
@@ -257,7 +294,5 @@ test("dxa.disassemble success response carries results[].path/.sha256/.byteLengt
       assert.equal(typeof result.byteLength, "number");
       assert.ok(result.byteLength > 0);
     });
-  } finally {
-    rmSync(fake.cleanupDir, { recursive: true, force: true });
-  }
+  });
 });

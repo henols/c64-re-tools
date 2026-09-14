@@ -36,6 +36,7 @@ import { startControlListener, type StartControlListenerResult, type AcquireOutc
 import { hostToolOverControlPlane, hostToolRequestTimeoutMs } from "./host-tool-client.ts";
 import { brokerJsonPath, CONTROL_CONNECT_TIMEOUT_MS } from "./vice-broker-client.ts";
 import { acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
+import { dxaSkipReasonFor, assertDxaRequiredIfEnvSet } from "./dxa-gate.ts";
 // FORKRM-01 (plan 52-06): resolvedBackend()'s own environment-variable
 // backend override was the ONLY path that bypassed its module-level memo --
 // deleted along with the override itself, so withFakeC1541() below now
@@ -76,6 +77,13 @@ const SKIP_REASON: string | false = acmeSkipReasonFor("host-tool.test.ts");
 
 test("ACME availability gate (mirrors skill-acme-build-cli.test.ts's own gate) -- always runs, never skips", () => {
   assertAcmeRequiredIfEnvSet(assert);
+});
+
+// Reach dxa only through the shared seam -- never a second hand-rolled probe.
+const DXA_SKIP_REASON: string | false = dxaSkipReasonFor("host-tool.test.ts");
+
+test("dxa availability gate (mirrors the ACME one above) -- always runs, never skips", () => {
+  assertDxaRequiredIfEnvSet(assert);
 });
 
 // Build BEFORE importing the artifact -- broker-state.test.ts's own idiom --
@@ -497,15 +505,51 @@ test("normaliseHostToolRequest: a wire request naming an explicit cwd key for ac
   if (!result.ok) assert.match(result.message, /cwd/);
 });
 
-test("buildHostToolArgv: a non-acme.build tool (dxa.disassemble) returns no cwd property, and its argv is unchanged from before this field existed", () => {
-  const request = { tool: "dxa.disassemble", args: { image: "game.prg", imageKind: "prg" } };
-  const resolved = { imagePath: "/repo/tree/game.prg", outDirPath: "/repo/tree" };
-  const built = buildHostToolArgv(request, resolved);
-  assert.equal(built.ok, true);
-  if (!built.ok) return;
-  assert.equal(built.cwd, undefined);
-  assert.deepEqual(built.argv, ["-p", "all-nmos6502", "-d", "skip-scanning", "-t", "detect-internal", "-a", "dump", "/repo/tree/game.prg"]);
-});
+// GATED (quick-260914-9n4), unlike dxa-seam.test.ts's own four argv-shape
+// siblings -- measured, not assumed, why THIS case alone cannot take that
+// file's plant/remove wrapper: this file and dxa-seam.test.ts both import
+// the SAME compiled artifact (resources/host-tool.mjs) and therefore both
+// resolve findDxaBinary()'s fixed candidate list through the identical
+// planted path (resources/vendor/dxa/dxa). A plant/remove pair added HERE
+// too would race dxa-seam.test.ts's own pair across the two parallel
+// `node --test` processes `node --test '*.test.*'` spawns per file -- and
+// that race is not hypothetical: it was observed directly while planning
+// this gate, dxa-seam.test.ts's `rmSync(resources/vendor)` (its OWN cleanup,
+// running in a sibling process) deleted this file's still-in-use plant
+// mid-run, and this case failed even though its own plant had been created
+// moments earlier. Two files cannot own that one fixed path concurrently, so
+// this plan keeps the plant owned by dxa-seam.test.ts alone and gates the
+// one case that cannot join it instead.
+//
+// Two rejected alternatives, and why:
+//   - Leaving the planted fake dxa on disk PERMANENTLY (never removing it)
+//     would let a stale fake binary silently satisfy the PRODUCTION probe
+//     for a real disassembly request -- turning a test fixture into a
+//     supply-chain hazard for whatever calls dxa.disassemble for real.
+//   - Relocating this case INTO dxa-seam.test.ts would split the `cwd`
+//     field's positive and negative directions across two files, when their
+//     entire value is being read TOGETHER: this file's own positive case at
+//     :479 (acme.build DOES get a cwd) sits right beside this negative one
+//     (dxa.disassemble does NOT) precisely so a reader sees both in one
+//     place.
+//
+// CI never sets VICE_REQUIRE_DXA (see dxa-gate.ts's own header for why), so
+// this SKIP is a normal, expected CI state -- not a defect. Every assertion
+// this case makes is unchanged from before this plan; only its runnability
+// changed.
+test(
+  "buildHostToolArgv: a non-acme.build tool (dxa.disassemble) returns no cwd property, and its argv is unchanged from before this field existed",
+  { skip: DXA_SKIP_REASON },
+  () => {
+    const request = { tool: "dxa.disassemble", args: { image: "game.prg", imageKind: "prg" } };
+    const resolved = { imagePath: "/repo/tree/game.prg", outDirPath: "/repo/tree" };
+    const built = buildHostToolArgv(request, resolved);
+    assert.equal(built.ok, true);
+    if (!built.ok) return;
+    assert.equal(built.cwd, undefined);
+    assert.deepEqual(built.argv, ["-p", "all-nmos6502", "-d", "skip-scanning", "-t", "detect-internal", "-a", "dump", "/repo/tree/game.prg"]);
+  },
+);
 
 test("runHostTool: an acme.build request whose includes contains an escaping entry is refused with the workspace-escape message, and the log spy recorded zero lines", async () => {
   await withTempDir(async (dir) => {

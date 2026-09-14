@@ -7,12 +7,21 @@
 // a synthetic scratch tree, or sweeps the real vendored `.c` files and
 // `THIRD-PARTY-NOTICES.md` on disk.
 //
-// NEVER REACHES THE NETWORK. build.bash's own CACHE_DIR is overridden per
-// case via DXA_BUILD_CACHE_DIR (a test-only seam this plan added to
-// build.bash for exactly this purpose) -- pointed at a scratch cache this
-// file fully controls, pre-seeded from the REAL cached tarball already on
-// this host (never fetched here) so a case that needs real bytes never
-// calls curl.
+// NEVER REACHES THE NETWORK, and never needs a REAL cached tarball either
+// (quick-260914-9n4 restructuring: CI's Test step failed on this file's own
+// two cases because they read `$HOME/.cache/c64-re-tools/phase23/
+// dxa-0.1.5.tar.gz`, a cache a clean runner can never have). Both cases now
+// SYNTHESISE their own cached tarball via `synthesizeCachedTarball()` below,
+// built from the SAME scratch tree copy `makeScratchTree()` already makes --
+// so the pin digest is always computed from bytes this file itself produced,
+// never copied from the committed pin. build.bash's own CACHE_DIR is
+// overridden per case via DXA_BUILD_CACHE_DIR (a test-only seam this plan
+// added to build.bash for exactly this purpose), pointed at a scratch cache
+// this file fully controls. Both restructured cases additionally run with a
+// stub `curl` on PATH ahead of the real one, and assert its loud failure
+// marker never appears -- build.bash silently discards a cached tarball
+// whose digest misses the pin and falls through to `curl`, so a synthetic
+// digest that ever stops matching must fail LOUDLY, never reach the network.
 //
 // THE NOTICES STRUCTURAL GATE LIVES HERE, NOT ITS OWN FILE (35-VALIDATION.md
 // asked this plan to confirm first whether an existing notices test could be
@@ -34,11 +43,6 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const VENDOR_DIR = join(HERE, "vendor", "dxa");
 const REAL_PIN_FILE = join(VENDOR_DIR, "dxa-0.1.5.tar.gz.sha256");
 const REAL_PIN_DIGEST = readFileSync(REAL_PIN_FILE, "utf8").trim().split(/\s+/)[0]!;
-
-/** The real, already-cached pinned tarball -- read here only to COPY its
- * bytes into a scratch cache this file controls. Never fetched by this file;
- * never mutated. */
-const REAL_CACHED_TARBALL = join(process.env.HOME ?? "", ".cache", "c64-re-tools", "phase23", "dxa-0.1.5.tar.gz");
 
 interface ScratchTree {
   /** Top-level scratch directory -- removed whole in removeScratchTree(). */
@@ -80,15 +84,85 @@ interface RunResult {
 
 /** Runs the SCRATCH tree's own build.bash (never the committed one), with
  * DXA_BUILD_CACHE_DIR pointed at the scratch cache -- so no case here can
- * ever reach the real network or this developer's own global cache. */
-function runBuildBash(tree: ScratchTree, verb: "verify" | "build"): RunResult {
-  const env: Record<string, string | undefined> = { ...process.env, DXA_BUILD_CACHE_DIR: tree.cacheDir };
+ * ever reach the real network or this developer's own global cache.
+ * `extraPathDirs`, when given, is prepended to PATH -- used by the two
+ * restructured cache-hit cases below to shadow `curl` with a stub that must
+ * never be reached. */
+function runBuildBash(tree: ScratchTree, verb: "verify" | "build", extraPathDirs: string[] = []): RunResult {
+  const path = [...extraPathDirs, process.env.PATH ?? ""].join(":");
+  const env: Record<string, string | undefined> = { ...process.env, DXA_BUILD_CACHE_DIR: tree.cacheDir, PATH: path };
   const r = spawnSync("bash", [join(tree.dir, "build.bash"), verb], {
     encoding: "utf8",
     timeout: 60_000,
     env,
   });
   return { status: r.status, output: `${r.stdout ?? ""}${r.stderr ?? ""}` };
+}
+
+/** The loud marker a shadowed `curl` prints before exiting non-zero --
+ * asserted ABSENT from every restructured case's output, so a synthetic
+ * digest that ever stops matching the pin fails LOUDLY instead of quietly
+ * reaching the network. */
+const CURL_STUB_MARKER = "SPIKE-FAIL: curl stub reached -- network fetch attempted";
+
+/** Writes a `curl` on PATH ahead of the real one that always fails loudly
+ * rather than fetching anything. Placed under `tree.root` as a SIBLING of
+ * both `tree.dir` and `tree.cacheDir` -- never inside `tree.dir`, for the
+ * same reason `ScratchTree`'s own `dir` field comment gives: build.bash's
+ * byte-identical diff walks that directory and would see a stray file
+ * placed inside it. */
+function makeCurlStub(tree: ScratchTree): string {
+  const fakeBinDir = join(tree.root, "fake-bin-curl");
+  mkdirSync(fakeBinDir, { recursive: true });
+  const curlPath = join(fakeBinDir, "curl");
+  writeFileSync(curlPath, `#!/usr/bin/env bash\necho "${CURL_STUB_MARKER}" >&2\nexit 1\n`, "utf8");
+  spawnSync("chmod", ["+x", curlPath]);
+  return fakeBinDir;
+}
+
+/**
+ * Synthesises a `dxa-0.1.5.tar.gz`-shaped cache-hit tarball from the SAME
+ * scratch tree copy `makeScratchTree()` already made -- so its digest is
+ * always computed from bytes this file itself produced, never copied from
+ * the committed pin file. Written directly into `tree.cacheDir` (the exact
+ * filename `build.bash` looks for), so the case that calls this never
+ * exercises the fetch path at all: the cache-hit digest comparison in
+ * build.bash succeeds before `curl` is ever considered.
+ *
+ * Stages a COPY of `tree.dir` under one top-level directory (real upstream
+ * tarballs always have exactly one) because `build.bash` extracts with
+ * `--strip-components=1` -- a tarball with no such wrapper directory would
+ * extract its files one level too shallow and `diff -rq` would report every
+ * path missing. The stage lives under `tree.root`, a SIBLING of `tree.dir`
+ * and `tree.cacheDir`, never inside either -- `diff -rq`'s own walk of
+ * `tree.dir` must never see it, and the tarball must never be written
+ * inside itself.
+ *
+ * Drops the built `dxa` binary and any `*.o` object file from the STAGED
+ * copy before archiving: a real upstream tarball ships neither. This is
+ * belt-and-braces, not load-bearing -- `build.bash`'s own `diff -rq`
+ * already excludes both names from its comparison (measured at plan time),
+ * so their presence in the extracted tree could not flip that check either
+ * way. Returns the tarball's own sha256, hex-encoded lower-case -- the
+ * caller decides whether to write it to the pin file as-is or upper-cased.
+ */
+function synthesizeCachedTarball(tree: ScratchTree): string {
+  const stageParent = join(tree.root, "tarball-stage");
+  const stageContentDir = join(stageParent, "dxa-0.1.5");
+  cpSync(tree.dir, stageContentDir, { recursive: true });
+  const builtBinary = join(stageContentDir, "dxa");
+  if (existsSync(builtBinary)) rmSync(builtBinary);
+  for (const entry of readdirSync(stageContentDir)) {
+    if (entry.endsWith(".o")) rmSync(join(stageContentDir, entry));
+  }
+  const tarballPath = join(tree.cacheDir, "dxa-0.1.5.tar.gz");
+  const r = spawnSync("tar", ["czf", tarballPath, "-C", stageParent, "dxa-0.1.5"], { encoding: "utf8" });
+  if (r.status !== 0) {
+    throw new Error(`failed to synthesise the scratch cache tarball: ${r.stderr ?? r.stdout ?? "(no output)"}`);
+  }
+  const digest = createHash("sha256").update(readFileSync(tarballPath)).digest("hex");
+  rmSync(stageParent, { recursive: true, force: true });
+  return digest;
 }
 
 // ---------------------------------------------------------------------------
@@ -133,15 +207,16 @@ test("build.bash with a pin file carrying a truncated (32-character) digest refu
 test("build.bash with an UPPER-CASE pin digest accepts it -- comparison lowercases both sides", () => {
   const tree = makeScratchTree();
   try {
-    if (!existsSync(REAL_CACHED_TARBALL)) {
-      throw new Error(
-        `this case needs the real cached tarball at ${REAL_CACHED_TARBALL} (never fetched by this test) -- absent on this host`,
-      );
-    }
-    cpSync(REAL_CACHED_TARBALL, join(tree.cacheDir, "dxa-0.1.5.tar.gz"));
-    writeFileSync(join(tree.dir, "dxa-0.1.5.tar.gz.sha256"), `${REAL_PIN_DIGEST.toUpperCase()}  dxa-0.1.5.tar.gz\n`, "utf8");
-    const r = runBuildBash(tree, "verify");
+    const digest = synthesizeCachedTarball(tree);
+    writeFileSync(join(tree.dir, "dxa-0.1.5.tar.gz.sha256"), `${digest.toUpperCase()}  dxa-0.1.5.tar.gz\n`, "utf8");
+    const curlStubDir = makeCurlStub(tree);
+    const r = runBuildBash(tree, "verify", [curlStubDir]);
     assert.equal(r.status, 0, `expected a zero exit with an upper-case (but otherwise correct) pin digest. Output:\n${r.output}`);
+    assert.doesNotMatch(
+      r.output,
+      new RegExp(CURL_STUB_MARKER.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+      `the synthesised tarball's digest matches the pin, so the cache hit must be used -- curl must never be reached. Output:\n${r.output}`,
+    );
   } finally {
     removeScratchTree(tree);
   }
@@ -154,26 +229,29 @@ test("build.bash with an UPPER-CASE pin digest accepts it -- comparison lowercas
 test("build.bash's pass/fail decision is a digest comparison: a `make` that exits 0 but produces the WRONG binary bytes is still refused", () => {
   const tree = makeScratchTree();
   try {
-    if (!existsSync(REAL_CACHED_TARBALL)) {
-      throw new Error(`this case needs the real cached tarball at ${REAL_CACHED_TARBALL} -- absent on this host`);
-    }
-    cpSync(REAL_CACHED_TARBALL, join(tree.cacheDir, "dxa-0.1.5.tar.gz"));
+    const digest = synthesizeCachedTarball(tree);
+    writeFileSync(join(tree.dir, "dxa-0.1.5.tar.gz.sha256"), `${digest}  dxa-0.1.5.tar.gz\n`, "utf8");
 
     // A fake `make` on PATH ahead of the real one: it exits 0 (a genuinely
     // "successful" spawned command) but writes WRONG bytes to `dxa`. If
     // build.bash's build gate trusted the spawned command's exit status
     // alone, this run would report success on a binary that is NOT the
-    // pinned one -- exactly the failure mode DXA-01 forbids.
+    // pinned one -- exactly the failure mode DXA-01 forbids. This is
+    // ORTHOGONAL to the synthesised tarball's own digest above: the pinned
+    // BUILT-BINARY digest build.bash compares against is a fixed project
+    // constant (the real vendored dxa's own sha256), unrelated to whichever
+    // source tarball digest this case's pin file carries.
     const fakeBinDir = join(tree.root, "fake-bin");
     mkdirSync(fakeBinDir, { recursive: true });
     const fakeMakePath = join(fakeBinDir, "make");
     writeFileSync(fakeMakePath, `#!/usr/bin/env bash\nprintf 'not the real dxa binary' > dxa\nexit 0\n`, "utf8");
     spawnSync("chmod", ["+x", fakeMakePath]);
+    const curlStubDir = makeCurlStub(tree);
 
     const env: Record<string, string | undefined> = {
       ...process.env,
       DXA_BUILD_CACHE_DIR: tree.cacheDir,
-      PATH: `${fakeBinDir}:${process.env.PATH ?? ""}`,
+      PATH: `${fakeBinDir}:${curlStubDir}:${process.env.PATH ?? ""}`,
     };
     const r = spawnSync("bash", [join(tree.dir, "build.bash"), "build"], { encoding: "utf8", timeout: 60_000, env });
     const output = `${r.stdout ?? ""}${r.stderr ?? ""}`;
@@ -194,6 +272,11 @@ test("build.bash's pass/fail decision is a digest comparison: a `make` that exit
     // side moved -- and proves a REAL comparison happened, not a skipped one.
     const wrongDigest = createHash("sha256").update("not the real dxa binary").digest("hex");
     assert.match(output, new RegExp(wrongDigest), `expected the WRONG binary's own digest to be printed. Output:\n${output}`);
+    assert.doesNotMatch(
+      output,
+      new RegExp(CURL_STUB_MARKER.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+      `the synthesised tarball's digest matches its own pin, so the cache hit must be used -- curl must never be reached. Output:\n${output}`,
+    );
   } finally {
     removeScratchTree(tree);
   }
