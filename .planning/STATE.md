@@ -5,16 +5,16 @@ milestone_name: The Rebuild Half
 current_phase: 51
 current_phase_name: Planning Vocabulary Out of the Shipped Server
 status: executing
-stopped_at: Phase 51 planned — 17 plans in 16 waves, ready to execute
-last_updated: "2026-09-14T08:48:49.754Z"
-last_activity: 2026-09-13
-last_activity_desc: "Completed quick task 260913-u1i: CI's build job no longer declares itself a container (removed the workflow-wide env block after converting the five test cases that depended on it to inject the signal directly)"
-state_head: 6ee0f1cf3ecfda99f79018208a46440cd614410d
+stopped_at: Completed 51-01-PLAN.md
+last_updated: "2026-09-14T11:01:12.972Z"
+last_activity: 2026-09-14
+last_activity_desc: Phase 51 execution started
+state_head: cabaa21988f7b42dab1f24d42eba0d66c667d795
 progress:
   total_phases: 11
   completed_phases: 7
   total_plans: 71
-  completed_plans: 54
+  completed_plans: 55
   percent: 64
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-09-13 after Phase 48 — one Key
 Decisions row and a footer; the last full evolution review was the v0.9.0 close
 on 2026-09-10)
 
-**Current focus:** Phase 49 — The Reassembly Gate, Committed Before the Phase It Gates
+**Current focus:** Phase 51 — Planning Vocabulary Out of the Shipped Server
 Gates. It runs against Phase 48's purpose-built subject; see the Phase 48 entry
 under Blockers/Concerns before interpreting that subject's emulator behaviour.
 
@@ -266,10 +266,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 51 (Planning Vocabulary Out of the Shipped Server) — READY TO EXECUTE
-Plan: Not started
-Status: Ready to execute
-Plans: 5/7 executed (49-01 through 49-05 complete; 49-06, 49-07 remain).
+Phase: 51 (Planning Vocabulary Out of the Shipped Server) — EXECUTING
+Plan: 2 of 17
+Status: Executing
+Plans: 1/17 executed. 51-01 is complete: it widened skills-planning-vocabulary.test.ts's scan surface to four sources, added a count-pinned RATCHET ledger and comment-byte budget. It also proved installer/bin/cli.mjs clean end to end. 51-02 through 51-17 remain.
 
 Carried in from Phase 48 (complete, verified, UAT passed 2026-09-13): the
 purpose-built subject carries all four planted hazard classes, the pure
@@ -284,7 +284,7 @@ artifact — it did not retract the finding. Phase 49 gates reassembly, so
 that subject is the thing it will gate on.
 
 Progress: [████████░░] 75% (6/8 phases complete in v1.0.0; per-phase plan counts in the ROADMAP Progress table)
-Last activity: 2026-09-13 - Completed quick task 260913-o1w: pin the host broker launcher's Node interpreter (refuse by name below the floor, record which interpreter ran)
+Last activity: 2026-09-14 — Phase 51 execution started (51-01 complete)
 
 ## Performance Metrics
 
@@ -617,6 +617,7 @@ Last activity: 2026-09-13 - Completed quick task 260913-o1w: pin the host broker
 | Phase 49 P07 | 55 min | 3 tasks | 9 files |
 | Phase quick-260913-jgv P01 | 55min | 3 tasks | 12 files |
 | Phase quick-260913-u1i P01 | 25min | 3 tasks | 9 files |
+| Phase 51 P01 | 46min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -1393,6 +1394,8 @@ Recent decisions affecting current work:
 - [Phase 49]: HAZARD_DISPOSITION recorded as blocked (not acknowledged): the frozen array acknowledges only the 3 real findings, per the plan's own instruction, leaving the subject's 1 permanently-unclassified region unacknowledged.
 - [Phase 50]: Quick task 260913-jgv: classified the previously-undecided VIC-II region by stating two register dependencies statically in the hazard-subject fixture; Phase 49 reassembly-gate verdict re-measured from red/R7 to acknowledged/R10.
 - [Phase 50]: Kept vice-proxy.test.ts's WORKSPACE_ENV gate rather than converting it -- its four gated cases FAIL (not pass) under the only environment that runs them, so converting would trade a named skip for an unattributable failure ahead of its scheduled re-baseline.
+- [Phase 51]: Widened skills-planning-vocabulary.test.ts to a four-source shipped surface (vice package files[], HOST_BOUND_ARTIFACTS .mts sources, installer package files[], src/skills/) and arrived green by pinning every dirty file's exact count in a RATCHET ledger (102 entries, 3876 hits) plus a per-file COMMENT_BUDGET_BASELINE (91 entries).
+- [Phase 51]: hop-chain-comments.test.ts's own separate extractCommentSpans() copy stays untouched, deliberately, per Task 1's explicit scope -- leaving this plan's success criterion 4 not literally satisfied and disclosed as a known discrepancy for a later plan.
 
 ### Pending Todos
 
@@ -2500,9 +2503,9 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-14T06:32:47.712Z
-Stopped at: Phase 51 context gathered
-Resume file: .planning/phases/51-planning-vocabulary-out-of-the-shipped-server/51-CONTEXT.md
+Last session: 2026-09-14T11:01:11.517Z
+Stopped at: Completed 51-01-PLAN.md
+Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
 Earlier: Completed 42-16-PLAN.md (gap-closure round 2 — CR-02 closed, proven live, PARSE-04 restored)
