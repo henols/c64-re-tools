@@ -138,6 +138,51 @@ had been failing upstream of its own Test step since Phase 34.
   0, every stale ledger claim about the file is corrected, and `npm run test:automated`
   stays at 0 failures / 9 skips with the file outside it.
 
+### Planning Vocabulary Out of the Shipped Server (Phase 51)
+
+Minted at planning time, 2026-09-14. `src/mcp/vice/**` ships this project's own
+GSD bookkeeping -- decision ids, requirement ids, phase and plan citations,
+`.planning/` paths -- to npm inside its own comments, where a consumer who
+installed the package or ran `npx` has none of that context and cannot act on
+it. One id per success criterion in the roadmap's Phase 51 entry, plus a sixth
+that closes a guard-pattern hole the roadmap's Phase 53 notes name.
+
+- [ ] **VOCAB-01**: `scanForPlanningVocabulary()`, the guard's own predicate,
+  reports zero occurrences across the whole file set the two npm tarballs
+  publish -- `src/mcp/vice/package.json`'s `files[]`, the eight host-bound
+  `.mts` sources `build.ts` compiles into `resources/*.mjs`, and
+  `installer/package.json`'s `files[]` -- and the guard measuring it runs in
+  `npm run test:automated`, the automated gate, not a manual-only one.
+- [ ] **VOCAB-02**: Each replaced citation states the REASON it stood for, not
+  a shorter pointer. A diff whose net effect is deleting explanatory comments
+  fails this requirement. This is backed mechanically, per file, by a comment-
+  character budget rather than left as a prose expectation alone.
+- [ ] **VOCAB-03**: The comment-pinning guards stay green throughout, having
+  been MOVED rather than relaxed wherever a pin named text this phase rewrote.
+  Measured finding, not an omission: exactly one of the five needed a move --
+  `comment-phase-pointers.test.ts`, whose own former "a blanket phase-mention
+  rule is not viable" position is superseded by this phase's rule. The other
+  four (`docs-dangling-refs.test.ts`, `hop-chain-comments.test.ts`,
+  `docs-absorbed-decisions.test.ts`, `audit-integrity.test.ts`) were checked
+  and needed none, because none of them scans the surface this phase rewrites.
+- [ ] **VOCAB-04**: No unresolvable `.planning/` path remains cited from
+  product source, and no citation is repointed at a different unresolvable
+  `.planning/` path -- the same defect one hop along.
+- [ ] **VOCAB-05**: A planted citation on the newly widened surface (a
+  shipped-module-shaped file at a synthetic root) reds the widened guard,
+  proving the wider file-set derivation is non-vacuous and not merely the
+  matching predicate.
+- [ ] **VOCAB-06**: The evidence-document path form (`docs/phase<digits>...`)
+  is matched by the guard's category set and sits at zero across this phase's
+  own scan surface. This overlaps Phase 53's `DOCS-04` (the same guard-widening
+  effect) in EFFECT but not in id: Phase 53 retains the relocation of the
+  `docs/phase*.md` files themselves and enforcement of the same citation form
+  outside this phase's surface (test files, skill scripts, and the vestigial
+  deployment copies `DOCS-04` measured). This id is folded in here because
+  widening this phase's own file-set derivation over a citation pattern the
+  widened guard does not yet match would ship a guard that is green on an
+  entire class of citation, which defeats `VOCAB-01`'s own zero bar.
+
 ## Departures from the v0.5.0 text
 
 Recorded explicitly, because these 14 requirements had stood byte-identical
@@ -226,21 +271,33 @@ Success-Criteria live in `.planning/ROADMAP.md` → "Phase Details".
 | PROXY-04 | Phase 55 | Complete |
 | PROXY-05 | Phase 55 | Complete |
 | PROXY-06 | Phase 55 | Complete |
+| VOCAB-01 | Phase 51 | Pending |
+| VOCAB-02 | Phase 51 | Pending |
+| VOCAB-03 | Phase 51 | Pending |
+| VOCAB-04 | Phase 51 | Pending |
+| VOCAB-05 | Phase 51 | Pending |
+| VOCAB-06 | Phase 51 | Pending |
 
 **Coverage:**
 
-- v1.0.0 requirements: 32 total
-- Mapped to phases: 32
+- v1.0.0 requirements: 38 total
+- Mapped to phases: 38
 - Unmapped: 0
 
-Nine phases carry requirements above: 45-50 plus 52, 53 and 55. (The count read
+Ten phases carry requirements above: 45-51 plus 52, 53 and 55. (The count read
 22 against 26 declared rows until 2026-09-14 -- `DOCS-01..04` were declared
-without updating this block; corrected here alongside `PROXY-01..06`.) (Phase 51 also carries a
-`TBD` requirements line in `.planning/ROADMAP.md`, but declaring or renumbering
-anything for Phase 51 is that phase's own planning job — doing it here would
-make these Coverage totals wrong the moment 51 is planned. The 22/22 figure
-above is not a claim that every roadmap phase is mapped; it is a claim that
-every requirement declared so far is mapped to exactly one phase.)
+without updating this block; corrected here alongside `PROXY-01..06`.) (Phase
+51's requirements were declared here on 2026-09-14 by Plan 51-02: `VOCAB-01`
+through `VOCAB-06`, six ids, traced to Phase 51 above. Until this edit, this
+parenthetical recorded that declaring or renumbering anything for Phase 51 was
+that phase's own planning job, deferred so the Coverage totals above would not
+go stale the moment 51 was planned. That deferral is now DISCHARGED -- Plan
+51-02 is Phase 51's own planning job doing exactly the deferred declaration --
+and this sentence supersedes the earlier one rather than deleting it, so a
+reader meeting the earlier text in this document's history knows which
+version was live when. The 38/38 figure above is not a claim that every
+roadmap phase is mapped. It is a claim that every requirement declared so far
+is mapped to exactly one phase.)
 
 **Why `FORKRM-*` is a separate id namespace:** `FORK-01` and `FORK-02` are Key
 Decisions rows in `.planning/PROJECT.md` (with an archived mirror in
@@ -272,3 +329,4 @@ Phase 47 rather than retrofitted onto it.
 ---
 *Requirements defined: 2026-09-10*
 *Last updated: 2026-09-14 — PROXY-01..06 declared and traced to Phase 55 (32/32 mapped); the Coverage block's stale 22 corrected against 26 already-declared rows (DOCS-01..04 had been added without it); Phase 51's TBD line remains unaddressed by design*
+*Last updated: 2026-09-14 (Plan 51-02) — VOCAB-01..06 declared and traced to Phase 51 (38/38 mapped). This supersedes one point in the line above. Phase 51's TBD line is addressed here, by Phase 51's own planning job, not left for later.*
