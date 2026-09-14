@@ -71,7 +71,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { repoRoot } from "./repo-root.ts";
-import { shippedTsModules } from "./shipped-modules.ts";
+import { extractCommentSpans, shippedTsModules } from "./shipped-modules.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = repoRoot({ from: HERE });
@@ -83,105 +83,11 @@ const ROOT = repoRoot({ from: HERE });
 // walks single/double-quoted strings and template literals (including
 // nested `${ ... }` interpolation) character-by-character to SKIP their
 // bodies correctly, so a `//` or `/*` sequence inside a string is never
-// mistaken for the start of a real comment.
+// mistaken for the start of a real comment. Moved to `shipped-modules.ts`
+// and imported from there -- the seam `commentByteTotal()`'s per-file
+// comment-volume budget shares with this guard's own phase-mention scan,
+// so both consumers read one definition instead of two that can drift.
 // ---------------------------------------------------------------------------
-
-interface CommentSpan {
-  text: string;
-  startIndex: number;
-}
-
-function extractCommentSpans(src: string): CommentSpan[] {
-  const spans: CommentSpan[] = [];
-  const n = src.length;
-  let i = 0;
-
-  interface TemplateFrame {
-    inInterp: boolean;
-    interpBraceDepth: number;
-  }
-  const templateStack: TemplateFrame[] = [];
-
-  while (i < n) {
-    const c = src[i];
-    const top = templateStack.length > 0 ? templateStack[templateStack.length - 1] : undefined;
-
-    if (top && !top.inInterp) {
-      // Inside a template literal's own text (not `${ }`) -- these
-      // characters are literal content, never comment syntax, so just walk
-      // through them watching for escapes, the closing backtick, and the
-      // start of an interpolation.
-      if (c === "\\") {
-        i += 2;
-        continue;
-      }
-      if (c === "`") {
-        templateStack.pop();
-        i++;
-        continue;
-      }
-      if (c === "$" && src[i + 1] === "{") {
-        top.inInterp = true;
-        top.interpBraceDepth = 1;
-        i += 2;
-        continue;
-      }
-      i++;
-      continue;
-    }
-
-    // Top-level code, OR inside a template literal's `${ ... }`
-    // interpolation (both scan for comments/strings/nested templates the
-    // same way; only the brace-depth tracking below differs).
-    if (c === "/" && src[i + 1] === "/") {
-      const start = i;
-      while (i < n && src[i] !== "\n") i++;
-      spans.push({ text: src.slice(start, i), startIndex: start });
-      continue;
-    }
-    if (c === "/" && src[i + 1] === "*") {
-      const start = i;
-      i += 2;
-      while (i < n && !(src[i] === "*" && src[i + 1] === "/")) i++;
-      i += 2;
-      spans.push({ text: src.slice(start, Math.min(i, n)), startIndex: start });
-      continue;
-    }
-    if (c === '"' || c === "'") {
-      const quote = c;
-      i++;
-      while (i < n && src[i] !== quote) {
-        if (src[i] === "\\") {
-          i += 2;
-          continue;
-        }
-        i++;
-      }
-      i++; // skip closing quote
-      continue;
-    }
-    if (c === "`") {
-      templateStack.push({ inInterp: false, interpBraceDepth: 0 });
-      i++;
-      continue;
-    }
-    if (top && top.inInterp) {
-      if (c === "{") {
-        top.interpBraceDepth++;
-        i++;
-        continue;
-      }
-      if (c === "}") {
-        top.interpBraceDepth--;
-        i++;
-        if (top.interpBraceDepth === 0) top.inInterp = false;
-        continue;
-      }
-    }
-    i++;
-  }
-  return spans;
-}
 
 /** Cumulative newline offsets, for mapping a character index back to a
  * 1-based physical line number without re-scanning the whole file per
@@ -450,20 +356,6 @@ test("non-vacuity: the scanned module set and comment-line volume are real", () 
   }
   assert.ok(spanCount >= 5000, `expected at least 5000 comment spans across the shipped set, got ${spanCount}`);
   assert.ok(phaseLineCount >= 80, `expected at least 80 comment lines naming a phase across the shipped set, got ${phaseLineCount}`);
-});
-
-test("positive control: the extractor captures comments and skips string/template literal bodies", () => {
-  const sample =
-    'const a = "Phase 99 inside a string, not a comment";\n' +
-    "// Phase 99 inside a real line comment\n" +
-    "const b = `template with Phase 99 inside a string too, plus ${1 + 1} interpolation`;\n" +
-    "/* Phase 99 inside a real block comment */\n";
-  const spans = extractCommentSpans(sample);
-  const commentTexts = spans.map((s) => s.text).join("\n");
-  assert.match(commentTexts, /Phase 99 inside a real line comment/, "the extractor must capture the line comment");
-  assert.match(commentTexts, /Phase 99 inside a real block comment/, "the extractor must capture the block comment");
-  assert.doesNotMatch(commentTexts, /inside a string, not a comment/, "the extractor must not capture string-literal bodies");
-  assert.doesNotMatch(commentTexts, /template with Phase 99 inside a string too/, "the extractor must not capture template-literal bodies");
 });
 
 test("no shipped src/mcp/vice/ source comment assigns pending/future work to a numbered phase (PKG-03)", () => {

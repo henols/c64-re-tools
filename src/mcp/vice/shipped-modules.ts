@@ -84,9 +84,9 @@
 //   - Never simplify `codeOnly()` into a regex or a line filter. It is a
 //     character state machine because a regex was measured to miss a real
 //     violation hidden in a template literal.
-//   - Never fold the comment-extractor family in here. Six sites do
-//     deliberately DIFFERENT jobs and are out of this seam's scope by
-//     decision, not by oversight:
+//   - Never fold the comment-BLANKING family in here beyond `codeOnly()`
+//     above. Five sites do deliberately DIFFERENT jobs and are out of this
+//     seam's scope by decision, not by oversight:
 //       * `disasm-decoder.test.ts:308` -- local comment-line const
 //       * `disasm-renderer.test.ts:346` -- byte-identical sibling of it
 //       * `disasm-opcodes.test.ts:394`  -- byte-identical sibling of it
@@ -95,15 +95,27 @@
 //         tool when the literal being searched for is itself a string
 //       * `stock-dispatch.test.ts`'s `nonCommentLines()` -- line-oriented on
 //         purpose, for exactly that reason
-//       * `hop-chain-comments.test.ts`'s comment-span extractor -- collects
-//         comment text rather than blanking it, the inverse operation
 //     Blanking string bodies would make the literals those five search for
 //     unobservable. Consolidating them would delete a measured decision.
+//   - `extractCommentSpans()`/`CommentSpan` below are the ONE exception to
+//     the point above: a comment-COLLECTING extractor (the inverse job --
+//     capturing comment text rather than blanking it) that used to be
+//     duplicated in `comment-phase-pointers.test.ts` is now defined here
+//     once and imported there. `hop-chain-comments.test.ts` still carries
+//     its OWN separate comment-collecting copy and is deliberately left
+//     alone: consolidating a third caller was out of scope for the work that
+//     moved the first two, and doing so without re-measuring that file's own
+//     assertions would be exactly the kind of drive-by widening this
+//     project's own review discipline rejects elsewhere. A future
+//     consolidation of that copy needs its own read-first pass over that
+//     file, not a fold-in here as a side effect.
 //   - Never import a host/container path-translation module here, and never
 //     add an assumption-log label token: both are grepped for mechanically.
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
+
+import { HOST_BOUND_ARTIFACTS } from "./build.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -390,4 +402,278 @@ export function codeOnly(src: string, keepLiteralBodies = false): string {
     i++;
   }
   return out.join("");
+}
+
+// ---------------------------------------------------------------------------
+// PHASE 51: the comment-span extractor and the four-source shipped-surface
+// enumerator. Both moved here for the same "single seam" reason as the two
+// exports above: each had exactly one correct implementation scattered
+// across guard test files that must not import each other, and a plain
+// module is the one place a guard test CAN import from without re-running a
+// sibling guard's tests as an import side effect.
+// ---------------------------------------------------------------------------
+
+/** Extensions worth reading as text -- everything a human or an agent reads
+ * as prose or source, across every guard in this directory that walks a
+ * directory tree. Moved here from `skills-planning-vocabulary.test.ts`
+ * (its value is unchanged) so `shippedScanSurface()` below and that guard
+ * share one definition instead of two that can drift apart. */
+export const TEXT_EXTENSIONS = Object.freeze([".md", ".mjs", ".js", ".ts", ".mts", ".json", ".a", ".asm", ".txt"]);
+
+/** One comment span: its exact source text (a `//` line or a block comment, including
+ * the delimiters) and the character offset in the source it started at.
+ * `startIndex` is what lets a caller map a span back to a physical line
+ * number without re-scanning the file (see `comment-phase-pointers.test.ts`'s
+ * `commentPhaseLines()`). Moved here, verbatim, from that same file -- this
+ * is the seam both it and the comment-byte budget below now share. */
+export interface CommentSpan {
+  text: string;
+  startIndex: number;
+}
+
+/** Captures every `//` line comment and every block comment span in `src`, walking
+ * single/double-quoted strings and template literals (including nested
+ * `${ ... }` interpolation) character-by-character to SKIP their bodies
+ * correctly -- so a `//` or `/*` sequence sitting inside a string is never
+ * mistaken for the start of a real comment. This is the inverse operation of
+ * `codeOnly()` above: that function blanks comments and keeps code; this one
+ * collects comment text and skips everything else. Moved here verbatim from
+ * `comment-phase-pointers.test.ts`, which now imports it rather than
+ * defining it a second time -- do not re-derive this state machine and do
+ * not simplify it into a regex; both existing consumers (that guard's
+ * per-line phase-mention scan, and `commentByteTotal()` below) depend on it
+ * skipping string/template bodies exactly the way `codeOnly()`'s own header
+ * explains was measured necessary. */
+export function extractCommentSpans(src: string): CommentSpan[] {
+  const spans: CommentSpan[] = [];
+  const n = src.length;
+  let i = 0;
+
+  interface TemplateFrame {
+    inInterp: boolean;
+    interpBraceDepth: number;
+  }
+  const templateStack: TemplateFrame[] = [];
+
+  while (i < n) {
+    const c = src[i];
+    const top = templateStack.length > 0 ? templateStack[templateStack.length - 1] : undefined;
+
+    if (top && !top.inInterp) {
+      // Inside a template literal's own text (not `${ }`) -- these
+      // characters are literal content, never comment syntax, so just walk
+      // through them watching for escapes, the closing backtick, and the
+      // start of an interpolation.
+      if (c === "\\") {
+        i += 2;
+        continue;
+      }
+      if (c === "`") {
+        templateStack.pop();
+        i++;
+        continue;
+      }
+      if (c === "$" && src[i + 1] === "{") {
+        top.inInterp = true;
+        top.interpBraceDepth = 1;
+        i += 2;
+        continue;
+      }
+      i++;
+      continue;
+    }
+
+    // Top-level code, OR inside a template literal's `${ ... }`
+    // interpolation (both scan for comments/strings/nested templates the
+    // same way; only the brace-depth tracking below differs).
+    if (c === "/" && src[i + 1] === "/") {
+      const start = i;
+      while (i < n && src[i] !== "\n") i++;
+      spans.push({ text: src.slice(start, i), startIndex: start });
+      continue;
+    }
+    if (c === "/" && src[i + 1] === "*") {
+      const start = i;
+      i += 2;
+      while (i < n && !(src[i] === "*" && src[i + 1] === "/")) i++;
+      i += 2;
+      spans.push({ text: src.slice(start, Math.min(i, n)), startIndex: start });
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      const quote = c;
+      i++;
+      while (i < n && src[i] !== quote) {
+        if (src[i] === "\\") {
+          i += 2;
+          continue;
+        }
+        i++;
+      }
+      i++; // skip closing quote
+      continue;
+    }
+    if (c === "`") {
+      templateStack.push({ inInterp: false, interpBraceDepth: 0 });
+      i++;
+      continue;
+    }
+    if (top && top.inInterp) {
+      if (c === "{") {
+        top.interpBraceDepth++;
+        i++;
+        continue;
+      }
+      if (c === "}") {
+        top.interpBraceDepth--;
+        i++;
+        if (top.interpBraceDepth === 0) top.inInterp = false;
+        continue;
+      }
+    }
+    i++;
+  }
+  return spans;
+}
+
+/** Sum of every comment span's character length in `src` -- a thin wrapper
+ * over `extractCommentSpans()`, deliberately: it must not re-walk the
+ * source itself, or this file would carry two independently-driftable
+ * comment scanners. Uses JS string `.length` (UTF-16 code units) throughout,
+ * matching how `scanForPlanningVocabulary()`'s own `match.length` already
+ * measures citation characters -- both sides of the comment-byte budget's
+ * inequality must use the same unit or the comparison is meaningless. */
+export function commentByteTotal(src: string): number {
+  let total = 0;
+  for (const span of extractCommentSpans(src)) total += span.text.length;
+  return total;
+}
+
+/** Directory names never walked into: `node_modules` (never shipped
+ * content) and anything starting `zz-scratch` (scratch directories other
+ * tests write into the real tree concurrently -- the same exclusion
+ * `shippedSkillFiles()` used before this function replaced it). */
+function isSkippedDirName(name: string): boolean {
+  return name === "node_modules" || name.startsWith("zz-scratch");
+}
+
+/** Recursively walks `absDir`, returning every file matching
+ * `TEXT_EXTENSIONS`, as a POSIX path relative to `repoRootAbs`. Shared by
+ * every directory-shaped `files[]` entry and by the `src/skills/` source
+ * below, so all four sources of `shippedScanSurface()` apply the identical
+ * extension filter and the identical scratch/node_modules exclusion. */
+function walkTextFilesUnder(absDir: string, repoRootAbs: string): string[] {
+  const out: string[] = [];
+  const walk = (dir: string): void => {
+    for (const dirent of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, dirent.name);
+      if (dirent.isDirectory()) {
+        if (isSkippedDirName(dirent.name)) continue;
+        walk(full);
+        continue;
+      }
+      if (TEXT_EXTENSIONS.some((ext) => dirent.name.endsWith(ext))) {
+        out.push(relative(repoRootAbs, full).split(sep).join("/"));
+      }
+    }
+  };
+  walk(absDir);
+  return out;
+}
+
+/** Expands one `package.json` `files[]` array: a directory entry is walked
+ * recursively via `walkTextFilesUnder()`; a file entry is taken directly,
+ * filtered to `TEXT_EXTENSIONS`. Any entry that does not exist on disk
+ * throws the shared `ShippedFilesEntryMissingError` -- the same failure
+ * shape `shippedTsModules()` above already established, so a stale entry
+ * narrows the scanned surface loudly instead of silently. `skipEntry` is the
+ * one named, content-derived exception this function accepts: the
+ * generated `installer/skills/` mirror (see `shippedScanSurface()` below). */
+function expandFilesArray(
+  pkgDir: string,
+  entries: readonly string[],
+  repoRootAbs: string,
+  skipEntry?: (entry: string) => boolean,
+): string[] {
+  const out: string[] = [];
+  for (const entry of entries) {
+    if (skipEntry?.(entry)) continue;
+    const abs = join(pkgDir, entry);
+    if (!existsSync(abs)) {
+      throw new ShippedFilesEntryMissingError(
+        `package.json files[] names ${entry} but it does not exist on disk -- update files[] rather than letting the scanned set shrink silently`,
+      );
+    }
+    if (statSync(abs).isDirectory()) {
+      out.push(...walkTextFilesUnder(abs, repoRootAbs));
+    } else if (TEXT_EXTENSIONS.some((ext) => entry.endsWith(ext))) {
+      out.push(relative(repoRootAbs, abs).split(sep).join("/"));
+    }
+  }
+  return out;
+}
+
+/** The full shipped-plus-skills scan surface every planning-vocabulary
+ * guard now walks: repo-relative, POSIX, sorted, deduplicated paths, unioned
+ * from four sources.
+ *
+ *   1. `<root>/src/mcp/vice/package.json` `files[]`, expanded (directory
+ *      entries walked recursively, file entries taken directly, both
+ *      filtered to `TEXT_EXTENSIONS`) -- what `shippedTsModules()` above
+ *      cannot do and must not be changed to do: that function filters to
+ *      `.ts`/`.mts` only and returns directory entries as literal strings,
+ *      which would silently drop `README.md`, `THIRD-PARTY-NOTICES.md`,
+ *      `tools-manifest.stock.json` and the whole `resources/` directory.
+ *   2. The host-bound sources behind the generated `resources/` artifacts:
+ *      `HOST_BOUND_ARTIFACTS` (imported from `./build.ts`, never
+ *      hand-listed) mapped from each `.mjs` name to its `.mts` sibling under
+ *      `<root>/src/mcp/vice/`. Two of these are already reachable through
+ *      source 1 and dedupe away there; the rest are what this source adds.
+ *   3. `<root>/installer/package.json` `files[]`, expanded the same way,
+ *      with `skills/` skipped -- a GENERATED MIRROR exclusion, not a
+ *      by-path content exemption: `installer/scripts/sync-skills.mjs`
+ *      regenerates it from source 4 below on every `npm pack`/`prepack`, it
+ *      is gitignored and absent on a fresh clone and in CI, and every byte
+ *      it would contain is already scanned at its source. No content
+ *      escapes the scan.
+ *   4. `<root>/src/skills/`, walked with the same exclusions and extension
+ *      filter as every other source -- the skills tree's own coverage,
+ *      preserved rather than replaced.
+ *
+ * `root` is a required parameter with no default, so this exact code path
+ * is drivable against a synthetic tree (see `shipped-modules.test.ts`) and
+ * so this function never bakes in a fixed `".."`. */
+export function shippedScanSurface(root: string): string[] {
+  const set = new Set<string>();
+
+  const vicePkgDir = join(root, "src", "mcp", "vice");
+  const vicePkg = JSON.parse(readFileSync(join(vicePkgDir, "package.json"), "utf8")) as { files?: string[] };
+  for (const rel of expandFilesArray(vicePkgDir, vicePkg.files ?? [], root)) set.add(rel);
+
+  for (const mjsName of HOST_BOUND_ARTIFACTS) {
+    const mtsName = mjsName.replace(/\.mjs$/, ".mts");
+    const abs = join(vicePkgDir, mtsName);
+    if (!existsSync(abs)) {
+      throw new ShippedFilesEntryMissingError(
+        `HOST_BOUND_ARTIFACTS names ${mjsName} but its .mts source ${mtsName} does not exist on disk -- update HOST_BOUND_ARTIFACTS rather than letting the scanned set shrink silently`,
+      );
+    }
+    set.add(relative(root, abs).split(sep).join("/"));
+  }
+
+  const installerDir = join(root, "installer");
+  const installerPkg = JSON.parse(readFileSync(join(installerDir, "package.json"), "utf8")) as { files?: string[] };
+  for (const rel of expandFilesArray(
+    installerDir,
+    installerPkg.files ?? [],
+    root,
+    (entry) => entry === "skills/" || entry === "skills",
+  )) {
+    set.add(rel);
+  }
+
+  const skillsDir = join(root, "src", "skills");
+  for (const rel of walkTextFilesUnder(skillsDir, root)) set.add(rel);
+
+  return [...set].sort();
 }

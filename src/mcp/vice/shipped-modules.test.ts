@@ -20,12 +20,20 @@
 // known-good control.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { codeOnly, shippedTsModules, ShippedFilesEntryMissingError } from "./shipped-modules.ts";
+import {
+  codeOnly,
+  commentByteTotal,
+  extractCommentSpans,
+  shippedScanSurface,
+  shippedTsModules,
+  ShippedFilesEntryMissingError,
+} from "./shipped-modules.ts";
+import { HOST_BOUND_ARTIFACTS } from "./build.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MODULE_NAME = "shipped-modules.ts";
@@ -245,5 +253,197 @@ test(`${MODULE_NAME} is not collected as a test file and registers no test at im
     /^\s*test\s*\(/m.test(codeOnly(src)),
     false,
     "no top-level test registration may run when this module is imported",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// extractCommentSpans() / commentByteTotal() -- moved here from
+// comment-phase-pointers.test.ts, which now imports both rather than
+// defining its own copy. The positive-control case below moved verbatim
+// (retitled); commentByteTotal() is new, driven over the same shape of
+// sample so both the extractor and the wrapper summing its output are
+// proven from one fixture.
+// ---------------------------------------------------------------------------
+
+test("extractCommentSpans(): captures comments and skips string/template literal bodies", () => {
+  const sample =
+    'const a = "Phase 99 inside a string, not a comment";\n' +
+    "// Phase 99 inside a real line comment\n" +
+    "const b = `template with Phase 99 inside a string too, plus ${1 + 1} interpolation`;\n" +
+    "/* Phase 99 inside a real block comment */\n";
+  const spans = extractCommentSpans(sample);
+  const commentTexts = spans.map((s) => s.text).join("\n");
+  assert.match(commentTexts, /Phase 99 inside a real line comment/, "the extractor must capture the line comment");
+  assert.match(commentTexts, /Phase 99 inside a real block comment/, "the extractor must capture the block comment");
+  assert.doesNotMatch(
+    commentTexts,
+    /inside a string, not a comment/,
+    "the extractor must not capture string-literal bodies",
+  );
+  assert.doesNotMatch(
+    commentTexts,
+    /template with Phase 99 inside a string too/,
+    "the extractor must not capture template-literal bodies",
+  );
+});
+
+test("commentByteTotal(): counts comment span characters and nothing else", () => {
+  const sample =
+    'const a = "not counted, even though it is long";\n' +
+    "// counted\n" +
+    "const b = `also not counted ${1 + 1}`;\n" +
+    "/* counted\n   across two lines too */\n";
+  const spans = extractCommentSpans(sample);
+  const expected = spans.reduce((sum, s) => sum + s.text.length, 0);
+  assert.equal(
+    commentByteTotal(sample),
+    expected,
+    "commentByteTotal() must equal the sum of every span's own text length, not re-walk the source itself",
+  );
+  assert.ok(expected > 0, "the sample must actually contain comment spans, or this assertion is vacuous");
+  assert.equal(commentByteTotal(""), 0, "an empty source has zero comment bytes");
+  assert.equal(
+    commentByteTotal('const s = "no comments at all, just a long string literal";'),
+    0,
+    "a string literal contributes nothing to the comment-byte total, however long it is",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// shippedScanSurface() -- the four-source enumerator. Driven against a
+// synthetic root shaped like the real repo (src/mcp/vice/, installer/,
+// src/skills/), never against the live files[] arrays, for the same
+// pinned-total reasoning withSyntheticPackage() above already states.
+// ---------------------------------------------------------------------------
+
+/** Builds a throwaway root shaped like the real repo -- `src/mcp/vice/` (with
+ * its own `package.json`), `installer/` (with its own `package.json`), and
+ * `src/skills/` -- for driving `shippedScanSurface()` against a synthetic
+ * tree. Every REAL `HOST_BOUND_ARTIFACTS` name gets a `.mts` stub under the
+ * synthetic `src/mcp/vice/` by default (source 2 is not root-parameterized:
+ * it always reads the real constant), so a case that does not care about the
+ * host-bound source does not have to enumerate all ten by hand; a case that
+ * DOES care can omit exactly one via `omitHostBoundArtifact` to prove the
+ * missing-entry throw. */
+function withSyntheticShippedRoot<T>(
+  spec: {
+    viceFiles: string[];
+    viceFilesOnDisk: string[];
+    installerFiles: string[];
+    installerFilesOnDisk: string[];
+    skillFilesOnDisk: string[];
+    omitHostBoundArtifact?: string;
+  },
+  fn: (root: string) => T,
+): T {
+  const root = mkdtempSync(join(tmpdir(), "shipped-scan-surface-"));
+  try {
+    const viceDir = join(root, "src", "mcp", "vice");
+    mkdirSync(viceDir, { recursive: true });
+    writeFileSync(join(viceDir, "package.json"), JSON.stringify({ files: spec.viceFiles }), "utf8");
+    for (const rel of spec.viceFilesOnDisk) {
+      const abs = join(viceDir, rel);
+      mkdirSync(dirname(abs), { recursive: true });
+      writeFileSync(abs, "// synthetic\n", "utf8");
+    }
+    for (const mjsName of HOST_BOUND_ARTIFACTS) {
+      if (mjsName === spec.omitHostBoundArtifact) continue;
+      const mtsAbs = join(viceDir, mjsName.replace(/\.mjs$/, ".mts"));
+      mkdirSync(dirname(mtsAbs), { recursive: true });
+      writeFileSync(mtsAbs, "// synthetic host-bound source\n", "utf8");
+    }
+
+    const installerDir = join(root, "installer");
+    mkdirSync(installerDir, { recursive: true });
+    writeFileSync(join(installerDir, "package.json"), JSON.stringify({ files: spec.installerFiles }), "utf8");
+    for (const rel of spec.installerFilesOnDisk) {
+      const abs = join(installerDir, rel);
+      mkdirSync(dirname(abs), { recursive: true });
+      writeFileSync(abs, "// synthetic\n", "utf8");
+    }
+
+    const skillsDir = join(root, "src", "skills");
+    mkdirSync(skillsDir, { recursive: true });
+    for (const rel of spec.skillFilesOnDisk) {
+      const abs = join(skillsDir, rel);
+      mkdirSync(dirname(abs), { recursive: true });
+      writeFileSync(abs, "synthetic skill content\n", "utf8");
+    }
+
+    return fn(root);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+test("shippedScanSurface(): expands directories, unions the host-bound sources, and throws on a stale entry", () => {
+  const found = withSyntheticShippedRoot(
+    {
+      viceFiles: ["alpha.ts", "resources", "README.md", "gamma.json"],
+      viceFilesOnDisk: ["alpha.ts", "resources/nested/deep.mjs", "README.md", "gamma.json"],
+      installerFiles: ["bin/", "README.md"],
+      installerFilesOnDisk: ["bin/cli.mjs", "README.md"],
+      skillFilesOnDisk: ["some-skill/SKILL.md"],
+    },
+    (root) => shippedScanSurface(root),
+  );
+
+  assert.ok(found.includes("src/mcp/vice/alpha.ts"), "a direct file entry must be present");
+  assert.ok(
+    found.includes("src/mcp/vice/resources/nested/deep.mjs"),
+    "a directory files[] entry must be walked recursively to reach a nested file",
+  );
+  assert.ok(found.includes("installer/bin/cli.mjs"), "an installer directory entry must be walked too");
+  assert.ok(found.includes("src/skills/some-skill/SKILL.md"), "the skills tree source must be represented");
+  for (const mjsName of HOST_BOUND_ARTIFACTS) {
+    const mtsRel = `src/mcp/vice/${mjsName.replace(/\.mjs$/, ".mts")}`;
+    assert.ok(
+      found.includes(mtsRel),
+      `host-bound source ${mtsRel} must be unioned in even though it is not in files[]`,
+    );
+  }
+
+  // A stale files[] entry throws the shared named error, naming the entry --
+  // never a silently narrowed list.
+  assert.throws(
+    () =>
+      withSyntheticShippedRoot(
+        {
+          viceFiles: ["alpha.ts", "vanished.ts"],
+          viceFilesOnDisk: ["alpha.ts"],
+          installerFiles: [],
+          installerFilesOnDisk: [],
+          skillFilesOnDisk: [],
+        },
+        (root) => shippedScanSurface(root),
+      ),
+    (err: unknown) => {
+      assert.ok(err instanceof ShippedFilesEntryMissingError, "a stale entry must raise the named error");
+      assert.match((err as Error).message, /vanished\.ts/);
+      return true;
+    },
+    "a stale files[] entry must throw rather than silently shrinking the widened surface too",
+  );
+
+  // A missing installer/skills/ directory must NOT throw -- it is a
+  // generated-mirror exclusion this function skips before ever checking
+  // whether the entry exists on disk, not a files[] entry it reads.
+  const withoutInstallerSkills = withSyntheticShippedRoot(
+    {
+      viceFiles: ["alpha.ts"],
+      viceFilesOnDisk: ["alpha.ts"],
+      installerFiles: ["skills/", "README.md"],
+      installerFilesOnDisk: ["README.md"], // deliberately no skills/ directory on disk
+      skillFilesOnDisk: ["some-skill/SKILL.md"],
+    },
+    (root) => shippedScanSurface(root),
+  );
+  assert.ok(
+    withoutInstallerSkills.includes("installer/README.md"),
+    "the rest of installer/package.json's files[] must still be scanned even when skills/ is absent",
+  );
+  assert.ok(
+    !withoutInstallerSkills.some((f) => f.startsWith("installer/skills/")),
+    "no installer/skills/ path should appear when the directory does not exist on disk",
   );
 });
