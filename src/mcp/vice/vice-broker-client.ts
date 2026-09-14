@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// Container-side half of the on-demand broker protocol. Through Phase 01.2
-// this module wrote the request/lease files resources/vice-broker.sh read
-// and read the grant/denial/broker files that script wrote, all on the SAME
+// Container-side half of the on-demand broker protocol. This module used to
+// write the request/lease files resources/vice-broker.sh read and read the
+// grant/denial/broker files that script wrote, all on the SAME
 // .vice-supervisor/ bind mount tools/vice-supervisor.sh's epoch.json already
-// used. Plan 01.6.2-07 deletes that file protocol wholesale (D-12: six
-// mechanisms retiring together -- startHeartbeat()/the mtime-as-heartbeat
+// used. That whole file protocol is now deleted wholesale (six mechanisms
+// retiring together -- startHeartbeat()/the mtime-as-heartbeat
 // convention/touchLease()/pollGrant()/pollRecycleAck()/the request-grant-
 // denial-lease-recycle-ack directory tree) now that vice-proxy.ts's
 // acquisition, release AND recycle all run over the TCP control plane
@@ -17,8 +17,8 @@
 //
 // Every read of broker.json is still untrusted input: parse in try/catch, a
 // malformed or half-written file is "not there yet" or "absent", never a
-// thrown exception. See 01.2-PATTERNS.md's "Never-throw /
-// never-cache-a-negative-result" section.
+// thrown exception -- the never-throw, never-cache-a-negative-result
+// posture this module holds throughout.
 //
 // MUST NOT import hostpath.ts: the host-path consumer set is closed to
 // exactly four production modules (containerpath.ts, install-resources.ts,
@@ -31,14 +31,15 @@ import { join, resolve } from "node:path";
 import { connect, type Socket } from "node:net";
 
 import { supervisorDir } from "./repo-root.ts";
-// Phase 33, plan 33-06 (D-15): TYPE-ONLY, and IMPORTED rather than
+// TYPE-ONLY, and IMPORTED rather than
 // redeclared. broker-launch.mts is the one definition of the profile shape and
 // the module that turns a profile into argv; a second local shape here is how
 // a client would start requesting a knob the host cannot honour. Type-only, so
 // the container-side bundle never resolves the host-bound module at runtime.
 import type { LaunchProfile } from "./broker-launch.mts";
 // backend-detect.mts is ViceBackend's one home (narrowed to a single literal
-// by FORKRM-01, plan 52-06). Type-only, same discipline as the import above.
+// now that the fork backend has been removed entirely). Type-only, same
+// discipline as the import above.
 import type { ViceBackend } from "./backend-detect.mts";
 // The module tree's ONE definition of the container-visible host alias
 // (vice.ts:49), carrying its own VICE_MCP_HOST override -- consumed below by
@@ -57,8 +58,8 @@ import { mcpHost, ViceError } from "./vice-errors.ts";
 
 // -------------------------------------------------------------- request ids
 //
-// Primary noun of this protocol (assumption-delta decision, 01.2-01-PLAN.md):
-// a request/grant/lease is identified by this id, never by port -- ports are
+// Primary noun of this protocol: a request/grant/lease is identified by
+// this id, never by port -- ports are
 // recycled across sessions under on-demand launch, so a port is an attribute
 // OF a grant, not identity. Matched byte-for-byte against the same shape
 // resources/vice-broker.sh's own request-id pattern validates (T-01.2-01);
@@ -66,12 +67,10 @@ import { mcpHost, ViceError } from "./vice-errors.ts";
 // shared corpus through both validators so neither side can silently accept
 // an id shape the other rejects.
 //
-// C7 (Phase 01.6.1): this is the criterion's whole container-side
-// deliverable -- a real, typed, NAMED export whose VALUE is unchanged from
-// the pre-conversion .mjs (verified live, this plan's SUMMARY quotes both).
-// 01.6.2's in-process broker imports this exact binding rather than
-// re-stating the pattern a third time; the bash copy
-// (resources/vice-broker.sh) does not retire until that phase deletes it.
+// This is a real, typed, NAMED export whose VALUE is unchanged from
+// the pre-conversion .mjs (verified live). The in-process broker imports
+// this exact binding rather than re-stating the pattern a third time; the
+// bash copy (resources/vice-broker.sh) does not retire until it is deleted.
 export const REQUEST_ID_PATTERN: RegExp = /^req-[0-9]+-[0-9]+-[0-9a-f]{8}$/;
 
 export function newRequestId(): string {
@@ -91,8 +90,9 @@ export function isValidRequestId(id: unknown): id is string {
 // The five sibling directory helpers this function used to anchor
 // (requestsDir/grantsDir/denialsDir/brokerLeasesDir/recycleAcksDir) and the
 // lease path helper (leasePathFor) are GONE, not merely unused -- their
-// directories cease to exist under D-01/D-12; only brokerJsonPath() below
-// survives, since broker.json itself is not part of the retiring protocol.
+// directories cease to exist now that the file protocol is retired; only
+// brokerJsonPath() below survives, since broker.json itself is not part of
+// the retiring protocol.
 export function brokerRootDir(): string {
   return process.env.VICE_POOL_DIR ? resolve(process.env.VICE_POOL_DIR) : supervisorDir();
 }
@@ -134,7 +134,7 @@ function readJsonMaybe(path: string): Record<string, unknown> | null {
 // writeRequest/createLease/touchLease/releaseLease/pollGrant/pollRecycleAck
 // and their record interfaces (RequestRecord, RecycleRequestRecord,
 // LeaseRecord, PollOptions, PollGrantResult, PollRecycleAckResult) are GONE:
-// the whole file-messaging protocol they implemented (D-01/D-12) is replaced
+// the whole file-messaging protocol they implemented is replaced
 // wholesale by the TCP control plane below. GRANT_POLL_TIMEOUT_MS/
 // GRANT_POLL_INTERVAL_MS/RECYCLE_ACK_TIMEOUT_MS/RECYCLE_ACK_POLL_INTERVAL_MS
 // (the retiring polls' own timeout/interval constants) and sleepMs() (their
@@ -183,8 +183,8 @@ export function readBrokerLiveness(path: string = brokerJsonPath()): BrokerLiven
 }
 
 // StartHeartbeatOptions/HEARTBEAT_MS/startHeartbeat() are GONE -- the
-// lease-heartbeat interval (one of D-12's six retiring mechanisms) has no
-// successor. Nothing needs touching to prove a TCP connection is alive; it
+// lease-heartbeat interval (one of the six retiring mechanisms named above)
+// has no successor. Nothing needs touching to prove a TCP connection is alive; it
 // either is, or the broker's own "close" handler has already reclaimed the
 // instance.
 
@@ -300,9 +300,8 @@ export function resolveControlTarget(record: Record<string, unknown>, port: numb
 // ---------------------------------------------------- TCP control plane
 //
 // The container-side half of the TCP control plane (broker-control.mts is
-// the host-side half). Wire format confirmed at plan 01's blocking
-// checkpoint:decision (2026-08-03, `as-specified`; see
-// .planning/RE-FINDINGS.md for the full record): newline-delimited JSON,
+// the host-side half). Wire format confirmed at an early blocking
+// decision checkpoint (2026-08-03, `as-specified`): newline-delimited JSON,
 // per-boot capability token, connection open = claim / close = release.
 export interface AcquireGrant {
   id: string;
@@ -310,15 +309,16 @@ export interface AcquireGrant {
   url: string;
   epoch_file: string;
   supervisor_dir: string;
-  /** Plan 41-01 (D-15); made mandatory-in-fact by plan 41-05 (D-16): the
-   * broker-allocated port stock's `-remotemonitor` text monitor binds.
+  /** The broker-allocated port stock's `-remotemonitor` text monitor binds,
+   * mandatory in fact once a stock acquire without one was made to fail
+   * outright rather than degrade.
    * Absent on a fork grant only -- a stock grant that could not bind a
    * text-monitor port no longer reaches the wire at all: the acquire fails
    * outright (`no_free_text_port`) before any grant is produced. */
   remote_monitor_port?: number;
 }
 
-/** Plan 41-01: parses the wire's `remote_monitor_port` into a validated
+/** Parses the wire's `remote_monitor_port` into a validated
  * integer in 1..65535, or `undefined` when the key is absent OR the observed
  * value is not a valid port -- never a fabricated 0/null standing in for
  * "no port", and never an unvalidated number handed downstream to a dial.
@@ -338,7 +338,7 @@ export interface AcquireOverControlPlaneHandle {
   release: () => void;
 }
 
-/** P-08 (01.6.2.1-04-PLAN.md): default raised from 25000 to 120000. The
+/** Default raised from 25000 to 120000. The
  * knob (VICE_BROKER_ACQUIRE_TIMEOUT_MS) is unchanged -- an explicitly
  * configured value keeps working exactly as before.
  *
@@ -354,7 +354,7 @@ export interface AcquireOverControlPlaneHandle {
  * client's generic timeout. */
 export const CONTROL_ACQUIRE_TIMEOUT_MS: number = Number(process.env.VICE_BROKER_ACQUIRE_TIMEOUT_MS || 120000);
 
-/** Phase 33, plan 33-06 (REPRO-05, D-15): the request-side launch profile.
+/** The request-side launch profile.
  * Optional and absent by default at BOTH acquire write sites in this file.
  *
  * ONE RULE, and it is the whole reason this shape is named rather than
@@ -373,17 +373,18 @@ export const CONTROL_ACQUIRE_TIMEOUT_MS: number = Number(process.env.VICE_BROKER
  * one of them silently never arrives for callers on the other path, which is
  * the same defect class as a tool argument that is accepted and dropped.
  *
- * CONSUMER STATUS: SUBSTRATE, NOT YET WIRED (33 review WR-08). The profile
+ * CONSUMER STATUS: SUBSTRATE, NOT YET WIRED. The profile
  * threads client -> wire -> narrowing -> eligibility -> argv -> record with
- * tests at every hop, but as of phase 33 NO production call site passes one:
+ * tests at every hop, but NO production call site passes one yet:
  * `acquireOverControlPlane()` and `BrokerControlSession.acquire()` are only
  * ever invoked without `opts.profile`, so `-warp` and `-console` are
- * unreachable in production. That is deliberate -- phase 33 built the chain
- * ahead of phases 34-38 using it -- and is recorded here rather than left for
- * a reader to discover, because a fully-tested chain reads as a live one.
+ * unreachable in production. That is deliberate -- the chain was built
+ * ahead of the callers that will use it -- and is recorded here rather than
+ * left for a reader to discover, because a fully-tested chain reads as a
+ * live one.
  *
  * Do NOT close this by inventing a call site. Note also that the profile is
- * refused outright on the fork backend (33 review WR-03, broker-control.mts):
+ * refused outright on the fork backend (broker-control.mts):
  * it maps to stock-only launch flags, so the first real consumer has to be on
  * stock. */
 export interface AcquireProfileOptions {
@@ -405,7 +406,7 @@ function acquireProfileFragment(profile?: LaunchProfile): { profile?: LaunchProf
  * failure: broker.json absent/unreadable/missing the control fields, a
  * connection error, an `error` response, or a timeout.
  *
- * Phase 33, plan 33-06: takes an optional `profile` (see
+ * Additionally takes an optional `profile` (see
  * AcquireProfileOptions above). Omitting it writes the exact wire line this
  * function has always written. */
 export function acquireOverControlPlane(dir: string = brokerRootDir(), opts: AcquireProfileOptions = {}): Promise<AcquireOverControlPlaneHandle> {
@@ -444,7 +445,7 @@ export function acquireOverControlPlane(dir: string = brokerRootDir(), opts: Acq
 
     socket.on("connect", () => {
       const requestId = newRequestId();
-      // Phase 33, plan 33-06: write site ONE of two (see
+      // Write site ONE of two (see
       // acquireProfileFragment()'s own comment) -- the key is absent entirely
       // when no profile was requested, so this line stays byte-identical to
       // what it always was for a profile-less acquire.
@@ -514,16 +515,16 @@ export function acquireOverControlPlane(dir: string = brokerRootDir(), opts: Acq
 }
 
 // ---------------------------------------------------------------------------
-// BROKER-CONTROL-CLIENT REGION START (plan 06, task 1)
+// BROKER-CONTROL-CLIENT REGION START
 //
-// Completed by plan 07 (the file protocol beside it is now gone).
-// openBrokerControl() is the container-side half of D-01: session shape,
-// all five request kinds, one discovery-record read, real per-request
-// deadlines, and a distinct broker-gone outcome. Lives alongside
-// acquireOverControlPlane() above (plan 01's tracer, kept unchanged and
+// The file protocol beside it is now gone.
+// openBrokerControl() is the container-side half of the TCP control plane:
+// session shape, all five request kinds, one discovery-record read, real
+// per-request deadlines, and a distinct broker-gone outcome. Lives alongside
+// acquireOverControlPlane() above (an early tracer, kept unchanged and
 // still used by broker-e2e.test.ts/broker-kill.test.ts as their own one-shot
 // acquire helper for exercising the SERVER side) -- the file protocol this
-// region's own predecessor sat beside is gone (plan 07, D-12).
+// region's own predecessor sat beside is gone entirely.
 //
 // Deliberately never REJECTS a promise: every failure -- deadline, a
 // refused connection, a malformed line, the broker going away mid-request --
@@ -541,21 +542,19 @@ export function acquireOverControlPlane(dir: string = brokerRootDir(), opts: Acq
 
 /** Same value as the tracer's own CONTROL_ACQUIRE_TIMEOUT_MS above --
  * referenced directly (not re-computed from the env var a second time) so
- * the two can never drift apart. This is "the relocated value of the
- * retiring grant-poll timeout" per 01.6.2-01-PLAN.md's own environment
- * variable table (VICE_BROKER_ACQUIRE_TIMEOUT_MS, default now 120000, raised
- * from 25000 per P-08 / 01.6.2.1-04-PLAN.md, against the measured tool-call
+ * the two can never drift apart. This is the relocated value of the
+ * retiring grant-poll timeout (VICE_BROKER_ACQUIRE_TIMEOUT_MS, default now
+ * 120000, raised from 25000 against the measured tool-call
  * budget spike-003 established -- see the counter-evidence comment at
  * CONTROL_ACQUIRE_TIMEOUT_MS's own declaration above). */
 export const ACQUIRE_TIMEOUT_MS: number = CONTROL_ACQUIRE_TIMEOUT_MS;
 
-/** The recycle bound. Plan 06 referenced the (now-deleted) retiring
- * pollRecycleAck()'s own RECYCLE_ACK_TIMEOUT_MS directly, so the two could
- * never drift apart while both existed; that predecessor is gone (plan 07,
- * D-12), so this reads the SAME environment variable directly -- the value
- * itself is unchanged (VICE_BROKER_RECYCLE_TIMEOUT_MS, default 30000, per
- * 01.6.2-01-PLAN.md's own environment variable table). Final tuning is
- * Phase 01.6.2.1's item. */
+/** The recycle bound. An earlier revision referenced the (now-deleted)
+ * retiring pollRecycleAck()'s own RECYCLE_ACK_TIMEOUT_MS directly, so the
+ * two could never drift apart while both existed; that predecessor is gone
+ * entirely, so this reads the SAME environment variable directly -- the
+ * value itself is unchanged (VICE_BROKER_RECYCLE_TIMEOUT_MS, default
+ * 30000). Final tuning remains a future item. */
 export const RECYCLE_TIMEOUT_MS: number = Number(process.env.VICE_BROKER_RECYCLE_TIMEOUT_MS || 30000);
 
 /** Genuinely NEW: the file protocol never "connected" anywhere, so there is
@@ -563,9 +562,9 @@ export const RECYCLE_TIMEOUT_MS: number = Number(process.env.VICE_BROKER_RECYCLE
  * a TCP connect over the docker bridge to a broker broker.json has already
  * classified alive (never_started/stale are refused before a connection is
  * ever attempted) -- deliberately not read from an environment variable,
- * since 01.6.2-06-PLAN.md's own scope is "no new environment variables
- * beyond the two deadline variables named in 01.6.2-01-PLAN.md" (the two
- * above). Final tuning is Phase 01.6.2.1's item, same as the other two. */
+ * since no new environment variable was wanted beyond the two deadline
+ * variables named above. Final tuning remains a future item, same as the
+ * other two. */
 export const CONTROL_CONNECT_TIMEOUT_MS = 5000;
 
 /** Every way a session-level request can fail to produce its expected
@@ -592,7 +591,7 @@ export type ControlFailureKind =
   | "no_free_port"
   | "at_capacity"
   | "internal"
-  // Plan 05 (BROK-02/PROTO-08): the broker's own ControlErrorCode gained
+  // The broker's own ControlErrorCode gained
   // this member for the ownership-conflict outcome; duplicated here for the
   // same reason every other member already is (this client and the broker
   // run in separate processes -- the shared surface is the wire format, not
@@ -631,7 +630,7 @@ interface ControlHostStateFields {
   warm_floor: number;
   max_instances: number;
   base_port: number;
-  /** FORKRM-01 (plan 52-06): narrowed from `"fork" | "stock" | null` to
+  /** Narrowed from `"fork" | "stock" | null` to
    * `ViceBackend | null` -- `null` when the broker predates this field or
    * sent something unrecognised: absent evidence, kept distinct from a
    * definite value. text-tools.ts's own broker-identity cross-check (out of
@@ -644,7 +643,7 @@ export type ControlHostStateResult =
   | { ok: false; kind: ControlFailureKind; message: string };
 
 // ---------------------------------------------------------------------------
-// MonitorClaimChannel (plan 41-03, D-14): the two-value channel contract,
+// MonitorClaimChannel: the two-value channel contract,
 // declared HERE as a local literal union rather than imported from
 // broker-state.mts -- that module is host-bound and compiled into
 // resources/*.mjs, and this file is the container-side half. The shared
@@ -655,9 +654,8 @@ export type ControlHostStateResult =
 // ---------------------------------------------------------------------------
 export type MonitorClaimChannel = "binary" | "text";
 
-/** Plan 05 (BROK-02/PROTO-08, D-13; gains `channel` in plan 41-03, D-14): the
- * current monitor-socket holder's own identity, named in a `monitor_owned`
- * refusal -- field-for-field the same shape the broker's own MonitorHolder
+/** The current monitor-socket holder's own identity, named in a
+ * `monitor_owned` refusal -- field-for-field the same shape the broker's own MonitorHolder
  * carries (broker-control.mts), minus nothing (pid included, matching
  * GrantRecord's own convention this whole mechanism mirrors). */
 export interface MonitorClaimHolder {
@@ -670,8 +668,8 @@ export interface MonitorClaimHolder {
 export interface ClaimMonitorOptions {
   targetId: string;
   timeoutMs?: number;
-  /** Plan 41-03 (D-14): which monitor socket to claim. Omitted is
-   * byte-identical to `"binary"` -- every pre-41-03 call site (and every
+  /** Which monitor socket to claim. Omitted is
+   * byte-identical to `"binary"` -- every pre-existing call site (and every
    * broker that predates this field) keeps working unchanged. */
   channel?: MonitorClaimChannel;
 }
@@ -679,20 +677,20 @@ export interface ClaimMonitorOptions {
 export interface ReleaseMonitorOptions {
   targetId: string;
   timeoutMs?: number;
-  /** Plan 41-03 (D-14): same default-to-binary posture as ClaimMonitorOptions.channel. */
+  /** Same default-to-binary posture as ClaimMonitorOptions.channel. */
   channel?: MonitorClaimChannel;
 }
 
-/** Discriminated claim outcome (plan 05): `monitor_owned` is kept STRICTLY
+/** Discriminated claim outcome: `monitor_owned` is kept STRICTLY
  * separate from `timeout` -- conflating "someone else holds it" with "the
- * broker did not answer" would reintroduce exactly the ambiguity PROTO-08
- * exists to remove. Never thrown; a caller that wants to raise instead
+ * broker did not answer" would reintroduce exactly the ambiguity this
+ * distinction exists to remove. Never thrown; a caller that wants to raise instead
  * should construct a MonitorOwnershipError from this outcome's own fields
  * (see that class's own header comment). */
 export type ClaimMonitorOutcome =
   | { ok: true }
   | { ok: false; reason: "monitor_owned"; holder: MonitorClaimHolder }
-  // "denied" (CR-03): the broker's control plane refused because the grant
+  // "denied": the broker's control plane refused because the grant
   // named is not the one THIS connection holds. In a correct client that is
   // unreachable -- stockConnect() always claims the grant its own session
   // acquired -- so it is carried as its own reason rather than collapsed into
@@ -707,15 +705,15 @@ export interface MonitorOwnershipErrorOptions {
   holderGrantId?: string;
   holderClaimedAt?: number;
   port?: number;
-  /** Plan 41-03 (D-14): which socket is contended -- so a handshake failure
+  /** Which socket is contended -- so a handshake failure
    * can say which channel was refused without re-parsing the message. */
   channel?: MonitorClaimChannel;
 }
 
 /** Thrown (by a caller that prefers to raise rather than branch on
  * ClaimMonitorOutcome) when `monitor_claim` is refused because a DIFFERENT
- * grant already holds this instance's monitor socket (plan 05, PROTO-08,
- * D-13). Names the holding grant and the port plainly, as an ownership
+ * grant already holds this instance's monitor socket. Names the holding
+ * grant and the port plainly, as an ownership
  * conflict -- a state the broker itself enforced, distinct from an emulator
  * that has stopped answering, and NOT a state the vice-wedge-triage skill's
  * opening move should ever be misdirected by.
@@ -724,9 +722,9 @@ export interface MonitorOwnershipErrorOptions {
  * connect() is ever attempted: stock VICE services exactly one binmon
  * client, and a second connect() produces no reply and no EOF, so a refusal
  * arriving only after dialling would be byte-for-byte indistinguishable
- * from a wedge (PROTO-08). Claiming first means this refusal is a JSON
+ * from a wedge. Claiming first means this refusal is a JSON
  * response on a control-plane socket that already works, and the second
- * client never dials the binmon port at all (D-13). */
+ * client never dials the binmon port at all. */
 export class MonitorOwnershipError extends ViceError {
   holderGrantId?: string;
   holderClaimedAt?: number;
@@ -759,16 +757,16 @@ export interface ControlDeadlineOptions {
  * exactly one request line and resolves against its own deadline; none of
  * them ever reject. */
 export interface BrokerControlSession {
-  /** Phase 33, plan 33-06 (REPRO-05, D-15): additionally takes an optional
+  /** Additionally takes an optional
    * `profile` -- see AcquireProfileOptions. Omitting it is byte-identical to
-   * every pre-33-06 call. */
+   * every pre-existing call. */
   acquire(opts?: ControlDeadlineOptions & AcquireProfileOptions): Promise<ControlAcquireResult>;
   release(): Promise<ControlReleaseResult>;
   recycle(targetId: string, opts?: ControlDeadlineOptions): Promise<ControlRecycleResult>;
   status(opts?: ControlDeadlineOptions): Promise<ControlStatusResult>;
   hostState(opts?: ControlDeadlineOptions): Promise<ControlHostStateResult>;
   /** Claims exclusive ownership of an instance's monitor socket BEFORE any
-   * binmon connect() is attempted (plan 05, PROTO-08, D-13) -- see
+   * binmon connect() is attempted -- see
    * MonitorOwnershipError's own header comment for why claiming first is
    * the only way this refusal can ever be distinguishable from a wedge. */
   claimMonitor(opts: ClaimMonitorOptions): Promise<ClaimMonitorOutcome>;
@@ -788,7 +786,7 @@ export type OpenBrokerControlOutcome =
 
 /** The backend-agnostic coordinate set a session which ALREADY holds a
  * broker grant hands to anything that needs to dial the instance that grant
- * names (plan 02-09, PROTO-08, D-13). Declared here, beside
+ * names. Declared here, beside
  * BrokerControlSession and openBrokerControl(), because it is
  * backend-agnostic -- the fork path does not consume it only because
  * forwardToVice() reads activeInstance() from the same module (vice.ts)
@@ -806,7 +804,7 @@ export interface HeldLease {
   port: number;
   targetId: string;
   brokerControl: BrokerControlSession;
-  /** CR-06: THIS instance's own epoch.json, in the CONSUMER's view of the
+  /** THIS instance's own epoch.json, in the CONSUMER's view of the
    * filesystem (i.e. already containerized -- vice-proxy.ts fills it from
    * activeInstance().epochFile, which adoptGrant() set from the containerized
    * grant). This is the reconnect-identity baseline stock-connect.ts's
@@ -817,7 +815,7 @@ export interface HeldLease {
    * Empty string means genuinely no epoch evidence exists, which is that same
    * unprovable case stated explicitly rather than by omission. */
   epochFile: string;
-  /** CR-06: the TOP-LEVEL supervisor directory -- the one holding
+  /** The TOP-LEVEL supervisor directory -- the one holding
    * `backend.json`, i.e. the same directory `broker.json` is read from
    * (brokerRootDir()). Deliberately NOT the grant's own per-instance
    * `supervisor_dir` (`<stateDir>/<port>`), which holds epoch.json and would
@@ -827,7 +825,7 @@ export interface HeldLease {
    * backend-detect.mts's own documented degradation for an omitted
    * supervisorDir. */
   supervisorDir: string;
-  /** Plan 41-01 (D-15); made mandatory-in-fact by plan 41-05 (D-16): THIS
+  /** THIS
    * instance's own text-monitor port, read by text-connect.ts's
    * textConnect() to dial the `-remotemonitor` channel. MANDATORY on a
    * stock grant, ABSENT on a fork grant -- the fork never launches with
@@ -868,9 +866,9 @@ type RawLineOutcome = { ok: true; line: Record<string, unknown> } | { ok: false;
 
 /** Never-throw extraction of a `holder` payload from untrusted wire input --
  * absent or malformed input answers `undefined`, never a partially-filled
- * object (plan 05's own never-throw-on-untrusted-input posture, matching
- * this file's own header comment on broker.json reads). `channel` (plan
- * 41-03, D-14) defaults to `requestedChannel` -- THE channel this request
+ * object (this module's own never-throw-on-untrusted-input posture, matching
+ * this file's own header comment on broker.json reads). `channel`
+ * defaults to `requestedChannel` -- THE channel this request
  * itself named -- when the wire omits it or sends something unrecognised;
  * never fabricated as a plausible value, in the same register the
  * `grantId: "unknown"` fallback one layer up (claimMonitor()'s own) uses. */
@@ -960,10 +958,10 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
           }
           if (line.kind === "error") {
             const code = typeof line.code === "string" ? (line.code as ControlFailureKind) : "internal";
-            // Plan 05: forward `holder` verbatim ONLY for monitor_owned --
+            // Forward `holder` verbatim ONLY for monitor_owned --
             // every other error code carries no such field on the wire, and
             // extractHolder() itself never invents one from absent/malformed
-            // input. Plan 41-03 (D-14): the requested channel comes from
+            // input. The requested channel comes from
             // THIS payload (the request this response answers), read from
             // the same closure `payload` sendAndAwaitLine() was called
             // with -- an absent/malformed wire `channel` is never fabricated,
@@ -997,7 +995,7 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
 
   async function acquire(opts: ControlDeadlineOptions & AcquireProfileOptions = {}): Promise<ControlAcquireResult> {
     const requestId = newRequestId();
-    // Phase 33, plan 33-06: write site TWO of two (see
+    // Write site TWO of two (see
     // acquireProfileFragment()'s own comment for why both matter) -- same
     // key-omitted-when-absent discipline as acquireOverControlPlane()'s raw
     // socket.write above.
@@ -1060,7 +1058,7 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
     // in-memory read on the broker side (no launch, no kill involved), so it
     // needs no timeout of its own scale; introducing a distinct constant (or
     // environment variable) for it would be exactly the kind of new knob
-    // 01.6.2-06-PLAN.md's own scope excludes.
+    // this module deliberately declines to add.
     const raw = await sendAndAwaitLine({ op: "status", token }, opts.timeoutMs ?? ACQUIRE_TIMEOUT_MS);
     if (!raw.ok) return raw;
     const line = raw.line;
@@ -1099,7 +1097,7 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
         warm_floor: Number(line.warm_floor),
         max_instances: Number(line.max_instances),
         base_port: Number(line.base_port),
-        // FORKRM-01 (plan 52-06): narrowed at the boundary, never cast --
+        // Narrowed at the boundary, never cast --
         // anything other than the one known verdict reads as `null` ("this
         // broker did not tell us"), which callers must treat as absent
         // evidence rather than agreement.
@@ -1113,19 +1111,19 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
    * `sendAndAwaitLine()` path -- the same session, the same token, the same
    * newline-delimited JSON discipline every other op uses; no second
    * control connection is ever opened, and this function never dials the
-   * binmon port itself, on success OR on failure (plan 05, PROTO-08, D-13
-   * -- see MonitorOwnershipError's own header comment for why the claim is
-   * made BEFORE any binmon connect()). `timeout` is reported distinctly
+   * binmon port itself, on success OR on failure -- see
+   * MonitorOwnershipError's own header comment for why the claim is
+   * made BEFORE any binmon connect(). `timeout` is reported distinctly
    * from `monitor_owned`: a timeout means the broker did not answer, never
-   * that someone else owns the socket. `channel` (plan 41-03, D-14) defaults
-   * to `"binary"` when omitted -- byte-identical to every pre-41-03 call. */
+   * that someone else owns the socket. `channel` defaults
+   * to `"binary"` when omitted -- byte-identical to every pre-existing call. */
   async function claimMonitor(opts: ClaimMonitorOptions): Promise<ClaimMonitorOutcome> {
     const requestId = newRequestId();
     const channel: MonitorClaimChannel = opts.channel ?? "binary";
     const raw = await sendAndAwaitLine({ op: "monitor_claim", id: requestId, target_id: opts.targetId, channel, token }, opts.timeoutMs ?? ACQUIRE_TIMEOUT_MS);
     if (!raw.ok) {
       if (raw.kind === "deadline") return { ok: false, reason: "timeout" };
-      // WR-08: the `monitor_owned` REASON survives even when the wire's own
+      // The `monitor_owned` REASON survives even when the wire's own
       // `holder` payload is absent or malformed. This used to be
       // `raw.kind === "monitor_owned" && raw.holder`, so a partially-malformed
       // refusal collapsed to `{ ok: false, reason: "internal" }` -- stockConnect()
@@ -1154,7 +1152,7 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
    * session. Tolerates a broker that has already cleared the record (the
    * broker's own onMonitorRelease answers `ok: true` for an already-cleared
    * target) -- this function never retries and never opens a second
-   * connection. `channel` (plan 41-03, D-14) defaults to `"binary"` when
+   * connection. `channel` defaults to `"binary"` when
    * omitted. */
   async function releaseMonitor(opts: ReleaseMonitorOptions): Promise<ReleaseMonitorOutcome> {
     const requestId = newRequestId();
@@ -1268,5 +1266,5 @@ export function openBrokerControl(dir: string = brokerRootDir(), opts: OpenBroke
 }
 
 // ---------------------------------------------------------------------------
-// BROKER-CONTROL-CLIENT REGION END (plan 06, task 1)
+// BROKER-CONTROL-CLIENT REGION END
 // ---------------------------------------------------------------------------

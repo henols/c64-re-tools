@@ -1252,8 +1252,8 @@ test("monitor_claim: claimMonitor() a control-plane timeout during claim is repo
 
 test("structural: the new control-client region (between the plan-06 marker pair) contains no filesystem-write construct", () => {
   const source = readFileSync(join(HERE, "vice-broker-client.ts"), "utf8");
-  const startMarker = "BROKER-CONTROL-CLIENT REGION START (plan 06, task 1)";
-  const endMarker = "BROKER-CONTROL-CLIENT REGION END (plan 06, task 1)";
+  const startMarker = "BROKER-CONTROL-CLIENT REGION START";
+  const endMarker = "BROKER-CONTROL-CLIENT REGION END";
   const startIdx = source.indexOf(startMarker);
   const endIdx = source.indexOf(endMarker);
   assert.ok(startIdx !== -1, "the region START marker must be present in vice-broker-client.ts");
