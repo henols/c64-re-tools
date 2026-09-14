@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: The Rebuild Half
-current_phase: 51
-current_phase_name: Planning Vocabulary Out of the Shipped Server
+current_phase: 56
+current_phase_name: Remove `shipped-modules.ts` and Its Embedded Source Scans
 status: executing
-stopped_at: Phase 56 context gathered
-last_updated: "2026-09-14T20:54:09.757Z"
+stopped_at: Phase 56 planned and verified
+last_updated: "2026-09-14T22:18:39.495Z"
 last_activity: 2026-09-14
-last_activity_desc: Phase 51 execution started
-state_head: 85a926b4d9f3e568777ba18e1712dfc8e112f5b5
+last_activity_desc: Phase 56 planned (11 plans, 4 waves)
+state_head: 5417c744e71dc5e874443a446bee6bbed66ecbac
 progress:
-  total_phases: 11
+  total_phases: 12
   completed_phases: 7
-  total_plans: 71
+  total_plans: 82
   completed_plans: 62
-  percent: 64
+  percent: 58
 ---
 
 # Project State
@@ -270,9 +270,14 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 51 (Planning Vocabulary Out of the Shipped Server) — EXECUTING
-Plan: 9 of 17
+Phase: 56 (Remove `shipped-modules.ts` and Its Embedded Source Scans) — READY TO EXECUTE
+Plan: 0 of 11
 Status: Ready to execute
+Plans: 0/11 executed. Phase 56 was planned 2026-09-15 - 11 plans across 4 waves, plan-checker PASSED, decision coverage 17/17, files_modified disjoint across 23 paths. It deletes `src/mcp/vice/shipped-modules.ts` and every embedded test case whose subject is source text.
+
+**Phase 51 is still in flight and is NOT superseded by this.** It remains In Progress at 8/17 plans in the ROADMAP Progress table; planning Phase 56 did not advance or close it. Its own position and per-plan record follows.
+
+Phase 51 (Planning Vocabulary Out of the Shipped Server) - EXECUTING, plan 9 of 17.
 Plans: 8/17 executed. 51-01 is complete: it widened skills-planning-vocabulary.test.ts's scan surface to four sources, added a count-pinned RATCHET ledger and comment-byte budget. It also proved installer/bin/cli.mjs clean end to end. 51-02 is complete: it built CITATION-RESOLUTION.md (five sections, re-derived dangling set at 30 tokens/76 occurrences, down from CONTEXT.md's inherited 33/~135). It also minted VOCAB-01..06 with traceability rows in REQUIREMENTS.md (38/38 mapped). 51-03 is complete: it swept host-tool.mts's 325 citations to zero, regenerated resources/host-tool.mjs, and finalized COMMENT_BUDGET_SLACK at 1650 from that file's own real diff. 51-04 is complete: it swept broker-launch.mts (186), broker-control.mts (80) and broker-epoch.mts (2) to zero, 268 citations across the broker's launch-and-control-plane family. It also regenerated all three resources/*.mjs siblings and deleted all six RATCHET entries. 51-05 is complete: it swept vice-broker.mts (147), vice-broker-client.ts (99), broker-state.mts (43) and broker-kill.mts (31) to zero, 320 citations across the broker's daemon/client/state/kill-path family. It also regenerated all three resources/*.mjs siblings, deleted all seven RATCHET entries, and confirmed the lease-model and incident-before-kill comments survive intact. 51-06 is complete: it swept anno-cli.ts (164), anno-join.ts (50), anno-symbols.ts (11), anno-index.ts (6) and anno-details.ts (3) to zero, 234 citations across the annotation-store CLI and its helpers. It is the first sweep in this phase to find and fix user-visible output (18 sites in anno-cli.ts's printed --help text and runtime messages), and it repointed three structural line citations in module-classification.ts that its own edits drifted. 51-07 is complete: it swept anno-store.ts (126), anno-types.ts (50), anno-store-export.ts (12), anno-derive.ts (6) and anno-confidence.ts (2) to zero, 196 citations across the store's core and type declarations. It resolved the phase's technical-token collision (UTF-16 -> "16-bit code units") without an exemption, named one genuinely unrecoverable (tier-4) citation, repointed a structural test (anno-types.test.ts) that pinned the exact vocabulary this phase removes, and confirmed the workspace-confinement and revert-history explanations survive intact. 51-08 is complete: it swept anno-export-asm.ts (146), anno-import.ts (21), anno-graphics.ts (18), anno-regbits-gen.ts (13), anno-memmap-render.ts (25), anno-provenance-ledger.ts (4) and anno-hazard-report.ts (2) to zero, 229 citations across the export path and six sibling modules. anno-register.ts's 63 citations are NOT resolved -- its requirements[] traceability data is real, mechanically-checked ids, and unshipping it (attempted, reverted) reddens anno-seam.test.ts's own completeness guard; documented as a Rule 4 architectural decision for a follow-up plan. 51-09 through 51-17 remain.
 
 Carried in from Phase 48 (complete, verified, UAT passed 2026-09-13): the
@@ -287,7 +292,7 @@ effects revert before the screen settles, root cause unknown, recorded in
 artifact — it did not retract the finding. Phase 49 gates reassembly, so
 that subject is the thing it will gate on.
 
-Progress: [█████░░░░░] 45% (6/8 phases complete in v1.0.0; per-phase plan counts in the ROADMAP Progress table)
+Progress: [██████░░░░] 58% (7/12 phases complete in v1.0.0; per-phase plan counts in the ROADMAP Progress table)
 Last activity: 2026-09-14 — Completed quick task 260914-uhm: deleted capture-seam.test.ts; Phase 56 added for the remaining embedded source scans
 
 ## Performance Metrics

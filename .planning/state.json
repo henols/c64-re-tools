@@ -292,12 +292,17 @@
       "number": "55",
       "name": "Restore the Fork Removal's Dropped Capabilities and Re-Baseline the Proxy Test",
       "status": "complete"
+    },
+    {
+      "number": "56",
+      "name": "Remove `shipped-modules.ts` and Its Embedded Source Scans",
+      "status": "pending"
     }
   ],
   "next": {
     "command": "/gsd:progress --next",
     "label": "Advance to the next step",
-    "reason": "Phase 51 of 11 · 45% · executing"
+    "reason": "Phase 56 of 12 · 58% · executing"
   },
-  "updated_at": "2026-09-14T16:07:09.664Z"
+  "updated_at": "2026-09-14T22:18:39.554Z"
 }

@@ -1964,7 +1964,12 @@ embedded: scanning cases living inside otherwise-real behaviour tests.
 **Plans**: 11 plans, in 4 waves.
 
 Plans:
+**Wave 1**
+
 - [ ] 56-01-PLAN.md — Tracer: build and prove the D-14 scratch scanner, then cut prg-image, anno-graphics and anno-types end to end
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 56-02-PLAN.md — anno-seam.test.ts: remove 21 of 23 cases, keep both D-07 survivors byte-identical
 - [ ] 56-03-PLAN.md — block-class, anno-join and anno-overlap
 - [ ] 56-04-PLAN.md — capture-predicate and evid-report-keys, with the three scanning helpers
@@ -1973,8 +1978,21 @@ Plans:
 - [ ] 56-07-PLAN.md — anno-store.test.ts, three regions, including both measured mixed cases
 - [ ] 56-08-PLAN.md — anno-export-asm, two scanning clusters and their nine helpers
 - [ ] 56-09-PLAN.md — anno-coverage.test.ts, the third giant
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 56-10-PLAN.md — anno-derive, then D-11's five production comment repairs
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 56-11-PLAN.md — git rm the module and its test, run the phase gate, write the D-16 SUMMARY
+
+**Cross-cutting constraints:**
+
+- npm run typecheck exits 0 at every commit. npm run test:automated is green at the end of this plan.
+- Every removed case had source TEXT as its entire subject, confirmed by a hand-read of the case body.
+- Each file runs green on its own and loses only the named source-scanning cases.
+- Every removed case had source TEXT as its entire subject, confirmed by a hand-read at its own paren-matched boundary.
 
 Notes:
 
@@ -2086,7 +2104,7 @@ in a milestone archive.
 | 53. Operator-Owned `docs/` | v1.0.0 | - | Not started | - |
 | 54. Remove Every Byte-Identical Assertion | v1.0.0 | - | Not started | - |
 | 55. Restore the Fork Removal's Dropped Capabilities and Re-Baseline the Proxy Test | v1.0.0 | 6/6 | Complete | 2026-09-14 |
-| 56. Remove `shipped-modules.ts` and Its Embedded Source Scans | v1.0.0 | - | Not started | - |
+| 56. Remove `shipped-modules.ts` and Its Embedded Source Scans | v1.0.0 | 0/11 | Not started | - |
 
 **Milestone roll-up:** v0.2.0 — 9 phases, 87 plans, 51/51 in-scope requirements,
 shipped 2026-08-19 (audit round 4 `tech_debt`; 13 deferred items at close).
