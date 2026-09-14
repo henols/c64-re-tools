@@ -383,7 +383,6 @@ const RATCHET: readonly RatchetEntry[] = Object.freeze([
   { file: "src/mcp/vice/tools-manifest.stock.json", family: "proxy / tool surface", count: 34 },
   { file: "src/mcp/vice/version.ts", family: "other", count: 10 },
   { file: "src/mcp/vice/vice-broker-client.ts", family: "proxy / tool surface", count: 99 },
-  { file: "src/mcp/vice/vice-broker.mts", family: "broker", count: 147 },
   { file: "src/mcp/vice/vice-proxy.ts", family: "proxy / tool surface", count: 107 },
   { file: "src/mcp/vice/vsf-slice.ts", family: "other", count: 4 },
 ]);
