@@ -14,15 +14,29 @@
 // What FLOW-02 cannot see is a COMMENT that hands pending or future work to
 // a numbered phase -- exactly the defect class the promoted todo named at
 // two sites (`stock-cia.ts`, `stock-dispatch.ts`), and which the plan-time
-// census found at thirteen more, across nine shipped modules total. A
-// blanket "no comment mentions Phase N" rule is not viable here: this
-// repo's shipped modules carry ~124 legitimate historical `Phase N`
-// mentions in comments (narrating when something was decided, built, or
-// found), against a mere handful of real violations. So this guard detects
-// the ASSIGNMENT SHAPE specifically -- narration stays legal, hand-off does
-// not -- plus a second, unrelated check: any comment naming a phase the
-// roadmap records as CUT, narration included, since a pointer at a phase
-// that no longer exists is orphaned regardless of how it is phrased.
+// census found at thirteen more, across nine shipped modules total.
+//
+// SUPERSEDED POSITION, kept here rather than silently reworded so a reader
+// meeting it in history knows which version was live: this guard's header
+// used to argue that a blanket "no comment mentions Phase N" rule was not
+// viable in this tree, on the strength of ~124 legitimate historical
+// `Phase N` narration comments against a mere handful of real violations.
+// That position no longer holds. The blanket rule IS now enforced --
+// `skills-planning-vocabulary.test.ts`'s widened scan surface flags ANY
+// numbered-phase mention (narration included) across every shipped file,
+// pinned in a count-exact ratchet that this project's later plans drive to
+// EMPTY rather than leaving as a permanent allowance. So EVERY `Phase N`
+// mention this file's own extractor finds, including the narration this
+// guard still treats as legal for its own purposes below, is independently
+// tracked toward zero by that guard. What survives HERE is a narrower,
+// better-diagnosed check for two specific shapes the blanket rule's own
+// generic "a numbered phase is mentioned" failure message cannot name on
+// its own: the ASSIGNMENT SHAPE (a comment that hands pending or future work
+// to a numbered phase, narration excluded) and any comment naming a phase
+// the roadmap records as CUT (narration included, since a pointer at a
+// phase that no longer exists is orphaned regardless of how it is phrased).
+// A maintainer hitting one of these two shapes gets a specific family name
+// and a specific reason instead of a generic "found a phase number" report.
 //
 // EXTRACTOR: the character-state-machine literal extractor
 // docs-dangling-refs.test.ts already proved out (chosen over a regex
@@ -339,23 +353,57 @@ test("cut-phase set: ROADMAP.md's Progress table parses to a non-empty cut/disso
   assert.ok(cutPhases.includes("6"), `expected Phase 6 (Stock-Only Gains, cut 2026-08-17) in the parsed cut set, got: ${JSON.stringify(cutPhases)}`);
 });
 
-test("non-vacuity: the scanned module set and comment-line volume are real", () => {
+test("non-vacuity: the scanned module set and comment span volume are real", () => {
   // Floors set below what was actually measured on 2026-08-22/23 (58
-  // modules, 7500+ comment spans, 124 comment lines naming a phase) --
-  // never a floor equal to a number that was never measured
-  // (ENGINEERING_RULES.md §6).
+  // modules, 7500+ comment spans) -- never a floor equal to a number that
+  // was never measured (ENGINEERING_RULES.md §6).
   const modules = shippedTsModules();
   assert.ok(modules.length >= 40, `expected at least 40 shipped .ts/.mts modules, got ${modules.length}`);
 
+  // This floor is now an ALLY of the shipped surface's comment-byte budget
+  // (skills-planning-vocabulary.test.ts's COMMENT_BUDGET_BASELINE), not a
+  // leftover: that budget catches a per-file rewrite that cuts more comment
+  // than it removed in citations, and this floor catches the same collapse
+  // at the scale of the whole shipped tree -- aggregate comment VOLUME must
+  // not shrink as the planning-vocabulary sweep replaces citations with
+  // reasons, because a rewrite is supposed to lengthen the reason, not
+  // delete it along with the citation.
   let spanCount = 0;
-  let phaseLineCount = 0;
   for (const file of modules) {
     const src = readFileSync(join(HERE, file), "utf8");
     spanCount += extractCommentSpans(src).length;
-    phaseLineCount += commentPhaseLines(src).length;
   }
   assert.ok(spanCount >= 5000, `expected at least 5000 comment spans across the shipped set, got ${spanCount}`);
-  assert.ok(phaseLineCount >= 80, `expected at least 80 comment lines naming a phase across the shipped set, got ${phaseLineCount}`);
+});
+
+test("non-vacuity: commentPhaseLines() still finds a phase mention in a synthetic multi-line block comment", () => {
+  // The real-tree phase-line count used to be asserted with a floor here
+  // (>= 80). That floor was a TRAP: this project's own planning-vocabulary
+  // sweep drives real-tree phase mentions toward zero by design, which would
+  // make the floor unsatisfiable exactly when the sweep succeeds -- the
+  // opposite of what a non-vacuity check is for. The floor is replaced with
+  // a corpus the sweep cannot empty: a SYNTHETIC multi-line block comment
+  // built right here, so `commentPhaseLines()`'s span-then-per-line
+  // splitting keeps proving itself non-vacuous no matter how clean the real
+  // tree becomes. If a real-tree count is ever wanted again, report it --
+  // never assert a lower bound on it.
+  const synthetic = [
+    "const noise = 1;",
+    "/* leading filler line",
+    "   another filler line",
+    "   this JSDoc-style block mentions Phase 7 on its own physical line",
+    "   and this trailing line does not */",
+    "const more = 2;",
+  ].join("\n");
+  const hits = commentPhaseLines(synthetic);
+  assert.ok(
+    hits.some((h) => /Phase\s+7\b/.test(h.text)),
+    `expected commentPhaseLines() to find the planted "Phase 7" mention inside the synthetic block comment, got: ${JSON.stringify(hits)}`,
+  );
+  assert.ok(
+    hits.every((h) => !/filler|noise|more/.test(h.text)),
+    "a physical line that does not itself mention a phase must not be reported",
+  );
 });
 
 test("no shipped src/mcp/vice/ source comment assigns pending/future work to a numbered phase (PKG-03)", () => {

@@ -292,7 +292,6 @@ export interface RatchetEntry {
  * plans work through, never a citation category and never a lone file.
  */
 const RATCHET: readonly RatchetEntry[] = Object.freeze([
-  { file: "installer/bin/cli.mjs", family: "installer", count: 4 },
   { file: "src/mcp/vice/THIRD-PARTY-NOTICES.md", family: "other", count: 11 },
   { file: "src/mcp/vice/anno-bank.ts", family: "annotation store / CLI", count: 16 },
   { file: "src/mcp/vice/anno-cli.ts", family: "annotation store / CLI", count: 164 },
@@ -526,16 +525,20 @@ const COMMENT_BUDGET_BASELINE: readonly CommentBudgetEntry[] = Object.freeze([
 
 /**
  * Provisional slack allowance for the comment-byte-budget inequality below,
- * in characters. PROVISIONAL: chosen from this task's own diff (the
- * `routine-queue-walker` sweep earlier in this same commit measured a
- * worst-case single file losing 129 comment characters while removing 149
- * citation characters -- already inside a zero-slack margin) plus a small
- * round-number margin for a rewrite that legitimately needs a few characters
- * of connective prose the citation itself did not carry. This value is
- * finalised in a later task of this same plan against `installer/bin/cli.mjs`
- * -- the densest real diff in the phase -- and is not yet the LAST word on
- * the number; treat it as a floor for what "the reason survives" enforces,
- * not a target.
+ * in characters. PROVISIONAL, and measured against every real diff this plan
+ * produced rather than guessed: the `routine-queue-walker` sweep's
+ * worst-case single file lost 129 comment characters while removing 149
+ * citation characters (already inside a zero-slack margin), and the
+ * installer CLI entry point taken to zero below (out of RATCHET, still in
+ * COMMENT_BUDGET_BASELINE) actually GREW its comment total by 179
+ * characters while removing 38 citation characters, so neither real
+ * rewrite in this plan needed any slack at all. 20 is a small round-number
+ * margin held in reserve for a
+ * rewrite that legitimately needs a few characters of connective prose the
+ * citation itself did not carry, not a number either diff demanded. This is
+ * NOT the last word on the value -- a later plan in this phase is expected
+ * to hit the densest real diff and recalibrate it there; treat this as a
+ * floor for what "the reason survives" enforces, not a target.
  */
 const COMMENT_BUDGET_SLACK = 20;
 

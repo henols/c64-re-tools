@@ -30,7 +30,9 @@ const PKG_ROOT = dirname(HERE);
 const SKILLS_SRC = join(PKG_ROOT, "skills");
 
 // The single version-resolution seam this repo maintains is
-// `src/mcp/vice/version.ts` (quick-260819-tsz, D-5). This package
+// `src/mcp/vice/version.ts` -- one algorithm for resolving a VERSION
+// template against a published version, kept in exactly one place after
+// this repo once carried several independent copies of it. This package
 // deliberately does NOT import it: it ships without the seam file (its
 // `files[]` is `bin/`, `skills/`, `README.md`) and targets node >= 18, which
 // cannot type-strip the seam's `.ts` the way the vice-mcp package's own
@@ -42,12 +44,13 @@ const SKILLS_SRC = join(PKG_ROOT, "skills");
 // only ever published with a concrete version already stamped in. That
 // number is PRODUCED elsewhere: `scripts/version.mjs stamp` writes the
 // working-tree placeholder, and CI's `npm version` writes the real one at
-// publish time. Do not reimplement D-2's template-resolution rules here.
+// publish time. Do not reimplement the seam's own VERSION-template
+// parsing and prefix-resolution rules here.
 const SELF = readJson(join(PKG_ROOT, "package.json")) ?? {};
 const SELF_VERSION = typeof SELF.version === "string" ? SELF.version : "0.0.0";
 const MCP_PKG = "@henols/vice-mcp";
 // The dev placeholder every derived, publishable version string carries in
-// the working tree (R-2, quick-260819-tsz). Defined authoritatively as
+// the working tree outside a stamped release. Defined authoritatively as
 // `DEV_PLACEHOLDER` in `src/mcp/vice/version.ts` -- repeated here as a
 // literal, NOT imported, because this package deliberately ships without
 // that seam file (see the comment above) and targets node >= 18, which
@@ -57,7 +60,7 @@ const MCP_PKG = "@henols/vice-mcp";
 // so a future edit to the seam's placeholder is not missed.
 const MCP_DEV_PLACEHOLDER = "0.0.0-dev";
 // Wire the project to the exact vice-mcp version this installer was built
-// against -- EXCEPT when run from an unstamped dev checkout (MED-3):
+// against -- EXCEPT when run from an unstamped dev checkout:
 // `installer/package.json`'s dependency pin is the permanent working-tree
 // placeholder outside a CI-stamped publish job, and `@henols/vice-mcp` at
 // that literal version will never exist on the npm registry. Silently
