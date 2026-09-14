@@ -477,6 +477,22 @@ test("planted violation, three import shapes (Phase 10 IN-02 proof): multi-line 
  * absorbed into it -- asserted as a disjointness case below. */
 const HOST_TOOL_FAMILY_RE = /^(host-tool|ghidra|dxa)(-[A-Za-z0-9-]*)?\.(ts|mts)$/;
 
+/** Test-only availability-gate modules that happen to match
+ * `HOST_TOOL_FAMILY_RE` by filename coincidence but carry NO production
+ * weight: `dxa-gate.ts` (quick-260914-9n4) is the ACME-gate-shaped
+ * (`acme-gate.ts`) test-only probe for the vendored dxa binary -- imported
+ * only by `*.test.ts` files, absent from `package.json`'s `files[]`, and
+ * never a production import (see its own header's WHAT NOT TO DO). This
+ * family's floor exists to keep PRODUCTION modules that reach host paths
+ * inside the closed-consumer discipline (see this file's own SEAM-06
+ * comment above); a test-only helper ships nothing and reaches no host
+ * path itself, so it does not belong in that count at all. `acme-gate.ts`
+ * never needed this same exclusion only because its name happens not to
+ * match this family's `host-tool|ghidra|dxa` prefix union -- if a future
+ * test-only gate module ever does, name it here rather than raising
+ * `HOST_TOOL_FAMILY_FLOOR` to admit a module that never ships. */
+const HOST_TOOL_FAMILY_TEST_ONLY_EXCEPTIONS = new Set(["dxa-gate.ts"]);
+
 /** The host-tool execution-seam module family, derived from disk via the
  * SAME `topLevelProductionModules()` helper the four-member consumer scan
  * and the `anno-` family both reuse -- never a second directory walk.
@@ -488,6 +504,7 @@ const HOST_TOOL_FAMILY_RE = /^(host-tool|ghidra|dxa)(-[A-Za-z0-9-]*)?\.(ts|mts)$
 function hostToolFamilyProductionModules(dir: string = HERE): string[] {
   return topLevelProductionModules(dir)
     .filter((name) => HOST_TOOL_FAMILY_RE.test(name))
+    .filter((name) => !HOST_TOOL_FAMILY_TEST_ONLY_EXCEPTIONS.has(name))
     .sort();
 }
 
