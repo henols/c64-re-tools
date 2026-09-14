@@ -1942,7 +1942,8 @@ assertion that reads a production module's own source and asserts on that text. 
 stated 2026-09-14: "no test may assert on text at all" and "only data-driven tests that test
 production code are kept."
 
-**Requirements**: TBD -- declare at planning time
+**Requirements**: SC-1..SC-5, declared at planning time as local criterion IDs mapping 1:1 onto
+the five Success Criteria below. No upstream REQUIREMENTS.md row exists for this phase.
 
 **Depends on**: Nothing. Follows quick tasks 260914-poo (60 files) and 260914-uhm
 (`capture-seam.test.ts`), which removed every WHOLE-FILE source scanner. What is left is
@@ -1960,7 +1961,20 @@ embedded: scanning cases living inside otherwise-real behaviour tests.
   4. No test file is left empty, and none is left with only setup and no assertions.
   5. `anno-seam.test.ts`'s WR-25 behavioural case survives in some form -- see the note below.
 
-**Plans**: TBD
+**Plans**: 11 plans, in 4 waves.
+
+Plans:
+- [ ] 56-01-PLAN.md — Tracer: build and prove the D-14 scratch scanner, then cut prg-image, anno-graphics and anno-types end to end
+- [ ] 56-02-PLAN.md — anno-seam.test.ts: remove 21 of 23 cases, keep both D-07 survivors byte-identical
+- [ ] 56-03-PLAN.md — block-class, anno-join and anno-overlap
+- [ ] 56-04-PLAN.md — capture-predicate and evid-report-keys, with the three scanning helpers
+- [ ] 56-05-PLAN.md — anno-index and vsf-slice
+- [ ] 56-06-PLAN.md — stock-dispatch, three regions, including one mixed case stripped in place
+- [ ] 56-07-PLAN.md — anno-store.test.ts, three regions, including both measured mixed cases
+- [ ] 56-08-PLAN.md — anno-export-asm, two scanning clusters and their nine helpers
+- [ ] 56-09-PLAN.md — anno-coverage.test.ts, the third giant
+- [ ] 56-10-PLAN.md — anno-derive, then D-11's five production comment repairs
+- [ ] 56-11-PLAN.md — git rm the module and its test, run the phase gate, write the D-16 SUMMARY
 
 Notes:
 
