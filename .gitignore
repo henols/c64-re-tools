@@ -18,6 +18,12 @@ node_modules/
 # .vice-snapshots/, tools/*.mjs, .planning/incidents/) is simply left on
 # disk, unread, for the user to delete by hand.
 /.c64-re-tools/
+# ...and the same directory written anywhere else. The rule above is
+# root-anchored, so a tool-root resolved from a different cwd (running the
+# suite from src/mcp/vice/ deploys one there) landed OUTSIDE it and was
+# committable -- twelve generated launcher artifacts, one `git add -A` away
+# from the tree. Generated host artifacts are never committed from any depth.
+.c64-re-tools/
 
 # The non-dotted ALIAS of the root above, not a second root: one broker-
 # minted symlink (ghidra-project.mts's ensureGhidraRunsHandle()) whose
