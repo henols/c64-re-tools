@@ -1,9 +1,13 @@
-// A focused, non-hanging sibling to vice-proxy.test.ts (which HANGS and must
-// never be run -- see that file's own header and test-gate.mjs's
-// MANUAL_ONLY_TESTS list). This file asserts ONLY on vice_ping's response
-// shape via stock-dispatch.ts's real dispatchStock()/handlePing() -- no
-// broker process, no emulator, no MCP server -- matching stock-dispatch.test.ts's
-// own offline convention.
+// A focused sibling to vice-proxy.test.ts. MEASURED 2026-09-14: that file
+// terminates -- it does not hang -- in about 26-27 seconds per run (`node
+// --test vice-proxy.test.ts`, 56 tests / 53 pass / 0 fail / 3 skipped),
+// spawning a real child process per test case. It stays manual-only
+// (test-gate.mjs's MANUAL_ONLY_TESTS list) for that per-run cost, not for
+// any host dependency -- see that file's own header and test-gate.mjs's
+// disposition rationale for the measured reason. This file asserts ONLY on
+// vice_ping's response shape via stock-dispatch.ts's real
+// dispatchStock()/handlePing() -- no broker process, no emulator, no MCP
+// server -- matching stock-dispatch.test.ts's own offline convention.
 //
 // WHY THIS FILE EXISTS (2026-08-19 finding, closed Phase 15 plan 15-09):
 // `vice_ping`'s `resolvedBinaryPath` field is a one-time, MCP-server-startup

@@ -1,11 +1,20 @@
-// node:test coverage of vice-proxy.mjs's stdio-MCP-server half, driven as a
+// node:test coverage of vice-proxy.ts's stdio-MCP-server half, driven as a
 // REAL spawned child process (matching vice-pool.test.mjs's own idiom: real
-// subprocess, no module-boundary mocking) with an in-process node:http
-// stand-in standing in for the host VICE MCP server. This is what makes the
-// phase verifiable with the host emulator completely down -- see
-// 01.1-RESEARCH.md's Validation Architecture and this project's own
-// STATE.md HARD BLOCKER history for why that property matters here
-// specifically.
+// subprocess, no module-boundary mocking), speaking JSON-RPC to it over
+// stdio. CORRECTED 2026-09-14: this file no longer dials an in-process
+// node:http stand-in directly through a fixed VICE_MCP_URL -- that forwarding
+// path was deleted once the stock backend started refusing outright,
+// unconditionally, the instant VICE_MCP_URL is set (it must claim the
+// monitor socket through a broker-managed instance before dialling
+// anything). The successful-call route today is one of two: this file's own
+// leading tracer proves a real proxy-local anno_* tool call (no stand-in, no
+// broker, no emulator) round-trips end to end; every broker-mediated test
+// below still spawns the SAME in-process node:http stand-in
+// (startStandInServer(), further down this file) but reaches it only
+// through a real acquired broker grant, never through a direct VICE_MCP_URL
+// dial. This is what makes the phase verifiable with the host emulator
+// completely down -- see this project's own STATE.md HARD BLOCKER history
+// for why that property matters here specifically.
 //
 // Coverage note for plan 01.1-03 (never-throw hardening task): the two
 // tracer-era tests immediately below do NOT directly trigger

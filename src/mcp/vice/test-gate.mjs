@@ -3,11 +3,16 @@
 // versus safe for the automated regression gate (`npm run test:automated`).
 //
 // WHY THIS FILE EXISTS: a bare `node --test '*.test.*'` (the `npm test`
-// script) globs all test files in this directory, but eight of them depend on
-// manual host setup -- a real broker topology and a real emulator/display
-// environment -- so they hang or need an opt-in env var rather than report
-// outside the devcontainer. This is a disposition, not a bug: see
-// `.planning/todos/pending/2026-08-12-vice-broker-tests-stall-outside-devcontainer.md`
+// script) globs all test files in this directory. RE-MEASURED 2026-09-14:
+// this list now holds twelve entries. Eleven depend on genuine manual host
+// setup -- a real broker topology, a real emulator/display environment, or
+// an installed external binary such as dxa or Ghidra -- so they hang or need
+// an opt-in env var rather than report outside a devcontainer. The twelfth,
+// vice-proxy.test.ts, is the one exception: it terminates cleanly (does not
+// hang) and needs no host dependency at all, spawning a real child process
+// per test case in about 26-27 seconds per run -- see its own header and
+// this list's second-entry note below for the measured reason it stays here
+// for cost rather than dependency. This is a disposition, not a bug
 // (user-dispositioned 2026-08-12: "not a bug to fix... exclude them from the
 // automated gate and treat them as manual"). BACK-02's and BROK-03's "the
 // existing suite passes unchanged" criterion had no mechanically-checkable
@@ -17,14 +22,25 @@
 // joined this list as the fourth entry: it is default-SKIP everywhere (never
 // hangs), but it spawns a real emulator process when opted in via
 // VICE_LIVE_STOCK_BIN, which is exactly the "manual host setup" disposition
-// the other three already share.
+// the other host-dependent entries share.
 //
-// WHAT NOT TO DO: do not re-list these eight file names in a CI workflow, an
+// `vice-proxy.test.ts` (this list's SECOND entry): CORRECTED 2026-09-14 --
+// this entry used to read "hangs", which is false and has been since an
+// earlier quick task bounded its unsettleable waits. MEASURED: it terminates
+// in about 26-27 seconds (`node --test vice-proxy.test.ts`, 56 tests / 53
+// pass / 0 fail / 3 skipped) and spawns one real child process per test
+// case. It is NOT excluded for a host dependency -- every neighbouring entry
+// in this list is, this one is not -- it stays here purely for that per-run
+// cost, which is unsuited to a gate meant to run on every edit. Promotion
+// into the narrowed automated set was considered and declined for that
+// reason; it is not an oversight.
+//
+// WHAT NOT TO DO: do not re-list these twelve file names in a CI workflow, an
 // npm script, or a second test runner anywhere else in this repo. If a
-// ninth file needs the same treatment, add it to MANUAL_ONLY_TESTS below and
-// nowhere else -- test-gate.test.ts's drift guard fails the build if a test
-// file ever escapes both this list and the automated set, so a silent second
-// list would desync from that guard the moment it existed.
+// thirteenth file needs the same treatment, add it to MANUAL_ONLY_TESTS below
+// and nowhere else -- test-gate.test.ts's drift guard fails the build if a
+// test file ever escapes both this list and the automated set, so a silent
+// second list would desync from that guard the moment it existed.
 //
 // `stock-live-triage.test.ts` (plan 07-17) joined this list as the fifth
 // entry: like `stock-live.test.ts`, it is default-SKIP everywhere (never
