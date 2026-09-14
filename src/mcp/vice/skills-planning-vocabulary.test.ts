@@ -320,7 +320,6 @@ const RATCHET: readonly RatchetEntry[] = Object.freeze([
   { file: "src/mcp/vice/broker-control.mts", family: "broker", count: 80 },
   { file: "src/mcp/vice/broker-epoch.mts", family: "broker", count: 2 },
   { file: "src/mcp/vice/broker-kill.mts", family: "broker", count: 31 },
-  { file: "src/mcp/vice/broker-launch.mts", family: "broker", count: 186 },
   { file: "src/mcp/vice/broker-state.mts", family: "broker", count: 43 },
   { file: "src/mcp/vice/build.ts", family: "other", count: 2 },
   { file: "src/mcp/vice/capture-predicate.ts", family: "other", count: 14 },

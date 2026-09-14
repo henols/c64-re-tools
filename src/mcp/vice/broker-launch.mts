@@ -1,28 +1,27 @@
 // broker-launch.mts
 //
-// C (complete, plan 02 of Phase 01.6.2): the single `in_flight` launch-guard
-// owner (plan 01, unchanged -- every launch call site in the whole broker
-// goes through tryLaunchOne(), which is what makes the single-owner
-// guarantee mechanical rather than a convention plan 02's own concurrency
-// race test can silently violate), PLUS the readiness probe's single
-// in-process mechanism (collapsed from a three-way branch by Phase
-// 01.6.2.1's own plan 02 -- D-05 as amended by P-05/P-06/P-07; see
-// probeReady()'s own header comment below for the amendment's record),
+// This module owns three concerns that started life separately and were
+// folded together here: the single `in_flight` launch-guard owner -- every
+// launch call site in the whole broker goes through tryLaunchOne(), which
+// is what makes the single-owner guarantee mechanical rather than a
+// convention a concurrency race test could silently violate -- PLUS the
+// readiness probe's single in-process mechanism (collapsed from a
+// three-way branch down to one; see probeReady()'s own header comment
+// below for the full record of that collapse and its later amendment),
 // the launching -> ready promotion sweep (promoteLaunchingInstances() --
-// plan 41-05, folded todo: this used to be step 1 inside a warm-floor
-// maintenance function that speculatively pre-launched spare instances;
-// that floor is RETIRED and VICE now launches strictly on demand, but the
-// promotion sweep outlived it), and the fixed-order evaluation pass both
-// surviving concerns run through.
+// this used to be step one inside a warm-floor maintenance function that
+// speculatively pre-launched spare instances; that floor is RETIRED and
+// VICE now launches strictly on demand, but the promotion sweep outlived
+// it), and the fixed-order evaluation pass both surviving concerns run
+// through.
 //
-// Plan 03, Task 2 grows this module into a real per-child supervisor
-// (C2/D-23), absorbing resources/vice-supervisor.sh wholesale: superviseChild()
+// This file also grew a real per-child supervisor: superviseChild()
 // launches an instance through tryLaunchOne() (the SAME single guarded
 // primitive above) and installs an exit handler on the spawned child that
 // respawns on crash (doubling backoff, clamped at a ceiling), gives up
 // cleanly after too many crashes inside a window, never respawns a
 // deliberately-killed instance, and writes the per-instance boot/crash log
-// D-23 preserves at the exact path shape the retiring bash supervisor used.
+// at the exact path shape the retiring bash supervisor used.
 import { spawn as nodeSpawn, type ChildProcess, type SpawnOptionsWithoutStdio } from "node:child_process";
 import { mkdirSync, mkdtempSync, openSync, closeSync, existsSync } from "node:fs";
 import { join, basename } from "node:path";
@@ -50,10 +49,10 @@ import type { BrokerState, InstanceRecord, PortAllocationResult } from "./broker
 // "./broker-epoch.mts" source import (safe -- test files reference the
 // literal .mts extension, never the post-build .mjs specifier).
 import type { EpochRecord } from "./broker-epoch.mjs";
-// Plan 02-07: ViceBackend's definition lives in backend-detect.mts, which is
-// the type's one home (narrowed to a single literal by FORKRM-01, plan
-// 52-06 -- see backend-detect.mts's own header comment). TYPE-ONLY, for the
-// same reason as the two imports directly
+// ViceBackend's definition lives in backend-detect.mts, which is the type's
+// one home (narrowed to a single literal now that the fork backend has
+// been removed -- see backend-detect.mts's own header comment). TYPE-ONLY,
+// for the same reason as the two imports directly
 // above: backend-detect.mts is ALSO a host-bound sibling compiled into this
 // same build, so a VALUE import would need "./backend-detect.mjs" to exist
 // at runtime -- which it does not when this file runs directly, unbuilt,
@@ -66,13 +65,13 @@ import type { ViceBackend } from "./backend-detect.mjs";
 // synchronous check, synchronous set, released in a finally, with no
 // `await` between the check and the set.
 //
-// D-07 (01.6.2.1-03-PLAN.md): launch PRIORITY is layered on this owner, and
-// never replaces or weakens it. An in-flight boot always completes and is
-// NEVER killed or abandoned to serve a later arrival -- preemption was
-// considered and rejected (01.6.2-CONTEXT.md D-07) because a kill/relaunch
-// overlap re-creates the exact concurrent-spawn window the 2026-08-01
-// outage came from (one SEGV, one exit 1, one exit 0 at the identical spawn
-// second). Once a boot reaches `ready`, a waiting request takes it
+// Launch PRIORITY is layered on this owner, and never replaces or weakens
+// it. An in-flight boot always completes and is NEVER killed or abandoned
+// to serve a later arrival -- preemption was considered and rejected
+// because a kill/relaunch overlap re-creates the exact concurrent-spawn
+// window the 2026-08-01 outage came from (one SEGV, one exit 1, one exit 0
+// at the identical spawn second). Once a boot reaches `ready`, a waiting
+// request takes it
 // regardless of which reason booted it (vice-broker.mts's
 // selectWarmInstance() performs no `reason` check at all -- proven by
 // vice-broker-acquire.test.ts). Priority governs only which REASON wins
@@ -84,10 +83,9 @@ let inFlight = false;
 // only, never a second guard: nothing branches on this value's presence to
 // decide whether a launch may proceed (that is `inFlight` alone, checked
 // and set synchronously exactly as before). Its only consumer is the
-// launch-slot decision log line (D-07's standing constraint that a
-// lifecycle decision must be reconstructable from the log after an
-// incident -- both 2026-08-01 and 2026-08-02 were diagnosed from broker log
-// lines).
+// launch-slot decision log line: a lifecycle decision must be
+// reconstructable from the log after an incident -- both the 2026-08-01
+// and 2026-08-02 outages were diagnosed from broker log lines.
 let inFlightReason: string | null = null;
 
 /** True while a launch is in progress -- exported for the race test plan 02
@@ -102,33 +100,33 @@ export function isLaunchInFlight(): boolean {
 // pattern, reused here.
 let warnedBinmonBindWidened = false;
 
-// Plan 03-04 (DIRECT-06, D-13): the SAME one-time-note idiom as
-// warnedBinmonBindWidened above, for the SECOND (`-remotemonitor`) port's
-// bind -- a separate boolean because the two flags widen independently (a
-// caller could widen one host override and not the other, though in
-// practice both resolve from the same `binmonHost` value below).
+// The SAME one-time-note idiom as warnedBinmonBindWidened above, for the
+// SECOND (`-remotemonitor`) port's bind -- a separate boolean because the
+// two flags widen independently (a caller could widen one host override
+// and not the other, though in practice both resolve from the same
+// `binmonHost` value below).
 let warnedRemoteMonitorBindWidened = false;
 
-/** Phase 33, plan 33-05 (`REPRO-01`): the random seed the stock determinism
- * block pins, and the exact value the reproduction was measured with on this
- * host -- exported so a capture record's reproducibility key can cite ONE
- * definition rather than re-deriving a literal that could silently drift away
- * from the launches it claims to describe. MEASURED 2026-09-02 against genuine
- * stock 3.9 over `-binarymonitor` (33-RESEARCH.md M3): two cold boots WITHOUT
- * the block differ at 59 of the 4080 addresses in the untouched `$C000-$CFEF`
- * window; WITH it, at 0 of 4080. */
+/** The random seed the stock determinism block pins, and the exact value
+ * the reproduction was measured with on this host -- exported so a capture
+ * record's reproducibility key can cite ONE definition rather than
+ * re-deriving a literal that could silently drift away from the launches it
+ * claims to describe. MEASURED 2026-09-02 against genuine stock 3.9 over
+ * `-binarymonitor`: two cold boots WITHOUT the block differ at 59 of the
+ * 4080 addresses in the untouched `$C000-$CFEF` window; WITH it, at 0 of
+ * 4080. */
 export const STOCK_DETERMINISM_SEED = 4242;
 
-/** Phase 33, plan 33-05 (`REPRO-01`): the determinism block, in ONE fixed
- * order, emitted UNCONDITIONALLY by the stock branch below (never gated on
- * `profile` -- see buildViceArgs()'s own comment above `args`). Exported and
- * frozen so tests and evidence scripts assert against this single definition
- * instead of a second hand-copied array, and so no caller can mutate the
- * shared value into a launch that no longer matches the recorded seed.
+/** The determinism block, in ONE fixed order, emitted UNCONDITIONALLY by
+ * the stock branch below (never gated on `profile` -- see buildViceArgs()'s
+ * own comment above `args`). Exported and frozen so tests and evidence
+ * scripts assert against this single definition instead of a second
+ * hand-copied array, and so no caller can mutate the shared value into a
+ * launch that no longer matches the recorded seed.
  *
- * The order is fixed and load-bearing beyond readability: `REPRO-04` keys
- * captures on an argv digest, so a block whose element order varied between
- * two launches on the same port would produce two digests for one launch
+ * The order is fixed and load-bearing beyond readability: capture records
+ * key on an argv digest, so a block whose element order varied between two
+ * launches on the same port would produce two digests for one launch
  * intent. */
 export const STOCK_DETERMINISM_FLAGS: readonly string[] = Object.freeze([
   "-seed",
@@ -142,13 +140,13 @@ export const STOCK_DETERMINISM_FLAGS: readonly string[] = Object.freeze([
   "+autostart-delay-random",
 ]);
 
-/** Phase 33, plan 33-05 (`D-15`): the two additive launch knobs a run may
- * request. Both are optional and absent by default, and each maps to exactly
- * one literal flag token on the stock branch -- there is deliberately no
- * `extraArgs`, no passthrough string and no argv element derived from a
- * `profile` VALUE (T-33-04). `VICE_ARGS` stays the single, deliberate
- * operator-only whole-argv override; `profile` must never become a second
- * one. Ignored entirely on the fork branch (`D-15`). */
+/** The two additive launch knobs a run may request. Both are optional and
+ * absent by default, and each maps to exactly one literal flag token on the
+ * stock branch -- there is deliberately no `extraArgs`, no passthrough
+ * string and no argv element derived from a `profile` VALUE (T-33-04).
+ * `VICE_ARGS` stays the single, deliberate operator-only whole-argv
+ * override; `profile` must never become a second one. Ignored entirely on
+ * the fork branch. */
 export type LaunchProfile = { warp?: boolean; headless?: boolean };
 
 /** Resolves the emulator's own argument vector for the given `backend`. The
@@ -160,56 +158,49 @@ export type LaunchProfile = { warp?: boolean; headless?: boolean };
  * understands neither `-mcpserver` nor `-binarymonitor` flags, and that need
  * does not depend on which backend is configured.
  *
- * `backend: "stock"` (FORKRM-01, plan 52-06: the only value `ViceBackend` has
- * left) returns `-binarymonitor -binarymonitoraddress
- * ip4://<host>:<port>` (docs/phase1-probe-results.md's confirmed real-world
- * command line). The host resolves from `binmonHost` or
- * VICE_BROKER_BINMON_HOST, defaulting to `127.0.0.1` -- deliberately
- * narrow, because VICE's binary
- * monitor is unauthenticated by design and grants full read/write over the
- * emulated machine plus process control to anything that can reach it
- * (planner decision, `02-03-PLAN.md`). Widening the bind away from loopback
- * emits exactly one stderr note per process, naming the resolved bind
- * address and what the exposure grants.
+ * `backend: "stock"` (the only value `ViceBackend` has, now that the fork
+ * backend is gone) returns `-binarymonitor -binarymonitoraddress
+ * ip4://<host>:<port>`, the confirmed real-world command line. The host
+ * resolves from `binmonHost` or VICE_BROKER_BINMON_HOST, defaulting to
+ * `127.0.0.1` -- deliberately narrow, because VICE's binary monitor is
+ * unauthenticated by design and grants full read/write over the emulated
+ * machine plus process control to anything that can reach it. Widening the
+ * bind away from loopback emits exactly one stderr note per process,
+ * naming the resolved bind address and what the exposure grants.
  *
- * Plan 03-04 (DIRECT-06, D-13): when `remoteMonitorPort` is a number, the
- * stock branch APPENDS `-remotemonitor -remotemonitoraddress
- * ip4://<host>:<remoteMonitorPort>`, reusing the SAME resolved `host` value
- * the binmon address already used -- one resolution, not two. When
- * `remoteMonitorPort` is omitted (undefined), the returned argv is
- * byte-identical to what this function always returned -- no
- * `-remotemonitor` at all. `-remotemonitoraddress`'s exact spelling was
- * live-probed against a real fork-3.10 binary and CONFIRMED (RESEARCH.md
- * Assumption A1, closed by 13-PROBE-RESULTS.md §A1: the flag bound a real,
- * accepting text-monitor listener, corroborated independently by
- * `ss -ltnp`). Genuine stock 3.9 was not independently probed in that run --
- * the spelling itself is a symmetrical CLI flag pair and is not
- * version-sensitive, so this is recorded as a low-risk carry-forward rather
- * than implied stock-3.9 coverage. Widening THIS bind away from loopback emits
- * its own one-time stderr note (`warnedRemoteMonitorBindWidened`), naming
- * the resolved address and stating that VICE's TEXT monitor accepts
- * arbitrary monitor commands and is unauthenticated. Phase 41 dials this
- * port (text-connect.ts's textConnect()) and Phase 41-05 (D-16) made it
- * MANDATORY on every stock launch -- a stock launch that cannot bind it now
- * fails the whole acquire rather than launching without it (see D-13's own
- * rationale for why the flag itself is set at launch time and not added
- * later: doing so would require relaunching a live instance, destroying all
- * emulation state).
+ * When `remoteMonitorPort` is a number, the stock branch APPENDS
+ * `-remotemonitor -remotemonitoraddress ip4://<host>:<remoteMonitorPort>`,
+ * reusing the SAME resolved `host` value the binmon address already used --
+ * one resolution, not two. When `remoteMonitorPort` is omitted (undefined),
+ * the returned argv is byte-identical to what this function always
+ * returned -- no `-remotemonitor` at all. `-remotemonitoraddress`'s exact
+ * spelling was live-probed against a real fork-3.10 binary and CONFIRMED:
+ * the flag bound a real, accepting text-monitor listener, corroborated
+ * independently by `ss -ltnp`. Genuine stock 3.9 was not independently
+ * probed in that run -- the spelling itself is a symmetrical CLI flag pair
+ * and is not version-sensitive, so this is recorded as a low-risk
+ * carry-forward rather than implied stock-3.9 coverage. Widening THIS bind
+ * away from loopback emits its own one-time stderr note
+ * (`warnedRemoteMonitorBindWidened`), naming the resolved address and
+ * stating that VICE's TEXT monitor accepts arbitrary monitor commands and
+ * is unauthenticated. text-connect.ts's textConnect() dials this port, and
+ * it is MANDATORY on every stock launch -- a stock launch that cannot bind
+ * it now fails the whole acquire rather than launching without it, because
+ * the flag has to be set at launch time: adding it later would require
+ * relaunching a live instance, destroying all emulation state.
  *
- * Phase 33, plan 33-05 (`D-15`, `REPRO-01`, `REPRO-05`): the stock branch now
- * also emits STOCK_DETERMINISM_FLAGS unconditionally, and takes an optional
- * `profile` for the two additive launch knobs. Deliberately in the same
- * register as tryLaunchOne's own widened `spawn` field below, and for the same
- * reason: `profile` is optional, so every pre-existing caller and every
- * pre-existing test stub keeps compiling and behaving identically, and an
- * ABSENT profile produces exactly the same argv as an empty one or one whose
- * knobs are both `false`. What optionality could NOT save (33-RESEARCH.md P7,
- * and the `D-15` amendment rider dated 2026-09-02): the determinism block is
- * unconditional on stock, so all FIVE stock whole-argv assertions in
- * broker-launch.test.ts move even with `profile` absent -- it is the block and
- * not the profile that moves them. `D-15`'s byte-identity claim therefore
- * survives in full only for the `profile` half: an absent profile adds no
- * flag. */
+ * The stock branch also emits STOCK_DETERMINISM_FLAGS unconditionally, and
+ * takes an optional `profile` for the two additive launch knobs. Deliberately
+ * in the same register as tryLaunchOne's own widened `spawn` field below,
+ * and for the same reason: `profile` is optional, so every pre-existing
+ * caller and every pre-existing test stub keeps compiling and behaving
+ * identically, and an ABSENT profile produces exactly the same argv as an
+ * empty one or one whose knobs are both `false`. What optionality could NOT
+ * save: the determinism block is unconditional on stock, so all FIVE stock
+ * whole-argv assertions in broker-launch.test.ts move even with `profile`
+ * absent -- it is the block and not the profile that moves them. The
+ * byte-identity claim therefore survives in full only for the `profile`
+ * half: an absent profile adds no flag. */
 export function buildViceArgs(
   port: number,
   {
@@ -225,9 +216,9 @@ export function buildViceArgs(
     binmonHost?: string;
     viceArgsEnv?: string;
     remoteMonitorPort?: number;
-    /** Phase 33, plan 33-05 (`D-15`): the additive launch knobs -- optional
-     * and absent by default. See LaunchProfile above and this function's own
-     * doc comment for why absence, `{}` and both-`false` are one behaviour. */
+    /** The additive launch knobs -- optional and absent by default. See
+     * LaunchProfile above and this function's own doc comment for why
+     * absence, `{}` and both-`false` are one behaviour. */
     profile?: LaunchProfile;
   },
 ): string[] {
@@ -261,76 +252,77 @@ export function buildViceArgs(
     // `-binarymonitor` or the monitor never binds and the subsequent connect
     // hangs in the backlog looking exactly like a wedge.
     //
-    // WORDING CORRECTED (33 review WR-09). This paragraph used to say
-    // "immediately after `-default`", which the `-console` block below now
-    // violates by construction whenever `profile.headless` is set -- leaving
-    // the next editor to find code contradicting the comment and having to
-    // re-derive which one is authoritative. What is load-bearing is the
-    // RELATIVE ORDER (`-default` precedes everything it resets), not
-    // adjacency.
+    // WORDING CORRECTED. This paragraph used to say "immediately after
+    // `-default`", which the `-console` block below now violates by
+    // construction whenever `profile.headless` is set -- leaving the next
+    // editor to find code contradicting the comment and having to re-derive
+    // which one is authoritative. What is load-bearing is the RELATIVE
+    // ORDER (`-default` precedes everything it resets), not adjacency.
     //
     // The `-console` block's own citation was `alive=yes bound=1`, which does
-    // NOT cover this paragraph's property: I-2's failure mode is Drive8Type
-    // silently reverting to 0 (NONE) WHILE THE MONITOR STILL BINDS FINE, so
-    // liveness and boundness cannot tell the good case from the failure being
-    // guarded against. Re-verified against the resource itself
+    // NOT cover this paragraph's property: the failure mode this flag guards
+    // against is Drive8Type silently reverting to 0 (NONE) WHILE THE MONITOR
+    // STILL BINDS FINE, so liveness and boundness cannot tell the good case
+    // from the failure being guarded against. Re-verified against the
+    // resource itself
     // [VERIFIED: live probe 2026-09-03, genuine unpatched stock
     // /usr/bin/x64sc (VICE 3.9), DISPLAY and WAYLAND_DISPLAY both unset]:
     //   [-default -console -drive8type 1541 <determinism> -binarymonitor]
     //     alive=yes bound=1  Drive8Type=1541  Drive8TrueEmulation=1
     // read over `RESOURCE_GET` (0x51) with `-console` interposed. So the
-    // citation now covers the RESOURCE and not only liveness. Confirmed sufficient live in
-    // Phase 8.1's standalone probe (08.1-WALKTHROUGH-EVIDENCE.md §4):
+    // citation now covers the RESOURCE and not only liveness. Confirmed
+    // sufficient live in a standalone probe:
     // `resourceget "Drive8Type"` moved 0 -> 1541 and a `load` over the text
     // monitor succeeded immediately. Deliberately NOT setting
     // -drive8truedrive / Drive8TrueEmulation here: this build's own default
-    // already reads Drive8TrueEmulation=1 (same probe), so 08.2-RESEARCH.md's
-    // primary recommendation is that only -drive8type needs adding.
-    // Assumption A3 in that doc's Assumptions Log (some other stock build
-    // might default Drive8TrueEmulation to 0) is read and deliberately not
-    // pre-emptively defended against here; plan 03's live test is what would
-    // surface it if that assumption is ever wrong on a different build.
+    // already reads Drive8TrueEmulation=1 (same probe), so only
+    // `-drive8type` needs adding.
+    // A different stock build might default Drive8TrueEmulation to 0,
+    // which is read and deliberately not pre-emptively defended against
+    // here; a live test against that build is what would surface it if
+    // this assumption is ever wrong there.
     //
-    // Phase 33, plan 33-05, `-console` at index 1 (`REPRO-05`, `D-15`): the
-    // headless route is `-console`, and its POSITION is as load-bearing as
-    // `-default`'s. `-console` is handled in the SAME `main.c` pre-scan as
-    // `-default` -- that loop `break`s at the first option it does not
-    // recognise and then strips the prefix it handled from argv
+    // The headless route is `-console`, and its POSITION is as
+    // load-bearing as `-default`'s. `-console` is handled in the SAME
+    // `main.c` pre-scan as `-default` -- that loop `break`s at the first
+    // option it does not recognise and then strips the prefix it handled
+    // from argv
     // [CITED: vice-3.8/src/main.c:184-192, 232-238] -- and `console_mode`
     // gates GTK initialisation at two call sites (`ui_init_with_args`,
     // `ui_init`) that BOTH run before the late command-line parser
     // `initcmdline_check_args()` [CITED: vice-3.8/src/main.c:296-345]. A
     // `-console` seen only by the late parser therefore arrives after GTK has
     // already tried and failed. MEASURED 2026-09-02 with `DISPLAY` and
-    // `WAYLAND_DISPLAY` both unset (33-RESEARCH.md P5):
+    // `WAYLAND_DISPLAY` both unset:
     //   [-default -console -binarymonitor]                    alive=yes bound=1
     //   [-default -drive8type 1541 -console -binarymonitor]   alive=no  bound=0  Gtk-WARNING: cannot open display:
     //   [-default -console -drive8type 1541 -binarymonitor]   alive=yes bound=1
     // So `-console` goes immediately after `-default` and BEFORE
-    // `-drive8type` -- which is compatible with the I-2 paragraph above as
-    // corrected (33 review WR-09): that constraint is `-drive8type` AFTER
-    // `-default`, not adjacent to it, and the interposition was re-verified
-    // over `RESOURCE_GET` to leave Drive8Type=1541 rather than only to leave
+    // `-drive8type` -- which is compatible with the paragraph above as
+    // corrected: that constraint is `-drive8type` AFTER `-default`, not
+    // adjacent to it, and the interposition was re-verified over
+    // `RESOURCE_GET` to leave Drive8Type=1541 rather than only to leave
     // the monitor bound. It is pinned by an ordering assertion rather than by
     // this comment -- a bare flag push with no reason is exactly what let the
     // `-default` ordering constraint be rediscovered by a red CI run last
     // time.
     //
-    // Phase 33, plan 33-05, the determinism block (`REPRO-01`): emitted
-    // UNCONDITIONALLY on stock, never gated on `profile`. Read over
-    // `RESOURCE_GET` (0x51) on this build under `-default -drive8type 1541`
-    // [VERIFIED: live probe 2026-09-02, 33-RESEARCH.md M2],
+    // The determinism block is emitted UNCONDITIONALLY on stock, never
+    // gated on `profile`. Read over `RESOURCE_GET` (0x51) on this build
+    // under `-default -drive8type 1541`
+    // [VERIFIED: live probe 2026-09-02],
     // `-raminitrandomchance 0` is the LOAD-BEARING one: the factory value is
     // **10**, i.e. 0.1% of all RAM bits randomly flipped at power-up, and it is
     // the dominant term in the divergence this milestone removes. The
     // `-raminitstartrandom 0` / `-raminitrepeatrandom 0` pair already reads 0
     // at factory and is DEFENSIVE against an operator `vicerc` -- belt and
-    // braces alongside the scratch `XDG_CONFIG_HOME` the I-1 rider threads in
+    // braces alongside the scratch `XDG_CONFIG_HOME` threaded in
     // spawnAndRecordInstance() below.
     //
-    // `+autostart-delay-random` is a FIFTH flag beyond `REPRO-01`'s text
-    // (which names only `-seed` plus the three `raminit*`), recorded here as a
-    // deliberate ADDITION rather than smuggled in. `AutostartDelayRandom`
+    // `+autostart-delay-random` is a FIFTH flag beyond the determinism
+    // block's own headline text (which names only `-seed` plus the three
+    // `raminit*`), recorded here as a deliberate ADDITION rather than
+    // smuggled in. `AutostartDelayRandom`
     // ships at **1** on this build [VERIFIED: same probe], it draws an
     // additional random delay of up to 10 frames
     // [CITED: vice-3.8/src/autostart.c:1432-1436], and -- the effect that is
@@ -340,21 +332,20 @@ export function buildViceArgs(
     // behavioural change and not only a timing one. Pin it once; never toggle
     // it between the two runs of a capture pair.
     //
-    // Phase 33, plan 33-05, `-warp` (`D-15`): position-free (MEASURED
-    // 2026-09-02), placed here only so the argv reads in the order a human
-    // would describe it. Launch-time is the ONLY route on stock: there is no
-    // runtime `WarpMode` resource at all (`RESOURCE_GET` replies `err=0x01`
-    // OBJECT_MISSING on 3.9), so no runtime setter can exist here. Worth
-    // roughly **1.97x** on this host and this launch profile -- 5.23 emulated
-    // seconds against 2.65 over the same 5 s wall clock [MEASURED:
-    // evidence/33-wallclock-control.md, Control B instance 1] -- and NOT the
-    // order of magnitude a reader may assume; `AUTOSTART` additionally turns
-    // warp on by itself during the load whatever argv says, so both loads are
-    // warped either way. It is behaviour-neutral under a frame-anchored
-    // protocol (identical registers and one identical 64K sha256 across a
-    // warped and an unwarped run, same source), which is the precondition
-    // `33-06` needs before `profile.warp` ships; it is NOT neutral for a
-    // wall-clock bracket, which it invalidates by 1.76x.
+    // `-warp` is position-free (MEASURED 2026-09-02), placed here only so
+    // the argv reads in the order a human would describe it. Launch-time is
+    // the ONLY route on stock: there is no runtime `WarpMode` resource at
+    // all (`RESOURCE_GET` replies `err=0x01` OBJECT_MISSING on 3.9), so no
+    // runtime setter can exist here. Worth roughly **1.97x** on this host
+    // and this launch profile -- 5.23 emulated seconds against 2.65 over
+    // the same 5 s wall clock [MEASURED: evidence/33-wallclock-control.md,
+    // Control B instance 1] -- and NOT the order of magnitude a reader may
+    // assume; `AUTOSTART` additionally turns warp on by itself during the
+    // load whatever argv says, so both loads are warped either way. It is
+    // behaviour-neutral under a frame-anchored protocol (identical registers
+    // and one identical 64K sha256 across a warped and an unwarped run, same
+    // source), which is a precondition for shipping `profile.warp`; it is
+    // NOT neutral for a wall-clock bracket, which it invalidates by 1.76x.
     const args = ["-default"];
     if (profile?.headless) {
       args.push("-console");
@@ -387,45 +378,45 @@ export interface TryLaunchDeps {
   state: BrokerState;
   supervisorDir: string;
   epochFile: string;
-  /** I-1 rider (08.2-02-PLAN.md, Task 2): widened to an optional third
-   * `options` argument so `spawnAndRecordInstance()` below can thread a
-   * scratch `XDG_CONFIG_HOME` through for stock launches. The parameter is
-   * optional, so every pre-existing 2-arg caller and every pre-existing
-   * 2-arg test stub keeps compiling and behaving identically -- JS/TS
-   * function-type compatibility allows a function that ignores its extra
-   * argument to satisfy a type that offers one. */
+  /** Widened to an optional third `options` argument so
+   * `spawnAndRecordInstance()` below can thread a scratch `XDG_CONFIG_HOME`
+   * through for stock launches. The parameter is optional, so every
+   * pre-existing 2-arg caller and every pre-existing 2-arg test stub keeps
+   * compiling and behaving identically -- JS/TS function-type compatibility
+   * allows a function that ignores its extra argument to satisfy a type
+   * that offers one. */
   spawn?: (command: string, args: string[], options?: SpawnOptionsWithoutStdio) => ChildProcess;
   now?: () => number;
   viceBin?: string;
   mcpHost?: string;
-  /** Which backend's argv shape to build (D-04, D-12) -- optional and
-   * defaulting to `"stock"` when omitted, the only value `ViceBackend` has
-   * (FORKRM-01, plan 52-06). The real broker resolves this ONCE at startup
+  /** Which backend's argv shape to build -- optional and defaulting to
+   * `"stock"` when omitted, the only value `ViceBackend` has now that the
+   * fork backend is gone. The real broker resolves this ONCE at startup
    * via backend-detect.mts's resolvedBackend() and passes the resolved
    * value down through every real launch call site -- see that module's own
    * doc comment; this file reads no environment variable itself. */
   backend?: ViceBackend;
   /** Stock-only bind override -- see buildViceArgs()'s own doc comment. */
   binmonHost?: string;
-  /** Plan 03-04 (DIRECT-06, D-13): the second, broker-allocated port stock's
-   * `-remotemonitor` text monitor binds -- threaded straight through to
-   * buildViceArgs() and mirrored onto the constructed InstanceRecord (key
-   * omitted when `undefined`). This function stays fully synchronous -- it
-   * must NOT allocate this port itself; the caller (acquirePortAndLaunch()
-   * below) resolves it before calling in. */
+  /** The second, broker-allocated port stock's `-remotemonitor` text
+   * monitor binds -- threaded straight through to buildViceArgs() and
+   * mirrored onto the constructed InstanceRecord (key omitted when
+   * `undefined`). This function stays fully synchronous -- it must NOT
+   * allocate this port itself; the caller (acquirePortAndLaunch() below)
+   * resolves it before calling in. */
   remoteMonitorPort?: number;
-  /** Phase 33, plan 33-06 (REPRO-05, D-15/D-16): the launch profile this
-   * spawn should be built with -- threaded straight through to
-   * buildViceArgs() and MIRRORED onto the constructed InstanceRecord (key
-   * omitted entirely when `undefined`, so an absent request produces a
-   * record with no `profile` key, which is what "absent means profile-less"
-   * requires of any ready-but-ungranted instance a LATER acquire's own
-   * eligibility check (vice-broker.mts's profileEligible()) might compare
-   * against). Optional and absent by default, so every
-   * pre-33-06 caller and every existing test stub produces byte-identical
-   * argv and a byte-identical record. The record has to carry it because
-   * warp is fixed at spawn and D-16's eligibility rule compares what an
-   * instance WAS launched with against what a later request asks for. */
+  /** The launch profile this spawn should be built with -- threaded
+   * straight through to buildViceArgs() and MIRRORED onto the constructed
+   * InstanceRecord (key omitted entirely when `undefined`, so an absent
+   * request produces a record with no `profile` key, which is what "absent
+   * means profile-less" requires of any ready-but-ungranted instance a
+   * LATER acquire's own eligibility check (vice-broker.mts's
+   * profileEligible()) might compare against). Optional and absent by
+   * default, so every pre-existing caller and every existing test stub
+   * produces byte-identical argv and a byte-identical record. The record
+   * has to carry it because warp is fixed at spawn and the eligibility
+   * rule compares what an instance WAS launched with against what a later
+   * request asks for. */
   profile?: LaunchProfile;
   /** Overrides the resolved-command-line log line's destination -- default
    * writes to stderr exactly like before this field existed. Added (plan
@@ -453,19 +444,19 @@ function spawnAndRecordInstance(reason: string, port: number, deps: TryLaunchDep
   const now = deps.now ?? ((): number => Date.now());
   const viceBin = deps.viceBin ?? process.env.VICE_BIN ?? "x64sc";
   const backend = deps.backend ?? "stock";
-  // Plan 41-05 (D-16): the ONE construction site for a fresh InstanceRecord
-  // asserts the invariant every downstream consumer (HeldLease,
-  // textConnect(), etc.) was written against -- a stock record NEVER lacks a
-  // text-monitor port. acquirePortAndLaunch() above already fails the whole
-  // acquire before ever reaching this function when the second allocation
-  // fails, so a caller that lands here with `backend: "stock"` and no
-  // `remoteMonitorPort` is a defect in THIS module (a call site that bypassed
-  // that guarantee), not a state a stock record may legitimately carry --
-  // throw by name rather than silently writing a record that violates it.
+  // The ONE construction site for a fresh InstanceRecord asserts the
+  // invariant every downstream consumer (HeldLease, textConnect(), etc.) was
+  // written against -- a stock record NEVER lacks a text-monitor port.
+  // acquirePortAndLaunch() above already fails the whole acquire before ever
+  // reaching this function when the second allocation fails, so a caller
+  // that lands here with `backend: "stock"` and no `remoteMonitorPort` is a
+  // defect in THIS module (a call site that bypassed that guarantee), not a
+  // state a stock record may legitimately carry -- throw by name rather
+  // than silently writing a record that violates it.
   // The fork case is real and unaffected: this check is stock-only.
   if (backend === "stock" && deps.remoteMonitorPort === undefined) {
     throw new Error(
-      "spawnAndRecordInstance: backend \"stock\" requires remoteMonitorPort (D-16) -- a stock launch that cannot bind a text-monitor port must fail the acquire before reaching this construction site, never write a portless stock record",
+      "spawnAndRecordInstance: backend \"stock\" requires remoteMonitorPort -- a stock launch that cannot bind a text-monitor port must fail the acquire before reaching this construction site, never write a portless stock record",
     );
   }
   const viceArgs = buildViceArgs(port, {
@@ -473,25 +464,23 @@ function spawnAndRecordInstance(reason: string, port: number, deps: TryLaunchDep
     mcpHost: deps.mcpHost,
     binmonHost: deps.binmonHost,
     remoteMonitorPort: deps.remoteMonitorPort,
-    // Phase 33, plan 33-06: the ONE place a launch's profile becomes argv.
-    // The record built below mirrors the SAME value, so an instance's
-    // recorded profile and its actual argv are written in one step and
-    // cannot disagree.
+    // The ONE place a launch's profile becomes argv. The record built
+    // below mirrors the SAME value, so an instance's recorded profile and
+    // its actual argv are written in one step and cannot disagree.
     profile: deps.profile,
   });
   const log = deps.log ?? defaultLog;
 
-  // I-1 rider (audit §4.4, 08.2-02-PLAN.md Task 2): production stock
-  // launches used to set no scratch XDG_CONFIG_HOME and would read whatever
-  // vicerc the operator's own $HOME already carried -- shared with the
-  // operator's own VICE usage and with the fork build. For backend ===
-  // "stock" only, compute a fresh, isolated config dir with mkdtempSync
-  // (atomic creation, random suffix, 0700 permissions -- the primitive that
-  // makes a collision or a symlink-swap into the operator's real config
-  // unreachable) and pass it as a third options argument carrying `env`
-  // only. Never `shell: true`: the existing array-form spawn(viceBin,
-  // viceArgs) call avoids shell interpretation entirely and that property
-  // must survive this widening.
+  // Production stock launches used to set no scratch XDG_CONFIG_HOME and
+  // would read whatever vicerc the operator's own $HOME already carried --
+  // shared with the operator's own VICE usage and with the fork build. For
+  // backend === "stock" only, compute a fresh, isolated config dir with
+  // mkdtempSync (atomic creation, random suffix, 0700 permissions -- the
+  // primitive that makes a collision or a symlink-swap into the operator's
+  // real config unreachable) and pass it as a third options argument
+  // carrying `env` only. Never `shell: true`: the existing array-form
+  // spawn(viceBin, viceArgs) call avoids shell interpretation entirely and
+  // that property must survive this widening.
   //
   // Scope boundary (do not remove this note): the production broker daemon
   // always supplies its own deps.spawn / deps.spawnFactory, so the widened
@@ -499,13 +488,12 @@ function spawnAndRecordInstance(reason: string, port: number, deps: TryLaunchDep
   // function's job is only to COMPUTE the value at the one seam that should
   // own it; the forwarding to nodeSpawn() happens at three further hops --
   // makeLoggingSpawn() in vice-broker.mts, and withCrashSupervision()'s
-  // wrapper body and launchSupervised()'s defaultRealSpawn in this file
-  // (plan 41-05, folded todo: a FOURTH hop, the retired warm floor's own
-  // inner stashingSpawn closure in vice-broker.mts, is REMOVED along with
-  // the function that held it). All three now forward the options argument
-  // (plan 08.2-06 closed them in this same phase, with a handleAcquire()
+  // wrapper body and launchSupervised()'s defaultRealSpawn in this file (a
+  // fourth hop, the retired warm floor's own inner stashingSpawn closure in
+  // vice-broker.mts, is REMOVED along with the function that held it). All
+  // three now forward the options argument, with a handleAcquire()
   // composition test that omits buildColdSpawnFactory so an injected stub
-  // cannot fake the proof). If you add another spawn hop, it must forward
+  // cannot fake the proof. If you add another spawn hop, it must forward
   // options too, or production stock launches silently lose their config
   // isolation again.
   //
@@ -541,25 +529,25 @@ function spawnAndRecordInstance(reason: string, port: number, deps: TryLaunchDep
     viceBin,
     viceArgs,
     dryRun: false,
-    // Plan 41-03 (D-14): non-optional, defaulted to an empty map -- "no
-    // claim on any channel" is an empty map, never an absent field. The
-    // ONE place a fresh InstanceRecord is constructed, so this is the ONE
-    // place this default is set.
+    // Non-optional, defaulted to an empty map -- "no claim on any channel"
+    // is an empty map, never an absent field. The ONE place a fresh
+    // InstanceRecord is constructed, so this is the ONE place this default
+    // is set.
     monitorClients: {},
-    // Plan 41-05 (D-16): key omitted only on the FORK path now -- the guard
-    // above already throws before this point for any stock call with no
+    // Key omitted only on the FORK path now -- the guard above already
+    // throws before this point for any stock call with no
     // remoteMonitorPort, so a stock record reaching this line always
     // supplies the key. "Absent" means fork, never "stock allocation
     // failed" (that state no longer exists).
     ...(deps.remoteMonitorPort === undefined ? {} : { remoteMonitorPort: deps.remoteMonitorPort }),
-    // Phase 33, plan 33-06: same key-omitted-when-undefined idiom as
-    // remoteMonitorPort directly above. An absent request must produce a
-    // record with NO `profile` key at all -- not `profile: undefined` --
-    // because "absent means profile-less" is the property a broker restarted
-    // mid-phase relies on when it reads records written before this field
-    // existed. A copy, not the caller's own object: the record outlives this
-    // call and a caller mutating its profile afterwards must not silently
-    // change what this instance claims it was launched with.
+    // Same key-omitted-when-undefined idiom as remoteMonitorPort directly
+    // above. An absent request must produce a record with NO `profile` key
+    // at all -- not `profile: undefined` -- because "absent means
+    // profile-less" is the property a broker restarted mid-phase relies on
+    // when it reads records written before this field existed. A copy, not
+    // the caller's own object: the record outlives this call and a caller
+    // mutating its profile afterwards must not silently change what this
+    // instance claims it was launched with.
     ...(deps.profile === undefined ? {} : { profile: { ...deps.profile } }),
   };
   deps.state.instances.set(port, record);
@@ -596,7 +584,7 @@ export interface AcquirePortAndLaunchDeps {
   state: BrokerState;
   stateDir: string;
   allocatePort: (state: BrokerState) => Promise<PortAllocationResult>;
-  /** I-1 rider -- same widened, optional third `options` argument as
+  /** The same widened, optional third `options` argument as
    * TryLaunchDeps.spawn's own doc comment describes; this value is passed
    * straight through to spawnAndRecordInstance() unchanged. */
   spawn?: (command: string, args: string[], options?: SpawnOptionsWithoutStdio) => ChildProcess;
@@ -610,26 +598,26 @@ export interface AcquirePortAndLaunchDeps {
    * fork-when-omitted default, threaded through to spawnAndRecordInstance(). */
   backend?: ViceBackend;
   binmonHost?: string;
-  /** Plan 03-04 (DIRECT-06, D-13); tightened by plan 41-05 (D-16): resolves
-   * the SECOND (`-remotemonitor`) port, given the primary port already
-   * allocated as `exclude` (so the second allocation can never return the
-   * SAME candidate the first one just claimed, before its InstanceRecord
-   * exists to make `exclude` redundant). Optional -- omitted entirely (the
-   * default for every pre-Phase-3 caller and every fork launch) means no
-   * second port is ever requested, and `buildViceArgs()`'s stock branch
-   * stays byte-identical to before this field existed. Called ONLY when
-   * `backend === "stock"` -- this function gates that itself; a caller need
-   * not check the backend before providing it. REQUIRED for a stock launch
-   * to succeed at all (D-16): the text port is mandatory on every stock
-   * launch, so when this allocator is provided and its allocation fails,
-   * `acquirePortAndLaunch()` fails the WHOLE acquire (`no_free_text_port`)
-   * rather than degrading to a launch without `-remotemonitor` -- no stock
-   * instance may ever exist without a text-monitor port. */
+  /** Resolves the SECOND (`-remotemonitor`) port, given the primary port
+   * already allocated as `exclude` (so the second allocation can never
+   * return the SAME candidate the first one just claimed, before its
+   * InstanceRecord exists to make `exclude` redundant). Optional -- omitted
+   * entirely (the default for every fork launch, back when the fork
+   * backend existed) means no second port is ever requested, and
+   * `buildViceArgs()`'s stock branch stays byte-identical to before this
+   * field existed. Called ONLY when `backend === "stock"` -- this function
+   * gates that itself; a caller need not check the backend before providing
+   * it. REQUIRED for a stock launch to succeed at all: the text port is
+   * mandatory on every stock launch, so when this allocator is provided and
+   * its allocation fails, `acquirePortAndLaunch()` fails the WHOLE acquire
+   * (`no_free_text_port`) rather than degrading to a launch without
+   * `-remotemonitor` -- no stock instance may ever exist without a
+   * text-monitor port. */
   allocateRemoteMonitorPort?: (state: BrokerState, exclude: ReadonlySet<number>) => Promise<PortAllocationResult>;
-  /** Phase 33, plan 33-06 (REPRO-05, D-15/D-16): see TryLaunchDeps.profile's
-   * own doc comment -- passed straight through to spawnAndRecordInstance()
-   * unchanged. Threading it here rather than re-reading anything is what
-   * makes a cold acquire's grant match the profile the acquire asked for. */
+  /** See TryLaunchDeps.profile's own doc comment -- passed straight through
+   * to spawnAndRecordInstance() unchanged. Threading it here rather than
+   * re-reading anything is what makes a cold acquire's grant match the
+   * profile the acquire asked for. */
   profile?: LaunchProfile;
   /** Overrides the launch-slot decision log line's destination -- default
    * writes to stderr, matching every other log seam in this module. */
@@ -638,58 +626,58 @@ export interface AcquirePortAndLaunchDeps {
 
 export type AcquireLaunchResult =
   | { ok: true; record: InstanceRecord }
-  // Plan 41-05 (D-16, checkpoint option B): `no_free_text_port` is a
-  // DISTINCT failure from `no_free_port` -- a host that fails only on the
-  // SECOND (`-remotemonitor`) allocation, after the primary port already
-  // succeeded, is a materially different situation from one that cannot
-  // allocate at all, and the control plane (broker-control.mts's
-  // AcquireOutcome/ControlErrorCode) carries the same distinction through
-  // rather than collapsing it to the generic `no_free_port` reason.
+  // `no_free_text_port` is a DISTINCT failure from `no_free_port` -- a host
+  // that fails only on the SECOND (`-remotemonitor`) allocation, after the
+  // primary port already succeeded, is a materially different situation
+  // from one that cannot allocate at all, and the control plane
+  // (broker-control.mts's AcquireOutcome/ControlErrorCode) carries the same
+  // distinction through rather than collapsing it to the generic
+  // `no_free_port` reason.
   | { ok: false; reason: "launch_in_flight" | "no_free_port" | "no_free_text_port" };
 
 /** Holds the SAME single in_flight owner across the ENTIRE
  * allocate-a-port-then-launch sequence -- not merely the synchronous spawn
  * instant tryLaunchOne() alone guards. This closes a genuine race window
  * tryLaunchOne() cannot: nextFreePort()'s own port-in-use probe is
- * asynchronous (plan 02, C4 -- a real bind-and-release check), so two
- * overlapping callers could otherwise BOTH be told the SAME candidate port
- * is free before either commits it to state.instances -- a double-launch on
- * one port, silently overwriting the earlier record. The guard is checked
- * and set SYNCHRONOUSLY before the first `await`, exactly like
- * tryLaunchOne()'s own discipline, so a second concurrent call is refused
- * immediately (`launch_in_flight`) rather than racing on the allocation.
+ * asynchronous (a real bind-and-release check), so two overlapping callers
+ * could otherwise BOTH be told the SAME candidate port is free before
+ * either commits it to state.instances -- a double-launch on one port,
+ * silently overwriting the earlier record. The guard is checked and set
+ * SYNCHRONOUSLY before the first `await`, exactly like tryLaunchOne()'s own
+ * discipline, so a second concurrent call is refused immediately
+ * (`launch_in_flight`) rather than racing on the allocation.
  *
- * Plan 41-05 (folded todo): this guard's own reasoning OUTLIVED the warm
- * floor it was originally written alongside -- it exists because of the
- * 2026-08-01 triple-launch outage (three simultaneous x64sc launches: one
- * SEGV, one exit 1, one exit 0 at the identical spawn second) and is
- * regression-tested (CLAUDE.md), and that history has nothing to do with
- * whether a warm floor exists. Today the only caller of this function is the
- * cold-acquire arm (vice-broker.mts's handleAcquire(), via `serveAcquires()`
- * in runBrokerPass()); the overlap this guard closes is now TWO OR MORE
+ * This guard's own reasoning OUTLIVED the warm floor it was originally
+ * written alongside -- it exists because of the 2026-08-01 triple-launch
+ * outage (three simultaneous x64sc launches: one SEGV, one exit 1, one exit
+ * 0 at the identical spawn second) and is regression-tested (CLAUDE.md),
+ * and that history has nothing to do with whether a warm floor exists.
+ * Today the only caller of this function is the cold-acquire arm
+ * (vice-broker.mts's handleAcquire(), via `serveAcquires()` in
+ * runBrokerPass()); the overlap this guard closes is now TWO OR MORE
  * concurrent acquires -- e.g. two requests arriving over the TCP control
  * listener at nearly the same moment, or one arriving while an EARLIER
  * acquire's own launch is still resolving -- never a warming pass, which no
  * longer exists. This is also the function that restores vice-broker.sh's
  * own process_requests() throttle (its `in_flight` local): whatever launches
  * this broker ever attempts, they never overlap, matching the bash
- * original's declined-to-change behaviour (RESEARCH.md §A1/§C). D-07
- * (01.6.2.1-03-PLAN.md) layers non-preemptive PRIORITY on top of this same
- * "one at a time" guard, never replacing it, and the anti-pattern it names --
- * killing or relaunching preemptively to serve a newer request -- is likewise
- * unaffected by the floor's removal: this function still only ever refuses a
- * second concurrent caller (`launch_in_flight`), and never kills or preempts
- * whichever caller already holds the slot. Among multiple QUEUED acquires,
- * which one wins this slot NEXT, once it frees, falls out of the
- * arrival-ordered pending-acquire structure (broker-control.mts's D-08
- * mechanism) that requeues a refused acquire for the next pass -- not from
- * anything in this function. The refusal below logs which reason currently
- * holds the slot and which reason is waiting, so the decision is
- * reconstructable from the log after an incident. */
+ * original's declined-to-change behaviour. Non-preemptive launch PRIORITY
+ * layers on top of this same "one at a time" guard, never replacing it, and
+ * the anti-pattern it names -- killing or relaunching preemptively to serve
+ * a newer request -- is likewise unaffected by the floor's removal: this
+ * function still only ever refuses a second concurrent caller
+ * (`launch_in_flight`), and never kills or preempts whichever caller
+ * already holds the slot. Among multiple QUEUED acquires, which one wins
+ * this slot NEXT, once it frees, falls out of the arrival-ordered
+ * pending-acquire structure (broker-control.mts's own mechanism) that
+ * requeues a refused acquire for the next pass -- not from anything in this
+ * function. The refusal below logs which reason currently holds the slot
+ * and which reason is waiting, so the decision is reconstructable from the
+ * log after an incident. */
 export async function acquirePortAndLaunch(reason: string, deps: AcquirePortAndLaunchDeps): Promise<AcquireLaunchResult> {
   const log = deps.log ?? defaultLog;
   if (inFlight) {
-    log(`vice-broker: launch-slot decision -- ${inFlightReason ?? "unknown"} holds the slot; ${reason} waits (D-07)`);
+    log(`vice-broker: launch-slot decision -- ${inFlightReason ?? "unknown"} holds the slot; ${reason} waits`);
     return { ok: false, reason: "launch_in_flight" };
   }
   inFlight = true;
@@ -704,14 +692,14 @@ export async function acquirePortAndLaunch(reason: string, deps: AcquirePortAndL
     const epochFile = join(supervisorDir, "epoch.json");
     const spawn = deps.spawnFactory ? deps.spawnFactory(port) : deps.spawn;
 
-    // Plan 03-04 (DIRECT-06, D-13): the second (`-remotemonitor`) port is
-    // resolved HERE, still inside the single in_flight owner's own
-    // try-block, immediately after the primary allocation succeeds -- both
-    // awaits stay inside this SAME try, after the guard's synchronous
-    // check-and-set above; neither is moved, duplicated, or awaited around
-    // that guard. Only ever attempted for `backend === "stock"`, and only
-    // when the caller actually provided the allocator -- every fork launch
-    // and every pre-Phase-3 caller never reaches this branch at all.
+    // The second (`-remotemonitor`) port is resolved HERE, still inside the
+    // single in_flight owner's own try-block, immediately after the primary
+    // allocation succeeds -- both awaits stay inside this SAME try, after
+    // the guard's synchronous check-and-set above; neither is moved,
+    // duplicated, or awaited around that guard. Only ever attempted for
+    // `backend === "stock"`, and only when the caller actually provided the
+    // allocator -- every fork launch and every caller before this feature
+    // existed never reaches this branch at all.
     let remoteMonitorPort: number | undefined;
     if (deps.backend === "stock" && deps.allocateRemoteMonitorPort) {
       const remoteResult = await deps.allocateRemoteMonitorPort(deps.state, new Set([port]));
@@ -729,12 +717,12 @@ export async function acquirePortAndLaunch(reason: string, deps: AcquirePortAndL
         deps.state.blockedPorts.add(remoteResult.port);
         remoteMonitorPort = remoteResult.port;
       } else {
-        // Plan 41-05 (D-16): FAIL, never degrade. Owner direction, verbatim:
-        // "it should not be possible, vice must be started witht the text
-        // channel." A stock launch that cannot bind a text-monitor port
-        // fails the whole acquire -- no process is spawned. The PRIMARY port
-        // allocated moments earlier is not yet in `state.instances` and was
-        // never added to `state.blockedPorts` by this function (only
+        // FAIL, never degrade. Owner direction, verbatim: "it should not be
+        // possible, vice must be started witht the text channel." A stock
+        // launch that cannot bind a text-monitor port fails the whole
+        // acquire -- no process is spawned. The PRIMARY port allocated
+        // moments earlier is not yet in `state.instances` and was never
+        // added to `state.blockedPorts` by this function (only
         // `nextFreePort()`'s own in-use probe blocks a candidate, and that
         // never ran against the winning candidate) -- so it is already
         // allocatable again on the very next call with no further release
@@ -743,7 +731,7 @@ export async function acquirePortAndLaunch(reason: string, deps: AcquirePortAndL
         // otherwise leave a port "spoken for" on the caller's behalf.
         log(
           `vice-broker: second (-remotemonitor) port allocation failed (${remoteResult.reason}) -- ` +
-            `abandoning the stock launch; the text-monitor port is mandatory on every stock launch (D-16) and the acquire fails`,
+            `abandoning the stock launch; the text-monitor port is mandatory on every stock launch and the acquire fails`,
         );
         return { ok: false, reason: "no_free_text_port" };
       }
@@ -773,17 +761,17 @@ export async function acquirePortAndLaunch(reason: string, deps: AcquirePortAndL
  * deleting the record AND handing its second (`-remotemonitor`) port back to
  * the allocator in the same step.
  *
- * CR-02 (03-REVIEW.md): `acquirePortAndLaunch()` above adds every allocated
- * remote-monitor port to `state.blockedPorts`, and until this function existed
- * NOTHING ever removed one. `nextFreePort()` never reconsiders a blocked
- * candidate for the lifetime of the process, so every teardown of a stock
- * instance permanently consumed one more port out of the fixed
- * PORT_SCAN_CEILING window even though the OS port was free again the instant
- * the owning process exited -- a long-running broker (the explicit design goal
- * of an on-demand pool with crash supervision, per plan 41-05 launched
- * strictly on demand rather than kept warm) eventually exhausts its band and
- * answers `no_free_port` to ordinary launches purely
- * from routine churn, with no operator recourse short of a broker restart.
+ * `acquirePortAndLaunch()` above adds every allocated remote-monitor port to
+ * `state.blockedPorts`, and until this function existed NOTHING ever removed
+ * one. `nextFreePort()` never reconsiders a blocked candidate for the
+ * lifetime of the process, so every teardown of a stock instance permanently
+ * consumed one more port out of the fixed PORT_SCAN_CEILING window even
+ * though the OS port was free again the instant the owning process exited
+ * -- a long-running broker (the explicit design goal of an on-demand pool
+ * with crash supervision, launched strictly on demand rather than kept
+ * warm) eventually exhausts its band and answers `no_free_port` to ordinary
+ * launches purely from routine churn, with no operator recourse short of a
+ * broker restart.
  *
  * A RESPAWN is deliberately NOT a call site: the replacement instance keeps
  * BOTH the primary port and the remote-monitor port of the instance it
@@ -809,13 +797,12 @@ export function deleteInstanceRecord(state: BrokerState, port: number): void {
 }
 
 // ---------------------------------------------------------------------------
-// Readiness probe (D-05's permitted-route note applies throughout this
-// section): this is HOST-SIDE broker code inspecting the emulator instance
-// IT ITSELF spawned, on 127.0.0.1, as part of owning that instance's
-// lifecycle -- exactly like vice-broker.sh's own probe_ready() does today.
-// mcp__vice__*-only governs CONTAINER-SIDE code reaching the emulator; this
-// is not that. No test in this module ever opens a real connection -- every
-// probe test injects its own stub.
+// Readiness probe: this is HOST-SIDE broker code inspecting the emulator
+// instance IT ITSELF spawned, on 127.0.0.1, as part of owning that
+// instance's lifecycle -- exactly like vice-broker.sh's own probe_ready()
+// does today. mcp__vice__*-only governs CONTAINER-SIDE code reaching the
+// emulator; this is not that. No test in this module ever opens a real
+// connection -- every probe test injects its own stub.
 // ---------------------------------------------------------------------------
 
 export interface ProbeDeps {
@@ -825,12 +812,13 @@ export interface ProbeDeps {
    * instance's own /mcp endpoint using the global fetch. Tests inject a
    * stub to control success/failure directly. */
   httpProbe?: (port: number, timeoutMs: number) => Promise<boolean>;
-  /** WR-01: which readiness route this port speaks. Threaded in exactly like
+  /** Which readiness route this port speaks. Threaded in exactly like
    * buildViceArgs() already receives it -- from the ONE `resolvedBackend()` call
    * the broker makes at startup, never re-detected here. Omitted defaults to
-   * "stock", the only value `ViceBackend` has (FORKRM-01, plan 52-06). */
+   * "stock", the only value `ViceBackend` has now that the fork backend is
+   * gone. */
   backend?: ViceBackend;
-  /** WR-01: the binary-monitor readiness check, used for `backend: "stock"`.
+  /** The binary-monitor readiness check, used for `backend: "stock"`.
    * Defaults to the real one-PING-then-EXIT exchange below; tests inject a
    * stub. */
   binmonProbe?: (port: number, timeoutMs: number) => Promise<boolean>;
@@ -875,7 +863,7 @@ async function defaultHttpProbe(port: number, timeoutMs: number): Promise<boolea
 }
 
 // ---------------------------------------------------------------------------
-// WR-01: the STOCK readiness route.
+// The STOCK readiness route.
 //
 // probeReady() below used to POST http://127.0.0.1:<port>/mcp unconditionally
 // and require both "version" and "machine" in the body. On the stock backend
@@ -897,8 +885,9 @@ async function defaultHttpProbe(port: number, timeoutMs: number): Promise<boolea
 // one request header out, one response header in, four bytes checked.
 // ---------------------------------------------------------------------------
 
-/** Hand-copied from docs/phase0-binmon-findings.md §5 -- see the block comment
- * above for why these are not imported from stock-protocol.ts. */
+/** Hand-copied from this project's own measured binary-monitor wire format
+ * (the same constants stock-protocol.ts defines) -- see the block comment
+ * above for why these are not imported from stock-protocol.ts directly. */
 const BINMON_STX = 0x02;
 const BINMON_API_VERSION = 0x02;
 const BINMON_REQUEST_HEADER_LEN = 11;
@@ -927,15 +916,15 @@ function binmonRequest(commandType: number, requestId: number): Buffer {
 const BINMON_UNSOLICITED_REQUEST_ID = 0xffffffff;
 
 /**
- * WR-01: one PING (0x81) over the binary monitor, requiring a WELL-FORMED 0x81
+ * One PING (0x81) over the binary monitor, requiring a WELL-FORMED 0x81
  * reply -- STX, the expected api_version, response type 0x81, error code 0x00,
  * and this probe's own request id. A bare TCP accept is explicitly insufficient
  * here for exactly the reason probeReady()'s own comment gives for the HTTP
  * route: a C64 can accept a connection before it has finished booting.
  *
- * quick task 260818-obc (live-discovered): a NEW binmon connection ALWAYS
- * emits an unsolicited REGISTER_INFO (0x31) frame at request-id 0xffffffff
- * the instant it opens (CLAUDE.md's own Protocol constraint) -- BEFORE this
+ * A live-discovered defect: a NEW binmon connection ALWAYS emits an
+ * unsolicited REGISTER_INFO (0x31) frame at request-id 0xffffffff the
+ * instant it opens (CLAUDE.md's own Protocol constraint) -- BEFORE this
  * probe's own PING reply ever arrives. The naive "the first 12 bytes ARE the
  * reply" read this code used to do treated that event frame's OWN response-
  * type byte (0x31) as a malformed PING reply and answered `false` forever,
@@ -951,8 +940,8 @@ const BINMON_UNSOLICITED_REQUEST_ID = 0xffffffff;
  * ViceMonitorClient chief among them).
  *
  * Then EXIT (0xaa), unconditionally, before closing -- because the PING ITSELF
- * HALTS THE MACHINE. Any inbound byte does (docs/phase0-binmon-findings.md §4,
- * and CR-02, which fixed the same omission in the connect handshake). A
+ * HALTS THE MACHINE. Any inbound byte does, and this project's own connect
+ * handshake had the same omission and was fixed for the same reason. A
  * readiness probe that left every warm instance frozen would be a worse defect
  * than the one it fixes: the emulator would be "ready" and stopped.
  *
@@ -1044,32 +1033,29 @@ async function defaultBinmonProbe(port: number, timeoutMs: number): Promise<bool
   });
 }
 
-/** D-05, AS AMENDED BY P-05 -- this comment is the amendment's record, kept
- * in the exact place a three-branch description used to sit, per this
- * plan's own instruction that a code reader must meet the amendment here,
- * not merely in the plan text (`01.6.2.1-02-PLAN.md`) or the validation
- * ledger (`01.6.2-VALIDATION.md`, consolidated by plan 06).
+/** This comment records why the readiness probe below looks the way it
+ * does, kept in the exact place a longer, three-branch description used to
+ * sit.
  *
- * D-05 (locked, `01.6.2-CONTEXT.md`) originally specified the probe as a
- * bare in-process TCP connect to the instance's own monitor port, with a
- * short timeout. The code that landed instead argued against that wording,
- * in its OWN comment: "a bare TCP accept is explicitly not sufficient (a
- * C64 can accept a connection before it has finished booting)" -- a
- * booting emulator promoted to ready on nothing more than an accepted
- * connection is exactly Defect 3's failure shape reappearing, here on the
- * plan-01 acquire hot path.
+ * The probe was originally specified as a bare in-process TCP connect to
+ * the instance's own monitor port, with a short timeout. The code that
+ * landed instead argued against that wording, in its OWN comment: "a bare
+ * TCP accept is explicitly not sufficient (a C64 can accept a connection
+ * before it has finished booting)" -- a booting emulator promoted to ready
+ * on nothing more than an accepted connection is exactly the kind of false
+ * positive this probe exists to prevent.
  *
- * P-05 amends D-05: the ping-shaped request body stays -- it is what
- * proves the emulator ANSWERS, not merely that a port is bound, which is
- * the whole difference between a liveness check and a readiness check. The
- * two OTHER branches the landed code carried (an external-command
- * mechanism, and a "neither mechanism available -> report ready
- * unconditionally" fallback) retire outright, per P-06: with no second
- * mechanism to prefer and no "no mechanism" state left to report, there is
- * no longer a pair of indistinguishable states (a deliberately-zero warm
- * floor and a broken host) for an operator to confuse in the logs. D-05's
- * own intent -- exactly one check, no external command, no ambiguity -- is
- * fully honoured by this collapse, not reversed by it.
+ * The ping-shaped request body stays -- it is what proves the emulator
+ * ANSWERS, not merely that a port is bound, which is the whole difference
+ * between a liveness check and a readiness check. Two other mechanisms the
+ * landed code originally carried (an external-command mechanism, and a
+ * "neither mechanism available -> report ready unconditionally" fallback)
+ * were retired outright: with no second mechanism to prefer and no "no
+ * mechanism" state left to report, there is no longer a pair of
+ * indistinguishable states (a deliberately-zero warm floor and a broken
+ * host) for an operator to confuse in the logs. The original intent --
+ * exactly one check, no external command, no ambiguity -- is fully
+ * honoured by this collapse, not reversed by it.
  *
  * No retry loop, deliberately: a still-booting instance simply fails THIS
  * pass and is re-probed on the next one (promoteLaunchingInstances()'s own
@@ -1081,7 +1067,7 @@ async function defaultBinmonProbe(port: number, timeoutMs: number): Promise<bool
 export async function probeReady(port: number, deps: ProbeDeps = {}): Promise<boolean> {
   const timeoutS = Number(deps.probeTimeoutSEnv ?? process.env.VICE_BROKER_PROBE_TIMEOUT_S) || DEFAULT_PROBE_TIMEOUT_S;
   const timeoutMs = timeoutS * 1000;
-  // WR-01: the route is chosen by the backend, exactly like buildViceArgs()'s
+  // The route is chosen by the backend, exactly like buildViceArgs()'s
   // own argv choice, and from the SAME threaded-down verdict. The fork arm below
   // is byte-identical to what this function always did, including the
   // omitted-backend default -- a fork deployment sees no behaviour change.
@@ -1096,17 +1082,15 @@ export async function probeReady(port: number, deps: ProbeDeps = {}): Promise<bo
 // ---------------------------------------------------------------------------
 // Launching -> ready promotion
 //
-// Plan 41-05 (folded todo, `.planning/todos/pending/
-// 2026-09-07-remove-pre-warm-launch-vice-on-first-request.md`): this used to
-// be step 1 inside the now-RETIRED warm-floor maintenance function -- the
-// warm floor itself is REMOVED by this plan (VICE now launches strictly on
-// demand, on the first request; the latency of a first cold launch is
-// accepted, per the todo's own settled open question). Promotion is NOT
-// warm-floor logic and does not go with it: a
-// COLD acquire's own `launching` instance needs promoting to `ready` too, so
-// this step outlived the floor it happened to live inside. Extracted
-// verbatim, unchanged in substance -- runs regardless of whether a launch is
-// in flight, exactly as before.
+// This used to be step 1 inside the now-RETIRED warm-floor maintenance
+// function -- the warm floor itself is REMOVED (VICE now launches strictly
+// on demand, on the first request; the latency of a first cold launch is
+// accepted as the trade-off for never keeping an idle spare running).
+// Promotion is NOT warm-floor logic and does not go with it: a COLD
+// acquire's own `launching` instance needs promoting to `ready` too, so this
+// step outlived the floor it happened to live inside. Extracted verbatim,
+// unchanged in substance -- runs regardless of whether a launch is in
+// flight, exactly as before.
 // ---------------------------------------------------------------------------
 
 export interface PromoteLaunchingInstancesDeps {
@@ -1133,7 +1117,7 @@ export interface PromoteLaunchingInstancesDeps {
 export async function promoteLaunchingInstances(deps: PromoteLaunchingInstancesDeps): Promise<void> {
   const log = deps.log ?? defaultLog;
   const now = deps.now ?? ((): number => Date.now());
-  // WR-01: the DEFAULT probe follows this call's own backend, so a caller that
+  // The DEFAULT probe follows this call's own backend, so a caller that
   // threads `backend` and omits `probe` gets a matching readiness route
   // rather than an HTTP POST at a binary-monitor port. An explicitly
   // injected `probe` still wins, unchanged.
@@ -1157,19 +1141,18 @@ export async function promoteLaunchingInstances(deps: PromoteLaunchingInstancesD
 // ---------------------------------------------------------------------------
 
 export interface BrokerPassDeps {
-  /** Serves pending acquires for this pass. Under this phase's TCP control
-   * plane (plan 01), an acquire is already served immediately, per
+  /** Serves pending acquires for this pass. Under this project's TCP
+   * control plane, an acquire is already served immediately, per
    * connection, by vice-broker.mts's own onAcquire callback -- there is no
-   * file-based request queue left to iterate (D-01). This concern stays a
-   * named, orderable step (rather than being dropped) because plan 05 adds
-   * the real arrival-ordered queue (D-08) here; until then it is a no-op
+   * file-based request queue left to iterate. This concern stays a named,
+   * orderable step (rather than being dropped) because a later addition
+   * adds the real arrival-ordered queue here; until then it is a no-op
    * by construction, not a stub standing in for missing work. */
   serveAcquires: () => Promise<void> | void;
-  /** Plan 41-05 (folded todo): the second concern, RENAMED from the
-   * retired warm-floor field this replaces -- the warm floor itself is
-   * gone; this is now ONLY the launching -> ready promotion sweep
-   * (promoteLaunchingInstances() above). Unlike the field it replaces,
-   * this step never calls
+  /** The second concern, RENAMED from the retired warm-floor field this
+   * replaces -- the warm floor itself is gone; this is now ONLY the
+   * launching -> ready promotion sweep (promoteLaunchingInstances() above).
+   * Unlike the field it replaces, this step never calls
    * acquirePortAndLaunch() and never competes for the single in-flight
    * launch slot -- see runBrokerPass()'s own comment for what the fixed
    * order still buys now that only one concern in this pass ever launches
@@ -1181,22 +1164,21 @@ export interface BrokerPassDeps {
  * comment names the ordering as load-bearing: "the spare invariant is
  * always re-evaluated against the freshest possible grant/teardown
  * state"). The bash version's third concern, the grant sweep, does NOT
- * appear here -- it is one of criterion F's six retiring file-lease
- * mechanisms; the TCP connection itself is the lease (D-12). The
- * broker-instances.json projection write does not appear either, per D-24
- * (see broker-state.mts's own FINDING 2 comment). Takes plain callbacks
- * rather than the full BrokerState/deps shape so a test can inject two
- * instrumented no-op functions and assert call ORDER without needing a
- * real broker, a real port or a real launch.
+ * appear here -- it is one of several retiring file-lease mechanisms; the
+ * TCP connection itself is the lease. The broker-instances.json projection
+ * write does not appear either (see broker-state.mts's own FINDING 2
+ * comment). Takes plain callbacks rather than the full BrokerState/deps
+ * shape so a test can inject two instrumented no-op functions and assert
+ * call ORDER without needing a real broker, a real port or a real launch.
  *
- * Plan 41-05 (folded todo): the warm floor that D-07 (01.6.2.1-03-PLAN.md)
- * originally reasoned about here is GONE -- `promoteLaunching` never calls
+ * The warm floor that non-preemptive launch priority originally reasoned
+ * about here is GONE -- `promoteLaunching` never calls
  * acquirePortAndLaunch() and so never competes for the single in-flight
  * launch slot the way a warm-floor spare launch used to. `serveAcquires()`
  * (via its own drainPendingAcquires()) is now the ONLY caller in this pass
- * that ever launches anything, so D-07's original "which reason wins a
- * freed slot" question has nothing left to decide BETWEEN these two steps --
- * that reasoning still applies WITHIN the acquire arm itself (two overlapping
+ * that ever launches anything, so the original "which reason wins a freed
+ * slot" question has nothing left to decide BETWEEN these two steps -- that
+ * reasoning still applies WITHIN the acquire arm itself (two overlapping
  * acquires still resolve through the single in-flight owner
  * (acquirePortAndLaunch()'s own invariant comment), which this reordering
  * never weakens). What the fixed order still buys: promoting AFTER serving
@@ -1212,14 +1194,14 @@ export async function runBrokerPass(deps: BrokerPassDeps): Promise<void> {
 }
 
 // ===========================================================================
-// Per-child supervision (Plan 03, Task 2 -- C2/D-23): absorbs
-// resources/vice-supervisor.sh WHOLESALE. The respawn loop becomes an
-// exit-event handler installed on the spawned child; the backoff shape
-// (initial delay, doubling, ceiling), the crash-loop give-up (too many
-// crashes inside a window), and the per-instance boot/crash log are ported
-// exactly, per D-1's own configuration knobs -- VICE_RESTART_BACKOFF_S,
-// VICE_RESTART_BACKOFF_MAX_S, VICE_MAX_RESTARTS, VICE_CRASH_WINDOW_S all
-// keep their exact names and semantics.
+// Per-child supervision: absorbs resources/vice-supervisor.sh WHOLESALE. The
+// respawn loop becomes an exit-event handler installed on the spawned
+// child; the backoff shape (initial delay, doubling, ceiling), the
+// crash-loop give-up (too many crashes inside a window), and the
+// per-instance boot/crash log are ported exactly, keeping the same
+// configuration knobs -- VICE_RESTART_BACKOFF_S, VICE_RESTART_BACKOFF_MAX_S,
+// VICE_MAX_RESTARTS, VICE_CRASH_WINDOW_S all keep their exact names and
+// semantics.
 // ===========================================================================
 
 function resolveMs(envVar: string, defaultSeconds: number, override?: number): number {
@@ -1261,11 +1243,10 @@ export interface SuperviseChildDeps {
    * all derived from this, exactly like every other launch path. */
   stateDir: string;
   epoch: EpochWriterDeps;
-  /** I-1 rider (08.2-06-PLAN.md, Task 1): widened to the same optional
-   * third `options` argument as every other spawn/spawnFactory field in
-   * this file, so a real crash-respawn threads the same isolation as the
-   * launch it replaces (CR-01 precedent: launch/respawn divergence has
-   * already caused one incident in this file). */
+  /** Widened to the same optional third `options` argument as every other
+   * spawn/spawnFactory field in this file, so a real crash-respawn threads
+   * the same isolation as the launch it replaces -- launch/respawn
+   * divergence has already caused one incident in this file. */
   spawn?: (command: string, args: string[], options?: SpawnOptionsWithoutStdio) => ChildProcess;
   spawnFactory?: (port: number) => (command: string, args: string[], options?: SpawnOptionsWithoutStdio) => ChildProcess;
   now?: () => number;
@@ -1339,12 +1320,11 @@ async function handleExit(reason: string, port: number, deps: SuperviseChildDeps
 
   const log = deps.log ?? defaultLog;
 
-  // Plan 05 (BROK-02/PROTO-08), promoted to a per-channel map by plan 41-03
-  // (D-14): the process behind this instance's monitor sockets has just
-  // exited, by every path this function can take (crash, recycle, or a
-  // deliberate teardown) -- clear EVERY channel's ownership record HERE,
-  // once, before any of those paths branch, so a client that died without
-  // releasing can never hold this lock forever on any channel. Redundant
+  // The process behind this instance's monitor sockets has just exited, by
+  // every path this function can take (crash, recycle, or a deliberate
+  // teardown) -- clear EVERY channel's ownership record HERE, once, before
+  // any of those paths branch, so a client that died without releasing can
+  // never hold this lock forever on any channel. Redundant
   // with the respawn/delete paths below (a fresh InstanceRecord never
   // carries this forward; a deleted one has no field to carry), but
   // explicit for the same reason broker-state.mts's own header comment
@@ -1368,20 +1348,19 @@ async function handleExit(reason: string, port: number, deps: SuperviseChildDeps
       const preKillState = record.state;
       const preKillCrashTimes = record.crashTimes ?? [];
       const preKillBackoffMs = record.backoffMs ?? resolveMs("VICE_RESTART_BACKOFF_S", 3, deps.initialBackoffMs);
-      // CR-02 (03-REVIEW.md): the second (`-remotemonitor`) port is carried
-      // forward across the replacement exactly like the primary port is --
-      // captured BEFORE launchSupervised() overwrites this port's map entry
-      // with a brand new record, for the same reason the three values above
-      // are.
+      // The second (`-remotemonitor`) port is carried forward across the
+      // replacement exactly like the primary port is -- captured BEFORE
+      // launchSupervised() overwrites this port's map entry with a brand
+      // new record, for the same reason the three values above are.
       const preKillRemoteMonitorPort = record.remoteMonitorPort;
-      // Phase 33, plan 33-06 (D-16, T-33-24): the launch PROFILE is carried
-      // forward for exactly the reason CR-02 carries the remote-monitor port
-      // forward, and the failure it prevents is sharper. Without this, a
-      // recycled `{warp:true}` instance would come back UNWARPED while its
-      // fresh record still claimed `profile:{warp:true}` -- after which
-      // profileEligible() (vice-broker.mts) would happily hand that instance
-      // to the next warp request. That is precisely the undetectable lie
-      // D-16 exists to structurally exclude, reintroduced one respawn later.
+      // The launch PROFILE is carried forward for exactly the reason the
+      // remote-monitor port is carried forward above, and the failure it
+      // prevents is sharper. Without this, a recycled `{warp:true}`
+      // instance would come back UNWARPED while its fresh record still
+      // claimed `profile:{warp:true}` -- after which profileEligible()
+      // (vice-broker.mts) would happily hand that instance to the next warp
+      // request. That is precisely the undetectable lie this carry-forward
+      // exists to structurally exclude, reintroduced one respawn later.
       // Captured BEFORE launchSupervised() overwrites this port's map entry
       // with a brand new record, same as the four values above.
       const preKillProfile = record.profile;
@@ -1406,7 +1385,7 @@ async function handleExit(reason: string, port: number, deps: SuperviseChildDeps
       deps.onOutcome?.("recycled", port);
       return;
     }
-    // CR-02: a deliberate teardown is the END of this instance -- its
+    // A deliberate teardown is the END of this instance -- its
     // remote-monitor port must go back to the allocator with it.
     deleteInstanceRecord(deps.state, port);
     deps.onOutcome?.("deliberate_teardown", port);
@@ -1424,7 +1403,7 @@ async function handleExit(reason: string, port: number, deps: SuperviseChildDeps
       `vice-broker: giving up on port ${port} after ${crashTimes.length} crashes within ${crashWindowMs}ms -- ` +
         `this is not a transient crash; check VICE_ARGS and whether the port is already bound`,
     );
-    // CR-02: giving up is likewise terminal for this instance -- release its
+    // Giving up is likewise terminal for this instance -- release its
     // remote-monitor port rather than leaking it out of the allocation band.
     deleteInstanceRecord(deps.state, port);
     deps.onOutcome?.("given_up", port);
@@ -1438,13 +1417,13 @@ async function handleExit(reason: string, port: number, deps: SuperviseChildDeps
   const maxBackoffMs = resolveMs("VICE_RESTART_BACKOFF_MAX_S", 30, deps.maxBackoffMs);
   const nextBackoffMs = Math.min(currentBackoffMs * 2, maxBackoffMs);
 
-  // CR-02: same carry-forward as the recycle branch above -- a crash must not
+  // Same carry-forward as the recycle branch above -- a crash must not
   // silently strip `-remotemonitor` (and its InstanceRecord field) off the
-  // replacement, which is what made D-13's "the instance record carries it"
-  // stop being true the first time an instance was replaced.
-  // Phase 33, plan 33-06: same carry-forward as the recycle branch above --
-  // an unexplained crash must not silently strip `-warp`/`-console` off the
-  // replacement while leaving the record claiming them (D-16, T-33-24).
+  // replacement, which would otherwise make the instance record's claim to
+  // carry that field stop being true the first time an instance was
+  // replaced. Same reasoning applies to the launch profile -- an
+  // unexplained crash must not silently strip `-warp`/`-console` off the
+  // replacement while leaving the record claiming them.
   const respawned = launchSupervised(reason, port, deps, crashTimes, nextBackoffMs, record.remoteMonitorPort, record.profile);
   deps.onOutcome?.(respawned ? "respawned" : "given_up", port);
 }
@@ -1476,12 +1455,11 @@ export function withCrashSupervision(
   baseSpawn: (command: string, args: string[], options?: SpawnOptionsWithoutStdio) => ChildProcess,
   deps: SuperviseChildDeps,
 ): (command: string, args: string[], options?: SpawnOptionsWithoutStdio) => ChildProcess {
-  // I-1 rider (08.2-06-PLAN.md, Task 1): forwards a third options argument
-  // in the BODY, not just the type -- this is the hop that matters most,
-  // because it wraps every real launch path (cold acquire and every
-  // respawn -- plan 41-05 retires the warm floor, the third path this
-  // comment used to name). A type-only widening would still silently drop a
-  // caller's options at this call site.
+  // Forwards a third options argument in the BODY, not just the type --
+  // this is the hop that matters most, because it wraps every real launch
+  // path (cold acquire and every respawn -- a warm floor used to be a
+  // third path here and has since been retired). A type-only widening
+  // would still silently drop a caller's options at this call site.
   return (cmd: string, args: string[], options?: SpawnOptionsWithoutStdio): ChildProcess => {
     const child = baseSpawn(cmd, args, options);
     child.once("exit", () => {
@@ -1492,7 +1470,7 @@ export function withCrashSupervision(
 }
 
 /** Launches (or relaunches) a supervised instance: spawns through
- * tryLaunchOne() (the SAME single guarded primitive plan 02 established --
+ * tryLaunchOne() (the SAME single guarded primitive established above --
  * "spawn again through the SAME single guarded launch function", never a
  * second, parallel spawn path), writes the per-instance boot/crash log at
  * the path shape the retiring supervisor used (a `logs/` directory under
@@ -1507,26 +1485,26 @@ export function withCrashSupervision(
  * fact that spawnAndRecordInstance() creates a BRAND NEW InstanceRecord
  * object on every launch, replacing the old one at the same port key.
  *
- * CR-02 (03-REVIEW.md): `remoteMonitorPort` is threaded the SAME way and for
- * the same reason -- it belongs to the instance, not to a single spawn of it.
- * The replacement reuses the port the crashed/recycled process just vacated
- * (already reserved in `state.blockedPorts`, so nothing else can have taken it
+ * `remoteMonitorPort` is threaded the SAME way and for the same reason --
+ * it belongs to the instance, not to a single spawn of it. The replacement
+ * reuses the port the crashed/recycled process just vacated (already
+ * reserved in `state.blockedPorts`, so nothing else can have taken it
  * meanwhile), exactly as it reuses the primary `port` argument; this function
  * stays fully synchronous and never allocates. `undefined` is the correct
  * value for a FIRST launch through superviseChild() and for every fork launch,
  * which is why the parameter is optional.
  *
- * Phase 33, plan 33-06 (D-16): `profile` is threaded the SAME way and for a
- * sharper version of the same reason -- it belongs to the instance, not to a
- * single spawn of it, and warp is fixed at spawn (there is no runtime
- * `WarpMode` resource on stock at all). A replacement that dropped it would
- * come back unwarped while its record still claimed warp, which is exactly the
- * mismatch-between-grant-and-request that D-16's eligibility rule exists to
+ * `profile` is threaded the SAME way and for a sharper version of the same
+ * reason -- it belongs to the instance, not to a single spawn of it, and
+ * warp is fixed at spawn (there is no runtime `WarpMode` resource on stock
+ * at all). A replacement that dropped it would come back unwarped while
+ * its record still claimed warp, which is exactly the
+ * mismatch-between-grant-and-request that this carry-forward exists to
  * make impossible. `undefined` is correct for a FIRST launch through
  * superviseChild() -- production has no profile-less first-launch call site
- * of its own left after plan 41-05 retires the warm floor, but this
- * module's own unit tests still drive one directly -- and for every fork
- * launch, which is why this parameter is optional too. */
+ * of its own left now that the warm floor is retired, but this module's
+ * own unit tests still drive one directly -- and for every fork launch,
+ * which is why this parameter is optional too. */
 function launchSupervised(
   reason: string,
   port: number,
@@ -1553,15 +1531,15 @@ function launchSupervised(
   const logPath = join(logDir, logFileName);
   const logRelPath = `logs/${logFileName}`;
 
-  // I-1 rider (08.2-06-PLAN.md, Task 1): forwards a third options argument
-  // and MERGES it with the per-instance log stdio -- caller options
-  // spread FIRST, `stdio` set LAST, so the per-instance log fd always
-  // wins. Never the other order: a caller-supplied `stdio` would silently
-  // redirect a crash-respawn's output away from the log file the epoch
-  // record names, and the forensic per-instance log (D-23) would point at
-  // a file that received nothing. Without this fix, a stock instance that
-  // crashes and respawns comes back reading the operator's real `vicerc`
-  // even though its original launch was isolated.
+  // Forwards a third options argument and MERGES it with the per-instance
+  // log stdio -- caller options spread FIRST, `stdio` set LAST, so the
+  // per-instance log fd always wins. Never the other order: a
+  // caller-supplied `stdio` would silently redirect a crash-respawn's
+  // output away from the log file the epoch record names, and the
+  // forensic per-instance log would point at a file that received nothing.
+  // Without this fix, a stock instance that crashes and respawns comes back
+  // reading the operator's real `vicerc` even though its original launch
+  // was isolated.
   const defaultRealSpawn = (cmd: string, args: string[], options?: SpawnOptionsWithoutStdio): ChildProcess => {
     const fd = openSync(logPath, "a");
     return nodeSpawn(cmd, args, { ...options, stdio: ["ignore", fd, fd] });
@@ -1623,16 +1601,16 @@ function launchSupervised(
  * mirroring resources/vice-supervisor.sh's own respawn loop but expressed
  * as an event-loop exit handler instead of a `while true` poll.
  *
- * Plan 41-05 (D-16): `remoteMonitorPort` is an OPTIONAL fourth parameter,
- * threaded straight through to launchSupervised() exactly like every other
- * optional trailing parameter in this file. A
- * `backend: "stock"` caller MUST supply it: spawnAndRecordInstance()'s own
- * construction-site assertion (D-16) throws otherwise, since this function
- * is a genuine first-launch call site, not merely a respawn. This is not a
- * production stock first-launch path today (only acquirePortAndLaunch() is)
- * -- it exists for this module's own unit tests to drive a supervised first
- * launch directly, and the parameter exists so a stock test case can do so
- * without violating the same guarantee production code enforces. */
+ * `remoteMonitorPort` is an OPTIONAL fourth parameter, threaded straight
+ * through to launchSupervised() exactly like every other optional trailing
+ * parameter in this file. A `backend: "stock"` caller MUST supply it:
+ * spawnAndRecordInstance()'s own construction-site assertion throws
+ * otherwise, since this function is a genuine first-launch call site, not
+ * merely a respawn. This is not a production stock first-launch path today
+ * (only acquirePortAndLaunch() is) -- it exists for this module's own unit
+ * tests to drive a supervised first launch directly, and the parameter
+ * exists so a stock test case can do so without violating the same
+ * guarantee production code enforces. */
 export function superviseChild(reason: string, port: number, deps: SuperviseChildDeps, remoteMonitorPort?: number): InstanceRecord | null {
   const initialBackoffMs = resolveMs("VICE_RESTART_BACKOFF_S", 3, deps.initialBackoffMs);
   return launchSupervised(reason, port, deps, [], initialBackoffMs, remoteMonitorPort);
