@@ -183,6 +183,35 @@ that closes a guard-pattern hole the roadmap's Phase 53 notes name.
   widened guard does not yet match would ship a guard that is green on an
   entire class of citation, which defeats `VOCAB-01`'s own zero bar.
 
+### Remove `shipped-modules.ts` and Its Embedded Source Scans (Phase 56)
+
+Declared at planning time, as the ROADMAP's `**Requirements**: TBD -- declare at
+planning time` line instructed. These five map 1:1 onto the phase's five ROADMAP
+Success Criteria and are cited by all eleven plans. The owner rule they serve,
+stated 2026-09-14: "no test may assert on text at all" and "only data-driven tests
+that test production code are kept."
+
+- [ ] **SC-1**: `src/mcp/vice/shipped-modules.ts` no longer exists, and nothing
+  imports it. Seventeen files import it as of the 2026-09-14 re-measure; all
+  sixteen surviving test files lose the import before the module is removed, so
+  `npm run typecheck` exits 0 at every commit rather than only at the end.
+- [ ] **SC-2**: No real coverage is deleted as collateral. A test file that merely
+  CONTAINED a source-scanning case keeps every other case it had; only cases whose
+  entire subject is source text are removed. The embedded-case count and the
+  whole-file count for `shipped-modules.test.ts` are reported SEPARATELY.
+- [ ] **SC-3**: `npm run test:automated` is green and `npm run typecheck` exits 0.
+  The test-count drop is stated as a number and reconciled CASE BY CASE against a
+  verbatim removed-name list, so a silently broken file cannot hide inside the
+  expected decrease. Counts-only reconciliation is rejected by this criterion's own
+  wording.
+- [ ] **SC-4**: No test file is left empty, and none is left with only setup and no
+  assertions. Applied at case level this is also the exemption test that decides
+  whether a mixed case is stripped in place or removed whole.
+- [ ] **SC-5**: `anno-seam.test.ts`'s WR-25 behavioural case survives. It proves
+  `openStore()` refuses with `AnnoStorePathError` when handed neither a
+  workspaceRoot nor the unconfined escape; `anno-confinement.test.ts` covers
+  symlink and workspace-locality refusals, NOT this one.
+
 ## Departures from the v0.5.0 text
 
 Recorded explicitly, because these 14 requirements had stood byte-identical
@@ -277,14 +306,19 @@ Success-Criteria live in `.planning/ROADMAP.md` → "Phase Details".
 | VOCAB-04 | Phase 51 | Pending |
 | VOCAB-05 | Phase 51 | Pending |
 | VOCAB-06 | Phase 51 | Pending |
+| SC-1 | Phase 56 | Pending |
+| SC-2 | Phase 56 | Pending |
+| SC-3 | Phase 56 | Pending |
+| SC-4 | Phase 56 | Pending |
+| SC-5 | Phase 56 | Pending |
 
 **Coverage:**
 
-- v1.0.0 requirements: 38 total
-- Mapped to phases: 38
+- v1.0.0 requirements: 43 total
+- Mapped to phases: 43
 - Unmapped: 0
 
-Ten phases carry requirements above: 45-51 plus 52, 53 and 55. (The count read
+Eleven phases carry requirements above: 45-51 plus 52, 53, 55 and 56. (The count read
 22 against 26 declared rows until 2026-09-14 -- `DOCS-01..04` were declared
 without updating this block; corrected here alongside `PROXY-01..06`.) (Phase
 51's requirements were declared here on 2026-09-14 by Plan 51-02: `VOCAB-01`
@@ -295,9 +329,18 @@ go stale the moment 51 was planned. That deferral is now DISCHARGED -- Plan
 51-02 is Phase 51's own planning job doing exactly the deferred declaration --
 and this sentence supersedes the earlier one rather than deleting it, so a
 reader meeting the earlier text in this document's history knows which
-version was live when. The 38/38 figure above is not a claim that every
+version was live when. The 43/43 figure above is not a claim that every
 roadmap phase is mapped. It is a claim that every requirement declared so far
-is mapped to exactly one phase.)
+is mapped to exactly one phase.) (Phase 56's requirements were declared here on
+2026-09-15 at its own planning time, as its ROADMAP line instructed: `SC-1`
+through `SC-5`, five ids, traced to Phase 56 above, taking the total from 38 to
+43. They are spelled `SC-N` rather than a word-prefixed family because all
+eleven Phase 56 plans and the ROADMAP Requirements line already cite that
+spelling and were verified against it; renaming to match the `VOCAB-*` /
+`PROXY-*` style would have desynced eleven checker-passed plans to buy
+consistency of form alone. Phase 54 remains `TBD -- declare at planning time`
+and is deliberately still uncounted, on the same reasoning that held for
+Phase 51 until 51-02 discharged it.)
 
 **Why `FORKRM-*` is a separate id namespace:** `FORK-01` and `FORK-02` are Key
 Decisions rows in `.planning/PROJECT.md` (with an archived mirror in
