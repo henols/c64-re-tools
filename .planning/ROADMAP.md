@@ -1935,6 +1935,72 @@ stale-path rebuilds in 49, the deliberately-broken rebuild in 50 — which is th
 same discipline measured at five points of use instead of one point up front.
 Asserting a fix is present proves nothing; making the failure happen does.
 
+### Phase 56: Remove `shipped-modules.ts` and Its Embedded Source Scans
+
+**Goal**: `src/mcp/vice/shipped-modules.ts` is deleted, and with it every remaining test
+assertion that reads a production module's own source and asserts on that text. Owner rule,
+stated 2026-09-14: "no test may assert on text at all" and "only data-driven tests that test
+production code are kept."
+
+**Requirements**: TBD -- declare at planning time
+
+**Depends on**: Nothing. Follows quick tasks 260914-poo (60 files) and 260914-uhm
+(`capture-seam.test.ts`), which removed every WHOLE-FILE source scanner. What is left is
+embedded: scanning cases living inside otherwise-real behaviour tests.
+
+**Success Criteria** (what must be TRUE):
+
+  1. `src/mcp/vice/shipped-modules.ts` no longer exists, and nothing imports it.
+  2. **No real coverage was deleted as collateral.** A test file that merely CONTAINED a
+     source-scanning case keeps every other case it had. Only cases whose entire subject is
+     source text are removed. The phase reports both numbers separately.
+  3. `npm run test:automated` is green and `npm run typecheck` exits 0. The test-count drop is
+     stated as a number and reconciled case by case, so a silently broken file cannot hide
+     inside the expected decrease.
+  4. No test file is left empty, and none is left with only setup and no assertions.
+  5. `anno-seam.test.ts`'s WR-25 behavioural case survives in some form -- see the note below.
+
+**Plans**: TBD
+
+Notes:
+
+- **MEASURED 2026-09-14, after 260914-uhm.** 16 test files import `shipped-modules.ts`, every
+  one of them for `codeOnly` or `shippedTsModules`. There is no non-text use of the module
+  anywhere: every call site reads a module's source and asserts on the text. Call-site counts:
+  `anno-store` 30, `anno-seam` 21, `vsf-slice` 8, `anno-export-asm` 7, `evid-report-keys` 6,
+  `anno-coverage` 5, `anno-derive` 5, `block-class` 5, `anno-graphics` 3, `anno-index` 3,
+  `prg-image` 3, `stock-dispatch` 3, `anno-join` 2, `anno-overlap` 2, `anno-types` 2,
+  `capture-predicate` 2. **Re-measure at planning time; these are dated.**
+
+- **This phase is surgery, not deletion, and that is the whole risk.** The three preceding
+  rounds deleted whole files and could be verified by set-equality on the git deletion set.
+  Here the edits are inside 16 surviving files, two of them very large (`anno-store.test.ts`
+  5,595 lines / 118 tests; `anno-export-asm.test.ts` 6,274 lines / 196 tests). A wrong cut
+  removes real coverage silently and a green suite will not catch it. Read each case before
+  removing it.
+
+- **`anno-seam.test.ts` needs per-case judgement and must not be deleted wholesale.** Nine of
+  its 23 cases scan source, but one is genuinely behavioural and says so in its own comment:
+  "ASSERTED THROUGH THE ENTRY POINT, NOT AGAINST SOURCE TEXT". WR-25 proves `openStore()`
+  refuses with `AnnoStorePathError` when handed neither a workspaceRoot nor the unconfined
+  escape, creates nothing at the refused path, and still opens when the escape IS supplied.
+  `anno-confinement.test.ts` covers symlink and workspace-locality refusals, NOT this one.
+  It also carries a files[]-completeness check that once blocked unshipping `anno-register.ts`.
+
+- **No AST exists to scope this mechanically.** Nothing in this repository parses one --
+  `typescript` is a typecheck-only devDependency, and there is no acorn/babel/espree. Every
+  census above came from grep plus `codeOnly()`'s own hand-rolled comment blanker, which is
+  itself being deleted. Several orchestrator greps during 260914-poo returned wrong answers by
+  reading a name inside a COMMENT as an import (`module-classification.ts`,
+  `anno-cli-invocations.mjs`, `anno-cli-verbs.mjs`). Any scoping scan written for this phase
+  must distinguish comments from code and must be proved against a planted case before its
+  output is trusted.
+
+- **Deliberately untested after the preceding rounds, and NOT to be "fixed" here**: the dxa
+  family, `test-gate.mjs`, `acme-gate.ts`, `binmon-fixtures.ts`, `textmon-fixtures.ts`,
+  `stock-schema-check.ts`, `ghidra-run.ts`. `shipped-modules.ts` joins them only by being
+  deleted outright.
+
 ## Progress
 
 **This per-phase table is load-bearing, not decorative.**
@@ -2006,6 +2072,7 @@ in a milestone archive.
 | 53. Operator-Owned `docs/` | v1.0.0 | - | Not started | - |
 | 54. Remove Every Byte-Identical Assertion | v1.0.0 | - | Not started | - |
 | 55. Restore the Fork Removal's Dropped Capabilities and Re-Baseline the Proxy Test | v1.0.0 | 6/6 | Complete | 2026-09-14 |
+| 56. Remove `shipped-modules.ts` and Its Embedded Source Scans | v1.0.0 | - | Not started | - |
 
 **Milestone roll-up:** v0.2.0 — 9 phases, 87 plans, 51/51 in-scope requirements,
 shipped 2026-08-19 (audit round 4 `tech_debt`; 13 deferred items at close).
