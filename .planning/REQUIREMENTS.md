@@ -118,23 +118,23 @@ cutting the capabilities themselves, and `vice-proxy.test.ts` -- a
 the 58% of `vice-proxy.ts` that deletion removed. Both were invisible because CI
 had been failing upstream of its own Test step since Phase 34.
 
-- [ ] **PROXY-01**: The shipped server enforces the result ceiling it advertises.
+- [x] **PROXY-01**: The shipped server enforces the result ceiling it advertises.
   An over-cap success splits across a real continuation sequence, `vice_result_continue`
   returns the chunks, reassembly is byte-exact, and the advertisement and the
   enforcement are one read of one constant. MEASURED 2026-09-13 at the wire: a
   `tools/call` returned 23,290 characters in a single unchunked item under a
   200-character advertised cap.
-- [ ] **PROXY-02**: A confirmed kill's incident record carries a real `epoch_after`
+- [x] **PROXY-02**: A confirmed kill's incident record carries a real `epoch_after`
   on turnover and an honest `null` otherwise -- never the stale `epoch_before`
   value -- from a wall-clock-bounded poll, pinned in the automated gate.
-- [ ] **PROXY-03**: Every removed assertion is DELETED with its reason and its named
+- [x] **PROXY-03**: Every removed assertion is DELETED with its reason and its named
   successor suite in the commit message. Nothing is `skip`-ed, and nothing whose
   behaviour is live but covered nowhere else is removed.
-- [ ] **PROXY-04**: Every remaining test in the file can fail. Each identified
+- [x] **PROXY-04**: Every remaining test in the file can fail. Each identified
   vacuous passer is re-pointed at real behaviour or deleted with a successor named.
-- [ ] **PROXY-05**: The surviving-behaviour set asserts post-fork-removal reality,
+- [x] **PROXY-05**: The surviving-behaviour set asserts post-fork-removal reality,
   with no guard weakened to reach green.
-- [ ] **PROXY-06**: `npm test` -- the full `*.test.*` glob CI actually runs -- exits
+- [x] **PROXY-06**: `npm test` -- the full `*.test.*` glob CI actually runs -- exits
   0, every stale ledger claim about the file is corrected, and `npm run test:automated`
   stays at 0 failures / 9 skips with the file outside it.
 
@@ -220,12 +220,12 @@ Success-Criteria live in `.planning/ROADMAP.md` → "Phase Details".
 | DOCS-02 | Phase 53 | Pending |
 | DOCS-03 | Phase 53 | Pending |
 | DOCS-04 | Phase 53 | Pending |
-| PROXY-01 | Phase 55 | Pending |
-| PROXY-02 | Phase 55 | Pending |
-| PROXY-03 | Phase 55 | Pending |
-| PROXY-04 | Phase 55 | Pending |
-| PROXY-05 | Phase 55 | Pending |
-| PROXY-06 | Phase 55 | Pending |
+| PROXY-01 | Phase 55 | Complete |
+| PROXY-02 | Phase 55 | Complete |
+| PROXY-03 | Phase 55 | Complete |
+| PROXY-04 | Phase 55 | Complete |
+| PROXY-05 | Phase 55 | Complete |
+| PROXY-06 | Phase 55 | Complete |
 
 **Coverage:**
 

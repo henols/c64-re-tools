@@ -1900,7 +1900,7 @@ in a milestone archive.
 | 52. Remove the Fork Backend | v1.0.0 | 13/13 | Complete | 2026-09-12 |
 | 53. Operator-Owned `docs/` | v1.0.0 | - | Not started | - |
 | 54. Remove Every Byte-Identical Assertion | v1.0.0 | - | Not started | - |
-| 55. Restore the Fork Removal's Dropped Capabilities and Re-Baseline the Proxy Test | v1.0.0 | - | Not started | - |
+| 55. Restore the Fork Removal's Dropped Capabilities and Re-Baseline the Proxy Test | v1.0.0 | 6/6 | Complete | 2026-09-14 |
 
 **Milestone roll-up:** v0.2.0 — 9 phases, 87 plans, 51/51 in-scope requirements,
 shipped 2026-08-19 (audit round 4 `tech_debt`; 13 deferred items at close).

@@ -5,17 +5,17 @@ milestone_name: The Rebuild Half
 current_phase: 50
 current_phase_name: Equivalence and Modifiability
 status: planning
-stopped_at: Completed quick task 260913-u1i (CI no longer claims to be a container)
+stopped_at: Phase 55 complete — the full *.test.* glob CI runs is green (4574 tests, 0 failures)
 last_updated: "2026-09-13T20:11:08.073Z"
 last_activity: 2026-09-13
 last_activity_desc: "Completed quick task 260913-u1i: CI's build job no longer declares itself a container (removed the workflow-wide env block after converting the five test cases that depended on it to inject the signal directly)"
 state_head: a6f53fd04bbcfa3a009c200ac3cfe307f7211457
 progress:
   total_phases: 10
-  completed_phases: 6
-  total_plans: 48
-  completed_plans: 48
-  percent: 60
+  completed_phases: 7
+  total_plans: 54
+  completed_plans: 54
+  percent: 70
 ---
 
 # Project State
