@@ -3,7 +3,7 @@
 //
 // The ONE place that answers "which annotated range owns this address" --
 // a pure, narrowest-range-wins paint index over the whole 64K address space,
-// rebuilt from rows and never maintained incrementally (STORE-03).
+// rebuilt from rows and never maintained incrementally.
 //
 // ---------------------------------------------------------------------------
 // WHY THIS FILE EXISTS
@@ -37,14 +37,14 @@
 //      an argument is the only shape that can be tested for it.
 //   2. NEVER cache this index on disk. A cached index is a second truth that
 //      can disagree with the range table -- exactly the failure the
-//      derived-from-bytes coverage census (`COV-01`) exists to make impossible.
+//      derived-from-bytes coverage census exists to make impossible.
 //      Rebuild it; see the measurement above.
-//   3. NEVER add an adjacency, coalescing or merge pass. `STORE-02` stores
-//      ranges AS ranges and never merges them, so there is no splitter
-//      primitive here to introduce. Merging is the named blocker behind
-//      `DECOMP-01` and `BUILD-02` and the predicted over-merge bias behind
-//      `COV-01`; all three are designed out by construction here, not
-//      documented as hazards to remember.
+//   3. NEVER add an adjacency, coalescing or merge pass. This project's own
+//      store stores ranges AS ranges and never merges them, so there is no
+//      splitter primitive here to introduce. Merging is a named blocker for
+//      decomposition-to-closure work and the predicted over-merge bias
+//      behind the coverage census; all three are designed out by
+//      construction here, not documented as hazards to remember.
 //   4. NEVER maintain the index incrementally. An incremental update has to
 //      know what the row it is removing was covering UNDERNEATH, which the
 //      index cannot say -- a painted cell records the winner, not the losers.

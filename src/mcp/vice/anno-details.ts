@@ -32,15 +32,15 @@
 //   - Never scan for the containing range with a start/end bracket comparison
 //     loop. `resolveAt()` over `paintIndexOf()` is the single arbiter --
 //     narrowest range wins, and among equally short ones the later-inserted one
-//     -- and `STORE-03` cross-validated it at all 65,536 addresses against an
+//     -- cross-validated at all 65,536 addresses against an
 //     independently written implementation. A second lookup rule here would be
 //     a second answer, and the disagreement would be invisible because both
 //     look authoritative.
 //   - Never write anything. This module is on a read path and is held to
 //     `anno-derive.ts`'s never-cache rule by the same structural control: no
 //     SQL write verb, no filesystem write call, no persistence binding.
-//   - Never import `hostpath.ts`, `containerpath.ts` or `container-guard.mts`
-//     (MCP-02) -- this composition is proxy-local.
+//   - Never import `hostpath.ts`, `containerpath.ts` or `container-guard.mts` --
+//     this composition is proxy-local.
 //   - Never return an empty array for something that could not be answered. A
 //     component with no answer comes back as `{available:false, reason}`, so an
 //     address that genuinely has no comments is distinguishable from a question
@@ -135,7 +135,7 @@ export function composeAddressDetails(
           available: false,
           reason:
             `cross-references to ${hex4(at)} are DERIVED from program bytes on every query and no bytes were supplied: the store ` +
-            "holds no program image (D-07), so this component is answerable only when the caller names the image it wants derived " +
+            "holds no program image, so this component is answerable only when the caller names the image it wants derived " +
             "from. The stored non-derivable rows alone are readable through anno-store.ts's listXrefs.",
         }
       : { available: true, value: crossReferencesTo(handle, image, origin, at) };

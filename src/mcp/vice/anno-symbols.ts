@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // anno-symbols.ts -- the ONE authoritative place in this repo for the
 // PRE-SPAWN half of the symbol round trip between an annotation store and
-// stock VICE's symbol table (ANNO-14/ANNO-15, ARCHITECTURE.md Rule A20).
+// stock VICE's symbol table (ARCHITECTURE.md Rule A20).
 //
-// WHAT LEFT, WHAT STAYED, AND WHERE THE ROUTE RETURNS (plan 29-10, D-01/D-14,
-// 2026-08-30). Read this paragraph before looking for a function that is not
+// WHAT LEFT, WHAT STAYED, AND WHERE THE ROUTE RETURNS (2026-08-30). Read this
+// paragraph before looking for a function that is not
 // here.
 //
 //   WHAT LEFT: the ROUTE. `exportLabels()`, `importLabels()` and
@@ -46,7 +46,7 @@
 //   criterion of it mentioned `export-lbl` or `import-lbl`. So the forecast
 //   was wrong, and it is CORRECTED here rather than deleted, because deleting
 //   a withdrawal notice erases the record that a capability went missing and
-//   why. `.planning/PROJECT.md` carries the dated ANNO-14/ANNO-15 notice and
+//   why. This project's own capability record carries the dated notice and
 //   says the same thing: this is a temporary loss of a capability that was
 //   genuinely Validated, not a completed one being tidied away. The
 //   demonstration was made end to end against genuine unpatched stock `x64sc`
@@ -67,7 +67,7 @@
 //
 // MEASURED FACTS, PAST TENSE, kept because they are the reasons for the
 // discipline above rather than instructions to anyone:
-//   - `--export_lbl` exported USER labels only. Measured (Phase 9, and
+//   - `--export_lbl` exported USER labels only. Measured (and
 //     re-confirmed by the round-trip test that was deleted with its subject):
 //     an annotated project emitted exactly the labels a caller had set, and
 //     the auto-generated `a_D011` / `a_D020` / `e_FFD2` externals were NOT
@@ -168,7 +168,7 @@ export interface ImportLabelsUnverified {
  * read `result.importedNames` and mistake "the import call returned no error"
  * for "the names are actually on disk".
  *
- * KEPT ACROSS THE CUT (plan 29-10). The route that produced it is gone; the
+ * KEPT ACROSS THE CUT. The route that produced it is gone; the
  * distinction it encodes is the whole lesson of the `--import_lbl` discard
  * measured in this module's header. Because no phase currently owns rebuilding
  * that route, this type is its only surviving contract; whenever a route IS
@@ -194,7 +194,7 @@ export interface ValidatedLabelFile {
 /**
  * THE PRE-SPAWN GATE (T-11-LBL-SIZE + T-11-NAME-INJECT, both closed) -- the
  * half of the deleted `importLabels()` that never touched a child process,
- * lifted out unchanged when the route around it was removed (plan 29-10).
+ * lifted out unchanged when the route around it was removed.
  *
  * In order, and the order matters:
  *   1. A byte-size check against `stock-symbols.ts`'s own

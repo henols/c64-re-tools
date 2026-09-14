@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // anno-join.ts
 //
-// Phase 37, plan 37-01 (AUTO-01): the mechanical join between stored
+// The mechanical join between stored
 // cross-references and `memmap.json`, with no agent call, no queue walk and
 // no skill invocation anywhere in the loop.
 //
@@ -17,9 +17,9 @@
 // WHAT THIS IS THE ONE AUTHORITATIVE PLACE FOR: reading `listXrefs()`'s
 // distinct target addresses, classifying each one (inside the loaded image,
 // no `memmap.json` entry, or annotated) and writing the resulting comment
-// through `setComment()`. `AUTO-01`'s own criterion -- no agent, no queue
+// through `setComment()`. This module's own criterion -- no agent, no queue
 // walk, no skill invocation -- is checked STRUCTURALLY over this module's own
-// source in `anno-join.test.ts` (plan 37 task 3), not merely asserted here in
+// source in `anno-join.test.ts`, not merely asserted here in
 // prose.
 //
 // WHAT NOT TO DO:
@@ -33,14 +33,14 @@
 //     that decodes to more than one region, DECLINES -- see the bank-state
 //     block below.
 //
-// Phase 37, plan 37-06 (AUTO-04/AUTO-05): `runMemmapJoin()` gains an
+// `runMemmapJoin()` gains an
 // OPTIONAL `constWrites` argument. When `undefined` (every pre-37-06 call
 // site, and every existing test in this file), the bank-state machinery
 // below is a complete no-op and every address resolves EXACTLY as it did
 // before this plan -- the candidate-constraint argument must not change any
 // unconstrained selection's answer. Only when a caller explicitly supplies
 // an array (even an empty one) does the reaching-values/decline logic
-// activate for addresses inside `BANK_CONDITIONAL_RANGES`. D-37-24: the
+// activate for addresses inside `BANK_CONDITIONAL_RANGES`. The
 // reaching-values computation is deliberately conservative -- it is NOT a
 // dataflow analysis. It uses only what the export gives: the recovered
 // constant stores to the processor port (each with its own address), and
@@ -49,7 +49,7 @@
 // `constWrites` whose OWN store address can reach that address, walked
 // forward over that same graph. Where the graph does not connect a store to
 // the address at all, that value is simply not in the reaching set --
-// D-37-23's decline-on-empty-or-disagreement rule (below) is what turns
+// the decline-on-empty-or-disagreement rule (below) is what turns
 // "nothing reaches this point" into a stated absence rather than a silent
 // default.
 
@@ -66,30 +66,29 @@ import type { ConstWriteFact } from "./anno-import.ts";
 import type { ContradictedComment, SplitTableReinterpretation, XrefRow } from "./anno-types.ts";
 import { loadMemmap, memmapDigest, PROVENANCE_TOKEN_PREFIX, selectMemmapEntry } from "./memmap-lookup.ts";
 import type { MemmapEntry, MemmapSelection } from "./memmap-lookup.ts";
-// Phase 37, plan 37-08 (AUTO-07): the graphics write-back. deriveGraphicsRanges()
+// The graphics write-back. deriveGraphicsRanges()
 // is structurally typed against ConstWriteFact -- GraphicsConstWriteFact's own
 // shape is identical ({storeAddress, targetAddress, value}) -- so THIS module's
-// own constWrites argument, already threaded for D-37-24's bank-state block, is
-// handed straight through with no translation layer (37-07-SUMMARY.md's own
-// "Next Phase Readiness" note names this directly).
+// own constWrites argument, already threaded for the bank-state block, is
+// handed straight through with no translation layer.
 import { deriveGraphicsRanges } from "./anno-graphics.ts";
 import type { GraphicsMap } from "./anno-graphics.ts";
 
-/** D-37-25: the axis-qualified provenance marker an annotated bank-conditional
+/** The axis-qualified provenance marker an annotated bank-conditional
  * comment carries, ALWAYS before `PROVENANCE_TOKEN_PREFIX`'s own digest
- * token (which stays last -- D-37-13). Names the axis ("processor-port")
+ * token (which stays last). Names the axis ("processor-port")
  * explicitly, so a later phase adding the VIC banking axis is additive
  * rather than ambiguous about which axis a given token names. */
 const BANK_PROVENANCE_PREFIX = "[processor-port:";
 
 /**
- * The reaching-values computation's own result shape (D-37-24): exactly one
+ * The reaching-values computation's own result shape: exactly one
  * recovered value reaches the address; several do (an array -- length 0
  * means none reach at all, length 2+ means genuine disagreement-or-agreement
  * to resolve); or the computation cannot decide at all. Nothing in this
  * project's current data model (a plain directed graph of already-resolved
  * `XrefRow`s) can currently produce `"unknown"` -- there is no signal here
- * for a dropped or unresolved reference (D-37-24's own stated limit) -- but
+ * for a dropped or unresolved reference (a stated limit of this computation) -- but
  * the shape is kept complete for a future importer that DOES emit such a
  * signal, rather than silently folding that case into "empty".
  */
@@ -126,7 +125,7 @@ function canReach(from: number, target: number, adjacency: Map<number, number[]>
   return false;
 }
 
-/** D-37-24: the set of recovered processor-port values whose OWN store
+/** The set of recovered processor-port values whose OWN store
  * address can reach `targetAddress`, over `adjacency`. Never a dataflow
  * analysis -- purely "does the stored cross-reference graph connect this
  * store to this address". */
@@ -156,8 +155,8 @@ export class AnnoJoinError extends Error {
 }
 
 /** What one `runMemmapJoin()` call reports. `addressesConsidered` is always
- * the sum of the next four fields. The three `graphics*` fields (plan 37-08,
- * AUTO-07) are always present and `0` when `constWrites` is omitted or when
+ * the sum of the next four fields. The three `graphics*` fields are always
+ * present and `0` when `constWrites` is omitted or when
  * the selected map derives zero ranges -- never absent, so a caller reads
  * them unconditionally instead of guarding on them, mirroring
  * `SetDataTypeResult`'s own "always present, often empty" convention for
@@ -175,14 +174,14 @@ export interface JoinCounts {
 }
 
 /**
- * What the graphics write-back (plan 37-08, AUTO-07) reports, in full --
+ * What the graphics write-back reports, in full --
  * `JoinCounts`'s own `graphics*` fields are the COUNTS of these same
  * `contradictedComments`/`reinterpretedSplitTables` arrays; this record
  * carries the disclosures themselves so neither is dropped (must_haves.truths:
  * "the join's returned counts include the contradicted-comment and
  * fragmented-split-table disclosures the range write reported; neither is
  * dropped"). `mapIndex` records WHICH of `deriveGraphicsRanges()`'s several
- * maps was written -- D-37-27's own rule (several valid combinations are
+ * maps was written -- this project's own rule (several valid combinations are
  * several maps, never one merged map) means writing more than one would
  * write mutually-contradicting ranges into the SAME store, so exactly one is
  * ever written and this field is the record of which. */
@@ -206,7 +205,7 @@ export interface JoinDecision {
 export interface RunMemmapJoinArgs {
   imageOrigin: number;
   imageByteLength: number;
-  /** D-37-24/AUTO-04/AUTO-05: the recovered `$01` const-write facts this run
+  /** The recovered `$01` const-write facts this run
    * has evidence for, typically `parseConstWrites()`'s own output over one
    * imported export. `undefined` (every pre-37-06 call site) means "this run
    * carries no bank-state evidence at all" -- the bank-state machinery is a
@@ -214,7 +213,7 @@ export interface RunMemmapJoinArgs {
    * An explicit array (even `[]`) activates it for addresses inside
    * `BANK_CONDITIONAL_RANGES`. */
   constWrites?: readonly ConstWriteFact[];
-  /** Plan 37-08 (AUTO-07, D-37-27): which of `deriveGraphicsRanges()`'s
+  /** Which of `deriveGraphicsRanges()`'s
    * several maps to write back, when `constWrites` derives more than one
    * distinct register-value combination. Defaults to `0`. Consulted ONLY
    * when `constWrites` is supplied AT ALL (the SAME gate that activates the
@@ -230,8 +229,9 @@ export interface RunMemmapJoinArgs {
  * in ascending address order. An address inside the caller's own loaded
  * image range is a program address, not a hardware/memory-map feature, and
  * is skipped WITHOUT a `memmap.json` lookup -- the membership test runs
- * BEFORE `selectEntry()` is called at all (D-37-12), so the guard is a
- * control-flow fact rather than a result-filtering one: `AUTO-03` says an
+ * BEFORE `selectEntry()` is called at all, so the guard is a
+ * control-flow fact rather than a result-filtering one: this file's own
+ * contract says an
  * in-image address is "never looked up in memmap.json", a claim about what
  * runs, not merely about what the caller sees back. An address with no
  * containing `memmap.json` entry is skipped for that reason instead;
@@ -262,7 +262,7 @@ export function runMemmapJoin(
     );
   }
 
-  // D-37-13: computed ONCE per join run and reused for every annotated row,
+  // Computed ONCE per join run and reused for every annotated row,
   // never recomputed per row -- two comments written in the same run are
   // therefore GUARANTEED to carry byte-identical tokens, not merely likely
   // to (the file cannot change mid-run, but a per-row recompute would still
@@ -272,7 +272,7 @@ export function runMemmapJoin(
   const xrefs = listXrefs(handle);
   const targets = [...new Set(xrefs.map((xref) => xref.toAddress))].sort((a, b) => a - b);
 
-  // D-37-24: built ONCE per run, over the SAME xref graph the unconstrained
+  // Built ONCE per run, over the SAME xref graph the unconstrained
   // path already reads via `listXrefs()` above -- reused for every address's
   // own reachability walk below. `undefined` `args.constWrites` means the
   // bank-state block is never entered at all, so this adjacency map is built
@@ -282,7 +282,7 @@ export function runMemmapJoin(
   const bankAdjacency = buildAdjacency(xrefs);
 
   // The inclusive image range, computed ONCE from the LoadedImage's own body
-  // bytes (D-37-12) -- never from `totalBytes` (the file's own byte count,
+  // bytes -- never from `totalBytes` (the file's own byte count,
   // which on the .prg route includes the two-byte load-address header and
   // would shift this whole range by two bytes) and never a caller-supplied
   // number pair that could silently widen or narrow the program's own
@@ -300,7 +300,7 @@ export function runMemmapJoin(
   for (const address of targets) {
     // THE GUARD: one early-return, before selectEntry() is ever called. A
     // single textual deletion of this block removes it cleanly -- that
-    // deletion is plan 37-05's own observed-red control (row 4).
+    // deletion is this file's own observed-red control.
     if (address >= imageStart && address <= imageEnd) {
       skippedInImage += 1;
       decisions.push({
@@ -313,13 +313,13 @@ export function runMemmapJoin(
       continue;
     }
 
-    // THE BANK-STATE BLOCK (D-37-22/D-37-23/D-37-24, AUTO-04/AUTO-05). Only
+    // THE BANK-STATE BLOCK. Only
     // entered when the caller supplied `constWrites` AT ALL (`undefined`
     // skips this whole block, falling through to the unconstrained path
     // below exactly as pre-37-06) AND the address is inside one of the
     // three bank-conditional ranges -- outside them, bank state is
     // irrelevant and the candidate set stays unconstrained regardless of
-    // `constWrites` (D-37-22).
+    // `constWrites`.
     if (args.constWrites !== undefined && isBankConditionalAddress(address)) {
       const reaching = computeReachingValues(address, args.constWrites, bankAdjacency);
 
@@ -335,7 +335,7 @@ export function runMemmapJoin(
 
       // Resolves ONE region (or refuses) for a single reaching value, applies
       // it as a candidate constraint BEFORE selection runs (never a
-      // post-filter -- D-37-22), and pushes the matching decision. Shared by
+      // post-filter), and pushes the matching decision. Shared by
       // both the single-value and the several-values-same-region branches
       // below, so the annotate path is written exactly once.
       const annotateUnderRegion = (region: Exclude<BankedRegion, "not_applicable">, bankNote: string): void => {
@@ -412,7 +412,7 @@ export function runMemmapJoin(
 
     // The full comment text: the selected entry's label, one space, the
     // provenance prefix, then the full 64-character digest -- always LAST,
-    // never truncated (D-37-13). setComment() -> assertCommentText() refuses
+    // never truncated. setComment() -> assertCommentText() refuses
     // (never truncates) a text that overflows MAX_COMMENT_BYTES; that
     // refusal is left to propagate here rather than being pre-checked and
     // silently worked around, because a truncated provenance token would be
@@ -424,7 +424,7 @@ export function runMemmapJoin(
     decisions.push({ address, outcome: "annotated", label: selection.entry.label });
   }
 
-  // THE GRAPHICS WRITE-BACK (D-37-32/D-37-33, AUTO-07). Runs AFTER the main
+  // THE GRAPHICS WRITE-BACK. Runs AFTER the main
   // per-address loop above, as its own step -- graphics ranges are derived
   // from register VALUES, never from the cross-reference targets the loop
   // above walks, so there is no reason to interleave the two. Gated on the
@@ -443,10 +443,10 @@ export function runMemmapJoin(
       );
     }
 
-    // D-37-27: write ONLY the selected map's own ranges -- never every map
+    // Write ONLY the selected map's own ranges -- never every map
     // deriveGraphicsRanges() returned. Several distinct register-value
-    // combinations describe MUTUALLY CONTRADICTING layouts (D-37-27's own
-    // reason several maps exist at all); writing more than one into the
+    // combinations describe MUTUALLY CONTRADICTING layouts (the reason
+    // several maps exist at all); writing more than one into the
     // same store would write ranges that disagree with each other by
     // construction.
     let rangesWritten = 0;
