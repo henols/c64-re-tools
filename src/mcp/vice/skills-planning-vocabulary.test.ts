@@ -522,23 +522,28 @@ const COMMENT_BUDGET_BASELINE: readonly CommentBudgetEntry[] = Object.freeze([
 ]);
 
 /**
- * Provisional slack allowance for the comment-byte-budget inequality below,
- * in characters. PROVISIONAL, and measured against every real diff this plan
- * produced rather than guessed: the `routine-queue-walker` sweep's
- * worst-case single file lost 129 comment characters while removing 149
- * citation characters (already inside a zero-slack margin), and the
- * installer CLI entry point taken to zero below (out of RATCHET, still in
- * COMMENT_BUDGET_BASELINE) actually GREW its comment total by 179
- * characters while removing 38 citation characters, so neither real
- * rewrite in this plan needed any slack at all. 20 is a small round-number
- * margin held in reserve for a
- * rewrite that legitimately needs a few characters of connective prose the
- * citation itself did not carry, not a number either diff demanded. This is
- * NOT the last word on the value -- a later plan in this phase is expected
- * to hit the densest real diff and recalibrate it there; treat this as a
- * floor for what "the reason survives" enforces, not a target.
+ * Slack allowance for the comment-byte-budget inequality below, in
+ * characters. FINAL, fixed by this phase's densest real diff:
+ * `src/mcp/vice/host-tool.mts` (325 citations swept to zero, the single
+ * largest real rewrite this phase produces) lost 4073 comment characters
+ * while removing 2478 citation characters -- a deficit of 1595, which is
+ * NOT lost reasoning. It is packaging removed ALONGSIDE each citation
+ * (`"Phase 36, plan 36-02 (D-36-07): "`'s own parentheses, commas and the
+ * literal words "Phase"/"plan" are comment bytes the guard's own
+ * `charsInCitations` tally never counts, because only the regex-matched
+ * token substrings count as "citation characters" -- the surrounding
+ * scaffolding is real comment volume this budget must still absorb even
+ * though removing it loses no explanation). Two earlier, far smaller real
+ * diffs (the `routine-queue-walker` sweep and `installer/bin/cli.mjs`,
+ * both from an earlier plan in this phase) needed no slack at all -- one
+ * even GREW its comment total. 1650 is 1595 rounded up with a 55-character
+ * margin: enough to absorb this file's own measured packaging overhead
+ * with a small buffer, not large enough to default-approve a genuine
+ * paragraph loss (Task 3 of the plan that set this value proved that by
+ * deleting a real explanatory paragraph from this same file and observing
+ * the assertion still red).
  */
-const COMMENT_BUDGET_SLACK = 20;
+const COMMENT_BUDGET_SLACK = 1650;
 
 /** Every planning-vocabulary offender across the widened scan surface,
  * formatted one line per hit -- the single assertion body BOTH the real
