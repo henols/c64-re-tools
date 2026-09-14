@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // anno-import.ts
 //
-// Phase 37, plan 37-01 (IMP-01, IMP-02): the container-side parser and
-// importer for `GhidraStructExport.java`'s `## `-delimited transfer file.
+// The container-side parser and importer for `GhidraStructExport.java`'s
+// `## `-delimited transfer file.
 //
 // THIS MODULE RECEIVES AN ALREADY-OPEN STORE HANDLE. It never opens or closes
 // a store itself -- there is no second store session anywhere in this file.
@@ -18,9 +18,9 @@
 // WHAT THIS IS THE ONE AUTHORITATIVE PLACE FOR: parsing the export's fixed
 // `## `-delimited section format, mapping Ghidra's `Reference.getReferenceType()`
 // vocabulary onto the store's frozen four-member `XrefAccessKind`
-// (`GHIDRA_REFTYPE_TO_ACCESS_KIND`, D-37-05), and the digest-then-delete
+// (`GHIDRA_REFTYPE_TO_ACCESS_KIND`), and the digest-then-delete
 // discipline that makes the transfer file transient evidence rather than a
-// second on-disk model (IMP-02).
+// second on-disk model.
 //
 // WHAT NOT TO DO:
 //   - Never write a row before the WHOLE document has parsed successfully.
@@ -37,7 +37,7 @@
 //     member of `XREF_ACCESS_KINDS`. It is dropped and COUNTED in
 //     `kindsSeenNotImported`, never silently absorbed and never refused --
 //     refusing on an ordinary `JSR`/`JMP` reference would make the importer
-//     unusable against a real corpus binary (D-37-05).
+//     unusable against a real corpus binary.
 
 import { createHash } from "node:crypto";
 // Namespace import, deliberately: a later acceptance gate greps this file for
@@ -95,11 +95,11 @@ export interface GhidraExportDocument {
  * hand-written test fixture using either convention keeps working.
  *
  * Discovered as a LIVE, previously-untested defect in the REFERENCES import
- * path (plan 37-01): every prior test used a hand-written, `$`-prefixed
+ * path: every prior test used a hand-written, `$`-prefixed
  * transfer file, never a token shaped exactly as Ghidra itself renders one
  * -- `importGhidraExport()` would refuse EVERY real captured export outright.
  * Fixed here, in the SAME function `## CONST_WRITES`'s own tokens (which are
- * ALSO bare hex, D-37-06) need the identical treatment for.
+ * ALSO bare hex) need the identical treatment for.
  */
 function parseGhidraAddressToken(token: string, what: string): number {
   if (token.startsWith("$") || /^0[xX]/.test(token)) {
@@ -245,7 +245,7 @@ export function parseGhidraExport(text: string): GhidraExportDocument {
   };
   checkTrailerCount("REFERENCES", "REFERENCE_COUNT");
   checkTrailerCount("CLASSIFICATION", "CLASSIFICATION_LINES");
-  // Plan 37-02: the SAME generic trailer-count check, extended to
+  // The SAME generic trailer-count check, extended to
   // `## CONST_WRITES` / `## CONST_WRITES_COUNT`. Note what this generic
   // grammar already does with the exporter's own `## CONST_WRITES_NONE`
   // marker line: because every `## `-prefixed line with no following space
@@ -262,7 +262,7 @@ export function parseGhidraExport(text: string): GhidraExportDocument {
 }
 
 /**
- * D-37-05's frozen mapping from Ghidra's `Reference.getReferenceType()`
+ * The frozen mapping from Ghidra's `Reference.getReferenceType()`
  * vocabulary onto the store's four-member `XrefAccessKind`. A token absent
  * from this table is dropped and COUNTED (`kindsSeenNotImported`), never
  * refused and never guessed -- a real corpus binary carries ordinary jump and
@@ -277,7 +277,7 @@ export const GHIDRA_REFTYPE_TO_ACCESS_KIND: Readonly<Record<string, XrefAccessKi
   COMPUTED_CALL: "COMPUTED_JUMP",
 });
 
-/** D-37-06's watched-address set, mirroring the Java constant
+/** The watched-address set, mirroring the Java constant
  * `CONST_WRITE_WATCHED_ADDRESSES` in `GhidraStructExport.java` byte-for-byte
  * -- the two MUST be kept in step. `parseConstWrites()` below does NOT
  * filter its own output against this list: a `## CONST_WRITES` line for an
@@ -299,8 +299,8 @@ export interface ConstWriteFact {
 
 /**
  * Turns the `## CONST_WRITES` section `parseGhidraExport()` already parsed
- * into `(storeAddress, targetAddress, value)` facts (Phase 37 plan 37-02,
- * `AUTO-04`/`AUTO-05`). `parseGhidraExport()` has ALREADY refused, before
+ * into `(storeAddress, targetAddress, value)` facts. `parseGhidraExport()`
+ * has ALREADY refused, before
  * this function is ever called, if a declared `## CONST_WRITES_COUNT`
  * trailer disagrees with the section's own parsed body-line count -- the
  * SAME generic check `## REFERENCE_COUNT`/`## CLASSIFICATION_LINES` already
@@ -357,10 +357,10 @@ export interface ImportCounts {
    * still reported as a success with this reason attached, never as a
    * failure after a durable write. */
   transferDeleteError?: string;
-  /** CR-01 fix: the `## CONST_WRITES` section's own facts, parsed by
+  /** The `## CONST_WRITES` section's own facts, parsed by
    * `parseConstWrites()` BEFORE the transfer file is deleted below -- the
    * ONE artifact carrying them. `importGhidraExport()` never persists these
-   * facts in the store (the reserved `bank` column stays null, IMP-01/D-37-25);
+   * facts in the store (the reserved `bank` column stays null);
    * they ride on THIS return value instead, so a caller can hand the SAME
    * array straight to `anno_join_memmap`'s own `const_writes` argument in a
    * following call, closing the loop `anno-tools.ts`'s `dispatchJoinMemmap()`
@@ -429,7 +429,7 @@ export function importGhidraExport(handle: AnnoStoreHandle, args: ImportGhidraEx
 
   const doc = parseGhidraExport(contents.toString("utf8"));
   const referenceLines = doc.sections.get("REFERENCES") ?? [];
-  // CR-01/WR-02 fix: parsed here, from the SAME document, before the
+  // Parsed here, from the SAME document, before the
   // transfer file is deleted below -- `parseConstWrites()` was previously
   // exercised only by test code (`anno-join.test.ts`/`ghidra-live.test.ts`),
   // never by this, the only production entry point that reads a transfer

@@ -1,19 +1,19 @@
 #!/usr/bin/env node
 // anno-graphics.ts
 //
-// Phase 37, plan 37-07 (AUTO-06): derives the VIC-II graphics areas -- screen
+// Derives the VIC-II graphics areas -- screen
 // matrix, character set or bitmap, and sprite POINTERS -- from RECOVERED VIC
 // register VALUES, never from cross-references. The chip fetches its
 // character/bitmap/screen data by direct memory access, so a character set
 // may be referenced by NO INSTRUCTION ANYWHERE IN THE PROGRAM -- exactly the
 // case a cross-reference-driven join structurally cannot find. That is
-// AUTO-06's entire reason to exist (`37-RESEARCH.md` SS E: no existing code in
+// This module's entire reason to exist: no existing code in
 // this repository decodes these three registers for this purpose -- the
 // stock-backend modules that name them read LIVE emulator state for a
-// different question).
+// different question.
 //
 // THIS MODULE TAKES PLAIN REGISTER-WRITE VALUES AND RETURNS PLAIN RANGES --
-// AND NOTHING ELSE (D-37-26). It never receives a store handle, never opens
+// AND NOTHING ELSE. It never receives a store handle, never opens
 // or names `node:sqlite`, never imports `anno-store.ts`, `anno-join.ts`, or
 // any module that reads the stored cross-reference graph, and never imports
 // `hostpath.ts`/`containerpath.ts` or the emulator backend
@@ -22,13 +22,13 @@
 // very case this derivation exists to cover -- so its import list is scanned
 // structurally (`anno-graphics.test.ts`) rather than merely reviewed.
 //
-// SPRITE BITMAP LOCATIONS ARE OUT OF SCOPE (D-37-29): this module derives the
+// SPRITE BITMAP LOCATIONS ARE OUT OF SCOPE: this module derives the
 // eight-byte sprite POINTER TABLE range only. The pointer VALUES themselves
 // are program data, usually written at run time, and are not register values
 // a static analysis recovers -- this module must never appear to promise
 // them.
 //
-// A MISSING REGISTER IS A STATED ABSENCE, NEVER A DEFAULT (D-37-28): where a
+// A MISSING REGISTER IS A STATED ABSENCE, NEVER A DEFAULT: where a
 // required register value was never recovered, the ranges that depend on it
 // are omitted from that map and the map names the missing register in
 // `missingRegisters`. Power-on defaults exist and are well known, which is
@@ -37,10 +37,10 @@
 // recovered value, and this phase exists to prevent exactly that class of
 // confident wrong output.
 //
-// SEVERAL COMBINATIONS ARE SEVERAL MAPS, NEVER ONE MERGED MAP (D-37-27): a
+// SEVERAL COMBINATIONS ARE SEVERAL MAPS, NEVER ONE MERGED MAP: a
 // program that reprograms bank, screen or charset per raster split has
 // several valid graphics maps, and a single derived map would be wrong for
-// all but one -- the same path-dependence limit AUTO-05 names for the
+// all but one -- the same path-dependence limit this project's own processor-port derivation names for the
 // processor port. `deriveGraphicsRanges()` returns one map per DISTINCT
 // combination of the three registers' own recovered values: the cross
 // product of each register's own distinct-value set, with a register that
@@ -49,7 +49,7 @@
 // tuple order (missing sorts first), so two runs over the same facts return
 // deeply equal arrays.
 //
-// NO GRAPHICS-SPECIFIC DATA TYPE EXISTS (D-37-30): the store's `DataType`
+// NO GRAPHICS-SPECIFIC DATA TYPE EXISTS: the store's `DataType`
 // vocabulary (`anno-types.ts`) is a frozen twelve with no graphics-specific
 // member, and widening it is a schema decision no plan in this phase makes --
 // widening it would require re-auditing every consumer of that frozen list,
@@ -61,7 +61,7 @@
 // (READ-ONLY, NEVER IMPORTED): this module's bank/screen/charset/bitmap
 // arithmetic was checked by hand against those two files' existing, tested
 // decode of the SAME three registers for the live-emulator backend, and
-// found to agree exactly -- see the plan 37-07 SUMMARY for the comparison.
+// found to agree exactly.
 // This module REIMPLEMENTS that arithmetic rather than importing it, because
 // importing either file would reach the emulator backend's own transport
 // seam, which this module must never touch.
@@ -126,7 +126,7 @@ export const SPRITE_POINTER_OFFSET = 0x3f8;
 const SPRITE_POINTER_SIZE = 8;
 
 /** The existing, byte-shaped `DataType` every range this module emits
- * carries (D-37-30). */
+ * carries. */
 const GRAPHICS_DATA_TYPE: DataType = "byte";
 
 /** One recovered register write, in the same shape `ConstWriteFact` in
@@ -212,7 +212,7 @@ function distinctValuesFor(facts: readonly GraphicsConstWriteFact[], targetAddre
 }
 
 /** One combination of the three registers' own recovered values --
- * `undefined` names a register with zero recovered facts (D-37-28). */
+ * `undefined` names a register with zero recovered facts. */
 interface RegisterCombo {
   bankSelect: number | undefined;
   memoryControl: number | undefined;
@@ -220,7 +220,7 @@ interface RegisterCombo {
 }
 
 /** Ascending, with `undefined` (missing) sorting first -- a stated,
- * deterministic order over the tuple (D-37-27), not "whatever `Set`
+ * deterministic order over the tuple, not "whatever `Set`
  * iteration happened to produce". */
 function compareSlot(a: number | undefined, b: number | undefined): number {
   const av = a ?? -1;
@@ -304,13 +304,13 @@ function buildGraphicsMap(combo: RegisterCombo): GraphicsMap {
 
 /**
  * Derives the graphics areas -- screen matrix, character set or bitmap, and
- * sprite pointers -- from recovered VIC register values ALONE (D-37-26).
+ * sprite pointers -- from recovered VIC register values ALONE.
  * Returns one `GraphicsMap` per distinct combination of the three registers'
- * own recovered values (D-37-27), in ascending tuple order, so two calls
+ * own recovered values, in ascending tuple order, so two calls
  * with the same `facts` return deeply equal arrays. A register with zero
  * recovered facts contributes a single "missing" combination slot rather
  * than an axis; every range depending on it is omitted from every map, and
- * the map names it in `missingRegisters` (D-37-28). `facts` carrying values
+ * the map names it in `missingRegisters`. `facts` carrying values
  * for addresses other than the three this module watches (e.g. the
  * processor port, $0001) are ignored -- this module only ever reads writes
  * to `BANK_SELECT_ADDRESS`/`MEMORY_CONTROL_ADDRESS`/`CONTROL_REGISTER_1_ADDRESS`.

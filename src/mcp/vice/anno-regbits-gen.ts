@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // anno-regbits-gen.ts -- the ONE authoritative place in this repo that turns
 // c64-memory-mapping's memmap.json into the curated address->bit-name table
-// anno-enum-gen.ts decodes register values against (D-22, ANNO-13).
+// anno-enum-gen.ts decodes register values against.
 //
-// WHY THIS EXISTS (D-22): neither register the phase's own pinned criterion-3
+// WHY THIS EXISTS: neither register the phase's own pinned criterion-3
 // target needs ($D011) nor the registers a real game writes to constantly
 // ($D015/$D017/$D01A-$D01D) can be named from memmap.json's own `bits` prose
 // alone -- some of that prose is OCR-damaged ("O = Blank" uses a letter O for
@@ -54,11 +54,11 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 
 /** The sole read of c64-memory-mapping's own memmap.json -- this generator is
  * its only consumer for this purpose (per this plan's key_links entry).
- * 2026-08-22 (plan 16-01): the skills tree moved from `.claude/skills/`
+ * 2026-08-22: the skills tree moved from `.claude/skills/`
  * (two levels up from `.claude/mcp/vice`) to `src/skills/` (three levels up,
  * since `src/` sits directly under the repo root rather than under `.claude/`).
- * This literal was not in plan 16-01's own enumerated consumer list and its
- * test failures caught the gap live -- see 16-01-SUMMARY.md deviations. */
+ * This literal was not in the original enumerated consumer list, and a
+ * test failure caught the gap live. */
 const MEMMAP_PATH = join(HERE, "..", "..", "..", "src", "skills", "c64-memory-mapping", "memmap.json");
 
 /** Where the generated, committed artifact lives -- always a sibling of this
@@ -163,14 +163,14 @@ export interface RegbitsRegisterOverride {
    * entries by their `bit` string. */
   fields?: readonly RegbitsFieldOverride[];
   /** A COMPLETE field list for an address memmap.json's `io` parser produced
-   * no `bits` entry for at all (D-22's known gap) -- used only when no
+   * no `bits` entry for at all -- used only when no
    * memmap entry exists for this address, never to replace one that does. */
   synthetic?: readonly RegBitsField[];
 }
 
 /** Builds the 8 independent "bit N = sprite N" flag fields the five VIC
  * sprite-plane registers ($D015/$D017/$D01B/$D01C/$D01D) all share the same
- * shape for (D-22's named gap) -- each bit is silent (empty token) when
+ * shape for -- each bit is silent (empty token) when
  * clear and names the specific sprite when set, so a typical enum (most
  * sprites off, one or two on) renders as a short, readable name instead of
  * naming all eight sprites' negative state every time.
@@ -236,15 +236,15 @@ export const OVERRIDES: readonly RegbitsRegisterOverride[] = [
     label: "CIA Interrupt Control Register (Read NMIs/Write Mask)",
   },
   {
-    // WHY: memmap.json's `io` parser produced no `bits` entry at all for this address (D-22's
-    // named gap) even though a real game writes to it constantly -- sprite enable, one flag bit
+    // WHY: memmap.json's `io` parser produced no `bits` entry at all for this address,
+    // even though a real game writes to it constantly -- sprite enable, one flag bit
     // per sprite, is trivially regular and does not need memmap's own prose to describe correctly.
     address: 53269, // $D015 -- Sprite Enable
     label: "Sprite Enable",
     synthetic: spriteBitFields("EN"),
   },
   {
-    // WHY: same D-22 gap as $D015 -- Sprite Y-Expand, one flag bit per sprite.
+    // WHY: same missing-`bits`-entry gap as $D015 -- Sprite Y-Expand, one flag bit per sprite.
     address: 53271, // $D017 -- Sprite Y-Expand
     label: "Sprite Y-Expand",
     synthetic: spriteBitFields("YEXP"),
@@ -264,20 +264,20 @@ export const OVERRIDES: readonly RegbitsRegisterOverride[] = [
     ],
   },
   {
-    // WHY: same D-22 gap as $D015 -- Sprite Priority (behind/in-front of background), one flag bit
+    // WHY: same missing-`bits`-entry gap as $D015 -- Sprite Priority (behind/in-front of background), one flag bit
     // per sprite.
     address: 53275, // $D01B -- Sprite Data Priority
     label: "Sprite Data Priority",
     synthetic: spriteBitFields("BG"),
   },
   {
-    // WHY: same D-22 gap as $D015 -- Sprite Multicolor, one flag bit per sprite.
+    // WHY: same missing-`bits`-entry gap as $D015 -- Sprite Multicolor, one flag bit per sprite.
     address: 53276, // $D01C -- Sprite Multicolor
     label: "Sprite Multicolor",
     synthetic: spriteBitFields("MC"),
   },
   {
-    // WHY: same D-22 gap as $D015 -- Sprite X-Expand, one flag bit per sprite.
+    // WHY: same missing-`bits`-entry gap as $D015 -- Sprite X-Expand, one flag bit per sprite.
     address: 53277, // $D01D -- Sprite X-Expand
     label: "Sprite X-Expand",
     synthetic: spriteBitFields("XEXP"),
