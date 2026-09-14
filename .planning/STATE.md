@@ -6,16 +6,16 @@ current_phase: 51
 current_phase_name: Planning Vocabulary Out of the Shipped Server
 status: executing
 stopped_at: Completed 51-06-PLAN.md
-last_updated: "2026-09-14T14:27:48.165Z"
+last_updated: "2026-09-14T15:23:07.665Z"
 last_activity: 2026-09-14
 last_activity_desc: Phase 51 execution started
-state_head: 1dd4194888fe4f0796cb643951c23ec1fc0699f6
+state_head: 377ab25aa1329c6ae080da66af3effa529a08a1a
 progress:
   total_phases: 11
-  completed_phases: 7
-  total_plans: 71
-  completed_plans: 60
-  percent: 64
+  completed_phases: 5
+  total_plans: 58
+  completed_plans: 48
+  percent: 45
 ---
 
 # Project State
@@ -271,9 +271,9 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 51 (Planning Vocabulary Out of the Shipped Server) — EXECUTING
-Plan: 7 of 17
+Plan: 8 of 17
 Status: Ready to execute
-Plans: 6/17 executed. 51-01 is complete: it widened skills-planning-vocabulary.test.ts's scan surface to four sources, added a count-pinned RATCHET ledger and comment-byte budget. It also proved installer/bin/cli.mjs clean end to end. 51-02 is complete: it built CITATION-RESOLUTION.md (five sections, re-derived dangling set at 30 tokens/76 occurrences, down from CONTEXT.md's inherited 33/~135). It also minted VOCAB-01..06 with traceability rows in REQUIREMENTS.md (38/38 mapped). 51-03 is complete: it swept host-tool.mts's 325 citations to zero, regenerated resources/host-tool.mjs, and finalized COMMENT_BUDGET_SLACK at 1650 from that file's own real diff. 51-04 is complete: it swept broker-launch.mts (186), broker-control.mts (80) and broker-epoch.mts (2) to zero, 268 citations across the broker's launch-and-control-plane family. It also regenerated all three resources/*.mjs siblings and deleted all six RATCHET entries. 51-05 is complete: it swept vice-broker.mts (147), vice-broker-client.ts (99), broker-state.mts (43) and broker-kill.mts (31) to zero, 320 citations across the broker's daemon/client/state/kill-path family. It also regenerated all three resources/*.mjs siblings, deleted all seven RATCHET entries, and confirmed the lease-model and incident-before-kill comments survive intact. 51-06 is complete: it swept anno-cli.ts (164), anno-join.ts (50), anno-symbols.ts (11), anno-index.ts (6) and anno-details.ts (3) to zero, 234 citations across the annotation-store CLI and its helpers. It is the first sweep in this phase to find and fix user-visible output (18 sites in anno-cli.ts's printed --help text and runtime messages), and it repointed three structural line citations in module-classification.ts that its own edits drifted. 51-07 through 51-17 remain.
+Plans: 7/17 executed. 51-01 is complete: it widened skills-planning-vocabulary.test.ts's scan surface to four sources, added a count-pinned RATCHET ledger and comment-byte budget. It also proved installer/bin/cli.mjs clean end to end. 51-02 is complete: it built CITATION-RESOLUTION.md (five sections, re-derived dangling set at 30 tokens/76 occurrences, down from CONTEXT.md's inherited 33/~135). It also minted VOCAB-01..06 with traceability rows in REQUIREMENTS.md (38/38 mapped). 51-03 is complete: it swept host-tool.mts's 325 citations to zero, regenerated resources/host-tool.mjs, and finalized COMMENT_BUDGET_SLACK at 1650 from that file's own real diff. 51-04 is complete: it swept broker-launch.mts (186), broker-control.mts (80) and broker-epoch.mts (2) to zero, 268 citations across the broker's launch-and-control-plane family. It also regenerated all three resources/*.mjs siblings and deleted all six RATCHET entries. 51-05 is complete: it swept vice-broker.mts (147), vice-broker-client.ts (99), broker-state.mts (43) and broker-kill.mts (31) to zero, 320 citations across the broker's daemon/client/state/kill-path family. It also regenerated all three resources/*.mjs siblings, deleted all seven RATCHET entries, and confirmed the lease-model and incident-before-kill comments survive intact. 51-06 is complete: it swept anno-cli.ts (164), anno-join.ts (50), anno-symbols.ts (11), anno-index.ts (6) and anno-details.ts (3) to zero, 234 citations across the annotation-store CLI and its helpers. It is the first sweep in this phase to find and fix user-visible output (18 sites in anno-cli.ts's printed --help text and runtime messages), and it repointed three structural line citations in module-classification.ts that its own edits drifted. 51-07 is complete: it swept anno-store.ts (126), anno-types.ts (50), anno-store-export.ts (12), anno-derive.ts (6) and anno-confidence.ts (2) to zero, 196 citations across the store's core and type declarations. It resolved the phase's technical-token collision (UTF-16 -> "16-bit code units") without an exemption, named one genuinely unrecoverable (tier-4) citation, repointed a structural test (anno-types.test.ts) that pinned the exact vocabulary this phase removes, and confirmed the workspace-confinement and revert-history explanations survive intact. 51-08 through 51-17 remain.
 
 Carried in from Phase 48 (complete, verified, UAT passed 2026-09-13): the
 purpose-built subject carries all four planted hazard classes, the pure
@@ -627,6 +627,7 @@ Last activity: 2026-09-14 — Phase 51 execution in progress (51-01, 51-02, 51-0
 | Phase 51 P04 | 100min | 2 tasks | 8 files |
 | Phase 51 P05 | 130min | 3 tasks | 10 files |
 | Phase 51 P06 | 95min | 2 tasks | 7 files |
+| Phase 51 P07 | 105 min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
