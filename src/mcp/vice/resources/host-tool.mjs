@@ -1722,7 +1722,7 @@ const ACME_LIB_MARKER = join("cbm", "c64", "vic.a");
 // for the compiled artifact. Mirrors findAcmeLib()'s own "candidate list,
 // first existing wins" idiom, immediately below.
 // ---------------------------------------------------------------------------
-function findDxaBinary(here) {
+export function findDxaBinary(here) {
     const tried = [join(here, "vendor", "dxa", "dxa"), join(here, "..", "vendor", "dxa", "dxa")];
     for (const candidate of tried) {
         if (existsSync(candidate))

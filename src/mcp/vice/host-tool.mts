@@ -2249,7 +2249,7 @@ const ACME_LIB_MARKER = join("cbm", "c64", "vic.a");
 // first existing wins" idiom, immediately below.
 // ---------------------------------------------------------------------------
 
-function findDxaBinary(here: string): { path: string | null; tried: string[] } {
+export function findDxaBinary(here: string): { path: string | null; tried: string[] } {
   const tried = [join(here, "vendor", "dxa", "dxa"), join(here, "..", "vendor", "dxa", "dxa")];
   for (const candidate of tried) {
     if (existsSync(candidate)) return { path: candidate, tried };
