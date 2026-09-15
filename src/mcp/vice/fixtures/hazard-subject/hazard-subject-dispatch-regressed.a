@@ -1,0 +1,74 @@
+; hazard-subject-dispatch-regressed.a -- the regressed twin of
+; hazard-subject-dispatch.a, carrying one planted single-bit regression.
+;
+; THIS FILE DIFFERS FROM hazard-subject-dispatch.a IN EXACTLY ONE PLACE:
+; dispatch_target_1's `lda #$02` -- the immediate operand feeding
+; `sta $d020`, the VIC-II border-colour register -- is changed to
+; `lda #$03`. $02 XOR $03 = $01, a single bit. Nothing else in this file is
+; touched: no instruction is added, removed or resized, and every other
+; dispatch target, both split address tables and the declining control are
+; copied unchanged from hazard-subject-dispatch.a.
+;
+; WHY THIS FILE EXISTS: it is a RED CONTROL for the cross-binary comparison
+; instrument (compare-cross-binary.mjs, plan 50-01). Under the OLD
+; compare.mjs rules a one-bit change to a $Dxxx register would pass twice
+; over -- once under the blanket $D000-$DFFF "volatile" exclusion, and once
+; again under the one-bit "drift" tolerance even if it were not masked.
+; Under the narrowed mask this phase committed first, $D020 stays
+; deliberately visible to the verdict and the one-bit tolerance is gone
+; entirely for cross-binary comparisons, so this planted regression must
+; make the comparison FAIL. This file is never assembled on its own -- it
+; is pulled into a synthesized root by make-hazard-subject-fixtures.mjs's
+; third FIXTURES entry, in place of hazard-subject-dispatch.a, the same way
+; the mis-aligned twin's root substitutes hazard-subject-align.a for
+; hazard-subject-align-misaligned.a.
+
+dispatch_target_1
+        lda #$03
+        sta $d020
+        rts
+
+dispatch_target_2
+        lda #$04
+        sta $d020
+        rts
+
+dispatch_target_3
+        lda #$06
+        sta $d020
+        rts
+
+; The two address tables `hazard_dispatch_entry` (in the root file) reads.
+; Declared back to back with no padding between them, and the byte
+; immediately after the second table belongs to the SECOND, DECLINING
+; construction below -- two separate hazard-bearing regions whose address
+; ranges exactly touch. That adjacency is deliberate, not an accident of
+; layout: the two are separate constructions and must never be read as one
+; merged region.
+dispatch_hi
+        !byte >(dispatch_target_1-1)
+        !byte >(dispatch_target_2-1)
+        !byte >(dispatch_target_3-1)
+dispatch_lo
+        !byte <(dispatch_target_1-1)
+        !byte <(dispatch_target_2-1)
+        !byte <(dispatch_target_3-1)
+
+; SITE TWO -- THE DECLINING CONTROL
+; -----------------------------------
+; Copied unchanged from hazard-subject-dispatch.a. See that file's header
+; for why this construction exists and why a detector correctly declines
+; it.
+decline_hi
+        !byte >(dispatch_target_1-1)
+decline_lo
+        !byte <(dispatch_target_1-1)
+
+dispatch_decline_entry
+        ldx #0
+        ldy #0
+        lda decline_hi,x
+        pha
+        lda decline_lo,y
+        pha
+        rts

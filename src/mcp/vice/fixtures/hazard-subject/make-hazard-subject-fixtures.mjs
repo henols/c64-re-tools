@@ -39,15 +39,16 @@
 // process, so every root source's bare-filename `!source "..."` lines
 // resolve without a directory component anywhere in the source text.
 //
-// THE SECOND FIXTURE HAS NO COMMITTED ROOT SOURCE FILE OF ITS OWN. Its root
-// is SYNTHESIZED here, in memory, from the committed `hazard-subject.a` by
-// swapping its one `!source "hazard-subject-align.a"` line for
-// `!source "hazard-subject-align-misaligned.a"` -- every other planted
-// construction (the SMC entry, the dispatch entry) stays shared and
-// unmodified between the two builds. The synthesized text is written to a
-// throwaway file in the OS temp directory, never inside this fixture
+// THE SECOND AND THIRD FIXTURES HAVE NO COMMITTED ROOT SOURCE FILE OF THEIR
+// OWN. Each root is SYNTHESIZED here, in memory, from the committed
+// `hazard-subject.a` by swapping one or more of its bare-filename `!source`
+// lines for a sibling variant's -- every other planted construction stays
+// shared and unmodified between builds. The synthesized text is written to
+// a throwaway file in the OS temp directory, never inside this fixture
 // directory, so a run never leaves a stray file behind for `git status` to
-// notice.
+// notice. One shared helper (`substituteSourceLines()`) performs every such
+// swap; do not copy its body a third time -- see that function's own
+// comment.
 //
 // Regenerate with:
 //   cd src/mcp/vice && node fixtures/hazard-subject/make-hazard-subject-fixtures.mjs
@@ -66,27 +67,58 @@ const ACME_BIN = process.env.ACME_BIN ?? "acme";
 
 const ALIGNED_SOURCE_LINE = '!source "hazard-subject-align.a"';
 const MISALIGNED_SOURCE_LINE = '!source "hazard-subject-align-misaligned.a"';
+const DISPATCH_SOURCE_LINE = '!source "hazard-subject-dispatch.a"';
+const DISPATCH_REGRESSED_SOURCE_LINE = '!source "hazard-subject-dispatch-regressed.a"';
+const ALIGN_REGRESSED_SOURCE_LINE = '!source "hazard-subject-align-regressed.a"';
+
+/** THE ONE `!source`-line substitution implementation in this file. Reads
+ * the committed `hazard-subject.a` root, and for every `[from, to]` pair in
+ * `pairs`, replaces `from` with `to`. Refuses (via the caller's `fail()`)
+ * rather than silently assembling the WRONG variant if the committed root
+ * ever stops containing one of the exact lines being replaced. Every
+ * synthesized-root fixture below calls this instead of re-implementing its
+ * own read-and-replace. */
+function substituteSourceLines(pairs) {
+  let rootText = readFileSync(join(HERE, "hazard-subject.a"), "utf8");
+  for (const [from, to] of pairs) {
+    if (!rootText.includes(from)) {
+      fail(`hazard-subject.a no longer contains ${JSON.stringify(from)} -- a synthesized root's substitution has nothing to replace`);
+    }
+    rootText = rootText.replace(from, to);
+  }
+  return rootText;
+}
 
 /** Builds the second build's root text by swapping the ONE `!source` line
  * that pulls in the aligned construction for the mis-aligned twin's own
- * file. Refuses (via the caller's `fail()`) rather than silently assembling
- * the WRONG twin if the committed root ever stops containing that exact
- * line. */
+ * file. */
 function misalignedRootSource() {
-  const rootText = readFileSync(join(HERE, "hazard-subject.a"), "utf8");
-  if (!rootText.includes(ALIGNED_SOURCE_LINE)) {
-    fail(`hazard-subject.a no longer contains ${JSON.stringify(ALIGNED_SOURCE_LINE)} -- the mis-aligned twin's root substitution has nothing to replace`);
-  }
-  return rootText.replace(ALIGNED_SOURCE_LINE, MISALIGNED_SOURCE_LINE);
+  return substituteSourceLines([[ALIGNED_SOURCE_LINE, MISALIGNED_SOURCE_LINE]]);
 }
 
-/** The two builds this script owns. The first assembles the committed root
- * directly; the second assembles a synthesized root (see above) that pulls
- * in every other planted construction UNCHANGED. Later parts of each build
- * are pulled in by `!source`, never listed here as separate entries. */
+/** Builds the third build's root text: the regressed twin. Swaps BOTH the
+ * dispatch and the alignment `!source` lines for their regressed sibling
+ * files, in one root, so the three planted single-bit regressions
+ * (dispatch_target_1's $D020 immediate, plus the align routine's $D015 and
+ * $D018 immediates) all land in the same image. Every other planted
+ * construction (the SMC entry, the raster entry) stays shared and
+ * unmodified with the committed subject. */
+function regressedRootSource() {
+  return substituteSourceLines([
+    [DISPATCH_SOURCE_LINE, DISPATCH_REGRESSED_SOURCE_LINE],
+    [ALIGNED_SOURCE_LINE, ALIGN_REGRESSED_SOURCE_LINE],
+  ]);
+}
+
+/** The builds this script owns. The first assembles the committed root
+ * directly; every other entry assembles a synthesized root (see above)
+ * that pulls in every other planted construction UNCHANGED. Later parts of
+ * each build are pulled in by `!source`, never listed here as separate
+ * entries. */
 const FIXTURES = [
   { rootSourceName: "hazard-subject.a", output: "hazard-subject.prg", format: "cbm" },
   { buildRootText: misalignedRootSource, output: "hazard-subject-misaligned.prg", format: "cbm" },
+  { buildRootText: regressedRootSource, output: "hazard-subject-regressed.prg", format: "cbm" },
 ];
 
 function fail(reason) {
