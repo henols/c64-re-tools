@@ -1,22 +1,22 @@
 // block-class.test.ts
 //
-// The unit tests for the ONE store-vocabulary boundary (SEAM-03). Two of
-// these are structural rather than behavioural and are the load-bearing
-// ones:
-//
-//   - the IMPORT-PURITY assertion. `block-class.ts`'s header trap 1 records
-//     that giving the classifier the census, the raw bytes, a decoder or a
-//     confidence grade would collapse the bytes-versus-store independence
-//     axis QUIETLY -- the coverage suite's independence test would keep
-//     passing while the claim it protects became void. A prohibition that
-//     only a header states is a prohibition a future edit does not see, so
-//     it is asserted here from the module's own source.
+// The unit tests for the ONE store-vocabulary boundary (SEAM-03). Behavioural
+// coverage of block-class lookup and the vocabulary mapping, plus one
+// structural, load-bearing check:
 //
 //   - the `files[]` INCLUSION assertion. This is the exact inverse of the
 //     test-only-module assertions elsewhere in this suite: the classifier is
 //     production runtime code reachable from the published entry point's
 //     relative-import closure, so it MUST ship. `anno-verify.test.ts`'s
 //     absence assertion is the shape; only the polarity differs.
+//
+// Phase 56 removed this file's IMPORT-PURITY assertion, which used to scan
+// `block-class.ts`'s own source (`block-class.ts`'s header trap 1 records
+// that giving the classifier the census, the raw bytes, a decoder or a
+// confidence grade would collapse the bytes-versus-store independence axis
+// QUIETLY). That prohibition is no longer test-enforced here -- a future
+// edit importing `anno-`, `disasm-` or `stock-` modules into
+// `block-class.ts` will not be caught by this suite.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -322,12 +322,7 @@ test("first-match-wins on overlapping blocks -- the earliest array entry decides
 });
 
 // ---------------------------------------------------------------------------
-// 4. Import purity -- see this file's header for why this is a test and not
-//    a comment
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// 5. Shipped, not test-only -- the inverse of this suite's absence assertions
+// 4. Shipped, not test-only -- the inverse of this suite's absence assertions
 // ---------------------------------------------------------------------------
 
 test("block-class.ts IS present in package.json's files[] array", () => {
