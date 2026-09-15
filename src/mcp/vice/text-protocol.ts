@@ -153,7 +153,9 @@ export const PROMPT_RE = /\(C:\$[0-9A-Fa-f]{4}\)\s*$/;
  * This is NOT a general "load anything" capability: the entry added to
  * TEXT_COMMAND_PARAM_SPECS below bakes in the ONE committed fixture path
  * this phase's tracer plan targets as part of the verb's own frozen
- * identity, never a caller-supplied filename -- see that entry's own
+ * identity, never a caller-supplied filename -- and, since plan 50-05, one
+ * such frozen entry per member of the closed HAZARD_SUBJECT_PRG_BASENAMES
+ * table, still never a caller-supplied filename. See those entries' own
  * comment for why a caller still cannot choose what gets loaded. `save`
  * remains refused exactly as before; only the read direction moved.
  */
@@ -184,8 +186,10 @@ export type TextCommand = (typeof TEXT_COMMAND_ALLOWLIST)[number];
 // here. TEXT_COMMAND_PARAM_SPECS is a SIBLING table describing, for the
 // subset of verbs that take one, the bounded typed value each accepts and
 // the ONE renderer that turns a validated value into the exact command
-// string VICE accepts. Plan 50-04 adds a fourth entry, "load" -- see its own
-// comment below and TEXT_COMMAND_ALLOWLIST's doc comment above for the full
+// string VICE accepts. Plan 50-04 adds a "load" entry, and plan 50-05 turns
+// that single entry into one DERIVED entry per committed subject (see
+// HAZARD_SUBJECT_PRG_BASENAMES) -- see those entries' own comment below and
+// TEXT_COMMAND_ALLOWLIST's doc comment above for the full
 // rationale; unlike the first three, this one is not sourced from a
 // committed live-captured fixture (no live capture was run to add it -- the
 // syntax is sourced directly from VICE's own upstream grammar and manual,
@@ -216,12 +220,76 @@ function renderAddressParam(verb: string, value: number): string {
 }
 
 /**
- * Absolute host path to the ONE committed fixture the `load` widening below
- * may load (plan 50-04, 2026-09-15): Phase 50's tracer-slice subject. Every
- * live capture task in Phase 50 loads this exact file; a later plan adding a
- * second committed subject (a rebuild or a modified variant) adds its OWN
- * new constant and its OWN new TEXT_COMMAND_PARAM_SPECS entry below, and
- * never widens this one to accept a caller-supplied path.
+ * The CLOSED set of committed fixtures the `load` widening below may load,
+ * as an id -> BASENAME table (plan 50-04 committed the first member; plan
+ * 50-05 turned the single constant into this table).
+ *
+ * WHY A TABLE AND NOT ONE CONSTANT PER SUBJECT. Plan 50-04's own note here
+ * said a later plan adding a second committed subject would add "its OWN new
+ * constant and its OWN new TEXT_COMMAND_PARAM_SPECS entry". Plan 50-05 is
+ * that later plan, and plan 50-06 needs two more. Three hand-copied
+ * constants, three hand-copied spec entries and three hand-copied verb
+ * strings in text-tools.ts is three chances to mis-copy a path and load the
+ * WRONG subject into a capture that then silently becomes evidence for the
+ * wrong binary. The table removes that class of mistake: adding a subject is
+ * ONE reviewed row here, and every spec entry, every verb string and the
+ * tool's own accepted id set are all derived from it.
+ *
+ * WHAT DID NOT CHANGE, AND MUST NOT. Every path here is still a reviewed
+ * literal chosen by THIS file. A caller never supplies a path, a basename or
+ * any fragment of one. The tool's `subject` argument (text-tools.ts) is an
+ * enumerated ID that is looked up in this frozen table by exact membership
+ * and is NEVER concatenated into a command string -- an id this table does
+ * not carry is refused BY NAME, so the set of loadable files stays exactly
+ * as closed as it was when it held one entry. TextCommandParamKind is
+ * likewise untouched: the only caller-supplied VALUE is still the bounded
+ * device NUMBER, and no parameter kind in this module accepts a string
+ * domain (text-protocol.test.ts pins both facts, at runtime and at source
+ * level).
+ *
+ * WHAT NOT TO DO: do not add an entry for a path outside the committed
+ * fixture directory, and do not add a function that builds a path from
+ * caller input. A build artifact that is not a committed fixture (plan
+ * 50-06's rebuild `.prg`, produced under the phase evidence directory) gets
+ * a reviewed row of its own, spelled out here the same way, never a
+ * caller-supplied path.
+ *
+ * `misaligned` is deliberately ABSENT: `hazard-subject-misaligned.prg` is a
+ * committed fixture, but no plan loads it into a running emulator -- it is
+ * consumed offline by the hazard-report gate. The set is what is actually
+ * dialed, not every fixture that happens to exist.
+ */
+export const HAZARD_SUBJECT_PRG_BASENAMES = Object.freeze({
+  /** Plan 50-04's tracer-slice subject -- the original. */
+  original: "hazard-subject.prg",
+  /** Plan 50-02's regressed twin: three planted single-bit regressions at
+   * the immediates feeding $D020, $D015 and $D018. Plan 50-05's red
+   * control. */
+  regressed: "hazard-subject-regressed.prg",
+  /** Plan 50-02's modified subject: one behaviour removed and one added.
+   * Plan 50-06's modifiability observation. */
+  modified: "hazard-subject-modified.prg",
+} as const);
+
+/** The id half of HAZARD_SUBJECT_PRG_BASENAMES -- the only thing a caller
+ * ever names, and never a path. */
+export type HazardSubjectId = keyof typeof HAZARD_SUBJECT_PRG_BASENAMES;
+
+/** The frozen id list, in table order. Exported so text-tools.ts can state
+ * the accepted set in its refusal message without re-typing it. */
+export const HAZARD_SUBJECT_IDS: readonly HazardSubjectId[] = Object.freeze(
+  Object.keys(HAZARD_SUBJECT_PRG_BASENAMES) as HazardSubjectId[],
+);
+
+/** True only for an id this table actually carries. The ONE membership test
+ * -- `Object.keys`-derived rather than a prototype lookup, so an inherited
+ * name ("constructor", "__proto__", "toString") can never test true. */
+export function isHazardSubjectId(value: unknown): value is HazardSubjectId {
+  return typeof value === "string" && (HAZARD_SUBJECT_IDS as readonly string[]).includes(value);
+}
+
+/**
+ * Absolute host path to one committed fixture in the closed table above.
  *
  * Resolved through repoRoot() rather than hard-coded as a relative string:
  * `broker-launch.mts` spawns `x64sc` with no explicit `cwd` (checked
@@ -238,21 +306,57 @@ function renderAddressParam(verb: string, value: number): string {
  * actually exercised" discipline -- a later plan that runs this widening
  * through a real container split adds it then.
  */
-export const HAZARD_SUBJECT_PRG_PATH: string = join(
-  repoRoot(),
-  "src",
-  "mcp",
-  "vice",
-  "fixtures",
-  "hazard-subject",
-  "hazard-subject.prg",
+export function hazardSubjectPrgPath(id: HazardSubjectId): string {
+  return join(repoRoot(), "src", "mcp", "vice", "fixtures", "hazard-subject", HAZARD_SUBJECT_PRG_BASENAMES[id]);
+}
+
+/** THE ONE place a `load "<path>"` verb string is spelled, for any subject.
+ * Both the TEXT_COMMAND_PARAM_SPECS keys below and text-tools.ts's own
+ * lookup go through this function, so the table key and the dialed verb can
+ * never drift apart into two literals that differ by a character. */
+export function hazardSubjectLoadVerb(id: HazardSubjectId): string {
+  return `load "${hazardSubjectPrgPath(id)}"`;
+}
+
+/** Plan 50-04's original constant, preserved by name and by value: it is
+ * exactly the `original` member of the table above. Kept because several
+ * committed tests and text-tools.ts already bind this name, and because the
+ * default subject is still the original. */
+export const HAZARD_SUBJECT_PRG_PATH: string = hazardSubjectPrgPath("original");
+
+/**
+ * One frozen `load "<path>"` spec per member of HAZARD_SUBJECT_PRG_BASENAMES,
+ * derived from that closed table rather than hand-copied per subject (plan
+ * 50-05). Every entry is identical except for the reviewed path baked into
+ * its own key: same "count" kind, same 0-11 device bound, same renderer. The
+ * DERIVATION is the point -- a hand-copied entry per subject is how a path
+ * and its renderer drift apart, and a renderer that disagrees with its own
+ * key fails isDialableTextCommandForVerb()'s round trip and refuses the
+ * command outright, which is a confusing way to discover a typo.
+ */
+const HAZARD_SUBJECT_LOAD_SPECS: Readonly<Record<string, TextCommandParamSpec>> = Object.freeze(
+  Object.fromEntries(
+    HAZARD_SUBJECT_IDS.map((id) => {
+      const verb = hazardSubjectLoadVerb(id);
+      return [
+        verb,
+        Object.freeze({
+          kind: "count",
+          min: 0,
+          max: 11,
+          render: (value: number) => renderCountParam(verb, value),
+        } satisfies TextCommandParamSpec),
+      ] as const;
+    }),
+  ),
 );
 
 /**
  * Frozen, per-verb parameter specs (D-42-1). Keyed by the verb exactly as
- * it appears in TEXT_COMMAND_ALLOWLIST above -- with ONE exception, `load`
- * (plan 50-04), whose key is a full frozen literal that already embeds its
- * own filename argument (see below); it never appears in
+ * it appears in TEXT_COMMAND_ALLOWLIST above -- with ONE exception, the
+ * `load` family (plan 50-04, one entry per committed subject since plan
+ * 50-05), whose keys are full frozen literals that already embed their own
+ * filename argument (see below); none of them ever appears in
  * TEXT_COMMAND_ALLOWLIST as a bare entry, because `load "<file>"` with no
  * device number is not valid VICE syntax on its own (`mon_parse.y`'s
  * `disk_rules: CMD_LOAD filename device_num opt_address` requires the
@@ -268,8 +372,9 @@ export const HAZARD_SUBJECT_PRG_PATH: string = join(
  * field, monitor_binary.c:1492). The address bound for "io" is 0 through
  * 65535, the full 16-bit machine address space.
  *
- * `load "<HAZARD_SUBJECT_PRG_PATH>"` (plan 50-04, 2026-09-15): the single
- * bounded value is the DEVICE NUMBER, per VICE's own documented syntax
+ * `load "<one committed subject path>"` (plan 50-04, 2026-09-15; one entry
+ * per subject since plan 50-05): the single bounded value is still the
+ * DEVICE NUMBER, per VICE's own documented syntax
  * (`load "<filename>" <device> [<address>]`, VICE Manual ch. 12 -- "If
  * device is 0, the file is read from the file system"). The address
  * argument is deliberately never offered here: omitting it makes VICE use
@@ -280,8 +385,10 @@ export const HAZARD_SUBJECT_PRG_PATH: string = join(
  * SAME `${verb} ${value}` rendering `renderCountParam()` already produces
  * for "chis"/"prof flat" -- no new TextCommandParamKind, no new render
  * shape; only the verb string itself is new, and it is a reviewed literal,
- * never a caller-supplied string (see TEXT_COMMAND_ALLOWLIST's own `load`
- * paragraph above). Bound 0 through 11: 0 is the one value this phase
+ * never a caller-supplied string, and the SUBJECT is chosen by an
+ * enumerated id looked up in that same frozen table, never by a path a
+ * caller passes in (see TEXT_COMMAND_ALLOWLIST's own `load` paragraph above
+ * and HAZARD_SUBJECT_PRG_BASENAMES). Bound 0 through 11: 0 is the one value this phase
  * exercises (host filesystem, per the manual quote above); 1 through 11
  * spans this project's own documented device-number range elsewhere
  * (CLAUDE.md's wire memspace note: units 8-11 are the four IEC disk
@@ -308,12 +415,7 @@ export const TEXT_COMMAND_PARAM_SPECS: Readonly<Record<string, TextCommandParamS
     max: 65535,
     render: (value: number) => renderAddressParam("io", value),
   }),
-  [`load "${HAZARD_SUBJECT_PRG_PATH}"`]: Object.freeze({
-    kind: "count",
-    min: 0,
-    max: 11,
-    render: (value: number) => renderCountParam(`load "${HAZARD_SUBJECT_PRG_PATH}"`, value),
-  }),
+  ...HAZARD_SUBJECT_LOAD_SPECS,
 } satisfies Record<string, TextCommandParamSpec>);
 
 function isSafeIntegerNumber(value: unknown): value is number {

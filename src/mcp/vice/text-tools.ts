@@ -69,7 +69,15 @@
 //     withChannelLockHeld()'s own discipline in stock-dispatch.ts.
 //   - Never embed a phase number in any string or template literal here.
 import { textConnect, textDisconnect } from "./text-connect.ts";
-import { withTextChannelLock, buildTextCommand, HAZARD_SUBJECT_PRG_PATH, type TextMonitorClient } from "./text-protocol.ts";
+import {
+  withTextChannelLock,
+  buildTextCommand,
+  hazardSubjectLoadVerb,
+  isHazardSubjectId,
+  HAZARD_SUBJECT_IDS,
+  type HazardSubjectId,
+  type TextMonitorClient,
+} from "./text-protocol.ts";
 import { MonitorOwnershipError } from "./vice-broker-client.ts";
 import { ChannelLockTimeoutError } from "./channel-lock.ts";
 import { isErrorText, derivedAnswer, convertHandshakeError, convertWireError, type StockToolResult } from "./stock-handler.ts";
@@ -785,25 +793,47 @@ export async function handleIoRegisters(args: Record<string, unknown>, deps: Sto
 // ---------------------------------------------------------------------------
 
 /**
- * The exact TEXT_COMMAND_PARAM_SPECS key for the plan 50-04 `load` widening --
- * built the SAME way text-protocol.ts's own table key is built, from the same
- * exported HAZARD_SUBJECT_PRG_PATH constant, never a second literal path. Not
- * exported: this string is meaningful only as a lookup key into that one
- * table, via buildTextCommand() below.
+ * The subject loaded when the caller names none. Plan 50-04's behaviour,
+ * unchanged: an omitted `subject` dials exactly the path that plan's single
+ * frozen entry dialed.
  */
-const LOAD_VERB = `load "${HAZARD_SUBJECT_PRG_PATH}"`;
+const DEFAULT_SUBJECT: HazardSubjectId = "original";
+
+/**
+ * Resolve the caller's `subject` argument to one of text-protocol.ts's own
+ * frozen ids, or to `null` for anything else.
+ *
+ * WHY THIS IS NOT A FILENAME PARAMETER, AND MUST NEVER BECOME ONE. The value
+ * a caller supplies here is an ID, checked for exact membership in
+ * HAZARD_SUBJECT_IDS and then used only as a LOOKUP KEY -- it is never
+ * concatenated into a command string, never joined onto a path, and never
+ * reaches the socket in any form. The dialed verb is built by
+ * hazardSubjectLoadVerb() from the reviewed literal text-protocol.ts's own
+ * closed table carries. So the set of host files this tool can ever load is
+ * exactly that table, whatever a caller sends. An unrecognised id is refused
+ * BY NAME before any text-monitor byte is written, the same way
+ * buildTextCommand() refuses an out-of-bounds device.
+ */
+function resolveSubjectId(raw: unknown): HazardSubjectId | null {
+  if (raw === undefined) return DEFAULT_SUBJECT;
+  return isHazardSubjectId(raw) ? raw : null;
+}
 
 /**
  * `vice_program_load` -- the shipped tool that reaches plan 50-04's widened
  * `load` verb (route-d, `.planning/phases/50-equivalence-and-modifiability/evidence/LOAD-ROUTE.md`).
- * Dials VICE's text-monitor `load "<file>" <device>` command for the ONE
- * committed Phase 50 tracer-slice fixture (HAZARD_SUBJECT_PRG_PATH,
- * text-protocol.ts), baked into the verb's own frozen allowlist identity --
- * this handler takes NO filename argument at all, so there is nothing here
- * for a caller to inject; the fixture path can never be anything other than
- * the one reviewed literal text-protocol.ts's table already carries.
+ * Dials VICE's text-monitor `load "<file>" <device>` command for ONE member
+ * of text-protocol.ts's closed HAZARD_SUBJECT_PRG_BASENAMES table, each
+ * baked into its own frozen allowlist identity -- this handler takes NO
+ * filename argument at all, so there is nothing here for a caller to
+ * inject; the loaded path can never be anything other than a reviewed
+ * literal that table already carries.
  *
- * Takes exactly one OPTIONAL parameter, `device`: an omitted device defaults
+ * Takes two OPTIONAL parameters. `subject` is an enumerated id from that
+ * table ("original", "regressed", "modified"); it defaults to "original",
+ * which is exactly plan 50-04's behaviour, and an id the table does not
+ * carry is refused by name (see resolveSubjectId() above for why an id is
+ * not a filename). `device`: an omitted device defaults
  * to 0 ("the file is read from the file system", VICE Manual ch. 12).
  * `buildTextCommand()` alone validates and bounds the device (0 through 11,
  * TEXT_COMMAND_PARAM_SPECS's own entry for this verb) -- this handler
@@ -818,9 +848,16 @@ const LOAD_VERB = `load "${HAZARD_SUBJECT_PRG_PATH}"`;
  * use.
  */
 export async function handleProgramLoad(args: Record<string, unknown>, deps: StockDispatchDeps): Promise<StockToolResult> {
-  const { device } = args;
+  const { device, subject } = args;
+  const subjectId = resolveSubjectId(subject);
+  if (subjectId === null) {
+    return isErrorText(
+      `vice_program_load: "subject" must be one of ${HAZARD_SUBJECT_IDS.map((id) => JSON.stringify(id)).join(", ")} ` +
+        `(got ${JSON.stringify(subject)}) -- refusing before any text-monitor byte is written; this tool never accepts a filename`,
+    );
+  }
   const resolvedDevice = device === undefined ? 0 : device;
-  const built = buildTextCommand(LOAD_VERB, resolvedDevice);
+  const built = buildTextCommand(hazardSubjectLoadVerb(subjectId), resolvedDevice);
   if (!built.ok) {
     return isErrorText(`vice_program_load: ${built.message} -- refusing before any text-monitor byte is written`);
   }
@@ -831,11 +868,13 @@ export async function handleProgramLoad(args: Record<string, unknown>, deps: Sto
     return derivedAnswer({
       command,
       device: resolvedDevice,
+      subject: subjectId,
       response,
       note:
-        "loads the ONE committed Phase 50 hazard-subject fixture baked into this verb's own frozen identity " +
-        "(plan 50-04, route-d) -- no filename is ever caller-supplied; the load address comes from the .prg " +
-        "file's own two-byte header, since no address argument is offered",
+        `loads the committed Phase 50 hazard-subject fixture "${subjectId}", baked into this verb's own frozen ` +
+        "identity (plan 50-04 route-d; one frozen verb per subject since plan 50-05) -- no filename is ever " +
+        "caller-supplied, only an enumerated subject id; the load address comes from the .prg file's own " +
+        "two-byte header, since no address argument is offered",
     });
   });
 }

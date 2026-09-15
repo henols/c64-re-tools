@@ -34,7 +34,7 @@ import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:net";
 import type { AddressInfo } from "node:net";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -44,6 +44,11 @@ import {
   TEXT_COMMAND_ALLOWLIST,
   TEXT_COMMAND_PARAM_SPECS,
   HAZARD_SUBJECT_PRG_PATH,
+  HAZARD_SUBJECT_IDS,
+  HAZARD_SUBJECT_PRG_BASENAMES,
+  hazardSubjectPrgPath,
+  hazardSubjectLoadVerb,
+  isHazardSubjectId,
   isAllowlistedTextCommand,
   buildTextCommand,
   isDialableTextCommandForVerb,
@@ -136,6 +141,62 @@ test("isAllowlistedTextCommand: accepts every TEXT_COMMAND_ALLOWLIST entry and r
   const widenedLoad = buildTextCommand(`load "${HAZARD_SUBJECT_PRG_PATH}"`, 0);
   assert.ok(widenedLoad.ok, "the reviewed load verb with device 0 must build");
   assert.ok(widenedLoad.ok && isAllowlistedTextCommand(widenedLoad.command), "the reviewed load verb's own canonical rendering must be allowlisted");
+
+  // NARROWED AGAIN, not deleted (plan 50-05): the single frozen `load` verb
+  // became one frozen verb per member of the closed
+  // HAZARD_SUBJECT_PRG_BASENAMES table, because the red control had to load
+  // a DIFFERENT committed subject. Growing the set is only acceptable while
+  // the set stays CLOSED, so that is what is asserted here -- both
+  // directions, in the same test.
+  for (const id of HAZARD_SUBJECT_IDS) {
+    const built = buildTextCommand(hazardSubjectLoadVerb(id), 0);
+    assert.ok(built.ok, `the reviewed load verb for subject ${JSON.stringify(id)} must build`);
+    assert.ok(
+      built.ok && isAllowlistedTextCommand(built.command),
+      `subject ${JSON.stringify(id)}'s own canonical rendering must be allowlisted`,
+    );
+  }
+
+  // THE CLOSED-SET PROOF. `hazard-subject-misaligned.prg` is a real,
+  // committed fixture sitting in the very same directory as all three
+  // dialable subjects -- and it is deliberately NOT in the table, because
+  // nothing loads it into a running emulator. If the widening had drifted
+  // into "any file under fixtures/hazard-subject", this assertion is what
+  // fails. A directory is not the boundary; the reviewed table is.
+  const misalignedPath = HAZARD_SUBJECT_PRG_PATH.replace(/hazard-subject\.prg$/, "hazard-subject-misaligned.prg");
+  assert.notEqual(misalignedPath, HAZARD_SUBJECT_PRG_PATH, "the misaligned path must really differ from the original's");
+  assert.ok(
+    !isAllowlistedTextCommand(`load "${misalignedPath}" 0`),
+    "a committed fixture the closed table does not name must never be dialable, even from the same directory",
+  );
+});
+
+test("HAZARD_SUBJECT_PRG_BASENAMES (plan 50-05): the loadable subject set is closed, every member is a real committed fixture, and only a table id passes the membership test", () => {
+  // Every id resolves to a file that actually exists. A row naming a path
+  // that is not there would refuse only at load time, inside the emulator,
+  // where the failure reads as an emulator problem rather than a table typo.
+  for (const id of HAZARD_SUBJECT_IDS) {
+    const path = hazardSubjectPrgPath(id);
+    assert.ok(existsSync(path), `subject ${JSON.stringify(id)} must resolve to a committed fixture (${path})`);
+    assert.ok(path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path), `subject ${JSON.stringify(id)}'s path must be absolute`);
+    assert.ok(path.endsWith(HAZARD_SUBJECT_PRG_BASENAMES[id]), "the resolved path must end in the table's own basename");
+  }
+
+  // The membership test admits exactly the table's own keys, and nothing
+  // reachable through the prototype chain -- the reason it is written
+  // against Object.keys rather than a property lookup.
+  for (const id of HAZARD_SUBJECT_IDS) assert.ok(isHazardSubjectId(id));
+  for (const notAnId of ["misaligned", "constructor", "__proto__", "toString", "", "ORIGINAL", 0, null, undefined, {}]) {
+    assert.equal(isHazardSubjectId(notAnId), false, `${JSON.stringify(notAnId)} must not pass as a subject id`);
+  }
+
+  // One spec entry per subject, and no `load` spec that is not one of them.
+  const loadVerbs = Object.keys(TEXT_COMMAND_PARAM_SPECS).filter((verb) => verb.startsWith("load "));
+  assert.deepEqual(
+    [...loadVerbs].sort(),
+    HAZARD_SUBJECT_IDS.map((id) => hazardSubjectLoadVerb(id)).sort(),
+    "the dialable `load` verbs must be exactly the closed table's members -- no more, no fewer",
+  );
 });
 
 test("TEXT_COMMAND_ALLOWLIST: every entry is exactly one of the eleven named verbs, and every allowlisted or parameterized verb (including the plan 50-04 `load` widening) still refuses a file-WRITING monitor verb (T-41-02)", () => {
@@ -260,6 +321,8 @@ test("isDialableTextCommandForVerb / isAllowlistedTextCommand: accept every cano
     ["prof flat", 5],
     ["io", 53280],
     [`load "${HAZARD_SUBJECT_PRG_PATH}"`, 0], // plan 50-04
+    [hazardSubjectLoadVerb("regressed"), 0], // plan 50-05
+    [hazardSubjectLoadVerb("modified"), 0], // plan 50-05
   ];
   for (const [verb, value] of cases) {
     const built = buildTextCommand(verb, value);

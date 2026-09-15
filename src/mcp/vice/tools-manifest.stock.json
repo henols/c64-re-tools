@@ -4508,7 +4508,7 @@
     },
     {
       "name": "vice_program_load",
-      "description": "Stock-only, no fork counterpart -- reaches VICE's text monitor over the -remotemonitor channel and halts the machine for the duration of the command, exactly as a binary-monitor command does. Issues \"load \\\"<path>\\\" <device>\" for the ONE committed Phase 50 hazard-subject fixture (fixtures/hazard-subject/hazard-subject.prg) -- the filename is baked into this tool's own dialed verb and is never a caller-supplied argument, so there is nothing here for a caller to inject. Takes an OPTIONAL \"device\" number, 0 through 11; an omitted device defaults to 0 (\"the file is read from the file system\", VICE Manual ch. 12). No address argument is offered -- omitting it makes VICE use the load address embedded in the .prg file's own two-byte header, which is exactly what this committed machine-code fixture needs.",
+      "description": "Stock-only, no fork counterpart -- reaches VICE's text monitor over the -remotemonitor channel and halts the machine for the duration of the command, exactly as a binary-monitor command does. Issues \"load \\\"<path>\\\" <device>\" for ONE of the committed Phase 50 hazard-subject fixtures (fixtures/hazard-subject/) -- every loadable path is baked into this tool's own frozen dialed verbs and is never a caller-supplied argument, so there is nothing here for a caller to inject. Takes an OPTIONAL \"subject\", an enumerated fixture id, defaulting to \"original\". Takes an OPTIONAL \"device\" number, 0 through 11; an omitted device defaults to 0 (\"the file is read from the file system\", VICE Manual ch. 12). No address argument is offered -- omitting it makes VICE use the load address embedded in the .prg file's own two-byte header, which is exactly what these committed machine-code fixtures need.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -4517,6 +4517,15 @@
             "minimum": 0,
             "maximum": 11,
             "description": "OPTIONAL. IEC device number VICE loads from. Defaults to 0 (the host filesystem) when omitted. 1 through 11 span this project's own documented device-number range elsewhere; this tool never accepts a filename."
+          },
+          "subject": {
+            "type": "string",
+            "enum": [
+              "original",
+              "regressed",
+              "modified"
+            ],
+            "description": "OPTIONAL. Which committed hazard-subject fixture to load, named by id, never by path. \"original\" is the Phase 50 tracer-slice subject and is the default; \"regressed\" is its three-single-bit-regression twin; \"modified\" is the one-behaviour-removed, one-behaviour-added variant. This tool never accepts a filename."
           }
         },
         "additionalProperties": false
@@ -4543,11 +4552,15 @@
               "stopped",
               "unknown"
             ]
+          },
+          "subject": {
+            "type": "string"
           }
         },
         "required": [
           "command",
           "device",
+          "subject",
           "response",
           "note",
           "runState"

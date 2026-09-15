@@ -29,7 +29,7 @@ import { loadTextFixture } from "./textmon-fixtures.ts";
 import { CPUHISTORY_DISABLED_STUB, resetTextCapabilityCache } from "./text-capability-probe.ts";
 import { PROFILING_NOT_STARTED_TEXT } from "./textmon-profile.ts";
 import { ViceMonitorClient, CommandType } from "./stock-protocol.ts";
-import { HAZARD_SUBJECT_PRG_PATH } from "./text-protocol.ts";
+import { HAZARD_SUBJECT_PRG_PATH, HAZARD_SUBJECT_IDS, hazardSubjectLoadVerb } from "./text-protocol.ts";
 
 beforeEach(() => {
   resetChannelLockForTests();
@@ -1290,6 +1290,63 @@ test("handleProgramLoad: no filename can be injected -- an extraneous filename-s
       );
     },
   );
+});
+
+test("handleProgramLoad [plan 50-05]: every subject id in the closed table dials its OWN frozen path, and an omitted subject still dials the original", async () => {
+  for (const id of HAZARD_SUBJECT_IDS) {
+    const receivedLines: string[] = [];
+    await withStubTextServer(
+      (line, socket) => {
+        receivedLines.push(line);
+        socket.write(PROMPT);
+      },
+      async (port) => {
+        const deps = makeDeps(port);
+        const result = await handleProgramLoad({ subject: id }, deps);
+        assert.equal(result.isError, false, `expected success for subject ${id}, got ${JSON.stringify(result)}`);
+        assert.deepEqual(receivedLines, [`${hazardSubjectLoadVerb(id)} 0`], `subject ${id} must dial its own frozen path`);
+        const payload = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+        assert.equal(payload.subject, id, "the answer must name which subject was actually loaded");
+      },
+    );
+  }
+
+  // The default is unchanged from plan 50-04: no subject means the original.
+  // This is what keeps every earlier caller and every earlier captured
+  // command string valid after the table widening.
+  const defaultLines: string[] = [];
+  await withStubTextServer(
+    (line, socket) => {
+      defaultLines.push(line);
+      socket.write(PROMPT);
+    },
+    async (port) => {
+      const result = await handleProgramLoad({}, makeDeps(port));
+      assert.equal(result.isError, false);
+      assert.deepEqual(defaultLines, [`load "${HAZARD_SUBJECT_PRG_PATH}" 0`]);
+    },
+  );
+});
+
+test("handleProgramLoad [plan 50-05]: a subject the closed table does not carry is refused BY NAME, before any lease and any byte -- including a path-shaped one", async () => {
+  // The whole point of an enumerated id rather than a filename: none of
+  // these reaches a command string, and the refusal names the accepted set
+  // rather than failing somewhere inside the emulator.
+  for (const bad of ["misaligned", "/etc/passwd", "../hazard-subject.prg", "", "ORIGINAL", "__proto__", "constructor", 0, null, {}]) {
+    let leaseCalled = false;
+    const deps: StockDispatchDeps = {
+      ensureLease: async () => {
+        leaseCalled = true;
+        return { ok: true, lease: null };
+      },
+    };
+    const result = await handleProgramLoad({ subject: bad } as Record<string, unknown>, deps);
+    assert.equal(result.isError, true, `expected ${JSON.stringify(bad)} to be refused`);
+    assert.match(result.content[0]!.text, /vice_program_load/);
+    assert.match(result.content[0]!.text, /"subject" must be one of/);
+    assert.match(result.content[0]!.text, /never accepts a filename/);
+    assert.equal(leaseCalled, false, "no lease may be resolved for an unrecognised subject id");
+  }
 });
 
 // ---------------------------------------------------------------------------

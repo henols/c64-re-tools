@@ -40,6 +40,16 @@
 // than through a raw TextMonitorClient, which is strictly closer to "the
 // sanctioned tool surface" than driving the socket by hand.
 //
+// PLAN 50-05 CHANGED EXACTLY ONE THING about the sequence below: which
+// committed subject is loaded. `vice_program_load` now selects one member of
+// text-protocol.ts's closed HAZARD_SUBJECT_PRG_BASENAMES table by ENUMERATED
+// ID (still never a caller-supplied filename), so this script takes
+// --subject-id and passes it through. Every emulator step -- the ping retry,
+// the route-d load, the checkpoint, the PC set, the resume, the poll, the
+// capture, the deletion, the enumeration and the single final resume -- is
+// unchanged, in the same order, through the same dispatchStock() seam. That
+// is what makes a capture taken here comparable with plan 50-04's.
+//
 // WHAT NOT TO DO: do not add a second acquire anywhere in this file, and do
 // not release between the load and the capture. Both would destroy the machine
 // mid-run (see the kill-never-recycle note above).
@@ -57,6 +67,7 @@ const VICE_DIR = join(REPO_ROOT, "src", "mcp", "vice");
 const { openBrokerControl, brokerRootDir } = await import(join(VICE_DIR, "vice-broker-client.ts"));
 const { dispatchStock } = await import(join(VICE_DIR, "stock-dispatch.ts"));
 const { isInsideContainer } = await import(join(VICE_DIR, "container-guard.mts"));
+const { hazardSubjectPrgPath, isHazardSubjectId, HAZARD_SUBJECT_IDS } = await import(join(VICE_DIR, "text-protocol.ts"));
 
 // ---------------------------------------------------------------- args
 
@@ -70,7 +81,32 @@ const OUT_DIR = arg("out-dir", join(HERE, "captures"));
 const CHECKPOINT_NAME = arg("checkpoint-name", "hazard_raster_entry");
 const CHECKPOINT_ADDR = Number(arg("checkpoint-address", "0"));
 const ENTRY_ADDR = Number(arg("entry-address", "0"));
-const SUBJECT_PRG = arg("subject", join(VICE_DIR, "fixtures", "hazard-subject", "hazard-subject.prg"));
+
+// WHICH SUBJECT (plan 50-05). Plan 50-04 loaded one committed fixture and
+// this script took its path as a string. text-protocol.ts now carries a
+// CLOSED id -> path table, and `vice_program_load` selects by id, so this
+// script takes the ID and derives the path from that same table. That is
+// deliberate and load-bearing: a separate --subject path argument alongside
+// an id could disagree with what the emulator actually loaded, and the
+// sha256 recorded in the bundle would then attest to the WRONG binary --
+// silently, in a document that later becomes evidence. One source, no
+// possible disagreement. An omitted id is "original", exactly plan 50-04's
+// behaviour.
+const SUBJECT_ID = arg("subject-id", "original");
+if (!isHazardSubjectId(SUBJECT_ID)) {
+  throw new Error(`--subject-id must be one of ${HAZARD_SUBJECT_IDS.join(", ")} (got ${JSON.stringify(SUBJECT_ID)})`);
+}
+if (process.argv.includes("--subject")) {
+  throw new Error("--subject (a path) is refused: pass --subject-id instead, so the loaded file and the recorded sha256 cannot disagree");
+}
+const SUBJECT_PRG = hazardSubjectPrgPath(SUBJECT_ID);
+
+// The snapshot's own scratch name. Defaults to exactly the string plan 50-04
+// used, so an unchanged invocation still produces an unchanged name; a
+// non-original subject passes its own, because a .vsf called
+// "phase50-original-…" holding the regressed twin would misdescribe itself
+// in the one place a reader looks to check what was captured.
+const SNAPSHOT_NAME = arg("snapshot-name", `phase50-original-${LABEL}`);
 
 if (!Number.isInteger(CHECKPOINT_ADDR) || CHECKPOINT_ADDR <= 0) {
   throw new Error("--checkpoint-address is required and must be a positive integer (read it from a real ACME --symbollist run)");
@@ -198,7 +234,7 @@ try {
   // 2. Route-d: the text monitor's own `load` verb, device 0 (host filesystem).
   //    No filename is passed -- the committed fixture path is baked into the
   //    verb's own frozen identity in text-protocol.ts.
-  await call("vice_program_load", { device: 0 });
+  await call("vice_program_load", { device: 0, subject: SUBJECT_ID });
 
   // 3. Arm the logical checkpoint, execute-break, stopping enabled.
   const cpAdd = await call("vice_checkpoint_add", { start: hex4(CHECKPOINT_ADDR), exec: true, stop: true });
@@ -238,10 +274,10 @@ try {
   if (!hit) throw new Error(`checkpoint at ${hex4(CHECKPOINT_ADDR)} never reported a hit after 40 polls`);
 
   // 6. Capture in the SAME paused window. Snapshot route first.
-  const snapName = `phase50-original-${LABEL}`;
+  const snapName = SNAPSHOT_NAME;
   const snap = await call("vice_snapshot_save", {
     name: snapName,
-    description: `Phase 50 plan 50-04 ${CHECKPOINT_NAME} capture ${LABEL}`,
+    description: `Phase 50 ${CHECKPOINT_NAME} capture ${LABEL} (subject ${SUBJECT_ID})`,
   });
 
   // 7. Chip state, same paused window.
@@ -270,6 +306,7 @@ try {
 
   const bundle = {
     label: LABEL,
+    subject_id: SUBJECT_ID,
     checkpoint_name: CHECKPOINT_NAME,
     checkpoint_address: CHECKPOINT_ADDR,
     entry_address: ENTRY_ADDR,
