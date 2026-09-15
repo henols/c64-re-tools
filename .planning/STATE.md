@@ -5,16 +5,16 @@ milestone_name: The Rebuild Half
 current_phase: 56
 current_phase_name: Remove `shipped-modules.ts` and Its Embedded Source Scans
 status: executing
-stopped_at: Phase 56 planned and verified
-last_updated: "2026-09-14T22:18:39.495Z"
-last_activity: 2026-09-14
-last_activity_desc: Phase 56 planned (11 plans, 4 waves)
-state_head: 5417c744e71dc5e874443a446bee6bbed66ecbac
+stopped_at: Completed 56-01-PLAN.md
+last_updated: "2026-09-15T05:02:19.676Z"
+last_activity: 2026-09-15
+last_activity_desc: Completed 56-01 (Plan 1 of 11)
+state_head: b35c594b6d2e4e409045c2c26c209177b623f862
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 82
-  completed_plans: 62
+  completed_plans: 63
   percent: 58
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-09-13 after Phase 48 — one Key
 Decisions row and a footer; the last full evolution review was the v0.9.0 close
 on 2026-09-10)
 
-**Current focus:** Phase 51 — Planning Vocabulary Out of the Shipped Server
+**Current focus:** Phase 56 — Remove `shipped-modules.ts` and Its Embedded Source Scans
 Gates. It runs against Phase 48's purpose-built subject; see the Phase 48 entry
 under Blockers/Concerns before interpreting that subject's emulator behaviour.
 
@@ -270,10 +270,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 56 (Remove `shipped-modules.ts` and Its Embedded Source Scans) — READY TO EXECUTE
-Plan: 0 of 11
-Status: Ready to execute
-Plans: 0/11 executed. Phase 56 was planned 2026-09-15 - 11 plans across 4 waves, plan-checker PASSED, decision coverage 17/17, files_modified disjoint across 23 paths. It deletes `src/mcp/vice/shipped-modules.ts` and every embedded test case whose subject is source text.
+Phase: 56 (Remove `shipped-modules.ts` and Its Embedded Source Scans) — EXECUTING
+Plan: 2 of 11
+Status: Executing
+Plans: 1/11 executed. Phase 56 was planned 2026-09-15 - 11 plans across 4 waves, plan-checker PASSED, decision coverage 17/17, files_modified disjoint across 23 paths. It deletes `src/mcp/vice/shipped-modules.ts` and every embedded test case whose subject is source text. Plan 01 (tracer) is complete. It proved the D-14 scanner against a planted fixture. It cut prg-image.test.ts end-to-end through the full pipeline, then applied the same cut to anno-graphics.test.ts and anno-types.test.ts. Net effect: 5 whole-case deletions, 1 strip-in-place-and-rename, 0 collateral loss. The suite and typecheck are both green.
 
 **Phase 51 is still in flight and is NOT superseded by this.** It remains In Progress at 8/17 plans in the ROADMAP Progress table; planning Phase 56 did not advance or close it. Its own position and per-plan record follows.
 
@@ -292,8 +292,8 @@ effects revert before the screen settles, root cause unknown, recorded in
 artifact — it did not retract the finding. Phase 49 gates reassembly, so
 that subject is the thing it will gate on.
 
-Progress: [██████░░░░] 58% (7/12 phases complete in v1.0.0; per-phase plan counts in the ROADMAP Progress table)
-Last activity: 2026-09-14 — Completed quick task 260914-uhm: deleted capture-seam.test.ts; Phase 56 added for the remaining embedded source scans
+Progress: [██████░░░░] 58% (7/12 phases complete in v1.0.0 -- per-phase plan counts in the ROADMAP Progress table)
+Last activity: 2026-09-15 — Completed 56-01 (Plan 1 of 11)
 
 ## Performance Metrics
 
@@ -634,6 +634,7 @@ Last activity: 2026-09-14 — Completed quick task 260914-uhm: deleted capture-s
 | Phase 51 P06 | 95min | 2 tasks | 7 files |
 | Phase 51 P07 | 105 min | 2 tasks | 7 files |
 | Phase 51 P08 | 65min | 3 tasks | 10 files |
+| Phase 56 P01 | 14min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -1422,6 +1423,8 @@ Recent decisions affecting current work:
 - [Phase 51]: Plan 51-06's Task 2 text described a soundness-asymmetry comment for anno-join.ts that does not exist there; that description matches evid-reconcile.ts (already swept in 51-05). Disclosed rather than fabricated.
 - [Phase 51]: Swept anno-export-asm.ts, anno-import.ts, anno-graphics.ts, anno-regbits-gen.ts, anno-memmap-render.ts, anno-provenance-ledger.ts and anno-hazard-report.ts (229 citations) to planning-vocabulary zero. anno-register.ts's 63 citations are NOT resolved: its requirements[] traceability data is mechanically validated by anno-register.test.ts against real REQUIREMENTS.md ids, and unshipping it (module-classification.ts's precedent) reddens a separate guard, anno-seam.test.ts, because the file's anno-* name pulls it into that guard's shipped-completeness check. Documented as a Rule 4 architectural decision, logged in WINDOWS.md, deferred to a follow-up plan.
 - [Phase 51]: anno-register.ts is unshipped rather than redesigned: remove it from src/mcp/vice/package.json files[] and give anno-seam.test.ts a reasoned exemption for a test-only register (or rename it off the anno-* prefix). Owner decision 2026-09-14, taken at plan 51-08's escalation; executed by plan 51-17. — The file has ZERO runtime consumers -- only anno-register.test.ts, anno-import.test.ts and anno-derivation.test.ts import it -- yet it ships to npm carrying a per-verb requirement-id traceability matrix. Shipping it is precisely the defect this phase exists to remove. The slug-indirection alternative would keep shipping the same bookkeeping to consumers, only obfuscated, at the cost of redesigning a mechanically-enforced contract. Unshipping keeps anno-register.test.ts's id validation exactly as it is, because that guard runs against the repo, not the tarball. The only thing that blocked it at 51-08 was anno-seam.test.ts's naming heuristic that any non-test anno-* file must be in files[] -- a rule about names, not a runtime constraint.
+- [Phase 56]: anno-graphics.test.ts's the-module-header-states case was removed under D-01 even though the D-14 scanner did not flag it (raw readFileSync, no doomed symbol) -- found by the mandated blind-spot pass.
+- [Phase 56]: anno-types.test.ts's SCHEMA_VERSION case was resolved as genuinely mixed under D-02 -- the assert.equal(SCHEMA_VERSION, 5) call stayed byte-for-byte, the seven raw-source assert.match calls were stripped, and the case was renamed per D-03.
 
 ### Pending Todos
 
@@ -2535,9 +2538,9 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-14T20:54:07.989Z
-Stopped at: Phase 56 context gathered
-Resume file: .planning/phases/56-remove-shipped-modules-ts-and-its-embedded-source-scans/56-CONTEXT.md
+Last session: 2026-09-15T05:02:18.362Z
+Stopped at: Completed 56-01-PLAN.md
+Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
 Earlier: Completed 42-16-PLAN.md (gap-closure round 2 — CR-02 closed, proven live, PARSE-04 restored)

@@ -296,7 +296,7 @@
     {
       "number": "56",
       "name": "Remove `shipped-modules.ts` and Its Embedded Source Scans",
-      "status": "pending"
+      "status": "in_progress"
     }
   ],
   "next": {
@@ -304,5 +304,5 @@
     "label": "Advance to the next step",
     "reason": "Phase 56 of 12 · 58% · executing"
   },
-  "updated_at": "2026-09-14T22:18:39.554Z"
+  "updated_at": "2026-09-15T05:01:40.342Z"
 }
