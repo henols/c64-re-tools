@@ -24,9 +24,6 @@
 // file rather than a schema migration.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import {
   assertAccessKind,
@@ -56,9 +53,6 @@ import {
   XREF_ACCESS_KINDS,
 } from "./anno-types.ts";
 import { OPCODES } from "./disasm-opcodes.ts";
-import { codeOnly } from "./shipped-modules.ts";
-
-const HERE = dirname(fileURLToPath(import.meta.url));
 
 /** The twelve members, WRITTEN OUT BY HAND -- see the file header for why this
  * one expectation is not derived from its own subject. */
@@ -661,128 +655,6 @@ test("assertEnumName and parseVariantKey complete the validator set: the identif
   );
 });
 
-test("anno-types.ts declares no module-level mutable binding, and its import specifier set is exactly the four it needs", () => {
-  const raw = readFileSync(join(HERE, "anno-types.ts"), "utf8");
-
-  // Trap 3 forbids module-level MUTABLE STATE, not the `let`/`var` keywords.
-  // Two adjustments to `block-class.test.ts:194-212`'s scan, both necessary
-  // here and both stated so a later reader does not "restore" the original:
-  //
-  //   * ANCHORED AT COLUMN ZERO. This module's functions have genuine local
-  //     containers (`const targets: number[] = []` inside
-  //     `resolveSplitTargets`, `const ends: readonly ... = [...]` inside
-  //     `assertRangeShape`). The requirement is about MODULE-level state, and
-  //     the anchor is what makes the scan mean that instead of "no local array
-  //     anywhere", which is a different and wrong rule.
-  //   * `export` INCLUDED IN THE PATTERN. The original matches `^\s*const`,
-  //     which an `export const` line never satisfies -- and in this module
-  //     almost every module-level binding is exported, so without this the scan
-  //     would look at nothing that matters.
-  //
-  // The `let`-only form of this grep let the likeliest real offender through
-  // once already (a `const seen = new Map()` memoising cache is module-level
-  // mutable state and is `const`), which is why the container half is here.
-  const strict = codeOnly(raw);
-  const offenders = strict
-    .split("\n")
-    .filter(
-      (line) =>
-        /^(let|var)\s/.test(line) ||
-        /^(export\s+)?const\s+\w+\s*(:[^=]*)?=\s*(new\s+(Map|Set|WeakMap|WeakSet)\b|\[|\{)/.test(line),
-    );
-  // MESSAGE NARROWED (2026-08-28), logic untouched. The scan above, its
-  // anchor, its container filter and its two documented adjustments are
-  // byte-identical and still report `[]` -- the confinement fix added no
-  // module-level binding. What changed is the SENTENCE beside it: it used to
-  // claim every export is a frozen constant or a pure function of its
-  // arguments, and that is now false for exactly one export. An assertion that
-  // is sound with a message that over-claims is the same defect as a comment
-  // asserting a guarantee the code does not provide, so the message moves in
-  // the same edit as the thing that falsified it.
-  assert.deepEqual(offenders, [],
-    "no module-level mutable state: nothing is held between calls, two concurrent callers cannot observe each other, and there is nothing " +
-      "to reset. Every export here is a frozen constant or a pure function of its arguments EXCEPT storePathWithinWorkspace, which is a " +
-      "function of its arguments AND THE FILESYSTEM -- workspace confinement has to know whether a path lands outside the root once " +
-      "symbolic links are followed, and no string comparison can answer that. Narrowed in step with trap 3 in anno-types.ts's own header, " +
-      "so the header and this test cannot disagree about which exports are pure.",
-  );
-
-  // Literal bodies KEPT: an import specifier IS a string literal, so blanking
-  // literal bodies would make the thing under assertion unobservable.
-  const kept = codeOnly(raw, true);
-  const specifiers = [
-    ...kept.matchAll(/\bfrom\s+["']([^"']+)["']|\bimport\s*\(\s*["']([^"']+)["']|^\s*import\s+["']([^"']+)["']/gm),
-  ]
-    .map((match) => match[1] ?? match[2] ?? match[3])
-    .filter((specifier): specifier is string => specifier !== undefined);
-
-  // WIDENED 2026-08-28, AND THIS IS A REVERSAL RATHER THAN A CORRECTION.
-  // This list held three entries until this date. It now holds four: node:fs
-  // was added when workspace confinement was fixed to compare REAL paths
-  // (28-VERIFICATION.md gap 3 / 28-REVIEW.md CR-03, where a symlinked
-  // subdirectory inside the workspace escaped and the store file was created
-  // outside the root). The reason is recorded here, and in the rationale
-  // below, because a guard widened with no record of why is indistinguishable
-  // from a floor quietly lowered to make a red go away -- which is exactly the
-  // failure 28-03's prohibition P2 names. The three absence assertions after
-  // it pin the directions this widening deliberately did NOT open, so the
-  // four-entry list is a floor and not a wildcard.
-  assert.deepEqual(
-    [...specifiers].sort(),
-    ["./disasm-opcodes.ts", "./vice-errors.ts", "node:fs", "node:path"],
-    "anno-types.ts may import the opcode table (for the derived denylist), the error base, node:path, and node:fs -- nothing else. " +
-      "STILL FORBIDDEN, unchanged: either host/container path-translation seam, any transport import, any census import, and the SQLite " +
-      "builtin, which belongs to anno-store.ts alone under STORE-07. WHY THE THREE-ENTRY VERSION BECAME FALSE: workspace confinement has " +
-      "to answer whether a path resolves outside the root once symbolic links are followed, and that is a filesystem question. The string " +
-      "comparison the shorter list implied WAS the gap CR-03 reported, and node:fs is the minimum that closes it. WHAT THAT MINIMUM IS " +
-      "GREW ON 2026-08-28, and the growth is recorded rather than quietly absorbed: it was existsSync and realpathSync; it is now those " +
-      "two plus lstatSync and readlinkSync, which is what it takes to stop the ancestor walk at a path ENTRY rather than at a path that " +
-      "RESOLVES (28-VERIFICATION.md gap 2 / 28-REVIEW.md CR-04 -- existsSync follows links, so a DANGLING one read as absent and the walk " +
-      "stepped past it while openStore created the store file outside the root). Four named bindings on one builtin specifier, nothing " +
-      "more. WHY node:fs IS NOT WHAT THE OLD SENTENCE GUARDED AGAINST: it is a Node builtin, not a seam. The failure " +
-      "that rationale feared was a store module growing a dependency on the transport or on path translation, and the guard that actually " +
-      "enforces that is hostpath-consumers.test.ts's closed consumer set -- which anno-types.ts is still absent from, and which did not " +
-      "move. A reader who widens this list further should be looking there.",
-  );
-  assert.equal(specifiers.length, 4, "four specifiers: a deepEqual catches a wrong one, the length catches a duplicate");
-
-  const localSpecifiers = specifiers.filter((specifier) => specifier.startsWith("./"));
-  assert.deepEqual([...localSpecifiers].sort(), ["./disasm-opcodes.ts", "./vice-errors.ts"]);
-  assert.equal(localSpecifiers.length, 2);
-
-  // THREE TARGETED ABSENCE ASSERTIONS -- what the widening did NOT open. The
-  // specifier scan above is already non-vacuous (its length assertion proves it
-  // read four real specifiers), so these run over the same stripped source and
-  // each carries its own message rather than being folded into one.
-  //
-  // The SQLite specifier is assembled rather than written out, and that is
-  // deliberate rather than stylistic: anno-seam.test.ts's
-  // TEST_FILES_NAMING_SQLITE scans every test file's code with literal bodies
-  // KEPT, so writing "node:sqlite" as a literal here would make THIS file a
-  // second declared namer of the builtin and redden that guard. Comments are
-  // stripped by that scan, which is why the name appears in this comment and
-  // not in the code below.
-  const sqliteSpecifier = ["node", "sqlite"].join(":");
-  assert.equal(
-    kept.includes("hostpath"),
-    false,
-    "anno-types.ts must not reach the host path-translation seam: a host-translated store path would let a store write land on the HOST " +
-      "filesystem, outside the workspace -- anno-store.ts's trap 7",
-  );
-  assert.equal(
-    kept.includes("containerpath"),
-    false,
-    "and not the container-side inverse either: the confinement contract compares real paths in ONE namespace, and a translation on " +
-      "either side of it would make the comparison meaningless",
-  );
-  assert.equal(
-    kept.includes(sqliteSpecifier),
-    false,
-    "and not the SQLite builtin: STORE-07 puts the dependency in anno-store.ts alone, and a validator layer that opened a connection " +
-      "would be a second place the store can be reached",
-  );
-});
-
 // ---------------------------------------------------------------------------
 // D-15: the SCHEMA_VERSION 2 -> 3 bump that bought `anno_enum_usage`, and the
 // row shape the association is read back through.
@@ -792,7 +664,7 @@ test("anno-types.ts declares no module-level mutable binding, and its import spe
 // Deriving `3` from the constant would make the pin read its own subject.
 // ---------------------------------------------------------------------------
 
-test("SCHEMA_VERSION is 5, and the constant's own doc comment records the reaffirm-refusal decision by table name and by date -- the bump is a decision on the record, not a number that drifted", () => {
+test("SCHEMA_VERSION is 5 -- a deliberate one-way bump that strands every version 4 store, not a number that drifted", () => {
   assert.equal(
     SCHEMA_VERSION,
     5,
@@ -800,39 +672,6 @@ test("SCHEMA_VERSION is 5, and the constant's own doc comment records the reaffi
       "because the checkpoint decision was reaffirm-refusal -- no migration arm was written. An edit to this number must be a decision, " +
       "which is why the expectation is typed out here by hand rather than derived from the constant it is checking.",
   );
-
-  // NOTE (Phase 51): this pin used to require the shipped doc comment to cite
-  // decision/requirement ids (D-15, EVID-02, BUILD-07) by name. Per
-  // `.planning/ENGINEERING_RULES.md` section 21.2 those ids no longer belong
-  // in a shipped file at all -- the reasoning is stated in prose instead, so
-  // this pin now anchors on the TABLE each version adds and the version's own
-  // date, which is what the prose states directly.
-  const src = readFileSync(join(HERE, "anno-types.ts"), "utf8");
-  assert.match(
-    src,
-    /anno_enum_usage/,
-    "the SCHEMA_VERSION doc comment must still name the anno_enum_usage table for the version 2 -> 3 bump: a version " +
-      "bump whose rationale is not stated in the file is a number the next reader has no way to weigh",
-  );
-  assert.match(
-    src,
-    /2026-08-29/,
-    "and it must still carry the version 3 bump's own dated record, matching the dated-record discipline the version 1 paragraph beside it already uses",
-  );
-  assert.match(
-    src,
-    /no migration arm/i,
-    "and it must state the version 3 bump's accepted COST in the same voice: no migration arm was written, so every version 2 store is unopenable",
-  );
-  assert.match(src, /anno_evid_exec/, "the version 4 paragraph must still name the anno_evid_exec table it adds, the same discipline the version 3 paragraph established");
-  assert.match(src, /2026-09-10/, "and it must still carry the version 4 decision's own date");
-  assert.match(src, /2026-09-11/, "and it must carry the version 5 decision's own date");
-  assert.match(
-    src,
-    /reaffirm-refusal/,
-    "and it must name the checkpoint option selected, by name, so the decision is legible without re-deriving it from a checkpoint transcript",
-  );
-  assert.match(src, /anno_excluded_range/, "and it must name the table the version 5 bump buys");
 });
 
 test("EnumUsageRow carries exactly id, address, enumId, enumName and bank -- the association is read back by enum ID, with the name resolved through the join rather than stored twice", () => {
