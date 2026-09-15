@@ -5,16 +5,16 @@ milestone_name: The Rebuild Half
 current_phase: 56
 current_phase_name: Remove `shipped-modules.ts` and Its Embedded Source Scans
 status: executing
-stopped_at: Completed 56-03-PLAN.md
-last_updated: "2026-09-15T05:44:21.096Z"
+stopped_at: Completed 56-04-PLAN.md
+last_updated: "2026-09-15T05:55:21.643Z"
 last_activity: 2026-09-15
-last_activity_desc: Completed 56-03 (Plan 3 of 11)
-state_head: 039471562440c9dd516ce49e053e5eace28f2052
+last_activity_desc: Completed 56-04 (Plan 4 of 11)
+state_head: 4333e6aabb5af46fe6aeaef0b8fa2be769486a40
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 82
-  completed_plans: 65
+  completed_plans: 66
   percent: 58
 ---
 
@@ -271,9 +271,9 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 56 (Remove `shipped-modules.ts` and Its Embedded Source Scans) — EXECUTING
-Plan: 4 of 11
+Plan: 5 of 11
 Status: Ready to execute
-Plans: 3/11 executed. Phase 56 was planned 2026-09-15 - 11 plans across 4 waves, plan-checker PASSED, decision coverage 17/17, files_modified disjoint across 23 paths. It deletes `src/mcp/vice/shipped-modules.ts`. It also deletes every embedded test case whose subject is source text. Plan 01 (tracer) is complete. It proved the D-14 scanner against a planted fixture. It cut prg-image.test.ts end-to-end through the full pipeline, then applied the same cut to anno-graphics.test.ts and anno-types.test.ts. Net effect: 5 whole-case deletions, 1 strip-in-place-and-rename, 0 collateral loss. Plan 02 is complete. It cut anno-seam.test.ts from 23 cases to 2: the package.json files[] completeness case and the WR-25 behavioural refusal case. Two atomic commits, each gated by a per-file TAP name-set diff. The suite and typecheck are both green. Plan 03 is complete. It cut block-class.test.ts (two cases), anno-join.test.ts (one case) and anno-overlap.test.ts (one case). Four whole-case deletions total, each reached by a single scanner hit or a helper-indirected hit. The suite (`fail 0`, `skipped 9`, `tests 3723`) and typecheck are both green.
+Plans: 4/11 executed. Phase 56 was planned 2026-09-15 - 11 plans across 4 waves, plan-checker PASSED, decision coverage 17/17, files_modified disjoint across 23 paths. It deletes `src/mcp/vice/shipped-modules.ts`. It also deletes every embedded test case whose subject is source text. Plan 01 (tracer) is complete. It proved the D-14 scanner against a planted fixture. It cut prg-image.test.ts end-to-end through the full pipeline, then applied the same cut to anno-graphics.test.ts and anno-types.test.ts. Net effect: 5 whole-case deletions, 1 strip-in-place-and-rename, 0 collateral loss. Plan 02 is complete. It cut anno-seam.test.ts from 23 cases to 2: the package.json files[] completeness case and the WR-25 behavioural refusal case. Two atomic commits, each gated by a per-file TAP name-set diff. The suite and typecheck are both green. Plan 03 is complete. It cut block-class.test.ts (two cases), anno-join.test.ts (one case) and anno-overlap.test.ts (one case). Four whole-case deletions total, each reached by a single scanner hit or a helper-indirected hit. The suite (`fail 0`, `skipped 9`, `tests 3723`) and typecheck are both green. Plan 04 is complete. It cut capture-predicate.test.ts (two cases) and evid-report-keys.test.ts (two direction-4 cases). It also removed evid-report-keys.test.ts's three now-orphaned module-scope helpers -- PATTERNS.md's worked Edit Kind 4 example. Four whole-case deletions total. The suite (`fail 0`, `skipped 9`, `tests 3719`) and typecheck are both green.
 
 **Phase 51 is still in flight and is NOT superseded by this.** It remains In Progress at 8/17 plans in the ROADMAP Progress table; planning Phase 56 did not advance or close it. Its own position and per-plan record follows.
 
@@ -293,7 +293,7 @@ artifact — it did not retract the finding. Phase 49 gates reassembly, so
 that subject is the thing it will gate on.
 
 Progress: [██████░░░░] 58% (7/12 phases complete in v1.0.0 -- per-phase plan counts in the ROADMAP Progress table)
-Last activity: 2026-09-15 — Completed 56-03 (Plan 3 of 11)
+Last activity: 2026-09-15 — Completed 56-04 (Plan 4 of 11)
 
 ## Performance Metrics
 
@@ -637,6 +637,7 @@ Last activity: 2026-09-15 — Completed 56-03 (Plan 3 of 11)
 | Phase 56 P01 | 14min | 3 tasks | 3 files |
 | Phase 56 P02 | 55 min | 3 tasks | 1 files |
 | Phase 56 P03 | 6min | 3 tasks | 3 files |
+| Phase 56 P04 | 6 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -1430,6 +1431,8 @@ Recent decisions affecting current work:
 - [Phase 56]: seamSource() and THE_ONE_SEAM were kept alive through anno-seam.test.ts's Task 1 (not removed with the other dead helpers) because the two WR-25 pin cases still called them until Task 2 removed those cases. Both were removed in Task 2 once genuinely dead. — Grep-confirming callers first (the cut_rule Helper rule) showed both were still called by cases Task 1 does not touch. Removing them early would have broken node --test with a ReferenceError inside a still-present case.
 - [Phase 56]: Section-header separator comments in anno-seam.test.ts were left untouched even where every case they once introduced is now gone. — D-10 forbids new prose and the cut_rule says stale comments stay stale. Editing or removing these banners was not named by either task's action text.
 - [Phase 56]: Phase 56 Plan 03: anno-join.test.ts's non-vacuity demonstration case (line 373) is out of scope for the source-scanning cut even though it neighbors the removed case, because its subject is assertion logic over a hardcoded empty array, not module source text. — The cut_rule's IN SCOPE test requires the case's SUBJECT to be a module's source text. This case reads no file and calls no doomed symbol, so the scanner correctly never flagged it and it stays byte-identical.
+- [Phase 56]: capture-predicate.test.ts's second candidate case is reached by a local const, not the module-scope moduleSpecifiers helper the plan names, but both hits are still source-text assertions and were removed under D-01 exactly as specified. — The cut_rule's IN SCOPE test is about the case's SUBJECT (source text), not its call route.
+- [Phase 56]: evid-report-keys.test.ts's directions 1-3 (scope completeness, banned keys, denominator adjacency) were confirmed NOT IN SCOPE and left untouched. — Their subject is a runtime JS value (ANNO_TOOL_DEFINITIONS or ANSWERS JSON), never a module's source text. Only direction 4 reads source text.
 
 ### Pending Todos
 
@@ -2543,8 +2546,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-15T05:43:49.084Z
-Stopped at: Completed 56-03-PLAN.md
+Last session: 2026-09-15T05:55:20.168Z
+Stopped at: Completed 56-04-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
