@@ -1,8 +1,8 @@
 # Memory map generation
 
-**The memory map is GENERATED, not hand-authored.** The store — labels, comments, block
+**A generator writes the memory map. Nobody hand-authors it.** The store — labels, comments, block
 types and scopes written through the `anno_*` tools described in `../SKILL.md` — is canonical. This
-file used to be a fill-in-the-rows document; it is now the schema for the one input the generator
+file used to be a fill-in-the-rows document. It is now the schema for the one input the generator
 needs beyond the store itself, plus the confidence vocabulary that store comments carry.
 
 Run the generator once findings are in the store:
@@ -13,15 +13,19 @@ node <plugin-root>/src/mcp/vice/vice-proxy.ts anno render-memmap game.annostore 
 ```
 
 Add `--check` to compare the rendered file on disk against a fresh render — it exits non-zero and
-prints the first differing line. Drift is reported when, and only when, one of these changed: the
-rendered file itself (a hand edit); a store row (a range, a label, a comment, or a comment's
-confidence grade); the provenance sidecar's bytes; the location of the store or the sidecar
-**relative to the workspace root**; or the renderer. **Relocating the checkout is not drift** — the
-same tree at a different absolute path renders the same bytes, because the banner records
-workspace-relative locations rather than absolute ones.
+prints the first differing line. `--check` reports drift when, and only when, one of these changed:
+
+- the rendered file itself (a hand edit)
+- a store row (a range, a label, a comment, or a comment's confidence grade)
+- the provenance sidecar's bytes
+- the location of the store or the sidecar **relative to the workspace root**
+- the renderer
+
+**Relocating the checkout is not drift** — the same tree at a different absolute path renders the
+same bytes, because the banner records workspace-relative locations rather than absolute ones.
 
 There is no way to "fix" drift by editing the rendered file directly: the fix is always to re-run
-the generator (or, if the sidecar itself is stale, correct it and re-run). That remedy is safe to
+the generator (or, if the sidecar itself is stale, fix it and re-run). That remedy is safe to
 follow on any machine — because the banner records workspace-relative locations, re-running in a
 different checkout or in a worktree does not rewrite the file with that machine's absolute paths.
 The generated file carries a banner naming the store, the sidecar and a content digest — do not
@@ -38,7 +42,7 @@ one-time, self-clearing banner correction — not a bug, and not a migration.
 Some facts belong to the **run** (which capture, which `$01`, which video standard) rather than to
 any address, and the store has no address-keyed shape for them. They are supplied to the
 renderer as a small JSON sidecar, hand-authored from `c64-ram-capture`'s and `derive.mjs`'s own
-outputs and validated by the renderer — a missing or malformed key is a named error listing every
+outputs and confirmed by the renderer — a missing or malformed key is a named error listing every
 problem at once, never a `<placeholder>` silently rendered into a published document.
 
 | Key | Type | Where it comes from |
@@ -54,7 +58,7 @@ problem at once, never a `<placeholder>` silently rendered into a published docu
 | `videoStandard` | `"PAL"` or `"NTSC"` | Known from the capture's origin/hardware context |
 | `liveVectorPair` | string | `derive.mjs vectors` — the live vector pair (`$0314/$0315` or `$FFFE/$FFFF`) |
 | `vectorHandler` | string | The address the live vector pair points at, confirmed live at a checkpoint |
-| `rasterPositions` | string array, optional | One entry per observed `$D012` write on the way out of the live IRQ handler; `derive.mjs sprites` where sprite coordinates are relevant |
+| `rasterPositions` | string array, optional | One entry per observed `$D012` write on the way out of the live IRQ handler. `derive.mjs sprites` where sprite coordinates are relevant |
 
 A fully-filled example, with plausible values in place of placeholders — copy this shape, never the
 literal values:
@@ -93,5 +97,5 @@ close but not exact — a typo never silently degrades into an ungraded comment)
 Do not force an unknown range through a disassembler and record the output as code. A linear
 decode of data is silently wrong and contaminates everything downstream.
 
-**Do not promote a row by editing its grade.** Re-verify and restate the evidence with a fresh
+**Do not promote a row by editing its grade.** Re-confirm and restate the evidence with a fresh
 `anno_set_comment` call, so the record of when something stopped being a guess survives.
