@@ -223,3 +223,110 @@ test("cross: an image that is not exactly 65536 bytes is refused with its byte c
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// ---------------------------------------------------------------------------
+// Task 2: allowlist and per-binary logical checkpoints
+// ---------------------------------------------------------------------------
+
+test("cross: an allowlist entry with a whitespace-only why is refused, naming the offending range", () => {
+  const dir = scratchDir();
+  try {
+    const img = basePattern();
+    const pa = writeImage(dir, "a.bin", img);
+    const pb = writeImage(dir, "b.bin", img);
+    const al = writeJson(dir, "allow.json", {
+      entries: [{ start: 0x8000, endInclusive: 0x8000, domain: "image", why: "   " }],
+    });
+    const r = runCross([pa, pb, "--allowlist", al]);
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /\$8000/);
+    assert.match(r.stderr, /why/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("cross: an allowlist entry overlapping a masked span is refused, naming the overlap", () => {
+  const dir = scratchDir();
+  try {
+    const img = basePattern();
+    const pa = writeImage(dir, "a.bin", img);
+    const pb = writeImage(dir, "b.bin", img);
+    const al = writeJson(dir, "allow.json", {
+      entries: [{ start: 0x0000, endInclusive: 0x0000, domain: "image", why: "deliberate test overlap" }],
+    });
+    const r = runCross([pa, pb, "--allowlist", al]);
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /overlap/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("cross: a pair that PASSES with an allowlist FAILS with --no-allowlist, same two images both times", () => {
+  const dir = scratchDir();
+  try {
+    const imgA = basePattern();
+    const imgB = Buffer.from(imgA);
+    imgB[0x8000] = (imgB[0x8000] + 1) & 0xff;
+    const pa = writeImage(dir, "a.bin", imgA);
+    const pb = writeImage(dir, "b.bin", imgB);
+    const al = writeJson(dir, "allow.json", {
+      entries: [{ start: 0x8000, endInclusive: 0x8000, domain: "image", why: "intentional test diff" }],
+    });
+
+    const withAllow = runCross([pa, pb, "--allowlist", al]);
+    assert.equal(withAllow.status, 0, withAllow.stdout + withAllow.stderr);
+    assert.match(withAllow.stdout, /VERDICT: PASS/);
+    assert.match(withAllow.stdout, /allowlisted \(intentional difference, excluded from the verdict\): 1/);
+
+    const withoutAllow = runCross([pa, pb, "--allowlist", al, "--no-allowlist"]);
+    assert.equal(withoutAllow.status, 1);
+    assert.match(withoutAllow.stdout, /VERDICT: FAIL/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("cross: two captures declaring different logical checkpoints are refused, naming both", () => {
+  const dir = scratchDir();
+  try {
+    const img = basePattern();
+    const pa = writeImage(dir, "a.bin", img);
+    const pb = writeImage(dir, "b.bin", img);
+    const sa = writeJson(dir, "a.state.json", { route: "memory-read", checkpoint_name: "checkpoint-a" });
+    const sb = writeJson(dir, "b.state.json", { route: "memory-read", checkpoint_name: "checkpoint-b" });
+    const r = runCross([pa, pb, "--state", sa, sb]);
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /checkpoint-a/);
+    assert.match(r.stderr, /checkpoint-b/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("cross: a successful run's header carries MASK_NARROWED_AT and one resolved checkpoint address per capture", () => {
+  const dir = scratchDir();
+  try {
+    const img = basePattern();
+    const pa = writeImage(dir, "a.bin", img);
+    const pb = writeImage(dir, "b.bin", img);
+    const sa = writeJson(dir, "a.state.json", {
+      route: "memory-read",
+      checkpoint_name: "hazard_raster_entry",
+      checkpoint_address: 0x10c2,
+    });
+    const sb = writeJson(dir, "b.state.json", {
+      route: "memory-read",
+      checkpoint_name: "hazard_raster_entry",
+      checkpoint_address: 0x10c5,
+    });
+    const r = runCross([pa, pb, "--state", sa, sb]);
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /MASK_NARROWED_AT:/);
+    assert.match(r.stdout, /A {2}checkpoint hazard_raster_entry @ \$10C2/);
+    assert.match(r.stdout, /B {2}checkpoint hazard_raster_entry @ \$10C5/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

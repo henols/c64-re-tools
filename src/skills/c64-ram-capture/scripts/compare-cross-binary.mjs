@@ -31,8 +31,9 @@
 //   (a) NO DRIFT BUCKET. Across two different binaries a one-bit difference
 //       is a real difference. `drift` exists to absorb sampling noise between
 //       two runs of the SAME binary; applied across binaries it would absorb
-//       an `lda #$02` to `lda #$03` regression whole. Every non-volatile
-//       difference is a divergence here, regardless of bit count.
+//       an `lda #$02` to `lda #$03` regression whole. Every non-volatile,
+//       non-allowlisted difference is a divergence here, regardless of bit
+//       count.
 //   (b) NARROWED I/O MASK. `compare.mjs` masks $D000-$DFFF entirely. This
 //       module masks only the addresses and register fields that genuinely
 //       cannot be stable, listed individually below with a reason each.
@@ -59,6 +60,12 @@ import { basename, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const IMAGE_BYTES = 65536;
+
+// A hand-bumped version string, printed into every report as
+// `MASK_NARROWED_AT:` so a transcript records which mask produced it. Bump
+// this whenever a mask span in IMAGE_VOLATILE or IO_VOLATILE changes --
+// never silently, and never to make a rebuild pass.
+const MASK_VERSION = "compare-cross-binary-mask-v1";
 
 // ---------------------------------------------------------------- IMAGE_VOLATILE
 
@@ -202,18 +209,89 @@ function normalizeRegisters(stateDoc, path) {
   return map;
 }
 
+// ----------------------------------------------------------------- allowlist
+
+// --allowlist <path> loads the intentional-difference document. Shape:
+//
+//   {
+//     "checkpoint": "hazard_raster_entry",
+//     "subjects": { "hazard-subject-modified": "<sha256 of the .prg>" },
+//     "entries": [
+//       { "start": 8221, "endInclusive": 8221, "domain": "image", "why": "..." }
+//     ]
+//   }
+//
+// Every entry is validated at load time and refused BY NAME on: a missing or
+// whitespace-only `why`; a `start` above `endInclusive`; a range that
+// intersects a masked span (mask wins -- an allowlist can never re-admit a
+// hardware-volatile address, so a real difference can never be smuggled in
+// under a masked address's cover); and a document `checkpoint` that does not
+// match the checkpoint the two captures themselves declare. This is
+// semantically distinct from the mask tables above -- hardware noise versus a
+// deliberate difference -- and is kept in its own bucket, never folded into
+// IMAGE_VOLATILE/IO_VOLATILE, so ROADMAP criterion 2's distinction stays
+// visible in the record.
+function loadAllowlist(path, { route, checkpointName }) {
+  const doc = JSON.parse(readFileSync(path, "utf8"));
+  const entries = doc.entries ?? [];
+
+  if (checkpointName && doc.checkpoint && doc.checkpoint !== checkpointName) {
+    throw new Error(
+      `${path}: allowlist declares checkpoint "${doc.checkpoint}", captures declare "${checkpointName}" -- refused`,
+    );
+  }
+
+  for (const e of entries) {
+    const rangeLabel =
+      e.start === e.endInclusive ? hex4(e.start) : `${hex4(e.start)}-${hex4(e.endInclusive)}`;
+    if (!e.why || !String(e.why).trim()) {
+      throw new Error(
+        `${path}: allowlist entry ${rangeLabel} has no why -- an allowlist entry without a non-empty why string is refused`,
+      );
+    }
+    if (!(e.start <= e.endInclusive)) {
+      throw new Error(`${path}: allowlist entry ${rangeLabel} has start above endInclusive -- refused`);
+    }
+    const domain = e.domain === "register" ? "register" : "image";
+    for (let addr = e.start; addr <= e.endInclusive; addr++) {
+      const maskEntry = domain === "register" ? ioMaskEntryFor(addr) : imageMaskEntryFor(addr, route);
+      if (maskEntry) {
+        throw new Error(
+          `${path}: allowlist entry ${rangeLabel} (${domain}) overlaps the masked span ` +
+            `${hex4(maskEntry.lo)}-${hex4(maskEntry.hi)} (${maskEntry.reason}) -- overlap between an ` +
+            `allowlist entry and the volatile mask is refused`,
+        );
+      }
+    }
+  }
+
+  return { checkpoint: doc.checkpoint ?? null, subjects: doc.subjects ?? {}, entries };
+}
+
+function findAllowlistEntry(allowlist, addr, domain) {
+  if (!allowlist) return null;
+  for (const e of allowlist.entries) {
+    const eDomain = e.domain === "register" ? "register" : "image";
+    if (eDomain !== domain) continue;
+    if (addr >= e.start && addr <= e.endInclusive) return e;
+  }
+  return null;
+}
+
 // -------------------------------------------------------------- classification
 
 /**
  * Classify every differing address between two captures -- image bytes plus,
  * when both sides carry a chip-state sidecar, register values. Precedence is
- * volatile first, then divergence -- the same "mask wins over everything
- * else" precedence compare.mjs already uses for isVolatile. There is no
- * fourth bucket and no bit-count branch: every non-volatile difference is a
- * divergence, one bit or many.
+ * volatile first, then allowlisted, then divergence -- the same "mask wins
+ * over everything else" precedence compare.mjs already uses for isVolatile,
+ * extended one step further: allowlist wins over bit-count too. There is no
+ * fourth bucket and no bit-count branch: every non-volatile,
+ * non-allowlisted difference is a divergence, one bit or many.
  */
-export function classify({ imgA, imgB, route, regMapA, regMapB }) {
+export function classify({ imgA, imgB, route, regMapA, regMapB, allowlist }) {
   const volatile_ = [];
+  const allowlisted = [];
   const divergence = [];
 
   for (let addr = 0; addr < IMAGE_BYTES; addr++) {
@@ -224,6 +302,11 @@ export function classify({ imgA, imgB, route, regMapA, regMapB }) {
     const rec = { addr, a: x, b: y, domain: "image" };
     if (isImageVolatile(addr, route)) {
       volatile_.push(rec);
+      continue;
+    }
+    const aw = findAllowlistEntry(allowlist, addr, "image");
+    if (aw) {
+      allowlisted.push({ ...rec, why: aw.why });
       continue;
     }
     divergence.push(rec);
@@ -243,11 +326,16 @@ export function classify({ imgA, imgB, route, regMapA, regMapB }) {
         volatile_.push(rec);
         continue;
       }
+      const aw = findAllowlistEntry(allowlist, addr, "register");
+      if (aw) {
+        allowlisted.push({ ...rec, why: aw.why });
+        continue;
+      }
       divergence.push(rec);
     }
   }
 
-  return { volatile: volatile_, divergence, pass: divergence.length === 0 };
+  return { volatile: volatile_, allowlisted, divergence, pass: divergence.length === 0 };
 }
 
 // ------------------------------------------------------------------- printing
@@ -260,7 +348,10 @@ function printList(title, rows, limit) {
   if (!rows.length) return;
   // --limit 0 means unlimited, matching the usage text. Anything else caps.
   const shown = limit ? rows.slice(0, limit) : rows;
-  for (const r of shown) console.log(fmtDiffRow(r));
+  for (const r of shown) {
+    const why = r.why ? `  -- ${r.why}` : "";
+    console.log(fmtDiffRow(r) + why);
+  }
   if (shown.length < rows.length) {
     console.log(`  … ${rows.length - shown.length} more (--limit 0 for all)`);
   }
@@ -271,6 +362,9 @@ function printList(title, rows, limit) {
 function parseCrossArgs(argv) {
   const positional = [];
   let statePaths = null;
+  let allowlistPath = null;
+  let noAllowlist = false;
+  let checkpointAssert = null;
   let routeAssert = null;
   let limit;
 
@@ -278,6 +372,12 @@ function parseCrossArgs(argv) {
     const a = argv[i];
     if (a === "--state") {
       statePaths = [argv[++i], argv[++i]];
+    } else if (a === "--allowlist") {
+      allowlistPath = argv[++i];
+    } else if (a === "--no-allowlist") {
+      noAllowlist = true;
+    } else if (a === "--checkpoint") {
+      checkpointAssert = argv[++i];
     } else if (a === "--route") {
       routeAssert = argv[++i];
     } else if (a === "--limit") {
@@ -290,7 +390,15 @@ function parseCrossArgs(argv) {
   }
 
   if (positional.length !== 2) throw new Error("cross needs exactly two image paths");
-  return { imagePaths: positional, statePaths, routeAssert, limit };
+  return {
+    imagePaths: positional,
+    statePaths,
+    allowlistPath,
+    noAllowlist,
+    checkpointAssert,
+    routeAssert,
+    limit,
+  };
 }
 
 function cmdCross(argv) {
@@ -312,21 +420,49 @@ function cmdCross(argv) {
   }
   const route = routeA;
 
+  const checkpointA = stateA?.checkpoint_name ?? null;
+  const checkpointB = stateB?.checkpoint_name ?? null;
+  if (checkpointA && checkpointB && checkpointA !== checkpointB) {
+    throw new Error(
+      `logical checkpoints differ -- A resolved "${checkpointA}", B resolved "${checkpointB}". A ` +
+        `comparison whose two captures name different logical checkpoints is refused.`,
+    );
+  }
+  const checkpointName = checkpointA ?? checkpointB ?? null;
+  if (opts.checkpointAssert && checkpointName && opts.checkpointAssert !== checkpointName) {
+    throw new Error(
+      `--checkpoint asserted "${opts.checkpointAssert}", captures declare "${checkpointName}" -- refused`,
+    );
+  }
+
   const regMapA = stateA ? normalizeRegisters(stateA, opts.statePaths[0]) : null;
   const regMapB = stateB ? normalizeRegisters(stateB, opts.statePaths[1]) : null;
+
+  const allowlist =
+    opts.allowlistPath && !opts.noAllowlist
+      ? loadAllowlist(opts.allowlistPath, { route, checkpointName })
+      : null;
 
   const haA = sha256(imgA);
   const haB = sha256(imgB);
 
   console.log(`A  ${basename(pa)}  sha256 ${haA}`);
   console.log(`B  ${basename(pb)}  sha256 ${haB}`);
+  console.log(`MASK_NARROWED_AT: ${MASK_VERSION}`);
+  if (checkpointA) {
+    console.log(`A  checkpoint ${checkpointA} @ ${hex4(stateA.checkpoint_address ?? 0)}`);
+  }
+  if (checkpointB) {
+    console.log(`B  checkpoint ${checkpointB} @ ${hex4(stateB.checkpoint_address ?? 0)}`);
+  }
 
-  const r = classify({ imgA, imgB, route, regMapA, regMapB });
+  const r = classify({ imgA, imgB, route, regMapA, regMapB, allowlist });
 
   printList("volatile (excluded from the verdict)", r.volatile, opts.limit);
+  printList("allowlisted (intentional difference, excluded from the verdict)", r.allowlisted, opts.limit);
   printList("DIVERGENCE — fails the comparison", r.divergence, opts.limit);
 
-  const total = r.volatile.length + r.divergence.length;
+  const total = r.volatile.length + r.allowlisted.length + r.divergence.length;
   console.log(`\ntotal differing addresses (image + register): ${total}`);
   console.log(`\nVERDICT: ${r.pass ? "PASS" : "FAIL"}`);
   return r.pass ? 0 : 1;
@@ -340,18 +476,20 @@ function usage() {
   return `usage: node compare-cross-binary.mjs <command>
 
   cross <a.bin> <b.bin> [--state <a.state.json> <b.state.json>]
+        [--allowlist <path>] [--no-allowlist] [--checkpoint <name>]
         [--route <snapshot|memory-read>] [--limit N]
     classify every difference between two captures of DIFFERENT binaries and
     print a single VERDICT line.
 
-No drift bucket here: every non-volatile difference fails, regardless of bit
-count -- unlike compare.mjs, which is for two captures of the SAME binary.
-Volatile registers (excluded): $D011, $D012, $D019, $D01E-$D01F, $D400-$D7FF,
-$D800-$DBFF, $DC00-$DCFF, $DD00-$DDFF, $DE00-$DFFF (mirrored across
-$D000-$D3FF where applicable). $D015, $D018 and $D020 are deliberately NOT
-masked.
+No drift bucket here: every non-volatile, non-allowlisted difference fails,
+regardless of bit count -- unlike compare.mjs, which is for two captures of
+the SAME binary. Volatile registers (excluded): $D011, $D012, $D019,
+$D01E-$D01F, $D400-$D7FF, $D800-$DBFF, $DC00-$DCFF, $DD00-$DDFF, $DE00-$DFFF
+(mirrored across $D000-$D3FF where applicable). $D015, $D018 and $D020 are
+deliberately NOT masked.
 --limit 0 prints every row. Exit status is 1 on a FAIL verdict, non-zero on
-any refusal (mismatched route, a malformed image).
+any refusal (mismatched route, mismatched checkpoint, a malformed allowlist,
+a malformed image).
 
 Captures come from the procedure in c64-ram-capture/SKILL.md, via
 mcp__plugin_c64-re-tools_vice__*. This script contacts nothing.`;
