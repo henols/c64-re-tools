@@ -46,6 +46,7 @@ import {
   HAZARD_SUBJECT_PRG_PATH,
   HAZARD_SUBJECT_IDS,
   HAZARD_SUBJECT_PRG_BASENAMES,
+  HAZARD_SUBJECT_PRG_RELPATHS,
   hazardSubjectPrgPath,
   hazardSubjectLoadVerb,
   isHazardSubjectId,
@@ -171,16 +172,59 @@ test("isAllowlistedTextCommand: accepts every TEXT_COMMAND_ALLOWLIST entry and r
   );
 });
 
-test("HAZARD_SUBJECT_PRG_BASENAMES (plan 50-05): the loadable subject set is closed, every member is a real committed fixture, and only a table id passes the membership test", () => {
+test("HAZARD_SUBJECT_PRG_RELPATHS (plan 50-05, rows generalised plan 50-06): the loadable subject set is closed, every member resolves to a real file on disk, and only a table id passes the membership test", () => {
   // Every id resolves to a file that actually exists. A row naming a path
   // that is not there would refuse only at load time, inside the emulator,
   // where the failure reads as an emulator problem rather than a table typo.
   for (const id of HAZARD_SUBJECT_IDS) {
     const path = hazardSubjectPrgPath(id);
-    assert.ok(existsSync(path), `subject ${JSON.stringify(id)} must resolve to a committed fixture (${path})`);
+    assert.ok(existsSync(path), `subject ${JSON.stringify(id)} must resolve to a real file on disk (${path})`);
     assert.ok(path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path), `subject ${JSON.stringify(id)}'s path must be absolute`);
-    assert.ok(path.endsWith(HAZARD_SUBJECT_PRG_BASENAMES[id]), "the resolved path must end in the table's own basename");
+    assert.ok(path.endsWith(HAZARD_SUBJECT_PRG_BASENAMES[id]), "the resolved path must end in the table's own derived basename");
   }
+
+  // THE ROW SHAPE, pinned (plan 50-06). A row is now a whole repo-relative
+  // path rather than a basename joined onto one fixed directory, because
+  // plan 50-06's rebuild `.prg` is a build artifact under the phase evidence
+  // directory rather than a committed fixture. That generalisation is only
+  // safe while every segment stays a REVIEWED LITERAL that cannot climb out
+  // of the repository, so that is asserted here rather than assumed: no
+  // empty segment, no `.` or `..`, no separator inside a segment, and no
+  // absolute segment. A caller supplies none of this -- the whole table is
+  // spelled in text-protocol.ts -- but a future editor adding a row is who
+  // this assertion is for.
+  for (const id of HAZARD_SUBJECT_IDS) {
+    const segments = HAZARD_SUBJECT_PRG_RELPATHS[id];
+    assert.ok(Array.isArray(segments) && segments.length > 0, `subject ${JSON.stringify(id)} must carry a non-empty segment list`);
+    assert.ok(Object.isFrozen(segments), `subject ${JSON.stringify(id)}'s segment list must be frozen`);
+    for (const segment of segments) {
+      assert.equal(typeof segment, "string", `every segment of ${JSON.stringify(id)} must be a string`);
+      assert.notEqual(segment, "", `no segment of ${JSON.stringify(id)} may be empty`);
+      assert.notEqual(segment, ".", `no segment of ${JSON.stringify(id)} may be "."`);
+      assert.notEqual(segment, "..", `no segment of ${JSON.stringify(id)} may be ".." -- a row must never climb out of the repository`);
+      assert.ok(!segment.includes("/") && !segment.includes("\\"), `no segment of ${JSON.stringify(id)} may carry a path separator (${segment})`);
+    }
+  }
+  // The derived basename table is derived, not spelled twice.
+  assert.deepEqual(
+    Object.keys(HAZARD_SUBJECT_PRG_BASENAMES).sort(),
+    [...HAZARD_SUBJECT_IDS].sort(),
+    "the derived basename table must carry exactly the source table's own ids",
+  );
+
+  // The rebuild row is the one member that is NOT under the fixture
+  // directory, and that is the whole reason the rows were generalised --
+  // asserted rather than left as prose, so a later edit that quietly moves
+  // it back into fixtures/ fails here instead of silently narrowing the
+  // table's reach.
+  assert.ok(
+    hazardSubjectPrgPath("rebuild").includes(join(".planning", "phases", "50-equivalence-and-modifiability", "evidence")),
+    "the rebuild subject must resolve under the phase evidence directory, not the fixture directory",
+  );
+  assert.ok(
+    hazardSubjectPrgPath("original").includes(join("src", "mcp", "vice", "fixtures", "hazard-subject")),
+    "the original subject must still resolve under the committed fixture directory",
+  );
 
   // The membership test admits exactly the table's own keys, and nothing
   // reachable through the prototype chain -- the reason it is written
@@ -323,6 +367,7 @@ test("isDialableTextCommandForVerb / isAllowlistedTextCommand: accept every cano
     [`load "${HAZARD_SUBJECT_PRG_PATH}"`, 0], // plan 50-04
     [hazardSubjectLoadVerb("regressed"), 0], // plan 50-05
     [hazardSubjectLoadVerb("modified"), 0], // plan 50-05
+    [hazardSubjectLoadVerb("rebuild"), 0], // plan 50-06
   ];
   for (const [verb, value] of cases) {
     const built = buildTextCommand(verb, value);

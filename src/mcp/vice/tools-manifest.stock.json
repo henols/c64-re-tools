@@ -4508,7 +4508,7 @@
     },
     {
       "name": "vice_program_load",
-      "description": "Stock-only, no fork counterpart -- reaches VICE's text monitor over the -remotemonitor channel and halts the machine for the duration of the command, exactly as a binary-monitor command does. Issues \"load \\\"<path>\\\" <device>\" for ONE of the committed Phase 50 hazard-subject fixtures (fixtures/hazard-subject/) -- every loadable path is baked into this tool's own frozen dialed verbs and is never a caller-supplied argument, so there is nothing here for a caller to inject. Takes an OPTIONAL \"subject\", an enumerated fixture id, defaulting to \"original\". Takes an OPTIONAL \"device\" number, 0 through 11; an omitted device defaults to 0 (\"the file is read from the file system\", VICE Manual ch. 12). No address argument is offered -- omitting it makes VICE use the load address embedded in the .prg file's own two-byte header, which is exactly what these committed machine-code fixtures need.",
+      "description": "Stock-only, no fork counterpart -- reaches VICE's text monitor over the -remotemonitor channel and halts the machine for the duration of the command, exactly as a binary-monitor command does. Issues \"load \\\"<path>\\\" <device>\" for ONE member of a closed, reviewed Phase 50 hazard-subject table -- three committed fixtures under fixtures/hazard-subject/ plus the rebuild produced under the phase evidence directory. Every loadable path is baked into this tool's own frozen dialed verbs and is never a caller-supplied argument, so there is nothing here for a caller to inject. Takes an OPTIONAL \"subject\", an enumerated subject id, defaulting to \"original\". Takes an OPTIONAL \"device\" number, 0 through 11; an omitted device defaults to 0 (\"the file is read from the file system\", VICE Manual ch. 12). No address argument is offered -- omitting it makes VICE use the load address embedded in the .prg file's own two-byte header, which is exactly what these committed machine-code fixtures need.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -4523,9 +4523,10 @@
             "enum": [
               "original",
               "regressed",
-              "modified"
+              "modified",
+              "rebuild"
             ],
-            "description": "OPTIONAL. Which committed hazard-subject fixture to load, named by id, never by path. \"original\" is the Phase 50 tracer-slice subject and is the default; \"regressed\" is its three-single-bit-regression twin; \"modified\" is the one-behaviour-removed, one-behaviour-added variant. This tool never accepts a filename."
+            "description": "OPTIONAL. Which reviewed Phase 50 hazard subject to load, named by id, never by path. \"original\" is the tracer-slice subject and is the default. \"regressed\" is its three-single-bit-regression twin. \"modified\" is the one-behaviour-removed, one-behaviour-added variant. \"rebuild\" is the original re-produced from its own committed annotation store, and is the one id that resolves outside the fixture directory. This tool never accepts a filename."
           }
         },
         "additionalProperties": false

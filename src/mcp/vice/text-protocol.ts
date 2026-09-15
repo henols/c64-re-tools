@@ -154,7 +154,7 @@ export const PROMPT_RE = /\(C:\$[0-9A-Fa-f]{4}\)\s*$/;
  * TEXT_COMMAND_PARAM_SPECS below bakes in the ONE committed fixture path
  * this phase's tracer plan targets as part of the verb's own frozen
  * identity, never a caller-supplied filename -- and, since plan 50-05, one
- * such frozen entry per member of the closed HAZARD_SUBJECT_PRG_BASENAMES
+ * such frozen entry per member of the closed HAZARD_SUBJECT_PRG_RELPATHS
  * table, still never a caller-supplied filename. See those entries' own
  * comment for why a caller still cannot choose what gets loaded. `save`
  * remains refused exactly as before; only the read direction moved.
@@ -188,7 +188,7 @@ export type TextCommand = (typeof TEXT_COMMAND_ALLOWLIST)[number];
 // the ONE renderer that turns a validated value into the exact command
 // string VICE accepts. Plan 50-04 adds a "load" entry, and plan 50-05 turns
 // that single entry into one DERIVED entry per committed subject (see
-// HAZARD_SUBJECT_PRG_BASENAMES) -- see those entries' own comment below and
+// HAZARD_SUBJECT_PRG_RELPATHS) -- see those entries' own comment below and
 // TEXT_COMMAND_ALLOWLIST's doc comment above for the full
 // rationale; unlike the first three, this one is not sourced from a
 // committed live-captured fixture (no live capture was run to add it -- the
@@ -247,38 +247,78 @@ function renderAddressParam(verb: string, value: number): string {
  * domain (text-protocol.test.ts pins both facts, at runtime and at source
  * level).
  *
- * WHAT NOT TO DO: do not add an entry for a path outside the committed
- * fixture directory, and do not add a function that builds a path from
- * caller input. A build artifact that is not a committed fixture (plan
- * 50-06's rebuild `.prg`, produced under the phase evidence directory) gets
- * a reviewed row of its own, spelled out here the same way, never a
- * caller-supplied path.
+ * WHAT NOT TO DO: do not add a function that builds a path from caller
+ * input, and do not widen a row into anything a caller can steer. Every row
+ * below is a REVIEWED LITERAL spelled out in this file, whole.
+ *
+ * WHY THE ROWS CARRY A WHOLE REPO-RELATIVE PATH AND NOT A BARE BASENAME
+ * (plan 50-06). Plan 50-05 wrote each row as a basename and joined a single
+ * fixed `src/mcp/vice/fixtures/hazard-subject` directory onto it, and said
+ * in this very comment that a build artifact outside that directory "gets a
+ * reviewed row of its own, spelled out here the same way". Plan 50-06 is the
+ * plan with that artifact: its rebuild `.prg` is produced from the committed
+ * annotation store and lands under the PHASE EVIDENCE directory, not the
+ * fixture directory, because it is an output of this phase rather than a
+ * committed fixture. A basename-plus-fixed-directory row cannot spell that,
+ * so the row now carries the whole repo-relative path as an array of
+ * reviewed segments. Nothing about the CLOSURE changed: the path is still
+ * chosen entirely by this file, a caller still supplies no path, no
+ * basename, no directory and no fragment of one, and the only thing a
+ * caller ever names is an id this table's own keys define.
  *
  * `misaligned` is deliberately ABSENT: `hazard-subject-misaligned.prg` is a
  * committed fixture, but no plan loads it into a running emulator -- it is
  * consumed offline by the hazard-report gate. The set is what is actually
- * dialed, not every fixture that happens to exist.
+ * dialed, not every fixture that happens to exist, and a committed test
+ * asserts it stays undialable so the boundary is this table rather than a
+ * directory.
  */
-export const HAZARD_SUBJECT_PRG_BASENAMES = Object.freeze({
+export const HAZARD_SUBJECT_PRG_RELPATHS = Object.freeze({
   /** Plan 50-04's tracer-slice subject -- the original. */
-  original: "hazard-subject.prg",
+  original: Object.freeze(["src", "mcp", "vice", "fixtures", "hazard-subject", "hazard-subject.prg"]),
   /** Plan 50-02's regressed twin: three planted single-bit regressions at
    * the immediates feeding $D020, $D015 and $D018. Plan 50-05's red
    * control. */
-  regressed: "hazard-subject-regressed.prg",
+  regressed: Object.freeze(["src", "mcp", "vice", "fixtures", "hazard-subject", "hazard-subject-regressed.prg"]),
   /** Plan 50-02's modified subject: one behaviour removed and one added.
    * Plan 50-06's modifiability observation. */
-  modified: "hazard-subject-modified.prg",
+  modified: Object.freeze(["src", "mcp", "vice", "fixtures", "hazard-subject", "hazard-subject-modified.prg"]),
+  /** Plan 50-06's REBUILD: the committed subject re-produced from its own
+   * committed annotation store through importStoreDocument() ->
+   * exportAsmTree() -> verifyAcmeAssemblesTree(), recorded in
+   * `.planning/phases/50-equivalence-and-modifiability/evidence/REBUILD.md`.
+   * The only row that is not a committed fixture, and the reason the rows
+   * carry a whole repo-relative path -- see this table's own comment. */
+  rebuild: Object.freeze([
+    ".planning",
+    "phases",
+    "50-equivalence-and-modifiability",
+    "evidence",
+    "hazard-subject-rebuild.prg",
+  ]),
 } as const);
 
-/** The id half of HAZARD_SUBJECT_PRG_BASENAMES -- the only thing a caller
+/** The id half of HAZARD_SUBJECT_PRG_RELPATHS -- the only thing a caller
  * ever names, and never a path. */
-export type HazardSubjectId = keyof typeof HAZARD_SUBJECT_PRG_BASENAMES;
+export type HazardSubjectId = keyof typeof HAZARD_SUBJECT_PRG_RELPATHS;
 
 /** The frozen id list, in table order. Exported so text-tools.ts can state
  * the accepted set in its refusal message without re-typing it. */
 export const HAZARD_SUBJECT_IDS: readonly HazardSubjectId[] = Object.freeze(
-  Object.keys(HAZARD_SUBJECT_PRG_BASENAMES) as HazardSubjectId[],
+  Object.keys(HAZARD_SUBJECT_PRG_RELPATHS) as HazardSubjectId[],
+);
+
+/** Each row's own last segment, DERIVED from the table above rather than
+ * spelled a second time. Preserved by name because committed tests already
+ * bind it, and because "which file does this id name" is a question worth
+ * answering without re-walking the path. */
+export const HAZARD_SUBJECT_PRG_BASENAMES: Readonly<Record<HazardSubjectId, string>> = Object.freeze(
+  Object.fromEntries(
+    HAZARD_SUBJECT_IDS.map((id) => {
+      const segments = HAZARD_SUBJECT_PRG_RELPATHS[id];
+      return [id, segments[segments.length - 1]] as const;
+    }),
+  ) as Record<HazardSubjectId, string>,
 );
 
 /** True only for an id this table actually carries. The ONE membership test
@@ -289,7 +329,10 @@ export function isHazardSubjectId(value: unknown): value is HazardSubjectId {
 }
 
 /**
- * Absolute host path to one committed fixture in the closed table above.
+ * Absolute host path to one member of the closed table above. Three members
+ * are committed fixtures; `rebuild` is plan 50-06's own build artifact under
+ * the phase evidence directory, which is why the table's rows carry a whole
+ * repo-relative path rather than a basename joined onto one fixed directory.
  *
  * Resolved through repoRoot() rather than hard-coded as a relative string:
  * `broker-launch.mts` spawns `x64sc` with no explicit `cwd` (checked
@@ -307,7 +350,7 @@ export function isHazardSubjectId(value: unknown): value is HazardSubjectId {
  * through a real container split adds it then.
  */
 export function hazardSubjectPrgPath(id: HazardSubjectId): string {
-  return join(repoRoot(), "src", "mcp", "vice", "fixtures", "hazard-subject", HAZARD_SUBJECT_PRG_BASENAMES[id]);
+  return join(repoRoot(), ...HAZARD_SUBJECT_PRG_RELPATHS[id]);
 }
 
 /** THE ONE place a `load "<path>"` verb string is spelled, for any subject.
@@ -325,7 +368,7 @@ export function hazardSubjectLoadVerb(id: HazardSubjectId): string {
 export const HAZARD_SUBJECT_PRG_PATH: string = hazardSubjectPrgPath("original");
 
 /**
- * One frozen `load "<path>"` spec per member of HAZARD_SUBJECT_PRG_BASENAMES,
+ * One frozen `load "<path>"` spec per member of HAZARD_SUBJECT_PRG_RELPATHS,
  * derived from that closed table rather than hand-copied per subject (plan
  * 50-05). Every entry is identical except for the reviewed path baked into
  * its own key: same "count" kind, same 0-11 device bound, same renderer. The
@@ -388,7 +431,7 @@ const HAZARD_SUBJECT_LOAD_SPECS: Readonly<Record<string, TextCommandParamSpec>> 
  * never a caller-supplied string, and the SUBJECT is chosen by an
  * enumerated id looked up in that same frozen table, never by a path a
  * caller passes in (see TEXT_COMMAND_ALLOWLIST's own `load` paragraph above
- * and HAZARD_SUBJECT_PRG_BASENAMES). Bound 0 through 11: 0 is the one value this phase
+ * and HAZARD_SUBJECT_PRG_RELPATHS). Bound 0 through 11: 0 is the one value this phase
  * exercises (host filesystem, per the manual quote above); 1 through 11
  * spans this project's own documented device-number range elsewhere
  * (CLAUDE.md's wire memspace note: units 8-11 are the four IEC disk

@@ -823,17 +823,20 @@ function resolveSubjectId(raw: unknown): HazardSubjectId | null {
  * `vice_program_load` -- the shipped tool that reaches plan 50-04's widened
  * `load` verb (route-d, `.planning/phases/50-equivalence-and-modifiability/evidence/LOAD-ROUTE.md`).
  * Dials VICE's text-monitor `load "<file>" <device>` command for ONE member
- * of text-protocol.ts's closed HAZARD_SUBJECT_PRG_BASENAMES table, each
+ * of text-protocol.ts's closed HAZARD_SUBJECT_PRG_RELPATHS table, each
  * baked into its own frozen allowlist identity -- this handler takes NO
  * filename argument at all, so there is nothing here for a caller to
  * inject; the loaded path can never be anything other than a reviewed
  * literal that table already carries.
  *
  * Takes two OPTIONAL parameters. `subject` is an enumerated id from that
- * table ("original", "regressed", "modified"); it defaults to "original",
- * which is exactly plan 50-04's behaviour, and an id the table does not
- * carry is refused by name (see resolveSubjectId() above for why an id is
- * not a filename). `device`: an omitted device defaults
+ * table ("original", "regressed", "modified", "rebuild"). It defaults to
+ * "original", which is exactly plan 50-04's behaviour, and an id the table
+ * does not carry is refused by name (see resolveSubjectId() above for why an
+ * id is not a filename). "rebuild" (plan 50-06) is the one id whose row
+ * resolves outside the fixture directory -- a build artifact under the phase
+ * evidence directory -- which is why the table's rows carry a whole
+ * repo-relative path. `device`: an omitted device defaults
  * to 0 ("the file is read from the file system", VICE Manual ch. 12).
  * `buildTextCommand()` alone validates and bounds the device (0 through 11,
  * TEXT_COMMAND_PARAM_SPECS's own entry for this verb) -- this handler
@@ -871,7 +874,7 @@ export async function handleProgramLoad(args: Record<string, unknown>, deps: Sto
       subject: subjectId,
       response,
       note:
-        `loads the committed Phase 50 hazard-subject fixture "${subjectId}", baked into this verb's own frozen ` +
+        `loads the reviewed Phase 50 hazard subject "${subjectId}", baked into this verb's own frozen ` +
         "identity (plan 50-04 route-d; one frozen verb per subject since plan 50-05) -- no filename is ever " +
         "caller-supplied, only an enumerated subject id; the load address comes from the .prg file's own " +
         "two-byte header, since no address argument is offered",
