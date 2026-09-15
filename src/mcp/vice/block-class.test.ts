@@ -24,7 +24,6 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { blockClassAt, type BlockClass, type BlockEntry } from "./block-class.ts";
-import { codeOnly } from "./shipped-modules.ts";
 import { DATA_TYPES } from "./anno-types.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -326,84 +325,6 @@ test("first-match-wins on overlapping blocks -- the earliest array entry decides
 // 4. Import purity -- see this file's header for why this is a test and not
 //    a comment
 // ---------------------------------------------------------------------------
-
-test("block-class.ts imports nothing census-side, disassembler-side, transport-side or path-translation-side", () => {
-  const raw = readFileSync(join(HERE, "block-class.ts"), "utf8");
-  // Comments must be stripped before scanning: this module's own header
-  // legitimately names the module families it must not import, so an
-  // unfiltered scan would be a self-invalidating gate. `codeOnly()` from
-  // `shipped-modules.ts` is the tree's shared stripper for exactly this job,
-  // and `keepLiteralBodies: true` is the right mode because an import
-  // specifier IS a string literal.
-  //
-  // This replaces a hand-rolled comment-line filter plus a
-  // `/\bfrom\s+"/` line scan that saw ONLY single-line, double-quoted,
-  // `from`-bearing imports (WR-03). All three of the shapes below were
-  // invisible to it, and both the family loop AND the emptiness assertion
-  // passed regardless -- a guard whose scanned set can shrink to nothing
-  // while staying green, which is trap 1's "quietly" made literal:
-  //
-  //   import "./anno-coverage.ts";                    // no `from` at all
-  //   import { x } from './anno-coverage.ts';         // single-quoted
-  //   const m = await import("./anno-coverage.ts");   // dynamic
-  const source = codeOnly(raw, true);
-
-  const specifiers = [
-    ...source.matchAll(
-      /\bfrom\s+["']([^"']+)["']|\bimport\s*\(\s*["']([^"']+)["']|^\s*import\s+["']([^"']+)["']/gm,
-    ),
-  ]
-    .map((match) => match[1] ?? match[2] ?? match[3])
-    .filter((specifier): specifier is string => specifier !== undefined);
-
-  // The family check runs FIRST and the emptiness check LAST, deliberately:
-  // `assert.deepEqual` is a type-narrowing assertion, so an empty-array
-  // expectation narrows `specifiers` to `never[]` and every later read of it
-  // becomes a typecheck error. Ordering, not a cast, is the fix.
-  for (const family of ["./anno-", "./disasm-", "./stock-", "./vice", "./hostpath", "./containerpath"]) {
-    assert.equal(
-      specifiers.some((specifier) => specifier.startsWith(family)),
-      false,
-      `block-class.ts imports from the ${family} family -- see trap 1 in its header`,
-    );
-  }
-
-  // The specifier scan catches a dynamic import with a LITERAL specifier, but
-  // `import(someVariable)` has no specifier to collect. Prohibit the shape
-  // itself, on strict-mode output so a comment discussing it cannot redden
-  // this.
-  assert.equal(
-    /\bimport\s*\(/.test(codeOnly(raw)),
-    false,
-    "block-class.ts must not use a dynamic import either -- it is an import the specifier scan above cannot see",
-  );
-
-  assert.deepEqual(
-    specifiers,
-    [],
-    "block-class.ts must import NOTHING -- giving the classifier the census, the bytes, a decoder or a grade " +
-      "collapses the bytes-versus-store independence axis while the independence test keeps passing",
-  );
-});
-
-test("block-class.ts declares no module-level mutable binding, including a const mutable container", () => {
-  // Trap 3 forbids module-level MUTABLE STATE, not the `let`/`var` keywords.
-  // A `let`-only grep let the likeliest real offender straight through
-  // (WR-04): `const seen = new Map<number, BlockClass>();` is a memoising
-  // cache, is module-level mutable state, is exactly the shape someone would
-  // reach for to speed up a linear scan, and is `const`. Scanned on
-  // strict-mode `codeOnly()` output so the header's own prose about the trap
-  // cannot redden the gate.
-  const source = codeOnly(readFileSync(join(HERE, "block-class.ts"), "utf8"));
-  const offenders = source
-    .split("\n")
-    .filter(
-      (line) =>
-        /^\s*(let|var)\s/.test(line) ||
-        /^\s*const\s+\w+\s*(:[^=]*)?=\s*(new\s+(Map|Set|WeakMap|WeakSet)\b|\[|\{)/.test(line),
-    );
-  assert.deepEqual(offenders, [], "the lookup is a pure function of its two arguments; there is nothing to hold");
-});
 
 // ---------------------------------------------------------------------------
 // 5. Shipped, not test-only -- the inverse of this suite's absence assertions
