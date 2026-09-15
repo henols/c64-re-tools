@@ -30,11 +30,11 @@ Options: `--image PATH` `--name CBM-NAME` `--out-dir DIR` `--json`.
 `--out-dir` defaults to the image's own directory, exactly like
 `acme-build`'s own `--out-dir` default. Both `--image` and `--out-dir` are
 resolved **workspace-relative** to the smallest ancestor directory
-containing both, before the request ever reaches the seam — the same
-resolution `acme-build`'s `source`/`--out-dir` already go through. `--name`
-is passed straight through, never resolved as a path. A value beginning
-with `-` is refused by the seam before any child process is spawned (it
-would otherwise be read as a flag by `c1541`'s own CLI).
+containing both, before the request reaches the seam. This is the same
+resolution `acme-build`'s `source`/`--out-dir` already go through. The seam
+passes `--name` straight through and never resolves it as a path. The seam
+refuses a value beginning with `-` before it spawns any child process.
+Otherwise `c1541`'s own CLI would read it as a flag.
 
 ## Directory listing
 
@@ -58,8 +58,8 @@ node $S bam --image game.d64 --json
 ```
 
 Same response shape as `dir`. `results[0].path` names a file carrying one
-per-sector allocation row per track (a run of `*`/`.` characters, `*` for
-an allocated sector).
+per-sector allocation row per track. Each row is a run of `*`/`.`
+characters, `*` for an allocated sector.
 
 ## One directory entry's raw fields
 
@@ -68,10 +68,11 @@ node $S entry --image game.d64 --name FILENAME --json
 ```
 
 `results[0].path` names a file carrying the entry's raw 32-byte directory
-record (as a hex dump) followed by its `T/S: <t>/<s>, <n> blocks` summary
-line. This script ALSO parses that line back and adds `firstTrack`/
-`firstSector` as numeric fields on the JSON response, purely to show them —
-the file itself is still the authoritative source.
+record (as a hex dump). A `T/S: <t>/<s>, <n> blocks` summary line follows
+the record. This script also parses that line back and adds
+`firstTrack`/`firstSector` as numeric fields on the JSON response. These
+fields exist purely to show the values — the file itself is still the
+authoritative source.
 
 ## A named file's sector chain
 
@@ -90,8 +91,8 @@ the tuple at every hop.
 node $S read --image game.d64 --name FILENAME --out-dir /scratch --json
 ```
 
-Writes the file's raw bytes (unlike the other four capabilities, this one
-is NOT a captured-stdout listing — `c1541` writes the output file itself).
+Writes the file's raw bytes. Unlike the other four capabilities, this one
+is NOT a captured-stdout listing — `c1541` writes the output file itself.
 `results[0]` carries that file's `path`/`sha256`/`byteLength`.
 
 ## Auditing for fabricated or corrupted entries
@@ -100,55 +101,57 @@ is NOT a captured-stdout listing — `c1541` writes the output file itself).
 node $S audit --image game.d64 --json
 ```
 
-Composes `dir` (names and block counts), `bam` (the per-sector allocation
-map), and one `entry` call per name (each file's own claimed first track/
-sector, and its directory sector's "next directory" pointer) into a ported,
+The `audit` command composes `dir` (names and block counts) and `bam` (the
+per-sector allocation map). For each name, it also makes one `entry` call
+to get that file's own claimed first track/sector and its directory
+sector's "next directory" pointer. Together these calls form a ported,
 read-only detector — no `-format`/`-write`/mutating verb, and no seventh
 `host_tool` id. This is three existing capabilities composed client-side.
 
-A directory entry is flagged `suspicious`, with **named reasons, never a
-bare boolean**, on any of:
+The `audit` command flags a directory entry `suspicious`, with **named
+reasons, never a bare boolean**, on any of:
 
 1. its block count is `0`.
-2. its first track/sector lies outside the image's own geometry (there is
-   no such track, or no such sector on that track).
-3. its first **sector** — not merely its whole track — is reported free by
-   the allocation map, meaning the file cannot really start there. This is
+2. its first track/sector lies outside the image's own geometry. There is
+   no such track, or no such sector on that track.
+3. the allocation map reports its first **sector** — not merely its whole
+   track — free, meaning the file cannot really start there. This is
    sharper than checking only whether the whole track is free, because the
    per-sector map is available.
 
-A cyclic or self-referential directory chain (two entries claiming the same
-first track/sector, or a "next directory" pointer that refers back to a
-sector already seen — including the directory's own starting sector) stops
-being treated as new information and is reported as a top-level
-`chain_error` naming the repeated pointer, rather than looping. Every
-remaining entry is still audited afterward — a chain error on one entry
-never hides another entry's own independent flag.
+A directory chain is cyclic or self-referential when two entries claim the
+same first track/sector. It is also cyclic or self-referential when a
+"next directory" pointer refers back to a sector already seen, including
+the directory's own starting sector. When this happens, the command stops
+treating the repeat as new information. Instead of looping, it reports a
+top-level `chain_error` naming the repeated pointer. Every remaining entry
+is still audited afterward — a chain error on one entry never hides another
+entry's own independent flag.
 
 ```json
 {"entries":[{"name":"basicstub","blocks":1,"first_track":17,"first_sector":0,"suspicious":false,"suspicious_reasons":[]}],"chain_error":null}
 ```
 
 **A flag is a signal to investigate, not a verdict.** A directory entry a
-cracker fabricated for a file never actually written, a genuinely corrupted
-image, and (rarely) an unusual-but-legitimate disk layout can all produce a
-flag. This command reports what it finds, named, and leaves the
-interpretation to whoever is looking at the disk.
+cracker fabricated for a file never actually written, a genuinely
+corrupted image, and (rarely) an unusual-but-legitimate disk layout can
+all produce a flag. This command reports what it finds, named, and leaves
+the interpretation to whoever is looking at the disk.
 
 ## Failure shape
 
-A nonexistent image, a nonexistent named entry, or any other call `c1541`
-cannot service is reported as `{"ok":false,"message":"..."}` with a
-non-zero exit code — **never** a success envelope over an empty or partial
-result. `c1541` itself exits `0` even on a genuine failure (it prints its
-own `Error - ...` lines to stdout instead). The seam's own classifier, not
-the exit code, is what decides success here.
+The seam reports a nonexistent image, a nonexistent named entry, or any
+other call `c1541` cannot service as `{"ok":false,"message":"..."}` with a
+non-zero exit code. This is **never** a success envelope over an empty or
+partial result. `c1541` itself exits `0` even on a genuine failure (it
+prints its own `Error - ...` lines to stdout instead). The seam's own
+classifier, not the exit code, is what decides success here.
 
 ## What this skill does NOT do
 
 - **No mutating verb.** `-format`/`-write`/`-bwrite`/`-delete` are never
   reachable from this script, on the wire, or anywhere in this skill's tree
-  — only the six read-only capabilities above are exposed.
+  — this skill exposes only the six read-only capabilities above.
 - **No direct binary spawn.** `c1541` runs host-side. This script only ever
   constructs a typed request and reads the produced files back off the
   shared workspace tree — the host-tool execution seam is the only route.
