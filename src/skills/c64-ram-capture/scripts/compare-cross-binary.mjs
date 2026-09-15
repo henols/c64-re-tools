@@ -456,6 +456,16 @@ function cmdCross(argv) {
     console.log(`B  checkpoint ${checkpointB} @ ${hex4(stateB.checkpoint_address ?? 0)}`);
   }
 
+  const byteIdentical = haA === haB;
+  console.log(`\nBYTE_IDENTICAL: ${byteIdentical ? "yes" : "no"}`);
+  console.log("  (a recorded extra -- the VERDICT line below is the acceptance signal, not this one)");
+
+  // Always classify, even when the images are byte-identical: a chip-state-
+  // only regression must still be caught. Unlike compare.mjs's cmdCompare(),
+  // there is no early return on equal digests here -- see this plan's
+  // assumption_delta_decision, which demotes byte-identity to a recorded
+  // extra and promotes behavioural equivalence (the full classification) to
+  // the actual acceptance criterion.
   const r = classify({ imgA, imgB, route, regMapA, regMapB, allowlist });
 
   printList("volatile (excluded from the verdict)", r.volatile, opts.limit);

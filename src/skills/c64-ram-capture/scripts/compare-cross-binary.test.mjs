@@ -330,3 +330,51 @@ test("cross: a successful run's header carries MASK_NARROWED_AT and one resolved
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// ---------------------------------------------------------------------------
+// Task 3: byte-identity is a recorded extra, never the verdict
+// ---------------------------------------------------------------------------
+
+test("cross: byte-identical images with identical sidecars produce VERDICT: PASS and full, non-omitted bucket-count lines", () => {
+  const dir = scratchDir();
+  try {
+    const img = basePattern();
+    const pa = writeImage(dir, "a.bin", img);
+    const pb = writeImage(dir, "b.bin", img);
+    const sa = writeJson(dir, "a.state.json", { route: "memory-read", registers: { "$D020": 14 } });
+    const sb = writeJson(dir, "b.state.json", { route: "memory-read", registers: { "$D020": 14 } });
+    const r = runCross([pa, pb, "--state", sa, sb]);
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /BYTE_IDENTICAL: yes/);
+    assert.match(r.stdout, /volatile \(excluded from the verdict\): 0/);
+    assert.match(r.stdout, /allowlisted \(intentional difference, excluded from the verdict\): 0/);
+    assert.match(r.stdout, /DIVERGENCE — fails the comparison: 0/);
+    assert.match(r.stdout, /VERDICT: PASS/);
+    // Classification actually ran, rather than short-circuiting on equal
+    // digests -- and BYTE_IDENTICAL never substitutes for the verdict: no
+    // single line carries both tokens.
+    const offendingLine = r.stdout
+      .split("\n")
+      .find((line) => line.includes("BYTE_IDENTICAL") && line.includes("VERDICT"));
+    assert.equal(offendingLine, undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("cross: byte-identical images whose sidecars differ at $D020 still FAIL (exit 1)", () => {
+  const dir = scratchDir();
+  try {
+    const img = basePattern();
+    const pa = writeImage(dir, "a.bin", img);
+    const pb = writeImage(dir, "b.bin", img);
+    const sa = writeJson(dir, "a.state.json", { route: "memory-read", registers: { "$D020": 14 } });
+    const sb = writeJson(dir, "b.state.json", { route: "memory-read", registers: { "$D020": 6 } });
+    const r = runCross([pa, pb, "--state", sa, sb]);
+    assert.equal(r.status, 1);
+    assert.match(r.stdout, /BYTE_IDENTICAL: yes/);
+    assert.match(r.stdout, /VERDICT: FAIL/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

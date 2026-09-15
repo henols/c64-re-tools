@@ -17,6 +17,7 @@ and name the offending address when it is wrong.
 S=src/skills/c64-ram-capture/scripts    # from the repo root
 A=$S/dump-artifacts.mjs
 C=$S/compare.mjs     L=$S/releases.mjs
+CX=$S/compare-cross-binary.mjs           # different-binary comparison (see below)
 T=$S/derive-transients.mjs               V=$S/vsf-slice.mjs
 TD=src/skills/c64-ram-capture/transients # the derived allow-lists live here
 
@@ -28,6 +29,8 @@ node $L list                                     # the valid --release ids
 node $C digest  dump.bin                         # sha256 + size, for the capture record
 node $C compare a.bin b.bin                      # classify every difference, exit 1 on FAIL
 node $C floor   a.bin b.bin c.bin                # drift floor across a capture set
+
+node $CX cross original.bin rebuild.bin          # DIFFERENT binaries -- see below
 
 node $T derive --release <id> --out $TD/<id>.json a.bin b.bin c.bin
 node $T check  --allow-list $TD/<id>.json a.bin b.bin
@@ -266,6 +269,50 @@ Capture the power-on image as the very first action against a fresh machine, the
 idle-capture twice more and run `floor` over the set. State the result as a
 floor, not a complete set — more captures can only widen it.
 
+## Compare two different binaries
+
+`compare.mjs` is for two captures of the **same** binary. When the two
+captures are of **different** binaries — original versus rebuilt, original
+versus modified — use its sibling instead, `scripts/compare-cross-binary.mjs`:
+
+```bash
+node $CX cross original.bin rebuild.bin \
+  --state original.state.json rebuild.state.json \
+  --allowlist allow.json --checkpoint hazard_raster_entry
+```
+
+Three rules depart from `compare.mjs`, each because the same-binary
+assumptions above are wrong across two different binaries:
+
+- **No drift bucket.** A one-bit difference is a real difference here, not
+  sampling noise — `drift` exists to absorb two runs of the *same* binary,
+  and applied across binaries it would absorb a real one-bit regression
+  (e.g. `lda #$02` becoming `lda #$03`) whole.
+- **Narrowed I/O mask.** `compare.mjs` masks the whole of `$D000`-`$DFFF`.
+  `compare-cross-binary.mjs` masks only the specific registers and ranges
+  that genuinely cannot be stable — `$D011`, `$D012`, `$D019`, `$D01E`-`$D01F`,
+  `$D400`-`$D7FF`, `$D800`-`$DBFF`, `$DC00`-`$DCFF`, `$DD00`-`$DDFF`,
+  `$DE00`-`$DFFF` — so `$D015`, `$D018` and `$D020` stay visible to the
+  verdict.
+- **Route awareness.** A capture declares its `route` (`snapshot` or
+  `memory-read`) in its state sidecar. Comparing a snapshot-route capture
+  against a memory-read-route capture is refused outright — see "Slice the
+  image out of a snapshot instead of transcribing it" above for why those two
+  routes disagree about what `$D000`-`$DFFF` even is.
+
+A real difference is resolved with the `--allowlist` document, never by
+widening the mask: each entry names a `start`/`endInclusive` range, a
+`domain` (`image` or `register`), and a non-empty `why`. An entry overlapping
+a masked span, or lacking a `why`, is refused by name. `--no-allowlist` is
+the allowlist's own red control — the same pair must fail without it, or the
+allowlist is doing no work.
+
+Byte-identity is printed as `BYTE_IDENTICAL: yes`/`no`, but it is a recorded
+extra, never the verdict — `compare-cross-binary.mjs` always runs the full
+classification, even when the two images are byte-for-byte equal, because a
+chip-state-only regression (e.g. a differing `$D020`) can exist under
+byte-identical images. The `VERDICT:` line is the only line to gate on.
+
 ## Derive a per-release transient allow-list
 
 `scripts/derive-transients.mjs` is the named, repeatable derivation. **The
@@ -392,6 +439,7 @@ split: the workflow fits in one file, which is the right call when it does.
 | Path | Covers |
 |---|---|
 | `scripts/compare.mjs` | Difference classification and the drift floor. Pure logic over captures you already have — `node $C` with no arguments prints the rules. |
+| `scripts/compare-cross-binary.mjs` | `cross` — for two DIFFERENT binaries. No drift bucket. A narrowed `$Dxxx` mask. Route awareness, an intentional-difference allowlist, and per-binary logical checkpoints. Covered by `scripts/compare-cross-binary.test.mjs`. |
 | `scripts/vsf-slice.mjs` | `slice` / `digest` — the flat 64K image sliced out of a `.vsf` snapshot with no transcription step. The layout lives in `vsf-slice.ts` on the MCP side; this wrapper resolves it and refuses by name when it cannot. Covered by `scripts/vsf-slice.test.mjs`. |
 | `scripts/derive-transients.mjs` | `derive` / `check` — the per-release transient allow-list, derived from N ≥ 3 runs as the pairwise union, under a committed cap of 64 that **voids** rather than warns. Covered by `scripts/derive-transients.test.mjs`. |
 | `transients/README.md` | The committed derivation method, the artifact shape, the cap's reasoning with its four measured reference points, and the rule that no address set is inherited between releases. Its `.gitignore` refuses every image byte form. |
@@ -415,7 +463,10 @@ grade is only worth anything if it says what was actually known when it was writ
 | A fresh `.map.json` says `classification_state: "bucketed"` | Wrong — a fresh capture is `"ranges-only"`. The provenance diff sets `"bucketed"`, nothing else. |
 | The checkpoint never fired | Most state reads pause the emulator. Resume exactly once, at the end, after every read. |
 | Two captures of the same checkpoint differ | Expected. Full-64K identity is impossible in principle; run `compare` and read the verdict rather than judging by eye. |
-| `compare` fails on an address in `$D000`-`$DFFF` | It cannot — that range is volatile. If you are seeing this, you applied the rules by hand; use `scripts/compare.mjs`. |
+| `compare.mjs`'s `compare` fails on an address in `$D000`-`$DFFF` | It cannot — `compare.mjs` masks that whole range for its own same-binary job. If you are seeing this, you applied the rules by hand; use `scripts/compare.mjs`. |
+| `compare-cross-binary.mjs`'s `cross` fails on an address in `$D000`-`$DFFF` | Expected — `compare-cross-binary.mjs` narrows the mask on purpose (see "Compare two different binaries" above). A failure here is a real finding, not a misapplied rule. |
+| `cross` refuses with "capture routes differ" | The two `--state` sidecars declare different `route` values. Re-capture both the same way — both `snapshot` or both `memory-read` — or pass the correct `--route`. |
+| `cross` refuses with "logical checkpoints differ" | The two `--state` sidecars declare different `checkpoint_name` values. Re-capture both at the same named checkpoint, or correct the sidecar. |
 | `compare` fails on `$FAD8` or `$FC51` only | Known and unexplained: RAM under KERNAL ROM, two addresses out of 8192. Record it with the capture rather than voiding a set that is otherwise clean. |
 | `--limit 0` printed nothing | Fixed 2026-08-04 — it now means unlimited. Re-pull the script if you see the old behaviour. |
 | An epoch-drift error appeared mid-capture | The machine restarted under you. Void the run; do not salvage the artifacts. The next call succeeding does not undo it. |
