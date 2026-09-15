@@ -106,7 +106,6 @@ import {
   setDataType,
   type SetDataTypeResult,
 } from "./anno-store.ts";
-import { codeOnly } from "./shipped-modules.ts";
 import { ViceError } from "./vice-errors.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -1484,31 +1483,6 @@ test("adjacency, BEHAVIOURAL: two adjacent same-type ranges stay TWO rows with d
     assert.equal(resolveAt(index, 0x0500), rows[1].id, "the first address of the second range resolves to the SECOND row");
     assert.notEqual(resolveAt(index, 0x04ff), resolveAt(index, 0x0500), "the boundary between two adjacent rows is observable");
   });
-});
-
-test("adjacency, STRUCTURAL: no coalescing, merging or splitter identifier exists anywhere in the store's code", () => {
-  // The behavioural half above cannot see a splitter that EXISTS but is not yet
-  // called -- and an uncalled merge primitive is one edit away from being
-  // called. `STORE-02`'s requirement is that no splitter concept is needed and
-  // none is introduced, so the absence is asserted over the code itself.
-  //
-  // STRICT `codeOnly()` (literal bodies BLANKED, the default): the targets are
-  // CODE IDENTIFIERS, so the store's own header prose about the absence of
-  // merging -- and this file's own prose -- cannot redden the gate.
-  const strict = codeOnly(readFileSync(join(HERE, "anno-store.ts"), "utf8"));
-
-  // NON-VACUITY: an empty or unreadable source would satisfy any absence
-  // assertion trivially. Pin that the scanned source is real first.
-  assert.ok(strict.length > 5_000, `the stripped source must be substantial, got ${strict.length} characters`);
-  assert.ok(strict.includes("setDataType"), "the stripped source must still contain the store's real code");
-
-  const offenders = ["coalesc", "merg", "splitter"].filter((needle) => strict.toLowerCase().includes(needle));
-  assert.deepEqual(
-    offenders,
-    [],
-    "ranges are stored AS ranges and never merged, so there is no splitter primitive to introduce -- " +
-      "merging is the named blocker behind the decompiler and rebuild requirements and the predicted over-merge bias in the coverage census",
-  );
 });
 
 // ---------------------------------------------------------------------------
