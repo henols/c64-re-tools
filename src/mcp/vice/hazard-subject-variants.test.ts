@@ -240,5 +240,138 @@ test("hazard subject variants: make-hazard-subject-fixtures.mjs contains exactly
   const helperDefinitions = generatorSource.match(/function substituteSourceLines\(/g) ?? [];
   assert.equal(helperDefinitions.length, 1, "exactly one substituteSourceLines() implementation must exist");
   const helperCalls = generatorSource.match(/substituteSourceLines\(\[/g) ?? [];
-  assert.ok(helperCalls.length >= 2, "both the mis-aligned twin and the regressed twin must call the shared substitution helper");
+  assert.ok(helperCalls.length >= 3, "the mis-aligned twin, the regressed twin and the modified subject must all call the shared substitution helper");
+});
+
+// ---------------------------------------------------------------------------
+// The modified subject -- one behaviour removed (the sprite construction),
+// one behaviour added (the second self-modifying construction), each
+// cross-referenced to a named committed hazard-report finding. Material
+// for ROADMAP criterion 4.
+// ---------------------------------------------------------------------------
+
+/** Builds the modified subject's root text the same way
+ * `make-hazard-subject-fixtures.mjs`'s `modifiedRootSource()` does. */
+function modifiedRootSourceText(): string {
+  const rootText = readFileSync(join(FIXTURE_DIR, ROOT_SOURCE_NAME), "utf8");
+  const alignLine = '!source "hazard-subject-align.a"';
+  const nospriteLine = `!source "${ALIGN_NOSPRITE_SOURCE_NAME}"`;
+  assert.ok(rootText.includes(alignLine), `precondition: root must contain ${JSON.stringify(alignLine)}`);
+  return rootText.replace(alignLine, nospriteLine);
+}
+
+function assembleModifiedFreshWithSymbols(): { bytes: Uint8Array; symbols: Map<string, number> } {
+  const dir = mkdtempSync(join(tmpdir(), "hazard-subject-variants-modified-"));
+  try {
+    const rootPath = join(dir, "synthesized-modified-root.a");
+    writeFileSync(rootPath, modifiedRootSourceText());
+    const outPath = join(dir, "out.prg");
+    const symPath = join(dir, "out.sym");
+    const r = spawnSync(ACME_BIN, ["--cpu", "6510", "-f", "cbm", "-o", outPath, "--symbollist", symPath, rootPath], {
+      encoding: "utf8",
+      timeout: 30_000,
+      cwd: FIXTURE_DIR,
+    });
+    assert.equal(r.status, 0, `the synthesized modified root must assemble:\n  stderr: ${r.stderr ?? ""}`);
+    assert.equal(existsSync(outPath), true, "ACME must write an output file");
+    assert.equal(existsSync(symPath), true, "ACME must write a symbol list file");
+    const symbols = new Map<string, number>();
+    for (const line of readFileSync(symPath, "utf8").split("\n")) {
+      const m = line.match(/^\s*(\S+)\s*=\s*\$([0-9a-fA-F]+)/);
+      if (m) symbols.set(m[1]!, parseInt(m[2]!, 16));
+    }
+    return { bytes: new Uint8Array(readFileSync(outPath)), symbols };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("hazard subject variants: hazard-subject-modified.prg exists and is tracked by git", () => {
+  assert.ok(existsSync(MODIFIED_PRG_PATH), "hazard-subject-modified.prg must be committed");
+  const ls = spawnSync("git", ["ls-files", "--error-unmatch", MODIFIED_PRG_PATH], { encoding: "utf8", cwd: FIXTURE_DIR });
+  assert.equal(ls.status, 0, "hazard-subject-modified.prg must be a tracked file, not merely present on disk");
+});
+
+test("hazard subject variants: the modified image and the committed subject have equal byte length", () => {
+  const original = readFileSync(PRG_PATH);
+  const modified = readFileSync(MODIFIED_PRG_PATH);
+  assert.equal(modified.length, original.length, "the !align $7ff, 0 directive after hazard_align_entry must absorb the code shrinkage");
+});
+
+test(
+  "hazard subject variants: every differing byte offset between the modified image and the committed subject lies inside the alignment routine's own range, both bounds resolved from real ACME symbols",
+  { skip: SKIP_REASON },
+  () => {
+    const { symbols } = assembleFreshWithSymbols(ROOT_SOURCE_NAME);
+    const alignEntry = symbols.get("hazard_align_entry");
+    const charBase = symbols.get("align_char_base");
+    assert.ok(alignEntry !== undefined, "hazard_align_entry must be a real symbol in the committed subject");
+    assert.ok(charBase !== undefined, "align_char_base must be a real symbol in the committed subject");
+
+    const original = readFileSync(PRG_PATH);
+    const modified = readFileSync(MODIFIED_PRG_PATH);
+    const diffs = diffOffsets(new Uint8Array(original), new Uint8Array(modified));
+    assert.ok(diffs.length > 0, "the modified subject must actually differ from the committed subject");
+
+    const origin = original[0]! | (original[1]! << 8);
+    for (const d of diffs) {
+      const address = origin + d.offset;
+      assert.ok(
+        address >= alignEntry! && address < charBase!,
+        `differing byte at $${address.toString(16)} lies outside [hazard_align_entry $${alignEntry!.toString(16)}, align_char_base $${charBase!.toString(16)})`,
+      );
+    }
+  },
+);
+
+test(
+  "hazard subject variants: the modified image contains a jsr to hazard_smc2_entry, and the committed subject contains none",
+  { skip: SKIP_REASON },
+  () => {
+    const { symbols: modifiedSymbols } = assembleModifiedFreshWithSymbols();
+    const smc2Entry = modifiedSymbols.get("hazard_smc2_entry");
+    assert.ok(smc2Entry !== undefined, "hazard_smc2_entry must be a real symbol");
+
+    const modified = loadPrg(MODIFIED_PRG_PATH);
+    const modifiedInstructions = decode(modified.bytes, modified.origin);
+    const modifiedJsrToSmc2 = modifiedInstructions.filter((i) => i.mnemonic === "jsr" && i.resolvedTarget === smc2Entry);
+    assert.ok(modifiedJsrToSmc2.length >= 1, "the modified image must contain a jsr to hazard_smc2_entry");
+
+    const original = loadPrg(PRG_PATH);
+    const originalInstructions = decode(original.bytes, original.origin);
+    const originalJsrToSmc2 = originalInstructions.filter((i) => i.mnemonic === "jsr" && i.resolvedTarget === smc2Entry);
+    assert.equal(originalJsrToSmc2.length, 0, "the committed subject must contain no jsr to hazard_smc2_entry");
+  },
+);
+
+test(
+  "hazard subject variants: the modified image contains no store to $D015, and the committed subject contains exactly one",
+  { skip: SKIP_REASON },
+  () => {
+    const modified = loadPrg(MODIFIED_PRG_PATH);
+    const modifiedInstructions = decode(modified.bytes, modified.origin);
+    const modifiedD015Stores = modifiedInstructions.filter((i) => i.mnemonic === "sta" && i.operand?.value === 0xd015);
+    assert.equal(modifiedD015Stores.length, 0, "the modified image must contain zero stores to $D015");
+
+    const original = loadPrg(PRG_PATH);
+    const originalInstructions = decode(original.bytes, original.origin);
+    const originalD015Stores = originalInstructions.filter((i) => i.mnemonic === "sta" && i.operand?.value === 0xd015);
+    assert.equal(originalD015Stores.length, 1, "the committed subject must contain exactly one store to $D015");
+  },
+);
+
+test("hazard subject variants: REGENERATOR AGREEMENT (modified subject) -- re-deriving the synthesized root reproduces the committed hazard-subject-modified.prg byte-for-byte", { skip: SKIP_REASON }, () => {
+  const { bytes } = assembleModifiedFreshWithSymbols();
+  assert.deepEqual(
+    [...bytes],
+    [...new Uint8Array(readFileSync(MODIFIED_PRG_PATH))],
+    "the synthesized modified root and hazard-subject-modified.prg have drifted apart; regenerate with " +
+      "`cd src/mcp/vice && node fixtures/hazard-subject/make-hazard-subject-fixtures.mjs`.",
+  );
+});
+
+test("hazard subject variants: hazard-subject-align-nosprite.a names both required finding anchors in its header", () => {
+  const source = readFileSync(join(FIXTURE_DIR, "hazard-subject-align-nosprite.a"), "utf8");
+  assert.ok(/088B/i.test(source), "must name anchor $088B (page-alignment, sprite-pointer-names-aligned-base)");
+  assert.ok(/0825/i.test(source), "must name anchor $0825 (self-modifying-code, store-target-in-instruction-opcode-byte)");
 });

@@ -70,6 +70,7 @@ const MISALIGNED_SOURCE_LINE = '!source "hazard-subject-align-misaligned.a"';
 const DISPATCH_SOURCE_LINE = '!source "hazard-subject-dispatch.a"';
 const DISPATCH_REGRESSED_SOURCE_LINE = '!source "hazard-subject-dispatch-regressed.a"';
 const ALIGN_REGRESSED_SOURCE_LINE = '!source "hazard-subject-align-regressed.a"';
+const ALIGN_NOSPRITE_SOURCE_LINE = '!source "hazard-subject-align-nosprite.a"';
 
 /** THE ONE `!source`-line substitution implementation in this file. Reads
  * the committed `hazard-subject.a` root, and for every `[from, to]` pair in
@@ -110,6 +111,17 @@ function regressedRootSource() {
   ]);
 }
 
+/** Builds the fourth build's root text: the MODIFIED subject. Swaps the
+ * alignment `!source` line for `hazard-subject-align-nosprite.a`, which
+ * removes the sprite construction and calls the second self-modifying
+ * construction for the first time -- see that file's own header for the
+ * two named finding anchors this modification cross-references. Every
+ * other planted construction (the SMC entry, the dispatch entry, the
+ * raster entry) stays shared and unmodified with the committed subject. */
+function modifiedRootSource() {
+  return substituteSourceLines([[ALIGNED_SOURCE_LINE, ALIGN_NOSPRITE_SOURCE_LINE]]);
+}
+
 /** The builds this script owns. The first assembles the committed root
  * directly; every other entry assembles a synthesized root (see above)
  * that pulls in every other planted construction UNCHANGED. Later parts of
@@ -119,6 +131,7 @@ const FIXTURES = [
   { rootSourceName: "hazard-subject.a", output: "hazard-subject.prg", format: "cbm" },
   { buildRootText: misalignedRootSource, output: "hazard-subject-misaligned.prg", format: "cbm" },
   { buildRootText: regressedRootSource, output: "hazard-subject-regressed.prg", format: "cbm" },
+  { buildRootText: modifiedRootSource, output: "hazard-subject-modified.prg", format: "cbm" },
 ];
 
 function fail(reason) {

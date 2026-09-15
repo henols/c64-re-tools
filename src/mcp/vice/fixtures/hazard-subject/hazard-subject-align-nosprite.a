@@ -1,0 +1,142 @@
+; hazard-subject-align-nosprite.a -- the MODIFIED twin of
+; hazard-subject-align.a: one behaviour removed, one behaviour added, each
+; cross-referenced to a committed hazard-report finding.
+;
+; REMOVED BEHAVIOUR -- anchor $088B, finding `page-alignment`, mechanism
+; `sprite-pointer-names-aligned-base`
+; ---------------------------------------------------------------------------
+; The whole sprite block is removed from `hazard_align_entry`: the
+; `lda #(align_sprite_base / 64)` / `sta $07f8` pointer write, the
+; `lda #%00000001` / `sta $d015` enable, and the two `lda #100` / `sta $d000`
+; / `sta $d001` position writes. `align_sprite_base` itself and its
+; `!fill 63` data are KEPT, along with the `!align $3f, 0` directive before
+; it -- the sprite shape still exists as data in the image, only the code
+; that points the VIC-II hardware at it is gone. This is the committed
+; `docs/phase49-the-reassembly-gate-findings.md` finding at anchor `$088B`
+; (`page-alignment`, mechanism `sprite-pointer-names-aligned-base`), removed
+; rather than merely relocated.
+;
+; ADDED BEHAVIOUR -- anchor $0825, finding `self-modifying-code`, mechanism
+; `store-target-in-instruction-opcode-byte`
+; ---------------------------------------------------------------------------
+; A single `jsr hazard_smc2_entry` is added at the end of
+; `hazard_align_entry`, immediately before its `rts`. `hazard_smc2_entry` is
+; defined in `hazard-subject-smc.a` and is never reached in the committed
+; subject -- this call makes it run for the first time. This is the second,
+; DELIBERATELY UNDETECTED self-modifying construction the committed
+; `docs/phase49-the-reassembly-gate-findings.md` finding at anchor `$0825`
+; (`self-modifying-code`, mechanism `store-target-in-instruction-opcode-byte`)
+; already names: the construction this subject's own design document
+; records as beyond what a static operand match can see (its store reaches
+; its target through a runtime-built zero-page pointer, indirect-indexed,
+; never as a literal operand anywhere in the image).
+;
+; OBSERVABLE CONSEQUENCES (so a transcript author does not have to
+; re-derive them)
+; ---------------------------------------------------------------------------
+; After this modified routine runs: `$07F8` no longer carries the sprite
+; base divided by 64 (nothing writes it at all). And the immediate operand
+; byte of the `lda` at `hazard_smc2_write` has been rewritten from `$04` to
+; `$05`, through the runtime-built zero-page pointer at `$FC`/`$FD` --
+; exactly the effect `hazard-subject-smc.a`'s own header describes for
+; `hazard_smc2_entry`.
+;
+; Every other line in this file -- the bank-select store, the `$d018`
+; derivation, the `$d011` store, the character-print store, both `!align`
+; directives, and all four data tables -- is copied UNCHANGED from
+; hazard-subject-align.a. Every ACME symbol name
+; `make-hazard-subject-annostore.mjs` looks up is still defined here.
+
+align_screen_offset = $0400
+
+hazard_align_entry
+        ; Select VIC bank 0 ($0000-$3fff) through a single immediate load
+        ; followed directly by its store -- not the read-modify-write this
+        ; routine used to carry. A read-modify-write's result depends on
+        ; whatever the CIA2 port A register already held at runtime, which
+        ; is a runtime fact a static report cannot recover: it is exactly
+        ; the shape `recoverImmediateStoreFacts()` in `anno-hazard-report.ts`
+        ; correctly declines to treat as known, so a subject that depends on
+        ; this register's value and never states it statically is asking a
+        ; static report to guess. $3f mirrors the value
+        ; `fixtures/ghidra/charset-phantom.a` already uses for the same
+        ; purpose: bits #0-#1 = %11 select VIC bank 0 (active low). THE
+        ; COST: this bare store also drives the CIA2 port A bits the old
+        ; read-modify-write preserved -- the serial-bus lines (ATN/CLK/DATA)
+        ; among them -- to $3f's own fixed state (all of bits #2-#7 set)
+        ; rather than leaving them at whatever this program's own earlier
+        ; serial-bus activity had set them to. That preservation is given up
+        ; here so the bank select is statically recoverable.
+        lda #$3f
+        sta $dd00
+
+        ; The VIC memory-control register, derived from the two labels
+        ; below rather than written as a bare hex constant: bits #4-#7 name
+        ; the screen offset (the ordinary KERNAL default), bits #1-#3 name
+        ; the character-set offset. This was already an immediate load
+        ; directly followed by its store -- no read-modify-write was ever
+        ; needed here, and none is added.
+        lda #((align_screen_offset / 1024) << 4) | ((align_char_base / 2048) << 1)
+        sta $d018
+
+        ; VIC-II control register 1: name character (text) mode explicitly,
+        ; bit 5 clear, through the same immediate-load-then-store shape as
+        ; the bank select above. This register was never written at all
+        ; before this edit, which is the second reason the page-alignment
+        ; dependency below could not be recovered statically: a static
+        ; report can only tell character mode from bitmap mode if the
+        ; program itself states which one it is using. $1b mirrors the same
+        ; model fixture's own control-register-1 value (extended-colour and
+        ; bitmap bits both clear, screen enabled).
+        lda #$1b
+        sta $d011
+
+        ; REMOVED: the sprite pointer write ($07f8), the sprite-0 enable
+        ; ($d015) and the two sprite position writes ($d000/$d001) that sit
+        ; here in hazard-subject-align.a are gone -- see the header above,
+        ; anchor $088B.
+
+        ; Print one character from the custom character set: screen code 0
+        ; addresses char_base's own first (and only committed) glyph.
+        lda #0
+        sta align_screen_offset
+
+        ; ADDED: run the second, deliberately-undetected self-modifying
+        ; construction for the first time -- see the header above, anchor
+        ; $0825. Never called anywhere in the committed subject.
+        jsr hazard_smc2_entry
+        rts
+
+; --- Character set, 2K-ALIGNED within the current VIC bank. A real
+; character set occupies a full 2048-byte block, one glyph per 8 bytes; this
+; fixture commits one recognisable glyph at the boundary and states that
+; shortfall here rather than silently implying a full set exists.
+!align $7ff, 0
+align_char_base
+        !byte %01111110
+        !byte %11111111
+        !byte %11100111
+        !byte %11100111
+        !byte %11111111
+        !byte %11111111
+        !byte %01111110
+        !byte %00000000
+
+; --- Sprite shape, 64-BYTE-ALIGNED within the current VIC bank. KEPT as
+; data even though no code in this file points the hardware at it anymore
+; (see the REMOVED note above) -- the shape still exists in the image, only
+; the pointer write is gone.
+!align $3f, 0
+align_sprite_base
+        !fill 63, %11111111
+
+; --- Level table: a plain labelled byte table, no alignment constraint. It
+; exists so the multi-file export path has a real, ordinary data range to
+; extract that is not itself hazard-bearing.
+align_level_table
+        !byte 1, 2, 3, 4, 5, 6, 7, 8
+
+; --- Music table: the same role as the level table, with distinct,
+; recognisable content.
+align_music_table
+        !byte $c0, $90, $60, $40, $30, $20, $10, $08
