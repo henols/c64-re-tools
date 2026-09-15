@@ -42,7 +42,7 @@ Pure Node over committed files — the `.bin` dumps, their `.map.json` manifests
 
 ## Two verbs write to tracked files
 
-`anchor-search` updates `recovery/RELEASES.json`; `ledger` rewrites
+`anchor-search` updates `recovery/RELEASES.json`. `ledger` rewrites
 `recovery/PROVENANCE.md` and touches `RELEASES.json` too. So `git status` is
 **expected** to be dirty after a run.
 
@@ -112,13 +112,13 @@ before quoting an `ORIGINAL` count as settled.
 
 The two seeds are where this goes wrong, and both failure modes are on record:
 
-- **`loader` is seeded from `RELEASES.json`'s earned `loader_ranges`** — live
-  disassembly evidence — **never from `NOTES.md` prose.** Reading a loader range
-  out of prose is the documented root cause of `$08F5`, a permanent joystick-poll
-  instruction, once being classified as loader code.
-- **`cracktro` is seeded from a crack-credit *vocabulary* scan**, not a bare
-  printable-ASCII scan. A bare scan was tried and produced a real false positive
-  against a real corpus: **the game's own title-screen text** is printable ASCII
+- **`bucketManifest` seeds `loader` from `RELEASES.json`'s earned `loader_ranges`**
+  — live disassembly evidence — **never from `NOTES.md` prose.** Reading a loader
+  range out of prose once classified `$08F5`, a permanent joystick-poll
+  instruction, as loader code — the documented root cause.
+- **`bucketManifest` seeds `cracktro` from a crack-credit *vocabulary* scan**, not
+  a bare printable-ASCII scan. A bare scan produced a real false positive against
+  a real corpus: **the game's own title-screen text** is printable ASCII
   too, and it differed between the two releases. A bare scan called that cracker
   credit. It is not — a differing string is not a cracker string, and it is
   correctly left `UNKNOWN`.
@@ -127,7 +127,7 @@ The two seeds are where this goes wrong, and both failure modes are on record:
 assigned at capture time and kept verbatim. Everything the trace reaches is `game`.
 
 The `.bin` files are **never** edited or zeroed. Classification lives in
-the manifests; the bytes stay verbatim evidence.
+the manifests. The bytes stay verbatim evidence.
 
 ## Carrying the verdict into the rebuild
 
@@ -147,7 +147,7 @@ verb writes.
 
 **The flag makes the verdict VISIBLE and decides nothing.** Every byte in
 scope is still emitted, whatever the verdict says — a `CRACKER-PATCH` row does
-not drop, filter or alter a single byte, it only makes the evidence readable
+not drop, filter or change a single byte, it only makes the evidence readable
 at the point of use. What gets reversed, kept or left out remains the
 end-user's decision, never the tool's. `--ledger` is optional: omitting it
 exports exactly as before, with no provenance comment anywhere in the output.
@@ -160,15 +160,15 @@ WITH the reason the operator gave, and `anno_include_range` takes the record
 back if the decision changes. Recording an exclusion changes nothing about
 which bytes the export emits — the exported block still carries every byte
 of that span, now with a visible marker naming the exclusion and its reason,
-so nothing is removed and no gap appears in the output. The ledger's verdict
-is information the operator reads at this point; it is never wired as an
-input to an automatic exclusion, here or anywhere else on this surface.
+so the export removes nothing and no gap appears in the output. The ledger's
+verdict is information the operator reads at this point. It is never wired as
+an input to an automatic exclusion, here or anywhere else on this surface.
 
 ## A `CRACKER-PATCH` in `game` code is a trainer until proven otherwise
 
 `count-patches` counts exactly one intersection — verdict `CRACKER-PATCH`, kind
 `game`. That intersection has a name the pipeline never says out loud: a **trainer**.
-A cracker changing bytes *inside game code* is altering gameplay, and unlimited
+A cracker who changes bytes *inside game code* changes gameplay, and unlimited
 lives, disabled collision or a frozen timer is the usual reason.
 
 This matters because the three verdicts answer **who wrote a range**, not **what it
@@ -190,21 +190,21 @@ game as it shipped*.
 
 ### The independence precondition — this skill's own premise
 
-`ORIGINAL` means "identical across two **independently**-cracked releases". Delete the
+`ORIGINAL` means "identical across two **independently**-cracked releases". Remove the
 word *independently* and the verdict is worthless: two releases sharing an ancestor
 are identical everywhere the ancestor was, **including everywhere the ancestor's
 cracker patched**. Establish the independence. Do not infer it from two releases
 carrying different group names, different loaders, or different cracktros — those are
 the cheapest things for a re-cracker to replace.
 
-Until it is established, the diff is directional, and the direction is the trap:
+Until you establish it, the diff is directional, and the direction is the trap:
 
 - A diff **hit** is informative — something was patched.
 - A diff **miss** is not, and it is the miss that reads as reassurance.
 
 So `count-patches` reporting `0` is not evidence that no trainer exists. It is
 evidence that no trainer exists **in one release and not the other**. With unproven
-ancestry those are different claims, and only the second one was tested.
+ancestry those are different claims, and the diff tested only the second one.
 
 ### The detector that does not depend on the diff
 
@@ -219,7 +219,7 @@ why it survives the shared-ancestor case:
    way this hunt returns a false negative.
 2. **Armed but never reached.** Code jumped to from a patched region that never
    executes across full gameplay coverage is either dead crack scaffolding or a
-   trainer waiting on a trigger. Both need a verdict; neither should be reproduced
+   trainer waiting on a trigger. Both need a verdict. Neither should be reproduced
    without one.
 3. **Trigger scanners.** Reads of the keyboard or joystick registers in code that is
    not the game's own input handler, and comparisons against key codes inside a range
@@ -235,8 +235,8 @@ four signatures, at this coverage level" is an answer. "The diff was clean" is n
 ## Before you trust a verdict
 
 - **Coverage is incomplete, and the ledger says so out loud.**
-  a load-coverage record is not a finished coverage claim until every game state
-  has actually been visited. An on-demand-loaded
+  a load-coverage record is not a finished coverage claim until you have actually
+  visited every game state. An on-demand-loaded
   region — bytes that only appear after reaching a room or state nobody visited —
   is by construction **absent from the primary dumps this diffs**. Every verdict is
   scoped to "the addresses visible at the post-loader game-entry point", not to the
@@ -244,14 +244,14 @@ four signatures, at this coverage level" is an answer. "The diff was clean" is n
   complete `LOADING.md` reopens it.
 - **Never resolve a range's `kind` from its `start` address.** Coalescing groups on
   *verdict* continuity, not *kind* continuity, so one range can span several kind
-  zones. `splitRangeByManifestKind` exists for this, and the bug was found live:
-  a wide `ORIGINAL` range was found running straight through a `loader` sub-range
-  nested inside it. Resolving from `start` silently mislabels every address after
+  zones. `splitRangeByManifestKind` exists for this. This bug appeared in a live
+  run: a wide `ORIGINAL` range ran straight through a `loader` sub-range nested
+  inside it. Resolving from `start` silently mislabels every address after
   the first boundary.
 - **`--gap-tolerance` is off-by-one sensitive by design.** A gap of identical bytes
-  *strictly shorter* than N coalesces; a run of *exactly* N stays its own row.
+  *strictly shorter* than N coalesces. A run of *exactly* N stays its own row.
 - **More agreeing independent releases is the only thing that raises confidence.**
-  Two releases can establish `ORIGINAL`; they cannot establish intent. And *agreeing*
+  Two releases can establish `ORIGINAL`. They cannot establish intent. And *agreeing*
   only counts once *independent* is proven — releases sharing an ancestor agree on
   the ancestor's patches too, so unproven ancestry makes every `ORIGINAL` verdict
   conditional rather than earned.
@@ -272,7 +272,7 @@ addresses.
 Record findings that make RE faster in your own project notes **at the moment you
 find them**, graded with `Evidence:` and `Confidence:`. Promote a finding by
 re-logging it with the new evidence, never by editing an old grade in place — the
-grade is only worth anything if it says what was actually known when it was written.
+grade is only worth anything if it says what you actually knew when you wrote it.
 
 ## Troubleshooting
 
