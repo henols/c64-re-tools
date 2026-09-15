@@ -236,3 +236,17 @@ None - no external service configuration required.
 ---
 *Phase: 56-remove-shipped-modules-ts-and-its-embedded-source-scans*
 *Completed: 2026-09-15*
+
+## Self-Check: PASSED
+
+- FOUND: `src/mcp/vice/capture-predicate.test.ts`
+- FOUND: `src/mcp/vice/evid-report-keys.test.ts`
+- FOUND commit `123fd2e0` (Task 1)
+- FOUND commit `5dec8c16` (Task 2)
+- Every task's `<acceptance_criteria>` re-verified against the current tree: TAP name-set diffs
+  match the recorded lost/gained names (2/0, 2/0), `grep -c 'from "./shipped-modules.ts"'`
+  returns 0 for both files, and `npm run typecheck` exits 0.
+- Plan-level `<verification>` re-run: `npm run test:automated` exits 0 with `fail 0`, `skipped 9`
+  (same as baseline), `tests 3719` (baseline 3723 minus the 4 cases this plan removed).
+  `git log --name-only` for this plan's two task commits names only the one file each commit
+  staged.
