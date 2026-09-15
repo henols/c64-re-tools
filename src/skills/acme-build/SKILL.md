@@ -22,10 +22,10 @@ absent `run` verb is not an omission). It contacts nothing.
 Options: `-o FILE` `--out-dir DIR` `-f FORMAT` `--setpc ADDR` `-DSYM=VAL`
 `-I DIR` `--no-report` `--json`.
 
-`-I DIR` is resolved **workspace-relative** to the project root the host
-broker was started with — the same resolution `source`/`--out-dir` already
-go through — before it ever reaches the assembler. An absolute or escaping
-`-I` directory is refused by the seam rather than passed to ACME. This is a
+The seam resolves `-I DIR` **workspace-relative** to the project root the host
+broker starts with — the same resolution `source`/`--out-dir` already
+go through — before it ever reaches the assembler. The seam refuses an absolute
+or escaping `-I` directory rather than passing it to ACME. This is a
 documented contract change from earlier releases, when an absolute include
 reached the assembler unchecked.
 
@@ -101,8 +101,8 @@ follows.
 
 ## Writing source
 
-Start from the scaffold — it carries a BASIC stub whose `SYS` target is computed,
-so the entry point stays correct as the program grows:
+Start from the scaffold — it carries a BASIC stub that computes its `SYS` target
+rather than hard-coding it, so the entry point stays correct as the program grows:
 
 ```bash
 node $A new game.asm
@@ -142,17 +142,17 @@ you also assemble by hand, so these stay recognised as mnemonics.
 This skill does not disassemble. The route that does is `anno export-asm`, and
 it lives in the `anno` CLI rather than here.
 
-**Dated withdrawal 2026-08-29, dated return 2026-08-31 — both halves are kept,
-because the withdrawal is the record of why the route is shaped the way it is.**
+**Dated withdrawal 2026-08-29, dated return 2026-08-31 — this document keeps
+both halves, because the withdrawal records why the route has its current shape.**
 Whole-program static disassembly was WITHDRAWN on 2026-08-29 rather than left standing on an unverified reassembly claim: the removed route
 settled correctness with a transcript parser, and the recorded false pass that
 discipline exists against read `ACME not found in PATH (skipped)` / `All
 roundtrip verifications passed.` / `EXIT=0` — exit zero, an aggregate line
 reading as a full pass, and the one assembler this project cares about never
 having run. On **2026-08-31 the route returned**, rebuilt over the annotation
-store as `anno export-asm`. It is not a rename of what was removed: its
-correctness is settled by **assembling the output with a real ACME and diffing
-the bytes against the input** — never by an exit code, and never by a string
+store as `anno export-asm`. It is not a rename of the removed route: its
+correctness comes from **assembling the output with a real ACME and diffing
+the bytes against the input** — never from an exit code, and never from a string
 match on the exporter's own output.
 
 **The live invocation:**
@@ -162,14 +162,14 @@ npx -y @henols/vice-mcp anno export-asm game.prg --store game.annostore --out ga
 node <plugin-root>/src/mcp/vice/vice-proxy.ts anno export-asm game.prg --store game.annostore
 ```
 
-`<image>` and `--store` are **two separate arguments and neither is derived from
+`<image>` and `--store` are **two separate arguments, and neither one derives from
 the other** — the image supplies the bytes, the store supplies the names, ranges,
 typed regions and comments, and naming one does not name the other. `--out` names
-a **directory** the whole export is written into, defaulting to the image's
+a **directory**: the verb writes the whole export into it, defaulting to the image's
 basename stem beside the **store**, not beside the image, because the export is a
 generated view of the annotations. The directory holds a root file that sources
 the rest, one file per annotation scope, and an `unscoped.a` for anything inside
-no scope. A non-empty destination is refused rather than overwritten unless you
+no scope. The verb refuses a non-empty destination rather than overwriting it, unless you
 pass `--force`.
 
 **The verb writes source text and runs no assembler.** Its own second output line
@@ -180,10 +180,10 @@ export-asm: this file has NOT been assembled -- this command writes source text 
 ```
 
 The real-ACME byte-diff oracle is **test-only** — it lives in
-`src/mcp/vice/acme-verify.ts`, is exercised by `acme-verify.test.ts` (hard-failed
-in CI with `VICE_REQUIRE_ACME=1`), and is deliberately absent from the published
+`src/mcp/vice/acme-verify.ts`, `acme-verify.test.ts` exercises it (hard-failed
+in CI with `VICE_REQUIRE_ACME=1`), and it stays deliberately absent from the published
 package, so nothing on the runtime path can reach it. A clean `export-asm` run is
-therefore evidence that source was written and nothing more. It is not an
+therefore evidence that the verb wrote source and nothing more. It is not an
 assembler verdict. If you need to know the emitted source reassembles, assemble
 it yourself — that is what this skill's own build route is for.
 
@@ -245,7 +245,7 @@ This one turns source into bytes. It does not restate what the others carry.
 Record findings that make RE faster in your own project notes **at the moment you
 find them**, graded with `Evidence:` and `Confidence:`. Promote a finding by
 re-logging it with the new evidence, never by editing an old grade in place — the
-grade is only worth anything if it says what was actually known when it was written.
+grade is only worth anything if it says what you actually knew when you wrote it.
 
 ## Troubleshooting
 
