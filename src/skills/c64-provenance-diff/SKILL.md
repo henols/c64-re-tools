@@ -61,10 +61,10 @@ changed.
 ## Worked example — the real corpus
 
 Two independently-cracked releases of one title, both captured at the same
-post-loader entry trigger. **The release ids below are shown as `release-a` and
-`release-b`; every number is real output from a live run against a two-release
-corpus, with only the ids renamed** — the tool has no opinion about what a
-release is called.
+post-loader entry trigger. **This example shows the release ids below as
+`release-a` and `release-b`.** **Every number is real output from a live run
+against a two-release corpus, with only the ids renamed** — the tool has no
+opinion about what you call a release.
 
 ```
 $ node $D anchor-search
@@ -94,15 +94,15 @@ naming the alternatives it ruled out:
 
 `UNKNOWN` with a rule-out list is the honest answer. Do not upgrade it to
 `CRACKER-PATCH` because a byte differs. **Confidence: HIGH** — run live against the
-committed corpus; `ledger` reproduced the committed
+committed corpus. `ledger` reproduced the committed
 `generated_tier_sha256 dc7eb080…` byte-identically, so the classification is
 deterministic.
 
 **One qualifier on the 102, and it is the example's premise rather than its output:**
-"independently-cracked" is asserted at the top of this example, not proven by it. The
-determinism is HIGH; the `ORIGINAL` verdicts inherit whatever confidence that
-independence claim carries. See § *The independence precondition* below before
-quoting an `ORIGINAL` count as settled.
+This example asserts "independently-cracked" at the top, and does not prove it.
+The determinism is HIGH. The `ORIGINAL` verdicts inherit whatever confidence
+that independence claim carries. See § *The independence precondition* below
+before quoting an `ORIGINAL` count as settled.
 
 ## The five kinds and the three verdicts
 
