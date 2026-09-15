@@ -5,12 +5,12 @@ description: Work out how an unknown C64 program is structured at runtime — en
 
 # Reconnaissance on an unknown C64 program
 
-**Do not disassemble the whole program first.** The structure hangs off a small fixed set of
-well-known addresses: read them in order and the answer falls out. Treated as a search problem it
-costs an hour every session; written down it is minutes.
+**Do not disassemble the whole program first.** The structure hangs off a small set of well-known
+addresses: read them in order and the answer falls out. Treated as a search problem it costs an
+hour every session. Written down, it is minutes.
 
-Build a network of confirmed facts. Once the vectors, the IRQ handler, the main loop and the major
-tables are known, everything else classifies far more easily.
+Build a network of checked facts. Once you know the vectors, the IRQ handler, the main loop and
+the major tables, everything else classifies far more easily.
 
 ```bash
 D=src/skills/c64-program-recon/scripts/derive.mjs   # from the repo root
@@ -21,7 +21,7 @@ node $D sprites --dd00 3E --d018 18 --d015 0F --ptrs 20,21,22,23,FF,FF,FF,FF
 ```
 
 The script does only the arithmetic that a lookup table cannot — register bits to concrete
-addresses — over values **you** fetched through `mcp__plugin_c64-re-tools_vice__*`. It contacts nothing.
+addresses — over values **you** got through `mcp__plugin_c64-re-tools_vice__*`. It contacts nothing.
 
 ## Before disassembling anything
 
@@ -36,19 +36,19 @@ either one here:
 
 ## The order
 
-Each step is a read whose answer rules something out. Do not skip ahead: step 6 is cheap once the
-handler is known, because that is where most chip writes happen.
+Each step is a read whose answer rules something out. Do not skip ahead: step 6 is cheap once you
+know the handler, because that is where most chip writes happen.
 
 | # | Question | Read | What the answer settles |
 |---|---|---|---|
-| 0 | Which of these bytes are even the game? | The manifest's buckets — `c64-provenance-diff` | Tracing a depacker's IRQ handler is wasted work. Scope before you trace |
+| 0 | Which of these bytes are even the game? | The manifest's buckets — `c64-provenance-diff` | Tracing a depacker's IRQ handler wastes work. Scope before you trace |
 | 1 | Where does execution start? | Post-depack: wherever the PC sits at the decrunch checkpoint. There is no BASIC stub to find. | The one address everything else hangs off |
 | 2 | Which vector is live? | `$01`, then `$0314/$0315` **or** `$FFFE/$FFFF` | HIRAM (`$01` bit 1) decides. KERNAL out ⇒ the RAM vectors are meaningless |
-| 3 | What drives the frame? | `$D01A`, `$D012`, `$DC0D` | `$DC0D` untouched ⇒ raster IRQ; programmed ⇒ the game runs its own timebase |
+| 3 | What drives the frame? | `$D01A`, `$D012`, `$DC0D` | `$DC0D` untouched ⇒ raster IRQ. Programmed ⇒ the game runs its own timebase |
 | 4 | Where is the main loop? | Checkpoint a suspected loop head, run one frame | Two shapes only: a real loop, or a two-instruction spin with the IRQ doing everything |
 | 5 | Code or data? | What the PC actually visits across full coverage | A range never executed is data, whatever a tracer guessed |
-| 6 | Where is the graphics? | `$DD00` → `$D018` → mode bits → `$D015` → VM+`$03F8` | Every displayed byte, computed. Nothing to search for |
-| 7 | Where is the music? | Watch `$D404` | `init` runs once from main code; `play` runs once per frame from the IRQ |
+| 6 | Where is the graphics? | `$DD00` → `$D018` → mode bits → `$D015` → VM+`$03F8` | Every byte shown on screen, computed. Nothing to search for |
+| 7 | Where is the music? | Watch `$D404` | `init` runs once from main code. `play` runs once per frame from the IRQ |
 | 8 | Where is the input? | Reads of `$DC00`/`$DC01` | Games poll the matrix directly and ignore the KERNAL buffer |
 
 ## Step 0 in full: only the game is in scope
@@ -72,21 +72,20 @@ per-session decision.
   `RELEASES.json` `loader_ranges` entry earned from live disassembly, or a depacker stub provably
   dead after first run. A bare printable-ASCII scan classified **the game's own title text** as
   cracktro credit and would have shipped a confidently-wrong `CRACKER-PATCH` verdict.
-- Absence of evidence records `UNKNOWN` and **keeps the bytes**. The
-  a real title-screen text divergence was found sitting in a region that is neither loader nor
-  cracktro — a cracker edit inside the game's own data. Stripping only the obvious intro screen
-  leaves crack residue behind.
+- Absence of evidence records `UNKNOWN` and **keeps the bytes**. A real title-screen text
+  divergence was found sitting in a region that is neither loader nor cracktro — a cracker edit
+  inside the game's own data. Stripping only the obvious intro screen leaves crack residue behind.
 
-`c64-provenance-diff` owns the machinery and the five kinds; do not re-derive them here. What
+`c64-provenance-diff` owns the machinery and the five kinds. Do not re-derive them here. What
 belongs here is the ordering: **bucket first, then trace only what survives.**
 
 Then work **backwards from observable effects** rather than reading code sequentially — it is
-consistently faster. Watch writes to the sprite coordinates to find movement; watch `$D018` to find
-the room loader; watch VM+`$03F8` to find the animation driver. `vice_watch_add` finds *writers*,
+consistently faster. Watch writes to the sprite coordinates to find movement. Watch `$D018` to find
+the room loader. Watch VM+`$03F8` to find the animation driver. `vice_watch_add` finds *writers*,
 and that is its real leverage.
 
 Differential experiments close the loop: patch a routine to `RTS` and see what stops. If enemies
-freeze and nothing else does, the routine's purpose is confirmed — far stronger evidence than
+freeze and nothing else does, that checks the routine's purpose — far stronger evidence than
 reading the listing.
 
 ## Step 0.5: is it packed, and by what?
@@ -100,7 +99,7 @@ node src/skills/c64-program-recon/scripts/packer-finding.mjs game.prg      # fro
 node src/skills/c64-program-recon/scripts/packer-finding.mjs game.prg --entropy 7.83
 ```
 
-Pass `--entropy` when you already have the number from `anno_get_binary_info`; otherwise the
+Pass `--entropy` when you already have the number from `anno_get_binary_info`. Otherwise the
 script measures it from the file. It prints one JSON object. Read the `verdict`:
 
 | Verdict | What it means | What to do |
@@ -113,7 +112,7 @@ script measures it from the file. It prints one JSON object. Read the `verdict`:
 **A name is reported only when an external oracle stated one, and this project does not guess.**
 No first-party route on this project's surface reports a packer name at all — that was
 established four independent ways, and the acceptance bar a future first-party identifier would
-have to clear was fixed at the same time. So there is no code path here that can write a packer
+have to clear was set at the same time. So there is no code path here that can write a packer
 name from entropy, from a decompression address, or from a byte pattern. If you want a name and the finding does not give
 you one, install an external identifier on the **host** and point `UNP64` or `UNP64_PATH` at it in
 the environment the host broker process sees — do not infer it. `packer-finding.mjs` never spawns
@@ -127,7 +126,7 @@ only, and the configured path's file name must be the oracle binary's own name (
 seam treats it as absent.
 
 **The entropy gate answers packedness, not identity.** High entropy tells you the bytes are
-compressed (or encrypted, or genuinely random); it does not tell you by what. And the way a packed
+compressed (or encrypted, or genuinely random). It does not tell you by what. And the way a packed
 image is actually opened up here is the run-and-capture route — run the program under the emulator
 and capture RAM at a checkpoint past the decrunch — not an in-place unpack, which would destroy
 the comments, labels and blocks the project already holds.
@@ -198,21 +197,21 @@ an exactly-65536-byte flat capture, dispatched **by extension first**, never by 
 | `anno_set_data_type` | Classifying a block (`code`, `byte`, `address`, `petscii`, …) |
 | `anno_add_scope` | Marking a handler's extent as a lexical scope |
 | `anno_set_comment` | Recording the evidence — the carrier for the confidence grade below |
-| `anno_batch_execute` | Bulk annotation, 5+ independent calls at once — a real memory map is dozens of labels/comments/block ranges, and one batch is one open/commit/close instead of dozens. The store (and the image, when an inner call needs one) is named ONCE at the top level and every inner call inherits it. A malformed payload, an empty `calls` array, an uncurated inner name at any depth or an illegal label name refuses the **whole** batch by index and executes nothing; past that gate, execution runs to completion and each entry carries its own status, so an error entry inside a successful result means that one call did not work |
+| `anno_batch_execute` | Bulk annotation, 5+ independent calls at once — a real memory map is dozens of labels, comments and block ranges. One batch is one open, commit, close instead of dozens. You name the store (and the image, when an inner call needs one) ONCE at the top level, and every inner call inherits it. A malformed payload, an empty `calls` array, an uncurated inner name at any depth, or an illegal label name refuses the **whole** batch by index. It executes nothing. Past that gate, execution runs to completion and each entry carries its own status. So an error entry inside a successful result means that one call did not work |
 
 **Grade with the confidence prefix.** Lead every evidence comment with exactly one of these five
 bracket tokens (quoted verbatim from `anno-confidence.ts`, the parser's own source of truth):
 
-`[confirmed-code]` (confirmed code), `[probable-code]` (probable code), `[confirmed-data]`
-(confirmed data), `[probable-data]` (probable data), `[unknown]` (unknown).
+`[confirmed-code]` (`confirmed code`), `[probable-code]` (`probable code`), `[confirmed-data]`
+(`confirmed data`), `[probable-data]` (`probable data`), `[unknown]` (`unknown`).
 
 A typo in the bracket token — wrong case, an underscore, a plural, stray whitespace — **fails
-loudly**; it does not silently degrade into an ungraded comment. Do not
-promote a row by editing its grade in place: re-verify and restate the evidence with a fresh
-`anno_set_comment` call, so the record of when something stopped being a guess survives.
+loudly**. It does not silently degrade into an ungraded comment. Do not promote a row by editing
+its grade in place. Re-check and restate the evidence with a fresh `anno_set_comment` call, so the
+record of when something stopped being a guess survives.
 
 **Query instead of re-deriving.** `anno_get_symbols`, `anno_get_comments` and `anno_get_blocks`
-answer straight from the store; `anno_get_cross_references` and `anno_search` derive their answers
+answer straight from the store. `anno_get_cross_references` and `anno_search` derive their answers
 from the image bytes plus the store's typed ranges, so they take `image` too. `anno_search` searches
 three corpora together — label names, comment text, and the instruction text rendered from every
 range typed `code` — **byte-exact and case-sensitive**, with each corpus named in the answer
@@ -232,8 +231,8 @@ whole workflow exists to make cheap:
 match exactly), every project enum with its variants, and every address-to-enum association.
 
 `anno_get_address_details` composes everything known about ONE address — the labels bound there,
-the comments there, the typed range covering it, and the cross-references reaching it. **The
-composition is disclosed:** the body carries `composed_client_side` and a `composed_from` list
+the comments there, the typed range covering it, and the cross-references reaching it. **The call
+discloses the composition:** the body carries `composed_client_side` and a `composed_from` list
 naming all four sources, so a composition is never mistaken for something the store held whole.
 
 ### Take names to the running machine, and bring live findings back
@@ -241,8 +240,8 @@ naming all four sources, so a composition is never mistaken for something the st
 **Dated withdrawal, 2026-08-29 — the `.lbl` round trip is WITHDRAWN, and as of 2026-08-31 no phase
 currently owns its return.** The two CLI verbs that carried it, `export-lbl` and `import-lbl`, are
 gone from this surface: both were delivery paths into the retired static analyser. This notice
-previously forecast that a numbered phase would rebuild them alongside the ACME export route; that
-forecast was **wrong and is corrected here rather than deleted**. The phase that rebuilt the ACME
+previously forecast that a numbered phase would rebuild them alongside the ACME export route. That
+forecast was **wrong, and this note fixes it here rather than removes it**. The phase that rebuilt the ACME
 export route covered that route only — no requirement and no success criterion of it mentioned the
 `.lbl` round trip — so the round trip still has no route and **no phase currently owns its return**.
 Do not reach for these verbs here: they do not exist, and an invocation fails with an unknown-verb
@@ -251,14 +250,14 @@ error and no explanation of why.
 The **loop itself is not withdrawn**, only its two automated legs, and the discipline it encodes is
 what to keep doing by hand for as long as they stay gone:
 
-1. **The store is the merge point, not your own notes.** A name discovered live —
-   disassembling the running machine, a checkpoint hit — is written into the store with
-   `anno_set_label_name` *first*, before it is carried anywhere else.
+1. **The store is the merge point, not your own notes.** Write a name discovered live —
+   disassembling the running machine, a checkpoint hit — into the store with
+   `anno_set_label_name` *first*, before you carry it anywhere else.
 2. **`vice_symbols_load` REPLACES the machine's symbol table rather than merging into it.** Call it
    **exactly once** per generated `.lbl` file. Loading an older file a second time, after the store
    has moved on, silently discards the newer names.
 3. **Regenerate whole, never patch incrementally.** The round trip regenerated the entire `.lbl`
-   from the store, and any rebuild of it must do the same; a hand-written incremental patch
+   from the store, and any rebuild of it must do the same. A hand-written incremental patch
    reintroduces exactly the drift the single merge point exists to prevent.
 
 Two traps that survive the withdrawal and are part of the specification whoever eventually rebuilds
@@ -267,11 +266,11 @@ never appeared in the written file — and neither direction ever created a stor
 
 `gen-enums` — turning register writes into named enum variants — is **withdrawn on the same terms,
 and no phase currently owns its return either**. The same superseded forecast named a numbered phase
-for it; that phase's requirements covered the ACME export oracle only. What `gen-enums` consumed,
-the `memmap.json` bit table, is documented in `c64-memory-mapping` along with the withdrawal and the
-by-hand route that stays open.
+for it. That phase's requirements covered the ACME export oracle only. `c64-memory-mapping`
+documents what `gen-enums` consumed — the `memmap.json` bit table — alongside the withdrawal and
+the by-hand route that stays open.
 
-**Generate the memory map; do not hand-author it.** Fill in the provenance sidecar (schema and a
+**Generate the memory map. Do not hand-author it.** Fill in the provenance sidecar (schema and a
 filled example live in `templates/memory-map.template.md`), then:
 
 ```bash
@@ -279,58 +278,63 @@ npx -y @henols/vice-mcp anno render-memmap game.annostore --provenance sidecar.j
 node <plugin-root>/src/mcp/vice/vice-proxy.ts anno render-memmap game.annostore --provenance sidecar.json
 ```
 
-Add `--check` to detect drift. It is reported when, and only when, one of these changed: the
-rendered file itself (a hand edit); a store row (a range, a label, a comment, or a comment's
-confidence grade); the provenance sidecar's bytes; the location of the store or the sidecar
-**relative to the workspace root**; or the renderer. **Relocating the checkout is not drift** — the
-same tree at a different absolute path renders the same bytes, because the banner records
-workspace-relative locations. The rendered file carries a generated-file banner; treat it like every
-other generated artifact in this repo and never hand-edit it.
+Add `--check` to detect drift. `--check` reports drift when, and only when, one of these changed:
+
+- the rendered file itself (a hand edit)
+- a store row (a range, a label, a comment, or a comment's confidence grade)
+- the provenance sidecar's bytes
+- the location of the store or the sidecar **relative to the workspace root**
+- the renderer
+
+**Relocating the checkout is not drift** — the same tree at a different absolute path renders the
+same bytes, because the banner records workspace-relative locations. The rendered file carries a
+generated-file banner. Treat it like every other generated artifact in this repo and never
+hand-edit it.
 
 **Dated correction, 2026-08-30 — the paragraph above used to name TWO drift causes, and a third
 existed.** Before gap-closure round 2 the banner recorded the store and the sidecar by their
 ABSOLUTE paths, so the checkout's own location was a silent third cause: an identical store,
 sidecar and rendered file reported `drifted` the moment the tree sat at a different absolute path,
-while `render-memmap` printed the same `render_digest` in both. That cause was removed by
-recording workspace-relative locations, so the cause set above is the one the shipped verb has. The
-old two-cause wording is superseded rather than merely reworded, and this note says so because a
-reader meeting it in history needs to know which claim was live when.
+while `render-memmap` printed the same `render_digest` in both. Recording workspace-relative
+locations removed that cause, so the cause set above is the one the shipped verb has. This note
+supersedes the old two-cause wording rather than merely rewording it, because a reader meeting it
+in history needs to know which claim was live when.
 
 **One-time drift after upgrading, 2026-08-30.** A memory map rendered *before* that change reports
 `drifted` on its first `--check` afterwards, exactly once, because the banner's recorded locations
 changed from absolute to workspace-relative spellings. Re-run the generator and commit the new
 banner. This repository has no committed rendered `memory-map.md` — only the template — so nothing
-here regresses; the sentence is written for **consuming projects**, which do have one.
+here regresses. This sentence is meant for **consuming projects**, which do have one.
 
 **This playbook itself has a generated twin, and it is not the one to edit.**
 `installer/skills/c64-program-recon/` is a gitignored COPY of this directory, rebuilt from it by
 `installer/scripts/sync-skills.mjs` on the installer package's `prepack` and by
-`npm --prefix installer run sync-skills`. Edit THIS file; never edit the twin. A hand-edit there is
+`npm --prefix installer run sync-skills`. Edit THIS file. Never edit the twin. A hand-edit there is
 overwritten by the next sync and is not independently covered either — the gates that scan the
-shipped tree run the sync before they scan it, so a change made only in the twin is erased before it
-is ever measured. A change made here is SHIPPED only once that sync has run.
+shipped tree run the sync before they scan it, so the sync REMOVES a change made only in the twin
+before anything ever measures it. A change made here SHIPS only once that sync has run.
 
 **Dated correction, 2026-08-30 — `render-memmap` reads the annotation store directly, and the note
 that used to stand here was WRONG when it shipped.** This verb was rebuilt over the annotation
 store: its positional is an EXISTING `.annostore`, opened
-with `mustExist` — an absent store is refused by name rather than created — and nothing on the path
-it reaches consults the retired external analyser. The pre-store project file the earlier note named
-has no producer left in this repository, so there is no route back to the old spelling. That earlier
-note asserted in the PRESENT TENSE that this verb still read a project file; it was already false
-when it shipped, and it is DELETED here rather than amended, so a reader comparing two dated claims
-can tell which one to believe.
+with `mustExist` — the call refuses an absent store by name rather than creating one — and nothing
+on the path it reaches consults the retired external analyser. The pre-store project file the
+earlier note named has no producer left in this repository, so there is no route back to the old
+spelling. That earlier note asserted in the PRESENT TENSE that this verb still read a project file.
+It was already false when it shipped, and this page REMOVES it here rather than amends it, so a
+reader comparing two dated claims can tell which one to believe.
 
 **Importing a Ghidra export, and the mechanical join that follows it.** When a Ghidra harness run
 (a separate, host-side capability) has produced a transfer file, two calls land its findings in the
 store — in this order, and each is one mechanical call, not an agent turn:
 
 1. **`anno_import_ghidra_export`** reads the transfer file, writes one cross-reference row per
-   surviving reference, and DELETES the transfer file once every write has durably committed. It reports
-   `referencesSeen`, `xrefsWritten`, `xrefsAlreadyPresent` (a duplicate reference is deduplicated, not
-   double-counted) and `kindsSeenNotImported` — reference kinds outside this store's four-member
-   vocabulary, dropped and counted rather than guessed or refused. A malformed, truncated or
-   digest-mismatched export is refused by name, naming the section and the offending line, and writes
-   nothing.
+   surviving reference, and REMOVES the transfer file once every write has durably committed. It
+   reports `referencesSeen`, `xrefsWritten`, `xrefsAlreadyPresent` (the call deduplicates a
+   duplicate reference rather than double-counting it) and `kindsSeenNotImported` — reference kinds
+   outside this store's four-member vocabulary, dropped and counted rather than guessed or refused.
+   The call refuses a malformed, truncated or digest-mismatched export by name, naming the section
+   and the offending line, and writes nothing.
 2. **`anno_join_memmap`** then reads every cross-reference target the store already holds, skips
    addresses inside the program's own loaded image (those are code/data addresses, not hardware
    features), and annotates everything else with the narrowest `c64-memory-mapping/memmap.json` entry
@@ -341,45 +345,45 @@ store — in this order, and each is one mechanical call, not an agent turn:
 Both calls are **mechanical**: there is no agent invocation, no queue walk and no skill invocation
 anywhere inside either one, checked structurally over the two modules' own source rather than
 asserted in prose. Run the import call once per Ghidra export, then the join call once per updated
-image; neither call takes an agent turn to complete.
+image. Neither call takes an agent turn to complete.
 
 ## Static disassembly
 
 **Dated withdrawal 2026-08-29, dated return 2026-08-31 — whole-program ACME export was WITHDRAWN
-and has come back as `anno export-asm`, behind a real-ACME byte-diff oracle.** The notice is kept
-rather than deleted because the withdrawal explains the shape of what returned. The removed verb
-turned a `.prg` or a flat 64K image into ACME source offline and settled its own correctness with a
-transcript parser; what returned is not a rename of it. It is rebuilt over the **annotation store**,
-and its correctness is settled by **assembling the output with a real ACME and diffing the bytes
-against the input** — never by an exit code and never by a string match on the exporter's own
-output.
+and has come back as `anno export-asm`, behind a real-ACME byte-diff oracle.** This page keeps the
+notice rather than removing it, because the withdrawal explains the shape of what returned. The
+removed verb turned a `.prg` or a flat 64K image into ACME source offline and settled its own
+correctness with a transcript parser. What returned is not a rename of it. This project rebuilds it
+over the **annotation store**, and settles its correctness by **assembling the output with a real
+ACME and diffing the bytes against the input** — never by an exit code and never by a string match
+on the exporter's own output.
 
 ```bash
 npx -y @henols/vice-mcp anno export-asm game.prg --store game.annostore --out game-src
 node <plugin-root>/src/mcp/vice/vice-proxy.ts anno export-asm game.prg --store game.annostore
 ```
 
-`<image>` and `--store` are **two separate arguments and neither is derived from the other**: the
+`<image>` and `--store` are **two separate arguments and neither derives from the other**: the
 image supplies the bytes, the store supplies the names, typed ranges and comments. `--out` names a
-**directory** the whole export is written into, defaulting to the image's basename stem beside the
-**store** rather than beside the image, and a non-empty destination is refused rather than
-overwritten unless you pass `--force`. The directory holds a root file that sources the rest, one
+**directory** for the whole export, defaulting to the image's basename stem beside the **store**
+rather than beside the image, and the export refuses a non-empty destination rather than
+overwriting it unless you pass `--force`. The directory holds a root file that sources the rest, one
 file per annotation scope, and an `unscoped.a` for any block that lies inside no scope — open the
 root file first to see how the tree fits together.
 
 **It writes source and runs no assembler**, and says so in its own second output line
 (`this file has NOT been assembled`). The real-ACME byte-diff is a **test-only** oracle in this
 repository's test suite, absent from the published package and unreachable at runtime — so a clean
-run is evidence that source was written, not an assembler verdict. `acme-build` carries the full
-statement of that split.
+run is evidence that the export wrote source, not an assembler verdict. `acme-build` carries the
+full statement of that split.
 
 Two routes remain for reading a single routine, and they are the ones the rest of this playbook
 already uses:
 
 - **`anno_read_region`** and **`anno_disassemble`** render one routine or table at an **explicit**
   inclusive range, decoded fresh from the image bytes on every call and written nowhere. That is
-  the static route, bounded on purpose: the combined byte count is capped at **4096 bytes**
-  (`ANNO_READ_REGION_MAX_BYTES`), and a wider request is REFUSED by name rather than truncated,
+  the static route, bounded on purpose: these calls cap the combined byte count at **4096 bytes**
+  (`ANNO_READ_REGION_MAX_BYTES`), and they REFUSE a wider request by name rather than truncating it,
   because a full-64K disassembly dumped into an agent's context is exactly the hazard the cap
   exists to prevent.
 - **`vice_disassemble`** is the live-RAM route this skill's own table above uses: it reads a
@@ -389,14 +393,14 @@ The two are complementary — reach for the static reads before the emulator is 
 `vice_disassemble` once you have a live checkpoint to decode from.
 
 Extracting a program from a `.d64` image is a separate capability that this repository still does
-not have, and — correcting an earlier note that assigned it to the same numbered phase as the ACME
-export oracle — **no phase currently owns it**. Whenever it is built it must name the file inside
-the image explicitly and refuse rather than guess, because a guess could analyse a cracktro
+not have, and — fixing an earlier note that assigned it to the same numbered phase as the ACME
+export oracle — **no phase currently owns it**. Whatever future tool builds it must name the file
+inside the image explicitly and refuse rather than guess, because a guess could analyse a cracktro
 or loader stub instead of the game.
 
 ## Before you touch the emulator
 
-Two hazards cost this project real sessions. Both are in `references/observation-hazards.md`; these
+Two hazards cost this project real sessions. Both are in `references/observation-hazards.md`. These
 two lines are the part you cannot afford to load lazily.
 
 - **Pause after every observation.** Agent think-time runs the emulator at full speed — 258 million
@@ -433,7 +437,7 @@ symbols it touches, is the absorbed pair in `c64-memory-mapping`.
   an Exomizer decrunch stub — and how genre informs a guess
   (`check_collision` is a plausible routine in a shooter).
 - With `may_contain_undocumented_opcodes: true`, expect `LAX`, `SAX`, `SLO`,
-  `DCP`, `ISC`. These are real instructions, not disassembly errors; do not
+  `DCP`, `ISC`. These are real instructions, not disassembly errors. Do not
   stop reading at one.
 
 ### 2. Bounds, from an explicit address
@@ -461,12 +465,12 @@ The combined byte count is capped at **4096 bytes** per call
 (`ANNO_READ_REGION_MAX_BYTES`) and a request above it is refused by name
 rather than silently truncated. A routine longer than that — rare, but real in
 a decruncher or a level builder — is read as **consecutive ranges**. Read them
-in order; do not raise the cap to swallow the whole program, because the cap is
+in order. Do not raise the cap to swallow the whole program, because the cap is
 what keeps a "read this routine" call from becoming a whole-program export.
 
 Then read the flow, not just the instructions:
 
-- Does it loop? Where does the loop terminate?
+- Does it loop? Where does the loop stop?
 - Does it call other routines, or ROM entry points?
 - Does it touch hardware registers?
 
@@ -489,10 +493,10 @@ decisive than the body:
 
 - Called from an init block → a setup routine, runs once.
 - Called from the main loop → a per-frame update.
-- Called from the IRQ → must be fast; likely a music tick or a raster update,
+- Called from the IRQ → must be fast. Likely a music tick or a raster update,
   and its zero-page usage is IRQ-relative.
 - **No callers at all** → not necessarily dead. It may be a dispatch target
-  reached through a jump table; check the nearby data blocks for an address
+  reached through a jump table. Check the nearby data blocks for an address
   table pointing at it.
 
 ### 5. What data it touches
@@ -567,8 +571,8 @@ documented earlier on this page.
 | Symptom | What it actually is |
 |---|---|
 | No `RTS`/`JMP`/`RTI` at the apparent end | Deliberate fall-through. Check whether the next label is independently called. |
-| `JMP some_routine` as the last instruction | A tail call. This routine ends there; the target is a separate routine. |
-| Several routines converging on one `RTS` | A shared epilogue. It belongs to none of them; note it in each comment. |
+| `JMP some_routine` as the last instruction | A tail call. This routine ends there. The target is a separate routine. |
+| Several routines converging on one `RTS` | A shared epilogue. It belongs to none of them. Note it in each comment. |
 | No callers, but the routine is clearly live | Reached through a jump table. Look for an address table pointing at it. |
 | Disassembly appears to break mid-routine | Undocumented opcodes. Check the binary-info hint and keep reading. |
 | Zero-page usage contradicts the main program's | The routine runs from the IRQ. Its context is IRQ-relative. |
@@ -581,8 +585,8 @@ reading tokenized bytes by hand: it wraps VICE's own `petcat` to produce the
 readable listing and to report the handover address — or a *named decline*
 (`entrypoint: null` with a reason) when the `SYS` argument is not a static
 value, which is a resolved answer, never a guess to spend a disassembler on.
-Corrected here: an earlier note claimed none of `c64-petcat`'s trigger phrases
-overlapped this skill's frontmatter; that was true only because the skill did
+Fixed here: an earlier note claimed none of `c64-petcat`'s trigger phrases
+overlapped this skill's frontmatter. That was true only because the skill did
 not exist yet, and it is superseded now that it does.
 
 The material below stays as **reference text only**, narrowed to what
@@ -599,7 +603,7 @@ layout below.
 A tokenised BASIC program is a linked list in memory. Each line is:
 
 1. **Bytes 0–1 — next-line pointer.** The address where the *next* line
-   begins, little-endian (`24 04` → `$0424`).
+   starts, little-endian (`24 04` → `$0424`).
 2. **Bytes 2–3 — line number**, 16-bit little-endian (`0A 00` → `10`).
 3. **Bytes 4–N — the tokens**, running until a `$00` terminator.
 4. **End of program** when a line's next-line pointer is `$00 $00`.
@@ -677,7 +681,7 @@ This one is the route between the stations. It does not restate what the others 
 |---|---|
 | `references/control-flow.md` | Entry point, the six vectors, IRQ source, main-loop shapes, state machines |
 | `references/graphics.md` | The VIC derivation chain, the char-ROM shadow trap, sprites, watch targets |
-| `references/sound-and-input.md` | SID player vs `$D41B`-as-RNG vs digi; CIA#1 vs CIA#2 |
+| `references/sound-and-input.md` | SID player vs `$D41B`-as-RNG vs digi. CIA#1 vs CIA#2 |
 | `references/observation-hazards.md` | Every way a live read gives a wrong answer. **Read before driving.** |
 | `references/tool-selection.md` | Which `mcp__plugin_c64-re-tools_vice__*` call answers which question, and what to delegate |
 | `references/reconstruction.md` | Binary inclusion, behavioural-equivalence correctness bar, SMC labels, label vocabulary |
@@ -690,13 +694,13 @@ what was actually known when it was written.
 
 ## Troubleshooting
 
-| Symptom | Fix |
+| Symptom | Remedy |
 |---|---|
-| `$0314` holds something that is not a plausible address | Check HIRAM. With the KERNAL banked out the RAM vectors are uninitialised; read `$FFFE/$FFFF`. |
-| Every graphics pointer is wrong, with no error | `$DD00` bits 0-1 are **inverted**. Re-derive the bank first; everything else hangs off it. |
+| `$0314` holds something that is not a plausible address | Check HIRAM. With the KERNAL banked out the RAM vectors are uninitialised. Read `$FFFE/$FFFF`. |
+| Every graphics pointer is wrong, with no error | `$DD00` bits 0-1 are **inverted**. Re-derive the bank first. Everything else hangs off it. |
 | The charset at the computed address is garbage | CB may resolve into the char-ROM shadow (`$1000`/`$9000`, banks 0/2). `derive.mjs vic` flags it — there is no charset in RAM to extract. |
-| A sprite decodes as noise | Check `$D015` first; a disabled sprite's registers are stale. Then check MCM — multicolor decoded as hires comes out twice as wide. |
+| A sprite decodes as noise | Check `$D015` first. A disabled sprite's registers are stale. Then check MCM — multicolor decoded as hires comes out twice as wide. |
 | Computed mode is "INVALID — screen goes black" | You caught the registers mid-update inside a raster split. Re-read. |
 | The emulator looks dead | Enumerate armed checkpoints before anything else. See hazard 2. |
 | `vice_keyboard_type` does nothing | The game polls `$DC00`/`$DC01` directly. `vice_keyboard_matrix` is **permanently unavailable** — see `references/observation-hazards.md` § 4 for the reason and the available alternative. |
-| Two captures of the same checkpoint differ | Expected. Full-64K identity is impossible in principle; use `c64-ram-capture`'s drift rules. |
+| Two captures of the same checkpoint differ | Expected. Full-64K identity is impossible in principle. Use `c64-ram-capture`'s drift rules. |
