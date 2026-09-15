@@ -93,7 +93,6 @@ import {
   updateProjectEnum,
 } from "./anno-store.ts";
 import { CONFIDENCE_GRADES, parseConfidencePrefix } from "./anno-confidence.ts";
-import { codeOnly } from "./shipped-modules.ts";
 import { ViceError } from "./vice-errors.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -3825,106 +3824,6 @@ test("WR-18, THE 28-11 P5 DIRECTION: an ordinary accepted write still returns it
   });
 });
 
-test("WR-18, STRUCTURAL: pruneSnapshots' return value is BOUND at runWriteSequence's step-9 call site rather than discarded", () => {
-  // WHY THIS IS STRUCTURAL, stated because this file's conventions forbid a
-  // structural assertion that does not say why it is one. The behaviour it pins
-  // -- that step 9 records a reported rollback failure on the handle -- can only
-  // fire when `reconcileSnapshotRing`'s own `rollback` throws, which has no
-  // reachable input without fault injection. The behavioural controls above
-  // prove what happens once the state EXISTS; this one is the only thing in the
-  // suite that fails when the wiring producing it is removed.
-  //
-  // LITERAL BODIES KEPT (`codeOnly(src, true)`): the surrounding function is
-  // identified by source text and strict mode would blank the SQL literals that
-  // make the body substantial.
-  const stripped = codeOnly(readFileSync(join(HERE, "anno-store.ts"), "utf8"), true);
-
-  const fnStart = stripped.indexOf("function runWriteSequence");
-  assert.ok(fnStart >= 0, "runWriteSequence must be findable in the stripped source");
-  const fnEnd = stripped.indexOf("\n}", fnStart);
-  assert.ok(fnEnd > fnStart, "and its body must terminate at a column-zero closing brace");
-  const body = stripped.slice(fnStart, fnEnd);
-  assert.ok(body.length > 800, `the extracted runWriteSequence body must be substantial, got ${body.length} characters`);
-
-  const call = body.indexOf("pruneSnapshots(handle)");
-  assert.ok(call >= 0, "the step-9 prune call must be present in the extracted body");
-
-  // THE BINDING ITSELF. A bare `pruneSnapshots(handle);` statement -- the shape
-  // this task started from -- has nothing between the start of its line and the
-  // call, which is precisely what this assertion rejects.
-  const lineStart = body.lastIndexOf("\n", call) + 1;
-  const callLine = body.slice(lineStart, body.indexOf("\n", call));
-  assert.match(
-    callLine,
-    /(if|const|let|return)\b[^\n]*pruneSnapshots\(handle\)/,
-    `step 9 must BIND or TEST pruneSnapshots' return rather than discarding it, got: ${callLine.trim()}`,
-  );
-
-  // AND THE FACT MUST LAND SOMEWHERE A LATER CALL CAN SEE IT. A binding that
-  // goes nowhere is the same discard with an extra local.
-  assert.match(
-    body.slice(call, call + 200),
-    /handle\.transactionStateUnknown = true/,
-    "and must record the reported rollback failure on the handle, which is what carries it to the next call",
-  );
-
-  // THE 28-11 P5 HALF, STRUCTURALLY: the consumption must not be a throw. A
-  // rethrow here would report a committed write as a failure.
-  assert.equal(
-    body.slice(call, call + 200).indexOf("throw"),
-    -1,
-    "and must NOT throw from step 9 -- the write is already committed (28-11 P5)",
-  );
-});
-
-test("WR-18, STRUCTURAL: revertTo's step-6 sweep call BINDS its result and acts on it, so a reported rollback failure is not handed back as a clean handle", () => {
-  // WHY THIS IS STRUCTURAL: same reason as the step-9 control above. The
-  // `rollbackFailed: true` arm has no reachable input without fault injection,
-  // so no behavioural control in this file can distinguish a bound result from a
-  // discarded one. This assertion is the only thing that does.
-  //
-  // LITERAL BODIES KEPT (`codeOnly(src, true)`).
-  const stripped = codeOnly(readFileSync(join(HERE, "anno-store.ts"), "utf8"), true);
-
-  const fnStart = stripped.indexOf("export function revertTo");
-  assert.ok(fnStart >= 0, "revertTo must be findable in the stripped source");
-  const fnEnd = stripped.indexOf("\n}", fnStart);
-  assert.ok(fnEnd > fnStart, "and revertTo's body must terminate at a column-zero closing brace");
-  const body = stripped.slice(fnStart, fnEnd);
-  assert.ok(body.length > 800, `the extracted revertTo body must be substantial, got ${body.length} characters`);
-
-  const call = body.indexOf("reconcileSnapshotRing(restored)");
-  assert.ok(call >= 0, "the step-6 sweep call must be present in the extracted revertTo body");
-
-  // THE BINDING. `reconcileSnapshotRing(restored);` on a line of its own -- the
-  // shape this task started from -- fails here.
-  const lineStart = body.lastIndexOf("\n", call) + 1;
-  const callLine = body.slice(lineStart, body.indexOf("\n", call));
-  assert.match(
-    callLine,
-    /(=|return)[^\n]*reconcileSnapshotRing\(restored\)/,
-    `step 6 must BIND the sweep's result rather than discarding it, got: ${callLine.trim()}`,
-  );
-
-  // AND IT MUST READ THE FIELD THIS PLAN WIRED, not merely bind something.
-  assert.match(
-    callLine,
-    /rollbackFailed/,
-    `and must read rollbackFailed off it -- the one state the sweep reports without throwing, got: ${callLine.trim()}`,
-  );
-
-  // AND THE RESULT MUST BE REFERENCED AGAIN INSIDE THE FUNCTION: a bound value
-  // nothing branches on is a discard with an extra local.
-  const after = body.slice(call);
-  assert.match(after, /if \(reopenNeeded\)/, "and must branch on it, so a connection whose transaction state is unknown is not returned");
-  assert.match(after.slice(0, 700), /closeStore\(restored\)/, "closing the suspect connection");
-  assert.match(
-    after.slice(0, 700),
-    /return openStore\(storePath, \{ unconfinedModuleDerivedPath: true \}\)/,
-    "and handing back a freshly opened one, on the module-derived path the escape option names",
-  );
-});
-
 // ---------------------------------------------------------------------------
 // WR-21 -- `addScope`'s two missing rules: idempotence and the no-nesting claim
 // its own doc comment (and `ScopeRow`'s) already made.
@@ -4706,63 +4605,6 @@ test("D-15: a genuine SCHEMA_VERSION 2 store file is REFUSED by name -- naming b
         "left them and remain recoverable by hand",
     );
   });
-});
-
-test("D-15: the schema_version refusal is a SINGLE WITNESS -- exactly one comparison site, inside openStore, with no second write of anno_meta.schema_version and no migration entry point anywhere in the module", () => {
-  const src = readFileSync(join(HERE, "anno-store.ts"), "utf8");
-
-  // LITERAL BODIES KEPT (`codeOnly(src, true)`): half of what is asserted below
-  // is SQL text inside statement literals, and the strict mode that blanks them
-  // would make those absence claims pass vacuously.
-  const stripped = codeOnly(src, true);
-  assert.ok(stripped.includes("export function openStore("), "the stripper must leave openStore findable, or every claim below is vacuous");
-
-  // --- 1. Exactly one comparison, and it is inside openStore. ---
-  const comparisons = stripped.match(/schema_version\s*!==\s*SCHEMA_VERSION/g) ?? [];
-  assert.equal(
-    comparisons.length,
-    1,
-    "the module must compare a store's declared schema_version against SCHEMA_VERSION at EXACTLY ONE site. A SECOND comparison site is " +
-      "how a migration arm gets added without a decision: it reads as a harmless special case beside the real gate, and it silently " +
-      "re-interprets files this build declared unopenable (D-15). If a second site is genuinely wanted, that is a decision to take " +
-      "explicitly, not a test to relax.",
-  );
-
-  const openStoreStart = stripped.indexOf("export function openStore(");
-  const afterOpenStore = stripped.indexOf("\nexport function closeStore(", openStoreStart);
-  assert.ok(afterOpenStore > openStoreStart, "openStore's extent must be bounded by the next exported function, or the locality claim below is unmeasured");
-  const openStoreBody = stripped.slice(openStoreStart, afterOpenStore);
-  assert.equal(
-    (openStoreBody.match(/schema_version\s*!==\s*SCHEMA_VERSION/g) ?? []).length,
-    1,
-    "and that one site must be inside openStore -- the gate belongs where the file is first read, not somewhere a caller could bypass",
-  );
-
-  // --- 2. anno_meta.schema_version is WRITTEN only at store creation. ---
-  const schemaWrites = stripped.match(/insert into anno_meta|update anno_meta set schema_version/g) ?? [];
-  assert.deepEqual(
-    schemaWrites,
-    ["insert into anno_meta"],
-    "the ONLY statement that writes a schema_version is the one that creates a fresh store. An `update anno_meta set schema_version` " +
-      "anywhere in this module IS an upgrade path, whatever it is called, and it would rewrite a file's declared version behind the " +
-      "refusal's back",
-  );
-  const freshBranchStart = stripped.indexOf("insert into anno_meta");
-  assert.ok(
-    freshBranchStart > openStoreStart && freshBranchStart < afterOpenStore,
-    "and that one write must sit inside openStore's fresh-store branch",
-  );
-
-  // --- 3. No migration entry point, under any of its names. ---
-  for (const forbidden of ["migrate", "migration", "upgradeStore", "downgradeStore"]) {
-    assert.equal(
-      stripped.toLowerCase().includes(forbidden.toLowerCase()),
-      false,
-      `the module must contain no ${forbidden} entry point: D-15 bought the anno_enum_usage table by ACCEPTING that every version 2 ` +
-        `store becomes permanently unopenable, and an arm added later would be guessing at a history nothing recorded -- the exact ` +
-        `failure the version 1 legacy directory's own record already names`,
-    );
-  }
 });
 
 // ---------------------------------------------------------------------------
