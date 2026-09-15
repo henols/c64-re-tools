@@ -240,7 +240,7 @@ its phase details live in `ROADMAP.md` under
 `## v0.6.0 Own the substrate — CLOSED INCOMPLETE (Phase Details)`, below v0.7.0's,
 because Phases 24 and 26 are held with live requirement text.
 
-The Deferred Items ledger below reads **15 open** pending todos, computed
+The Deferred Items ledger below reads **14 open** pending todos, computed
 directly from the count of files in `.planning/todos/pending/` rather than by
 subtraction from a prior figure (it read 0 at the v0.4.0 close; eleven were
 filed after it, then `capability-registry-manifest-claim-stale` and
@@ -293,7 +293,7 @@ artifact — it did not retract the finding. Phase 49 gates reassembly, so
 that subject is the thing it will gate on.
 
 Progress: [█████████░] 89% (8/13 phases complete in v1.0.0, 73/82 plans. Phase 56 completed by this plan. Phase 57 was added concurrently during this plan's execution. Per-phase plan counts are in the ROADMAP Progress table.)
-Last activity: 2026-09-15 — Phase 56 complete, transitioned to Phase 50
+Last activity: 2026-09-15 — Completed quick task 260915-hwe: retired two stale planning records (dead scratch-dir leak; ROADMAP Progress-table enforcement claim)
 
 ## Performance Metrics
 
@@ -1734,6 +1734,7 @@ ledger table row below were both updated in the same change as this one.
 | 260913-o1w | Pin the host broker launcher's Node interpreter. `vice-launcher.sh` exec'd a bare `node`, so the broker ran under whatever the launching context exposed -- measured on this host as v24.20.0 interactively but v20.19.2 from any stripped environment, across four installed versions, with nothing checking or recording which. It now resolves `VICE_BROKER_NODE` then PATH, gates the result against a floor mirrored from `engines.node` (drift-tested, so the bash and package halves cannot diverge), refuses by name with exit 4 BEFORE exec naming path/version/floor/remedy, and records `node_exec_path` in `broker.json`. Accepted consequence: a stripped-environment launch that silently worked on Node 20 now refuses, by design | 2026-09-13 | 321b0804, 05a7d4b0, 4ca6c3d4, 15e9d5a7, ab0e15e1 | passed (verifier GOAL_ACHIEVED 8/8, every check driven live; orchestrator independently re-proved the self-reexec guard non-vacuous in both dot and bracket spellings) | [260913-o1w-pin-the-host-broker-s-node-interpreter-i](./quick/260913-o1w-pin-the-host-broker-s-node-interpreter-i/) |
 | 260914-poo | Keep only data-driven tests of production code. Deleted 60 files: 44 test files that assert on prose/comments/YAML/frontmatter or whose subject never ships, `module-classification.ts` (its only importer was its own test), the four text-scanning `check-skill-*.mjs` CI checkers, `audit-gate.mjs` (orphaned once its PreToolUse hook was removed) and ten orphaned `scripts/lib` files. Four CI steps dropped; the planning-vocabulary convention retired from CLAUDE.md and CONVENTIONS.md with no successor. `textmon-seam.test.ts` was added mid-run after Task 1's verify tripped over it -- a pinned owner map naming a just-deleted file; it imports only node builtins and scans source, so it was deleted rather than patched. Suite 4432 -> 3765 tests, 2 failures -> 0, runtime 145s -> 59s, typecheck clean. Accepted consequence: ~12 non-shipped modules (the dxa family, `shipped-modules.ts`, `test-gate.mjs`, the fixture loaders) are now deliberately untested | 2026-09-14 | 276c15c9, 0b6c394e, e4759250, 85d13976 |  | [260914-poo-delete-all-text-asserting-tests-disarm-t](./quick/260914-poo-delete-all-text-asserting-tests-disarm-t/) |
 | 260914-uhm | Delete `capture-seam.test.ts` (534 lines, 12 tests), the last whole-file source scanner. All twelve cases read `capture-predicate.ts` and `stop-oracle.ts` as TEXT and asserted neither names an import specifier for the other, with planted violations proving the scanner non-vacuous; it invoked neither module and its only non-builtin import was `shipped-modules.ts`, which does not ship. The invariant it guarded -- a capture must not certify its own stop -- survives as reasoning in `capture-predicate.ts`'s header. `anno-seam.test.ts` was REMOVED from this task's scope: one of its cases is genuinely behavioural (WR-25, `openStore` refusing by name with nothing created) and no other file covers it, so it moves to Phase 56. Suite 3765 -> 3753 tests, exactly the twelve deleted, fail 0, typecheck clean | 2026-09-14 | 88e063f3 |  | [260914-uhm-delete-capture-seam-test-ts-a-pure-sourc](./quick/260914-uhm-delete-capture-seam-test-ts-a-pure-sourc/) |
+| 260915-hwe | Retire two stale planning records. Deleted the 19 empty, untracked `.planning/vice-proxy-evidence-test-*` residue directories -- their writer `tmpWorkspaceIncidentsDir()` was deleted in `d8ed053e`, so the leak was already dead and the todo's three proposed remedies (startup reap / relocate base / gitignore) were moot; the todo moved to `todos/completed/` carrying a Resolution section, its STATE.md Deferred Items row was dropped (15 -> 14 open), and the CONCERNS.md entry was rewritten as resolved with its stale `vice-proxy.test.ts:4711-4726` pointer relabelled historical. Also corrected the ROADMAP `## Progress` preamble, which claimed the table was mechanically enforced by `comment-phase-pointers.test.ts` -- deleted in `276c15c9`. The table and all 60 rows are kept for an accurate reason (it is the only current and complete per-phase record; the seven archived milestone ROADMAPs are cumulative snapshots frozen at their own close, the newest stopping at 47 rows with nothing for Phases 45-56), and the preamble now states plainly that convention alone maintains it. No source file changed | 2026-09-15 | 57f80e35, 988fc67e, d4a5aca5 |  | [260915-hwe-retire-two-stale-planning-records-delete](./quick/260915-hwe-retire-two-stale-planning-records-delete/) |
 
 ### Blockers/Concerns
 
@@ -2205,7 +2206,6 @@ regression and not this inheritance.
 | broker | 2026-09-07-remove-pre-warm-launch-vice-on-first-request | minor | Pending |
 | broker | 2026-09-11-remove-anno-from-the-mcp-surface-reach-it-via-a-stateless-br | minor | Pending |
 | mcp | capability-registry-manifest-claim-stale | minor | Pending |
-| testing | 2026-09-13-vice-proxy-test-leaks-scratch-dirs-into-planning-root | minor | Pending |
 | proxy | 2026-09-13-result-chunking-orphaned-by-the-fork-removal | major | Pending |
 | broker | 2026-09-13-incident-record-epoch-after-has-no-producer | major | Pending |
 | installer | installer-skill-provenance-stamp | medium | Pending |
