@@ -212,6 +212,54 @@ that test production code are kept."
   workspaceRoot nor the unconfined escape; `anno-confinement.test.ts` covers
   symlink and workspace-locality refusals, NOT this one.
 
+### No Automatic Installation (Phase 57)
+
+Owner decision 2026-09-15, generalising the standing external-tool rule from
+external binaries to **everything**: "I don't want anything to be installed at all,
+not from a new session, mcp start or when running the test. We can expect that all
+tools are correctly installed." Scope confirmed the same day as total -- it covers
+the two user-machine triggers, the installer's explicit `--vendor` flag, and CI.
+
+This withdraws all three exemptions `CLAUDE.md`'s external-tools bullet names by
+name. The external-tool half of that rule was already clean and stays as written;
+what changes is that the project's OWN npm dependencies stop being exempt.
+
+Evidence for every row below: `.planning/notes/nothing-is-installed-automatically.md`.
+
+- [ ] **INSTALL-01**: No session start installs anything. `scripts/ensure-mcp-deps.sh`
+  no longer runs `npm ci`; it detects whether `src/mcp/vice/node_modules` is present
+  and, when it is not, refuses BY NAME with the exact command the user must run --
+  the permitted pattern `CLAUDE.md` already states positively. It still never blocks
+  the session (exit 0 on every path), and the lockfile-sha256 stamp under
+  `.c64-re-tools/cache/` is removed with the install it gated, not left orphaned.
+- [ ] **INSTALL-02**: No MCP server launch installs anything. The installer stops
+  writing `npx -y @henols/vice-mcp@<version>` into a consumer's `.mcp.json`
+  (`installer/bin/cli.mjs:135-142`) and writes an entry resolving an already-present
+  package instead. This is the site that had escaped the record entirely: it carried
+  no lockfile gate, and because `package-lock.json` is not in the published `files[]`
+  its transitive dependency tree floated to whatever the registry served at launch,
+  so the installer path never ran the tree the plugin path tests.
+- [ ] **INSTALL-03**: The installer cannot install the MCP package under any flag.
+  `--vendor` and `vendorInstall()` (`installer/bin/cli.mjs:213`) are deleted, not
+  merely defaulted off, and the flag's removal is reflected in the CLI help text and
+  in `installer/wire-mcp.test.mjs`.
+- [ ] **INSTALL-04**: CI installs nothing. `npm ci` (ci.yml:39), `retry_apt install -y
+  acme` (ci.yml:78) and both `npm install -g npm@latest` steps (ci.yml:282, ci.yml:349)
+  are gone, CI running instead against a pre-provisioned image or container that
+  already carries `node_modules`, `acme`, and an npm new enough for OIDC trusted
+  publishing (>= 11.5.1). `actions/setup-node`'s `cache: npm` block (ci.yml:31-35) goes
+  with them -- it exists only to accelerate the `npm ci` being removed. A GitHub runner
+  has nothing pre-installed, so there is no in-workflow way to satisfy this row; the
+  provisioning change IS the requirement.
+- [ ] **INSTALL-05**: The rule is mechanically enforced, not merely documented. A guard
+  fails the build when any tracked file outside the deliberate documentation of this
+  rule introduces a package-manager invocation -- `npm ci`, `npm i`/`npm install`,
+  `npx -y`, `apt-get install`, `brew install`, `pacman -S`, or a fetch-and-build. The
+  guard is proven non-vacuous by a planted invocation, following the precedent
+  `DOCS-04` sets for pattern-level enforcement, and it scores `.github/workflows/**`
+  as well as `src/**`, `scripts/**` and `installer/**` -- the CI sites are exactly the
+  ones a `src/`-only guard would miss.
+
 ## Departures from the v0.5.0 text
 
 Recorded explicitly, because these 14 requirements had stood byte-identical
@@ -311,11 +359,16 @@ Success-Criteria live in `.planning/ROADMAP.md` → "Phase Details".
 | SC-3 | Phase 56 | Pending |
 | SC-4 | Phase 56 | Pending |
 | SC-5 | Phase 56 | Pending |
+| INSTALL-01 | Phase 57 | Pending |
+| INSTALL-02 | Phase 57 | Pending |
+| INSTALL-03 | Phase 57 | Pending |
+| INSTALL-04 | Phase 57 | Pending |
+| INSTALL-05 | Phase 57 | Pending |
 
 **Coverage:**
 
-- v1.0.0 requirements: 43 total
-- Mapped to phases: 43
+- v1.0.0 requirements: 48 total
+- Mapped to phases: 48
 - Unmapped: 0
 
 Eleven phases carry requirements above: 45-51 plus 52, 53, 55 and 56. (The count read
@@ -373,3 +426,4 @@ Phase 47 rather than retrofitted onto it.
 *Requirements defined: 2026-09-10*
 *Last updated: 2026-09-14 — PROXY-01..06 declared and traced to Phase 55 (32/32 mapped); the Coverage block's stale 22 corrected against 26 already-declared rows (DOCS-01..04 had been added without it); Phase 51's TBD line remains unaddressed by design*
 *Last updated: 2026-09-14 (Plan 51-02) — VOCAB-01..06 declared and traced to Phase 51 (38/38 mapped). This supersedes one point in the line above. Phase 51's TBD line is addressed here, by Phase 51's own planning job, not left for later.*
+*Last updated: 2026-09-15 — INSTALL-01..05 declared and traced to Phase 57 (48/48 mapped). Owner decision: nothing is installed automatically, at any trigger, on a user machine OR in CI; the three exemptions CLAUDE.md names by name are withdrawn.*

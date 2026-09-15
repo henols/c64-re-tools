@@ -2033,6 +2033,70 @@ Notes:
   `stock-schema-check.ts`, `ghidra-run.ts`. `shipped-modules.ts` joins them only by being
   deleted outright.
 
+### Phase 57: Nothing Is Installed Automatically
+
+**Goal**: No trigger anywhere in this project installs anything. Not a session start, not an
+MCP server launch, not a test run, not an installer flag, and not CI. Every tool and every
+dependency is expected to be already correctly installed; a missing one is DETECTED and
+REFUSED BY NAME with the remedy in the message, never provisioned.
+
+Owner decision 2026-09-15: "I don't want anything to be installed at all, not from a new
+session, mcp start or when running the test. We can expect that all tools are correctly
+installed." Scope confirmed the same day as total — user machine, the installer's `--vendor`
+flag, and CI alike.
+
+**Requirements**: INSTALL-01, INSTALL-02, INSTALL-03, INSTALL-04, INSTALL-05.
+
+**Depends on**: Nothing. Independent of Phase 56.
+
+**Success Criteria** (what must be TRUE):
+
+  1. **No session start installs.** `scripts/ensure-mcp-deps.sh` detects and refuses by name
+     instead of running `npm ci`; it still exits 0 on every path, and the lockfile-sha256
+     stamp is removed along with the install it gated (INSTALL-01).
+  2. **No MCP launch installs.** No `npx -y` of the server package is written into any
+     consumer's `.mcp.json`; the installer wires an entry resolving an already-present
+     package (INSTALL-02).
+  3. **The installer cannot install under any flag.** `--vendor` and `vendorInstall()` are
+     deleted rather than defaulted off, with the help text and `installer/wire-mcp.test.mjs`
+     updated to match (INSTALL-03).
+  4. **CI installs nothing.** `npm ci`, `retry_apt install -y acme`, both
+     `npm install -g npm@latest` steps and `setup-node`'s `cache: npm` block are gone, CI
+     running against a pre-provisioned image or container carrying `node_modules`, `acme`
+     and npm >= 11.5.1 (INSTALL-04).
+  5. **A guard enforces it.** A build-failing check catches any newly introduced
+     package-manager invocation across `.github/workflows/**`, `src/**`, `scripts/**` and
+     `installer/**`, proven non-vacuous by a planted invocation (INSTALL-05).
+  6. **`npm run test:automated` is green and `npm run typecheck` exits 0** on a machine where
+     `node_modules` already exists — which is now the only supported state.
+
+**Cross-cutting constraints:**
+
+- The external-tool half of the rule is already satisfied and must not be re-litigated or
+  re-implemented: `x64sc`, `c1541`, `petcat`, ACME, Ghidra and dxa are already
+  detect-then-refuse-by-name. This phase changes only the project's OWN npm dependencies.
+- `CLAUDE.md`'s external-tools bullet must be edited in the same phase to withdraw the three
+  exemptions it names (`scripts/ensure-mcp-deps.sh`, CI's `retry_apt install -y acme`,
+  `--vendor`). Leaving it stating the old carve-outs is a documented rule contradicting an
+  enforced one.
+- No `npm run typecheck` regression at any commit.
+
+Notes:
+
+- **The plugin-install cost is accepted, not a defect.** A plugin ships no `node_modules`,
+  and the SessionStart hook is the only reason a fresh plugin install works today. After
+  INSTALL-01, a first-time plugin user gets a refusal naming `npm ci` in `src/mcp/vice`
+  rather than a working MCP server. Do not "fix" this later by restoring the hook.
+- **CI cannot satisfy INSTALL-04 from inside the workflow.** A GitHub runner has nothing
+  pre-installed, so the requirement necessarily means changing how the runner is
+  provisioned (pre-baked image or `container:`). Scoping this as a workflow edit will fail.
+- **The `npx -y` site was undocumented.** `installer/bin/cli.mjs:135-142` carried no
+  lockfile gate, and since `package-lock.json` is not in the published `files[]`, its
+  transitive tree floated to whatever the registry served at launch — so the installer path
+  never ran the dependency tree the plugin path tests. Only the two direct deps were pinned.
+- Full measured inventory, including the auto-*written* (non-network) sites that must NOT be
+  removed by mistake: `.planning/notes/nothing-is-installed-automatically.md`.
+
 ## Progress
 
 **This per-phase table is load-bearing, not decorative.**
@@ -2105,6 +2169,7 @@ in a milestone archive.
 | 54. Remove Every Byte-Identical Assertion | v1.0.0 | - | Not started | - |
 | 55. Restore the Fork Removal's Dropped Capabilities and Re-Baseline the Proxy Test | v1.0.0 | 6/6 | Complete | 2026-09-14 |
 | 56. Remove `shipped-modules.ts` and Its Embedded Source Scans | v1.0.0 | 9/11 | In Progress | - |
+| 57. Nothing Is Installed Automatically | v1.0.0 | 0/0 | Not Started | - |
 
 **Milestone roll-up:** v0.2.0 — 9 phases, 87 plans, 51/51 in-scope requirements,
 shipped 2026-08-19 (audit round 4 `tech_debt`; 13 deferred items at close).
