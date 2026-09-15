@@ -128,11 +128,11 @@ Weigh a comment by the region it describes:
   equally solid wherever ROM is banked in — `$01` bits #0-#2 select it, and the
   vector at `$0314` shows whether the KERNAL IRQ path is in use.
 - **Zero page, `$0200-$07FF` and the BASIC area describe BASIC and KERNAL usage.**
-  Read them as a strong hint and confirm against the program's own behaviour
+  Read them as a strong hint and check against the program's own behaviour
   before adopting the name. A game that banks ROM out keeps its own variables
   there. A real case: at `$08E6` a game's `LDA $49` gets labelled `FORPNT`
   ("value of current variable during LET"), when `$49` is really one of that
-  game's own variables. Take the address, verify the meaning.
+  game's own variables. Take the address, check the meaning.
 - **A region-only answer is not an error.** An address that no source names
   specifically prints only the wider regions enclosing it — no error, no
   not-found line. `node $D lookup '$1234'` prints:
@@ -154,7 +154,7 @@ Weigh a comment by the region it describes:
   table that loses coverage, not for anything the current one omits.
 
 For a game, the fastest route to a real name is to annotate with `--max-span 2`,
-trust the I/O lines immediately, and confirm the rest by watching what the code
+trust the I/O lines immediately, and check the rest by watching what the code
 does with them.
 
 ## Where the data comes from
@@ -174,12 +174,12 @@ only Node. Rebuild when a source publishes a correction. `lookup`'s `<src>` tags
 show which table any given claim came from.
 
 `memmap` overwrites the committed, git-tracked `memmap.json` (driver.mjs:270 —
-235,925 bytes as of 2026-08-04, confirm with `wc -c`) **in place, with no backup
-and no diff.** One of the four sources (`http://unusedino.de/…`, driver.mjs:33)
-is fetched over plain HTTP with no TLS, and the only guard against a bad rebuild
+235,925 bytes as of 2026-08-04, check with `wc -c`) **in place, with no backup
+and no diff.** `memmap` gets one of the four sources (`http://unusedino.de/…`,
+driver.mjs:33) over plain HTTP with no TLS. The only guard against a bad rebuild
 is a per-source emptiness check plus a 600-entry floor across all sources
-combined (driver.mjs:262, 268) — so a partially-reachable or partially-changed
-source set can silently replace good tracked data with less of it. Rebuild, then
+combined (driver.mjs:262, 268). A partially-reachable or partially-changed source
+set can therefore silently replace good tracked data with less of it. Rebuild, then
 run `git diff --stat` on `memmap.json` before accepting the result, and
 `git checkout` the file if the diff is not explainable as the correction you
 were expecting. **`memmap` mutates tracked files** — unlike `lookup` and
@@ -200,7 +200,7 @@ if `memmap.json` changed without a re-run.
 `$D017`, `$D01A` and `$D01B`–`$D01D` — the sprite-plane bitmask registers a real game writes
 constantly — are **not** among those 29, so the enum generator supplies them from its own curated
 override table (`OVERRIDES` in `anno-regbits-gen.ts`), not from this file. Widening `memmap.json`'s
-`io` parser (or repairing the OCR damage already present in some `bits` prose, e.g. a letter `O` for
+`io` parser (or correcting the OCR damage already present in some `bits` prose, e.g. a letter `O` for
 the digit `0`) so those registers get a real structured entry here is separate work belonging to this
 skill, not the generator.
 
@@ -283,7 +283,7 @@ them. Each pass makes the next one cheaper.
 
 1. **Provably-reachable code** — read from the entry point of each region that
    meets the proof bar above with `anno_disassemble`, then type the range you
-   actually verified as `code` with `anno_set_data_type`. **Reading and typing
+   actually checked as `code` with `anno_set_data_type`. **Reading and typing
    are two calls on this surface, and that is deliberate:** `anno_disassemble`
    decodes fresh from the image bytes and writes nothing at all, so nothing is
    ever classified as code by a decoder's guess — the boundary you record is
@@ -325,7 +325,7 @@ them. Each pass makes the next one cheaper.
 #### Applying the classification
 
 - **Code**: `anno_disassemble` from the entry-point address to READ, then
-  `anno_set_data_type` with `"code"` to RECORD the range you verified.
+  `anno_set_data_type` with `"code"` to RECORD the range you checked.
   `anno_disassemble` performs no write, so nothing is classified until you say
   so. Type only as far as you actually followed the flow — the end of a routine
   at its `RTS`/`RTI`/`JMP`, not "to the end of the region" — because the typed
@@ -349,7 +349,7 @@ them. Each pass makes the next one cheaper.
   ones a human recorded.
 - A split layout REFUSES an odd byte count — the low half and the high half must
   be the same length.
-- Re-read `anno_get_blocks` after each batch to confirm what actually landed.
+- Re-read `anno_get_blocks` after each batch to check what actually landed.
   `max_results` is REQUIRED on that read and has no default. The true match
   count is returned beside the list.
 
@@ -368,7 +368,7 @@ then: anno_get_blocks max_results=500        # refresh
 
 | Block type | `data_type` | When |
 |---|---|---|
-| **Code** | `code` | Provably-executed instructions. Read the extent with `anno_disassemble` first — it writes nothing — then record exactly what you verified. |
+| **Code** | `code` | Provably-executed instructions. Read the extent with `anno_disassemble` first — it writes nothing — then record exactly what you checked. |
 | Byte | `byte` | Raw 8-bit data: sprites, bitmaps, charsets, lookup tables, variables, unknowns |
 | Word | `word` | 16-bit little-endian values: 16-bit variables, math constants, SID frequencies |
 | Address | `address` | 16-bit LE pointers — jump tables, vector lists. Creates cross-references |
@@ -619,7 +619,7 @@ still readable even though the store cannot format it.
 
 ## Troubleshooting
 
-| Symptom | Fix |
+| Symptom | Correction |
 |---|---|
 | Comments land on regions too wide to be useful | `--max-span 2`. The default is 4096 bytes. |
 | A `JSR` or branch target got no comment at all | Flow instructions are capped at 2 bytes regardless of `--max-span`. `lookup` the target directly for the ROM routine name. |
