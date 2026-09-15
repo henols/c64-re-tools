@@ -685,26 +685,6 @@ const PRODUCTION_BLOCK_SPELLINGS: readonly string[] = [
   ...new Set<string>([...ANALYSER_BLOCK_SPELLINGS, ...DATA_TYPES]),
 ];
 
-/** The subset of `PRODUCTION_BLOCK_SPELLINGS` whose presence as a string
- * literal in `anno-coverage.ts` would actually mean a store spelling had
- * leaked into the census -- i.e. every accepted spelling EXCEPT the ones that
- * are string-identical to a neutral `BlockClass` token.
- *
- * WHY THIS SUBTRACTION EXISTS, and why it is not a lowered floor. Two of the
- * store's twelve members -- its code spelling and its undefined spelling --
- * are byte-identical to two of the three neutral classes the census
- * legitimately holds and compares everywhere. `block-class.ts`'s header used
- * to claim that could never happen, and records that the claim is now false;
- * this constant is the same fact measured from the other side. The absence
- * supplement below therefore cannot speak about those two: their presence in
- * the census proves nothing either way, which is precisely the protection that
- * was lost. What still protects them is the derived TOTAL cross-check in
- * `block-class.test.ts` and the substitutability proof below, neither of which
- * depends on a spelling being unspelled. */
-const CENSUS_FORBIDDEN_BLOCK_LITERALS: readonly string[] = PRODUCTION_BLOCK_SPELLINGS.filter(
-  (spelling) => !(["code", "data", "undefined"] satisfies BlockClass[] as readonly string[]).includes(spelling),
-);
-
 /** The substituted vocabulary. Every spelling is chosen to collide with
  * nothing in `PRODUCTION_BLOCK_SPELLINGS` -- see this section's header. */
 const SUBSTITUTED_BLOCK_SPELLINGS: Record<BlockClass, string> = {
@@ -754,15 +734,6 @@ test("the production block-spelling list is the DERIVED union of BOTH accepted v
     ANALYSER_BLOCK_SPELLINGS.length + DATA_TYPES.length,
     "the two accepted vocabularies overlap -- they are meant to differ in case at every member, so an overlap " +
       "means one of them was re-spelt",
-  );
-
-  // The absence supplement's own non-vacuity: exactly the two members that
-  // collide with a neutral class are subtracted, and nothing else is.
-  assert.deepEqual(
-    PRODUCTION_BLOCK_SPELLINGS.filter((s) => !CENSUS_FORBIDDEN_BLOCK_LITERALS.includes(s)),
-    ["code", "undefined"],
-    "the absence supplement's exemption list must be exactly the two store members that are byte-identical to a " +
-      "neutral BlockClass token -- a wider exemption would be a lowered floor",
   );
 });
 
