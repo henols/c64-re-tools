@@ -1,7 +1,7 @@
 # SID and CIA: music, effects, the RNG, input, timing
 
 Graded 2026-08-01, **MEDIUM**, doc-derived, except where marked. Per-register bit detail lives in
-`c64-memory-mapping`; this file carries the idioms and the order.
+`c64-memory-mapping`. This file carries the idioms and the order.
 
 ## SID — separating the player from the game logic
 
@@ -36,8 +36,8 @@ Confusing them is a frequent early error.
 
 | | CIA#1 `$DC00` — keyboard, joysticks, **IRQ** | CIA#2 `$DD00` — VIC bank, serial, user port, **NMI** |
 |---|---|---|
-| Port A | `$DC00` keyboard **column** select; joystick port 2 | `$DD00` VIC bank (bits 0-1, inverted); serial ATN/CLK/DATA |
-| Port B | `$DC01` keyboard **row** read; joystick port 1 | `$DD01` user port / RS-232 |
+| Port A | `$DC00` keyboard **column** select. Joystick port 2 | `$DD00` VIC bank (bits 0-1, inverted). Serial ATN/CLK/DATA |
+| Port B | `$DC01` keyboard **row** read. Joystick port 1 | `$DD01` user port / RS-232 |
 | Timers | `$DC04-$DC07`, control at `$DC0E`/`$DC0F` | `$DD04-$DD07`, `$DD0E`/`$DD0F` — these drive **NMI** |
 | Interrupt | `$DC0D` | `$DD0D`, same bit layout |
 
@@ -52,7 +52,7 @@ One that programs `$DC04-$DC07` and enables timer A runs its own timebase.
   writing `$DD00` is usually talking to the drive.
 - **`$DC0D`/`$DD0D` clear the interrupt flags on read**, the same shape as `$D01E`/`$D01F`. Reading
   one steals an interrupt the game was about to service. Prefer `vice_cia_get_state`. The VICE
-  monitor's exact behaviour here is **unverified** — verify, don't assume. On stock,
+  monitor's exact behaviour here is **unverified** — check, don't assume. On stock,
   `vice_cia_get_state` reports the **read** side of `$xx0D` as `interruptStatus` and marks the
   write-side enable mask `unavailable` — the two share one address with different meanings, so a
   reader looking for "which interrupts are enabled" is not silently handed the flags that have
@@ -62,13 +62,13 @@ One that programs `$DC04-$DC07` and enables timer A runs its own timebase.
   afternoon.** Games and cracks bypass the KERNAL keyboard buffer and read the matrix directly.
   Assume it until shown otherwise. **`vice_keyboard_matrix` is permanently unavailable** — the
   binary monitor's `KEYBOARD_FEED` only injects PETSCII buffer text and cannot drive the raw
-  matrix; see `docs/stock-hard-losses.md`. Use `vice_keyboard_type` / `vice_keyboard_petscii` when
-  the gate reads the KERNAL buffer, or `vice_joystick_set` when it polls the matrix directly;
-  buffer injection stays invisible to a program polling `$DC00`/`$DC01` itself.
+  matrix. See `docs/stock-hard-losses.md`. Use `vice_keyboard_type` / `vice_keyboard_petscii` when
+  the gate reads the KERNAL buffer, or `vice_joystick_set` when it polls the matrix directly.
+  Buffer injection stays invisible to a program polling `$DC00`/`$DC01` itself.
 
 ## Finding input handling from the observable side
 
 Watch reads of `$DC00`/`$DC01` to find the input routine, then trace forward to what it stores.
 The joystick bits are active-low: bit 4 is fire, bits 0-3 up/down/left/right. A routine that reads
-`$DC01`, masks one bit and branches is the input decoder; the variable it writes is the one to
+`$DC01`, masks one bit and branches is the input decoder. The variable it writes is the one to
 name first.

@@ -1,7 +1,7 @@
 # Which `mcp__plugin_c64-re-tools_vice__*` call answers which question
 
 **This is not a restatement of the tool surface.** You already hold typed schemas for every
-call; read parameters off those. What the schemas cannot tell you is *which call to reach for
+call. Read parameters off those. What the schemas cannot tell you is *which call to reach for
 first*, and that ordering is the whole value here.
 
 Curated 2026-08-01, doc-derived, **Confidence: MEDIUM** — the mapping is reasoned from the tool surface and this project's own
@@ -9,7 +9,7 @@ usage, not measured). Individual rows that have since been exercised live are ma
 
 | Question | Call |
 |---|---|
-| Vectors, `$01`, `$D011`/`$D012`/`$D018`/`$D019`/`$D01A`, `$DC0D`/`$DD0D`, `$DD00` | `vice_memory_read` — highest-value first move; answers most vector questions in one or two calls |
+| Vectors, `$01`, `$D011`/`$D012`/`$D018`/`$D019`/`$D01A`, `$DC0D`/`$DD0D`, `$DD00` | `vice_memory_read` — highest-value first move. Answers most vector questions in one or two calls |
 | What does the handler at this vector do? | `vice_disassemble` — the emulator's own decoder, not a dead listing |
 | Is this really the main loop? | `vice_checkpoint_add` + `vice_run_until` + `vice_registers_get` — fires once per frame ⇒ proven |
 | What code writes this? | `vice_watch_add` — finds **writers**. Best targets: `$D018`, VM+`$03F8`, `$D404` |
@@ -17,33 +17,33 @@ usage, not measured). Individual rows that have since been exercised live are ma
 | Whole-chip SID state without the read hazards | `vice_sid_get_state` — **permanently unavailable**: SID `$D400-$D418` is write-only in hardware and the binary monitor has no SID command, so read-back cannot be recovered. Writes to those addresses still work fine over the memory-set primitive. See `docs/stock-hard-losses.md` |
 | Decode sprite data | `vice_sprite_get` / `vice_sprite_inspect` |
 | Find a known byte pattern | `vice_memory_search` |
-| Carry labels across sessions | `vice_symbols_load` / `vice_symbols_lookup` — ACME `--vicelabels` emits the format they consume. The annotation store's own export into that format is **withdrawn as of 2026-08-29, and no phase currently owns its return** — an earlier forecast naming a numbered phase for it is superseded |
+| Carry labels across sessions | `vice_symbols_load` / `vice_symbols_lookup` — ACME `--vicelabels` emits the format they consume. The annotation store's own export into that format is **withdrawn as of 2026-08-29, and no phase currently owns its return**. An earlier forecast named a numbered phase for it, and that forecast is superseded now |
 | Is the machine wedged, or did it stop itself? | `vice_diagnose` — five-state verdict with its evidence (one state is `monitor_held_elsewhere`, because this monitor serves exactly one client at a time). **Reachable and proxy-intercepted as of 2026-08-04** (verified live). Triage tree: `vice-wedge-triage` |
 | Replace a wedged instance | `vice_recycle` — destructive, requires a `reason`, and that reason is written into `.c64-re-tools/incidents/` **before** anything is killed. The reason *is* the evidence record |
-| Read the restart epoch | **No tool does.** The proxy compares it around every forwarded call and raises drift itself; a value comes from that error or from `vice_diagnose` |
+| Read the restart epoch | **No tool does.** The proxy compares it around every forwarded call and raises drift itself. A value comes from that error or from `vice_diagnose` |
 
 ## Delegate rather than restate
 
 | Question | Go to |
 |---|---|
 | What does address X mean? | the `c64-memory-mapping` skill — `node … lookup '$D018'`. **Do not restate its tables.** |
-| Is this byte original or cracker-changed? | the `c64-provenance-diff` skill |
+| Is this byte original or cracker-patched? | the `c64-provenance-diff` skill |
 | A verified 64K image, or comparing two captures | the `c64-ram-capture` skill |
-| Whole-program static disassembly with code/data separation | **`anno export-asm`** — withdrawn 2026-08-29, returned 2026-08-31, settled by assembling the output with a real ACME and diffing the bytes against the input. That oracle is test-only, so the verb itself writes source and runs no assembler. For a single routine, read one explicit range at a time with `anno_read_region` / `anno_disassemble` (4096-byte cap per call, refused rather than truncated above it) and record what you verified with `anno_set_data_type` |
+| Whole-program static disassembly with code/data separation | **`anno export-asm`** — withdrawn 2026-08-29, returned 2026-08-31. It settles correctness by assembling the output with a real ACME and diffing the bytes against the input. That oracle is test-only, so the verb itself writes source and runs no assembler. For a single routine, read one explicit range at a time with `anno_read_region` / `anno_disassemble` (4096-byte cap per call, refused rather than truncated above it). Record what you checked with `anno_set_data_type` |
 
 ## Runtime evidence versus the byte-derived guess
 
 | Question | Call |
 |---|---|
-| Where the store's byte-derived block table (`anno_set_data_type`'s own ranges) disagrees with what the emulator was actually observed executing | **`anno evid-disagreements`** (also `anno_evid_disagreements`) — joins the typed ranges against the runtime-observed rows an `anno_evid_ingest` call already wrote, reporting disagreements first, agreement as a count only, and a never-observed count that is explicitly NOT evidence the address holds data |
+| Where the store's byte-derived block table (`anno_set_data_type`'s own ranges) disagrees with what the emulator was actually observed executing | **`anno evid-disagreements`** (also `anno_evid_disagreements`) — joins the typed ranges against the runtime-observed rows an `anno_evid_ingest` call already wrote. It reports disagreements first, agreement as a count only, and a never-observed count. A never-observed count is explicitly NOT evidence the address holds data |
 | What evidence a store already holds, without re-running the program | `anno_evid_runs` — every run identity's observation count beside its denominator |
-| Reset one run identity's evidence for a fresh re-measurement | `anno_evid_reset` — clears only that run identity's rows; pair it with `vice_memmap_zap` on the emulator side |
+| Reset one run identity's evidence for a fresh re-measurement | `anno_evid_reset` — clears only that run identity's rows. Pair it with `vice_memmap_zap` on the emulator side |
 
 ## What blocks this program's code from being moved
 
 | Question | Call |
 |---|---|
-| Which constructions block relocating, rebasing or stripping part of this program | **`anno hazard-report`** (also `anno_hazard_report`) — enumerates movement-hazard findings derived from decoded bytes alone (for example, a store or read-modify-write instruction whose literal target lands on another instruction's opcode or operand byte, changing what runs or what value is read on a later pass). Each finding carries its own detection mechanism and a detection-strength token. Reports and changes NOTHING: it never relocates, strips or rebases anything, and it never emits a flag a caller could act on as an automatic relocation |
+| Which constructions block relocating, rebasing or stripping part of this program | **`anno hazard-report`** (also `anno_hazard_report`) — enumerates movement-hazard findings derived from decoded bytes alone. For example, a store or read-modify-write instruction may land its literal target on another instruction's opcode or operand byte. A later pass may then run different code or read a different value there. Each finding carries its own detection mechanism and a detection-strength token. It reports and touches NOTHING. It never relocates, strips or rebases anything, and it never emits a flag a caller could act on as an automatic relocation |
 
 **A region this report does not flag is undecided or unflagged, never certified safe to move.** Every checked
 region reports one of exactly three outcomes, and only one of them means a construction was actually found
@@ -58,9 +58,9 @@ moved.
 
 **`vice_run_until`'s `timeout_ms` bounds the wait.** `timeout_ms` (default 30000, ceiling 600000)
 bounds a run to an address the program never reaches, and a timed-out answer says the machine is
-left halted rather than looking like a wedged emulator; prefer `vice_checkpoint_add` + a bounded
+left stopped rather than looking like a wedged emulator. Prefer `vice_checkpoint_add` + a bounded
 poll when the address is a hypothesis rather than a certainty — see `vice-wedge-triage` for the
-full triage judgement and its live evidence; do not restate it here.
+full triage judgement and its live evidence. Do not restate it here.
 
 **`vice_diagnose` leaves the machine paused.** When it measures a cycle bracket it resumes the
 machine once or twice and then leaves it **paused** — resuming is your own next call. And a

@@ -1,7 +1,7 @@
 # Hazards: how observing a running C64 gives you the wrong answer
 
 The entries here are graded higher than the method files, because most were established live on
-this project at real cost. A wrong answer from a register table is cheap; a wrong answer from a
+this project at real cost. A wrong answer from a register table is cheap. A wrong answer from a
 machine that changed *because you looked at it* discredits a whole session without announcing
 itself.
 
@@ -78,18 +78,18 @@ Reading one while the game runs steals the event the game was about to service.
 
 Prefer the whole-chip reads — `vice_vicii_get_state`, `vice_cia_get_state`, `vice_sid_get_state`
 — over raw register reads. Whether the VICE monitor's own read path is side-effect-free is
-**unverified**: treat it as verify-don't-assume rather than taking it on faith.
+**unverified**: treat it as check-don't-assume rather than taking it on faith.
 
 `vice_vicii_get_state`/`vice_cia_get_state` reads are `sidefx: false` with
 no argument able to override it — **VERIFIED**, asserted on the wire body by a regression test.
 Whether the emulator's own `MEM_GET` read path actually honours that flag for
 `$D01E`/`$D01F`/`$DC0D`/`$DD0D` — i.e. whether it truly cannot clear them — is **ASSUMED**, with
-no probe recorded in this repo; treat it as unverified, not as a proven guarantee.
+no probe recorded in this repo. Treat it as unverified, not as a proven guarantee.
 `vice_sid_get_state` read-back is **permanently unavailable**: SID `$D400-$D418` is write-only
 in hardware and the binary monitor has no SID command, so there is no route to recover it.
 Writes to those addresses still work fine. See `docs/stock-hard-losses.md`. Also: an internal
 field the register map cannot expose is marked `{ available: false, reason }` in the answer, never
-a bare `0` — do not record a `0` from one of these fields as a measurement; check `available`
+a bare `0` — do not record a `0` from one of these fields as a measurement. Check `available`
 first. A chip-state or sprite answer also **names the memory view it read** (`bank`, or
 `registerBank`/`dataBank`), read through the emulator's own `io`/`ram` banks, so it stays valid
 even while the program has I/O banked out ($01 driving the RAM/ROM/I-O switch). An answer with
@@ -105,11 +105,11 @@ Games and cracks poll the `$DC00`/`$DC01` matrix directly, bypassing the KERNAL 
 gate by releasing it at the trigger checkpoint, never earlier.
 
 **`vice_keyboard_matrix` is permanently unavailable.** The binary monitor's `KEYBOARD_FEED` (0x72)
-only injects PETSCII text into the KERNAL keyboard buffer; the emulator recomputes CIA port B from
+only injects PETSCII text into the KERNAL keyboard buffer. The emulator recomputes CIA port B from
 its own keyboard array on every read, so there is no wire command that can drive the raw matrix —
 this is unrecoverable, not merely unbuilt. See `docs/stock-hard-losses.md`. Use
 `vice_keyboard_type` / `vice_keyboard_petscii` when the gate reads the KERNAL buffer, or
-`vice_joystick_set` when it polls the matrix directly instead; either way, buffer injection is
+`vice_joystick_set` when it polls the matrix directly instead. Either way, buffer injection is
 invisible to a program polling `$DC00`/`$DC01` itself, so a matrix-polling gate must be driven by
 the joystick or not at all.
 
@@ -140,4 +140,4 @@ real measured rate, so plan a live session to tolerate re-deriving a boot sequen
 Never-written RAM drifts continuously, so two captures of the same checkpoint will not match
 across all 64K. The recovery procedure is deterministic **for the program image**, not for 64K.
 `c64-ram-capture` § Compare two captures carries the volatility regions and the drift
-discriminator; use them rather than treating any difference as a divergence.
+discriminator. Use them rather than treating any difference as a divergence.

@@ -17,12 +17,12 @@ file deliberately does not restate them.
    (`%11` → bank 0 at `$0000`, `%00` → bank 3 at `$C000`). Every other pointer is relative to this
    base, so getting it wrong corrupts the whole chain **silently, with no error to signal it**.
    This is the most common source of a wrong answer in C64 graphics RE.
-2. **`$D018` — two pointers in one byte.** Bits 4-7 = VM (screen RAM = bank + VM × `$0400`);
-   bits 1-3 = CB (charset = bank + CB × `$0800`). In bitmap mode only bit 3 matters: which 8K half
+2. **`$D018` — two pointers in one byte.** Bits 4-7 = VM (screen RAM = bank + VM × `$0400`).
+   Bits 1-3 = CB (charset = bank + CB × `$0800`). In bitmap mode only bit 3 matters: which 8K half
    of the bank the bitmap occupies, and the video matrix then holds colour pairs rather than
    character codes.
 3. **The mode bits** — `$D011` bit 6 (ECM), `$D011` bit 5 (BMM), `$D016` bit 4 (MCM). These decide
-   what the bytes *mean*; decoding a multicolor sprite as hires produces garbage twice as wide as
+   what the bytes *mean*. Decoding a multicolor sprite as hires produces garbage twice as wide as
    it should be. ECM combined with BMM or MCM is invalid and blanks the screen — if you compute
    that, you probably caught the registers mid-update inside a raster split, so re-read.
 4. **`$D015` — the sprite enable mask. Start here, not at the sprite data.** A disabled sprite's
@@ -60,7 +60,7 @@ game runs steals the collision the game was about to act on — the worst class 
 because it discredits the capture without announcing itself. Prefer `vice_vicii_get_state`.
 
 Whether the VICE monitor's own read is side-effect-free is **unverified** — treat it as
-verify-don't-assume, not as a settled fact.
+check-don't-assume, not as a settled fact.
 
 Many games do software collision anyway: look for coordinate subtraction, comparisons against
 width and height, tile lookups, mask tables and bounding-box arithmetic before concluding the
@@ -69,10 +69,10 @@ hardware registers are what the game uses.
 ## Sprite decoding
 
 `vice_sprite_get` / `vice_sprite_inspect` do the pointer arithmetic and the multicolor bit-pair
-unpacking. Verify what they return once against a hand-resolved pointer — `derive.mjs sprites`
+unpacking. Check what they return once against a hand-resolved pointer — `derive.mjs sprites`
 gives you that hand resolution — then trust them.
 
-On stock, `vice_vicii_get_state`'s `$D018` pointers are reported **bank-relative**;
+On stock, `vice_vicii_get_state`'s `$D018` pointers come back **bank-relative**.
 `vice_sprite_get` resolves the absolute `screenBase` and per-sprite `dataAddress` for you.
 `vice_sprite_inspect`'s ASCII grid is the sprite's native 24x21 (hi-res) or 12x21 (multicolour)
 **data block** — it is **not** scaled by the `$D017`/`$D01D` expansion bits, so a sprite shown

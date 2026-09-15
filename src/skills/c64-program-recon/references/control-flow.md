@@ -1,7 +1,7 @@
 # Control flow: entry point → vectors → IRQ source → main loop → structure
 
-Graded 2026-08-01, **MEDIUM**, doc-derived, except where a line says otherwise. The vector-table step was confirmed against
-this project's own captures on 2026-08-04 — see the bottom of this file.
+Graded 2026-08-01, **MEDIUM**, doc-derived, except where a line says otherwise. This project
+checked the vector-table step against its own captures on 2026-08-04 — see the bottom of this file.
 
 ## 1. Entry point — three routes, and post-depack is a different question
 
@@ -17,8 +17,8 @@ SP settle into a repeating range across three consecutive batches.
 
 ## 2. Vectors — sweep every block, and `$01` decides which are live
 
-Six pairs is not "all vectors". `node derive.mjs vectors <image.bin>` sweeps all six blocks below;
-it prints the IRQ/BRK/NMI and hardware blocks by default and takes `--all` for the rest.
+Six pairs is not "all vectors". `node derive.mjs vectors <image.bin>` sweeps all six blocks below.
+It prints the IRQ/BRK/NMI and hardware blocks by default and takes `--all` for the rest.
 
 | Block | Range | Why it matters |
 |---|---|---|
@@ -38,7 +38,7 @@ loaders that bypass the KERNAL, so a diverted `$0330` is a provenance signal, an
 `$0328` is anti-tamper. Neither was being looked for before 2026-08-04.
 
 The second tell is the handler's own first instruction: the KERNAL's register-save preamble means
-the KERNAL path is in use; a jump straight into game code means it is not.
+the KERNAL path is in use. A jump straight into game code means it is not.
 
 ### A non-default value in a dormant block is not a hook
 
@@ -73,7 +73,7 @@ Run over all six committed captures of one title (two releases, runs 1-3 each):
 
 | Vector | release-a | release-b | Reading |
 |---|---|---|---|
-| `$FFFE/$FFFF` IRQ | `$1103` | `$1103` | Known; matches the live-established handler chain |
+| `$FFFE/$FFFF` IRQ | `$1103` | `$1103` | Known. Matches the live-established handler chain |
 | `$FFFA/$FFFB` NMI | `$1116` | `$1116` | **New.** The game installs its own NMI handler under KERNAL ROM |
 | `$FFFC/$FFFD` RESET | `$1116` | `$1116` | **New.** RESET funnels to the *same* address as NMI |
 | `$0328/$0329` ISTOP | `$F6FC` | `$F6ED` (stock) | **New, and a divergence.** Residue — the block is dormant |
@@ -84,13 +84,13 @@ ways a user perturbs a running game, and both land in the same place. `$1116` is
 address to checkpoint when the emulator is next available. Testing the RESTORE half of that
 experiment is not currently possible: **`vice_keyboard_restore` is permanently unavailable.** The
 RESTORE key pulses the NMI line directly and is not part of the keyboard matrix, so `KEYBOARD_FEED`
-(which only injects PETSCII text into the buffer) cannot produce it; calling the tool returns an
+(which only injects PETSCII text into the buffer) cannot produce it. Calling the tool returns an
 error naming the reason, rather than pulsing RESTORE. No client-side substitute exists — see
 `docs/stock-hard-losses.md`. The reset half of the experiment remains testable: arm the checkpoint,
 call `vice_machine_reset` soft and hard, and record where the PC actually lands.
 
-**Evidence:** derived mechanically from six three-run-verified captures; every value identical
-across all three runs of its release, so none of it is drift.
+**Evidence:** derived mechanically from six three-run-verified captures. Every value stays
+identical across all three runs of its release, so none of it is drift.
 **Confidence:** HIGH for the values and for the cross-release divergence. The *interpretation* of
 `$1116` as anti-tamper is **LOW** — unexercised, and the perturbation experiment above is exactly
 what would settle it.
@@ -155,12 +155,12 @@ JumpVector:
 
 Finding the state variable gives a high-level map of the whole program. A practical route: pause
 at a title screen and again in gameplay, diff the two captures, and look for a single byte that
-changed in zero page or low RAM. `vice_memory_compare` narrows this; `c64-ram-capture` § Compare
+differs in zero page or low RAM. `vice_memory_compare` narrows this. `c64-ram-capture` § Compare
 two captures gives the volatility rules that stop you chasing drift.
 
-Only `mode: 'ranges'` is served — capture the two states at different points in time and
-compare two live ranges. `mode: 'snapshot'` is refused with an explanatory message; there is no
-memory-only snapshot producer at all.
+`vice_memory_compare` serves only `mode: 'ranges'`, which captures the two states at different
+points in time and compares two live ranges. It refuses `mode: 'snapshot'` with an explanatory
+message. There is no memory-only snapshot producer at all.
 
 ## Verified against this project — 2026-08-04
 

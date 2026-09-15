@@ -4,8 +4,8 @@ Do not wait until everything is understood. Stand up a buildable tree early, inc
 unidentified bulk as binary, and replace regions with real source as they are confirmed. The tree
 stays assemblable at every commit, so a regression has a small blast radius.
 
-`acme-build` covers assembling; this file covers the shape of the source and what makes a
-reconstruction correct.
+`acme-build` covers assembling. This file covers the shape of the source and what makes a
+reconstruction right.
 
 ## Start with binary inclusion
 
@@ -43,9 +43,9 @@ at a checkpoint is not verified** — the constraint's own conclusion, and the r
 design is part of the reconstruction work rather than something to bolt on afterwards.
 
 **That bar is what buys you the freedom to rename routines, reorganise files, replace constants
-with symbols and add macros**. **But** reorganising changes addresses, which breaks self-modifying code and
+with symbols and add macros**. **But** reorganising shifts addresses, which breaks self-modifying code and
 timing-sensitive raster routines. Replay through the checkpoint set after EACH reorganisation, not
-at the end of several: one changed address per failing replay is a short diagnosis, ten is a
+at the end of several: one shifted address per failing replay is a short diagnosis, ten is a
 bisect.
 
 A full 64K RAM capture is not a comparison surface: never-written RAM drifts continuously, so
@@ -91,7 +91,7 @@ Provisional names that carry their own uncertainty beat confident names that tur
 | `Unknown_` | no reliable interpretation yet |
 
 `Routine_43A2` → `Maybe_UpdatePlayer` → `UpdatePlayerPosition`, promoted only when behaviour is
-confirmed. Avoid `AmazingCollisionRoutine`-style names entirely; they encode a guess as a fact.
+confirmed. Avoid `AmazingCollisionRoutine`-style names entirely. They encode a guess as a fact.
 
 Record the confidence next to the thing, in the same grammar the project uses everywhere else:
 
@@ -123,7 +123,7 @@ stream across full gameplay coverage is data, whatever the tracer guessed.
 
 ACME's `--vicelabels` output is the `al C:xxxx .Name` format `vice_symbols_load` /
 `vice_symbols_lookup` consume, so labels flow source → build → debugger without translation.
-`acme-build` emits the `.vs` file on every build; load it after each one and your checkpoints carry
+`acme-build` emits the `.vs` file on every build. Load it after each one and your checkpoints carry
 real names.
 
 **The other direction — exporting the annotation store into that same format — is withdrawn as of
