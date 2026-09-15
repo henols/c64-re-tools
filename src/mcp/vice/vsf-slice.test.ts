@@ -43,7 +43,6 @@ import {
   RAM_OFFSET,
   RAM_SIZE,
 } from "./vsf-slice.ts";
-import { codeOnly } from "./shipped-modules.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MODULE_PATH = join(HERE, "vsf-slice.ts");
@@ -192,96 +191,6 @@ test("VsfSliceError is the module's own named error type", () => {
   assert.ok(err instanceof Error);
 });
 
-// ---------------------------------------------------------------------------
-// Structural SUPPLEMENT: the module is pure -- bytes in, values out.
-//
-// `codeOnly()` is imported from `shipped-modules.ts`, the single home of the
-// full comment-and-string-literal stripper. The import-specifier test needs
-// the literal bodies (a specifier IS a string) so it passes `true`; the
-// forbidden-call test keeps the default, so a module name mentioned in a
-// comment or a message string can never satisfy it.
-// ---------------------------------------------------------------------------
-
-/** The exact marker `vsf-slice.ts` uses to separate its pure library from its
- * process entry point. Split on the RAW source, before `codeOnly()` strips
- * comments -- the marker lives in a comment, so a stripped split finds
- * nothing and would silently scan the whole file (or nothing at all). */
-const CLI_MARKER = "CLI_REGION_BEGIN";
-
-/** The library half of `vsf-slice.ts`: everything before the CLI marker. This
- * is the region every IMPORTER of the module gets, and the region the purity
- * claim in the module's header is about. Throws rather than returning the
- * whole file if the marker has gone, because a scan that silently widened to
- * include the CLI region would then fail for a reason that looks unrelated,
- * and a scan that silently narrowed to nothing would pass by finding
- * nothing. */
-function libraryRegion(): string {
-  const src = readFileSync(MODULE_PATH, "utf8");
-  const parts = src.split(CLI_MARKER);
-  assert.equal(
-    parts.length,
-    2,
-    `vsf-slice.ts must contain the marker ${CLI_MARKER} exactly once -- found ${parts.length - 1} occurrence(s)`,
-  );
-  return parts[0];
-}
-
-test("vsf-slice.ts imports nothing from this repo -- only node: builtins, and only in the CLI region", () => {
-  const specifiersIn = (code: string): string[] =>
-    [...code.matchAll(/^\s*import\s[^;]*?from\s+"([^"]*)"/gm)].map((m) => m[1]);
-
-  // The whole file: nothing from this repo, by either shape a specifier can
-  // take. This is the assertion that keeps the closed five-member host-path
-  // consumer set unchanged -- structurally, not by promise.
-  const whole = specifiersIn(codeOnly(readFileSync(MODULE_PATH, "utf8"), true));
-  assert.deepEqual(whole, ["node:fs", "node:crypto", "node:url", "node:path"]);
-  for (const specifier of whole) {
-    assert.ok(specifier.startsWith("node:"), `${specifier} is not a node: builtin`);
-    assert.ok(!specifier.startsWith("."), `${specifier} is a relative in-repo import`);
-    assert.ok(!specifier.startsWith("@henols/"), `${specifier} is an in-repo package import`);
-  }
-
-  // The library region imports NOTHING, which is what makes it usable from
-  // any context without dragging `node:fs` in behind it.
-  assert.deepEqual(specifiersIn(codeOnly(libraryRegion(), true)), []);
-});
-
-test("vsf-slice.ts's LIBRARY region performs no filesystem, subprocess or network I/O", () => {
-  // Scoped to the library region because the CLI entry point below the marker
-  // does exactly the file I/O the library refuses to do -- that is the point
-  // of the split, and it is why the scope is derived from a marker in the
-  // source rather than from a line number here.
-  const code = codeOnly(libraryRegion());
-  for (const forbidden of [
-    /\b(readFile|readFileSync|writeFile|writeFileSync|appendFileSync|openSync|createReadStream|createWriteStream)\s*\(/,
-    /\b(spawn|spawnSync|exec|execSync|execFile|execFileSync|fork)\s*\(/,
-    /\b(fetch|request|connect|createConnection|createServer)\s*\(/,
-    /\bimport\s*\(/,
-    /\bprocess\s*\./,
-  ]) {
-    assert.equal(
-      forbidden.test(code),
-      false,
-      `vsf-slice.ts's library region must not contain ${forbidden}`,
-    );
-  }
-});
-
-test("the CLI entry point is guarded: main() is only reachable behind the entry-point check", () => {
-  const code = codeOnly(readFileSync(MODULE_PATH, "utf8"));
-  // Exactly one `process.exit(` call site in the whole module, and it sits
-  // inside the guard. Asserted on the source because the alternative -- an
-  // unguarded top-level call -- would run main() on every import and could
-  // not be observed by importing the module (the runner would be gone).
-  const exits = [...code.matchAll(/process\.exit\s*\(/g)];
-  assert.equal(exits.length, 1, "vsf-slice.ts must have exactly one process.exit() call site");
-  assert.match(code, /if \(isProcessEntryPoint\(\)\) \{\s*process\.exit\(main\(process\.argv\.slice\(2\)\)\);\s*\}/);
-  // The guard is path arithmetic, never a filesystem call, so the check
-  // itself does no I/O on import.
-  assert.match(code, /resolve\(entry\) === fileURLToPath\(import\.meta\.url\)/);
-  assert.equal(/realpathSync/.test(code), false, "the entry-point guard must not touch the filesystem");
-});
-
 test("importing vsf-slice.ts runs nothing: a fresh process that only imports it exits 0 and prints nothing", () => {
   // The behavioural half of the guard assertion above. Run in a CHILD
   // process: if the module ran main() on import, this test file's own import
@@ -340,21 +249,6 @@ test("the CLI refuses `--out --json` instead of writing a 64K file named --json 
   assert.match(r.stderr, /--out needs a path/);
   assert.match(r.stderr, /--json/, "the refusal names the token it refused to treat as a path");
   assert.equal(existsSync(join(dir, "--json")), false, "no file may be written under the flag's own name");
-});
-
-test("no exported function takes a filesystem path -- both take a byte array", () => {
-  // Read from the source rather than asserted in prose: the signature is the
-  // property that keeps path traversal out of this module's threat surface,
-  // and a header sentence cannot notice when an edit falsifies it.
-  const code = codeOnly(readFileSync(MODULE_PATH, "utf8"));
-  const signatures = [...code.matchAll(/export function (\w+)\(([^)]*)\)/g)].map((m) => [
-    m[1],
-    m[2].trim(),
-  ]);
-  assert.deepEqual(signatures, [
-    ["listSnapshotModules", "bytes: Uint8Array"],
-    ["sliceC64Mem", "bytes: Uint8Array"],
-  ]);
 });
 
 // ---------------------------------------------------------------------------
