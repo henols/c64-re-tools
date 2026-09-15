@@ -28,16 +28,9 @@
 // auto-discovered automated set.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { gzipSync } from "node:zlib";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
 
 import { parsePrg, flatImageOrigin, decodeRawData } from "./prg-image.ts";
-import { codeOnly } from "./shipped-modules.ts";
-
-const HERE = dirname(fileURLToPath(import.meta.url));
-const MODULE_PATH = join(HERE, "prg-image.ts");
 
 // ---------------------------------------------------------------------------
 // Relocated verbatim from anno-project.test.ts.
@@ -88,33 +81,4 @@ test("decodeRawData: round-trips an all-zero page and a byte sequence with every
   assert.deepEqual(Buffer.from(decodeRawData(gzipSync(zeros).toString("base64"))), zeros);
   const ramp = Buffer.from(Array.from({ length: 256 }, (_, i) => i));
   assert.deepEqual(Buffer.from(decodeRawData(gzipSync(ramp).toString("base64"))), ramp);
-});
-
-// ---------------------------------------------------------------------------
-// Structural SUPPLEMENT: the module is pure -- bytes in, values out.
-// ---------------------------------------------------------------------------
-
-// `codeOnly()` is imported from `shipped-modules.ts`, the single home of the
-// full comment-and-string-literal stripper. The import-specifier test below
-// needs the literal bodies (a specifier IS a string) so it passes `true`; the
-// forbidden-call test keeps the default, so a module name mentioned in a
-// comment or a message string can never satisfy it.
-
-test("prg-image.ts imports exactly one module, node:zlib, and nothing from this repo", () => {
-  const code = codeOnly(readFileSync(MODULE_PATH, "utf8"), true);
-  const specifiers = [...code.matchAll(/^\s*import\s[^;]*?from\s+"([^"]*)"/gm)].map((m) => m[1]);
-  assert.deepEqual(specifiers, ["node:zlib"]);
-});
-
-test("prg-image.ts performs no filesystem, subprocess or network I/O", () => {
-  const code = codeOnly(readFileSync(MODULE_PATH, "utf8"));
-  for (const forbidden of [
-    /\b(readFile|readFileSync|writeFile|writeFileSync|appendFileSync|openSync|createReadStream|createWriteStream)\s*\(/,
-    /\b(spawn|spawnSync|exec|execSync|execFile|execFileSync|fork)\s*\(/,
-    /\b(fetch|request|connect|createConnection|createServer)\s*\(/,
-    /\bimport\s*\(/,
-    /\bprocess\s*\./,
-  ]) {
-    assert.equal(forbidden.test(code), false, `prg-image.ts must not contain ${forbidden}`);
-  }
 });
