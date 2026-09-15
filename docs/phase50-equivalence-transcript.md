@@ -16,6 +16,14 @@ subjects:
     prg_sha256: fd6484f1101ef0773c0137d479e6b630c247169445ddb01b149072bd8df21427
     captures:
       regressed: d18830159c1c385901c7c97280fc91adb1dbfad167ee44ce0186bd0c663b2b97
+  # Added 2026-09-15 by plan 50-06's green comparison. This one is not a
+  # committed fixture: it is the rebuild produced from hazard-subject's own
+  # committed annotation store (evidence/REBUILD.md), living under the phase
+  # evidence directory.
+  hazard-subject-rebuild:
+    prg_sha256: 89846d489f83f4d9fd092f214343c5566433655b836d20625e7123682b8c6828
+    captures:
+      rebuild: 0e3f47d64732a67b0a01a6d59aed8de4f62fe19b0edfdc00f7543ddd7e2dc2f5
 ---
 
 # Phase 50: Equivalence Transcript
@@ -748,6 +756,294 @@ Recorded plainly, without overclaiming:
   launched without those flags, uninitialised RAM could reasonably add
   differences that have nothing to do with a planted regression.
 
+## Green: the rebuild behaves like the original
+
+The red control above established that this instrument is not blind. This
+section is the run it was the control *for*: the committed subject against a
+**rebuild produced from the committed annotation store**, at the same logical
+checkpoint, under the same mask, with the same command shape and no allowlist.
+
+The rebuild's provenance is recorded separately, in
+`.planning/phases/50-equivalence-and-modifiability/evidence/REBUILD.md`: the
+committed store document was imported into a fresh throwaway store through
+`importStoreDocument()`, exported with `exportAsmTree()`, and assembled through
+`verifyAcmeAssemblesTree()` — `acme-verify.ts`'s one real-assembler entry
+point, which is also its byte-diff oracle. It returned `outcome: "ok"`.
+Nothing was copied.
+
+### 1. The checkpoint, re-resolved for THIS binary
+
+The address was not carried over from any section above. The rebuild's own
+exported tree was assembled with a symbol list, and the freshly assembled
+output is byte-identical to the `.prg` that was actually loaded:
+
+The timestamp below is derived from the two output files' own mtimes
+(`stat -c %y` on `rb.prg` and `rb.sym`, both `2026-09-15 21:49:35 +0200`),
+because the shell that ran the assembler printed none. It is recorded that way
+rather than rounded to a plausible value.
+
+```
+[2026-09-15T19:49:35Z] $ cd <the rebuild's exported tree>
+$ acme --cpu 6510 -f cbm -o $SCRATCH/rb.prg --symbollist $SCRATCH/rb.sym root.a
+(exit 0)
+
+$ grep -E 'hazard_raster_entry|^[[:space:]]*entry[[:space:]]' $SCRATCH/rb.sym
+	entry	= $80d	; unused
+	hazard_raster_entry	= $108f
+
+$ sha256sum $SCRATCH/rb.prg .../evidence/hazard-subject-rebuild.prg
+89846d489f83f4d9fd092f214343c5566433655b836d20625e7123682b8c6828  …/rb.prg
+89846d489f83f4d9fd092f214343c5566433655b836d20625e7123682b8c6828  …/hazard-subject-rebuild.prg
+```
+
+So `hazard_raster_entry` = **`$108F`** (4239) and `entry` = **`$080D`** (2061)
+**in this binary**, read from this binary's own symbol list.
+
+That same run carries one extra confirmation worth recording. `REBUILD.md`
+states that the rebuild `.prg`'s two-byte load-address header was *derived*
+(from the export's own lowest block start) rather than copied, because the
+oracle assembles with `-f plain` and emits no header. This `-f cbm` run emits
+the header ACME itself would write, and its output is byte-identical to the
+`.prg` with the derived header — so the derivation is confirmed against the
+assembler rather than merely reasoned about.
+
+### 2. What changed about the procedure, and what did not
+
+**Which subject is loaded, and nothing else.** The rebuild `.prg` is a build
+artifact under the phase evidence directory rather than a committed fixture, so
+plan 50-05's closed `id → basename` table — which joined one fixed fixture
+directory onto every row — could not spell its path. The rows now carry the
+whole repo-relative path as reviewed segments
+(`HAZARD_SUBJECT_PRG_RELPATHS`), and the basename table is derived from them.
+
+What did not change is exactly what plan 50-05's own note said must not: every
+loadable path is still a reviewed literal chosen by `text-protocol.ts`; a
+caller supplies no path, basename, directory or fragment of one; the `subject`
+id is still exact-membership-checked and used only as a lookup key, never
+concatenated into a command and never on the socket; `TextCommandParamKind` is
+still `count | address`, so both no-string-kind tests pass **unmodified**; the
+write-direction `save` refusal test passes **unmodified**; and
+`hazard-subject-misaligned.prg`, a committed fixture in the same directory as
+three of the four rows, is still **not dialable**, so the boundary is the
+reviewed table rather than a directory. New assertions pin that no row segment
+may be empty, `.`, `..`, or carry a separator.
+
+Every emulator step is unchanged and in the same order, through the same
+`dispatchStock()` seam: the ping retry, the route-d load, the checkpoint, the
+`PC` set, the resume, the poll, the capture, the deletion, the enumeration and
+the single final resume. Same route (`snapshot`), same logical checkpoint, same
+driver, same genuine unpatched stock `/usr/bin/x64sc`, same broker argv.
+
+The broker for this run was started at `[2026-09-15T19:50:10Z]` as a systemd
+user unit with the same two overrides, and named its own binary:
+
+```
+vice-broker: backend "stock" (binary: /usr/bin/x64sc)
+```
+
+### 3. The capture
+
+```
+[2026-09-15T19:50:27Z] $ node …/evidence/capture-run.mjs \
+    --label rebuild --subject-id rebuild --snapshot-name phase50-rebuild \
+    --checkpoint-address 4239 --entry-address 2061
+```
+
+The route-d load, naming the file stock VICE itself reports it loaded — and it
+is the rebuild under the phase evidence directory, not the committed fixture:
+
+```
+[2026-09-15T19:50:29Z] CALL vice_program_load {"device":0,"subject":"rebuild"}
+{"command":"load \"…/.planning/phases/50-equivalence-and-modifiability/evidence/hazard-subject-rebuild.prg\" 0",
+ "device":0,"subject":"rebuild",
+ "response":"(C:$fd70) Loading '…/hazard-subject-rebuild.prg' from 0801 to 10E7 (08E7 bytes)\n"}
+```
+
+The checkpoint trapped, and the CPU registers read in the same paused window
+confirm it independently — `PC` is 4239, which is `$108F`:
+
+```
+[2026-09-15T19:50:30Z] CALL vice_checkpoint_list {}
+{"checkpoints":[{"id":1,"start":4239,"end":4239,"stop":true,"enabled":true,
+ "hitCount":1,…}],"totalReported":1,"entriesReceived":1,"runState":"stopped"}
+
+[2026-09-15T19:50:30Z] CALL vice_registers_get {}
+{"registers":{"PC":4239,"A":0,"X":234,"Y":0,"SP":251,"00":47,"01":55,
+ "FL":7,"LIN":2,"CYC":9},"memspace":"main","runState":"stopped"}
+```
+
+The VIC-II register block read in that same paused window:
+
+```
+"base":53248,"end":53294,"length":47,
+"registersHex":"64640000000000000000000000000000001b02000001c50015
+                71f00000000000f2f0f0f0f0f0f0f0f0f0f0f0f0f0f0"
+```
+
+**Checkpoint deletion, proven by enumeration:**
+
+```
+[2026-09-15T19:50:30Z] CALL vice_checkpoint_delete {"checkpoint_num":1}
+{"checkpointNum":1,"deleted":true,"runState":"stopped"}
+
+[2026-09-15T19:50:30Z] CALL vice_checkpoint_list {}
+{"checkpoints":[],"totalReported":0,"entriesReceived":0,"runState":"stopped"}
+```
+
+**The checkpoint-list count observed after deletion is `0`.** The machine was
+then resumed exactly once.
+
+The snapshot was sliced into the flat 64K image by the same tool:
+
+```
+[2026-09-15T19:50:43Z] $ node src/skills/c64-ram-capture/scripts/vsf-slice.mjs \
+    slice .c64-re-tools/snapshots/phase50-rebuild.vsf \
+    --out …/evidence/captures/rebuild.bin --json
+{"imageBytes":65536,
+ "sha256":"0e3f47d64732a67b0a01a6d59aed8de4f62fe19b0edfdc00f7543ddd7e2dc2f5",
+ "snapshotMinor":1,"bodyLength":65555,"dataOut":39,"dataRead":55,"dirRead":47}
+```
+
+```
+[2026-09-15T19:50:43Z] $ node …/evidence/make-sidecar.mjs \
+    --bundle …/captures/run-rebuild.bundle.json \
+    --image …/captures/rebuild.bin \
+    --out …/captures/rebuild.state.json
+wrote …/captures/rebuild.state.json
+  route=snapshot checkpoint=hazard_raster_entry @ $108F
+  registers=49 image_sha256=0e3f47d64732a67b0a01a6d59aed8de4f62fe19b0edfdc00f7543ddd7e2dc2f5
+  checkpoints after delete = 0
+```
+
+### 4. What was compared
+
+| | subject `.prg` | subject sha256 | capture | capture sha256 | checkpoint |
+|---|---|---|---|---|---|
+| A | `hazard-subject.prg` | `89846d489f83f4d9fd092f214343c5566433655b836d20625e7123682b8c6828` | `original-a.bin` | `0e3f47d64732a67b0a01a6d59aed8de4f62fe19b0edfdc00f7543ddd7e2dc2f5` | `hazard_raster_entry` @ `$108F` |
+| B | `evidence/hazard-subject-rebuild.prg` | `89846d489f83f4d9fd092f214343c5566433655b836d20625e7123682b8c6828` | `rebuild.bin` | `0e3f47d64732a67b0a01a6d59aed8de4f62fe19b0edfdc00f7543ddd7e2dc2f5` | `hazard_raster_entry` @ `$108F` |
+
+Both sidecars declare `route: snapshot`. The comparison module refuses a mixed
+pair, so the route agreement is enforced rather than merely intended.
+
+### 5. The comparison, run in full with no row limit and no allowlist
+
+```
+[2026-09-15T19:51:28Z] $ node src/skills/c64-ram-capture/scripts/compare-cross-binary.mjs cross \
+    .planning/phases/50-equivalence-and-modifiability/evidence/captures/original-a.bin \
+    .planning/phases/50-equivalence-and-modifiability/evidence/captures/rebuild.bin \
+    --state .planning/phases/50-equivalence-and-modifiability/evidence/captures/original-a.state.json \
+            .planning/phases/50-equivalence-and-modifiability/evidence/captures/rebuild.state.json \
+    --checkpoint hazard_raster_entry --limit 0
+
+A  original-a.bin  sha256 0e3f47d64732a67b0a01a6d59aed8de4f62fe19b0edfdc00f7543ddd7e2dc2f5
+B  rebuild.bin  sha256 0e3f47d64732a67b0a01a6d59aed8de4f62fe19b0edfdc00f7543ddd7e2dc2f5
+MASK_NARROWED_AT: compare-cross-binary-mask-v1
+A  checkpoint hazard_raster_entry @ $108F
+B  checkpoint hazard_raster_entry @ $108F
+
+BYTE_IDENTICAL: yes
+  (a recorded extra -- the VERDICT line below is the acceptance signal, not this one)
+
+volatile (excluded from the verdict): 0
+
+allowlisted (intentional difference, excluded from the verdict): 0
+
+DIVERGENCE — fails the comparison: 0
+
+total differing addresses (image + register): 0
+
+VERDICT: PASS
+```
+
+The exit status, quoted from the shell that ran it:
+
+```
+exit status: 0
+```
+
+**The mask version string the run printed is `compare-cross-binary-mask-v1`**,
+the same string the red control above printed.
+
+### 6. The complete difference set
+
+**The run reported no difference in any bucket.** Volatile `0`, allowlisted
+`0`, DIVERGENCE `0`, total differing addresses `0`. There is therefore nothing
+to list, and nothing was absorbed: the complete difference set is empty.
+
+Stated plainly, which is what ROADMAP criterion 3 asks for: **the two images
+and their sidecars agree completely at this checkpoint.** Not one of the 65536
+image addresses differed. Not one of the 49 register addresses both sidecars
+carry differed. The two captures have the same SHA-256.
+
+### 7. Same mask, same command shape, no flag differed
+
+Stated explicitly, because the green result is only evidence in relation to the
+red one above:
+
+- **The mask is the same.** Both runs printed
+  `MASK_NARROWED_AT: compare-cross-binary-mask-v1`. No mask span in
+  `IMAGE_VOLATILE` or `IO_VOLATILE` was changed, added or deleted by this plan,
+  and the unit tests that pin the mask's edges are green.
+- **No allowlist was used, in either run.** Neither command line carries
+  `--allowlist`, and both runs' own `allowlisted` bucket reports `0`.
+- **The command shape is the same.** Both are
+  `compare-cross-binary.mjs cross <a.bin> <b.bin> --state <a.state.json>
+  <b.state.json> --checkpoint hazard_raster_entry --limit 0`. Only the second
+  image path and its sidecar differ between them. **No flag differed between
+  the red run and this one.**
+
+### 8. Emulator shutdown for this run
+
+The same broker session served both this capture and the modifiability capture
+in `docs/phase50-modifiability-transcript.md`, and was stopped in the same
+session as the last emulator call. The stop time is taken from the unit's own
+journal (`journalctl --user -u vice-broker.service -o short-iso` →
+`2026-09-15T21:51:17+02:00 … Stopped vice-broker.service`), not clocked at the
+shell, because the shell that ran the stop printed none.
+
+```
+[2026-09-15T19:51:17Z] $ systemctl --user stop vice-broker.service
+$ systemctl --user is-active vice-broker.service
+inactive
+$ ps -eo pid,etime,cmd | grep -Ei 'vice-broker|x64sc' | grep -v grep
+(no output)
+$ ss -ltnp | grep -E ':66[0-9][0-9]'
+(no output)
+$ ss -ltnp | grep -E ':19510'
+(no output)
+```
+
+### 9. What this section does and does not establish
+
+Recorded plainly, without overclaiming:
+
+- **It establishes behavioural equivalence between the original and the
+  rebuild at this checkpoint, on genuine unpatched stock VICE, with this
+  document as the artifact of record.** The rebuild was produced from the
+  committed annotation store through the export-and-assemble path, loaded into
+  a real emulator, stopped at its own re-resolved logical checkpoint, and
+  compared against the original under the mask this phase committed before any
+  rebuild existed. The verdict is PASS with an empty difference set.
+- **It is evidence only because the red control was committed first**, by the
+  same mechanism, under the same mask, with no flag difference. A green-only
+  result would not be evidence, and this transcript carries the red section
+  above this one in the file and earlier in git history.
+- **It does not add anything the red control already carries about
+  sensitivity.** The rebuild is byte-identical to the committed subject (see
+  `REBUILD.md`'s own subordinate `## Optional extra: byte-identity` section),
+  so at the byte level this run compared two runs of the same program. That is
+  worth stating rather than hiding: this section proves the rebuild path
+  produced something that behaves identically, and it is the red control — not
+  this section — that proves the instrument would have seen it if it had not.
+- **It does not establish that the mask's edges are correct in general**
+  (flagged assumption P2), and it does not upgrade plan 50-04's calibration.
+- **It does not establish that the probe set is exhaustive** (flagged
+  assumption P1). Nothing here speaks to a kind of difference nobody planted.
+- One property it inherits and does not re-prove: the run-to-run determinism is
+  partly manufactured by the rig (`-seed 4242 -raminitstartrandom 0 …`), which
+  is what makes an empty difference set readable as *empty* rather than as
+  *below the noise floor*.
+
 ## Artifacts this transcript is the record for
 
 | Artifact | SHA-256 | Size |
@@ -757,8 +1053,12 @@ Recorded plainly, without overclaiming:
 | `evidence/captures/original-b.bin` | `0e3f47d64732a67b0a01a6d59aed8de4f62fe19b0edfdc00f7543ddd7e2dc2f5` | 65536 bytes |
 | `src/mcp/vice/fixtures/hazard-subject/hazard-subject-regressed.prg` | `fd6484f1101ef0773c0137d479e6b630c247169445ddb01b149072bd8df21427` | 2281 bytes |
 | `evidence/captures/regressed.bin` | `d18830159c1c385901c7c97280fc91adb1dbfad167ee44ce0186bd0c663b2b97` | 65536 bytes |
+| `evidence/hazard-subject-rebuild.prg` | `89846d489f83f4d9fd092f214343c5566433655b836d20625e7123682b8c6828` | 2281 bytes |
+| `evidence/captures/rebuild.bin` | `0e3f47d64732a67b0a01a6d59aed8de4f62fe19b0edfdc00f7543ddd7e2dc2f5` | 65536 bytes |
 
-All three sidecars declare `route: snapshot`, `checkpoint_name:
-hazard_raster_entry` and `checkpoint_address: 4239` — the two original captures
-and, since plan 50-05's red control, `regressed.state.json` as well, whose
-address was re-resolved from its own binary's symbol list rather than copied.
+All four sidecars declare `route: snapshot`, `checkpoint_name:
+hazard_raster_entry` and `checkpoint_address: 4239` — the two original
+captures, `regressed.state.json` since plan 50-05's red control, and
+`rebuild.state.json` since plan 50-06's green comparison. Each non-original
+address was re-resolved from its own binary's own symbol list rather than
+copied.
