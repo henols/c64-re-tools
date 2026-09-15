@@ -5,16 +5,16 @@ milestone_name: The Rebuild Half
 current_phase: 56
 current_phase_name: Remove `shipped-modules.ts` and Its Embedded Source Scans
 status: executing
-stopped_at: Completed 56-01-PLAN.md
-last_updated: "2026-09-15T05:02:19.676Z"
+stopped_at: Completed 56-02-PLAN.md
+last_updated: "2026-09-15T05:29:32.605Z"
 last_activity: 2026-09-15
 last_activity_desc: Completed 56-01 (Plan 1 of 11)
-state_head: b35c594b6d2e4e409045c2c26c209177b623f862
+state_head: 70a103f6eb17b41ad1ea76d7387e10e9030e96ac
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 82
-  completed_plans: 63
+  completed_plans: 64
   percent: 58
 ---
 
@@ -271,9 +271,9 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 56 (Remove `shipped-modules.ts` and Its Embedded Source Scans) — EXECUTING
-Plan: 2 of 11
-Status: Executing
-Plans: 1/11 executed. Phase 56 was planned 2026-09-15 - 11 plans across 4 waves, plan-checker PASSED, decision coverage 17/17, files_modified disjoint across 23 paths. It deletes `src/mcp/vice/shipped-modules.ts` and every embedded test case whose subject is source text. Plan 01 (tracer) is complete. It proved the D-14 scanner against a planted fixture. It cut prg-image.test.ts end-to-end through the full pipeline, then applied the same cut to anno-graphics.test.ts and anno-types.test.ts. Net effect: 5 whole-case deletions, 1 strip-in-place-and-rename, 0 collateral loss. The suite and typecheck are both green.
+Plan: 3 of 11
+Status: Ready to execute
+Plans: 2/11 executed. Phase 56 was planned 2026-09-15 - 11 plans across 4 waves, plan-checker PASSED, decision coverage 17/17, files_modified disjoint across 23 paths. It deletes `src/mcp/vice/shipped-modules.ts` and every embedded test case whose subject is source text. Plan 01 (tracer) is complete. It proved the D-14 scanner against a planted fixture. It cut prg-image.test.ts end-to-end through the full pipeline, then applied the same cut to anno-graphics.test.ts and anno-types.test.ts. Net effect: 5 whole-case deletions, 1 strip-in-place-and-rename, 0 collateral loss. Plan 02 is complete. It cut anno-seam.test.ts from 23 cases to 2: the package.json files[] completeness case and the WR-25 behavioural refusal case. Two atomic commits, each gated by a per-file TAP name-set diff. The suite and typecheck are both green.
 
 **Phase 51 is still in flight and is NOT superseded by this.** It remains In Progress at 8/17 plans in the ROADMAP Progress table; planning Phase 56 did not advance or close it. Its own position and per-plan record follows.
 
@@ -293,7 +293,7 @@ artifact — it did not retract the finding. Phase 49 gates reassembly, so
 that subject is the thing it will gate on.
 
 Progress: [██████░░░░] 58% (7/12 phases complete in v1.0.0 -- per-phase plan counts in the ROADMAP Progress table)
-Last activity: 2026-09-15 — Completed 56-01 (Plan 1 of 11)
+Last activity: 2026-09-15 — Completed 56-02 (Plan 2 of 11)
 
 ## Performance Metrics
 
@@ -635,6 +635,7 @@ Last activity: 2026-09-15 — Completed 56-01 (Plan 1 of 11)
 | Phase 51 P07 | 105 min | 2 tasks | 7 files |
 | Phase 51 P08 | 65min | 3 tasks | 10 files |
 | Phase 56 P01 | 14min | 3 tasks | 3 files |
+| Phase 56 P02 | 55 min | 3 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -1425,6 +1426,8 @@ Recent decisions affecting current work:
 - [Phase 51]: anno-register.ts is unshipped rather than redesigned: remove it from src/mcp/vice/package.json files[] and give anno-seam.test.ts a reasoned exemption for a test-only register (or rename it off the anno-* prefix). Owner decision 2026-09-14, taken at plan 51-08's escalation; executed by plan 51-17. — The file has ZERO runtime consumers -- only anno-register.test.ts, anno-import.test.ts and anno-derivation.test.ts import it -- yet it ships to npm carrying a per-verb requirement-id traceability matrix. Shipping it is precisely the defect this phase exists to remove. The slug-indirection alternative would keep shipping the same bookkeeping to consumers, only obfuscated, at the cost of redesigning a mechanically-enforced contract. Unshipping keeps anno-register.test.ts's id validation exactly as it is, because that guard runs against the repo, not the tarball. The only thing that blocked it at 51-08 was anno-seam.test.ts's naming heuristic that any non-test anno-* file must be in files[] -- a rule about names, not a runtime constraint.
 - [Phase 56]: anno-graphics.test.ts's the-module-header-states case was removed under D-01 even though the D-14 scanner did not flag it (raw readFileSync, no doomed symbol) -- found by the mandated blind-spot pass.
 - [Phase 56]: anno-types.test.ts's SCHEMA_VERSION case was resolved as genuinely mixed under D-02 -- the assert.equal(SCHEMA_VERSION, 5) call stayed byte-for-byte, the seven raw-source assert.match calls were stripped, and the case was renamed per D-03.
+- [Phase 56]: seamSource() and THE_ONE_SEAM were kept alive through anno-seam.test.ts's Task 1 (not removed with the other dead helpers) because the two WR-25 pin cases still called them until Task 2 removed those cases. Both were removed in Task 2 once genuinely dead. — Grep-confirming callers first (the cut_rule Helper rule) showed both were still called by cases Task 1 does not touch. Removing them early would have broken node --test with a ReferenceError inside a still-present case.
+- [Phase 56]: Section-header separator comments in anno-seam.test.ts were left untouched even where every case they once introduced is now gone. — D-10 forbids new prose and the cut_rule says stale comments stay stale. Editing or removing these banners was not named by either task's action text.
 
 ### Pending Todos
 
@@ -2538,8 +2541,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-15T05:02:18.362Z
-Stopped at: Completed 56-01-PLAN.md
+Last session: 2026-09-15T05:29:31.501Z
+Stopped at: Completed 56-02-PLAN.md
 Resume file: None
 
 Earlier: Completed 43-06-PLAN.md
