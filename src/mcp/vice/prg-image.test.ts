@@ -1,9 +1,7 @@
 // prg-image.test.ts
 //
 // The committed regression for `prg-image.ts`'s two input validators, plus
-// the payload round trip its own doc comment says it exists to allow, plus a
-// structural check that the module really is the pure, I/O-free thing its
-// header claims.
+// the payload round trip its own doc comment says it exists to allow.
 //
 // PROVENANCE OF THE FIRST FOUR TESTS: they were RELOCATED VERBATIM out of
 // `anno-project.test.ts` together with the functions they cover -- same
@@ -13,15 +11,10 @@
 // reworded assertion would be a new test wearing an old test's authority.
 // Only the import specifier changed.
 //
-// WHY THE NO-I/O CHECK IS STRUCTURAL AND NOT A CLAIM IN A COMMENT: the
-// module's header states it performs no filesystem and no network I/O, and
-// that statement is load-bearing -- it is what makes the module safe to ship
-// in the npm tarball with no path handling and no threat surface of its own.
-// A header sentence cannot notice when a later edit falsifies it. Asserting
-// the module's own import set from its source can. This is the same shape as
-// the source-level structural assertions the coverage and spawn-seam suites
-// already carry, and it is labelled here as the SUPPLEMENT to the behavioural
-// tests above, never as the proof of purity by itself.
+// Phase 56 removed this file's structural no-I/O check -- an import-set scan
+// plus a forbidden-pattern scan of `prg-image.ts`'s own source, asserting the
+// module really is the pure, filesystem/subprocess/network-free thing its
+// header claims. That claim is no longer test-enforced here.
 //
 // Never add this file to `test-gate.mjs`'s MANUAL_ONLY_TESTS: it needs no
 // external binary, no emulator and no network, so it belongs in the
