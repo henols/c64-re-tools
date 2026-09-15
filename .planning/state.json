@@ -1,7 +1,7 @@
 {
   "contract": "1.0.0",
   "flavor": "core",
-  "milestone": "v1.0.0 \u2014 The Rebuild Half",
+  "milestone": "v1.0.0 — The Rebuild Half",
   "phases": [
     {
       "number": "1",
@@ -235,7 +235,7 @@
     },
     {
       "number": "44",
-      "name": "PROOF-04 \u2014 The Independent External Check",
+      "name": "PROOF-04 — The Independent External Check",
       "status": "complete"
     },
     {
@@ -306,8 +306,8 @@
   ],
   "next": {
     "command": "/gsd:progress --next",
-    "label": "Advance to the next step (verify)",
-    "reason": "Phase 56 of 13 (v1.0.0) \u00b7 89% \u00b7 ready to verify"
+    "label": "Advance to the next step (plan phase 50)",
+    "reason": "Phase 50 of 13 — needs a plan"
   },
-  "updated_at": "2026-09-15T09:50:36.050Z"
+  "updated_at": "2026-09-15T10:46:35.825Z"
 }
