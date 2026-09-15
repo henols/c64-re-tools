@@ -276,17 +276,17 @@ grade is only worth anything if it says what you actually knew when you wrote it
 
 ## Troubleshooting
 
-| Symptom | Fix |
+| Symptom | What to do |
 |---|---|
 | `anchor-search` reports `ok=false` | Anchors disagreed, so there is no single offset. Do **not** pick the majority — the images are not the same fully-loaded state, or one capture is bad. Re-capture rather than force it. |
-| `git status` dirty after a run | Expected — two verbs write. Diff the two files; if only `proven_at`/`generated_at` moved, `git checkout --` them. |
-| `generated_tier_sha256` changed | The classification changed, not just a timestamp. Find the cause before committing; the digest is the determinism check. |
-| `count-patches` reports 0 | Usually correct. It counts `CRACKER-PATCH` **and** `game`-kind addresses; with two releases and no signature match, nothing qualifies. Check the `diff --json` tally before treating it as a bug. But do not read it as "no trainer" — see the next two rows. |
+| `git status` dirty after a run | Expected — two verbs write. Diff the two files. If only `proven_at`/`generated_at` moved, `git checkout --` them. |
+| `generated_tier_sha256` changed | The classification changed, not just a timestamp. Find the cause before committing. The digest is the determinism check. |
+| `count-patches` reports 0 | Usually accurate. It counts `CRACKER-PATCH` **and** `game`-kind addresses. With two releases and no signature match, nothing qualifies. Check the `diff --json` tally before treating it as a bug. But do not read it as "no trainer" — see the next two rows. |
 | Asked whether the crack added a trainer | `count-patches` is the diff-side answer: `CRACKER-PATCH` ∧ `game` **is** the trainer count. It is necessary and not sufficient — it cannot see a trainer both releases carry. Run the signature hunt too. |
-| Asked to confirm a release has no trainer | You cannot confirm that from a diff alone, and saying so is the answer. A clean diff only rules out a trainer in *one* release and not the other; with unproven ancestry that is a weaker claim than it sounds. Report the signature-hunt result with its coverage limits. |
+| Asked to prove a release has no trainer | You cannot prove that from a diff alone, and saying so is the answer. A clean diff only rules out a trainer in *one* release and not the other. With unproven ancestry that is a weaker claim than it sounds. Report the signature-hunt result with its coverage limits. |
 | Two releases agree everywhere suspicious | Suspect shared ancestry before concluding `ORIGINAL`. Different group names, loaders and cracktros are the cheapest things for a re-cracker to swap and prove nothing about independence. |
-| Everything is `UNKNOWN` | Also usually correct. `UNKNOWN` means "differs, no recognised signature, alternatives ruled out". Read the range's `reason` field. |
-| A range's `kind` looks wrong past its start | You resolved `kind` from `start`. Use `splitRangeByManifestKind`; coalescing does not respect kind boundaries. |
-| A loader range disagrees with `NOTES.md` | `RELEASES.json`'s `loader_ranges` wins — it is earned from disassembly. Prose is how `$08F5` got misclassified. |
+| Everything is `UNKNOWN` | Also usually accurate. `UNKNOWN` means "differs, no recognised signature, alternatives ruled out". Read the range's `reason` field. |
+| A range's `kind` looks wrong past its start | You resolved `kind` from `start`. Use `splitRangeByManifestKind`. Coalescing does not respect kind boundaries. |
+| A loader range disagrees with `NOTES.md` | `RELEASES.json`'s `loader_ranges` wins because live disassembly evidence earns it. Prose is how `$08F5` got misclassified. |
 | Title-screen text shows up as cracktro | You used a bare printable-run scan. The vocabulary scan exists because `$4771-$4779` is the game's own text. |
 | `unknown release "x" -- known releases: …` | `node src/skills/c64-provenance-diff/scripts/releases.mjs list` for the valid ids. |
