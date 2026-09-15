@@ -4,18 +4,18 @@ milestone: v1.0.0
 milestone_name: The Rebuild Half
 current_phase: 50
 current_phase_name: Equivalence and Modifiability
-status: planning
+status: executing
 stopped_at: Phase 56 complete, ready to plan Phase 50
-last_updated: "2026-09-15T10:46:35.738Z"
+last_updated: "2026-09-15T12:37:36.541Z"
 last_activity: 2026-09-15
-last_activity_desc: Phase 56 complete, transitioned to Phase 50
-state_head: 826007ddd11510a43af0d8d4616cecf50c8f17cf
+last_activity_desc: Phase 56 learnings extracted (44 items) to 56-LEARNINGS.md
+state_head: 06e91b6e3c43bfabc789704fc4227a2060f8d490
 progress:
   total_phases: 13
   completed_phases: 8
-  total_plans: 82
+  total_plans: 89
   completed_plans: 73
-  percent: 89
+  percent: 82
 ---
 
 # Project State
@@ -270,9 +270,9 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 50 — Equivalence and Modifiability
+Phase: 50 (Equivalence and Modifiability) — READY TO EXECUTE
 Plan: Not started
-Status: Ready to plan
+Status: Ready to execute
 Plans: 11/11 executed. Phase 56 was planned 2026-09-15 - 11 plans across 4 waves, plan-checker PASSED, decision coverage 17/17, files_modified disjoint across 23 paths. It deletes `src/mcp/vice/shipped-modules.ts`. It also deletes every embedded test case whose subject is source text. Plan 01 (tracer) is complete. It proved the D-14 scanner against a planted fixture. It cut prg-image.test.ts end-to-end through the full pipeline, then applied the same cut to anno-graphics.test.ts and anno-types.test.ts. Net effect: 5 whole-case deletions, 1 strip-in-place-and-rename, 0 collateral loss. Plan 02 is complete. It cut anno-seam.test.ts from 23 cases to 2: the package.json files[] completeness case and the WR-25 behavioural refusal case. Two atomic commits, each gated by a per-file TAP name-set diff. The suite and typecheck are both green. Plan 03 is complete. It cut block-class.test.ts (two cases), anno-join.test.ts (one case) and anno-overlap.test.ts (one case). Four whole-case deletions total, each reached by a single scanner hit or a helper-indirected hit. The suite (`fail 0`, `skipped 9`, `tests 3723`) and typecheck are both green. Plan 04 is complete. It cut capture-predicate.test.ts (two cases) and evid-report-keys.test.ts (two direction-4 cases). It also removed evid-report-keys.test.ts's three now-orphaned module-scope helpers -- PATTERNS.md's worked Edit Kind 4 example. Four whole-case deletions total. The suite (`fail 0`, `skipped 9`, `tests 3719`) and typecheck are both green. Plan 05 is complete. It cut anno-index.test.ts (three cases, one reading the test file's own source rather than a production module). It also cut vsf-slice.test.ts (four cases, including its whole "Structural SUPPLEMENT" section). Seven whole-case deletions total. The now-orphaned `indexSource()`, `CLI_MARKER` and `libraryRegion()` helpers are gone. The suite (`fail 0`, `skipped 9`, `tests 3712`) and typecheck are both green. Plan 06 is complete. It cut stock-dispatch.test.ts, the phase's largest single source-scanning population. 15 whole-case deletions plus 2 D-02/D-03 renames, reached through two module-scope `*_SOURCE` constants and a direct `readFileSync` rather than the doomed module alone. All four CHAN-04 channel-lock cases survive untouched. The suite (`fail 0`, `skipped 9`, `tests 3697`) and typecheck are both green. Plan 07 is complete. It cut anno-store.test.ts, the largest single file in the phase at 5,595 lines and the one holding both of the phase's measured genuinely-mixed cases. 12 whole-case deletions, plus the bank-field case's D-02/D-03 rename and CR-08's no-rename strip. The suite (`fail 0`, `skipped 9`, `tests 3685`) and typecheck are both green. Plan 08 is complete. It cut anno-export-asm.test.ts's auto-name prefix cluster and BUILD-07 guard cluster. 11 whole-case deletions total, including one the D-14 scanner could not see at all, found only by the mandated blind-spot pass. No D-02/D-03 renames were needed. All three plan-flagged "may be mixed" candidates resolved to pure false positives on hand-read and stayed byte-identical. The suite (`fail 0`, `skipped 9`, `tests 3674`) and typecheck are both green. Plan 09 is complete. It cut anno-coverage.test.ts, the third giant file at 5,016 lines. 16 whole-case deletions total. An eleven-case cluster among them evaded the D-14 scanner and the plan's own candidate list entirely. Only the mandated blind-spot pass found it -- the largest single blind-spot find of the phase. One plan-flagged candidate resolved to a pure false positive and stayed byte-identical. Two now-orphaned production imports (`LABEL_KINDS`, `PROVEN_TARGET_SOURCES`) were also removed. The suite (`fail 0`, `skipped 9`, `tests 3658`) and typecheck are both green. Plan 10 is complete. It cut anno-derive.test.ts's five source-scanning cases. It then repaired thirteen now-false "asserted by X" enforcement clauses across D-11's five named production modules (anno-store.ts, dxa-blocks.ts, evid-ingest.ts, memmap-lookup.ts, capture-predicate.ts). Five of those clauses were beyond the plan's own action text. A mandated blanket-grep completeness gate found them. Every constraint sentence stays. No new prose was added. The suite (`fail 0`, `skipped 9`, `tests 3653`) and typecheck are both green. Plan 11 is complete. It removed `shipped-modules.ts` and its 16-case test file with `git rm`, after a repository-wide preflight grep confirmed zero remaining importers. It reconciled the whole phase's test-count drop case by case. 100 embedded cases were removed across sixteen surviving files (plans 56-01 through 56-10). 16 more cases were removed with the module's own test file (this plan). These are reported as two separate numbers, totaling 116 (3753 to 3637). All five success criteria have a recorded verdict. The suite (`fail 0`, `skipped 9`, `tests 3637`) and typecheck are both green. Phase 56 is complete.
 
 **Phase 51 is still in flight and is NOT superseded by this.** It remains In Progress at 8/17 plans in the ROADMAP Progress table; planning Phase 56 did not advance or close it. Its own position and per-plan record follows.
@@ -293,7 +293,7 @@ artifact — it did not retract the finding. Phase 49 gates reassembly, so
 that subject is the thing it will gate on.
 
 Progress: [█████████░] 89% (8/13 phases complete in v1.0.0, 73/82 plans. Phase 56 completed by this plan. Phase 57 was added concurrently during this plan's execution. Per-phase plan counts are in the ROADMAP Progress table.)
-Last activity: 2026-09-15 — Completed quick task 260915-hwe: retired two stale planning records (dead scratch-dir leak; ROADMAP Progress-table enforcement claim)
+Last activity: 2026-09-15 — Extracted Phase 56 learnings to 56-LEARNINGS.md (12 decisions, 12 lessons, 11 patterns, 9 surprises); rebuilt estimate calibration
 
 ## Performance Metrics
 

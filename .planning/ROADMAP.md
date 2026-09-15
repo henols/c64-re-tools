@@ -1277,12 +1277,26 @@ with behaviour worth removing and adding)
 **Plans**: 7 plans, 5 waves
 
 Plans:
+**Wave 1**
+
 - [ ] 50-01-PLAN.md — the comparison instrument, committed first: narrowed volatile mask, intentional-difference allowlist, per-binary logical checkpoints (wave 1)
 - [ ] 50-02-PLAN.md — the two subject variants: a three-regression red-control twin, and a modified subject anchored to two named hazard findings (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 50-03-PLAN.md — Phase 49's gate re-run against the modified subject, its machine-readable findings document, and the pre-registered allowlist (wave 2)
 - [ ] 50-04-PLAN.md — tracer: the load-route decision, one binary end-to-end in stock VICE, and the mask calibrated against a same-binary re-run (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 50-05-PLAN.md — the red control: the planted regression observed being caught, committed before any green result exists (wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 50-06-PLAN.md — the green comparison against the rebuild, and the removed and added behaviours observed in the modified subject (wave 4)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 50-07-PLAN.md — the stated CI boundary, the transcript freshness guard, and a broken step observed reddening CI (wave 5)
 
 Notes:
@@ -2177,7 +2191,7 @@ check. No test reads this table now.
 | 47. Multi-File Rebuildable Source | v1.0.0 | 6/6 | Complete | 2026-09-12 |
 | 48. The Movement-Hazard Report and Its Purpose-Built Subject | v1.0.0 | 6/6 | Complete | 2026-09-13 |
 | 49. The Reassembly Gate, Committed Before the Phase It Gates | v1.0.0 | 7/7 | Complete | 2026-09-13 |
-| 50. Equivalence and Modifiability | v1.0.0 | - | Not started | - |
+| 50. Equivalence and Modifiability | v1.0.0 | 0/7 | Not started | - |
 | 51. Planning Vocabulary Out of the Shipped Server | v1.0.0 | 8/17 | In Progress | - |
 | 52. Remove the Fork Backend | v1.0.0 | 13/13 | Complete | 2026-09-12 |
 | 53. Operator-Owned `docs/` | v1.0.0 | - | Not started | - |
