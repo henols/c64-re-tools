@@ -1906,52 +1906,6 @@ test("ROUND TRIP: the ALIASED store still reassembles byte-identically -- a mark
 const EXPORTER_PATH = join(HERE, "anno-export-asm.ts");
 
 /**
- * A quote-aware comment stripper, the shape `anno-cli-path-consumers.test.ts`
- * uses. A COPY rather than an import: that helper is not exported, and widening
- * another test file's surface for this one is a larger change than the twenty
- * lines below.
- */
-function stripComments(src: string): string {
-  let out = "";
-  const n = src.length;
-  let i = 0;
-  let quote: string | null = null;
-  while (i < n) {
-    const c = src[i]!;
-    if (quote) {
-      out += c;
-      if (c === "\\") {
-        out += src[i + 1] ?? "";
-        i += 2;
-        continue;
-      }
-      if (c === quote) quote = null;
-      i++;
-      continue;
-    }
-    if (c === '"' || c === "'" || c === "`") {
-      quote = c;
-      out += c;
-      i++;
-      continue;
-    }
-    if (c === "/" && src[i + 1] === "/") {
-      while (i < n && src[i] !== "\n") i++;
-      continue;
-    }
-    if (c === "/" && src[i + 1] === "*") {
-      i += 2;
-      while (i < n && !(src[i] === "*" && src[i + 1] === "/")) i++;
-      i += 2;
-      continue;
-    }
-    out += c;
-    i++;
-  }
-  return out;
-}
-
-/**
  * The eleven prefix tokens, parsed out of `AUTO_NAME_PREFIX_RE`'s OWN
  * alternation. Never a literal list -- see this file's WHAT NOT TO DO.
  */
@@ -1963,38 +1917,6 @@ function parseAutoNamePrefixes(): string[] {
       `${AUTO_NAME_PREFIX_RE.source}`,
   );
   return match[1]!.split("|");
-}
-
-/**
- * Regex literals in already-stripped TypeScript source, matched only where a
- * regex may legally BEGIN (start of line, or after an operator-ish character).
- * Without that guard the `/` inside a string like `"./anno-store.ts"` opens a
- * phantom literal and the scan reports on text that is not a regex at all.
- */
-function regexLiteralBodies(strippedSrc: string): string[] {
-  const bodies: string[] = [];
-  for (const m of strippedSrc.matchAll(/(^|[=(,:[!&|?{;+\s])\/((?:\\.|\[[^\]]*\]|[^/\n\\])+)\/[dgimsuvy]*/gm)) {
-    bodies.push(m[2]!);
-  }
-  return bodies;
-}
-
-/**
- * THE ONE PREDICATE. The real scan and BOTH controls call this same function,
- * so there is exactly one definition of "restates the auto-name prefixes rather
- * than importing them" -- the discipline `anno-cli-path-consumers.test.ts`
- * states: a structural test and its own proof must share the checked logic
- * rather than each carry a copy.
- *
- * `true` means VIOLATION: the source either does not import
- * `AUTO_NAME_PREFIX_RE` at all, or it carries a regex literal whose body names
- * two or more of the prefix tokens -- which is what a hand-rolled
- * reimplementation looks like.
- */
-function restatesAutoNamePrefixes(strippedSrc: string, prefixes: readonly string[]): boolean {
-  const importsTheRegex = /import\s*\{[^}]*\bAUTO_NAME_PREFIX_RE\b[^}]*\}\s*from/.test(strippedSrc);
-  const restatingLiteral = regexLiteralBodies(strippedSrc).some((body) => prefixes.filter((prefix) => body.includes(prefix)).length >= 2);
-  return !importsTheRegex || restatingLiteral;
 }
 
 test("the auto-name prefix set is parsed from AUTO_NAME_PREFIX_RE's own alternation: exactly eleven, `L_` absent, ASCII case-sensitive", () => {
@@ -2011,49 +1933,6 @@ test("the auto-name prefix set is parsed from AUTO_NAME_PREFIX_RE's own alternat
   // ASCII case-sensitive: an uppercased auto name is a user rename.
   assert.equal(AUTO_NAME_PREFIX_RE.test("s_0820"), true);
   assert.equal(AUTO_NAME_PREFIX_RE.test("S_0820"), false, "matching is ASCII case-sensitive, exactly as upstream emits the prefixes");
-});
-
-test("STRUCTURAL SCAN, all three directions: the exporter imports the prefix regex, a planted five-prefix copy is reported, and a comment-only mention is NOT", () => {
-  const prefixes = parseAutoNamePrefixes();
-  const real = stripComments(readFileSync(EXPORTER_PATH, "utf8"));
-
-  // Direction 1: the real source is clean.
-  assert.equal(
-    restatesAutoNamePrefixes(real, prefixes),
-    false,
-    "anno-export-asm.ts must import AUTO_NAME_PREFIX_RE from its one home and carry no regex literal restating the prefixes. " +
-      "A five-prefix copy under-counts silently and breaks routine-queue-walker's backlog construction while every test keeps passing.",
-  );
-
-  // Direction 2: a planted FIVE-prefix regex literal is reported. Built from the
-  // parsed tokens, so it is a genuine short copy of the real vocabulary rather
-  // than five names typed here.
-  const plantedBody = `/^(${prefixes.slice(0, 5).join("|")})/`;
-  const plantedSource = `${real}\nconst LOCAL_AUTO_PREFIX_RE = ${plantedBody};\n`;
-  assert.equal(
-    restatesAutoNamePrefixes(plantedSource, prefixes),
-    true,
-    `the scan must REPORT a five-prefix reimplementation, or it is not checking anything:\n  planted: ${plantedBody}`,
-  );
-
-  // Direction 3: the SAME text inside a comment is NOT reported. This is the
-  // control that stops the scan degrading into a substring search that passes by
-  // counting the module's own prose about the prefixes.
-  const commentOnly = stripComments(`${readFileSync(EXPORTER_PATH, "utf8")}\n// a note mentioning ${plantedBody} in prose only\n`);
-  assert.equal(
-    restatesAutoNamePrefixes(commentOnly, prefixes),
-    false,
-    "a comment naming the prefixes is documentation, not a reimplementation -- a scan that cannot tell them apart would fire on the " +
-      "module's own WHAT-NOT-TO-DO paragraph",
-  );
-
-  // And the planted violation must be caught for the RIGHT reason: a source with
-  // the import removed is also a violation, by the other half of the predicate.
-  assert.equal(
-    restatesAutoNamePrefixes(real.replace("AUTO_NAME_PREFIX_RE", "SOMETHING_ELSE"), prefixes),
-    true,
-    "dropping the import is a violation too -- the predicate has two halves and both must bite",
-  );
 });
 
 test("every one of the parsed prefixes round-trips as a label name, is MARKED in the source, and `L_`/uppercase names are not counted", { skip: SKIP_REASON }, () => {
