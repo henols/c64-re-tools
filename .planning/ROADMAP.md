@@ -1961,7 +1961,7 @@ embedded: scanning cases living inside otherwise-real behaviour tests.
   4. No test file is left empty, and none is left with only setup and no assertions.
   5. `anno-seam.test.ts`'s WR-25 behavioural case survives in some form -- see the note below.
 
-**Plans**: 5/11 plans executed, in 4 waves.
+**Plans**: 6/11 plans executed, in 4 waves.
 
 Plans:
 **Wave 1**
@@ -1974,7 +1974,7 @@ Plans:
 - [x] 56-03-PLAN.md — block-class, anno-join and anno-overlap
 - [x] 56-04-PLAN.md — capture-predicate and evid-report-keys, with the three scanning helpers
 - [x] 56-05-PLAN.md — anno-index and vsf-slice
-- [ ] 56-06-PLAN.md — stock-dispatch, three regions, including one mixed case stripped in place
+- [x] 56-06-PLAN.md — stock-dispatch, three regions, including one mixed case stripped in place
 - [ ] 56-07-PLAN.md — anno-store.test.ts, three regions, including both measured mixed cases
 - [ ] 56-08-PLAN.md — anno-export-asm, two scanning clusters and their nine helpers
 - [ ] 56-09-PLAN.md — anno-coverage.test.ts, the third giant
@@ -2104,7 +2104,7 @@ in a milestone archive.
 | 53. Operator-Owned `docs/` | v1.0.0 | - | Not started | - |
 | 54. Remove Every Byte-Identical Assertion | v1.0.0 | - | Not started | - |
 | 55. Restore the Fork Removal's Dropped Capabilities and Re-Baseline the Proxy Test | v1.0.0 | 6/6 | Complete | 2026-09-14 |
-| 56. Remove `shipped-modules.ts` and Its Embedded Source Scans | v1.0.0 | 5/11 | In Progress | - |
+| 56. Remove `shipped-modules.ts` and Its Embedded Source Scans | v1.0.0 | 6/11 | In Progress | - |
 
 **Milestone roll-up:** v0.2.0 — 9 phases, 87 plans, 51/51 in-scope requirements,
 shipped 2026-08-19 (audit round 4 `tech_debt`; 13 deferred items at close).
