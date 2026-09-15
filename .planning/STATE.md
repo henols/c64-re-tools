@@ -5,16 +5,16 @@ milestone_name: The Rebuild Half
 current_phase: 56
 current_phase_name: Remove `shipped-modules.ts` and Its Embedded Source Scans
 status: executing
-stopped_at: Completed 56-07-PLAN.md
-last_updated: "2026-09-15T07:50:28.801Z"
+stopped_at: Completed 56-08-PLAN.md
+last_updated: "2026-09-15T08:17:08.875Z"
 last_activity: 2026-09-15
-last_activity_desc: Completed 56-07 (Plan 7 of 11)
-state_head: bb09bf8ec15c218b66d8063e6ccb8145ff8dc2cf
+last_activity_desc: Completed 56-08 (Plan 8 of 11)
+state_head: f112e287766710c6d7b12d25c78d9122cb26006a
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 82
-  completed_plans: 69
+  completed_plans: 70
   percent: 58
 ---
 
@@ -271,9 +271,9 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 56 (Remove `shipped-modules.ts` and Its Embedded Source Scans) — EXECUTING
-Plan: 8 of 11
+Plan: 9 of 11
 Status: Ready to execute
-Plans: 7/11 executed. Phase 56 was planned 2026-09-15 - 11 plans across 4 waves, plan-checker PASSED, decision coverage 17/17, files_modified disjoint across 23 paths. It deletes `src/mcp/vice/shipped-modules.ts`. It also deletes every embedded test case whose subject is source text. Plan 01 (tracer) is complete. It proved the D-14 scanner against a planted fixture. It cut prg-image.test.ts end-to-end through the full pipeline, then applied the same cut to anno-graphics.test.ts and anno-types.test.ts. Net effect: 5 whole-case deletions, 1 strip-in-place-and-rename, 0 collateral loss. Plan 02 is complete. It cut anno-seam.test.ts from 23 cases to 2: the package.json files[] completeness case and the WR-25 behavioural refusal case. Two atomic commits, each gated by a per-file TAP name-set diff. The suite and typecheck are both green. Plan 03 is complete. It cut block-class.test.ts (two cases), anno-join.test.ts (one case) and anno-overlap.test.ts (one case). Four whole-case deletions total, each reached by a single scanner hit or a helper-indirected hit. The suite (`fail 0`, `skipped 9`, `tests 3723`) and typecheck are both green. Plan 04 is complete. It cut capture-predicate.test.ts (two cases) and evid-report-keys.test.ts (two direction-4 cases). It also removed evid-report-keys.test.ts's three now-orphaned module-scope helpers -- PATTERNS.md's worked Edit Kind 4 example. Four whole-case deletions total. The suite (`fail 0`, `skipped 9`, `tests 3719`) and typecheck are both green. Plan 05 is complete. It cut anno-index.test.ts (three cases, one reading the test file's own source rather than a production module). It also cut vsf-slice.test.ts (four cases, including its whole "Structural SUPPLEMENT" section). Seven whole-case deletions total. The now-orphaned `indexSource()`, `CLI_MARKER` and `libraryRegion()` helpers are gone. The suite (`fail 0`, `skipped 9`, `tests 3712`) and typecheck are both green. Plan 06 is complete. It cut stock-dispatch.test.ts, the phase's largest single source-scanning population. 15 whole-case deletions plus 2 D-02/D-03 renames, reached through two module-scope `*_SOURCE` constants and a direct `readFileSync` rather than the doomed module alone. All four CHAN-04 channel-lock cases survive untouched. The suite (`fail 0`, `skipped 9`, `tests 3697`) and typecheck are both green. Plan 07 is complete. It cut anno-store.test.ts, the largest single file in the phase at 5,595 lines and the one holding both of the phase's measured genuinely-mixed cases. 12 whole-case deletions, plus the bank-field case's D-02/D-03 rename and CR-08's no-rename strip. The suite (`fail 0`, `skipped 9`, `tests 3685`) and typecheck are both green.
+Plans: 8/11 executed. Phase 56 was planned 2026-09-15 - 11 plans across 4 waves, plan-checker PASSED, decision coverage 17/17, files_modified disjoint across 23 paths. It deletes `src/mcp/vice/shipped-modules.ts`. It also deletes every embedded test case whose subject is source text. Plan 01 (tracer) is complete. It proved the D-14 scanner against a planted fixture. It cut prg-image.test.ts end-to-end through the full pipeline, then applied the same cut to anno-graphics.test.ts and anno-types.test.ts. Net effect: 5 whole-case deletions, 1 strip-in-place-and-rename, 0 collateral loss. Plan 02 is complete. It cut anno-seam.test.ts from 23 cases to 2: the package.json files[] completeness case and the WR-25 behavioural refusal case. Two atomic commits, each gated by a per-file TAP name-set diff. The suite and typecheck are both green. Plan 03 is complete. It cut block-class.test.ts (two cases), anno-join.test.ts (one case) and anno-overlap.test.ts (one case). Four whole-case deletions total, each reached by a single scanner hit or a helper-indirected hit. The suite (`fail 0`, `skipped 9`, `tests 3723`) and typecheck are both green. Plan 04 is complete. It cut capture-predicate.test.ts (two cases) and evid-report-keys.test.ts (two direction-4 cases). It also removed evid-report-keys.test.ts's three now-orphaned module-scope helpers -- PATTERNS.md's worked Edit Kind 4 example. Four whole-case deletions total. The suite (`fail 0`, `skipped 9`, `tests 3719`) and typecheck are both green. Plan 05 is complete. It cut anno-index.test.ts (three cases, one reading the test file's own source rather than a production module). It also cut vsf-slice.test.ts (four cases, including its whole "Structural SUPPLEMENT" section). Seven whole-case deletions total. The now-orphaned `indexSource()`, `CLI_MARKER` and `libraryRegion()` helpers are gone. The suite (`fail 0`, `skipped 9`, `tests 3712`) and typecheck are both green. Plan 06 is complete. It cut stock-dispatch.test.ts, the phase's largest single source-scanning population. 15 whole-case deletions plus 2 D-02/D-03 renames, reached through two module-scope `*_SOURCE` constants and a direct `readFileSync` rather than the doomed module alone. All four CHAN-04 channel-lock cases survive untouched. The suite (`fail 0`, `skipped 9`, `tests 3697`) and typecheck are both green. Plan 07 is complete. It cut anno-store.test.ts, the largest single file in the phase at 5,595 lines and the one holding both of the phase's measured genuinely-mixed cases. 12 whole-case deletions, plus the bank-field case's D-02/D-03 rename and CR-08's no-rename strip. The suite (`fail 0`, `skipped 9`, `tests 3685`) and typecheck are both green. Plan 08 is complete. It cut anno-export-asm.test.ts's auto-name prefix cluster and BUILD-07 guard cluster. 11 whole-case deletions total, including one the D-14 scanner could not see at all, found only by the mandated blind-spot pass. No D-02/D-03 renames were needed. All three plan-flagged "may be mixed" candidates resolved to pure false positives on hand-read and stayed byte-identical. The suite (`fail 0`, `skipped 9`, `tests 3674`) and typecheck are both green.
 
 **Phase 51 is still in flight and is NOT superseded by this.** It remains In Progress at 8/17 plans in the ROADMAP Progress table; planning Phase 56 did not advance or close it. Its own position and per-plan record follows.
 
@@ -639,6 +639,7 @@ Last activity: 2026-09-15 — Completed 56-07 (Plan 7 of 11)
 | Phase 56 P03 | 6min | 3 tasks | 3 files |
 | Phase 56 P04 | 6 min | 2 tasks | 2 files |
 | Phase 56 P07 | 42min | 3 tasks | 1 files |
+| Phase 56 P08 | 33min | 3 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -1440,6 +1441,7 @@ Recent decisions affecting current work:
 - [Phase 56]: Plan 06's Task 2 commit message incorrectly stated VICE_PROXY_SOURCE was kept because Task 1's renamed WR-06 case still read it. Task 1 had already stripped that exact reference in its own D-02/D-03 cut. The constant was fully orphaned and was removed in Task 3, which independently satisfies the plan's own no-`_SOURCE`-constant acceptance gate. — No functional impact: typecheck and the TAP suite stayed green at every commit.
 - [Phase 56]: Plan 06's Task 2 candidate 1 ("dispatch: no handler in the table ever throws...") did not match its plan description. The plan claimed a source-constant read that hand-read did not find. Left completely untouched and reported rather than silently reconciled, per the plan's own "stop and report, never adjust" boundary.
 - [Phase 56]: anno-store.test.ts (56-07) removed 12 whole source-scanning cases. The two mixed cases resolved differently. The "reserved bank field" case needed a D-03 rename, because it lost half its name's promise. CR-08 needed no rename, because its surviving name already described only the behavioural half.
+- [Phase 56]: anno-export-asm.test.ts (56-08) removed 11 whole source-scanning cases. One case was invisible to the D-14 scanner and was found only by the mandated blind-spot pass. All three plan-flagged "may be mixed" candidates resolved to pure false positives on hand-read, not D-02 exemptions. Two inspected a RegExp's own `.source` property rather than any module's file text. One was a genuine exportAsm()+ACME round trip with zero file reads. No D-03 renames were needed in this plan.
 
 ### Pending Todos
 
@@ -2553,10 +2555,11 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-15T07:49:25.237Z
-Stopped at: Completed 56-07-PLAN.md
+Last session: 2026-09-15T08:17:08.875Z
+Stopped at: Completed 56-08-PLAN.md
 Resume file: None
 
+Earlier: Completed 56-07-PLAN.md
 Earlier: Completed 56-06-PLAN.md
 Earlier: Completed 56-05-PLAN.md
 Earlier: Completed 56-04-PLAN.md
