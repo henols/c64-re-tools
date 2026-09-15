@@ -2099,14 +2099,20 @@ Notes:
 
 ## Progress
 
-**This per-phase table is load-bearing, not decorative.**
-`comment-phase-pointers.test.ts`'s `parseCutPhasesFromRoadmap()` parses it to
-derive the cut/dissolved phase set that its orphaned-pointer check runs against
-— it splits on the `## Progress` heading and reads column 1 (`N.` or `N.M`) and
-column 4 (Status) of every row. Collapsing it to a per-milestone summary makes
-that set empty and turns four of its tests red. Keep the per-phase rows, keep
-the column order, and keep cut/dissolved phases recorded here rather than only
-in a milestone archive.
+**Keep this per-phase table. Keep its column order. Keep every row, including
+the cut and dissolved phases (`6.`, `20.`, `21.`, `22.`, `25.`).**
+This live table is the only current and complete per-phase record. The
+archived `milestones/v0.*-ROADMAP.md` copies are cumulative snapshots frozen
+at their own close, not per-milestone slices. The newest one, `v0.9.0`, stops
+at 47 phase rows and carries nothing for Phases 45 to 56. Collapsing this
+table would leave the newest phases with no per-phase record, and would force
+a reader to rebuild history from seven frozen snapshots instead of reading one
+live one.
+
+No mechanism enforces this table today. Convention alone maintains it. Commit
+`276c15c9` deleted the former mechanical consumer, `comment-phase-pointers.test.ts`,
+which used to parse this table to derive a cut-phase set for an orphaned-pointer
+check. No test reads this table now.
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|

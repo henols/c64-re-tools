@@ -168,15 +168,21 @@ Confirmed against the current tree. Do not re-raise these.
 - Workaround: none. Read the raw spawn error rather than the rendered verdict when a guard
   reports a timeout that does not reproduce.
 
-**Test-leaked scratch directories accumulate in `.planning/`:**
-- Symptoms: 13 `.planning/vice-proxy-evidence-test-*` directories exist on the working tree.
-- Files: `src/mcp/vice/vice-proxy.test.ts:4711-4726` (`tmpWorkspaceIncidentsDir()`)
-- Trigger: running `vice-proxy.test.ts`. The directory *must* live inside the mounted workspace
-  for the path translation under test to be real, so `/tmp` is not an option — but the caller's
-  `finally` block does not remove the empty parent.
-- Workaround: they are empty, so git does not track them and `git status` stays clean; they are
-  **not** gitignored (`git check-ignore` → rc 1), so a non-empty one would show up as untracked
-  noise. Harmless today, latent tomorrow. `rm -rf .planning/vice-proxy-evidence-test-*`.
+**Test-leaked scratch directories accumulate in `.planning/` — resolved 2026-09-15:**
+- Symptoms (historical): up to 19 `.planning/vice-proxy-evidence-test-*` directories accumulated
+  on the working tree over time.
+- Files (historical): `src/mcp/vice/vice-proxy.test.ts:4711-4726` named `tmpWorkspaceIncidentsDir()`
+  as the writer. Commit `d8ed053e` deleted that writer, so this pointer names a line range whose
+  helper no longer exists. Treat it as historical, not a live pointer.
+- Trigger (historical): running `vice-proxy.test.ts` used to leak these directories, because the
+  caller's `finally` block did not delete the empty parent. That trigger is no longer true — the
+  writer that produced the leak is gone.
+- Resolution: an executor checked all 19 accumulated directories as empty and deleted them on
+  2026-09-15. Nobody added the pattern to `.gitignore`, by decision — with no writer left,
+  there is nothing to ignore, and an ignore rule would only hide a real recurrence instead of
+  surfacing one. See
+  `.planning/todos/completed/2026-09-13-vice-proxy-test-leaks-scratch-dirs-into-planning-root.md`
+  for the full closure record.
 
 ## Security Considerations
 
