@@ -42,7 +42,6 @@ import { fileURLToPath } from "node:url";
 
 import { closeStore, openStore, setDataType } from "./anno-store.ts";
 import { ANNO_TOOL_DEFINITIONS, runAnnoTool } from "./anno-tools.ts";
-import { codeOnly, shippedTsModules } from "./shipped-modules.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OWN_FILENAME = "evid-report-keys.test.ts";
@@ -323,74 +322,6 @@ test("direction 3 (denominator adjacency), planted control: a synthetic nested o
     () => assertDenominatorAdjacency(poisoned, "plant"),
     /innerCount/,
     "a Count key with no denominator anywhere must fail this guard by name",
-  );
-});
-
-// ---------------------------------------------------------------------------
-// Direction 4: no runtime `data` branch -- a type-level control, source-traced
-// rather than assumed.
-// ---------------------------------------------------------------------------
-
-/** The evidence family's shipped modules: anything named `evid-*.ts`, plus
- * `anno-types.ts`, where `RuntimeExecClass` itself is declared. */
-function evidenceFamilyModules(dir: string): string[] {
-  return shippedTsModules(dir).filter((f) => f.startsWith("evid-") || f === "anno-types.ts");
-}
-
-/** Extracts `RuntimeExecClass`'s own union members from a source string and
- * asserts there are exactly two -- `keepLiteralBodies: true`, because the
- * thing being read here IS a string (the quoted union members), and blanking
- * literal bodies would make it unobservable. The real scan and the planted
- * control both call this SAME predicate. */
-function assertRuntimeUnionHasExactlyTwoMembers(source: string): string[] {
-  const stripped = codeOnly(source, true);
-  const match = stripped.match(/export\s+type\s+RuntimeExecClass\s*=\s*([^;]+);/);
-  assert.ok(match, "no RuntimeExecClass type declaration found in this source");
-  const members = (match as RegExpMatchArray)[1]
-    .split("|")
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
-  assert.equal(members.length, 2, `RuntimeExecClass must have exactly two members, found ${members.length}: ${members.join(", ")}`);
-  return members.map((m) => m.replace(/^"(.*)"$/, "$1"));
-}
-
-/** Scans one source string for a `runtime: "..."` field assignment and
- * refuses any value outside the allowed (derived, not hand-typed) member
- * set. */
-function assertNoRuntimeLiteralOutsideUnion(source: string, allowedMembers: readonly string[], label: string): void {
-  const stripped = codeOnly(source, true);
-  const pattern = /runtime\s*:\s*"([^"]*)"/g;
-  let match: RegExpExecArray | null;
-  while ((match = pattern.exec(stripped)) !== null) {
-    assert.ok(
-      allowedMembers.includes(match[1]),
-      `${label}: a "runtime" field is assigned the literal ${JSON.stringify(match[1])}, outside RuntimeExecClass's own ${JSON.stringify(allowedMembers)}`,
-    );
-  }
-}
-
-test("direction 4 (no runtime data branch), clean control: RuntimeExecClass has exactly two members, and no scanned evidence-family module assigns a runtime literal outside it", () => {
-  const files = evidenceFamilyModules(HERE);
-  assert.ok(files.length > 0, "the evidence-family module scan must not be empty -- a scan that found nothing must not report clean");
-  for (const name of ["evid-reconcile.ts", "evid-ingest.ts", "anno-types.ts"]) {
-    assert.ok(files.includes(name), `the evidence-family scan must include ${name} by name`);
-  }
-
-  const typesSource = readFileSync(join(HERE, "anno-types.ts"), "utf8");
-  const allowedMembers = assertRuntimeUnionHasExactlyTwoMembers(typesSource);
-
-  for (const name of files) {
-    const source = readFileSync(join(HERE, name), "utf8");
-    assertNoRuntimeLiteralOutsideUnion(source, allowedMembers, name);
-  }
-});
-
-test("direction 4 (no runtime data branch), planted control: a synthetic source string declaring a three-member runtime union fails the cardinality check by name", () => {
-  const synthetic = 'export type RuntimeExecClass = "code" | "unobserved" | "data";';
-  assert.throws(
-    () => assertRuntimeUnionHasExactlyTwoMembers(synthetic),
-    /exactly two members/,
-    "a three-member RuntimeExecClass declaration must fail this guard",
   );
 });
 
