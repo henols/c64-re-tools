@@ -9,11 +9,11 @@
 // 34 real bytes, goes through `parsePrg()`, and is decoded by the same
 // `decode()` the production module calls.
 //
-// THE NEVER-CACHED CONTROL has two halves and both are here: behavioural (six
-// observations of the store file, the snapshot ring and the revision, all
-// unchanged across repeated derived queries) and structural (the derivation
+// THE NEVER-CACHED CONTROL is behavioural: six observations of the store
+// file, the snapshot ring and the revision, all unchanged across repeated
+// derived queries. Phase 56 removed its structural half (the derivation
 // modules' stripped source, plus a directory-wide census of SQL write sites
-// against a NAMED expected set).
+// against a named expected set).
 //
 // Nothing here asserts stderr is empty, and nothing may: `node:sqlite` emits an
 // `ExperimentalWarning` unconditionally on first load.
