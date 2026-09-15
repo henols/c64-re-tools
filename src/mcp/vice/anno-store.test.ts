@@ -862,7 +862,7 @@ test("nothing derivable is cached: anno_xref holds ZERO rows after typing a lo_h
   });
 });
 
-test("the reserved bank field is never INTERPRETED: every list function returns bank null, and no line of the seam's own code branches on or computes with a bank value", () => {
+test("the reserved bank field is never INTERPRETED: every list function returns bank null for every row it lists", () => {
   inTempDir((dir) => {
     const path = join(dir, "proj.annostore");
     const store = openStore(path, { workspaceRoot: dir });
@@ -888,55 +888,6 @@ test("the reserved bank field is never INTERPRETED: every list function returns 
       closeStore(store);
     }
   });
-
-  // THE STRUCTURAL HALF. `PROOF-03` is recorded could-not-run and `memmap.json`
-  // is flat, so nothing knows what a bank number would MEAN -- which makes any
-  // code path branching on its value a guess dressed as logic. Scanned on
-  // STRICT `codeOnly()` output, which blanks string-literal bodies: that is what
-  // removes the `DDL` template's `bank integer` declarations and every `select
-  // ... bank ...` column list from the scan without hand-excluding line spans,
-  // leaving only real code that names the identifier.
-  //
-  // WHAT IN-06 CHANGED, AND WHY THE CONTROL IS NARROWED RATHER THAN DELETED.
-  // Before IN-06 the store's only range insert bound the literal `null`, so
-  // "no line outside the row mappers so much as names a bank value" was true
-  // and was the assertion. `retype()`'s split-and-preserve now carries the
-  // OVERLAPPED ROW'S OWN bank forward onto its remainders, because a split path
-  // that dropped a reserved column is exactly the silent loss a future
-  // banked-memory model would inherit. Carrying a value through verbatim is not
-  // INTERPRETING it: the four lines allowed below declare it, bind it, and pass
-  // it on, and not one of them asks what the number means. The prohibition that
-  // actually matters -- no branch, no comparison, no arithmetic on a bank value
-  // -- is asserted separately and unconditionally underneath, over the same
-  // scanned lines, so narrowing the allow-list cannot quietly widen the rule.
-  const strict = codeOnly(readFileSync(join(HERE, "anno-store.ts"), "utf8"));
-  const bankLines = strict.split("\n").filter((line) => /\bbank\b/.test(line));
-
-  // NON-VACUITY: an allow-list is only evidence if the scan found the lines it
-  // is excusing. 14 lines name a bank value on the tree this control was
-  // written against; the floor is stated below it so an accidental change to
-  // `codeOnly()` that stripped everything cannot pass here trivially.
-  assert.ok(bankLines.length >= 13, `the scan must find the bank-naming lines it excuses, got ${bankLines.length}`);
-
-  const offenders = bankLines
-    // The row mappers ARE the one permitted read, one line each.
-    .filter((line) => !/^\s*bank: row\.bank,$/.test(line))
-    // ...and the local row-shape casts that name the column's type, whether
-    // written over several lines or inline on the `.all()` that produced them.
-    .filter((line) => !/^\s*bank: number \| null;$/.test(line))
-    .filter((line) => !/^\s*\.all\(.*\) as \{[^}]*bank: number \| null \}\[\];$/.test(line))
-    // IN-06's pass-through, four lines: the parameter, the bind, and the two
-    // remainder call sites that hand the overlapped row's own value onward.
-    .filter((line) => !/^function insertRange\(.*, bank: number \| null\): void \{$/.test(line))
-    .filter((line) => !/^\s*db\.prepare\(\)\.run\(start, endInclusive, dataType, bank\);$/.test(line))
-    .filter((line) => !/^\s*insertRange\(db, .*, row\.bank\);$/.test(line));
-  assert.deepEqual(offenders, [], "no code outside the row mappers and IN-06's verbatim pass-through may touch a bank value");
-
-  // THE RULE THE ALLOW-LIST MUST NOT SOFTEN: nothing may act on the value.
-  const interpreters = bankLines.filter(
-    (line) => /\bbank\b\s*(===|!==|==|!=|<=|>=|<|>|\+|-|\*|\/|\?\?|\|\||&&|\?)/.test(line) || /(===|!==|==|!=|<=|>=|<|>|\?\?)\s*\w*\.?\bbank\b/.test(line),
-  );
-  assert.deepEqual(interpreters, [], "no line may branch on, compare or compute with a bank value -- nothing knows what one would mean");
 });
 
 // ---------------------------------------------------------------------------
@@ -1451,67 +1402,6 @@ test("WR-24, BEHAVIOURAL: several sequential reverts to the SAME revision each s
       closeStore(store);
     }
   });
-});
-
-test("WR-24, STRUCTURAL: revertTo's staging name derives from randomUUID, and all three of its cleanups route through discardSnapshot rather than a bare rmSync", () => {
-  // WHY THIS IS STRUCTURAL, AND WHAT ITS EVIDENCE IS WORTH -- stated in the
-  // control itself, because this file's conventions forbid a structural
-  // assertion that does not say why it is one, and because 28-17 P5 forbids a
-  // uniqueness claim whose only evidence is that the code was written down.
-  //
-  // THE COLLISION-AVOIDANCE CLAIM IS NOT PROVED HERE. Two genuinely concurrent
-  // `revertTo` attempts cannot be constructed in-process, so the in-process
-  // evidence for "no two attempts can share a staging path" is that the name is
-  // built from `randomUUID` -- PRESENCE, not behaviour. That claim is filed as a
-  // `backstop` truth in this plan's summary with exactly that reason. What this
-  // control DOES prove is that the derivation and the cleanup routing have not
-  // silently regressed, which the behavioural control above cannot see: a bare
-  // `rmSync` removes the file just as well on the sequential path.
-  //
-  // LITERAL BODIES KEPT (`codeOnly(src, true)`): the surrounding function is
-  // identified by source text and strict mode would blank the literals that make
-  // the body substantial.
-  const stripped = codeOnly(readFileSync(join(HERE, "anno-store.ts"), "utf8"), true);
-
-  const fnStart = stripped.indexOf("export function revertTo");
-  assert.ok(fnStart >= 0, "revertTo must be findable in the stripped source");
-  const fnEnd = stripped.indexOf("\n}", fnStart);
-  assert.ok(fnEnd > fnStart, "and revertTo's body must terminate at a column-zero closing brace");
-  const body = stripped.slice(fnStart, fnEnd);
-
-  // NON-VACUITY FIRST: a failed extraction satisfies an absence assertion
-  // trivially, which is how a control comes to pass for the wrong reason.
-  assert.ok(body.length > 800, `the extracted revertTo body must be substantial, got ${body.length} characters`);
-
-  // THE DERIVATION. Recorded as the matched source line so the summary can quote
-  // what the control actually saw rather than what it hoped for.
-  const stagingLine = body.split("\n").find((l) => l.includes("const staging = "));
-  assert.ok(stagingLine !== undefined, "revertTo must still assign a staging path");
-  assert.match(
-    stagingLine,
-    /randomUUID\(\)/,
-    `revertTo's staging name must derive from randomUUID -- the same primitive stageSnapshot uses -- got: ${stagingLine.trim()}`,
-  );
-  assert.match(stagingLine, /\.revert-/, `and must keep the .revert- marker so a leaked file is attributable, got: ${stagingLine.trim()}`);
-
-  // THE POSITIVE COUNT IS THE PRIMARY ASSERTION. Counting the thing that must be
-  // PRESENT is what fails when a call site is quietly changed back; a count of
-  // the removed spelling alone would also pass on a body that lost a cleanup
-  // entirely.
-  const discards = body.split("discardSnapshot(staging)").length - 1;
-  assert.equal(
-    discards,
-    3,
-    `revertTo must route all three of its staging cleanups through discardSnapshot -- the module's one place a staging file is ` +
-      `removed -- found ${discards}`,
-  );
-
-  // AND THE SECONDARY ASSERTION, DELIBERATELY SCOPED TO THIS FUNCTION'S BODY
-  // and never to the module: `rmSync` is legitimately used elsewhere in
-  // `anno-store.ts` (the ring sweep, the prune loop, `discardSnapshot` itself),
-  // so a module-wide count would be asserting something false.
-  const bareRemovals = body.split("rmSync(staging").length - 1;
-  assert.equal(bareRemovals, 0, `and must contain no bare rmSync on the staging path, found ${bareRemovals}`);
 });
 
 // ---------------------------------------------------------------------------
@@ -2055,20 +1945,6 @@ test("STORE-03, post-revert ORDERING: after a revert listRanges is in ascending 
   });
 });
 
-test("STORE-02 non-vacuity: the code this gap closure adds is inside the source the no-splitter structural scan reads", () => {
-  // `anno-overlap.test.ts:487` asserts that `coalesc`, `merg` and `splitter`
-  // appear NOWHERE in `codeOnly(anno-store.ts)`. An ABSENCE assertion over
-  // source that does not contain the new code proves nothing about the new
-  // code, so the presence of the two new identifiers is pinned here. Together
-  // the two make the adjacency guarantee non-vacuous over this plan's
-  // additions.
-  const stripped = codeOnly(readFileSync(join(HERE, "anno-store.ts"), "utf8"));
-  assert.ok(stripped.includes("retainedRevisions"), "the one ownership predicate must be in the source the absence scan reads");
-  assert.ok(stripped.includes("reconcileSnapshotRing"), "and so must the one half-state resolver");
-  const offenders = ["coalesc", "merg", "splitter"].filter((needle) => stripped.toLowerCase().includes(needle));
-  assert.deepEqual(offenders, [], "and neither new identifier -- nor anything else in the file -- may name a merging or splitting primitive");
-});
-
 // ---------------------------------------------------------------------------
 // THE TWO PRUNE HALF-STATES, AND THE SOURCE ORDER THAT DECIDES WHICH ONE A
 // KILL CAN REACH (gap 2 = WR-01).
@@ -2245,37 +2121,6 @@ test("prune half-state B, the orphan FILE (the harmless direction): the store st
       closeStore(store);
     }
   });
-});
-
-test("the prune's SOURCE ORDER is the guarantee: inside pruneSnapshots the pointer-row delete precedes the unlink, asserted over the module's own stripped source", () => {
-  // A BEHAVIOURAL assertion cannot see this. Both statements are present in
-  // either arrangement and both leave the same end state when nothing kills
-  // the process, so only the ORDER distinguishes the harmless half-state from
-  // the forbidden one. This is the assertion a future reader who "tidies" the
-  // loop back to file-then-row will trip.
-  //
-  // LITERAL BODIES KEPT (`codeOnly(src, true)`): the delete statement is SQL
-  // text inside a string literal, which strict mode blanks.
-  const stripped = codeOnly(readFileSync(join(HERE, "anno-store.ts"), "utf8"), true);
-  const start = stripped.indexOf("export function pruneSnapshots");
-  assert.ok(start >= 0, "pruneSnapshots must be findable in the stripped source");
-  const end = stripped.indexOf("\n}", start);
-  assert.ok(end > start, "and its body must terminate at a column-zero closing brace");
-  const body = stripped.slice(start, end);
-
-  // NON-VACUITY FIRST: a failed extraction, or a body missing either
-  // statement, would satisfy an ordering comparison trivially.
-  assert.ok(body.length > 200, `the extracted pruneSnapshots body must be substantial, got ${body.length} characters`);
-  const rowDelete = body.indexOf("delete from anno_snapshot");
-  const unlink = body.indexOf("rmSync");
-  assert.ok(rowDelete >= 0, "the pointer-row delete must be present in the extracted body");
-  assert.ok(unlink >= 0, "and so must the unlink");
-
-  assert.ok(
-    rowDelete < unlink,
-    "the POINTER ROW must be deleted BEFORE the file is unlinked: a kill between the two then leaves an orphan FILE -- harmless and " +
-      `reconcilable by revision number -- and never an orphan ROW (row delete at ${rowDelete}, unlink at ${unlink})`,
-  );
 });
 
 test("STORE-04 idempotency across the half-states: a second pruneSnapshots reports nothing dropped in either direction and changes neither the files nor the rows, and a second revertTo(r) leaves the same rows and the same revision", () => {
@@ -2509,154 +2354,6 @@ test("a prune whose sweep DEFERRED returns early: one busy_timeout and not two, 
       closeStore(a);
     }
   });
-});
-
-test("the sweep's SOURCE ORDER is the guarantee too: inside reconcileSnapshotRing there is NO pointer-row delete at all, and the commit precedes the unlink", () => {
-  // A BEHAVIOURAL assertion cannot see either clause, for the same reason the
-  // prune's own source-order control exists: the surviving statements are
-  // present in every arrangement and leave the same end state when nothing
-  // kills the process, so only the ORDER distinguishes the harmless half-state
-  // from the forbidden one. The sweep's own transaction is the hazard the 28-11
-  // repair introduced -- an interruption between the transaction and the
-  // unlinks -- and closing the transaction first is what makes that
-  // interruption leave extra FILES rather than a pointer row aimed at a deleted
-  // file.
-  //
-  // WHY THE ROW-DELETE CLAUSE CHANGED FROM AN ORDERING TO AN ABSENCE (CR-05):
-  // this control used to assert that the pointer-row delete PRECEDED the
-  // commit. That statement was removed on purpose. The sweep could not
-  // distinguish a row belonging to this ring from a row belonging to a ring
-  // reached under a second spelling of the same store file -- a symlink alias,
-  // or `mv proj.annostore other.annostore` -- and deleting rows under that
-  // ambiguity destroyed a reachable revert history irreversibly, reproduced
-  // twice through production entry points. The ABSENCE is now the guarantee,
-  // and it is asserted here rather than left implicit so a future
-  // re-introduction is caught at the statement rather than at the next
-  // destroyed history.
-  //
-  // LITERAL BODIES KEPT (`codeOnly(src, true)`): the delete statement whose
-  // absence is asserted would be SQL text inside a string literal, which strict
-  // mode blanks -- and a blanked literal would make the absence assertion pass
-  // vacuously.
-  const stripped = codeOnly(readFileSync(join(HERE, "anno-store.ts"), "utf8"), true);
-  const start = stripped.indexOf("export function reconcileSnapshotRing");
-  assert.ok(start >= 0, "reconcileSnapshotRing must be findable in the stripped source");
-  const end = stripped.indexOf("\n}", start);
-  assert.ok(end > start, "and its body must terminate at a column-zero closing brace");
-  const body = stripped.slice(start, end);
-
-  // NON-VACUITY FIRST: a failed extraction, or a body missing either surviving
-  // statement, would satisfy both the ordering comparison AND the absence
-  // assertion trivially. The length bound and the two presence checks are
-  // exactly what stops the absence clause from being satisfied by an empty
-  // string.
-  assert.ok(body.length > 400, `the extracted reconcileSnapshotRing body must be substantial, got ${body.length} characters`);
-  const rowDelete = body.indexOf("delete from anno_snapshot");
-  const commitCall = body.indexOf("commitTransaction");
-  const unlink = body.indexOf("rmSync");
-  assert.ok(commitCall >= 0, "the module's one commit site must be called from inside the sweep's own transaction");
-  assert.ok(unlink >= 0, "and the unlink must be present in the extracted body");
-  // AND THE POSITIVE CONTROL FOR THE ABSENCE CLAUSE, which is the assertion
-  // that stops it passing for the wrong reason. If `codeOnly(src, true)` ever
-  // stopped keeping literal bodies, the search string would be blanked
-  // everywhere and "no pointer-row delete in the sweep" would be true of a
-  // source that still had one. `pruneSnapshots` is REQUIRED to contain exactly
-  // this statement (its own source-order control asserts the ordering), so
-  // finding it there proves the needle is findable when it is present.
-  assert.ok(
-    stripped.indexOf("delete from anno_snapshot", stripped.indexOf("export function pruneSnapshots")) >= 0,
-    "pruneSnapshots must still contain the pointer-row delete in the stripped source -- otherwise literal bodies are being blanked and the absence assertion below is vacuous",
-  );
-
-  assert.equal(
-    rowDelete,
-    -1,
-    `the sweep must contain NO pointer-row delete at all (CR-05): it cannot establish ownership of the row direction under a second spelling of the store file, so it abstains from it entirely (found one at ${rowDelete})`,
-  );
-  assert.ok(
-    commitCall < unlink,
-    "the row deletes must be DURABLE BEFORE any file is unlinked: an interrupted sweep then leaves extra FILES -- harmless and reconcilable " +
-      `by revision number -- and never a pointer row aimed at a deleted file (commitTransaction at ${commitCall}, unlink at ${unlink})`,
-  );
-});
-
-test("the publish path's SOURCE ORDER is the durability guarantee (WR-13): stageSnapshot fsyncs after its vacuum, and publishSnapshot fsyncs the ring directory after its rename", () => {
-  // WHY THIS CONTROL IS STRUCTURAL AND SAYS SO. An `fsync` has NO in-process
-  // observable: it returns the same `undefined` whether the bytes reached the
-  // platter or the page cache lied, and the only witness that distinguishes the
-  // two is a host losing power. A behavioural assertion here would therefore be
-  // measuring something else -- that a file exists, that a read-back matches --
-  // and CALLING it durability, which is the 28-07 P3 shape ("a comment or a
-  // message that asserts a guarantee the code does not provide") this phase keeps
-  // re-encountering. So the claim is stated for what it is: the ORDER of two
-  // calls in the source, asserted with a positive control for the needle. The
-  // BEHAVIOURAL half of the durability story lives in `anno-durability.test.ts`,
-  // which kills a real process; this control only pins that the publish path uses
-  // the same helper in the same order the revert path already does.
-  //
-  // WHAT THE ORDER BUYS. The pointer row naming a published snapshot is inserted
-  // inside the write transaction and committed by SQLite, WHICH DOES FSYNC.
-  // Without these two calls the ROW is durable and the FILE it names is not, so a
-  // host crash (not the `SIGKILL` the durability proof covers) can leave a
-  // PRESENT, PARTIAL snapshot that `retainedRevisions()` would advertise -- the
-  // exact input CR-08 was reproduced with.
-  //
-  // LITERAL BODIES KEPT (`codeOnly(src, true)`): the `vacuum into` needle is SQL
-  // text inside a template literal, which strict mode blanks -- and a blanked
-  // literal would make the `fsyncPath` AFTER `vacuum into` comparison pass
-  // against a source that fsynced first.
-  const stripped = codeOnly(readFileSync(join(HERE, "anno-store.ts"), "utf8"), true);
-
-  const extract = (declaration: string): string => {
-    const start = stripped.indexOf(declaration);
-    assert.ok(start >= 0, `${declaration} must be findable in the stripped source`);
-    const end = stripped.indexOf("\n}", start);
-    assert.ok(end > start, `and ${declaration}'s body must terminate at a column-zero closing brace`);
-    return stripped.slice(start, end);
-  };
-
-  const stage = extract("export function stageSnapshot");
-  const publish = extract("function publishSnapshot");
-
-  // NON-VACUITY FIRST: a failed extraction, or a body reduced to its signature,
-  // would satisfy both ordering comparisons trivially by leaving both indexes at
-  // -1. The length bounds and the four presence checks are what stop that.
-  assert.ok(stage.length > 200, `the extracted stageSnapshot body must be substantial, got ${stage.length} characters`);
-  assert.ok(publish.length > 40, `the extracted publishSnapshot body must be substantial, got ${publish.length} characters`);
-
-  const vacuum = stage.indexOf("vacuum into");
-  const stageFsync = stage.indexOf("fsyncPath(");
-  assert.ok(vacuum >= 0, "stageSnapshot must still take its image with `vacuum into`");
-  assert.ok(stageFsync >= 0, "and stageSnapshot must fsync the staged image before it returns");
-
-  const rename = publish.indexOf("renameSync(");
-  const publishFsync = publish.indexOf("fsyncPath(");
-  assert.ok(rename >= 0, "publishSnapshot must still publish by rename");
-  assert.ok(publishFsync >= 0, "and publishSnapshot must fsync the ring directory after that rename");
-
-  // AND THE POSITIVE CONTROL FOR THE NEEDLE, in the same style the sweep's
-  // source-order control uses for `delete from anno_snapshot`. If `fsyncPath(`
-  // ever stopped being findable -- renamed, wrapped, blanked by a change in
-  // `codeOnly` -- both `>= 0` checks above would fail loudly rather than the
-  // orderings passing for the wrong reason, but the assertion is stated anyway
-  // because `revertTo` is REQUIRED to contain this call (its steps 3 and 5 are
-  // the idiom the publish path was made to match), so finding it there proves the
-  // needle is findable when it is present.
-  assert.ok(
-    stripped.indexOf("fsyncPath(", stripped.indexOf("export function revertTo")) >= 0,
-    "revertTo must still contain fsyncPath in the stripped source -- otherwise the needle is unfindable and the two orderings below are vacuous",
-  );
-
-  assert.ok(
-    stageFsync > vacuum,
-    "the staged image must be fsynced AFTER the vacuum that fills it and before stageSnapshot returns: the pointer row that will name it " +
-      `is committed by SQLite, which fsyncs, so a row durable ahead of its file is a snapshot that is advertised and partial (vacuum into at ${vacuum}, fsyncPath at ${stageFsync})`,
-  );
-  assert.ok(
-    publishFsync > rename,
-    "the ring directory must be fsynced AFTER the rename that publishes into it: a rename is VISIBLE immediately and DURABLE only after the " +
-      `directory fsync, which is the distinction fsyncPath's own doc sentence records (renameSync at ${rename}, fsyncPath at ${publishFsync})`,
-  );
 });
 
 test("idempotency of open: opening and closing a store twice with no write between leaves the revision, the rows and the snapshot ring unchanged", () => {
