@@ -191,23 +191,23 @@ Success Criteria and are cited by all eleven plans. The owner rule they serve,
 stated 2026-09-14: "no test may assert on text at all" and "only data-driven tests
 that test production code are kept."
 
-- [ ] **SC-1**: `src/mcp/vice/shipped-modules.ts` no longer exists, and nothing
+- [x] **SC-1**: `src/mcp/vice/shipped-modules.ts` no longer exists, and nothing
   imports it. Seventeen files import it as of the 2026-09-14 re-measure; all
   sixteen surviving test files lose the import before the module is removed, so
   `npm run typecheck` exits 0 at every commit rather than only at the end.
-- [ ] **SC-2**: No real coverage is deleted as collateral. A test file that merely
+- [x] **SC-2**: No real coverage is deleted as collateral. A test file that merely
   CONTAINED a source-scanning case keeps every other case it had; only cases whose
   entire subject is source text are removed. The embedded-case count and the
   whole-file count for `shipped-modules.test.ts` are reported SEPARATELY.
-- [ ] **SC-3**: `npm run test:automated` is green and `npm run typecheck` exits 0.
+- [x] **SC-3**: `npm run test:automated` is green and `npm run typecheck` exits 0.
   The test-count drop is stated as a number and reconciled CASE BY CASE against a
   verbatim removed-name list, so a silently broken file cannot hide inside the
   expected decrease. Counts-only reconciliation is rejected by this criterion's own
   wording.
-- [ ] **SC-4**: No test file is left empty, and none is left with only setup and no
+- [x] **SC-4**: No test file is left empty, and none is left with only setup and no
   assertions. Applied at case level this is also the exemption test that decides
   whether a mixed case is stripped in place or removed whole.
-- [ ] **SC-5**: `anno-seam.test.ts`'s WR-25 behavioural case survives. It proves
+- [x] **SC-5**: `anno-seam.test.ts`'s WR-25 behavioural case survives. It proves
   `openStore()` refuses with `AnnoStorePathError` when handed neither a
   workspaceRoot nor the unconfined escape; `anno-confinement.test.ts` covers
   symlink and workspace-locality refusals, NOT this one.
@@ -354,11 +354,11 @@ Success-Criteria live in `.planning/ROADMAP.md` → "Phase Details".
 | VOCAB-04 | Phase 51 | Pending |
 | VOCAB-05 | Phase 51 | Pending |
 | VOCAB-06 | Phase 51 | Pending |
-| SC-1 | Phase 56 | Pending |
-| SC-2 | Phase 56 | Pending |
-| SC-3 | Phase 56 | Pending |
-| SC-4 | Phase 56 | Pending |
-| SC-5 | Phase 56 | Pending |
+| SC-1 | Phase 56 | Complete |
+| SC-2 | Phase 56 | Complete |
+| SC-3 | Phase 56 | Complete |
+| SC-4 | Phase 56 | Complete |
+| SC-5 | Phase 56 | Complete |
 | INSTALL-01 | Phase 57 | Pending |
 | INSTALL-02 | Phase 57 | Pending |
 | INSTALL-03 | Phase 57 | Pending |

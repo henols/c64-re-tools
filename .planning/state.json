@@ -1,7 +1,7 @@
 {
   "contract": "1.0.0",
   "flavor": "core",
-  "milestone": "v1.0.0 — The Rebuild Half",
+  "milestone": "v1.0.0 \u2014 The Rebuild Half",
   "phases": [
     {
       "number": "1",
@@ -235,7 +235,7 @@
     },
     {
       "number": "44",
-      "name": "PROOF-04 — The Independent External Check",
+      "name": "PROOF-04 \u2014 The Independent External Check",
       "status": "complete"
     },
     {
@@ -296,7 +296,7 @@
     {
       "number": "56",
       "name": "Remove `shipped-modules.ts` and Its Embedded Source Scans",
-      "status": "in_progress"
+      "status": "complete"
     },
     {
       "number": "57",
@@ -306,8 +306,8 @@
   ],
   "next": {
     "command": "/gsd:progress --next",
-    "label": "Advance to the next step",
-    "reason": "Phase 56 of 13 · 54% · executing"
+    "label": "Advance to the next step (verify)",
+    "reason": "Phase 56 of 13 (v1.0.0) \u00b7 89% \u00b7 ready to verify"
   },
-  "updated_at": "2026-09-15T09:30:36.007Z"
+  "updated_at": "2026-09-15T09:50:36.050Z"
 }
