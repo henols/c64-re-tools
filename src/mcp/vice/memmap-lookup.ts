@@ -9,7 +9,7 @@
 // path here is repo-relative and derived from this module's own location, the
 // same posture `anno-regbits-gen.ts` and `dxa-blocks.ts` take for themselves.
 // It also NEVER NAMES `node:sqlite` and NEVER OPENS THE ANNOTATION STORE:
-// `anno-store.ts` is the one module `anno-seam.test.ts` allows to name that
+// `anno-store.ts` is the one module permitted to name that
 // dependency, and this module answers a pure question about a static JSON
 // file that has nothing to do with the store's own persistence.
 //

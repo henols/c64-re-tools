@@ -52,9 +52,7 @@
 //   4. NEVER open a store here. This module imports nothing from
 //      `anno-store.ts` and touches no filesystem, transport or
 //      child-process -- the write happens in `anno-tools.ts`'s dispatch
-//      arm, which is what keeps this module out of `anno-seam.test.ts`'s
-//      single-consumer set (`anno-store.ts` remains the one module naming
-//      `node:sqlite`).
+//      arm.
 //   5. NEVER read `.read` or `.write` off an `AccessFlags` value anywhere in
 //      this file. Only `.execute` is ever inspected -- read-and-write-only
 //      access is deliberately not this layer's concern (see the header

@@ -36,9 +36,7 @@
 // This module performs NO filesystem and NO network I/O: every function takes
 // bytes, an already-parsed JSON value, or a string array, and returns values.
 // Callers obtain and persist the bytes themselves. That is the same claim
-// `prg-image.ts` and `vsf-slice.ts`'s library region make about themselves, and
-// `capture-predicate.test.ts` asserts it from this module's own source rather
-// than trusting this paragraph.
+// `prg-image.ts` and `vsf-slice.ts`'s library region make about themselves.
 //
 // WHY THIS FILE EXISTS, AND WHAT IT IS NOT: the existing
 // `src/skills/c64-ram-capture/scripts/compare.mjs` is a VOCABULARY ANALOG
@@ -96,9 +94,7 @@
 //     fold it into the slicer -- the slicer returns the port bytes precisely so
 //     this module can apply them exactly once.
 //   - Never give any function here a filesystem PATH parameter, and never
-//     import either of this repo's host/container path-translation seams. Both
-//     absences are asserted structurally by `capture-predicate.test.ts`, not
-//     merely stated here.
+//     import either of this repo's host/container path-translation seams.
 //   - Never import `stop-oracle.ts` from here, on any route, static or
 //     dynamic. The captured 64K is the DEPENDENT VARIABLE the stop-identity
 //     oracle certifies; a predicate that could reach the oracle -- or an oracle
