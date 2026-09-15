@@ -58,7 +58,23 @@ patterns-established:
   - "Growing a security-relevant closed set: prove the set is still CLOSED in the same test that proves each new member works. hazard-subject-misaligned.prg -- a real committed fixture in the same directory that nothing loads -- is asserted NOT dialable, so the boundary is the reviewed table rather than the directory."
   - "Report a red control's difference set at the granularity it actually has. Three planted regressions produced six rows because each is visible as both an operand byte in RAM and a chip register value; both are reported rather than one being treated as the 'real' one."
 
-requirements-completed: [EQUIV-01, EQUIV-02]
+requirements-completed: []  # CORRECTED by the execute-phase orchestrator, 2026-09-15.
+  # This SUMMARY originally read [EQUIV-01, EQUIV-02]. Neither is complete yet.
+  # EQUIV-02 reads "behavioural equivalence between the original and THE REBUILD".
+  #   No rebuild exists: plan 50-06 Task 1 produces it. This plan compared the original
+  #   against a deliberately REGRESSED twin and correctly got a FAIL. A red control
+  #   against a regressed binary is not equivalence against a rebuild, so nothing here
+  #   evidences EQUIV-02 at all. Coverage D2/D3/D5 were retagged to EQUIV-01 for the
+  #   same reason -- all three describe the red control.
+  # EQUIV-01 is nearly earned and is deliberately still withheld. Three of its four
+  #   clauses are proven here and were independently re-verified by the orchestrator
+  #   from the committed captures (different-binary mode; the narrowed mask naming
+  #   $D020/$D015/$D018 individually; per-binary logical checkpoint resolution). Its
+  #   remaining clause, "an allowlist for intentional differences", has not been
+  #   exercised on a real capture pair -- the mechanism exists and is unit-tested, but
+  #   50-06 is the run that puts it to work.
+  # 50-06 can claim BOTH ids with complete evidence. This follows 50-04's own recorded
+  #   pattern in this phase: hold the id until the run that actually proves it.
 
 coverage:
   - id: D1
@@ -74,7 +90,7 @@ coverage:
     human_judgment: false
   - id: D2
     description: "The cross-binary comparison returns FAIL with exit status 1 against the regressed twin, under the same mask and with no allowlist"
-    requirement: EQUIV-02
+    requirement: EQUIV-01  # retagged 2026-09-15: this evidences the red control
     verification:
       - kind: other
         ref: "node compare-cross-binary.mjs cross original-a.bin regressed.bin --state ... --checkpoint hazard_raster_entry --limit 0 (exit status 1)"
@@ -85,7 +101,7 @@ coverage:
     human_judgment: false
   - id: D3
     description: "Each of $D020, $D015 and $D018 is named individually in the transcript with its original value, its regressed value and its bucket"
-    requirement: EQUIV-02
+    requirement: EQUIV-01  # retagged 2026-09-15: this evidences the red control
     verification:
       - kind: other
         ref: "grep -c 'D020\\|D015\\|D018' docs/phase50-equivalence-transcript.md -> 15"
@@ -106,7 +122,7 @@ coverage:
     human_judgment: false
   - id: D5
     description: "The red transcript section is committed before any green transcript exists, so git history carries the order the ROADMAP requires"
-    requirement: EQUIV-02
+    requirement: EQUIV-01  # retagged 2026-09-15: this evidences the red control
     verification:
       - kind: other
         ref: "grep -c '^## Green' docs/phase50-equivalence-transcript.md -> 0 at commit e5d84960"
