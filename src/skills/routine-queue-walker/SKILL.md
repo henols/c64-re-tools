@@ -6,37 +6,38 @@ description: Drive an existing C64 annotation store's backlog of undocumented ro
 # Walking the routine and symbol queue to closure
 
 **Do not start annotating whatever is in front of you.** The expensive failure
-here is not slow work — it is a pass that *looks* finished while a hundred
+here is not slow work. It is a pass that *looks* finished while a hundred
 `p_XXXX` labels are still nameless and nobody wrote down which ones. Build the
 queue first, from data, then walk it to the end.
 
 This playbook assumes block classification has already happened and an
-annotation store already exists. If you do not yet know what the program is —
-where it starts, which vector is live, which regions are code — stop and run
-`c64-program-recon` first. That skill answers *what is this program*. This one
-answers *what is still undocumented in it, and how do I finish*.
+annotation store already exists. You may not yet know what the program is —
+where it starts, which vector is live, which regions are code. If so, stop
+and run `c64-program-recon` first. That skill answers *what is this
+program*. This one answers *what is still undocumented in it, and how do I
+finish*.
 
 ## The one rule that makes this different from upstream's version
 
 **Work the queue one entry at a time.** Not as a throughput compromise — as an
-accurate model of the store underneath. One `.annostore` is one writer: every
+accurate model of the store underneath. One `.annostore` is one writer. Every
 mutating call opens it, commits and closes inside the call, and every one of
-them accepts an optional `base_revision` compare-and-swap that REFUSES a write
-computed against a revision the store has already moved past. Fanning several
-writers at one store therefore buys **zero** extra throughput and costs
-correctness: the losers come back as named stale-revision refusals you then
-have to re-derive and replay. Reading fan-out — several agents *thinking* over
-answers they already got — is fine, and its value is reasoning bandwidth,
-never I/O.
+them accepts an optional `base_revision` compare-and-swap. That REFUSES a
+write computed against a revision the store has already moved past. Fanning
+several writers at one store therefore buys **zero** extra throughput and
+costs correctness. The losers come back as named stale-revision refusals you
+then have to re-derive and replay. Reading fan-out — several agents *thinking*
+over answers they already got — is fine, and its value is reasoning
+bandwidth, never I/O.
 
-**Every call names its own store.** There is no ambient "current store" on this
-surface: pass `store` (a `.annostore` path) on every call, and pass `image` as
-well on every call that derives its answer from the program's bytes rather than
-from the annotations — `anno_get_binary_info`, `anno_read_region`,
-`anno_disassemble`, `anno_get_cross_references`, `anno_search` and
-`anno_get_address_details`. The store holds annotations and never bytes, so an
-omitted image would read as a plausible success against whatever was recorded
-last.
+**Every call names its own store.** There is no ambient "current store" on
+this surface: pass `store` (a `.annostore` path) on every call. Also pass
+`image` on every call that derives its answer from the program's bytes rather
+than from the annotations. Those calls are `anno_get_binary_info`,
+`anno_read_region`, `anno_disassemble`, `anno_get_cross_references`,
+`anno_search` and `anno_get_address_details`. The store holds annotations and
+never bytes, so an omitted image would read as a plausible success against
+whatever was recorded last.
 
 ## Phase 0 — context, and the packed-binary gate
 
@@ -45,17 +46,18 @@ last.
    quotes them.
 2. Read the returned `entropy` against the threshold of **7.5** carried in that
    tool's own description. At or above it, the bytes are very likely packed.
-3. If the binary looks packed, **stop and say so.** Do not annotate a packed
-   image: you would be documenting a decruncher, and every label you write is
-   thrown away the moment you recover the real image. This project's route to
-   an unpacked image is `c64-ram-capture` — run the program in the emulator and
-   capture RAM at a checkpoint past the decrunch — plus the packer-identity
-   finding in `c64-program-recon`, which names the packer when an oracle can.
-   Come back with the captured image and start again at Phase 0.
+3. If the binary looks packed, **stop and say so.** Do not annotate a
+   packed image. You would be documenting a decruncher. Every label you write
+   is thrown away the moment you recover the real image. This project's
+   route to an unpacked image is `c64-ram-capture`. Run the program in the
+   emulator and capture RAM at a checkpoint past the decrunch. Also run the
+   packer-identity finding in `c64-program-recon`, which names the packer
+   when an oracle can. Come back with the captured image and start again at
+   Phase 0.
 
-Upstream's in-place `unpack_binary` step is deliberately not carried: it is
-destructive (it clears the comments, labels and blocks already in the store)
-and this project has a non-destructive route to the same answer.
+Upstream's in-place `unpack_binary` step is deliberately not carried. It is
+destructive: it clears the comments, labels and blocks already in the store.
+This project has a non-destructive route to the same answer.
 
 ## Phase 1 — make sure blocks are classified
 
@@ -74,27 +76,27 @@ candidate is only meaningful once you know the bytes around it are code.
 A routine counts as **already documented** when its entry address carries a
 line comment. That is the only test. Do not guess from the label name.
 
-1. Call `anno_get_symbols` for all labels — user, system and external, with
-   an explicit `max_results` above the program's label count (`max_results` is
-   REQUIRED on this surface and has no default, so a truncated answer is always
-   a ceiling you chose). Keep the answer. Phase 3 reuses it.
+1. Call `anno_get_symbols` for all labels — user, system and external. Use
+   an explicit `max_results` above the program's label count. `max_results`
+   is REQUIRED on this surface and has no default. So a truncated answer is
+   always a ceiling you chose. Keep the answer. Phase 3 reuses it.
 2. Call `anno_get_comments`, again with an explicit `max_results`. Keep that
-   too — the true match count rides beside the list, so truncation is a fact
+   too. The true match count rides beside the list. So truncation is a fact
    you are told rather than one you infer.
 3. **Candidate source A — cross-reference and block-derived, checked FIRST and
    independently of whatever `anno_get_symbols` returned.** Call
    `anno_get_blocks` with `block_type: "code"` for every code-typed range,
    read each one with `anno_disassemble`, and collect every `jsr` target
-   address. For each candidate target, check that it is a real routine and
-   gather its full caller list with `anno_get_cross_references` (a generous
-   `max_results` — this is also the call that fills in "called from" when you
-   write up the entry in Phase 2.2). Every one of these targets is a routine
-   candidate **regardless of whether it carries any label at all**. A real
-   measured derivation run (dxa disassemble, then Ghidra import) found that a
-   purely dxa/Ghidra-derived store carries ZERO labels of any shape —
-   derivation writes typed ranges and cross-references, never names — so a
+   address. For each candidate target, check that it is a real routine. Also
+   gather its full caller list with `anno_get_cross_references`. Use a
+   generous `max_results`. This is also the call that fills in "called from"
+   when you write up the entry in Phase 2.2. Every one of these targets is a
+   routine candidate **regardless of whether it carries any label at all**.
+   A real measured derivation run (dxa disassemble, then Ghidra import) found
+   this. A purely dxa/Ghidra-derived store carries ZERO labels of any shape.
+   Derivation writes typed ranges and cross-references, never names. So a
    queue built only from Candidate source B below finds nothing to do on
-   such a store and silently reports a clean, empty queue on a program
+   such a store. It silently reports a clean, empty queue on a program
    nothing has been named in yet. Source A does not depend on step 1 having
    found anything.
 4. **Candidate source B — the label-prefix path, for a store that DOES carry
@@ -104,7 +106,7 @@ line comment. That is the only test. Do not guess from the label name.
    - it sits in a code region and is the target of at least one `JSR`
      cross-reference (`anno_get_cross_references`).
    - it is a `p_XXXX` label sitting **inside a code region**. These come from
-     split lo/hi immediate loads and from address tables, and they are almost
+     split lo/hi immediate loads and from address tables. They are almost
      always chained raster-IRQ handlers, hardware- or shadow-vector handlers,
      or jump-table and callback targets. Treat every one of them as a
      candidate rather than pattern-matching specific vector addresses.
@@ -122,11 +124,12 @@ line comment. That is the only test. Do not guess from the label name.
 Take **one** entry at a time, to completion, before starting the next — the
 queue discipline this section owns. For each entry, run `c64-program-recon`
 `SKILL.md`'s **"Documenting one routine, end to end"** procedure (steps 1-7)
-against the entry's explicit address — including its 4096-byte
-`anno_read_region` cap (consecutive ranges above it, never a raised cap) and
-its tail-call / fall-through bounds rules (`JMP shared_epilogue` still ends
-the routine. No return may mean fall-through — say so). Do not re-derive or
-paraphrase that procedure here.
+against the entry's explicit address. That procedure has a 4096-byte
+`anno_read_region` cap. Above the cap, use consecutive ranges. Never use a
+raised cap. That procedure also carries its tail-call and fall-through
+bounds rules. A `JMP shared_epilogue` still ends the routine. No return may
+mean fall-through — say so. Do not re-derive or paraphrase that procedure
+here.
 
 Record per entry, for Phase 4: the address, the old label, the new label, a
 one-line summary, and any uncertainty.
@@ -134,45 +137,48 @@ one-line summary, and any uncertainty.
 ### 2.3 Refresh point
 
 When the queue is empty, read the store's revision with `anno_save_project`.
-**It performs no write, and it exists to say so:** every mutating verb on this
-surface has already committed and fsynced its own write by the time it
-returned, so there is nothing for an explicit save to flush. Record the
-revision — it is the checkpoint you measure this pass from, and the
+**It performs no write, and it exists to say so.** Every mutating verb on
+this surface has already committed and fsynced its own write by the time it
+returned. So there is nothing for an explicit save to flush. Record the
+revision — it is the checkpoint you measure this pass from. It is also the
 `base_revision` a later compare-and-swap write would quote. Everything after
-this point re-reads the store, because Phase 2 has just changed the label names
-Phase 3 filters on.
+this point re-reads the store, because Phase 2 has just changed the label
+names Phase 3 filters on.
 
 ## Phase 3 — the symbol queue
 
 ### 3.1 Build the candidate list
 
-A symbol counts as **already documented** when it has a name a human chose, or
-when it is a well-known system address (hardware register, KERNAL entry point,
-OS variable).
+A symbol counts as **already documented** when it has a name a human chose.
+It also counts as documented when it is a well-known system address (hardware
+register, KERNAL entry point, OS variable).
 
 1. Call `anno_get_symbols` **again** — Phase 2 renamed things.
 2. **Candidate source A — cross-reference and block-derived, checked FIRST
    and independently of whatever label population exists.** Call
    `anno_get_blocks` (with `include: ["enum_usage"]` where useful) for every
-   typed range, then use `anno_get_cross_references` to find every address
-   that is: referenced by one half of a split lo/hi pair or by an address
-   table (a `lo_hi_address`/`hi_lo_address`/`lo_hi_word`/`hi_lo_word` range —
-   the `_address` forms produce cross-references, the `_word` forms do not,
-   per that data type's own schema distinction), OR referenced from a code
-   range while NOT itself sitting inside one. Every one of these is a symbol
-   candidate **regardless of whether it carries any label at all**.
-   The same measured derivation run found that a
-   purely dxa/Ghidra-derived store carries ZERO labels of any shape, so
-   Candidate source B below finds nothing to do on such a store and silently
-   reports a clean, empty queue on a program nothing has been named in yet.
+   typed range. Then use `anno_get_cross_references` to find every address
+   referenced by one half of a split lo/hi pair. Also find any address
+   referenced by an address table. An address table is a
+   `lo_hi_address`/`hi_lo_address`/`lo_hi_word`/`hi_lo_word` range. The
+   `_address` forms produce cross-references, the `_word` forms do not, per
+   that data type's own schema distinction. Also include any address
+   referenced from a code range while it does not sit inside one. Every one
+   of these is a symbol candidate **regardless of whether it carries any
+   label at all**. The same measured derivation run found this. A purely
+   dxa/Ghidra-derived store carries ZERO labels of any shape. So Candidate
+   source B below finds nothing to do on such a store. It silently reports
+   a clean, empty queue on a program nothing has been named in yet.
 3. **Candidate source B — the label-prefix path, for a store that DOES carry
    externally-imported auto-names.** Keep every label whose name still
    matches an auto-generated pattern. In the zero page, that pattern is
    `zpp_XX`, `zpf_XX` or `zpa_XX`. Outside the zero page, that pattern is
    `p_XXXX`, `f_XXXX`, `a_XXXX` or `e_XXXX`.
-4. Exclude, from BOTH sources: `s_XXXX` (Phase 2 handled those), `b_XXXX`
-   (branch targets, not data symbols), and any `p_XXXX`-shaped or
-   xref-derived candidate inside a code region (also Phase 2's).
+4. Exclude, from BOTH sources:
+   - `s_XXXX` (Phase 2 handled those).
+   - `b_XXXX` (branch targets, not data symbols).
+   - any `p_XXXX`-shaped or xref-derived candidate inside a code region
+     (also Phase 2's).
 5. **Union sources A and B by address** — a symbol reachable both ways counts
    once.
 6. What remains is the symbol queue.
@@ -181,16 +187,17 @@ OS variable).
 
 Same discipline as Phase 2: explicit address, one entry at a time, to
 completion. For each symbol, use `anno_get_cross_references` to find who
-touches it — a symbol's meaning is what its callers do with it — then rename it
-and comment it. Classify it plainly: flag, counter, pointer, state variable,
-buffer, table.
+touches it. A symbol's meaning is what its callers do with it. Then rename
+it and comment it. Classify it plainly: flag, counter, pointer, state
+variable, buffer, table.
 
 **No premature stopping.** The symbol queue is routinely far larger than the
 routine queue — fifty, a hundred entries is normal. Do not truncate it, do not
 skip "secondary" symbols, and do not stop early because it is long. Feeding the
 whole queue through is the job. Stopping early and labelling the remainder
-"skipped for review" is a failed pass, not a completed one — unless you
-report the remainder explicitly, in full, under Phase 4's leftovers table.
+"skipped for review" is a failed pass, not a completed one. The only
+exception is a remainder you report explicitly, in full, under Phase 4's
+leftovers table.
 
 For naming conventions and for what any given hardware or KERNAL address
 means, follow `src/skills/c64-memory-mapping/SKILL.md` rather than guessing.
@@ -203,7 +210,7 @@ performed. The writes already landed.
 ## Phase 4 — save and report
 
 1. Read the revision one last time with `anno_save_project` and quote it in
-   the report, so the pass is attributable to an exact store state.
+   the report. This makes the pass attributable to an exact store state.
 2. Write the report. Four sections, all of them required:
 
 **Regions.** How many regions you classified, grouped by type, plus anything
@@ -226,7 +233,7 @@ optional and it is not allowed to be empty when the queues were not emptied.
 List every routine and every symbol you left undone, with its address and
 the reason. Never report "no uncertain areas" or "nothing left" while a single
 `f_XXXX` or `a_XXXX` label is still auto-named or a queued routine is still
-uncommented — those must be listed by name for a human to pick up.
+uncommented. Those must be listed by name for a human to pick up.
 
 ## Phase 5 — measure the pass instead of asserting it finished
 
@@ -245,26 +252,27 @@ other.
 
 **Dated note, 2026-08-30 — the positional is a program IMAGE, and the command
 above is now correct against the shipped verb.** `<program>` is a `.prg` (a
-2-byte little-endian load address followed by the payload) or an
-**exactly-65536-byte** flat capture with a `.raw` or `.bin` extension — the two
-forms every other verb and tool on this surface already reads, and the two
-`c64-ram-capture` produces. The intermediate project-file format this verb
-previously required has **no producer left in this repo**. It is still accepted
-so an existing project file keeps working, but nothing here writes one, so do
-not go looking for a step that produces it.
+2-byte little-endian load address followed by the payload). Or it is an
+**exactly-65536-byte** flat capture with a `.raw` or `.bin` extension. Every
+other verb and tool on this surface already reads these two forms.
+`c64-ram-capture` also produces these same two forms. The intermediate
+project-file format this verb previously required has **no producer left in
+this repo**. It is still accepted so an existing project file keeps working.
+But nothing here writes one, so do not go looking for a step that produces
+it.
 
-Dispatch is by **file extension first, length second**. A short flat capture is
-therefore refused by name — `a flat 64K capture must be exactly 65536 bytes` —
-rather than misread as a `.prg` whose first two payload bytes become the load
-address. If you get that refusal, the capture is truncated. Re-capture it, do
-not rename it.
+Dispatch is by **file extension first, length second**. A short flat capture
+is therefore refused by name: `a flat 64K capture must be exactly 65536
+bytes`. It is not misread as a `.prg` whose first two payload bytes become
+the load address. If you get that refusal, the capture is truncated.
+Re-capture it, do not rename it.
 
 Add `--out coverage.json` to keep the machine-readable report, `--force` to
 overwrite one, and `--sample N` to widen the reproducibility sample. The verb
-reads the same store every call in this playbook writes to, and exits **0 even
-when the numbers are bad** — a low measurement is a result, not a failure.
-Non-zero means a caller error, an image it could not read, or a store it could
-not read at all.
+reads the same store every call in this playbook writes to. It exits **0
+even when the numbers are bad** — a low measurement is a result, not a
+failure. Non-zero means a caller error, an image it could not read, or a
+store it could not read at all.
 
 **Run it three times:**
 - once before Phase 2, so the pass has a starting point to be compared
@@ -276,21 +284,21 @@ The last run is what goes in the report.
 
 **Read the three numbers against each other. Never quote one of them alone.**
 There is deliberately no single "percent documented" figure, because one
-combined number lets a weak measure hide behind a strong one and makes the
-claim unfalsifiable:
+combined number lets a weak measure hide behind a strong one. That combined
+number also makes the claim unfalsifiable:
 
 - **A high user fraction beside a large unreached count means you named the
-  wrong things.** Every label got a human name, but most of the image was never
-  reached by the descent walk from any seed — you worked the queue over the
-  easily-visible part of the program and the rest was never entered. Go back to
-  Phase 0 and find more entry points (chained IRQ vectors, dispatch tables),
-  not more labels.
+  wrong things.** Every label got a human name, but most of the image was
+  never reached by the descent walk from any seed. You worked the queue over
+  the easily-visible part of the program. The rest was never entered. Go back
+  to Phase 0 and find more entry points (chained IRQ vectors, dispatch
+  tables), not more labels.
 - **A large divergence means the store and the bytes disagree about what is
   code.** Bytes the census reached as instructions that the store does not call
   `Code` are places where Phase 1's classification is behind the actual control
   flow. The reverse direction (the store calls it `Code`, the census never
-  reached it) is ordinary on an image with unreachable filler — read it, do not
-  chase it.
+  reached it) is ordinary on an image with unreachable filler. Read it, do
+  not chase it.
 - **A low distinct-comment ratio means the comments are filler.** Fifty
   addresses carrying the same sentence counts once, not fifty times. That is
   the number that catches a pass which renamed everything and explained
@@ -306,13 +314,15 @@ This is a DIFFERENT, non-overlapping measurement from the `anno coverage`
 call above — neither replaces the other. `anno coverage` is the byte-census
 and label-ratio instrument: a derived-from-bytes census this store's own
 block table cannot move. `anno decomp-completeness` is the
-disagreement-gated closure gate: whether this fixture's byte-derived block
-classification and its own real, observed-execution evidence agree, every
-code entry point carries a name and a complete purpose comment, every
-referenced non-hardware address resolves to a name or a decline, and no
-auto-named survivor remains in a code region — with the disagreement query
-itself a required, non-defaultable input rather than an optional
-cross-check.
+disagreement-gated closure gate. It checks four things:
+- this fixture's byte-derived block classification and its own real,
+  observed-execution evidence agree.
+- every code entry point carries a name and a complete purpose comment.
+- every referenced non-hardware address resolves to a name or a decline.
+- no auto-named survivor remains in a code region.
+
+The disagreement query itself is a required, non-defaultable input, not an
+optional cross-check.
 
 ```
 node src/mcp/vice/vice-proxy.ts anno decomp-completeness --store <fixture>.annostore --disagreements <fixture>-disagreements.json --manifest src/mcp/vice/fixtures/decomp-execution-manifest.json
@@ -323,52 +333,62 @@ All three arguments are REQUIRED, and none is derived from another:
 - `--disagreements` names the JSON `anno evid-disagreements --store <same
   store> --json` wrote for THIS store's own run.
 - `--manifest` names the committed execution manifest recording which of the
-  nine fixtures were actually run under the reproducible-run protocol, and
-  which were declared not-executed and why.
+  nine fixtures were actually run under the reproducible-run protocol. It also
+  records which fixtures were declared not-executed, and why.
 
-Omitting any of the three refuses
-by name rather than rendering an empty-disagreement report — "the query was
-never run" and "the query found nothing" must never read the same.
+Omitting any of the three refuses by name rather than rendering an
+empty-disagreement report. "The query was never run" and "the query found
+nothing" must never read the same.
 
 **The stop condition is a measured exit code, not a belief.** The walk
 described in Phases 2-4 above finishes for a fixture when `node
 src/skills/routine-queue-walker/scripts/completeness-report.mjs --store
 <fixture>.annostore --disagreements <fixture>-disagreements.json --manifest
-src/mcp/vice/fixtures/decomp-execution-manifest.json` **exits 0** — never when
-the agent believes the queue is empty. A non-zero exit names, by address,
-exactly which measure still fails (an Undefined byte, a surviving auto-name,
-an entry point missing a name or a purpose-comment element, an unresolved
-referenced address, or an unresolved disagreement). Go back to the
-corresponding phase and close it, then re-run the gate. Do not report a pass
-from reading the rendered text alone — read the process exit code.
+src/mcp/vice/fixtures/decomp-execution-manifest.json` **exits 0**. It never
+finishes just because the agent believes the queue is empty. A non-zero exit
+names, by address, exactly which measure still fails:
+- an Undefined byte.
+- a surviving auto-name.
+- an entry point missing a name or a purpose-comment element.
+- an unresolved referenced address.
+- an unresolved disagreement.
+
+Go back to the corresponding phase and close it, then re-run the gate. Do
+not report a pass from reading the rendered text alone — read the process
+exit code.
 
 ## When something fails
 
 - A failed call is not a reason to drop a queue entry. Log the address, the
-  call and the error, put the entry back on the queue, and carry on with the
+  call and the error. Put the entry back on the queue, and carry on with the
   next one. Report every one of those in the leftovers table.
-- A refused write is not silent and must not be treated as one. A
-  stale-revision refusal (a `base_revision` that the store has moved past), an
-  illegal label name, or a scope that overlaps an existing one all come back
-  REFUSED and named, with nothing written. Re-read, re-derive and replay that
-  one entry. Never widen the range or drop the `base_revision` to make the
-  refusal go away.
-- Never invent an answer to make a queue entry go away. An honest "this looks
-  like a table, callers unclear" in the leftovers table is worth more than a
-  confident wrong label that the next reader has to un-learn.
+- A refused write is not silent and must not be treated as one. Three
+  things all come back REFUSED and named, with nothing written:
+  - a stale-revision refusal (a `base_revision` that the store has moved
+    past).
+  - an illegal label name.
+  - a scope that overlaps an existing one.
+
+  Re-read, re-derive and replay that one entry. Never widen the range or drop
+  the `base_revision` to make the refusal go away.
+- Never invent an answer to make a queue entry go away. In the leftovers
+  table, an honest "this looks like a table, callers unclear" beats a
+  confident wrong label. The next reader would have to un-learn a wrong
+  label like that.
 - **A genuinely unresolvable target gets a `DECLINED:` comment, never a
   fabricated name.** When a referenced address's target is truly
   path-dependent or otherwise cannot be determined, record it with
-  `anno_set_comment` using the literal prefix `DECLINED:` naming what is
-  unknown and why — the same convention `.annostore`'s own importer already
-  uses for bank-state declines, never a second mechanism. A confident wrong
-  label is worse than an absent one.
-- **An accepted disagreement gets a `DISAGREEMENT-ACCEPTED:` comment.** When
-  the decomposition-completeness gate's disagreement census flags a byte the
+  `anno_set_comment`. Use the literal prefix `DECLINED:` naming what is
+  unknown and why. `.annostore`'s own importer already uses this same
+  convention for bank-state declines. This is never a second mechanism. A
+  confident wrong label is worse than an absent one.
+- **An accepted disagreement gets a `DISAGREEMENT-ACCEPTED:` comment.** The
+  decomposition-completeness gate's disagreement census flags a byte the
   byte-derived block table calls `data` but the runtime evidence shows
-  executing, and a review finds the runtime evidence correct (or the
+  executing. Also, a review finds the runtime evidence correct. Or the
   disagreement is otherwise a reviewed, accepted fact rather than a
-  classification bug), record it with `anno_set_comment` using the literal
-  prefix `DISAGREEMENT-ACCEPTED:` naming why — greppable, and read by the gate
-  itself as the resolution for that address. Both conventions ride the
-  existing `anno_set_comment` tool. Neither is a new mechanism.
+  classification bug. When either holds, record it with `anno_set_comment`.
+  Use the literal prefix `DISAGREEMENT-ACCEPTED:` naming why. This is
+  greppable, and the gate itself reads it as the resolution for that
+  address. Both conventions ride the existing `anno_set_comment` tool.
+  Neither is a new mechanism.
