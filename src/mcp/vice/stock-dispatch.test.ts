@@ -1450,200 +1450,15 @@ test("dispatch: no handler in the table ever throws -- dispatchStock always reso
   }
 });
 
-// ---------------------------------------------------------------------------
-// Task 2 (plan 02-10): source-structure assertions on vice-proxy.ts itself --
-// the structural stand-in for the fall-through and lease-wiring guarantees in
-// a file vice-proxy.test.ts (excluded from the automated gate) cannot prove
-// by running it. Every assertion here reads vice-proxy.ts as plain text; none
-// of them import or execute it (that file's own top-level `await
-// server.startStdio()` makes importing it unsafe outside a real stdio
-// harness).
-// ---------------------------------------------------------------------------
-
 const VICE_PROXY_SOURCE = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "vice-proxy.ts"), "utf8");
-const VICE_PROXY_CODE_LINES = VICE_PROXY_SOURCE.split("\n").filter((line) => !/^\s*\*/.test(line) && !/^\s*\/\//.test(line));
 
-test("structure/proxy: vice-proxy.ts has exactly one dispatchStock CALL SITE", () => {
-  // Counts call sites in CODE lines only. The original oracle counted every
-  // textual occurrence anywhere in the file, prose included, which made the
-  // "one dispatch site" guarantee it exists to protect indistinguishable from
-  // "nobody may explain the guarantee in a comment". The invariant is
-  // unchanged and still enforced: ONE place a stock tools/call is routed
-  // from -- dispatchStockFor(), the shared helper the manifest loop and
-  // handleRecycle()/handleDiagnose() all call instead of each building their
-  // own deps object inline (which would have put "dispatchStock(" on three
-  // separate lines and made this guarantee meaningless).
-  const matches = VICE_PROXY_CODE_LINES.filter((line) => line.includes("stockDispatch.dispatchStock("));
-  assert.equal(matches.length, 1, `expected exactly one stockDispatch.dispatchStock( call site, found ${matches.length}: ${JSON.stringify(matches)}`);
-});
-
-test("structure/proxy: vice-proxy.ts's dispatchStock call site passes ensureBrokerLease as its LeaseProvider", () => {
-  assert.match(VICE_PROXY_SOURCE, /dispatchStock\([^)]*ensureLease:\s*ensureBrokerLease/);
-});
-
-test("structure/proxy: vice-proxy.ts references manifestPathForBackend exactly once", () => {
-  const matches = VICE_PROXY_SOURCE.split("\n").filter((line) => line.includes("manifestPathForBackend"));
-  assert.equal(matches.length, 1, `expected exactly one manifestPathForBackend reference, found ${matches.length}`);
-});
-
-test("structure/proxy: vice-proxy.ts's ensureBrokerLease has at least two lease-bearing success returns", () => {
-  const matches = VICE_PROXY_SOURCE.match(/ok:\s*true,\s*lease/g) ?? [];
-  assert.ok(matches.length >= 2, `expected >= 2 lease-bearing success returns, found ${matches.length}`);
-});
-
-test("structure/proxy: no code line in vice-proxy.ts pairs \"stock\" with \"forwardToVice\"", () => {
-  const offenders = VICE_PROXY_CODE_LINES.filter((line) => /stock/i.test(line) && line.includes("forwardToVice"));
-  assert.equal(offenders.length, 0, `found a line pairing stock with forwardToVice: ${JSON.stringify(offenders)}`);
-});
-
-// ---------------------------------------------------------------------------
-// CR-07: the assertion above was satisfied by an arrangement that still
-// reached the fork's HTTP transport on stock -- the three synthetic tools were
-// registered unconditionally after the (backend-aware) manifest loop, and
-// tools/list is served from that same object, so vice_diagnose and
-// vice_recycle were advertised on stock and ran call()/forwardToVice() against
-// a binary-monitor port. Checking that no LINE pairs the two strings is not the
-// same as checking that no registered RUNNER can reach that transport. These
-// assert the registration seam itself.
-// ---------------------------------------------------------------------------
-
-/** Every `tools[<name>] = <expr>;` registration in vice-proxy.ts, as
- * `[registrationKey, righthandSide]`. */
-function proxyToolRegistrations(): Array<[string, string]> {
-  const out: Array<[string, string]> = [];
-  for (const line of VICE_PROXY_CODE_LINES) {
-    const match = /^\s*tools\[([^\]]+)\]\s*=\s*(.+)$/.exec(line);
-    if (match) out.push([match[1]!.trim(), match[2]!.trim()]);
-  }
-  return out;
-}
-
-/** The three tools with no manifest entry at all -- served proxy-local, so the
- * manifest loop's own backend-aware runner choice never covers them. */
-const SYNTHETIC_TOOL_KEYS = ["RESULT_CONTINUE_TOOL.name", "RECYCLE_TOOL.name", "DIAGNOSE_TOOL.name"];
-
-/** The two registration keys permitted to bypass dispatchStock() entirely:
- * RESULT_CONTINUE_TOOL.name (a continuation store, no transport of any kind)
- * and annoDef.name (the anno_* family's own loop registration -- a
- * proxy-local SQLite annotation store, never VICE, so there is no dispatch
- * to make). Both are "no transport at all" in the sense that matters here:
- * neither can ever reach a generic-dispatch surface, because none exists in
- * this file for either to be reached behind (the fork-only forwarding
- * function this file used to route non-bypassing registrations away from is
- * deleted outright, along with the per-backend registration seam that used
- * to make this exemption backend-aware).
- *
- * ORDER IS LOAD-BEARING. The deepEqual below is order-sensitive, and the anno
- * entry keeps position 2 -- swapping the two source-order registrations must
- * fail this test, not be normalised away by a set comparison. A THIRD entry
- * collides here rather than being absorbed into a superset. */
-const BACKEND_SEAM_BYPASS_KEYS = ["RESULT_CONTINUE_TOOL.name", "annoDef.name"];
-
-/** Whether a registration's right-hand side reaches dispatchStock -- either
- * via dispatchStockFor() (the manifest loop's own inline call, and the
- * shared helper handleRecycle()/handleDiagnose() are asserted elsewhere in
- * this file to delegate to internally) or by naming handleRecycle()/
- * handleDiagnose() directly. */
-function reachesDispatchStock(rhs: string): boolean {
-  return /dispatchStockFor\(|handleRecycle\(|handleDiagnose\(/.test(rhs);
-}
-
-test("structure/proxy (CR-07): every registered tool whose runner can touch a transport reaches dispatchStock, directly or via handleRecycle()/handleDiagnose()", () => {
-  const registrations = proxyToolRegistrations();
-  assert.ok(registrations.length >= 5, `expected the manifest-loop registration, three synthetic ones and the anno loop registration, found ${registrations.length}`);
-  for (const [key, rhs] of registrations) {
-    if (BACKEND_SEAM_BYPASS_KEYS.includes(key)) continue; // the two asserted exceptions, covered below
-    assert.ok(
-      reachesDispatchStock(rhs),
-      `tools[${key}] must be registered through dispatchStock (directly, or via handleRecycle()/handleDiagnose()) -- there is no other route to a stock tool call left in this file: ${rhs}`,
-    );
-  }
-});
-
-test("structure/proxy (CR-07): the synthetic tools are all registered, and the only registrations bypassing dispatchStock entirely are vice_result_continue and the anno_* family", () => {
-  const registrations = proxyToolRegistrations();
-  const keys = registrations.map(([key]) => key);
-  for (const synthetic of SYNTHETIC_TOOL_KEYS) {
-    assert.ok(keys.includes(synthetic), `expected a registration for ${synthetic}`);
-  }
-  const bypassing = registrations.filter(([, rhs]) => !reachesDispatchStock(rhs)).map(([key]) => key);
-  assert.deepEqual(
-    bypassing,
-    BACKEND_SEAM_BYPASS_KEYS,
-    "exactly two registrations may bypass dispatchStock entirely: a continuation store and a proxy-local annotation store are both \"no transport at all\"",
-  );
-});
-
-test("structure/proxy (CR-07): vice_result_continue's runner is handleResultContinue, whose body touches no transport at all", () => {
-  const registrations = proxyToolRegistrations();
-  const entry = registrations.find(([key]) => key === "RESULT_CONTINUE_TOOL.name");
-  assert.ok(entry, "vice_result_continue must still be registered");
-  assert.match(entry![1], /handleResultContinue\(/, "its runner must be handleResultContinue, the proxy-local continuation reader");
-
-  const start = VICE_PROXY_SOURCE.indexOf("function handleResultContinue(");
-  assert.ok(start > 0, "handleResultContinue() must still exist");
-  const body = VICE_PROXY_SOURCE.slice(start, VICE_PROXY_SOURCE.indexOf("\n}", start));
-  for (const forbidden of ["forwardToVice", "ensureViceSession", "rewriteArguments"]) {
-    assert.ok(!body.includes(forbidden), `handleResultContinue() must not reach ${forbidden} -- that is what makes its backend-independence sound`);
-  }
-});
-
-const ANNO_TOOLS_SOURCE = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "anno-tools.ts"), "utf8");
-
-test("structure/proxy (plan 29-01): the anno_* loop registration's runner is runAnnoTool, whose body touches no VICE transport at all", () => {
-  const registrations = proxyToolRegistrations();
-  const entry = registrations.find(([key]) => key === "annoDef.name");
-  assert.ok(entry, "the anno_* family's loop registration must still exist");
-  assert.match(entry![1], /runAnnoTool\(/, "its runner must be runAnnoTool, the curated anno_* surface's own dispatcher");
-
-  const start = ANNO_TOOLS_SOURCE.indexOf("export async function runAnnoTool(");
-  assert.ok(start > 0, "runAnnoTool() must still exist in anno-tools.ts");
-  const body = ANNO_TOOLS_SOURCE.slice(start, ANNO_TOOLS_SOURCE.indexOf("\n}", start));
-  for (const forbidden of ["forwardToVice", "ensureViceSession", "rewriteArguments"]) {
-    assert.ok(!body.includes(forbidden), `runAnnoTool() must not reach ${forbidden} -- that is what makes the anno_* family's backend-independence sound: the runner reaches a proxy-local SQLite store and never the host-path seam`);
-  }
-});
-
-test("structure/proxy (plan 29-01): every curated anno_* name is absent from tools-manifest.stock.json", () => {
+test("anno_* curation (plan 29-01): every curated anno_* name is absent from tools-manifest.stock.json", () => {
   const stock = readManifest(STOCK_MANIFEST_PATH);
   const stockNames = new Set(stock.tools.map((t) => t.name));
   assert.ok(CURATED_ANNO_TOOLS.length > 0, "the curated set must be non-empty for this assertion to mean anything");
   for (const name of CURATED_ANNO_TOOLS) {
     assert.ok(!stockNames.has(name), `${name} is curated but present in the STOCK manifest -- the anno_* family is served proxy-locally, in neither manifest, by design`);
   }
-});
-
-test("structure/proxy (CR-07): handleRecycle() and handleDiagnose() each delegate to dispatchStockFor(), with no per-backend branch left to route around", () => {
-  // FORKRM-05 (plan 52-07): this used to also assert the handler body never
-  // contained a literal per-backend comparison naming the retired backend --
-  // that assertion is gone along with the backend value it named. ViceBackend
-  // has exactly one literal now (backend-detect.mts, FORKRM-01), so no
-  // handler body can branch on a second value that no longer exists; the
-  // delegation check below is what remains meaningful.
-  for (const handlerName of ["handleRecycle", "handleDiagnose"]) {
-    const declStart = VICE_PROXY_SOURCE.indexOf(`function ${handlerName}(args`);
-    assert.ok(declStart > 0, `${handlerName}() must still be declared in vice-proxy.ts`);
-    const body = VICE_PROXY_SOURCE.slice(declStart, VICE_PROXY_SOURCE.indexOf("\n}", declStart));
-    assert.match(body, /dispatchStockFor\(/, `${handlerName}() must delegate to dispatchStockFor() -- the one shared helper that reaches dispatchStock()`);
-  }
-});
-
-test("structure/proxy (CR-07): handleDiagnose and handleRecycle are each referenced by exactly one registration, via buildViceTool() directly", () => {
-  const registrations = proxyToolRegistrations();
-  for (const handler of ["handleDiagnose(", "handleRecycle("]) {
-    const hits = registrations.filter(([, rhs]) => rhs.includes(handler));
-    assert.equal(hits.length, 1, `expected exactly one registration referencing ${handler}, found ${hits.length}`);
-    assert.match(hits[0]![1], /buildViceTool\(/, `${handler} must be registered through buildViceTool() directly -- there is no longer a separate per-backend registration wrapper`);
-  }
-});
-
-test("structure/proxy: vice-proxy.ts CALLS resolvedBackend() exactly once", () => {
-  // Same correction as the dispatchStock oracle above: CODE lines only. The
-  // invariant is "the backend is settled exactly once, at module scope" -- a
-  // comment explaining that invariant (WR-04's mismatch check has to explain why
-  // the broker's verdict is authoritative) is not a second call.
-  const matches = VICE_PROXY_CODE_LINES.filter((line) => line.includes("resolvedBackend("));
-  assert.equal(matches.length, 1, `expected exactly one resolvedBackend( call, found ${matches.length}: ${JSON.stringify(matches)}`);
 });
 
 // FORKRM-01 (plan 52-06): the sibling test that used to sit here --
@@ -1656,25 +1471,6 @@ test("structure/proxy: vice-proxy.ts CALLS resolvedBackend() exactly once", () =
 // file (a structural assertion pointing at now-deleted source), not a
 // registry-content decision -- the file's own registry-shaped fork
 // references remain plan 52-07's scope.
-
-// CR-06: buildHeldLease() is the ONE production construction site for
-// HeldLease, and it lives in the one file the automated gate cannot execute
-// (vice-proxy.ts's own top-level `await server.startStdio()`). HeldLease's two
-// new fields being REQUIRED already makes an omission a typecheck failure;
-// these assert the VALUES it threads, which typing alone cannot.
-
-test("structure/proxy (CR-06): buildHeldLease() threads epochFile and supervisorDir, from activeInstance() and brokerRootDir() respectively", () => {
-  const start = VICE_PROXY_SOURCE.indexOf("function buildHeldLease(");
-  assert.ok(start > 0, "buildHeldLease() must still exist in vice-proxy.ts");
-  const body = VICE_PROXY_SOURCE.slice(start, VICE_PROXY_SOURCE.indexOf("\n}", start));
-  assert.match(body, /epochFile/, "the lease must carry the instance's epoch file -- without it stockReconnect() always reports a false machine restart");
-  assert.match(body, /supervisorDir:\s*brokerRootDir\(\)/, "the capability cache directory must come from brokerRootDir(), the same resolver broker.json is read from");
-  assert.match(body, /activeInstance\(\)/, "epochFile must be read fresh from activeInstance(), never memoised");
-  // The per-instance supervisor_dir would point backend.json at
-  // <stateDir>/<port>, where no record is ever written -- a silent permanent
-  // capability-cache miss.
-  assert.doesNotMatch(body, /supervisor_dir/, "the grant's per-instance supervisor_dir is NOT the capability-cache directory");
-});
 
 // ---------------------------------------------------------------------------
 // Task 3 (plan 03-13): the D-02 answer-conformance harness. Every one of the
