@@ -49,3 +49,30 @@ invisible RAM one. Do not take that route.
 
 **Also delete the 14 existing directories** — they are untracked and empty, so
 removal is safe, but check for non-empty ones first.
+
+## Resolution
+
+Closed 2026-09-15 as MOOT, not as corrected.
+
+Commit `d8ed053e` ("test(55-03): delete the proxy-local recycle test block,
+paired to its successors") deleted the writer this file's frontmatter names,
+`tmpWorkspaceIncidentsDir()`. Nothing recreates `vice-proxy-evidence-test-*`
+directories now.
+
+A repository-wide grep for the identifier `tmpWorkspaceIncidentsDir`, over
+`*.ts`, `*.mts` and `*.mjs`, outside `node_modules`, returns nothing. A
+separate grep for an `mkdtemp` call rooted at `.planning`, over the same file
+types, also returns nothing.
+
+All three candidate remedies this file proposed are therefore moot: the
+startup reap, the relocated base, and the gitignore rule. None is needed
+because the writer that would have required any of them no longer exists.
+
+A quick task's Task 1 checked the 19 directories that had accumulated by
+2026-09-15 as empty, one emptiness check per directory, and deleted all 19.
+That closes this file's own final instruction ("Also delete the 14 existing
+directories").
+
+Nobody added the pattern to `.gitignore`. With no writer, there is nothing
+left to ignore, and an ignore rule would only hide a real recurrence instead
+of surfacing one.
