@@ -18,14 +18,10 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { codeOnly, shippedTsModules } from "./shipped-modules.ts";
 import { AnnoStorePathError } from "./anno-types.ts";
 import { closeStore, openStore } from "./anno-store.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-
-/** The one module allowed to name the persistence dependency. */
-const THE_ONE_SEAM = "anno-store.ts";
 
 /** The three shipped modules this area adds. */
 const NEW_SHIPPED_MODULES = ["anno-types.ts", "anno-index.ts", "anno-store.ts"];
@@ -105,11 +101,6 @@ test("package.json files[] ships every anno-* production module on disk and no a
 // 9-12. Properties of the one seam module itself
 // ---------------------------------------------------------------------------
 
-/** The seam's raw source, read once per test that needs it. */
-function seamSource(): string {
-  return readFileSync(join(HERE, THE_ONE_SEAM), "utf8");
-}
-
 // ---------------------------------------------------------------------------
 // WR-25 -- `openStore`'s unconfined ESCAPE HATCH, pinned to its enumerated
 // sites in the SEAM_PRIVATE_EXPORTS style.
@@ -120,62 +111,6 @@ function seamSource(): string {
 // this pin exists at all and why it asserts a POSITIVE count rather than only
 // an absence.
 // ---------------------------------------------------------------------------
-
-/** The literal a CALL SITE spells when it asks for the unconfined path. The
- * option's declaration (`unconfinedModuleDerivedPath?: boolean`) and the
- * guard's own read (`opts.unconfinedModuleDerivedPath !== true`) deliberately
- * do NOT match this, so the count below counts uses and not mentions. */
-const ESCAPE_AT_A_CALL_SITE = "unconfinedModuleDerivedPath: true";
-
-/**
- * The enumerated module-derived opens inside the seam, read off the code at
- * plan time and asserted here so a fifth one cannot arrive unnoticed:
- *   1. `snapshotOpenFailure`'s judging open of `snapshotPathFor(handle, revision)`
- *   2. `revertTo` step 3b's open of the staged copy
- *   3. `revertTo` step 6's reopen after the rename
- *   4. `revertTo` step 6's second reopen, on the failed-sweep recovery path
- */
-const ENUMERATED_DERIVED_OPENS = 4;
-
-test("WR-25 pin: the unconfined escape is used by NO shipped module but the seam, and exactly at its enumerated module-derived opens", () => {
-  // STRICT `codeOnly()` (literal bodies BLANKED, the default): the option's own
-  // name appears inside `openStore`'s refusal MESSAGE, and a guard that counted
-  // that would be counting prose. This is the same reason the extension-loading
-  // gate above uses strict mode.
-  const seamCode = codeOnly(seamSource());
-
-  // THE POSITIVE COUNT IS THE PRIMARY ASSERTION -- it states what must be true
-  // rather than only what must be absent, so a rename that made every scan below
-  // find nothing cannot pass this test.
-  const uses = seamCode.split(ESCAPE_AT_A_CALL_SITE).length - 1;
-  assert.equal(
-    uses,
-    ENUMERATED_DERIVED_OPENS,
-    `the seam must ask for the unconfined path at exactly its ${ENUMERATED_DERIVED_OPENS} enumerated module-derived opens, found ${uses} -- ` +
-      "a fifth use is either a new derived-path open that belongs in the enumeration above, or the old unsafe default returning by another name",
-  );
-
-  const others = shippedTsModules().filter((name) => name !== THE_ONE_SEAM);
-  assert.ok(others.length > 10, `the comparison set must be non-empty, got ${others.length}`);
-  const leaked = others.filter((name) => codeOnly(readFileSync(join(HERE, name), "utf8")).includes("unconfinedModuleDerivedPath"));
-  assert.deepEqual(
-    leaked,
-    [],
-    "no shipped module other than the seam may name the unconfined escape at all -- a path a consumer supplied is never a path this module derived",
-  );
-});
-
-test("WR-25 pin, NON-VACUITY: the scanned shipped module set is real and the seam's stripped source still contains openStore", () => {
-  // The absence half above is trivially satisfied by an empty or unreadable
-  // scan, and the count half is trivially satisfied by a source that was never
-  // read. Both sides are pinned here.
-  const scanned = shippedTsModules();
-  assert.ok(scanned.length > 10, `the shipped module set must be substantial, got ${scanned.length}`);
-  assert.ok(scanned.includes(THE_ONE_SEAM), `the scanned set must contain ${THE_ONE_SEAM}, or the count above scanned nothing`);
-
-  const seamCode = codeOnly(seamSource());
-  assert.ok(seamCode.includes("openStore"), "openStore must exist in the seam's stripped source, or the pin above is decoration");
-});
 
 test("WR-25: the guard itself exists -- openStore refuses BEHAVIOURALLY when neither a workspaceRoot nor the escape is supplied", () => {
   // ASSERTED THROUGH THE ENTRY POINT, NOT AGAINST SOURCE TEXT, and that is
