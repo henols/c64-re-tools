@@ -5,11 +5,11 @@ milestone_name: The Rebuild Half
 current_phase: 50
 current_phase_name: Equivalence and Modifiability
 status: executing
-stopped_at: Completed 50-03-PLAN.md
-last_updated: "2026-09-15T14:29:23.097Z"
+stopped_at: Halted 50-04-PLAN.md offline half (Task 1 + load-route allowlist widening). Tasks 2/3 (live capture) await a live executor.
+last_updated: "2026-09-15T17:33:46.000Z"
 last_activity: 2026-09-15
-last_activity_desc: Phase 50 execution started
-state_head: ca02a89cba8e66c7e6b728933321379d33efdd31
+last_activity_desc: Phase 50 plan 4 offline half done (load-route decision + text-protocol.ts widening). Live half halted.
+state_head: f57f2595c4e5726f79f26887c78be9091565eddf
 progress:
   total_phases: 13
   completed_phases: 8
@@ -272,7 +272,7 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 Phase: 50 (Equivalence and Modifiability) — EXECUTING
 Plan: 4 of 7
-Status: Plan 3 (modified subject's reassembly-gate verdict + pre-registered allowlist) complete, ready for plan 4
+Status: Plan 4's offline half is done (50-04-SUMMARY.md, status: halted). Task 1's checkpoint:decision is recorded in LOAD-ROUTE.md (route-d). The resulting text-protocol.ts allowlist widening for the `load` verb is implemented and tested. Tasks 2 and 3 (live capture, checkpoint calibration) are NOT executed. They need a live executor with `mcp__vice__*` tool access. See "Live half -- not executed" in 50-04-SUMMARY.md for exactly what remains and whether a new MCP tool is needed to reach the widened `load` verb.
 Plans: 11/11 executed. Phase 56 was planned 2026-09-15 - 11 plans across 4 waves, plan-checker PASSED, decision coverage 17/17, files_modified disjoint across 23 paths. It deletes `src/mcp/vice/shipped-modules.ts`. It also deletes every embedded test case whose subject is source text. Plan 01 (tracer) is complete. It proved the D-14 scanner against a planted fixture. It cut prg-image.test.ts end-to-end through the full pipeline, then applied the same cut to anno-graphics.test.ts and anno-types.test.ts. Net effect: 5 whole-case deletions, 1 strip-in-place-and-rename, 0 collateral loss. Plan 02 is complete. It cut anno-seam.test.ts from 23 cases to 2: the package.json files[] completeness case and the WR-25 behavioural refusal case. Two atomic commits, each gated by a per-file TAP name-set diff. The suite and typecheck are both green. Plan 03 is complete. It cut block-class.test.ts (two cases), anno-join.test.ts (one case) and anno-overlap.test.ts (one case). Four whole-case deletions total, each reached by a single scanner hit or a helper-indirected hit. The suite (`fail 0`, `skipped 9`, `tests 3723`) and typecheck are both green. Plan 04 is complete. It cut capture-predicate.test.ts (two cases) and evid-report-keys.test.ts (two direction-4 cases). It also removed evid-report-keys.test.ts's three now-orphaned module-scope helpers -- PATTERNS.md's worked Edit Kind 4 example. Four whole-case deletions total. The suite (`fail 0`, `skipped 9`, `tests 3719`) and typecheck are both green. Plan 05 is complete. It cut anno-index.test.ts (three cases, one reading the test file's own source rather than a production module). It also cut vsf-slice.test.ts (four cases, including its whole "Structural SUPPLEMENT" section). Seven whole-case deletions total. The now-orphaned `indexSource()`, `CLI_MARKER` and `libraryRegion()` helpers are gone. The suite (`fail 0`, `skipped 9`, `tests 3712`) and typecheck are both green. Plan 06 is complete. It cut stock-dispatch.test.ts, the phase's largest single source-scanning population. 15 whole-case deletions plus 2 D-02/D-03 renames, reached through two module-scope `*_SOURCE` constants and a direct `readFileSync` rather than the doomed module alone. All four CHAN-04 channel-lock cases survive untouched. The suite (`fail 0`, `skipped 9`, `tests 3697`) and typecheck are both green. Plan 07 is complete. It cut anno-store.test.ts, the largest single file in the phase at 5,595 lines and the one holding both of the phase's measured genuinely-mixed cases. 12 whole-case deletions, plus the bank-field case's D-02/D-03 rename and CR-08's no-rename strip. The suite (`fail 0`, `skipped 9`, `tests 3685`) and typecheck are both green. Plan 08 is complete. It cut anno-export-asm.test.ts's auto-name prefix cluster and BUILD-07 guard cluster. 11 whole-case deletions total, including one the D-14 scanner could not see at all, found only by the mandated blind-spot pass. No D-02/D-03 renames were needed. All three plan-flagged "may be mixed" candidates resolved to pure false positives on hand-read and stayed byte-identical. The suite (`fail 0`, `skipped 9`, `tests 3674`) and typecheck are both green. Plan 09 is complete. It cut anno-coverage.test.ts, the third giant file at 5,016 lines. 16 whole-case deletions total. An eleven-case cluster among them evaded the D-14 scanner and the plan's own candidate list entirely. Only the mandated blind-spot pass found it -- the largest single blind-spot find of the phase. One plan-flagged candidate resolved to a pure false positive and stayed byte-identical. Two now-orphaned production imports (`LABEL_KINDS`, `PROVEN_TARGET_SOURCES`) were also removed. The suite (`fail 0`, `skipped 9`, `tests 3658`) and typecheck are both green. Plan 10 is complete. It cut anno-derive.test.ts's five source-scanning cases. It then repaired thirteen now-false "asserted by X" enforcement clauses across D-11's five named production modules (anno-store.ts, dxa-blocks.ts, evid-ingest.ts, memmap-lookup.ts, capture-predicate.ts). Five of those clauses were beyond the plan's own action text. A mandated blanket-grep completeness gate found them. Every constraint sentence stays. No new prose was added. The suite (`fail 0`, `skipped 9`, `tests 3653`) and typecheck are both green. Plan 11 is complete. It removed `shipped-modules.ts` and its 16-case test file with `git rm`, after a repository-wide preflight grep confirmed zero remaining importers. It reconciled the whole phase's test-count drop case by case. 100 embedded cases were removed across sixteen surviving files (plans 56-01 through 56-10). 16 more cases were removed with the module's own test file (this plan). These are reported as two separate numbers, totaling 116 (3753 to 3637). All five success criteria have a recorded verdict. The suite (`fail 0`, `skipped 9`, `tests 3637`) and typecheck are both green. Phase 56 is complete.
 
 **Phase 51 is still in flight and is NOT superseded by this.** It remains In Progress at 8/17 plans in the ROADMAP Progress table; planning Phase 56 did not advance or close it. Its own position and per-plan record follows.
@@ -292,8 +292,8 @@ effects revert before the screen settles, root cause unknown, recorded in
 artifact — it did not retract the finding. Phase 49 gates reassembly, so
 that subject is the thing it will gate on.
 
-Progress: [████████░░] 85% (8/13 phases complete in v1.0.0, 76/89 plans. Phase 56 completed by a prior plan. Phase 57 was added concurrently during that plan's execution. Phase 50 plan 3 of 7 completed by this plan. Per-phase plan counts are in the ROADMAP Progress table.)
-Last activity: 2026-09-15 — Phase 50 execution started
+Progress: [████████░░] 85% (8/13 phases complete in v1.0.0, 76/89 plans. Phase 56 completed by a prior plan. Phase 57 was added concurrently during that plan's execution. This plan completed Phase 50 plan 4's offline half. Plan 4 itself is NOT counted as complete -- its live half (Tasks 2/3) remains outstanding. Per-phase plan counts are in the ROADMAP Progress table.)
+Last activity: 2026-09-15 — Phase 50 plan 4 offline half done. Live half halted, awaiting a live executor.
 
 ## Performance Metrics
 
@@ -821,6 +821,7 @@ Last activity: 2026-09-15 — Phase 50 execution started
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
+- Phase 50 (50-04, Task 1, 2026-09-15): the load-route `checkpoint:decision` is answered. The developer chose route-d, a route the plan did not offer: the text monitor's own `load` command over `-remotemonitor`. The developer then chose to widen `text-protocol.ts`'s allowlist for it. The reasoning: `load` reads a host file and writes nothing back, unlike the write-direction `save` refusal the allowlist keeps. Full rationale and the three rejected routes (a/b/c) are in `.planning/phases/50-equivalence-and-modifiability/evidence/LOAD-ROUTE.md`. The widening itself is narrow: one `TEXT_COMMAND_PARAM_SPECS` entry, the fixture filename baked into the verb's own frozen identity, only the device number caller-bounded. See `50-04-SUMMARY.md` (`status: halted`) — Tasks 2/3 (the live capture this decision unblocks) are not yet executed.
 - Phase 40 (40-07): the `d64-parse.mjs` → `c1541` supersession decision and the
   `cartconv`/`PREP-03` removal are both recorded, with measured evidence and
   accepted costs, in `docs/phase40-preprocessing-tools-decisions.md` — the two
@@ -1745,6 +1746,19 @@ ledger table row below were both updated in the same change as this one.
 
 ### Blockers/Concerns
 
+- **Phase 50 plan 4 (2026-09-15): live half not executed, blocking plans 50-05/50-06.**
+  `50-04-SUMMARY.md` carries `status: halted`. Task 1 (the load-route
+  `checkpoint:decision`, answered route-d) and the resulting `text-protocol.ts`
+  allowlist widening are done and committed. Tasks 2 and 3 need a live
+  executor with `mcp__vice__*` tool access, to load the committed
+  `hazard-subject.prg` through the widened `load` verb, hit a real checkpoint,
+  and capture RAM. The SUMMARY's "Live half -- not executed" section also
+  flags an open design question: reaching the widened `load` verb from an
+  MCP session may need a new tool in `text-tools.ts` (which an already-running
+  server will not advertise until restart), or the live task may instead
+  drive `text-connect.ts` directly from a committed script. Plans 50-05 and
+  50-06 depend on this plan's captures and transcript, so they are blocked
+  too until a live executor resolves this.
 - **Phase 42 carried items (2026-09-10), none blocking Phase 43.** The phase closed at
   16/16 plans and 5/5 verified must-haves after two gap-closure rounds; round 2 closed
   exactly one finding, `CR-02`, and the round-2 code review returned `status: clean`.
@@ -2570,9 +2584,11 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-15T14:29:22.437Z
-Stopped at: Completed 50-03-PLAN.md
+Last session: 2026-09-15T17:33:46.000Z
+Stopped at: Halted 50-04-PLAN.md offline half. Task 1 (load-route decision, route-d) and the resulting text-protocol.ts allowlist widening are done and committed. Tasks 2/3 (live capture) are not executed. They need a live executor with mcp__vice__* tools.
 Resume file: None
+
+Earlier: Completed 50-03-PLAN.md
 
 Earlier: Completed 56-07-PLAN.md
 Earlier: Completed 56-06-PLAN.md
