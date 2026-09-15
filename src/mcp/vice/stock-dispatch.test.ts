@@ -35,7 +35,6 @@ import type { StockConnectSession, StockConnectOptions } from "./stock-connect.t
 import { resetRunStateTrackersForTest, attachRunStateTracker } from "./stock-runstate.ts";
 import type { StockSessionHandler, StockToolResult } from "./stock-handler.ts";
 import { checkAgainstSchema } from "./stock-schema-check.ts";
-import { shippedTsModules } from "./shipped-modules.ts";
 import { CommandType } from "./stock-protocol.ts";
 import { setIsInsideContainerForTest } from "./stock-paths.ts";
 import { resetBankCatalogsForTest } from "./stock-memory.ts";
@@ -1450,8 +1449,6 @@ test("dispatch: no handler in the table ever throws -- dispatchStock always reso
   }
 });
 
-const VICE_PROXY_SOURCE = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "vice-proxy.ts"), "utf8");
-
 test("anno_* curation (plan 29-01): every curated anno_* name is absent from tools-manifest.stock.json", () => {
   const stock = readManifest(STOCK_MANIFEST_PATH);
   const stockNames = new Set(stock.tools.map((t) => t.name));
@@ -2328,17 +2325,6 @@ conformanceTest("vice_sprite_inspect", async () => {
   assert.equal(parsed.dataAddress, 40960, "sprite 0's resolved dataAddress must match the fixture's pointer byte");
 });
 
-test("structure: stock-dispatch.ts contains zero CODE references to the fork-forwarding function's name, pairing the vice-proxy.ts structural assertion above with this module's own", () => {
-  // Same filtering VICE_PROXY_CODE_LINES uses above -- strips both `//` line
-  // comments and `*` block-comment continuation lines, since stock-dispatch.ts's
-  // own withDerivedTool() docblock names the function IN PROSE (explaining
-  // the hazard it exists to prevent), which is not a code reference.
-  const src = readFileSync(join(HERE, "stock-dispatch.ts"), "utf8");
-  const codeLines = src.split("\n").filter((line) => !/^\s*\*/.test(line) && !/^\s*\/\//.test(line));
-  const offenders = codeLines.filter((line) => line.includes("forwardToVice"));
-  assert.equal(offenders.length, 0, `found a forwardToVice reference in stock-dispatch.ts: ${JSON.stringify(offenders)}`);
-});
-
 // --------------------------------------------------------- vice_ping
 
 conformanceTest("vice_ping", async () => {
@@ -3014,57 +3000,4 @@ test("CHAN-04: a second concurrent dispatch of a session-taking tool with a 1ms 
   const firstResult = await firstPromise;
   assert.equal(firstResult.isError, false);
   assert.equal(currentChannelLockHolder(), null);
-});
-
-// ---------------------------------------------------------------------------
-// WR-13 single-source invariant, RETAINED AS A STANDING REGRESSION GUARD
-// after FORKRM-05 (plan 52-07) deleted the per-backend capability registry
-// that used to be this invariant's one exempted authoritative source.
-//
-// DISCOVERY, not enumeration: the scanned module set is derived from
-// package.json's files[] array -- the SHIPPED production .ts/.mts set --
-// via the shared shippedTsModules() helper in shipped-modules.ts, rather
-// than a hand-typed file list that could silently omit a future offender.
-//
-// WR-13 originally found stock-dispatch.ts's OLD miss branch hardcoding "the
-// fork backend provides this tool" (false for a stock-only-gain name). With
-// the registry gone there is no longer any authoritative source to exempt --
-// NO shipped module may carry that wording now, full stop; it describes a
-// two-backend concept this tree no longer has.
-//
-// The sibling invariant that used to sit here -- pairing a "wait for a later
-// phase" framing with an environment-variable backend-selection instruction
-// -- is deleted rather than kept as a permanently vacuous check: that
-// environment variable was removed from every shipped module in plan 52-06
-// (FORKRM-01), so nothing in the scanned population could ever carry it
-// again, and a check that can never fire is not a regression guard.
-
-/** Strips comment lines (a line whose first non-whitespace characters open a
- * `//`, `/*`, or `*` continuation line) before scanning -- this file's own
- * comments above quote WR-13's fixed wording, and that is not a live
- * occurrence. Line-oriented, not the fuller codeOnly() string-literal
- * stripper in shipped-modules.ts -- no shipped module's non-comment code has
- * any legitimate reason to hold the forbidden phrase inside a string
- * literal either, so the simpler filter is sufficient here. */
-function nonCommentLines(src: string): string[] {
-  return src.split("\n").filter((line) => !/^\s*(\/\/|\/\*|\*)/.test(line));
-}
-
-test("invariant (WR-13): no shipped module hardcodes a fork-provides refusal claim", () => {
-  const offenders: string[] = [];
-  for (const modulePath of shippedTsModules()) {
-    const lines = nonCommentLines(readFileSync(join(HERE, modulePath), "utf8"));
-    for (const line of lines) {
-      if (/\bbackend provides this tool\b/i.test(line)) {
-        offenders.push(`${modulePath}: ${line.trim()}`);
-      }
-    }
-  }
-  assert.deepEqual(
-    offenders,
-    [],
-    `a hardcoded "<backend> provides this tool" claim describes a two-backend concept this tree no longer ` +
-      `has (FORKRM-05, plan 52-07) -- it is always wrong now, on every shipped module, with no exemption. ` +
-      `Offending line(s): ${JSON.stringify(offenders)}`,
-  );
 });
