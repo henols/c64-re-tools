@@ -79,6 +79,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 
 import { acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
 import { verifyAcmeAssemblesTree } from "./acme-verify.ts";
@@ -425,5 +426,166 @@ test("gate run: the four in-process gate inputs, measured for real against the M
     `context: movement-outcome-reason=${JSON.stringify(movementVerdict.reason)} ` +
       `movement-byte-length=${movementVerdict.byteDiff?.actualLength ?? "n/a"} movement-segment-count=${movementExport.blocks.length} ` +
       `movement-diff-scope-extent=${hex4(movementExtent.start)}..${hex4(movementExtent.endExclusive)} (exclusive)`,
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Task 3: the pre-registered allowlist's static proof. Needs no emulator --
+// each committed subject's own payload is lifted into a fresh, zero-filled
+// 65536-byte buffer at its own load address, and the SAME cross-binary
+// comparison instrument plan 50-01 committed
+// (`compare-cross-binary.mjs`) is run over the pair through its own CLI.
+//
+// A SUBPROCESS, NEVER AN IMPORT: `src/mcp/vice/**` and `src/skills/**`
+// publish as separate npm packages and cannot import each other
+// (`acme-verify.ts`'s own header states the identical constraint for
+// `ACME_VERIFY_ARGV_FLAGS`). `skill-acme-build-cli.test.ts` already
+// establishes this exact pattern -- a `src/mcp/vice/` test file driving a
+// sibling `src/skills/` script via `spawnSync(process.execPath, [...])` --
+// for `src/skills/acme-build/scripts/acme.mjs`; this is the same pattern
+// applied to `compare-cross-binary.mjs`. This is NOT a second real-assembler
+// launch site: `compare-cross-binary.mjs` never spawns anything and
+// contacts nothing (its own header states this), so `T-50-09`'s "the one
+// sanctioned assembler launch" is unaffected -- the assembler is reached
+// only through `verifyAcmeAssemblesTree()`, above, exactly as Task 1 left
+// it.
+// ---------------------------------------------------------------------------
+
+const ALLOWLIST_PATH = join(FIXTURE_DIR, "hazard-subject-modified.allowlist.json");
+const CROSS_BINARY_SCRIPT = join(HERE, "..", "..", "skills", "c64-ram-capture", "scripts", "compare-cross-binary.mjs");
+
+interface AllowlistEntry {
+  start: number;
+  endInclusive: number;
+  domain?: "image" | "register";
+  why?: string;
+}
+
+interface AllowlistDoc {
+  entries: AllowlistEntry[];
+  note?: string;
+  checkpoint?: string;
+  subjects?: Record<string, string>;
+}
+
+function loadAllowlistDoc(): AllowlistDoc {
+  return JSON.parse(readFileSync(ALLOWLIST_PATH, "utf8")) as AllowlistDoc;
+}
+
+/** A minimal duplicate of `compare-cross-binary.mjs`'s own `IO_VOLATILE`
+ * register mask and `IMAGE_VOLATILE` image mask, for the two static
+ * mask-overlap assertions below. This file cannot import the real tables --
+ * see this section's own header for why a subprocess, not an import, is
+ * this file's only route to `src/skills/**` at all. This is the SAME
+ * deliberate second-implementation pattern `acme-verify.ts`'s
+ * `ACME_VERIFY_ARGV_FLAGS`/`MSVC` already carry across the identical
+ * package boundary, kept minimal and matched address-for-address against
+ * the real module's own committed tables. */
+const IO_MASKED_CANONICAL: ReadonlyArray<{ lo: number; hi: number }> = [
+  { lo: 0xd011, hi: 0xd011 },
+  { lo: 0xd012, hi: 0xd012 },
+  { lo: 0xd019, hi: 0xd019 },
+  { lo: 0xd01e, hi: 0xd01f },
+];
+const IO_MASKED_FLAT: ReadonlyArray<{ lo: number; hi: number }> = [
+  { lo: 0xd400, hi: 0xd7ff },
+  { lo: 0xd800, hi: 0xdbff },
+  { lo: 0xdc00, hi: 0xdcff },
+  { lo: 0xdd00, hi: 0xddff },
+  { lo: 0xde00, hi: 0xdfff },
+];
+const IMAGE_MASKED: ReadonlyArray<{ lo: number; hi: number }> = [
+  { lo: 0x0000, hi: 0x0001 },
+  { lo: 0x0100, hi: 0x01ff },
+  { lo: 0x0200, hi: 0x03ff },
+];
+
+function isRegisterMasked(addr: number): boolean {
+  if (addr >= 0xd000 && addr <= 0xd3ff) {
+    const canonical = 0xd000 + (addr & 0x3f);
+    return IO_MASKED_CANONICAL.some(({ lo, hi }) => canonical >= lo && canonical <= hi);
+  }
+  return IO_MASKED_FLAT.some(({ lo, hi }) => addr >= lo && addr <= hi);
+}
+
+function isImageMasked(addr: number): boolean {
+  return IMAGE_MASKED.some(({ lo, hi }) => addr >= lo && addr <= hi);
+}
+
+test("allowlist: every entry has a non-empty why", () => {
+  const doc = loadAllowlistDoc();
+  assert.ok(doc.entries.length > 0, "the allowlist must carry at least one entry");
+  for (const entry of doc.entries) {
+    assert.ok(
+      typeof entry.why === "string" && entry.why.trim().length > 0,
+      `entry ${entry.start}..${entry.endInclusive} has no non-empty why`,
+    );
+  }
+});
+
+test("allowlist: no entry's range intersects a masked span", () => {
+  const doc = loadAllowlistDoc();
+  for (const entry of doc.entries) {
+    const domain = entry.domain === "register" ? "register" : "image";
+    for (let addr = entry.start; addr <= entry.endInclusive; addr++) {
+      const masked = domain === "register" ? isRegisterMasked(addr) : isImageMasked(addr);
+      assert.equal(masked, false, `entry ${entry.start}..${entry.endInclusive} (${domain}) overlaps a masked span at ${addr}`);
+    }
+  }
+});
+
+test("allowlist: every register-domain entry names an address outside the narrowed mask", () => {
+  const doc = loadAllowlistDoc();
+  const registerEntries = doc.entries.filter((e) => e.domain === "register");
+  assert.ok(registerEntries.length > 0, "the allowlist must carry at least one register-domain entry -- a .prg image carries no register state, so this is the only place those entries are exercised at all");
+  for (const entry of registerEntries) {
+    for (let addr = entry.start; addr <= entry.endInclusive; addr++) {
+      assert.ok(addr >= 0xd000 && addr <= 0xd3ff, `register-domain entry address ${addr} must be a real VIC-II/SID/CIA register, inside $D000-$D3FF`);
+      assert.equal(isRegisterMasked(addr), false, `register-domain entry address ${addr} is inside the narrowed mask -- it would be shadowed rather than meaningful`);
+    }
+  }
+});
+
+/** Lifts a committed `.prg`'s own payload into a fresh, zero-filled
+ * 65536-byte buffer at its own load address -- never the raw `.prg` bytes,
+ * which carry a two-byte little-endian load-address header
+ * `compare-cross-binary.mjs` does not expect. */
+function prgToImageBuffer(path: string): Buffer {
+  const raw = readFileSync(path);
+  const origin = raw[0]! | (raw[1]! << 8);
+  const buf = Buffer.alloc(65536);
+  raw.subarray(2).copy(buf, origin);
+  return buf;
+}
+
+function runCrossBinary(argv: string[]): { status: number | null; stdout: string; stderr: string } {
+  const r = spawnSync(process.execPath, [CROSS_BINARY_SCRIPT, "cross", ...argv], { encoding: "utf8", timeout: 30_000 });
+  return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
+}
+
+test("allowlist static proof: the committed pair passes with the allowlist and fails with --no-allowlist", () => {
+  const dir = freshDir("allowlist-static-proof");
+  const committedImagePath = join(dir, "committed.bin");
+  const modifiedImagePath = join(dir, "modified.bin");
+  writeFileSync(committedImagePath, prgToImageBuffer(join(FIXTURE_DIR, "hazard-subject.prg")));
+  writeFileSync(modifiedImagePath, prgToImageBuffer(PRG_PATH));
+
+  // WITH the committed allowlist: loading it must succeed (no refusal
+  // printed to stderr), and the comparison must pass -- the allowlist's own
+  // predicted entries must cover every real difference between the two
+  // committed images.
+  const withAllowlist = runCrossBinary([committedImagePath, modifiedImagePath, "--allowlist", ALLOWLIST_PATH]);
+  assert.doesNotMatch(withAllowlist.stderr, /error:/, "the allowlist must load with zero refusals");
+  assert.equal(withAllowlist.status, 0, `expected exit 0 with the allowlist, got ${withAllowlist.status}: ${withAllowlist.stderr}`);
+  assert.match(withAllowlist.stdout, /^VERDICT: PASS$/m, "expected VERDICT: PASS with the allowlist");
+
+  // WITHOUT it: the identical difference must fail -- proving the allowlist
+  // is doing real work rather than being vacuously satisfied.
+  const withoutAllowlist = runCrossBinary([committedImagePath, modifiedImagePath, "--no-allowlist"]);
+  assert.equal(withoutAllowlist.status, 1, `expected exit 1 without the allowlist, got ${withoutAllowlist.status}`);
+  assert.match(
+    withoutAllowlist.stdout,
+    /^VERDICT: FAIL$/m,
+    "expected VERDICT: FAIL without the allowlist -- the same difference the allowlist covers must diverge without it",
   );
 });

@@ -1,0 +1,52 @@
+{
+  "note": "PRE-REGISTRATION. Written before any capture exists -- this plan's own Task 3 commits this document in wave 2, and the phase's first real cross-binary capture does not exist until wave 4 (plan 50-06). Every entry below predicts an intentional difference from the source, before any measurement is taken against it. An entry added after a measurement exists must carry an added_after_measurement field naming the date and the reason -- that field is what keeps a later honest amendment distinguishable from a fit. Widening an existing entry's range after seeing a rebuild's differences is never how this document is amended.",
+  "checkpoint": "hazard_raster_entry",
+  "subjects": {
+    "hazard-subject.prg": "89846d489f83f4d9fd092f214343c5566433655b836d20625e7123682b8c6828",
+    "hazard-subject-modified.prg": "fd16c6c171da90e693dca10c1df0b1f6817563e0c3d1af99bcc572bceb7d641d"
+  },
+  "entries": [
+    {
+      "start": 2170,
+      "endInclusive": 4095,
+      "domain": "image",
+      "why": "the alignment routine's own code range ($87A hazard_align_entry .. $FFF, one before align_char_base at $1000, both resolved from a real ACME symbol list). REMOVED: the sprite-pointer write, the $D015 enable and the $D000/$D001 position stores (anchor $088B, finding page-alignment, mechanism sprite-pointer-names-aligned-base). ADDED: a jsr hazard_smc2_entry call before the routine's rts (anchor $0825, finding self-modifying-code, mechanism store-target-in-instruction-opcode-byte). Both changes rewrite instruction bytes inside this same range."
+    },
+    {
+      "start": 2040,
+      "endInclusive": 2040,
+      "domain": "image",
+      "why": "$07F8, the sprite-0 pointer byte. The removed behaviour (anchor $088B, page-alignment, sprite-pointer-names-aligned-base) means nothing writes this address any more, so a real runtime capture of the modified subject never carries the committed subject's sprite-base-divided-by-64 value here."
+    },
+    {
+      "start": 252,
+      "endInclusive": 253,
+      "domain": "image",
+      "why": "$FC-$FD, the zero-page pointer the added self-modifying construction builds at runtime (smc2_ptr_lo/smc2_ptr_hi, hazard-subject-smc.a). The removed sprite construction never touches these bytes; the added construction (anchor $0825, self-modifying-code, store-target-in-instruction-opcode-byte) writes a runtime-computed indirect-indexed pointer here on every call."
+    },
+    {
+      "start": 2100,
+      "endInclusive": 2100,
+      "domain": "image",
+      "why": "the immediate operand byte of the lda at hazard_smc2_write (smc2_operand_addr, $834). The added construction (anchor $0825, self-modifying-code, store-target-in-instruction-opcode-byte) patches this byte from $04 to $05 on its second pass -- and that second pass never runs in the committed subject, which never calls hazard_smc2_entry at all."
+    },
+    {
+      "start": 53248,
+      "endInclusive": 53249,
+      "domain": "register",
+      "why": "$D000-$D001, sprite-0 X/Y position. The removed behaviour (anchor $088B, page-alignment, sprite-pointer-names-aligned-base) means the modified subject never writes these registers, so their runtime value depends only on whatever else the run leaves there -- not on this routine."
+    },
+    {
+      "start": 53269,
+      "endInclusive": 53269,
+      "domain": "register",
+      "why": "$D015, sprite enable. The removed behaviour (anchor $088B, page-alignment, sprite-pointer-names-aligned-base) means the modified subject never enables sprite 0."
+    },
+    {
+      "start": 53280,
+      "endInclusive": 53280,
+      "domain": "register",
+      "why": "$D020, border colour. The committed subject's last border write at this checkpoint comes from the dispatch routine's own first target; the added construction (anchor $0825, self-modifying-code, store-target-in-instruction-opcode-byte) writes this register itself on both of its own passes through hazard_smc2_write, so the modified subject's own last write to $D020 before this checkpoint comes from a different construction."
+    }
+  ]
+}
