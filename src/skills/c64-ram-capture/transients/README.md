@@ -17,7 +17,8 @@ Verbatim, because this is the part that is meant to survive:
 
 - **N >= 3 runs** of the **same release** under the **same protocol** at the
   **same stop**. Three runs is already this project's documented minimum for a
-  verified capture. Fewer is refused, naming the count and the minimum.
+  verified capture. `derive` refuses fewer than three runs, naming the count
+  and the minimum.
 - The allow-list is the **union of addresses differing across the pairwise
   comparisons** — every pairing, which is N(N-1)/2 for N images, not just the
   adjacent ones.
@@ -26,8 +27,8 @@ Verbatim, because this is the part that is meant to survive:
   empty otherwise, so an unattributed transient is visibly unattributed rather
   than absent).
 - It is **re-derived per release**, and **no address set is ever inherited
-  between releases**. Re-deriving over an existing artifact is refused without
-  an explicit `--force`.
+  between releases**. `derive` refuses a re-derivation over an existing
+  artifact without an explicit `--force`.
 - The list is **enumerated** — one entry per address, never a range, a span, a
   page or a region. `parseAllowList()` in
   `src/mcp/vice/capture-predicate.ts` refuses range-shaped keys by name.
@@ -67,7 +68,7 @@ node $S/derive-transients.mjs check --allow-list $T/<id>.json runA.bin runB.bin
 
 `entries` is ascending by address, so the artifact is diffable and an entry's
 position never depends on which pairing happened to observe it first. `address`
-is an integer; `values` are the distinct bytes seen at it, in hex, across every
+is an integer. `values` are the distinct bytes seen at it, in hex, across every
 pairing it differed in. This is exactly the shape `parseAllowList()` accepts —
 there is no translation step between the derivation and the predicate, and the
 derivation's colocated test asserts the round-trip rather than assuming it.
@@ -75,9 +76,9 @@ derivation's colocated test asserts the round-trip rather than assuming it.
 ## The cap is 64, and exceeding it VOIDS the derivation
 
 `TRANSIENT_ALLOW_LIST_CAP = 64` in `src/mcp/vice/capture-predicate.ts` is the
-one definition; the script's default cap is asserted equal to it by test.
-`--cap` **only ever narrows** — a value above the committed cap is refused by
-name.
+one definition. A test asserts the script's default cap equal to it.
+`--cap` **only ever narrows**. `derive` refuses a value above the committed cap
+by name.
 
 **Over the cap is not "the list is a bit long".** It means **the stop is not
 frame-exact**, and that is a fact the gate must hear rather than a threshold to
@@ -103,7 +104,7 @@ measured on this host:
 Read the second row carefully: **overflow is an observed outcome, not a
 hypothetical.** A frame-anchored autostarted stop has already been measured
 over the cap at one jitter and under it at another. The answer to that is a
-better stop, recorded with the jitter it was taken at — not a bigger cap.
+better stop, recorded together with the jitter value — not a bigger cap.
 
 The 1242 row is also the reason the seed is not the whole story: that stop had
 the determinism block applied and still differed at 1242 bytes, because it was
@@ -112,7 +113,7 @@ anchor close, not what the seed does.
 
 ## `$0000` / `$0001` do not belong in a derived list by hand
 
-The 6510 port overlay is normalised **in code**, once, by `normalisePorts()` on
+`normalisePorts()` normalises the 6510 port overlay **in code**, once, on
 the snapshot route. Spending two of the cap's 64 slots on those two addresses
 would hide a real difference behind a known one. They can legitimately appear in
 a derivation taken from un-normalised images — `derive` compares the bytes it is
@@ -123,7 +124,7 @@ the images, not a rule to add.
 
 `.gitignore` here refuses every image byte form — flat captures, disk and tape
 images, cartridges, `.vsf` snapshots, and the archives an image arrives inside —
-and it was committed **before the first derivation existed**. A directory that
+and this project committed it **before the first derivation existed**. A directory that
 starts refusing images after the first capture lands has already had one
 commit's worth of opportunity to leak one. JSON is deliberately not refused:
 the derived allow-lists are the artifacts this directory is for.
