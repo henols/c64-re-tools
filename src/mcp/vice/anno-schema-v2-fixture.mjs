@@ -19,17 +19,15 @@
 // ---------------------------------------------------------------------------
 // WHY IT IS A SEPARATE PROCESS AT ALL, WHICH IS THE ONLY INTERESTING QUESTION
 // ---------------------------------------------------------------------------
-// `STORE-07` confines `node:sqlite` to `anno-store.ts`, and `anno-seam.test.ts`
-// bounds the TEST tree with the same predicate: the set of test files naming
-// the builtin is a DECLARED list, today exactly `["anno-seam.test.ts"]`. A
-// fixture builder written inline in `anno-store.test.ts` would have to name the
-// specifier and would therefore have to widen that declared list -- weakening a
-// standing guard to serve one fixture.
+// `STORE-07` confines `node:sqlite` to `anno-store.ts`. `anno-seam.test.ts`
+// used to bound the TEST tree with the same predicate: the set of test files
+// naming the builtin was a DECLARED list, then exactly `["anno-seam.test.ts"]`.
+// Phase 56 removed that declared-list check. A fixture builder written inline
+// in `anno-store.test.ts` would still have to name the specifier there, which
+// is the widening this file exists to avoid.
 //
 // It goes in a spawned child instead, which is the pattern the store's own test
-// tree already uses. The child names the builtin; no test file does. Widening
-// the declared list would still be an available option, but it is the one that
-// costs a guard, so it is not the one taken.
+// tree already uses. The child names the builtin; no test file does.
 //
 // ---------------------------------------------------------------------------
 // WHAT IT DOES NOT DO

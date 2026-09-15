@@ -259,12 +259,10 @@ test("source census: evid-ingest.ts never compares against the block table's own
   // -- neither may appear as a string literal in this module's non-comment
   // source. This module reports execution observations only; it never
   // classifies an address as code, data or anything else. `node:sqlite` and
-  // `anno-store` absence is already asserted, non-redundantly, by
-  // anno-seam.test.ts's shipped-module-set scan (which now covers
-  // evid-ingest.ts too) -- repeating the `node:sqlite` substring here would
-  // additionally require this file to join anno-seam.test.ts's own
-  // TEST_FILES_NAMING_SQLITE declared list for no benefit, so it is checked
-  // there and not duplicated here.
+  // `anno-store` absence used to be asserted, non-redundantly, by
+  // anno-seam.test.ts's shipped-module-set scan (which covered evid-ingest.ts
+  // too). Phase 56 removed that scan, so this census does not repeat the
+  // `node:sqlite` substring check here.
   for (const banned of ['"code"', "'code'", '"data"', "'data'", "block-class"]) {
     assert.equal(
       nonCommentSource.includes(banned),

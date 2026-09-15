@@ -79,8 +79,7 @@
 //       that disagrees with whatever the filesystem does, so the divergence is
 //       recorded rather than papered over.
 //
-// This file names no `node:sqlite` specifier, so `anno-seam.test.ts`'s declared
-// `TEST_FILES_NAMING_SQLITE` list is untouched by its existence. It spawns no
+// This file names no `node:sqlite` specifier. It spawns no
 // process and needs no emulator, broker or network, so it needs no
 // `MANUAL_ONLY_TESTS` entry in `test-gate.mjs` and joins `automatedTestFiles()`
 // automatically. `package.json`'s `files[]` is an explicit list, so it is

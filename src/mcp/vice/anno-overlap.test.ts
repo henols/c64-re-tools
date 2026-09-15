@@ -76,7 +76,7 @@
 //     load, so such an assertion would fail for that alone.
 //   * Everything goes through `anno-store.ts`'s exported entry points. This
 //     file must never name `node:sqlite`: the store is the ONE module allowed
-//     to, and `anno-seam.test.ts` fails the build if a second one does.
+//     to.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";

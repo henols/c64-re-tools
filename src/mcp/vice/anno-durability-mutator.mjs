@@ -13,8 +13,7 @@
 //     `anno-durability.test.ts` asserts that absence MECHANICALLY on every
 //     suite run rather than trusting this comment.
 //   * It must NEVER be imported by a production module. Its whole purpose is
-//     to reach `applyWriteWithoutCommit`, and `anno-seam.test.ts` already
-//     asserts no shipped module but the seam so much as names that wrapper.
+//     to reach `applyWriteWithoutCommit`, a seam-private export.
 //   * Its own filename deliberately does NOT match the `*.test.*` glob
 //     `node --test` collects. Here that clause is LOAD-BEARING in a way it is
 //     not for `acme-gate.ts`: this file is SPAWNED, and spawning it as a test

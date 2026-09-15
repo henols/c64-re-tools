@@ -2486,7 +2486,7 @@ test("cross-process compare-and-swap: after a genuinely separate OS process comm
       // `update anno_meta set revision = revision + 1 where id = 1 and
       // revision = ?` with its `changes !== 1` rollback inside
       // `begin immediate`, plus the base-revision check that precedes the
-      // transaction -- and `anno-seam.test.ts` pins all three structurally.
+      // transaction.
       const dataVersion = store.db.prepare("pragma data_version").get() as { data_version: number };
       assert.equal(typeof dataVersion.data_version, "number", "data_version is readable, and is deliberately NOT what the refusal is built on");
 
@@ -2496,13 +2496,13 @@ test("cross-process compare-and-swap: after a genuinely separate OS process comm
       //
       //   * Making the step-5 compare-and-swap TAUTOLOGICAL (its `revision = ?`
       //     guard replaced by an always-true predicate, the bound parameter
-      //     kept so the statement still runs) leaves THIS TEST GREEN and
-      //     reddens only `anno-seam.test.ts`'s structural CAS assertion.
-      //     Measured: 52 tests, 1 fail. The reason is not a weakness in this
-      //     test: the CAS guards the window between step 1's revision read and
-      //     step 5's update -- a writer committing INSIDE that window -- and a
-      //     single-threaded test cannot open it. The CAS is pinned
-      //     structurally for exactly that reason.
+      //     kept so the statement still runs) leaves THIS TEST GREEN. Phase 56
+      //     removed `anno-seam.test.ts`'s structural CAS assertion, which used
+      //     to be the only thing this mutation reddened (measured before
+      //     removal: 52 tests, 1 fail). The reason THIS test stays green is not
+      //     a weakness in it: the CAS guards the window between step 1's
+      //     revision read and step 5's update -- a writer committing INSIDE
+      //     that window -- and a single-threaded test cannot open it.
       //   * Removing the STEP-2 base-revision refusal reddens this test with
       //     `Missing expected exception`: the stale-base write is silently
       //     accepted and the other process's meaning is overwritten. Measured:
@@ -4557,10 +4557,12 @@ create index anno_xref_to on anno_xref(to_address);
 `;
 
 /** The TEST-ONLY spawned helper that writes the fixture. Its own header records
- * why it is a separate process: `anno-seam.test.ts` bounds the set of TEST
- * files naming the SQLite builtin to a declared list, and building this fixture
- * inline would have widened that list -- weakening a standing guard to serve
- * one fixture. */
+ * why it is a separate process: `anno-seam.test.ts` used to bound the set of
+ * TEST files naming the SQLite builtin to a declared list, and building this
+ * fixture inline would have widened that list -- weakening a standing guard to
+ * serve one fixture. Phase 56 removed that declared-list check; this fixture
+ * still runs as a spawned child process rather than naming `node:sqlite`
+ * inline in `anno-store.test.ts`. */
 const V2_FIXTURE_WRITER = join(HERE, "anno-schema-v2-fixture.mjs");
 
 /** Writes a genuine `SCHEMA_VERSION` 2 store file at `path`, in a child

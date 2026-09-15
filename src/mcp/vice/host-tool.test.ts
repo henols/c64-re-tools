@@ -49,9 +49,8 @@ import { resetResolvedBackendForTests } from "./backend-detect.mts";
 // definition of either path.
 import { ghidraRunsRealRoot, ghidraRunsRoot, ensureGhidraRunsHandle } from "./ghidra-project.mts";
 // 34-10 Task 2 (CR-05): a container-side import into a container-side test
-// file -- legal here, and anno-types.ts names no node:sqlite specifier, so
-// anno-seam.test.ts's TEST_FILES_NAMING_SQLITE list is untouched. Drives the
-// OTHER implementation of the same ancestor-realpath walk for the
+// file -- legal here, and anno-types.ts names no node:sqlite specifier.
+// Drives the OTHER implementation of the same ancestor-realpath walk for the
 // equivalence table below.
 import { storePathWithinWorkspace, AnnoStorePathError } from "./anno-types.ts";
 
