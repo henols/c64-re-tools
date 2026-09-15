@@ -13,7 +13,7 @@ queue first, from data, then walk it to the end.
 This playbook assumes block classification has already happened and an
 annotation store already exists. If you do not yet know what the program is —
 where it starts, which vector is live, which regions are code — stop and run
-`c64-program-recon` first. That skill answers *what is this program*; this one
+`c64-program-recon` first. That skill answers *what is this program*. This one
 answers *what is still undocumented in it, and how do I finish*.
 
 ## The one rule that makes this different from upstream's version
@@ -72,12 +72,12 @@ candidate is only meaningful once the bytes around it are known to be code.
 ### 2.1 Build the candidate list
 
 A routine counts as **already documented** when its entry address carries a
-line comment. That is the only test; do not guess from the label name.
+line comment. That is the only test. Do not guess from the label name.
 
 1. Call `anno_get_symbols` for all labels — user, system and external, with
    an explicit `max_results` above the program's label count (`max_results` is
    REQUIRED on this surface and has no default, so a truncated answer is always
-   a ceiling you chose). Keep the answer; Phase 3 reuses it.
+   a ceiling you chose). Keep the answer. Phase 3 reuses it.
 2. Call `anno_get_comments`, again with an explicit `max_results`. Keep that
    too — the true match count rides beside the list, so truncation is a fact
    you are told rather than one you infer.
@@ -99,14 +99,14 @@ line comment. That is the only test; do not guess from the label name.
 4. **Candidate source B — the label-prefix path, for a store that DOES carry
    externally-imported auto-names.** Keep a label as a routine candidate when
    any of these holds:
-   - its name starts with `s_` (an auto-generated subroutine label);
+   - its name starts with `s_` (an auto-generated subroutine label).
    - it sits in a code region and is the target of at least one `JSR`
-     cross-reference (`anno_get_cross_references`);
+     cross-reference (`anno_get_cross_references`).
    - it is a `p_XXXX` label sitting **inside a code region**. These come from
      split lo/hi immediate loads and from address tables, and they are almost
      always chained raster-IRQ handlers, hardware- or shadow-vector handlers,
      or jump-table and callback targets. Treat every one of them as a
-     candidate rather than pattern-matching specific vector addresses;
+     candidate rather than pattern-matching specific vector addresses.
    - it is the label named exactly `start`.
 5. **Union sources A and B by address** — a routine reachable both ways counts
    once. A store may carry either shape, or both, so neither source alone is
@@ -124,7 +124,7 @@ queue discipline this section owns. For each entry, run `c64-program-recon`
 against the entry's explicit address — including its 4096-byte
 `anno_read_region` cap (consecutive ranges above it, never a raised cap) and
 its tail-call / fall-through bounds rules (`JMP shared_epilogue` still ends
-the routine; no return may mean fall-through — say so). Do not re-derive or
+the routine. No return may mean fall-through — say so). Do not re-derive or
 paraphrase that procedure here.
 
 Record per entry, for Phase 4: the address, the old label, the new label, a
@@ -166,8 +166,9 @@ OS variable).
    reports a clean, empty queue on a program nothing has been named in yet.
 3. **Candidate source B — the label-prefix path, for a store that DOES carry
    externally-imported auto-names.** Keep every label whose name still
-   matches an auto-generated pattern: `zpp_XX`, `zpf_XX`, `zpa_XX` in the zero
-   page; `p_XXXX`, `f_XXXX`, `a_XXXX` and `e_XXXX` outside it.
+   matches an auto-generated pattern. In the zero page, that pattern is
+   `zpp_XX`, `zpf_XX` or `zpa_XX`. Outside the zero page, that pattern is
+   `p_XXXX`, `f_XXXX`, `a_XXXX` or `e_XXXX`.
 4. Exclude, from BOTH sources: `s_XXXX` (Phase 2 handled those), `b_XXXX`
    (branch targets, not data symbols), and any `p_XXXX`-shaped or
    xref-derived candidate inside a code region (also Phase 2's).
@@ -196,7 +197,7 @@ means, follow `src/skills/c64-memory-mapping/SKILL.md` rather than guessing.
 ### 3.3 Refresh point
 
 Read the revision again with `anno_save_project` and record it. No write is
-performed; the writes already landed.
+performed. The writes already landed.
 
 ## Phase 4 — save and report
 
@@ -236,7 +237,7 @@ node src/mcp/vice/vice-proxy.ts anno coverage game.prg --store game.annostore
 ```
 
 **`--store` is REQUIRED and is a second path, not a spelling of the first.**
-`<program>` supplies the payload bytes and the load origin; `--store` names the
+`<program>` supplies the payload bytes and the load origin. `--store` names the
 annotation store holding the labels, comments and typed ranges. The store holds
 annotations and never bytes, so the verb refuses to guess either path from the
 other.
@@ -247,14 +248,14 @@ above is now correct against the shipped verb.** `<program>` is a `.prg` (a
 **exactly-65536-byte** flat capture with a `.raw` or `.bin` extension — the two
 forms every other verb and tool on this surface already reads, and the two
 `c64-ram-capture` produces. The intermediate project-file format this verb
-previously required has **no producer left in this repo**; it is still accepted
+previously required has **no producer left in this repo**. It is still accepted
 so an existing project file keeps working, but nothing here writes one, so do
 not go looking for a step that produces it.
 
 Dispatch is by **file extension first, length second**. A short flat capture is
 therefore refused by name — `a flat 64K capture must be exactly 65536 bytes` —
 rather than misread as a `.prg` whose first two payload bytes become the load
-address. If you get that refusal, the capture is truncated; re-capture it, do
+address. If you get that refusal, the capture is truncated. Re-capture it, do
 not rename it.
 
 Add `--out coverage.json` to keep the machine-readable report, `--force` to
@@ -264,9 +265,13 @@ when the numbers are bad** — a low measurement is a result, not a failure.
 Non-zero means a caller error, an image it could not read, or a store it could
 not read at all.
 
-**Run it three times:** once before Phase 2, so the pass has a starting point
-to be compared against; once at Phase 2.3's refresh point; and once at the end,
-after Phase 4's final save. The last run is what goes in the report.
+**Run it three times:**
+- once before Phase 2, so the pass has a starting point to be compared
+  against.
+- once at Phase 2.3's refresh point.
+- once at the end, after Phase 4's final save.
+
+The last run is what goes in the report.
 
 **Read the three numbers against each other. Never quote one of them alone.**
 There is deliberately no single "percent documented" figure, because one
@@ -312,12 +317,15 @@ cross-check.
 node src/mcp/vice/vice-proxy.ts anno decomp-completeness --store <fixture>.annostore --disagreements <fixture>-disagreements.json --manifest src/mcp/vice/fixtures/decomp-execution-manifest.json
 ```
 
-All three arguments are REQUIRED, and none is derived from another: `--store`
-names the annotation store; `--disagreements` names the JSON `anno
-evid-disagreements --store <same store> --json` wrote for THIS store's own
-run; `--manifest` names the committed execution manifest recording which of
-the nine fixtures were actually run under the reproducible-run protocol, and
-which were declared not-executed and why. Omitting any of the three refuses
+All three arguments are REQUIRED, and none is derived from another:
+- `--store` names the annotation store.
+- `--disagreements` names the JSON `anno evid-disagreements --store <same
+  store> --json` wrote for THIS store's own run.
+- `--manifest` names the committed execution manifest recording which of the
+  nine fixtures were actually run under the reproducible-run protocol, and
+  which were declared not-executed and why.
+
+Omitting any of the three refuses
 by name rather than rendering an empty-disagreement report — "the query was
 never run" and "the query found nothing" must never read the same.
 
@@ -329,7 +337,7 @@ src/mcp/vice/fixtures/decomp-execution-manifest.json` **exits 0** — never when
 the agent believes the queue is empty. A non-zero exit names, by address,
 exactly which measure still fails (an Undefined byte, a surviving auto-name,
 an entry point missing a name or a purpose-comment element, an unresolved
-referenced address, or an unresolved disagreement); go back to the
+referenced address, or an unresolved disagreement). Go back to the
 corresponding phase and close it, then re-run the gate. Do not report a pass
 from reading the rendered text alone — read the process exit code.
 
@@ -342,7 +350,7 @@ from reading the rendered text alone — read the process exit code.
   stale-revision refusal (a `base_revision` that the store has moved past), an
   illegal label name, or a scope that overlaps an existing one all come back
   REFUSED and named, with nothing written. Re-read, re-derive and replay that
-  one entry; never widen the range or drop the `base_revision` to make the
+  one entry. Never widen the range or drop the `base_revision` to make the
   refusal go away.
 - Never invent an answer to make a queue entry go away. An honest "this looks
   like a table, callers unclear" in the leftovers table is worth more than a
@@ -362,4 +370,4 @@ from reading the rendered text alone — read the process exit code.
   classification bug), record it with `anno_set_comment` using the literal
   prefix `DISAGREEMENT-ACCEPTED:` naming why — greppable, and read by the gate
   itself as the resolution for that address. Both conventions ride the
-  existing `anno_set_comment` tool; neither is a new mechanism.
+  existing `anno_set_comment` tool. Neither is a new mechanism.
