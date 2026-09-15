@@ -11,6 +11,11 @@ subjects:
     captures:
       original-a: 0e3f47d64732a67b0a01a6d59aed8de4f62fe19b0edfdc00f7543ddd7e2dc2f5
       original-b: 0e3f47d64732a67b0a01a6d59aed8de4f62fe19b0edfdc00f7543ddd7e2dc2f5
+  # Added 2026-09-15 by plan 50-05's red control.
+  hazard-subject-regressed:
+    prg_sha256: fd6484f1101ef0773c0137d479e6b630c247169445ddb01b149072bd8df21427
+    captures:
+      regressed: d18830159c1c385901c7c97280fc91adb1dbfad167ee44ce0186bd0c663b2b97
 ---
 
 # Phase 50: Equivalence Transcript
@@ -423,6 +428,326 @@ $ ss -ltnp | grep -E ':19510'
 (no output)
 ```
 
+## Red control: a planted regression is caught
+
+The calibration above ended with the instrument unconfirmed. Two runs of the
+same binary produced the same 65536 bytes and the same 49 register values, and
+a comparison that finds nothing cannot distinguish "there was nothing to find"
+from "the instrument cannot see". This section is the run that settles it.
+
+The subject here is `hazard-subject-regressed.prg`, the deliberately regressed
+twin built in plan 50-02. It differs from the committed subject at exactly
+three bytes, each one a single bit, and each one an immediate operand feeding
+a VIC-II register: `$D020`, `$D015` and `$D018`. Under the rules
+`compare.mjs` carries, all three would have passed twice over — once under a
+blanket `$D000-$DFFF` volatile exclusion, and again under a one-bit drift
+tolerance. Under the narrowed mask this phase committed first, all three must
+fail, and each must be named.
+
+**The expected outcome of this section is a FAILURE.** A PASS here would be a
+finding about the instrument, not a success.
+
+### 1. The checkpoint, re-resolved for THIS binary
+
+The address was not carried over from the calibration above. The regressed twin
+has no committed root source of its own — `make-hazard-subject-fixtures.mjs`
+synthesizes one by swapping two `!source` lines in `hazard-subject.a` for their
+regressed siblings — so the same synthesis was performed, assembled, and read:
+
+```
+[2026-09-15T19:27:16Z] $ acme --cpu 6510 -f cbm -o $SCRATCH/r2.prg \
+       --symbollist $SCRATCH/r2.sym $SCRATCH/synthesized-regressed-root.a
+(exit 0)
+
+$ grep -E 'hazard_raster_entry|^[[:space:]]*entry[[:space:]]' $SCRATCH/r2.sym
+	entry	= $80d	; ?
+	hazard_raster_entry	= $108f	; ?
+```
+
+The symbol list describes the committed binary, proven rather than assumed:
+
+```
+$ sha256sum $SCRATCH/r2.prg hazard-subject-regressed.prg
+fd6484f1101ef0773c0137d479e6b630c247169445ddb01b149072bd8df21427  …/r2.prg
+fd6484f1101ef0773c0137d479e6b630c247169445ddb01b149072bd8df21427  hazard-subject-regressed.prg
+```
+
+So `hazard_raster_entry` = **`$108F`** (4239) and `entry` = **`$080D`** (2061)
+in this binary. That is the same pair the committed subject resolves to, which
+is what a three-operand-byte change with no length change should produce — but
+it was **read from this binary's own symbol list**, not transcribed from the
+section above. The per-binary resolution is the mechanism that keeps a later,
+differently-laid-out binary honest, and leaving it unexercised here would have
+left it unexercised everywhere.
+
+### 2. One change to the procedure, and what did not change
+
+The capture repeats the procedure in "Capture procedure" above. Exactly one
+thing about it differs, and it is recorded here rather than left for a reader
+to notice: **which committed subject is loaded.**
+
+Plan 50-04 baked one fixture path into the `load` verb's own frozen identity in
+`text-protocol.ts`, and that entry resolves only to `hazard-subject.prg`. It
+could not reach the regressed twin. The frozen path was therefore generalised
+into a **closed id → path table** (`HAZARD_SUBJECT_PRG_BASENAMES`), with one
+frozen `load "<path>"` verb derived per member, and `vice_program_load` gained
+an **enumerated `subject` id**. What did not change is the property the
+original widening rested on: every loadable path is still a reviewed literal
+chosen by `text-protocol.ts`, a caller still supplies no path, no basename and
+no fragment of one, the only caller-supplied *value* is still the bounded
+device number, no parameter kind accepts a string domain, and `save` — the
+write direction — is refused exactly as before. The subject id is checked for
+exact membership and used only as a lookup key; it is never concatenated into a
+command and never reaches the socket. A committed fixture the table does not
+name (`hazard-subject-misaligned.prg`, sitting in the same directory) is not
+dialable, and a committed test asserts that, so the boundary is the reviewed
+table rather than the directory.
+
+Every emulator step is unchanged and in the same order, through the same
+`dispatchStock()` seam: the ping retry, the route-d load, the checkpoint, the
+`PC` set, the resume, the poll, the capture, the deletion, the enumeration and
+the single final resume. Same route (`snapshot`), same logical checkpoint, same
+driver, same genuine unpatched stock `/usr/bin/x64sc`, same broker argv.
+
+### 3. The capture
+
+```
+[2026-09-15T19:24:51Z] $ node …/evidence/capture-run.mjs \
+    --label regressed --subject-id regressed --snapshot-name phase50-regressed \
+    --checkpoint-address 4239 --entry-address 2061
+```
+
+The route-d load, naming the file stock VICE itself reports it loaded:
+
+```
+[2026-09-15T19:24:54Z] CALL vice_program_load {"device":0,"subject":"regressed"}
+{"command":"load \"…/fixtures/hazard-subject/hazard-subject-regressed.prg\" 0",
+ "device":0,"subject":"regressed",
+ "response":"(C:$fd70) Loading '…/hazard-subject-regressed.prg' from 0801 to 10E7 (08E7 bytes)\n"}
+```
+
+`0801 to 10E7 (08E7 bytes)` is the same extent the committed subject loads to,
+which is the expected consequence of a three-operand-byte change that resizes
+nothing.
+
+The checkpoint trapped, and the CPU registers read in the same paused window
+confirm it independently — `PC` is 4239, which is `$108F`:
+
+```
+[2026-09-15T19:24:54Z] CALL vice_checkpoint_list {}
+{"checkpoints":[{"id":1,"start":4239,"end":4239,"stop":true,"enabled":true,
+ "hitCount":1,…}],"totalReported":1,"entriesReceived":1,"runState":"stopped"}
+
+[2026-09-15T19:24:54Z] CALL vice_registers_get {}
+{"registers":{"PC":4239,"A":0,"X":234,"Y":0,"SP":251,"00":47,"01":55,
+ "FL":7,"LIN":2,"CYC":9},"memspace":"main","runState":"stopped"}
+```
+
+All three regressions were already visible in the chip state read in that same
+paused window, before any comparison was run — the VIC-II register block came
+back as
+
+```
+"base":53248,"end":53294,"length":47,
+"registersHex":"64640000000000000000000000000000001b02000000c50017
+                71f00000000000f3f0f0f0f0f0f0f0f0f0f0f0f0f0f0"
+```
+
+against the committed subject's `…0001c5001571f0…f2f0…`, and the direct
+one-byte read of `$D018` returned `17` where the original returned `15`.
+
+**Checkpoint deletion, proven by enumeration:**
+
+```
+[2026-09-15T19:24:54Z] CALL vice_checkpoint_delete {"checkpoint_num":1}
+{"checkpointNum":1,"deleted":true,"runState":"stopped"}
+
+[2026-09-15T19:24:54Z] CALL vice_checkpoint_list {}
+{"checkpoints":[],"totalReported":0,"entriesReceived":0,"runState":"stopped"}
+```
+
+**The checkpoint-list count observed after deletion is `0`.** The machine was
+then resumed exactly once.
+
+The snapshot was sliced into the flat 64K image by the same tool:
+
+```
+[2026-09-15T19:24:54Z] $ node src/skills/c64-ram-capture/scripts/vsf-slice.mjs \
+    slice .c64-re-tools/snapshots/phase50-regressed.vsf \
+    --out …/evidence/captures/regressed.bin --json
+{"imageBytes":65536,
+ "sha256":"d18830159c1c385901c7c97280fc91adb1dbfad167ee44ce0186bd0c663b2b97",
+ "snapshotMinor":1,"bodyLength":65555,"dataOut":39,"dataRead":55,"dirRead":47}
+```
+
+### 4. What was compared
+
+| | subject `.prg` | subject sha256 | capture | capture sha256 | checkpoint |
+|---|---|---|---|---|---|
+| A | `hazard-subject.prg` | `89846d489f83f4d9fd092f214343c5566433655b836d20625e7123682b8c6828` | `original-a.bin` | `0e3f47d64732a67b0a01a6d59aed8de4f62fe19b0edfdc00f7543ddd7e2dc2f5` | `hazard_raster_entry` @ `$108F` |
+| B | `hazard-subject-regressed.prg` | `fd6484f1101ef0773c0137d479e6b630c247169445ddb01b149072bd8df21427` | `regressed.bin` | `d18830159c1c385901c7c97280fc91adb1dbfad167ee44ce0186bd0c663b2b97` | `hazard_raster_entry` @ `$108F` |
+
+Both sidecars declare `route: snapshot`. The comparison module refuses a mixed
+pair, so the route agreement is enforced rather than merely intended.
+
+### 5. The comparison, run in full with no row limit and no allowlist
+
+```
+[2026-09-15T19:26:55Z] $ node src/skills/c64-ram-capture/scripts/compare-cross-binary.mjs cross \
+    .planning/phases/50-equivalence-and-modifiability/evidence/captures/original-a.bin \
+    .planning/phases/50-equivalence-and-modifiability/evidence/captures/regressed.bin \
+    --state .planning/phases/50-equivalence-and-modifiability/evidence/captures/original-a.state.json \
+            .planning/phases/50-equivalence-and-modifiability/evidence/captures/regressed.state.json \
+    --checkpoint hazard_raster_entry --limit 0
+
+A  original-a.bin  sha256 0e3f47d64732a67b0a01a6d59aed8de4f62fe19b0edfdc00f7543ddd7e2dc2f5
+B  regressed.bin  sha256 d18830159c1c385901c7c97280fc91adb1dbfad167ee44ce0186bd0c663b2b97
+MASK_NARROWED_AT: compare-cross-binary-mask-v1
+A  checkpoint hazard_raster_entry @ $108F
+B  checkpoint hazard_raster_entry @ $108F
+
+BYTE_IDENTICAL: no
+  (a recorded extra -- the VERDICT line below is the acceptance signal, not this one)
+
+volatile (excluded from the verdict): 0
+
+allowlisted (intentional difference, excluded from the verdict): 0
+
+DIVERGENCE — fails the comparison: 6
+  $0854  $02 %00000010  ->  $03 %00000011   [image]
+  $0880  $14 %00010100  ->  $16 %00010110   [image]
+  $088F  $01 %00000001  ->  $00 %00000000   [image]
+  $D015  $01 %00000001  ->  $00 %00000000   [register]
+  $D018  $15 %00010101  ->  $17 %00010111   [register]
+  $D020  $F2 %11110010  ->  $F3 %11110011   [register]
+
+total differing addresses (image + register): 6
+
+VERDICT: FAIL
+```
+
+The exit status, quoted from the shell that ran it:
+
+```
+exit status: 1
+```
+
+**The mask version string the run printed is `compare-cross-binary-mask-v1`.**
+Nothing about the mask, the flags or the invocation was adjusted to reach this
+result. The first run of this command produced this output, and it is the
+output recorded here.
+
+### 6. The three planted regressions, each named
+
+The divergence list above is the complete difference set — all six entries, at
+`--limit 0`, with nothing elided. It is six rows and not three because each
+planted regression is visible **twice**: once as the changed immediate operand
+byte sitting in the captured RAM image, and once as the value that operand
+actually put into the chip. Both are reported, and both fall in the same
+bucket.
+
+Which store each operand feeds was decoded from the captured image itself
+rather than read off the source, so the pairing below is derived evidence:
+each differing offset is preceded by opcode `$A9` (`LDA #imm`) and immediately
+followed by `$8D` (`STA abs`) naming the register.
+
+| Register | Original | Regressed | Bit | Bucket | Operand byte in the image | Its store |
+|---|---|---|---|---|---|---|
+| **`$D020`** (border colour) | `$F2` `%11110010` | `$F3` `%11110011` | bit 0 | **DIVERGENCE** | `$0854`: `$02` → `$03` | `STA $D020` at `$0855` |
+| **`$D015`** (sprite enable) | `$01` `%00000001` | `$00` `%00000000` | bit 0 | **DIVERGENCE** | `$088F`: `$01` → `$00` | `STA $D015` at `$0890` |
+| **`$D018`** (VIC memory control) | `$15` `%00010101` | `$17` `%00010111` | bit 1 | **DIVERGENCE** | `$0880`: `$14` → `$16` | `STA $D018` at `$0881` |
+
+Three named registers, three distinct DIVERGENCE rows. **The comparison did not
+catch one regression and inherit the verdict for the other two** — that was the
+specific failure this section had to rule out, and the per-address rows above
+are what rule it out.
+
+One detail is recorded rather than smoothed over, because it would otherwise
+read as an inconsistency. The `$D018` operand byte is `$14`/`$16` while the
+register reads back `$15`/`$17`: bit 0 of `$D018` is unused on the VIC-II and
+reads as 1 regardless of what was written. The one planted bit is bit 1 in both
+views, and the `%` columns above show it in both.
+
+The upper nibble of `$D020` reads as `$F` for the same class of reason — the
+VIC-II colour registers decode only four bits and the high nibble reads as open
+bus. The planted bit is bit 0, again visible in both views.
+
+### 7. No allowlist, and the same mask as every later run
+
+Stated explicitly, because the later green result depends on it:
+
+- **No allowlist was used for this run.** The command carries no `--allowlist`
+  flag, and the run's own `allowlisted` bucket reports `0`. Nothing was excused.
+- **The mask used is `compare-cross-binary-mask-v1`**, the version plan 50-01
+  committed and plan 50-04's calibration left unchanged. It is the same mask
+  every later comparison in this phase runs under. No mask span was changed,
+  added or deleted by this plan, and the unit tests that pin the mask's edges
+  are green.
+- There is therefore **no flag, mask or allowlist difference** between this red
+  result and the green result a later plan will produce. That sameness is the
+  whole reason the two are comparable.
+
+Neither of the two permitted resolution routes was taken, because neither had
+anything to act on. **ROUTE 1 (narrow the mask): not taken. Zero entries.**
+**ROUTE 2 (name an unexplained residual): not taken. Zero entries** — every one
+of the six differences is accounted for by a deliberately planted regression,
+and none is unexplained.
+
+### 8. Emulator shutdown for this run
+
+Stopped in the same session as the last emulator call, and verified rather than
+assumed:
+
+The stop time below is taken from the unit's own journal
+(`journalctl --user -u vice-broker.service -o short-iso` →
+`2026-09-15T21:25:24+02:00 … Stopped vice-broker.service`), not clocked at the
+shell, because the shell that ran the stop did not print one. It is recorded
+that way rather than rounded to a plausible value.
+
+```
+[2026-09-15T19:25:24Z] $ systemctl --user stop vice-broker.service
+$ systemctl --user is-active vice-broker.service
+inactive
+$ ps -eo pid,etime,cmd | grep -Ei 'vice-broker|x64sc' | grep -v grep
+(no output)
+$ ss -ltnp | grep -E ':66[0-9][0-9]'
+(no output)
+$ ss -ltnp | grep -E ':19510'
+(no output)
+```
+
+### 9. What this section does and does not establish
+
+Recorded plainly, without overclaiming:
+
+- **It establishes that the instrument is not blind.** Three single-bit
+  regressions at `$D020`, `$D015` and `$D018`, at this checkpoint, under
+  `compare-cross-binary-mask-v1`, with no allowlist, each produced its own named
+  DIVERGENCE row and together produced `VERDICT: FAIL` with exit status 1. The
+  narrowed mask does not hide them, and the one-bit drift tolerance that would
+  have excused them is genuinely gone for cross-binary comparisons.
+- **It does not establish that the probe set is exhaustive.** Nothing in the
+  ROADMAP or the research shows that `$D020`, `$D015` and `$D018` are a
+  sufficient regression probe set for this subject (flagged assumption P1). This
+  run proves the instrument catches these three. It says nothing about a fourth
+  kind of regression nobody planted.
+- **It does not establish that the mask's edges are correct in general**
+  (flagged assumption P2). Plan 50-04's calibration was a measurement against a
+  same-binary re-run, not an exhaustive proof, and this section does not upgrade
+  it. What it adds is one-sided: the mask is now shown not to be too *wide* at
+  these three registers.
+- **It establishes nothing whatsoever about a rebuild.** No rebuild has been
+  produced or captured at the time this section was committed, and no green
+  comparison exists anywhere in this transcript yet. That ordering is deliberate
+  and is a fact in git history rather than a claim in prose: this red section is
+  committed in wave 3, before the green section exists.
+- One thing this run inherits from the calibration above and does not re-prove:
+  the byte-identity of the two original runs was partly manufactured by the rig
+  (`-seed 4242 -raminitstartrandom 0 …`). That determinism is what makes a
+  six-difference result readable as *these six and nothing else*. On a run pair
+  launched without those flags, uninitialised RAM could reasonably add
+  differences that have nothing to do with a planted regression.
+
 ## Artifacts this transcript is the record for
 
 | Artifact | SHA-256 | Size |
@@ -430,6 +755,10 @@ $ ss -ltnp | grep -E ':19510'
 | `src/mcp/vice/fixtures/hazard-subject/hazard-subject.prg` | `89846d489f83f4d9fd092f214343c5566433655b836d20625e7123682b8c6828` | 2281 bytes |
 | `evidence/captures/original-a.bin` | `0e3f47d64732a67b0a01a6d59aed8de4f62fe19b0edfdc00f7543ddd7e2dc2f5` | 65536 bytes |
 | `evidence/captures/original-b.bin` | `0e3f47d64732a67b0a01a6d59aed8de4f62fe19b0edfdc00f7543ddd7e2dc2f5` | 65536 bytes |
+| `src/mcp/vice/fixtures/hazard-subject/hazard-subject-regressed.prg` | `fd6484f1101ef0773c0137d479e6b630c247169445ddb01b149072bd8df21427` | 2281 bytes |
+| `evidence/captures/regressed.bin` | `d18830159c1c385901c7c97280fc91adb1dbfad167ee44ce0186bd0c663b2b97` | 65536 bytes |
 
-Both sidecars declare `route: snapshot`, `checkpoint_name: hazard_raster_entry`
-and `checkpoint_address: 4239`.
+All three sidecars declare `route: snapshot`, `checkpoint_name:
+hazard_raster_entry` and `checkpoint_address: 4239` — the two original captures
+and, since plan 50-05's red control, `regressed.state.json` as well, whose
+address was re-resolved from its own binary's symbol list rather than copied.
