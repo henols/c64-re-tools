@@ -1,0 +1,180 @@
+{
+  "schema_version": 1,
+  "batch_id": "260915-mmh",
+  "created_at": "2026-09-15T14:17:22.617Z",
+  "options": {},
+  "base_revision": "fd0ba45da83836149a46e54a19f8552925fbaf22",
+  "items": [
+    {
+      "quick_id": "260915-mmi",
+      "client_id": null,
+      "description": "c64-program-recon skill: apply the STE100 strict pass, following every rule in .planning/ste100-batch-rules.md, to these eight files — src/skills/c64-program-recon/SKILL.md (baseline 108 violations), src/skills/c64-program-recon/references/control-flow.md, src/skills/c64-program-recon/references/graphics.md, src/skills/c64-program-recon/references/observation-hazards.md, src/skills/c64-program-recon/references/reconstruction.md, src/skills/c64-program-recon/references/sound-and-input.md, src/skills/c64-program-recon/references/tool-selection.md, src/skills/c64-program-recon/templates/memory-map.template.md",
+      "status": "complete",
+      "depends_on": [],
+      "planned_files": [
+        "src/skills/c64-program-recon/SKILL.md",
+        "src/skills/c64-program-recon/references/control-flow.md",
+        "src/skills/c64-program-recon/references/graphics.md",
+        "src/skills/c64-program-recon/references/observation-hazards.md",
+        "src/skills/c64-program-recon/references/reconstruction.md",
+        "src/skills/c64-program-recon/references/sound-and-input.md",
+        "src/skills/c64-program-recon/references/tool-selection.md",
+        "src/skills/c64-program-recon/templates/memory-map.template.md"
+      ],
+      "directory": null,
+      "worktree": null,
+      "dispatched_worktree": null,
+      "dispatched_branch": null,
+      "dispatched_base": null,
+      "wave": 0,
+      "commit": "c3d5ad24baa9d47d43f2a0b59d6f9a9cc9ea9a15",
+      "failure_reason": null
+    },
+    {
+      "quick_id": "260915-mmj",
+      "client_id": null,
+      "description": "c64-memory-mapping skill: apply the STE100 strict pass, following every rule in .planning/ste100-batch-rules.md, to src/skills/c64-memory-mapping/SKILL.md (baseline 71 violations)",
+      "status": "complete",
+      "depends_on": [],
+      "planned_files": [
+        "src/skills/c64-memory-mapping/SKILL.md"
+      ],
+      "directory": null,
+      "worktree": null,
+      "dispatched_worktree": null,
+      "dispatched_branch": null,
+      "dispatched_base": null,
+      "wave": 0,
+      "commit": "6d6dba59d09e19c989f23db6e2a5aef6d0b13109",
+      "failure_reason": null
+    },
+    {
+      "quick_id": "260915-mmk",
+      "client_id": null,
+      "description": "vice-wedge-triage skill: apply the STE100 strict pass, following every rule in .planning/ste100-batch-rules.md, to src/skills/vice-wedge-triage/SKILL.md (baseline 56 violations) — this file holds the evidence-ledger tables the cell-not-row rule exists for",
+      "status": "complete",
+      "depends_on": [],
+      "planned_files": [
+        "src/skills/vice-wedge-triage/SKILL.md"
+      ],
+      "directory": null,
+      "worktree": null,
+      "dispatched_worktree": null,
+      "dispatched_branch": null,
+      "dispatched_base": null,
+      "wave": 0,
+      "commit": "91a44accf59a33c53874640069bf4024e63feaa8",
+      "failure_reason": null
+    },
+    {
+      "quick_id": "260915-mml",
+      "client_id": null,
+      "description": "routine-queue-walker skill: apply the STE100 strict pass, following every rule in .planning/ste100-batch-rules.md, to src/skills/routine-queue-walker/SKILL.md (baseline 50 violations)",
+      "status": "complete",
+      "depends_on": [],
+      "planned_files": [
+        "src/skills/routine-queue-walker/SKILL.md"
+      ],
+      "directory": null,
+      "worktree": null,
+      "dispatched_worktree": null,
+      "dispatched_branch": null,
+      "dispatched_base": null,
+      "wave": 0,
+      "commit": "b5ed3c5405706f6d7e6b3c8f3c3c86538261cd3e",
+      "failure_reason": null
+    },
+    {
+      "quick_id": "260915-mmm",
+      "client_id": null,
+      "description": "c64-ram-capture skill: apply the STE100 strict pass, following every rule in .planning/ste100-batch-rules.md, to these three files — src/skills/c64-ram-capture/SKILL.md (baseline 46 violations), src/skills/c64-ram-capture/templates/capture-record.template.md, src/skills/c64-ram-capture/transients/README.md",
+      "status": "complete",
+      "depends_on": [],
+      "planned_files": [
+        "src/skills/c64-ram-capture/SKILL.md",
+        "src/skills/c64-ram-capture/templates/capture-record.template.md",
+        "src/skills/c64-ram-capture/transients/README.md"
+      ],
+      "directory": null,
+      "worktree": null,
+      "dispatched_worktree": null,
+      "dispatched_branch": null,
+      "dispatched_base": null,
+      "wave": 0,
+      "commit": "6bd13eea92672812f8701a72568ef63e39e3579a",
+      "failure_reason": null
+    },
+    {
+      "quick_id": "260915-mmn",
+      "client_id": null,
+      "description": "c64-provenance-diff skill: apply the STE100 strict pass, following every rule in .planning/ste100-batch-rules.md, to src/skills/c64-provenance-diff/SKILL.md (baseline 39 violations)",
+      "status": "complete",
+      "depends_on": [],
+      "planned_files": [
+        "src/skills/c64-provenance-diff/SKILL.md"
+      ],
+      "directory": null,
+      "worktree": null,
+      "dispatched_worktree": null,
+      "dispatched_branch": null,
+      "dispatched_base": null,
+      "wave": 0,
+      "commit": "5d104d75bb96fc97143f5b2f0d96449f9c9bc865",
+      "failure_reason": null
+    },
+    {
+      "quick_id": "260915-mmo",
+      "client_id": null,
+      "description": "acme-build skill: apply the STE100 strict pass, following every rule in .planning/ste100-batch-rules.md, to src/skills/acme-build/SKILL.md (baseline 23 violations)",
+      "status": "complete",
+      "depends_on": [],
+      "planned_files": [
+        "src/skills/acme-build/SKILL.md"
+      ],
+      "directory": null,
+      "worktree": null,
+      "dispatched_worktree": null,
+      "dispatched_branch": null,
+      "dispatched_base": null,
+      "wave": 0,
+      "commit": "ab39ad0efc7bd6d26039f7e430ae1216faebf9d9",
+      "failure_reason": null
+    },
+    {
+      "quick_id": "260915-mmp",
+      "client_id": null,
+      "description": "c64-disk-access skill: apply the STE100 strict pass, following every rule in .planning/ste100-batch-rules.md, to src/skills/c64-disk-access/SKILL.md (baseline 22 violations)",
+      "status": "complete",
+      "depends_on": [],
+      "planned_files": [
+        "src/skills/c64-disk-access/SKILL.md"
+      ],
+      "directory": null,
+      "worktree": null,
+      "dispatched_worktree": null,
+      "dispatched_branch": null,
+      "dispatched_base": null,
+      "wave": 0,
+      "commit": "9f51396a7ada3c51fefdb2c58777f5f439ac9714",
+      "failure_reason": null
+    },
+    {
+      "quick_id": "260915-mmq",
+      "client_id": null,
+      "description": "c64-petcat skill: apply the STE100 strict pass, following every rule in .planning/ste100-batch-rules.md, to src/skills/c64-petcat/SKILL.md (baseline 9 violations)",
+      "status": "complete",
+      "depends_on": [],
+      "planned_files": [
+        "src/skills/c64-petcat/SKILL.md"
+      ],
+      "directory": null,
+      "worktree": null,
+      "dispatched_worktree": null,
+      "dispatched_branch": null,
+      "dispatched_base": null,
+      "wave": 0,
+      "commit": "04a0831c3e97563ec8dd988f17f010c5db8d2648",
+      "failure_reason": null
+    }
+  ]
+}
