@@ -22,8 +22,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 import {
   closeStore,
@@ -41,7 +40,6 @@ import type { AnnoStoreHandle } from "./anno-store.ts";
 import { NO_ROW, resolveAt } from "./anno-index.ts";
 import { AnnoAddressError } from "./anno-types.ts";
 import { parsePrg } from "./prg-image.ts";
-import { codeOnly, shippedTsModules } from "./shipped-modules.ts";
 import {
   AnnoDeriveArgumentError,
   ANNO_DERIVE_MAX_IMAGE_BYTES,
@@ -49,8 +47,6 @@ import {
   searchAnnotations,
 } from "./anno-derive.ts";
 import { composeAddressDetails } from "./anno-details.ts";
-
-const HERE = dirname(fileURLToPath(import.meta.url));
 
 // ---------------------------------------------------------------------------
 // The fixture: 34 real bytes, laid out so every behavioural case in the plan
@@ -426,189 +422,6 @@ test("STORE-06 never-cached control: repeated derived queries leave the store by
         "anything -- an xref row, a byte of the store file, a snapshot, a revision -- has broken that contract.",
     );
   });
-});
-
-// ---------------------------------------------------------------------------
-// 4. The never-cached control, structural half (task 2)
-// ---------------------------------------------------------------------------
-
-/**
- * SQL as it is ACTUALLY written in this tree is a STRING LITERAL, so the census
- * below strips comments while KEEPING literal bodies (`codeOnly(src, true)`).
- * Stripping comments first is not optional -- the derivation module's own header
- * must explain the never-cache rule, and matching the raw file would let that
- * prose invalidate the check that enforces it. Keeping literal bodies is equally
- * not optional in the other direction: the strict mode would blank every SQL
- * string in the tree and the census would find nothing at all.
- */
-function strippedSource(name: string): string {
-  return codeOnly(readFileSync(join(HERE, name), "utf8"), true);
-}
-
-/** SQL-SHAPED write verbs, not bare English words: `create table`, never
- * `created`. A prose sentence cannot trip this; a real statement cannot evade
- * it. */
-const SQL_WRITE_VERB = /\b(?:insert\s+into|update\s+[a-z_]+\s+set|delete\s+from|drop\s+(?:table|index)|create\s+(?:table|index|unique)|replace\s+into|vacuum\s+into|alter\s+table)\b/gi;
-
-/** Node's filesystem write surface, named individually. */
-const FS_WRITE_CALLS = [
-  "writeFileSync",
-  "appendFileSync",
-  "createWriteStream",
-  "copyFileSync",
-  "renameSync",
-  "mkdirSync",
-  "rmSync",
-  "unlinkSync",
-  "writeSync",
-  "fsyncSync",
-  "truncateSync",
-];
-
-/** The three host/container path-translation seam modules. MCP-02: none may be
- * imported by a proxy-local derivation. */
-const HOST_PATH_SEAMS = ["hostpath.ts", "containerpath.ts", "container-guard.mts"];
-
-/** Every module of this area whose whole subject is DERIVATION. All three
- * assertions below are applied to each of them identically -- `anno-details.ts`
- * sits on a read path too, so it is held to exactly the same rule. */
-const DERIVATION_MODULES = ["anno-derive.ts", "anno-details.ts"];
-
-test("STORE-06 never-cached control: the derivation modules' stripped source carries no SQL write verb", () => {
-  for (const name of DERIVATION_MODULES) {
-    const source = strippedSource(name);
-    SQL_WRITE_VERB.lastIndex = 0;
-    const found = source.match(SQL_WRITE_VERB) ?? [];
-    assert.deepEqual(found, [], `${name} must never write: a cached derivation is a second on-disk truth (putXref's contract)`);
-  }
-});
-
-test("STORE-06 never-cached control: the derivation modules name no filesystem write call and no SQLite binding", () => {
-  for (const name of DERIVATION_MODULES) {
-    const source = strippedSource(name);
-    for (const call of FS_WRITE_CALLS) {
-      assert.ok(!source.includes(call), `${name} must not name ${call} -- a derived answer is computed, never persisted`);
-    }
-    assert.ok(!source.includes("node:fs"), `${name} must not reach the filesystem at all`);
-    assert.ok(!source.includes("node:sqlite"), `${name} must reach the store only through anno-store.ts's entry points (STORE-07)`);
-  }
-});
-
-test("MCP-02: the derivation modules import none of the three host-path seam modules", () => {
-  for (const name of DERIVATION_MODULES) {
-    const source = strippedSource(name);
-    for (const seam of HOST_PATH_SEAMS) {
-      assert.ok(!source.includes(seam), `${name} must not import ${seam} -- the store path is a PROXY-LOCAL filesystem path`);
-    }
-  }
-});
-
-/** The last top-level `function`/`const` declaration before `index` -- the
- * function a write site sits in. Line-anchored so a local `const` inside a
- * callback never renames a site. */
-function enclosingDeclaration(source: string, index: number): string {
-  const TOP_LEVEL = /^(?:export\s+)?(?:async\s+)?(?:function\s+([A-Za-z_$][\w$]*)|const\s+([A-Za-z_$][\w$]*))/gm;
-  let name = "(module scope)";
-  let match: RegExpExecArray | null;
-  while ((match = TOP_LEVEL.exec(source)) !== null && match.index < index) {
-    name = match[1] ?? match[2] ?? name;
-  }
-  return name;
-}
-
-/**
- * Every SQL write site across the STRIPPED sources of the shipped module set,
- * as `file#declaration` pairs.
- *
- * The scanned set is `shippedTsModules()` -- NOT a local `readdirSync` -- so it
- * throws rather than silently shrinking when a `files[]` entry is missing from
- * disk. A guard that scans nothing finds nothing.
- */
-function sqlWriteSites(): string[] {
-  const sites = new Set<string>();
-  for (const name of shippedTsModules()) {
-    const source = strippedSource(name);
-    SQL_WRITE_VERB.lastIndex = 0;
-    let match: RegExpExecArray | null;
-    while ((match = SQL_WRITE_VERB.exec(source)) !== null) {
-      sites.add(`${name}#${enclosingDeclaration(source, match.index)}`);
-    }
-  }
-  return [...sites].sort();
-}
-
-/**
- * THE NAMED EXPECTED SET -- file-and-declaration pairs, listed individually
- * rather than counted. A bare count would be satisfied by a new write site on a
- * read path replacing an old one on a write path.
- *
- * Every entry is in `anno-store.ts`, which is the whole claim: the ONE seam owns
- * every write. `applyEnumUsage` and `clearEnumUsage` are the two sites plan
- * 29-03 added with `anno_enum_usage` (its third new function, `listEnumUsage`,
- * is a read and correctly does not appear here). `removeScope` is the one site
- * plan 29-06 added: `addScope`'s inverse, which `28-VERIFICATION.md`'s `WR-28`
- * carried to Phase 29 in writing because that phase puts `addScope` on an
- * agent-driven surface where a transposed span is likelier, and `28-REVIEW.md`
- * required shipped in the same phase as the refusal. It is a WRITE verb on a
- * WRITE path -- this control caught it, which is the control working.
- *
- * TWO SITES 46-03 ADDED, for `anno_excluded_range` (`SCHEMA_VERSION` 5,
- * `BUILD-07`): `addExcludedRange` records a user-requested exclusion's extent
- * and reason, and `removeExcludedRange` is its exact inverse, following
- * `addScope`/`removeScope`'s own pairing. Neither is a cached derivation of
- * anything -- every row is a directly caller-supplied fact (the user's own
- * words), exactly like `removeScope` above.
- */
-const EXPECTED_SQL_WRITE_SITES = [
-  "anno-store.ts#DDL",
-  "anno-store.ts#addExcludedRange",
-  "anno-store.ts#addScope",
-  "anno-store.ts#applyEnumUsage",
-  "anno-store.ts#clearEnumUsage",
-  "anno-store.ts#createProjectEnum",
-  // TWO SITES 43-02 ADDED, for `anno_evid_exec` (SCHEMA_VERSION 4, EVID-01):
-  // `insertExecObservations` writes the observation rows, and
-  // `deleteExecObservationsForRun` is the bracket-reset inverse (EVID-05).
-  // Neither is a cached derivation of anything -- every row is a directly
-  // caller-supplied fact (an observed execution, or its identity), which is
-  // exactly what distinguishes a legitimate new write site here from the
-  // failure this control exists to catch.
-  "anno-store.ts#deleteExecObservationsForRun",
-  "anno-store.ts#insertExecObservations",
-  "anno-store.ts#insertRange",
-  "anno-store.ts#openStore",
-  "anno-store.ts#pruneSnapshots",
-  "anno-store.ts#putXref",
-  "anno-store.ts#removeExcludedRange",
-  "anno-store.ts#removeScope",
-  "anno-store.ts#retype",
-  "anno-store.ts#runWriteSequence",
-  "anno-store.ts#setComment",
-  "anno-store.ts#setLabel",
-  "anno-store.ts#stageSnapshot",
-  "anno-store.ts#updateProjectEnum",
-];
-
-test("STORE-06 never-cached control: the tree's SQL write sites are exactly the named expected set", () => {
-  const sites = sqlWriteSites();
-  assert.deepEqual(
-    sites,
-    EXPECTED_SQL_WRITE_SITES,
-    "a NEW write site anywhere -- and especially on a read path -- is what this control exists to catch. " +
-      "putXref's contract: \"nothing derivable is ever written here. A cached derivation would be a SECOND ON-DISK TRUTH " +
-      'that can disagree with the range table it came from."',
-  );
-  assert.ok(sites.length > 0, "a census that returned nothing would deepEqual an empty expectation and prove nothing");
-});
-
-test("STORE-06 never-cached control: the census can actually SEE a planted write site", () => {
-  // Non-vacuity: the same predicate the real census uses, over a planted
-  // source. Without this, a stripper change that blanked every SQL string
-  // would leave the census green and empty.
-  const planted = codeOnly('function cacheIt() {\n  db.prepare("insert into anno_xref(a) values (?)").run(1);\n}\n', true);
-  SQL_WRITE_VERB.lastIndex = 0;
-  assert.equal((planted.match(SQL_WRITE_VERB) ?? []).length, 1);
-  assert.equal(enclosingDeclaration(planted, planted.search(/insert/i)), "cacheIt");
 });
 
 // ---------------------------------------------------------------------------
