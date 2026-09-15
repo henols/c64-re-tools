@@ -26,8 +26,8 @@ computed against a revision the store has already moved past. Fanning several
 writers at one store therefore buys **zero** extra throughput and costs
 correctness: the losers come back as named stale-revision refusals you then
 have to re-derive and replay. Reading fan-out — several agents *thinking* over
-already-fetched answers — is fine, and its value is reasoning bandwidth, never
-I/O.
+answers they already got — is fine, and its value is reasoning bandwidth,
+never I/O.
 
 **Every call names its own store.** There is no ambient "current store" on this
 surface: pass `store` (a `.annostore` path) on every call, and pass `image` as
@@ -47,7 +47,7 @@ last.
    tool's own description. At or above it, the bytes are very likely packed.
 3. If the binary looks packed, **stop and say so.** Do not annotate a packed
    image: you would be documenting a decruncher, and every label you write is
-   thrown away the moment the real image is recovered. This project's route to
+   thrown away the moment you recover the real image. This project's route to
    an unpacked image is `c64-ram-capture` — run the program in the emulator and
    capture RAM at a checkpoint past the decrunch — plus the packer-identity
    finding in `c64-program-recon`, which names the packer when an oracle can.
@@ -60,7 +60,7 @@ and this project has a non-destructive route to the same answer.
 ## Phase 1 — make sure blocks are classified
 
 Region classification is a prerequisite for everything below: a routine
-candidate is only meaningful once the bytes around it are known to be code.
+candidate is only meaningful once you know the bytes around it are code.
 
 1. Follow `src/skills/c64-memory-mapping/SKILL.md` for the classification pass
    and for what each region type means.
@@ -85,17 +85,18 @@ line comment. That is the only test. Do not guess from the label name.
    independently of whatever `anno_get_symbols` returned.** Call
    `anno_get_blocks` with `block_type: "code"` for every code-typed range,
    read each one with `anno_disassemble`, and collect every `jsr` target
-   address. For each candidate target, confirm it and gather its full caller
-   list with `anno_get_cross_references` (a generous `max_results` — this is
-   also the call that fills in "called from" when the entry is written up in
-   Phase 2.2). Every one of these targets is a routine candidate **regardless
-   of whether it carries any label at all**. A real measured derivation run
-   (dxa disassemble, then Ghidra import) found that a purely dxa/Ghidra-derived
-   store carries ZERO labels of any shape — derivation writes typed ranges and
-   cross-references, never names — so a queue built only from Candidate source
-   B below finds nothing to do on such a store and silently reports a clean,
-   empty queue on a program nothing has been named in yet. Source A does not
-   depend on step 1 having found anything.
+   address. For each candidate target, check that it is a real routine and
+   gather its full caller list with `anno_get_cross_references` (a generous
+   `max_results` — this is also the call that fills in "called from" when you
+   write up the entry in Phase 2.2). Every one of these targets is a routine
+   candidate **regardless of whether it carries any label at all**. A real
+   measured derivation run (dxa disassemble, then Ghidra import) found that a
+   purely dxa/Ghidra-derived store carries ZERO labels of any shape —
+   derivation writes typed ranges and cross-references, never names — so a
+   queue built only from Candidate source B below finds nothing to do on
+   such a store and silently reports a clean, empty queue on a program
+   nothing has been named in yet. Source A does not depend on step 1 having
+   found anything.
 4. **Candidate source B — the label-prefix path, for a store that DOES carry
    externally-imported auto-names.** Keep a label as a routine candidate when
    any of these holds:
@@ -112,9 +113,9 @@ line comment. That is the only test. Do not guess from the label name.
    once. A store may carry either shape, or both, so neither source alone is
    sufficient.
 6. Drop every candidate that already carries a line comment.
-7. What is left is the routine queue.
+7. What remains is the routine queue.
 8. **Order it with `start` first** when `start` is in it. The entry point sets
-   the context every other routine is read against.
+   the context you read every other routine against.
 
 ### 2.2 Walk it
 
@@ -136,7 +137,7 @@ When the queue is empty, read the store's revision with `anno_save_project`.
 **It performs no write, and it exists to say so:** every mutating verb on this
 surface has already committed and fsynced its own write by the time it
 returned, so there is nothing for an explicit save to flush. Record the
-revision — it is the checkpoint this pass is measured from, and the
+revision — it is the checkpoint you measure this pass from, and the
 `base_revision` a later compare-and-swap write would quote. Everything after
 this point re-reads the store, because Phase 2 has just changed the label names
 Phase 3 filters on.
@@ -174,7 +175,7 @@ OS variable).
    xref-derived candidate inside a code region (also Phase 2's).
 5. **Union sources A and B by address** — a symbol reachable both ways counts
    once.
-6. What is left is the symbol queue.
+6. What remains is the symbol queue.
 
 ### 3.2 Walk it
 
@@ -184,12 +185,12 @@ touches it — a symbol's meaning is what its callers do with it — then rename
 and comment it. Classify it plainly: flag, counter, pointer, state variable,
 buffer, table.
 
-**No premature halting.** The symbol queue is routinely far larger than the
+**No premature stopping.** The symbol queue is routinely far larger than the
 routine queue — fifty, a hundred entries is normal. Do not truncate it, do not
 skip "secondary" symbols, and do not stop early because it is long. Feeding the
 whole queue through is the job. Stopping early and labelling the remainder
-"skipped for review" is a failed pass, not a completed one — unless the
-remainder is reported explicitly, in full, under Phase 4's leftovers table.
+"skipped for review" is a failed pass, not a completed one — unless you
+report the remainder explicitly, in full, under Phase 4's leftovers table.
 
 For naming conventions and for what any given hardware or KERNAL address
 means, follow `src/skills/c64-memory-mapping/SKILL.md` rather than guessing.
@@ -205,8 +206,8 @@ performed. The writes already landed.
    the report, so the pass is attributable to an exact store state.
 2. Write the report. Four sections, all of them required:
 
-**Regions.** How many regions are classified, grouped by type, plus anything
-notable — text at a fixed address, a jump table, a sprite block.
+**Regions.** How many regions you classified, grouped by type, plus anything
+notable — text at a constant address, a jump table, a sprite block.
 
 **Routines.**
 
@@ -222,7 +223,7 @@ notable — text at a fixed address, a jump table, a sprite block.
 
 **Leftovers — uncertain, skipped, or still unannotated.** This section is not
 optional and it is not allowed to be empty when the queues were not emptied.
-List every routine and every symbol that was left undone, with its address and
+List every routine and every symbol you left undone, with its address and
 the reason. Never report "no uncertain areas" or "nothing left" while a single
 `f_XXXX` or `a_XXXX` label is still auto-named or a queued routine is still
 uncommented — those must be listed by name for a human to pick up.
@@ -278,9 +279,9 @@ There is deliberately no single "percent documented" figure, because one
 combined number lets a weak measure hide behind a strong one and makes the
 claim unfalsifiable:
 
-- **A high user fraction beside a large unreached count means the wrong things
-  were named.** Every label got a human name, but most of the image was never
-  reached by the descent walk from any seed — the queue was worked over the
+- **A high user fraction beside a large unreached count means you named the
+  wrong things.** Every label got a human name, but most of the image was never
+  reached by the descent walk from any seed — you worked the queue over the
   easily-visible part of the program and the rest was never entered. Go back to
   Phase 0 and find more entry points (chained IRQ vectors, dispatch tables),
   not more labels.
@@ -330,7 +331,7 @@ by name rather than rendering an empty-disagreement report — "the query was
 never run" and "the query found nothing" must never read the same.
 
 **The stop condition is a measured exit code, not a belief.** The walk
-described in Phases 2-4 above is finished for a fixture when `node
+described in Phases 2-4 above finishes for a fixture when `node
 src/skills/routine-queue-walker/scripts/completeness-report.mjs --store
 <fixture>.annostore --disagreements <fixture>-disagreements.json --manifest
 src/mcp/vice/fixtures/decomp-execution-manifest.json` **exits 0** — never when
@@ -365,7 +366,7 @@ from reading the rendered text alone — read the process exit code.
 - **An accepted disagreement gets a `DISAGREEMENT-ACCEPTED:` comment.** When
   the decomposition-completeness gate's disagreement census flags a byte the
   byte-derived block table calls `data` but the runtime evidence shows
-  executing, and review confirms the runtime evidence is correct (or the
+  executing, and a review finds the runtime evidence correct (or the
   disagreement is otherwise a reviewed, accepted fact rather than a
   classification bug), record it with `anno_set_comment` using the literal
   prefix `DISAGREEMENT-ACCEPTED:` naming why — greppable, and read by the gate
