@@ -1274,13 +1274,13 @@ with behaviour worth removing and adding)
   4. **One behaviour is removed and one added** in the rebuilt source, reassembled through Phase 49's gate, and both are observed taking effect in VICE with transcripts committed. Each change is cross-referenced to a hazard-report finding or a moved range, so the demonstration touches decomposed and rebuilt code rather than an already-easy already-symbolised constant.
   5. CI runs the pipeline on **committed synthetic fixtures alone** — no copyrighted image, no new host prerequisite — and the boundary is **stated rather than blurred**: which segment a GitHub runner actually executes (store → export → assemble → gate → byte-diff, on the ACME the workflow already installs) and which segment is emulator-dependent and therefore a named manual step whose committed transcripts CI checks for freshness against the fixture's hash, so a stale transcript is caught instead of read as a pass. A broken step is observed reddening CI.
 
-**Plans**: 1/7 plans executed, 5 waves
+**Plans**: 2/7 plans executed, 5 waves
 
 Plans:
 **Wave 1**
 
 - [x] 50-01-PLAN.md — the comparison instrument, committed first: narrowed volatile mask, intentional-difference allowlist, per-binary logical checkpoints (wave 1)
-- [ ] 50-02-PLAN.md — the two subject variants: a three-regression red-control twin, and a modified subject anchored to two named hazard findings (wave 1)
+- [x] 50-02-PLAN.md — the two subject variants: a three-regression red-control twin, and a modified subject anchored to two named hazard findings (wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -2191,7 +2191,7 @@ check. No test reads this table now.
 | 47. Multi-File Rebuildable Source | v1.0.0 | 6/6 | Complete | 2026-09-12 |
 | 48. The Movement-Hazard Report and Its Purpose-Built Subject | v1.0.0 | 6/6 | Complete | 2026-09-13 |
 | 49. The Reassembly Gate, Committed Before the Phase It Gates | v1.0.0 | 7/7 | Complete | 2026-09-13 |
-| 50. Equivalence and Modifiability | v1.0.0 | 1/7 | In Progress | - |
+| 50. Equivalence and Modifiability | v1.0.0 | 2/7 | In Progress | - |
 | 51. Planning Vocabulary Out of the Shipped Server | v1.0.0 | 8/17 | In Progress | - |
 | 52. Remove the Fork Backend | v1.0.0 | 13/13 | Complete | 2026-09-12 |
 | 53. Operator-Owned `docs/` | v1.0.0 | - | Not started | - |
