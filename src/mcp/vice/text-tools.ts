@@ -69,7 +69,7 @@
 //     withChannelLockHeld()'s own discipline in stock-dispatch.ts.
 //   - Never embed a phase number in any string or template literal here.
 import { textConnect, textDisconnect } from "./text-connect.ts";
-import { withTextChannelLock, buildTextCommand, type TextMonitorClient } from "./text-protocol.ts";
+import { withTextChannelLock, buildTextCommand, HAZARD_SUBJECT_PRG_PATH, type TextMonitorClient } from "./text-protocol.ts";
 import { MonitorOwnershipError } from "./vice-broker-client.ts";
 import { ChannelLockTimeoutError } from "./channel-lock.ts";
 import { isErrorText, derivedAnswer, convertHandshakeError, convertWireError, type StockToolResult } from "./stock-handler.ts";
@@ -773,6 +773,69 @@ export async function handleIoRegisters(args: Record<string, unknown>, deps: Sto
       unrecognisedLines: parsed.value.unrecognisedLines,
       unrecognisedLineCount: parsed.value.unrecognisedLines.length,
       ...(identityWarning !== "" ? { identityWarning } : {}),
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Plan 50-04 (route-d): the tool that reaches text-protocol.ts's widened
+// `load` verb. See TEXT_COMMAND_ALLOWLIST's own `load` paragraph and
+// TEXT_COMMAND_PARAM_SPECS's own `load` entry (both text-protocol.ts) for
+// the full rationale this handler leans on without repeating it.
+// ---------------------------------------------------------------------------
+
+/**
+ * The exact TEXT_COMMAND_PARAM_SPECS key for the plan 50-04 `load` widening --
+ * built the SAME way text-protocol.ts's own table key is built, from the same
+ * exported HAZARD_SUBJECT_PRG_PATH constant, never a second literal path. Not
+ * exported: this string is meaningful only as a lookup key into that one
+ * table, via buildTextCommand() below.
+ */
+const LOAD_VERB = `load "${HAZARD_SUBJECT_PRG_PATH}"`;
+
+/**
+ * `vice_program_load` -- the shipped tool that reaches plan 50-04's widened
+ * `load` verb (route-d, `.planning/phases/50-equivalence-and-modifiability/evidence/LOAD-ROUTE.md`).
+ * Dials VICE's text-monitor `load "<file>" <device>` command for the ONE
+ * committed Phase 50 tracer-slice fixture (HAZARD_SUBJECT_PRG_PATH,
+ * text-protocol.ts), baked into the verb's own frozen allowlist identity --
+ * this handler takes NO filename argument at all, so there is nothing here
+ * for a caller to inject; the fixture path can never be anything other than
+ * the one reviewed literal text-protocol.ts's table already carries.
+ *
+ * Takes exactly one OPTIONAL parameter, `device`: an omitted device defaults
+ * to 0 ("the file is read from the file system", VICE Manual ch. 12).
+ * `buildTextCommand()` alone validates and bounds the device (0 through 11,
+ * TEXT_COMMAND_PARAM_SPECS's own entry for this verb) -- this handler
+ * duplicates no bound, mirroring `handleCpuHistory()`'s own discipline of
+ * never re-stating a spec's own bound in a second place.
+ *
+ * No address argument is offered, and none ever will be through this tool:
+ * omitting it makes VICE use the load address embedded in the `.prg` file's
+ * own two-byte header, which is exactly what a committed machine-code
+ * fixture needs -- text-protocol.ts's own `load` entry documents this same
+ * choice and why a second numeric slot is not worth bounding for no present
+ * use.
+ */
+export async function handleProgramLoad(args: Record<string, unknown>, deps: StockDispatchDeps): Promise<StockToolResult> {
+  const { device } = args;
+  const resolvedDevice = device === undefined ? 0 : device;
+  const built = buildTextCommand(LOAD_VERB, resolvedDevice);
+  if (!built.ok) {
+    return isErrorText(`vice_program_load: ${built.message} -- refusing before any text-monitor byte is written`);
+  }
+  const command = built.command;
+
+  return withTextTool("vice_program_load", deps, async (client) => {
+    const response = await client.command(command);
+    return derivedAnswer({
+      command,
+      device: resolvedDevice,
+      response,
+      note:
+        "loads the ONE committed Phase 50 hazard-subject fixture baked into this verb's own frozen identity " +
+        "(plan 50-04, route-d) -- no filename is ever caller-supplied; the load address comes from the .prg " +
+        "file's own two-byte header, since no address argument is offered",
     });
   });
 }

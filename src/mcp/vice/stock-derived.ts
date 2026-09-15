@@ -106,6 +106,7 @@ export const STOCK_DERIVED_TOOLS: ReadonlySet<string> = new Set([
   "vice_profile_flat", // Plan 42-07, PARSE-02 -- text-channel flat-profile tool, needsSession:false (text-tools.ts)
   "vice_backtrace", // Plan 42-07, PARSE-02/D-42-4 -- text-channel backtrace tool, shares the fork's own name, needsSession:false (text-tools.ts)
   "vice_io_registers", // Plan 42-07, PARSE-02 -- text-channel register-decode tool, needsSession:false (text-tools.ts)
+  "vice_program_load", // Plan 50-04, route-d -- text-channel program-load tool for the committed hazard-subject fixture, needsSession:false (text-tools.ts)
 ]);
 
 /**

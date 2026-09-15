@@ -104,6 +104,10 @@ const STOCK_ONLY_TOOLS = new Set([
   "vice_cpu_history",
   "vice_profile_flat",
   "vice_io_registers",
+  // Plan 50-04 (route-d): the program-load tool for the committed
+  // hazard-subject fixture -- same reasoning, reached over the same
+  // text-monitor channel, no fork HTTP-API equivalent.
+  "vice_program_load",
 ]);
 
 // Phase 7, plan 07-09: a THIRD named category, distinct from STOCK_ONLY_TOOLS
@@ -2713,6 +2717,17 @@ conformanceTest("vice_io_registers", async () => {
       const deps = buildTextConformanceDeps(port);
       const result = await dispatchStock("vice_io_registers", { address: 0xd020 }, deps);
       assertAnswerConforms("vice_io_registers", result);
+    },
+  );
+});
+
+conformanceTest("vice_program_load", async () => {
+  await withConformanceTextServer(
+    (_line, socket) => socket.write("(C:$0801) "),
+    async (port) => {
+      const deps = buildTextConformanceDeps(port);
+      const result = await dispatchStock("vice_program_load", {}, deps);
+      assertAnswerConforms("vice_program_load", result);
     },
   );
 });

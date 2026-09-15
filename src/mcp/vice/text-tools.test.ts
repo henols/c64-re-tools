@@ -18,7 +18,7 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { handleDeviceConsole, handleWarpSet, handleMemmapShow, handleMemmapZap, handleCpuHistory, handleProfileFlat, handleBacktrace, handleIoRegisters } from "./text-tools.ts";
+import { handleDeviceConsole, handleWarpSet, handleMemmapShow, handleMemmapZap, handleCpuHistory, handleProfileFlat, handleBacktrace, handleIoRegisters, handleProgramLoad } from "./text-tools.ts";
 import { dispatchStock } from "./stock-dispatch.ts";
 import type { StockDispatchDeps } from "./stock-dispatch.ts";
 import type { StockToolResult } from "./stock-handler.ts";
@@ -29,6 +29,7 @@ import { loadTextFixture } from "./textmon-fixtures.ts";
 import { CPUHISTORY_DISABLED_STUB, resetTextCapabilityCache } from "./text-capability-probe.ts";
 import { PROFILING_NOT_STARTED_TEXT } from "./textmon-profile.ts";
 import { ViceMonitorClient, CommandType } from "./stock-protocol.ts";
+import { HAZARD_SUBJECT_PRG_PATH } from "./text-protocol.ts";
 
 beforeEach(() => {
   resetChannelLockForTests();
@@ -1183,6 +1184,110 @@ test("handleIoRegisters (CR-02): an indeterminate (empty) reply under a RESOLVED
       const result = await handleIoRegisters({ address: 0xd020 }, deps);
       assert.equal(result.isError, true);
       assert.match(result.content[0]!.text, /unknown, not negative/);
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// handleProgramLoad (plan 50-04, route-d): reaches text-protocol.ts's
+// widened `load` verb. Takes only an optional, bounded device number --
+// never a filename -- so these tests prove the rendered command, the
+// channel-lock discipline every handler in this file shares, the
+// buildTextCommand()-driven out-of-range refusal, and that no filename-
+// shaped argument the caller supplies ever reaches the dialed command.
+// ---------------------------------------------------------------------------
+
+test("handleProgramLoad: no device argument dials device 0, the exact command buildTextCommand()'s own load spec produces", async () => {
+  const receivedLines: string[] = [];
+  await withStubTextServer(
+    (line, socket) => {
+      receivedLines.push(line);
+      socket.write(PROMPT);
+    },
+    async (port) => {
+      const deps = makeDeps(port);
+      const result = await handleProgramLoad({}, deps);
+      assert.equal(result.isError, false, `expected success, got ${JSON.stringify(result)}`);
+      assert.deepEqual(receivedLines, [`load "${HAZARD_SUBJECT_PRG_PATH}" 0`]);
+      const payload = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+      assert.equal(payload.command, `load "${HAZARD_SUBJECT_PRG_PATH}" 0`);
+      assert.equal(payload.device, 0);
+    },
+  );
+});
+
+test("handleProgramLoad: a supplied device dials buildTextCommand()'s canonical rendering for that device", async () => {
+  const receivedLines: string[] = [];
+  await withStubTextServer(
+    (line, socket) => {
+      receivedLines.push(line);
+      socket.write(PROMPT);
+    },
+    async (port) => {
+      const deps = makeDeps(port);
+      const result = await handleProgramLoad({ device: 8 }, deps);
+      assert.equal(result.isError, false, `expected success, got ${JSON.stringify(result)}`);
+      assert.deepEqual(receivedLines, [`load "${HAZARD_SUBJECT_PRG_PATH}" 8`]);
+      const payload = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+      assert.equal(payload.device, 8);
+    },
+  );
+});
+
+test("handleProgramLoad: refuses an out-of-range device by name, via buildTextCommand's own message, no lease resolved", async () => {
+  let leaseCalled = false;
+  const deps: StockDispatchDeps = {
+    ensureLease: async () => {
+      leaseCalled = true;
+      return { ok: true, lease: null };
+    },
+  };
+  const result = await handleProgramLoad({ device: 12 }, deps);
+  assert.equal(result.isError, true);
+  assert.match(result.content[0]!.text, /vice_program_load/);
+  assert.match(result.content[0]!.text, /requires an integer between 0 and 11/);
+  assert.equal(leaseCalled, false, "no lease should ever be resolved before buildTextCommand's own bound check runs");
+});
+
+test("handleProgramLoad: holds the text-channel lock for the duration and releases it on success", async () => {
+  let holderDuringCommand: ReturnType<typeof currentChannelLockHolder> = null;
+  await withStubTextServer(
+    (_line, socket) => {
+      holderDuringCommand = currentChannelLockHolder();
+      socket.write(PROMPT);
+    },
+    async (port) => {
+      const deps = makeDeps(port);
+      assert.equal(currentChannelLockHolder(), null, "no lock held before the call");
+      const result = await handleProgramLoad({}, deps);
+      assert.equal(result.isError, false);
+      assert.ok(holderDuringCommand, "expected a holder to be observed while the command was outstanding");
+      assert.equal(holderDuringCommand!.channel, "text");
+      assert.equal(holderDuringCommand!.operation, "vice_program_load");
+      assert.equal(currentChannelLockHolder(), null, "the lock must be released again after the call returns");
+    },
+  );
+});
+
+test("handleProgramLoad: no filename can be injected -- an extraneous filename-shaped argument is ignored, the baked-in fixture path is always dialed", async () => {
+  const receivedLines: string[] = [];
+  await withStubTextServer(
+    (line, socket) => {
+      receivedLines.push(line);
+      socket.write(PROMPT);
+    },
+    async (port) => {
+      const deps = makeDeps(port);
+      const result = await handleProgramLoad(
+        { device: 0, filename: "/etc/passwd", path: "/etc/passwd", file: "../../etc/passwd" } as Record<string, unknown>,
+        deps,
+      );
+      assert.equal(result.isError, false, `expected success, got ${JSON.stringify(result)}`);
+      assert.deepEqual(
+        receivedLines,
+        [`load "${HAZARD_SUBJECT_PRG_PATH}" 0`],
+        "the handler reads no filename-shaped argument at all -- only the baked-in fixture path is ever dialed",
+      );
     },
   );
 });

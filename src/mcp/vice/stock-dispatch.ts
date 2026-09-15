@@ -75,7 +75,7 @@ import { handleCyclesStopwatch, forgetTimingForOtherTargets } from "./stock-timi
 import { handleRunUntil } from "./stock-run-until.ts";
 import { handleDiagnoseStock } from "./stock-diagnose.ts";
 import { handleRecycleStock } from "./stock-recycle.ts";
-import { handleDeviceConsole, handleWarpSet, handleMemmapShow, handleMemmapZap, handleCpuHistory, handleProfileFlat, handleBacktrace, handleIoRegisters } from "./text-tools.ts";
+import { handleDeviceConsole, handleWarpSet, handleMemmapShow, handleMemmapZap, handleCpuHistory, handleProfileFlat, handleBacktrace, handleIoRegisters, handleProgramLoad } from "./text-tools.ts";
 
 // Re-exported so Phase 2's existing import surface (and its 921-line test
 // file) keeps working unchanged -- these four names used to be DEFINED
@@ -832,6 +832,10 @@ const STOCK_DISPATCH_TABLE: Record<string, StockHandler> = {
   vice_profile_flat: withDerivedTool("vice_profile_flat", { needsSession: false }, handleProfileFlat),
   vice_backtrace: withDerivedTool("vice_backtrace", { needsSession: false }, handleBacktrace),
   vice_io_registers: withDerivedTool("vice_io_registers", { needsSession: false }, handleIoRegisters),
+  // Plan 50-04 (route-d): reaches text-protocol.ts's widened `load` verb --
+  // same needsSession:false reasoning as its five siblings above (each
+  // resolves its own lease and takes only the text channel's own lock).
+  vice_program_load: withDerivedTool("vice_program_load", { needsSession: false }, handleProgramLoad),
 };
 
 /** Looks up the table entry for `name` -- `undefined` on a miss, never a

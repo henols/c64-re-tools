@@ -701,6 +701,7 @@ const DERIVED_TOOL_MODULES: Record<string, string> = {
   vice_profile_flat: "text-tools.ts",
   vice_backtrace: "text-tools.ts",
   vice_io_registers: "text-tools.ts",
+  vice_program_load: "text-tools.ts",
 };
 
 test("D-05-12: DERIVED_TOOL_MODULES' key set equals STOCK_DERIVED_TOOLS exactly", () => {

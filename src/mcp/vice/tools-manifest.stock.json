@@ -4505,6 +4505,54 @@
           "runState"
         ]
       }
+    },
+    {
+      "name": "vice_program_load",
+      "description": "Stock-only, no fork counterpart -- reaches VICE's text monitor over the -remotemonitor channel and halts the machine for the duration of the command, exactly as a binary-monitor command does. Issues \"load \\\"<path>\\\" <device>\" for the ONE committed Phase 50 hazard-subject fixture (fixtures/hazard-subject/hazard-subject.prg) -- the filename is baked into this tool's own dialed verb and is never a caller-supplied argument, so there is nothing here for a caller to inject. Takes an OPTIONAL \"device\" number, 0 through 11; an omitted device defaults to 0 (\"the file is read from the file system\", VICE Manual ch. 12). No address argument is offered -- omitting it makes VICE use the load address embedded in the .prg file's own two-byte header, which is exactly what this committed machine-code fixture needs.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "device": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 11,
+            "description": "OPTIONAL. IEC device number VICE loads from. Defaults to 0 (the host filesystem) when omitted. 1 through 11 span this project's own documented device-number range elsewhere; this tool never accepts a filename."
+          }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "device": {
+            "type": "integer"
+          },
+          "response": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "runState": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "unknown"
+            ]
+          }
+        },
+        "required": [
+          "command",
+          "device",
+          "response",
+          "note",
+          "runState"
+        ]
+      }
     }
   ]
 }
