@@ -60,10 +60,26 @@ transcript's content.
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| TBD — planner fills per task | — | — | EQUIV-01 | — | N/A | unit | `cd src/mcp/vice && npm run test:automated` | ❌ W0 | ⬜ pending |
-| TBD — planner fills per task | — | — | EQUIV-02 | — | N/A | live-emulator | committed transcript under `docs/phase50-*.md` | ❌ W0 | ⬜ pending |
-| TBD — planner fills per task | — | — | EQUIV-03 | — | N/A | integration + live-emulator | `cd src/mcp/vice && npm run test:automated` | ❌ W0 | ⬜ pending |
-| TBD — planner fills per task | — | — | EQUIV-04 | — | N/A | CI + freshness unit | `cd src/mcp/vice && npm test` (CI, `VICE_REQUIRE_ACME=1`) | ⚠️ partial | ⬜ pending |
+| T1 narrowed mask + classifier | 50-01 | 1 | EQUIV-01 | T-50-01 | no process launch, no network | unit | `node --test src/skills/c64-ram-capture/scripts/compare-cross-binary.test.mjs` | ❌ W0 | ⬜ pending |
+| T2 allowlist + logical checkpoint | 50-01 | 1 | EQUIV-01 | T-50-02 | reason required, mask overlap refused | unit | `node --test src/skills/c64-ram-capture/scripts/compare-cross-binary.test.mjs` | ❌ W0 | ⬜ pending |
+| T3 byte-identity demotion + SKILL.md | 50-01 | 1 | EQUIV-01 | T-50-04 | pre-commitment guard | unit | `node --test src/skills/c64-ram-capture/scripts/compare-cross-binary.test.mjs` | ❌ W0 | ⬜ pending |
+| T1 regressed twin | 50-02 | 1 | EQUIV-03 | T-50-05 | argv-array spawn only | unit | `cd src/mcp/vice && node --test hazard-subject-variants.test.ts` | ❌ W0 | ⬜ pending |
+| T2 modified subject | 50-02 | 1 | EQUIV-03 | T-50-06 | generator-produced, deterministic | unit | `cd src/mcp/vice && node --test hazard-subject-variants.test.ts` | ❌ W0 | ⬜ pending |
+| T3 modified annostore | 50-02 | 1 | EQUIV-03 | T-50-06 | symbol-driven, refuse on drift | unit | `cd src/mcp/vice && node --test hazard-subject-variants.test.ts hazard-subject-fixture.test.ts` | ❌ W0 | ⬜ pending |
+| T1 gate run, modified subject | 50-03 | 2 | EQUIV-03 | T-50-09 | one sanctioned spawn site | integration | `cd src/mcp/vice && node --test reassembly-gate-modified-run.test.ts` | ❌ W0 | ⬜ pending |
+| T2 findings document | 50-03 | 2 | EQUIV-03 | T-50-08 | every value cited to an evidence line | doc assertion | `grep -ac '^\(tree_rebuild\|movement_rebuild\|hazard_disposition\|diff_scope_coverage\|red_controls\|second_path_guard\|ordering_proof\):' docs/phase50-modifiability-findings.md` | ❌ W0 | ⬜ pending |
+| T3 pre-registered allowlist | 50-03 | 2 | EQUIV-03 | T-50-02 | reason required, no mask overlap | unit | `cd src/mcp/vice && node --test reassembly-gate-modified-run.test.ts` | ❌ W0 | ⬜ pending |
+| T1 load-route decision | 50-04 | 2 | EQUIV-01 | T-50-10 | no auto-install, container-out seam | human decision | none — `checkpoint:decision`, `gate="blocking-human"` | ❌ W0 | ⬜ pending |
+| T2 tracer: one binary end-to-end | 50-04 | 2 | EQUIV-02 | T-50-11, T-50-12 | snapshot under the tool-written root | live-emulator | `test "$(stat -c %s .../captures/original-a.bin)" = "65536"` | ❌ W0 | ⬜ pending |
+| T3 mask calibration | 50-04 | 2 | EQUIV-01 | T-50-04 | mask closed after this task | live-emulator | `node --test src/skills/c64-ram-capture/scripts/compare-cross-binary.test.mjs` | ❌ W0 | ⬜ pending |
+| T1 capture the regressed twin | 50-05 | 3 | EQUIV-01 | T-50-12 | checkpoint enumerated and removed | live-emulator | `test "$(stat -c %s .../captures/regressed.bin)" = "65536"` | ❌ W0 | ⬜ pending |
+| T2 red control observed | 50-05 | 3 | EQUIV-02 | T-50-08 | exit status re-derivable | live-emulator | the `cross` run, asserted to exit 1 | ❌ W0 | ⬜ pending |
+| T1 rebuild + byte-identity extra | 50-06 | 4 | EQUIV-02 | T-50-09 | no second spawn site | integration | `cd src/mcp/vice && node --test acme-verify.test.ts hazard-subject-reassembly.test.ts` | ❌ W0 | ⬜ pending |
+| T2 green comparison | 50-06 | 4 | EQUIV-02 | T-50-04 | mask unchanged from the red run | live-emulator | the `cross` run, asserted to exit 0 | ❌ W0 | ⬜ pending |
+| T3 modifiability observed | 50-06 | 4 | EQUIV-03 | T-50-02 | allowlist red control asserted | live-emulator | the `cross` run with and without `--allowlist` | ❌ W0 | ⬜ pending |
+| T1 transcript freshness guard | 50-07 | 5 | EQUIV-04 | T-50-03 | no process launch, no network | CI unit | `cd src/mcp/vice && node --test phase50-transcript-freshness.test.ts` | ❌ W0 | ⬜ pending |
+| T2 CI boundary document | 50-07 | 5 | EQUIV-04 | T-50-14 | claims traceable to a workflow step | doc assertion | `grep -ac '^## What a GitHub runner executes...' docs/phase50-ci-boundary.md` | ❌ W0 | ⬜ pending |
+| T3 broken step observed red | 50-07 | 5 | EQUIV-04 | T-50-13 | break reverted, tree clean | CI unit + human-check | `cd src/mcp/vice && node --test phase50-transcript-freshness.test.ts` | ❌ W0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 

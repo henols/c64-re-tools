@@ -1274,7 +1274,16 @@ with behaviour worth removing and adding)
   4. **One behaviour is removed and one added** in the rebuilt source, reassembled through Phase 49's gate, and both are observed taking effect in VICE with transcripts committed. Each change is cross-referenced to a hazard-report finding or a moved range, so the demonstration touches decomposed and rebuilt code rather than an already-easy already-symbolised constant.
   5. CI runs the pipeline on **committed synthetic fixtures alone** — no copyrighted image, no new host prerequisite — and the boundary is **stated rather than blurred**: which segment a GitHub runner actually executes (store → export → assemble → gate → byte-diff, on the ACME the workflow already installs) and which segment is emulator-dependent and therefore a named manual step whose committed transcripts CI checks for freshness against the fixture's hash, so a stale transcript is caught instead of read as a pass. A broken step is observed reddening CI.
 
-**Plans**: TBD
+**Plans**: 7 plans, 5 waves
+
+Plans:
+- [ ] 50-01-PLAN.md — the comparison instrument, committed first: narrowed volatile mask, intentional-difference allowlist, per-binary logical checkpoints (wave 1)
+- [ ] 50-02-PLAN.md — the two subject variants: a three-regression red-control twin, and a modified subject anchored to two named hazard findings (wave 1)
+- [ ] 50-03-PLAN.md — Phase 49's gate re-run against the modified subject, its machine-readable findings document, and the pre-registered allowlist (wave 2)
+- [ ] 50-04-PLAN.md — tracer: the load-route decision, one binary end-to-end in stock VICE, and the mask calibrated against a same-binary re-run (wave 2)
+- [ ] 50-05-PLAN.md — the red control: the planted regression observed being caught, committed before any green result exists (wave 3)
+- [ ] 50-06-PLAN.md — the green comparison against the rebuild, and the removed and added behaviours observed in the modified subject (wave 4)
+- [ ] 50-07-PLAN.md — the stated CI boundary, the transcript freshness guard, and a broken step observed reddening CI (wave 5)
 
 Notes:
 
