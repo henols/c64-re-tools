@@ -31,6 +31,17 @@ key-files:
   modified:
     - src/mcp/vice/text-protocol.ts
     - src/mcp/vice/text-protocol.test.ts
+    # Continuation (2026-09-15, offline half continued): the vice_program_load
+    # tool that reaches the load widening above through the normal vice_*
+    # surface -- see "## Continuation" section below.
+    - src/mcp/vice/text-tools.ts
+    - src/mcp/vice/text-tools.test.ts
+    - src/mcp/vice/stock-dispatch.ts
+    - src/mcp/vice/stock-dispatch.test.ts
+    - src/mcp/vice/stock-derived.ts
+    - src/mcp/vice/stock-derived.test.ts
+    - src/mcp/vice/hostpath-consumers.test.ts
+    - src/mcp/vice/tools-manifest.stock.json
 
 key-decisions:
   - "The developer answered Task 1's checkpoint:decision with a fourth route (route-d, the text monitor's own `load` command). The plan did not offer this route. The developer also chose to widen text-protocol.ts's allowlist for it, rather than reject the route once the existing refusal was discovered."
@@ -70,6 +81,19 @@ coverage:
     verification: []
     human_judgment: true
     rationale: "This task depends on Task 2's captures. Task 2 has not run. This is also a live task, out of scope for this executor for the same reason as D3."
+  - id: D5
+    description: "Continuation (2026-09-15, offline half continued): a new shipped MCP tool, vice_program_load, reaches text-protocol.ts's widened load verb through the normal vice_* dispatch seam. It takes one optional, bounded device number (0-11, default 0). It takes no filename argument. The committed hazard-subject fixture path stays baked into the verb's own frozen identity."
+    verification:
+      - kind: unit
+        ref: "src/mcp/vice/text-tools.test.ts#handleProgramLoad: renders buildTextCommand()'s exact rendering for the default device and for a supplied device. It holds the text-channel lock for the duration. It refuses an out-of-range device by name, via buildTextCommand's own message, with no lease resolved. It ignores an injected filename-shaped argument."
+        status: pass
+      - kind: unit
+        ref: "src/mcp/vice/stock-dispatch.test.ts#conformanceTest(\"vice_program_load\"): dispatchStock() answers. Its answer validates against tools-manifest.stock.json's own declared outputSchema. The file's own D-02 completeness guard requires this case once a manifest entry exists."
+        status: pass
+      - kind: unit
+        ref: "src/mcp/vice/stock-derived.test.ts, src/mcp/vice/hostpath-consumers.test.ts: vice_program_load is registered in STOCK_DERIVED_TOOLS (needsSession:false). It is also registered in DERIVED_TOOL_MODULES (text-tools.ts). D-05-12's existing enforcement therefore covers it: no derived-tool module may import hostpath.ts."
+        status: pass
+    human_judgment: false
 
 # Metrics
 duration: 55min
@@ -101,6 +125,7 @@ Each task was committed atomically:
 
 1. **Task 1: Decide how a committed .prg reaches the running emulator (record the decision)** - `10cb7e83` (docs)
 2. **Deviation: widen text-protocol.ts's allowlist for the load verb (route-d)** - `f57f2595` (feat)
+3. **Continuation (2026-09-15): add the `vice_program_load` shipped MCP tool** - `494b512c` (feat)
 
 **Plan metadata:** committed together with this SUMMARY (see below).
 
@@ -143,29 +168,79 @@ This deviation is the direct, authorized consequence of the developer's answered
 
 None - no external service configuration required.
 
-## Live half -- not executed
+## Continuation (2026-09-15): the `vice_program_load` tool
+
+A second, offline-only executor continued this halted plan. Its one job: expose the
+already-widened text-channel `load` verb (see Task 1 and the deviation above) as a
+shipped MCP tool. This lets a later live executor reach it through the normal
+`vice_*` surface, instead of route 2 below. This continuation ran no `mcp__vice__*`
+tool. It attempted no live capture. Tasks 2 and 3 remain exactly as unexecuted as
+before.
+
+**What it added**, following `handleIoRegisters`'s own pattern (route 1 named in the
+prior version of this section, below):
+
+- `src/mcp/vice/text-tools.ts`: `handleProgramLoad()`, registered as `vice_program_load`.
+  It takes exactly one optional argument, `device` (bounded 0-11, default 0 when
+  omitted). It takes NO filename argument. `buildTextCommand()` alone validates and
+  bounds the device. The handler duplicates no bound. It dials inside
+  `withTextTool(...)`. It takes the text channel's own lock via
+  `withTextChannelLock()`, around exactly one `client.command()`, matching every
+  sibling handler in the file.
+- `src/mcp/vice/stock-dispatch.ts`: registered with `withDerivedTool("vice_program_load",
+  { needsSession: false }, handleProgramLoad)`. This is the same adapter its five
+  text-channel siblings use.
+- `src/mcp/vice/stock-derived.ts`: added to `STOCK_DERIVED_TOOLS`.
+- `src/mcp/vice/tools-manifest.stock.json`: added a `vice_program_load` entry. Input
+  schema: one optional bounded `device` integer, no filename property anywhere.
+  Output schema: `command`, `device`, `response`, `note`, `runState`.
+- Tests: `src/mcp/vice/text-tools.test.ts` gained five new cases. They prove the
+  rendered command for the default and a supplied device. They prove the
+  channel-lock hold. They prove the out-of-range refusal, via `buildTextCommand`'s
+  own message, with no lease resolved. They prove an injected filename-shaped
+  argument never reaches the dialed command. `src/mcp/vice/stock-dispatch.test.ts`
+  gained a `conformanceTest("vice_program_load", ...)` case, required by that file's
+  own D-02 completeness guard once a manifest entry exists, plus a
+  `STOCK_ONLY_TOOLS` entry. `src/mcp/vice/stock-derived.test.ts` and
+  `src/mcp/vice/hostpath-consumers.test.ts` were updated for the new registered
+  count and the new `DERIVED_TOOL_MODULES` mapping (`vice_program_load` ->
+  `text-tools.ts`). Both files' own existing completeness assertions required this
+  update.
+- **Verification:** `npm run typecheck` reports no errors. `npm run test:automated`
+  passes 3661 of 3661 non-skipped tests. 9 tests are skipped -- the documented
+  `MANUAL_ONLY_TESTS` floor. There are 0 failures.
+
+**Restart requirement, stated plainly:** an already-running MCP server process reads
+`tools-manifest.stock.json` once. It reads the file offline, at startup. It answers
+every later `tools/list` request from that one load (this project's own "Advertised
+tool surface" component description). Adding `vice_program_load` to the manifest and
+to the dispatch table does NOT make an already-running server advertise or dispatch
+it. A live executor picking up Task 2 needs a FRESH MCP server session. That means a
+fresh process, started after this continuation's commit. Only then is
+`vice_program_load` reachable at all. A session already open when this commit
+landed will not see the new tool, no matter how long it keeps running.
+
+## Live half -- not executed (Tasks 2/3 themselves)
 
 **What remains:** Plan 50-04's Tasks 2 and 3 have not been executed.
 
 - **Task 2** ("One binary, end to end -- load, checkpoint, capture, digest, transcript") requires a live executor to start a genuine stock VICE instance. That executor must load the committed `hazard-subject.prg` through the now-widened `load` verb. It must arm and hit a real execute checkpoint at `hazard_raster_entry`. It must capture a full 64K RAM image plus a chip-state sidecar, and write `docs/phase50-equivalence-transcript.md`'s capture-procedure section from the literal commands it actually ran.
 - **Task 3** ("Calibrate the narrowed mask against two runs of the same binary") repeats Task 2's procedure from a fresh emulator start. It then runs the cross-binary comparison. It cannot start until Task 2's captures exist.
 
-Both tasks need `mcp__vice__*` tools: `vice_checkpoint_add`, `vice_execution_run`, `vice_ping`, `vice_snapshot_save`, `vice_vicii_get_state`, `vice_sprite_get`, `vice_registers_get`, `vice_checkpoint_delete`, `vice_checkpoint_list`, and a way to dial the widened `load` command itself. This executor had none of these tools. The instructions for this executor explicitly forbade attempting, synthesizing, fabricating, or simulating any live capture. This executor did none of those things. No capture artifact, transcript, or checkpoint-address claim exists anywhere in this plan's output, beyond what Task 1 and the code widening required.
+Both tasks need `mcp__vice__*` tools: `vice_checkpoint_add`, `vice_execution_run`, `vice_ping`, `vice_snapshot_save`, `vice_vicii_get_state`, `vice_sprite_get`, `vice_registers_get`, `vice_checkpoint_delete`, `vice_checkpoint_list`, and a way to dial the widened `load` command itself. Neither this plan's original executor nor this continuation had any of these tools. Both were explicitly forbidden from attempting, synthesizing, fabricating, or simulating any live capture, and neither did. No capture artifact, transcript, or checkpoint-address claim exists anywhere in this plan's output. Nothing exists beyond what Task 1, the code widening, and this continuation's tool addition required.
 
-**Does reaching the widened `load` verb need a new shipped MCP tool?** Yes, if the live task goes through the normal `vice_*` tool surface. This executor did not add such a tool.
+**Does reaching the widened `load` verb need a new shipped MCP tool?** Yes, if the live task goes through the normal `vice_*` tool surface. As of this continuation, that tool now exists: `vice_program_load`. A second route remains available and is named below for completeness. It is no longer the only option.
 
-Concretely:
+Concretely, the two routes named in the original version of this section were:
 
-- `src/mcp/vice/text-tools.ts` (read in full this session) has no handler that dials a command parameterized the way `load` needs. Every handler there dials one fixed verb (`handleDeviceConsole`, `handleWarpSet`). Or it dials a verb parameterized by a value the caller supplies as a tool argument (`handleCpuHistory`'s `count`, `handleProfileFlat`'s `count`, `handleIoRegisters`'s `address`), through `buildTextCommand(verb, value)`. In every existing handler, `verb` is a fixed string literal the handler itself chooses. `vice_device_console`'s own doc comment says it "takes NO arguments at all". It issues the single fixed literal `device c:`. No existing tool dials `load "<HAZARD_SUBJECT_PRG_PATH>" <device>` today.
-- Reaching the widened `load` verb from an actual MCP-driven session therefore needs one of two routes:
-  1. A new, narrowly-scoped tool handler in `text-tools.ts`. It would follow the exact `handleIoRegisters` pattern: validate a `device` argument client-side, call `buildTextCommand('load "<HAZARD_SUBJECT_PRG_PATH>"', device)`, and dial it inside `withTextTool(...)`. It would register in `stock-dispatch.ts` with `{ needsSession: false }`, exactly like the five existing text tools, and it would need an entry in `tools-manifest.stock.json`. An already-running MCP server will not advertise this new tool until the server process restarts. The manifest loads once, offline, at `tools/list` time (this project's own "Advertised tool surface" component description).
-  2. Driving `text-connect.ts`/`text-protocol.ts` directly, in-process, from a committed Node script. This route does not go through the MCP tool surface at all. This project's own `c64-ram-capture` skill scripts, and `text-protocol.test.ts` itself, already call `TextMonitorClient`/`textConnect()` directly, without going through a `vice_*` tool.
-- This executor added neither route. Only the underlying `text-protocol.ts` primitive exists now: `buildTextCommand`, `isAllowlistedTextCommand`, and the allowlist entry itself. Whoever executes Task 2 must choose one of these two routes first. If that person chooses route 1, they must plan for the MCP server restart this project's own architecture requires, before a newly-registered tool becomes reachable.
+1. A new, narrowly-scoped tool handler in `text-tools.ts`, following the exact `handleIoRegisters` pattern. **This continuation added it** (`handleProgramLoad`, registered as `vice_program_load` -- see "## Continuation" above for the full detail). Whoever executes Task 2 still needs a fresh MCP server session for it to be reachable at all (see the restart requirement stated above).
+2. Driving `text-connect.ts`/`text-protocol.ts` directly, in-process, from a committed Node script, never through the MCP tool surface. This project's own `c64-ram-capture` skill scripts, and `text-protocol.test.ts` itself, already call `TextMonitorClient`/`textConnect()` directly this way. This route remains available and untouched by this continuation. A live executor may still choose it instead of `vice_program_load`, if that is otherwise preferable.
 
 ## Next Phase Readiness
 
 - The load-route decision is settled and recorded. The allowlist widening it requires is implemented, tested, and committed.
 - Tasks 2 and 3 of this plan remain blocked. So do plans 50-05 and 50-06, which depend on this plan's captures and transcript. All of them need a live executor with `mcp__vice__*` tool access, to complete the work described in "Live half -- not executed" above.
+- The `vice_program_load` tool now exists in the shipped tool surface (this continuation). A live executor still needs a FRESH MCP server session, started after this continuation's commit, before that tool is reachable. See "Restart requirement, stated plainly" above.
 - This SUMMARY uses `status: halted`, not `complete`, deliberately. This is an intentional, designed halt at the live-capture boundary. It is not a finished plan. Treat any later plan whose `depends_on` names `50-04` as blocked. A live executor must first complete Tasks 2/3. This SUMMARY, or a follow-up one, must then be re-marked `complete`.
 
 ## Self-Check: PASSED
@@ -176,6 +251,15 @@ Concretely:
 - `npm run typecheck` → PASS (no errors)
 - `node --test text-protocol.test.ts` → 35 of 35 PASS (run twice)
 - `npm run test:automated` → 3655 of 3655 PASS on a clean rerun (see "Issues Encountered" for the one unrelated transient flake on the first run)
+
+### Continuation self-check (2026-09-15): PASSED
+
+- `[ -f src/mcp/vice/text-tools.ts ]`, `[ -f src/mcp/vice/stock-dispatch.ts ]`, `[ -f src/mcp/vice/stock-derived.ts ]`, `[ -f src/mcp/vice/tools-manifest.stock.json ]` → FOUND (all modified, verified via `git diff --stat`)
+- `grep -n "vice_program_load" src/mcp/vice/tools-manifest.stock.json src/mcp/vice/stock-dispatch.ts src/mcp/vice/stock-derived.ts` → each file names the new tool
+- `npm run typecheck` → PASS (no errors)
+- `node --test text-tools.test.ts stock-dispatch.test.ts` → 184 of 184 non-skipped tests PASS, 1 skipped (a pre-existing opt-in live case)
+- `npm run test:automated` → 3661 of 3661 non-skipped tests PASS, 9 skipped (the documented `MANUAL_ONLY_TESTS` floor), 0 failures
+- `git log --oneline -1` → this continuation's own commit (see "Task Commits" below)
 
 ---
 *Phase: 50-equivalence-and-modifiability*
