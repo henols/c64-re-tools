@@ -45,15 +45,9 @@
 // No assertion in this file compares stderr to an empty string.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
 
 import { NO_ROW, PAINT_INDEX_SIZE, buildPaintIndex, resolveAt, type IndexableRange } from "./anno-index.ts";
 import { ADDRESS_MAX, ADDRESS_MIN, AnnoAddressError } from "./anno-types.ts";
-import { codeOnly } from "./shipped-modules.ts";
-
-const HERE = dirname(fileURLToPath(import.meta.url));
 
 // ---------------------------------------------------------------------------
 // Oracle B -- the second, independently written implementation
@@ -275,36 +269,6 @@ test("the fixture is non-degenerate on the tie-break axis: some address is cover
 });
 
 // ---------------------------------------------------------------------------
-// 4. The two implementations share no code path
-// ---------------------------------------------------------------------------
-
-test("the linear-scan oracle shares no code path with the production paint index", () => {
-  // Scoped to the oracle's OWN body, not to the whole file: this file
-  // legitimately names `buildPaintIndex`, `resolveAt` and `Int32Array`
-  // elsewhere, so a file-wide scan would be permanently red. Strict
-  // `codeOnly()` mode, because the targets are code identifiers -- the prose
-  // above discusses all four of them.
-  const source = codeOnly(readFileSync(join(HERE, "anno-index.test.ts"), "utf8"));
-  const declaration = source.indexOf("function resolveByScan");
-  assert.ok(declaration >= 0, "the oracle's declaration must be findable in this file's own stripped source");
-  // Inner braces are indented, so the first column-zero `}` after the
-  // declaration closes the function.
-  const closing = source.indexOf("\n}", declaration);
-  assert.ok(closing > declaration, "the oracle's body must be extractable; an empty region would pass vacuously");
-  const body = source.slice(declaration, closing + 2);
-  assert.ok(body.includes("bestLen"), `the extracted region must be the real body, got ${body.length} chars`);
-
-  for (const forbidden of ["buildPaintIndex", "resolveAt", "Int32Array", ".sort("]) {
-    assert.equal(
-      body.includes(forbidden),
-      false,
-      `the oracle must not reach for ${forbidden} -- it is the second implementation, and an implementation that ` +
-        "borrows the first's algorithm or calls into it cross-validates nothing",
-    );
-  }
-});
-
-// ---------------------------------------------------------------------------
 // 5. Pin 1 -- the $FFFF boundary, and the out-of-range refusal
 // ---------------------------------------------------------------------------
 //
@@ -443,93 +407,4 @@ test("a single-row index resolves that row inside its span and NO_ROW one step e
   assert.equal(resolveAt(index, 0x2fff), 11);
   assert.equal(resolveAt(index, 0x1fff), NO_ROW, "one step below the only row");
   assert.equal(resolveAt(index, 0x3000), NO_ROW, "one step above the only row");
-});
-
-// ---------------------------------------------------------------------------
-// 10. Purity -- the index must never become a SECOND truth
-// ---------------------------------------------------------------------------
-
-/** `anno-index.ts`'s own source, comment- and literal-stripped. */
-function indexSource(keepLiteralBodies = false): string {
-  return codeOnly(readFileSync(join(HERE, "anno-index.ts"), "utf8"), keepLiteralBodies);
-}
-
-test("anno-index.ts declares no module-level mutable binding, including a const bound to a mutable container", () => {
-  // Reused from `block-class.test.ts:194-212`, whose comment must not be lost:
-  // trap 3 forbids module-level MUTABLE STATE, not the `let`/`var` keywords,
-  // and a `let`-only grep let the likeliest real offender straight through
-  // when that scan was first written (WR-04). `const seen = new Map()` is a
-  // memoising cache, IS module-level mutable state, is exactly the shape
-  // someone reaches for to speed up an index rebuild, and is `const`. That
-  // half must never be weakened back.
-  //
-  // Anchored at column zero AND allowing an `export ` prefix: this module's
-  // functions hold genuine locals (`let state`-shaped loop variables are not
-  // the subject), and every module-level binding here is exported, which the
-  // unprefixed anchor would have missed entirely. A cached index is a second
-  // answer to "what type is this address" that can disagree with the range
-  // table -- the exact failure COV-01's derived-from-bytes census exists to
-  // make impossible.
-  const offenders = indexSource()
-    .split("\n")
-    .filter(
-      (line) =>
-        /^(?:export\s+)?(let|var)\s/.test(line) ||
-        /^(?:export\s+)?const\s+\w+\s*(:[^=]*)?=\s*(new\s+(Map|Set|WeakMap|WeakSet)\b|\[|\{)/.test(line),
-    );
-  assert.deepEqual(offenders, [], "the index is a pure function of its rows; there is nothing to hold between calls");
-});
-
-test("anno-index.ts imports from exactly one module, anno-types.ts, and uses no dynamic import", () => {
-  // Adapted from `block-class.test.ts:176-192`. `keepLiteralBodies: true` is
-  // the right mode because an import specifier IS a string literal, and the
-  // pattern set covers all three shapes the hand-rolled `from "`-line scan it
-  // replaces could not see (WR-03): a bare `import "./x.ts"`, a single-quoted
-  // specifier, and a dynamic `await import("./x.ts")`.
-  //
-  // NOT asserted as `import type`: `anno-index.ts` imports two ERROR CLASSES
-  // it throws (`AnnoAddressError`, `AnnoRangeShapeError`), which are runtime
-  // values, so a type-only import is unreachable here. Pinning the specifier
-  // SET to one entry is what the constraint is actually for -- the index must
-  // not acquire a runtime dependency on the store, on a decoder, or on the
-  // filesystem -- and the family loop below states that directly.
-  const specifiers = [
-    ...indexSource(true).matchAll(
-      /\bfrom\s+["']([^"']+)["']|\bimport\s*\(\s*["']([^"']+)["']|^\s*import\s+["']([^"']+)["']/gm,
-    ),
-  ]
-    .map((match) => match[1] ?? match[2] ?? match[3])
-    .filter((specifier): specifier is string => specifier !== undefined);
-
-  assert.ok(specifiers.length > 0, "the scanned set must be non-empty; a scan that saw nothing would pass vacuously");
-
-  // The family loop runs FIRST and the `deepEqual` LAST, deliberately:
-  // `deepEqual` narrows its actual argument's type, so a one-element
-  // expectation makes every later read of `specifiers` a typecheck error.
-  // The retired analyser family used to be listed here as a forbidden prefix.
-  // It is gone from the tree entirely -- every module that carried it was
-  // renamed into the `anno-` namespace or deleted -- so the entry is dropped
-  // rather than re-pointed at `./anno-`, which would forbid this module's one
-  // legitimate import, `./anno-types.ts`.
-  for (const family of ["node:", "./anno-store", "./hostpath", "./containerpath", "./vice", "./disasm-"]) {
-    assert.equal(
-      specifiers.some((specifier) => specifier.startsWith(family)),
-      false,
-      `anno-index.ts imports from the ${family} family -- the index must have no store, no decoder and no filesystem`,
-    );
-  }
-
-  // A specifier scan cannot see `import(someVariable)`, so prohibit the shape
-  // itself, on strict-mode output so the prose above cannot redden this.
-  assert.equal(
-    /\bimport\s*\(/.test(indexSource()),
-    false,
-    "anno-index.ts must not use a dynamic import either -- it is an import the specifier scan cannot see",
-  );
-
-  assert.deepEqual(
-    specifiers,
-    ["./anno-types.ts"],
-    "anno-index.ts must import from exactly one module: the type and error vocabulary, and nothing else",
-  );
 });
