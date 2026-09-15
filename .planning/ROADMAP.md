@@ -1961,7 +1961,7 @@ embedded: scanning cases living inside otherwise-real behaviour tests.
   4. No test file is left empty, and none is left with only setup and no assertions.
   5. `anno-seam.test.ts`'s WR-25 behavioural case survives in some form -- see the note below.
 
-**Plans**: 9/11 plans executed, in 4 waves.
+**Plans**: 10/11 plans executed, in 4 waves.
 
 Plans:
 **Wave 1**
@@ -1981,7 +1981,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 56-10-PLAN.md — anno-derive, then D-11's five production comment repairs
+- [x] 56-10-PLAN.md — anno-derive, then D-11's five production comment repairs
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -2168,7 +2168,7 @@ in a milestone archive.
 | 53. Operator-Owned `docs/` | v1.0.0 | - | Not started | - |
 | 54. Remove Every Byte-Identical Assertion | v1.0.0 | - | Not started | - |
 | 55. Restore the Fork Removal's Dropped Capabilities and Re-Baseline the Proxy Test | v1.0.0 | 6/6 | Complete | 2026-09-14 |
-| 56. Remove `shipped-modules.ts` and Its Embedded Source Scans | v1.0.0 | 9/11 | In Progress | - |
+| 56. Remove `shipped-modules.ts` and Its Embedded Source Scans | v1.0.0 | 10/11 | In Progress | - |
 | 57. Nothing Is Installed Automatically | v1.0.0 | 0/0 | Not Started | - |
 
 **Milestone roll-up:** v0.2.0 — 9 phases, 87 plans, 51/51 in-scope requirements,

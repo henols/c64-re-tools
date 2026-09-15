@@ -297,12 +297,17 @@
       "number": "56",
       "name": "Remove `shipped-modules.ts` and Its Embedded Source Scans",
       "status": "in_progress"
+    },
+    {
+      "number": "57",
+      "name": "Nothing Is Installed Automatically",
+      "status": "pending"
     }
   ],
   "next": {
     "command": "/gsd:progress --next",
     "label": "Advance to the next step",
-    "reason": "Phase 56 of 12 · 58% · executing"
+    "reason": "Phase 56 of 13 · 54% · executing"
   },
-  "updated_at": "2026-09-15T08:50:13.940Z"
+  "updated_at": "2026-09-15T09:30:36.007Z"
 }

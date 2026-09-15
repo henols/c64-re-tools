@@ -5,17 +5,17 @@ milestone_name: The Rebuild Half
 current_phase: 56
 current_phase_name: Remove `shipped-modules.ts` and Its Embedded Source Scans
 status: executing
-stopped_at: Completed 56-09-PLAN.md
-last_updated: "2026-09-15T08:54:15.963Z"
+stopped_at: Completed 56-10-PLAN.md
+last_updated: "2026-09-15T09:30:36.007Z"
 last_activity: 2026-09-15
-last_activity_desc: Completed 56-09 (Plan 9 of 11)
-state_head: 9891e71177f931572dbd78fc3b34580be9de651e
+last_activity_desc: Completed 56-10 (Plan 10 of 11)
+state_head: a19a2510c330be7536aa094ced62e6ad53b8677b
 progress:
-  total_phases: 12
+  total_phases: 13
   completed_phases: 7
   total_plans: 82
-  completed_plans: 71
-  percent: 58
+  completed_plans: 72
+  percent: 54
 ---
 
 # Project State
@@ -271,9 +271,9 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 56 (Remove `shipped-modules.ts` and Its Embedded Source Scans) — EXECUTING
-Plan: 10 of 11
+Plan: 11 of 11
 Status: Ready to execute
-Plans: 9/11 executed. Phase 56 was planned 2026-09-15 - 11 plans across 4 waves, plan-checker PASSED, decision coverage 17/17, files_modified disjoint across 23 paths. It deletes `src/mcp/vice/shipped-modules.ts`. It also deletes every embedded test case whose subject is source text. Plan 01 (tracer) is complete. It proved the D-14 scanner against a planted fixture. It cut prg-image.test.ts end-to-end through the full pipeline, then applied the same cut to anno-graphics.test.ts and anno-types.test.ts. Net effect: 5 whole-case deletions, 1 strip-in-place-and-rename, 0 collateral loss. Plan 02 is complete. It cut anno-seam.test.ts from 23 cases to 2: the package.json files[] completeness case and the WR-25 behavioural refusal case. Two atomic commits, each gated by a per-file TAP name-set diff. The suite and typecheck are both green. Plan 03 is complete. It cut block-class.test.ts (two cases), anno-join.test.ts (one case) and anno-overlap.test.ts (one case). Four whole-case deletions total, each reached by a single scanner hit or a helper-indirected hit. The suite (`fail 0`, `skipped 9`, `tests 3723`) and typecheck are both green. Plan 04 is complete. It cut capture-predicate.test.ts (two cases) and evid-report-keys.test.ts (two direction-4 cases). It also removed evid-report-keys.test.ts's three now-orphaned module-scope helpers -- PATTERNS.md's worked Edit Kind 4 example. Four whole-case deletions total. The suite (`fail 0`, `skipped 9`, `tests 3719`) and typecheck are both green. Plan 05 is complete. It cut anno-index.test.ts (three cases, one reading the test file's own source rather than a production module). It also cut vsf-slice.test.ts (four cases, including its whole "Structural SUPPLEMENT" section). Seven whole-case deletions total. The now-orphaned `indexSource()`, `CLI_MARKER` and `libraryRegion()` helpers are gone. The suite (`fail 0`, `skipped 9`, `tests 3712`) and typecheck are both green. Plan 06 is complete. It cut stock-dispatch.test.ts, the phase's largest single source-scanning population. 15 whole-case deletions plus 2 D-02/D-03 renames, reached through two module-scope `*_SOURCE` constants and a direct `readFileSync` rather than the doomed module alone. All four CHAN-04 channel-lock cases survive untouched. The suite (`fail 0`, `skipped 9`, `tests 3697`) and typecheck are both green. Plan 07 is complete. It cut anno-store.test.ts, the largest single file in the phase at 5,595 lines and the one holding both of the phase's measured genuinely-mixed cases. 12 whole-case deletions, plus the bank-field case's D-02/D-03 rename and CR-08's no-rename strip. The suite (`fail 0`, `skipped 9`, `tests 3685`) and typecheck are both green. Plan 08 is complete. It cut anno-export-asm.test.ts's auto-name prefix cluster and BUILD-07 guard cluster. 11 whole-case deletions total, including one the D-14 scanner could not see at all, found only by the mandated blind-spot pass. No D-02/D-03 renames were needed. All three plan-flagged "may be mixed" candidates resolved to pure false positives on hand-read and stayed byte-identical. The suite (`fail 0`, `skipped 9`, `tests 3674`) and typecheck are both green. Plan 09 is complete. It cut anno-coverage.test.ts, the third giant file at 5,016 lines. 16 whole-case deletions total. An eleven-case cluster among them evaded the D-14 scanner and the plan's own candidate list entirely. Only the mandated blind-spot pass found it -- the largest single blind-spot find of the phase. One plan-flagged candidate resolved to a pure false positive and stayed byte-identical. Two now-orphaned production imports (`LABEL_KINDS`, `PROVEN_TARGET_SOURCES`) were also removed. The suite (`fail 0`, `skipped 9`, `tests 3658`) and typecheck are both green.
+Plans: 10/11 executed. Phase 56 was planned 2026-09-15 - 11 plans across 4 waves, plan-checker PASSED, decision coverage 17/17, files_modified disjoint across 23 paths. It deletes `src/mcp/vice/shipped-modules.ts`. It also deletes every embedded test case whose subject is source text. Plan 01 (tracer) is complete. It proved the D-14 scanner against a planted fixture. It cut prg-image.test.ts end-to-end through the full pipeline, then applied the same cut to anno-graphics.test.ts and anno-types.test.ts. Net effect: 5 whole-case deletions, 1 strip-in-place-and-rename, 0 collateral loss. Plan 02 is complete. It cut anno-seam.test.ts from 23 cases to 2: the package.json files[] completeness case and the WR-25 behavioural refusal case. Two atomic commits, each gated by a per-file TAP name-set diff. The suite and typecheck are both green. Plan 03 is complete. It cut block-class.test.ts (two cases), anno-join.test.ts (one case) and anno-overlap.test.ts (one case). Four whole-case deletions total, each reached by a single scanner hit or a helper-indirected hit. The suite (`fail 0`, `skipped 9`, `tests 3723`) and typecheck are both green. Plan 04 is complete. It cut capture-predicate.test.ts (two cases) and evid-report-keys.test.ts (two direction-4 cases). It also removed evid-report-keys.test.ts's three now-orphaned module-scope helpers -- PATTERNS.md's worked Edit Kind 4 example. Four whole-case deletions total. The suite (`fail 0`, `skipped 9`, `tests 3719`) and typecheck are both green. Plan 05 is complete. It cut anno-index.test.ts (three cases, one reading the test file's own source rather than a production module). It also cut vsf-slice.test.ts (four cases, including its whole "Structural SUPPLEMENT" section). Seven whole-case deletions total. The now-orphaned `indexSource()`, `CLI_MARKER` and `libraryRegion()` helpers are gone. The suite (`fail 0`, `skipped 9`, `tests 3712`) and typecheck are both green. Plan 06 is complete. It cut stock-dispatch.test.ts, the phase's largest single source-scanning population. 15 whole-case deletions plus 2 D-02/D-03 renames, reached through two module-scope `*_SOURCE` constants and a direct `readFileSync` rather than the doomed module alone. All four CHAN-04 channel-lock cases survive untouched. The suite (`fail 0`, `skipped 9`, `tests 3697`) and typecheck are both green. Plan 07 is complete. It cut anno-store.test.ts, the largest single file in the phase at 5,595 lines and the one holding both of the phase's measured genuinely-mixed cases. 12 whole-case deletions, plus the bank-field case's D-02/D-03 rename and CR-08's no-rename strip. The suite (`fail 0`, `skipped 9`, `tests 3685`) and typecheck are both green. Plan 08 is complete. It cut anno-export-asm.test.ts's auto-name prefix cluster and BUILD-07 guard cluster. 11 whole-case deletions total, including one the D-14 scanner could not see at all, found only by the mandated blind-spot pass. No D-02/D-03 renames were needed. All three plan-flagged "may be mixed" candidates resolved to pure false positives on hand-read and stayed byte-identical. The suite (`fail 0`, `skipped 9`, `tests 3674`) and typecheck are both green. Plan 09 is complete. It cut anno-coverage.test.ts, the third giant file at 5,016 lines. 16 whole-case deletions total. An eleven-case cluster among them evaded the D-14 scanner and the plan's own candidate list entirely. Only the mandated blind-spot pass found it -- the largest single blind-spot find of the phase. One plan-flagged candidate resolved to a pure false positive and stayed byte-identical. Two now-orphaned production imports (`LABEL_KINDS`, `PROVEN_TARGET_SOURCES`) were also removed. The suite (`fail 0`, `skipped 9`, `tests 3658`) and typecheck are both green. Plan 10 is complete. It cut anno-derive.test.ts's five source-scanning cases. It then repaired thirteen now-false "asserted by X" enforcement clauses across D-11's five named production modules (anno-store.ts, dxa-blocks.ts, evid-ingest.ts, memmap-lookup.ts, capture-predicate.ts). Five of those clauses were beyond the plan's own action text. A mandated blanket-grep completeness gate found them. Every constraint sentence stays. No new prose was added. The suite (`fail 0`, `skipped 9`, `tests 3653`) and typecheck are both green.
 
 **Phase 51 is still in flight and is NOT superseded by this.** It remains In Progress at 8/17 plans in the ROADMAP Progress table; planning Phase 56 did not advance or close it. Its own position and per-plan record follows.
 
@@ -292,8 +292,8 @@ effects revert before the screen settles, root cause unknown, recorded in
 artifact — it did not retract the finding. Phase 49 gates reassembly, so
 that subject is the thing it will gate on.
 
-Progress: [██████░░░░] 58% (7/12 phases complete in v1.0.0 -- per-phase plan counts in the ROADMAP Progress table)
-Last activity: 2026-09-15 — Completed 56-09 (Plan 9 of 11)
+Progress: [█████░░░░░] 54% (7/13 phases complete in v1.0.0. Phase 57 was added concurrently during this plan's execution. Per-phase plan counts are in the ROADMAP Progress table.)
+Last activity: 2026-09-15 — Completed 56-10 (Plan 10 of 11)
 
 ## Performance Metrics
 
@@ -641,6 +641,7 @@ Last activity: 2026-09-15 — Completed 56-09 (Plan 9 of 11)
 | Phase 56 P07 | 42min | 3 tasks | 1 files |
 | Phase 56 P08 | 33min | 3 tasks | 1 files |
 | Phase 56 P09 | 31min | 2 tasks | 1 files |
+| Phase 56 P10 | 35min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -1444,6 +1445,7 @@ Recent decisions affecting current work:
 - [Phase 56]: anno-store.test.ts (56-07) removed 12 whole source-scanning cases. The two mixed cases resolved differently. The "reserved bank field" case needed a D-03 rename, because it lost half its name's promise. CR-08 needed no rename, because its surviving name already described only the behavioural half.
 - [Phase 56]: anno-export-asm.test.ts (56-08) removed 11 whole source-scanning cases. One case was invisible to the D-14 scanner and was found only by the mandated blind-spot pass. All three plan-flagged "may be mixed" candidates resolved to pure false positives on hand-read, not D-02 exemptions. Two inspected a RegExp's own `.source` property rather than any module's file text. One was a genuine exportAsm()+ACME round trip with zero file reads. No D-03 renames were needed in this plan.
 - [Phase 56]: D-02 hand-judgement resolved the label-kind case as scaffolding for its own text claim, not an exemption; the mandated blind-spot pass found an eleven-case source-scanning cluster (functionBodyFromSource/coverageSource) invisible to the D-14 scanner and the plan's candidate list, the largest such find in the phase
+- [Phase 56]: Phase 56 Plan 10: repaired thirteen now-false anno-seam.test.ts/capture-predicate.test.ts enforcement credits across D-11's five named production modules -- five more than the plan's action text named, all found by the plan's own mandated blanket-grep completeness gate and fixed under the same keep-the-constraint-drop-the-credit rule. — The plan's action text undercounted (anno-store.ts had 8 occurrences not 4, capture-predicate.ts had 2 not 1), matching the phase's own documented undercount pattern (56-06 precedent). The task's own verify blocks required a whole-file grep to return 0, so completing the task as verified required repairing every occurrence.
 
 ### Pending Todos
 
@@ -2557,8 +2559,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-15T08:54:13.357Z
-Stopped at: Completed 56-09-PLAN.md
+Last session: 2026-09-15T09:29:18.292Z
+Stopped at: Completed 56-10-PLAN.md
 Resume file: None
 
 Earlier: Completed 56-07-PLAN.md
