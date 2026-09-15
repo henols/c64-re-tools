@@ -43,6 +43,7 @@ import {
   PROMPT_RE,
   TEXT_COMMAND_ALLOWLIST,
   TEXT_COMMAND_PARAM_SPECS,
+  HAZARD_SUBJECT_PRG_PATH,
   isAllowlistedTextCommand,
   buildTextCommand,
   isDialableTextCommandForVerb,
@@ -113,11 +114,31 @@ test("isAllowlistedTextCommand: accepts every TEXT_COMMAND_ALLOWLIST entry and r
   for (const cmd of TEXT_COMMAND_ALLOWLIST) {
     assert.ok(isAllowlistedTextCommand(cmd), `expected ${JSON.stringify(cmd)} to be allowlisted`);
   }
-  assert.ok(!isAllowlistedTextCommand("load \"foo\" 8 1"), "an arbitrary command string must never be allowlisted");
+  // Narrowed, not deleted (plan 50-04, 2026-09-15, developer decision
+  // "route-d": widen the allowlist for `load`, recorded in
+  // .planning/phases/50-equivalence-and-modifiability/evidence/LOAD-ROUTE.md).
+  // An ARBITRARY load command, with a caller-chosen filename, must still
+  // never be allowlisted -- this is exactly what the string below is: a
+  // *different* file ("foo") and a *different* device (8) than the one
+  // narrow, fixed `load "<HAZARD_SUBJECT_PRG_PATH>"` verb this project
+  // deliberately added to TEXT_COMMAND_PARAM_SPECS (see that entry's own
+  // comment). Only that one reviewed verb, with its own bounded device
+  // parameter, is dialable -- proven by the companion positive assertion
+  // immediately below.
+  assert.ok(!isAllowlistedTextCommand("load \"foo\" 8 1"), "an arbitrary load command naming a different, caller-chosen file must never be allowlisted");
+  assert.ok(!isAllowlistedTextCommand(`load "${HAZARD_SUBJECT_PRG_PATH}" 8 1`), "even the reviewed fixture path is refused with a stray extra address argument the spec does not offer");
   assert.ok(!isAllowlistedTextCommand("device c"), "the colon is required -- device c (no colon) is a different, non-allowlisted string");
+
+  // Positive control (plan 50-04): the ONE narrow load verb this project
+  // did widen for IS dialable, with its own bounded device parameter --
+  // proving the refusal above is a real refusal of a DIFFERENT string, not
+  // a refusal of "load" as a substring.
+  const widenedLoad = buildTextCommand(`load "${HAZARD_SUBJECT_PRG_PATH}"`, 0);
+  assert.ok(widenedLoad.ok, "the reviewed load verb with device 0 must build");
+  assert.ok(widenedLoad.ok && isAllowlistedTextCommand(widenedLoad.command), "the reviewed load verb's own canonical rendering must be allowlisted");
 });
 
-test("TEXT_COMMAND_ALLOWLIST: every entry is exactly one of the eleven named verbs, never a file-touching monitor verb (T-41-02)", () => {
+test("TEXT_COMMAND_ALLOWLIST: every entry is exactly one of the eleven named verbs, and every allowlisted or parameterized verb (including the plan 50-04 `load` widening) still refuses a file-WRITING monitor verb (T-41-02)", () => {
   // Widened to ten in plan 42-09 (a conscious, measured widening, not a
   // speculative one, per this constant's own header comment): `prof on`/
   // `prof off` were added so the live opt-in suite can toggle VICE's own
@@ -129,13 +150,33 @@ test("TEXT_COMMAND_ALLOWLIST: every entry is exactly one of the eleven named ver
   // EVID-05's bracket reset): `memmapzap` clears VICE's accumulated
   // memory-access map so a runtime-evidence measurement starts from
   // nothing. The file-writing sibling `memmapsave` was considered and
-  // rejected -- it touches a host file and this test's own load/save regex
+  // rejected -- it touches a host file and this test's own save regex
   // below refuses it by name.
+  //
+  // Plan 50-04 (2026-09-15) narrows the RULE this test enforces, not just
+  // its regex: the invariant was never "no `load` or `save` anywhere", it
+  // is "no verb that WRITES a host file". `load` READS a host file and was
+  // deliberately, narrowly widened into TEXT_COMMAND_PARAM_SPECS (never
+  // into TEXT_COMMAND_ALLOWLIST itself -- see that entry's own comment for
+  // why). TEXT_COMMAND_ALLOWLIST therefore stays exactly these eleven
+  // entries, unchanged; what changes here is that the save-refusal check
+  // below now also covers every TEXT_COMMAND_PARAM_SPECS key, so the
+  // widening's own new entry is exercised by this test too, not merely
+  // left unvisited because it lives in a different table.
   const expected = ["device c:", "warp on", "warp off", "memmapshow", "prof flat", "chis", "bt", "io", "prof on", "prof off", "memmapzap"];
   assert.deepEqual([...TEXT_COMMAND_ALLOWLIST].sort(), [...expected].sort());
-  for (const cmd of TEXT_COMMAND_ALLOWLIST) {
-    assert.doesNotMatch(cmd, /\bload\b|\bsave\b/, `${JSON.stringify(cmd)} must not be a file-touching verb`);
+  const allDialableVerbStrings = [...TEXT_COMMAND_ALLOWLIST, ...Object.keys(TEXT_COMMAND_PARAM_SPECS)];
+  for (const cmd of allDialableVerbStrings) {
+    assert.doesNotMatch(cmd, /\bsave\b/, `${JSON.stringify(cmd)} must never be a file-WRITING verb`);
   }
+  // The load widening is real, not vacuous: prove it is actually present
+  // among the dialable verb strings above (a hypothetical revert of the
+  // TEXT_COMMAND_PARAM_SPECS entry would still pass every check above it,
+  // since removing a key can never make it match /\bsave\b/).
+  assert.ok(
+    allDialableVerbStrings.some((cmd) => /\bload\b/.test(cmd)),
+    "expected the plan 50-04 `load` widening to be present among the dialable verb strings",
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -159,6 +200,32 @@ test("buildTextCommand: the three canonical renderings match the exact command s
   const ioResult = buildTextCommand("io", 53280); // 53280 == 0xd020
   assert.equal(ioResult.ok, true);
   assert.equal(ioResult.ok && ioResult.command, io.provenance.command);
+});
+
+test("buildTextCommand [load, plan 50-04]: renders the exact command form VICE's own upstream grammar documents for device 0, host-filesystem read", () => {
+  // Unlike the three fixtures above (captured on a real wire against a
+  // genuinely running stock instance), this widening was authored WITHOUT a
+  // live capture (the developer's decision explicitly widens the allowlist
+  // ahead of any live proof -- LOAD-ROUTE.md records that). So this
+  // assertion is sourced from VICE's own committed upstream source instead
+  // of a fixtures/textmon/*.json capture: `doc/vice.texi` ("load
+  // \"<filename>\" <device> [<address>]" / "If device is 0, the file is
+  // read from the file system") and `src/monitor/mon_parse.y`'s
+  // `disk_rules: CMD_LOAD filename device_num opt_address` grammar rule,
+  // both read directly from a vendored VICE 3.8 checkout this session. The
+  // live task that actually dials this against a real emulator (plan
+  // 50-04's Task 2, out of this executor's scope) is what turns this from
+  // "matches the documented grammar" into "matches a captured fixture",
+  // exactly like the other three entries once were before their own first
+  // live capture.
+  const built = buildTextCommand(`load "${HAZARD_SUBJECT_PRG_PATH}"`, 0);
+  assert.equal(built.ok, true);
+  assert.equal(built.ok && built.command, `load "${HAZARD_SUBJECT_PRG_PATH}" 0`);
+  // The path itself must be absolute -- never a bare repo-relative string
+  // (see HAZARD_SUBJECT_PRG_PATH's own comment for why: broker-launch.mts
+  // spawns x64sc with no explicit cwd).
+  assert.ok(HAZARD_SUBJECT_PRG_PATH.startsWith("/") || /^[A-Za-z]:[\\/]/.test(HAZARD_SUBJECT_PRG_PATH), "HAZARD_SUBJECT_PRG_PATH must be absolute");
+  assert.ok(HAZARD_SUBJECT_PRG_PATH.endsWith(join("src", "mcp", "vice", "fixtures", "hazard-subject", "hazard-subject.prg")));
 });
 
 test("buildTextCommand: refuses a non-integer, a negative, a NaN, an Infinity, a numeric string, and an out-of-range value -- each naming the verb and the accepted range", () => {
@@ -188,11 +255,13 @@ test("buildTextCommand: refuses a verb with no spec entry, rather than falling t
 });
 
 test("isDialableTextCommandForVerb / isAllowlistedTextCommand: accept every canonical rendering the builder produces", () => {
-  for (const [verb, value] of [
+  const cases: ReadonlyArray<readonly [string, number]> = [
     ["chis", 4],
     ["prof flat", 5],
     ["io", 53280],
-  ] as const) {
+    [`load "${HAZARD_SUBJECT_PRG_PATH}"`, 0], // plan 50-04
+  ];
+  for (const [verb, value] of cases) {
     const built = buildTextCommand(verb, value);
     assert.ok(built.ok);
     const command = built.ok ? built.command : "";

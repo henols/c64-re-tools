@@ -51,24 +51,33 @@
 //     outbound command must come from TEXT_COMMAND_ALLOWLIST below;
 //     command() refuses anything else BY NAME, before a single byte reaches
 //     the socket (D-01). The ONE stated, bounded exception (D-42-1, plan
-//     42-04): TEXT_COMMAND_PARAM_SPECS lets exactly three of those eight
-//     verbs also carry a caller-chosen value, but that value is always a
-//     typed, bounded number -- never a string, never a rest-of-line
-//     passthrough, never a `params` field -- validated and rendered by
-//     buildTextCommand(), the ONE place such a string is built, and
-//     accepted as dialable only when isDialableTextCommandForVerb()'s own
-//     re-render round trip reproduces it byte-for-byte. This does not
+//     42-04, widened plan 50-04): TEXT_COMMAND_PARAM_SPECS lets exactly
+//     four of the allowlisted verbs also carry a caller-chosen value, but
+//     that value is always a typed, bounded number -- never a string, never
+//     a rest-of-line passthrough, never a `params` field -- validated and
+//     rendered by buildTextCommand(), the ONE place such a string is built,
+//     and accepted as dialable only when isDialableTextCommandForVerb()'s
+//     own re-render round trip reproduces it byte-for-byte. This does not
 //     widen what "free-text command" means above; it narrows one bounded
-//     numeric slot per verb.
+//     numeric slot per verb. Plan 50-04's `load` entry is the sole
+//     exception to "never a string": the FILENAME half of that one entry is
+//     not a caller-supplied string at all -- it is baked into the verb's
+//     own frozen identity, a reviewed literal chosen by this file, never a
+//     value a caller passes in. Only the device NUMBER is the caller's
+//     bounded value, exactly like every other entry in this table. See
+//     TEXT_COMMAND_PARAM_SPECS's own `load` entry below for the full
+//     rationale.
 //   - Never frame a response by a timeout, a byte count, or any fallback
 //     that hands back a plausible-looking partial payload. A response that
 //     cannot be honestly framed refuses by name (TextFramingError), naming
 //     what was actually observed -- never a guess.
 import { EventEmitter } from "node:events";
 import net from "node:net";
+import { join } from "node:path";
 
 import { ViceError } from "./vice-errors.ts";
 import { acquireChannelLock, currentChannelLockHolder } from "./channel-lock.ts";
+import { repoRoot } from "./repo-root.ts";
 
 // ---------------------------------------------------------------------------
 // The prompt terminator and the closed command allowlist.
@@ -117,10 +126,36 @@ export const PROMPT_RE = /\(C:\$[0-9A-Fa-f]{4}\)\s*$/;
  * subtracting a prior baseline after the fact. The sibling verb `memmapsave`
  * is deliberately NOT added here -- it writes a host file, and this
  * allowlist's own membership test (`text-protocol.test.ts`) refuses any
- * entry whose name matches the pattern that spells the words `load` or
- * `save`, the same file-touching-verb rule `device c:`, `warp on/off`,
+ * entry whose name matches the pattern that spells the word `save`, the
+ * same file-touching-WRITE-verb rule `device c:`, `warp on/off`,
  * `memmapshow`, `prof flat`, `chis`, `bt`, `io` and `prof on/off` already
  * satisfy.
+ *
+ * `load` (plan 50-04, 2026-09-15, a conscious, measured widening, and the
+ * FIRST one that reverses part of the load/save refusal rather than adding
+ * a fresh always-safe verb): Phase 50 needed a way to get a committed
+ * `.prg` into a running stock VICE for a live capture, and the project's
+ * only other route -- `vice_autostart` against a bare `.prg` -- was
+ * MEASURED to fail with monitor error `0x8f` (see
+ * `fixtures/hazard-subject/FIXTURE-DESIGN.md`), with no committed `.d64`
+ * writer anywhere in this tree to fall back to. The developer was shown
+ * three routes that added no capability, a hand-authored disk image, or a
+ * new file-WRITING host-tool capability -- and chose a FOURTH: the text
+ * monitor's own `load` command (`load "<filename>" <device> [<address>]`,
+ * VICE Manual ch. 12, `mon_parse.y`'s `disk_rules` grammar), because it
+ * READS a host file and writes nothing back to the host. That is the
+ * load-bearing distinction this widening rests on: this allowlist's own
+ * rule above was never "no `load` or `save`" in principle, it was "no verb
+ * that touches a host file" -- and `memmapsave`'s rejection above is a
+ * WRITE. `load` is a READ, and the developer judged the original rule to
+ * have over-reached for the read direction (recorded in
+ * `.planning/phases/50-equivalence-and-modifiability/evidence/LOAD-ROUTE.md`).
+ * This is NOT a general "load anything" capability: the entry added to
+ * TEXT_COMMAND_PARAM_SPECS below bakes in the ONE committed fixture path
+ * this phase's tracer plan targets as part of the verb's own frozen
+ * identity, never a caller-supplied filename -- see that entry's own
+ * comment for why a caller still cannot choose what gets loaded. `save`
+ * remains refused exactly as before; only the read direction moved.
  */
 export const TEXT_COMMAND_ALLOWLIST = Object.freeze([
   "device c:",
@@ -139,17 +174,22 @@ export const TEXT_COMMAND_ALLOWLIST = Object.freeze([
 export type TextCommand = (typeof TEXT_COMMAND_ALLOWLIST)[number];
 
 // ---------------------------------------------------------------------------
-// Parameterized commands (D-42-1, plan 42-04). Three of the eight
-// allowlisted verbs -- "chis", "prof flat", "io" -- were captured on the
+// Parameterized commands (D-42-1, plan 42-04, widened plan 50-04). Three of
+// the allowlisted verbs -- "chis", "prof flat", "io" -- were captured on the
 // real wire carrying a caller-chosen value ("chis 4", "prof flat 5",
 // "io $d020" -- see fixtures/textmon/{cpu-history,flat-profile,
 // register-decode}-stock.json's own "command" field), so a bare literal
 // alone cannot reach them meaningfully. TEXT_COMMAND_ALLOWLIST above is NOT
-// widened for this: it stays exactly the eight frozen literals, and its own
-// membership assertion is unaffected. TEXT_COMMAND_PARAM_SPECS is a SIBLING
-// table describing, for the subset of verbs that take one, the bounded
-// typed value each accepts and the ONE renderer that turns a validated
-// value into the exact command string VICE was captured accepting.
+// widened for this: its own membership assertion is unaffected by any entry
+// here. TEXT_COMMAND_PARAM_SPECS is a SIBLING table describing, for the
+// subset of verbs that take one, the bounded typed value each accepts and
+// the ONE renderer that turns a validated value into the exact command
+// string VICE accepts. Plan 50-04 adds a fourth entry, "load" -- see its own
+// comment below and TEXT_COMMAND_ALLOWLIST's doc comment above for the full
+// rationale; unlike the first three, this one is not sourced from a
+// committed live-captured fixture (no live capture was run to add it -- the
+// syntax is sourced directly from VICE's own upstream grammar and manual,
+// cited on the entry itself).
 // ---------------------------------------------------------------------------
 
 /** The parameter kind a spec entry declares. "count" bounds a decimal
@@ -176,15 +216,78 @@ function renderAddressParam(verb: string, value: number): string {
 }
 
 /**
+ * Absolute host path to the ONE committed fixture the `load` widening below
+ * may load (plan 50-04, 2026-09-15): Phase 50's tracer-slice subject. Every
+ * live capture task in Phase 50 loads this exact file; a later plan adding a
+ * second committed subject (a rebuild or a modified variant) adds its OWN
+ * new constant and its OWN new TEXT_COMMAND_PARAM_SPECS entry below, and
+ * never widens this one to accept a caller-supplied path.
+ *
+ * Resolved through repoRoot() rather than hard-coded as a relative string:
+ * `broker-launch.mts` spawns `x64sc` with no explicit `cwd` (checked
+ * directly in this session -- no `cwd` option anywhere in that file), so a
+ * repo-relative string would resolve against whatever directory the broker
+ * process itself happened to be started from, not necessarily this
+ * repository. An absolute path removes that ambiguity. Residual, stated
+ * risk (not solved here): this is the CONTAINER-side path as seen by this
+ * Node process; on a genuinely containerized deployment (this project has
+ * none today -- host-developed, no devcontainer) the host process actually
+ * running `x64sc` would need this translated through `hostpath.ts` first.
+ * That translation is deliberately NOT added here, matching this project's
+ * existing "solve the general host/container case only where it is
+ * actually exercised" discipline -- a later plan that runs this widening
+ * through a real container split adds it then.
+ */
+export const HAZARD_SUBJECT_PRG_PATH: string = join(
+  repoRoot(),
+  "src",
+  "mcp",
+  "vice",
+  "fixtures",
+  "hazard-subject",
+  "hazard-subject.prg",
+);
+
+/**
  * Frozen, per-verb parameter specs (D-42-1). Keyed by the verb exactly as
- * it appears in TEXT_COMMAND_ALLOWLIST above. A verb with no entry here
- * takes no parameter -- it keeps dialing its bare frozen literal, unchanged
- * (the three no-parameter verbs -- "device c:", "warp on", "warp off" --
- * are deliberately absent). The count bound is 1 through 65535: one because
- * a zero-row request is not a request, and 65535 because that is the same
- * 16-bit domain the CPU-history count lives in on this machine
- * (CPUHISTORY_GET's own count field, monitor_binary.c:1492). The address
- * bound is 0 through 65535, the full 16-bit machine address space.
+ * it appears in TEXT_COMMAND_ALLOWLIST above -- with ONE exception, `load`
+ * (plan 50-04), whose key is a full frozen literal that already embeds its
+ * own filename argument (see below); it never appears in
+ * TEXT_COMMAND_ALLOWLIST as a bare entry, because `load "<file>"` with no
+ * device number is not valid VICE syntax on its own (`mon_parse.y`'s
+ * `disk_rules: CMD_LOAD filename device_num opt_address` requires the
+ * device number) -- unlike "chis"/"prof flat"/"io", which ARE independently
+ * valid bare and so are also listed in TEXT_COMMAND_ALLOWLIST.
+ *
+ * A verb with no entry here takes no parameter -- it keeps dialing its bare
+ * frozen literal, unchanged (the three no-parameter verbs -- "device c:",
+ * "warp on", "warp off" -- are deliberately absent). The count bound is 1
+ * through 65535 for "chis"/"prof flat": one because a zero-row request is
+ * not a request, and 65535 because that is the same 16-bit domain the
+ * CPU-history count lives in on this machine (CPUHISTORY_GET's own count
+ * field, monitor_binary.c:1492). The address bound for "io" is 0 through
+ * 65535, the full 16-bit machine address space.
+ *
+ * `load "<HAZARD_SUBJECT_PRG_PATH>"` (plan 50-04, 2026-09-15): the single
+ * bounded value is the DEVICE NUMBER, per VICE's own documented syntax
+ * (`load "<filename>" <device> [<address>]`, VICE Manual ch. 12 -- "If
+ * device is 0, the file is read from the file system"). The address
+ * argument is deliberately never offered here: omitting it makes VICE use
+ * the load address embedded in the `.prg` file's own two-byte header, which
+ * is exactly what a committed machine-code fixture needs and removes a
+ * second numeric slot this project would otherwise have to bound and
+ * justify for no present use. This reuses the SAME "count" kind and the
+ * SAME `${verb} ${value}` rendering `renderCountParam()` already produces
+ * for "chis"/"prof flat" -- no new TextCommandParamKind, no new render
+ * shape; only the verb string itself is new, and it is a reviewed literal,
+ * never a caller-supplied string (see TEXT_COMMAND_ALLOWLIST's own `load`
+ * paragraph above). Bound 0 through 11: 0 is the one value this phase
+ * exercises (host filesystem, per the manual quote above); 1 through 11
+ * spans this project's own documented device-number range elsewhere
+ * (CLAUDE.md's wire memspace note: units 8-11 are the four IEC disk
+ * drives this codebase ever names) -- a deliberately narrow bound, not the
+ * full addressable device range VICE itself accepts, because nothing in
+ * this project has a reason to dial anything wider yet.
  */
 export const TEXT_COMMAND_PARAM_SPECS: Readonly<Record<string, TextCommandParamSpec>> = Object.freeze({
   chis: Object.freeze({
@@ -204,6 +307,12 @@ export const TEXT_COMMAND_PARAM_SPECS: Readonly<Record<string, TextCommandParamS
     min: 0,
     max: 65535,
     render: (value: number) => renderAddressParam("io", value),
+  }),
+  [`load "${HAZARD_SUBJECT_PRG_PATH}"`]: Object.freeze({
+    kind: "count",
+    min: 0,
+    max: 11,
+    render: (value: number) => renderCountParam(`load "${HAZARD_SUBJECT_PRG_PATH}"`, value),
   }),
 } satisfies Record<string, TextCommandParamSpec>);
 
