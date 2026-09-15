@@ -14,11 +14,11 @@ S=src/skills/c64-petcat/scripts/petcat.mjs   # from the repo root
 node $S decode --image path/to/program.prg   # detokenize + resolve the SYS handover
 ```
 
-The script wraps `petcat` and nothing else. `--image` is required. `--out-dir`
-is optional, defaulting to the image's own directory, exactly like
-`acme-build`'s own `--out-dir` default. Both are resolved
-**workspace-relative** to the smallest ancestor directory containing both,
-before the request ever reaches the seam — the same resolution
+The script wraps `petcat` and nothing else. The script requires `--image`.
+`--out-dir` is optional, defaulting to the image's own directory, exactly like
+`acme-build`'s own `--out-dir` default. The script resolves both
+**workspace-relative** to the smallest ancestor directory containing both.
+This happens before the request ever reaches the seam — the same resolution
 `acme-build`/`c64-disk-access` already go through.
 
 Options: `--image PATH` `--out-dir DIR` `--json`.
@@ -67,11 +67,11 @@ posture `acme-build` already takes for its own assembler target.
 
 ## Failure shape
 
-A file `petcat` does not recognise as a BASIC program at all — including a
-missing file — is reported as `{"ok":false,"message":"..."}` with a
-non-zero exit code, never a success envelope carrying an empty or guessed
-verdict. `petcat` itself exits `0` even on garbage input. The seam's own
-classifier, not the exit code, is what decides success here.
+The seam reports a file `petcat` does not recognise as a BASIC program at
+all — including a missing file — as `{"ok":false,"message":"..."}` with a
+non-zero exit code. It never reports a success envelope carrying an empty
+or guessed verdict. `petcat` itself exits `0` even on garbage input. The
+seam's own classifier, not the exit code, is what decides success here.
 
 ## What this skill does NOT do
 
