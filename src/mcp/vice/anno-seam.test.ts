@@ -1,16 +1,17 @@
-// anno-seam.test.ts -- the structural assertion that STORE-07's confinement is
-// REAL rather than promised: `node:sqlite` is named by exactly ONE module of
-// the shipped module set, all four of its working access routes are proven
-// catchable by the one predicate the real scan uses, and a comment-only
-// mention is proven not to count.
+// anno-seam.test.ts -- two surviving checks. Phase 56 removed this file's
+// structural confinement scan (`node:sqlite` named by exactly one shipped
+// module, all four planted access routes caught by the real scan, the
+// negative control, the seam-private-export scan, and the commit-site and
+// idempotency checks); that scan is no longer test-enforced.
 //
-// Modelled on `hostpath-consumers.test.ts`, which established this idiom, and
-// diverging from it in exactly TWO places -- both stated below, because a
-// divergence a reader has to infer is a divergence a later edit will undo by
-// accident.
+// What remains: package.json's files[] lists exactly the shipped anno-*
+// production modules and no test file or test-only helper, and WR-25's
+// behavioural refusal -- openStore refuses when neither a workspaceRoot nor
+// the escape is supplied, proven through the real entry point.
 //
 // Nothing here asserts that stderr is empty, and nothing may: `node:sqlite`
-// emits an `ExperimentalWarning` unconditionally on first load.
+// emits an `ExperimentalWarning` unconditionally on first load (via
+// anno-store.ts, the module both surviving tests import).
 import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
@@ -27,19 +28,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const NEW_SHIPPED_MODULES = ["anno-types.ts", "anno-index.ts", "anno-store.ts"];
 
 // ---------------------------------------------------------------------------
-// 1. The real assertion
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// 2-5. The four planted access routes, all through the same predicate
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// 6. The negative control -- comment half only, and the trade is recorded
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// 7-8. Non-vacuity: the scanned set and the shipped list are real
+// 1. Non-vacuity: the scanned set and the shipped list are real
 // ---------------------------------------------------------------------------
 
 test("package.json files[] ships every anno-* production module on disk and no anno-prefixed test file or test-only helper", () => {
@@ -98,11 +87,7 @@ test("package.json files[] ships every anno-* production module on disk and no a
 });
 
 // ---------------------------------------------------------------------------
-// 9-12. Properties of the one seam module itself
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// WR-25 -- `openStore`'s unconfined ESCAPE HATCH, pinned to its enumerated
+// 2. WR-25 -- `openStore`'s unconfined ESCAPE HATCH, pinned to its enumerated
 // sites in the SEAM_PRIVATE_EXPORTS style.
 //
 // Confinement became `openStore`'s default in 28-21, and the escape is what
