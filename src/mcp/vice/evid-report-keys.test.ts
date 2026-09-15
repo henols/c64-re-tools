@@ -17,16 +17,11 @@
 // directions, so a sixth verb with no fixture entry fails by name rather than
 // passing unguarded.
 //
-// WHY THIS FILE READS SOURCES WITH `readFileSync`/`codeOnly()` RATHER THAN
-// SHELLING OUT TO A TEXT SEARCH (the same register `anno-coverage.test.ts` and
-// `capture-seam.test.ts` already use for the identical reason): one source
-// file in this tree carries a NUL byte, which makes a plain shell search treat
-// it as binary and skip it silently -- a shelled-out census would under-cover
-// while still reporting success, and that exact blind spot has already
-// produced one false decision in this project. `shippedTsModules()` (derived
-// from `package.json`'s `files[]`, and it THROWS on an entry missing from
-// disk) is the scanned set; `codeOnly()` is the one comment-and-string
-// stripper every structural guard in this directory shares.
+// Phase 56 removed this file's fourth direction (no runtime data branch),
+// which used to read every evidence-family module's source with
+// `readFileSync`/`codeOnly()` to scan for a stray runtime literal outside
+// `RuntimeExecClass`'s two members. The surviving `readFileSync` calls below
+// only read `package.json`, not other shipped modules.
 //
 // EVERY DIRECTION BELOW IS A NAMED PREDICATE THE REAL SCAN AND ITS PLANTED
 // CONTROL BOTH CALL -- never a rule re-implemented inside the plant, which is
