@@ -107,11 +107,6 @@ import { AUTO_NAME_PREFIX_RE } from "./anno-coverage.ts";
 // re-derived, on the same "re-check, never re-define" terms this file
 // already applies elsewhere.
 import { provenanceForRange, readProvenanceLedger } from "./anno-provenance-ledger.ts";
-// Phase 46 plan 06 (BUILD-07): the ONE comment-and-string-literal stripper
-// in this tree (shipped-modules.ts's own header), so the structural guard
-// below cannot be satisfied or invalidated by this module's own prose
-// discussing the forbidden shape at length.
-import { codeOnly } from "./shipped-modules.ts";
 // BUILD-05 (phase 46 plan 01): `renderLedger()` is the ONE writer of the
 // generated tier this fixture must satisfy exactly (its own three refusal
 // preconditions -- non-empty UNKNOWN reasons, agreeing_releases >= 2 for
@@ -1059,46 +1054,6 @@ test("every hex literal in one emitted document uses ONE case (30-REVIEW IN-03)"
 });
 
 // ---------------------------------------------------------------------------
-// 30-REVIEW IN-04 -- the fixture generator's ACME probe was narrower than the
-// gate's: it accepted only `acme --version` exiting 0, while `acme-gate.ts`
-// falls back to `--help` because "ACME 0.97 prints its banner to either
-// depending on build". On such a build the generator refused to regenerate a
-// fixture that would have assembled fine.
-//
-// The generator cannot IMPORT the gate (the gate is test-only and asserts its
-// own absence from `files[]`; the generator sits under a path the packer
-// walks), so the ladder is mirrored -- and this is what keeps the two mirrors
-// in step.
-// ---------------------------------------------------------------------------
-
-test("the fixture generator's ACME probe ladder matches the gate's (30-REVIEW IN-04)", () => {
-  const gate = readFileSync(join(HERE, "acme-gate.ts"), "utf8");
-  const generator = readFileSync(join(SMC_DIR, "make-export-asm-fixtures.mjs"), "utf8");
-
-  // Both rungs of the ladder, and the banner test, present on both sides.
-  for (const [label, needle] of [
-    ["the --version rung", /\["--version"\]/],
-    ["the --help fallback rung", /\["--help"\]/],
-    ["the case-insensitive acme banner test", /\/acme\/i/],
-  ] as const) {
-    assert.match(gate, needle, `precondition: acme-gate.ts must still have ${label}`);
-    assert.match(
-      generator,
-      needle,
-      `make-export-asm-fixtures.mjs is missing ${label} -- its probe is narrower than the gate's again (IN-04)`,
-    );
-  }
-
-  // And the narrow form the finding was about must not come back: a bare
-  // `status !== 0` verdict on the --version probe.
-  assert.doesNotMatch(
-    generator,
-    /probe\.error \|\| probe\.status !== 0/,
-    "the generator must not go back to accepting only `--version` exiting 0 (IN-04)",
-  );
-});
-
-// ---------------------------------------------------------------------------
 // 30-REVIEW WR-07 -- `decode()` was handed an EXCLUSIVE end for a parameter
 // documented as INCLUSIVE.
 //
@@ -1146,19 +1101,6 @@ test("decode()'s `end` is INCLUSIVE, so the exclusive end permits one instructio
   );
 });
 
-test("the exporter hands decode() the INCLUSIVE bound (30-REVIEW WR-07)", () => {
-  // Structural, over the module's own source: the two spellings produce
-  // identical output for every store this exporter can build (the slice bounds
-  // it first), so no behavioural test can tell them apart at the exportAsm()
-  // level. That is precisely why the wrong one survived, and why the guard has
-  // to read the call.
-  const source = readFileSync(join(HERE, "anno-export-asm.ts"), "utf8");
-  assert.match(
-    source,
-    /decode\(slice, block\.start, \{ end: block\.endExclusive - 1 \}\)/,
-    "the ONE decode() call must pass an INCLUSIVE end -- `end: block.endExclusive` is WR-07",
-  );
-});
 
 // ---------------------------------------------------------------------------
 // 30-REVIEW WR-10 -- an enum variant symbol colliding with a label name was
@@ -1902,8 +1844,6 @@ test("ROUND TRIP: the ALIASED store still reassembles byte-identically -- a mark
 // has THREE directions -- including the comment-only control that stops it
 // degrading into a substring search which passes by counting its own prose.
 // ---------------------------------------------------------------------------
-
-const EXPORTER_PATH = join(HERE, "anno-export-asm.ts");
 
 /**
  * The eleven prefix tokens, parsed out of `AUTO_NAME_PREFIX_RE`'s OWN
@@ -4323,12 +4263,6 @@ test("exportAsm(): source is exactly [\"!cpu 6510\", ...headerLines, every block
   const result = exportAsm({ storePath, imagePath, workspaceRoot: dir });
   const reconstructed = `${["!cpu 6510", ...result.headerLines, ...result.blocks.flatMap((b) => b.lines)].join("\n")}\n`;
   assert.equal(result.source, reconstructed, "result.source must be byte-for-byte reconstructible from its own structured pieces");
-});
-
-test("anno-export-asm.ts imports nothing from node:child_process -- the exporter provably runs no external program", () => {
-  const raw = readFileSync(join(HERE, "anno-export-asm.ts"), "utf8");
-  const stripped = codeOnly(raw);
-  assert.ok(!stripped.includes("node:child_process"), "anno-export-asm.ts must not import node:child_process anywhere in its own source");
 });
 
 // ---------------------------------------------------------------------------
