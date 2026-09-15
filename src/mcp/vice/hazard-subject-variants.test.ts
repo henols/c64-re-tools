@@ -34,6 +34,7 @@ import { fileURLToPath } from "node:url";
 
 import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
 import { decode, type Instruction } from "./disasm-decoder.ts";
+import type { StoreExportDocument } from "./anno-store-export.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURE_DIR = join(HERE, "fixtures", "hazard-subject");
@@ -374,4 +375,84 @@ test("hazard subject variants: hazard-subject-align-nosprite.a names both requir
   const source = readFileSync(join(FIXTURE_DIR, "hazard-subject-align-nosprite.a"), "utf8");
   assert.ok(/088B/i.test(source), "must name anchor $088B (page-alignment, sprite-pointer-names-aligned-base)");
   assert.ok(/0825/i.test(source), "must name anchor $0825 (self-modifying-code, store-target-in-instruction-opcode-byte)");
+});
+
+// ---------------------------------------------------------------------------
+// The modified annotation-store export -- derived by the existing generator
+// from real ACME symbol addresses, never hand-typed.
+// ---------------------------------------------------------------------------
+
+function loadExport(path: string): StoreExportDocument {
+  return JSON.parse(readFileSync(path, "utf8")) as StoreExportDocument;
+}
+
+test("hazard subject variants: hazard-subject-modified.annostore.json exists and is tracked by git", () => {
+  assert.ok(existsSync(MODIFIED_ANNOSTORE_PATH), "hazard-subject-modified.annostore.json must be committed");
+  const ls = spawnSync("git", ["ls-files", "--error-unmatch", MODIFIED_ANNOSTORE_PATH], { encoding: "utf8", cwd: FIXTURE_DIR });
+  assert.equal(ls.status, 0, "hazard-subject-modified.annostore.json must be a tracked file, not merely present on disk");
+});
+
+test("hazard subject variants: the modified export's ranges partition the modified image with no hole and no overlap", () => {
+  const doc = loadExport(MODIFIED_ANNOSTORE_PATH);
+  const { origin, bytes } = loadPrg(MODIFIED_PRG_PATH);
+  const imageEndInclusive = origin + bytes.length - 1;
+
+  const sorted = [...doc.ranges].sort((a, b) => a.start - b.start);
+  assert.ok(sorted.length > 0, "the modified export must declare at least one range");
+  assert.equal(sorted[0]!.start, origin, `the first range must start at the image origin $${origin.toString(16)}`);
+
+  let expected = origin;
+  for (const r of sorted) {
+    assert.equal(r.start, expected, `range gap or overlap at $${expected.toString(16)}..$${(r.start - 1).toString(16)}`);
+    assert.ok(r.endInclusive >= r.start, `range ${r.start}..${r.endInclusive} must not be inverted`);
+    expected = r.endInclusive + 1;
+  }
+  assert.equal(expected, imageEndInclusive + 1, `the ranges must cover through the image end $${imageEndInclusive.toString(16)}; coverage stopped at $${(expected - 1).toString(16)}`);
+});
+
+test("hazard subject variants: the modified export carries the same number of scopes as the committed export", () => {
+  const modifiedDoc = loadExport(MODIFIED_ANNOSTORE_PATH);
+  const committedDoc = loadExport(ANNOSTORE_PATH);
+  assert.equal(modifiedDoc.scopes?.length ?? 0, committedDoc.scopes?.length ?? 0, "the modification removes no hazard-bearing routine, so the scope count must be unchanged");
+});
+
+test(
+  "hazard subject variants: the modified export's hazard_align_entry label resolves to the same address as the modified image's own decoded alignment-routine start",
+  { skip: SKIP_REASON },
+  () => {
+    const doc = loadExport(MODIFIED_ANNOSTORE_PATH);
+    const label = doc.labels.find((l) => l.name === "hazard_align_entry");
+    assert.ok(label, "the modified export must declare a hazard_align_entry label");
+
+    const { symbols } = assembleModifiedFreshWithSymbols();
+    const assembledAddress = symbols.get("hazard_align_entry");
+    assert.ok(assembledAddress !== undefined, "hazard_align_entry must be a real symbol in the modified image");
+    assert.equal(label!.address, assembledAddress, "the export's hazard_align_entry label address must match the modified image's own assembled address");
+
+    const { bytes, origin } = loadPrg(MODIFIED_PRG_PATH);
+    const instruction = instructionAt(bytes, origin, assembledAddress!);
+    assert.ok(instruction, `hazard_align_entry's address $${assembledAddress!.toString(16)} must decode as a real instruction start in the modified image`);
+  },
+);
+
+test("hazard subject variants: make-hazard-subject-annostore.mjs contains exactly one copy of the decomposition arrays, shared by both subjects", () => {
+  const generatorSource = readFileSync(join(FIXTURE_DIR, "make-hazard-subject-annostore.mjs"), "utf8");
+  const rangesDeclarations = generatorSource.match(/const ranges = \[/g) ?? [];
+  assert.equal(rangesDeclarations.length, 1, "exactly one `ranges` decomposition array must exist");
+  const scopesDeclarations = generatorSource.match(/const scopes = \[/g) ?? [];
+  assert.equal(scopesDeclarations.length, 1, "exactly one `scopes` decomposition array must exist");
+  const subjectsDeclarations = generatorSource.match(/const SUBJECTS = \[/g) ?? [];
+  assert.equal(subjectsDeclarations.length, 1, "exactly one SUBJECTS array must declare the two subjects sharing this decomposition");
+});
+
+test("hazard subject variants: the committed hazard-subject.annostore.json is unchanged by the annostore generator's parameterisation", () => {
+  // This is a REGRESSION guard, not a regeneration -- it reads the
+  // committed file as-is and checks internal self-consistency the
+  // parameterisation must have preserved (16 ranges / 5 scopes / 22 labels,
+  // the same counts `make-hazard-subject-annostore.mjs`'s own stdout
+  // reports for the first SUBJECTS entry).
+  const doc = loadExport(ANNOSTORE_PATH);
+  assert.equal(doc.ranges.length, 16, "the committed original export's range count must be unchanged by parameterisation");
+  assert.equal(doc.scopes?.length ?? 0, 5, "the committed original export's scope count must be unchanged by parameterisation");
+  assert.equal(doc.labels.length, 22, "the committed original export's label count must be unchanged by parameterisation");
 });

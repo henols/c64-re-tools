@@ -563,13 +563,20 @@ test("hazard subject: the mis-aligned image's sprite shape base is not a multipl
   assert.notEqual(charBase! % 2048, 0, `the mis-aligned align_char_base ($${charBase!.toString(16)}) must NOT be 2048-byte aligned`);
 });
 
-test("hazard subject: the regenerator's fixture table declares two builds, and both refuse before writing if the assembler is unusable", () => {
+test("hazard subject: the regenerator's fixture table declares four builds, and all refuse before writing if the assembler is unusable", () => {
+  // Was "exactly two build entries" before plan 50-02 added the regressed
+  // twin and the modified subject as two more synthesized-root FIXTURES
+  // entries (both via the shared substituteSourceLines() helper). Updated
+  // here rather than left stale -- this is Rule 1 (a now-incorrect
+  // assertion about this generator's own shape), not new coverage.
   const generatorSource = readFileSync(REGENERATOR_PATH, "utf8");
   const outputMentions = generatorSource.match(/output:\s*"[^"]+\.prg"/g) ?? [];
-  assert.equal(outputMentions.length, 2, "the FIXTURES table must declare exactly two build entries, one per committed .prg");
+  assert.equal(outputMentions.length, 4, "the FIXTURES table must declare exactly four build entries, one per committed .prg");
   assert.ok(generatorSource.includes('"hazard-subject.prg"'), "the aligned build's output name must be declared");
   assert.ok(generatorSource.includes('"hazard-subject-misaligned.prg"'), "the mis-aligned build's output name must be declared");
-  assert.ok(generatorSource.includes("REFUSING to write a partial fixture"), "the shared refusal path must still cover both builds");
+  assert.ok(generatorSource.includes('"hazard-subject-regressed.prg"'), "the regressed build's output name must be declared");
+  assert.ok(generatorSource.includes('"hazard-subject-modified.prg"'), "the modified build's output name must be declared");
+  assert.ok(generatorSource.includes("REFUSING to write a partial fixture"), "the shared refusal path must still cover every build");
 });
 
 test("hazard subject: REGENERATOR AGREEMENT (mis-aligned twin) -- re-deriving the synthesized root reproduces the committed hazard-subject-misaligned.prg byte-for-byte", { skip: SKIP_REASON }, () => {
