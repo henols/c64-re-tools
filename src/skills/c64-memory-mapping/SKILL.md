@@ -77,10 +77,11 @@ loop:   ldx $dc01                           ; $DC01 = Port B, keyboard matrix ro
         rts
 ```
 
-A header block listing every referenced address with its full description, symbol
-and region is prepended (elided above): measured on the two examples on this page,
-the eleven-line listing above grows a 23-line header and the nine-line IRQ excerpt
-below grows a 25-line one — a little over 2x the input either way. Pass
+`annotate` prepends a header block that lists every referenced address with its
+full description, symbol and region (elided above). Measured on the two examples
+on this page, the eleven-line listing above grows a 23-line header and the
+nine-line IRQ excerpt below grows a 25-line one — a little over 2x the input
+either way. Pass
 `--no-header` to drop it and get the annotated body alone.
 
 Options:
@@ -91,8 +92,8 @@ Options:
   (`$0400-$07E7`, 1000 bytes) or the `$C000-$CFFF` block still earns an inline
   comment, while the 8 KB BASIC and KERNAL ROM blocks do not — a branch
   annotated "KERNAL ROM (8192 bytes)" teaches nobody anything. The cap applies
-  only to non-flow instructions: flow instructions (`JMP`, `JSR`, branches,
-  `RTS`, `RTI`) are held to 2 bytes regardless of `--max-span`, so a jump or
+  only to non-flow instructions. `annotate` holds flow instructions (`JMP`,
+  `JSR`, branches, `RTS`, `RTI`) to 2 bytes regardless of `--max-span`, so a jump or
   branch only earns a comment when it targets a specific vector such as
   `$0314`. `--max-span 2` gives register- and variable-level comments only.
 - `--no-header` suppresses the prepended header block, for piping annotated
@@ -210,8 +211,8 @@ named enum variants was the `gen-enums` CLI verb, and **that verb is WITHDRAWN f
 no phase currently owns its return.** This notice previously forecast that it would come
 back as a rebuild over the annotation store alongside the ACME export route. The ACME export route
 did come back on 2026-08-31, but the phase that rebuilt it covered that route only — no requirement
-and no success criterion of it mentioned `gen-enums`. That forecast is corrected here rather than
-deleted. Do not invoke the verb — it does not exist, and the invocation fails with an unknown-verb
+and no success criterion of it mentioned `gen-enums`. This notice corrects that forecast rather than
+removing it. Do not invoke the verb — it does not exist, and the invocation fails with an unknown-verb
 error and nothing to explain it.
 
 What it did, so the rebuild has a specification and so a reader knows what is missing: it read the
@@ -229,7 +230,7 @@ manual where `gen-enums` was bulk, but it writes exactly the same rows into the 
 Two deeper jobs feed the annotate/lookup job above, rather than standing apart from it: knowing
 what a whole region actually is (code, or one of eight kinds of data) before it can be annotated
 at all, and knowing what one of a program's own addresses represents when no published table can
-say. Both exist to serve a documented listing. Neither is invoked as a job on its own.
+say. Both exist to serve a documented listing. You do not invoke either one as a job on its own.
 
 ### Classifying every region of an annotation project
 
@@ -315,9 +316,9 @@ them. Each pass makes the next one cheaper.
    both the `store` and the `image`): `view:
    "hexdump"` shows the byte patterns, and **omitting `view`** gives the
    disassembly view — that is the parameter's documented default — which shows
-   how the region would decode. The combined byte count is capped at **4096 bytes** per call
-   (`ANNO_READ_REGION_MAX_BYTES`), and a request above the cap is refused by
-   name rather than truncated — so walk a large binary in consecutive ranges.
+   how the region would decode. `anno_read_region` caps the combined byte count
+   at **4096 bytes** per call (`ANNO_READ_REGION_MAX_BYTES`). It refuses a
+   request above the cap by name rather than truncating it — so walk a large binary in consecutive ranges.
    Chunks of **256–512 bytes** are the practical working size for
    classification. A 4096-byte hexdump is more than can be read carefully in
    one pass.
@@ -326,7 +327,7 @@ them. Each pass makes the next one cheaper.
 
 - **Code**: `anno_disassemble` from the entry-point address to READ, then
   `anno_set_data_type` with `"code"` to RECORD the range you checked.
-  `anno_disassemble` performs no write, so nothing is classified until you say
+  `anno_disassemble` performs no write, so it classifies nothing until you say
   so. Type only as far as you actually followed the flow — the end of a routine
   at its `RTS`/`RTI`/`JMP`, not "to the end of the region" — because the typed
   `code` ranges are what `anno_get_cross_references` and `anno_search` decode
@@ -350,8 +351,8 @@ them. Each pass makes the next one cheaper.
 - A split layout REFUSES an odd byte count — the low half and the high half must
   be the same length.
 - Re-read `anno_get_blocks` after each batch to check what actually landed.
-  `max_results` is REQUIRED on that read and has no default. The true match
-  count is returned beside the list.
+  `max_results` is REQUIRED on that read and has no default. That read returns
+  the true match count beside the list.
 
 Example of a valid data-only batch, then the code regions separately:
 
@@ -416,8 +417,8 @@ give-away. A full screen dump is exactly 1000 bytes.
 a `PSID`/`RSID` header, a 2048-byte charset (256 chars × 8 bytes), sprite data
 in multiples of 64, or a bitmap. Export it rather than annotate it.
 
-**PETSCII is not screencode.** If it is copied to `$0400`, it is screencode. If
-it is passed to CHROUT, it is PETSCII. Getting this backwards produces text
+**PETSCII is not screencode.** If the program copies it to `$0400`, it is
+screencode. If the program passes it to CHROUT, it is PETSCII. Getting this backwards produces text
 that renders as garbage in exactly one of the two places.
 
 #### The adjacent-table limitation, and how it was closed
@@ -464,7 +465,7 @@ Then report, and mean it:
   regions on a real game is almost always a report that stopped looking.
 - The store revision, read with `anno_save_project`. That verb performs **no
   write** — every classification call above already committed and fsynced its
-  own — so quoting the revision is how the report is pinned to an exact store
+  own — so quoting the revision pins the report to an exact store
   state rather than to "after the pass".
 
 #### What goes wrong
@@ -485,7 +486,7 @@ a hardware register, a KERNAL entry point, an OS variable. That answer comes
 from four tables and holds for every program.
 
 This section is the other half: **what a program's *own* address represents.**
-No table can tell you, because the meaning was decided by the program's code.
+No table can tell you, because the program's code decided the meaning.
 When `lookup` returns a region-only answer — the dominant case for a game's own
 code and variables, as noted above — this is the procedure that gets you a
 name.
@@ -507,7 +508,7 @@ name.
 #### 2. Gather the usage
 
 `anno_get_cross_references` on the address — naming the `store`, the `image` and
-a REQUIRED `max_results` — returns everywhere it is touched. Read the
+a REQUIRED `max_results` — returns every site that touches it. Read the
 instruction at each site, because the instruction is the evidence:
 
 - **Writes**: `STA`, `STX`, `STY`
@@ -612,7 +613,7 @@ still readable even though the store cannot format it.
   variable, dead.
 - **Evidence**: the specific cross-references or usage patterns that decided
   it. A classification with no evidence line is a guess wearing a name.
-- **Actions taken**: what was renamed, what was commented, which enums were
+- **Actions taken**: what you renamed, what you commented, which enums were
   defined or applied.
 - **Uncertainty**: if `anno_get_cross_references` returned nothing, say which
   of the three explanations in step 2 you could and could not rule out.
@@ -622,7 +623,7 @@ still readable even though the store cannot format it.
 | Symptom | Correction |
 |---|---|
 | Comments land on regions too wide to be useful | `--max-span 2`. The default is 4096 bytes. |
-| A `JSR` or branch target got no comment at all | Flow instructions are capped at 2 bytes regardless of `--max-span`. `lookup` the target directly for the ROM routine name. |
+| A `JSR` or branch target got no comment at all | `annotate` caps flow instructions at 2 bytes regardless of `--max-span`. `lookup` the target directly for the ROM routine name. |
 | The output is mostly header | `--no-header`. |
 | `lookup` printed only wide region lines and no specific name | Nothing in the four tables names that address. This answer is normal for the game's own code. Take the region and name the address from what the code does with it. |
 | `lookup` printed `(not in memory map)` | Nothing covers it. Check the address parsed as intended, since a bare `1234` reads as decimal. |
