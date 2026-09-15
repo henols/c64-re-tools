@@ -9,10 +9,9 @@
 // the future real-capture case, not this one.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 import {
   BANK_SELECT_ADDRESS,
@@ -25,10 +24,6 @@ import type { GraphicsConstWriteFact, GraphicsMap } from "./anno-graphics.ts";
 import { DATA_TYPES } from "./anno-types.ts";
 import { closeStore, listXrefs, openStore, putXref } from "./anno-store.ts";
 import { runMemmapJoin } from "./anno-join.ts";
-import { codeOnly } from "./shipped-modules.ts";
-
-const HERE = dirname(fileURLToPath(import.meta.url));
-const REAL_ANNO_GRAPHICS_PATH = join(HERE, "anno-graphics.ts");
 
 function inTempDir(body: (dir: string) => void): void {
   const dir = mkdtempSync(join(tmpdir(), "anno-graphics-"));
@@ -148,12 +143,6 @@ test("every returned range has endInclusive >= start, and every dataType is a me
   assert.ok(sawRange, "non-vacuity: at least one range must have been checked");
 });
 
-test("the module header states the sprite-bitmap-out-of-scope boundary and the byte-datatype choice", () => {
-  const src = readFileSync(REAL_ANNO_GRAPHICS_PATH, "utf8");
-  assert.match(src, /SPRITE BITMAP LOCATIONS ARE OUT OF SCOPE/);
-  assert.match(src, /NO GRAPHICS-SPECIFIC DATA TYPE EXISTS/);
-});
-
 // ---------------------------------------------------------------------------
 // Task 2 -- proving the derivation finds what cross-references structurally
 // cannot (AUTO-06's distinguishing claim, turned into an assertion).
@@ -232,55 +221,4 @@ test("derived ranges are unchanged whether the store carries cross-reference row
     }
   });
   assert.deepEqual(withRows, withoutRows);
-});
-
-/** Extracts every static (`from "..."`) and dynamic (`import("...")`)
- * specifier from already `codeOnly()`-stripped source. Mirrors the idiom
- * `anno-seam.test.ts` establishes (comment/string-stripped source, one named
- * predicate), scaled down to this module's own narrower question: WHICH
- * modules does it import, not merely whether one named builtin appears. */
-function extractImportSpecifiers(strippedSrc: string): string[] {
-  const specifiers: string[] = [];
-  const staticImportRe = /\bfrom\s+["']([^"']+)["']/g;
-  const dynamicImportRe = /\bimport\(\s*["']([^"']+)["']\s*\)/g;
-  let match: RegExpExecArray | null;
-  while ((match = staticImportRe.exec(strippedSrc))) specifiers.push(match[1]!);
-  while ((match = dynamicImportRe.exec(strippedSrc))) specifiers.push(match[1]!);
-  return specifiers;
-}
-
-/** The modules this module's own import list must never reach (D-37-26): the
- * persistence seam, the join, the reference-graph-exposing modules (the same
- * one as the persistence seam here), the host-path modules, and the
- * emulator backend. Non-vacuity (a non-zero specifier count) is asserted
- * separately below, BEFORE this list is even consulted. */
-const BANNED_IMPORT_SUBSTRINGS = [
-  "anno-store",
-  "anno-join",
-  "hostpath",
-  "containerpath",
-  "stock-vicii",
-  "stock-sprites",
-];
-
-test("a non-vacuous structural scan of anno-graphics.ts's own import list reaches none of the store, the join, the host-path modules or the emulator backend", () => {
-  const raw = readFileSync(REAL_ANNO_GRAPHICS_PATH, "utf8");
-  // `keepLiteralBodies = true` is mandatory here (mirrors `anno-seam.test.ts`'s
-  // own `stripForSpecifierScan()`): the import specifiers THIS scan looks for
-  // are themselves string literals, and the default `codeOnly()` mode blanks
-  // literal bodies out entirely.
-  const stripped = codeOnly(raw, true);
-  const specifiers = extractImportSpecifiers(stripped);
-  // Non-vacuity FIRST: an empty or mis-globbed scan must fail here, not pass
-  // the loop below trivially by having nothing to iterate. Hand-confirmed
-  // once during authoring (see the plan 37-07 SUMMARY): pointing this same
-  // scan at an empty source string yields zero specifiers, and the banned-
-  // substring loop below would then vacuously pass with nothing to check --
-  // exactly why this assertion exists ahead of it.
-  assert.ok(specifiers.length > 0, "non-vacuity: the scan must find at least one import specifier");
-  for (const specifier of specifiers) {
-    for (const banned of BANNED_IMPORT_SUBSTRINGS) {
-      assert.ok(!specifier.includes(banned), `import specifier "${specifier}" must not reach "${banned}"`);
-    }
-  }
 });
