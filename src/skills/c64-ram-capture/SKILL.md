@@ -9,8 +9,8 @@ description: Capture a running C64's full 64K RAM as a verified flat image, and 
 permitted route. Never open a connection by any other means.
 
 **Never hand-assemble a capture.** Sixteen `vice_memory_read` calls have to land
-contiguously and total exactly 65536 bytes; a dropped or short read is the normal
-failure and it is invisible in a hex dump. Two committed modules do that byte work
+contiguously and total exactly 65536 bytes. A dropped or short read is the normal
+failure, and it is invisible in a hex dump. Two committed modules do that byte work
 and name the offending address when it is wrong.
 
 ```bash
@@ -43,7 +43,7 @@ Every module above reads only committed files and the JSON **you** wrote from
 your own `mcp__plugin_c64-re-tools_vice__*` calls. They contact nothing.
 
 **Prerequisite: a resolvable project root.** `scripts/project-paths.mjs` uses
-`C64RE_PROJECT_ROOT` when it is set, and otherwise walks up from the toolkit's
+`C64RE_PROJECT_ROOT` when you set it, and otherwise walks up from the toolkit's
 own location for the nearest ancestor directory containing a `.git` entry. A
 scratch project has neither by default, so `git init` it first or set the
 variable — the thrown error names both when this fails.
@@ -53,7 +53,7 @@ variable — the thrown error names both when this fails.
 | # | Phase | Settles |
 |---|---|---|
 | 1 | Read the disk directory | Whether the release's entries are real or faked, before booting anything |
-| 2 | Boot, confirm the PC moved | That the loader is actually executing |
+| 2 | Boot, check the PC moved | That the loader is actually executing |
 | 3 | Checkpoint, hit, read 64K + chip state | The capture itself — all reads in one paused window |
 | 4 | `write-set` | Assertions pass, four artifacts written, digest returned |
 | 5 | Disarm, enumerate, resume once | That you left no checkpoint armed and the machine running |
@@ -69,10 +69,10 @@ sector chain or raw bytes, and directory-fakery detection — is
 1. `mcp__plugin_c64-re-tools_vice__vice_disk_attach` with the disk image.
 2. `mcp__plugin_c64-re-tools_vice__vice_autostart` with the same image.
 3. `mcp__plugin_c64-re-tools_vice__vice_execution_run`.
-4. `mcp__plugin_c64-re-tools_vice__vice_registers_get` and confirm the program counter has moved.
+4. `mcp__plugin_c64-re-tools_vice__vice_registers_get` and check the program counter has moved.
 
-The broker sets the drive type at launch for every stock instance, so no drive setup
-is needed before attaching.
+Every time the broker starts a stock instance, it sets the drive type, so you do
+not need drive setup before attaching.
 
 If the program counter has not moved, type `LOAD"*",8,1` with
 `mcp__plugin_c64-re-tools_vice__vice_keyboard_type`, run it, then type `RUN` and run it.
@@ -87,11 +87,11 @@ If the program counter has not moved, type `LOAD"*",8,1` with
    4096 bytes each. Write them to `chunks.json` as an array of
    `{ "address": "$0000", "hex": "..." }` records, one per call, hex only.
 5. Record the chip state in the **same paused window**, into `raw.json`. The keys
-   are fixed, because `chip-state` derives from exactly these: `registers`,
-   `sprites` and `cpu` pass through verbatim from
+   never change, because `chip-state` derives from exactly these fields.
+   `registers`, `sprites` and `cpu` pass through verbatim from
    `mcp__plugin_c64-re-tools_vice__vice_vicii_get_state` / `mcp__plugin_c64-re-tools_vice__vice_sprite_get` /
-   `mcp__plugin_c64-re-tools_vice__vice_registers_get`; `port01_raw` is `$0001`; `dd00_raw` is
-   `$DD00`; `d018_raw` is `$D018`; `sprite_pointers` is the eight bytes at
+   `mcp__plugin_c64-re-tools_vice__vice_registers_get`. `port01_raw` is `$0001`. `dd00_raw` is
+   `$DD00`. `d018_raw` is `$D018`. `sprite_pointers` is the eight bytes at
    `screen_base+$3F8`.
 6. Write all four artifacts in one call:
 
@@ -106,7 +106,7 @@ If the program counter has not moved, type `LOAD"*",8,1` with
    with the SHA-256. It also derives `vic_bank`, `screen_base`, `charset_base`
    and `sprite_data_addresses` for free — do not recompute them by hand.
 7. `mcp__plugin_c64-re-tools_vice__vice_checkpoint_delete` the checkpoint.
-8. `mcp__plugin_c64-re-tools_vice__vice_checkpoint_list` and confirm it reports zero checkpoints.
+8. `mcp__plugin_c64-re-tools_vice__vice_checkpoint_list` and check it reports zero checkpoints.
    Accept only this enumeration as proof. Record the count.
 9. `mcp__plugin_c64-re-tools_vice__vice_execution_run` to leave the machine running.
 
@@ -163,20 +163,20 @@ only after the provenance diff partitions loader from cracktro from game — see
 ## Find an entry point
 
 1. Press past any "hit any key" gate. **`vice_keyboard_matrix` is permanently unavailable** — the
-   binary monitor's `KEYBOARD_FEED` only injects PETSCII text into the KERNAL buffer and cannot
-   drive the raw matrix; see `docs/stock-hard-losses.md`. Use `vice_keyboard_type` /
+   binary monitor's `KEYBOARD_FEED` only injects PETSCII text into the KERNAL buffer. It cannot
+   drive the raw matrix. See `docs/stock-hard-losses.md`. Use `vice_keyboard_type` /
    `vice_keyboard_petscii` when the gate reads the KERNAL buffer, or `vice_joystick_set` when it
-   polls the matrix directly; buffer injection stays invisible to a program polling
+   polls the matrix directly. Buffer injection stays invisible to a program that polls
    `$DC00`/`$DC01` itself.
 2. Step forward in batches with `mcp__plugin_c64-re-tools_vice__vice_execution_step`, reading
    `mcp__plugin_c64-re-tools_vice__vice_registers_get` after each batch.
 3. Stop when the program counter and the stack pointer both settle into a
    repeating range across three consecutive batches. That range is the
-   dispatch loop; its lowest address is the entry point.
-4. Confirm the address with `mcp__plugin_c64-re-tools_vice__vice_disassemble` before recording it.
+   dispatch loop. Its lowest address is the entry point.
+4. Check the address with `mcp__plugin_c64-re-tools_vice__vice_disassemble` before recording it.
 
 Set a batch ceiling before you start. Report failure to stabilise as a finding
-with the batches spent; never extend the ceiling silently.
+with the batches spent. Never extend the ceiling silently.
 
 ## Prove the machine did not change under you
 
@@ -184,7 +184,7 @@ with the batches spent; never extend the ceiling silently.
 not have to poll for one.** The proxy compares the restart epoch before *and*
 after every forwarded call, and refuses the call — or discards its result, if the
 change happened mid-call — with a loud error naming both epoch values. So the
-capture's identity is guarded continuously, not at two sampled points.
+proxy guards the capture's identity continuously, not at two sampled points.
 
 What that leaves you:
 
@@ -205,7 +205,7 @@ stops answering.
 1. Rename each artifact to `<name>.VOID-<UTC timestamp>`.
 2. Write a sibling note recording the reason, the time, and — if a drift error is
    what voided it — the two epoch values quoted from that error. Do not go looking
-   for them; nothing reads the epoch on demand. Keep the voided artifacts on disk.
+   for them. Nothing reads the epoch on demand. Keep the voided artifacts on disk.
 
 ## Compare two captures
 
@@ -249,12 +249,12 @@ repeat every `$40` across `$D000-$D3FF` and the SID's across `$D400-$D7FF`, so
 reading that range samples live hardware and two captures can never agree there.
 Omitting it is what made the earlier hand-applied rule fail five of the six
 committed gameentry pairings on `$D344`, `$D625` and `$D628` — differences that
-were guaranteed. Region first, bit-count second.
+the repeating registers guarantee. Region first, bit-count second.
 
 `$E000-$FFFF` (RAM under KERNAL ROM when HIRAM = 0) is deliberately **not**
 excluded. `$FAD8` and `$FC51` do differ across captures, but only two addresses
 out of 8192 — too few for power-on garbage, and unexplained. They still fail, and
-what writes them is an open question. Observed 2026-08-04; graded MEDIUM,
+what writes them is an open question. Observed 2026-08-04. Graded MEDIUM,
 structural, not reproduced against a second release.
 
 **Establish a drift floor** with `floor` across every capture of one checkpoint.
@@ -295,20 +295,20 @@ assumptions above are wrong across two different binaries:
   `$DE00`-`$DFFF` — so `$D015`, `$D018` and `$D020` stay visible to the
   verdict.
 - **Route awareness.** A capture declares its `route` (`snapshot` or
-  `memory-read`) in its state sidecar. Comparing a snapshot-route capture
-  against a memory-read-route capture is refused outright — see "Slice the
-  image out of a snapshot instead of transcribing it" above for why those two
-  routes disagree about what `$D000`-`$DFFF` even is.
+  `memory-read`) in its state sidecar. `compare-cross-binary.mjs` refuses to
+  compare a snapshot-route capture against a memory-read-route capture — see
+  "Slice the image out of a snapshot instead of transcribing it" above for why
+  those two routes disagree about what `$D000`-`$DFFF` even is.
 
-A real difference is resolved with the `--allowlist` document, never by
-widening the mask: each entry names a `start`/`endInclusive` range, a
-`domain` (`image` or `register`), and a non-empty `why`. An entry overlapping
-a masked span, or lacking a `why`, is refused by name. `--no-allowlist` is
-the allowlist's own red control — the same pair must fail without it, or the
-allowlist is doing no work.
+You resolve a real difference with the `--allowlist` document, never by widening
+the mask: each entry names a `start`/`endInclusive` range, a `domain`
+(`image` or `register`), and a non-empty `why`. `compare-cross-binary.mjs`
+refuses by name an entry overlapping a masked span, or one lacking a `why`.
+`--no-allowlist` is the allowlist's own red control — the same pair must fail
+without it, or the allowlist is doing no work.
 
-Byte-identity is printed as `BYTE_IDENTICAL: yes`/`no`, but it is a recorded
-extra, never the verdict — `compare-cross-binary.mjs` always runs the full
+`compare-cross-binary.mjs` prints byte-identity as `BYTE_IDENTICAL: yes`/`no`,
+but it is a recorded extra, never the verdict — it always runs the full
 classification, even when the two images are byte-for-byte equal, because a
 chip-state-only regression (e.g. a differing `$D020`) can exist under
 byte-identical images. The `VERDICT:` line is the only line to gate on.
@@ -316,7 +316,7 @@ byte-identical images. The `VERDICT:` line is the only line to gate on.
 ## Derive a per-release transient allow-list
 
 `scripts/derive-transients.mjs` is the named, repeatable derivation. **The
-method is what carries forward between releases; no address set ever does.** Two
+method is what carries forward between releases. No address set ever does.** Two
 verbs:
 
 ```bash
@@ -327,18 +327,18 @@ node $T check  --allow-list $TD/<id>.json runA.bin runB.bin
 `derive` takes **N ≥ 3** runs of the same release under the same protocol at the
 same stop and writes the **union of addresses differing across every pairwise
 comparison** — one entry per address, carrying which pairings it differed in,
-the distinct bytes seen, and an empty attribution line for you to fill. Fewer
-than three images is refused naming the count and the minimum; an image that is
-not exactly 65536 bytes is refused naming the path and the length. It prints
+the distinct bytes seen, and an empty attribution line for you to fill. `derive`
+refuses fewer than three images, naming the count and the minimum. It refuses an
+image that is not exactly 65536 bytes, naming the path and the length. It prints
 `TRANSIENT_COUNT: <n>` at column 0, so a measurement gets transcribed rather
 than paraphrased.
 
 **Over the cap of 64 addresses the derivation is VOID:** non-zero exit, **no
 artifact written**, and the message says what the overflow means — the stop is
 not frame-exact. That is a fact to record, not a threshold to raise. `--cap`
-only ever *narrows*; a value above 64 is refused by name, and the union is never
-truncated to fit, because a truncated list makes every later comparison pass on
-bytes nobody vetted. Overflow is a **measured** outcome: 0 differing addresses
+only ever *narrows*. `derive` refuses a value above 64 by name, and it never
+truncates the union to fit, because a truncated list makes every later
+comparison pass on bytes nobody vetted. Overflow is a **measured** outcome: 0 differing addresses
 at a frame-exact `READY` stop, 66 at a frame-anchored autostarted stop at
 jitter 4000 ms, 300 at a wall-clock autostarted stop on a real release, 1242 at
 a wall-clock `READY` stop with the determinism block applied.
@@ -378,7 +378,7 @@ real difference. Do not carry the exclusion across from the memory-read route.
 
 A malformed snapshot is **refused**, by name, naming the offending value and the
 valid range — it is never truncated into a plausible short image. The `.vsf`
-byte layout lives in exactly one place, `vsf-slice.ts` on the MCP side; this
+byte layout lives in exactly one place, `vsf-slice.ts` on the MCP side. This
 script resolves it via `VICE_MCP_DIR`, the in-repo path, or the
 `@henols/vice-mcp` package, and refuses naming every path it tried when no rung
 resolves rather than falling back to a second copy of the layout.
@@ -391,8 +391,8 @@ and `size` become the sidecar's `captureSha256`, proving which image the rendere
 sidecar's other run-scoped keys (`port01`, `dd00`, `vicBank`, `screenRam`, `charsetOrBitmap`, `mode`,
 `liveVectorPair`, `vectorHandler`, `rasterPositions`) come from `c64-program-recon`'s own
 `derive.mjs` — **this skill does not emit the sidecar itself.** The sidecar is hand-authored from
-those two skills' outputs and validated by the renderer, which throws naming every missing or
-malformed key at once rather than rendering a document that silently carries a placeholder.
+those two skills' outputs. The renderer checks it and throws, naming every missing or
+malformed key at once, rather than rendering a document that silently carries a placeholder.
 
 ## Which skill does what
 
@@ -422,7 +422,7 @@ registry — every other module takes the id as an argument. Its shape:
 | `id` | per-release | yes | The `--release` argument every other script takes. |
 | `canonical` | per-release | — | A boolean on one entry, not "the canonical image" — there are N releases. |
 | `disk_image` | per-release | yes | Project-relative path to the release's `.d64`. |
-| `dumps` | per-release | **yes, as an array** | Per-capture records written by `write-set`. **Must be an array, never omitted** — `releases.mjs`'s `list` command reads `r.dumps.length` with no guard (`releases.mjs:98`), so a missing `dumps` throws `TypeError: Cannot read properties of undefined` instead of listing anything. An empty array (`[]`) is fine; an absent key is not. `releases.mjs` itself imposes no per-entry shape; `scripts/watch-loads.mjs` (a different reader) looks up an entry by `label` and reads its `range_manifest`, which the example below follows. |
+| `dumps` | per-release | **yes, as an array** | Per-capture records written by `write-set`. **Must be an array, never omitted** — `releases.mjs`'s `list` command reads `r.dumps.length` with no guard (`releases.mjs:98`), so a missing `dumps` throws `TypeError: Cannot read properties of undefined` instead of listing anything. An empty array (`[]`) is fine. An absent key is not. `releases.mjs` itself imposes no per-entry shape. `scripts/watch-loads.mjs` (a different reader) looks up an entry by `label` and reads its `range_manifest`, which the example below follows. |
 
 The registry lives at `<project root>/recovery/RELEASES.json` by default —
 override the whole path with `C64RE_REGISTRY`, or just the containing
@@ -440,35 +440,35 @@ split: the workflow fits in one file, which is the right call when it does.
 |---|---|
 | `scripts/compare.mjs` | Difference classification and the drift floor. Pure logic over captures you already have — `node $C` with no arguments prints the rules. |
 | `scripts/compare-cross-binary.mjs` | `cross` — for two DIFFERENT binaries. No drift bucket. A narrowed `$Dxxx` mask. Route awareness, an intentional-difference allowlist, and per-binary logical checkpoints. Covered by `scripts/compare-cross-binary.test.mjs`. |
-| `scripts/vsf-slice.mjs` | `slice` / `digest` — the flat 64K image sliced out of a `.vsf` snapshot with no transcription step. The layout lives in `vsf-slice.ts` on the MCP side; this wrapper resolves it and refuses by name when it cannot. Covered by `scripts/vsf-slice.test.mjs`. |
-| `scripts/derive-transients.mjs` | `derive` / `check` — the per-release transient allow-list, derived from N ≥ 3 runs as the pairwise union, under a committed cap of 64 that **voids** rather than warns. Covered by `scripts/derive-transients.test.mjs`. |
-| `transients/README.md` | The committed derivation method, the artifact shape, the cap's reasoning with its four measured reference points, and the rule that no address set is inherited between releases. Its `.gitignore` refuses every image byte form. |
-| `templates/capture-record.template.md` | The per-capture record: identity including the three-row reproducibility key and the `capture route` row, machine state read in the same paused window, the void checklist, and the per-pairing comparison table. |
+| `scripts/vsf-slice.mjs` | `slice` / `digest` — the flat 64K image sliced out of a `.vsf` snapshot with no transcription step. The layout lives in `vsf-slice.ts` on the MCP side. This wrapper resolves it and refuses by name when it cannot. Covered by `scripts/vsf-slice.test.mjs`. |
+| `scripts/derive-transients.mjs` | `derive` / `check` — the per-release transient allow-list, derived from N ≥ 3 runs as the pairwise union. A committed cap of 64 **voids** it rather than warns. Covered by `scripts/derive-transients.test.mjs`. |
+| `transients/README.md` | The committed derivation method, the artifact shape, and the cap's reasoning with its four measured reference points. No address set is inherited between releases. Its `.gitignore` refuses every image byte form. |
+| `templates/capture-record.template.md` | The per-capture record: identity, including the three-row reproducibility key and the `capture route` row. Also the machine state read in the same paused window, the void checklist, and the per-pairing comparison table. |
 | `scripts/dump-artifacts.mjs` | `assemble` / `chip-state` / `manifest` / `write-set` — the guarded byte work, and the source of every `assembleImage:` message in the table below. |
 | `RELEASES.json.example` | A copyable release-registry shape — see `## Release registry shape` above. |
 
 Record findings that make RE faster in your own project notes **at the moment you
 find them**, graded with `Evidence:` and `Confidence:`. Promote a finding by
 re-logging it with the new evidence, never by editing an old grade in place — the
-grade is only worth anything if it says what was actually known when it was written.
+grade is only worth anything if it says what you actually knew when you wrote it.
 
 ## Troubleshooting
 
-| Symptom | Fix |
+| Symptom | Correction |
 |---|---|
-| `assembleImage: gap before address $3000 -- next chunk starts at $4000` | A `vice_memory_read` never landed. Re-read that 4096-byte window; do not pad it. |
+| `assembleImage: gap before address $3000 -- next chunk starts at $4000` | A `vice_memory_read` never landed. Re-read that 4096-byte window. Do not pad it. |
 | `assembleImage: overlap at address $8000 -- a previous chunk already covered up to $8003` | Two chunks cover the same window, usually a duplicated call after a retry. Drop the duplicate. |
 | `assembleImage: assembled 65534 bytes ending at $FFFE, expected exactly 65536` | A read returned short. Re-read the final window. |
-| `unknown release "x" -- known releases: …` | The `--release` id is not in the registry. The error names the valid ids; it throws before writing anything. |
+| `unknown release "x" -- known releases: …` | The `--release` id is not in the registry. The error names the valid ids. It throws before writing anything. |
 | A fresh `.map.json` says `classification_state: "bucketed"` | Wrong — a fresh capture is `"ranges-only"`. The provenance diff sets `"bucketed"`, nothing else. |
 | The checkpoint never fired | Most state reads pause the emulator. Resume exactly once, at the end, after every read. |
-| Two captures of the same checkpoint differ | Expected. Full-64K identity is impossible in principle; run `compare` and read the verdict rather than judging by eye. |
-| `compare.mjs`'s `compare` fails on an address in `$D000`-`$DFFF` | It cannot — `compare.mjs` masks that whole range for its own same-binary job. If you are seeing this, you applied the rules by hand; use `scripts/compare.mjs`. |
+| Two captures of the same checkpoint differ | Expected. Full-64K identity is impossible in principle. Run `compare` and read the verdict rather than judging by eye. |
+| `compare.mjs`'s `compare` fails on an address in `$D000`-`$DFFF` | It cannot — `compare.mjs` masks that whole range for its own same-binary job. If you are seeing this, you applied the rules by hand. Use `scripts/compare.mjs`. |
 | `compare-cross-binary.mjs`'s `cross` fails on an address in `$D000`-`$DFFF` | Expected — `compare-cross-binary.mjs` narrows the mask on purpose (see "Compare two different binaries" above). A failure here is a real finding, not a misapplied rule. |
 | `cross` refuses with "capture routes differ" | The two `--state` sidecars declare different `route` values. Re-capture both the same way — both `snapshot` or both `memory-read` — or pass the correct `--route`. |
 | `cross` refuses with "logical checkpoints differ" | The two `--state` sidecars declare different `checkpoint_name` values. Re-capture both at the same named checkpoint, or correct the sidecar. |
 | `compare` fails on `$FAD8` or `$FC51` only | Known and unexplained: RAM under KERNAL ROM, two addresses out of 8192. Record it with the capture rather than voiding a set that is otherwise clean. |
-| `--limit 0` printed nothing | Fixed 2026-08-04 — it now means unlimited. Re-pull the script if you see the old behaviour. |
-| An epoch-drift error appeared mid-capture | The machine restarted under you. Void the run; do not salvage the artifacts. The next call succeeding does not undo it. |
+| `--limit 0` printed nothing | Corrected 2026-08-04 — it now means unlimited. Re-pull the script if you see the old behaviour. |
+| An epoch-drift error appeared mid-capture | The machine restarted under you. Void the run. Do not salvage the artifacts. The next call succeeding does not undo it. |
 | The emulator looks dead | `vice-wedge-triage` — and enumerate your own armed checkpoints before concluding anything. |
 | `` `project-paths: could not locate the project root -- no `.git` found above ...` `` | No `.git` ancestor and no `C64RE_PROJECT_ROOT`. `git init` the project, or set the variable to its root. |
