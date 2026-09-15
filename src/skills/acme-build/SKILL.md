@@ -23,9 +23,9 @@ Options: `-o FILE` `--out-dir DIR` `-f FORMAT` `--setpc ADDR` `-DSYM=VAL`
 `-I DIR` `--no-report` `--json`.
 
 `-I DIR` is resolved **workspace-relative** to the project root the host
-broker was launched with — the same resolution `source`/`--out-dir` already
+broker was started with — the same resolution `source`/`--out-dir` already
 go through — before it ever reaches the assembler. An absolute or escaping
-`-I` directory is refused by the seam rather than passed to ACME; this is a
+`-I` directory is refused by the seam rather than passed to ACME. This is a
 documented contract change from earlier releases, when an absolute include
 reached the assembler unchecked.
 
@@ -96,7 +96,7 @@ Inspect the result with `od`:
 od -An -tx1 game.prg | head -2
 ```
 
-The first two bytes are the little-endian load address (`01 08` = `$0801`); code
+The first two bytes are the little-endian load address (`01 08` = `$0801`). Code
 follows.
 
 ## Writing source
@@ -183,7 +183,7 @@ The real-ACME byte-diff oracle is **test-only** — it lives in
 `src/mcp/vice/acme-verify.ts`, is exercised by `acme-verify.test.ts` (hard-failed
 in CI with `VICE_REQUIRE_ACME=1`), and is deliberately absent from the published
 package, so nothing on the runtime path can reach it. A clean `export-asm` run is
-therefore evidence that source was written and nothing more; it is not an
+therefore evidence that source was written and nothing more. It is not an
 assembler verdict. If you need to know the emitted source reassembles, assemble
 it yourself — that is what this skill's own build route is for.
 
@@ -191,7 +191,7 @@ it yourself — that is what this skill's own build route is for.
 `anno_read_region` and `anno_disassemble` render an explicit inclusive range out
 of the image on demand, capped at 4096 bytes per call and REFUSED by name above
 the cap rather than truncated. `c64-program-recon` documents that route and this
-history together; it is not restated there.
+history together. It is not restated there.
 
 ## Setup
 
@@ -249,7 +249,7 @@ grade is only worth anything if it says what was actually known when it was writ
 
 ## Troubleshooting
 
-| Symptom | Fix |
+| Symptom | Correct |
 |---|---|
 | `install the ACME cross assembler and put acme on PATH` | Install ACME. |
 | `for <...> includes, set $ACME to …` | `export ACME=<dir holding cbm/c64/vic.a>`. |
@@ -257,4 +257,4 @@ grade is only worth anything if it says what was actually known when it was writ
 | `Label name not in leftmost column` + `Syntax error` on a mnemonic | Add `!cpu 6510`. |
 | `Output file already chosen` | Remove `!to` from the source and keep `-o`. |
 | `Number does not fit in 8 bits` | Pass a value 0–255, or drop the `#` if you meant an address. |
-| `This tool cannot read binary files. The file appears to be a binary .a file.` | The file is fine — ACME source is plain text; the agent's Read tool refuses the `.a` extension regardless of content, and Edit needs a prior successful Read. Scaffold and write source as `.asm` instead — the driver accepts `.a`/`.asm`/`.s`, all three assemble byte-identically (verified both directions in this container, 2026-08-04). To read an existing `.a` file, use `sed -n '1,60p' file.a`. |
+| `This tool cannot read binary files. The file appears to be a binary .a file.` | The file is fine. ACME source is plain text. The agent's Read tool refuses the `.a` extension regardless of content. Edit needs a prior successful Read. Scaffold and write source as `.asm` instead — the driver accepts `.a`/`.asm`/`.s`, all three assemble byte-identically (verified both directions in this container, 2026-08-04). To read an existing `.a` file, use `sed -n '1,60p' file.a`. |
