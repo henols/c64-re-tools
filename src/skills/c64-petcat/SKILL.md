@@ -14,7 +14,7 @@ S=src/skills/c64-petcat/scripts/petcat.mjs   # from the repo root
 node $S decode --image path/to/program.prg   # detokenize + resolve the SYS handover
 ```
 
-The script wraps `petcat` and nothing else. `--image` is required; `--out-dir`
+The script wraps `petcat` and nothing else. `--image` is required. `--out-dir`
 is optional, defaulting to the image's own directory, exactly like
 `acme-build`'s own `--out-dir` default. Both are resolved
 **workspace-relative** to the smallest ancestor directory containing both,
@@ -70,12 +70,12 @@ posture `acme-build` already takes for its own assembler target.
 A file `petcat` does not recognise as a BASIC program at all — including a
 missing file — is reported as `{"ok":false,"message":"..."}` with a
 non-zero exit code, never a success envelope carrying an empty or guessed
-verdict. `petcat` itself exits `0` even on garbage input; the seam's own
+verdict. `petcat` itself exits `0` even on garbage input. The seam's own
 classifier, not the exit code, is what decides success here.
 
 ## What this skill does NOT do
 
-- **No direct binary spawn.** `petcat` runs host-side; this script only ever
+- **No direct binary spawn.** `petcat` runs host-side. This script only ever
   constructs a typed request and reads the produced listing file back off
   the shared workspace tree — the host-tool execution seam is the only
   route.
