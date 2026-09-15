@@ -170,7 +170,7 @@ what the others leave out:
 | [C64io.txt](https://www.zimmers.net/anonftp/pub/cbm/maps/C64io.txt) | VIC/SID/CIA registers broken down per bit |
 
 The built table is committed alongside the script, so `lookup` and `annotate` need
-only Node. Rebuild when a source publishes a correction; `lookup`'s `<src>` tags
+only Node. Rebuild when a source publishes a correction. `lookup`'s `<src>` tags
 show which table any given claim came from.
 
 `memmap` overwrites the committed, git-tracked `memmap.json` (driver.mjs:270 —
@@ -191,8 +191,8 @@ tree, and review the diff before you commit it.
 `memmap.json`'s structured `bits` entries are the source of the curated register bit-name table used
 to generate program-specific enums for this project's annotation store: register
 writes disassemble as `lda #D011_YSCROLL3_ROW25_SCREENON_TEXT` instead of a bare `#$1b`. The
-generator is `src/mcp/vice/anno-regbits-gen.ts`; its committed output is
-`src/mcp/vice/anno-regbits.json`; and that output is **digest-pinned** to `memmap.json` — a
+generator is `src/mcp/vice/anno-regbits-gen.ts`. Its committed output is
+`src/mcp/vice/anno-regbits.json`. That output is **digest-pinned** to `memmap.json`. A
 `node anno-regbits-gen.ts` run compares its own fresh build against the committed file, and CI fails
 if `memmap.json` changed without a re-run.
 
@@ -208,7 +208,7 @@ skill, not the generator.
 table above only builds `anno-regbits.json`. Turning a specific program's register *writes* into
 named enum variants was the `gen-enums` CLI verb, and **that verb is WITHDRAWN from this surface, and
 no phase currently owns its return.** This notice previously forecast that it would come
-back as a rebuild over the annotation store alongside the ACME export route; the ACME export route
+back as a rebuild over the annotation store alongside the ACME export route. The ACME export route
 did come back on 2026-08-31, but the phase that rebuilt it covered that route only — no requirement
 and no success criterion of it mentioned `gen-enums`. That forecast is corrected here rather than
 deleted. Do not invoke the verb — it does not exist, and the invocation fails with an unknown-verb
@@ -229,7 +229,7 @@ manual where `gen-enums` was bulk, but it writes exactly the same rows into the 
 Two deeper jobs feed the annotate/lookup job above, rather than standing apart from it: knowing
 what a whole region actually is (code, or one of eight kinds of data) before it can be annotated
 at all, and knowing what one of a program's own addresses represents when no published table can
-say. Both exist to serve a documented listing; neither is invoked as a job on its own.
+say. Both exist to serve a documented listing. Neither is invoked as a job on its own.
 
 ### Classifying every region of an annotation project
 
@@ -242,7 +242,7 @@ data?**
 answers the *live* code-versus-data question — its step 5 is "what the PC
 actually visits across full coverage", and an execution trace beats every
 static heuristic on this page. Run the live pass when you have a running
-machine; run this one when all you have is a file, and treat a later trace as
+machine. Run this one when all you have is a file, and treat a later trace as
 the thing that overrules it.
 
 When a binary is first loaded, the auto-analyzer traces reachable code from the
@@ -279,7 +279,7 @@ four hundred lines of fiction.
 #### The order of the passes
 
 Work the Undefined blocks in four passes, in this order. Do not interleave
-them; each pass makes the next one cheaper.
+them. Each pass makes the next one cheaper.
 
 1. **Provably-reachable code** — read from the entry point of each region that
    meets the proof bar above with `anno_disassemble`, then type the range you
@@ -291,7 +291,7 @@ them; each pass makes the next one cheaper.
 2. **Text** — PETSCII and screencode strings.
 3. **Tables** — byte, word, address and split (lo/hi, hi/lo) tables.
 4. **Whatever is left** — decide data, or leave it Undefined for a human.
-   **Never** speculatively disassemble in this pass; by definition nothing here
+   **Never** speculatively disassemble in this pass. By definition nothing here
    met the proof bar.
 
 #### Scope, and reading a region
@@ -309,7 +309,7 @@ them; each pass makes the next one cheaper.
      data** — they are valid instructions. The flag is a human's hint, not a
      guarantee: some programs use them with the flag false.
 2. `anno_get_blocks` to see what is already classified, and focus on the
-   Undefined entries. `max_results` is REQUIRED with no default; pass a ceiling
+   Undefined entries. `max_results` is REQUIRED with no default. Pass a ceiling
    above the range count you expect and compare the returned count against it.
 3. Read each candidate region twice, through `anno_read_region` (which names
    both the `store` and the `image`): `view:
@@ -319,7 +319,7 @@ them; each pass makes the next one cheaper.
    (`ANNO_READ_REGION_MAX_BYTES`), and a request above the cap is refused by
    name rather than truncated — so walk a large binary in consecutive ranges.
    Chunks of **256–512 bytes** are the practical working size for
-   classification; a 4096-byte hexdump is more than can be read carefully in
+   classification. A 4096-byte hexdump is more than can be read carefully in
    one pass.
 
 #### Applying the classification
@@ -337,9 +337,9 @@ them; each pass makes the next one cheaper.
 - **A wrong classification is not a disaster and does not need undoing.**
   `anno_set_data_type` is idempotent over a range: set the correct type again
   over the same range and the previous one is gone, and an identical repeat
-  succeeds reporting `changed: false`. (Upstream reaches for an undo call here;
-  this project does not expose one, and does not need to.)
-- **Read the disclosures on a successful retype; they are not errors and they
+  succeeds reporting `changed: false`. (Upstream reaches for an undo call here.
+  This project does not expose one, and does not need to.)
+- **Read the disclosures on a successful retype. They are not errors and they
   are never dropped.** `contradictedComments` names comments whose recorded
   confidence now contradicts the type you just applied, and
   `reinterpretedSplitTables` names every split table the write FRAGMENTED, with
@@ -350,7 +350,7 @@ them; each pass makes the next one cheaper.
 - A split layout REFUSES an odd byte count — the low half and the high half must
   be the same length.
 - Re-read `anno_get_blocks` after each batch to confirm what actually landed.
-  `max_results` is REQUIRED on that read and has no default; the true match
+  `max_results` is REQUIRED on that read and has no default. The true match
   count is returned beside the list.
 
 Example of a valid data-only batch, then the code regions separately:
@@ -383,17 +383,17 @@ then: anno_get_blocks max_results=500        # refresh
 
 #### Recognising each kind
 
-**Byte data** — regular patterns that form no valid instruction sequence;
-addressed by `LDA addr,X` / `LDA addr,Y` table lookups; sprite data in 63-byte
-(padded to 64) units, usually grouped; bitmap data in 8-byte character cells;
-colour data confined to `$00`–`$0F`; or random-looking bytes between two code
+**Byte data** — regular patterns that form no valid instruction sequence.
+Addressed by `LDA addr,X` / `LDA addr,Y` table lookups. Sprite data in 63-byte
+(padded to 64) units, usually grouped. Bitmap data in 8-byte character cells.
+Colour data confined to `$00`–`$0F`. Or random-looking bytes between two code
 blocks whose disassembly is nonsense.
 
 **Word data** — byte pairs forming meaningful 16-bit values (screen addresses,
-timer values); loaded low-then-high by adjacent `LDA addr` / `LDA addr+1`.
+timer values). Loaded low-then-high by adjacent `LDA addr` / `LDA addr+1`.
 
 **Address tables** — byte pairs that read as little-endian addresses landing
-*inside* the binary; reached by `JMP ($addr)` or indexed indirect reads. Jump
+*inside* the binary. Reached by `JMP ($addr)` or indexed indirect reads. Jump
 tables, dispatch tables and vector lists all live here.
 
 **Split lo/hi (or hi/lo) tables** — two equal halves, one of plausible low
@@ -404,25 +404,25 @@ on the 6502. **The total byte count must be even and the halves equal** — an
 odd count means the boundary is in the wrong place.
 
 **PETSCII text** — bytes in `$20`–`$7E` (unshifted) or `$C0`–`$DF` (shifted),
-often recognisably English since PETSCII shares `$20`–`$5F` with ASCII;
-terminated by `$00`, `$0D`, or a high-bit sentinel; reached by `$FFD2` (CHROUT)
+often recognisably English since PETSCII shares `$20`–`$5F` with ASCII.
+Terminated by `$00`, `$0D`, or a high-bit sentinel. Reached by `$FFD2` (CHROUT)
 or `$AB1E` (BASIC STROUT). `GAME OVER`, `PRESS FIRE`, menus, credits.
 
-**Screencode text** — bytes in `$00`–`$3F` where `$00` is `@` and `$01` is `A`;
-copied directly to `$0400`–`$07E7`. `LDA data,X / STA $0400,X` is the
+**Screencode text** — bytes in `$00`–`$3F` where `$00` is `@` and `$01` is `A`.
+Copied directly to `$0400`–`$07E7`. `LDA data,X / STA $0400,X` is the
 give-away. A full screen dump is exactly 1000 bytes.
 
 **External file** — a large contiguous non-code block matching a known format:
 a `PSID`/`RSID` header, a 2048-byte charset (256 chars × 8 bytes), sprite data
 in multiples of 64, or a bitmap. Export it rather than annotate it.
 
-**PETSCII is not screencode.** If it is copied to `$0400`, it is screencode; if
+**PETSCII is not screencode.** If it is copied to `$0400`, it is screencode. If
 it is passed to CHROUT, it is PETSCII. Getting this backwards produces text
 that renders as garbage in exactly one of the two places.
 
 #### The adjacent-table limitation, and how it was closed
 
-**Dated limitation, recorded 2026-08-24; CLOSED 2026-08-29 when the store
+**Dated limitation, recorded 2026-08-24. CLOSED 2026-08-29 when the store
 changed underneath it.** The old store auto-merged two adjacent regions of the
 *same* type into one block, so two byte tables side by side — or the two halves
 of a split table sitting next to each other — lost their boundary on read, and
@@ -443,7 +443,7 @@ So the working rules are now the ordinary ones:
 - **Do** still record the boundary in the annotations as well — an
   `anno_set_label_name` at the start of the second table and a line comment on
   both naming the extent you determined. A name and an evidence line survive a
-  later retype; a row boundary does not.
+  later retype. A row boundary does not.
 - **Do not** carry the old over-merge caveat into a report taken from this
   store. It was true of the retired one and is not true here.
 
@@ -471,7 +471,7 @@ Then report, and mean it:
 
 | Symptom | What it actually is |
 |---|---|
-| A region disassembles beautifully but has no incoming reference | Data. Decodability is not evidence; leave it Undefined. |
+| A region disassembles beautifully but has no incoming reference | Data. Decodability is not evidence. Leave it Undefined. |
 | Disassembly full of impossible branches or `BRK` (`$00`) floods | Data misread as code. |
 | Odd-looking instructions, but real `JSR`/`JMP` cross-references land here | Probably code using undocumented opcodes. Check the `may_contain_undocumented_opcodes` hint. |
 | A split table's addresses recombine to nonsense | The half boundary is misplaced, or the table is hi/lo rather than lo/hi. |
@@ -540,14 +540,14 @@ field of auto-generated offsets.
 
 **An external ROM or system routine?** An `e_` prefix, or an address in KERNAL
 space (`$E000`–`$FFFF`), or a standard shadow vector. `lookup` gives the
-routine's published name; rename to the conventional form — `$FFD2` becomes
+routine's published name. Rename to the conventional form — `$FFD2` becomes
 `KERNAL_CHROUT`, `$EA31` becomes `SYSTEM_IRQ_HANDLER`.
 
 **A 16-bit pointer?** Below `$0100`, and used with indirect-indexed `($xx),Y`
 or indexed-indirect `($xx,X)`. Rename to `ptr_`/`vec_` form and comment what it
 points *to*, which is the thing the name cannot carry.
 
-**A flag or bitmask?** Only ever `$00`/`$01` or `$00`/`$FF`; tested with `BIT`
+**A flag or bitmask?** Only ever `$00`/`$01` or `$00`/`$FF`. Tested with `BIT`
 or `LDA`/`BEQ`. Name it as a predicate — `is_active`, `has_collided`. When the
 individual bits carry separate meanings, that is an enum: define it with
 `anno_create_project_enum` (`$01 = ACTIVE`, `$02 = COLLIDED`, `$04 =
@@ -559,8 +559,8 @@ with `CPX`/`CPY`/`CMP`. `loop_idx`, `sprite_count`, `delay_timer`.
 
 **A state variable?** Several distinct values, often feeding a dispatch
 (`ASL` / `TAX` / `JMP (table,X)`). Name it `game_state` or `current_mode` — and
-these are the best enum candidates of all. Look for an existing enum first;
-define one (`0 = INIT`, `1 = TITLE`, `2 = GAMEPLAY`, `3 = GAME_OVER`) with a
+these are the best enum candidates of all. Look for an existing enum first.
+Define one (`0 = INIT`, `1 = TITLE`, `2 = GAMEPLAY`, `3 = GAME_OVER`) with a
 real `description` if none matches, then apply it to every instruction reading
 or writing the variable.
 
@@ -621,10 +621,10 @@ still readable even though the store cannot format it.
 
 | Symptom | Fix |
 |---|---|
-| Comments land on regions too wide to be useful | `--max-span 2`; the default is 4096 bytes. |
-| A `JSR` or branch target got no comment at all | Flow instructions are capped at 2 bytes regardless of `--max-span`; `lookup` the target directly for the ROM routine name. |
+| Comments land on regions too wide to be useful | `--max-span 2`. The default is 4096 bytes. |
+| A `JSR` or branch target got no comment at all | Flow instructions are capped at 2 bytes regardless of `--max-span`. `lookup` the target directly for the ROM routine name. |
 | The output is mostly header | `--no-header`. |
-| `lookup` printed only wide region lines and no specific name | Nothing in the four tables names that address; expected for the game's own code — take the region and name the address from what the code does with it. |
-| `lookup` printed `(not in memory map)` | Nothing covers it; check the address parsed as intended, since a bare `1234` reads as decimal. |
-| `no memmap.json; run: node driver.mjs memmap` | Restore the committed table with `git checkout` rather than rebuilding; the rebuild needs network and overwrites tracked data. |
-| `memmap` rewrote `memmap.json` and the diff is large or negative | A source was unreachable or changed; `git checkout` the file. |
+| `lookup` printed only wide region lines and no specific name | Nothing in the four tables names that address. This answer is normal for the game's own code. Take the region and name the address from what the code does with it. |
+| `lookup` printed `(not in memory map)` | Nothing covers it. Check the address parsed as intended, since a bare `1234` reads as decimal. |
+| `no memmap.json; run: node driver.mjs memmap` | Restore the committed table with `git checkout` rather than rebuilding. The rebuild needs network and overwrites tracked data. |
+| `memmap` rewrote `memmap.json` and the diff is large or negative | A source was unreachable or changed. `git checkout` the file. |
