@@ -1,0 +1,416 @@
+{
+  "route": "snapshot",
+  "checkpoint_name": "hazard_raster_entry",
+  "checkpoint_address": 4239,
+  "registers": {
+    "$D000": 100,
+    "$D001": 100,
+    "$D002": 0,
+    "$D003": 0,
+    "$D004": 0,
+    "$D005": 0,
+    "$D006": 0,
+    "$D007": 0,
+    "$D008": 0,
+    "$D009": 0,
+    "$D00A": 0,
+    "$D00B": 0,
+    "$D00C": 0,
+    "$D00D": 0,
+    "$D00E": 0,
+    "$D00F": 0,
+    "$D010": 0,
+    "$D011": 27,
+    "$D012": 2,
+    "$D013": 0,
+    "$D014": 0,
+    "$D015": 1,
+    "$D016": 197,
+    "$D017": 0,
+    "$D018": 21,
+    "$D019": 113,
+    "$D01A": 240,
+    "$D01B": 0,
+    "$D01C": 0,
+    "$D01D": 0,
+    "$D01E": 0,
+    "$D01F": 0,
+    "$D020": 242,
+    "$D021": 240,
+    "$D022": 240,
+    "$D023": 240,
+    "$D024": 240,
+    "$D025": 240,
+    "$D026": 240,
+    "$D027": 240,
+    "$D028": 240,
+    "$D029": 240,
+    "$D02A": 240,
+    "$D02B": 240,
+    "$D02C": 240,
+    "$D02D": 240,
+    "$D02E": 240,
+    "$0001": 55,
+    "$DD00": 63
+  },
+  "subject_prg": "/home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice/fixtures/hazard-subject/hazard-subject.prg",
+  "subject_prg_sha256": "89846d489f83f4d9fd092f214343c5566433655b836d20625e7123682b8c6828",
+  "entry_address": 2061,
+  "image_sha256": "0e3f47d64732a67b0a01a6d59aed8de4f62fe19b0edfdc00f7543ddd7e2dc2f5",
+  "snapshot_path": "/home/henrik/dev/henrik/git/c64-re-tools/.c64-re-tools/snapshots/phase50-original-a.vsf",
+  "vicii_raw": {
+    "base": 53248,
+    "end": 53294,
+    "length": 47,
+    "bank": {
+      "id": 3,
+      "name": "io"
+    },
+    "registersHex": "64640000000000000000000000000000001b02000001c5001571f00000000000f2f0f0f0f0f0f0f0f0f0f0f0f0f0f0",
+    "spriteX": [
+      100,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "spriteY": [
+      100,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "spriteEnabled": [
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ],
+    "spriteExpandY": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ],
+    "spritePriorityBehindBackground": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ],
+    "spriteMulticolour": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ],
+    "spriteExpandX": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ],
+    "spriteColour": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "control1": {
+      "raw": 27,
+      "yScroll": 3,
+      "rows25": true,
+      "screenOn": true,
+      "bitmapMode": false,
+      "extendedBackgroundMode": false,
+      "rasterMsb": false
+    },
+    "control2": {
+      "raw": 197,
+      "xScroll": 5,
+      "columns40": false,
+      "multicolourMode": false
+    },
+    "rasterLine": 2,
+    "lightPenX": 0,
+    "lightPenY": 0,
+    "memorySetup": {
+      "raw": 21,
+      "screenOffset": 1024,
+      "charsetOffset": 4096,
+      "bitmapOffset": 0,
+      "relativeTo": "vic bank"
+    },
+    "interruptStatus": {
+      "raw": 113,
+      "rasterIrq": true,
+      "spriteBackgroundCollisionIrq": false,
+      "spriteSpriteCollisionIrq": false,
+      "lightPenIrq": false,
+      "anyIrqPending": false
+    },
+    "interruptEnable": {
+      "raw": 240,
+      "rasterIrqEnabled": false,
+      "spriteBackgroundCollisionIrqEnabled": false,
+      "spriteSpriteCollisionIrqEnabled": false,
+      "lightPenIrqEnabled": false
+    },
+    "spriteSpriteCollision": {
+      "raw": 0,
+      "sprites": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ]
+    },
+    "spriteBackgroundCollision": {
+      "raw": 0,
+      "sprites": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ]
+    },
+    "borderColour": 2,
+    "backgroundColour": 0,
+    "extraBackgroundColour1": 0,
+    "extraBackgroundColour2": 0,
+    "extraBackgroundColour3": 0,
+    "spriteMulticolour1": 0,
+    "spriteMulticolour2": 0,
+    "unavailable": {
+      "rasterIrqLine": {
+        "available": false,
+        "reason": "the raster-compare latch written to $D012 plus $D011 bit 7 -- reading those addresses returns the CURRENT raster line, not the compare value, and the binary monitor has no VIC-II command that exposes the latch. The current raster line IS available as this answer's own rasterLine."
+      },
+      "videoCounter": {
+        "available": false,
+        "reason": "the VIC-II's internal VC/VCBASE video matrix counter -- not exposed anywhere in the memory-mapped register map."
+      },
+      "rowCounter": {
+        "available": false,
+        "reason": "the VIC-II's internal RC character-row counter -- not exposed anywhere in the memory-mapped register map."
+      },
+      "badLineCondition": {
+        "available": false,
+        "reason": "the internal bad-line flip-flop that gates VIC-II DMA steals -- not exposed anywhere in the memory-mapped register map."
+      },
+      "borderFlipFlops": {
+        "available": false,
+        "reason": "the internal vertical and horizontal border flip-flops that gate the border unit -- not exposed anywhere in the memory-mapped register map."
+      },
+      "spriteDmaState": {
+        "available": false,
+        "reason": "the internal per-sprite DMA / MC / MCBASE sequencer state -- not exposed anywhere in the memory-mapped register map."
+      }
+    },
+    "runState": "stopped"
+  },
+  "sprites": {
+    "vicBank": 0,
+    "vicBankBase": 0,
+    "cia2PortARaw": 63,
+    "memorySetupRaw": 21,
+    "screenBase": 1024,
+    "pointerTableAddress": 2040,
+    "spriteMulticolour1": 0,
+    "spriteMulticolour2": 0,
+    "sprites": [
+      {
+        "index": 0,
+        "enabled": true,
+        "x": 100,
+        "y": 100,
+        "colour": 0,
+        "multicolour": false,
+        "expandX": false,
+        "expandY": false,
+        "priorityBehindBackground": false,
+        "pointer": 65,
+        "dataAddress": 4160
+      },
+      {
+        "index": 1,
+        "enabled": false,
+        "x": 0,
+        "y": 0,
+        "colour": 0,
+        "multicolour": false,
+        "expandX": false,
+        "expandY": false,
+        "priorityBehindBackground": false,
+        "pointer": 0,
+        "dataAddress": 0
+      },
+      {
+        "index": 2,
+        "enabled": false,
+        "x": 0,
+        "y": 0,
+        "colour": 0,
+        "multicolour": false,
+        "expandX": false,
+        "expandY": false,
+        "priorityBehindBackground": false,
+        "pointer": 255,
+        "dataAddress": 16320
+      },
+      {
+        "index": 3,
+        "enabled": false,
+        "x": 0,
+        "y": 0,
+        "colour": 0,
+        "multicolour": false,
+        "expandX": false,
+        "expandY": false,
+        "priorityBehindBackground": false,
+        "pointer": 255,
+        "dataAddress": 16320
+      },
+      {
+        "index": 4,
+        "enabled": false,
+        "x": 0,
+        "y": 0,
+        "colour": 0,
+        "multicolour": false,
+        "expandX": false,
+        "expandY": false,
+        "priorityBehindBackground": false,
+        "pointer": 255,
+        "dataAddress": 16320
+      },
+      {
+        "index": 5,
+        "enabled": false,
+        "x": 0,
+        "y": 0,
+        "colour": 0,
+        "multicolour": false,
+        "expandX": false,
+        "expandY": false,
+        "priorityBehindBackground": false,
+        "pointer": 255,
+        "dataAddress": 16320
+      },
+      {
+        "index": 6,
+        "enabled": false,
+        "x": 0,
+        "y": 0,
+        "colour": 0,
+        "multicolour": false,
+        "expandX": false,
+        "expandY": false,
+        "priorityBehindBackground": false,
+        "pointer": 0,
+        "dataAddress": 0
+      },
+      {
+        "index": 7,
+        "enabled": false,
+        "x": 0,
+        "y": 0,
+        "colour": 0,
+        "multicolour": false,
+        "expandX": false,
+        "expandY": false,
+        "priorityBehindBackground": false,
+        "pointer": 0,
+        "dataAddress": 0
+      }
+    ],
+    "count": 8,
+    "registerBank": {
+      "id": 3,
+      "name": "io"
+    },
+    "dataBank": {
+      "id": 1,
+      "name": "ram"
+    },
+    "notes": [
+      "sprite 0: address 0x1040 falls in VIC bank 0's character-ROM window ($1000-$1FFF relative to the bank base) -- the VIC-II chip sees character ROM there, while MEM_GET returns the RAM underneath it, so the bytes reported may not be what the chip is fetching"
+    ],
+    "runState": "stopped"
+  },
+  "cpu": {
+    "registers": {
+      "PC": 4239,
+      "A": 0,
+      "X": 234,
+      "Y": 0,
+      "SP": 251,
+      "00": 47,
+      "01": 55,
+      "FL": 7,
+      "LIN": 2,
+      "CYC": 9
+    },
+    "unknownIds": [],
+    "memspace": "main",
+    "runState": "stopped"
+  },
+  "port01_raw": 55,
+  "dd00_raw": 63,
+  "d018_raw": 21,
+  "sprite_pointers": [
+    65,
+    0,
+    255,
+    255,
+    255,
+    255,
+    0,
+    0
+  ],
+  "checkpoint_list_after_delete": {
+    "checkpoints": [],
+    "totalReported": 0,
+    "entriesReceived": 0,
+    "runState": "stopped"
+  }
+}
