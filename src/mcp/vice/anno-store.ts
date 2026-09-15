@@ -12,9 +12,7 @@
 // surface can change under a patch release, and it emits an
 // `ExperimentalWarning` on first load. A dependency with that profile earns a
 // blast radius of exactly one file -- and, more to the point, a CONFINEMENT
-// THAT IS ASSERTED rather than promised. `anno-seam.test.ts` scans the shipped
-// module set and fails if any second module names the specifier, through any of
-// its four working access routes.
+// THAT IS ASSERTED rather than promised.
 //
 // Three measured facts shaped the code below, and each one is here because the
 // obvious reading of SQLite's behaviour is wrong:
@@ -67,8 +65,6 @@
 //      methods on `DatabaseSync.prototype`, and not through the constructor
 //      option that permits them. Both exist, and either one turns this
 //      module's caller-supplied FILE ARGUMENT into arbitrary code loading.
-//      `anno-seam.test.ts` asserts all three names are absent from this
-//      module's code.
 //   2. NEVER write a double-quoted SQL string literal. `node:sqlite` disables
 //      the double-quoted-string misfeature by default, so
 //      `insert into t values ("a")` throws `no such column: "a"` rather than
@@ -447,8 +443,7 @@ function fsyncPath(path: string): void {
  * itself (a snapshot image path, a staging path, or the live store path
  * `revertTo` already resolved), where there is no caller argument left to
  * confine. Every such site below carries a one-line comment naming the
- * module-derived value that produced its path, and `anno-seam.test.ts` pins
- * that no other shipped module names the option at all.
+ * module-derived value that produced its path.
  *
  * When `workspaceRoot` is supplied the path is confined to it first. The
  * fresh-versus-existing decision is made with `existsSync` BEFORE the
@@ -741,10 +736,7 @@ export const NO_RETAINED_REVISION = -1;
  * writer's in-flight snapshot -- the exact loss this reconciliation exists to
  * prevent, committed by the repair itself.
  *
- * A frozen `RegExp` literal is NOT module-level mutable state: the scan in
- * `anno-seam.test.ts` matches `new Map|Set|WeakMap|WeakSet` and array/object
- * initialisers, so this constant sits outside it by construction rather than
- * by exemption.
+ * A frozen `RegExp` literal is NOT module-level mutable state.
  */
 const SNAPSHOT_FILE_PATTERN = /^r(\d+)\.db$/;
 
@@ -1189,10 +1181,7 @@ export function reconcileSnapshotRing(handle: AnnoStoreHandle): { droppedFiles: 
 
     // STEP 4. Close the sweep's own transaction through THE module's single
     // commit site. It must be `commitTransaction` and never a second
-    // `handle.db.exec` of the bare word: `anno-seam.test.ts` asserts this module
-    // contains exactly ONE such statement, because the durability proof's planted
-    // violation must have a single site -- a second literal would split that
-    // planting and let half of it survive.
+    // `handle.db.exec` of the bare word.
     commitTransaction(handle.db);
   } catch {
     // ROLLED BACK INSIDE ITS OWN SWALLOWING `try`: there is nothing useful to
@@ -1373,9 +1362,6 @@ export function pruneSnapshots(handle: AnnoStoreHandle): boolean {
  * has to drive the IDENTICAL staging code the production writer uses. A
  * hand-copied variant inside a test can drift out of agreement with the real
  * one, and a proof that agrees with a copy proves nothing about the original.
- * `anno-seam.test.ts` asserts that no shipped module other than this one so
- * much as names it -- the same bound `applyWriteWithoutCommit` carries, by the
- * same mechanism rather than a second one.
  *
  * THE STAGING SUFFIX IS DELIBERATELY OUTSIDE `SNAPSHOT_FILE_PATTERN`. That
  * pattern is anchored on `r<digits>.db`, and `reconcileSnapshotRing`'s
@@ -1823,7 +1809,7 @@ function runWriteSequence<T>(
           // `rolledBack` is carried in `data` as well as in the prose so a caller
           // can branch on the fact instead of substring-matching a message.
           // The wording here is FREE. It used to be constrained: the
-          // single-commit-site control in `anno-seam.test.ts` counted the WORD
+          // single-commit-site control counted the WORD
           // `commit` over this module's stripped source, so a `step` value
           // reading "commit ..." reddened a control in a different file. A later
           // revision replaced that count with a match on `exec()` calls carrying a bare
@@ -1893,8 +1879,7 @@ export function applyWrite<T>(
  * real one.
  *
  * Its only caller is a spawned, test-only helper that is deliberately absent
- * from `package.json`'s `files[]`, and `anno-seam.test.ts` asserts that no
- * shipped module other than this one so much as names it.
+ * from `package.json`'s `files[]`.
  */
 export function applyWriteWithoutCommit<T>(
   handle: AnnoStoreHandle,
