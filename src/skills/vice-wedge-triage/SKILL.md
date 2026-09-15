@@ -5,8 +5,8 @@ description: Decide whether a VICE emulator that has stopped responding is genui
 
 # Triage a VICE that stopped moving
 
-**Five states look identical from outside, and the intuitive fix destroys a healthy machine in
-more than one of them.** Work the order below. Do not start with a remedy.
+**Five states look identical from outside, and the intuitive correction destroys a healthy machine
+in more than one of them.** Work the order below. Do not start with a remedy.
 
 | State | Cheap tell | Safe action |
 |---|---|---|
@@ -24,10 +24,10 @@ mcp__plugin_c64-re-tools_vice__vice_diagnose        # one call, no arguments, an
 `vice_diagnose`'s verdict vocabulary is `restarted`, `checkpoint_trap`, `wedged`,
 `monitor_held_elsewhere`, `live`. The binary monitor services exactly one client, so a second
 connection sits unserviced in the backlog with no reply and no EOF — a state that looks exactly
-like a wedge unless it is named, hence `monitor_held_elsewhere`. Read the tool's own schema for
-the exact contract: `tools/list`'s advertised schema is the real manifest entry. `vice_diagnose`
-can also answer a `diagnosis_unavailable` outcome when no verdict could be established at all —
-that is **not** a sixth verdict; see the table below.
+like a wedge unless `vice_diagnose` names it as `monitor_held_elsewhere`. Read the tool's own
+schema for the exact contract: `tools/list`'s advertised schema is the real manifest entry.
+`vice_diagnose` can also answer a `diagnosis_unavailable` outcome when no verdict could be
+established at all. That is **not** a sixth verdict. See the table below.
 
 ## The order
 
@@ -38,15 +38,15 @@ that is **not** a sixth verdict; see the table below.
    below. A verdict is not a suggestion to try things.
 3. **`diagnose` leaves the machine paused** when it ran a bracket. Resuming is your own next call.
    Do not treat "still paused afterwards" as a symptom. Every established verdict also reports
-   `machinePaused` plus `machinePausedSource` (07-15), so you can tell an actual observation from
-   an inference: `observed` means a wire `stopped`/`resumed`/`jam` event directly reported the
-   state; `structural` means it was inferred from the fact that every stock read halts the machine
-   not from a specific event; `no_session` means no session was ever obtained (e.g. the
-   `monitor_held_elsewhere` verdict, or a `diagnosis_unavailable` acquisition failure) so no claim
-   about pause state is being made at all.
+   `machinePaused` plus `machinePausedSource` (07-15). These fields let you tell an actual
+   observation from an inference. `observed` means a wire `stopped`/`resumed`/`jam` event directly
+   reported the state. `structural` means the diagnosis inferred the state. It used the fact that
+   every stock read stops the machine, not a specific event. `no_session` means no session was
+   ever obtained — for example, the `monitor_held_elsewhere` verdict, or a `diagnosis_unavailable`
+   acquisition failure. In that case, the answer makes no claim about pause state at all.
 4. **If the verdict is `wedged`, capture evidence before recovering.** `vice_recycle` requires a
-   `reason`, and that string is written verbatim into a permanent incident record under
-   `.c64-re-tools/incidents/` **before anything is killed**. That record is the evidence
+   `reason`. It writes that string verbatim into a permanent incident record under
+   `.c64-re-tools/incidents/` **before the recycle kills anything**. That record is the evidence
    capture — there is no separate ritual to perform, and a lazy `reason` is a lost incident.
 5. **Recycling changes the restart epoch.** Any run in flight is void. Resume from the last
    recorded milestone snapshot, never from where the wedge happened.
@@ -77,7 +77,7 @@ rather than a sixth verdict:
 | `-jamaction 2` (Monitor) | `wedged` | The machine stopped, so both brackets read zero advance | **`vice_machine_reset`, not `vice_recycle`.** Recycling destroys an instance a reset recovers — the same trap as `checkpoint_trap` |
 | default (continue) | `live` | The emulator keeps burning cycles refetching the same opcode, so both brackets **advance** | **`vice_machine_reset`.** "Cycles advanced" is true and irrelevant: the machine will never execute another instruction |
 
-**`jamObserved: true` is never a reason to recycle.** A jam is recovered by a reset; the instance
+**`jamObserved: true` is never a reason to recycle.** A reset recovers a jam. The instance
 itself is healthy. Treat a `live` verdict with `jamObserved: true` as a false negative on liveness,
 and a `wedged` verdict with it as a false positive on wedging.
 
@@ -87,18 +87,18 @@ Every `vice_diagnose` verdict carries `evidence.channelContention` (always prese
 omitted). `held` is `true` when the **other** monitor channel — the binary monitor or the
 `-remotemonitor` text channel, whichever this call is not — currently holds this instance's halt
 authority. When `held` is `true` the verdict is always `live`, with `evidence.bracketsRun: 0` —
-meaning **no cycle bracket was run at all**, not that a bracket ran and read zero. The four detail
+meaning **no cycle bracket ran at all**, not that a bracket ran and read zero. The four detail
 fields name the holder: `channel` (`"binary"` or `"text"`), `operation`, `grantId`, and `heldMs` (a
 non-negative whole-millisecond duration) — all four are `null` when `held` is `false`.
 
-**`channelContention.held: true` is never a reason to call `vice_recycle`** — the instance is
-healthy and is answering; the remedy is to wait for the other channel's operation to finish, or to
+**`channelContention.held: true` is never a reason to call `vice_recycle`.** The instance is
+healthy and is answering. The remedy is to wait for the other channel's operation to finish, or to
 find its holder, exactly as the opening table's contention row says.
 
-Deliberate asymmetry with `jamObserved`, worth stating so a later reader does not "fix" it:
+Deliberate asymmetry with `jamObserved`, worth stating so a later reader does not "correct" it:
 `jamObserved` qualifies `wedged` in this prose above and still lets that verdict return — the caller
-has to read the evidence and choose not to recycle. `channelContention` is guarded in **code**, in
-`vice_diagnose`'s own handler, and makes `wedged` structurally unreachable while a foreign hold is
+has to read the evidence and choose not to recycle. `vice_diagnose`'s own handler guards
+`channelContention` in **code** and makes `wedged` structurally unreachable while a foreign hold is
 live — the only route to `wedged` is through a liveness bracket, and a bracket only runs when this
 instance's own diagnose call actually held the lock. The two are different on purpose: the cost of
 being wrong about contention is a destructive recycle of a healthy instance, not merely a
@@ -133,10 +133,10 @@ the machine frozen, in sequence. Deleting the checkpoint is not guaranteed to un
 If a bracket still reads zero after the checkpoint is gone, the verdict becomes `wedged` and
 recycle is the fallback after all.
 
-**A stalled session cannot be repaired from inside.** The instance is granted on the session's
+**A stalled session cannot be corrected from inside.** The instance is granted on the session's
 first forwarded call and is that session's for its whole life, so a subagent inherits the same
-stalled instance. Before `vice_recycle` existed, the only exit was abandoning the session; that is
-still the exit if recycle itself cannot land.
+stalled instance. Before `vice_recycle` existed, the only exit was abandoning the session. That
+is still the exit if recycle itself cannot land.
 
 ## Two traps that read as a wedge and are not
 
@@ -147,17 +147,17 @@ at a checkpoint — VICE's flag flips before the trap fires. Checkpoint bookkeep
 throughout a real wedge, so "the tools respond" proves nothing.
 
 **A `vice_run_until` on an address that is never reached looks exactly like a wedge.** Its
-`cycles` parameter is *"not yet implemented"*, and passing it is REFUSED rather than ignored —
+`cycles` parameter is *"not yet implemented"*, and the tool REFUSES it rather than ignoring it —
 including alongside `address`, where it used to be silently dropped while the answer still
-reported `reached: true`. Unexpected argument names are refused by name too, so a
+reported `reached: true`. The tool refuses unexpected argument names by name too, so a
 `timeoutMs`/`timeout_ms` typo can no longer run with the default bound in silence. **This is
-bounded:** pass `timeout_ms` (default 30000, clamped to a ceiling of 600000); an unreachable
+bounded:** pass `timeout_ms` (default 30000, clamped to a ceiling of 600000). An unreachable
 address returns an explicit, bounded `timedOut: true` answer — with the temporary checkpoint
 already cleaned up — rather than looking like a wedge. **Two further behaviours:** every
 non-error answer, hit or timeout, carries `machineHalted` plus a `machineHaltedNote` naming the
 resume call — the tool halts the machine on every read and says so explicitly. **`machineHalted`
-is `true` on a hit and on a timeout whose cleanup delete was answered (`cleanup: "deleted"` /
-`"already_gone"`); it is `false` when `cleanup: "delete_failed"` or the socket is already gone**
+is `true` on a hit and on a timeout whose cleanup delete got an answer** (`cleanup: "deleted"` /
+`"already_gone"`). **It is `false` when `cleanup: "delete_failed"` or the socket is already gone**
 and the run-state projection does not say `"stopped"`. **Do not read `machineHalted: false` as
 "still running"** — it means nothing here could establish the state, `machineHaltedNote` says so,
 and the next call should be `vice_diagnose`, not `vice_execution_run` (which may not reach the
@@ -166,16 +166,16 @@ asserts `reached: false` outright: it reads the program counter and resolves the
 (`raceResolved: "pc_at_address"` / `"pc_elsewhere"`), or, if the PC read itself fails, omits
 `reached` entirely and reports `reachedUnknown: true` (`raceResolved: "unresolved"`). **An absent
 `reached` is not "false"** — check `reachedUnknown` before assuming a miss. The underlying
-judgement is unchanged and still the right first question: before concluding anything, check
+judgement stays the same and is still the right first question: before concluding anything, check
 whether you asked the machine to run to an address it cannot reach. **Confidence: HIGH for the
-reach/timeout mechanism** — live-confirmed against genuine, unmodified `/usr/bin/x64sc` (VICE
+reach/timeout mechanism** — live-checked against genuine, unmodified `/usr/bin/x64sc` (VICE
 3.9) and `/usr/local/bin/x64sc` (VICE 3.10): a real KERNAL address ($EA31) reached within its
 timeout, an unreached one ($C000) timing out with the checkpoint deleted. **MEDIUM for the
 honesty fields above** (`machineHalted`, `raceResolved`, `reachedUnknown`) — unit-proven
 (`stock-run-until.test.ts`, 21/21) but not independently re-exercised against a real emulator.
 
 **A second binary-monitor client is contention, not a wedge, and it has a cheap tell.** The
-binary monitor services exactly one client; a second `connect()` sits
+binary monitor services exactly one client. A second `connect()` sits
 unserviced in the backlog with no reply and no EOF. The discriminator: a socket that *accepts* the
 connection but never answers is contention, not a hung emulator — and the broker itself already
 knows whether it holds a lease on that port, which is the thing a human or agent can actually go
@@ -208,8 +208,8 @@ calls during the wait**:
 
 **Exactly `0`, twice in a row, is a wedge.** Cycles advancing but far below the expected rate for
 a real wait is a third thing — merely slow, a separate documented hazard measured at ~6,000/s
-when a loop polls without re-resuming instead of waiting clean. Never poll with a state read;
-those pause and do not resume.
+when a loop polls without re-resuming instead of waiting clean. Never poll with a state read.
+Those pause and do not resume.
 
 `vice_diagnose` already runs exactly this bracket internally, so the manual fallback above is
 only for when the broker itself is unreachable and `vice_diagnose` cannot be called at all.
@@ -236,7 +236,7 @@ session, the last three all on that call).
 | `evidence.channelContention`: always present, `wedged` unreachable while contended, verdict `live` with `bracketsRun:0` while a foreign hold is live | Unit-proven in `stock-diagnose.test.ts` (65/65) — the always-present field on every verdict including both `session === null` paths, the `live`-with-`bracketsRun:0` answer on a foreign hold, `wedged` never reached while contended, and the discriminating-power case where an uncontended double-zero still answers `wedged`. **Live-reproduced against genuine stock `/usr/bin/x64sc` (VICE 3.9) only** — 2026-09-09, command `VICE_LIVE_STOCK_BIN=/usr/bin/x64sc node --test text-monitor-live.test.ts`: with the text channel holding a real `device c:` command, a concurrent `vice_diagnose` answered `verdict=live, evidence={"bracketsRun":0,"jamObserved":false,"channelContention":{"held":true,"channel":"text","operation":"device c:","grantId":"unknown","heldMs":3499}}`; after release, the same call answered `verdict=live, evidence={"bracketsRun":1,...,"channelContention":{"held":false,"channel":null,"operation":null,"grantId":null,"heldMs":null}}`, confirming a real bracket ran once uncontended | **MEDIUM** — a single binary's basis: the text channel is a stock-backend-only capability, so it is proven where it ships (genuine stock `/usr/bin/x64sc`, VICE 3.9), not against a second binary the way the neighbouring HIGH row above is |
 
 **Log a new incident in your own project notes at the moment you hit it**, graded the same way
-(`Evidence:` and `Confidence:`); promote a grade by re-logging, never by editing the old entry in
+(`Evidence:` and `Confidence:`). Promote a grade by re-logging, never by editing the old entry in
 place. A defect in the `vice` MCP tools themselves is worth filing as a bug rather than working
 around inline — the workaround outlives the memory of why it was needed.
 
