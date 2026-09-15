@@ -300,3 +300,136 @@ parse as an address. The consumer's contract wins, because it is the one that
 actually executes. Every field `raw.json` names is preserved unchanged under an
 explicitly named sibling key (`vicii_raw`, `sprites`, `cpu`, `port01_raw`,
 `dd00_raw`, `d018_raw`, `sprite_pointers`). Nothing is dropped.
+
+## Mask calibration: two runs of the same binary
+
+Run B repeats the procedure above without change, on the same committed binary,
+from a fresh emulator start. The prior instance was already gone — the broker
+kills a released instance — so run B's `x64sc` is a new process, launched at
+`21:01:30` against run A's `20:59:46`, each with its own `XDG_CONFIG_HOME`
+scratch directory.
+
+```
+[2026-09-15T19:01:29Z] $ node …/evidence/capture-run.mjs \
+    --label b --checkpoint-address 4239 --entry-address 2061
+```
+
+Run B reproduced run A's observable facts exactly: the same load extent
+(`from 0801 to 10E7 (08E7 bytes)`), the same checkpoint (`id 1`, `start 4239`,
+`hitCount 1`), the same stopped `PC` of 4239, the same `$0001`/`$DD00`/`$D018`
+bytes (`37` / `3f` / `15`), the same VIC-II `registersHex`, and the same
+post-deletion checkpoint count of `0`.
+
+### The comparison, run in full with no row limit
+
+```
+[2026-09-15T19:01:58Z] $ node src/skills/c64-ram-capture/scripts/compare-cross-binary.mjs cross \
+    …/captures/original-a.bin …/captures/original-b.bin \
+    --state …/captures/original-a.state.json …/captures/original-b.state.json \
+    --checkpoint hazard_raster_entry --limit 0
+
+A  original-a.bin  sha256 0e3f47d64732a67b0a01a6d59aed8de4f62fe19b0edfdc00f7543ddd7e2dc2f5
+B  original-b.bin  sha256 0e3f47d64732a67b0a01a6d59aed8de4f62fe19b0edfdc00f7543ddd7e2dc2f5
+MASK_NARROWED_AT: compare-cross-binary-mask-v1
+A  checkpoint hazard_raster_entry @ $108F
+B  checkpoint hazard_raster_entry @ $108F
+
+BYTE_IDENTICAL: yes
+  (a recorded extra -- the VERDICT line below is the acceptance signal, not this one)
+
+volatile (excluded from the verdict): 0
+
+allowlisted (intentional difference, excluded from the verdict): 0
+
+DIVERGENCE — fails the comparison: 0
+
+total differing addresses (image + register): 0
+
+VERDICT: PASS
+```
+
+### The complete difference set
+
+**There were none.** Not one of the 65536 image addresses differed, and not one
+of the 49 register addresses the two sidecars both carry differed. All three
+buckets — volatile, allowlisted, divergence — are empty, and the two images have
+the same SHA-256.
+
+There is therefore **no unmasked difference to resolve**. Neither of the two
+permitted resolution routes was taken, because neither had anything to act on:
+
+- **ROUTE 1 (narrow the mask, with a hardware reason): not taken. Zero
+  entries.** No mask span in `IMAGE_VOLATILE` or `IO_VOLATILE` was changed,
+  added or deleted by this task. `MASK_NARROWED_AT` still reads
+  `compare-cross-binary-mask-v1`, the version plan 50-01 committed.
+- **ROUTE 2 (name an unexplained residual): not taken. Zero entries.** No
+  address or register differed, so there is no residual to name.
+
+### What this result does and does not mean
+
+Recorded plainly, without dressing up:
+
+- Run-to-run variation at `hazard_raster_entry` is **below this instrument's
+  resolution**. Two independent runs of the same binary, on two separate
+  emulator processes, produced the same 65536 bytes and the same 49 register
+  values.
+- **The instrument is therefore not yet confirmed against real variation.** A
+  comparison that finds nothing cannot distinguish "there was nothing to find"
+  from "the instrument cannot see". The red control in plan 50-05 is what
+  settles that, and until it runs, this PASS is evidence that the pipeline is
+  reproducible, not evidence that it is sensitive.
+- The byte-identity is **partly manufactured by the rig, and that is stated
+  rather than glossed**: every instance is launched with `-seed 4242
+  -raminitstartrandom 0 -raminitrepeatrandom 0 -raminitrandomchance 0`, a
+  deterministic RAM-init profile (see the argv in "Capture procedure" step 2).
+  A run pair launched without those flags could reasonably differ in uninitialised
+  RAM. The determinism is a property of how this project launches VICE, not a
+  discovered property of the C64.
+- The checkpoint was chosen so that nothing runs under interrupt at the sample
+  point, and section 5's disassembled bytes confirm the raster construction had
+  not yet installed its vector. That is the structural reason this checkpoint is
+  reproducible, and it is measured here rather than asserted.
+
+### The mask is closed from this point on
+
+This calibration is **the last point in Phase 50 at which the volatile mask may
+be touched.** It was permitted here, and only here, because no binary other than
+the subject itself had been captured yet — nothing could be tuned to make a
+rebuild pass, because no rebuild existed.
+
+From this point on, a difference is resolved by **naming it in the allowlist
+with why it is intentional**, and never by widening the mask. The mask must
+never be widened after seeing a rebuild's differences. As it happens this task
+narrowed nothing either, so the mask that every later comparison in this phase
+runs under is exactly the one plan 50-01 committed, unchanged:
+`compare-cross-binary-mask-v1`.
+
+## Emulator shutdown
+
+The broker was stopped in the same session as the last emulator call, and the
+shutdown was verified rather than assumed — a live broker deterministically
+reddens `vice-proxy.test.ts`'s BACK-05 case, so a test run taken with one still
+up would be worthless.
+
+```
+[2026-09-15T19:02:15Z] $ systemctl --user stop vice-broker.service
+$ systemctl --user is-active vice-broker.service
+inactive
+$ ps -eo pid,etime,cmd | grep -Ei 'vice-broker|x64sc' | grep -v grep
+(no output)
+$ ss -ltnp | grep -E ':66[0-9][0-9]'
+(no output)
+$ ss -ltnp | grep -E ':19510'
+(no output)
+```
+
+## Artifacts this transcript is the record for
+
+| Artifact | SHA-256 | Size |
+|---|---|---|
+| `src/mcp/vice/fixtures/hazard-subject/hazard-subject.prg` | `89846d489f83f4d9fd092f214343c5566433655b836d20625e7123682b8c6828` | 2281 bytes |
+| `evidence/captures/original-a.bin` | `0e3f47d64732a67b0a01a6d59aed8de4f62fe19b0edfdc00f7543ddd7e2dc2f5` | 65536 bytes |
+| `evidence/captures/original-b.bin` | `0e3f47d64732a67b0a01a6d59aed8de4f62fe19b0edfdc00f7543ddd7e2dc2f5` | 65536 bytes |
+
+Both sidecars declare `route: snapshot`, `checkpoint_name: hazard_raster_entry`
+and `checkpoint_address: 4239`.
