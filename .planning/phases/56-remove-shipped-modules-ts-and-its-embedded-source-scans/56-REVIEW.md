@@ -30,7 +30,10 @@ findings:
   warning: 8
   info: 0
   total: 8
-status: issues_found
+status: fixed
+fixed: 2026-09-15
+fixed_count: 9
+open_count: 0
 ---
 
 # Phase 56: Code Review Report
@@ -71,6 +74,7 @@ module itself") with nothing under them.
 ### WR-01: File header for `anno-seam.test.ts` describes structural content the phase deleted in full
 
 **File:** `src/mcp/vice/anno-seam.test.ts:1-13`
+**Disposition:** fixed — commit `f6e595bf`
 **Issue:** The file's own opening comment says: "the structural assertion that STORE-07's
 confinement is REAL rather than promised: `node:sqlite` is named by exactly ONE module of the
 shipped module set, **all four of its working access routes are proven catchable** by the one
@@ -89,6 +93,7 @@ constraint, drop the credit" treatment already applied to `anno-store.ts`'s comm
 ### WR-02: Orphaned numbered section markers left in `anno-seam.test.ts`
 
 **File:** `src/mcp/vice/anno-seam.test.ts:29-41, 100-104`
+**Disposition:** fixed — commit `f6e595bf`
 **Issue:** Section headers "1. The real assertion" (line 29-31), "2-5. The four planted access
 routes, all through the same predicate" (33-35), "6. The negative control" (37-39), "9-12.
 Properties of the one seam module itself" (100-104) each introduce zero code — the next thing
@@ -100,6 +105,7 @@ sections ("7-8" and the `WR-25` test) so the numbering is contiguous and accurat
 ### WR-03: File header for `block-class.test.ts` names a load-bearing test that no longer exists
 
 **File:** `src/mcp/vice/block-class.test.ts:1-19`
+**Disposition:** fixed — commit `05d6283a`
 **Issue:** The header states: "Two of these are structural rather than behavioural and are the
 **load-bearing ones**: — the IMPORT-PURITY assertion. `block-class.ts`'s header trap 1
 records that giving the classifier the census, the raw bytes, a decoder or a confidence grade
@@ -116,6 +122,7 @@ regression test if the invariant is still meant to be test-enforced.
 ### WR-04: Orphaned section header "4. Import purity" left empty in `block-class.test.ts`
 
 **File:** `src/mcp/vice/block-class.test.ts:324-327`
+**Disposition:** fixed — commit `05d6283a`
 **Issue:** Section header "4. Import purity -- see this file's header for why this is a test
 and not a comment" is immediately followed by section "5. Shipped, not test-only" with no test
 between them. Both tests that constituted section 4 were deleted, and the header text pointing
@@ -125,6 +132,7 @@ back at the file's own docstring (see WR-03) is now describing nothing.
 ### WR-05: File header for `prg-image.test.ts` describes a structural check that was deleted whole
 
 **File:** `src/mcp/vice/prg-image.test.ts:1-28`
+**Disposition:** fixed — commit `be6a4bfd`
 **Issue:** The header states this file contains "the committed regression for `prg-image.ts`'s
 two input validators, plus the payload round trip its own doc comment says it exists to allow,
 **plus a structural check that the module really is the pure, I/O-free thing its header
@@ -142,6 +150,7 @@ STRUCTURAL" paragraph from the header, or reinstate a minimal purity check.
 ### WR-06: File header for `evid-report-keys.test.ts` describes a scanning technique the file no longer uses
 
 **File:** `src/mcp/vice/evid-report-keys.test.ts:1-29`
+**Disposition:** fixed — commit `e3532d29`
 **Issue:** The header has a dedicated paragraph, "WHY THIS FILE READS SOURCES WITH
 `readFileSync`/`codeOnly()` RATHER THAN SHELLING OUT TO A TEXT SEARCH... `shippedTsModules()`
 ... is the scanned set; `codeOnly()` is the one comment-and-string stripper every structural
@@ -157,6 +166,7 @@ file used to read sources with codeOnly(). That direction was removed in phase 5
 ### WR-07: File header for `anno-derive.test.ts` claims a "structural" half that was removed in full
 
 **File:** `src/mcp/vice/anno-derive.test.ts:11-15`
+**Disposition:** fixed — commit `18c8a70e`
 **Issue:** "THE NEVER-CACHED CONTROL has two halves and **both are here**: behavioural (six
 observations of the store file, the snapshot ring and the revision, all unchanged across
 repeated derived queries) and **structural** (the derivation modules' stripped source, plus a
@@ -172,6 +182,7 @@ half was removed in phase 56.
 ### WR-08: Vestigial constant and dangling forward-reference in `anno-coverage.test.ts`
 
 **File:** `src/mcp/vice/anno-coverage.test.ts:688-706, 759`
+**Disposition:** fixed — commit `e180f24c`
 **Issue:** `CENSUS_FORBIDDEN_BLOCK_LITERALS` (line 704) carries a 16-line doc comment explaining
 that it exists to scope "the absence supplement below" — i.e. the deleted test `SUPPLEMENT (not
 the proof): the census module's source carries no production block-type literal`, which was the
@@ -192,6 +203,7 @@ own" references.
 ### WR-09: Dead import left behind in `anno-overlap.test.ts`
 
 **File:** `src/mcp/vice/anno-overlap.test.ts:82`
+**Disposition:** fixed — commit `d9a62058`
 **Issue:** `import { mkdtempSync, readFileSync, rmSync } from "node:fs";` — `readFileSync` has
 zero call sites anywhere in this file. Its only use was inside the deleted test `adjacency,
 STRUCTURAL: no coalescing, merging or splitter identifier exists anywhere in the store's code`,
