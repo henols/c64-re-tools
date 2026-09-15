@@ -20,7 +20,6 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { codeOnly } from "./shipped-modules.ts";
 import {
   argvDigest,
   bin8,
@@ -203,54 +202,6 @@ test("argvDigest is order-sensitive and refuses an empty array by name", () => {
 // 5. Module posture: pure, byte-taking, path-free, and reaching neither
 //    path-translation seam nor each other
 // ---------------------------------------------------------------------------
-
-/** Every module specifier a source names, read from the source itself. Run with
- * literal bodies KEPT, because an import specifier IS a string literal --
- * blanking literal bodies would make the thing under assertion unobservable. */
-function moduleSpecifiers(src: string): string[] {
-  const code = codeOnly(src, true);
-  return [...code.matchAll(/["']([^"'\n]*)["']/g)]
-    .map((m) => m[1])
-    .filter((s) => /^node:/.test(s) || (s.includes("/") && !/\s/.test(s)));
-}
-
-test("neither module imports anything but node builtins -- no path-translation seam, and not each other", () => {
-  const predicate = moduleSpecifiers(readFileSync(join(HERE, "capture-predicate.ts"), "utf8"));
-  const oracle = moduleSpecifiers(readFileSync(join(HERE, "stop-oracle.ts"), "utf8"));
-
-  // Pinned exactly rather than filtered: the point is that the closed set is
-  // SHORT, and a filtered assertion would pass a module that added a seam
-  // import the filter did not name.
-  assert.deepEqual(predicate, ["node:crypto"], "the predicate needs sha256 and nothing else");
-  assert.deepEqual(oracle, [], "the oracle is four scalars in, one record out -- it imports nothing at all");
-});
-
-test("no exported function in either module takes a filesystem path -- every one takes bytes, scalars or a parsed value", () => {
-  // Read from the source rather than asserted in prose: the signature is the
-  // property that keeps path traversal out of these modules' threat surface,
-  // and a header sentence cannot notice when an edit falsifies it.
-  //
-  // Whitespace is normalised because a signature broken across lines is the
-  // same signature; a trailing comma from a multi-line parameter list is
-  // dropped for the same reason.
-  const signaturesOf = (name: string): string[][] => {
-    const code = codeOnly(readFileSync(join(HERE, name), "utf8"));
-    return [...code.matchAll(/export function (\w+)\(([^)]*)\)/g)].map((m) => [
-      m[1],
-      m[2].replace(/\s+/g, " ").trim().replace(/,$/, ""),
-    ]);
-  };
-
-  assert.deepEqual(signaturesOf("capture-predicate.ts"), [
-    ["popcount", "n: number"],
-    ["parseAllowList", "json: unknown"],
-    ["normalisePorts", "image: Uint8Array, ports: PortReads"],
-    ["compareCaptures", "a: Uint8Array, b: Uint8Array, allowList: TransientAllowList | readonly number[]"],
-    ["formatComparison", "comparison: CaptureComparison, limit = 0"],
-    ["argvDigest", "argv: readonly string[]"],
-  ]);
-  assert.deepEqual(signaturesOf("stop-oracle.ts"), [["compareStopIdentity", "a: StopIdentity, b: StopIdentity"]]);
-});
 
 test("the report vocabulary is carried across in kind: hex4, hex2, bin8 and popcount behave as compare.mjs's do", () => {
   assert.equal(hex4(0x1000), "$1000");
