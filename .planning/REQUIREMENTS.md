@@ -67,10 +67,10 @@ Stated once so no requirement below has to restate them.
 
 ### Equivalence and Modifiability
 
-- [ ] **EQUIV-01**: `compare.mjs` works in original-versus-different-binary mode — narrowed volatile mask so a real `$D020`/`$D015`/`$D018` regression cannot hide, an allowlist for intentional differences, and per-binary logical checkpoints — a mode it has never been run in
-- [ ] **EQUIV-02**: Behavioural equivalence between the original and the rebuild is demonstrated in VICE, with a committed transcript as the artifact of record rather than a described walkthrough
+- [x] **EQUIV-01**: `compare.mjs` works in original-versus-different-binary mode — narrowed volatile mask so a real `$D020`/`$D015`/`$D018` regression cannot hide, an allowlist for intentional differences, and per-binary logical checkpoints — a mode it has never been run in
+- [x] **EQUIV-02**: Behavioural equivalence between the original and the rebuild is demonstrated in VICE, with a committed transcript as the artifact of record rather than a described walkthrough
 - [ ] **EQUIV-03**: Modifiability is demonstrated, not described — one behaviour removed and one added in the rebuilt source, reassembled, both observed taking effect in VICE, transcript committed
-- [ ] **EQUIV-04**: The synthetic fixtures are committed and the whole pipeline is runnable in CI
+- [x] **EQUIV-04**: The synthetic fixtures are committed and the whole pipeline is runnable in CI
 
 ### Fork-Backend Removal (Phase 52)
 
@@ -327,10 +327,10 @@ Success-Criteria live in `.planning/ROADMAP.md` → "Phase Details".
 | BUILD-05 | Phase 46 | Complete |
 | BUILD-06 | Phase 49 | Complete |
 | BUILD-07 | Phase 46 | Complete |
-| EQUIV-01 | Phase 50 | Pending |
-| EQUIV-02 | Phase 50 | Pending |
+| EQUIV-01 | Phase 50 | Complete |
+| EQUIV-02 | Phase 50 | Complete |
 | EQUIV-03 | Phase 50 | Pending |
-| EQUIV-04 | Phase 50 | Pending |
+| EQUIV-04 | Phase 50 | Complete |
 | FORKRM-01 | Phase 52 | Complete |
 | FORKRM-02 | Phase 52 | Complete |
 | FORKRM-03 | Phase 52 | Complete |

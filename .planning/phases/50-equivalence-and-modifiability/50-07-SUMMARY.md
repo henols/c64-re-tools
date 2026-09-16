@@ -104,7 +104,21 @@ patterns-established:
 #   and delete the branch. Alternatively the developer records a dated decline,
 #   in which case the withheld clause becomes an accepted residual rather than a
 #   gap -- but that is the developer's call to make, not this executor's.
-requirements-completed: []
+requirements-completed: [EQUIV-04]  # CLAIMED by the execute-phase orchestrator, 2026-09-16,
+  # on the developer's recorded decision -- this plan correctly withheld it pending that answer.
+  # EQUIV-04's last clause is "a broken step is observed reddening CI". This plan observed the
+  #   red LOCALLY, against CI's exact command and environment, and deliberately declined to
+  #   claim the id without a developer ruling on whether that counts.
+  # The developer was asked on 2026-09-16 and DECLINED a real GitHub Actions run, accepting the
+  #   local observation as sufficient. The decline is recorded, dated, with its residual named,
+  #   in docs/phase50-ci-boundary.md's "A broken step, observed going red" section.
+  # The residual stands and is not absorbed: no GitHub Actions run has been observed going red
+  #   for this guard, and flagged assumption P5 remains unresolved. Three supporting claims were
+  #   re-verified by the orchestrator before the decline was written: the guard is absent from
+  #   test-gate.mjs's MANUAL_ONLY_TESTS (grep -ac -> 0), .github/workflows/ci.yml is unchanged by
+  #   this plan's commits, and the guard sits under CI's existing test glob.
+  # Coverage C1-C4 back the id's other clauses (fixtures committed, boundary stated per named
+  #   workflow step, transcripts freshness-checked against the fixture hash, broken step observed).
 
 # Metrics
 metrics:

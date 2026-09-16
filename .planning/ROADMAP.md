@@ -1274,7 +1274,7 @@ with behaviour worth removing and adding)
   4. **One behaviour is removed and one added** in the rebuilt source, reassembled through Phase 49's gate, and both are observed taking effect in VICE with transcripts committed. Each change is cross-referenced to a hazard-report finding or a moved range, so the demonstration touches decomposed and rebuilt code rather than an already-easy already-symbolised constant.
   5. CI runs the pipeline on **committed synthetic fixtures alone** — no copyrighted image, no new host prerequisite — and the boundary is **stated rather than blurred**: which segment a GitHub runner actually executes (store → export → assemble → gate → byte-diff, on the ACME the workflow already installs) and which segment is emulator-dependent and therefore a named manual step whose committed transcripts CI checks for freshness against the fixture's hash, so a stale transcript is caught instead of read as a pass. A broken step is observed reddening CI.
 
-**Plans**: 3/7 plans executed, 5 waves (50-04's offline half is done. Its live half is halted — see below.)
+**Plans**: 7/7 plans executed, 5 waves. A sixth wave (50-08) is outstanding — see below.
 
 Plans:
 **Wave 1**
@@ -1285,19 +1285,23 @@ Plans:
 **Wave 2** *(blocked on Wave 1 completion)*
 
 - [x] 50-03-PLAN.md — Phase 49's gate re-run against the modified subject, its machine-readable findings document, and the pre-registered allowlist (wave 2)
-- [ ] 50-04-PLAN.md — tracer: the load-route decision, one binary end-to-end in stock VICE, and the mask calibrated against a same-binary re-run (wave 2). Offline half done (load-route decision + allowlist widening, `status: halted` in 50-04-SUMMARY.md) — live half (checkpoint hit, capture, calibration) not executed, needs a live executor.
+- [x] 50-04-PLAN.md — tracer: the load-route decision, one binary end-to-end in stock VICE, and the mask calibrated against a same-binary re-run (wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 50-05-PLAN.md — the red control: the planted regression observed being caught, committed before any green result exists (wave 3)
+- [x] 50-05-PLAN.md — the red control: the planted regression observed being caught, committed before any green result exists (wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 50-06-PLAN.md — the green comparison against the rebuild, and the removed and added behaviours observed in the modified subject (wave 4)
+- [x] 50-06-PLAN.md — the green comparison against the rebuild, and the removed and added behaviours observed in the modified subject (wave 4)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 50-07-PLAN.md — the stated CI boundary, the transcript freshness guard, and a broken step observed reddening CI (wave 5)
+- [x] 50-07-PLAN.md — the stated CI boundary, the transcript freshness guard, and a broken step observed reddening CI (wave 5)
+
+**Wave 6** *(blocked on Wave 5 completion — NOT YET PLANNED)*
+
+- [ ] 50-08-PLAN.md — modifiability demonstrated in the EXPORTED source: edit a file `exportAsmTree()` emitted, reassemble through Phase 49's gate, capture live and compare (wave 6). Closes `EQUIV-03`, the phase's one outstanding requirement. Needs `/gsd-plan-phase 50` to author it.
 
 Notes:
 

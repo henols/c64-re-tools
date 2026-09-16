@@ -329,16 +329,32 @@ GitHub runner.
 
 The stronger evidence would be pushing the same one-character break on a scratch
 branch, opening a pull request, observing the `build` job go red, then closing the
-pull request and deleting the branch. **That has not been done, and the developer
-has not yet been asked.** This plan ran with `workflow.auto_advance` false and
-`workflow.human_verify_mode` `end-of-phase`, so the question is deferred to the
-phase's end-of-phase human verification rather than answered here.
+pull request and deleting the branch.
 
-This section must be updated with **one** of the following, and until then it
-records neither:
+**The developer was asked, and declined that run. Decision recorded 2026-09-16.**
 
-- a real CI run URL and the `build` job status observed on it, or
-- a dated note that the developer declined a real CI run.
+The local observation is accepted as sufficient for this criterion. What it rests
+on, stated plainly so a later reader can re-judge it rather than inherit it:
 
-Recording a decline that was never given would be a fabricated result, which is
-the same failure this whole document exists to make impossible.
+- The command observed is the command CI runs, not an approximation of it:
+  `VICE_REQUIRE_ACME=1 node --test phase50-transcript-freshness.test.ts`, run from
+  `src/mcp/vice`, in the same environment CI's `Test` step establishes.
+- The guard sits under CI's existing test glob and is absent from
+  `test-gate.mjs`'s `MANUAL_ONLY_TESTS`, so no workflow change was needed to make
+  CI run it. That claim is checkable: `grep -ac 'phase50-transcript-freshness'
+  test-gate.mjs` returns 0, and `.github/workflows/ci.yml` is unchanged by the
+  plan that added the guard.
+- The planted break reddened the aggregate gate as well as the single file, so the
+  failure is not confined to a hand-picked invocation.
+
+**The residual, stated rather than absorbed:** no GitHub Actions run has been
+observed going red for this guard. The inference from "red locally under CI's own
+command and environment" to "red on a GitHub runner" is sound but is an inference,
+not an observation. Plan 50-07's flagged assumption **P5** stays unresolved on
+that basis. Anyone who wants the observation can still take the four steps named
+at the top of this section; nothing here forecloses it.
+
+This is a declined verification, not a passed one. It is recorded as a decision
+with a date and a named residual, which is the only honest form a decline can
+take. Recording it as an observation would be a fabricated result, which is the
+same failure this whole document exists to make impossible.
