@@ -1,5 +1,5 @@
 {
-  "produced_at": "2026-09-16T10:09:53Z",
+  "produced_at": "2026-09-16T10:12:32Z",
   "manifest": "/home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice/fixtures/hazard-subject/exported-edit.manifest.json",
   "manifest_sha256": "cedd4ed1f3f0ef0a9f65efbdb6363cb3ec27febe76c93c3c247f1b76239b5d78",
   "store_document": "/home/henrik/dev/henrik/git/c64-re-tools/src/mcp/vice/fixtures/hazard-subject/hazard-subject.annostore.json",

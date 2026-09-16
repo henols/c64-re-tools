@@ -294,7 +294,11 @@ test("the committed docs/ directory really does hold at least two phase-50 trans
   // Guards the guard: every negative case below is meaningless if the
   // discovery pattern silently matches nothing in the real tree.
   const found = readdirSync(DOCS_DIR).filter((f) => TRANSCRIPT_PATTERN.test(f)).sort();
-  assert.deepEqual(found, ["phase50-equivalence-transcript.md", "phase50-modifiability-transcript.md"]);
+  assert.deepEqual(found, [
+    "phase50-equivalence-transcript.md",
+    "phase50-exported-modifiability-transcript.md",
+    "phase50-modifiability-transcript.md",
+  ]);
 });
 
 // ===========================================================================
