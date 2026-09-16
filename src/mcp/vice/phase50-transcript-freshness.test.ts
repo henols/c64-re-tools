@@ -188,9 +188,94 @@ export function topLevelHeadings(body: string): string[] {
  * second re-derived copy of the rule. Returns the list of failures; an empty
  * list means the transcripts are fresh, complete and paired. */
 export function auditPhase50Transcripts(options: TranscriptAuditOptions): string[] {
-  // RED STUB -- plan 50-07 task 1 implements this.
-  void options;
-  return [];
+  const failures: string[] = [];
+
+  const transcripts = readdirSync(options.docsDir).filter((f) => TRANSCRIPT_PATTERN.test(f)).sort();
+  if (transcripts.length === 0) {
+    // NEVER a vacuous pass. A tree whose transcripts were deleted, renamed out
+    // of the pattern, or never checked out is reported, not treated as clean.
+    return [
+      `no phase-50 transcript was found in ${options.docsDir} -- this guard matches ${TRANSCRIPT_PATTERN} and ` +
+        "matched nothing, so it checked NOTHING. Either the transcripts were deleted or renamed out of the pattern. " +
+        "An empty transcript set is a failure, never a pass.",
+    ];
+  }
+
+  for (const name of transcripts) {
+    const transcriptPath = join(options.docsDir, name);
+    const text = readFileSync(transcriptPath, "utf8");
+
+    const split = splitFrontmatter(text);
+    if (!split) {
+      failures.push(`${name}: the document has no \`---\`-delimited frontmatter, so no recorded digest can be checked.`);
+      continue;
+    }
+
+    // --------------------------------------------------------------------
+    // Direction 1 and 2: freshness and orphans.
+    // --------------------------------------------------------------------
+    const subjects = parseSubjects(split.frontmatter);
+    if (subjects === null) {
+      failures.push(
+        `${name}: the frontmatter carries no \`subjects:\` block. A transcript with no recorded subject digest ` +
+          "cannot be checked for staleness at all, which is indistinguishable from a transcript that is stale."
+      );
+    } else if (subjects.length === 0) {
+      failures.push(`${name}: the \`subjects:\` block is empty, so this transcript records nothing that can go stale.`);
+    } else {
+      for (const subject of subjects) {
+        if (!subject.prgPath) {
+          failures.push(
+            `${name}: subject \`${subject.name}\` has no \`prg_path\`. A recorded digest with no path names no file ` +
+              "and is therefore unverifiable. Add the repository-relative path of the subject's `.prg` beside its `prg_sha256`."
+          );
+          continue;
+        }
+        if (!subject.prgSha256) {
+          failures.push(
+            `${name}: subject \`${subject.name}\` has no \`prg_sha256\`. A named subject with no recorded digest ` +
+              "records nothing this guard can compare against."
+          );
+          continue;
+        }
+        const absolute = join(options.root, subject.prgPath);
+        if (!existsSync(absolute)) {
+          failures.push(
+            `${name}: ORPHAN -- subject \`${subject.name}\` names \`${subject.prgPath}\`, which does not exist in this tree. ` +
+              "The transcript describes a binary that is gone, so nothing it records can be checked. " +
+              REFRESH_REMEDY
+          );
+          continue;
+        }
+        const current = sha256OfFile(absolute);
+        if (current !== subject.prgSha256) {
+          failures.push(
+            `${name}: STALE -- subject \`${subject.name}\` (\`${subject.prgPath}\`) recorded sha256 ` +
+              `${subject.prgSha256} but the committed file now hashes to ${current}. The transcript describes a ` +
+              "binary that no longer exists in this tree, so its recorded result must not be read as a current pass. " +
+              REFRESH_REMEDY
+          );
+        }
+      }
+    }
+
+    // --------------------------------------------------------------------
+    // Direction 3: the green-only refusal (ROADMAP criterion 2).
+    // --------------------------------------------------------------------
+    const headings = topLevelHeadings(split.body);
+    const green = headings.filter((h) => /^green\b/i.test(h));
+    const red = headings.filter((h) => /^red\b/i.test(h));
+    if (green.length > 0 && red.length === 0) {
+      failures.push(
+        `${name}: REFUSED -- this transcript carries a green section (${JSON.stringify(green)}) and no paired ` +
+          "`## Red ...` control section. ROADMAP criterion 2 refuses a green-only result as evidence: an instrument " +
+          "that has never been observed failing has not been shown capable of failing, so its pass means nothing. " +
+          "Commit the red control section in the same transcript, or move the green result into a transcript that has one."
+      );
+    }
+  }
+
+  return failures;
 }
 
 // ===========================================================================

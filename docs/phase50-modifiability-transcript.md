@@ -6,13 +6,18 @@ capture_route: snapshot
 checkpoint_name: hazard_raster_entry
 mask_version: compare-cross-binary-mask-v1
 allowlist_path: src/mcp/vice/fixtures/hazard-subject/hazard-subject-modified.allowlist.json
+# `prg_path` was added beside each `prg_sha256` on 2026-09-16 by plan 50-07, so
+# `src/mcp/vice/phase50-transcript-freshness.test.ts` can locate each subject and
+# recompute its digest on every CI run. No recorded value was changed.
 subjects:
   hazard-subject:
     prg_sha256: 89846d489f83f4d9fd092f214343c5566433655b836d20625e7123682b8c6828
+    prg_path: src/mcp/vice/fixtures/hazard-subject/hazard-subject.prg
     captures:
       original-a: 0e3f47d64732a67b0a01a6d59aed8de4f62fe19b0edfdc00f7543ddd7e2dc2f5
   hazard-subject-modified:
     prg_sha256: fd16c6c171da90e693dca10c1df0b1f6817563e0c3d1af99bcc572bceb7d641d
+    prg_path: src/mcp/vice/fixtures/hazard-subject/hazard-subject-modified.prg
     captures:
       modified: 72269fd11d852b87e99ef213c0d549dbb2df6960f3e38c8f0e8904294e340a8b
 ---

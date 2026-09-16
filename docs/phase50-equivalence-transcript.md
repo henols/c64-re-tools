@@ -5,15 +5,20 @@ probe_date: 2026-09-15
 capture_route: snapshot
 checkpoint_name: hazard_raster_entry
 mask_version: compare-cross-binary-mask-v1
+# `prg_path` was added beside each `prg_sha256` on 2026-09-16 by plan 50-07, so
+# `src/mcp/vice/phase50-transcript-freshness.test.ts` can locate each subject and
+# recompute its digest on every CI run. No recorded value was changed.
 subjects:
   hazard-subject:
     prg_sha256: 89846d489f83f4d9fd092f214343c5566433655b836d20625e7123682b8c6828
+    prg_path: src/mcp/vice/fixtures/hazard-subject/hazard-subject.prg
     captures:
       original-a: 0e3f47d64732a67b0a01a6d59aed8de4f62fe19b0edfdc00f7543ddd7e2dc2f5
       original-b: 0e3f47d64732a67b0a01a6d59aed8de4f62fe19b0edfdc00f7543ddd7e2dc2f5
   # Added 2026-09-15 by plan 50-05's red control.
   hazard-subject-regressed:
     prg_sha256: fd6484f1101ef0773c0137d479e6b630c247169445ddb01b149072bd8df21427
+    prg_path: src/mcp/vice/fixtures/hazard-subject/hazard-subject-regressed.prg
     captures:
       regressed: d18830159c1c385901c7c97280fc91adb1dbfad167ee44ce0186bd0c663b2b97
   # Added 2026-09-15 by plan 50-06's green comparison. This one is not a
@@ -22,6 +27,7 @@ subjects:
   # evidence directory.
   hazard-subject-rebuild:
     prg_sha256: 89846d489f83f4d9fd092f214343c5566433655b836d20625e7123682b8c6828
+    prg_path: .planning/phases/50-equivalence-and-modifiability/evidence/hazard-subject-rebuild.prg
     captures:
       rebuild: 0e3f47d64732a67b0a01a6d59aed8de4f62fe19b0edfdc00f7543ddd7e2dc2f5
 ---
