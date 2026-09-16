@@ -3,10 +3,10 @@ gsd_state_version: "1.0"
 milestone: v1.1.0
 milestone_name: The Prerequisite Doctor
 status: planning
-last_updated: "2026-09-16T12:35:13.227Z"
+last_updated: "2026-09-16T13:10:00.000Z"
 last_activity: 2026-09-16
 progress:
-  total_phases: 0
+  total_phases: 5
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -34,9 +34,12 @@ session drives anything — and produces no evidence bearing on the ONE thing, s
 restating it here would be a sixth repetition with nothing behind it.*
 
 **Current focus:** **Milestone v1.1.0 "The Prerequisite Doctor"**, opened
-2026-09-16. Defining requirements. One hypothesis: *a person who has just
-installed this plugin can find out what is missing in one command, and tell the
-plugin where an unusually-located tool lives, without reading source.*
+2026-09-16. Requirements defined and **roadmap created the same day — five
+phases, 58-62, with 24/24 requirements mapped, each to exactly one phase.**
+Nothing is planned or executed yet; the next action is `/gsd-plan-phase 58`. One
+hypothesis: *a person who has just installed this plugin can find out what is
+missing in one command, and tell the plugin where an unusually-located tool
+lives, without reading source.*
 
 **What this milestone builds**, per the owner's framing — *"a standard
 installation tool and how the different tools that are needed for being able to
@@ -321,10 +324,22 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-09-16 — Milestone v1.1.0 started
+Phase: 58 - One Declaration, Four Places That Can No Longer Disagree (not started)
+Plan: — (no plans exist yet; next action is `/gsd-plan-phase 58`)
+Status: Roadmap created — five phases, 58-62, 24/24 requirements mapped
+Last activity: 2026-09-16 — v1.1.0 roadmap created (Phases 58-62)
+
+**Milestone shape, so no reader has to rebuild it from the ROADMAP:** Phase 58
+declares the prerequisites; Phase 59 builds the tool-location seam and its
+precedence order; Phase 60 wires that seam into the code that ships; Phase 61 is
+`vice-mcp doctor` itself; Phase 62 generates the README install tables from the
+declaration. **Phases 51, 53, 54 and 57 remain carried and are not part of this
+milestone** — Phase 57 shares the subject and is excluded on purpose.
+
+**The ordering 59 → 60 → 61 is load-bearing, not tidy.** `DOCTOR-05` forbids the
+doctor from having a second detection path; the doctor arriving last, after the
+seam is already the live resolution path, is what makes that structural rather
+than a matter of discipline.
 
 ## Performance Metrics
 
@@ -848,6 +863,47 @@ Last activity: 2026-09-16 — Milestone v1.1.0 started
   `BUILD-05` states it, `BUILD-07` makes it checkable by a planted control — and
   enforcing it first means the multi-file work is *written* against it rather
   than audited for filtering behaviour that was never prevented.
+
+- **v1.1.0 opened as Phases 58-62 (2026-09-16), starting at 58 rather than at
+  51.** The four carried numbers are not free: Phases 51, 53, 54 and 57 still
+  hold live requirement text (`VOCAB-01..06`, `DOCS-01..04`, `INSTALL-01..05`)
+  that is not this milestone's, so 58 is the first available number. The
+  five-phase shape is: the prerequisite declaration (58), the tool-location seam
+  and its precedence order (59), the seam wired into today's consumers (60),
+  `vice-mcp doctor` itself (61), and the generated README install tables with
+  their semantic guard (62). Research's proposed build order was adopted
+  unchanged; the two departures are requirement ownership, not sequence.
+
+- **v1.1.0: the resolver seam is a phase BEFORE the doctor, and that ordering is
+  what enforces `DOCTOR-05`.** A doctor built first grows its own detection path
+  — the "doctor that lies" failure, where the report can contradict the refusal
+  the user actually hits. Making the seam already be the live resolution path
+  before the doctor exists leaves the doctor nothing to reimplement, which is a
+  structural guarantee rather than a discipline one.
+
+- **v1.1.0: wiring the seam into existing consumers is its own phase (60), not
+  the tail of the phase that builds it (59).** Phase 60 is the first
+  regeneration of the committed `resources/*.mjs` artifacts that
+  `resources-sync.test.ts` guards byte-identically, it touches
+  `backend-detect.mts` and `host-tool.mts` together, and `LOC-03`'s success
+  condition is that *nothing changed* for existing `VICE_BIN`/`ACME_BIN`/`ACME`/
+  `GHIDRA_HOME` users. A "nothing changed" claim folded into a phase that also
+  introduces a new module gets asserted rather than measured.
+
+- **v1.1.0: `DECL-03` moved out of the declaration phase, and `LOC-01`/`LOC-02`
+  out of the seam phase, both into Phase 60.** Each is a claim about *every code
+  path*, so none can be true while only data or only a module exists. Recorded in
+  `REQUIREMENTS.md`'s Traceability preamble and in "Sequencing Rationale
+  (v1.1.0)" rather than left to read as a mapping error.
+
+- **v1.1.0: no opening go/degrade/no-go gate phase.** Fifth milestone shape
+  decision of this kind, and the same reasoning as v1.0.0's: a gate probes a fact
+  about something this project does not control, and v1.1.0 has no unknown of
+  that shape — every probe it reports through already ships and is already
+  tested, with zero new npm packages and zero new host prerequisites. The one
+  fact genuinely outside this project's control, whether a given Node parses the
+  doctor's entry point, is settled by the CI matrix cell inside `DOCTOR-02`
+  rather than by a gate standing in front of the milestone.
 
 ### Decisions
 
@@ -2726,9 +2782,11 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-16T11:55:10Z
-Stopped at: Milestone v1.0.0 "The Rebuild Half" closed and archived on its delivered scope (9 phases, 73 plans, 33/33 in-scope requirements, `override_closeout`). Phases 51, 53, 54 and 57 carried forward with their ROADMAP sections live.
-Resume file: None — next action is `/gsd-new-milestone`
+Last session: 2026-09-16T13:10:00Z
+Stopped at: v1.1.0 roadmap created — five phases, 58-62, continuing numbering from Phase 57; 24/24 requirements mapped, each to exactly one phase (`DECL-01..05`, `LOC-01..07`, `DOCTOR-01..09`, `GEN-01..03`). ROADMAP.md carries the checklist, the five phase detail sections and "Sequencing Rationale (v1.1.0)"; REQUIREMENTS.md's Traceability table is populated and its coverage block reads 24/24. Nothing planned and nothing executed.
+Resume file: None — next action is `/gsd-plan-phase 58`
+
+Earlier: Milestone v1.0.0 "The Rebuild Half" closed and archived on its delivered scope (9 phases, 73 plans, 33/33 in-scope requirements, `override_closeout`). Phases 51, 53, 54 and 57 carried forward with their ROADMAP sections live.
 
 Earlier: Completed 50-08-PLAN.md
 
@@ -3253,4 +3311,4 @@ Resume file: .planning/phases/32-the-deletion-and-the-grep-gate/32-CONTEXT.md
 
 ## Operator Next Steps
 
-- Start the next milestone with /gsd-new-milestone
+- Plan the first phase of v1.1.0 with /gsd-plan-phase 58

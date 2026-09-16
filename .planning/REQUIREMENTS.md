@@ -90,16 +90,67 @@ Acknowledged, deferred, not in this roadmap.
 
 ## Traceability
 
-Populated during roadmap creation.
+Populated at roadmap creation, 2026-09-16. **Every v1.1.0 requirement maps to
+exactly one phase; there are no orphans and no requirement owned twice.**
+
+Two mappings are deliberate departures from the researched phase shape and are
+reasoned in `ROADMAP.md` -> "Sequencing Rationale (v1.1.0)" rather than left to
+be read as sloppiness:
+
+- **`DECL-03` is owned by Phase 60, not by the declaration phase.** Repointing
+  every live refusal at the declaration edits `host-tool.mts`, whose compiled
+  `resources/*.mjs` artifact is guarded byte-identically by
+  `resources-sync.test.ts`. Phase 60 exists to isolate that first regeneration,
+  so the edit belongs there rather than spread across two phases.
+- **`LOC-01` and `LOC-02` are owned by Phase 60, not by Phase 59 which builds the
+  seam.** Both are claims about *every code path* ("have every code path that
+  resolves that tool honour it"; "both the doctor and the live dispatch path
+  resolve through that same seam"), and neither can be true while only the module
+  exists. Phase 59 owns the seam's own refusal semantics (`LOC-05`, `LOC-06`,
+  `LOC-07`); Phase 60 owns the two that become true when the shipped code
+  resolves through it.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DECL-01 | — | Pending |
+| DECL-01 | Phase 58 | Pending |
+| DECL-02 | Phase 58 | Pending |
+| DECL-04 | Phase 58 | Pending |
+| DECL-05 | Phase 58 | Pending |
+| LOC-05 | Phase 59 | Pending |
+| LOC-06 | Phase 59 | Pending |
+| LOC-07 | Phase 59 | Pending |
+| LOC-01 | Phase 60 | Pending |
+| LOC-02 | Phase 60 | Pending |
+| LOC-03 | Phase 60 | Pending |
+| LOC-04 | Phase 60 | Pending |
+| DECL-03 | Phase 60 | Pending |
+| DOCTOR-01 | Phase 61 | Pending |
+| DOCTOR-02 | Phase 61 | Pending |
+| DOCTOR-03 | Phase 61 | Pending |
+| DOCTOR-04 | Phase 61 | Pending |
+| DOCTOR-05 | Phase 61 | Pending |
+| DOCTOR-06 | Phase 61 | Pending |
+| DOCTOR-07 | Phase 61 | Pending |
+| DOCTOR-08 | Phase 61 | Pending |
+| DOCTOR-09 | Phase 61 | Pending |
+| GEN-01 | Phase 62 | Pending |
+| GEN-02 | Phase 62 | Pending |
+| GEN-03 | Phase 62 | Pending |
 
 **Coverage:**
 - v1.1.0 requirements: 24 total
-- Mapped to phases: 0
-- Unmapped: 24 ⚠️
+- Mapped to phases: 24
+- Unmapped: 0 ✓
+
+**Per phase:** Phase 58 — 4 (`DECL-01`, `DECL-02`, `DECL-04`, `DECL-05`);
+Phase 59 — 3 (`LOC-05`, `LOC-06`, `LOC-07`); Phase 60 — 5 (`LOC-01`, `LOC-02`,
+`LOC-03`, `LOC-04`, `DECL-03`); Phase 61 — 9 (`DOCTOR-01`..`DOCTOR-09`);
+Phase 62 — 3 (`GEN-01`, `GEN-02`, `GEN-03`).
+
+**Not in this milestone and not in this table:** `VOCAB-01`..`06`,
+`DOCS-01`..`04` and `INSTALL-01`..`05`, held by the carried Phases 51, 53, 54 and
+57. Their requirement text stays live in `milestones/v1.0.0-REQUIREMENTS.md` and
+their ROADMAP sections stay live; no phase of this milestone may absorb one.
 
 ---
 *Requirements defined: 2026-09-16*
