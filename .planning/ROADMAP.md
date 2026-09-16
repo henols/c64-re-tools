@@ -1274,7 +1274,7 @@ with behaviour worth removing and adding)
   4. **One behaviour is removed and one added** in the rebuilt source, reassembled through Phase 49's gate, and both are observed taking effect in VICE with transcripts committed. Each change is cross-referenced to a hazard-report finding or a moved range, so the demonstration touches decomposed and rebuilt code rather than an already-easy already-symbolised constant.
   5. CI runs the pipeline on **committed synthetic fixtures alone** — no copyrighted image, no new host prerequisite — and the boundary is **stated rather than blurred**: which segment a GitHub runner actually executes (store → export → assemble → gate → byte-diff, on the ACME the workflow already installs) and which segment is emulator-dependent and therefore a named manual step whose committed transcripts CI checks for freshness against the fixture's hash, so a stale transcript is caught instead of read as a pass. A broken step is observed reddening CI.
 
-**Plans**: 7/7 plans executed, 5 waves. A sixth wave (50-08) is outstanding — see below.
+**Plans**: 8 plans, 6 waves. 7/8 executed; 50-08 is planned and outstanding — see below.
 
 Plans:
 **Wave 1**
@@ -1299,9 +1299,9 @@ Plans:
 
 - [x] 50-07-PLAN.md — the stated CI boundary, the transcript freshness guard, and a broken step observed reddening CI (wave 5)
 
-**Wave 6** *(blocked on Wave 5 completion — NOT YET PLANNED)*
+**Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 50-08-PLAN.md — modifiability demonstrated in the EXPORTED source: edit a file `exportAsmTree()` emitted, reassemble through Phase 49's gate, capture live and compare (wave 6). Closes `EQUIV-03`, the phase's one outstanding requirement. Needs `/gsd-plan-phase 50` to author it.
+- [ ] 50-08-PLAN.md — modifiability demonstrated in the EXPORTED source: edit a file `exportAsmTree()` emitted, reassemble through Phase 49's gate, capture live and compare (wave 6). Closes `EQUIV-03`, the phase's one outstanding requirement. Planned 2026-09-16; 3 tasks, offline tasks 1-2 plus a live task 3.
 
 Notes:
 
