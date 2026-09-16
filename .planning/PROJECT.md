@@ -336,6 +336,31 @@ at this close, as this project does. All **15 of the original 15** are satisfied
 and independently re-checked by the milestone audit, which traced the whole
 export → reassembly → gate → equivalence chain and found no broken link.
 
+**TAKEN as v1.1.0's scope, 2026-09-16 — the install and prerequisite story.**
+One hypothesis, and it is about the *user's first hour* rather than about
+driving an emulator: **a person who has just installed this plugin can find out
+what is missing in one command, and tell the plugin where an unusually-located
+tool lives, without reading source.** The ground truth it is measured against is
+that a wrong or absent prerequisite today surfaces only as an individual refusal
+at the moment a skill needs the tool — seven independent probes, each discovered
+separately, with the remedy text living in four places that have no mechanism
+saying when they disagree.
+
+This is deliberately **not** a Core Value milestone. It sits entirely upstream of
+"a Claude session can reliably drive a real C64 emulator" and adds nothing to
+what a session does once it is running. It is taken now because every capability
+this project has shipped across eight milestones is reachable only after a setup
+step whose failure modes have never been given a single surface.
+
+**Nothing from the carried-forward list below is taken with it.** Phases 51, 53,
+54 and 57 all stand unchanged into v1.1.0 and beyond it; the owner scoped this
+milestone to the install story alone, and the 2026-09-14 retirement
+reconciliation named as "the first task of the next milestone" was put as a
+candidate at this open and declined for it. It is still owed. See
+`## Current Milestone: v1.1.0 The Prerequisite Doctor` for the five scoping
+decisions taken, including why Phase 57 in particular is *not* this milestone
+despite sharing its subject matter.
+
 **CARRIED FORWARD to the next milestone, 2026-09-16 — the four phases v1.0.0 did
 not execute.** These are not dropped and their requirement text is not archived
 away: Phases **51**, **53**, **54** and **57** stand with their ROADMAP sections
@@ -1852,6 +1877,118 @@ with five of them never checked.
 
 **Phase numbering continues at 45.**
 
+## Current Milestone: v1.1.0 The Prerequisite Doctor
+
+**Goal:** A user can find out in one command, before any session exists, which of
+this plugin's prerequisites are present and what each missing one costs them —
+and when a tool is installed somewhere unusual, point at it once in a file
+instead of hunting for the right environment variable.
+
+**Scoped 2026-09-16 from the owner's framing**: *"we need to focus on using a
+standard installation tool and how the different tools that are needed for being
+able to use the skills and the mcp"*. Five decisions were taken at the open and
+are recorded here because each closes an alternative a later reader would
+otherwise re-propose:
+
+1. **"A standard installation tool" resolved to a prerequisite *doctor*, not an
+   installer and not a package-manager manifest.** Three alternatives were put
+   and declined: a `mise`/`Brewfile`-style declaration the user's own tool
+   consumes, collapsing the two install paths into one, and executing Phase 57 as
+   written. The doctor was chosen because the measured problem is not that
+   installing is hard — it is that a user cannot find out what is missing without
+   triggering seven independent refusals one at a time.
+
+2. **The never-auto-install rule holds unchanged, and its three carve-outs
+   stay.** `CLAUDE.md`'s standing constraint (owner, 2026-09-08) is not
+   re-litigated: nothing this milestone ships invokes a package manager. The
+   stricter option — withdrawing `scripts/ensure-mcp-deps.sh`, CI's `retry_apt
+   install -y acme` and the installer's `--vendor` — was put and declined.
+   **Phase 57 is therefore NOT executed this milestone and stays carried**, since
+   withdrawing those three is precisely its goal. `INSTALL-01`..`05` are untouched
+   and `INSTALL-04` still records its own impossibility.
+
+3. **The doctor is a CLI verb, not an MCP tool.** `vice-mcp doctor` follows the
+   `vice-mcp anno <verb>` subcommand precedent (D-06, plan 10-04) — which
+   `CLAUDE.md` already names as an invocation rather than an install. The seam is
+   forced by the host/container split: host tools are spawned inside the broker
+   process, so an MCP tool answering from the container cannot see the host's
+   `$PATH` without a broker round trip, and would be unreachable in the state the
+   user most needs it — before `.mcp.json` is wired and before any session exists.
+
+4. **The report is capability-mapped, not a flat binary list.** The owner's
+   framing asks about the tools needed "for being able to use the skills and the
+   mcp", so the unit of the answer is a skill or an MCP capability, not a binary:
+   a user missing ACME should learn that `acme-build` is blocked and the other
+   six skills are not, rather than reading a bare red row.
+
+5. **Tool locations become a file, layered *under* the environment variables
+   rather than replacing them.** Resolution becomes `env var → file → $PATH` or
+   sibling probe `→ refuse by name with the remedy`. Replacing the env vars
+   outright was put and declined: it would break every existing `VICE_BIN=...`
+   consumer including CI and the live-test paths, in a milestone whose subject is
+   making setup *easier* to get right.
+
+**Target features:**
+
+- **One committed prerequisite declaration.** Per tool: version floor, what it
+  unblocks, and the remedy per platform. Today that knowledge is split across
+  `README.md`'s hand-kept per-distro tables, `acme-build/SKILL.md`'s prefix list,
+  and inline refusal strings in `host-tool.mts` — four places that can disagree
+  and have no mechanism saying when they do.
+
+- **`vice-mcp doctor`, reachable on a Node too old to run the server.** This is a
+  hard constraint, not a preference: a doctor whose most basic check is *"your
+  Node is too old"* must start on a Node that is too old. *(Scoping input,
+  measured at this open by reading `src/mcp/vice/package.json` and to be
+  re-verified by the phase that acts on it: `bin.vice-mcp` points at
+  `vice-proxy.ts`, a `.ts` entry that only runs under Node >= 24 type-stripping,
+  so it cannot parse on Node 20 — the doctor entry cannot simply be a subcommand
+  of the existing binary.)*
+
+- **Capability-mapped output that names its own sources.** Per skill and per MCP
+  capability, each resolved path reported together with *which* source supplied
+  it — env var, location file, `$PATH`, or sibling probe — so a layered
+  resolution stays explainable when it produces a surprise.
+
+- **A tool-location file at `.c64-re-tools/tools.json`.** Inside the tool-written
+  root every writer already derives from `toolsDir()` (D-33) and already
+  gitignored, so a machine-specific absolute path cannot land in a commit. The
+  doctor writes a commented template on request; the user edits it. *(Scoping
+  input, measured at this open by grep over `src/`, to be re-verified by the
+  phase: five per-tool location overrides exist today in three naming
+  conventions — `VICE_BIN` in `backend-detect.mts`/`vice-broker.mts`/
+  `broker-launch.mts`, `ACME_BIN` in `host-tool.mts`/`acme-gate.ts`, a bare
+  `ACME` for the stdlib dir, `GHIDRA_HOME` in `host-tool.mts` and
+  `ghidra-project.mts`, and `VICE_BROKER_NODE` in the launcher — while `c1541`,
+  `petcat` and `dxa` have no location override at all.)*
+
+- **The doctor calls the probes that already ship.** `resolvedBackend()`,
+  `findSiblingBinary()`, `findDxaBinary()`, `findAcmeLib()` and the Ghidra
+  `analyzeHeadless` search. Minting a second detection path is the specific
+  mistake to avoid here: two probes that can disagree about whether a tool is
+  present are worse than one probe with no reporting surface, because the doctor
+  would then be able to contradict the refusal the user actually hits.
+
+- **`README.md`'s install tables generated from the declaration.** Guarded
+  **semantically**, not byte-identically — the owner decision of 2026-09-13 to
+  remove every byte-identical assertion (Phase 54) stands, and a new guard in
+  that shape would be building the thing that decision removed.
+
+**Explicitly not this milestone**, recorded so none is inherited silently or
+re-proposed as an oversight:
+
+- **Phases 51, 53, 54 and 57 all stay carried.** The owner scoped this milestone
+  to the install and prerequisite story alone. In particular the 2026-09-14
+  retirement reconciliation — which `## Next Milestone Goals` and `STATE.md` both
+  name as the first task of the next milestone — was put as a candidate and
+  declined for this one. It remains owed.
+- **No install path is added, removed or collapsed.** Both the npm installer and
+  the plugin marketplace route stay as they are.
+- **The external-tool half of the never-auto-install rule is already satisfied**
+  and must not be re-implemented: `x64sc`, `c1541`, `petcat`, ACME, Ghidra and
+  dxa are already detect-then-refuse-by-name. This milestone adds a *reporting*
+  and *location* surface over those probes; it does not change what they decide.
+
 ## Next Milestone Goals
 
 *Rewritten 2026-09-16 at the v1.0.0 close. The section this replaces was written
@@ -2437,6 +2574,20 @@ two-projects halves; `ANNO-03`'s licence, which the Phase 9 probe falsified as
 written).
 
 </details>
+
+---
+
+*Last updated: 2026-09-16 at the **open of milestone v1.1.0 "The Prerequisite
+Doctor"** — a milestone-start write, not an evolution review. Two sections
+changed and nothing else: a `## Current Milestone` section was added carrying the
+goal, the five scoping decisions taken at the open and what is explicitly not in
+scope; and **Active** gained a `TAKEN as v1.1.0's scope` block above the
+carried-forward list. **Core Value is untouched and was not re-weighed** — this
+milestone sits entirely upstream of it and produces no evidence bearing on it, so
+re-confirming it here would be a sixth restatement with nothing behind it.
+**Nothing moved to Validated or Out of Scope**, and the four carried-forward
+phases (51, 53, 54, 57) stand exactly as the v1.0.0 close left them. The full
+evolution review below is the v1.0.0 close's and remains current.*
 
 ---
 

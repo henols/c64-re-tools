@@ -1,62 +1,69 @@
 ---
 gsd_state_version: "1.0"
-milestone: v1.0.0
-milestone_name: The Rebuild Half
-status: Awaiting next milestone
-stopped_at: Milestone v1.0.0 closed 2026-09-16 on its delivered scope; Phases 51, 53, 54 and 57 carried forward
-last_updated: "2026-09-16T11:55:10.837Z"
+milestone: v1.1.0
+milestone_name: The Prerequisite Doctor
+status: planning
+last_updated: "2026-09-16T12:35:13.227Z"
 last_activity: 2026-09-16
-last_activity_desc: Milestone v1.0.0 completed and archived (override_closeout)
-state_head: 647f8e3cb9651ee4c482563964f84861e8592497
 progress:
-  total_phases: 9
-  completed_phases: 9
-  total_plans: 73
-  completed_plans: 73
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 carried_forward_phases: [51, 53, 54, 57]
-current_phase: null
-current_phase_name: null
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-16 at the **v1.0.0 milestone close** —
-a full evolution review: six requirement bullets moved to Validated, Active
-rewritten around the four carried-forward phases, three Key Decisions rows added,
-Out of Scope audited with nothing moved, and the stale 3-failure `test:automated`
-floor corrected to the measured zero)
+See: .planning/PROJECT.md (updated 2026-09-16 at the **v1.1.0 milestone open** —
+a milestone-start write, not an evolution review: a `## Current Milestone`
+section carrying the goal, the five scoping decisions and what is explicitly out
+of scope, plus a `TAKEN as v1.1.0's scope` block in Active. Core Value untouched
+and deliberately not re-weighed. The v1.0.0 close's full evolution review stands
+below it and remains current.)
 
 **Core value:** A Claude session can reliably drive a real C64 emulator to
 reverse-engineer a program — read and write memory, set checkpoints, capture
 RAM, inspect chip state — and keep working when the emulator misbehaves.
-*Re-confirmed at the v1.0.0 close and unchanged. This milestone extended what
-happens **after** that — an annotated binary now comes back out as source a
-person can read, change and reassemble — without moving the ONE thing.*
+*Untouched at the v1.1.0 open and deliberately NOT re-confirmed. This milestone
+sits entirely upstream of it — it is about the user's first hour, before a
+session drives anything — and produces no evidence bearing on the ONE thing, so
+restating it here would be a sixth repetition with nothing behind it.*
 
-**Current focus:** None. **Milestone v1.0.0 "The Rebuild Half" closed
-2026-09-16** on its delivered scope — 9 phases (45-50, 52, 55, 56), 73 plans,
-203 tasks, 33/33 in-scope requirements, `override_closeout`.
+**Current focus:** **Milestone v1.1.0 "The Prerequisite Doctor"**, opened
+2026-09-16. Defining requirements. One hypothesis: *a person who has just
+installed this plugin can find out what is missing in one command, and tell the
+plugin where an unusually-located tool lives, without reading source.*
 
-**Next action:** `/gsd-new-milestone`. It starts with an unusual inheritance —
-**four phases that already exist and mostly should not be executed as written**:
+**What this milestone builds**, per the owner's framing — *"a standard
+installation tool and how the different tools that are needed for being able to
+use the skills and the mcp"* — resolved at the open to a prerequisite **doctor**,
+not an installer:
 
-| Phase | Requirements | What it needs first |
-|---|---|---|
-| 51 | `VOCAB-01`..`06` | **Re-scoping.** The convention it enforces was retired outright on 2026-09-14 and its guard deleted; 4 of 6 ids are unimplementable as written |
-| 53 | `DOCS-01`..`04` | **Re-measuring.** `docs/phase*.md` is now 27 files, not the 21 it was written against; `DOCS-04`'s subject is a deleted file |
-| 54 | *(none — `TBD`)* | **Requirements.** Never declared any; owner decision 2026-09-13 to remove all byte-identical assertions stands |
-| 57 | `INSTALL-01`..`05` | **Re-scoping.** `INSTALL-04` records its own impossibility — it needs a pre-provisioned runner image, not a workflow change |
+| Deliverable | Shape |
+|---|---|
+| Prerequisite declaration | One committed source of truth per tool: version floor, what it unblocks, remedy per platform |
+| `vice-mcp doctor` | Host-side CLI verb, following the `vice-mcp anno <verb>` precedent. Must start on a Node too old to run the server |
+| Capability-mapped report | Answers per skill and per MCP capability, naming which source supplied each resolved path |
+| `.c64-re-tools/tools.json` | User-authored tool locations, gitignored. Resolution: env var → file → `$PATH`/sibling → refuse by name |
+| Generated README tables | From the same declaration, guarded semantically — never byte-identically (Phase 54's owner decision stands) |
 
-**The first task of the next milestone is not any of them.** It is reconciling
-the 2026-09-14 quick task (`260914-poo`) into the documents that drive execution.
-That task retired the planning-vocabulary convention with no successor and
-deleted 60 files; its own summary said ROADMAP/REQUIREMENTS/STATE would be
-reconciled afterwards, and that never happened. Until it is done, Phase 51's
-remaining plans and `DOCS-04` are instructions to rebuild something deliberately
-removed.
+**The standing constraint this milestone must not violate:** never auto-install.
+`CLAUDE.md`'s rule (owner, 2026-09-08) holds unchanged and its three carve-outs
+stay. Every surface added here **detects and reports**; the user runs every
+install command. Nothing shipped by this milestone may invoke a package manager.
+
+**Four phases remain carried and are NOT in this milestone** — 51, 53, 54 and 57,
+holding `VOCAB-01`..`06`, `DOCS-01`..`04` and `INSTALL-01`..`05`. Phase 57 shares
+this milestone's subject matter and is still excluded on purpose: its goal is to
+*withdraw* the three never-auto-install carve-outs, and the owner chose to keep
+them. The 2026-09-14 retirement reconciliation (`260914-poo`) that the v1.0.0
+close named as "the first task of the next milestone" was put as a candidate at
+this open and declined for it. **It is still owed**, and the nine live plans and
+four requirements pointing at a deleted guard are still pointing at it.
 
 **The governing constraint, which no phase may violate:** the tool reports; the
 end-user decides what gets reverse-engineered. No phase delivers behaviour that
@@ -101,7 +108,6 @@ need a variant taxonomy per class written before implementation.
 end-user decides what gets reverse-engineered. No phase delivers behaviour that
 removes, strips, drops or excludes part of a subject binary on the tool's own
 judgement. Phase 46 makes that structural rather than stated.
-
 
 *Everything below in this section is the v0.9.0 milestone narrative as written
 during execution, kept as the historical record rather than rewritten at the
@@ -315,10 +321,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: Milestone v1.0.0 complete
+Phase: Not started (defining requirements)
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-09-16 — Milestone v1.0.0 completed and archived
+Status: Defining requirements
+Last activity: 2026-09-16 — Milestone v1.1.0 started
 
 ## Performance Metrics
 
