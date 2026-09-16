@@ -3,6 +3,9 @@ title: Stamp installed-skill provenance and give the npm route a real update pat
 date: 2026-09-14
 priority: medium
 source: /gsd-explore — skill installer route survey (.planning/notes/skill-installer-routes-surveyed.md)
+audit_acknowledged:
+  milestone: v1.0.0
+  at: 2026-09-16
 ---
 
 # Stamp installed-skill provenance in the npm installer target

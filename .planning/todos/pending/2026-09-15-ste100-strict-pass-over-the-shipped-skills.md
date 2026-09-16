@@ -2,6 +2,9 @@
 title: Run a strict ASD-STE100 pass over all 18 markdown files under src/skills
 date: 2026-09-15
 priority: medium
+audit_acknowledged:
+  milestone: v1.0.0
+  at: 2026-09-16
 ---
 
 # Task

@@ -3,6 +3,9 @@ title: Fix stale "six skills" count — nine ship
 date: 2026-09-14
 priority: low
 source: /gsd-explore — skill installer route survey (.planning/notes/skill-installer-routes-surveyed.md)
+audit_acknowledged:
+  milestone: v1.0.0
+  at: 2026-09-16
 ---
 
 # Stale skill count: prose says six, nine ship

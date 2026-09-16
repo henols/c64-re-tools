@@ -3,6 +3,9 @@ title: incident records always write epoch_after: null — stock-recycle.ts neve
 date: 2026-09-13
 priority: medium
 source: planning-time measurement while re-baselining vice-proxy.test.ts (quick task 260913-v9e)
+audit_acknowledged:
+  milestone: v1.0.0
+  at: 2026-09-16
 ---
 
 # What

@@ -4,8 +4,13 @@ title: audit-gate.mjs's shared 15s guard budget marks the last docs guards red u
 area: testing
 severity: major
 files:
+
   - scripts/audit-gate.mjs:296
   - src/mcp/vice/audit-integrity.test.ts:245
+
+audit_acknowledged:
+  milestone: v1.0.0
+  at: 2026-09-16
 ---
 
 # What

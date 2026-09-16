@@ -11,6 +11,7 @@ while running this task's own verify command
 `node --test docs-absorbed-decisions.test.ts docs-dangling-refs.test.ts`.
 
 **What's wrong:** `docs-dangling-refs.test.ts` fails two tests:
+
 - `no shipped src/mcp/vice/ string literal names a phase number (FLOW-02)`
 - `planted-violation: the verbatim pre-fix wording is flagged, and the corrected wording is not`
 
@@ -40,3 +41,4 @@ reproducible-run protocol" or similar), then re-verify
 `docs-dangling-refs.test.ts` is fully green.
 
 **Also recorded in:** `.planning/WINDOWS.md` (via `gsd_run windows append`).
+  status: acknowledged

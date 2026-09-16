@@ -1,5 +1,142 @@
 # Milestones
 
+## v1.0.0 The Rebuild Half (Shipped: 2026-09-16)
+
+**Phases completed:** 9 phases (45-50, 52, 55, 56), 73 plans, 203 tasks
+**Timeline:** 2026-09-10 → 2026-09-16 (6 days, 619 commits since the `v0.9.0` tag)
+**Requirements:** 33/33 in-scope Complete
+**Closeout type:** `override_closeout`
+**Known verification overrides:** 11 newly acknowledged, 38 carried forward from prior closes, 8 permanently un-acknowledgeable and disclosed (see STATE.md Deferred Items)
+
+**Delivered: the "and rebuild" half, claimed since v0.1.x and never built.** An
+annotated store now exports as a directory of ACME source that real ACME 0.97
+reassembles byte-identically, that a person can edit, and whose rebuild is shown
+behaving identically to the original on genuine stock VICE 3.9.
+
+**Key accomplishments:**
+
+- **Decomposition to closure, disagreement first** (`DECOMP-01`..`04`, Phase 45).
+  Nine committed fixtures fully typed from real dxa+Ghidra derivation with **zero
+  fabricated code**, six carrying genuine stock-VICE execution evidence. The
+  `decomp-completeness` verb takes `anno_evid_disagreements` as a **required**
+  input and refuses by name rather than rendering an empty answer without it. Its
+  gate was proven non-vacuous by three planted controls watched going RED against
+  a real derived-and-executed store, and criterion 5 ran end to end at
+  **4095/4095 bytes byte-identical** under real ACME.
+
+- **Rebuildable, reassemblable, provenance-carrying source** (`BUILD-01`..`07`,
+  Phases 46-49). One ACME file per scope wired by `!source`; data tables extracted
+  to sibling `.bin` files, proven swappable by replacing `charset-phantom.prg`'s
+  own 2048-byte character set with **zero lines of code touched**; every branch,
+  `JSR`/`JMP` and data reference resolved through a symbol or the export refusing
+  by name, naming both addresses and count. `BUILD-07` makes losslessness
+  structural rather than stated: a test-only filtering variant is watched dropping
+  a `CRACKER-PATCH` range (RED) before the real exporter is trusted to keep it
+  byte for byte (GREEN).
+
+- **A gate frozen before the thing it measures, and shipped red** (`BUILD-06`,
+  Phase 49). Seven inputs and twelve first-match-wins rules committed to git
+  **alone, before any measurement existed**, watched turning red on all three
+  named failure shapes, and proven by exhaustive 864-combination enumeration to
+  admit no non-clean hazard disposition to green. Its first real run returned
+  **`red` under rule `R7`** — the subject carries one permanently-unclassified
+  VIC-II region — and it was published red rather than tuned until it passed.
+  Phase 50 then ran it independently over a different subject and got
+  `acknowledged` under `R10`, so the table discriminates rather than always
+  refusing.
+
+- **Equivalence and modifiability, demonstrated on a real machine**
+  (`EQUIV-01`..`04`, Phase 50). `compare-cross-binary.mjs` was committed before
+  any rebuild existed to compare under it. Three planted single-bit regressions at
+  `$D020`/`$D015`/`$D018` each produced a named DIVERGENCE row and `VERDICT: FAIL`
+  — the first evidence the instrument could see anything at all. The rebuild then
+  gave `VERDICT: PASS`, exit 0, **empty difference set** under that same mask.
+  `EQUIV-03` was closed on its literal reading: the edit was made in
+  `scope_087a.a`, a file `exportAsmTree()` itself emitted, proven to be the
+  exporter's own output by membership in that run's `files` list rather than by
+  filename convention.
+
+- **The fork backend deleted outright** (`FORKRM-01`..`07`, Phase 52). `vice.ts`,
+  the fork manifest, its probe, `capability-registry.ts` and ~1,800 lines of proxy
+  forwarding are gone; `ViceBackend` is the single literal `"stock"`. All 27
+  fork-mentioning lines across nine shipped skill files became either a stated
+  permanent limitation citing `docs/stock-hard-losses.md` or a collapsed
+  single-backend fact — **zero fork mentions remain under `src/skills/`**. The
+  three capabilities stock provably cannot have are recorded as permanent,
+  accepted losses rather than routed to a backend that no longer exists.
+
+- **116 source-scanning test cases removed with zero collateral loss**
+  (`SC-1`..`SC-5`, Phase 56, plus Phase 55's 2,826-line reduction). A test that
+  merely *contained* a scanning assertion kept every other assertion it had, and
+  the suite's measured 3753→3637 drop was reconciled case by case against the 100
+  embedded removals plus the 16-case whole-file deletion — so a silently broken
+  file could not hide inside the expected decrease.
+
+### Carried forward, not dropped
+
+Four phases were **not** executed and their 15 requirements move to the next
+milestone with their ROADMAP sections live, following the v0.6.0 precedent for
+held Phases 24 and 26:
+
+| Phase | Requirements | State |
+|---|---|---|
+| 51 — Planning Vocabulary Out of the Shipped Server | `VOCAB-01`..`06` | In flight at 8/17 plans; **needs re-scoping, not resumption** |
+| 53 — Operator-Owned `docs/` | `DOCS-01`..`04` | Never started; `DOCS-04` unimplementable as written |
+| 54 — Remove Every Byte-Identical Assertion | *(none declared — `TBD`)* | Never started; needs requirements before plans |
+| 57 — Nothing Is Installed Automatically | `INSTALL-01`..`05` | Never started; `INSTALL-04` records its own impossibility |
+
+### Known Gaps
+
+Accepted at close and recorded rather than resolved:
+
+- **Phase 55 shipped with no VERIFICATION.md, VALIDATION.md or REVIEW.md.**
+  `PROXY-01`..`06` are Complete on delivery and independent re-measurement, never
+  on a gate. The integration checker traced both restorations to live code and the
+  phase's central claim was re-measured and held. `/gsd-verify-work 55` closes it.
+- **`FORKRM-02`'s literal text was undone after it was satisfied.** It required
+  `docs-fork-decision.test.ts` be *"rewritten to pin the new decision rather than
+  deleted"*; Phase 52 did exactly that, and commit `276c15c9` then deleted it along
+  with `docs-fork-absence.test.ts`. The decision survives in
+  `docs/stock-hard-losses.md`; the enforcement does not.
+- **An owner decision the planning documents never absorbed.** Quick task
+  `260914-poo` (2026-09-14) retired the planning-vocabulary convention outright and
+  deleted 60 files. Its own summary said ROADMAP/REQUIREMENTS/STATE would be
+  reconciled afterwards; that never happened, and the audit found nine live plans
+  pointed at a deleted guard. Reconciling it is the next milestone's first task.
+- **`50-REVIEW.md` `CR-01`, unresolved Critical** (pre-existing, Phase 41):
+  `TextMonitorClient.command()` declares a `timeoutMs` and never arms a timer.
+- **`EQUIV-04` criterion 5 rests on a declined verification.** The CI red was
+  observed locally under CI's own command and environment, never on a real runner;
+  the developer was asked and declined. Recorded as declined, not passed.
+- **`BUILD-04`'s synthetic subject settles to a plain `READY.` prompt**, with none
+  of its four planted on-screen effects surviving in combination though each works
+  in isolation. Root cause unknown; human-accepted 2026-09-13 with the finding
+  explicitly **not** retracted.
+
+### Measured at close
+
+Taken with no broker or emulator process running, output redirected, exit code read
+on the same line — twice, independently (milestone audit and close):
+
+| Check | Result |
+|---|---|
+| `npm run test:automated` | `tests 3701 · pass 3692 · fail 0 · skipped 9 · EXIT=0` |
+| `npm test` (the full glob CI runs) | `tests 3858 · pass 3777 · fail 0 · skipped 81 · EXIT=0` in 67.6s |
+| `npm run typecheck` | `EXIT=0` |
+
+The **3-failure `test:automated` floor** carried in PROJECT.md since the v0.9.0
+close is **false as of this milestone** and was corrected rather than re-stated.
+Conversely, three artifacts written after Phase 55 closed still claim
+`vice-proxy.test.ts` hangs; measured, it does not.
+
+**Archived:**
+
+- [`milestones/v1.0.0-ROADMAP.md`](milestones/v1.0.0-ROADMAP.md)
+- [`milestones/v1.0.0-REQUIREMENTS.md`](milestones/v1.0.0-REQUIREMENTS.md)
+- [`milestones/v1.0.0-MILESTONE-AUDIT.md`](milestones/v1.0.0-MILESTONE-AUDIT.md)
+
+---
+
 ## v0.9.0 The Text Channel and the Runtime Evidence Layer (Shipped: 2026-09-10)
 
 **Phases completed:** 6 phases, 51 plans, 123 tasks

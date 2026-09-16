@@ -4,11 +4,16 @@ title: Remove anno from the MCP surface; reach it via a stateless broker call
 area: broker
 severity: minor
 files:
+
   - src/mcp/vice/vice-proxy.ts:3415-3440
   - src/mcp/vice/vice-proxy.ts:196-312
   - src/mcp/vice/anno-tools.ts
   - src/mcp/vice/anno-cli.ts
   - src/mcp/vice/anno-store.ts:132-537
+
+audit_acknowledged:
+  milestone: v1.0.0
+  at: 2026-09-16
 ---
 
 ## Problem

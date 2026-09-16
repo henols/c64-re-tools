@@ -46,9 +46,13 @@ was believed; this block is what actually happened.
 
 ```
 cd src/mcp/vice && node --test docs-review-disposition.test.ts
+
 # tests 7
+
 # pass 7
+
 # fail 0
+
 exit 0
 ```
 
@@ -65,6 +69,7 @@ ledger **alone** — with every other disposition source excluded — covers all
 code is above.
 
 **Status: CLEARED 2026-08-25.**
+  status: acknowledged
 
 ## 2. `audit-integrity.test.ts` D-12-02 cascades from item 1 (found by 19-06, same owner)
 
@@ -165,7 +170,9 @@ explained away once per run and never fixed.
 
 **Sixth full-suite observation, same day:** 19-13's own phase gate ran
 `cd src/mcp/vice && npm test` at `88d7de4` and came back **green** — `# tests 2580 / # pass 2535 /
+
 # fail 0`, exit 0, `# duration_ms 102561`. The rate is therefore **2 red in 6 full-suite runs** on
+
 2026-08-25, and **0 red in 4 standalone runs**. A green gate does not close this item: an
 intermittent failure that happens not to fire is not a fixed one, and the clearing condition above
 is unchanged.

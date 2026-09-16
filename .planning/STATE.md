@@ -2,30 +2,74 @@
 gsd_state_version: "1.0"
 milestone: v1.0.0
 milestone_name: The Rebuild Half
-current_phase: 51
-current_phase_name: Planning Vocabulary Out of the Shipped Server
-status: executing
-stopped_at: Phase 50 complete; Phase 51 resumes at plan 9 of 17
-last_updated: "2026-09-16T10:49:39.422Z"
+status: Awaiting next milestone
+stopped_at: Milestone v1.0.0 closed 2026-09-16 on its delivered scope; Phases 51, 53, 54 and 57 carried forward
+last_updated: "2026-09-16T11:55:10.837Z"
 last_activity: 2026-09-16
-last_activity_desc: Phase 50 complete, transitioned to Phase 51
-state_head: 433cd325c868b89818ce99bca4100c0cbd6fd638
+last_activity_desc: Milestone v1.0.0 completed and archived (override_closeout)
+state_head: 647f8e3cb9651ee4c482563964f84861e8592497
 progress:
-  total_phases: 13
+  total_phases: 9
   completed_phases: 9
-  total_plans: 90
-  completed_plans: 81
-  percent: 90
+  total_plans: 73
+  completed_plans: 73
+  percent: 100
+carried_forward_phases: [51, 53, 54, 57]
+current_phase: null
+current_phase_name: null
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-16 after Phase 50 — one Key
-Decisions row and a footer; the last full evolution review was the v0.9.0 close
-on 2026-09-10. Note the footer skipped Phase 49, which closed 2026-09-13 without
-updating it)
+See: .planning/PROJECT.md (updated 2026-09-16 at the **v1.0.0 milestone close** —
+a full evolution review: six requirement bullets moved to Validated, Active
+rewritten around the four carried-forward phases, three Key Decisions rows added,
+Out of Scope audited with nothing moved, and the stale 3-failure `test:automated`
+floor corrected to the measured zero)
+
+**Core value:** A Claude session can reliably drive a real C64 emulator to
+reverse-engineer a program — read and write memory, set checkpoints, capture
+RAM, inspect chip state — and keep working when the emulator misbehaves.
+*Re-confirmed at the v1.0.0 close and unchanged. This milestone extended what
+happens **after** that — an annotated binary now comes back out as source a
+person can read, change and reassemble — without moving the ONE thing.*
+
+**Current focus:** None. **Milestone v1.0.0 "The Rebuild Half" closed
+2026-09-16** on its delivered scope — 9 phases (45-50, 52, 55, 56), 73 plans,
+203 tasks, 33/33 in-scope requirements, `override_closeout`.
+
+**Next action:** `/gsd-new-milestone`. It starts with an unusual inheritance —
+**four phases that already exist and mostly should not be executed as written**:
+
+| Phase | Requirements | What it needs first |
+|---|---|---|
+| 51 | `VOCAB-01`..`06` | **Re-scoping.** The convention it enforces was retired outright on 2026-09-14 and its guard deleted; 4 of 6 ids are unimplementable as written |
+| 53 | `DOCS-01`..`04` | **Re-measuring.** `docs/phase*.md` is now 27 files, not the 21 it was written against; `DOCS-04`'s subject is a deleted file |
+| 54 | *(none — `TBD`)* | **Requirements.** Never declared any; owner decision 2026-09-13 to remove all byte-identical assertions stands |
+| 57 | `INSTALL-01`..`05` | **Re-scoping.** `INSTALL-04` records its own impossibility — it needs a pre-provisioned runner image, not a workflow change |
+
+**The first task of the next milestone is not any of them.** It is reconciling
+the 2026-09-14 quick task (`260914-poo`) into the documents that drive execution.
+That task retired the planning-vocabulary convention with no successor and
+deleted 60 files; its own summary said ROADMAP/REQUIREMENTS/STATE would be
+reconciled afterwards, and that never happened. Until it is done, Phase 51's
+remaining plans and `DOCS-04` are instructions to rebuild something deliberately
+removed.
+
+**The governing constraint, which no phase may violate:** the tool reports; the
+end-user decides what gets reverse-engineered. No phase delivers behaviour that
+removes, strips, drops or excludes part of a subject binary on the tool's own
+judgement. `BUILD-07` made that structural rather than stated, and it shipped.
+
+---
+
+*Everything below in this section is the v1.0.0 and v0.9.0 in-flight narrative as
+written during execution, kept as the historical record rather than rewritten at
+the close. It is superseded by the block above wherever the two disagree.*
+
+**Superseded — v1.0.0 in-flight focus:** Phase 51 — Planning Vocabulary Out of the Shipped Server (in flight at 8/17 plans)
 
 **Current focus:** Phase 51 — Planning Vocabulary Out of the Shipped Server (already
 in flight at 8/17 plans)
@@ -58,7 +102,6 @@ end-user decides what gets reverse-engineered. No phase delivers behaviour that
 removes, strips, drops or excludes part of a subject binary on the tool's own
 judgement. Phase 46 makes that structural rather than stated.
 
----
 
 *Everything below in this section is the v0.9.0 milestone narrative as written
 during execution, kept as the historical record rather than rewritten at the
@@ -272,30 +315,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 51 (Planning Vocabulary Out of the Shipped Server) — EXECUTING, plan 9 of 17
-Plan: 8 of 17 executed
-Status: Phase 51 is already planned and in flight — it is NOT "not started". 17 plans exist on disk, 8 carry SUMMARY files, and the ROADMAP Progress table records 8/17 In Progress. Phase 50 closed 2026-09-16 with all four requirements Complete and verification passed 5/5 (50-VERIFICATION.md): EQUIV-01 and EQUIV-02 from 50-06, EQUIV-04 from 50-07 (on the developer's dated 2026-09-16 decline of a real GitHub Actions run, residual named in docs/phase50-ci-boundary.md), and EQUIV-03 from 50-08, which made its edit in scope_087a.a -- a file exportAsmTree() itself emitted -- proven by membership in that same export run's own files list rather than by filename convention. Two items stay open on the record, neither a Phase 50 regression: 50-REVIEW.md's CR-01 (TextMonitorClient.command()'s timeoutMs is declared and never armed, so the seven text-tools.ts call sites passing timeoutMs: 30000 hold no bound at all; origin fad65de8 feat(41-01), a Phase 41 defect) and WR-01 (compare-cross-binary.mjs skips register-domain comparison without a diagnostic when one sidecar carries no registers -- verified never exercised by any committed Phase 50 transcript). Phase 50 also still owes /gsd-secure-phase 50: the secure-phase step hook is active and no 50-SECURITY.md exists.
-Plans: 11/11 executed. Phase 56 was planned 2026-09-15 - 11 plans across 4 waves, plan-checker PASSED, decision coverage 17/17, files_modified disjoint across 23 paths. It deletes `src/mcp/vice/shipped-modules.ts`. It also deletes every embedded test case whose subject is source text. Plan 01 (tracer) is complete. It proved the D-14 scanner against a planted fixture. It cut prg-image.test.ts end-to-end through the full pipeline, then applied the same cut to anno-graphics.test.ts and anno-types.test.ts. Net effect: 5 whole-case deletions, 1 strip-in-place-and-rename, 0 collateral loss. Plan 02 is complete. It cut anno-seam.test.ts from 23 cases to 2: the package.json files[] completeness case and the WR-25 behavioural refusal case. Two atomic commits, each gated by a per-file TAP name-set diff. The suite and typecheck are both green. Plan 03 is complete. It cut block-class.test.ts (two cases), anno-join.test.ts (one case) and anno-overlap.test.ts (one case). Four whole-case deletions total, each reached by a single scanner hit or a helper-indirected hit. The suite (`fail 0`, `skipped 9`, `tests 3723`) and typecheck are both green. Plan 04 is complete. It cut capture-predicate.test.ts (two cases) and evid-report-keys.test.ts (two direction-4 cases). It also removed evid-report-keys.test.ts's three now-orphaned module-scope helpers -- PATTERNS.md's worked Edit Kind 4 example. Four whole-case deletions total. The suite (`fail 0`, `skipped 9`, `tests 3719`) and typecheck are both green. Plan 05 is complete. It cut anno-index.test.ts (three cases, one reading the test file's own source rather than a production module). It also cut vsf-slice.test.ts (four cases, including its whole "Structural SUPPLEMENT" section). Seven whole-case deletions total. The now-orphaned `indexSource()`, `CLI_MARKER` and `libraryRegion()` helpers are gone. The suite (`fail 0`, `skipped 9`, `tests 3712`) and typecheck are both green. Plan 06 is complete. It cut stock-dispatch.test.ts, the phase's largest single source-scanning population. 15 whole-case deletions plus 2 D-02/D-03 renames, reached through two module-scope `*_SOURCE` constants and a direct `readFileSync` rather than the doomed module alone. All four CHAN-04 channel-lock cases survive untouched. The suite (`fail 0`, `skipped 9`, `tests 3697`) and typecheck are both green. Plan 07 is complete. It cut anno-store.test.ts, the largest single file in the phase at 5,595 lines and the one holding both of the phase's measured genuinely-mixed cases. 12 whole-case deletions, plus the bank-field case's D-02/D-03 rename and CR-08's no-rename strip. The suite (`fail 0`, `skipped 9`, `tests 3685`) and typecheck are both green. Plan 08 is complete. It cut anno-export-asm.test.ts's auto-name prefix cluster and BUILD-07 guard cluster. 11 whole-case deletions total, including one the D-14 scanner could not see at all, found only by the mandated blind-spot pass. No D-02/D-03 renames were needed. All three plan-flagged "may be mixed" candidates resolved to pure false positives on hand-read and stayed byte-identical. The suite (`fail 0`, `skipped 9`, `tests 3674`) and typecheck are both green. Plan 09 is complete. It cut anno-coverage.test.ts, the third giant file at 5,016 lines. 16 whole-case deletions total. An eleven-case cluster among them evaded the D-14 scanner and the plan's own candidate list entirely. Only the mandated blind-spot pass found it -- the largest single blind-spot find of the phase. One plan-flagged candidate resolved to a pure false positive and stayed byte-identical. Two now-orphaned production imports (`LABEL_KINDS`, `PROVEN_TARGET_SOURCES`) were also removed. The suite (`fail 0`, `skipped 9`, `tests 3658`) and typecheck are both green. Plan 10 is complete. It cut anno-derive.test.ts's five source-scanning cases. It then repaired thirteen now-false "asserted by X" enforcement clauses across D-11's five named production modules (anno-store.ts, dxa-blocks.ts, evid-ingest.ts, memmap-lookup.ts, capture-predicate.ts). Five of those clauses were beyond the plan's own action text. A mandated blanket-grep completeness gate found them. Every constraint sentence stays. No new prose was added. The suite (`fail 0`, `skipped 9`, `tests 3653`) and typecheck are both green. Plan 11 is complete. It removed `shipped-modules.ts` and its 16-case test file with `git rm`, after a repository-wide preflight grep confirmed zero remaining importers. It reconciled the whole phase's test-count drop case by case. 100 embedded cases were removed across sixteen surviving files (plans 56-01 through 56-10). 16 more cases were removed with the module's own test file (this plan). These are reported as two separate numbers, totaling 116 (3753 to 3637). All five success criteria have a recorded verdict. The suite (`fail 0`, `skipped 9`, `tests 3637`) and typecheck are both green. Phase 56 is complete.
-
-**Phase 51 is still in flight and is NOT superseded by this.** It remains In Progress at 8/17 plans in the ROADMAP Progress table; planning Phase 56 did not advance or close it. Its own position and per-plan record follows.
-
-Phase 51 (Planning Vocabulary Out of the Shipped Server) - EXECUTING, plan 9 of 17.
-Plans: 8/17 executed. 51-01 is complete: it widened skills-planning-vocabulary.test.ts's scan surface to four sources, added a count-pinned RATCHET ledger and comment-byte budget. It also proved installer/bin/cli.mjs clean end to end. 51-02 is complete: it built CITATION-RESOLUTION.md (five sections, re-derived dangling set at 30 tokens/76 occurrences, down from CONTEXT.md's inherited 33/~135). It also minted VOCAB-01..06 with traceability rows in REQUIREMENTS.md (38/38 mapped). 51-03 is complete: it swept host-tool.mts's 325 citations to zero, regenerated resources/host-tool.mjs, and finalized COMMENT_BUDGET_SLACK at 1650 from that file's own real diff. 51-04 is complete: it swept broker-launch.mts (186), broker-control.mts (80) and broker-epoch.mts (2) to zero, 268 citations across the broker's launch-and-control-plane family. It also regenerated all three resources/*.mjs siblings and deleted all six RATCHET entries. 51-05 is complete: it swept vice-broker.mts (147), vice-broker-client.ts (99), broker-state.mts (43) and broker-kill.mts (31) to zero, 320 citations across the broker's daemon/client/state/kill-path family. It also regenerated all three resources/*.mjs siblings, deleted all seven RATCHET entries, and confirmed the lease-model and incident-before-kill comments survive intact. 51-06 is complete: it swept anno-cli.ts (164), anno-join.ts (50), anno-symbols.ts (11), anno-index.ts (6) and anno-details.ts (3) to zero, 234 citations across the annotation-store CLI and its helpers. It is the first sweep in this phase to find and fix user-visible output (18 sites in anno-cli.ts's printed --help text and runtime messages), and it repointed three structural line citations in module-classification.ts that its own edits drifted. 51-07 is complete: it swept anno-store.ts (126), anno-types.ts (50), anno-store-export.ts (12), anno-derive.ts (6) and anno-confidence.ts (2) to zero, 196 citations across the store's core and type declarations. It resolved the phase's technical-token collision (UTF-16 -> "16-bit code units") without an exemption, named one genuinely unrecoverable (tier-4) citation, repointed a structural test (anno-types.test.ts) that pinned the exact vocabulary this phase removes, and confirmed the workspace-confinement and revert-history explanations survive intact. 51-08 is complete: it swept anno-export-asm.ts (146), anno-import.ts (21), anno-graphics.ts (18), anno-regbits-gen.ts (13), anno-memmap-render.ts (25), anno-provenance-ledger.ts (4) and anno-hazard-report.ts (2) to zero, 229 citations across the export path and six sibling modules. anno-register.ts's 63 citations are NOT resolved -- its requirements[] traceability data is real, mechanically-checked ids, and unshipping it (attempted, reverted) reddens anno-seam.test.ts's own completeness guard; documented as a Rule 4 architectural decision for a follow-up plan. 51-09 through 51-17 remain.
-
-Carried in from Phase 48 (complete, verified, UAT passed 2026-09-13): the
-purpose-built subject carries all four planted hazard classes, the pure
-read-only report module detects three of them and declines the deliberately
-undetected self-modification by name, the cross-check against four
-independently-sourced fixtures is committed, and the subject reassembles
-through the real multi-file export path with a real assembler. One finding
-stays open and disclosed rather than closed: the combined image's on-screen
-effects revert before the screen settles, root cause unknown, recorded in
-`FIXTURE-DESIGN.md`. Human UAT judged that acceptable for the delivered
-artifact — it did not retract the finding. Phase 49 gates reassembly, so
-that subject is the thing it will gate on.
-
-Progress: [█████████░] 90% (9/13 phases complete in v1.0.0, 81/90 plans. Phase 50 completed and verified 2026-09-16. Phase 56 completed by a prior plan. Phase 57 was added concurrently during that plan's execution. This plan completed Phase 50 plan 4's offline half. Plan 4 itself is NOT counted as complete -- its live half (Tasks 2/3) remains outstanding. Phase 50 gained plan 50-08 at planning time, which is why the plan total grows by one. Per-phase plan counts are in the ROADMAP Progress table.)
-Last activity: 2026-09-16 — Phase 50 complete, transitioned to Phase 51
+Phase: Milestone v1.0.0 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-09-16 — Milestone v1.0.0 completed and archived
 
 ## Performance Metrics
 
@@ -2547,6 +2570,90 @@ close should recognise them by this note and **re-disclose rather than
 re-investigate**. The fix belongs upstream in the scanner, not in this project's
 evidence files.
 
+### Acknowledged at the v1.0.0 close (2026-09-16)
+
+The pre-close artifact audit reported **19** open items against **38** already
+suppressed by earlier closes. **11 were newly acknowledged through
+`query audit-open acknowledge`** — 1 debug session, 8 pending todos and 2 phase
+deferred items. Verified by re-running the scan: `counts.total` 19 → 8,
+`acknowledged.total` 38 → 49. The remaining **8 could not be acknowledged by any
+CLI path** and are disclosed below rather than suppressed. They are the *same* 8
+as at the v0.7.0, v0.8.0 and v0.9.0 closes.
+
+**Fourth consecutive close, same 8, same mechanism.** All 8 refuse with
+`no deferred item matched --text`, and all 8 are markdown **table rows** in
+`.planning/phases/23-the-real-release-gate-go-degrade-no-go/deferred-items.md`
+(the 4-row run-log table in its item 3 and the 4-row timing-verdict table in the
+orchestrator note), not deferred-item bullets. The v0.7.0 writer note remains the
+record and the fix belongs upstream in the scanner. Following the v0.8.0
+instruction, this close **re-disclosed rather than re-investigated**, and did not
+halt the close on the refusals — a refusal recorded is not a refusal discarded.
+Planting a `resolved` cell to quiet the scanner remains unavailable here: that
+table records `159` and `2410` as `unresolved` in an adjacent cell, and writing
+`resolved` beside `unresolved` would falsify a v0.6.0 evidence record.
+
+The three counts that actually gate a phase close — `uat_gaps`,
+`verification_gaps` and `context_questions` — were all **0** at this close.
+
+Acknowledgment is verdict-preserving and self-invalidating: it never rewrites an
+artifact's own verdict, and the suppression lapses the moment the artifact's
+observed state changes again.
+
+**Counts:** 11 newly acknowledged, 38 carried forward from prior closes, 8
+disclosed-but-unsuppressable. `closeout_type=override_closeout`.
+
+| Category | Item | Status | Deferred At | Milestone |
+|----------|------|--------|-------------|-----------|
+| debug_sessions | knowledge-base | unknown | 2026-09-16 | v1.0.0 |
+| todos | 2026-09-11-remove-anno-from-the-mcp-surface-reach-it-via-a-stateless-br.md | (presence-only) | 2026-09-16 | v1.0.0 |
+| todos | 2026-09-13-incident-record-epoch-after-has-no-producer.md | (presence-only) | 2026-09-16 | v1.0.0 |
+| todos | 2026-09-13-result-chunking-orphaned-by-the-fork-removal.md | (presence-only) | 2026-09-16 | v1.0.0 |
+| todos | 2026-09-15-ste100-strict-pass-over-the-shipped-skills.md | (presence-only) | 2026-09-16 | v1.0.0 |
+| todos | audit-gate-shared-budget-reds-tail-guards.md | (presence-only) | 2026-09-16 | v1.0.0 |
+| todos | capability-registry-manifest-claim-stale.md | (presence-only) | 2026-09-16 | v1.0.0 |
+| todos | installer-skill-provenance-stamp.md | (presence-only) | 2026-09-16 | v1.0.0 |
+| todos | stale-six-skills-count.md | (presence-only) | 2026-09-16 | v1.0.0 |
+| deferred_items | Phase 19/deferred-items.md: the plan-19-13 correction block (self-marked `Status: CLEARED 2026-08-25`) | acknowledged | 2026-09-16 | v1.0.0 |
+| deferred_items | Phase 45/deferred-items.md: FLOW-02 violation in `anno-cli.ts`'s `decomp-completeness` USAGE text | acknowledged | 2026-09-16 | v1.0.0 |
+
+**Two of the todos acknowledged above were already closed in code by Phase 55**
+and are filed pending only because no Resolution section was ever written:
+`2026-09-13-result-chunking-orphaned-by-the-fork-removal.md` (closed by
+`54a4ac54`) and `2026-09-13-incident-record-epoch-after-has-no-producer.md`
+(closed by `1037f8cb`). Acknowledged rather than closed here to keep this close
+to bookkeeping; both are cheap wins for the next milestone.
+
+**The Phase 45 deferred item is genuinely open** and its guard is gone: the
+FLOW-02 violation in `anno-cli.ts`'s USAGE text was policed by
+`docs-dangling-refs.test.ts`, deleted by `276c15c9`. The violation now stands
+unenforced rather than fixed.
+
+#### Disclosed, not suppressed — the 8 permanently un-acknowledgeable rows
+
+All from `.planning/phases/23-the-real-release-gate-go-degrade-no-go/deferred-items.md`.
+They resurface at every close for as long as Phase 23 sits in `.planning/phases/`,
+which is for as long as Phases 24 and 26 are held.
+
+| # | Row text (truncated) | Refusal |
+|---|---|---|
+| 1 | `1 — 1 — (not captured)` | `no deferred item matched --text` |
+| 2 | `2 — 4 — 159 wired disconnect-while-queued; 916 anno call-timeout/crash-counter; …` | `no deferred item matched --text` |
+| 3 | `3 — 1 — (not captured)` | `no deferred item matched --text` |
+| 4 | `4 — 1 — 2408 BACK-05 D-G ordering at the wire` | `no deferred item matched --text` |
+| 5 | `2408 — 23-03, 23-10 — yes — broker-caused, deterministic — proven both directions` | `no deferred item matched --text` |
+| 6 | `916 — 23-04 — no (broker dead since 2026-08-20) — genuinely load-sensitive` | `no deferred item matched --text` |
+| 7 | `159 — 23-03/23-10 — yes — unresolved — never observed without a live broker` | `no deferred item matched --text` |
+| 8 | `2410 — 23-03/23-10 — yes — unresolved — never observed without a live broker` | `no deferred item matched --text` |
+
+#### Correction to the v0.9.0 note's inheritance claim
+
+The v0.9.0 close recorded two items as "v1.0.0's inheritance": the 3-failure
+`test:automated` floor and the `audit-root-args.test.ts` race. **The first is
+now closed** — re-measured twice on 2026-09-16 at `fail 0`, with
+`anno-register.test.ts`/`anno-import.test.ts` both green. The second is **still
+live** and passes to the next milestone. The floor claim was corrected in
+PROJECT.md rather than carried a second time.
+
 ### Acknowledged at the v0.9.0 close (2026-09-10)
 
 The pre-close artifact audit reported **14** open items against **33** already
@@ -2613,9 +2720,9 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-16T10:49:39Z
-Stopped at: Phase 50 complete and verified (8/8 plans, 5/5 must-haves); Phase 51 resumes at plan 9 of 17
-Resume file: None
+Last session: 2026-09-16T11:55:10Z
+Stopped at: Milestone v1.0.0 "The Rebuild Half" closed and archived on its delivered scope (9 phases, 73 plans, 33/33 in-scope requirements, `override_closeout`). Phases 51, 53, 54 and 57 carried forward with their ROADMAP sections live.
+Resume file: None — next action is `/gsd-new-milestone`
 
 Earlier: Completed 50-08-PLAN.md
 
@@ -3140,10 +3247,4 @@ Resume file: .planning/phases/32-the-deletion-and-the-grep-gate/32-CONTEXT.md
 
 ## Operator Next Steps
 
-- Plan Phase 45 with /gsd-plan-phase 45
-- Phase 48 carries a research flag: no reusable prior art for any of the four
-  movement-hazard classes. A variant taxonomy per class, written before
-  implementation, is what makes its non-vacuity criterion mean anything.
-- Phase 50's CI criterion needs a stated boundary rather than a blurred one:
-  the GitHub runner installs ACME but has no VICE, no built dxa and no Ghidra,
-  and new host prerequisites are out of scope for this milestone.
+- Start the next milestone with /gsd-new-milestone

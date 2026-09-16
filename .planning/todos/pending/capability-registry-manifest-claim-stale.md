@@ -3,6 +3,9 @@ title: capability-registry.ts claims vice_diagnose/vice_recycle are in neither m
 date: 2026-09-11
 priority: low
 source: /gsd-explore — MCP tool redundancy census
+audit_acknowledged:
+  milestone: v1.0.0
+  at: 2026-09-16
 ---
 
 # What

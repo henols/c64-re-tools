@@ -103,6 +103,25 @@ a bare count that the type system gives no way to render as `data`. **Nine skill
 ship, not seven — `c64-petcat` and `c64-disk-access` are this milestone's, both
 built on the `host_tool` seam rather than on new architecture.
 
+**As of v1.0.0 the "and rebuild" half in the first sentence above is real.** It
+had been claimed since v0.1.x and never delivered. An annotated store now exports
+as a **directory of ACME source** — one file per scope, wired by `!source`, data
+tables extracted to sibling `.bin` files, every branch, `JSR`/`JMP` and data
+reference resolved through a symbol or the export refusing by name — which real
+ACME 0.97 reassembles byte-identically, and which a person can edit and observe
+behaving differently on genuine stock VICE 3.9. The pipeline **reports and never
+decides**: nothing removes, strips, drops or excludes part of a subject binary on
+the tool's own judgement, and `BUILD-07` makes that structural rather than
+stated, proven by a planted control where a heuristic *would* want to drop a
+range and the range survives. A four-class movement-hazard report enumerates what
+blocks relocation and acts on none of it. A reassembly gate — seven inputs,
+twelve first-match-wins rules — was frozen in git before any measurement existed
+and returns `red`, `acknowledged` or `clean` on evidence rather than judgement.
+There is **one backend**: the fork is deleted, stock upstream `x64sc` is the only
+target, and the three capabilities it provably cannot have are recorded as
+permanent accepted losses in `docs/stock-hard-losses.md` rather than routed
+elsewhere.
+
 ## Core Value
 
 A Claude session can reliably drive a real C64 emulator to reverse-engineer a
@@ -289,6 +308,12 @@ rather than re-confirmed a fifth time.
 - ✓ Five human-formatted text-monitor outputs are structured data with one owning module each, and a build that lacks a command says so by name — v0.9.0 Phase 42 (`PARSE-01`..`PARSE-04`, verification `passed` 5/5 across two gap-closure rounds). `memmapshow` preserves **execute as its own bit** (`PARSE-01`); `chis`, `bt`, `prof flat` and `io` decode into ranked cycles, per-entry CPU history, the reconstructed JSR chain and the semantic register view (`PARSE-02`) — `prof flat` reading VICE's U+202F narrow-no-break-space thousands separator by ASCII-space-only tokenization, never a whitespace-class split. Every closed set (processor flags, memspace markers, register-label order, frame origins, sprite-table offsets) **refuses by name on drift** rather than decoding a plausible-looking wrong answer. Fixtures come from two real binaries (stock 3.9, fork 3.10) pinned to the binary they came from, and `textmon-seam.test.ts` mechanically enforces one owner per format against the real tree (`PARSE-03`). `PARSE-04` is answered per command rather than by a version gate — and the polarity is the **opposite** of a version floor: tracing/profiling support is opt-**out** at build time, `memmapshow`/`chis` share one guard and one remedy sentence, `bt`/`prof flat` are gated by nothing and never claim a build gap, and `io` degrades per-chip at runtime and is reported as a chip fact. All five decoded a reply dialed live from genuine stock `/usr/bin/x64sc`.
 - ✓ What the emulator observed becomes durable, run-keyed, monotonically accumulating store state, joined against the byte-derived block table by a query that reports disagreement **first** and agreement as a count, never overwriting it — v0.9.0 Phase 43 (`EVID-01`..`EVID-06`, verification `passed` 5/5; `anno_evid_exec` at `SCHEMA_VERSION` 4, `evid-reconcile.ts`'s join, `anno_evid_ingest`/`anno_evid_disagreements`/`anno_evid_runs`/`anno_evid_reset`). The soundness asymmetry the hypothesis was bounded by is enforced **structurally**, not by care: `RuntimeExecClass` is `"code" | "unobserved"` with no `data` member to return, the never-observed population is a count with no row array and no class field, and every summary carries the denominator it is a fraction of
 - ✓ `PROOF-01`'s missing independent external check, delivered — its false-positive count is computable for the first time — v0.9.0 Phase 44 (`PROOF-04`; 3/3 observable truths verified). The reversal condition stated verbatim at the v0.8.0 open — "a binary-monitor-reachable execution oracle, or a decision to open the text channel" — is closed by the **second** branch, deliberately and on the record. Measured live against genuine stock VICE 3.9 on `danish.d64`'s `BRUCE LEE (DC)`: **168 false positives / 45072** at anchor hit 50 (labelled `frame-exact-region`, inside `EVID-06`'s proven window) and **434 / 45072** at anchor hit 3000 (labelled `narrowed`, not frame-exact), positive class `code`, tier `runtime-observed`. Both runs are recorded **beside each other**, neither superseding the other, and both cite one identical `SUBJECT_ARTIFACT_SHA256` so anchor depth was the only variable. All three Phase 38 figures — `100.00 (24/24)`, `72.39 (97/134)`, `72.46 (100/138)` — are restated verbatim beside the new numbers rather than replaced. Independence is asserted **structurally, not promised**: two separately-invoked producers with closed import lists, proven non-vacuous by planted-violation controls in both directions, joined by exactly one call to the shipped `reconcileObservedExecution()`. Two limits are named rather than absorbed: the never-observed population stays a **count** and is never converted into a class, and the deeper run's reach past `EVID-06`'s hit-50 bound is labelled `narrowed` in its own section rather than softened into a parenthetical.
+- ✓ Decomposition to closure, disagreement first — v1.0.0 Phase 45 (`DECOMP-01`..`04`, verification `passed` 5/5). Nine committed fixtures are fully typed from real dxa+Ghidra derivation with **zero fabricated code**, six carrying genuine stock-VICE execution evidence. The fifth `anno` CLI verb (`decomp-completeness`) is the only data path from a real store into the completeness report, it takes `anno_evid_disagreements` as a **required** input and refuses by name rather than rendering an empty answer without it, and its gate was proven non-vacuous by three planted controls observed going RED against a real derived-and-executed store. `decomposeRegisterValue()` is the one owning multi-bit decoder driving both render surfaces. Criterion 5 ran end to end on the real committed `charset-phantom` store under real ACME 0.97 at **4095/4095 bytes byte-identical**, with `anno-decomp-closure.test.ts` re-proving all nine fixtures' gate on every CI run with no external tool.
+- ✓ Rebuildable, reassemblable, provenance-carrying ACME source behind a gate that exists before the phase it gates — v1.0.0 Phases 46, 47, 48, 49 (`BUILD-01`..`07`, four verifications all `passed`). A store now exports as a real **directory** of ACME files that real ACME 0.97 reassembles byte-identically; data tables leave as sibling `.bin` files swappable with zero lines of code touched (proven by replacing `charset-phantom.prg`'s own 2048-byte character set); every branch, `JSR`/`JMP` and data reference resolves through a symbol or the export **refuses by name**, naming both addresses and count. `BUILD-05`'s reworded invariant carries the provenance verdict to point of use, and **`BUILD-07` makes losslessness structural**: a test-only filtering variant is watched dropping a `CRACKER-PATCH` range (RED) before the real exporter is trusted to keep it byte for byte (GREEN). `BUILD-04`'s hazard report enumerates all four movement-blocking classes and acts on none of them, against a purpose-built subject whose every planted construction is asserted at the byte level rather than through a detector's opinion. `BUILD-06`'s gate — a seven-input schema and twelve-rule, first-match-wins table — was **frozen in git, alone, before any measurement existed**, watched turning red on all three named failure shapes, and proven by exhaustive 864-combination enumeration to admit no non-clean hazard disposition to green.
+- ✓ Equivalence and modifiability, demonstrated on genuine stock VICE rather than described — v1.0.0 Phase 50 (`EQUIV-01`..`04`, verification `passed` 5/5). `compare-cross-binary.mjs` runs the original-versus-different-binary mode `compare.mjs` had never been run in, with a narrowed `$Dxxx` mask and mirrored-register folding, and was committed **before any rebuild existed to compare under it**. Three planted single-bit regressions at `$D020`/`$D015`/`$D018` each produced their own named DIVERGENCE row and `VERDICT: FAIL` — the first evidence the instrument can see anything at all. The rebuild produced from the committed annotation store then behaved identically to the original: `VERDICT: PASS`, exit 0, **empty difference set** under the same mask the red control failed against. `EQUIV-03` was closed on its literal reading — the edit was made in `scope_087a.a`, a file `exportAsmTree()` itself emitted, proven to be the exporter's own output by membership in that run's `files` list rather than by filename convention.
+- ✓ The fork backend removed outright, leaving one honest single-backend story — v1.0.0 Phase 52 (`FORKRM-01`..`07`, verification `passed` 8/8). `FORK-01` reversed in place, `vice.ts` and the fork manifest deleted whole, `vice-proxy.ts` collapsed to one dispatch path (~1,800 lines), `capability-registry.ts` and its runtime refusal deleted after confirming the migration landed, and `ViceBackend` narrowed to the single literal `"stock"`. All 27 fork-mentioning lines across nine shipped skill files are now either a stated permanent limitation citing `docs/stock-hard-losses.md` or a collapsed single-backend fact. The three hardware-level capabilities with no route on stock (SID read-back, matrix keyboard, RESTORE-NMI) are recorded as **permanent, accepted losses** rather than a gap awaiting a workaround.
+- ✓ `shipped-modules.ts` and every embedded source scan removed, under the owner's data-driven-tests-only rule — v1.0.0 Phase 56 (`SC-1`..`SC-5`, verification `passed` 5/5). 116 source-scanning cases removed across eleven plans with **zero collateral loss** — a test that merely *contained* a scanning assertion kept every other assertion it had — and the suite's measured 3753→3637 drop reconciled case by case against the 100 embedded removals plus the 16-case whole-file deletion, so a silently broken file could not hide inside the expected decrease.
+- ⚠️ Capabilities orphaned by the fork removal, restored and the proxy test re-baselined — v1.0.0 Phase 55 (`PROXY-01`..`06`). **Delivered and self-measured, but this phase shipped with no VERIFICATION.md, VALIDATION.md or REVIEW.md** — the milestone audit scored it `partial` for want of a gate, not for want of delivery, and the integration checker independently traced both restorations to live code. `wrapPossiblyChunked()`'s only call site is restored (a 23,290-character result had been crossing a 200-character advertised cap whole), `stock-recycle.ts`'s bounded post-kill epoch poll gives `epoch_after` a producer again, and 2,826 lines of assertions about five confirmed-gone fork-era mechanisms were removed with every one naming its successor or its settled no-successor disposition. Its central claim was re-measured independently at the milestone audit and **holds**: the full `npm test` glob is green with an empty failing set.
 
 ### Active
 
@@ -303,36 +328,73 @@ corrupting the binary client's view* — with interleaved command behaviour call
 out as **Unverified** and the gate on everything else. It was measured, not
 assumed: `CHAN-01` returned `go` on rule `R15`.
 
-**TAKEN as v1.0.0's scope, 2026-09-10 — the rebuild half:**
+**v1.0.0's stated hypothesis is Validated and is no longer listed here.** It read:
+*from an annotated binary to ACME source a person can actually read, change,
+reassemble and observe behaving identically in VICE* — `DECOMP-01`..`04`,
+`BUILD-01`..`07` and `EQUIV-01`..`04`, audited as one phase-spanning hypothesis
+at this close, as this project does. All **15 of the original 15** are satisfied
+and independently re-checked by the milestone audit, which traced the whole
+export → reassembly → gate → equivalence chain and found no broken link.
 
-- [ ] Decomposition to closure, rebuildable source behind a reassembly gate, and
-  equivalence plus modifiability — `DECOMP-01`..`04`, `BUILD-01`..`07`,
-  `EQUIV-01`..`04`. The base text stands in
-  [`milestones/v0.5.0-REQUIREMENTS.md`](milestones/v0.5.0-REQUIREMENTS.md),
-  where it had never been re-scoped since it was cut. Re-mapped v0.7.0 → v0.9.0
-  → **v1.0.0** (2026-09-06) on the reasoning that the runtime-evidence layer is
-  upstream of it rather than parallel to it; **v0.9.0 discharged that reasoning
-  rather than merely restating it**, which is why this bullet is taken now
-  instead of standing a fourth time.
-  - **Re-scoped at this open for the first time since the cut**, on the owner's
-    2026-09-10 decision that **the tool reports and the end-user decides what
-    gets reverse-engineered**. `BUILD-05` no longer reads *"cracker patches are
-    deliberately excluded rather than inherited"* — that wording made the tool
-    the decider. It now carries the provenance verdict to point of use so the
-    operator can see what the evidence says about any range, with inclusion and
-    exclusion the user's call, made explicit and recorded rather than silently
-    applied. **`BUILD-07` is new**: the export path is lossless by default — no
-    range dropped, filtered or omitted on the tool's own judgement — proven by
-    a planted control where a heuristic *would* want to drop a range and the
-    range survives. `BUILD-04` was already the right model and is unchanged: it
-    enumerates movement hazards and acts on none of them.
-  - **One enabling deliverable added**: a purpose-built synthetic C64 program
-    carrying all four `BUILD-04` hazard classes deliberately, plus data tables
-    and visible behaviour. Without it `BUILD-04`'s detector and `EQUIV-03`'s
-    modifiability proof are vacuous against today's single-purpose probe
-    fixtures. The v0.5.0 bar it satisfies — committed synthetic fixtures only,
-    no copyrighted image in the repository — is unchanged and was re-confirmed
-    by measurement at this open.
+**CARRIED FORWARD to the next milestone, 2026-09-16 — the four phases v1.0.0 did
+not execute.** These are not dropped and their requirement text is not archived
+away: Phases **51**, **53**, **54** and **57** stand with their ROADMAP sections
+live, exactly as v0.6.0's Phases 24 and 26 were held for v0.8.0. They are listed
+here because v1.0.0 closed on the 33 requirements it delivered and these 15 are
+the remainder.
+
+- [ ] **`VOCAB-01`..`06` — planning vocabulary out of the shipped server (Phase
+  51, in flight at 8/17 plans).** **This family must be re-scoped before it is
+  re-planned, not merely resumed.** An owner-directed quick task on 2026-09-14
+  (`260914-poo`) retired the planning-vocabulary convention **outright, with no
+  successor**, and deleted every mechanism the remaining nine plans are written
+  against — `scanForPlanningVocabulary()` does not exist in the tree,
+  `skills-planning-vocabulary.test.ts` and `comment-phase-pointers.test.ts` were
+  deleted, and `shipped-modules.ts` went with Phase 56's own deliverable. Four of
+  the six ids are therefore **unimplementable as written**. The *work already
+  done* is real and kept — 755 citations rewritten into the reasons they stood
+  for across `host-tool.mts` and twelve `anno-*` modules, which is better source
+  either way. What needs deciding is whether anything still enforces it.
+- [ ] **`DOCS-01`..`04` — operator-owned `docs/` (Phase 53, never started).**
+  Re-measured at the milestone audit rather than carried on its original
+  figures: `docs/phase*.md` now holds **27** files, not the 21 the requirement
+  measured on 2026-09-13 — Phase 50 added six more *after* the requirement
+  existed, because the guard `DOCS-04` names had been deleted the day before.
+  Files under `src/` citing a `docs/phase*.md` path now measure **34**, down
+  from 42, reduced incidentally by Phase 51's partial sweep and Phase 56's
+  deletions rather than by any DOCS work. `DOCS-04` is **unimplementable as
+  written** — its entire subject is a deleted file, and the 7-citation finding
+  that motivated it now measures **0**.
+- [ ] **Remove every byte-identical assertion (Phase 54, never started).** Owner
+  decision 2026-09-13: they are unproductive and are removed, including the three
+  tree-sync guards. No requirement ids were ever declared for it — they were left
+  as `TBD` at planning time, so this phase enters the next milestone needing its
+  requirements written, not just its plans.
+- [ ] **`INSTALL-01`..`05` — nothing is installed automatically (Phase 57, never
+  started).** The standing owner constraint (never auto-install; detect, then
+  refuse by name with the remedy) is already documented and honoured in
+  `CLAUDE.md`; what is missing is the *enforcement*. `scripts/ensure-mcp-deps.sh`
+  still runs `npm ci` on `SessionStart`, `installer/bin/cli.mjs` still writes an
+  `npx -y` line into a consumer's `.mcp.json`, `--vendor`/`vendorInstall()` are
+  still present, and no package-manager-invocation guard exists. `INSTALL-04`'s
+  own text records that **no in-workflow change can satisfy it** — it needs a
+  pre-provisioned runner image — so it should be re-scoped or retired rather than
+  re-planned as written.
+
+**Two bookkeeping debts this close hands forward, both named rather than absorbed:**
+
+- [ ] **Phase 55 has no verification artifact of any kind** — no VERIFICATION.md,
+  VALIDATION.md or REVIEW.md, though its six plans all report complete, its work
+  was independently traced to live code, and its central claim was re-measured
+  and held. `PROXY-01`..`06` are marked Complete on that basis and the gap is
+  disclosed here rather than papered over. `/gsd-verify-work 55` closes it.
+- [ ] **`FORKRM-02`'s literal text was not honoured, though its decision was.**
+  It required `docs-fork-decision.test.ts` to be *"rewritten to pin the new
+  decision rather than deleted"*. Phase 52 did exactly that; commit `276c15c9`
+  then deleted it, along with `docs-fork-absence.test.ts`. The decision the
+  requirement protects is intact in `docs/stock-hard-losses.md`; the enforcement
+  it demanded is not.
+
 - [ ] `PROOF-03` on real cracked code. The bank-boundary claim is proven in
   **both** directions, but on a **synthetic** two-caller fixture; the
   `danish.d64` question is open and was recorded as open rather than quietly
@@ -348,19 +410,42 @@ assumed: `CHAN-01` returned `go` on rule `R15`.
   from 75) is now a concrete question with a real instrument behind it, not a
   hypothetical.
 
-**Inherited test-suite debt, carried into v1.0.0 rather than fixed at the
-close** (both measured, both proven pre-existing, both disclosed in STATE.md's
-Deferred Items at this close):
+**Inherited test-suite debt — the failure floor is now measured at ZERO, and
+that is a correction, not a restatement.** This block carried a "3-failure
+`test:automated` floor" from the v0.9.0 close through every phase of v1.0.0.
+Re-measured twice on 2026-09-16 with no broker or emulator process running and
+the exit code read on the same line — once by the milestone audit, once
+independently at this close:
 
-- [ ] The 3-failure `test:automated` floor — `anno-register.test.ts` /
-  `anno-import.test.ts` fail because the annotation register cites requirement
-  ids (`STORE-01`, `STORE-04`, `STORE-06`, `IMP-01`, `IMP-02`, `AUTO-01`,
-  `MCP-04`) that no longer appear in a live `REQUIREMENTS.md`. Either re-declare
-  them or retire the register entries that cite them.
+```
+npm run test:automated   →  tests 3701 · pass 3692 · fail 0 · skipped 9 · EXIT=0
+npm test (the FULL glob CI runs)  →  tests 3858 · pass 3777 · fail 0 · skipped 81 · EXIT=0, 67.6s
+```
+
+- [x] **The 3-failure floor is closed.** `anno-register.test.ts` /
+  `anno-import.test.ts` no longer fail on requirement ids absent from a live
+  `REQUIREMENTS.md` — Phase 52's reconciliation and the 2026-09-14 deletions
+  between them removed the citing entries. Both halves of the old floor are
+  green.
+- [x] **`vice-proxy.test.ts` does not hang, and three artifacts still say it
+  does.** Phase 55 re-baselined it and `PROXY-06` criterion 7 required that
+  nothing in the tree still claim otherwise. `50-VALIDATION.md`,
+  `50-07-PLAN.md` and `56-RESEARCH.md` — all written *after* Phase 55 closed —
+  re-assert the hang. Measured at the audit: the full glob completes in **67.6
+  seconds** with an empty failing set. The false hazard warning is the live
+  defect here, not the suite; it is currently steering planners away from the
+  suite CI actually runs.
 - [ ] `audit-root-args.test.ts`'s scratch-fixture race — four sequential spawns
   compared against a shared, live `src/skills/` tree that another test file
-  mutates mid-suite. Needs either a more tolerant comparison or cross-file
-  serialization the runner does not currently provide.
+  mutates mid-suite. **Still open**, unaffected by the above, and still needing
+  either a more tolerant comparison or cross-file serialization the runner does
+  not currently provide.
+- [ ] **About twelve modules are now deliberately untested**, as an accepted
+  consequence of the data-driven-tests-only rule rather than as an oversight:
+  the dxa family, `test-gate.mjs`, `acme-gate.ts`, `binmon-fixtures.ts`,
+  `textmon-fixtures.ts`, `stock-schema-check.ts`, `ghidra-run.ts` and
+  `check-no-skill-external-spawn.mjs`. Named here so a later reader does not
+  discover it as a surprise.
 
 **Two capabilities were Validated but had NO ROUTE as of v0.9.0**, withdrawn by the
 v0.7.0 removal with no phase owning their return at that time. They are named here as well as
@@ -757,6 +842,9 @@ ceiling is explicitly recorded.
 | Delete the warm floor's speculative pre-launching outright, and fail the whole acquire when a text port cannot bind (Phase 41, 2026-09-09) | A stock launch that silently degrades to binary-only would hand callers an instance that fails later, at an unrelated call site. Launching strictly on demand removes the class of instance that exists before anyone asked for it. | ✓ Good — the launching-to-ready promotion step survived as its own function, so the deletion cost no capability |
 | Accept the synthetic subject with its on-screen disagreement disclosed and un-root-caused, rather than revising it until the combined image settles visibly (Phase 48, `BUILD-04`, 2026-09-13) | Each of the four planted constructions is independently proven to take visible effect; only their combination reverts before the screen settles, and the investigation narrowed it to the timer-stabilised raster part's shared IRQ vector without pinning the cause. The alternative was to keep editing the subject until it looked right, which is precisely the failure this phase was built against — a fixture shaped to satisfy an observer. Disclosure in `FIXTURE-DESIGN.md` preserves the disagreement; revision would have dissolved it. | ⚠️ Watch — Phase 49's reassembly gate runs against this subject, so the unexplained reversion is inherited, not retired. The finding stands open in `48-VERIFICATION.md`; the human judgment accepted the artifact, it did not retract the finding. |
 | Accept a locally-observed CI red as sufficient for criterion 5, rather than pushing the planted break to a real GitHub Actions run (Phase 50, `EQUIV-04`, 2026-09-16) | The stronger evidence was available and cheap — push the same one-character break to a scratch branch, open a PR, watch the `build` job go red, close and delete. The developer was asked and declined it. What the decline rests on is checkable rather than asserted: the command observed is the command CI runs (`VICE_REQUIRE_ACME=1 node --test phase50-transcript-freshness.test.ts`, from `src/mcp/vice`, in CI's own `Test` environment), the guard is under CI's existing glob and absent from `test-gate.mjs`'s `MANUAL_ONLY_TESTS` so no workflow edit was needed, and the planted break reddened the aggregate gate as well as the single file. | ⚠️ Watch — recorded as a **declined verification, not a passed one**, with its residual named in `docs/phase50-ci-boundary.md`: no GitHub Actions run has been observed going red for this guard, so plan 50-07's assumption **P5** stays unresolved. The inference from "red locally under CI's own command and environment" to "red on a runner" is sound but is an inference. Reverses the moment anyone takes the four steps the document still spells out; nothing forecloses it. |
+| Close v1.0.0 on the 33 requirements it delivered, and carry Phases 51, 53, 54 and 57 forward with their requirement text live, rather than closing all 13 phases as `override_closeout` (milestone close, 2026-09-16) | The milestone audit found the split clean and the two halves unlike each other: the *stated* scope — the rebuild pipeline, `DECOMP`/`BUILD`/`EQUIV` — is 15/15 delivered, verified, and independently re-traced end to end. What failed the audit is everything the milestone accumulated *after* that roadmap was written: three phases never started, one half-executed, one closed with no gate. Archiving 15 unsatisfied requirements as "shipped with known gaps" would file delivered work and never-started work under one verdict and make the tag mean less. Holding them live follows this project's own v0.6.0 precedent, where Phases 24 and 26 were held with their requirement text carried into v0.8.0 | ✓ Good — the split lands exactly on `REQUIREMENTS.md`'s own checkboxes (33 `[x]`, 15 `[ ]`) with no judgement call needed at the boundary, and the carried phases keep their ROADMAP sections rather than needing reconstruction from an archive |
+| Retire the planning-vocabulary convention outright, mid-phase, deleting 60 files including 44 tests and four CI checkers (owner-directed quick task `260914-poo`, 2026-09-14) | The owner's rule is that only data-driven tests exercising production code are kept. The convention's guards were structural scanners over source text, not tests of behaviour, and the owner judged the whole class unproductive | ⚠️ Revisit — the decision is the owner's and stands, and the quick task executed it faithfully and recorded its consequences honestly. What went wrong is downstream: its own summary said the orchestrator would reconcile `STATE.md`/`ROADMAP.md`/`REQUIREMENTS.md` afterwards, and **that never happened**, leaving nine plans and four requirements pointed at a deleted guard for two days until the milestone audit found it. The lesson is not about the deletion — it is that a quick task retiring a *convention* must reconcile the documents that drive execution in the same pass, or name an owner who will |
+| Record `BUILD-06`'s reassembly gate as `red` under rule `R7` and ship it, rather than tuning the gate or the subject until it read green (Phase 49, 2026-09-13) | The red is honest and specific: the baseline rebuild's own diff-scope coverage is incomplete because the subject carries one permanently-unclassified VIC-II region, unrelated to any byte-level defect. A gate that is adjusted until its first real run passes has measured nothing | ✓ Good — the gate was frozen in git *before* any measurement existed, watched turning red on three named failure shapes, and proven by 864-combination enumeration to admit no non-clean hazard disposition to green. Phase 50 then ran it independently over a different subject and got `acknowledged` under `R10`, so the table discriminates rather than always refusing |
 ## Evolution
 
 This document evolves at phase transitions and milestone boundaries.
@@ -776,6 +864,73 @@ This document evolves at phase transitions and milestone boundaries.
 
 
 ## Current State
+
+**Shipped: v1.0.0 The Rebuild Half** — 2026-09-16.
+9 phases (45-50, 52, 55, 56 — no inserted decimals), 73 plans, 203 tasks,
+33/33 in-scope requirements, 6 days, 619 commits since the `v0.9.0` tag,
+`override_closeout`.
+Full record: [`MILESTONES.md`](MILESTONES.md) ·
+[`milestones/v1.0.0-ROADMAP.md`](milestones/v1.0.0-ROADMAP.md) ·
+[`milestones/v1.0.0-REQUIREMENTS.md`](milestones/v1.0.0-REQUIREMENTS.md) ·
+[`milestones/v1.0.0-MILESTONE-AUDIT.md`](milestones/v1.0.0-MILESTONE-AUDIT.md)
+
+**Four phases were carried forward rather than closed** — 51, 53, 54 and 57,
+holding `VOCAB-01`..`06`, `DOCS-01`..`04` and `INSTALL-01`..`05`. Their ROADMAP
+sections stay live, following the v0.6.0 precedent for held Phases 24 and 26.
+See `## Requirements → Active` for what each one needs before it can be
+re-planned; two of the three families need **re-scoping, not resumption**,
+because the mechanisms they are written against were deleted on 2026-09-14.
+
+**This project can now take an annotated binary all the way back out to source a
+person can read, change and reassemble — and prove the result behaves like the
+original on a real machine.** That claim stood in `## What This Is` from v0.1.x
+and was, until this milestone, the one thing the tool did not do.
+
+The chain is wired end to end and was re-traced independently at the milestone
+audit: a store exports to a multi-file ACME tree, real ACME 0.97 reassembles it,
+the hazard report and reassembly gate run over it, and `compare-cross-binary.mjs`
+shows the rebuild behaving identically to the original in genuine stock VICE 3.9
+— `VERDICT: PASS`, exit 0, **empty difference set**, under the same narrowed
+`$Dxxx` mask that a three-single-bit planted regression at `$D020`/`$D015`/`$D018`
+had already been watched failing. Modifiability was demonstrated rather than
+described, and on the requirement's literal reading: the edit was made in
+`scope_087a.a`, a file `exportAsmTree()` itself emitted, proven to be the
+exporter's own output by membership in that run's `files` list.
+
+**The discipline that produced it is the part worth keeping.** Every instrument
+in this milestone was committed before the thing it measures existed, and watched
+failing before any green result from it was trusted. `BUILD-06`'s gate — seven
+inputs, twelve first-match-wins rules — was frozen in git alone, with an
+exhaustive 864-combination proof that no non-clean hazard disposition can reach
+green, *then* run. It returned **`red`** under rule `R7` on its first real
+subject and was shipped red rather than tuned until it passed. Phase 50's
+comparator was committed before any rebuild existed to compare under it.
+Phase 45's completeness gate was proven non-vacuous by three planted controls
+observed going RED against a real store. Nine fixtures are typed from real
+dxa+Ghidra derivation with **zero fabricated code**.
+
+**One backend, honestly described.** The fork is deleted outright — `vice.ts`,
+its manifest, its probe, `capability-registry.ts` and ~1,800 lines of proxy
+forwarding — and `ViceBackend` is the single literal `"stock"`. The three
+capabilities stock provably cannot have are recorded as permanent, accepted
+losses in `docs/stock-hard-losses.md` rather than routed to a second backend that
+no longer exists. Zero fork mentions remain under `src/skills/`.
+
+**What this close does not claim.** Phase 55 shipped with **no verification
+artifact of any kind**; its work was traced to live code and its central claim
+re-measured and held, but no gate ever ran, so `PROXY-01`..`06` are Complete on
+delivery rather than on verification. `BUILD-04`'s synthetic subject settles to a
+plain `READY.` prompt with none of its four planted on-screen effects surviving
+in combination, though each works in isolation — root cause unknown, accepted
+2026-09-13 as an honestly-disclosed limitation with the finding explicitly **not**
+retracted. `50-REVIEW.md`'s `CR-01` is an **unresolved Critical**, pre-existing
+from Phase 41: `TextMonitorClient.command()` declares a `timeoutMs` and never
+arms a timer, so seven call sites hold no bound and a non-responding VICE hangs
+inside the held channel-lock mutex. `EQUIV-04`'s criterion 5 rests on a CI red
+observed locally under CI's own command and environment, never on a real runner —
+the developer was asked and declined, and it is recorded as a **declined
+verification, not a passed one**.
+*The v0.9.0 record that stood here is kept below as the prior close's narrative.*
 
 **Shipped: v0.9.0 The Text Channel and the Runtime Evidence Layer** — 2026-09-10.
 6 phases (39-44 — no inserted decimals), 51 plans, 123 tasks,
@@ -1597,7 +1752,12 @@ oracle answers, and `EQUIV-*`'s measured ceiling (exact through anchor hit 50,
 lost from 75, `CPUHISTORY_GET` unavailable on the 3.9 floor) is a ceiling `chis`
 over the text channel may lift.
 
-## Current Milestone: v1.0.0 The Rebuild Half
+## Shipped: v1.0.0 The Rebuild Half
+
+*Closed 2026-09-16 on the 33 requirements it delivered. Phases 51, 53, 54 and
+57 were carried forward with their requirement text live — see `## Requirements
+→ Active`. What follows is the scoping record written at the 2026-09-10 open,
+kept as written rather than rewritten at the close.*
 
 **Goal:** Ship the "and rebuild" half that `## What This Is` has claimed since
 v0.1.x and never delivered — from an annotated binary to ACME source a person
@@ -1691,6 +1851,84 @@ with five of them never checked.
 **Phase numbering continues at 45.**
 
 ## Next Milestone Goals
+
+*Rewritten 2026-09-16 at the v1.0.0 close. The section this replaces was written
+at the v0.9.0 close and its single item — the rebuild half — is now **shipped**.*
+
+**The next milestone starts with an unusual inheritance: four phases that already
+exist, already have ROADMAP sections, and mostly should not be executed as
+written.** That is the honest shape of what v1.0.0 leaves behind, and it is the
+first thing `/gsd-new-milestone` has to deal with.
+
+**1. Reconcile the 2026-09-14 retirement before planning anything on top of it.**
+An owner-directed quick task (`260914-poo`) retired the planning-vocabulary
+convention outright, with no successor, and deleted 60 files — 44 tests, one
+production module, four CI checkers and one audit gate. The decision is the
+owner's and stands. Its *own summary* said the orchestrator would then reconcile
+`STATE.md`, `ROADMAP.md` and `REQUIREMENTS.md`; that never happened, and the
+milestone audit found nine live plans and four requirements still pointed at a
+deleted guard two days later. **This is the first task of the next milestone, not
+a cleanup item** — until it is done, Phase 51's remaining plans and `DOCS-04` are
+instructions to rebuild something deliberately removed.
+
+**2. Decide what, if anything, replaces the deleted enforcement.** Three separate
+requirement families were written against guards that no longer exist. The
+question is not "how do we restore them" — it is whether each rule still earns a
+mechanism under the data-driven-tests-only rule:
+- Planning vocabulary in shipped source (`VOCAB-*`): the *sweep* was valuable
+  independently of the guard — 755 citations across `host-tool.mts` and twelve
+  `anno-*` modules became the reasons they stood for, which is better source for
+  a reader with no `.planning/` tree. Whether anything should stop it recurring
+  is open.
+- `docs/phase*.md` in the operator's tree (`DOCS-*`): measured **27** files now,
+  up from the 21 that motivated the requirement — Phase 50 added six *after* it
+  was written, precisely because the guard was gone. The precedent recurred
+  within three days, which is itself the strongest argument either way.
+- Byte-identical assertions (Phase 54): owner decision 2026-09-13 to remove them
+  all, including the three tree-sync guards. **No requirement ids were ever
+  declared** — they stand at `TBD`, so this needs requirements written before it
+  needs plans.
+
+**3. Close the two bookkeeping gaps this milestone is shipping with.** Phase 55
+has no VERIFICATION.md, VALIDATION.md or REVIEW.md (`/gsd-verify-work 55`), and
+`FORKRM-02`'s literal requirement — that `docs-fork-decision.test.ts` be
+*rewritten rather than deleted* — was satisfied by Phase 52 and then undone.
+Neither is a delivery gap; both are records that disagree with the tree.
+
+**4. `INSTALL-01`..`05` should be re-scoped before being re-planned.** The
+constraint they encode is settled, documented in `CLAUDE.md`, and not up for
+re-litigation: never auto-install; detect, then refuse by name with the remedy.
+What is missing is enforcement — and `INSTALL-04`'s own text already records that
+**no in-workflow change can satisfy it**, because it needs a pre-provisioned
+runner image. A requirement that names its own impossibility should be rewritten
+or retired, not carried a second milestone.
+
+**5. The long-standing items, unchanged and still owed.** Each has now survived
+more than one milestone and is listed so none is inherited silently:
+- **`PROOF-03` on real cracked code.** The bank-boundary claim is proven in both
+  directions on a *synthetic* two-caller fixture; the `danish.d64` question is
+  open. The last of the four PROOF requirements still owing a real-code
+  measurement.
+- **`ANNO-14` / `ANNO-15` — the symbol round trip.** Still unowned for a fifth
+  milestone. Phase 45's D-15 reclaimed `ANNO-13`'s enum half only and explicitly
+  does not extend here.
+- **`50-REVIEW.md` `CR-01`, an unresolved Critical.** `TextMonitorClient.command()`
+  ignores its own `timeoutMs`; seven call sites pass `30000` and hold no bound,
+  and a non-responding VICE hangs inside the held channel-lock mutex. Traced to
+  `fad65de8 feat(41-01)` — a Phase 41 defect, carried not closed.
+- **`audit-root-args.test.ts`'s scratch-fixture race**, orthogonal to the D-27
+  `mkdtemp` fix and untouched by it.
+- **The false `vice-proxy.test.ts` hang warning** in `50-VALIDATION.md`,
+  `50-07-PLAN.md` and `56-RESEARCH.md`. Measured false — the full glob runs in
+  67.6s with an empty failing set — and currently steering planners away from the
+  suite CI actually runs.
+
+**What is NOT next, recorded so it is not re-proposed.** VICE's `a`/`d`
+assemble/disassemble commands and `x64` ↔ `x64sc` mode switching were explicitly
+declined by owner decision on 2026-09-06 as carrying no value here. Applying the
+pipeline to a real copyrighted title remains downstream use, not a milestone's
+evidence — the committed-synthetic-fixtures-only bar is unchanged.
+*The v0.9.0-era version of this section follows, kept as the prior close's record.*
 
 **The item that stood here is now unblocked, and v0.9.0 is why.** At the v0.8.0
 close this section said the rebuild half was next but that the runtime-evidence
@@ -2199,6 +2437,45 @@ written).
 
 ---
 
+*Last updated: 2026-09-16 at the **close of milestone v1.0.0 "The Rebuild Half"** —
+a full evolution review, the first since the v0.9.0 close on 2026-09-10.*
+
+*What changed in this review, so a later reader does not have to diff it. **"What
+This Is"** gained a v1.0.0 paragraph, and it is the one substantive change: the
+"and rebuild" half claimed in its first sentence since v0.1.x is now real, and
+the two-backend paragraph it superseded is already marked. **Core Value is
+unchanged and was re-confirmed rather than assumed** — a session still drives a
+real C64 to reverse-engineer a program; this milestone extended what happens
+after that, not the ONE thing. **Six requirement bullets moved to Validated**
+(`DECOMP`, `BUILD`, `EQUIV`, `FORKRM`, `SC`, and `PROXY` marked ⚠️ for its
+missing gate). **Active was rewritten** around the four carried-forward phases.
+**Three Key Decisions rows** were added: the close-on-33 scope decision, the
+2026-09-14 convention retirement (⚠️ Revisit — for the unreconciled documents,
+not for the deletion), and shipping `BUILD-06`'s gate red. **Out of Scope was
+audited and nothing moved** — every entry's reasoning still holds, and the four
+v1.0.0 additions from 2026-09-10 are all still binding.*
+
+*One correction this review makes rather than carries. The "**3-failure
+`test:automated` floor**" had stood in Active since the v0.9.0 close and was
+repeated at every v1.0.0 phase transition. It is **false as of this close**:
+measured twice on 2026-09-16, independently, with no broker running and the exit
+code read on the same line — `tests 3701 · pass 3692 · fail 0 · skipped 9 ·
+EXIT=0`, and the full glob at `3858 · 3777 · 0 · 81` in 67.6s. Both halves of the
+old floor are green. The block now records the measurement instead of the
+inherited claim, and names the live defect in its place: three artifacts written
+after Phase 55 closed still assert `vice-proxy.test.ts` hangs, which is measured
+false.*
+
+*Two things this close deliberately does not smooth over. **Phase 55 shipped with
+no verification artifact of any kind** — `PROXY-01`..`06` are Complete on
+delivery and independent re-measurement, never on a gate. And the milestone
+**carried 15 requirements forward rather than archiving them as met**; four of
+them are unimplementable as written, which is recorded in Active as a re-scoping
+instruction rather than left for the next planner to discover.*
+
+<details>
+<summary>Previous footer — Phase 50 transition, 2026-09-16</summary>
+
 *Last updated: 2026-09-16 after Phase 50 (Equivalence and Modifiability), which closed at
 8/8 plans with verification `passed` 5/5 and all four of `EQUIV-01`..`04` Complete.
 **No Active bullet moved**, for the same reason Phases 47 and 48 recorded: v1.0.0's
@@ -2226,3 +2503,5 @@ Phase 50 regression — and it is carried, not closed.
 Bookkeeping gap noted rather than silently repaired: this footer skipped from Phase 48 to
 Phase 50. Phase 49 closed on 2026-09-13 without updating it or adding a Key Decisions row,
 and nothing here reconstructs what that note would have said.*
+
+</details>
