@@ -658,7 +658,7 @@ v1.0.0 to the rebuild half alone.
 - [x] **Phase 47: Multi-File Rebuildable Source** - An annotated store becomes a tree of ACME files a person can open and edit — one file per scope, data tables in their own swappable files, every reference through a symbol — and real ACME assembles the tree back to the same program (completed 2026-09-12)
 - [x] **Phase 48: The Movement-Hazard Report and Its Purpose-Built Subject** - One synthetic C64 program deliberately carrying all four movement-blocking classes, and a report that enumerates them across those four classes — delivered and reviewed together so neither is written to match the other, and acting on nothing it finds (completed 2026-09-13)
 - [x] **Phase 49: The Reassembly Gate, Committed Before the Phase It Gates** - A gate that says whether an exported tree really rebuilds — byte-diffed against the image, hazard report attached, movement exercised on every run — with its rules in git before its first real run and its verdict read as a precondition by Phase 50 (completed 2026-09-13)
-- [ ] **Phase 50: Equivalence and Modifiability** - The rebuild shown behaving like the original in a real emulator and shown being changed, with committed transcripts as the artifacts of record rather than described walkthroughs — and the comparison observed failing before it is trusted
+- [x] **Phase 50: Equivalence and Modifiability** - The rebuild shown behaving like the original in a real emulator and shown being changed, with committed transcripts as the artifacts of record rather than described walkthroughs — and the comparison observed failing before it is trusted (completed 2026-09-16)
 - [ ] **Phase 51: Planning Vocabulary Out of the Shipped Server** - The 2384 planning citations still in the 88 modules npm ships verbatim are replaced by the reasoning each one stands for, and the guard that already holds `src/skills/**` at zero is widened to hold the server there too
 - [ ] **Phase 53: Operator-Owned `docs/`** - The 21 phase-evidence documents squatting in the operator's own `docs/` tree go back to the phase artifact tree, the citations that pinned them there become the reasons they stood for, and a guard stops the precedent that has quietly recurred at every phase since 2026-08-11
 - [ ] **Phase 54: Remove Every Byte-Identical Assertion** - Owner decision: byte-identical checks are unproductive and go. 148 assertion sites across 60 test files -- 72 tests that exist only to assert byte-identity, and 76 assertions inside tests that do other work and keep it
@@ -2195,7 +2195,7 @@ check. No test reads this table now.
 | 47. Multi-File Rebuildable Source | v1.0.0 | 6/6 | Complete | 2026-09-12 |
 | 48. The Movement-Hazard Report and Its Purpose-Built Subject | v1.0.0 | 6/6 | Complete | 2026-09-13 |
 | 49. The Reassembly Gate, Committed Before the Phase It Gates | v1.0.0 | 7/7 | Complete | 2026-09-13 |
-| 50. Equivalence and Modifiability | v1.0.0 | 8/8 | In Progress | - |
+| 50. Equivalence and Modifiability | v1.0.0 | 8/8 | Complete | 2026-09-16 |
 | 51. Planning Vocabulary Out of the Shipped Server | v1.0.0 | 8/17 | In Progress | - |
 | 52. Remove the Fork Backend | v1.0.0 | 13/13 | Complete | 2026-09-12 |
 | 53. Operator-Owned `docs/` | v1.0.0 | - | Not started | - |
