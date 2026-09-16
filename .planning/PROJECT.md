@@ -1975,6 +1975,29 @@ otherwise re-propose:
   reads it before any working Node interpreter is known, so it cannot parse a
   JSON file to find one.
 
+- **The doctor reports NO tool version numbers except Node's.** Decided
+  2026-09-16 at the open, on the owner's observation that every function this
+  project wants is reachable over either the binary monitor or the text
+  protocol — so version is not the question that decides anything. Verified in
+  the tree rather than accepted: `vice_cpu_history` is routed over the **text
+  channel** (`chis`, `text-tools.ts:522`, registered as a text-channel tool at
+  `stock-derived.ts:105`), and the VICE >= 3.10 floor applies to the
+  `CPUHISTORY_GET` binary-monitor opcode that **no shipped tool calls**.
+  `text-capability-probe.ts:98` already warns never to conflate the two answers.
+  No shipped tool refuses on a VICE version, so a version row would be
+  decoration that invites a reader to act on it.
+
+  What IS reported instead, because each catches a real failure: the **resolved
+  path** (a fork build at `/usr/local/bin/x64sc` shadowing genuine stock at
+  `/usr/bin/x64sc` is a dated incident in this project's history, and no version
+  number catches it); the ACME **standard library** as a separate row from the
+  ACME binary (Debian's `acme` package ships no `cbm/c64/*.a`, CI's own
+  environment included — FINDING-A1, again invisible to a version check); and
+  whether vendored dxa is **built**. **Node is the one genuine version gate** and
+  keeps its floor check: below 24 the server does not degrade, it fails to parse.
+  The general rule this follows is one this project has now learned twice —
+  probe the capability, do not infer it from a version.
+
 - **The doctor calls the probes that already ship.** `resolvedBackend()`,
   `findSiblingBinary()`, `findDxaBinary()`, `findAcmeLib()` and the Ghidra
   `analyzeHeadless` search. Minting a second detection path is the specific
