@@ -1,0 +1,81 @@
+{
+  "provenance": {
+    "store_document": "hazard-subject.annostore.json",
+    "image": "hazard-subject.prg",
+    "statement": "The tree this manifest edits is produced by exportAsmTree() (src/mcp/vice/anno-export-asm.ts) and by nothing else -- see make-exported-edit.mjs, which imports the committed store through importStoreDocument() and exports it through exportAsmTree() before any edit in this manifest is applied."
+  },
+  "source_edits": [
+    {
+      "file": "scope_087a.a",
+      "find": [
+        "        lda #$41",
+        "        sta $07f8",
+        "        lda #$01",
+        "        sta $d015",
+        "        lda #$64",
+        "        sta $d000",
+        "        lda #$64",
+        "        sta $d001"
+      ],
+      "replace": [
+        "        nop",
+        "        nop",
+        "        nop",
+        "        nop",
+        "        nop",
+        "        nop",
+        "        nop",
+        "        nop",
+        "        nop",
+        "        nop",
+        "        nop",
+        "        nop",
+        "        nop",
+        "        nop",
+        "        nop",
+        "        nop",
+        "        nop",
+        "        nop",
+        "        nop",
+        "        nop"
+      ],
+      "why": "Removes the sprite-0 pointer write (sta $07f8), the sprite-0 enable (sta $d015) and the two sprite position writes (sta $d000/$d001), together with the four immediate loads that feed them -- the construction that produces the committed subject's page-alignment finding at anchor $088B (mechanism sprite-pointer-names-aligned-base). The three constructions above this block (the $dd00 bank select, the $d018 character-set selector, and the $d011 screen-control write) are left untouched, and the $0400 screen write plus the routine's rts below are left untouched. Each of the 8 removed instructions (20 bytes total: 4 two-byte immediate loads and 4 three-byte absolute stores) is replaced one-for-one in length with a single-byte nop, so the block's total length -- and every later address and symbol value in the exported tree -- is unchanged."
+    },
+    {
+      "file": "scope_087a.a",
+      "find": [
+        "        sta $d011",
+        "        nop",
+        "        nop",
+        "        nop"
+      ],
+      "replace": [
+        "        sta $d011",
+        "        jsr hazard_smc2_entry"
+      ],
+      "why": "Adds one jsr to hazard_smc2_entry (symbols.a: hazard_smc2_entry = $0839) inside the region the first edit above freed -- the first three bytes of that freed region, immediately after the untouched sta $d011 line, which makes this find unique in the file. This runs the self-modifying-code construction anchored at $0825 (mechanism store-target-in-instruction-opcode-byte) for the first time; the construction's own bytes at $0833-$0838 are unchanged by this edit -- only its reachability moves from never-called to called once. The three removed nop bytes (3 bytes) are replaced one-for-one in length by the 3-byte jsr instruction, so the block's total length is unchanged by this edit too."
+    }
+  ],
+  "expected_byte_changes": [
+    { "address": 2185, "address_hex": "$0889", "from": 169, "to": 32 },
+    { "address": 2186, "address_hex": "$088A", "from": 65, "to": 57 },
+    { "address": 2187, "address_hex": "$088B", "from": 141, "to": 8 },
+    { "address": 2188, "address_hex": "$088C", "from": 248, "to": 234 },
+    { "address": 2189, "address_hex": "$088D", "from": 7, "to": 234 },
+    { "address": 2190, "address_hex": "$088E", "from": 169, "to": 234 },
+    { "address": 2191, "address_hex": "$088F", "from": 1, "to": 234 },
+    { "address": 2192, "address_hex": "$0890", "from": 141, "to": 234 },
+    { "address": 2193, "address_hex": "$0891", "from": 21, "to": 234 },
+    { "address": 2194, "address_hex": "$0892", "from": 208, "to": 234 },
+    { "address": 2195, "address_hex": "$0893", "from": 169, "to": 234 },
+    { "address": 2196, "address_hex": "$0894", "from": 100, "to": 234 },
+    { "address": 2197, "address_hex": "$0895", "from": 141, "to": 234 },
+    { "address": 2198, "address_hex": "$0896", "from": 0, "to": 234 },
+    { "address": 2199, "address_hex": "$0897", "from": 208, "to": 234 },
+    { "address": 2200, "address_hex": "$0898", "from": 169, "to": 234 },
+    { "address": 2201, "address_hex": "$0899", "from": 100, "to": 234 },
+    { "address": 2202, "address_hex": "$089A", "from": 141, "to": 234 },
+    { "address": 2203, "address_hex": "$089B", "from": 1, "to": 234 },
+    { "address": 2204, "address_hex": "$089C", "from": 208, "to": 234 }
+  ]
+}

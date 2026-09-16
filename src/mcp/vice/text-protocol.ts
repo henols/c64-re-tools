@@ -296,6 +296,22 @@ export const HAZARD_SUBJECT_PRG_RELPATHS = Object.freeze({
     "evidence",
     "hazard-subject-rebuild.prg",
   ]),
+  /** Plan 50-08's exported-edit subject: the same one-behaviour-removed,
+   * one-behaviour-added pair `modified` carries, made this time in a file
+   * `exportAsmTree()` itself emitted (`scope_087a.a`) rather than in the
+   * hand-written `modified` fixture family, reassembled through the same
+   * single oracle against a pre-registered byte manifest committed at
+   * `fixtures/hazard-subject/exported-edit.manifest.json`. See
+   * `docs/phase50-exported-edit-findings.md` and
+   * `docs/phase50-exported-modifiability-transcript.md`. */
+  "exported-edit": Object.freeze([
+    "src",
+    "mcp",
+    "vice",
+    "fixtures",
+    "hazard-subject",
+    "hazard-subject-exported-edit.prg",
+  ]),
 } as const);
 
 /** The id half of HAZARD_SUBJECT_PRG_RELPATHS -- the only thing a caller
