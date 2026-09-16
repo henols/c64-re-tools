@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 43
+open_count: 44
 waived_count: 14
 fixed_count: 9
-total_count: 66
-last_updated: 2026-09-14T16:02:40.848Z
+total_count: 67
+last_updated: 2026-09-16T05:31:50.462Z
 ---
 
 # Broken Windows Ledger
@@ -81,6 +81,7 @@ last_updated: 2026-09-14T16:02:40.848Z
 | 64 | quick-260913-jgv | deviation | src/mcp/vice |  | Full automated suite carries 7 pre-existing, unrelated failures (REQUIREMENTS.md/REVIEW.md disposition tracking, STATE.md Deferred Items) present before this quick task's first edit and identical name-for-name after -- out of scope, not fixed, documented in the quick task's SUMMARY. | open |  | 2026-09-13T12:31:18.832Z |  |
 | 65 | quick-260913-mql | deviation | src/mcp/vice/broker-e2e.test.ts | 403 | Pre-existing, out-of-scope failure discovered while measuring the 12 MANUAL_ONLY_TESTS CI delta: 'wired warm-hit (plan 41-05)' fails deterministically (reproduced twice) on a real broker crash-respawn deadline, unrelated to any file this quick task touched. | open |  | 2026-09-13T14:56:52.250Z |  |
 | 66 | 51 | deviation | src/mcp/vice/anno-register.ts |  | 63 requirement-id citations left unresolved: the file's requirements[] traceability data is mechanically validated against real, declared REQUIREMENTS.md ids by anno-register.test.ts, and removing the ids would gut the only thing the file exists to check; unshipping it breaks anno-seam.test.ts's completeness guard. Genuine architectural decision (Rule 4), deferred rather than resolved unilaterally. | open |  | 2026-09-14T16:02:40.848Z |  |
+| 67 | 50 | unmet-truth | docs/phase50-ci-boundary.md |  | ROADMAP criterion 5's 'a broken step is observed reddening CI' was observed against CI's exact command and environment LOCALLY, never on a GitHub runner; EQUIV-04 withheld pending a real CI run or a dated developer decline | open |  | 2026-09-16T05:31:50.462Z |  |
 
 ````json
 [
@@ -875,6 +876,19 @@ last_updated: 2026-09-14T16:02:40.848Z
     "reason": "",
     "recorded_at": "2026-09-14T16:02:40.848Z",
     "resolved_at": null
+  },
+  {
+    "id": 67,
+    "kind": "unmet-truth",
+    "phase": "50",
+    "file": "docs/phase50-ci-boundary.md",
+    "line": null,
+    "description": "ROADMAP criterion 5's 'a broken step is observed reddening CI' was observed against CI's exact command and environment LOCALLY, never on a GitHub runner; EQUIV-04 withheld pending a real CI run or a dated developer decline",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-16T05:31:50.462Z",
+    "resolved_at": null,
+    "milestone": "v1.0.0"
   }
 ]
 ````
