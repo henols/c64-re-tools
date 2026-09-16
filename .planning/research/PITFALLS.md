@@ -1,773 +1,671 @@
-# Pitfalls Research: Adding the Rebuild Half to c64-re-tools
+# Pitfalls Research: Adding a Prerequisite Doctor to an Existing System
 
-**Domain:** Decomposition-to-closure, rebuildable multi-file ACME source, movement-hazard
-detection, reassembly gate, behavioural-equivalence/modifiability proof — added to an existing
-C64 reverse-engineering toolchain (dxa + Ghidra decode, owned `.annostore`, real-ACME oracle,
-runtime execution-evidence layer). Milestone v1.0.0.
-**Researched:** 2026-09-10
-**Confidence:** HIGH for anything citing a measurement already recorded in this repo's
-`PROJECT.md`/`ENGINEERING_RULES.md`/source; MEDIUM for general 6502/ACME domain facts corroborated
-by external sources; LOW is flagged inline where a claim is inference rather than measurement.
+**Domain:** Retrofitting a diagnostic/doctor CLI plus a user-authored tool-location config
+file onto an existing, opinionated codebase (`c64-re-tools`, milestone v1.1.0 "The
+Prerequisite Doctor")
+**Researched:** 2026-09-16
+**Confidence:** MEDIUM-HIGH — the integration pitfalls (§1, §4, §6) are grounded directly
+in this repository's own source and its own documented incident history, which is stronger
+evidence than a generic web survey. The generic CLI-doctor failure modes (§2, §3, §5, §7)
+combine real, cited public incidents (Flutter, Homebrew) with reasoning clearly labelled as
+such where no public incident was found for this exact shape of problem.
 
-This document assumes the reader has `.planning/PROJECT.md` → `## Current Milestone: v1.0.0`,
-`.planning/milestones/v0.5.0-REQUIREMENTS.md` (the un-re-scoped base text for `DECOMP-*`/
-`BUILD-*`/`EQUIV-*`), and `.planning/ENGINEERING_RULES.md` open. Nothing below repeats generic
-reverse-engineering advice that isn't specific to *this* system's shape.
+This research answers one question: **what goes wrong specifically when a doctor and a
+location-config file are ADDED to a system that already has its own (undocumented,
+inconsistent) detection logic** — not generic "how to write a good CLI" advice.
 
 ---
 
 ## Critical Pitfalls
 
-### Pitfall 1: Deriving the reassembly verdict from exit status or an aggregate summary line
+### Pitfall 1: The doctor that lies — two probes, two verdicts
 
 **What goes wrong:**
-A rebuild "passes" because the assembler exited 0, or because a printed aggregate line
-("Saving N bytes...") looks like a clean summary, while the actual bytes produced are wrong. This
-project has already measured this exact failure once, on a different route: the `da65`+ca65/ld65
-pivot recorded as an anti-feature — a `TYPE SKIP` hole collapsed and the rebuild **assembled
-cleanly to a wrong binary**. The general form is broader than that one incident: ACME 0.97 itself
-demonstrates it — `lda #$00` and `lda #$01` both assemble and both exit 0 while their bytes
-differ, so exit status structurally cannot see a wrong byte.
+The doctor reports a tool present/absent/adequate in a way that disagrees with what the
+code that actually *uses* the tool decides at run time. The user trusts the green check,
+then hits a refusal the doctor never predicted (or panics over a red the real code path
+never hits).
 
-**Why it happens:**
-Exit status and summary lines are cheap, always-present signals; a byte-diff requires deriving
-the expected bytes independently and keeping that derivation out of the same code path that
-produced the source. Under time pressure, the cheap signal gets wired up first and never
-replaced, because it is green on every happy-path run during development.
+**Why it happens — the general mechanism, evidenced publicly:**
+- **Different resolution algorithm than the real code path.** Flutter's doctor has
+  repeatedly diverged from `flutter run`'s own toolchain resolution — e.g. doctor
+  resolving a **different Java path** than the one the build actually invokes
+  ([flutter/flutter#108618](https://github.com/flutter/flutter/issues/108618): *"Flutter
+  doctor uses wrong path to determine the Java version: Cannot execute /wrong/path/to/java"*),
+  and doctor reporting success while every real command still fails on a path error
+  ([flutter/flutter#45687](https://github.com/flutter/flutter/issues/45687)).
+- **Stale/cached verdict vs. a PATH that changed since.** Homebrew's `brew doctor` has a
+  long history of complaining about PATH ordering that the shell/session has already
+  fixed, or missing that its own install hook writes to `/etc/paths.d/homebrew`, which is
+  read at a different point in shell startup than the check assumes
+  ([Homebrew/brew#21334](https://github.com/Homebrew/brew/issues/21334)); doctor and the
+  live command simply see different environments.
+- **Caching/memoisation drift.** A resolver that memoises its answer for process lifetime
+  is correct *within* a process and wrong *across* processes that started at different
+  times relative to a fix. This is not hypothetical for this codebase — it is already how
+  the code we are extending behaves (see next paragraph).
 
-**How to avoid:**
-Follow the pattern this project already built for `acme export-asm`'s oracle
-(`src/mcp/vice/acme-verify.ts`) rather than reinventing verification for the rebuild gate: the
-verdict is a **byte-diff of the file this run created against bytes the caller derived from the
-image**, exit status is recorded but consulted by nothing, the aggregate summary line is recorded
-but consulted by nothing, and a spawn that never ran gets its own `"skipped"` outcome distinct
-from both pass and byte-level fail. Any new reassembly gate for `BUILD-06` must reuse or mirror
-this three-outcome design, not build a second, weaker oracle beside it.
+**Why it is a real, present risk in THIS codebase specifically (measured, not
+hypothetical):**
+- `backend-detect.mts`'s `resolvedBackend()` **memoises its answer for the process
+  lifetime** in a module-level variable (`let memoisedResult`), by explicit design ("a
+  long-running process ... resolves once per process lifetime"). A long-lived broker
+  process that resolved `x64sc` before a user edits `tools.json` or fixes their `$PATH`
+  will keep answering with the *old* resolution until the broker process itself restarts
+  — while a doctor invocation started fresh right after the fix reports the *new* answer.
+  Two truthful answers, from two different processes, both correct for their own moment —
+  indistinguishable from a lying doctor to the user reading them side by side.
+- `findSiblingBinary()` (`host-tool.mts`) is **also memoised per binary name for the
+  process lifetime**, and its own header comment states the reasoning explicitly: *"A
+  `null` (not found) answer is memoised too: a transient host misconfiguration that
+  resolves differently mid-process is not a case this module has ever handled."* This is
+  a documented, deliberate design choice in the exact functions the milestone plans to
+  reuse — the doctor inherits this staleness property for free if it calls the same
+  functions, and must not silently assume "the doctor's answer is what a fresh session
+  gets" without stating that assumption.
+- **The project has a real, already-recorded instance of exactly this failure class**,
+  independent of memoisation: a self-built fork VICE at `/usr/local/bin/x64sc` shadowed
+  genuine stock at `/usr/bin/x64sc` on `$PATH`. Every bare-name resolution (`resolvedBackend()`'s
+  default `viceBin ?? "x64sc"`, the broker's default `VICE_BIN`) landed on the fork, and this
+  produced a wrong conclusion in-session that was only caught by deliberately addressing the
+  absolute path (`no-real-stock-vice-available` memory, 2026-08-16 supersession note: *"Anything
+  claiming to test 'the stock backend' against a bare `x64sc` invocation is actually exercising
+  the fork build"*). The fork is gone architecturally now (FORKRM-01), but the **shadowing shape
+  is not fork-specific** — a distro package, a self-compiled build, or a stale Homebrew keg at a
+  different `$PATH` position reproduces the identical failure with two *stock* builds.
+- **A structural trap unique to this milestone's own hard constraint:** the doctor must run
+  on a Node too old to run the server, so it **cannot simply `import` the `.ts`/`.mts` modules**
+  that hold today's real probes (`resolvedBackend()`, `findSiblingBinary()`, `findDxaBinary()`,
+  `findAcmeLib()`, the Ghidra `analyzeHeadless` search) if those modules assume Node ≥ 24
+  type-stripping or pull in anything that does. If the doctor's implementation responds to that
+  constraint by **re-deriving its own copy** of the probe logic (a plausible, easy-looking fix),
+  that is precisely "a second detection path that can disagree with the first" — the exact
+  anti-pattern the milestone's own scoping note already names as *"the specific mistake to
+  avoid here."* The doctor must be Node-old-safe **without** becoming a second probe
+  implementation; those two constraints are in tension and the tension is the pitfall.
+- **`vice_ping`'s `resolvedBinaryPath`/`binPathResolved` fields already exist as the
+  "what did the real code actually resolve" ground truth** (`ResolvedBackendResult`,
+  `backend-detect.mts`). Any doctor claim about x64sc that cannot be cross-checked against
+  a live `vice_ping` answer, in a test, is an unverified claim about agreement, not
+  verified agreement.
+- The doctor also cannot reach VICE's real version string through the same channel the
+  running code uses: `versionQuad` is only ever learned from a **live binary-monitor
+  connection's own `REGISTER_INFO`/info response** (`stock-connect.ts`'s `resolveCapabilities()`,
+  `infoResponse.versionString`) — never from a static `--version`/`--help` spawn (that
+  discriminator was deliberately deleted, `backend-detect.mts`'s own header: *"the `--help`
+  probe ... [is] deleted outright"*). A doctor that runs before any session exists has no live
+  monitor connection to ask, so whatever it reports about the VICE *version* is necessarily a
+  **different, weaker signal** (e.g. presence + `stat`) than what the real code eventually
+  learns. See Pitfall 6 for the version-floor half of this.
 
-**Warning signs:**
-The gate's implementation reads `child.status === 0` (or greps for a "Saving" line) anywhere on
-the path to a pass/fail verdict. A gate that has never been observed to fail on a real bad rebuild
-in this codebase's test history.
+**How to avoid (actionable):**
+1. **Zero new probe implementations.** The doctor may only call the existing exported
+   probe functions (`resolvedBackend()`, `findSiblingBinary()`, `findDxaBinary()`,
+   `findAcmeLib()`, the Ghidra language/analyzeHeadless search), or a thin host-bound
+   `.mjs` wrapper around them compiled the same way `resources/*.mjs` already is — never a
+   re-implementation with its own PATH walk or its own candidate list. If the Node-floor
+   constraint makes direct import impossible for one probe, that probe's *logic* still has
+   to be the single source: factor it so the doctor's old-Node-safe entry point can load it
+   (e.g. a plain `.mjs`/`.cjs` module with no type-stripping dependency, imported by
+   *both* the doctor and the real dispatch path) rather than hand-copying its behaviour.
+2. **A same-process differential test, not a docs claim.** Add a test that calls the
+   doctor's resolution for a given tool and the real dispatch-path resolution for the same
+   tool, in the same process, against the same fixture PATH/env/tools.json, and asserts
+   the two answers (path, and whether it resolved) are identical. Run it for every tool the
+   doctor reports on. This is the only mechanism that actually catches drift between the
+   two call sites when someone edits one and not the other later — a written comment saying
+   "these must agree" does not survive a future edit.
+3. **State memoisation staleness in the doctor's own output, not just in a comment.** Where
+   the doctor's process is necessarily distinct from any running broker's process (the
+   normal case, since it runs before any session), the doctor's report should not imply
+   "this is what the broker will resolve *right now*" — it should say what a **fresh**
+   process would resolve, and, if a broker state file already exists (`.c64-re-tools/supervisor/`),
+   the doctor can additionally surface what that specific running instance last resolved,
+   labelled as such, rather than presenting one merged number.
+4. **Treat "the shadowing scenario" as a required fixture**, not an edge case: a test PATH
+   with two same-named binaries at different priority positions, asserting the doctor names
+   *which one* it picked and *why* (PATH order), because the project has already paid for
+   this exact confusion once.
 
-**Phase to address:**
-The rebuildable-source / reassembly-gate phase (`BUILD-06`), before any phase downstream depends
-on "reassembles cleanly" meaning anything.
+**Warning signs (for a reviewer):**
+- A PR touching the doctor that does NOT touch `backend-detect.mts`, `host-tool.mts`, or
+  their test files at all — a doctor that never imports/exercises the real probes is
+  already suspicious.
+- Any `find`/`resolve`/`probe`-shaped function newly added under a `doctor*` file that
+  duplicates a PATH walk, a candidate-list walk, or a `existsSync` loop already present
+  elsewhere.
+- A doctor test that asserts against a **hand-written expected path** rather than against
+  the output of the real resolver called with the same inputs.
+
+**Phase to address:** the phase that builds the doctor's resolution/reporting core (not the
+CLI shell, not the declaration data file) — this is the single highest-risk phase in the
+milestone and should not be combined with unrelated scope.
 
 ---
 
-### Pitfall 2: Byte-diff against a stale or fixed output path
+### Pitfall 2: The doctor that cannot run
 
 **What goes wrong:**
-The gate diffs a `.prg` at a fixed path across invocations. A prior successful build's bytes are
-still sitting there from yesterday; the current run's assembler invocation fails silently (spawn
-error, wrong argv) and the stale, unrelated bytes are diffed and reported as a pass.
+The diagnostic tool fails to start on exactly the broken environment it exists to explain —
+either it needs the thing it is checking for, or it needs something else that happens to be
+missing on a badly set up machine, and the user gets a stack trace instead of a diagnosis.
 
 **Why it happens:**
-Reusing a fixed output path is the path of least resistance when wiring a verifier quickly, and it
-works fine in every manual test where the developer already knows the file is fresh.
+- **Version-floor self-reference.** A doctor entry point that is a subcommand of the main
+  binary inherits that binary's own runtime floor. This is a documented, named failure
+  shape elsewhere: the `evlog` CLI's doctor command carries its own explicit
+  `NODE_TOO_OLD` error path as a first-class case ([evlog.dev/cli/doctor](https://www.evlog.dev/cli/doctor)),
+  because a generic "your Node is too old" crash (an unhandled syntax error from a
+  language feature the old runtime doesn't support, or an `ERR_REQUIRE_ESM` at import
+  time) is not a diagnosis — it just looks like the tool is broken.
+- **Bootstrap-phase dependency mismatches** are a real, recurring class of "the installer/
+  doctor cannot even start" bug — e.g. a bootstrap process failing on an `EBADENGINE`
+  npm engine mismatch at its *own* setup stage before it can report anything useful
+  ([NousResearch/hermes-agent#76484](https://github.com/NousResearch/hermes-agent/issues/76484)).
+- **A doctor importing "the whole app."** If the doctor entry point is reached by importing
+  a module that has side effects at import time (opens a socket, reads a config file that
+  doesn't exist yet, requires an MCP SDK dependency tree), any one of those can throw before
+  the doctor's own logic runs at all.
 
-**How to avoid:**
-`acme-verify.ts` already states the rule for this exact hazard: "ACME leaves a PRE-EXISTING
-output file completely untouched when it fails" — use a fresh `mkdtempSync` per invocation and
-assert the output path was **absent before the spawn**, so "did THIS run create it" is the
-property being checked, not merely "does a file exist at this path now." Reuse that exact
-mechanism for the rebuild gate rather than re-deriving a weaker one.
+**Why it is a real, present risk in THIS codebase specifically:**
+- Confirmed at milestone scoping time by reading `package.json`: `bin.vice-mcp` points at
+  `vice-proxy.ts`, which only *parses* under Node's native type-stripping (Node ≥ 24). On
+  Node < 24 this is not a graceful degrade — it is a syntax the older runtime cannot even
+  parse, so any doctor implemented as "a new subcommand branch inside `vice-proxy.ts`" is
+  self-defeating by construction: the one check most likely to fail (Node too old) is the
+  one guaranteed to prevent that code from ever running.
+- `@mastra/mcp`/`@mastra/core` and the rest of the stdio JSON-RPC framing stack are real,
+  possibly Node-version-sensitive dependencies of the *server*. A doctor that imports
+  `vice-proxy.ts`'s module graph even indirectly (e.g. to reuse a shared constants file that
+  itself imports the MCP SDK) inherits that dependency surface for a task — "is Node old" —
+  that should need none of it.
+- `scripts/ensure-mcp-deps.sh` provisions `node_modules` for the *server* lazily on
+  `SessionStart`; on a machine where that has never run (exactly the state the doctor is
+  most useful in — before any session exists), any doctor path that resolves through
+  `node_modules` for the server package can throw `MODULE_NOT_FOUND` before it reaches the
+  Node-version check it was trying to report.
+
+**How to avoid (actionable):**
+1. **The doctor entry point must be its own file, with its own `bin` binding, importing
+   only Node built-ins plus the narrowly-scoped resolution helpers it shares with the real
+   dispatch path (Pitfall 1) — never `vice-proxy.ts`, never anything that transitively pulls
+   in `@mastra/*`.** This is a structural constraint, testable by a source-level guard: a
+   test that statically walks the doctor entry's import graph and fails if it reaches
+   `@mastra/mcp`, `@mastra/core`, or `vice-proxy.ts`.
+2. **The Node-version check must be the literal first statement executed, written in syntax
+   that is valid on every Node version the doctor might run under** (i.e. no optional
+   chaining assumptions beyond what the floor requires, no top-level `await` if that's a
+   risk, plain `process.versions.node` string parsing) — so that when it fails, it fails
+   with a clear, doctor-authored message, not a runtime parse/import error.
+3. **A CI matrix cell that runs the doctor under the actual old-Node floor**, not just under
+   the CI runner's normal Node — asserting exit code and a specific "Node too old" message,
+   not merely "did not throw."
+4. **No side-effecting import at module load time.** Every filesystem/env probe the doctor
+   performs happens inside an explicitly called function, never at `import` time — so a
+   probe that itself throws (e.g. `GHIDRA_HOME` set to a garbage path) cannot prevent the
+   Node-version check (or any other independent check) from running and being reported.
 
 **Warning signs:**
-The gate's output directory is a fixed, reused path (e.g. `build/rebuild.prg`) rather than a
-fresh temp directory per run.
+- `bin.vice-mcp-doctor` (or however it is registered) resolves to the same file as, or a
+  file that imports, `vice-proxy.ts`.
+- The doctor's own `package.json`/manifest declares an `engines.node` floor identical to the
+  server's — if true, the doctor cannot report on the one condition it exists to report on.
+- No test exercises the doctor with a Node binary below the floor (mocking
+  `process.version` is not equivalent — the real defect class is a parse/import failure,
+  which only a real old interpreter reproduces).
 
-**Phase to address:**
-The reassembly-gate phase (`BUILD-06`).
+**Phase to address:** the phase that stands up the doctor's CLI entry point, before any
+reporting logic is added on top of it. This should be verified before Pitfall 1's
+resolution-sharing work begins, since the entry point's import boundaries constrain how
+probe logic can be shared at all.
 
 ---
 
-### Pitfall 3: Reassembly verified only at the original layout, never after movement
+### Pitfall 3: Path/location config pitfalls — `tools.json`
 
 **What goes wrong:**
-The gate re-assembles the exported source and diffs it against the *original* image at the
-*original* addresses — proving the symbol table round-trips, but never actually exercising
-`BUILD-03`'s claim ("every branch, JSR/JMP and data reference goes through a symbol, so code can
-move"). A rebuild that never moves anything can pass a byte-diff gate trivially even with broken
-symbolisation, because unresolved or wrong symbols that happen to still evaluate to the original
-addresses produce the original bytes.
+A user-authored path in a config file behaves differently from a `$PATH`-resolved binary in
+ways the resolution code doesn't anticipate: `~` never expands, a relative path resolves
+against the wrong working directory (the broker's cwd, not the user's shell cwd, not the
+repo root), a path points at a directory or a non-executable file and the failure surfaces
+as a confusing spawn error instead of a doctor-level refusal, or the path is checked once
+and used later after it has changed underneath the process.
 
-**Why it happens:**
-"Reassemble and byte-diff" is the natural first gate to build, and it is genuinely necessary. But
-it answers a narrower question (did the printer round-trip this decode) than the one the
-milestone needs answered (can this source actually be relocated). Movement is a second,
-independent property that a same-address round trip cannot exercise.
+**Why it happens (general, well-established classes):**
+- **TOCTOU (CWE-367):** checking a path exists/is executable and then using it later is
+  inherently racy — "a pathname is not a stable reference to a specific file object... an
+  attacker [or, non-adversarially, a routine file replace] can change what the pathname
+  resolves to" between check and use ([CWE-367](https://cwe.mitre.org/data/definitions/367.html);
+  [Wikipedia TOCTOU](https://en.wikipedia.org/wiki/Time-of-check_to_time-of-use)). The
+  non-adversarial version of this — a package manager upgrade replacing the binary between
+  the doctor's check and the broker's next launch — is the realistic case here, not an
+  attacker.
+- **`~` and env-var expansion are not automatic in Node.** `existsSync("~/tools/x64sc")` is
+  checked *literally* — Node performs no shell-style tilde expansion — so a config value a
+  user naturally types (copying a shell prompt's `~/bin/x64sc`) silently resolves to nothing
+  unless the resolution code expands it itself.
+- **Relative-path ambiguity.** A relative path in a config file has no inherent "resolve
+  against what" — the repo root, the config file's own directory, and the process's `cwd`
+  at spawn time are three different, all-plausible answers, and a config format that doesn't
+  pick one explicitly will get user reports assuming each of the other two.
+- **Windows suffix/separator handling** (`.exe`, `.cmd`, `\` vs `/`) is a well-known Node
+  `child_process` sharp edge — a bare "does this file exist" check on Windows needs the
+  right extension appended or PATHEXT-style resolution, and this project's own README
+  already documents that VICE has **no package-manager route on Windows at all** — meaning
+  Windows users are the population *most likely* to need `tools.json` to point at a hand-
+  placed `.exe`, which is exactly the platform this class of bug hits hardest.
+- **Exists-but-not-executable, and exists-but-is-a-directory** are both states `existsSync()`
+  reports as true — a probe that treats "exists" as "usable" will attempt to spawn a
+  directory or a non-executable file and surface a raw `EACCES`/`EISDIR` from `child_process`
+  instead of the doctor's own named refusal.
 
-**How to avoid:**
-Run the reassembly gate in **two** modes, not one: (1) same-address round trip against the
-original image (a necessary sanity floor — this is the "narrower, optional pre-modification
-byte-identical sanity check" the v0.5.0 requirements explicitly leave room for), and (2) a
-relocated build where at least one hazard-free block is moved to a different address and the gate
-confirms the moved build still assembles *and* that every reference the store believes is
-symbolic actually re-resolved rather than having been emitted as a literal address that happened
-to match. `EQUIV-01`'s "original-versus-different-binary mode ... a mode it has never been run in"
-is the direct precedent for "we built the harness but never actually ran the mode that matters" —
-don't let the reassembly gate repeat it.
+**How to avoid (actionable):**
+1. **Resolve `tools.json` paths through one function, with a fixed, documented base for
+   relative paths (repo root via the existing `repoRoot()`/`toolsDir()` resolver — never
+   the process cwd), explicit `~` expansion against `process.env.HOME`/`os.homedir()`, and
+   `.exe` fallback probing only on `process.platform === "win32"`.** This function must sit
+   beside `defaultResolveBinPath()`/`findSiblingBinary()`, not duplicate their shape.
+2. **Verify usability, not just existence:** `statSync` and check `isFile()` (reject
+   directories with a named refusal, not a spawn attempt) and, on POSIX, a mode/`X_OK`
+   check via `fs.accessSync(path, fs.constants.X_OK)` — surfaced as "found but not
+   executable: `chmod +x`" rather than a generic spawn failure.
+3. **Do not eliminate the TOCTOU window — narrow its consequence.** The realistic risk here
+   is staleness (a package upgrade), not attack, so the actionable fix is not "close the
+   race" (impossible without holding a file descriptor across the whole session) but
+   "detect and report the mismatch": reuse the identity fields (`mtimeMs`/`sizeBytes`)
+   `backend-detect.mts`'s cache already carries for exactly this purpose (a binary "replaced
+   in place" invalidates the cached identity) rather than trusting a path string forever.
+4. **A path from `tools.json` must reach `spawn()` only through the existing argv-array
+   call sites** (`spawnHostTool()`'s `spawn(toolPath, argv, {...})`, no `shell: true`
+   anywhere in this project's spawn calls — confirmed by reading `host-tool.mts`). This is
+   already the house invariant (CLAUDE.md: *"argv array, never a shell command string"*);
+   the new risk `tools.json` introduces is a **user-controlled** string reaching that argv
+   array for the first time (previously it was env-var-controlled, same trust level, so this
+   is not a *new* trust boundary — but it is worth a regression test asserting a path
+   containing shell metacharacters (`; rm -rf`, `$(...)`, backticks) is passed through to
+   `spawn`'s argv unchanged and never concatenated into a string anywhere in the call chain).
+5. **Symlinks:** resolve them explicitly (`fs.realpathSync`) only when the identity check in
+   (3) needs a stable target to compare against; do not silently follow a symlink and then
+   report the *link's* path back to the user as "where the tool is" — report what the user
+   typed AND what it resolved to, the same two-field pattern (`binPath`/`binPathResolved`)
+   `backend-detect.mts` already uses for `x64sc`.
+
+**Security question — is a repo-local `tools.json` a code-execution vector?**
+Analysis, not a citation (this is project-specific reasoning):
+- `.c64-re-tools/` is gitignored (`.gitignore` lines 20/26), and the plugin/npm release
+  artifacts are built via `git archive HEAD`, which only ever includes **tracked** files —
+  so an untracked `tools.json` cannot ship inside a release by ordinary means. This *does*
+  mitigate "a malicious repo ships a poisoned `tools.json` that a fresh clone silently
+  trusts" — there is no committed file to poison.
+- It does **not** fully mitigate the file as a vector, for two reasons that are still real:
+  (a) a user (or a compromised dependency's postinstall, or a careless `git add -f`) *can*
+  force-add it despite `.gitignore`, and gitignore is a convention, not an access control —
+  a reviewer diffing a PR should treat any tracked `.c64-re-tools/tools.json` as an
+  immediate hard stop; (b) even untracked, `tools.json` is still an **attacker-writable
+  file on a shared or CI-adjacent machine** if anything else with write access to the repo
+  checkout (another tool, a build step, a compromised editor extension) can write it — the
+  resolution code should therefore treat every path it reads from `tools.json` with the same
+  suspicion as an env var, i.e. it is data, not code, and must never be `eval`'d,
+  interpolated into a shell string, or used to construct anything beyond an argv-array spawn
+  target and a `existsSync`/`statSync` check.
+6. **Structural mitigation, testable:** a guard test asserting `tools.json` values are only
+   ever passed to `fs.*` path functions and `spawn()`'s argv array — grep-shaped is
+   acceptable here (assert the resolution module contains no `exec(`, `execSync(`, template
+   literal building a command string, or `shell: true`).
 
 **Warning signs:**
-`BUILD-06`'s gate always assembles at `*=` equal to the original load address; no plan or test
-ever moves a symbol's home address and reassembles.
+- Any `tools.json` value reaching a template string (`` `${bin} --version` ``) anywhere.
+- A relative-path test that only exercises "run from repo root" — the ambiguous case is
+  "run from somewhere else," which is the normal case for a globally-installed CLI.
+- No test for "path exists, is a directory" or "path exists, is not executable" as distinct
+  refusal messages from "path does not exist."
 
-**Phase to address:**
-The reassembly-gate phase (`BUILD-06`) — build the movement-mode check in the same phase that
-builds the gate, not deferred to the equivalence phase, since a movement-blind gate would let
-`EQUIV-03`'s modifiability proof start on an unverified foundation.
+**Phase to address:** the phase that implements `tools.json` resolution (layered under env
+vars, per the milestone's own decision 5) — this is a self-contained module and should ship
+with its own focused test file before the doctor's reporting layer consumes it.
 
 ---
 
-### Pitfall 4: Hazard-adjacent ranges silently excluded from the byte-diff scope
+### Pitfall 4: Layered-precedence pitfalls — env → file → `$PATH`/sibling → refuse
 
 **What goes wrong:**
-The reassembly gate reports "clean" because it only diffs the ranges the decomposition confidently
-typed, quietly excluding ranges the pipeline was unsure about (declined bank-state-dependent
-bytes, `unclassified` dxa/Ghidra overlaps, self-modifying-code targets). The gate is vacuously
-green because it never looked at the bytes most likely to be wrong.
+With four possible sources for one resolved path, the two most common failures are (a) a
+lower-priority source silently wins because the precedence check has a bug, and (b) the user
+genuinely cannot tell *which* source supplied the answer they are looking at, so a correct
+answer still reads as unexplained.
 
 **Why it happens:**
-It's tempting to scope the diff to "what we're confident about" during development, and that scope
-never gets widened back out once the gate is green.
+- **Precedence differing between two code paths in the same product is the single most
+  damaging version of this** — because it means "which source wins" is not even one true
+  fact, it is two facts that happen to usually agree. This is precisely the shape of
+  Pitfall 1, applied to precedence specifically rather than to resolution generally: if the
+  doctor's precedence order is `env → file → PATH/sibling → refuse` but the real dispatch
+  path's precedence (once `tools.json` is wired into it) ends up being `file → env → ...`
+  because of where the wiring was inserted relative to an existing `env.VICE_BIN ?? "x64sc"`
+  default, the doctor becomes actively wrong rather than merely stale.
+- **A config file overriding a deliberate one-shot env override** is a real, named UX
+  failure in exactly this precedence shape elsewhere — `tbd`'s doctor had to be patched
+  specifically because it warned about PATH state that an env-based, single-invocation
+  override had already deliberately fixed for that run
+  ([jlevy/tbd#248](https://github.com/jlevy/tbd/pull/248): *"doctor warns when npm's global
+  bin is off PATH"* despite the running session already being correctly configured). The
+  general lesson: a persistent, file-based source and a transient, per-invocation source are
+  not interchangeable, and putting the persistent one *above* the transient one in precedence
+  (or reporting on the persistent one when the transient one is what's actually live) produces
+  a doctor that argues with a decision the user just made on purpose.
+- **Stale cached resolution outliving a precedence change** — see Pitfall 1's memoisation
+  discussion; it applies identically here, compounded, because now there are four things
+  that could have changed (env unset, file edited, PATH reordered, sibling binary replaced)
+  instead of one.
+- **This project's own real, already-documented instance is directly on point** (repeated
+  here because it is precedence-shaped, not just resolution-shaped): the fork-vs-stock
+  `x64sc` shadowing on `$PATH` meant that even when `VICE_BIN` was *unset* (so PATH
+  resolution should be the deciding source), the answer a reader got depended entirely on
+  which of two real, valid binaries happened to sit first in `$PATH` — an ordering fact
+  invisible from the resolved absolute path alone unless the tool explicitly surfaces "PATH
+  order" as the reason. `backend-detect.mts`'s `binPath`/`binPathResolved` fields answer
+  "what did it resolve to," never "why this one and not the other."
 
-**How to avoid:**
-This directly threatens the milestone's own new invariant, `BUILD-07`: "the export path is
-lossless by default — no range dropped, filtered or omitted on the tool's own judgement." Reuse
-its already-specified control for the reassembly gate too — a planted control where a heuristic
-*would* want to exclude a range from the diff, and the range still gets diffed. The gate's scope
-must be **the whole image**, derived the same way `BUILD-07`'s lossless-export check derives its
-scope, not a second, independently-maintained range list.
+**How to avoid (actionable):**
+1. **One resolver function, called by both the doctor and the real dispatch path** — this
+   is the same structural fix as Pitfall 1, and it is what makes "precedence differs between
+   two code paths" structurally impossible rather than merely discouraged. If the Node-floor
+   constraint truly forces two call sites, the precedence LOGIC itself (the ordered list of
+   sources, as data — e.g. `["env:VICE_BIN", "file:tools.json#x64sc", "path", "sibling"]`)
+   must be a single exported constant/table both call sites iterate, never two independently
+   written `if/else if` chains.
+2. **The resolved answer always carries its source, as a first-class field** — not
+   reconstructed after the fact by re-checking each layer, but recorded at the moment of
+   resolution (`{ path, source: "env" | "file" | "path" | "sibling", tried: [...] }`), so
+   "why did I get this answer" is answered by the resolver itself, in every consumer,
+   including the doctor's report and any refusal message. `findSiblingBinary()`'s existing
+   `tried: string[]` return shape and its logged PATH-fallback warning are the right
+   precedent to extend, not replace.
+3. **A precedence conformance test matrix**: for every pair of sources (env set + file set,
+   file set + PATH match, PATH match + sibling match, all four set), assert the winner is
+   the one the documented precedence says and that the *source label* on the result matches.
+   This test should exist once, and both the doctor and the real dispatch path should be
+   asserted against it (see (1)) — not two separate test files that could each pass while
+   disagreeing with each other.
+4. **Do not let `tools.json` shadow a same-run env override.** Per the milestone's own
+   decision 5, env vars are *above* the file in precedence — verify this is true not just in
+   the written precedence order but in the actual resolver code path, with a test that sets
+   both `VICE_BIN` and a conflicting `tools.json` entry and asserts the env var wins.
 
 **Warning signs:**
-The gate's diff loop iterates over `annostore` block ranges with a `type !== "unclassified"`
-filter, or similar, before comparing bytes.
+- A resolved answer with no `source` field, or one only reconstructable by the caller
+  re-probing each layer itself.
+- Doctor and dispatch-path precedence described in prose in two different files
+  (`doctor.md`-shaped comment in one, `stock-dispatch.ts`-shaped comment in the other)
+  rather than one shared, imported list.
+- No test exercising the "PATH has two valid matches at different positions" case — this
+  project has already been burned by exactly this scenario once.
 
-**Phase to address:**
-The reassembly-gate phase (`BUILD-06`), sharing its scope-derivation code with `BUILD-07`'s
-lossless-export control rather than parallel-building it.
+**Phase to address:** should be delivered together with Pitfall 3's `tools.json` resolution
+phase — precedence is a property of the resolver, not a separate feature, and splitting them
+across phases risks exactly the "two code paths disagree" failure this pitfall describes.
 
 ---
 
-### Pitfall 5: Bank-state-dependent code/data decisions collapse to a single wrong guess
+### Pitfall 5: Generated-documentation drift, without a byte-identical guard
 
 **What goes wrong:**
-Any range whose meaning depends on the CPU port (`$01`) or VIC banking state at the moment it's
-touched — code visible under one memory configuration, ROM/RAM/I-O under another — gets
-classified once, confidently, and wrong for the configuration that actually applies at that
-program point. `PROOF-03` already measured this exact failure mode structurally: the same
-`$D020` annotates differently under `$34` and `$33`, and a scratch-mutated "forward carry"
-annotator produces a confident wrong answer at `PROOF03_FORWARD_CARRY_WRONG_AT`, while the
-committed branch declines with a reason naming both values.
+A README section generated from a declaration drifts from that declaration, and the guard
+meant to catch it either (a) never actually fails under a real drift (vacuous), (b) fails on
+harmless formatting noise unrelated to content (too strict, trains reviewers to ignore red
+CI), or (c) is never exercised in CI because the generator itself is only ever run by hand.
 
-**Why it happens:**
-Static disassemblers (dxa, Ghidra without hints) have no notion of the 6510's memory-mapping
-state machine; a byte at `$A000` is either BASIC ROM or cartridge/RAM depending on `$01`, and a
-single fixed disassembly pass has to pick one.
+**Why it happens (general):**
+- **The specific failure of "testing the generator against itself."** A drift guard that
+  regenerates the section and diffs it against what's on disk is only meaningful if the
+  generator is independent of whatever broke — if the same bug that produced wrong README
+  content also produces the "expected" value the guard diffs against (because both read the
+  same broken intermediate value, or the guard literally re-invokes the generator and
+  compares its output to itself rather than to the committed file), the guard is
+  structurally unable to fail. This is the generated-docs analogue of a unit test whose
+  expected value is derived from the same code path as the actual value under test — this
+  project's own `ENGINEERING_RULES.md` §5 already bans exactly this shape ("tests ... derive
+  their expected value from the same live source that produced the input under test") for
+  code; the same discipline has to extend to the new drift guard or it inherits the
+  loophole.
+- **Guards not run in CI** is the most common real-world failure — a generator with a
+  correct guard that only runs via a manual `npm run docs:check` script nobody remembers to
+  invoke is equivalent to no guard the moment someone forgets.
+- **Byte-identical guards are too strict for a Markdown table hand-adjacent to prose** — this
+  is exactly why the owner removed all byte-identical assertions on 2026-09-13 (Phase 54,
+  "including the three tree-sync guards"). A new byte-identical README guard would rebuild
+  the specific thing that decision deleted, and would also be the wrong tool for the job
+  even on its own merits: it reds on a trailing-whitespace fix, a reflowed sentence next to
+  the generated block, or a heading-level change — none of which are drift.
 
-**How to avoid:**
-Preserve the AUTO-01..08 precedent for the new decomposition/export work: **decline with a
-reason** rather than emit a comment for any address whose bank state is path-dependent, and
-surface that decline in `DECOMP-03`'s "every referenced non-hardware address is named and
-documented" as an explicit `unresolved-bank-state` entry, not silence. Do not let the rebuild
-pipeline invent a plausible-looking symbol name for a bank-ambiguous byte just because
-`DECOMP-01`'s "nothing left Undefined" bar is pushing toward 100% coverage — a wrong confident
-name is worse than an honestly incomplete one, and this is the project's own stated standard.
+**Why the shape matters specifically for THIS project:**
+This project already has the correct discipline for a *different* generated-artifact pair
+(`.mts` sources → committed `resources/*.mjs`), enforced by `resources-sync.test.ts`, and
+`CLAUDE.md` states it plainly: *"`resources-sync.test.ts` fails CI on drift."* That guard
+is allowed to be byte-identical because its artifact (compiled `.mjs`) has no legitimate
+reason to differ from its generator's output by even one byte. A generated **README
+section** is different in kind: it lives inside a hand-written document, so "drift" has to
+mean "the generated facts disagree with the declaration," not "the bytes differ" — the
+declaration-to-README relationship is a **referential-integrity** property, not an
+**identity** property, and the guard shape has to match that.
+
+**How to avoid — the concrete recommended shape:**
+1. **Bracket the generated section with explicit, machine-findable markers** in `README.md`
+   (e.g. `<!-- BEGIN GENERATED: prerequisites -->` / `<!-- END GENERATED: prerequisites -->`),
+   so the guard can extract exactly the generated slice without depending on surrounding
+   prose staying put.
+2. **The guard regenerates into memory from the committed declaration, then parses BOTH the
+   regenerated text and the extracted committed slice back into structured data** (e.g. an
+   array of `{ tool, versionFloor, unblocks: [...], remedy: { platform: string } }` records)
+   using the same Markdown-table-to-object parser on both sides — **never a raw string/byte
+   diff of the two texts.** Assert **set/record equality** on the structured data (order-
+   insensitive where order isn't semantically meaningful, whitespace-insensitive
+   everywhere). This is what makes the guard non-byte-identical while still non-vacuous: it
+   is sensitive to a changed version floor, a changed remedy string, a missing tool, an
+   extra tool — and *insensitive* to reflowed prose, trailing whitespace, or heading style.
+3. **The guard must run the real generator, in CI, against the real committed declaration
+   file** — not a fixture copy of the declaration and not a hand-written "expected" table.
+   This closes the "generator never run in CI" failure and the "testing against itself"
+   failure simultaneously: the input (declaration) and the comparison target (committed
+   README slice) are two genuinely independent artifacts on disk; only the *transform*
+   (declaration → structured facts, README slice → structured facts) is shared code, and
+   that is fine — the two parses start from different source text.
+4. **Apply `ENGINEERING_RULES.md` §6 (non-vacuous verification) to this guard explicitly**,
+   as a required step, not an optional nice-to-have: plant a violation (hand-edit the
+   committed README's remedy string for one tool without regenerating; separately, hand-edit
+   the declaration's version floor without regenerating) and confirm the guard fails BOTH
+   times, with two separate test cases. A guard that has never been observed failing is not
+   evidence it can fail.
+5. **This is a real, direct tension worth surfacing to the roadmapper explicitly**:
+   `ENGINEERING_RULES.md` §11 currently says *"Generated documentation should use
+   scratch-generation plus byte-diff or an equivalent deterministic drift check where
+   practical"* — written before the 2026-09-13 byte-identical removal decision, and not yet
+   reconciled with it. The structural-diff shape above is the *"equivalent deterministic
+   drift check"* §11 already anticipates as an alternative, so no rule conflict actually
+   exists once §11 is read as offering a choice — but §11's own text should be updated (or a
+   note added) so a future reader does not see "byte-diff" and "no byte-identical
+   assertions" as contradictory in this specific area.
 
 **Warning signs:**
-`DECOMP-01`'s "every byte is code/byte/word/address/..." census reaches 100% with zero
-`unresolved-bank-state` (or equivalent) entries on a fixture that deliberately exercises bank
-switching — that is the sign the decliner was bypassed, not that the problem doesn't exist on this
-fixture.
+- A `docs-prereq-drift.test.ts` (or similarly named) guard whose failure message is a raw
+  string diff rather than a named field (`"acme-build: version floor mismatch: declared
+  0.97, README says 0.96"`).
+- The guard imports the generator and calls it, then compares the result **to itself** or to
+  a second in-memory generation, rather than to the actual `README.md` file on disk.
+- No CI step invokes the generator/guard at all — only a `package.json` script a human has
+  to remember.
+- The guard was never observed red (no commit history, no test-of-the-test) — this is
+  disqualifying under §6, not merely a nice-to-have.
 
-**Phase to address:**
-The decomposition phase (`DECOMP-01`..`04`) for the census discipline; the synthetic-fixture
-phase should deliberately include a bank-state-dependent range to make this checkable at all.
+**Phase to address:** the phase that adds the generated README section, delivered together
+with its guard in the same phase (never generator-now-guard-later) — and the guard's
+non-vacuousness must be demonstrated as part of that phase's own verification, per
+`ENGINEERING_RULES.md` §6/§18.
 
 ---
 
-### Pitfall 6: Static reachability misses code the runtime evidence layer already knows about
+### Pitfall 6: Version-floor pitfalls
 
 **What goes wrong:**
-The decomposition pipeline relies on dxa/Ghidra's static recursive-descent reachability to decide
-what's code. Anything reached only through an indirect jump table, a computed dispatch, or a path
-a static walk doesn't take gets typed as data (or left `Undefined`), even though this project
-already has an independent, structurally-separate fact source that would catch it:
-`anno_evid_exec`'s runtime evidence layer, whose whole `EVID-*`/`PROOF-04` design exists
-specifically to report **disagreement** between what the bytes imply and what the machine was
-observed doing.
+Parsing a tool's version turns out to be far less reliable than it looks: the string is on
+the wrong stream, the tool hangs, the tool needs a TTY, a distro repackages the version
+string in a way the parser doesn't expect, or — the deepest version of this pitfall —
+"present at version N" and "actually works for what we need" are different questions that a
+version check alone cannot answer.
 
-**Why it happens:**
-The decomposition work and the runtime-evidence work were built in different milestones
-(`v0.8.0` static engines vs. `v0.9.0` runtime evidence), so it is easy to run the rebuild pipeline
-purely off the static block table and never re-query the evidence layer that was built to catch
-exactly this class of miss.
+**Why it happens (general, well-established):**
+- **stderr vs. stdout.** The canonical example is `java -version`, which has written its
+  version banner to **stderr**, not stdout, since Java's earliest releases — any doctor
+  that only captures stdout on a `--version`/`-version` spawn silently gets an empty string
+  from a tool that is actually present and working.
+- **Non-zero exit for `--version`.** Some CLIs treat `--version` as an error path and exit
+  non-zero even though they printed the right thing — a doctor that gates on exit code
+  before reading output discards a correct answer.
+- **TTY requirements / hangs.** A tool whose interactive mode activates on a bare invocation
+  (no args recognized) can hang waiting for stdin if the doctor's spawn doesn't close stdin
+  or set a timeout — turning a fast diagnostic into a wedged process.
+- **Distro-patched version strings.** Package maintainers routinely append build metadata
+  (`3.9+dfsg-1`, as this project's own README already documents for VICE on Debian) — a
+  parser expecting a bare semver-shaped string will either fail to parse or, worse,
+  misparse the suffix as part of the version and compare wrong.
+- **"Present" vs. "works" is the deepest version of this pitfall**, and it is not really a
+  parsing problem — a tool can be installed, on `$PATH`, and report a version string that
+  satisfies the floor, and still not work for the specific thing the code needs (missing a
+  compiled-in feature, missing a runtime dependency, wrong build flags).
 
-**How to avoid:**
-Before declaring `DECOMP-01` satisfied on any fixture that has been executed under the emulator
-(which the synthetic fixture will be, for `EQUIV-02`/`EQUIV-03`), run
-`anno_evid_disagreements` and treat every disagreement as a decomposition defect to resolve, not
-as an unrelated finding. This is the one integration point in this milestone where "upstream of
-the rebuild half" (the v0.8.0-close dependency note, now discharged per PROJECT.md's v1.0.0-open
-text) actually pays for itself — use it, don't leave it sitting unused beside a purely
-byte-derived census.
+**Why this is already a *measured, known* case in THIS codebase — and the project has
+already learned the exact lesson the question anticipates:**
+- `CPUHISTORY_GET` (the binary-monitor opcode) needs VICE ≥ 3.10; Debian/Ubuntu ship 3.9.
+  This is a genuine, real version floor.
+- **But the project already discovered that gating on the VICE version string is the wrong
+  tool for this specific floor**, because the equivalent *capability* is reachable a
+  different way on stock 3.9 (the `chis` text-monitor command, over the text channel,
+  independent of the binary-monitor opcode's version gate) — documented in `CLAUDE.md`'s own
+  dependency bullet: *"the version floor is on the opcode, not the capability... text-command
+  tracing/profiling support is opt-**out** at build time, the opposite of a version floor."*
+  In other words: for this exact tool, a naive "check the version string, refuse below 3.10"
+  doctor answer would have been **actively wrong** — it would refuse a capability that is, in
+  fact, available through a different route on the same binary.
+- **The mechanism that resolves VICE's version today is not a static probe at all** — it is
+  read from a live binary-monitor connection's own info response
+  (`stock-connect.ts`'s `resolveCapabilities()`, `infoResponse.versionString`), and the
+  static `--help`-based discriminator that used to exist was **deliberately deleted**
+  (`backend-detect.mts`'s header comment) once it stopped being needed for backend
+  discrimination. This means the doctor — which by design runs before any session/connection
+  exists — has **no existing static version-probing code to reuse for VICE at all**. Whatever
+  the doctor does to report on VICE's version is necessarily NEW code, which raises Pitfall 1
+  again: a new, doctor-only version probe for `x64sc` is a second source of truth about VICE's
+  version, alongside the live-connection one the real dispatch path uses, and the two can
+  disagree (e.g. the doctor spawns `x64sc --help`/`-verbose` and parses a version banner from
+  a build whose actual live-negotiated `versionString` differs, or a build with a `--help` text
+  format the doctor's parser doesn't expect).
+
+**How to avoid (actionable):**
+1. **Capture both stdout and stderr on any `--version`-shaped spawn**, and accept either
+   exit code, consistent with the "present vs. works" distinction — the doctor's job here is
+   narrower than the real dispatch path's: report identity/presence, not full capability.
+2. **Do not gate any doctor verdict on a version comparison where a capability probe already
+   exists and is cheaper to state honestly as "unknown until a live check."** For VICE
+   specifically: the doctor should report **presence** (found at path X) and, where the
+   declaration records it, the **documented package-manager version for the detected
+   platform** (i.e. "if you installed via `apt`, expect 3.9, which does NOT include
+   CPU-history over the binary-monitor opcode — it may still be reachable via the text
+   channel; the MCP tool surface will tell you if it isn't") rather than attempting to parse
+   a live version string the doctor has no connection to observe. This keeps the doctor
+   truthful by construction: it never claims a version-gated capability verdict it cannot
+   actually observe.
+3. **Timeout every version-probing spawn** (the project's own `spawnHostTool()` already has
+   a documented hard ceiling on stdout/stderr accumulation and an applied timeout budget —
+   the doctor's own probes, if any spawn a `--version`, must use the same discipline, not a
+   bespoke unbounded spawn).
+4. **Treat the declaration's version-floor field as informational text for the human, not as
+   a live-comparable value the doctor computes and asserts pass/fail on**, unless a specific
+   tool's version can genuinely be checked cheaply and statelessly (e.g. ACME, `c1541`,
+   `petcat`, `dxa`, Ghidra — none of which need a live emulator connection the way VICE's
+   capability gate does). Apply the "capability beats version" lesson **per tool**, not as a
+   blanket policy — VICE is the one tool in this set where it is already proven necessary.
 
 **Warning signs:**
-`DECOMP-01`'s completeness census is computed and reported without any query against
-`anno_evid_disagreements` in the same evidence trail; the decomposition phase's plans never call
-the runtime-evidence tools at all.
+- A doctor check for VICE that reports "CPU history: unavailable" based on a parsed version
+  string alone, with no caveat that the text-channel route may still work.
+- A version-parsing regex tested only against one clean, un-suffixed version string, never
+  against a distro-suffixed one (`3.9+dfsg-1`) or a `--help`-banner shape.
+- Any doctor spawn without an explicit timeout.
 
-**Phase to address:**
-The decomposition phase (`DECOMP-01`), gated on the synthetic fixture already having been executed
-and captured (an ordering dependency the roadmap should make explicit: capture-and-execute the
-fixture before or interleaved with decomposition, not only for `EQUIV-02` afterward).
+**Phase to address:** the phase that writes the prerequisite declaration (version-floor
+field semantics decided there) and the phase that implements the doctor's reporting for
+VICE specifically — flag the VICE row for extra review given it is the one case already
+proven to need capability-over-version reasoning.
 
 ---
 
-### Pitfall 7: A "clean hazard report" that never saw the RTS-trick variant it wasn't written to expect
+### Pitfall 7: Scope creep — the doctor that starts fixing things
 
 **What goes wrong:**
-The movement-hazard detector's RTS-trick check pattern-matches the canonical idiom (push
-low byte, push high byte, `rts` to fall into the target) and misses functionally-equivalent
-variants — an index computed by combining two bytes, a table selected via `x` in one place and
-`y` in another, a target pushed by two separate `pha` sequences on different branches. The report
-comes back clean; `BUILD-06`'s gate passes; the range gets moved; the game jumps into garbage at
-runtime, discovered only if someone happens to exercise that exact code path in `EQUIV-02`/`03`,
-and possibly not even then.
+A doctor that can *see* what's missing is one small, natural-feeling step from a doctor that
+*offers* to fix it — write the `tools.json` template automatically and silently, run
+`brew install` "just this once because it's obviously right," or auto-detect and pin a path
+without the user ever looking at it. Each of these individually looks like a UX improvement
+and each one crosses the project's explicit, non-negotiable "never auto-install" line.
 
-**Why it happens:**
-RTS-trick detection is inherently a pattern-match over a family of idioms, not a single fixed
-opcode sequence, and the fixture used to validate the detector is written by the same person (or
-same design document) that wrote the detector — see Pitfall 15 for why that specifically produces
-this failure.
+**Why teams cross this line, generally and here specifically:**
+- The pull is structural, not carelessness: a doctor's entire value proposition is "tell me
+  what's wrong," and the very next sentence a user says is always "so fix it" — the feature
+  request writes itself, and a doctor's own author is the person most primed to say yes,
+  because they already have the detection logic and installing feels like "just one more
+  branch."
+- **In this specific codebase, the line has already been drawn precisely, with an accepted
+  positive pattern to follow** (CLAUDE.md's Dependency bullet): *"detect, then refuse by name
+  with the remedy in the message"* — and the milestone's own scoping notes reinforce this is
+  not up for re-litigation (*"The never-auto-install rule holds unchanged, and its three
+  carve-outs stay"*). The risk is not that a planner argues against this rule; it's that an
+  *implementation* detail quietly slides across it without anyone framing it as a decision —
+  e.g. "the doctor writes a *default* `tools.json` with guessed paths pre-filled" is not
+  package-manager invocation, so it doesn't trip the obvious tripwire, but it *does* silently
+  assert unverified facts into a config file the user might not review before it starts being
+  trusted as ground truth.
+- **The milestone's own text already names the one place this could creep in**: *"The doctor
+  writes a commented template on request; the user edits it."* "On request" and "commented
+  template" (i.e. containing guidance/placeholders, not asserted real paths) are the load-
+  bearing words — a version that writes real, unreviewed, auto-detected paths into
+  `tools.json` without an explicit user action has quietly become an auto-configuration
+  feature, which is a smaller step from auto-install than it looks.
 
-**How to avoid:**
-A hazard detector that can miss a hazard is worse than none, because the report is then trusted.
-Treat the RTS-trick detector's precision claim the same way this project treats every other
-non-vacuous-verification claim (`ENGINEERING_RULES.md` §6): it must be observed **catching** a
-planted instance it was not specifically pattern-matched against, not merely passing on the one
-canonical instance it was built to catch. Where the detector cannot prove generality, it must
-report `unclassified — indirect control flow, manual review required` rather than "clean" —
-mirroring the coverage instrument's own precedent of an honest gap over a confident wrong number
-(`COV-02`).
-
-**Warning signs:**
-The RTS-trick detector's test suite contains exactly the fixture instance it was designed against
-and no structurally-different variant; "clean" is the detector's *only* output value (no
-"unclassified, needs review" outcome exists at all).
-
-**Phase to address:**
-The rebuildable-source phase (`BUILD-04`), with the non-vacuity control specifically required
-before `BUILD-06`'s gate is allowed to consume the hazard report as a green light.
-
----
-
-### Pitfall 8: Self-modifying-code detection that only watches the SMC's own file, not every write site
-
-**What goes wrong:**
-The self-modifying-code hazard check looks for a `STA`/`STX`/`STY` whose target literally falls
-inside a range the store already typed as `Code` — the pattern this project's own Ghidra probe
-proved works ("flagged the self-modifying write landing inside a Code block"). It misses SMC where
-the write's target address is computed at runtime (indirect via a zero-page pointer, or an
-indexed store where the index varies across calls) and therefore is never a literal match against
-a code range during static analysis, even though the runtime evidence layer would show the code
-range's bytes differing between two captures at the same address.
-
-**Why it happens:**
-Ghidra's own SMC detection (as measured in this project) operates on the **decompiler** layer, not
-the listing's data types — a write with a computed target doesn't decompile to an obviously
-code-target store, so it's invisible at that layer too. The gap is structural, not an
-implementation oversight in either engine.
-
-**How to avoid:**
-Treat static SMC detection as a first-pass heuristic only, and add a second, independent line of
-defense this project already has the substrate for: compare two runtime `anno_evid_exec` captures
-of the same subject taken at different points and flag any address whose **observed bytes**
-differ across captures, or whose class flips from `unobserved` to `code` mid-run in a way a static
-Code/Data assignment didn't predict. Report both signals in `BUILD-04`'s hazard report as
-independently-sourced findings rather than merging them into one boolean.
+**How to avoid — structural, not documentary:**
+1. **The doctor process must have zero code paths that spawn a package manager, `curl`,
+   `git clone`, or any other acquisition tool.** This is enforceable exactly like the
+   project's own existing discipline elsewhere (CLAUDE.md already documents this as a
+   maintained invariant for the rest of the codebase — extend the same guard to the doctor):
+   a source-level test that scans the doctor's module(s) for `apt`, `brew`, `pacman`, `npm
+   install`, `pip install`, `curl`, `wget`, `git clone` as literal strings and fails if found
+   anywhere outside a remedy *message* (i.e. the strings may appear in a string constant
+   printed to the user, never as an argument to `spawn`/`exec`).
+2. **Template writing requires an explicit, separate CLI invocation** (e.g. `vice-mcp doctor
+   --write-template`), never a side effect of the plain `vice-mcp doctor` read-only report —
+   so "doctor was run" and "doctor wrote a file" are two distinctly-audited actions, and a
+   test can assert the plain invocation never touches the filesystem for writes.
+3. **The written template must contain no asserted real paths for anything the doctor merely
+   guessed** — only commented-out example lines and the genuinely-detected sibling/PATH
+   results the existing probes already surface with high confidence (i.e. reusing Pitfall 1's
+   single resolver, not a new guessing heuristic). If the doctor cannot *prove* a path via the
+   existing probe machinery, it does not pre-fill it.
+4. **Doctor output is read-only with respect to the filesystem by default; the ONE write path
+   (the template) is the one explicitly named exception, and should be implemented as a
+   clearly separate module from the reporting logic** — so a future contributor adding, say,
+   "auto-detect Ghidra and pin it in tools.json for you" has to consciously add a new write
+   path rather than extend an existing one that already writes.
 
 **Warning signs:**
-The hazard report's self-modifying-code class has exactly one detection mechanism (static
-write-target-in-Code-range) and the runtime evidence layer is never consulted for it.
-
-**Phase to address:**
-The rebuildable-source phase (`BUILD-04`), reusing the runtime-evidence-layer integration point
-named in Pitfall 6.
-
----
-
-### Pitfall 9: Page-alignment dependence detected only as a literal `!align` directive
-
-**What goes wrong:**
-The alignment-hazard detector looks for the presence of an explicit alignment marker in the
-generated source and declares anything without one "safe to move." It misses the far more common
-implicit forms: a table sized to exactly 256 bytes so that an `INX`/wraparound indexing scheme
-depends on it starting at offset 0 of a page; a bitmask like `AND #$3F` applied to an index that
-only stays in range because the table's base address's low byte is `$00`; a `,X`-indexed store
-whose target crosses a page boundary and therefore costs an extra cycle only at its *current*
-address. None of these show up as a directive to grep for — they are properties of the address's
-low byte, not of syntax.
-
-**Why it happens:**
-Alignment dependence in real 6502 code is almost always implicit — an artifact of how the
-programmer laid the table out, not a declared constraint — so a detector built to check "is there
-an alignment pragma" checks a signal that mostly doesn't exist in the input it needs to protect
-against.
-
-**How to avoid:**
-Detect page-alignment dependence structurally rather than syntactically: flag any table whose
-current base address's low byte is `$00` (or any other suspicious round value) together with an
-indexing pattern that masks or wraps the index (`AND` with a page-aligned mask, `INX`/`INY` used
-as a modulo-256 counter against that table), and flag it as a hazard **regardless of whether the
-source contains an alignment directive today** — the current alignment is itself the fact to
-preserve or explicitly break. Cross-check with the cycle-exact class (Pitfall 10): a page-crossing
-indexed store changes cycle count when the base moves, independent of alignment.
-
-**Warning signs:**
-The hazard report's page-alignment class only fires on fixtures containing an explicit `!align`,
-and returns clean on a table that merely *happens* to sit at a round address today with
-index-masking logic that assumes it.
-
-**Phase to address:**
-The rebuildable-source phase (`BUILD-04`); the synthetic fixture (see Pitfall 16) must include the
-implicit form, not only an explicit `!align`.
-
----
-
-### Pitfall 10: Cycle-exact raster code symbolised correctly but timed wrong after movement
-
-**What goes wrong:**
-`BUILD-03` symbolises every branch and reference so code "can move." For raster-synchronised code
-(an IRQ handler racing the beam, code gated on `$D012`/`$D011`), correct addressing after a move
-does not imply correct *timing* after a move — moving code changes its absolute position relative
-to a page boundary, which changes whether an indexed instruction pays a page-crossing cycle
-penalty even when every address it touches is still symbolically correct. A rebuild can be
-byte-plausible and reference-correct and still desync raster-critical code the moment anything
-upstream of it in the same routine shifts by even one byte.
-
-**Why it happens:**
-Symbol resolution operates on addresses; cycle cost is a property of the *specific* encoded
-instruction at its *specific* address (branch-across-page, indexed-store-across-page). Nothing in
-a symbolic rebuild pipeline tracks cycle count as a first-class property, because until this
-milestone nothing in the pipeline needed to.
-
-**How to avoid:**
-Do not attempt to make the hazard *detector* prove cycle-exactness statically — that is exactly
-the kind of "automatic relocation or rebasing" the v0.5.0 requirements already rule out as an
-unsolved general problem. Instead, make the hazard report's cycle-exact-raster class a **coarse,
-conservative** flag: any code reachable from an IRQ vector, or any code that reads/writes
-`$D012`/`$D011`/`$D019`/`$D01A` (raster/latch registers), is flagged hazard-class regardless of
-whether it "looks" timing-sensitive by pattern, and the flag is a standing instruction to verify
-by the only oracle capable of it — a live run, per `EQUIV-01`/`EQUIV-02`. Do not let a clean static
-hazard report substitute for that live check; the whole reason `EQUIV-01`'s narrowed volatile mask
-explicitly protects `$D011`/`$D015`/`$D018` from being hidden is that this class of regression is
-only observable by actually running the rebuild.
-
-**Warning signs:**
-The cycle-exact-raster hazard class is implemented as a pattern match over specific idioms (e.g.
-"looks for a `bit $d012`/loop") rather than a broad reachability flag from every IRQ entry point
-and raster-register touch; `EQUIV-01`'s volatile mask is reused unchanged from the earlier
-same-binary frame-exact-capture work without being re-narrowed for this milestone's purpose.
-
-**Phase to address:**
-The rebuildable-source phase (`BUILD-04`) for the conservative flag; the equivalence phase
-(`EQUIV-01`/`EQUIV-02`) for the only check that can actually confirm timing survived a move.
-
----
-
-### Pitfall 11: Split hi/lo address tables symbolised per-byte instead of as one structured type
-
-**What goes wrong:**
-A table pair like `lda tableLo,x` / `lda tableHi,x` combined at runtime into a 16-bit address gets
-symbolised naively — each byte in `tableLo`/`tableHi` treated as an independent data value and
-given its own auto-name — instead of being recognised as one split-pointer construct whose two
-halves must move, re-export, and reassemble together. Rename or move one half without the other
-and the rebuild still assembles (each half is independently valid `!byte` data) but computes wrong
-addresses at runtime — a silent, "looks clean" wrongness of exactly the same shape as the
-`TYPE SKIP` failure this project already measured on the retired `da65` route, which was explicitly
-called out as **structurally unable to express a split-address table** (`da65`'s `RANGE TYPE`
-vocabulary), which is why that route was abandoned.
-
-**Why it happens:**
-Byte-level typing is the natural default for a linear disassembler; recognising the *relationship*
-between two separate ranges (same stride, same index register, combined by the caller into one
-address) requires structural knowledge the store's twelve-member type vocabulary was deliberately
-extended to carry (`STORE-01`'s four split layouts), but the export/symbolisation code has to
-actually consult that structure rather than falling back to per-byte defaults.
-
-**How to avoid:**
-Export split-pointer tables as ONE named symbol pair with the low/high relationship preserved in
-the generated ACME source (e.g. two parallel `!byte` blocks under names that make the pairing
-explicit, generated from the store's split-layout type rather than from independent per-byte
-labels). Verify with a reassembly-gate control that specifically moves one half of a split table
-without the other and confirms the gate — or an explicit consistency check — catches it, rather
-than trusting that "it reassembled" proves the pairing survived.
-
-**Warning signs:**
-The exporter's symbol-naming code has no special case for the store's split-layout types and
-treats every `DATA`-typed range identically regardless of its narrower type.
-
-**Phase to address:**
-The decomposition phase (`DECOMP-03`, "every referenced non-hardware address is named") and the
-rebuildable-source phase (`BUILD-01`/`BUILD-03`) together — this is exactly the seam between "the
-store knows the structure" and "the exporter uses it."
-
----
-
-### Pitfall 12: Fabricating a target symbol for a zero-page-indirect address that is genuinely path-dependent
-
-**What goes wrong:**
-`lda ($xx),y` / `sta ($xx,x)` targets a runtime-computed address held in a zero-page pointer. A
-symbolisation pass that tries to resolve "the" target of every indirect access, in order to hit
-`DECOMP-03`'s "every referenced non-hardware address is named" bar, invents a single plausible
-target name for an access whose real target varies by call site or by program state — producing
-a confident, wrong, and unmaintainable symbol (renaming it "fixes" only the call sites that
-happened to share that runtime value).
-
-**Why it happens:**
-The completeness pressure from `DECOMP-01`/`DECOMP-03` ("nothing left Undefined", "every
-referenced address named") pushes toward resolving everything, and a zero-page-indirect access
-*looks* like it should resolve to something.
-
-**How to avoid:**
-Symbolise the **zero-page pointer itself** as a named variable (this is legitimate and always
-correct — the pointer location doesn't move) and explicitly decline to synthesize a "resolved
-target" symbol unless the pointer is provably constant across every observed and reachable write
-site (checkable against the runtime evidence layer's per-address facts, not asserted from a single
-code reading). This is the same "decline with a reason" discipline `AUTO-01`..`08` already
-established for `$01` bank-state-dependent addresses — indirect-target resolution is the same
-category of problem and should get the same treatment, not a separate, weaker one invented for
-this milestone.
-
-**Warning signs:**
-Every `($xx),y` site in the decomposition ends up with a named target symbol, with zero declines
-recorded, on a fixture that deliberately varies the pointer at runtime (the synthetic fixture
-should include this case specifically to make the check possible).
-
-**Phase to address:**
-The decomposition phase (`DECOMP-03`).
-
----
-
-### Pitfall 13: An address typed as data in one place and used as a jump target in another gets two conflicting symbols
-
-**What goes wrong:**
-The narrowest-range-wins paint index assigns one type per address, but a real program can use the
-same address both as a table *entry value* referencing elsewhere and, separately, as something the
-program also jumps to directly at another point (e.g. a default-case fallthrough that's also
-listed in a dispatch table). If the exporter renders "data" ranges as literal bytes and separately
-renders "code" cross-reference targets as labels without checking for this overlap, the generated
-source ends up with a JMP/JSR to a raw hex address in one place and a `!byte`-only table entry in
-another that should have referenced the *same* label — reassembles fine (both are individually
-legal ACME), but a later human edit that moves the target breaks the un-symbolised reference
-silently.
-
-**Why it happens:**
-Cross-reference resolution (`STORE-06`) and per-range typing (`STORE-01`) are two different
-subsystems answering two different questions; nothing forces every cross-reference target found
-by one to be checked against a label existing from the other before the exporter emits source.
-
-**How to avoid:**
-Before export, require every entry in the cross-reference union (`STORE-06`'s decoded code +
-typed ADDRESS tables + stored non-derivable rows) to resolve to exactly one already-assigned
-symbol name, and treat an unresolvable cross-reference (a target with no assigned symbol at
-export time) as an export-time hard error, not a raw hex fallback. This makes the failure loud at
-generation time instead of silent in the assembled bytes.
-
-**Warning signs:**
-The exporter contains a fallback branch that emits a literal hex address "when no symbol is
-found," rather than refusing to export until the symbol exists.
-
-**Phase to address:**
-The rebuildable-source phase (`BUILD-01`/`BUILD-03`).
-
----
-
-### Pitfall 14: A mid-instruction label's scope doesn't follow its instruction when the routine is split into a different file
-
-**What goes wrong:**
-This project already has a route for the `=*+$01` mid-instruction label case in the export path.
-Decomposition-to-closure and file-splitting are new work layered on top of that: when a routine
-containing a mid-instruction label is split into its own `!source`d file under a new zone, the
-label's own zone/scope assignment must move with it. If the splitter derives file/zone membership
-from one property (e.g. the store's scope field) while the mid-instruction label machinery derives
-its own name from a different rule (`AUTO_NAME_PREFIX_RE`'s prefix set), the two can disagree about
-which file a given label belongs in — producing a label reference across a zone boundary that
-either fails to resolve (loud, safe) or, worse, silently resolves to a *different* same-named
-label ACME's zone system permits to exist per-zone (quiet, wrong).
-
-**Why it happens:**
-The two mechanisms were built independently, in different phases, for different purposes, and
-nothing in this milestone's plan yet forces them through one shared "what file/zone does this
-address's label live in" resolver.
-
-**How to avoid:**
-Derive file/zone membership for every label — mid-instruction or otherwise — from exactly one
-function, called by both the splitter and the label-naming code, and add a reassembly-gate control
-that specifically exercises a mid-instruction label whose containing instruction sits at a
-file/zone boundary the splitter chose.
-
-**Warning signs:**
-Two different modules independently compute "which output file does address X belong in."
-
-**Phase to address:**
-The rebuildable-source phase (`BUILD-01`, one file per scope).
-
----
-
-### Pitfall 15: The synthetic fixture is written to match the hazard detector's own pattern list
-
-**What goes wrong:**
-The fixture carrying "all four `BUILD-04` hazard classes deliberately" is written by looking at
-what the detector checks for, so every hazard instance in the fixture is the textbook idiom the
-detector was literally built to recognise. The detector passes with 100% precision and recall —
-against itself. This is the classic form of a test that validates its own assumptions rather than
-the property it claims to check, and it is a documented risk this project has hit before in a
-different instrument: the coverage census (`COV-01`) went through **four verification cycles**,
-each finding the completeness number inflatable by a new shape, before a fifth round closed the
-gap — evidence that "the detector and its own test fixture were designed together" is a real,
-repeated failure mode in this codebase's own history, not a hypothetical.
-
-**Why it happens:**
-Writing a fixture and writing a detector are usually done by the same reasoning process in the
-same short window, so both encode the same mental model of "what an RTS-trick / SMC / alignment /
-raster hazard looks like" — any gap in that mental model is invisible to both at once.
-
-**How to avoid:**
-Apply the `COV-02` playbook (five planted defects, each caught by a NAMED measure, plus a
-both-directions control) to the hazard detector specifically: for each of the four classes, plant
-at least one instance in a *structurally different* form from the canonical idiom the detector's
-implementation was written against (see Pitfalls 7, 8, 9, 10 for the specific variant per class),
-and require the detector to either catch it via the general rule or explicitly report
-`unclassified` rather than `clean`. Additionally, run the finished detector against the
-already-committed measured fixtures that were captured for *unrelated* purposes and were never
-written with this detector in mind — `fixtures/dxa/tracer.prg` (the 279-byte fixture already
-proven to contain an RTS-trick dispatch and self-modifying code, per the dxa+Ghidra pivot record)
-and `fixtures/ghidra/bank.prg` / `fixtures/export-asm/smc.prg`. Agreement with those independently-
-sourced fixtures' known-correct classifications is real non-vacuity evidence; agreement with the
-purpose-built fixture alone is not.
-
-**Warning signs:**
-The hazard detector's test suite contains only the new synthetic fixture; no plan cross-checks the
-detector against `tracer.prg`/`bank.prg`/`smc.prg`, which this project already has committed and
-already knows the ground truth for.
-
-**Phase to address:**
-The enabling-deliverable phase that builds the synthetic fixture, paired explicitly with the
-rebuildable-source phase (`BUILD-04`) rather than sequenced strictly before it — write the fixture
-and the cross-check against old fixtures together, not the fixture alone first.
-
----
-
-### Pitfall 16: The fixture's "hazard classes" are structurally identical to each other, only reskinned
-
-**What goes wrong:**
-"All four hazard classes present" is satisfied by, say, one RTS-trick table, one SMC write, one
-`!align`-marked table, and one raster-polling loop — each the single simplest possible instance of
-its class, none combined with another, none in the implicit/computed form a real cracked game
-would actually contain (see Pitfalls 9 and 10 for the implicit forms). The fixture technically
-satisfies a checklist ("four classes present") while being no harder for the detector than four
-independent unit tests, and the modifiability demonstration (`EQUIV-03`) never has to touch
-hazard-adjacent code because the "behaviour to add/remove" was placed in ordinary, un-hazardous
-code for convenience.
-
-**Why it happens:**
-A checklist framing ("does the fixture contain class 1, 2, 3, 4? yes/yes/yes/yes") is satisfied by
-the shallowest possible instance of each, and nobody re-reads the fixture asking whether its
-*presence* actually stresses the pipeline being validated.
-
-**How to avoid:**
-Require the fixture's design doc to state, for each hazard class, which specific *variant* it
-uses (canonical vs. implicit/computed) and require at least one class to be combined with another
-in the same routine (e.g. a page-aligned table accessed through an RTS-trick dispatch). Route
-`EQUIV-03`'s modifiability demonstration's added/removed behaviour through code adjacent to at
-least one hazard, not through a freestanding routine untouched by decomposition's harder cases —
-otherwise the modifiability proof only shows that ACME itself still works, which was never in
-question.
-
-**Warning signs:**
-The fixture design lists four hazard "instances" with no cross-reference to which is canonical vs.
-implicit; `EQUIV-03`'s behaviour change touches a routine with no hazard annotations anywhere near
-it.
-
-**Phase to address:**
-The enabling-deliverable (synthetic-fixture) phase, reviewed against `BUILD-04`'s and `EQUIV-03`'s
-success criteria before the fixture is declared final.
-
----
-
-### Pitfall 17: "Behavioural equivalence demonstrated" without ever observing the check fail first
-
-**What goes wrong:**
-`EQUIV-02` is satisfied by a transcript showing the original and the rebuild producing matching
-output in VICE. Nothing in that transcript proves the comparison mechanism (`compare.mjs` in
-original-versus-different-binary mode — explicitly a mode it has **never been run in**, per the
-v0.5.0 base text) is actually capable of detecting a real difference; a comparison tool that is
-silently vacuous (e.g. its volatile mask over-masks, or its checkpoint set never actually reaches
-the code that changed) would produce an identical-looking "match" transcript whether or not the
-rebuild is correct.
-
-**Why it happens:**
-It's natural to build the comparison, run it once, see it pass, and stop — passing is the goal,
-so a passing run looks like done. Proving the harness *can* fail requires deliberately building
-and running a broken case, which feels like extra, unrewarded work.
-
-**How to avoid:**
-This project's own stated preference is explicit and should be treated as a hard requirement, not
-a nicety: observe the control go RED before trusting it green. Before accepting `EQUIV-02`'s
-"match" transcript as evidence, commit a transcript of the *same* comparison run against a
-deliberately-broken rebuild (e.g., before the hazard report's fixes are applied, or with one
-symbol intentionally left unresolved) and show `compare.mjs` actually reports the difference —
-specifically exercising the narrowed volatile mask requirement from `EQUIV-01`
-(a real `$D020`/`$D015`/`$D018` regression must not be maskable). Only then is the subsequent
-"match" transcript meaningful.
-
-**Warning signs:**
-`EQUIV-02`'s deliverable is a single transcript showing a pass, with no paired transcript anywhere
-in the phase's evidence showing the same mechanism catching an injected difference.
-
-**Phase to address:**
-The equivalence-and-modifiability phase (`EQUIV-01`/`EQUIV-02`), and specifically before
-`EQUIV-01`'s narrowed volatile mask is accepted as correct.
-
----
-
-### Pitfall 18: Modifiability proven with a trivial, decoupled change that never touches decomposed/rebuilt code
-
-**What goes wrong:**
-`EQUIV-03` is satisfied by changing something maximally easy and already fully symbolised — a
-border-colour enum value, already resolved to a clean `#VIC_BORDER_...` constant by the existing
-enum-generation heuristics — rather than a change routed through code that decomposition and
-symbolisation actually had to work hard on (a moved routine, a hazard-adjacent range, a split
-table). The demonstration proves ACME assembles a one-line edit, which was never in doubt; it does
-not prove this milestone's actual deliverable (rebuildable, decomposed, moved source) is
-modifiable in the way that matters.
-
-**Why it happens:**
-An easy, guaranteed-to-work change is the path of least resistance to close out a checklist item,
-especially under schedule pressure at the end of a milestone.
-
-**How to avoid:**
-Choose the removed/added behaviour specifically so it requires touching at least one range the
-hazard report flagged (see Pitfall 16) or at least one range that was moved for `BUILD-03`'s
-symbolisation proof — e.g., changing the *destination* of an RTS-trick dispatch entry, or the
-condition gating a raster-synced effect. That is the only choice that actually stresses
-"modifiable" rather than "ACME still works."
-
-**Warning signs:**
-The behaviour changed in `EQUIV-03` has no cross-reference to any entry in `BUILD-04`'s hazard
-report or any moved range from `BUILD-01`/`BUILD-03`.
-
-**Phase to address:**
-The equivalence-and-modifiability phase (`EQUIV-03`).
-
----
-
-### Pitfall 19: Zero-page labels declared out of file order silently degrade to absolute addressing
-
-**What goes wrong:**
-ACME requires zero-page labels to be visible to the assembler by the time it first encounters a
-zero-page-addressable use of them; if the multi-file generator emits the zero-page constant
-definitions into a file that is `!source`d *after* a file that uses one in a zero-page addressing
-mode, ACME does not error — it falls back to absolute (3-byte) addressing for that instruction
-instead of zero-page (2-byte) addressing. The rebuild still assembles and the program still runs
-correctly (the semantics are identical), but silently grows in size and, more importantly for this
-milestone, silently changes the **cycle count** of every affected instruction — which is exactly
-the kind of change `EQUIV-01`'s narrowed volatile mask and the cycle-exact-raster hazard class
-(Pitfall 10) exist to catch, but only if the comparison is actually run and the mask doesn't hide
-it.
-
-**Why it happens:**
-The generator's natural file-ordering rule is derived from the annotation store's scopes (one file
-per scope, per `BUILD-01`), which has no inherent relationship to "which file must be assembled
-first for zero-page visibility" — a purely ACME-toolchain constraint the store's scoping model was
-never designed around.
-
-**How to avoid:**
-Emit all zero-page constant/variable definitions the export touches into a dedicated file that is
-always `!source`d **first**, regardless of which annotation-store scope they logically belong to,
-and add a reassembly-gate control that specifically checks the assembled instruction encoding
-length for a known zero-page reference (2 bytes, not 3) rather than only checking that assembly
-succeeded — encoding-length drift is exactly the kind of thing that "reassembles cleanly" does not
-catch (see Pitfall 1's general lesson applied to this specific case).
-
-**Warning signs:**
-The generator's `!source` ordering is derived purely from the store's scope list or directory
-listing order, with no special-casing for zero-page declarations; the `.rep` listing for a known
-zero-page symbol shows a 3-byte encoding.
-
-**Phase to address:**
-The rebuildable-source phase (`BUILD-01`).
-
----
-
-### Pitfall 20: Subzone label isolation silently orphans a reference that used to be an implicit local label
-
-**What goes wrong:**
-ACME's zone system nests, but a subzone does **not** inherit the local labels of an enclosing
-zone — it is closer to an "interrupting zone" than a lexical child scope. A single-file decode
-that used bare local labels (relying on the file's one implicit "Zone `<untitled>`", visible in
-this project's own diagnostic output) works today. Once decomposition splits that file into
-multiple `!source`d files each opening its own zone (per `BUILD-01`), any reference across what
-used to be an implicit single-zone boundary either fails to resolve (loud) or, if both zones
-happen to define a same-named local label independently, silently resolves to the *wrong* same-
-named label in the referencing zone rather than the one originally intended (quiet, wrong — the
-same class of failure as Pitfall 14's mid-instruction case, but for ordinary local labels).
-
-**Why it happens:**
-Splitting a decode into per-scope files is a natural, mechanical transformation from the store's
-scope model, but "does this label reference cross a zone boundary" is an ACME-specific fact the
-store's scope model doesn't track at all.
-
-**How to avoid:**
-Before splitting, classify every label as **global** (referenced across scopes; promote to
-`!zone`-global / a project-wide name, matching this project's own eleven-member
-`AUTO_NAME_PREFIX_RE` naming convention so global names stay visually distinguishable) or
-genuinely **scope-local** (referenced only within its own scope's file), and do this classification
-from the cross-reference union (`STORE-06`) rather than from label naming convention alone. Never
-let a cross-scope reference remain a bare local label after the split.
-
-**Warning signs:**
-The generator emits `!source` files whose local labels are given no explicit global/local
-disposition — every label is emitted the same way regardless of whether `STORE-06`'s
-cross-reference data shows it referenced from another scope's file.
-
-**Phase to address:**
-The rebuildable-source phase (`BUILD-01`/`BUILD-03`).
-
----
-
-### Pitfall 21: Non-deterministic file ordering makes every re-export an unreviewable full-tree diff
-
-**What goes wrong:**
-Regenerating the multi-file export after a single label rename or a single comment edit produces
-a diff touching every generated file, because file splitting, zone assignment, and per-file label
-ordering are all re-derived together from a computation whose ordering isn't pinned (e.g.
-insertion order into an intermediate map, or a directory listing). This defeats human review of
-the rebuild — exactly the property `DECOMP-02`'s purpose-comment requirement and this milestone's
-whole "rebuildable, human-modifiable source" goal depend on — and makes it impossible to tell a
-real hazard regression apart from export-generator noise in a code review.
-
-**Why it happens:**
-It's easy to derive file/label ordering from whatever order a `Map` or SQL query happens to
-return rows in, which is not guaranteed stable across two otherwise-identical exports.
-
-**How to avoid:**
-Apply this project's own standing convention for generated artifacts
-(`ENGINEERING_RULES.md` §11 — generator is authoritative, drift-checked, minimal expected delta)
-to the multi-file export specifically: order files and labels deterministically by address (not
-insertion order or directory listing), and add a drift guard that re-exports from an unchanged
-store and asserts byte-identical output — the same scratch-generation-plus-byte-diff pattern
-already used for `docs/tool-support.md` and other generated documentation in this codebase.
-
-**Warning signs:**
-Two consecutive exports from the same unmodified store produce a non-empty diff; no drift guard
-exists asserting export determinism.
-
-**Phase to address:**
-The rebuildable-source phase (`BUILD-01`).
+- Any diff touching the doctor that adds a `child_process.spawn`/`exec` call targeting
+  anything other than the six prerequisite tools' own `--version`/identity probes.
+- A `tools.json` template that ships with real filesystem paths already filled in, rather
+  than commented examples plus only what the existing probes actually proved.
+- Doctor behavior changing based on a flag that defaults to "on" for anything that writes or
+  installs — the never-auto-install posture requires defaults to be the safe/inert choice.
+
+**Phase to address:** applies across every phase that touches the doctor's write surface;
+enforce it as a standing guard test added in the same phase that first gives the doctor any
+filesystem-write capability (the template-writing phase), not deferred to a later cleanup.
 
 ---
 
@@ -775,113 +673,98 @@ The rebuildable-source phase (`BUILD-01`).
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|-----------------|------------------|
-| Reassembly gate checks only same-address round trip, never a moved build | Ships `BUILD-06` faster | `BUILD-03`'s "code can move" claim is unverified; a real move can silently break at the first real use | Never as the final state; acceptable as an interim milestone-internal checkpoint if explicitly labelled partial |
-| Hazard detector ships with "clean" as its only outcome (no `unclassified`) | Simpler report shape, easier UI | A miss reads as a guarantee; false confidence is explicitly worse than no detector per this milestone's own framing | Never |
-| Zero-page declarations emitted in scope order, not forced-first order | No special-casing needed in the generator | Silent absolute-addressing fallback, size/cycle drift invisible to the reassembly gate | Never once any hazard class references cycle timing; acceptable only for a fixture proven to contain zero zero-page-addressed instructions |
-| Modifiability demo (`EQUIV-03`) uses an easy, already-symbolised constant | Fast to demonstrate, low risk of the demo itself failing | Proves ACME works, not that decomposition/rebuild is modifiable — the actual claim goes unverified | Never as the sole modifiability evidence; fine as an additional, easy first example alongside a hazard-adjacent one |
-| Fixture and detector for `BUILD-04` written in the same pass by the same author | Fast to build, immediately "passes" | Self-validating; this project already paid this exact cost once on `COV-01` (four verification rounds) | Never — cross-check against `tracer.prg`/`bank.prg`/`smc.prg` from the start |
+| Doctor re-implements a probe instead of importing/sharing it (to dodge the Node-floor import constraint) | Ships faster, sidesteps a real packaging problem | Becomes a second, driftable source of truth (Pitfall 1) — the single worst outcome this milestone can produce | Never — solve the Node-floor import problem directly (a shared `.mjs`/`.cjs` module), do not accept a duplicate |
+| Byte-identical drift guard for the generated README (reverting the 2026-09-13 decision) | Simple to write, obviously correct-looking | Reds on every unrelated prose edit near the generated block, trains reviewers to ignore CI red, and directly contradicts a recorded owner decision | Never for this artifact — acceptable only for artifacts with zero legitimate byte variance (e.g. compiled `.mjs`, which already has its own guard) |
+| `tools.json` resolution skips `~`/relative-path/executable-bit handling "for v1" | Smaller diff, ships sooner | The very users who need `tools.json` (unusual install locations) are disproportionately the ones who hit these edge cases first | Acceptable only if explicitly scoped out in writing and the doctor's refusal message for each unhandled case is still honest (not silently treated as "not found") |
+| Doctor's VICE version reporting parses a static `--version`/`--help` spawn to approximate the live-negotiated `versionString` | Doctor can say something about version without a live connection | Two version sources that can disagree (Pitfall 1 + 6); risks repeating the "version gates a capability that's actually reachable another way" mistake the project already made once | Acceptable only if framed explicitly as "expected version for your platform," never as a live-verified capability verdict |
 
 ## Integration Gotchas
 
-Specific to wiring the new export path against the existing store, ACME oracle, host-tool seam,
-and runtime evidence layer.
-
 | Integration | Common Mistake | Correct Approach |
-|--------------|-----------------|-------------------|
-| Multi-file export vs. `.annostore`'s narrowest-range-wins index | Deriving file/scope membership from a fresh re-scan of ranges instead of the store's own paint index, producing a different split than what `anno_*` tools would report for the same address | Derive every file/scope decision from the same paint-index queries the rest of the `anno_*` surface uses — one source of truth, not a parallel re-derivation |
-| Reassembly gate vs. `acme-verify.ts`'s existing byte-diff oracle | Building a second, independent verify path for the rebuild gate instead of extending the existing test-only oracle module | Extend `acme-verify.ts`'s three-outcome (`ok`/`failed`/`skipped`) design; keep it test-only and absent from the published package exactly as today, since `BUILD-06`'s gate is a CI/dev-time gate, not a shipped runtime verb |
-| Host-tool seam (`acme`, `dxa`, `analyzeHeadless`) vs. a new "reassemble the export" verb | Adding a fourth `spawnSync` site for the rebuild's own ACME invocation, bypassing the typed `host_tool` control op | Route the rebuild's ACME invocation through the same `host_tool` op as the existing `acme-build` skill; run `scripts/check-no-skill-external-spawn.mjs` against any new script before considering the phase done |
-| Runtime evidence layer vs. decomposition completeness | Treating `DECOMP-01`'s byte census and `anno_evid_disagreements` as two unrelated reports, never cross-checked | Query disagreements as part of the decomposition completeness gate on any fixture that has been executed; a disagreement is a decomposition defect, not a separate finding |
-| Provenance verdict (`c64-provenance-diff`) vs. export path | Re-implementing "which ranges are cracker patches" inside the exporter instead of reading `c64-provenance-diff`'s existing verdict | `BUILD-05` carries the existing verdict to point of use (comments/metadata in the export); it must not re-derive provenance independently, and must never use the verdict to drop a range (`BUILD-07`) |
+|--------------|------------------|--------------------|
+| `resolvedBackend()` / `findSiblingBinary()` (existing probes) | Doctor calls them but doesn't account for their per-process memoisation, reporting a stale "fixed!" or stale "still missing" answer | Doctor either runs in a fresh process each invocation (true today, since it's a separate CLI run) and states clearly it reflects a fresh resolution, not a running broker's cached one; add a differential test (Pitfall 1) |
+| Ghidra's `analyzeHeadless` search | A second, doctor-only search for the binary that doesn't match `ghidra-project.mts`'s existing logic (which already has documented, fragile symlink/dot-path handling) | Doctor imports and calls the exact same exported search function; never re-derives the candidate list |
+| `VICE_BIN`/`ACME_BIN`/`GHIDRA_HOME`/`VICE_BROKER_NODE` env vars | New `tools.json` precedence logic implemented inline at each of the 3+ existing call sites, independently, producing 3 slightly different precedence orders | One resolver function/table (Pitfall 4), imported at every call site — including the pre-existing ones, which should be refactored onto it rather than left as a fourth, un-migrated precedent |
+| Generated README section | Guard regenerates and diffs the whole README file, so any unrelated prose edit anywhere in the file reds CI on an unrelated PR | Guard extracts only the marked generated slice (Pitfall 5); unrelated README edits never touch the guard |
+| `c1541`/`petcat` (no location override today) | Doctor adds a `C1541_BIN`/`PETCAT_BIN` env var as a new, doctor-specific mechanism instead of only exposing sibling-probe results for tools with no override | Doctor reports sibling-probe results for these two as today; only `tools.json` (not new env vars) is the milestone's stated mechanism for the tools that currently have none |
+
+## Performance Traps
+
+| Trap | Symptoms | Prevention | When It Breaks |
+|------|----------|------------|-----------------|
+| Doctor spawns a `--version` probe per tool with no timeout, one of the six tools hangs (e.g. a broken/interactive build) | `vice-mcp doctor` itself appears to hang — ironic, since diagnosing hangs is this project's other standing pain point (`vice-wedge-triage`) | Every probing spawn uses the same timeout discipline `spawnHostTool()` already enforces; doctor never blocks indefinitely on any single tool, and reports "timed out probing X" as its own distinct status | Any tool whose bare/`--version` invocation can block on stdin or a slow first-run cache build |
+| Doctor re-probes Ghidra's language directory (a real directory walk) on every invocation with no caching, and a user runs it repeatedly during setup | Doctor feels slow specifically during the "keep re-running doctor while fixing things" loop it's designed for | Cheap, per-run probes only; if any probe is genuinely expensive, cache within the single invocation (not across invocations — see Pitfall 1 on cross-process staleness) | Only matters if a probe crosses roughly human-noticeable latency (>~200ms); most of the six tools are cheap existence checks |
+
+## Security Mistakes
+
+| Mistake | Risk | Prevention |
+|---------|------|------------|
+| `tools.json` value reaches a shell string (via a future refactor that "simplifies" spawn to a template string) | Shell injection from a user- or attacker-writable config file | Structural guard (Pitfall 3 #6): scan for `exec(`/`shell: true`/template-string command construction; keep argv-array `spawn()` the only call shape |
+| Doctor's `--write-template` (or equivalent) writes without prompting, and pre-fills unverified guessed paths | A wrong or malicious pre-filled path gets trusted as ground truth without review | Explicit invocation required; only proven (probe-confirmed) paths pre-filled, everything else stays a commented example (Pitfall 7) |
+| A tracked (force-added) `.c64-re-tools/tools.json` ships in a clone/fork | A path an attacker controls gets treated as a trusted local override by anyone who clones that fork | Not preventable purely in code (gitignore is convention, not enforcement) — the mitigating control is the existing house discipline that `tools.json` values are treated as untrusted data (existence/executable checks + argv-array spawn only, same posture as an env var), not that the file can never be committed |
 
 ## UX Pitfalls
 
 | Pitfall | User Impact | Better Approach |
-|---------|-------------|-------------------|
-| Hazard report lists every flagged range with no severity/confidence distinction | Operator can't tell "definitely unsafe to move" from "possibly fine, low-confidence pattern match" and either ignores the whole report or blocks on everything | Carry each finding's detection mechanism and confidence alongside the range, so the operator (who owns the "what gets reverse-engineered" decision per this milestone's owner-decided scoping) can actually decide rather than face an undifferentiated wall of flags |
-| Provenance verdict surfaced but the export defaults to including everything with no visual distinction | Operator can't easily see, at point of use, which lines the tool is uncertain are original code | Render the provenance verdict inline (a comment or metadata annotation per this milestone's `BUILD-05` rewording), not only in a separate report the operator has to cross-reference by address |
+|---------|--------------|-------------------|
+| Doctor reports a flat pass/fail per binary | User can't tell what they actually lose by not fixing it | Capability-mapped output (already decided, milestone decision 4) — report per skill/MCP capability, not per binary |
+| Doctor reports a resolved path with no source | User can't tell if PATH, the file, or an env var supplied the answer, and can't explain a surprising result to themselves | Always show the winning source and the full `tried:` list (Pitfall 4), matching `findSiblingBinary()`'s existing warning-log precedent |
+| Doctor's VICE version story reads as a hard pass/fail on a version number | User believes CPU-history is simply unavailable on their 3.9 install, when the text-channel route may still cover it | State the capability-over-version nuance explicitly for VICE (Pitfall 6) rather than compressing it into a version comparison |
+| Template-writing silently overwrites an existing, user-edited `tools.json` | Loses hand-authored config with no warning | Refuse to overwrite an existing file by name (consistent with the project's own "detect, then refuse by name" house style) unless an explicit `--force`-shaped flag is given |
 
 ## "Looks Done But Isn't" Checklist
 
-- [ ] **Reassembly gate (`BUILD-06`):** Often missing a movement-mode run — verify it has actually
-  assembled a build with at least one relocated symbol, not only a same-address round trip.
-- [ ] **Hazard report (`BUILD-04`):** Often missing an `unclassified`/low-confidence outcome —
-  verify the detector's output type isn't boolean clean/unclean with no third state.
-- [ ] **Lossless export (`BUILD-07`):** Often missing the planted-heuristic-would-drop-this control
-  — verify a specific range that a "helpful" filter would exclude survives export.
-- [ ] **Decomposition completeness (`DECOMP-01`):** Often missing a cross-check against
-  `anno_evid_disagreements` — verify the census isn't purely byte-derived with the runtime
-  evidence layer never consulted.
-- [ ] **Symbol resolution (`BUILD-03`):** Often missing split hi/lo table handling — verify at
-  least one split-address table round-trips as a pair, not as independent bytes.
-- [ ] **Behavioural equivalence (`EQUIV-02`):** Often missing a paired failing-case transcript —
-  verify a committed transcript exists showing the SAME comparison mechanism catching a
-  deliberately broken rebuild, not only the passing case.
-- [ ] **Modifiability (`EQUIV-03`):** Often missing a hazard-adjacent target — verify the
-  added/removed behaviour touches code the hazard report or the movement work actually flagged or
-  moved, not an isolated easy routine.
-- [ ] **Synthetic fixture:** Often missing variant coverage — verify each of the four hazard
-  classes appears in at least one non-canonical (implicit/computed/combined) form, and that the
-  fixture's ground truth is cross-checked against `tracer.prg`/`bank.prg`/`smc.prg`, not only
-  self-consistent.
-- [ ] **Multi-file export determinism:** Often missing a drift guard — verify two exports from an
-  unchanged store are byte-identical.
+- [ ] **Doctor resolution logic:** Often "looks shared" but is actually a parallel
+      implementation — verify with a same-process differential test against the real
+      dispatch path (Pitfall 1), not by reading the code and agreeing it "looks the same."
+- [ ] **Doctor entry point:** Often "looks Node-floor-safe" but still transitively imports
+      something that pulls in `@mastra/*` or `vice-proxy.ts` — verify by actually running it
+      under the real floor Node binary in CI, not by inspection.
+- [ ] **`tools.json` resolution:** Often "handles paths" but only tested against the happy
+      path (absolute, existing, executable file) — verify against `~`, relative, directory,
+      non-executable, and (on Windows) missing-`.exe` cases explicitly.
+- [ ] **Precedence order:** Often "documented" in prose in two places but not backed by one
+      shared, tested table — verify the doctor and the real dispatch path are provably using
+      the same ordered list, not two lists that happen to agree today.
+- [ ] **Generated README guard:** Often "exists" but has never been observed failing —
+      verify with a planted-violation test per `ENGINEERING_RULES.md` §6 before trusting it.
+- [ ] **Never-auto-install boundary:** Often "respected" in the obvious cases (no `apt`
+      call) but crossed quietly via unreviewed template pre-fill — verify the template-write
+      path only asserts probe-proven facts.
 
 ## Recovery Strategies
 
 | Pitfall | Recovery Cost | Recovery Steps |
-|---------|-----------------|------------------|
-| Reassembly gate found to be exit-status-derived after other phases already depend on "green" | HIGH | Freeze consumers, retrofit the byte-diff oracle pattern from `acme-verify.ts`, re-run every prior "passing" rebuild through the corrected gate before trusting any of them |
-| Hazard detector found to miss a real variant after the synthetic fixture was declared final | MEDIUM | Add the missed variant to the fixture (or a sibling fixture), re-run detection, and re-open `BUILD-06`'s gate history for anything moved on the strength of the earlier, incomplete report |
-| Multi-file export found non-deterministic after several manual edits already made to generated files | MEDIUM | Re-derive a canonical ordering, regenerate once, and diff by hand against the manually-edited files to recover any edits before the drift guard is turned on |
-| Zero-page ordering bug found after `EQUIV-01` already ran and reported "match" under a mask that hid the cycle drift | HIGH | Re-run `EQUIV-01`/`EQUIV-02` with the corrected file ordering and the narrowed mask from Pitfall 17's red-first control; do not trust the earlier "match" transcript |
+|---------|-----------------|-------------------|
+| Doctor and real dispatch path disagree, discovered post-ship | MEDIUM | Add the differential test retroactively (Pitfall 1); it will immediately show which of the two is wrong; fix the divergent one to call the shared resolver, do not patch the symptom |
+| Generated-docs guard found vacuous (never actually reds) | LOW | Plant a violation, confirm it fails; if it doesn't, the guard is comparing generator output to itself — fix it to compare against the actual committed `README.md` slice (Pitfall 5) |
+| `tools.json` found to be trusted uncritically (e.g. reaches a shell string somewhere) | MEDIUM-HIGH | Audit every consumer of the resolved path for string-interpolation into a command; replace with argv-array `spawn()`; add the structural grep-guard so it cannot regress |
+| Doctor discovered to silently pre-fill unverified paths in a written template | LOW-MEDIUM | Restrict template output to probe-proven facts plus commented examples; add a test asserting the template never contains a path the probe layer didn't return |
 
 ## Pitfall-to-Phase Mapping
 
 | Pitfall | Prevention Phase | Verification |
-|---------|-------------------|----------------|
-| 1, 2 (gate vacuity: exit status, stale path) | Rebuildable-source / reassembly-gate phase (`BUILD-06`) | Gate observed failing on a planted wrong-byte rebuild and on a stale-output-path scenario |
-| 3 (movement never exercised) | Reassembly-gate phase (`BUILD-06`) | At least one CI/test run reassembles a build with a symbol relocated from its original address |
-| 4 (scope-excluded ranges) | Reassembly-gate phase (`BUILD-06`), shared with `BUILD-07` | Planted heuristic-would-drop-this control passes |
-| 5 (bank-state misclassification) | Decomposition phase (`DECOMP-01`..`03`) | Fixture with a bank-dependent range shows an explicit decline, not a guess |
-| 6 (static reachability misses runtime-observed code) | Decomposition phase (`DECOMP-01`) | `anno_evid_disagreements` queried and zero unresolved disagreements remain on the executed fixture |
-| 7, 8, 9, 10 (hazard classes: RTS-trick, SMC, alignment, raster) | Rebuildable-source phase (`BUILD-04`) | Each class observed catching a non-canonical planted variant, not only the textbook idiom |
-| 11 (split hi/lo tables) | Decomposition + rebuildable-source phases (`DECOMP-03`, `BUILD-01`/`03`) | Moving one half of a split table without the other is caught |
-| 12 (fabricated indirect targets) | Decomposition phase (`DECOMP-03`) | Fixture with a runtime-varying ZP pointer produces an explicit decline |
-| 13 (data/code target conflict) | Rebuildable-source phase (`BUILD-01`/`03`) | Export refuses rather than emits a raw-hex fallback for an unresolved cross-reference |
-| 14, 20 (zone/scope label breakage) | Rebuildable-source phase (`BUILD-01`) | Cross-zone reference resolves correctly after the split; single shared resolver used by both splitter and label-naming code |
-| 15, 16 (fixture written to match detector; shallow variants) | Enabling-deliverable (synthetic-fixture) phase, paired with `BUILD-04` | Detector cross-checked against `tracer.prg`/`bank.prg`/`smc.prg`; fixture design doc states variant per class |
-| 17 (equivalence never observed failing) | Equivalence phase (`EQUIV-01`/`02`) | Paired red/green transcripts exist for the same comparison mechanism |
-| 18 (trivial modifiability demo) | Equivalence phase (`EQUIV-03`) | Changed behaviour cross-referenced to a hazard-report entry or a moved range |
-| 19 (zero-page ordering) | Rebuildable-source phase (`BUILD-01`) | `.rep` listing shows correct (2-byte) encoding length for a known zero-page reference |
-| 21 (non-deterministic export) | Rebuildable-source phase (`BUILD-01`) | Two exports from an unchanged store are byte-identical (drift guard) |
+|---------|--------------------|----------------|
+| 1. The doctor that lies | Doctor resolution/reporting core phase | Same-process differential test: doctor's answer vs. real dispatch path's answer, for every probed tool, under shared fixtures |
+| 2. The doctor that cannot run | Doctor CLI entry-point phase (built before reporting logic) | CI matrix cell running the doctor binary under the actual old-Node floor; static import-graph guard excluding `@mastra/*`/`vice-proxy.ts` |
+| 3. Path/location config pitfalls | `tools.json` resolution phase | Fixture matrix: `~`, relative, directory, non-executable, Windows `.exe`-missing cases; grep-guard for shell-string construction |
+| 4. Layered-precedence pitfalls | Same phase as #3 (precedence is a resolver property, not separate) | Precedence conformance matrix (env×file×path×sibling combinations) asserted identical between doctor and dispatch path |
+| 5. Generated-documentation drift | Generated-README phase, guard delivered in the same phase as the generator | Structural (parsed-record) diff guard; planted-violation test per `ENGINEERING_RULES.md` §6, both on declaration-side and README-side edits |
+| 6. Version-floor pitfalls | Declaration-authoring phase (semantics) + doctor VICE-reporting phase (implementation) | Test asserting the doctor never claims a version-gated capability verdict it has no live connection to observe; distro-suffixed version-string fixture |
+| 7. Scope creep toward auto-fixing | Whichever phase first gives the doctor any filesystem-write capability | Source-scan guard for package-manager/acquisition-tool invocation strings used as spawn targets; test asserting plain `doctor` (no flag) never writes |
 
 ## Sources
 
-- **This repository, measured/committed (HIGH confidence):** `.planning/PROJECT.md` §"Out of
-  Scope" (the `da65`/ca65/ld65 anti-feature, five of six grounds measured, `TYPE SKIP` collapse to
-  a wrong binary), §"Phase 20-22... Cut on 2026-08-25" (the dxa+Ghidra pivot measurement on the
-  279-byte fixture: RTS-trick dispatch, split pointer tables, self-modifying code, `COMPUTED_JUMP`
-  resolution in the decompiler layer only), §Validated entries for `STORE-01`/`STORE-04`/
-  `STORE-06`/`AUTO-01`..`08`/`EVID-01`..`06`/`PROOF-01`..`04`/`EXPORT-01`..`03`/`GHID-01`..`05`/
-  `OPC-01`..`04`, §"Active" (v1.0.0 scoping, `BUILD-05`/`BUILD-07` rewording, the synthetic-fixture
-  enabling deliverable); `.planning/milestones/v0.5.0-REQUIREMENTS.md` (`DECOMP-*`/`BUILD-*`/
-  `EQUIV-*` base text, "Out of Scope" table); `.planning/ENGINEERING_RULES.md` §6 (Non-Vacuous
-  Verification), §7 (Independent Oracle Rule), §11 (Generated Artifacts); `src/mcp/vice/
-  acme-verify.ts` header comment (the recorded false-pass mechanisms and the three-outcome verdict
-  design); `src/skills/acme-build/SKILL.md` (project's own ACME invocation conventions, `-I`
-  workspace-relative resolution, `AUTO_NAME_PREFIX_RE`'s eleven-prefix naming convention).
-- **External, general 6502/ACME domain corroboration (MEDIUM confidence, dated 2026-09):**
-  [ACME QuickRef / zone and pseudopc semantics](https://github.com/martinpiper/ACME/blob/master/docs/QuickRef.txt),
-  [A Tour of 6502 Cross-Assemblers](https://bumbershootsoft.wordpress.com/2016/01/31/a-tour-of-6502-cross-assemblers/)
-  (zero-page label declaration order affecting zero-page vs. absolute addressing; subzones not
-  inheriting an enclosing zone's local labels), [On Disassembly](https://6502disassembly.com/on-disassembly.html)
-  and [About Disassembly — SourceGen Tutorial](https://6502bench.com/sgtutorial/about-disasm.html)
-  (code/data separation as a fundamentally hard problem on 6502, jump tables and alignment bytes
-  causing silent disassembly failure), [The Lost Art of Assembly Programming: Self-modifying Code](https://tibleiz.net/blog/2024-04-30-self-modifying-code.html)
-  and [Disassembly of Executable Code Revisited](https://www.academia.edu/8582967/Disassembly_of_Executable_Code_Revisited)
-  (self-modifying code requiring re-analysis on write, not merely detection at read time).
+- [flutter/flutter#108618 — doctor resolves a different Java path than the real build](https://github.com/flutter/flutter/issues/108618)
+- [flutter/flutter#45687 — doctor reports success while every real command fails on a path error](https://github.com/flutter/flutter/issues/45687)
+- [Homebrew/brew#21334 — brew doctor PATH complaint diverging from actual shell state](https://github.com/Homebrew/brew/issues/21334)
+- [jlevy/tbd#248 — doctor warns despite a deliberate, already-correct one-run PATH override](https://github.com/jlevy/tbd/pull/248)
+- [evlog doctor CLI reference — explicit NODE_TOO_OLD error path](https://www.evlog.dev/cli/doctor)
+- [NousResearch/hermes-agent#76484 — bootstrap installer failing on its own npm engine mismatch before it can diagnose anything](https://github.com/NousResearch/hermes-agent/issues/76484)
+- [CWE-367 — Time-of-check Time-of-use (TOCTOU) Race Condition](https://cwe.mitre.org/data/definitions/367.html)
+- [Wikipedia — Time-of-check to time-of-use](https://en.wikipedia.org/wiki/Time-of-check_to_time-of-use)
+- **This repository, read directly as primary evidence** (not web sources): `src/mcp/vice/backend-detect.mts` (per-process memoisation of `resolvedBackend()`, deleted `--help` discriminator, `binPath`/`binPathResolved` fields), `src/mcp/vice/host-tool.mts` (`findSiblingBinary()` per-name memoisation and its own stated staleness rationale, `findDxaBinary()`/`findAcmeLib()` candidate-list pattern, `spawnHostTool()`'s argv-array-only spawn discipline and timeout ceiling), `src/mcp/vice/stock-connect.ts` (`versionQuad` sourced only from a live connection's `infoResponse.versionString`), `src/mcp/vice/ghidra-project.mts` (existing Ghidra probe/refusal machinery), `README.md` (per-distro VICE version/CPU-history table, the exact shape the generated section will mirror), `CLAUDE.md` (never-auto-install rule and its three named carve-outs, argv-array spawn invariant, `.c64-re-tools/` gitignore/tool-root discipline), `.planning/ENGINEERING_RULES.md` §5/§6/§11 (same-source test-derivation ban, non-vacuous verification requirement, the pre-2026-09-13 byte-diff guidance this research reconciles), `.planning/PROJECT.md`'s "Current Milestone: v1.1.0" section (the five scoping decisions, the doctor's Node-floor constraint measured at scoping time, the five-override-three-naming-convention census), and this Claude Code instance's own project memory `no-real-stock-vice-available.md` (the fork-vs-stock `x64sc` `$PATH`-shadowing incident, 2026-08-16, cited throughout §1 and §4 as this project's own real, prior instance of the exact failure class both sections describe).
 
 ---
-*Pitfalls research for: c64-re-tools v1.0.0 — the rebuild half*
-*Researched: 2026-09-10*
+*Pitfalls research for: retrofitting a prerequisite doctor and tool-location config onto `c64-re-tools`*
+*Researched: 2026-09-16*

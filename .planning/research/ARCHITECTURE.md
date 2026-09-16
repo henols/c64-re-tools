@@ -1,627 +1,451 @@
-# Architecture Research
+# Architecture Research: Prerequisite Doctor + Layered Tool-Location Resolver
 
-**Domain:** Rebuild-half integration for c64-re-tools (v1.0.0 "The Rebuild Half")
-**Researched:** 2026-09-10
-**Confidence:** HIGH for everything cited against real source; MEDIUM where a
-detector or table is explicitly net-new and the design is a recommendation
-rather than a measured fact (flagged inline).
+**Domain:** Integration into an existing, opinionated TypeScript/Node MCP-plugin codebase (`c64-re-tools`)
+**Researched:** 2026-09-16
+**Confidence:** HIGH for structural claims (all cite file:line read directly from the tree). MEDIUM for a few build-order sequencing calls that are judgment, not fact. Explicit open questions are marked as such, not guessed.
 
-This is a **subsequent-milestone integration** document, not a greenfield
-domain survey. It answers "where does each v1.0.0 target feature slot into the
-architecture that already exists," against the real tree, and does not
-propose a parallel seam anywhere the existing one already reaches.
+This is not a generic architecture survey — the milestone (`v1.1.0 The Prerequisite
+Doctor`, `.planning/PROJECT.md:1880-1975`) already fixed five decisions. This
+document works out *how* those decisions land on the actual files.
 
-## What already exists that this milestone builds on
+## Answer to the key question first (Q1's `.mts`/`.ts` placement)
 
-Read directly, not inferred:
+**The new location-resolution seam must be authored as a host-bound `.mts` file,
+added to `build.ts`'s `HOST_BOUND_ARTIFACTS` array, and it must NOT statically
+import `repo-root.ts`.** It receives the resolved root/tools-dir as an explicit
+string parameter from its caller, exactly like `backend-detect.mts` already does
+for `supervisorDir`. This is not a stylistic preference — it is forced, and the
+precedent already exists verbatim in the tree:
 
-- `src/mcp/vice/anno-export-asm.ts` (1310 lines) — `exportAsm()` is **already**
-  "the ONE place annotation-store rows plus image bytes become ACME source
-  text" (its own header, line 24). Today it emits **one monolithic file**, no
-  `!source`, no filtering of any kind — every store range is emitted
-  unconditionally. `.annostore` → text, nothing else; no assembler runs here.
-- `src/mcp/vice/anno-cli.ts` — `export-asm <image> --store FILE [--out FILE]
-  [--force]` is a **CLI-only** verb (`anno-cli.ts:1632`, `1644` — "this CLI has
-  exactly four" verbs: `render-memmap`, `coverage`, `export-asm`,
-  `evid-disagreements`). It is **not** an `anno_*` MCP tool today.
-- `src/mcp/vice/anno-tools.ts` / `vice-proxy.ts:3438-3439` — every `anno_*` MCP
-  tool is registered from the `ANNO_TOOL_DEFINITIONS` array via
-  `buildViceTool()` directly, which is why the family never reaches
-  `forwardToVice()` (MCP-02, satisfied by construction). Adding a new `anno_*`
-  tool is exactly this: one entry in that array plus one dispatch arm.
-- `src/mcp/vice/host-tool.mts` (compiled to `resources/host-tool.mjs`, runs
-  **host-side** inside the broker process) — `acme.build`'s `buildHostToolArgv()`
-  branch (`:1287-1330`) already supports `source`, `outDir`, `includes` (`-I`
-  dirs), `defines` (`-D`), `setpc`. Every path-bearing field is resolved through
-  `resolveWorkspacePath()` (`:2355-2380`), the same site every other host tool's
-  paths go through. `spawn(toolPath, argv, { stdio, ...env })` at `:2139` has
-  **no `cwd` override** — the child inherits the broker process's own cwd.
-- `src/mcp/vice/acme-verify.ts` / `acme-gate.ts` — the real-ACME byte-diff
-  oracle (EXPORT-03). **Test-only**, absent from `package.json`'s `files[]` by a
-  committed assertion (`acme-verify.ts` header). `PROJECT.md`'s own v0.9.0
-  "Next Milestone Goals" note already decides this is reused, not re-minted,
-  for the reassembly gate.
-- `src/mcp/vice/anno-coverage.ts` (`scanIndirectDispatch()`, `:967`) — a
-  **proven, shipped detector** for exactly one of BUILD-04's four hazard
-  classes already exists: split lo/hi jump tables, multi-entry dispatch
-  tables, and — by name — the **RTS-trick idiom**
-  (`DISPATCH_CONTEXT_SHAPES: ["stack-return-push-idiom",
-  "zeropage-vector-jumped-through"]`, `:761`). It also already reports an
-  **advisory/unproven bucket** (`splitTableCandidates`) explicitly because
-  "this is precisely what the hazard report wants to see, flagged as unproven"
-  (`:646-649`, a comment written before this milestone existed). No detector
-  for self-modifying-code writes, page-alignment dependence, or cycle-exact
-  raster code exists anywhere in the tree (confirmed by grep across
-  `anno-*.ts`, `disasm-*.ts`, `stock-*.ts`).
-- `src/mcp/vice/evid-reconcile.ts` — `reconcileObservedExecution()` is a
-  **pure function**, never opens the store itself (its own header states this),
-  called by `dispatchEvidDisagreements()` in `anno-tools.ts:2414-2430`, which
-  fetches both sides itself (`listExecObservations()`, `listRanges()` via a
-  **lazy** `await import("./anno-cli.ts")` to avoid dragging `anno-coverage.ts`
-  /`anno-memmap-render.ts`/`anno-export-asm.ts` into the MCP server's static
-  import graph) and returns a `max_results`-bounded, disagreement-first report.
-  This is the template a hazard-report MCP tool should copy verbatim.
-- `src/skills/c64-ram-capture/scripts/compare.mjs` — pure, no MCP calls, a
-  hardcoded `VOLATILE` span array (`:30-41`) and a single `compare(a, b)`
-  entry point that assumes **one shared address space** at **one shared
-  logical instant** between the two 64K images. `EQUIV-01` has never run this
-  in any mode but that one.
+> `src/mcp/vice/backend-detect.mts:60-80` — *"`supervisorDir` is ALWAYS an
+> explicit string this module receives from its caller, never a default this
+> module derives itself... This file cannot import repo-root.ts's VALUE as a
+> static import and still compile as a host-bound artifact: repo-root.ts (and
+> its own dependency install-resources.ts) use `.ts`-extension imports that
+> only resolve under Node's native type-stripping, unbuilt — exactly the mode a
+> bare host running this module's COMPILED resources/backend-detect.mjs cannot
+> rely on... Passing the resolved string in, rather than importing the
+> resolver, is what keeps this file importable UNBUILT from a container-side
+> `.ts` (exactly like container-guard.mts's own precedent) AND compilable into
+> resources/ for the host, from the SAME source, with no `#ifdef`-style split."*
 
-## Answer 1 — Where the export path lives
+Every production runtime consumer of a tool location today is host-bound:
 
-**In the `anno_*` family, not `acme-build`, extending `anno-export-asm.ts` in
-place.** This is not a new decision — it is the existing decision, restated
-for the multi-file case:
+| Consumer | File:line | What it resolves | Compiled? |
+|---|---|---|---|
+| `resolvedBackend()` | `backend-detect.mts:283` (`env.VICE_BIN ?? "x64sc"`) | `x64sc` | Yes — in `HOST_BOUND_ARTIFACTS` (`build.ts:43-53`) |
+| `spawnAndRecordInstance` default | `broker-launch.mts:445`, `:1523` (`process.env.VICE_BIN ?? "x64sc"`) | `x64sc` (the broker's own spawn target) | Yes |
+| ACME binary | `host-tool.mts:1292` (`process.env.ACME_BIN ... : "acme"`) | `acme` | Yes |
+| ACME library dir | `host-tool.mts:2231-2245` (`findAcmeLib()`, fixed candidate list + `process.env.ACME`) | ACME stdlib dir | Yes |
+| Ghidra install dir | `host-tool.mts:1348-1362`, `:1513-1524`, `:2534-2545` (`process.env.GHIDRA_HOME`) | `analyzeHeadless`, `support/sleigh` | Yes |
+| c1541/petcat siblings | `host-tool.mts:2273-2311` (`findSiblingBinary()`, sibling-of-x64sc probe + `$PATH` fallback) | `c1541`, `petcat` | Yes |
+| dxa | `host-tool.mts:2223-2229` (`findDxaBinary()`, FIXED vendored path, deliberately never env-overridable) | vendored `dxa` | Yes |
+| Node interpreter | `resources/vice-launcher.sh:189-222` | `node` itself | N/A — hand-authored bash, not compiled |
 
-- The export is fundamentally `(store rows, image bytes) → text`. That is
-  MCP-02's derived-tool shape exactly: a computation over `.annostore` state
-  that touches no emulator and no transport. Placing it in `acme-build` would
-  put annotation-store knowledge (ranges, labels, comments, enums, scopes) in
-  a skill whose entire contract today is "wraps `acme` and nothing else...
-  contacts nothing" (`src/skills/acme-build/SKILL.md:16-18`) and that has zero
-  reach into `node:sqlite` — `anno-store.ts` is the **one** module in this repo
-  permitted to name it, structurally asserted by `anno-seam.test.ts`.
-  Splitting store-reading logic across two module families would be exactly
-  the "re-deriving a cross-cutting seam locally" anti-pattern this project's
-  own `.planning/codebase/ARCHITECTURE.md` names by its own incident history.
-- `BUILD-01`'s new requirement — one ACME file **per scope** wired by
-  `!source`, assembling to a single output — is a change to `exportAsm()`'s
-  *output shape*, not to *which module owns the derivation*. Concretely: add
-  a scope-partitioned sibling (e.g. `exportAsmProject()`) that groups
-  `listRanges()`'s rows by their `anno_range.scope` column (the store already
-  has scopes — `PROJECT.md`'s STORE-01 line), emits one file per scope through
-  the **same** `emitBlock()`/`emitDataLines()`/`withComments()`/label logic
-  already in `anno-export-asm.ts` (never duplicated), plus one root/header
-  file carrying the `!source "scope_x.a"` lines and the header symbol/enum
-  definitions. `expectedBytes` (already derived from the image, never from
-  `source`, per the module's own "WHAT THIS FILE DOES NOT CHECK" section) is
-  unaffected by the file split — it is a property of the union of blocks, not
-  of how many files they were written into.
-- Assembly stays completely separate, exactly as it is today: the multi-file
-  tree the exporter produces is handed to `acme-build`'s existing
-  `host_tool acme.build` route (`host-tool.mts`) to actually invoke ACME. The
-  `anno_*` family still never touches ACME or the host boundary; `acme-build`
-  still never touches the store. This is the same "two things intentionally
-  kept ignorant of each other" split `EXPORT-01`'s header already describes
-  ("Nothing in this file verifies this file").
-- Surface: keep it **CLI-only** (`anno-cli.ts`'s `export-asm` verb, widened
-  with new options, or the existing `--out` becoming an output *directory*
-  for multi-file mode) rather than adding an MCP `anno_*` tool for the export
-  itself — a multi-file source tree is a filesystem artifact for a human/ACME
-  to read, not a bounded, chunkable answer an agent queries mid-session (the
-  precedent that *does* call for an `anno_*` MCP tool is the hazard report,
-  Answer 3, because that is exactly the shape `anno_evid_disagreements`
-  already serves).
+The one place that reads `ACME_BIN` **outside** the host-bound set is
+`acme-gate.ts:71` — but that module is explicitly **test-only**
+(`acme-gate.ts:32-34`: *"must never appear in `package.json`'s `files[]`... must
+never be imported by a production module — only by `*.test.ts` files"*). It is
+a separate, deliberately duplicate probe used by the test suite, not a
+production consumer. **It is not a caller the new seam needs to serve for
+correctness of the shipped product** — though see the "doctor vs. real refusal
+agreement" section below for why it must not become a third opinion either.
 
-**New vs modified:** `anno-export-asm.ts` — modified (add scope-partitioned
-multi-file emission alongside the existing single-file path, which stays for
-backward compatibility / the reassembly gate's byte-diff granularity).
-`anno-cli.ts` — modified (`export-asm` verb widened). Nothing in
-`acme-build`, `host-tool.mts`, or `vice-proxy.ts` changes for this decision
-alone.
+Given that every production caller is host-bound and compiled, and the one
+container-side `.ts` reader (`acme-gate.ts`) is test-only, the seam's home is
+settled: it lives beside `backend-detect.mts` as a new `*-location.mts` (or
+similar) file, is added to `HOST_BOUND_ARTIFACTS`, and takes `toolsDir`/
+`repoRoot` as a parameter — never a static import of `repo-root.ts`.
 
-## Answer 2 — Where ACME actually runs, and what that implies for file layout
+### Why it cannot live inside `host-tool.mts`
 
-ACME is a **host** binary reached only through `runHostTool()`'s `acme.build`
-branch (`host-tool.mts:2355-2470` builds argv and resolves paths;
-`host-tool.mts:2139` spawns it). The container-side exporter never touches it.
-This creates a genuine, previously-unexercised hazard for a multi-file tree:
+`backend-detect.mts` is imported BY `host-tool.mts` (`host-tool.mts:124`,
+`import { resolvedBackend } from "./backend-detect.mjs"`). A tool-location
+resolver that both `backend-detect.mts` (for `VICE_BIN`/`x64sc`) and
+`host-tool.mts` (for `ACME_BIN`/`GHIDRA_HOME`/sibling probes) need to call
+cannot live inside `host-tool.mts`, because that would make `backend-detect.mts`
+depend on `host-tool.mts` depend on `backend-detect.mts` — the exact module
+cycle `repo-root.ts`'s own header names as a hazard class this codebase
+rejects (`repo-root.ts:9-33`, and the "module-cycle avoidance is deliberate and
+documented" architectural constraint in `CLAUDE.md`). It must be its own file,
+sitting *below* both `backend-detect.mts` and `host-tool.mts` in the import
+graph, so both can depend on it without depending on each other.
 
-**Measured fact about ACME itself** (ACME's own file-inclusion rule,
-`AllPOs.txt` / project quick-reference): a quoted `!source "name.a"` is loaded
-from the assembler process's **current working directory**, never from the
-directory of the file that contains the `!source` line. `<name.a>`
-angle-bracket quoting instead searches the `-I` library directories (the
-mechanism `acme-build`'s existing `-I`/`includes` option already serves, and
-which is semantically for library-style search paths such as
-`cbm/c64/config.a`, not for a project's own generated sibling scope files).
+### Can `vice-launcher.sh` consume a JSON location file?
 
-**Measured fact about this codebase:** `host-tool.mts`'s `spawn()` call for
-`acme.build` sets no `cwd` — the ACME child inherits the broker process's own
-working directory, whatever that happens to be at broker start. Today this is
-harmless because the shipped exporter never emits `!source` at all (single
-monolithic file). The moment `BUILD-01`'s multi-file, `!source`-wired export
-ships, it stops being harmless: a bare `!source "scope_main.a"` line resolves
-against a directory nobody has ever pinned, decoupled entirely from where the
-files were actually written.
+**Only in a degraded, hand-rolled way, and there is a real bootstrapping
+problem that argues against trying.** `vice-launcher.sh` reads
+`VICE_BROKER_NODE` (`resources/vice-launcher.sh:189-222`) *before* it has a
+working Node interpreter — that variable's whole job is finding one. A `tools.json`
+reader that used `node -e '...'` to parse the file would need to already have
+resolved a Node to run it, which is the very question being answered. The
+launcher could grep/sed a single well-known JSON key out of a flat file
+without a full parser, but that reintroduces a second, fragile, hand-rolled
+JSON reader outside the one seam this design is trying to consolidate around
+— the exact anti-pattern ("re-deriving a cross-cutting seam locally") this
+project already names. **Recommendation: `VICE_BROKER_NODE` stays env-var-only,
+explicitly out of `tools.json`'s scope.** State this as a documented exception
+in the prerequisite declaration and in `tools.json`'s own generated comment
+header, not as an oversight. (This matches the milestone's own framing — it
+lists `VICE_BROKER_NODE` as one of the five pre-existing overrides in three
+naming conventions, `.planning/PROJECT.md:1926-1932`, without ever proposing to
+unify it into the file.)
 
-**What this implies, concretely:**
+## 1. Where the seam lives, and what it looks like
 
-1. **Every file the multi-file exporter writes for one export must land flat
-   in one directory** (the resolved `outDir`), and every `!source` line the
-   exporter emits must reference a **bare filename with no directory
-   component** (`!source "scope_sprites.a"`, never `!source
-   "scopes/scope_sprites.a"`). This is a constraint on `exportAsm()`'s output,
-   decided container-side.
-2. **`host-tool.mts`'s `acme.build` branch needs a `cwd` addition** — set
-   `spawn()`'s `cwd` to the already-resolved `outDirPath` for this tool only.
-   This is a small, host-side, single-seam-respecting change: `host-tool.mts`
-   is already the one place that decides what environment/library path ACME
-   sees (`findAcmeLib()` injecting `$ACME`, `:2196-2384`), so adding "and also
-   its working directory" to the same branch is extending the existing
-   pattern, not inventing a second one.
-3. **The container-side exporter must never embed a host absolute path** in
-   generated source text. `anno-export-asm.ts`'s own header already forbids
-   importing `hostpath.ts`/`containerpath.ts` ("an exporter has no reason to
-   join it") — that rule, read together with fact 1 above, is what forces the
-   bare-filename design rather than "just write the host path into `!source`."
-   The container does not reliably know the host path, and hardcoding one
-   would break portability across machines reading the same store.
-4. The root/header file the exporter emits should itself be resolvable as
-   `acme.build`'s `source` argument exactly as today (a single entry point);
-   only its **siblings**, reached via `!source`, are new.
+**New file (proposed name, not yet in the tree):** `src/mcp/vice/tool-location.mts`
 
-**New vs modified:** `host-tool.mts` — modified (add `cwd: outDirPath` to the
-`acme.build` spawn options; this is genuinely new behaviour this milestone
-requires, not present today because nothing has ever needed it).
-`anno-export-asm.ts` — modified (bare-filename `!source` emission, one file
-per scope, all in one directory). `acme-build`'s `SKILL.md` — likely needs a
-documentation note about the multi-file convention once it exists, since the
-skill currently documents only single-file assembly.
+- Added to `build.ts`'s `HOST_BOUND_ARTIFACTS` (`build.ts:42-53`), which
+  bumps that array from 10 entries to 11 and is asserted exactly
+  (`build.ts:192-205` fails loudly on an unexpected emit).
+- Exports one function, shaped like `resolvedBackend()`:
+  `resolveToolLocation(toolId, deps): { path: string | null; source:
+  "env" | "file" | "path" | "sibling" | "vendored" | "not-found"; tried:
+  string[] }`, where `deps` carries `env?`, `toolsJsonPath?` (an explicit
+  string — never self-resolved), and any per-tool probe overrides needed for
+  testing (mirrors `ResolvedBackendDeps`'s injection-seam idiom,
+  `backend-detect.mts:252-265`).
+- Precedence inside the function: `env var → tools.json entry → $PATH/sibling
+  probe → not found` (milestone decision #5, `.planning/PROJECT.md:1922-1932`).
+  This is a *reordering/wrapping* of existing per-tool logic, not new probing
+  logic — `findSiblingBinary()`, `findAcmeLib()`, `resolvedBackend()`'s own
+  `$PATH` walk, and `findDxaBinary()`'s fixed-path check all already exist
+  and must be called, not reimplemented (milestone's own explicit warning:
+  *"Minting a second detection path is the specific mistake to avoid here"*,
+  `.planning/PROJECT.md:1936-1940`).
+- **`findDxaBinary()` stays outside the env/file override layer.**
+  `host-tool.mts:126-131` states this as a deliberate, argued rule: dxa is
+  vendored and built by this project, so an override "could only ever select
+  a binary this project did not build and did not pin — a substitution this
+  seam must never allow." The new seam should special-case `dxa` (and any
+  future project-vendored tool) to skip the `env`/`file` precedence steps
+  entirely and go straight to the fixed vendored-path probe. Get this wrong
+  and the new seam silently reopens a hole the current code deliberately
+  closed.
 
-## Answer 3 — Where the hazard report lives
+### Which existing modules must call it
 
-**A derived, read-only query — new pure module plus a new `anno_*` MCP tool —
-never a new store table, never a table that anything "acts on."**
+| Module | Current resolution code (to be routed through the seam) |
+|---|---|
+| `backend-detect.mts:283` | `deps.viceBin ?? env.VICE_BIN ?? "x64sc"` |
+| `broker-launch.mts:445`, `:1523` | `process.env.VICE_BIN ?? "x64sc"` |
+| `host-tool.mts:1292` | ACME binary path |
+| `host-tool.mts:1348-1362`, `:1513-1524`, `:2534-2545` | `GHIDRA_HOME`-derived paths |
+| `host-tool.mts:2231-2245` (`findAcmeLib`) | ACME library dir candidates |
+| `host-tool.mts:2273-2311` (`findSiblingBinary`) | c1541/petcat siblings |
 
-- **Not a new store table.** `BUILD-04`'s own text is "enumerates... none of
-  which any existing tool in this stack detects" and the 2026-09-10 scoping
-  decision is explicit: "`BUILD-04` was already the right model and is
-  unchanged: it enumerates what blocks movement and **acts on none of it**."
-  A store table implies durable, mutable, revertable state (that is exactly
-  what `.annostore`'s existing tables are for — labels, comments, ranges,
-  enums). A hazard finding is not an annotation a person authored; it is a
-  computed fact about the current byte layout, and it must be recomputed
-  every time the layout changes rather than going stale in a table nobody
-  invalidates. This is the same reasoning that already keeps
-  `scanIndirectDispatch()`'s output out of the store and inside
-  `anno-coverage.ts`'s pure `computeCoverage()` pipeline.
-- **A derived query, following `anno_evid_disagreements`'s exact shape**
-  (`anno-tools.ts:2414-2430`): a new pure module (recommend
-  `src/mcp/vice/anno-hazards.ts`) that takes already-fetched, plain data —
-  decoded instructions, the byte-derived block table (`blocksFromStore()`),
-  cross-references, and (for class 4) `anno_evid_exec` observations — and
-  returns a four-bucket report. It **never opens the store itself**, mirroring
-  `evid-reconcile.ts`'s own documented contract. A `dispatchHazardReport()`
-  arm in `anno-tools.ts` fetches both sides and calls it, exactly like
-  `dispatchEvidDisagreements()` does today, and gets `max_results` truncation
-  for free from the same pattern (a full hazard listing dumped whole is the
-  same "full-64K disassembly view dumped into an agent's context" hazard
-  `anno-tools.ts:1584` already documents for a different tool).
-- **Reuse, don't re-derive, the one class that already has a proven
-  detector.** Class 1 (indexed jump tables including the RTS-trick idiom) is
-  `scanIndirectDispatch()`'s `IndirectDispatchScan` — import its **types and
-  function**, do not re-implement the dispatch-context gate. The advisory
-  `splitTableCandidates` bucket is explicitly designed to feed a hazard report
-  and should be surfaced as "unproven, flagged" rather than dropped.
-- **Classes 2-4 are genuinely new** (confirmed absent from the tree by
-  grep — no self-modifying-code write detector, no page-alignment detector, no
-  raster-timing detector exists anywhere today):
-  - *Self-modifying code*: any `STA`/`STX`/`STY`/`INC`/`DEC` (etc.) whose
-    resolved operand address falls inside a `code`-typed range. This is a
-    **byte-level scan over `decode()`'s output**, independent of whether a
-    human has already placed a mid-instruction label there — `anno-export-asm.ts`'s
-    existing mid-instruction-label handling (`:1004-1037`) is a *symptom* of
-    already-annotated SMC, not a detector of unannotated SMC, and the hazard
-    report needs the latter.
-  - *Page-alignment dependence*: enumeration only, per this project's own
-    Out-of-Scope stance on automatic relocation — flag any indexed table
-    access whose base sits on (or is a candidate for) a page boundary, where
-    moving the table would change indexed-access cycle counts or wrap
-    behaviour. No general solve; report the candidate and let a human decide.
-  - *Cycle-exact raster code*: enumeration only — flag code reachable from an
-    IRQ vector (cross-reference-derived) that also writes `$D012`/reads the
-    raster line, using the **existing** cross-reference union
-    (`STORE-06`) and `anno_evid_exec` execution evidence as corroboration, not
-    as a cycle-accurate proof (this project has no static cycle counter; the
-    live `(PC, hit_count, (LIN, CYC))` harness is a *measurement* tool, not
-    a *static* one, and the hazard report must stay static/byte-derived to
-    run without an emulator).
-- **Relation to `anno_evid_exec`'s soundness asymmetry matters here
-  directly.** A hazard-report finding that consults runtime evidence (class 4
-  above) must never use "never observed executing" as evidence that a region
-  is *not* raster-sensitive code — `RuntimeExecClass` structurally has no
-  `data` member for exactly this reason (EVID-01..06). Observed-executing
-  strengthens a class-4 flag; unobserved says nothing and must not suppress
-  one. This is not a new rule to invent — it is the existing asymmetry,
-  applied at a new consumption site.
+`findDxaBinary()` (`host-tool.mts:2223-2229`) is **not** rerouted through the
+`env`/`file` layers per above, but the seam should still expose it (or wrap
+it) so the *doctor* has one call surface for all seven tools, including dxa.
 
-**New vs modified:** `anno-hazards.ts` — new, pure. `anno-tools.ts` — modified
-(one new `dispatchHazardReport()` arm plus one new `ANNO_TOOL_DEFINITIONS`
-entry — `anno_hazard_report` or similar). `anno-cli.ts` — likely modified too
-(a fifth CLI verb, which requires touching the hard-coded "this CLI has
-exactly four" closed-set message at `:1644` and its guarding test). No change
-to `anno-store.ts`'s schema, no `SCHEMA_VERSION` bump.
+**Open question — should `broker-launch.mts` and `backend-detect.mts`
+literally call into the new module, or should `resolvedBackend()` itself grow
+a `toolsJsonPath` deps field and stay the sole `VICE_BIN` authority, with the
+new seam calling *it* rather than the reverse?** Both directions avoid a
+cycle (neither file currently imports the other — `backend-detect.mts` has no
+import of `host-tool.mts` or vice versa apart from the one-directional
+`host-tool.mts → backend-detect.mjs` edge already shown above). The codebase's
+own "single seam per concern" rule argues for **`resolvedBackend()` gaining
+the `tools.json` precedence step internally** (since it is already the one
+authoritative place for `x64sc` resolution, per its own header,
+`backend-detect.mts:1-23`) while the *other* six tools (ACME binary, ACME lib,
+Ghidra, c1541, petcat, dxa) route through the new seam module, which
+`host-tool.mts` already sits next to. This keeps `resolvedBackend()` as the
+one `x64sc` authority (unchanged) and makes the new module the one authority
+for everything host-tool.mts. **This is a design choice for the phase to make
+explicitly, not a fact this research measured — flagged as a decision point,
+not a gap.**
 
-## Answer 4 — The reassembly-plus-hazard gate, structurally before the phase it gates
+## 2. Where the doctor runs, and the disagreement risk
 
-`BUILD-06`'s (renumbered `BUILD-07` in the current requirement text — see
-`PROJECT.md`'s v1.0.0 scoping note) literal requirement is a **phase-ordering**
-constraint, and this project already has two directly-precedented mechanisms
-for exactly this shape, both citable:
+**The doctor is a plain host-side process, and it must call the *same*
+compiled artifacts the broker calls — not re-import unbuilt `.mts` source and
+not reimplement any probe.** Concretely:
 
-1. **Standalone go/no-go phase, rules committed before measurement.** Phase 9
-   (`ANNO-16`) and the `CHAN-01` gate (Phase 39) are this project's own
-   precedent: "Make the assumption probe a standalone go/no-go **phase**, not
-   a criterion inside one" (`PROJECT.md` Key Decisions), because a phase
-   boundary makes the gate structural rather than skippable, and a verdict
-   whose rules were written and frozen *before* the measurement exists is
-   derived rather than judged.
-2. **Build the instrument before the work it gates, not after.** Phase 12
-   (`GATE-01`, v0.4.0) is the second precedent: an instrument built *after*
-   the work it is meant to gate has never gated anything.
+- The doctor's own entry point cannot be a `.ts` file requiring Node ≥24
+  type-stripping (`bin.vice-mcp` → `vice-proxy.ts`,
+  `src/mcp/vice/package.json:6-9`, `engines.node: >=24.0.0`,
+  `package.json:104-106`) — the milestone states this as a hard constraint,
+  not a preference (`.planning/PROJECT.md:1938-1944`).
+- `resources/*.mjs` is already **plain, type-stripped, ES2022 JavaScript** —
+  the committed output of `build.ts`'s `tsc` pass
+  (`GENERATED_BANNER`, `build.ts:60-69`). It runs on any Node capable of
+  ES2022 modules, with no type-stripping needed at all. This is the doctor's
+  way out of the Node-version bind: **author the doctor's CLI entry as a new
+  host-bound `.mts` file** (mirroring `vice-broker.mts`'s and `host-tool.mts`'s
+  own bottom-of-file CLI blocks — see `vice-broker.mts:121-150`'s `parseArgs()`
+  and `host-tool.mts:2991-3018`'s `run --repo-root <path> --request <json>`
+  CLI), add it to `HOST_BOUND_ARTIFACTS`, and let `build.ts` emit a plain
+  `.mjs` that needs no type-stripping to run. Ship it as a **second `bin`
+  entry** in `src/mcp/vice/package.json` (today only `vice-mcp` →
+  `vice-proxy.ts`, `package.json:6-9`) pointing at the compiled artifact under
+  `resources/`.
+- **Crucially, the doctor imports the same compiled `resources/*.mjs` modules
+  the broker imports** — `resolvedBackend` from `backend-detect.mjs`, and the
+  probe functions from the new `tool-location.mjs` (and, transitively,
+  whatever of `host-tool.mts`'s probe functions the seam wraps). This is what
+  answers Q2 directly: **yes, the doctor can call the resolution seam
+  in-process, host-side, with no broker round trip, and get the identical
+  answer — because it is calling the exact same function, not a
+  reimplementation.** The risk named in the prompt ("a doctor that can
+  disagree with the real refusal") is avoided by construction, not by
+  cross-checking two independent probes.
 
-Applied here: the reassembly-plus-hazard gate should be its **own phase**,
-sitting between the "Rebuildable source" (`BUILD-*`) phase and the
-"Equivalence and modifiability" (`EQUIV-*`) phase — not a criterion folded
-into either. Its sole deliverable is a script that:
+### Memoisation is the one place this needs care
 
-- Reuses, never re-mints, v0.7.0's real-ACME byte-diff oracle
-  (`acme-verify.ts`/`acme-gate.ts`) — this is already the decided position,
-  stated verbatim in `PROJECT.md`'s v0.9.0 "Next Milestone Goals": *"A
-  reassembly gate should reuse it rather than mint a second one."*
-- Calls the new multi-file `exportAsm()` path (Answer 1), assembles it through
-  the real `acme.build` host-tool route with the `cwd` fix (Answer 2), and
-  byte-diffs against `expectedBytes` exactly as `acme-verify.ts` does today —
-  never trusting ACME's exit status or its aggregate summary line, per that
-  module's own documented recorded false-pass history.
-- Calls the new hazard-report module (Answer 3) and requires the report to be
-  **clean** (or every remaining finding explicitly acknowledged, mirroring
-  this project's existing acknowledge-don't-falsify discipline for
-  unclosable audit items).
-- Combines both into one go/no-go verdict, with its rules committed in the
-  **same commit** as the phase that builds the gate, before the gate is ever
-  run for real — the `CHAN-01`/`GATE-01` pattern.
+`resolvedBackend()` and `findSiblingBinary()` are both **memoised per process
+lifetime** (`backend-detect.mts:271-277`'s `memoisedResult`;
+`host-tool.mts:2260-2271`'s `siblingBinaryMemo`, including a documented
+"a `null` answer is memoised too" rule). This is correct and desired *inside
+a single long-running broker* — it is explicitly *not* correct to import if
+copied into a long-lived doctor daemon. It is a non-issue for a **doctor
+invoked as a one-shot CLI**, since a fresh process means a fresh, empty memo
+on every run — which is exactly the behaviour a "check what's missing right
+now" command wants. State this explicitly as a constraint on the doctor's
+shape: **it must be a one-shot process, never a resident/watch-mode process**,
+or the memoisation semantics that are safe for the broker become stale
+answers for the doctor.
 
-Because `EQUIV-04` requires the "whole pipeline runnable in CI," this gate
-script is a project-internal verification artifact (same category as
-`acme-verify.ts`) exercised against the committed synthetic fixture (Target
-feature 4, "A purpose-built synthetic subject"), not a shipped end-user tool
-— consistent with `acme-verify.ts` being test-only and absent from
-`package.json`'s `files[]`.
+`resolvedBackend()`'s cache-eligibility path also takes an *optional*
+`supervisorDir` (`backend-detect.mts:283`, `deps.supervisorDir`) for the
+on-disk `backend.json` capability cache. The doctor should almost certainly
+**not** pass a `supervisorDir` at all — persisting a capability cache from a
+doctor run that never actually connects to a live VICE instance would write a
+half-true record (identity, no `versionQuad`) into the same file the broker
+maintains, for no benefit. Passing `deps.supervisorDir` unset makes this a
+pure no-op there (`backend-detect.mts:82-88`: *"When supervisorDir is omitted
+entirely, every cache read/write below is a no-op"*) — cite this behaviour
+explicitly in the doctor's own header so a future reader does not "helpfully"
+wire it up.
 
-**New vs modified:** one new phase-scoped gate script (recommend
-`gate-reassembly.ts` or similar, test-only, importing `acme-verify.ts` and
-`anno-hazards.ts`'s exported function directly — not shelling to the CLI, for
-the same reason `acme-verify.ts` never shells to `anno-cli.ts`). No change to
-existing modules beyond what Answers 1-3 already require.
+## 3. The prerequisite declaration and its consumers
 
-## Answer 5 — `compare.mjs` in original-versus-different-binary mode
+**Format: plain JSON (or equivalently simple, dependency-free data — not
+TypeScript, not YAML requiring a parser dependency).** This follows directly
+from how the installer package already handles the identical Node-floor
+problem: `installer/bin/cli.mjs:32-48` explicitly does **not** import
+`src/mcp/vice/version.ts` (the project's real "single version-resolution
+seam") because the installer targets Node ≥18
+(`installer/package.json:15-17`) and cannot type-strip a `.ts` import the
+way the `vice-mcp` package's Node ≥24 runtime can — it hand-copies one
+literal (`MCP_DEV_PLACEHOLDER`) instead, with a comment explaining the
+disclosed divergence. **The prerequisite declaration will hit the exact same
+wall if it is authored as a `.ts`/`.mts` module**, because its three named
+consumers — the doctor (old-Node CLI), the README generator, and
+`host-tool.mts`'s refusal messages — do not share one Node floor. A plain
+`.json` file sidesteps this entirely: every consumer can `JSON.parse` it with
+zero dependency and zero Node-version requirement.
 
-`compare.mjs` (`src/skills/c64-ram-capture/scripts/compare.mjs`) is pure,
-dependency-free logic with **no MCP/store/host-tool involvement at all** —
-this is the right layer for the change and it stays exactly there. The
-existing `compare(a, b)` function assumes one shared 64K address space
-compared at one shared logical instant; `EQUIV-01` breaks both assumptions
-(two different binaries, each with its own meaningful stopping point, and
-labels/addresses that may legitimately differ post-rebuild since byte-identity
-is explicitly not the acceptance bar).
+### The three consumers, concretely
 
-**What changes, architecturally, is entirely inside this one file plus its
-CLI surface — no new seam, no MCP tool, no store table:**
+1. **The doctor.** Reads the declaration to know what to probe and what each
+   tool unblocks per skill; calls `resolveToolLocation()` per tool; renders
+   the capability-mapped report.
+2. **Runtime refusal messages in `host-tool.mts`.** Today these are inline
+   string literals at the point of refusal — e.g. `host-tool.mts:1352`
+   (`` `host_tool "ghidra.analyze" requires the GHIDRA_HOME environment
+   variable...` ``), `:1362`, `:1472`, `:1517`, `:1559`, `:1634`. **These
+   should NOT be rewritten to interpolate the declaration at runtime** — that
+   would add a JSON-read-and-template step to the hot refusal path for no
+   real benefit, and would risk the refusal text silently drifting from what
+   the doctor reports if the interpolation logic itself diverges. The safer
+   integration is the reverse: the declaration's per-tool "remedy" text
+   should be **authored to match** these existing refusal strings (a
+   cross-check test, not a runtime coupling), so a reader who hits the live
+   refusal and a reader who runs the doctor see consistent guidance without
+   the refusal path taking on a new dependency. This is consistent with the
+   milestone's own framing of README generation as "guarded **semantically**,
+   not byte-identically" (`.planning/PROJECT.md:1965-1968`) — the same
+   semantic-not-literal relationship should hold here.
+3. **README.md's install table generator.** Today `README.md`'s per-distro
+   VICE table is entirely hand-kept (`README.md:101-110`); there is no
+   equivalent table for ACME or Ghidra there at all — ACME's install guidance
+   lives separately, in `src/skills/acme-build/SKILL.md:211,254` (prefix list
+   and a table row). The generator's job is to **produce** (or verify) these
+   tables from the one declaration, closing the milestone's named
+   fragmentation (*"today that knowledge is split across README.md's
+   hand-kept per-distro tables, acme-build/SKILL.md's prefix list, and
+   inline refusal strings in host-tool.mts — four places that can disagree"*,
+   `.planning/PROJECT.md:1949-1953`).
 
-- The hardcoded `VOLATILE` array (`:30-41`) must become **caller-suppliable**
-  rather than a single fixed constant, because same-binary mode's broad
-  volatile mask (blanket `$D000-$DFFF`) is exactly what would hide a real
-  `$D020`/`$D015`/`$D018` regression in cross-binary mode — the requirement's
-  own wording ("narrowed volatile mask so a real ... regression cannot hide").
-  The fix is a config/allowlist argument (JSON file or `--volatile` flag),
-  with the existing hardcoded array becoming the *default* for same-binary
-  mode so no existing caller breaks.
-- A new **allowlist for intentional differences** — addresses (or ranges)
-  the caller declares as expected-to-differ because the rebuild changed them
-  on purpose (moved data table, renamed/relocated symbol whose absolute value
-  differs even though its function doesn't). This is a second, orthogonal
-  input file from the volatile mask: volatile means "always excluded because
-  it's hardware/stack noise"; allowlist means "this specific pairing is
-  known-intentional for this specific comparison." Both narrow the
-  `divergence` bucket, neither should be the same mechanism (conflating them
-  would make an intentional difference indistinguishable from hardware noise
-  in the report).
-- **Per-binary logical checkpoints** is a **capture-time**, not a
-  compare-time, concern — it means the *skill* (not `compare.mjs`) must be
-  able to stop each of the two binaries at its own semantically-equivalent
-  point (which may be a different PC/address in each, since addresses can
-  legitimately differ) before capturing. `compare.mjs`'s only obligation is to
-  accept and print which checkpoint label produced each side of the
-  comparison, so the report states what was actually compared rather than
-  implying a shared PC. This is a metadata/reporting addition to
-  `cmdCompare()`'s argument handling, not a new capability elsewhere in the
-  architecture — the `c64-ram-capture` skill already knows how to set
-  arbitrary checkpoints via the existing `vice_*` MCP surface; nothing new is
-  needed there.
+### Does the declaration need to be in `files[]`?
 
-**New vs modified:** `compare.mjs` — modified (new mode/flags: a
-volatile-mask override, an allowlist file, checkpoint-label metadata on
-output). `c64-ram-capture/SKILL.md` — modified (document the new mode). No
-change anywhere in `src/mcp/vice/`.
+- **`src/mcp/vice/package.json`'s `files[]`: yes, if the doctor's compiled
+  `.mjs` entry (or `host-tool.mjs`, transitively) reads it at runtime.**
+  The published tarball only ships what `files[]` lists
+  (`package.json:10-99`) plus the whole `resources/` directory
+  (`package.json:98`, the line reading `"resources"`). A `.json` data file
+  living inside `src/mcp/vice/` needs its own `files[]` entry (like
+  `anno-regbits.json` already has at `package.json:66`, or
+  `tools-manifest.stock.json` at `package.json:97`) — it will not ship
+  automatically just by existing in the source tree, and it will not be
+  covered by the `"resources"` entry unless it is physically placed inside
+  `resources/` (which would be a category error: it is authored/curated data,
+  not a build artifact, so it should NOT go through `build.ts`'s staging/
+  banner/atomic-rename pipeline, and should NOT live inside the directory
+  `resources-sync.test.ts` walks looking for stale builds).
+- **`installer/package.json`'s `files[]` (`bin/`, `skills/`, `README.md`,
+  `THIRD-PARTY-NOTICES.md`, `installer/package.json:9-14`): only if the
+  installer's own README generator or CLI reads the declaration directly.**
+  Given the installer targets Node ≥18 and already avoids importing
+  `vice-mcp`'s TS seams for exactly this reason (`cli.mjs:32-48`), if the
+  installer needs the declaration (e.g. to print "what you'll need" at
+  install time) it should read it as **plain JSON via `fs.readFileSync` +
+  `JSON.parse`**, never via a TypeScript import — and the file must then be
+  vendored into the installer package's own `files[]` (most likely by
+  `scripts/sync-skills.mjs`'s existing copy step, or a new equivalent), not
+  imported cross-package at publish time. **Open question: does the
+  installer actually need to consume the declaration in v1.1.0, or is that
+  out of scope ("No install path is added, removed or collapsed",
+  `.planning/PROJECT.md:1972-1974`)?** The milestone's own scoping note
+  suggests the installer's *install paths* stay untouched — reading a
+  declaration to print information is not an install-path change, but this
+  is a judgment call the phase should make explicitly, not something this
+  research can settle from the tree as written.
 
-## Answer 6 — Where the lossless-export invariant is enforced and tested
+## 4. Build order
 
-**`anno-export-asm.ts`'s `exportAsm()` (and its multi-file sibling from
-Answer 1) is the single seam, because it already is the one chokepoint every
-store range must pass through to become emitted text.** Today it has **zero**
-filtering logic anywhere in its call chain (confirmed by reading the whole
-file: `listRanges()`'s result becomes `blocks` via a straight `.map()`, never
-a `.filter()`), which means the invariant already holds vacuously — the risk
-this requirement guards against is a **future** change (most plausibly
-`BUILD-05`'s provenance-aware carry-through) tempting someone to add a
-provenance-based skip inside this same function, exactly the mistake the
-2026-09-10 scoping decision already named and reworded `BUILD-05` to prevent
-("that wording made the tool the decider").
+Dependencies flow one direction: the declaration and the resolver are
+data/logic that everything else consumes; the doctor and the README generator
+are consumers. Suggested phase sequence:
 
-**Concrete enforcement design:**
+1. **The prerequisite declaration (data only).** New file, e.g.
+   `src/mcp/vice/tools.declaration.json` (name TBD by the phase). No code
+   changes to `host-tool.mts` or `backend-detect.mts` yet. Content: per tool
+   (`x64sc`, `c1541`, `petcat`, ACME binary, ACME library dir, Ghidra, dxa) —
+   version floor (where known), which skill(s)/MCP capability it unblocks,
+   per-platform remedy text. Cross-check its remedy strings against the
+   existing inline refusal messages listed in §3 as part of this phase's
+   acceptance, not a later one.
+2. **The location-resolution seam (`tool-location.mts`), new module, added
+   to `HOST_BOUND_ARTIFACTS`.** Depends on nothing from step 1 structurally
+   (the resolver's precedence logic — env → `tools.json` → probe — is
+   independent of the *declaration's* content), but should be built with the
+   declaration's tool-id vocabulary already fixed, so the two agree on names.
+   This step also defines `tools.json`'s own schema (the *user-facing*,
+   `.c64-re-tools/tools.json` override file — distinct from the
+   *declaration*, which is developer-authored and committed). Unit-testable
+   directly against its own unbuilt `.mts` source, following
+   `backend-detect.test.ts`'s own precedent of importing `./backend-detect.mts`
+   directly rather than only through the control-plane.
+3. **Wire the seam into existing consumers.** Modify `host-tool.mts`'s five
+   resolution sites (§1's table) and, per the open design question in §1,
+   either `resolvedBackend()` internally or `broker-launch.mts`'s two
+   `VICE_BIN` reads. This is the first step that touches
+   `resources-sync.test.ts`-guarded files, so it is also the first step that
+   requires `node build.ts` to be re-run and the diff of `resources/*.mjs`
+   committed.
+4. **The doctor CLI.** Depends on steps 1-3 existing: it reads the
+   declaration (step 1) to know what to probe and how to describe it, and
+   calls the seam (steps 2-3) to get real answers. New host-bound `.mts`
+   entry point, new `HOST_BOUND_ARTIFACTS` member, new `bin` entry in
+   `src/mcp/vice/package.json`.
+5. **The README generator.** Depends on step 1 (the declaration) only,
+   structurally — but should land after step 4 so it can borrow the doctor's
+   own per-tool descriptions rather than inventing a third rendering of the
+   same data. Guarded semantically, per the milestone's own instruction
+   (`.planning/PROJECT.md:1965-1968`), not byte-for-byte.
 
-1. **User-requested exclusion becomes a recorded, visible state, never a
-   silent gap.** Add an explicit exclusion mechanism at the store layer — a
-   `anno_excluded_range` table (or a nullable "excluded + reason" column on
-   `anno_range`, whichever costs less against `SCHEMA_VERSION`'s existing
-   strict-refusal discipline; a new table is more consistent with this
-   project's history of adding tables rather than widening existing ones,
-   c.f. `anno_evid_exec` at `SCHEMA_VERSION` 4 rather than a column bolted onto
-   `anno_range`). `exportAsm()` still walks an excluded range's full byte
-   span and emits a block for it — filled with the real bytes (byte-identity
-   is not lost) but tagged with a visible marker comment naming the exclusion
-   and its reason, mirroring the existing `AUTO_NAME_MARKER`/
-   `ALIAS_MARKER_PREFIX` pattern (`:513`, `:525`) of "mark, never drop, never
-   silently resolve." `expectedBytes` — derived from the image, never from
-   `source` — is completely unaffected either way, which is exactly why this
-   module is the right place: the byte-diff oracle from Answer 4 cannot even
-   express "this range vanished" as anything other than a coverage gap, so a
-   silent drop would already be visible to the reassembly gate as a range no
-   longer covered — but the invariant is about **never reaching that state**,
-   not about detecting it after the fact.
-2. **A structural regression guard, not just a behavioural test.** Add a test
-   (in the style of this project's other structural guards —
-   `anno-seam.test.ts`, `module-classification.test.ts`) that scans
-   `anno-export-asm.ts`'s own source text and asserts there is no
-   provenance/confidence-keyed conditional between `listRanges()`'s result and
-   the emitted block array — i.e. `blocks.length` is asserted equal to
-   `ranges.length` unconditionally, by construction, so a future contributor
-   adding `.filter(r => r.provenance !== "cracker")` reds a named test rather
-   than shipping silently.
-3. **The planted-heuristic-survives control** the requirement asks for:
-   construct a store fixture where a plausible heuristic (e.g. "provenance
-   confidence below some threshold" or "range flagged `cracker-patch` by
-   `c64-provenance-diff`") would want to drop a range, run `exportAsm()`, and
-   assert the range's bytes are present in `expectedBytes`/the emitted source
-   regardless. This is the same idiom `anno-coverage.test.ts`'s planted-defect
-   controls already use for `COV-02`'s vacuous-pass detection — reuse the
-   pattern, don't invent a new one.
+**New components:** the declaration file, the `tool-location.mts` seam
+module, the doctor CLI entry (`.mts` + compiled `.mjs` + new `bin` entry), the
+README generator script, a `tools.json` schema/loader, a `tools.json` template
+writer ("the doctor writes a commented template on request",
+`.planning/PROJECT.md:1954-1955`).
 
-**New vs modified:** `anno-store.ts` — modified (new exclusion table,
-`SCHEMA_VERSION` bump if a new table is chosen). `anno-export-asm.ts` —
-modified (exclusion-aware block emission, still zero provenance-based
-filtering). `anno-tools.ts` — modified (a way to *set* an exclusion, e.g.
-`anno_exclude_range`/`anno_include_range`, symmetric with how every other
-mutating `anno_*` verb pairs a setter with a lister). New structural test
-file, new planted-fixture test in `anno-export-asm.test.ts`.
+**Modified components:** `build.ts` (`HOST_BOUND_ARTIFACTS` array, twice —
+once for the seam, once for the doctor entry), `host-tool.mts` (five
+resolution sites rerouted through the seam), `backend-detect.mts` and/or
+`broker-launch.mts` (per the §1 open design question), `src/mcp/vice/
+package.json` (`files[]` gains the declaration; `bin` gains the doctor
+entry), possibly `installer/package.json`'s `files[]` (open question, §3),
+`README.md` (becomes generated/verified rather than hand-kept, at least for
+the VICE table), `src/skills/acme-build/SKILL.md` (its prefix list becomes a
+candidate for sourcing from the same declaration rather than being a fourth
+hand-kept copy — not required by the milestone but worth flagging as the
+same fragmentation class).
 
-## New vs Modified Components — summary table
+## 5. What must NOT change
 
-| Component | New / Modified | What changes |
-|---|---|---|
-| `anno-export-asm.ts` | Modified | scope-partitioned multi-file emission, bare-filename `!source`, exclusion-aware block emission, no provenance filtering (guarded) |
-| `anno-cli.ts` | Modified | `export-asm` widened for multi-file output; new `hazards` verb (closed-set message at `:1644` must move) |
-| `anno-tools.ts` | Modified | new `anno_hazard_report` dispatch arm + definition; new exclusion setter/lister verbs |
-| `anno-hazards.ts` | **New** | pure four-class hazard scan; imports `scanIndirectDispatch()` from `anno-coverage.ts` for class 1, adds SMC/page-align/raster-timing detectors |
-| `anno-store.ts` | Modified | new exclusion table (or column), `SCHEMA_VERSION` bump |
-| `host-tool.mts` | Modified | `acme.build`'s `spawn()` gains `cwd: outDirPath` |
-| `acme-build` skill/`SKILL.md` | Modified (docs) | document the multi-file `!source` convention once the exporter emits it |
-| `compare.mjs` | Modified | caller-suppliable volatile mask, allowlist input, checkpoint-label metadata |
-| `c64-ram-capture/SKILL.md` | Modified (docs) | document cross-binary mode and per-binary checkpoint procedure |
-| reassembly+hazard gate script | **New** | test-only, imports `acme-verify.ts` + `anno-hazards.ts` directly, own phase |
-| `vice-proxy.ts` | Unaffected | `ANNO_TOOL_DEFINITIONS` loop already registers any new `anno_*` entry with no further change needed |
-| `.mcp.json`, `vice.ts`, `stock-*.ts`, broker control protocol | Unaffected | nothing here touches the emulator, the transport seam, or `forwardToVice()` |
+Every one of these is a named, tested invariant in the tree today — not
+general advice:
 
-## Data Flow — the export + assemble + verify path (new)
+- **The broker's synchronous `inFlight` launch guard
+  (`broker-launch.mts:80-94`, checked at `:574-579` and `:679-684`).**
+  `backend-detect.mts`'s own header states this explicitly:
+  *"Do not call resolvedBackend() from inside broker-launch.mts's `inFlight`
+  single-owner launch guard. This still performs filesystem I/O... anything
+  that can block inside that synchronous check-and-set window is the exact
+  failure class the 2026-08-01 triple-launch outage came from"*
+  (`backend-detect.mts:37-43`). **The new seam inherits this constraint
+  exactly** — it also performs filesystem I/O (`tools.json` read, plus
+  whatever probes it wraps), and must never be called from inside that
+  synchronous window either. If `broker-launch.mts` is one of the modules
+  rerouted through the seam (§1's open question), this is the single most
+  important thing to get right.
+- **`resources-sync.test.ts`'s byte-identical build comparison** — every new
+  `HOST_BOUND_ARTIFACTS` addition (the seam, the doctor entry) must be
+  produced by `node build.ts` and the resulting `resources/*.mjs` committed;
+  a hand-edited `resources/*.mjs` fails this test outright, by design
+  (`resources-sync.test.ts:1-8`).
+- **Memoisation semantics of `resolvedBackend()` and `findSiblingBinary()`**
+  — both are correct *because* they are per-process, including a memoised
+  `null`. The new seam must either delegate to these functions unchanged
+  (preferred) or, if it introduces its own memoisation layer, must not
+  contradict them (e.g. must not re-derive a `$PATH` walk that could answer
+  differently on a second call within the same broker process).
+- **The container-out seam for spawning.** `host-tool.mts` is "the ONE place
+  that turns an untrusted wire request into a real child process on the
+  HOST" (`host-tool.mts:3-11`) and does so only via `spawn` (async, never
+  `spawnSync`, never a shell string — `host-tool.mts:22-25`). Nothing about
+  location resolution should introduce a *second* spawn site. The seam
+  resolves paths; it must never itself launch a probe subprocess outside the
+  existing `spawnAndRecordInstance`/`runHostTool` spawn points — a
+  version-probe subprocess (explicitly withdrawn already, per
+  `host-tool.mts:2256-2257`: *"No version probe: deliberately withdrawn by
+  the project owner — this stays a name-and-location probe only and must not
+  gain one back"*) would violate both this rule and a standing owner
+  decision in one move.
+- **`findDxaBinary()`'s immunity to override** (`host-tool.mts:126-131`,
+  §1 above) — do not let the new `env → file → probe` precedence chain apply
+  to a project-vendored, project-built binary.
+- **The never-auto-install rule and its three carve-outs**
+  (`CLAUDE.md`'s "Dependency" bullet; restated as unchanged by the milestone,
+  `.planning/PROJECT.md:1901-1906`). The doctor detects and reports; it must
+  never invoke a package manager, never fetch-and-build, and never `npx -y` a
+  third-party package on a user's behalf. This is explicitly *not*
+  re-litigated by this milestone.
+- **The seven-synchronized-edit-sites discipline for `HostToolId`**
+  (`host-tool.mts:140-166`, enforced by `host-tool.test.ts`'s "both-directions
+  census"). The doctor probing ACME/Ghidra/c1541/petcat/dxa/x64sc does **not**
+  require adding any of them as a new `HostToolId` — they already have
+  dedicated probe functions outside that allowlist (`findAcmeLib`,
+  `findDxaBinary`, `findSiblingBinary`, `resolvedBackend`). Do not conflate
+  "the doctor needs to check this tool" with "this tool needs a new
+  `host_tool` wire operation" — the milestone is explicit that this is a
+  reporting/location surface over existing probes, not a new capability
+  (`.planning/PROJECT.md:1976-1980`).
 
-```
-.annostore (SQLite, container-side)
-   |  listRanges / listLabels / listComments / listProjectEnums / listEnumUsage
-   v
-anno-export-asm.ts: exportAsm() / exportAsmProject()   [container-side, pure-ish: reads store + image, writes nothing itself in library form]
-   |  groups ranges by scope, emits one .a file per scope + one root .a with
-   |  !source "scope_x.a" (BARE filenames) + expectedBytes derived from IMAGE
-   v
-anno-cli.ts: export-asm verb   [container-side, writes files to a workspace dir]
-   |  writes root.a + scope_*.a flat into one output directory (container path)
-   v
-host-tool-client.ts -> broker control socket -> host-tool.mts: acme.build   [crosses container/host boundary]
-   |  resolveWorkspacePath() translates the container output dir to a host path
-   |  spawn(acme, argv, { cwd: outDirPath })   <-- NEW: cwd fix from Answer 2
-   v
-real ACME (host)   -- resolves every bare !source "scope_x.a" against cwd == outDirPath
-   |  writes .prg / .sym / .vs / .rep back into outDirPath
-   v
-reassembly gate script (test-only, own phase)
-   |  byte-diffs assembled output against exportAsm()'s expectedBytes (acme-verify.ts's oracle, reused)
-   |  calls anno-hazards.ts's report, requires clean or acknowledged
-   v
-go / no-go, decided by rules committed before this script's first real run
-```
+## Open Questions (not determined from the tree — do not guess these away)
 
-## Data Flow — the hazard report path (new)
-
-```
-.annostore                      byte-derived block table (block-class.ts)
-   |  listRanges / cross-refs        |  blocksFromStore()
-   v                                 v
-anno_hazard_report dispatch arm (anno-tools.ts)  <-- fetches BOTH sides, exactly like dispatchEvidDisagreements()
-   |
-   v
-anno-hazards.ts (pure, new)
-   |-- class 1: scanIndirectDispatch() [REUSED from anno-coverage.ts, not re-derived]
-   |-- class 2: new SMC-write scan over decode() output vs code-typed ranges
-   |-- class 3: new page-alignment candidate scan (enumeration only)
-   |-- class 4: new raster/IRQ reachability scan, corroborated (never suppressed) by anno_evid_exec
-   v
-{ indexedJumpTables, selfModifyingCode, pageAlignment, rasterTiming }, max_results-bounded
-```
-
-## Anti-Patterns to avoid in this milestone specifically
-
-### Building a second export route through `acme-build`
-
-**What would happen:** a new skill script inside `acme-build` reads
-`.annostore` directly (or shells out to `vice-mcp anno export-asm` and then
-does its own scope-splitting) to produce the multi-file tree.
-**Why it's wrong:** duplicates store-reading/derivation logic outside the
-`anno_*` family's confinement, and reintroduces the "prefix-driven / re-derived
-seam" failure mode this project has direct incident history with
-(`shipped-modules.ts`'s four hand-copied `shippedTsModules()` implementations,
-cited in `.planning/codebase/ARCHITECTURE.md`).
-**Do this instead:** extend `anno-export-asm.ts`, keep `acme-build` as the
-assembly-only consumer it already is.
-
-### Re-deriving the indexed-jump-table detector
-
-**What would happen:** `anno-hazards.ts` reimplements its own indexed-load
-pairing scan for BUILD-04's class 1 instead of importing
-`scanIndirectDispatch()`.
-**Why it's wrong:** `anno-coverage.ts`'s detector already survived a real
-false-positive incident (CR-04, documented at length in its own header) and
-carries a mechanically-enforced closed shape list (`DISPATCH_CONTEXT_SHAPES`)
-with negative controls proven to reach the predicate's interior. A second
-implementation starts over from zero evidence and can silently reintroduce
-exactly the false-positive class CR-04 fixed.
-**Do this instead:** import the function and its types; treat
-`splitTableCandidates` as the hazard report's "unproven, flagged" bucket
-verbatim.
-
-### Letting the exporter learn about provenance verdicts directly
-
-**What would happen:** `BUILD-05`'s "carry the provenance verdict to point of
-use" gets implemented by having `exportAsm()` read a confidence/provenance
-column and skip or annotate ranges based on a threshold it decides.
-**Why it's wrong:** this is precisely the tool-is-the-decider failure mode the
-2026-09-10 scoping decision renamed `BUILD-05` to avoid, and it is exactly
-what `BUILD-07`'s lossless invariant (Answer 6) exists to make structurally
-unreachable.
-**Do this instead:** the verdict is carried as **visible text** (a comment,
-sourced from `c64-provenance-diff`'s existing ledger) attached to every
-emitted block regardless of its value; inclusion/exclusion is a separate,
-explicit, user-invoked action (the exclusion table from Answer 6), never a
-threshold inside the exporter.
-
-### Embedding a host path in generated ACME source
-
-**What would happen:** to work around the `!source` cwd issue (Answer 2), the
-exporter (container-side) is handed the host output directory and writes
-absolute host paths into `!source` lines.
-**Why it's wrong:** violates `anno-export-asm.ts`'s own documented rule
-against importing `hostpath.ts`/`containerpath.ts`, and hardcodes a
-machine-specific path into a *store-derived artifact* that is supposed to be
-portable and re-exportable on any machine holding the same `.annostore`.
-**Do this instead:** bare filenames, one flat output directory, `cwd` fix in
-`host-tool.mts` (Answer 2's actual recommendation).
-
-### Adding a `data` class to `RuntimeExecClass` for hazard corroboration
-
-**What would happen:** the class-4 (raster-timing) hazard detector, wanting to
-say "this region is *not* raster code," reads `anno_evid_exec`'s absence of
-observations as evidence and reports it as safe/data-like.
-**Why it's wrong:** `RuntimeExecClass` is deliberately `"code" | "unobserved"`
-with no `data` member (EVID-01..06's structural soundness asymmetry).
-Never-observed proves nothing; treating it as evidence of safety would launder
-an absence into a false negative on exactly the class of hazard this milestone
-exists to surface honestly.
-**Do this instead:** use `anno_evid_exec` only to *strengthen* a flag already
-raised by static evidence (IRQ-reachable + writes `$D012`/`$D011`), never to
-suppress one.
-
-## Suggested Build Order
-
-Dependencies, not calendar time — each item lists what it structurally needs
-from the item(s) before it.
-
-1. **Decomposition to closure (`DECOMP-01..04`)** — depends on nothing new
-   architecturally; consumes the existing `anno_evid_exec` join
-   (`reconcileObservedExecution()`) that v0.9.0 already shipped, plus existing
-   `anno_*` label/comment/enum tools. No new module required.
-2. **The purpose-built synthetic subject** — should land early, in parallel
-   with (1) or immediately after, because `BUILD-04`'s hazard detector and
-   `EQUIV-03`'s modifiability proof are stated to be *vacuous* without it.
-   Every later item's tests depend on this fixture existing and containing
-   all four hazard classes deliberately.
-3. **Lossless-export invariant machinery (Answer 6)** — build the exclusion
-   table/column and the structural no-filter guard **before** widening the
-   exporter for multi-file output, so the multi-file work is written against
-   an already-enforced invariant rather than retrofitted onto it.
-4. **Multi-file export + `!source` wiring (Answers 1 & 2)** — depends on (3)
-   for the exclusion-aware block emission, and depends on the synthetic
-   fixture (2) to exercise every hazard-adjacent shape (SMC operand labels,
-   split tables) through the new multi-file path at least once.
-   `host-tool.mts`'s `cwd` fix can be built independently and lands here.
-5. **Hazard report (Answer 3)** — depends on `scanIndirectDispatch()` already
-   existing (it does) and on the synthetic fixture (2) to give the three new
-   detectors something real to fire on. Independent of (3)/(4) in principle,
-   but sequencing it after the fixture exists (2) is what makes its own tests
-   non-vacuous, mirroring this project's own stated concern about `COV-02`-style
-   vacuous passes.
-6. **`compare.mjs` cross-binary mode (Answer 5)** — independent of 1-5;
-   can be built in parallel at any point, since it touches no `src/mcp/vice/`
-   code at all. Should land before (7) since equivalence demonstration needs
-   it.
-7. **Reassembly-plus-hazard gate, as its own phase (Answer 4)** — depends on
-   (4) (multi-file export must exist to reassemble) and (5) (hazard report
-   must exist to gate on). Must be built and **run for real, green or
-   explicitly acknowledged**, before the Equivalence phase begins — this is
-   the literal ordering `BUILD-06`/`BUILD-07` requires, and this project's own
-   Phase 9 / Phase 12 precedent for what "before" means structurally.
-8. **Equivalence and modifiability (`EQUIV-01..04`)** — depends on (6) and
-   (7) both being in place; this is the phase the gate in (7) exists to gate.
-
-## Sources
-
-- `src/mcp/vice/anno-export-asm.ts` (read in full, 1310 lines)
-- `src/mcp/vice/anno-cli.ts` (grepped for `export-asm`, verb dispatch,
-  closed-set message at `:1644`)
-- `src/mcp/vice/anno-tools.ts` (`dispatchEvidDisagreements()` read at
-  `:2388-2430`; registration loop referenced from `vice-proxy.ts`)
-- `src/mcp/vice/vice-proxy.ts` (`ANNO_TOOL_DEFINITIONS` registration at
-  `:3438-3439`, `buildViceTool()` at `:3300`)
-- `src/mcp/vice/host-tool.mts` (read `:1-130`, `:1180-1330`, `:2340-2500`;
-  grepped for `acme`, `cwd`, `spawn(`)
-- `src/mcp/vice/acme-gate.ts`, `src/mcp/vice/acme-verify.ts` (headers read in
-  full)
-- `src/mcp/vice/anno-coverage.ts` (`:600-880`, `scanIndirectDispatch()` and
-  `DISPATCH_CONTEXT_SHAPES`/`DISPATCH_GATE_ROUTES`)
-- `src/mcp/vice/evid-reconcile.ts`, `src/mcp/vice/anno-store.ts` (schema
-  section `:250-350`, `:3453-3710` for `anno_evid_exec`)
-- `src/skills/acme-build/SKILL.md` (read `:1-60`)
-- `src/skills/c64-ram-capture/scripts/compare.mjs` (read in full)
-- `.planning/PROJECT.md` (`## Constraints` `:623-654`, `## Key Decisions`
-  `:680-742`, `## Current Milestone: v1.0.0` `:1583-1732`)
-- `.planning/milestones/v0.5.0-REQUIREMENTS.md` (base `DECOMP-*`/`BUILD-*`/
-  `EQUIV-*` text, read in full)
-- `.planning/codebase/ARCHITECTURE.md` (component responsibilities, anti-
-  patterns, architectural constraints — read in full)
-- ACME file-inclusion semantics (`!source "name"` = current-directory-relative,
-  `<name>` = `-I` library search path) — web search against ACME's own
-  `AllPOs.txt`/quick-reference documentation, cross-checked against this
-  project's own `-I`/`includes` implementation in `host-tool.mts`.
-
----
-*Architecture research for: c64-re-tools v1.0.0 rebuild-half integration*
-*Researched: 2026-09-10*
+- Whether `resolvedBackend()` itself should gain the `tools.json` precedence
+  step internally (keeping it the sole `x64sc` authority) versus the new
+  seam wrapping it externally (§1). Both avoid a cycle; this is a design
+  call for the phase, not a fact this research found in the code.
+- Whether the installer package needs to consume the declaration at all in
+  this milestone, or whether that is out of scope under "no install path is
+  added, removed or collapsed" (§3). The milestone's text is ambiguous
+  between "the installer prints prerequisite info" (arguably in scope, not
+  an install-path change) and "nothing about the installer changes" (also a
+  defensible reading).
+- The exact filename/location for the declaration and for `tool-location.mts`
+  are proposals in this document, not settled names — nothing in the tree
+  today names them, so the phase is free to choose, but should pick names
+  consistent with the existing `*-detect.mts` / `*-tool.mts` naming pattern.
+- Whether `vice.json`/`tools.json`'s template-writing behavior ("the doctor
+  writes a commented template on request", `.planning/PROJECT.md:1954-1955`)
+  needs its own schema-validation pass, or whether `resolveToolLocation()`'s
+  own defensive `isPlainObject()`-style narrowing (matching
+  `backend-detect.mts:129-131`'s existing idiom) is sufficient. Not resolved
+  by this research — a schema-validation library would be a new dependency,
+  which this codebase visibly avoids elsewhere (no `.eslintrc`, no
+  `biome.json`, hand-rolled narrowing throughout `host-tool.mts`).

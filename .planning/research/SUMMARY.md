@@ -1,207 +1,180 @@
-# Research Summary: v1.0.0 "The Rebuild Half"
+# Project Research Summary: c64-re-tools v1.1.0 "The Prerequisite Doctor"
 
 **Project:** c64-re-tools  
-**Domain:** Static 6502/C64 reverse-engineering rebuild pipeline (annotated binary → multi-file ACME source → reassembled program → behavioral equivalence verification)  
-**Researched:** 2026-09-10  
-**Confidence:** HIGH (all claims grounded in source code inspection, external documentation, or measured absence; design recommendations are evidence-based, not theoretical)
-
----
+**Domain:** CLI prerequisite doctor + tool-location config for an existing Node/TypeScript MCP plugin  
+**Researched:** 2026-09-16  
+**Confidence:** HIGH — every finding is verified against official sources, the project's own tree (read directly), or measured empirically in this session
 
 ## Executive Summary
 
-The rebuild half of c64-re-tools v1.0.0 is achievable with **zero new npm runtime dependencies and zero new host prerequisites**, layering four genuinely novel capabilities (multi-file ACME generation, swappable data tables, movement-hazard detection, behavioral-equivalence comparison) onto existing infrastructure this project already owns: the annotation store, real-ACME byte-diff oracle, dxa/Ghidra decoding, and v0.9.0's runtime execution-evidence layer.
+The prerequisite doctor is a low-floor diagnostic CLI that reports on the availability and location of six external tools (VICE, ACME, c1541, petcat, Ghidra, dxa) and which skills/MCP capabilities each tool unblocks. It must run on a Node too old to parse the main server's TypeScript source (a hard constraint), so it cannot be a subcommand of the existing entry point — it must be its own low-floor, compiled-to-plain-JS artifact.
 
-The stack recommendation is ACME 0.97 "Zem" (unchanged from existing `acme-build`), Node ≥24 (unchanged), and extension of existing modules rather than new dependencies. The architecture is settled: export lives in the `anno_*` family, hazard detection is a computed query (never a store table), and both routes reuse proven infrastructure.
+**Recommended approach:** Author the doctor as a host-bound `.mts` file (mirroring `vice-broker.mts` / `host-tool.mts`), add it to the existing `build.ts` compile pipeline to emit a plain `.mjs` artifact, and wire a new `bin` entry in `package.json` to that `.mjs`. This reuses the project's existing "generated-but-committed" pattern rather than introducing new machinery. The doctor calls the *same* resolution functions (`resolvedBackend()`, `findSiblingBinary()`, etc.) the real dispatch path calls, compiled to `.mjs` alongside it, so disagreement between doctor and dispatch is structurally impossible — they use identical probes.
 
-**One genuine disagreement emerges from research that must NOT be resolved by the roadmapper:** FEATURES.md recommends building the synthetic fixture early, *before* the hazard-detection phase, so both hazard detection and modifiability proof can be developed against a real subject from day one. PITFALLS.md instead recommends sequencing the fixture *with* BUILD-04's hazard-detector phase, because a fixture built ahead of the detector risks being written to match the detector's own assumptions rather than to test them independently (this project measured exactly this failure mode once already, on the coverage instrument: four verification rounds, each finding new gameability). Both positions are reasoning from real incident history and deserve equal weight in the roadmap's sequencing decision. **Present both to the roadmapper and let the owner decide.**
-
-The milestone's governing constraint ("the tool reports, the end-user decides what gets reverse-engineered") means no phase may silently drop, filter, or exclude any byte from a binary. Every feature must surface data for human decision, never decide for the user. Phases BUILD-05 and BUILD-07 encode this explicitly and must not be circumvented.
-
----
+**Key risks and mitigations:**
+- **Risk:** Doctor reports a resolution that diverges from what the code actually uses at runtime → **Mitigation:** One resolver function called by both doctor and dispatch path; same-process differential test per tool
+- **Risk:** Doctor cannot run on an old Node → **Mitigation:** Plain `.mjs` entry, Node-version check as first statement, CI matrix cell exercising actual old-Node floor
+- **Risk:** Tool-location config (`tools.json`) paths behave unexpectedly → **Mitigation:** Centralized resolver handling `~` expansion, relative-path base (repo root), executable checks, identity-staleness via existing `mtimeMs`/`sizeBytes` pattern
+- **Risk:** Generated README section drifts from declaration → **Mitigation:** Semantic diff guard (parsed records, not bytes); planted-violation test per `ENGINEERING_RULES.md` §6
 
 ## Key Findings
 
 ### Recommended Stack
 
-**Zero new dependencies.** Every capability needed for the rebuild half is reachable by extending code this project already owns:
+**Zero new npm packages.** The doctor reuses Node built-ins, the project's existing compiled-artifact pattern, and no external libraries.
 
-- **ACME 0.97 "Zem"** — assembler, unchanged from existing `acme-build` skill. Multi-file generation via the `!source "name.a"` directive (cwd-relative, not library-search) and `!binary` for extracted data tables are core ACME semantics, documented and proven against this project's existing byte-diff oracle (`acme-verify.ts`).
-- **Node ≥24 (MCP server) / ≥18 (installer)** — unchanged. No v1.0.0 feature requires a newer Node API; the work is pure string/array/binary manipulation over existing `node:fs` and `Uint8Array`.
-- **Existing .annostore** — already has schema members: `anno_scope` for scope boundaries, `external_file` type for extracted tables (currently unused), four split-address types for lo/hi table pairs, `anno_evid_exec` for runtime-evidence-informed hazard detection.
-- **`anno-export-asm.ts`** — the one place annotation-store rows + image bytes become ACME source text; extend for multi-file + lossless invariant, never duplicate.
-- **`acme-verify.ts` byte-diff oracle** — real-ACME verification with three-outcome design (ok/failed/skipped), already proven against false-pass hazards. Reuse, never re-mint.
-- **`anno-coverage.ts`'s `scanIndirectDispatch()`** — proven detector for RTS-trick idiom (Class 1 hazard), including `splitTableCandidates` advisory bucket explicitly designed for hazard reporting.
-- **`capture-pair.mjs` + `compare.mjs`** — frame-exact capture and classified comparison, already shipped in v0.9.0. Run in original-versus-rebuilt mode (never exercised before) to demonstrate behavioral equivalence.
-- **`vice_cpu_history` (`chis`)** — per-entry cycle counts from real stock VICE, shipped and parseable in v0.9.0. Use for cycle-exact-raster hazard corroboration (flagging, not proving).
+**Core technologies:**
+- **Node process.versions.node string check** (builtin, no library) — Gate the entry point version inline before any TypeScript is touched
+- **Plain JSON** (no YAML/TOML parser) — Prerequisite declaration and `tools.json` (user-facing location override file) remain machine-parseable with `JSON.parse`, requiring no new runtime dependency
+- **`build.ts` existing pipeline** — Doctor authored as `.mts`, added to `HOST_BOUND_ARTIFACTS`, compiled to committed `resources/*.mjs` exactly like `broker-launch.mts` and `host-tool.mts`
+- **Existing probes** (`resolvedBackend()`, `findSiblingBinary()`, `findDxaBinary()`, `findAcmeLib()`, Ghidra `analyzeHeadless` search) — Doctor calls these functions compiled to `.mjs`, not reimplemented; single seam, no disagreement risk
+- **Hand-rolled version comparator** (numeric-tuple split/compare, ~15 lines) — Per-tool version detection via `--version`/`--help` probe, reusing the pattern `acme-gate.ts` already demonstrates; unit test guards against the exact `"3.9"` vs `"3.10"` lexicographic-compare bug CLAUDE.md already documents
 
-**Critical real-world blocker found in existing code:** `host-tool.mts`'s `acme.build` spawn sets no `cwd` — ACME resolves every bare `!source "name.a"` relative to the broker process's inherited working directory. This is harmless today (exporter never emits `!source`); it becomes load-bearing for v1.0.0. **Must add `cwd: outDirPath` to the spawn call.** Without this, multi-file exports silently resolve to stale or missing files from an unpredictable directory.
+**Owner decision override applied:** No VICE version-floor reporting in the doctor. The `CPUHISTORY_GET` binary-monitor opcode floor (≥3.10) is irrelevant here because shipped tools use the text-channel `chis` command instead, which has no version gate. **Report VICE presence and resolved path only.** Node ≥24 is reported as a genuine version gate (required for the MCP server itself) and must be checked/documented. **dxa is deliberately excluded from the tool-location-config override layer** because it is project-vendored and project-built; an env var or file entry could only select a binary the project did not pin.
 
 ### Expected Features
 
-All 15 requirements committed to PROJECT.md: `DECOMP-01`..`04`, `BUILD-01`..`07`, `EQUIV-01`..`04`.
+**Must have for v1.1.0 launch:**
+- Single CLI entry point executable on pre-v24 Node (hard constraint: doctor must run before the server can)
+- Per-tool status: OK / present-but-below-version-floor / absent-optional / absent-blocking (3–4 states, not 2)
+- Capability-mapped grouping (per skill/MCP capability, not per-binary flat list) — Flutter's `[✓]` Android-toolchain pattern applies to "which skills does each tool unblock"
+- Per-row resolved source tracking (env-var name / `tools.json` / `$PATH` position / sibling-probe) — matches `git config --show-origin` precedent, answers "why did I get this answer"
+- `.c64-re-tools/tools.json` location file consulted in precedence order: `env var → file → $PATH/sibling probe → refuse by name`
+- Exit code provably tracks worst row (0 = all green, distinct code 1 = any yellow, distinct code 2 = any red), tested against real verdicts
+- Per-platform remedy text for every absent/below-floor row (already exists scattered in README + SKILL.md + refusal messages; consolidate via declaration)
+- **Zero package-manager or acquisition-tool invocation** — report only, never execute a fix
 
-**Table stakes (decomposition to closure):**
-- `DECOMP-01`: Zero `Undefined`-typed bytes — measure and drive to zero with structured classification.
-- `DECOMP-02`: Semantic naming of entry points — `routine-queue-walker` skill already exists for this workflow.
-- `DECOMP-03`: Every non-hardware address named and documented — cross-reference union (`STORE-06`) already exists.
-- `DECOMP-04`: Hardware register enums — by-hand route (`anno_create_project_enum`) is the only documented path.
-
-**Table stakes (rebuildable export):**
-- `BUILD-01`: One ACME file per scope, `!source`-wired, assembling to one `.prg`.
-- `BUILD-02`: Data tables in separate, swappable `.bin` files — `external_file` type exists unused.
-- `BUILD-03`: Universal symbolization — every branch/JSR/JMP/data reference through named symbol, not raw hex.
-- `BUILD-06`/`BUILD-07`: Reassembly gate + lossless export — byte-diff oracle reused, movement-mode always exercised.
-
-**Table stakes (hazard detection):**
-- `BUILD-04`: Hazard report across four classes (RTS-trick, self-modifying code, page-alignment, cycle-exact raster) — **no prior art exists as reusable tools**. Must build four detectors from existing data, plus three-valued output (`ok` / `flagged-hazard` / `unclassified`), never boolean.
-
-**Table stakes (provenance + behavioral equivalence):**
-- `BUILD-05`: Provenance verdict carried to point of use as visible metadata/comments, not tool-decided.
-- `EQUIV-01`: `compare.mjs` in original-versus-rebuilt mode with narrowed volatile mask.
-- `EQUIV-02`: Behavioral equivalence demonstrated with committed VICE transcript.
-- `EQUIV-03`: Modifiability proof through code the hazard report or movement work actually touched.
-- `EQUIV-04`: Pipeline runnable in CI with committed synthetic fixture.
-
-**Differentiator:** `DECOMP-01`'s completeness gate must query `anno_evid_disagreements` as required, not optional.
+**Defer to v1.1.x or later:**
+- `--json` / machine-readable output (ship once a real CI/scripting consumer exists)
+- `-v`/verbose mode with per-row extra detail (genuine nice-to-have, not launch-blocking)
+- README table generation from declaration (ship after semantic-guard is live and proven stable)
+- Multiple layered `tools.json` files (explicitly out of scope per PROJECT.md)
 
 ### Architecture Approach
 
-Export path lives entirely in the `anno_*` MCP tool family, extending `anno-export-asm.ts` in place. Hazard report is a computed, read-only query (new pure module `anno-hazards.ts`) that never opens or modifies the store. Class 1 (RTS-trick) reuses `scanIndirectDispatch()` from `anno-coverage.ts`; Classes 2-4 (SMC, page-alignment, raster-timing) are new.
+The new tool-location resolver lives as a sibling to `backend-detect.mts` (a new file, e.g. `tool-location.mts`), added to `build.ts`'s `HOST_BOUND_ARTIFACTS` array, and exports a single function: `resolveToolLocation(toolId, { env?, toolsJsonPath?, ... }): { path: string | null; source: "env" | "file" | "path" | "sibling" | "vendored" | "not-found"; tried: string[] }`. It must NOT import `repo-root.ts` as a static import (module-cycle risk in a host-bound `.mts`); instead, callers pass the resolved `toolsDir` as an explicit string parameter, exactly as `backend-detect.mts` already does for `supervisorDir`.
 
-**Critical architectural hazard:** ACME's `!source "name.a"` resolves relative to the broker's working directory. Set `cwd: outDirPath` in `acme.build` spawn (Answer 2, ARCHITECTURE.md).
+**Doctor placement:** A separate host-bound `.mts` entry point (e.g. `doctor-cli.mts`), also added to `HOST_BOUND_ARTIFACTS`, compiled to `.mjs`, and wired as a second `bin` entry in `package.json` pointing at `resources/doctor-cli.mjs`. This is structurally identical to how `vice-broker.mts` is authored, compiled, and deployed as `resources/vice-broker.mjs`.
 
-File ordering must be deterministic (address-based), with drift guard asserting byte-identical output on re-export.
+**Prerequisite declaration:** Plain JSON file (e.g. `tools.declaration.json`, committed alongside source) containing per-tool records: tool ID, version floor, which skill(s)/capability each tool unblocks, per-platform remedy text.
 
 ### Critical Pitfalls
 
-Research identified 21 pitfalls; most severe:
+1. **The doctor that lies — two probes, two verdicts** 
+   - **How to avoid:** One resolver function called by both; same-process differential test per tool; test catches any future drift when someone edits one without the other
 
-1. **Reassembly gate on wrong signals** (Pitfalls 1-4) — Never trust exit status or fixed output path. Reuse `acme-verify.ts`'s three-outcome design, always test movement.
+2. **The doctor that cannot run — Node-floor self-reference** 
+   - **How to avoid:** Plain `.mjs` entry point with Node-version check as first statement; static import-graph guard excluding `@mastra/*`/`vice-proxy.ts`; CI matrix cell exercising actual old-Node floor
 
-2. **Hazard detector validated only against itself** (Pitfalls 7, 15, 16) — Cross-check against independently-sourced fixtures (`tracer.prg`, `bank.prg`, `smc.prg`), deliberately include non-canonical variants.
+3. **Tool-location config pitfalls — `tools.json` path handling** 
+   - **How to avoid:** Centralized resolver handling `~` expansion, relative paths (resolved from repo root), executable-bit checks, identity caching via `mtimeMs`/`sizeBytes`; never interpolate a path into a shell string
 
-3. **Behavioral equivalence never observed failing** (Pitfall 17) — Require paired red transcript showing comparison catches deliberately-broken rebuild.
+4. **Layered-precedence pitfalls — env → file → $PATH → refuse** 
+   - **How to avoid:** One resolver function both doctor and dispatch call; resolved answer carries `source` field; precedence conformance test matrix asserts identical order
 
-4. **Modifiability through untouched code** (Pitfall 18) — Behavior must be routed through code hazard report flagged or movement work moved.
-
-5. **Runtime evidence layer left on the shelf** (Pitfall 6) — Make `anno_evid_disagreements` query required, not optional.
-
----
+5. **Generated-documentation drift without proper guard** 
+   - **How to avoid:** Semantic-structure diff guard (parse to objects, compare equality not bytes); guard runs in CI; planted-violation tests confirm it fails when facts diverge
 
 ## Implications for Roadmap
 
-### Phase 1: Decomposition to Closure (`DECOMP-01`..`04`)
+Research identifies a natural **five-phase build order based on structural dependencies:**
 
-**Rationale:** Must happen first — every later phase assumes classified and named subject.  
-**Delivers:** Synthetic fixture with zero `Undefined` bytes, semantic names, hardware enums.  
-**Critical:** Integrate `anno_evid_disagreements` as part of completeness gate; capture/execute fixture before or with this phase for runtime evidence.
+### Phase 1: Prerequisite Declaration (Data Only)
+**Rationale:** Every other phase depends on knowing what to probe and what it unblocks. This locks the vocabulary down.
 
-### Phase 2: (CONTESTED — Two Valid Strategies)
-
-**Strategy A (FEATURES.md): Early Synthetic Fixture Enabler**  
-Build fixture before hazard detection so both develop against real subject independently.  
-**Rationale:** Avoids late surprises where detector validated only against itself.
-
-**Strategy B (PITFALLS.md): Fixture Paired With Hazard Detection**  
-Build fixture and detector together, cross-check against independently-sourced fixtures.  
-**Rationale:** Catches "detector and fixture designed together" failure mode early.
-
-**→ Roadmapper decision required:** Choose A (early), B (paired), or hybrid. Both grounded in incident history.
-
-### Phase 3: Lossless-Export Invariant & Structural Guards
-
-**Rationale:** Build exclusion mechanism and guards before extending exporter for multi-file.  
-**Delivers:** `anno_excluded_range` table, structural test asserting no filter, drift guard for determinism.  
-**Implements:** `BUILD-07` lossless invariant, `BUILD-05` provenance-carry (read-only).
-
-### Phase 4: Multi-File Export + ACME Integration (`BUILD-01`, `BUILD-02`, `BUILD-03`)
-
-**Rationale:** Lossless invariant established; extend exporter for scope-partitioned output.  
-**Delivers:** Scope-splitting, `!source` wiring, universal symbolization, `cwd` fix.  
-**Critical:** Add `cwd: outDirPath` to `host-tool.mts` `acme.build` spawn.
-
-### Phase 5 (if Strategy A) or Phase 5A (if Strategy B): Hazard Detection (`BUILD-04`)
-
-**Rationale (A):** Fixture and structure in place; build detectors. (B) Paired with fixture validation.  
-**Delivers:** `anno-hazards.ts` module, four-class detection, three-valued output, cross-check against `tracer.prg`/`bank.prg`/`smc.prg`.  
-**Class 1:** Reuse `scanIndirectDispatch()`. **Classes 2-4:** New detectors (SMC, page-alignment, raster-timing).
-
-### Phase 6: Reassembly Gate (`BUILD-06`)
-
-**Rationale:** Multi-file export and hazard detection exist; gate them together as standalone phase.  
-**Delivers:** Gate script, byte-diff against `expectedBytes`, hazard report required clean/acknowledged, movement always exercised.  
-**Implements:** Reuse `acme-verify.ts` oracle (never re-mint).
-
-### Phase 7: Behavioral Equivalence & Modifiability (`EQUIV-01`..`04`)
-
-**Rationale:** Depends on reassembly gate green and structured.  
-**Delivers:** Narrowed volatile mask, per-binary checkpoints, `compare.mjs` cross-binary mode, red/green paired transcripts, modifiability through hazard-adjacent code.
+**Delivers:** Plain JSON file with per-tool vocabulary, version floors, capability mappings, and per-platform remedy text (consolidated from README, SKILL.md, refusal strings)
 
 ---
 
-## Research Flags
+### Phase 2: Tool-Location Resolver Seam (`tool-location.mts`)
+**Rationale:** Pure resolver that owns the `env → file → path/sibling → vendored → refuse` precedence order, callable by both doctor and dispatch.
 
-**Phases needing research during planning:**
-- **Phase 5 (Hazard Detection):** No library equivalents; each detector built from first principles. **Research spike:** variant taxonomy per class before implementation.
-- **Phase 2 (contested):** Fixture sequencing disagreement. **Planning task:** resolve owner's preference (Strategy A vs. B).
+**Delivers:** New module `src/mcp/vice/tool-location.mts` exporting `resolveToolLocation()`; added to `build.ts`'s `HOST_BOUND_ARTIFACTS`
 
-**Phases with standard patterns (skip research-phase):**
-- **Phase 1 (Decomposition):** Proven workflows, standard annotation discipline.
-- **Phase 4 (Export):** Documented ACME directives, one-line `cwd` fix, standard work.
-- **Phase 6 (Gate):** Established patterns, standard gate design.
-- **Phase 7 (Equivalence):** Existing tools, mechanical mode-of-use change, standard testing.
+**Research flag:** Whether `resolvedBackend()` gains `toolsJsonPath` parameter internally, or the new seam wraps it externally (both avoid cycles; affects phase 3 scope)
 
 ---
+
+### Phase 3: Wire Resolver Into Existing Consumers
+**Rationale:** Refactor five existing resolution callsites to use the seam; first time `resources/*.mjs` is regenerated.
+
+**Delivers:** Refactored callsites in `backend-detect.mts` and `host-tool.mts`; updated and committed `resources/*.mjs` artifacts
+
+**Critical:** Do not call resolver from inside `broker-launch.mts`'s synchronous `inFlight` launch guard
+
+---
+
+### Phase 4: Doctor CLI Entry Point
+**Rationale:** Depends on phases 1–3; structurally parallel to `vice-broker.mts` — author as `.mts`, compile to `.mjs`, wire as second `bin` entry.
+
+**Delivers:** New module `src/mcp/vice/doctor-cli.mts`; exit codes 0/1/2 tracking status; per-tool status and capability mapping; Node-version check as first statement
+
+**Verification:** CI matrix cell running doctor under actual pre-v24 Node; same-process differential test per tool
+
+---
+
+### Phase 5: README Generator + Semantic Guard
+**Rationale:** Consolidate install tables from declaration; ideally ship after phase 4 so both doctor and README tell consistent stories.
+
+**Delivers:** Generator script, semantic-diff guard, bracketed section in README.md
+
+**Verification:** Guard runs in CI; planted-violation tests confirm it fails when declaration and README diverge
+
+---
+
+### Phase Ordering Rationale
+
+- Phases 1–2 are pure data/logic with zero behavioral change
+- Phase 3 wires the seam into today's code paths (first real-world test)
+- Phase 4 adds the user-facing diagnostic (heaviest on testing)
+- Phase 5 completes the documentation feedback loop (can defer slightly if needed)
+
+### Research Flags
+
+**Phases needing deeper investigation during planning:**
+- **Phase 2:** Open design question on resolver placement — affects phase 3 refactoring scope
+- **Phase 4:** VICE version-reporting semantics novel; review against any live VICE-capability testing
+
+**Phases with standard patterns:**
+- **Phase 1:** Pure data authoring; no new patterns to research
+- **Phase 3:** Mirrors existing patterns already established
+- **Phase 5:** Extends existing non-vacuous-verification principle
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | Source inspection: `anno-export-asm.ts`, `host-tool.mts`, `acme-verify.ts`. Directives verified against ACME's `docs/QuickRef.txt`, `docs/AllPOs.txt`. |
-| Features | HIGH | 15 requirements in PROJECT.md; complexity grounded in actual source (e.g., `external_file` type unused, confirmed zero consumers). |
-| Architecture | HIGH | Module responsibilities read directly from source. Recommendations extend existing patterns. |
-| Pitfalls | HIGH | Measured failures in project history (da65 wrong binary, coverage four rounds, mid-instruction precision). Domain expertise corroborated (ACME, 6502 forums). |
-| **Overall** | HIGH | No assumption-based claims. Absence findings (no prior art for hazards) from direct, repeated search across SourceGen, IDA, Ghidra, arxiv, emulator tooling. |
+| Stack | **HIGH** | Verified against Node official docs, measured empirically against real binaries; zero new npm packages confirmed |
+| Features | **HIGH** | Sourced from mature, real tools (Flutter, Homebrew, Claude Code, npm, git, rustup); expectations grounded in tool precedent |
+| Architecture | **HIGH** | All claims cite `file:line` read from tree; one open design question explicitly flagged |
+| Pitfalls | **HIGH** | Grounded in project's own incident history (fork-vs-stock PATH shadowing, triple-launch outage); generic failures sourced from real public incidents |
+
+**Overall confidence:** **HIGH**
 
 ### Gaps to Address
 
-1. **Phase 2 fixture sequencing:** Research provides evidence for both strategies. Owner's scheduling/risk preference determines choice.
+1. **VICE version-reporting semantics:** Confirm live VICE-capability testing doesn't assume binary-monitor opcode availability that "presence-only" report would contradict
 
-2. **Hazard-detector precision on real cracked titles:** Research focused on synthetic fixture and small fixtures. Real titles may present variants not anticipated. Measurement against real cracked titles (`bruce_lee`, etc.) deferred to v1.x (FUT-05).
+2. **Installer package scope:** Does installer consume declaration for "what you'll need" output, or is that purely the doctor's job?
 
-3. **Cycle-exact raster-code detection:** No static algorithm exists. Flag as caution, never guarantee. Live runs only check actual timing.
+3. **ACME prefix-list generation scope:** Whether `acme-build/SKILL.md` prefix list should be generated from declaration is explicitly out of scope for v1.1.0
 
-4. **Zero-page constant ordering:** Must emit declarations into file always sourced first. Phase 4 explicit handling; Phase 6 gate checks encoding lengths.
-
-5. **Split-address table round-tripping:** Store's four split-layout types must generate paired names, move together. Phase 4 special-case split-layouts; Phase 6 gate control moves one half without other.
-
----
+4. **`tools.json` schema validation:** Defer to phase 2 planning; current evidence suggests defensive narrowing is sufficient
 
 ## Sources
 
-**Primary (HIGH confidence, measured in repository):**
-- `.planning/PROJECT.md`, `v0.5.0-REQUIREMENTS.md`, `ENGINEERING_RULES.md`
-- `src/mcp/vice/anno-export-asm.ts`, `anno-tools.ts`, `anno-coverage.ts`, `host-tool.mts`, `acme-verify.ts`, `anno-types.ts`, `anno-store.ts`
-- `src/skills/acme-build/SKILL.md`, `c64-ram-capture/scripts/compare.mjs`
+### Primary (directly verified from the tree)
+- `src/mcp/vice/build.ts` — `HOST_BOUND_ARTIFACTS` list, design rationale
+- `src/mcp/vice/backend-detect.mts` — `resolvedBackend()` pattern, memoisation, output shape
+- `src/mcp/vice/host-tool.mts` — existing probes pattern, spawn invariant
+- `.planning/PROJECT.md` § "Current Milestone: v1.1.0" — scoping decisions
+- `.planning/ENGINEERING_RULES.md` — test derivation bans, verification requirements
+- `CLAUDE.md` — architectural constraints, never-auto-install rule
 
-**Primary (HIGH confidence, official documentation):**
-- ACME 0.97 "Zem" manual: `docs/QuickRef.txt`, `docs/AllPOs.txt` (via martinpiper/ACME GitHub)
-- 6502.org forums: "[solved] Symbol already defined" multi-file collision
-- NESdev Wiki: RTS Trick, Jump Tables
-- 6502bench SourceGen: manual on RTS-trick tagging (manual, not automatic)
-
-**Secondary (MEDIUM confidence, domain expertise):**
-- SkoolKit, Gridrunner, Iridis Alpha, splat-based decomps: universal rebuildable-source pattern
-- Bumbershoot Software, Antimon: raster-stabilization technique, page-crossing timing
-- Held Games: matching-decomp convention
-
-**Tertiary (Absence findings, stated as absence not positive claim):**
-- No static RTS-trick detector (SourceGen manual-tagging only)
-- No static SMC verifier (academic x86 malware unpacking domain only, not transferable)
-- No cross-binary equivalence framework (VICE Testbench is emulator-regression only)
+### Secondary (official/authoritative)
+- Node.js official docs — `process.versions.node`, type-stripping, `util.styleText` stability
+- Real shipped bugs — Flutter#108618, Homebrew#21334, npm/cli#1226
 
 ---
-
-*Research completed: 2026-09-10*  
-*Committed to: .planning/research/SUMMARY.md*  
-*Open decision for roadmapper: Phase 2 fixture sequencing (Strategy A: early vs. Strategy B: paired)*
+*Research completed: 2026-09-16*  
+*Ready for roadmap: yes*
