@@ -69,7 +69,7 @@ Stated once so no requirement below has to restate them.
 
 - [x] **EQUIV-01**: `compare.mjs` works in original-versus-different-binary mode — narrowed volatile mask so a real `$D020`/`$D015`/`$D018` regression cannot hide, an allowlist for intentional differences, and per-binary logical checkpoints — a mode it has never been run in
 - [x] **EQUIV-02**: Behavioural equivalence between the original and the rebuild is demonstrated in VICE, with a committed transcript as the artifact of record rather than a described walkthrough
-- [ ] **EQUIV-03**: Modifiability is demonstrated, not described — one behaviour removed and one added in the rebuilt source, reassembled, both observed taking effect in VICE, transcript committed
+- [x] **EQUIV-03**: Modifiability is demonstrated, not described — one behaviour removed and one added in the rebuilt source, reassembled, both observed taking effect in VICE, transcript committed
 - [x] **EQUIV-04**: The synthetic fixtures are committed and the whole pipeline is runnable in CI
 
 ### Fork-Backend Removal (Phase 52)
@@ -329,7 +329,7 @@ Success-Criteria live in `.planning/ROADMAP.md` → "Phase Details".
 | BUILD-07 | Phase 46 | Complete |
 | EQUIV-01 | Phase 50 | Complete |
 | EQUIV-02 | Phase 50 | Complete |
-| EQUIV-03 | Phase 50 | Pending |
+| EQUIV-03 | Phase 50 | Complete |
 | EQUIV-04 | Phase 50 | Complete |
 | FORKRM-01 | Phase 52 | Complete |
 | FORKRM-02 | Phase 52 | Complete |
@@ -387,7 +387,9 @@ roadmap phase is mapped. It is a claim that every requirement declared so far
 is mapped to exactly one phase.) (Phase 56's requirements were declared here on
 2026-09-15 at its own planning time, as its ROADMAP line instructed: `SC-1`
 through `SC-5`, five ids, traced to Phase 56 above, taking the total from 38 to
+
 43. They are spelled `SC-N` rather than a word-prefixed family because all
+
 eleven Phase 56 plans and the ROADMAP Requirements line already cite that
 spelling and were verified against it; renaming to match the `VOCAB-*` /
 `PROXY-*` style would have desynced eleven checker-passed plans to buy
