@@ -419,7 +419,7 @@ independently at this close:
 
 ```
 npm run test:automated   →  tests 3701 · pass 3692 · fail 0 · skipped 9 · EXIT=0
-npm test (the FULL glob CI runs)  →  tests 3858 · pass 3777 · fail 0 · skipped 81 · EXIT=0, 67.6s
+npm test (the FULL glob CI runs)  →  tests 3858 · pass 3777 · fail 0 · skipped 81 · EXIT=0
 ```
 
 - [x] **The 3-failure floor is closed.** `anno-register.test.ts` /
@@ -431,8 +431,10 @@ npm test (the FULL glob CI runs)  →  tests 3858 · pass 3777 · fail 0 · skip
   does.** Phase 55 re-baselined it and `PROXY-06` criterion 7 required that
   nothing in the tree still claim otherwise. `50-VALIDATION.md`,
   `50-07-PLAN.md` and `56-RESEARCH.md` — all written *after* Phase 55 closed —
-  re-assert the hang. Measured at the audit: the full glob completes in **67.6
-  seconds** with an empty failing set. The false hazard warning is the live
+  re-assert the hang. Measured twice: the full glob **completes**, with an empty
+  failing set, in 67.6s at the audit and 193s re-measured at the close on the
+  same machine. The counts were identical both runs; only the wall time moved, so
+  duration is load-dependent and is not the claim — **termination** is. The false hazard warning is the live
   defect here, not the suite; it is currently steering planners away from the
   suite CI actually runs.
 - [ ] `audit-root-args.test.ts`'s scratch-fixture race — four sequential spawns
@@ -1920,8 +1922,9 @@ more than one milestone and is listed so none is inherited silently:
   `mkdtemp` fix and untouched by it.
 - **The false `vice-proxy.test.ts` hang warning** in `50-VALIDATION.md`,
   `50-07-PLAN.md` and `56-RESEARCH.md`. Measured false — the full glob runs in
-  67.6s with an empty failing set — and currently steering planners away from the
-  suite CI actually runs.
+  with an empty failing set (measured twice, 67.6s and 193s — the counts
+  identical, the duration load-dependent) — and currently steering planners away
+  from the suite CI actually runs.
 
 **What is NOT next, recorded so it is not re-proposed.** VICE's `a`/`d`
 assemble/disassemble commands and `x64` ↔ `x64sc` mode switching were explicitly
@@ -2460,7 +2463,7 @@ v1.0.0 additions from 2026-09-10 are all still binding.*
 repeated at every v1.0.0 phase transition. It is **false as of this close**:
 measured twice on 2026-09-16, independently, with no broker running and the exit
 code read on the same line — `tests 3701 · pass 3692 · fail 0 · skipped 9 ·
-EXIT=0`, and the full glob at `3858 · 3777 · 0 · 81` in 67.6s. Both halves of the
+EXIT=0`, and the full glob at `3858 · 3777 · 0 · 81`, terminating. Both halves of the
 old floor are green. The block now records the measurement instead of the
 inherited claim, and names the live defect in its place: three artifacts written
 after Phase 55 closed still assert `vice-proxy.test.ts` hangs, which is measured

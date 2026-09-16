@@ -121,7 +121,7 @@ on the same line — twice, independently (milestone audit and close):
 | Check | Result |
 |---|---|
 | `npm run test:automated` | `tests 3701 · pass 3692 · fail 0 · skipped 9 · EXIT=0` |
-| `npm test` (the full glob CI runs) | `tests 3858 · pass 3777 · fail 0 · skipped 81 · EXIT=0` in 67.6s |
+| `npm test` (the full glob CI runs) | `tests 3858 · pass 3777 · fail 0 · skipped 81 · EXIT=0` — it terminates. Wall time is load-dependent, not an invariant: 67.6s at the audit, 193s re-measured at this close. Identical counts both runs |
 | `npm run typecheck` | `EXIT=0` |
 
 The **3-failure `test:automated` floor** carried in PROJECT.md since the v0.9.0
