@@ -1959,8 +1959,21 @@ otherwise re-propose:
   conventions — `VICE_BIN` in `backend-detect.mts`/`vice-broker.mts`/
   `broker-launch.mts`, `ACME_BIN` in `host-tool.mts`/`acme-gate.ts`, a bare
   `ACME` for the stdlib dir, `GHIDRA_HOME` in `host-tool.mts` and
-  `ghidra-project.mts`, and `VICE_BROKER_NODE` in the launcher — while `c1541`,
-  `petcat` and `dxa` have no location override at all.)*
+  `ghidra-project.mts`, and `VICE_BROKER_NODE` in the launcher — while `c1541`
+  and `petcat` have no location override at all.)*
+
+  **dxa is deliberately excluded from this file and must stay excluded.**
+  Corrected 2026-09-16, the same day, before any plan was written: an earlier
+  version of this bullet listed dxa alongside `c1541` and `petcat` as a gap. It
+  is not a gap. `host-tool.mts:126-131` states the reason in the code — dxa is
+  vendored **and built by this project**, unlike `ACME_BIN`/`GHIDRA_HOME` which
+  name a host prerequisite a user installs anywhere, so an override could only
+  ever select a binary this project did not build and did not pin. A requirement
+  giving dxa a location entry would break that invariant, and is the specific
+  mistake this correction exists to prevent. `VICE_BROKER_NODE` is a second
+  documented exclusion for a different reason: `vice-launcher.sh` is bash and
+  reads it before any working Node interpreter is known, so it cannot parse a
+  JSON file to find one.
 
 - **The doctor calls the probes that already ship.** `resolvedBackend()`,
   `findSiblingBinary()`, `findDxaBinary()`, `findAcmeLib()` and the Ghidra
