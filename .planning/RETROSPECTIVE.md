@@ -2,6 +2,146 @@
 
 *A living document updated after each milestone. Lessons feed forward into future planning.*
 
+## Milestone: v1.0.0 — The Rebuild Half
+
+**Shipped:** 2026-09-16 (`override_closeout`)
+**Phases:** 9 closed (45-50, 52, 55, 56), 4 carried forward (51, 53, 54, 57) | **Plans:** 73 | **Tasks:** 203 | **Requirements:** 33/33 in-scope, 15 carried
+
+### What Was Built
+
+**The "and rebuild" half — claimed in `PROJECT.md`'s first sentence since v0.1.x,
+and until now the one thing the tool could not do.** An annotated store exports
+as a real *directory* of ACME source, one file per scope wired by `!source`, with
+data tables extracted to sibling `.bin` files. Real ACME 0.97 reassembles it
+byte-identically. A person edits it, and the rebuild is shown behaving
+identically to the original on genuine stock VICE 3.9 — `VERDICT: PASS`, exit 0,
+empty difference set — under the same narrowed mask that a planted three-bit
+regression had already been watched failing.
+
+**A reassembly gate that was written before it could be influenced.** Seven
+inputs, twelve first-match-wins rules, an 864-combination totality proof — all
+frozen in git *alone*, in a commit containing no measurement, and then run. It
+returned **`red` under rule `R7`** on its first real subject and shipped red.
+
+**One backend, honestly described.** The fork is gone entirely — `vice.ts`, its
+manifest, its probe, `capability-registry.ts`, ~1,800 lines of proxy forwarding —
+and the three capabilities stock provably cannot have are recorded as permanent
+accepted losses rather than routed somewhere that no longer exists.
+
+**About 2,900 lines of test code deleted on purpose**, under the owner's
+data-driven-tests-only rule, with the suite's drop reconciled case by case so a
+silently broken file could not hide inside an expected decrease.
+
+### What Worked
+
+**Committing the instrument before the thing it measures — now the project's
+default, not an experiment.** Phase 49 froze the gate before any measurement
+existed. Phase 50 committed `compare-cross-binary.mjs` before any rebuild existed
+to compare under it. Phase 45's completeness gate was proven non-vacuous by three
+planted controls watched going RED against a *real* store. In every case the
+sequence made the verdict derived rather than argued, and in Phase 49's case it
+is the only reason a `red` first result was publishable instead of embarrassing.
+
+**Running the milestone audit.** After **five consecutive closes without one**,
+this milestone ran `/gsd-audit-milestone` — and it changed the outcome. It found
+15 requirements that were not merely unmet but *unimplementable as written*, a
+phase marked complete with no verification artifact of any kind, and a live
+requirement whose subject file had been deleted. None of that was visible from
+the per-phase verifiers, all of which had passed. **The audit is what made a
+scope-split close possible instead of a false "shipped with known gaps".**
+
+**Measuring instead of adjudicating.** When the audit found two records
+disagreeing about whether `vice-proxy.test.ts` hangs, it ran the suite rather
+than deciding which document to believe: 67.6 seconds, empty failing set. The
+same move retired a "3-failure floor" that had been copied forward through every
+phase transition of the milestone without anyone re-running it.
+
+**Disclosure over smoothing, repeatedly and at cost.** Phase 48's synthetic
+subject does not visibly show its four planted effects in combination; the root
+cause is unknown and the finding was **not** retracted. Phase 50's criterion 5
+rests on a CI red observed locally, because the developer was asked for a real
+runner and declined — recorded as a *declined verification, not a passed one*.
+Phase 45 disclosed a `$DD00` curated-table gap rather than working around it
+quietly.
+
+### What Was Inefficient
+
+**A quick task retired a convention and nobody reconciled the documents.** The
+single most expensive thing that happened this milestone. On 2026-09-14 an
+owner-directed quick task deleted 60 files and retired the planning-vocabulary
+convention outright. Its own summary said the orchestrator would update
+`STATE.md`, `ROADMAP.md` and `REQUIREMENTS.md`. That never happened. For two days
+Phase 51 had nine live plans and four requirements pointed at a deleted guard,
+and the drift was only caught because this milestone ran an audit. **Eight plans
+of genuinely useful work (755 citations rewritten) now sit behind a re-scoping
+decision that should have been made the same day.**
+
+**Phase 55 shipped with no gate at all.** Six plans, all reporting complete, a
+`docs(phase-55)` close commit, and no VERIFICATION.md, VALIDATION.md or
+REVIEW.md. Its ROADMAP checkboxes are still unticked and the two todos its work
+closed in code are still filed pending. The work is real — independently traced
+to live code and re-measured at the audit — which is exactly why the missing gate
+went unnoticed: nothing downstream broke.
+
+**Requirements written against mechanisms that then got deleted.** `FORKRM-02`
+required a specific test file be *rewritten rather than deleted*; Phase 52 did
+exactly that, and it was deleted two days later. `DOCS-04`'s entire subject is now
+a deleted file, and the 7-citation finding that motivated it measures 0. A
+requirement that names a *file* rather than a *property* cannot survive a
+deletion sweep.
+
+**Three phases were added to a closed roadmap and never started.** v1.0.0 opened
+with 15 requirements across 6 phases and ended carrying 48 across 13. The 33 it
+delivered were almost entirely the original scope; nearly everything added
+mid-milestone went unexecuted.
+
+### Patterns Established
+
+- **The instrument is committed alone, in a commit with no measurement in it.**
+  Not merely "before" — *alone*, so the diff proves it could not have been shaped
+  by a result.
+- **A gate's first real result is published whatever it says.** `red` under `R7`
+  shipped. Phase 50 later got `acknowledged` under `R10` from the same table,
+  which is what proved the table discriminates rather than always refusing.
+- **Losslessness is proven by a planted control that wants to violate it.** A
+  test-only filtering variant is watched dropping a range (RED) before the real
+  exporter is trusted to keep it (GREEN).
+- **A milestone may close on a subset and carry the rest with its text live.**
+  Established at v0.6.0 for held Phases 24 and 26; used deliberately here for the
+  first time as a *close strategy* rather than a gate outcome.
+- **An acknowledge-refusal is recorded, not discarded, and does not halt a
+  close.** Fourth consecutive close for the same 8 un-acknowledgeable table rows.
+
+### Key Lessons
+
+1. **Run the audit.** Five closes skipped it on the reasoning that every phase
+   verifier passed. Every phase verifier passed this time too, and the audit
+   still found 15 unimplementable requirements and an ungated phase. Per-phase
+   verification cannot see cross-phase or post-hoc drift by construction.
+2. **A quick task that retires a *convention* must reconcile the planning
+   documents in the same pass, or name an owner who will.** "The orchestrator
+   handles it" is not an owner.
+3. **Write requirements against properties, not filenames.** Every requirement
+   that broke this milestone broke because it named a specific file that a later,
+   legitimate decision deleted.
+4. **Re-measure inherited claims before copying them forward.** The 3-failure
+   floor was false and was restated at every phase transition for a week. The
+   `vice-proxy.test.ts` hang warning is false and is still being written into new
+   documents.
+5. **A phase with no verification artifact will not announce itself.** Nothing
+   downstream of Phase 55 broke, so nothing surfaced it until an audit
+   cross-referenced three independent sources.
+
+### Cost Observations
+
+- Plans: 73 across 9 closed phases (mean ~8/phase; range 6-13)
+- Tasks: 203 | Commits: 619 since the `v0.9.0` tag | Timeline: 6 days (2026-09-10 → 2026-09-16)
+- Tokens (summed from plan `actuals`): ~1.98M across the closed phases
+- Notable: the two largest phases by plan count (52 at 13, 56 at 11) were both
+  *deletion* phases. Removal cost more plans than any feature phase in the
+  milestone — Phase 52 alone found five consumers neither the plan nor the
+  orchestrator's own measured consumer-map had named.
+
 ## Milestone: v0.9.0 — The Text Channel and the Runtime Evidence Layer
 
 **Shipped:** 2026-09-10 (`override_closeout`)
@@ -926,6 +1066,7 @@ container-side, static-analysis-only prerequisite reached through 17 curated
 | v0.7.0 | 6 | 80 | First large deletion. Introduced the classification registry as *deletion driver* (never a prefix glob), a checked `ModuleFate`, and non-vacuity thresholds derived from the artifact rather than pinned |
 | v0.8.0 | 6 | 47 | First milestone measured on **real cracked code** rather than a synthetic fixture. Second pre-committed gate honoured (`degrade`, `R6`), this one proven **total** over its 108-tuple input space. Introduced the typed host-tool control op with its ban written as a CI gate, `not-exercised` as a first-class verdict, and proving a carve **by disappearance** |
 | v0.9.0 | 6 | 51 | First **`go`** from a pre-committed gate — the third distinct verdict (`no-go`/`degrade`/`go`) the practice has produced and honoured. First time the project drives one emulator over **two concurrent channels**. Introduced the totality proof frozen alongside the rules, one mutex per *machine* rather than per channel, a non-destructive sibling to a destructive verdict, and absence-as-a-count enforced by the type system |
+| v1.0.0 | 9 closed, 4 carried | 73 | **First milestone audit in six closes — and it changed the outcome.** Every per-phase verifier passed; the audit still found 15 requirements unimplementable as written and a phase complete with no gate. Introduced closing on a **subset** with the remainder carried and its text live (a close strategy, not a gate outcome), the instrument committed *alone* in a measurement-free commit, and publishing a gate's first real result whatever it says (`red`, `R7`) |
 
 ### Cumulative Quality
 
@@ -937,6 +1078,7 @@ container-side, static-analysis-only prerequisite reached through 17 curated
 | v0.7.0 | 0 failures on `test:automated` (the project's floor; the whole-glob `npm test` still does not terminate unaided — `vice-proxy.test.ts` leaks two LISTEN sockets) | real ACME 0.97 as a byte-diff oracle, hard-failed in CI with `VICE_REQUIRE_ACME=1` | the annotation store on `node:sqlite` — a **built-in** at this project's Node floor; `better-sqlite3` rejected on 11.4 MB/consumer and 8 prebuild targets — 0 new npm deps |
 | v0.8.0 | **2 failures in 1 file** on `test:automated` (`anno-register.test.ts` `:385`/`:479` — the register cites v0.7.0 ids no v0.8.0 requirements document declares; root cause named, unfixed). ~3113 tests. The whole-glob `npm test` still does not terminate unaided | real dxa 0.1.5 and real Ghidra 12.1.3 as live oracles — `ghidra-live.test.ts` and `ghidra-opcode-live.test.ts` are the 11th and 12th manual-only files | a vendored, digest-verified dxa 0.1.5 build and a vendored NMOS 6502 SLEIGH language, both reached over the host-tool seam — Ghidra declared by version rather than vendored (543 MiB) — **0 new npm deps** |
 | v0.9.0 | **3 failures in 2 files** on `test:automated` (`anno-register.test.ts` `:385`/`:479` and `anno-import.test.ts` `:352` — same root cause as v0.8.0, now with `IMP-*`/`AUTO-*` ids joining the `STORE-*`/`MCP-*` ones; still unfixed, still named). 4051 tests, 4033 pass, 10 skipped, 5 todo, 24 suites. **Measured after the close's own `git rm` and ROADMAP collapse**, which reddened nothing — the `requirementsPath()` archive fallback added at v0.7.0 held. Beside the floor sits the intermittent `audit-root-args.test.ts` scratch race (a *second*, orthogonal hazard the v0.8.0 `mkdtemp` fix does not touch) | genuine stock `/usr/bin/x64sc` VICE 3.9 across five of six phases; `text-monitor-live.test.ts` joins the manual-only set with a teardown assertion proven able to go red | the text-monitor line protocol hand-rolled over a raw socket, `channel-lock.ts` (a FIFO async mutex), five zero-import format parsers, and `anno_evid_exec` on the built-in `node:sqlite` — **0 new npm deps, and 0 new external prerequisites** (`c1541`/`petcat` resolve as siblings of `x64sc`) |
+| v1.0.0 | **0 failures** on `test:automated` — `tests 3701 / pass 3692 / fail 0 / skipped 9 / EXIT=0`. The 3-failure floor carried since v0.8.0 is **closed**: `anno-register.test.ts` and `anno-import.test.ts` are both green, the citing entries removed by Phase 52's reconciliation and the 2026-09-14 deletions. The whole-glob `npm test` **also terminates and is green** — `3858 / 3777 / 0 / 81` in 67.6s — retiring a hang claim three later artifacts still repeat. Measured twice, independently (audit and close), and again after this close's own `git rm` and ROADMAP collapse | real ACME 0.97 as a byte-diff oracle across the whole rebuild chain; genuine stock `x64sc` VICE 3.9 for the equivalence and modifiability runs, including three planted single-bit regressions each producing its own named DIVERGENCE row | the reassembly gate's twelve-rule decision table, the multi-file ACME tree exporter, `compare-cross-binary.mjs`, and the four-class movement-hazard report — **0 new npm deps, 0 new external prerequisites**. Net **negative** dependency change: the fork backend and ~2,900 lines of test code were removed |
 
 | Milestone | Audit verdict | Rounds | Open gaps at close | Deferred at close |
 |-----------|---------------|--------|--------------------|-------------------|
@@ -948,6 +1090,7 @@ container-side, static-analysis-only prerequisite reached through 17 curated
 | v0.7.0 | **not run** | — | 0 against its own 28 requirements | 15 newly acknowledged, 21 carried, **8 disclosed as un-acknowledgeable** |
 | v0.8.0 | **not run** | — | 0 against its own 43 requirements; `GATE-01` returned `degrade` (`R6`) | 4 newly acknowledged, 31 carried, **the same 8 disclosed as un-acknowledgeable for the second close running** |
 | v0.9.0 | **not run** | — | 0 against its own 20 in-scope requirements; `CHAN-01` returned **`go`** (`R15`) | 6 newly acknowledged, 33 carried, **the same 8 disclosed as un-acknowledgeable for the third close running** |
+| v1.0.0 | **`gaps_found`** | 1 | **15 carried forward rather than accepted** — 6 `VOCAB-*`, 4 `DOCS-*`, 5 `INSTALL-*`; 6 `PROXY-*` scored `partial` for want of a gate, not delivery. 0 gaps against the 33 it closed on | 11 newly acknowledged, 38 carried, **the same 8 disclosed as un-acknowledgeable for the fourth close running** |
 
 **Five consecutive closes without a milestone audit** *(updated at the v0.9.0
 close, 2026-09-10; the paragraphs below are kept as written and extended, not
