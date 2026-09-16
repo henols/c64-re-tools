@@ -22,11 +22,13 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-13 after Phase 48 — one Key
+See: .planning/PROJECT.md (updated 2026-09-16 after Phase 50 — one Key
 Decisions row and a footer; the last full evolution review was the v0.9.0 close
-on 2026-09-10)
+on 2026-09-10. Note the footer skipped Phase 49, which closed 2026-09-13 without
+updating it)
 
-**Current focus:** Phase 50 — Equivalence and Modifiability
+**Current focus:** Phase 51 — Planning Vocabulary Out of the Shipped Server (already
+in flight at 8/17 plans)
 Gates. It runs against Phase 48's purpose-built subject; see the Phase 48 entry
 under Blockers/Concerns before interpreting that subject's emulator behaviour.
 
@@ -1760,19 +1762,32 @@ ledger table row below were both updated in the same change as this one.
 
 ### Blockers/Concerns
 
-- **Phase 50 plan 4 (2026-09-15): live half not executed, blocking plans 50-05/50-06.**
-  `50-04-SUMMARY.md` carries `status: halted`. Task 1 (the load-route
-  `checkpoint:decision`, answered route-d) and the resulting `text-protocol.ts`
-  allowlist widening are done and committed. Tasks 2 and 3 need a live
-  executor with `mcp__vice__*` tool access, to load the committed
-  `hazard-subject.prg` through the widened `load` verb, hit a real checkpoint,
-  and capture RAM. The SUMMARY's "Live half -- not executed" section also
-  flags an open design question: reaching the widened `load` verb from an
-  MCP session may need a new tool in `text-tools.ts` (which an already-running
-  server will not advertise until restart), or the live task may instead
-  drive `text-connect.ts` directly from a committed script. Plans 50-05 and
-  50-06 depend on this plan's captures and transcript, so they are blocked
-  too until a live executor resolves this.
+- **RESOLVED 2026-09-16 — Phase 50's plan-4 live-half blocker is closed.** The live
+  executor ran: 50-05 produced the red control, 50-06 the green comparison, and 50-08
+  the exported-edit capture, all against genuine unpatched stock `/usr/bin/x64sc`.
+  The open design question that rode with it ("does reaching the widened `load` verb
+  need a new tool in `text-tools.ts`") resolved in practice — `vice_program_load` is
+  advertised after an MCP server restart. One environment fact worth carrying rather
+  than rediscovering: live plans need `VICE_BROKER_NODE` pointed at a Node >= 24
+  (this host's `/usr/bin/node` is v20, below the launcher's floor) and `VICE_BIN=/usr/bin/x64sc`
+  to reach genuine stock rather than the fork build that shadows it on `$PATH`.
+- **Phase 50 carried items (2026-09-16), none blocking Phase 51.** The phase closed at
+  8/8 plans with verification `passed` 5/5 and all four `EQUIV-*` Complete. Three
+  residuals ride forward. (1) **`50-REVIEW.md` `CR-01` is an open Critical and is NOT a
+  Phase 50 defect**: `TextMonitorClient.command()` declares a `timeoutMs` option and never
+  arms a timer, so the seven `text-tools.ts` call sites passing `timeoutMs: 30000` hold no
+  bound at all, and a VICE that stops responding without reaching `TEXT_MAX_BUFFERED_LEN`
+  hangs inside `withTextChannelLock()`'s held mutex — `release()` never runs, so later text
+  calls queue until the ~630s acquire timeout while the original call never resolves.
+  Origin `fad65de8 feat(41-01)`, so it belongs to Phase 41; `text-protocol.test.ts` never
+  exercises `timeoutMs`. (2) **`50-REVIEW.md` `WR-01`**: `compare-cross-binary.mjs` skips
+  register-domain comparison without printing a diagnostic when either sidecar carries an
+  empty `registers` map — verified never exercised by any committed Phase 50 transcript,
+  so no recorded verdict depends on it. (3) **Criterion 5's CI red was observed locally,
+  not on a GitHub runner** — the developer was asked and declined that run on 2026-09-16;
+  plan 50-07's assumption **P5** stays unresolved and the residual is stated in
+  `docs/phase50-ci-boundary.md`. Separately: `/gsd-secure-phase 50` is still owed — the
+  secure-phase step hook is active and no `50-SECURITY.md` exists.
 - **Phase 42 carried items (2026-09-10), none blocking Phase 43.** The phase closed at
   16/16 plans and 5/5 verified must-haves after two gap-closure rounds; round 2 closed
   exactly one finding, `CR-02`, and the round-2 code review returned `status: clean`.
@@ -2598,11 +2613,11 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-16T10:29:32.885Z
-Stopped at: Phase 50 complete, ready to plan Phase 51
+Last session: 2026-09-16T10:49:39Z
+Stopped at: Phase 50 complete and verified (8/8 plans, 5/5 must-haves); Phase 51 resumes at plan 9 of 17
 Resume file: None
 
-Earlier: Completed 50-03-PLAN.md
+Earlier: Completed 50-08-PLAN.md
 
 Earlier: Completed 56-07-PLAN.md
 Earlier: Completed 56-06-PLAN.md

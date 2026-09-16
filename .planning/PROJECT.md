@@ -756,6 +756,7 @@ ceiling is explicitly recorded.
 | Report channel contention as `live` with a named holder instead of the existing `wedged` verdict, guarded in the handler rather than in prose (Phase 41, `CHAN-05`, 2026-09-09) | `wedged` is a **destructive** verdict — it authorises a recycle. Stock's measured `accepted-then-silent` wire state makes a contended instance look exactly like a hung one, so opening a second channel without this would have made the triage playbook destroy healthy instances. | ✓ Good — a structural guard in `vice_diagnose`'s own handler, with the `vice-wedge-triage` playbook updated in the same phase rather than left to drift |
 | Delete the warm floor's speculative pre-launching outright, and fail the whole acquire when a text port cannot bind (Phase 41, 2026-09-09) | A stock launch that silently degrades to binary-only would hand callers an instance that fails later, at an unrelated call site. Launching strictly on demand removes the class of instance that exists before anyone asked for it. | ✓ Good — the launching-to-ready promotion step survived as its own function, so the deletion cost no capability |
 | Accept the synthetic subject with its on-screen disagreement disclosed and un-root-caused, rather than revising it until the combined image settles visibly (Phase 48, `BUILD-04`, 2026-09-13) | Each of the four planted constructions is independently proven to take visible effect; only their combination reverts before the screen settles, and the investigation narrowed it to the timer-stabilised raster part's shared IRQ vector without pinning the cause. The alternative was to keep editing the subject until it looked right, which is precisely the failure this phase was built against — a fixture shaped to satisfy an observer. Disclosure in `FIXTURE-DESIGN.md` preserves the disagreement; revision would have dissolved it. | ⚠️ Watch — Phase 49's reassembly gate runs against this subject, so the unexplained reversion is inherited, not retired. The finding stands open in `48-VERIFICATION.md`; the human judgment accepted the artifact, it did not retract the finding. |
+| Accept a locally-observed CI red as sufficient for criterion 5, rather than pushing the planted break to a real GitHub Actions run (Phase 50, `EQUIV-04`, 2026-09-16) | The stronger evidence was available and cheap — push the same one-character break to a scratch branch, open a PR, watch the `build` job go red, close and delete. The developer was asked and declined it. What the decline rests on is checkable rather than asserted: the command observed is the command CI runs (`VICE_REQUIRE_ACME=1 node --test phase50-transcript-freshness.test.ts`, from `src/mcp/vice`, in CI's own `Test` environment), the guard is under CI's existing glob and absent from `test-gate.mjs`'s `MANUAL_ONLY_TESTS` so no workflow edit was needed, and the planted break reddened the aggregate gate as well as the single file. | ⚠️ Watch — recorded as a **declined verification, not a passed one**, with its residual named in `docs/phase50-ci-boundary.md`: no GitHub Actions run has been observed going red for this guard, so plan 50-07's assumption **P5** stays unresolved. The inference from "red locally under CI's own command and environment" to "red on a runner" is sound but is an inference. Reverses the moment anyone takes the four steps the document still spells out; nothing forecloses it. |
 ## Evolution
 
 This document evolves at phase transitions and milestone boundaries.
@@ -2198,17 +2199,30 @@ written).
 
 ---
 
-*Last updated: 2026-09-13 after Phase 48 (The Movement-Hazard Report and Its
-Purpose-Built Subject), which closed at 6/6 plans with verification `passed` and
-human UAT passed on its single checkpoint. **No Active bullet moved**, for the
-same reason Phase 47 recorded: v1.0.0's rebuild-half bullet spans
-`DECOMP-01`..`04`, `BUILD-01`..`07` and `EQUIV-01`..`04` as one hypothesis, and
-this project audits a phase-spanning hypothesis whole at the milestone close —
-v1.0.0 is now 4/8 phases in. `BUILD-04` is Complete in REQUIREMENTS.md, which is
-where per-requirement status lives. One Key Decisions row added, and it is not a
-scope decision: it records the owner accepting the purpose-built subject with its
-on-screen disagreement disclosed rather than revising the subject until it looked
-right. Nothing moved to Out of Scope and "What This Is" is unchanged — the phase
-validated planned scope and discovered no new boundary. The one thing a later
-reader should not have to reconstruct: the subject Phase 49 will gate on carries
-a known, named, unexplained behaviour, and that was a deliberate acceptance.*
+*Last updated: 2026-09-16 after Phase 50 (Equivalence and Modifiability), which closed at
+8/8 plans with verification `passed` 5/5 and all four of `EQUIV-01`..`04` Complete.
+**No Active bullet moved**, for the same reason Phases 47 and 48 recorded: v1.0.0's
+rebuild-half bullet spans `DECOMP-01`..`04`, `BUILD-01`..`07` and `EQUIV-01`..`04` as one
+hypothesis, and this project audits a phase-spanning hypothesis whole at the milestone
+close — v1.0.0 is now 9/13 phases in. Per-requirement status lives in `REQUIREMENTS.md`.
+One Key Decisions row added, and like Phase 48's it is not a scope decision: it records the
+owner declining a real GitHub Actions run and the residual that decline leaves standing.
+Nothing moved to Out of Scope and "What This Is" is unchanged.
+
+The two things a later reader should not have to reconstruct. First, `EQUIV-03` was
+deliberately **withheld** when plans 50-02 and 50-06 finished, and plan 50-08 exists only
+to close it: its clause reads "one behaviour removed and one added IN THE REBUILT SOURCE",
+and those earlier plans edited `hazard-subject-align-nosprite.a` — the subject's own
+hand-written source — which proves the assembler works, not that the decomposition is
+modifiable. 50-08 made the edit in `scope_087a.a`, a file `exportAsmTree()` itself emitted,
+and proves the target is the exporter's own output by membership in that same run's `files`
+list rather than by filename convention. Second, the phase's review left a **Critical open
+and unfixed** (`50-REVIEW.md` `CR-01`): `TextMonitorClient.command()` declares a `timeoutMs`
+and never arms a timer, so the seven `text-tools.ts` call sites passing `timeoutMs: 30000`
+hold no bound, and a non-responding VICE hangs inside the held channel-lock mutex. It traces
+to `fad65de8 feat(41-01)` — a Phase 41 defect this phase's review scope surfaced, not a
+Phase 50 regression — and it is carried, not closed.
+
+Bookkeeping gap noted rather than silently repaired: this footer skipped from Phase 48 to
+Phase 50. Phase 49 closed on 2026-09-13 without updating it or adding a Key Decisions row,
+and nothing here reconstructs what that note would have said.*
