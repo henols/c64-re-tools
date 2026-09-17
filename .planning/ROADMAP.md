@@ -1496,28 +1496,41 @@ Notes:
   every `npx` consumer exactly as the banned form did, and the filename smuggles a
   phase number into shipped source besides. The operator's folder complaint and a
   live section 21 gap are the same defect.
-- **MEASURED 2026-09-13.** 21 of 27 files in `docs/` are `phase*`-named. 20 of the 21
-  map onto a live phase directory; `phase0` is the single orphan. **89 hand-edit citation
-  occurrences across 37 files**, after separating three file classes that a raw
-  grep conflates (see the file-class note below). Of the 89, **39 occurrences in 15
-  files fall inside Phase 51's scope** (published by
-  `src/mcp/vice/package.json`'s `files[]`) and the rest fall outside it — tests, `.mts` sources, skill scripts, and the gitignored `tools/`
-  deployment copies. Re-measure at planning time; these are dated.
+- **MEASURED 2026-09-13 — OBSOLETE as of 2026-09-17, superseded by the two notes below.**
+  This note originally read: 21 of 27 files in `docs/` are `phase*`-named, 20 of the 21
+  map onto a live phase directory, `phase0` is the single orphan, 89 hand-edit citation
+  occurrences across 37 files, of which 39 occurrences in 15 files fall inside Phase 51's
+  scope. Re-measurement on 2026-09-17 found the orphan count wrong: `phase0-binmon-findings.md`
+  is not the only pre-roadmap document with no matching phase directory —
+  `phase1-probe-results.md` and `phase2-backend-probe-evidence.md` are orphans too. The
+  Goal paragraph above carries the counts this phase actually closed with.
+- **ORPHAN DESTINATIONS — DECIDED and RECORDED 2026-09-17 (`DOCS-02`).** All three
+  pre-roadmap documents are placed by the evidence of which plan authored them, not by the
+  number in their filename:
+  - `docs/phase0-binmon-findings.md` and `docs/phase1-probe-results.md` both appear verbatim
+    in `.planning/phases/01-corrected-ground-truth/01-04-PLAN.md`'s own `files_modified:`
+    frontmatter list — that plan authored both documents. Destination:
+    `.planning/phases/01-corrected-ground-truth/evidence/`.
+  - `docs/phase2-backend-probe-evidence.md`'s own opening paragraph names its origin —
+    it records evidence-gathering "plan 02-02 was supposed to perform" — and its body cites
+    the decision record it overrides, `.planning/phases/02-stock-backend-connection/02-CONTEXT.md`.
+    Destination: `.planning/phases/02-stock-backend-connection/evidence/`.
+  All three moved with `git mv` in plan 53-04; `git log --follow` on each returns its
+  pre-move history.
 - **The ordering is load-bearing and runs opposite to intuition.** The citations
   must be rewritten BEFORE the files move. Moving first leaves 42 files pointing
   into `.planning/`, which is a straight section 21 violation and precisely the
   "one hop along" failure criterion 4 forbids. Rewrite, verify zero, then `git mv`.
-- **THE GUARD HOLE — MEASURED 2026-09-13, and it reverses the phase order.**
-  `src/skills/**` carries **7** `docs/phase45-*.md` citations:
-  `routine-queue-walker/scripts/completeness-report.mjs:79`, `SKILL.md:92` and
-  `:163`, and `scripts/completeness-report.test.mjs:22`, `:468`, `:491`, `:512`.
-  ENGINEERING_RULES section 21.1 declares that tree must be at ZERO, calls the rule
-  "mechanically enforced", and grants no by-path exemption. Yet
-  `skills-planning-vocabulary.test.ts` passes 5/5 green with all seven in place:
-  **its category patterns do not match the `docs/phase*` path form.** The rule is
-  violated and the enforcement reports otherwise. Fix the PATTERN here, not just
-  the seven sites — a sweep that cleans the sites and leaves the hole re-arms
-  nothing.
+- **THE GUARD HOLE — MEASURED 2026-09-13, OBSOLETE as of 2026-09-17.** This note
+  originally read: `src/skills/**` carries 7 `docs/phase45-*.md` citations
+  (`routine-queue-walker/scripts/completeness-report.mjs:79`, `SKILL.md:92` and `:163`,
+  and `scripts/completeness-report.test.mjs:22`, `:468`, `:491`, `:512`), and
+  `skills-planning-vocabulary.test.ts` passed 5/5 green with all seven in place because
+  its category patterns did not match the `docs/phase*` path form — the rule was violated
+  and the enforcement reported otherwise. That test file no longer exists: it was deleted
+  2026-09-14 (`276c15c9`, quick task `260914-poo`) under the standing decisions that
+  retired the text-scanning-test shape outright. There is nothing left to widen, and
+  `src/skills/**` measures zero `docs/phase` citations as of this phase's start.
 - **This is why Phase 53 runs before Phase 51, not after.** Phase 51's guard
   strategy is to widen this same file's `shippedSkillFiles()` from the skills tree
   to `package.json`'s `files[]`. Widening the FILE SET over an unfixed PATTERN hole
@@ -1533,23 +1546,23 @@ Notes:
 - **THREE FILE CLASSES, and a raw grep conflates them.** MEASURED 2026-09-13:
   - **Canonical, 37 files / 89 occurrences** — hand-rewrite each. These are the
     phase's actual work.
-  - **Generated, 4 files / 9 occurrences** — `src/mcp/vice/resources/broker-launch.mjs`
-    and `host-tool.mjs` (compiled from the `.mts` by `build.ts`), plus
-    `installer/skills/routine-queue-walker/`'s two files (copied from `src/skills/`
-    by `sync-skills.mjs`, and untracked). Fix the SOURCE and regenerate; hand-editing
-    these is how the copy silently diverges from what `resources-sync.test.ts` pins.
-  - **Dead, 3 files / 8 occurrences** — `tools/broker-launch.mjs`, `tools/host-tool.mjs`,
-    `tools/backend-detect.mjs`. DELETE, do not rewrite. `.gitignore` states it
-    outright: "tools/ itself is now vestigial -- git ls-files tools/ is empty." The
-    directory is pre-consolidation layout, superseded by `.c64-re-tools/bin/` in the
-    2026-09-08 clean break, and nothing reads it. Rewriting a citation in a dead file
-    is pure waste, and counting it inflates the phase.
-- **Delete the stale layout tree while here.** `tools/` (12 files), `.vice-snapshots/`
-  (4) and `.vice-supervisor/` (40) are the pre-consolidation locations `.gitignore`
-  says are "left on disk, unread, for the user to delete by hand". They are the only
-  untracked directories in `git status` and they are what makes the tree read as
-  scattered. Confirm nothing reads them at plan time rather than trusting this note,
-  then remove them.
+  - **Generated, 4 files / 9 occurrences — OBSOLETE as of 2026-09-17, measures zero
+    today.** Originally: `src/mcp/vice/resources/broker-launch.mjs` and `host-tool.mjs`
+    (compiled from the `.mts` by `build.ts`), plus `installer/skills/routine-queue-walker/`'s
+    two files (copied from `src/skills/` by `sync-skills.mjs`, untracked). The `.mts`
+    sources that fed those generated files no longer carry `docs/phase` citations, so
+    this class is empty by the time this phase executed.
+  - **Dead, 3 files / 8 occurrences — OBSOLETE as of 2026-09-17, the directory no
+    longer exists.** Originally: `tools/broker-launch.mjs`, `tools/host-tool.mjs`,
+    `tools/backend-detect.mjs`, to be DELETED rather than rewritten. `tools/` itself is
+    gone from disk (`ls tools` returns "No such file or directory"); this class has
+    nothing left to act on.
+- **Delete the stale layout tree while here — OBSOLETE as of 2026-09-17, already
+  gone from disk.** Originally: `tools/` (12 files), `.vice-snapshots/` (4) and
+  `.vice-supervisor/` (40) were the pre-consolidation locations `.gitignore` said were
+  "left on disk, unread, for the user to delete by hand." Re-measured 2026-09-17: all
+  three are unresolvable (`ls tools` → "No such file or directory") — the user already
+  removed them by hand. Nothing left for this phase to do here.
 
 ### Phase 54: Remove Every Byte-Identical Assertion
 
