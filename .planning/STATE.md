@@ -331,7 +331,7 @@ suppressed/acknowledged rows are recorded in their own sections.
 Phase: 58 - One Declaration, Four Places That Can No Longer Disagree (not started)
 Plan: — (no plans exist yet; next action is `/gsd-plan-phase 58`)
 Status: Roadmap created — five phases, 58-62, 24/24 requirements mapped
-Last activity: 2026-09-16 — v1.1.0 roadmap created (Phases 58-62)
+Last activity: 2026-09-17 — Completed quick task 260917-cfx: CLAUDE.md corrections and block replacement
 
 **Milestone shape, so no reader has to rebuild it from the ROADMAP:** Phase 58
 declares the prerequisites; Phase 59 builds the tool-location seam and its
@@ -1848,6 +1848,7 @@ ledger table row below were both updated in the same change as this one.
 | 260915-mmo | acme-build skill: apply the STE100 strict pass, following every rule in .planning/ste100-batch-rules.md, to src/skills/acme-build/SKILL.md (baseline 23 violations) | 2026-09-15 | ab39ad0efc7bd6d26039f7e430ae1216faebf9d9 | — | .planning/quick/260915-mmo-acme-build-skill-apply-the-ste100-strict-pass-following-ever |
 | 260915-mmp | c64-disk-access skill: apply the STE100 strict pass, following every rule in .planning/ste100-batch-rules.md, to src/skills/c64-disk-access/SKILL.md (baseline 22 violations) | 2026-09-15 | 9f51396a7ada3c51fefdb2c58777f5f439ac9714 | — | .planning/quick/260915-mmp-c64-disk-access-skill-apply-the-ste100-strict-pass-following |
 | 260915-mmq | c64-petcat skill: apply the STE100 strict pass, following every rule in .planning/ste100-batch-rules.md, to src/skills/c64-petcat/SKILL.md (baseline 9 violations) | 2026-09-15 | 04a0831c3e97563ec8dd988f17f010c5db8d2648 | — | .planning/quick/260915-mmq-c64-petcat-skill-apply-the-ste100-strict-pass-following-ever |
+| 260917-cfx | Correct seven verified factual errors in CLAUDE.md and replace the two truncated GSD-generated blocks (conventions, architecture) with an ASD-STE100 condensation | 2026-09-17 | 6f856111, b406de46 | — | .planning/quick/260917-cfx-correct-six-factual-errors-in-claude-md- |
 
 ### Blockers/Concerns
 
