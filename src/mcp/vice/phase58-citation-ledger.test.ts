@@ -26,6 +26,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { MANUAL_ONLY_TESTS, automatedTestFiles } from "./test-gate.mjs";
+
 /** The plain `.git`-marker walk, mirrored from phase50-findings-contract.test.ts. */
 function findRepoRoot(from: string): string {
   let dir = from;
@@ -125,6 +127,17 @@ function parseCitationString(citation: string): { filePart: string; start: numbe
   return { filePart: m[1]!, start, end };
 }
 
+/** Matches a `path:start` or `path:start-end` citation, requiring a real
+ * file extension immediately before the colon. Requiring the extension is
+ * what keeps something like an apt package epoch (`1:0.97~svn...`) from
+ * being mistaken for a citation. */
+const CITATION_RE = /[A-Za-z0-9_.\/-]+\.(?:md|mts|ts|mjs|json|yml|sh|a):[0-9]+(?:-[0-9]+)?/g;
+
+/** STUB (Task 2 RED phase): not yet implemented. */
+export function extractCitations(_docText: string): string[] {
+  return [];
+}
+
 /** The whole resolution-relation audit (Task 1 scope): every ledger entry's
  * citation must parse, its path must resolve inside `repoRoot`, its range
  * must be well-formed and in-bounds, and its anchor must be found -- as a
@@ -136,6 +149,35 @@ export function auditProvenanceCitations(options: CitationAuditOptions): string[
   const docText = readFileSync(options.docPath, "utf8");
   const { entries, errors } = parseCitationLedger(docText);
   failures.push(...errors);
+
+  // Completeness / no-orphans / non-vacuity (Task 2): only meaningful once
+  // the ledger region itself parsed cleanly -- a malformed or missing
+  // region is already reported above via `errors`.
+  if (errors.length === 0) {
+    const bodyCitations = extractCitations(docText);
+    const ledgerCitations = entries.map((e) => e.citation);
+
+    if (entries.length === 0 && bodyCitations.length > 0) {
+      // Non-vacuity: an author cannot disarm the guard by emptying the
+      // ledger while the body still cites something.
+      failures.push(
+        `vacuity: the document body carries ${bodyCitations.length} citation(s) (${bodyCitations.join(", ")}) but the Citation ledger has zero entries`,
+      );
+    } else {
+      const ledgerSet = new Set(ledgerCitations);
+      for (const citation of bodyCitations) {
+        if (!ledgerSet.has(citation)) {
+          failures.push(`${citation}: cited in the document body but has no Citation ledger entry`);
+        }
+      }
+      const bodySet = new Set(bodyCitations);
+      for (const citation of ledgerCitations) {
+        if (!bodySet.has(citation)) {
+          failures.push(`${citation}: has a Citation ledger entry but does not occur in the document body`);
+        }
+      }
+    }
+  }
 
   const repoRoot = options.repoRoot;
   const repoRootWithSep = repoRoot.endsWith(sep) ? repoRoot : repoRoot + sep;
@@ -358,4 +400,202 @@ No ledger section at all in this document.
       rmSync(root, { recursive: true, force: true });
     }
   }
+});
+
+// ===========================================================================
+// Task 2 cases -- completeness, no-orphans, non-vacuity, encoding, ordering,
+// and the automated-gate membership guard.
+// ===========================================================================
+
+test("structural (non-vacuity): a citation in the body with no ledger entry is reported", () => {
+  const root = mkdtempSync(join(tmpdir(), "phase58-citation-ledger-unledgered-"));
+  try {
+    writeFileSync(join(root, "cited.md"), "alpha\nbravo\n");
+
+    const missingEntryDoc = `# fixture
+
+Body text citing \`cited.md:1\` and \`cited.md:2\`.
+
+## Citation ledger
+
+\`\`\`json
+[
+  { "citation": "cited.md:1", "anchor": "alpha" }
+]
+\`\`\`
+`;
+    writeFileSync(join(root, "missing.md"), missingEntryDoc);
+    const failures = auditProvenanceCitations({ docPath: join(root, "missing.md"), repoRoot: root });
+    assert.equal(failures.length, 1, `expected exactly one failure, got ${JSON.stringify(failures)}`);
+    assert.match(failures[0]!, /cited\.md:2/);
+    assert.match(failures[0]!, /no Citation ledger entry/);
+
+    const completeDoc = `# fixture
+
+Body text citing \`cited.md:1\` and \`cited.md:2\`.
+
+## Citation ledger
+
+\`\`\`json
+[
+  { "citation": "cited.md:1", "anchor": "alpha" },
+  { "citation": "cited.md:2", "anchor": "bravo" }
+]
+\`\`\`
+`;
+    writeFileSync(join(root, "complete.md"), completeDoc);
+    assert.deepEqual(auditProvenanceCitations({ docPath: join(root, "complete.md"), repoRoot: root }), []);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("structural (non-vacuity): a ledger entry whose citation never appears in the body is reported", () => {
+  const root = mkdtempSync(join(tmpdir(), "phase58-citation-ledger-orphan-"));
+  try {
+    writeFileSync(join(root, "cited.md"), "alpha\nbravo\n");
+
+    const orphanDoc = `# fixture
+
+Body text citing only \`cited.md:1\`.
+
+## Citation ledger
+
+\`\`\`json
+[
+  { "citation": "cited.md:1", "anchor": "alpha" },
+  { "citation": "cited.md:2", "anchor": "bravo" }
+]
+\`\`\`
+`;
+    writeFileSync(join(root, "orphan.md"), orphanDoc);
+    const failures = auditProvenanceCitations({ docPath: join(root, "orphan.md"), repoRoot: root });
+    assert.equal(failures.length, 1, `expected exactly one failure, got ${JSON.stringify(failures)}`);
+    assert.match(failures[0]!, /cited\.md:2/);
+    assert.match(failures[0]!, /does not occur in the document body/);
+
+    const correctedDoc = `# fixture
+
+Body text citing only \`cited.md:1\`.
+
+## Citation ledger
+
+\`\`\`json
+[
+  { "citation": "cited.md:1", "anchor": "alpha" }
+]
+\`\`\`
+`;
+    writeFileSync(join(root, "corrected.md"), correctedDoc);
+    assert.deepEqual(auditProvenanceCitations({ docPath: join(root, "corrected.md"), repoRoot: root }), []);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a document containing citations with an empty ledger fails rather than passing vacuously", () => {
+  const root = mkdtempSync(join(tmpdir(), "phase58-citation-ledger-vacuity-"));
+  try {
+    writeFileSync(join(root, "cited.md"), "alpha\n");
+
+    const vacuousDoc = `# fixture
+
+Body text citing \`cited.md:1\`.
+
+## Citation ledger
+
+\`\`\`json
+[]
+\`\`\`
+`;
+    writeFileSync(join(root, "vacuous.md"), vacuousDoc);
+    const failures = auditProvenanceCitations({ docPath: join(root, "vacuous.md"), repoRoot: root });
+    assert.equal(failures.length, 1, `expected exactly one failure, got ${JSON.stringify(failures)}`);
+    assert.match(failures[0]!, /vacuity/);
+    assert.match(failures[0]!, /cited\.md:1/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("anchor matching is a raw substring test: a multi-byte anchor matches and a normalised variant does not", () => {
+  const root = mkdtempSync(join(tmpdir(), "phase58-citation-ledger-encoding-"));
+  try {
+    // U+00E9 LATIN SMALL LETTER E WITH ACUTE, precomposed (NFC) -- distinct
+    // byte sequence from "e" + U+0301 COMBINING ACUTE ACCENT (NFD).
+    const nfc = "café";
+    const nfd = "café";
+    assert.notEqual(nfc, nfd, "the two forms must be byte-different for this case to mean anything");
+
+    writeFileSync(join(root, "cited.md"), `${nfc}\n`);
+
+    const matchingDoc = `# fixture
+
+Body text citing \`cited.md:1\`.
+
+## Citation ledger
+
+\`\`\`json
+[
+  { "citation": "cited.md:1", "anchor": "${nfc}" }
+]
+\`\`\`
+`;
+    writeFileSync(join(root, "matching.md"), matchingDoc);
+    assert.deepEqual(auditProvenanceCitations({ docPath: join(root, "matching.md"), repoRoot: root }), []);
+
+    const mismatchingDoc = `# fixture
+
+Body text citing \`cited.md:1\`.
+
+## Citation ledger
+
+\`\`\`json
+[
+  { "citation": "cited.md:1", "anchor": "${nfd}" }
+]
+\`\`\`
+`;
+    writeFileSync(join(root, "mismatching.md"), mismatchingDoc);
+    const failures = auditProvenanceCitations({ docPath: join(root, "mismatching.md"), repoRoot: root });
+    assert.equal(failures.length, 1, `a byte-differing normalised variant must not match; got ${JSON.stringify(failures)}`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("failures are returned in ledger order, so the same tree produces identical output", () => {
+  const root = mkdtempSync(join(tmpdir(), "phase58-citation-ledger-ordering-"));
+  try {
+    writeFileSync(join(root, "cited.md"), "one\ntwo\nthree\n");
+
+    const doc = `# fixture
+
+Body text citing \`cited.md:1\` and \`cited.md:3\`.
+
+## Citation ledger
+
+\`\`\`json
+[
+  { "citation": "cited.md:3", "anchor": "one" },
+  { "citation": "cited.md:1", "anchor": "three" }
+]
+\`\`\`
+`;
+    writeFileSync(join(root, "doc.md"), doc);
+    const failures = auditProvenanceCitations({ docPath: join(root, "doc.md"), repoRoot: root });
+    assert.equal(failures.length, 2, `expected exactly two failures, got ${JSON.stringify(failures)}`);
+    // Ledger order: cited.md:3 first, cited.md:1 second -- never body order,
+    // never alphabetical.
+    assert.match(failures[0]!, /cited\.md:3/);
+    assert.match(failures[1]!, /cited\.md:1/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("the citation guard runs in the automated gate: automatedTestFiles includes it and MANUAL_ONLY_TESTS does not", () => {
+  const ownBasename = fileURLToPath(import.meta.url).split(/[\\/]/).pop()!;
+  assert.ok(automatedTestFiles(HERE).includes(ownBasename), `${ownBasename} must be discovered by automatedTestFiles()`);
+  assert.ok(!MANUAL_ONLY_TESTS.includes(ownBasename), `${ownBasename} must not be listed in MANUAL_ONLY_TESTS`);
 });
