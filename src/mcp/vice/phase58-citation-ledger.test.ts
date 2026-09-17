@@ -57,14 +57,130 @@ export interface CitationAuditOptions {
   repoRoot: string;
 }
 
-/** STUB (RED phase): not yet implemented. */
-export function parseCitationLedger(_docText: string): { entries: CitationLedgerEntry[]; errors: string[] } {
-  return { entries: [], errors: ["not implemented"] };
+/** The ledger region is everything from the line matching this level-2
+ * heading through the end of the file -- deliberately the document's FINAL
+ * section, so any section added later is automatically inside the body
+ * `extractCitations()` (Task 2) scans. */
+const LEDGER_HEADING_RE = /^## Citation ledger\s*$/m;
+
+/** Parses `docText`'s Citation ledger section: the single fenced ```json
+ * block after the `## Citation ledger` heading, as a JSON array of
+ * `{ citation, anchor }` objects. Returns the valid entries plus a string
+ * array of parse errors -- never throws, never coerces a type, never drops
+ * an unexpected key silently (the same refuse-unknown-keys discipline
+ * `normaliseHostToolRequest()` applies on the host-tool seam). */
+export function parseCitationLedger(docText: string): { entries: CitationLedgerEntry[]; errors: string[] } {
+  const headingMatch = LEDGER_HEADING_RE.exec(docText);
+  if (!headingMatch) {
+    return {
+      entries: [],
+      errors: ["Citation ledger region not found: no line matches a level-2 'Citation ledger' heading"],
+    };
+  }
+  const ledgerRegion = docText.slice(headingMatch.index);
+  const blockMatch = /```json\s*\n([\s\S]*?)```/.exec(ledgerRegion);
+  if (!blockMatch) {
+    return { entries: [], errors: ["Citation ledger region found but contains no fenced ```json block"] };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(blockMatch[1]!);
+  } catch (err) {
+    return { entries: [], errors: [`Citation ledger json block does not parse as JSON: ${(err as Error).message}`] };
+  }
+  if (!Array.isArray(parsed)) {
+    return { entries: [], errors: ["Citation ledger json block must be a JSON array of {citation, anchor} objects"] };
+  }
+
+  const entries: CitationLedgerEntry[] = [];
+  const errors: string[] = [];
+  parsed.forEach((raw: unknown, i: number) => {
+    if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+      errors.push(`ledger entry ${i}: expected an object with "citation" and "anchor" string fields, got ${JSON.stringify(raw)}`);
+      return;
+    }
+    const keys = Object.keys(raw as Record<string, unknown>).sort();
+    if (keys.length !== 2 || keys[0] !== "anchor" || keys[1] !== "citation") {
+      errors.push(`ledger entry ${i}: must carry exactly the two keys "citation" and "anchor", got [${keys.join(", ")}]`);
+      return;
+    }
+    const { citation, anchor } = raw as { citation: unknown; anchor: unknown };
+    if (typeof citation !== "string" || typeof anchor !== "string") {
+      errors.push(`ledger entry ${i}: "citation" and "anchor" must both be strings`);
+      return;
+    }
+    entries.push({ citation, anchor });
+  });
+  return { entries, errors };
 }
 
-/** STUB (RED phase): not yet implemented. */
-export function auditProvenanceCitations(_options: CitationAuditOptions): string[] {
-  return ["not implemented"];
+/** Splits a `path:line` or `path:start-end` citation string into its parts.
+ * Returns null if the string does not match that shape. */
+function parseCitationString(citation: string): { filePart: string; start: number; end: number } | null {
+  const m = /^(.+):(\d+)(?:-(\d+))?$/.exec(citation);
+  if (!m) return null;
+  const start = Number(m[2]);
+  const end = m[3] !== undefined ? Number(m[3]) : start;
+  return { filePart: m[1]!, start, end };
+}
+
+/** The whole resolution-relation audit (Task 1 scope): every ledger entry's
+ * citation must parse, its path must resolve inside `repoRoot`, its range
+ * must be well-formed and in-bounds, and its anchor must be found -- as a
+ * raw substring, no normalisation -- inside the cited line range's live
+ * text. Returns a string array of failures; empty means pass. Task 2 adds
+ * the completeness, no-orphans and non-vacuity relations on top of this. */
+export function auditProvenanceCitations(options: CitationAuditOptions): string[] {
+  const failures: string[] = [];
+  const docText = readFileSync(options.docPath, "utf8");
+  const { entries, errors } = parseCitationLedger(docText);
+  failures.push(...errors);
+
+  const repoRoot = options.repoRoot;
+  const repoRootWithSep = repoRoot.endsWith(sep) ? repoRoot : repoRoot + sep;
+
+  for (const entry of entries) {
+    const parsedCitation = parseCitationString(entry.citation);
+    if (!parsedCitation) {
+      failures.push(`${entry.citation}: not a valid "path:line" or "path:start-end" citation string`);
+      continue;
+    }
+    const { filePart, start, end } = parsedCitation;
+
+    if (start > end) {
+      failures.push(`${entry.citation}: malformed range -- start (${start}) is greater than end (${end})`);
+      continue;
+    }
+
+    const resolvedPath = resolve(repoRoot, filePart);
+    if (resolvedPath !== repoRoot && !resolvedPath.startsWith(repoRootWithSep)) {
+      failures.push(`${entry.citation}: resolves outside the repository root (${repoRoot}) -- refused, file not read`);
+      continue;
+    }
+
+    if (!existsSync(resolvedPath)) {
+      failures.push(`${entry.citation}: cited file does not exist at ${resolvedPath}`);
+      continue;
+    }
+
+    const fileLines = readFileSync(resolvedPath, "utf8").split("\n");
+    if (start < 1 || end > fileLines.length) {
+      failures.push(`${entry.citation}: range out of bounds -- cited file has ${fileLines.length} lines`);
+      continue;
+    }
+
+    const citedText = fileLines.slice(start - 1, end).join("\n");
+    // Raw substring match: no normalize(), no trim(), no case folding. The
+    // document quotes real source text containing multi-byte characters,
+    // and any normalisation would make the check accept text the cited
+    // file does not literally carry (Task 2's encoding case proves this).
+    if (!citedText.includes(entry.anchor)) {
+      failures.push(`${entry.citation}: anchor ${JSON.stringify(entry.anchor)} not found in cited range; actual text: ${JSON.stringify(citedText)}`);
+    }
+  }
+
+  return failures;
 }
 
 // ===========================================================================

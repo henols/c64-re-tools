@@ -32,14 +32,14 @@ by name rather than filling in a plausible number.
 > Checked live against each ecosystem on 2026-08-18. `CPUHISTORY_GET`, the
 > opcode behind this project's exact cycle stopwatch, requires **VICE >= 3.10**
 
-`.planning/REQUIREMENTS.md:88` records the opposite, and is the later
+`.planning/REQUIREMENTS.md:85` records the opposite, and is the later
 evidence:
 
 > Reporting a VICE, ACME, Ghidra or dxa version number | No shipped tool
 > refuses on one. `vice_cpu_history` runs over the text channel (`chis`); the
 > VICE >= 3.10 floor is on `CPUHISTORY_GET`, an opcode no shipped tool calls
 
-**`.planning/REQUIREMENTS.md:88` wins.** It is both the later statement (the
+**`.planning/REQUIREMENTS.md:85` wins.** It is both the later statement (the
 README prose dates to 2026-08-18; the REQUIREMENTS.md row was written for the
 v1.1.0 milestone opened 2026-09-16) and the measured one: `vice_cpu_history`
 is served over the text channel's `chis` command, not the binary monitor's
@@ -272,3 +272,18 @@ find the current probe list. `CLAUDE.md`'s constraint list still cites
 citation is stale, the correction is deliberately deferred (it needs to
 touch both `CLAUDE.md` and `.planning/PROJECT.md` at once, since the former
 is mirrored from the latter), and this doc does not close it.
+
+## Citation ledger
+
+This ledger is machine-read by `src/mcp/vice/phase58-citation-ledger.test.ts`.
+Every distinct `file:line` citation in this document's body must have a
+matching entry below, carrying an `anchor` -- the exact substring the cited
+line range must contain. The anchor is re-asserted against the cited file's
+live text on every run: adding a citation to this document without adding
+its entry here, or letting an entry drift off its anchor, fails the build.
+
+```json
+[
+  { "citation": ".planning/REQUIREMENTS.md:85", "anchor": "No shipped tool refuses on one." }
+]
+```
