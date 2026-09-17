@@ -114,13 +114,17 @@ Flatpak and Snap builds of VICE exist but are **unverified** here — this
 project has not confirmed whether their sandboxing permits reaching the
 binary monitor on `127.0.0.1`, so neither is recommended either way.
 
-### What a sub-3.10 VICE costs
+### VICE version compatibility
 
-Nothing breaks. `CPUHISTORY_GET` (the exact per-instruction cycle counter) is
-absent below VICE 3.10, so the cycle stopwatch degrades to an honest
-within-one-frame approximation instead of an exact count. This is
-already-shipped graceful degradation — every other tool works the same
-either way.
+No shipped tool in this project refuses on a VICE version. `vice_cpu_history`
+— the exact per-instruction cycle counter — runs over the text channel's
+`chis` command, not the binary monitor's `CPUHISTORY_GET` opcode, so it works
+the same regardless of which VICE version you have installed. The 3.10 floor
+named in the table above binds `CPUHISTORY_GET` itself, an opcode no shipped
+tool calls — see `.planning/REQUIREMENTS.md` for the measured claim.
+Consequently the prerequisite declaration (`src/mcp/vice/prerequisites.json`)
+carries no VICE version data of any kind — not a floor, and not a dated
+observation.
 
 ### Capabilities with no route on stock
 
