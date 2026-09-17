@@ -1,7 +1,7 @@
 {
   "contract": "1.0.0",
   "flavor": "core",
-  "milestone": "v1.1.0",
+  "milestone": "v1.1.0 — The Prerequisite Doctor",
   "phases": [
     {
       "number": "1",
@@ -302,12 +302,37 @@
       "number": "57",
       "name": "Nothing Is Installed Automatically",
       "status": "pending"
+    },
+    {
+      "number": "58",
+      "name": "One Declaration, Four Places That Can No Longer Disagree",
+      "status": "pending"
+    },
+    {
+      "number": "59",
+      "name": "The Tool-Location Seam and Its Precedence Order",
+      "status": "pending"
+    },
+    {
+      "number": "60",
+      "name": "The Seam Wired Into the Code That Ships",
+      "status": "pending"
+    },
+    {
+      "number": "61",
+      "name": "`vice-mcp doctor`, Reachable on a Node Too Old to Run the Server",
+      "status": "pending"
+    },
+    {
+      "number": "62",
+      "name": "The Install Tables Generated, and a Guard That Compares Facts",
+      "status": "pending"
     }
   ],
   "next": {
-    "command": "/gsd:discuss-phase",
-    "label": "Discuss the first phase",
-    "reason": "Project initialized — plan your first phase"
+    "command": "/gsd:execute-phase 58",
+    "label": "Execute phase 58 (2 plans, 2 waves)",
+    "reason": "Phase 58 planned and verified - 2 plans ready to execute"
   },
-  "updated_at": "2026-09-16T12:35:13.318Z"
+  "updated_at": "2026-09-17T10:06:21.109Z"
 }
