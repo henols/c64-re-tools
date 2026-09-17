@@ -1,145 +1,146 @@
 ---
 phase: 58-one-declaration-four-places-that-can-no-longer-disagree
-reviewed: 2026-09-17T00:00:00Z
+reviewed: 2026-09-17T19:26:18Z
 depth: standard
-files_reviewed: 6
+files_reviewed: 2
 files_reviewed_list:
-  - src/mcp/vice/prerequisites.json
-  - src/mcp/vice/prerequisites.test.ts
-  - src/mcp/vice/package.json
-  - .github/workflows/ci.yml
   - docs/phase58-declaration-provenance.md
-  - README.md
+  - src/mcp/vice/phase58-citation-ledger.test.ts
 findings:
-  critical: 0
-  warning: 3
+  critical: 2
+  warning: 2
   info: 1
-  total: 4
+  total: 5
 status: issues_found
 ---
 
 # Phase 58: Code Review Report
 
-**Reviewed:** 2026-09-17T00:00:00Z
+**Reviewed:** 2026-09-17T19:26:18Z
 **Depth:** standard
-**Files Reviewed:** 6
+**Files Reviewed:** 2
 **Status:** issues_found
 
 ## Summary
 
-Reviewed the phase 58 declaration deliverable: `prerequisites.json`, its colocated
-structural test, the one-line `package.json`/`ci.yml` additions, the provenance
-document, and the README correction. `prerequisites.test.ts`'s 20 cases all pass
-locally, `tsc --noEmit` is clean, and every citation inside `prerequisites.json`
-itself was independently re-opened and confirmed accurate (README table rows,
-`host-tool.mts` refusal messages and line ranges, `ci.yml`'s measured install
-line, `SKILL.md` troubleshooting rows) — the data file and its test are sound.
+`docs/phase58-declaration-provenance.md`'s Citation ledger and
+`src/mcp/vice/phase58-citation-ledger.test.ts`'s audit function were read in
+full, the suite was run (10/10 green), and `extractCitations()` /
+`parseCitationLedger()` were exercised directly against the committed
+document: all 25 body citations have exactly one matching, resolving ledger
+entry today, so the shipped document is currently self-consistent. The
+problems found are all in the audit function's edge-case handling rather than
+in today's document content — each was confirmed with a standalone repro
+against the real `auditProvenanceCitations()` export, not inferred from
+reading. Two let the guard silently confirm something it never actually
+checked (an empty anchor, or a path that has walked out of the repository via
+a symlink); one crashes the run outright with a raw filesystem exception
+instead of the graceful failure string the module's own comments promise.
+None of the three requires anything more than a single future ledger-JSON
+edit to trigger, and none is currently present in the committed ledger.
 
-The defects found are all in the surrounding narrative and completeness, not in
-the mechanically-tested JSON shape: `docs/phase58-declaration-provenance.md`
-carries two citations that point at the wrong lines in the files they claim to
-quote (one lands on an unrelated `.planning/REQUIREMENTS.md` table row, the other
-lands inside an unrelated bash function in `ci.yml`), and `prerequisites.json`
-itself omits one real, user-installed external tool (`unp64`, the packer oracle)
-that the codebase already documents and resolves through its own env vars —
-notable because this phase's stated purpose is a declaration of *every* external
-tool the plugin needs. None of these rise to a security or runtime-correctness
-issue (nothing reads `prerequisites.json` at runtime yet, per the phase's own
-scope note), but a provenance document whose entire content is a set of
-falsifiable citations should not contain incorrect ones, and an incomplete
-"every tool" declaration will propagate its gap into Phase 60's refusal wiring
-and Phase 61's doctor.
+## Critical Issues
+
+### CR-01: Symlink under the repo root defeats the containment check, letting the audit "verify" content that lives outside the repository
+
+**File:** `src/mcp/vice/phase58-citation-ledger.test.ts:205-222`
+**Issue:** The path-escape guard (`resolvedPath !== repoRoot && !resolvedPath.startsWith(repoRootWithSep)`, line 206) operates on the *lexical* result of `resolve(repoRoot, filePart)` only. It never resolves symlinks before comparing against `repoRoot`. If a citation's `filePart` names a path inside the repo that is (or contains) a symlink pointing outside the repo, `resolve()` still returns a path that lexically starts with `repoRootWithSep`, so the containment check passes, and the subsequent `readFileSync(resolvedPath, ...)` (line 216) transparently follows the symlink and reads whatever is at the real target — which can be anywhere on the filesystem the process can read.
+
+Confirmed with a standalone repro against the real export:
+```
+symlink: <tmproot>/link.md -> <outside-tmp>/secret.md  (content: "TOP SECRET CONTENT HERE")
+citation: { "citation": "link.md:1", "anchor": "TOP SECRET" }
+auditProvenanceCitations({ docPath: <tmproot>/doc.md, repoRoot: <tmproot> })
+=> []   // zero failures: the audit reports the citation as VERIFIED
+```
+The "escape" test at line 286 only exercises a lexical `..` escape and explicitly asserts the file is "never read" for that case; it does not cover the symlink-indirection variant, so this gap has no regression coverage. This is exactly the class of bug the review brief flagged ("whether its path handling can read outside the repository root") and it reproduces cleanly against the shipped code, not a hypothetical.
+**Fix:**
+```ts
+import { realpathSync } from "node:fs";
+// ... after existsSync(resolvedPath) succeeds:
+const realPath = realpathSync(resolvedPath);
+const realRoot = realpathSync(repoRoot);
+const realRootWithSep = realRoot.endsWith(sep) ? realRoot : realRoot + sep;
+if (realPath !== realRoot && !realPath.startsWith(realRootWithSep)) {
+  failures.push(`${entry.citation}: resolves outside the repository root via a symlink (${realPath}) -- refused, file not read`);
+  continue;
+}
+```
+Add a test mirroring the existing `..`-escape case but using `symlinkSync()` to point a same-directory file outside `repoRoot`.
+
+### CR-02: A ledger citation resolving to a directory crashes the run with an uncaught `EISDIR` instead of the promised graceful failure
+
+**File:** `src/mcp/vice/phase58-citation-ledger.test.ts:211-222`
+**Issue:** `existsSync(resolvedPath)` (line 211) is true for directories as well as files, so the directory case falls through to `readFileSync(resolvedPath, "utf8")` (line 216), which throws `EISDIR: illegal operation on a directory, read`. `auditProvenanceCitations` has no try/catch around this read, so the exception propagates out of the function uncaught, crashing the `node --test` run rather than appearing as an entry in the returned failures array. This directly contradicts the module's own stated contract — the header comment for `parseCitationLedger` says "never throws", and the escape-test's own comment (line 292) states the design intent explicitly: an audit failure must be "a graceful failure string", not a thrown exception (mirroring exactly the ENOENT case that test already guards).
+
+Confirmed with a standalone repro against the real export:
+```
+mkdir <tmproot>/adir.md
+citation: { "citation": "adir.md:1", "anchor": "x" }
+auditProvenanceCitations({ docPath: ..., repoRoot: <tmproot> })
+=> throws "EISDIR: illegal operation on a directory, read"
+```
+A single bad ledger entry (e.g. a citation accidentally pointed at a directory rather than a file, plausible during hand-authoring since the CITATION_RE format doesn't distinguish them) takes down the whole test file's run with a low-level OS error instead of a readable, single-entry failure message.
+**Fix:**
+```ts
+import { statSync } from "node:fs";
+// ... replace the existsSync + readFileSync sequence with:
+let stat;
+try {
+  stat = statSync(resolvedPath);
+} catch {
+  failures.push(`${entry.citation}: cited file does not exist at ${resolvedPath}`);
+  continue;
+}
+if (!stat.isFile()) {
+  failures.push(`${entry.citation}: cited path is not a regular file: ${resolvedPath}`);
+  continue;
+}
+```
 
 ## Warnings
 
-### WR-01: Wrong `.planning/REQUIREMENTS.md` line citation for the VICE version-gate quote
+### WR-01: Empty-string `anchor` trivially satisfies the substring check, letting a ledger entry "verify" any cited range with no actual assertion
 
-**File:** `docs/phase58-declaration-provenance.md:35` and `:42`
-**Issue:** The doc quotes `.planning/REQUIREMENTS.md:88` as the "later evidence" that overturns
-the README's old VICE-3.10 framing:
-> `.planning/REQUIREMENTS.md:88` records the opposite, and is the later evidence:
-> Reporting a VICE, ACME, Ghidra or dxa version number | No shipped tool refuses on one. `vice_cpu_history` runs over the text channel (`chis`); the VICE >= 3.10 floor is on `CPUHISTORY_GET`, an opcode no shipped tool calls
+**File:** `src/mcp/vice/phase58-citation-ledger.test.ts:110-116` and `:227`
+**Issue:** `parseCitationLedger` validates that `anchor` is a `string` (line 111) but never that it is non-empty. `String.prototype.includes("")` is always `true` in JavaScript for any string, including the empty string itself, so `citedText.includes(entry.anchor)` (line 227) passes unconditionally whenever `entry.anchor === ""`, regardless of what the cited line range actually contains.
 
-That exact table row is actually at `.planning/REQUIREMENTS.md:85`. Line 88 is a
-different, unrelated row: `| Byte-identical guarding of the generated README | Owner
-decision 2026-09-13 removes that assertion class... |`. The citation is off by
-three lines and, followed literally, points a reader at the wrong evidence for
-the document's central "Case one" argument. Both occurrences (the introduction
-at line 35 and the "wins" restatement at line 42) repeat the same wrong number.
-**Fix:** Change both citations from `.planning/REQUIREMENTS.md:88` to
-`.planning/REQUIREMENTS.md:85`.
+Confirmed with a standalone repro against the real export:
+```
+cited.md: "totally unrelated content"
+ledger entry: { "citation": "cited.md:1", "anchor": "" }
+auditProvenanceCitations(...) => []   // reported as verified
+```
+This reopens, for a single entry, exactly the silent-drift failure mode this whole file exists to close (per its own header: "a citation cannot silently drift ... and must never again be the entire check"). Nothing in the committed ledger currently uses an empty anchor, but nothing stops a future edit from doing so, accidentally or otherwise, and the entry would pass every case in this suite.
+**Fix:** Reject empty (or whitespace-only) anchors as a ledger-format error in `parseCitationLedger`:
+```ts
+if (typeof citation !== "string" || typeof anchor !== "string" || anchor.length === 0) {
+  errors.push(`ledger entry ${i}: "citation" and "anchor" must both be non-empty strings`);
+  return;
+}
+```
 
-### WR-02: Wrong `ci.yml` line citation for the ACME banner-verification claim
+### WR-02: Out-of-bounds check admits one phantom trailing "line" for files ending in a newline
 
-**File:** `docs/phase58-declaration-provenance.md:102`
-**Issue:** Case three states:
-> It is graded `measured` and not merely `carried` because CI does not just run the install command -- it then proves the installed binary really is ACME by grepping its own version banner (`.github/workflows/ci.yml:70-72`)
-
-`.github/workflows/ci.yml:70-72` is inside the `retry_apt()` helper's *failure*
-branch (`echo "retry_apt: attempt ${attempt}/3 failed..."`, `sleep 5`, `done`) —
-it has nothing to do with the banner grep. The sentence describing the intent
-("and then PROVES the installed binary really is ACME by running it and
-grepping its own banner") is at `ci.yml:50-51`, and the actual banner grep this
-paragraph is describing runs at `ci.yml:80-81`
-(`{ acme --version || acme --help; } ... | tee /tmp/acme-banner.txt` /
-`grep -qi acme /tmp/acme-banner.txt`).
-**Fix:** Change the citation to `.github/workflows/ci.yml:80-81` (the actual grep), or
-`:50-51` if the intent is to cite where the behavior is described in prose.
-
-### WR-03: `prerequisites.json` omits the `unp64` packer-oracle prerequisite
-
-**File:** `src/mcp/vice/prerequisites.json`
-**Issue:** The declaration's stated purpose (per this phase's scope note and
-`docs/phase58-declaration-provenance.md`'s own framing) is a committed record of
-"every external tool the plugin needs." The document declares eight tool ids
-(`x64sc`, `c1541`, `petcat`, `acme`, `acme-lib`, `ghidra`, `dxa`, `node`), and
-`prerequisites.test.ts`'s required-tools case asserts exactly that set. But a
-ninth, genuinely external, user-installed binary exists in this codebase:
-`unp64` (the packer-identification oracle), resolved via the `UNP64`/`UNP64_PATH`
-environment variables in `src/mcp/vice/host-tool.mts`'s `resolveOracleCommand()`
-(around line 2803) and documented as a host-side install step in
-`src/skills/c64-program-recon/SKILL.md:117-125` ("install an external identifier
-on the **host** and point `UNP64` or `UNP64_PATH` at it"). Its two MCP tool ids,
-`oracle.probe` and `oracle.run`, are members of `HOST_TOOL_IDS` and *do* appear —
-but only under the `node` record's `unblocks.mcp` list, which is misleading:
-Node being present does not make `oracle.probe`/`oracle.run` useful; the absence
-of `unp64` is the actual, common reason those two tools report
-`available: false` / degrade. A future doctor (Phase 61) or refusal wiring
-(Phase 60) built by walking this file's `tools` object will never be able to
-name `unp64` by id, tell a user what to install, or point at a remedy for it,
-because no such record exists.
-**Fix:** Add a `unp64` record to `prerequisites.json` (no `versionFloor`, `unblocks.mcp:
-["oracle.probe", "oracle.run"]`, `unblocks.skills: ["c64-program-recon"]`, and a
-`universal` remedy citing `src/skills/c64-program-recon/SKILL.md:117-125` and/or
-`host-tool.mts`'s `resolveOracleCommand()`), and add `"unp64"` to
-`prerequisites.test.ts`'s required-tool-ids list so the omission cannot silently
-recur.
+**File:** `src/mcp/vice/phase58-citation-ledger.test.ts:216-217`
+**Issue:** `readFileSync(...).split("\n")` produces a trailing empty-string element for any file ending in `\n` (e.g. `"a\nb\n".split("\n")` → `["a", "b", ""]`, length 3 for a 2-line file). The bounds check `end > fileLines.length` (line 217) therefore accepts `end` one past the file's real last line, and the "cited" text for that phantom line is `""`. On its own this doesn't let a *meaningful* anchor match (an empty slice can't contain non-empty text), but combined with WR-01 it means a citation one line past end-of-file with an empty anchor passes silently — confirmed: citing line 3 of a 2-line, newline-terminated file with `anchor: ""` returns `[]`. Independent of WR-01, it's a genuine off-by-one against the file's real line count.
+**Fix:** Drop a single trailing empty element produced by a final newline before computing `fileLines.length`:
+```ts
+const rawContent = readFileSync(resolvedPath, "utf8");
+const fileLines = rawContent.split("\n");
+if (rawContent.endsWith("\n")) fileLines.pop();
+```
 
 ## Info
 
-### IN-01: `acme`'s "measured" remedy text is not the literal command CI ran
+### IN-01: Extension whitelist in `CITATION_RE` will fail closed (loudly, not silently) for any future citation using an unlisted extension
 
-**File:** `src/mcp/vice/prerequisites.json` (acme.remedies.linux, ecosystem `ubuntu`)
-**Issue:** The entry is graded `"measured"`, and `docs/phase58-declaration-provenance.md`
-Case three grounds that grade specifically in this being "an observed install,
-not an asserted one" — i.e. the text is presented as what was actually run and
-verified. The `text` field reads `"sudo apt-get install -y acme"`, but the line
-it cites, `.github/workflows/ci.yml:78`, actually runs `retry_apt install -y acme`,
-a shell function that expands to
-`sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install -y acme`.
-The simplification is a reasonable one for a human-facing remedy (a user has no
-`retry_apt` function to call), but it means the "measured" grade's own stated
-justification — that this text is what was literally observed running — is not
-quite true of the string a reader actually sees.
-**Fix:** Either note in the remedy text or in `docs/phase58-declaration-provenance.md`
-that the measured grade covers the *effective* apt invocation (package name and
-manager), not a byte-identical copy of the CI script line, so a future reader
-does not assume `prerequisites.test.ts` or the `measured` tag guarantees literal
-text equality the way the dedicated debian-trixie/README parity test does for
-`x64sc`.
+**File:** `src/mcp/vice/phase58-citation-ledger.test.ts:134`
+**Issue:** `CITATION_RE` only recognizes `md|mts|ts|mjs|json|yml|sh|a` extensions immediately before the `:line` suffix. A future citation to, say, a `.mjs.map` or `.cjs` file would not be extracted by `extractCitations()`, so a correctly-authored ledger entry for it would be reported as an "orphan" (has a ledger entry but does not occur in the document body) even though it's genuinely cited in prose. This fails the build rather than passing silently, so it's self-correcting, but it's a maintenance trap worth a one-line comment note near the regex for the next person who adds a citation to an unlisted extension and gets a confusing "orphan" failure instead of an "unrecognized extension" one.
+**Fix:** Either widen the whitelist preemptively for extensions already used elsewhere in the repo (`.cjs`, `.yaml`), or add a comment above `CITATION_RE` stating explicitly that a new extension must be added here first, before it can be cited.
 
 ---
 
-_Reviewed: 2026-09-17T00:00:00Z_
+_Reviewed: 2026-09-17T19:26:18Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
