@@ -336,7 +336,7 @@ suppressed/acknowledged rows are recorded in their own sections.
 Phase: 58 (One Declaration, Four Places That Can No Longer Disagree) — READY TO EXECUTE
 Plan: 0/2 executed - 58-01 (Wave 1), 58-02 (Wave 2, depends on 58-01)
 Status: Phase 58 planned - research, patterns and validation strategy written; plan-checker returned VERIFICATION PASSED; requirements 4/4 and decisions 15/15 covered
-Last activity: 2026-09-17 - Planned Phase 58 (2 plans, 2 waves); next action is `/gsd-execute-phase 58`
+Last activity: 2026-09-17 — Phase 53 (Operator-Owned `docs/`) executed: 27 evidence documents relocated out of docs/, 83 product-source citations rewritten as reasons, criterion 6 withdrawn
 
 **Milestone shape, so no reader has to rebuild it from the ROADMAP:** Phase 58
 declares the prerequisites; Phase 59 builds the tool-location seam and its

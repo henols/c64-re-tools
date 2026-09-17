@@ -1464,11 +1464,11 @@ a pattern hole ships a guard that is green on the citations it was built to catc
 **Plans**: 5 plans
 
 Plans:
-- [ ] 53-01-PLAN.md — Rewrite the 30 citations in the ten npm-published modules
-- [ ] 53-02-PLAN.md — Rewrite the 32 citations in the probe script, the fixture module and the fixture tree
-- [ ] 53-03-PLAN.md — Rewrite the 21 citations in the thirteen test files
-- [ ] 53-04-PLAN.md — `git mv` the 27 documents, repoint the two guard tests, record the orphan decision
-- [ ] 53-05-PLAN.md — Repair the 98 references the move stranded, and demonstrate criteria 1-5
+- [x] 53-01-PLAN.md — Rewrite the 30 citations in the ten npm-published modules
+- [x] 53-02-PLAN.md — Rewrite the 32 citations in the probe script, the fixture module and the fixture tree
+- [x] 53-03-PLAN.md — Rewrite the 21 citations in the thirteen test files
+- [x] 53-04-PLAN.md — `git mv` the 27 documents, repoint the two guard tests, record the orphan decision
+- [x] 53-05-PLAN.md — Repair the 98 references the move stranded, and demonstrate criteria 1-5
 
 Notes:
 
@@ -2222,7 +2222,7 @@ check. No test reads this table now.
 | 50. Equivalence and Modifiability | v1.0.0 | 8/8 | Complete | 2026-09-16 |
 | 51. Planning Vocabulary Out of the Shipped Server | v1.0.0 → carried | 8/17 | **Carried forward** | - |
 | 52. Remove the Fork Backend | v1.0.0 | 13/13 | Complete | 2026-09-12 |
-| 53. Operator-Owned `docs/` | v1.0.0 → carried | - | **Carried forward** | - |
+| 53. Operator-Owned `docs/` | v1.0.0 → carried | 5/5 | Complete (5 of 6 criteria; criterion 6 withdrawn) | 2026-09-17 |
 | 54. Remove Every Byte-Identical Assertion | v1.0.0 → carried | - | **Carried forward** | - |
 | 55. Restore the Fork Removal's Dropped Capabilities and Re-Baseline the Proxy Test | v1.0.0 | 6/6 | Complete ⚠️ no gate | 2026-09-14 |
 | 56. Remove `shipped-modules.ts` and Its Embedded Source Scans | v1.0.0 | 11/11 | Complete | 2026-09-15 |
