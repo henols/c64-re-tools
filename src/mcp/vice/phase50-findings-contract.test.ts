@@ -4,20 +4,19 @@
 // ---------------------------------------------------------------------------
 // WHY THIS FILE EXISTS
 // ---------------------------------------------------------------------------
-// The transcription step of two EQUIV-03 verdict documents
-// (`docs/phase50-modifiability-findings.md` and
-// `docs/phase50-exported-edit-findings.md`) was unguarded. Both carry YAML
-// frontmatter with seven `inputs:` keys and evidence citations on every key
-// line. The plan-time automated command that aimed at them,
-// `grep -ac '^\(tree_rebuild\|...\):'`, was anchored at column 0 and
-// returned 0 against a correct document -- the keys are INDENTED under an
-// `inputs:` mapping, not at column 0. That broken command is wired into no
-// test and runs nowhere in CI. This file guards the transcription rule with
-// a regex that matches the keys where they REALLY LIVE, indented inside
-// `inputs:`, never re-introducing the column-0 anchor.
+// The transcription step of the two committed EQUIV-03 verdict documents was
+// unguarded. Both carry YAML frontmatter with seven `inputs:` keys and
+// evidence citations on every key line. The plan-time automated command that
+// aimed at them, `grep -ac '^\(tree_rebuild\|...\):'`, was anchored at
+// column 0 and returned 0 against a correct document -- the keys are
+// INDENTED under an `inputs:` mapping, not at column 0. That broken command
+// is wired into no test and runs nowhere in CI. This file guards the
+// transcription rule with a regex that matches the keys where they REALLY
+// LIVE, indented inside `inputs:`, never re-introducing the column-0 anchor.
 //
-// A third guard covers `docs/phase50-ci-boundary.md`'s required `## ` section
-// (G4): the CI boundary document can silently lose this section if unguarded.
+// A third guard covers the document recording where the continuous-
+// integration boundary falls, so its required `## ` section (G4) cannot
+// silently disappear unguarded.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -162,7 +161,8 @@ export function auditPhase50FindingsContract(options: FindingsAuditOptions): str
   }
 
   // =========================================================================
-  // Contract 4: docs/phase50-ci-boundary.md carries the required section.
+  // Contract 4: the document recording where the continuous-integration
+  // boundary falls carries the required section.
   // =========================================================================
   const ciBoundaryPath = join(options.docsDir, "phase50-ci-boundary.md");
   if (existsSync(ciBoundaryPath)) {
