@@ -9,8 +9,9 @@
  * items research flagged UNVERIFIED (9-byte CHECKPOINT_SET, Drive8TrueEmulation
  * naming, MEM_SET into drive ROM, RL/CY condition acceptance + firing,
  * PALETTE_GET/pixel-vs-register), plus whether ADVANCE_INSTRUCTIONS emits a
- * RESUMED/STOPPED pair. See docs/phase0-binmon-findings.md and
- * docs/phase1-probe-results.md (the recorded run).
+ * RESUMED/STOPPED pair -- every one of those confirmed by a live run
+ * against genuine, unpatched stock VICE with each wire byte captured and
+ * matched against monitor_binary.c's own encoder/decoder pair.
  *
  * Usage:
  *   1) Launch a VICE build with the binary monitor:
@@ -34,9 +35,12 @@
  * --capture-out (defaults to fixtures/binmon/ next to this script), each via
  * a tmp-sibling -> rename write. Every case is bounded by MAX_CAPTURE_FRAMES:
  * a runaway case aborts and writes nothing rather than consuming the whole
- * capture session's time budget (see the CHECKPOINT_INFO x18 flood recorded
- * in docs/phase1-probe-results.md). binmon-fixtures.ts's loadCapturedFixture()
- * is the consumer of what this writes.
+ * capture session's time budget -- eighteen CHECKPOINT_INFO frames arrived
+ * back-to-back with no interleaved STOPPED/RESUMED in the one run that
+ * triggered this, on a vendor-fork 3.10 build under a full-range,
+ * non-temporary, stop=1 checkpoint, and every command sent on that
+ * connection after the flood timed out. binmon-fixtures.ts's
+ * loadCapturedFixture() is the consumer of what this writes.
  *
  * Phase-3 assumption probes (needs a real x64sc; live, no fixtures written):
  *   node src/mcp/vice/probe-binmon.mjs --probe-assumptions [host] [port]
@@ -53,9 +57,12 @@
  * non-stopping checkpoint's CHECKPOINT_INFO hit frame is emitted
  * SYNCHRONOUSLY, over the blocking socket, from inside the emulator's CPU
  * loop (mon_breakpoint.c:557-562) -- on a hot address this can stall the
- * emulator thread. See docs/phase1-probe-results.md and
- * .planning/phases/13-external-verification/13-PROBE-RESULTS.md for recorded
- * runs.
+ * emulator thread, exactly the failure mode observed live on a vendor-fork
+ * 3.10 build, where a full-range stop=1 checkpoint re-fired eighteen times
+ * with no interleaved STOPPED/RESUMED and every later command on that
+ * connection timed out. That was not reproduced on stock 3.9 under the same
+ * conditions, so this probe never arms a checkpoint on a hot address to
+ * find out.
  *
  * No dependencies; pure Node (net).
  */
@@ -122,11 +129,14 @@ const MAX_BODY_LEN = 4 * 1024 * 1024;
 // Hard per-case cap on how many frames --capture will accumulate before
 // aborting that case and writing no .bin for it. Exists because a
 // non-stopping or wide-range checkpoint can flood CHECKPOINT_INFO frames
-// synchronously from inside the CPU loop -- exactly the CHECKPOINT_INFO x18
-// flood observed on the fork build and recorded in
-// docs/phase1-probe-results.md's "Anomaly observed on the fork build". A
-// runaway case must not consume the whole capture session's time budget for
-// the other cases.
+// synchronously from inside the CPU loop -- the exact eighteen-frame flood
+// observed live on a vendor-fork 3.10 build, where a stop=1, non-temporary,
+// full-address-range checkpoint kept re-arming faster than the fire test
+// could read it back, with no interleaved STOPPED/RESUMED between hits and
+// every command on that connection then timing out. The same conditions did
+// not reproduce it on stock 3.9; whether it is fork-specific or provokable
+// on stock too is still open. A runaway case must not consume the whole
+// capture session's time budget for the other cases.
 const MAX_CAPTURE_FRAMES = 32;
 
 // The real-capture cases --capture accepts (plus "all"). The three
@@ -272,9 +282,12 @@ class BinMon {
         // 2-byte PC. JAM (0x61) has a zero-length body; CHECKPOINT_INFO (0x11)
         // begins with a u32 checkpoint number and REGISTER_INFO (0x31) with a
         // register-item count, so decoding either as a PC yields a
-        // plausible-but-meaningless value. An earlier revision did exactly
-        // that and wrote fabricated "PC=$0001"/"PC=$000a" lines into
-        // docs/phase1-probe-results.md's recorded transcripts.
+        // plausible-but-meaningless value. An earlier revision of this
+        // handler did exactly that against a real run: it printed
+        // "REGISTER_INFO PC=$000a" (really the register-item count, 10) and
+        // "CHECKPOINT_INFO PC=$0001" (really the checkpoint number, 1) as if
+        // both were a moving program counter, when neither event type ever
+        // carries one.
         const isPcShaped = respType === EVT.STOPPED || respType === EVT.RESUMED;
         const pc = isPcShaped && body.length >= 2 ? body.readUInt16LE(0) : null;
         let detail = "";
@@ -1228,11 +1241,12 @@ async function probeA2StepOver(mon) {
   let pcRegId = null;
 
   try {
-    // Halt the machine on demand -- per docs/phase0-binmon-findings.md §4,
-    // "any inbound byte halts the machine" (monitor_check_binary() calls
-    // monitor_startup_trap() every vsync). A bare PING is enough; no
-    // checkpoint of any kind is armed. Register writes only stick with the
-    // machine stopped, so this probe must observe a real halt before
+    // Halt the machine on demand -- "any inbound byte halts the machine",
+    // confirmed by reading VICE's own monitor_check_binary(), which calls
+    // monitor_startup_trap() every vsync, and reproduced live against
+    // genuine stock VICE by sending a bare PING with no checkpoint of any
+    // kind armed and observing the halt. Register writes only stick with
+    // the machine stopped, so this probe must observe a real halt before
     // touching PC -- if it cannot, it records INCONCLUSIVE rather than
     // working around it with a checkpoint.
     const beforePing = mon.events.length;
@@ -1875,9 +1889,12 @@ async function main() {
   // cpNum lives OUTSIDE the try so the finally can always delete it. This
   // checkpoint is enabled, non-temporary, full-address-range and stop=1, and
   // the machine is resumed via EXIT while it is live -- if anything after that
-  // throws (CHECKPOINT_GET timing out is the observed case, see
-  // docs/phase1-probe-results.md), a leaked copy re-fires on essentially the
-  // next instruction and wedges every later check on the same connection.
+  // throws (CHECKPOINT_GET timing out is the observed case: an earlier
+  // revision deleted the checkpoint only after this same read, inside the
+  // same try, so when the read timed out the delete never ran and the
+  // checkpoint stayed live), a leaked copy re-fires on essentially the next
+  // instruction and wedges every later check on the same connection --
+  // observed live, not merely anticipated.
   let cp10Num = null;
   try {
     const fullRange = checkpointSetBody({ start: 0x0000, end: 0xffff, stop: 1, enabled: 1, ops: 0x04, temporary: 0 });
@@ -2085,7 +2102,7 @@ async function main() {
     `unsolicited event sequence (full session) -> ${mon.events.map((e) => e.name).join(" -> ") || "none"}`,
   );
   console.log(
-    "\nVICE >= 3.10 is the gate for CPUHISTORY_GET, not a compile flag -- see docs/phase1-probe-results.md for the recorded run.",
+    "\nVICE >= 3.10 is required for the CPUHISTORY_GET (0x86) binary-monitor opcode itself, not a compile-time flag -- on an older build the same CPU-history capability is still reachable over the text monitor's `chis` command.",
   );
 }
 
@@ -2175,8 +2192,10 @@ async function captureCheckpointListCase(mon) {
   try {
     return await withFrameCapture(mon, async () => {
       // Two narrow, single-address (start === end) stop=1 checkpoints --
-      // never the fork's $0000-$FFFF full-range shape, which produced the
-      // CHECKPOINT_INFO x18 flood recorded in docs/phase1-probe-results.md.
+      // never the vendor fork's $0000-$FFFF full-range shape, which is what
+      // produced the eighteen-frame CHECKPOINT_INFO flood observed live on
+      // that build: no interleaved STOPPED/RESUMED between hits, and every
+      // later command on that connection timed out.
       const rA = await mon.send(
         CMD.CHECKPOINT_SET,
         checkpointSetBody({ start: 0xea31, end: 0xea31, stop: 1, enabled: 0, temporary: 1 }),

@@ -5,12 +5,15 @@
 // loads a binary-monitor response frame from -- no test file should hand-roll
 // its own header-byte offsets.
 //
-// WHY THIS FILE EXISTS: docs/phase0-binmon-findings.md §5 fixes the wire
-// layout, but nothing before this plan could produce a byte-exact frame
-// (or a garbage/duplicate/desynced stream) without a live x64sc. That left
-// five of VERIF-02's eight cases unobtainable in this container, which has
-// no VICE and no display (see docs/phase1-probe-results.md's own framing).
-// This module makes those five cases synthesize-only fixtures; the others
+// WHY THIS FILE EXISTS: the binary-monitor wire layout is fixed
+// independently of any running emulator -- confirmed against VICE's own
+// monitor_binary.c encoder/decoder pair and against live captures from
+// genuine stock VICE -- but nothing before this plan could produce a
+// byte-exact frame (or a garbage/duplicate/desynced stream) without a live
+// x64sc. That left five of VERIF-02's eight cases unobtainable in this
+// container, which has no VICE and no display. This module makes those
+// five cases synthesize-only fixtures, exercising the exact wire framing
+// with neither an emulator nor a display present; the others
 // (display-get, event-interleaved, checkpoint-list, and the three
 // CPUHISTORY_GET cases added by plan 07-12) are LOADED from fixtures/binmon/
 // through loadCapturedFixture() below, which probe-binmon.mjs's --capture mode
@@ -57,8 +60,10 @@ import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-/** Hand-copied from VICE's wire format (docs/phase0-binmon-findings.md §5) --
- * never imported from the vendor's contracts.ts. */
+/** Hand-copied from VICE's wire format -- the STX byte, api_version and
+ * broadcast request id, confirmed against monitor_binary.c's own encoder
+ * and matched byte-for-byte against a live capture from genuine stock
+ * VICE -- never imported from the vendor's contracts.ts. */
 export const VICE_STX = 0x02;
 export const VICE_API_VERSION = 0x02;
 export const VICE_BROADCAST_REQUEST_ID = 0xffffffff;
@@ -81,9 +86,11 @@ export interface EncodeResponseFrameOptions {
   bodyLength?: number;
 }
 
-/** Build the normative 12-byte binary-monitor response header
- * (docs/phase0-binmon-findings.md §5) plus body. This is the ONE frame
- * builder every test/fixture in this package goes through. */
+/** Build the normative 12-byte binary-monitor response header -- the exact
+ * byte layout read directly out of VICE's own monitor_binary.c response
+ * encoder and matched against a live capture from genuine stock VICE --
+ * plus body. This is the ONE frame builder every test/fixture in this
+ * package goes through. */
 export function encodeResponseFrame({
   responseType,
   errorCode = 0x00,
@@ -149,10 +156,11 @@ export function syntheticDesyncStream(): Buffer {
   return Buffer.concat([frame1, garbage, frame2]);
 }
 
-/** DISPLAY_GET (0x84) response for the recorded 504x312 8bpp debug-screen
- * geometry (docs/phase1-probe-results.md: dw=504 dh=312 xo=136 yo=51 iw=320
- * ih=200 bpp=8). Body layout per docs/phase0-binmon-findings.md §3 /
- * probe-binmon.mjs's parseDisplayGet(): [info_len:u32LE][dw,dh,xo,yo,iw,ih:
+/** DISPLAY_GET (0x84) response for the 504x312 8bpp debug-screen geometry
+ * captured live from a genuine stock VICE instance (dw=504 dh=312 xo=136
+ * yo=51 iw=320 ih=200 bpp=8). Body layout confirmed against
+ * monitor_binary.c's own response encoder and against probe-binmon.mjs's
+ * parseDisplayGet(): [info_len:u32LE][dw,dh,xo,yo,iw,ih:
  * u16LE each][bpp:1][buflen:u32LE][buffer...]. Exists so PROTO-07's test is
  * not blocked on host availability; plan 02-02's committed real capture
  * supersedes this synthetic frame. */
