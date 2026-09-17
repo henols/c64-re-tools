@@ -225,11 +225,78 @@ test("assertSourcesResolve: every carried/measured source resolves on disk; ever
   assert.deepEqual(assertSourcesResolve(doc), []);
 });
 
-test("tools.x64sc has no versionFloor key, and the string appears zero times in the committed file", () => {
+test("tools.x64sc has no versionFloor key", () => {
   const doc = readPrerequisites();
   assert.equal(Object.prototype.hasOwnProperty.call(doc.tools.x64sc, "versionFloor"), false);
+});
+
+test("DECL-04: tools.node.versionFloor is byte-equal to vice's own engines.node, and it is the ONLY versionFloor field in the whole document", () => {
+  const doc = readPrerequisites();
+  const enginesNode = (JSON.parse(readFileSync(join(HERE, "package.json"), "utf8")) as { engines: { node: string } }).engines.node;
+  assert.equal(doc.tools.node!.versionFloor, enginesNode);
+
+  const floorCarriers = Object.entries(doc.tools).filter(([, r]) => Object.prototype.hasOwnProperty.call(r, "versionFloor"));
+  assert.deepEqual(
+    floorCarriers.map(([id]) => id),
+    ["node"],
+    "exactly one record may carry a versionFloor field, and it must be the node record",
+  );
+
   const raw = readFileSync(join(HERE, "prerequisites.json"), "utf8");
-  assert.equal((raw.match(/versionFloor/g) ?? []).length, 0);
+  assert.equal((raw.match(/"versionFloor"\s*:/g) ?? []).length, 1);
+});
+
+test("all eight required tool ids are present (subset relation over the required set, never a record count)", () => {
+  const doc = readPrerequisites();
+  const required = ["x64sc", "c1541", "petcat", "acme", "acme-lib", "ghidra", "dxa", "node"];
+  const have = new Set(Object.keys(doc.tools));
+  const missing = required.filter((id) => !have.has(id));
+  assert.deepEqual(missing, []);
+});
+
+test("D-06: x64sc/c1541/petcat share one OS package -- their linux remedy ecosystem order and text are byte-identical in all three pairwise directions", () => {
+  const doc = readPrerequisites();
+  const linuxOf = (id: string) => doc.tools[id]!.remedies!.linux!;
+  const ecosystems = (id: string) => linuxOf(id).map((e) => e.ecosystem);
+  const texts = (id: string) => linuxOf(id).map((e) => e.text).join(" ");
+
+  assert.deepEqual(ecosystems("x64sc"), ecosystems("c1541"));
+  assert.deepEqual(ecosystems("c1541"), ecosystems("petcat"));
+  assert.deepEqual(ecosystems("petcat"), ecosystems("x64sc"));
+
+  assert.equal(texts("x64sc"), texts("c1541"));
+  assert.equal(texts("c1541"), texts("petcat"));
+  assert.equal(texts("petcat"), texts("x64sc"));
+});
+
+test("D-07: acme and acme-lib are two distinct records with different remedy sources", () => {
+  const doc = readPrerequisites();
+  const acmeSource = doc.tools.acme!.remedies!.universal![0]!.source;
+  const acmeLibSource = doc.tools["acme-lib"]!.remedies!.universal![0]!.source;
+  assert.notEqual(acmeSource, acmeLibSource);
+});
+
+test("D-14/D-15: exactly one remedy entry in the whole document is graded measured, and it points at the one command CI executes", () => {
+  const doc = readPrerequisites();
+  const measured: string[] = [];
+  for (const record of Object.values(doc.tools)) {
+    for (const entries of Object.values(record.remedies ?? {})) {
+      for (const entry of entries) {
+        if (entry.provenance === "measured") measured.push(entry.source);
+      }
+    }
+  }
+  assert.deepEqual(measured, [".github/workflows/ci.yml:78"]);
+});
+
+test("tools.dxa.remedies has the single key universal with exactly one entry naming the vendored build command", () => {
+  const doc = readPrerequisites();
+  const remedies = doc.tools.dxa!.remedies!;
+  assert.deepEqual(Object.keys(remedies), ["universal"]);
+  assert.equal(remedies.universal!.length, 1);
+  const entry = remedies.universal![0]!;
+  assert.match(entry.text, /vendor\/dxa\/build\.bash build/);
+  assert.match(entry.source, /^src\/mcp\/vice\/host-tool\.mts:/);
 });
 
 test("assertNoStrayVersionFloor: passes on the real, unmodified document", () => {

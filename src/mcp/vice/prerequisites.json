@@ -80,6 +80,297 @@
           }
         ]
       }
+    },
+    "c1541": {
+      "id": "c1541",
+      "unblocks": {
+        "skills": [
+          "c64-disk-access"
+        ],
+        "mcp": [
+          "c1541.bam",
+          "c1541.dir",
+          "c1541.entry",
+          "c1541.chain",
+          "c1541.read"
+        ]
+      },
+      "remedies": {
+        "linux": [
+          {
+            "ecosystem": "debian-trixie",
+            "text": "sudo apt install vice (enable the contrib component first — VICE ships there, not main; a stock debian:trixie installation has no vice candidate until it is)",
+            "provenance": "carried",
+            "source": "README.md:101"
+          },
+          {
+            "ecosystem": "debian-forky",
+            "text": "sudo apt install vice (same contrib-component requirement as trixie)",
+            "provenance": "carried",
+            "source": "README.md:102"
+          },
+          {
+            "ecosystem": "ubuntu-2510",
+            "text": "sudo apt install vice (enable multiverse first)",
+            "provenance": "carried",
+            "source": "README.md:103"
+          },
+          {
+            "ecosystem": "arch",
+            "text": "sudo pacman -S vice",
+            "provenance": "carried",
+            "source": "README.md:104"
+          },
+          {
+            "ecosystem": "fedora-rpmfusion",
+            "text": "enable RPM Fusion Non-Free, then sudo dnf install vice",
+            "provenance": "carried",
+            "source": "README.md:105"
+          },
+          {
+            "ecosystem": "alpine-edge",
+            "text": "enable the edge/testing repo, then apk add vice",
+            "provenance": "carried",
+            "source": "README.md:106"
+          },
+          {
+            "ecosystem": "homebrew",
+            "text": "brew install vice",
+            "provenance": "carried",
+            "source": "README.md:107"
+          }
+        ],
+        "darwin": [
+          {
+            "ecosystem": "homebrew",
+            "text": "brew install vice",
+            "provenance": "carried",
+            "source": "README.md:107"
+          }
+        ],
+        "win32": [
+          {
+            "ecosystem": "windows-official",
+            "text": "download the GTK3/SDL2 win64 zip",
+            "provenance": "carried",
+            "source": "README.md:108"
+          }
+        ]
+      }
+    },
+    "petcat": {
+      "id": "petcat",
+      "unblocks": {
+        "skills": [
+          "c64-petcat",
+          "c64-program-recon"
+        ],
+        "mcp": [
+          "petcat.decode"
+        ]
+      },
+      "remedies": {
+        "linux": [
+          {
+            "ecosystem": "debian-trixie",
+            "text": "sudo apt install vice (enable the contrib component first — VICE ships there, not main; a stock debian:trixie installation has no vice candidate until it is)",
+            "provenance": "carried",
+            "source": "README.md:101"
+          },
+          {
+            "ecosystem": "debian-forky",
+            "text": "sudo apt install vice (same contrib-component requirement as trixie)",
+            "provenance": "carried",
+            "source": "README.md:102"
+          },
+          {
+            "ecosystem": "ubuntu-2510",
+            "text": "sudo apt install vice (enable multiverse first)",
+            "provenance": "carried",
+            "source": "README.md:103"
+          },
+          {
+            "ecosystem": "arch",
+            "text": "sudo pacman -S vice",
+            "provenance": "carried",
+            "source": "README.md:104"
+          },
+          {
+            "ecosystem": "fedora-rpmfusion",
+            "text": "enable RPM Fusion Non-Free, then sudo dnf install vice",
+            "provenance": "carried",
+            "source": "README.md:105"
+          },
+          {
+            "ecosystem": "alpine-edge",
+            "text": "enable the edge/testing repo, then apk add vice",
+            "provenance": "carried",
+            "source": "README.md:106"
+          },
+          {
+            "ecosystem": "homebrew",
+            "text": "brew install vice",
+            "provenance": "carried",
+            "source": "README.md:107"
+          }
+        ],
+        "darwin": [
+          {
+            "ecosystem": "homebrew",
+            "text": "brew install vice",
+            "provenance": "carried",
+            "source": "README.md:107"
+          }
+        ],
+        "win32": [
+          {
+            "ecosystem": "windows-official",
+            "text": "download the GTK3/SDL2 win64 zip",
+            "provenance": "carried",
+            "source": "README.md:108"
+          }
+        ]
+      }
+    },
+    "acme": {
+      "id": "acme",
+      "unblocks": {
+        "skills": [
+          "acme-build"
+        ],
+        "mcp": [
+          "acme.build"
+        ]
+      },
+      "remedies": {
+        "linux": [
+          {
+            "ecosystem": "ubuntu",
+            "text": "sudo apt-get install -y acme",
+            "provenance": "measured",
+            "source": ".github/workflows/ci.yml:78"
+          },
+          {
+            "ecosystem": "debian",
+            "text": "sudo apt-get install -y acme",
+            "provenance": "carried",
+            "source": ".github/workflows/ci.yml:48"
+          }
+        ],
+        "universal": [
+          {
+            "ecosystem": "generic",
+            "text": "Install ACME.",
+            "provenance": "carried",
+            "source": "src/skills/acme-build/SKILL.md:254"
+          }
+        ]
+      }
+    },
+    "acme-lib": {
+      "id": "acme-lib",
+      "unblocks": {
+        "skills": [
+          "acme-build"
+        ],
+        "mcp": [
+          "acme.build"
+        ]
+      },
+      "remedies": {
+        "universal": [
+          {
+            "ecosystem": "generic",
+            "text": "export ACME=<dir holding cbm/c64/vic.a>.",
+            "provenance": "carried",
+            "source": "src/skills/acme-build/SKILL.md:255"
+          }
+        ]
+      }
+    },
+    "ghidra": {
+      "id": "ghidra",
+      "unblocks": {
+        "skills": [
+          "c64-program-recon"
+        ],
+        "mcp": [
+          "ghidra.analyze",
+          "ghidra.installExtension"
+        ]
+      },
+      "remedies": {
+        "universal": [
+          {
+            "ecosystem": "generic",
+            "text": "Set the GHIDRA_HOME environment variable to name a Ghidra installation directory.",
+            "provenance": "carried",
+            "source": "src/mcp/vice/host-tool.mts:1352"
+          }
+        ]
+      }
+    },
+    "dxa": {
+      "id": "dxa",
+      "unblocks": {
+        "skills": [
+          "routine-queue-walker"
+        ],
+        "mcp": [
+          "dxa.disassemble"
+        ]
+      },
+      "remedies": {
+        "universal": [
+          {
+            "ecosystem": "generic",
+            "text": "bash vendor/dxa/build.bash build",
+            "provenance": "carried",
+            "source": "src/mcp/vice/host-tool.mts:1472"
+          }
+        ]
+      }
+    },
+    "node": {
+      "id": "node",
+      "versionFloor": ">=24.0.0",
+      "unblocks": {
+        "skills": [
+          "acme-build",
+          "c64-disk-access",
+          "c64-memory-mapping",
+          "c64-petcat",
+          "c64-program-recon",
+          "c64-provenance-diff",
+          "c64-ram-capture",
+          "routine-queue-walker",
+          "vice-wedge-triage"
+        ],
+        "mcp": [
+          "acme.build",
+          "ghidra.analyze",
+          "oracle.probe",
+          "oracle.run",
+          "dxa.disassemble",
+          "ghidra.installExtension",
+          "c1541.bam",
+          "c1541.dir",
+          "c1541.entry",
+          "c1541.chain",
+          "c1541.read",
+          "petcat.decode"
+        ]
+      },
+      "remedies": {
+        "universal": [
+          {
+            "ecosystem": "generic",
+            "text": "Install Node >= v24 and put it on PATH, or set VICE_BROKER_NODE to an absolute path to one.",
+            "provenance": "carried",
+            "source": "src/mcp/vice/resources/vice-launcher.sh:219"
+          }
+        ]
+      }
     }
   }
 }
