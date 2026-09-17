@@ -33,7 +33,7 @@ The two things genuinely **lost** were **SID state read-back** and
 
 Ranked by impact. (On-demand pause was retired from this list on 2026-08-12:
 `monitor_startup_trap()` fires on any inbound byte, so `vice_execution_pause`
-is not degraded on stock — see `docs/phase0-binmon-findings.md` §4. The list
+is not degraded on stock — see `.planning/phases/01-corrected-ground-truth/evidence/phase0-binmon-findings.md` §4. The list
 below is renumbered to stay contiguous.)
 
 1. **SID state read-back — `vice_sid_get_state` (voices, filter) → hard loss.**
@@ -86,7 +86,7 @@ below is renumbered to stay contiguous.)
    regardless of build — was **rejected outright**, not shipped: that
    checkpoint fires far above this client's own trace-hazard guard
    (`TRACE_HITS_PER_SECOND_LIMIT = 20` in `stock-checkpoints.ts`), which would
-   auto-disable it — see the SUPERSEDED note in `docs/phase0-binmon-findings.md`
+   auto-disable it — see the SUPERSEDED note in `.planning/phases/01-corrected-ground-truth/evidence/phase0-binmon-findings.md`
    §1. There is no hardware stopwatch reset on either route, so "atomic
    reset_and_read" is client-side baseline math regardless of route. Live-
    confirmed on genuine stock VICE 3.9 (Route B, including a live wraparound
@@ -180,7 +180,7 @@ below is renumbered to stay contiguous.)
 7. **Expected divergences licensed by design (Phase 3 — D-01, D-03, D-05, D-14)**
    A wrong implementation detail among the probed wire assumptions below is
    not a licensed divergence — it is a silently wrong answer; per-assumption
-   verdicts live in `docs/phase2-backend-probe-evidence.md` and
+   verdicts live in `.planning/phases/02-stock-backend-connection/evidence/phase2-backend-probe-evidence.md` and
    `13-PROBE-RESULTS.md` (`.planning/phases/13-external-verification/`).
    - **Every stock answer is stock-native (D-01).** A tool present on both
      backends does not reproduce the fork's JSON answer shape. The fork

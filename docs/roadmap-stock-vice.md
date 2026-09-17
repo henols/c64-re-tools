@@ -5,7 +5,7 @@
 >
 > **Corrected 2026-08-12 (Phase 1):** the on-demand-halt behavior and the
 > unsolicited-event set below were wrong and have been corrected in place.
-> `docs/phase0-binmon-findings.md` is the normative source for binary-monitor
+> `.planning/phases/01-corrected-ground-truth/evidence/phase0-binmon-findings.md` is the normative source for binary-monitor
 > protocol facts (resolution W2) — consult it, not this ADR, for anything not
 > explicitly restated here.
 
@@ -126,7 +126,7 @@ halting is settled (see "Resolved" note above).
 
 ## Verification
 
-- Phase-0 probe result recorded at `docs/phase1-probe-results.md` (produced by
+- Phase-0 probe result recorded at `.planning/phases/01-corrected-ground-truth/evidence/phase1-probe-results.md` (produced by
   Phase 1 plan `01-04`) before further work.
 - Unit tests for the binary-monitor client against recorded/stubbed protocol frames.
 - End-to-end: launch stock `x64sc -binarymonitor`, drive the MCP tools, diff outputs
