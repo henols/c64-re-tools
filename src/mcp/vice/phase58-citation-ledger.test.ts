@@ -133,9 +133,16 @@ function parseCitationString(citation: string): { filePart: string; start: numbe
  * being mistaken for a citation. */
 const CITATION_RE = /[A-Za-z0-9_.\/-]+\.(?:md|mts|ts|mjs|json|yml|sh|a):[0-9]+(?:-[0-9]+)?/g;
 
-/** STUB (Task 2 RED phase): not yet implemented. */
-export function extractCitations(_docText: string): string[] {
-  return [];
+/** Every distinct `file:line` citation in `docText` OUTSIDE the Citation
+ * ledger region -- that is, the document body plus its YAML frontmatter,
+ * which carries citations of its own in its `location` and `amended_at`
+ * values. The ledger region is excluded so a ledger entry's own citation
+ * string is never mistaken for something the body cites. */
+export function extractCitations(docText: string): string[] {
+  const headingMatch = LEDGER_HEADING_RE.exec(docText);
+  const body = headingMatch ? docText.slice(0, headingMatch.index) : docText;
+  const matches = body.match(CITATION_RE) ?? [];
+  return [...new Set(matches)];
 }
 
 /** The whole resolution-relation audit (Task 1 scope): every ledger entry's

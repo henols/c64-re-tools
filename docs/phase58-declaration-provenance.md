@@ -99,7 +99,7 @@ Exactly one remedy entry in `prerequisites.json` carries `"provenance":
 `.github/workflows/ci.yml:18`). It is graded `measured` and not merely
 `carried` because CI does not just run the install command -- it then proves
 the installed binary really is ACME by grepping its own version banner
-(`.github/workflows/ci.yml:70-72`), so this is an observed install, not an
+(`.github/workflows/ci.yml:80-81`), so this is an observed install, not an
 asserted one.
 
 **Recorded because it was directly observed, not assumed:** a live CI run
@@ -284,6 +284,26 @@ its entry here, or letting an entry drift off its anchor, fails the build.
 
 ```json
 [
-  { "citation": ".planning/REQUIREMENTS.md:85", "anchor": "No shipped tool refuses on one." }
+  { "citation": ".planning/REQUIREMENTS.md:85", "anchor": "No shipped tool refuses on one." },
+  { "citation": "README.md:96-97", "anchor": "Checked live against each ecosystem on 2026-08-18." },
+  { "citation": "README.md:117-123", "anchor": "No shipped tool in this project refuses on a VICE version." },
+  { "citation": "src/mcp/vice/host-tool.mts:1559", "anchor": "host_tool \"${request.tool}\" refuses: \"c1541\" does not exist" },
+  { "citation": "src/mcp/vice/host-tool.mts:1634", "anchor": "host_tool \"petcat.decode\" refuses: \"petcat\" does not exist" },
+  { "citation": "src/mcp/vice/host-tool.mts:2273-2311", "anchor": "function findSiblingBinary(" },
+  { "citation": "README.md:99-108", "anchor": "| Ecosystem | Install command | Version it ships | Clears the 3.10 gate? |" },
+  { "citation": ".github/workflows/ci.yml:78", "anchor": "retry_apt install -y acme" },
+  { "citation": ".github/workflows/ci.yml:18", "anchor": "runs-on: ubuntu-latest" },
+  { "citation": ".github/workflows/ci.yml:80-81", "anchor": "grep -qi acme /tmp/acme-banner.txt" },
+  { "citation": ".github/workflows/ci.yml:48", "anchor": "verified package name against" },
+  { "citation": ".github/workflows/ci.yml:45-50", "anchor": "verified package name against" },
+  { "citation": "src/mcp/vice/package.json:102-103", "anchor": "\"node\": \">=24.0.0\"" },
+  { "citation": "installer/package.json:15-16", "anchor": "\"node\": \">=18\"" },
+  { "citation": "src/mcp/vice/resources/vice-launcher.sh:156", "anchor": "NODE_FLOOR_MAJOR=24" },
+  { "citation": "README.md:107", "anchor": "brew install vice" },
+  { "citation": "src/mcp/vice/host-tool.mts:2231-2245", "anchor": "function findAcmeLib()" },
+  { "citation": "src/mcp/vice/host-tool.mts:2205", "anchor": "ACME_LIB_MARKER = join(\"cbm\", \"c64\", \"vic.a\")" },
+  { "citation": "src/skills/acme-build/SKILL.md:211-212", "anchor": "documented a second time here" },
+  { "citation": "src/skills/acme-build/SKILL.md:254", "anchor": "Install ACME." },
+  { "citation": "src/mcp/vice/resources/vice-launcher.sh:266", "anchor": "NODE_MAJOR\" -lt \"$NODE_FLOOR_MAJOR\"" }
 ]
 ```
