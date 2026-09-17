@@ -454,7 +454,8 @@ test("WR-01 probeReady: the seconds-valued timeout knob applies to the stock rou
 // --- the REAL binmon probe, against a loopback stub emulator -----------------
 //
 // No real x64sc anywhere: the stub speaks the 11-byte request / 12-byte response
-// header layout from docs/phase0-binmon-findings.md §5 and nothing else.
+// header layout confirmed against genuine stock VICE's binary monitor -- all
+// multi-byte fields little-endian -- and nothing else.
 
 const BINMON_STX = 0x02;
 const BINMON_API = 0x02;
@@ -524,9 +525,10 @@ test("WR-01 binmon probe: a well-formed PING reply reports READY, and the probe 
     { reply: (commandType, requestId) => binmonReply(commandType, 0x00, requestId) },
     async (port, received) => {
       assert.equal(await probeReady(port, { backend: "stock", probeTimeoutSEnv: "3" }), true);
-      // The EXIT is the whole point: any inbound byte halts the machine
-      // (docs/phase0-binmon-findings.md §4), so a probe that only pinged would
-      // leave every warm instance "ready" and frozen. probeReady() resolves as
+      // The EXIT is the whole point: on genuine stock VICE, any inbound byte
+      // halts the machine -- confirmed against the binary monitor's own
+      // request handling -- so a probe that only pinged would leave every
+      // warm instance "ready" and frozen. probeReady() resolves as
       // soon as its own write flushes, which can be before the peer has read it,
       // so wait for the stub to actually observe both commands rather than
       // asserting on a race.

@@ -795,11 +795,13 @@ test(
 // second extraction path. D-36-20: a SECOND, narrower opt-in on top of the
 // file-level one, mirroring that same precedent.
 //
-// The release image is `danish.d64` from Phase 23's corpus (canonical per
-// `docs/phase33-reproducible-run-gate-findings.md`'s own frontmatter),
-// gitignored and never committed -- absent on any machine that has not
-// separately obtained it, which is why the corpus case carries its own
-// skip reason naming the expected path rather than failing.
+// The release image is `danish.d64` from Phase 23's corpus -- the same
+// image an earlier reproducible-run gate run recorded using, in that run's
+// own frontmatter, which is what makes it the canonical choice here rather
+// than any other corpus entry. It is gitignored and never committed --
+// absent on any machine that has not separately obtained it, which is why
+// the corpus case carries its own skip reason naming the expected path
+// rather than failing.
 // ---------------------------------------------------------------------------
 
 const CORPUS_PATH = join(

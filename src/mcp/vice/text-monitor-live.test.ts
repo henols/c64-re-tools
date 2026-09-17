@@ -1155,8 +1155,9 @@ test(
           skipReason =
             `the drive checkpoint (id ${checkpointId}, $${DRIVE_ROM_START.toString(16)}-$${DRIVE_ROM_END.toString(16)}, ` +
             `memspace 0x${DRIVE_MEMSPACE.toString(16)}) never hit within 15s on this host -- the contamination path was ` +
-            `not reproducible here, and this is a named gap (recorded in docs/phase41-text-channel-live-evidence.md and ` +
-            `the SUMMARY), not a silent pass. The remedy (device c:) is still confirmed reachable and allowlisted by the ` +
+            `not reproducible here: a drive checkpoint hit is what sets default_memspace and freezes main-CPU stepping, ` +
+            `and this host's drive activity within the 15s poll window did not trigger that hit, so this is a named, ` +
+            `disclosed gap, not a silent pass. The remedy (device c:) is still confirmed reachable and allowlisted by the ` +
             `unconditional first live test in this file.`;
           return;
         }

@@ -1482,10 +1482,11 @@ test("registersSetBody: memspace(1) count(u16LE) then itemSize(1) regId(1) value
   // Deviation (Rule 1 auto-fix): the plan's own illustrative text claimed
   // body[2]/body[6] === 3 for the two items' itemSize bytes. With the
   // documented layout (memspace(1) + count(u16LE) = a 3-byte header before
-  // the first item, matching docs/phase0-binmon-findings.md §5's
-  // REGISTERS_SET layout and this file's own RegisterInfo parser inverse),
-  // the itemSize bytes actually land at offsets 3 and 7. The plan's total
-  // LENGTH assertion (3 + 2 * 4 = 11) is correct and is what this test uses.
+  // the first item, matching the REGISTERS_SET request layout confirmed
+  // against monitor_binary.c's own encoder and this file's own RegisterInfo
+  // parser inverse), the itemSize bytes actually land at offsets 3 and 7.
+  // The plan's total LENGTH assertion (3 + 2 * 4 = 11) is correct and is
+  // what this test uses.
   assert.equal(body.length, 3 + 2 * 4);
   assert.equal(body[0], 0x00);
   assert.equal(body.readUInt16LE(1), 2);

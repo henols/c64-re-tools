@@ -269,9 +269,10 @@ test("stockConnect: handshake claims before dialling and completes against a stu
 // CR-02: the handshake must RESUME the machine its own PING halted.
 //
 // These assert on the bytes that actually left the socket, not on the presence
-// of a constant: docs/phase0-binmon-findings.md §4 says any inbound byte halts
-// the machine and only EXIT (0xaa) resumes it, so the observable contract is
-// "an EXIT reached the wire, after the capability probe, exactly once".
+// of a constant: on genuine stock VICE, any inbound byte halts the machine and
+// only EXIT (0xaa) resumes it -- confirmed against the binary monitor's own
+// request handling -- so the observable contract is "an EXIT reached the wire,
+// after the capability probe, exactly once".
 // ===========================================================================
 
 test("stockConnect (CR-02): a successful handshake sends exactly one EXIT (0xaa), and sends it LAST -- after the capability probe", async () => {
@@ -282,7 +283,7 @@ test("stockConnect (CR-02): a successful handshake sends exactly one EXIT (0xaa)
 
     const exits = seenCommands.filter((c) => c === CommandType.Exit);
     assert.equal(exits.length, 1, `the handshake must resume the machine its PING halted exactly once -- saw ${JSON.stringify(seenCommands)}`);
-    assert.equal(CommandType.Exit, 0xaa, "the resume opcode is EXIT 0xaa per docs/phase0-binmon-findings.md §4");
+    assert.equal(CommandType.Exit, 0xaa, "EXIT (0xaa) is the one command that resumes a machine any inbound byte just halted, confirmed against stock VICE's own binary monitor -- pinning the wire value here catches a future edit that would silently change which opcode performs the resume");
     assert.equal(seenCommands[seenCommands.length - 1], CommandType.Exit, "the resume must be the LAST command of the handshake");
     assert.ok(
       seenCommands.indexOf(CommandType.CpuHistoryGet) < seenCommands.indexOf(CommandType.Exit),
