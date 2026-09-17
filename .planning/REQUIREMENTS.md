@@ -25,10 +25,10 @@ withdrawing them is Phase 57's goal, and Phase 57 is not in this milestone.
 ### Prerequisite Declaration
 
 - [ ] **DECL-01**: One committed declaration names every prerequisite, and for each one records its id, which skills and MCP capabilities it unblocks, and its remedy text per platform.
-- [ ] **DECL-02**: The declaration is plain JSON, adds no new runtime dependency, and is readable by a Node below the MCP server's own version floor.
+- [x] **DECL-02**: The declaration is plain JSON, adds no new runtime dependency, and is readable by a Node below the MCP server's own version floor.
 - [ ] **DECL-03**: The remedy text a user sees when a tool is missing comes from the declaration at every site that emits one, so a live refusal and the doctor cannot name different remedies for the same tool.
 - [ ] **DECL-04**: The declaration carries a version floor only for a tool whose absence at that version makes a shipped code path refuse. Today that is Node alone — no tool carries a version-floor field that nothing enforces.
-- [ ] **DECL-05**: The declaration ships in the published package, so a user who installed rather than cloned gets the same remedies.
+- [x] **DECL-05**: The declaration ships in the published package, so a user who installed rather than cloned gets the same remedies.
 
 ### Tool Location Resolution
 
@@ -113,9 +113,9 @@ be read as sloppiness:
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | DECL-01 | Phase 58 | Pending |
-| DECL-02 | Phase 58 | Pending |
+| DECL-02 | Phase 58 | Complete |
 | DECL-04 | Phase 58 | Pending |
-| DECL-05 | Phase 58 | Pending |
+| DECL-05 | Phase 58 | Complete |
 | LOC-05 | Phase 59 | Pending |
 | LOC-06 | Phase 59 | Pending |
 | LOC-07 | Phase 59 | Pending |
@@ -138,6 +138,7 @@ be read as sloppiness:
 | GEN-03 | Phase 62 | Pending |
 
 **Coverage:**
+
 - v1.1.0 requirements: 24 total
 - Mapped to phases: 24
 - Unmapped: 0 ✓
@@ -149,7 +150,9 @@ Phase 62 — 3 (`GEN-01`, `GEN-02`, `GEN-03`).
 
 **Not in this milestone and not in this table:** `VOCAB-01`..`06`,
 `DOCS-01`..`04` and `INSTALL-01`..`05`, held by the carried Phases 51, 53, 54 and
+
 57. Their requirement text stays live in `milestones/v1.0.0-REQUIREMENTS.md` and
+
 their ROADMAP sections stay live; no phase of this milestone may absorb one.
 
 ---
