@@ -43,7 +43,7 @@ plan named in it is the single owner of that file.
 | `39-text-single-client.md` | `39-08` | `TEXT_SINGLE_CLIENT:`, `TEXT_SECOND_CONNECT_OBSERVATION:` and the run transcript | That a second connection's outcome is recorded as an observation, never inferred from a timeout alone |
 | `fixture-capture.mjs` | `39-08` | The fixture-capture script producing the first text-channel fixture batch | That `PARSE-03`/`PARSE-04`'s provenance discipline is exercised against real captured text |
 | `39-fixture-batch.md` | `39-08` | `FIXTURE_COUNT:`, `FIXTURE_BINARIES:`, `FIXTURE_ENCODING:`, `FIXTURE_DIVERGENCE:`, `FIXTURE_UNSUPPORTED:` and the run transcript | That the fixture batch is captured on two binaries with divergence recorded rather than averaged |
-| `docs/phase39-dual-channel-coexistence-gate-findings.md` *(outside this directory, at the repository root's `docs/`)* | `39-08` | The durable verdict artifact: machine-readable frontmatter, the rule set reproduced verbatim, the derivation walked input by input, one section per input | That the verdict is **re-derivable from the document alone**, without trusting any summary and without a plan file surviving |
+| `.planning/phases/39-the-dual-channel-coexistence-gate-go-degrade-no-go/evidence/phase39-dual-channel-coexistence-gate-findings.md` *(outside this directory, at the repository root's `docs/`)* | `39-08` | The durable verdict artifact: machine-readable frontmatter, the rule set reproduced verbatim, the derivation walked input by input, one section per input | That the verdict is **re-derivable from the document alone**, without trusting any summary and without a plan file surviving |
 
 ---
 

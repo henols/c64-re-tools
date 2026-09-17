@@ -66,7 +66,7 @@ Declared source file for every line in this table: `evidence/proof01-dxa-real-re
 | `PROOF01_WEAKNESS_NO_EXTERNAL_CHECK` | free text — the absent execution oracle (`memmapshow`), stated with its reversal condition |
 | `PROOF01_WEAKNESS_UNCOMPUTABLE_FP` | free text — the ground-truth *design* limit (distinct from the oracle's *availability*), per D-03: neither weakness is ever folded into the other |
 | `PROOF01_CAPTURE_PAIR` | `none` when this measurement reports no capture pair (this plan's expected value — PROOF-01 takes no live capture) |
-| `FIXTURE_DATA_RECOVERY_PCT` | `formatPercent()` shape, recorded value `72.39 (97/134)`, cited to `docs/phase23-real-release-gate-findings.md` — never re-derived |
+| `FIXTURE_DATA_RECOVERY_PCT` | `formatPercent()` shape, recorded value `72.39 (97/134)`, cited to `.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/phase23-real-release-gate-findings.md` — never re-derived |
 | `FIXTURE_FALSE_POSITIVES` | non-negative integer, recorded value `3` |
 | `FIXTURE_REPRODUCED` | exactly `no` |
 | `PIVOT_PUBLISHED_DATA_RECOVERY_PCT` | `formatPercent()` shape, recorded value `72.46 (100/138)` — the pivot's own published figure, beside the fixture, never as ground truth |

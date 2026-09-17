@@ -7,7 +7,7 @@
 # ORCHESTRATOR at phase close, not by a dispatched plan. Plan 23-09, which would have
 # owned bank-divergence measurement, was never dispatched (no capture substrate, D-03).
 # The file exists because the `201 multi-bit divergences` figure had already been carried
-# into STATE.md, ROADMAP.md and docs/phase23-real-release-gate-findings.md while appearing
+# into STATE.md, ROADMAP.md and .planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/phase23-real-release-gate-findings.md while appearing
 # nowhere under evidence/ — a breach of this tree's own rule that every cited value is
 # transcribed from a named outcome line. Code review finding CR-02. The number was
 # re-measured from scratch here rather than copied forward.

@@ -198,7 +198,7 @@ BROKER_STATE: no VICE broker running (pgrep -af 'vice-broker' returned nothing)
 plan (2) is NOT HIGHER than the failing-test count BEFORE this plan (2) — a delta of 0 —
 and the failing FILE is the same single file, `anno-register.test.ts`, both before and
 after. This project's own recorded floor is documented elsewhere as "5 failing tests in 3
-files as of 2026-09-02" (`docs/phase33-reproducible-run-gate-findings.md`'s "Never a gate"
+files as of 2026-09-02" (`.planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/evidence/phase33-reproducible-run-gate-findings.md`'s "Never a gate"
 section, cited by `34-RESEARCH.md`); this plan's own two direct measurements, taken
 immediately before and after its own commits in the same environment, both show 2 failing
 tests in 1 file — a smaller number than that recorded floor, not a larger one, and either
@@ -231,8 +231,9 @@ PHASE_CLOSE_TEST_AUTOMATED: 2 failing tests, 1 failing file (anno-register.test.
   -- the two failures are the SAME two named above ("DIRECTION 5 (basis integrity)..." and
      "planted violation (the negative control)..."), both pre-existing and out of this
      phase's scope; this is a delta claim, not a zero-floor claim -- this project's own
-     recorded floor elsewhere is "5 failing tests in 3 files" (docs/phase33-reproducible-run-
-     gate-findings.md), and this measurement's smaller number does not change what this
+     recorded floor elsewhere is "5 failing tests in 3 files" (.planning/phases/33-the-
+     reproducible-run-protocol-and-the-capture-substrate-go-d/evidence/phase33-reproducible-
+     run-gate-findings.md), and this measurement's smaller number does not change what this
      phase is answerable for, which is its own before/after delta
 ```
 

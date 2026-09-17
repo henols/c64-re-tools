@@ -111,7 +111,7 @@ this plan.
 
 ## Block B: the fixture figures, unchanged and not replaced
 
-Cited to `docs/phase23-real-release-gate-findings.md` (lines 456-479) and
+Cited to `.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/phase23-real-release-gate-findings.md` (lines 456-479) and
 Phase 35's own independent re-derivation (`35-03-SUMMARY.md`). Never
 re-derived here, never replaced by Block A's numbers:
 
@@ -138,7 +138,7 @@ fixture source and report Phase 35 used, and the published figures happen to
 flatter dxa exactly where its "0 false positives" headline lived (a 141/138
 partition where the fixture's own independently re-derived source-derived
 partition reads 145 code / 131 strict data / 3 pad,
-`docs/phase23-real-release-gate-findings.md`). This is written as a
+`.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/phase23-real-release-gate-findings.md`). This is written as a
 hypothesis about why the two partitions disagree, not as an established
 finding — no further investigation into the pivot's own methodology was
 undertaken in this plan.

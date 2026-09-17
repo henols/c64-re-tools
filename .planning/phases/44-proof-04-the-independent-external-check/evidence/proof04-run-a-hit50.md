@@ -146,7 +146,7 @@ line in this file's authoritative record is printed twice.
 `ORACLE_DEPTH_REACHED` is 50, at or below the threshold, so
 `ORACLE_DEPTH_LABEL` is `frame-exact-region` (SCHEMA.md section 5).
 
-`docs/phase43-instrumentation-perturbation-ab.md` (lines 152-156) states the
+`.planning/phases/43-the-runtime-evidence-layer/evidence/phase43-instrumentation-perturbation-ab.md` (lines 152-156) states the
 licensing sentence verbatim:
 
 > This `no-perturbation` verdict licenses **only** the claim that this

@@ -150,7 +150,7 @@ No `x64sc` process survived this run.
 `ORACLE_DEPTH_REACHED` is `3000`, above the threshold of 50, so
 `ORACLE_DEPTH_LABEL` is `narrowed` (SCHEMA.md section 5).
 
-`docs/phase43-instrumentation-perturbation-ab.md` (lines 152-156) states the
+`.planning/phases/43-the-runtime-evidence-layer/evidence/phase43-instrumentation-perturbation-ab.md` (lines 152-156) states the
 licensing sentence verbatim, and it does not extend here:
 
 > This `no-perturbation` verdict licenses **only** the claim that this

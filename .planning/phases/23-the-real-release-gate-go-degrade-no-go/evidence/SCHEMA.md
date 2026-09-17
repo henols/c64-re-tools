@@ -43,7 +43,7 @@ the pre-commitment; they are derived. The correction is carried into the finding
 
 ## 2. Findings-document frontmatter keys
 
-Fixed here, before `docs/phase23-real-release-gate-findings.md` exists.
+Fixed here, before `.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/phase23-real-release-gate-findings.md` exists.
 
 | Key | Domain |
 |---|---|

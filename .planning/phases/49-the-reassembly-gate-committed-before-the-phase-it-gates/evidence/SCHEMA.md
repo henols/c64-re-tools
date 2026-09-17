@@ -240,8 +240,8 @@ measurement. One line name never has two source files; a file may declare more t
 
 ## 5. The findings-document frontmatter shape
 
-Fixed here, before `docs/phase49-the-reassembly-gate-findings.md` exists, mirroring
-`docs/phase39-dual-channel-coexistence-gate-findings.md`. Keys in this order:
+Fixed here, before `.planning/phases/49-the-reassembly-gate-committed-before-the-phase-it-gates/evidence/phase49-the-reassembly-gate-findings.md` exists, mirroring
+`.planning/phases/39-the-dual-channel-coexistence-gate-go-degrade-no-go/evidence/phase39-dual-channel-coexistence-gate-findings.md`. Keys in this order:
 
 | Key | Domain |
 |---|---|

@@ -31,7 +31,7 @@ ends, so a later wave reads a file that still exists.
 | `criterion2-*.txt` | **NEVER PRODUCED.** Plan 23-08 was not dispatched, for the same D-03 reason | That criterion 2 is `could-not-run` and explicitly **not** `not-exercised`: zero sites were enumerated and zero tested, so nothing is known either way about Ghidra on a computed-index dispatch in real code |
 | `criterion3-*.txt` | **NEVER PRODUCED.** Plan 23-09 was not dispatched, for the same D-03 reason | That criterion 3 is `could-not-run`. The single-forward-carried-`$01` model is left **unvalidated** — neither confirmed nor broken — at exactly the risk the ROADMAP names as the highest on the pivot's own record |
 | `criterion4-analyzer-audit.md` | All 26 `analyzer.rs` capabilities (8 entry points, 11 `LabelType`, 7 `BlockType`), each carrying exactly one disposition: `C4_CAPABILITIES_AUDITED: 26`, `C4_REPLACED: 23`, `C4_LOST_ACCEPTED: 3`, `C4_UNREPLACED_CAPABILITIES: 0`. Three `## ACCEPTED LIMIT` blocks and seven research corrections | That **nothing in `analyzer.rs` blocks the milestone** — `R8`'s input is `0` — derived from the real crate source with no the external analyser process started (D-01), and that the one row a re-run could move (E6 `follow_indirect_jumps`) is named with the exact condition that would move it |
-| `docs/phase23-real-release-gate-findings.md` *(outside this directory, at the repository root's `docs/`)* | The durable verdict artifact (23-10): machine-readable frontmatter, the derivation, the rule reproduced verbatim, one section per criterion, the collected accepted limits and corrections | That the verdict `no-go` / `R1` is **re-derivable from the document alone**, without trusting any summary and without a plan file surviving |
+| `.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/phase23-real-release-gate-findings.md` *(outside this directory, at the repository root's `docs/`)* | The durable verdict artifact (23-10): machine-readable frontmatter, the derivation, the rule reproduced verbatim, one section per criterion, the collected accepted limits and corrections | That the verdict `no-go` / `R1` is **re-derivable from the document alone**, without trusting any summary and without a plan file surviving |
 
 ---
 
@@ -198,7 +198,7 @@ $ git diff --name-only fd1093b..HEAD
 .planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/tools/verify/task3-verify-as-planned.bash
 .planning/todos/pending/2026-08-26-extract-flat-64k-from-vice-snapshots-instead-of-transcribing-hex.md
 .planning/todos/pending/2026-08-26-run-vice-headless-and-in-warp-mode-when-the-run-allows-it.md
-docs/phase23-real-release-gate-findings.md
+.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/phase23-real-release-gate-findings.md
 ```
 
 Every path is under `.planning/` or `docs/`. **No line begins with a source-tree path, so the
@@ -209,7 +209,7 @@ $ git diff --name-only fd1093b..HEAD | grep -c '^src/'
 0
 ```
 
-Note on scope: this section's own commit adds `docs/phase23-real-release-gate-findings.md` and
+Note on scope: this section's own commit adds `.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/phase23-real-release-gate-findings.md` and
 modifies this file and `23-RESEARCH.md`, all three of which already appear in the list above,
 so the assertion is stable across the commit that records it. The two `.d64` corpus images are
 absent from the list by construction — `corpus/.gitignore` refuses every binary image form and

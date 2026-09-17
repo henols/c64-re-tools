@@ -60,7 +60,7 @@ Exit code of the full `node --test` invocation, read directly on the same
 line (never through a pipe): `0`. (Full unabridged transcript, all five
 printed outcome lines together in the one run that produced them, is
 preserved for cross-checking in
-`docs/phase49-the-reassembly-gate-findings.md`'s own citation of this run.)
+`.planning/phases/49-the-reassembly-gate-committed-before-the-phase-it-gates/evidence/phase49-the-reassembly-gate-findings.md`'s own citation of this run.)
 
 ## Reading the two lines this file declares
 

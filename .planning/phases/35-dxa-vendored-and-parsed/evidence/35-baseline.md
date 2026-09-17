@@ -171,7 +171,7 @@ failing file and worsened no existing failure's underlying cause.
 **This phase produced and consumed NO capture pair, across all five plans.** `GATE-01`
 recorded `degrade`, fired by rule `R6` (`ORACLE_NECESSITY: unproven`), and its pre-mapped
 narrowing narrows the stop-identity oracle to the two-term `(PC, hit_count)` form with the
-frame term `(LIN, CYC)` recorded but not asserted (`docs/phase33-reproducible-run-gate-findings.md`).
+frame term `(LIN, CYC)` recorded but not asserted (`.planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/evidence/phase33-reproducible-run-gate-findings.md`).
 `D-06` records that no test guard encodes this binding, so its omission from a capture-pair
 record would go uncaught -- which is exactly why this phase states the absence explicitly
 rather than leaving the line out. Checked directly against every artefact this phase's evidence

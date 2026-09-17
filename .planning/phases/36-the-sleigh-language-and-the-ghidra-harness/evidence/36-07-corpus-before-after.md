@@ -5,7 +5,7 @@ Recorded from a real live run against Ghidra 12.1.3 (`GHIDRA_HOME=/home/henrik/d
 ## Release identity
 
 - **Release image**: `.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/corpus/danish.d64` (gitignored, never committed; D-04, that directory's own `README.md` convention 10).
-- **Release sha256**: `1a9d294e07f9593ba59d878423d157bacfe6c6902d3a52ef6ac96512a15fb6c5` -- matches the canonical corpus release recorded in `docs/phase33-reproducible-run-gate-findings.md`'s own frontmatter (`corpus.releases[0]`, `canonical: true`).
+- **Release sha256**: `1a9d294e07f9593ba59d878423d157bacfe6c6902d3a52ef6ac96512a15fb6c5` -- matches the canonical corpus release recorded in `.planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/evidence/phase33-reproducible-run-gate-findings.md`'s own frontmatter (`corpus.releases[0]`, `canonical: true`).
 - **Extracted entry**: the image's own first directory entry, `"BRUCE LEE   (DC)"`, extracted through `anno-d64.ts`'s `listEntries()`/`extractEntry()` -- the SAME directory-and-entry route `dxa-live.test.ts`'s own corpus case established (D-36-18); no second extraction path was written.
 - **Extracted entry length**: 45074 bytes, `.prg` header bytes `$01,$08` (load address `$0801`).
 

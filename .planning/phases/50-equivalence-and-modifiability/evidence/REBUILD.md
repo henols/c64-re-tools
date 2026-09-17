@@ -126,7 +126,7 @@ one layout, and it says nothing whatsoever about behaviour.
 
 **The acceptance criterion is behavioural equivalence between the original and
 the rebuild, demonstrated in a running emulator, with the committed transcript
-as the artifact of record** — `docs/phase50-equivalence-transcript.md`.
+as the artifact of record** — `.planning/phases/50-equivalence-and-modifiability/evidence/phase50-equivalence-transcript.md`.
 ROADMAP Phase 50 criterion 3 states it in those terms. It then adds, in its
 own words, "Byte-identity is not the bar and is not claimed". It goes on, in
 the same sentence, "a narrower pre-modification byte-identical sanity check may

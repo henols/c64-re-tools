@@ -132,7 +132,7 @@ An address never observed executing proves nothing about whether it is code
 or data -- the runtime evidence layer's own record states this precisely:
 "The absence of a row is the absence of an assertion. It is never an
 assertion that the address is data"
-(`docs/phase43-runtime-evidence-layer.md`). No sentence in this record, or in
+(`.planning/phases/43-the-runtime-evidence-layer/evidence/phase43-runtime-evidence-layer.md`). No sentence in this record, or in
 either run's own transcript, pairs the never-observed bucket with a
 conclusion that those addresses are settled as data, established as data, or
 in any other way known to be data. Reading absence as "the rest must be
@@ -155,7 +155,7 @@ its own rather than folding them together.
 ### PROOF04_LIMIT_DEPTH
 
 `run-a-hit50` reached anchor hit 50, at or below the licensed threshold, so
-its label is `frame-exact-region`. `docs/phase43-instrumentation-perturbation-ab.md`
+its label is `frame-exact-region`. `.planning/phases/43-the-runtime-evidence-layer/evidence/phase43-instrumentation-perturbation-ab.md`
 states the licensing sentence verbatim: "This `no-perturbation` verdict
 licenses **only** the claim that this project's own instrumentation dials
 (`memmapzap` pre-`AUTOSTART`, `memmapshow` post-stop) do not perturb

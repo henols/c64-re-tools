@@ -1,6 +1,6 @@
 # Phase 50, plan 50-08 — the real gate run against the EXPORTED-EDIT subject
 
-Declares all seven outcome lines `docs/phase50-exported-edit-findings.md`'s
+Declares all seven outcome lines `.planning/phases/50-equivalence-and-modifiability/evidence/phase50-exported-edit-findings.md`'s
 frontmatter cites: `tree_rebuild`, `movement_rebuild`, `hazard_disposition`,
 `diff_scope_coverage` (both occurrences), `red_controls`, `second_path_guard`
 and `ordering_proof`. Read the inputs from this file, never from a summary's

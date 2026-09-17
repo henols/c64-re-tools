@@ -205,8 +205,8 @@ conventions* 3, 4 and 5).
 
 ## 4. The findings-document frontmatter shape
 
-Fixed here, before `docs/phase39-dual-channel-coexistence-gate-findings.md` exists, mirroring
-`docs/phase33-reproducible-run-gate-findings.md`. Keys in this order:
+Fixed here, before `.planning/phases/39-the-dual-channel-coexistence-gate-go-degrade-no-go/evidence/phase39-dual-channel-coexistence-gate-findings.md` exists, mirroring
+`.planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/evidence/phase33-reproducible-run-gate-findings.md`. Keys in this order:
 
 | Key | Domain |
 |---|---|

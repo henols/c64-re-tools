@@ -123,5 +123,5 @@
     "sha256": "fd16c6c171da90e693dca10c1df0b1f6817563e0c3d1af99bcc572bceb7d641d",
     "byte_identical_to_exported_edit": false
   },
-  "note_on_optional_extra": "Byte-identity to hazard-subject-modified.prg is NOT this plan's acceptance criterion and is not aimed for -- see docs/phase50-exported-edit-findings.md."
+  "note_on_optional_extra": "Byte-identity to hazard-subject-modified.prg is NOT this plan's acceptance criterion and is not aimed for -- see .planning/phases/50-equivalence-and-modifiability/evidence/phase50-exported-edit-findings.md."
 }

@@ -240,7 +240,7 @@ the gate's pins use. **`lines`** = LINES of content containing it.
 | 1 | `.github/workflows/ci.yml` | 1 | 1 | infra | unchanged | — | `gate-self`, pinned **1** (the step name) |
 | 2 | `README.md` | 2 | 1 | 2 | unchanged | — | `surviving-provenance`, pinned **2** (one line: the attribution link's URL + link text) |
 | 3 | `THIRD-PARTY-NOTICES.md` | 3 | 3 | 2 | unchanged | — | `notices-attribution-blocks`, BLOCK-scoped (no per-file exact pin; class total **27**) |
-| 4 | `docs/phase23-real-release-gate-findings.md` | 3 | 2 | 1 | unchanged | — | `findings-docs`, pinned **3** |
+| 4 | `.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/phase23-real-release-gate-findings.md` | 3 | 2 | 1 | unchanged | — | `findings-docs`, pinned **3** |
 | 5 | `docs/phase9-external-analyser-probe-findings.md` | 44 | 41 | 1 | unchanged | — | `findings-docs`, pinned **44** — 43 in content + **1 in the filename** |
 | 6 | `docs/stock-vice-parity.md` | 1 | 1 | 2 | unchanged | — | `surviving-provenance`, pinned **1** |
 | 7 | `installer/THIRD-PARTY-NOTICES.md` | 7 | 7 | 2 | unchanged | — | `notices-attribution-blocks`, BLOCK-scoped |

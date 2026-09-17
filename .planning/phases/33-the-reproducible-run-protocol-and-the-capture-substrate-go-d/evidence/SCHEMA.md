@@ -188,7 +188,7 @@ are gitignored and untracked by construction.
 
 ## 5. Findings-document frontmatter keys
 
-Fixed here, before `docs/phase33-reproducible-run-gate-findings.md` exists. Keys in this
+Fixed here, before `.planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/evidence/phase33-reproducible-run-gate-findings.md` exists. Keys in this
 order (`D-05`):
 
 | Key | Domain |

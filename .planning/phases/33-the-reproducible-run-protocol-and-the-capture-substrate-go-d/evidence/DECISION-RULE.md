@@ -11,7 +11,7 @@ proof; see `README.md` § *Ordering proof*.
 or "clarified" after the first measurement commit lands — including by a later plan that
 believes it is only resolving an ambiguity. If an ambiguity is found, the measuring plan
 records it as an `## ACCEPTED LIMIT` in its **own** evidence file and the findings document
-(`docs/phase33-reproducible-run-gate-findings.md`) records an explicit override. The rule
+(`.planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/evidence/phase33-reproducible-run-gate-findings.md`) records an explicit override. The rule
 text itself does not move. A rule set that can be adjusted once the numbers are visible is
 not a pre-commitment; it is a verdict written backwards from the answer.
 
