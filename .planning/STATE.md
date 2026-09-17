@@ -5,10 +5,10 @@ milestone_name: The Prerequisite Doctor
 current_phase: 58
 current_phase_name: One Declaration, Four Places That Can No Longer Disagree
 status: executing
-stopped_at: Completed 58-02-PLAN.md
+stopped_at: Phase 58 verified - gaps_found, awaiting /gsd-plan-phase 58 --gaps
 last_updated: "2026-09-17T14:38:31.631Z"
 last_activity: 2026-09-17
-last_activity_desc: Phase 58 execution started
+last_activity_desc: Phase 58 executed (2/2 plans); verification returned gaps_found
 state_head: ba52be37e534cef9b49a27274305057ecd33faef
 progress:
   total_phases: 5
@@ -337,8 +337,13 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 Phase: 58 (One Declaration, Four Places That Can No Longer Disagree) — Plan 2 of 2 complete
 Plan: 2 of 2
-Status: Phase 58 complete, ready for verification
-Last activity: 2026-09-17 — Completed 58-02-PLAN.md
+Status: Phase 58 verified GAPS FOUND — 3/5 roadmap criteria verified. Both plans
+executed and all gates green (typecheck, 4113 tests across the four CI suites,
+0 failures); the gap is citation accuracy in
+docs/phase58-declaration-provenance.md (two wrong file:line pointers, reasoning
+sound). DECL-04 and DECL-05 verified complete; DECL-01 and DECL-02 reverted to
+incomplete. Next: /gsd-plan-phase 58 --gaps
+Last activity: 2026-09-17 — Phase 58 verification returned gaps_found
 
 **Milestone shape, so no reader has to rebuild it from the ROADMAP:** Phase 58
 declares the prerequisites; Phase 59 builds the tool-location seam and its
