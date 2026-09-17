@@ -730,7 +730,7 @@ of a matter of discipline. And wiring the seam into today's consumers is its
 because `LOC-03`'s success condition is that *nothing changed* — a claim that
 needs its own evidence rather than a corner of a larger phase.
 
-- [ ] **Phase 58: One Declaration, Four Places That Can No Longer Disagree** - Every prerequisite described once — what it unblocks and the remedy per platform — in plain JSON a Node too old to run the server can still parse, and present in the published package
+- [x] **Phase 58: One Declaration, Four Places That Can No Longer Disagree** - Every prerequisite described once — what it unblocks and the remedy per platform — in plain JSON a Node too old to run the server can still parse, and present in the published package (completed 2026-09-17)
 - [ ] **Phase 59: The Tool-Location Seam and Its Precedence Order** - One module owns *where is this tool*, in one order — environment variable, then `tools.json`, then `$PATH` or sibling probe — naming the source that answered and refusing a bad entry by name instead of falling through
 - [ ] **Phase 60: The Seam Wired Into the Code That Ships** - Every live resolution goes through the seam and every live remedy comes from the declaration, with a developer who already has `VICE_BIN` set noticing nothing at all
 - [ ] **Phase 61: `vice-mcp doctor`, Reachable on a Node Too Old to Run the Server** - One command reports per skill and per MCP capability what is ready and what blocks it, naming every resolved path and which source supplied it, and printing remedies it never runs
@@ -1840,7 +1840,7 @@ four carried phases.
   `resources/*.mjs` artifact is regenerated for the first time in Phase 60, where
   that risk is isolated and carries its own evidence.
 
-**Plans**: 3/3 plans executed — gap-closure plan 58-03 complete, ready for re-verification
+**Plans**: 3/3 plans executed — phase complete 2026-09-17, verification passed 5/5, UAT 1/1
 
 Plans:
 

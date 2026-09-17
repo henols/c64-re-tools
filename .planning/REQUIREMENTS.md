@@ -25,7 +25,7 @@ withdrawing them is Phase 57's goal, and Phase 57 is not in this milestone.
 ### Prerequisite Declaration
 
 - [x] **DECL-01**: One committed declaration names every prerequisite, and for each one records its id, which skills and MCP capabilities it unblocks, and its remedy text per platform.
-- [ ] **DECL-02**: The declaration is plain JSON, adds no new runtime dependency, and is readable by a Node below the MCP server's own version floor.
+- [x] **DECL-02**: The declaration is plain JSON, adds no new runtime dependency, and is readable by a Node below the MCP server's own version floor.
 - [ ] **DECL-03**: The remedy text a user sees when a tool is missing comes from the declaration at every site that emits one, so a live refusal and the doctor cannot name different remedies for the same tool.
 - [x] **DECL-04**: The declaration carries a version floor only for a tool whose absence at that version makes a shipped code path refuse. Today that is Node alone — no tool carries a version-floor field that nothing enforces.
 - [x] **DECL-05**: The declaration ships in the published package, so a user who installed rather than cloned gets the same remedies.
@@ -114,7 +114,7 @@ be read as sloppiness:
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | DECL-01 | Phase 58 | Complete |
-| DECL-02 | Phase 58 | Gaps Found |
+| DECL-02 | Phase 58 | Complete |
 | DECL-04 | Phase 58 | Complete |
 | DECL-05 | Phase 58 | Complete |
 | LOC-05 | Phase 59 | Pending |

@@ -2,20 +2,20 @@
 gsd_state_version: "1.0"
 milestone: v1.1.0
 milestone_name: The Prerequisite Doctor
-current_phase: 58
-current_phase_name: One Declaration, Four Places That Can No Longer Disagree
-status: executing
-stopped_at: Completed 58-03-PLAN.md (gap closure) - ready for /gsd-verify-work 58
-last_updated: "2026-09-17T19:14:36.415Z"
+current_phase: 59
+current_phase_name: The Tool-Location Seam and Its Precedence Order
+status: planning
+stopped_at: Phase 58 complete, ready to plan Phase 59
+last_updated: "2026-09-17T20:36:05.591Z"
 last_activity: 2026-09-17
-last_activity_desc: Phase 58 execution started
-state_head: 678534cb7375de37e7802841d7bf6b6d932c423c
+last_activity_desc: Phase 58 complete, transitioned to Phase 59
+state_head: ca56f1d988ba26c5d99b2305677c3e06b34fb27c
 progress:
   total_phases: 5
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 3
   completed_plans: 3
-  percent: 0
+  percent: 20
 carried_forward_phases:
 
   - 51
@@ -29,7 +29,7 @@ carried_forward_phases:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-16 at the **v1.1.0 milestone open** —
+See: .planning/PROJECT.md (last substantive update 2026-09-16 at the **v1.1.0 milestone open**; reviewed again at the Phase 58 transition 2026-09-17 with no evolution write — v1.1.0 is 1 of 5 phases in, so no requirement graduated to Validated —
 a milestone-start write, not an evolution review: a `## Current Milestone`
 section carrying the goal, the five scoping decisions and what is explicitly out
 of scope, plus a `TAKEN as v1.1.0's scope` block in Active. Core Value untouched
@@ -44,9 +44,13 @@ sits entirely upstream of it — it is about the user's first hour, before a
 session drives anything — and produces no evidence bearing on the ONE thing, so
 restating it here would be a sixth repetition with nothing behind it.*
 
-**Current focus:** **Phase 58 — One Declaration, Four Places That Can No
-Longer Disagree**, executing. It is the first phase of **Milestone v1.1.0 "The
-Prerequisite Doctor"**, opened 2026-09-16. Requirements defined and **roadmap
+**Current focus:** **Phase 59 — The Tool-Location Seam and Its Precedence
+Order**, ready to plan. **Phase 58 (One Declaration, Four Places That Can No
+Longer Disagree) closed 2026-09-17** at 5/5 roadmap success criteria, UAT 1/1,
+`threats_open: 0` and `nyquist_compliant: true` — its last open item, the
+`decl-02-node18-proof` job proven green on a real GitHub Actions runner, was
+discharged by run `35270271098` (Node v18.20.8). Phase 59 is the second phase of
+**Milestone v1.1.0 "The Prerequisite Doctor"**, opened 2026-09-16. Requirements defined and **roadmap
 created the same day — five phases, 58-62, with 24/24 requirements mapped, each
 to exactly one phase.** One hypothesis: *a person who has just installed this
 plugin can find out what is missing in one command, and tell the plugin where an
@@ -335,9 +339,9 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 58 (One Declaration, Four Places That Can No Longer Disagree) — AWAITING VERIFICATION
-Plan: 3 of 3 — all plans executed, gap-closure plan 58-03 complete
-Status: Gap-closure plan 58-03 complete. A citation-ledger structural guard
+Phase: 59 — The Tool-Location Seam and Its Precedence Order
+Plan: Not started
+Status: Ready to plan
 (src/mcp/vice/phase58-citation-ledger.test.ts) now runs inside
 npm run test:automated; both wrong file:line citations 58-VERIFICATION.md
 flagged are corrected by live re-derivation; unp64's exclusion is recorded as
@@ -345,7 +349,7 @@ DECL-F3. DECL-01 marked Complete; DECL-02 remains Gaps Found pending the
 unpushed decl-02-node18-proof real-runner execution (human verification, not
 plannable). DECL-04 and DECL-05 unchanged (already Complete). Next:
 /gsd-verify-work 58.
-Last activity: 2026-09-17 — Phase 58 gap-closure plan 58-03 executed
+Last activity: 2026-09-17 — Phase 58 complete, transitioned to Phase 59
 
 **Milestone shape, so no reader has to rebuild it from the ROADMAP:** Phase 58
 declares the prerequisites; Phase 59 builds the tool-location seam and its
@@ -363,7 +367,7 @@ than a matter of discipline.
 
 **Velocity:**
 
-- Total plans completed: 438
+- Total plans completed: 441
 - Average duration: —
 - Total execution time: —
 
@@ -418,6 +422,7 @@ than a matter of discipline.
 | 49 | 7 | - | - |
 | 56 | 11 | - | - |
 | 50 | 8 | - | - |
+| 58 | 3 | - | - |
 
 **Recent Trend:**
 
@@ -1870,6 +1875,27 @@ ledger table row below were both updated in the same change as this one.
 
 ### Blockers/Concerns
 
+- **Phase 58 carried items (2026-09-17), none blocking Phase 59.** The phase closed
+  at 5/5 roadmap success criteria with UAT 1/1, `threats_open: 0` and
+  `nyquist_compliant: true`. Four code-review findings against the NEW citation-ledger
+  guard (`src/mcp/vice/phase58-citation-ledger.test.ts`) were deliberately **not**
+  fixed and are carried: CR-01, a symlink inside the repo root can defeat the
+  path-containment check and let the audit read a file outside the repository; CR-02,
+  a citation resolving to a directory crashes the run with an uncaught `EISDIR`
+  instead of a graceful failure string; WR-01, an empty-string anchor trivially
+  "verifies" any cited range; WR-02, an off-by-one in the end-of-file line count
+  admits one phantom trailing line. **None fires on content committed today** —
+  each needs a future adversarial or careless ledger edit — which is why they were
+  classed as follow-on hardening of the guard rather than Phase 58 defects. They
+  matter the moment the ledger grows by hand.
+- **`scripts/check-npm-packages.mjs` does not exist and nothing should look for it
+  (2026-09-17).** `58-01-PLAN.md`, `58-VALIDATION.md`'s draft and `58-01-SUMMARY.md`
+  all name it as DECL-05's packaging gate. The assertion actually shipped as a
+  colocated case, `src/mcp/vice/prerequisites.test.ts:356`, which reads the tarball's
+  own file list via `npm pack --dry-run --json` rather than a repo-path `existsSync`.
+  `phase.complete` independently flagged the dangling reference. VALIDATION.md has
+  been corrected; the SUMMARY is left as the historical record it is.
+
 - **RESOLVED 2026-09-16 — Phase 50's plan-4 live-half blocker is closed.** The live
   executor ran: 50-05 produced the red control, 50-06 the green comparison, and 50-08
   the exported-edit capture, all against genuine unpatched stock `/usr/bin/x64sc`.
@@ -2805,8 +2831,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-17T19:14:36.267Z
-Stopped at: Completed 58-03-PLAN.md (gap closure) - ready for /gsd-verify-work 58
+Last session: 2026-09-17T20:40:00.000Z
+Stopped at: Phase 58 complete and verified (UAT 1/1, verification 5/5 passed, security threats_open 0, nyquist_compliant true); ready to plan Phase 59
 Resume file: None
 
 Earlier: Milestone v1.0.0 "The Rebuild Half" closed and archived on its delivered scope (9 phases, 73 plans, 33/33 in-scope requirements, `override_closeout`). Phases 51, 53, 54 and 57 carried forward with their ROADMAP sections live.

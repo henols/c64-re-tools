@@ -271,7 +271,7 @@
     {
       "number": "51",
       "name": "Planning Vocabulary Out of the Shipped Server",
-      "status": "in_progress"
+      "status": "pending"
     },
     {
       "number": "52",
@@ -291,7 +291,7 @@
     {
       "number": "55",
       "name": "Restore the Fork Removal's Dropped Capabilities and Re-Baseline the Proxy Test",
-      "status": "complete"
+      "status": "pending"
     },
     {
       "number": "56",
@@ -306,7 +306,7 @@
     {
       "number": "58",
       "name": "One Declaration, Four Places That Can No Longer Disagree",
-      "status": "in_progress"
+      "status": "pending"
     },
     {
       "number": "59",
@@ -331,8 +331,8 @@
   ],
   "next": {
     "command": "/gsd:progress --next",
-    "label": "Advance to the next step",
-    "reason": "Phase 58 of 5 · 0% · executing"
+    "label": "Advance to the next step (plan phase 59)",
+    "reason": "Phase 59 of 5 — needs a plan"
   },
-  "updated_at": "2026-09-17T14:37:28.630Z"
+  "updated_at": "2026-09-17T20:36:05.673Z"
 }
