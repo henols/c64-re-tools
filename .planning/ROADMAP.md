@@ -1801,7 +1801,16 @@ four carried phases.
   `resources/*.mjs` artifact is regenerated for the first time in Phase 60, where
   that risk is isolated and carries its own evidence.
 
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 58-01-PLAN.md — The declaration proven end to end: one tracer record wired
+  through the JSON file, its structural test, the `files[]` entry, the tarball
+  assertion and a Node-18 CI job, then expanded to all eight records with every
+  remedy string traced to a named source
+- [ ] 58-02-PLAN.md — The provenance record of which source won each
+  disagreement, and the README prose correction the declaration's
+  no-version-data rule requires
 
 ### Phase 59: The Tool-Location Seam and Its Precedence Order
 
