@@ -541,7 +541,9 @@ test("non-vacuity floor: CLI_PATH_ARGUMENTS has at least CLI_PATH_ARGUMENT_FLOOR
 // ---------------------------------------------------------------------------
 
 test("WR-20: no Node child is spawned as a bare \"node\" -- every site passes process.execPath", () => {
-  const roots = [HERE, join(HERE, "..", "..", "..", "scripts"), join(HERE, "..", "..", "..", "scripts", "lib")];
+  // `scripts/lib/` was removed with the two checkers that were its only
+  // consumers, so it is no longer a root to scan -- scandir would throw ENOENT.
+  const roots = [HERE, join(HERE, "..", "..", "..", "scripts")];
   const offenders: string[] = [];
   let scanned = 0;
   for (const root of roots) {

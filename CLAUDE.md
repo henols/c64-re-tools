@@ -58,7 +58,7 @@ state — and keep working when the emulator misbehaves.
 ## Languages
 - TypeScript (ES2022, NodeNext modules) - MCP server implementation, `src/mcp/vice/*.ts` and `*.mts`
 - JavaScript (ESM, `.mjs`) - installer CLI (`installer/bin/cli.mjs`), skill scripts (`src/skills/*/scripts/*.mjs`), compiled host launcher resources (`src/mcp/vice/resources/*.mjs`)
-- Bash - host launcher script (`src/mcp/vice/resources/vice-launcher.sh`), release/packaging scripts (`scripts/package.sh`, `scripts/ensure-mcp-deps.sh`)
+- Bash - host launcher script (`src/mcp/vice/resources/vice-launcher.sh`), SessionStart dependency provisioning (`scripts/ensure-mcp-deps.sh`)
 - 6502/6510 assembly (ACME dialect) - skill scaffolds/templates, e.g. `src/skills/acme-build/template.a`
 - Markdown - all skill documentation (`SKILL.md` files), project docs (`docs/`, `README.md`)
 ## Runtime
@@ -102,16 +102,14 @@ state — and keep working when the emulator misbehaves.
 - `CLAUDE_PROJECT_DIR`, `CONTAINER_WORKSPACE_PATH`, `HOST_WORKSPACE_PATH` - project-root resolution (`src/mcp/vice/repo-root.ts`) and host/container path translation.
 - `MASTRA_TELEMETRY_DISABLED` - disables Mastra's telemetry.
 - `.env` files: none detected in the repository.
-- `scripts/package.sh` - builds the installable plugin release zip (used by CI).
-- `scripts/check-npm-packages.mjs` - validates, via `npm pack --dry-run --json`, that both published tarballs (`@henols/vice-mcp`, `@henols/c64-re-tools`) contain exactly the right files (no `node_modules/`, no test files, no fixtures leaked; skills present).
 ## Platform Requirements
 - Node.js >= 24 to run/test the MCP server; Node >= 18 to run the installer.
 - ACME cross-assembler on `$PATH` for the `acme-build` skill.
 - A reachable host running stock upstream VICE (`x64sc`) for any live emulator interaction — the MCP server itself has no in-process emulator.
 - Docker/devcontainer awareness baked in: code checks `isInsideContainer()` (`src/mcp/vice/container-guard.mts`) to decide between `host.docker.internal` and `127.0.0.1` as the default VICE host.
 - Published to the public npm registry as `@henols/vice-mcp` and `@henols/c64-re-tools`, installed via `npx` into consumer projects, or as a Claude Code plugin via `/plugin marketplace add`.
-- CI: GitHub Actions (`.github/workflows/ci.yml`) — typecheck, test, smoke-test, package validation, artifact build, GitHub Release creation on `v*` tags, and npm publishing via OIDC Trusted Publishing (no `NPM_TOKEN` secret required for release; a manual `check-npm-token.yml` workflow exists purely as a diagnostic).
-- Every merge to `main` auto-publishes a new patch version (unless the commit subject contains `[skip release]`).
+- CI: GitHub Actions (`.github/workflows/ci.yml`) — two jobs only. `build` runs typecheck plus the MCP-server, installer and skill suites. `publish-npm` triggers on a `v*` tag (or a manual dispatch with an explicit version), derives the version from the ref, and publishes both packages via OIDC Trusted Publishing (no `NPM_TOKEN` secret).
+- Merging to `main` publishes nothing. A release is a git tag: `git tag v1.2.3 && git push origin v1.2.3`. The plugin is installed from the repository, so no release zip is built or attached.
 <!-- GSD:stack-end -->
 
 <!-- GSD:conventions-start source:CONVENTIONS.md -->
@@ -123,7 +121,7 @@ Full detail: `.planning/codebase/CONVENTIONS.md`. The rules below change what yo
 - **`.mts` against `.ts`.** `.mts` marks a module that `build.ts` compiles into `resources/`. Plain `.ts` runs as source under Node type-stripping. Read the `HOST_BOUND_ARTIFACTS` array in `build.ts` before you rename a file across the two.
 - **Names.** A function name is camelCase and starts with a verb, as in `repoRoot()` and `containerPath()`. A function that returns a boolean reads as a predicate, as in `isInsideContainer()`. A type name is PascalCase. An options type is `<FunctionName>Options`. A result type is `<FunctionName>Result`. An error class name ends in `Error`.
 - **Style.** The repo holds no formatter config. Match the file you edit. Indent with 2 spaces. Use double quotes, semicolons and template literals. Lines run to about 100 to 120 columns. Do not rewrap an existing line. `npm run typecheck` is the only static gate, so treat strict TypeScript as the linter.
-- **Imports.** Import Node built-ins first, always with the `node:` prefix. Leave a blank line. Then import local modules as relative paths that include the real file extension. The repo defines no path alias. `verbatimModuleSyntax` makes `import type` mandatory for a type-only import. The runtime dependency set is exactly `@mastra/mcp` and `@mastra/core`. `scripts/check-npm-packages.mjs` enforces that set, so do not add a runtime dependency.
+- **Imports.** Import Node built-ins first, always with the `node:` prefix. Leave a blank line. Then import local modules as relative paths that include the real file extension. The repo defines no path alias. `verbatimModuleSyntax` makes `import type` mandatory for a type-only import. The runtime dependency set is exactly `@mastra/mcp` and `@mastra/core`. Nothing enforces that mechanically any more, so do not add a runtime dependency without deciding to.
 - **Errors.** `ViceError` in `src/mcp/vice/vice-errors.ts:158` is the base class and carries an optional `code` and `data`. A subclass extends it and adds domain fields as public properties. A constructor takes a message and an options object. Prefer a structured result over a throw. A `reason` field holds prose that a caller shows to a user. It is not a code to map later.
 - **Comments.** A module header states WHY the file exists and names the incident behind it. Write "a second broker launch raced the first and killed a live capture". Do not write "plan 02-03 (BROK-03, D-14)". State what the file is the one authoritative place for. State what NOT to do and name the past mistake. Give every export a JSDoc block written as prose.
 - **Modules.** Export by name. This repo uses no default export and no barrel file. One module owns each piece of derived knowledge. `repo-root.ts` owns the project root. `stock-connect.ts` owns the binary-monitor handshake. `hostpath.ts` and `containerpath.ts` own path translation. `stock-dispatch.ts` owns the dispatch table. Import the owning function. Do not recompute it inline.

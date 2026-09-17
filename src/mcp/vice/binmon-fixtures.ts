@@ -52,7 +52,7 @@
 // The three pure wire constants below are hand-copied, not imported. This
 // module must not be imported by any published runtime file (it lives
 // outside package.json's `files` array on purpose) and must never itself be
-// added to that array -- check-npm-packages.mjs asserts the tarball ships no
+// added to that array -- the tarball must ship no
 // test tooling.
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";

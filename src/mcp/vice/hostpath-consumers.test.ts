@@ -52,7 +52,7 @@ const HOSTPATH_IMPORT_RE = /^\s*import\s[^;]*from\s+"\.\/hostpath\.(ts|mts|mjs)"
 
 /** Matches a dynamic `await import("./hostpath.ts")` (or `.mts`/`.mjs`) --
  * the other shape Phase 10 IN-02 names as invisible to a static-import-only
- * detector. Mirrors `scripts/check-npm-packages.mjs`'s own
+ * detector. Mirrors the retired tarball checker's own
  * STATIC_IMPORT_RE/DYNAMIC_IMPORT_RE pairing (added for the identical reason
  * by an earlier plan): the dynamic pattern is ADDED ALONGSIDE the static
  * one above, never a replacement. containerpath.ts is not covered here
@@ -424,7 +424,7 @@ test("planted violation, three import shapes (Phase 10 IN-02 proof): multi-line 
   // (b) Dynamic import -- the shape vice-proxy.ts's own
   // `await import("./anno-cli.ts")` proves exists in this repo's own style,
   // and the shape the STATIC_IMPORT_RE-only closure walk in
-  // check-npm-packages.mjs was measured to miss before that guard grew its
+  // the tarball checker was measured to miss before that guard grew its
   // own DYNAMIC_IMPORT_RE sibling.
   const dynamicImport = 'export async function useIt() {\n  const { hostPath } = await import("./hostpath.ts");\n  return hostPath;\n}\n';
 

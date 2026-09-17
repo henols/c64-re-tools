@@ -2456,7 +2456,7 @@ async function runOracleRun(args, deps) {
 }
 // ---------------------------------------------------------------------------
 // CLI entry point (guarded on being the process entry point, the
-// check-npm-packages.mjs:159 IS_ENTRY_POINT idiom). Needed for the
+// entry-point idiom the retired tarball checker also used). Needed for the
 // host-local route (no broker in the loop). `node resources/host-tool.mjs
 // run --repo-root <path> --request <json>` prints the response as one JSON
 // line on stdout and exits non-zero on a refusal.

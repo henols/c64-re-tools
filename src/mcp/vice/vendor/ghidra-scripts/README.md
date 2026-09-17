@@ -29,6 +29,6 @@ sits outside `docs-dangling-refs.test.ts`'s own scanned set --that guard's
 character-state-machine literal extractor covers only the `.ts`/`.mts`
 modules named in `package.json`'s `files[]`, and `.java` sources under
 `vendor/` are never packaged (the same exclusion `fixtures/` gets, per
-`scripts/check-npm-packages.mjs`). The rule is enforced here instead by this
+a retired tarball checker). The rule is carried here instead by this
 plan's own `<verify>` grep over both `.java` files and this README:
 `grep -aciE 'Phase[[:space:]]+[0-9]'`, asserted to return 0.

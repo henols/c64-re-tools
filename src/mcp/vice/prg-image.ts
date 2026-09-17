@@ -34,7 +34,7 @@
 // `flatImageOrigin` from here with a plain top-level import, and `vice-proxy.ts`
 // imports `anno-tools.ts` statically. `anno-coverage.ts` (the byte-coverage
 // census) imports `decodeRawData`, `parsePrg` and `flatImageOrigin` for the
-// same three facts on the CLI's route. `scripts/check-npm-packages.mjs` walks
+// same three facts on the CLI's route. The published closure once walked
 // that closure over `files[]` and fails the pack the moment a reachable module
 // sits outside the listed set.
 //

@@ -532,5 +532,5 @@ have been.
 No new runtime dependency was added by the disassembler (`disasm-opcodes.ts`,
 `disasm-decoder.ts`, `disasm-renderer.ts`, `stock-disassemble.ts` import only
 this package's own sibling modules and Node built-ins). This is a checkable
-claim, not a prose one: `scripts/check-npm-packages.mjs` asserts the packed
+claim, not a prose one: the packed
 tarball's runtime `dependencies` are exactly these two, by key set and count.

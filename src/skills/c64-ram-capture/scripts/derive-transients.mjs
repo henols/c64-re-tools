@@ -63,7 +63,7 @@
 // is unavailable here -- `capture-predicate.ts` is a pure library with no CLI
 // entry point, a static cross-package import resolves on neither npm-installer
 // route (see `vsf-slice.mjs`'s header for the measured constraint), and
-// `scripts/check-npm-packages.mjs`'s transitive closure walk would fail the
+// a transitive closure walk over the published set would fail the
 // pack for one. So this is the retired skill-side/MCP-side disk-image-reader
 // pair's own answer rather than the `vsf-slice.mjs`
 // answer: a second independent implementation of a rule that

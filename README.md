@@ -223,8 +223,6 @@ docs/
   stock-hard-losses.md  # the three capabilities with no route on stock, and why (see above)
 scripts/
   ensure-mcp-deps.sh    # SessionStart dependency provisioning (plugin mode)
-  package.sh            # validates manifests + builds the plugin release zip
-  check-npm-packages.mjs # validates the two npm tarballs' contents
 ```
 
 The payload no longer sits on Claude Code's auto-discovery path — see
@@ -236,70 +234,41 @@ though the tree no longer mirrors a consumer's installed `.claude/` layout.
 
 ## Publishing (maintainers)
 
-The version lives in **one hand-edited file**: `VERSION` at the repo root. It holds
-a *template*, not a number — each dot-component is either a literal integer or `-`,
-which marks an auto-managed slot:
-
-```
-0.2.-
-```
-
-`scripts/version.mjs` resolves that template against whatever is actually published
-on npm, using four rules:
-
-| `VERSION` | published on npm | resolves to | rule |
-|-----------|------------------|-------------|------|
-| `0.2.-`   | `0.1.12`         | `0.2.0`     | literal prefix differs -> auto slots reset to 0 |
-| `0.2.-`   | `0.2.0`          | `0.2.1`     | literal prefix matches -> first `-` increments |
-| `0.3.-`   | `0.2.7`          | `0.3.0`     | you bumped minor by hand -> patch does **not** carry over |
-| `0.-.-`   | `0.2.7`          | `0.3.0`     | first `-` (minor) increments, later `-` reset to 0 |
-| `1.0.0`   | anything         | `1.0.0`     | fully pinned, no auto slot, no bump |
-
-So in practice:
-
-- **Patch release** — merge to `main`. Nothing to edit. CI resolves the next patch,
-  publishes `@henols/vice-mcp` then `@henols/c64-re-tools`, and creates the matching
-  `v<version>` tag + GitHub release.
-- **Minor or major release** — edit `VERSION` (e.g. `0.2.-` -> `0.3.-`) and merge to
-  `main`. The patch resets to `0` rather than continuing the old count, so you get
-  `0.3.0`, never `0.3.13`. No manual workflow trigger, no tag to push.
-- **Land a change without releasing** — put `[skip release]` in the merge commit
-  **subject** (first line).
-
-You never pre-bump a `package.json`. Every publishable version string in the working
-tree carries the self-evident placeholder `0.0.0-dev`, stamped with the resolved
-version inside CI's ephemeral checkout at publish time — the two `package.json`
-files and the installer's `@henols/vice-mcp` dependency pin by `npm version`, the
-three plugin-manifest fields by `scripts/version.mjs stamp`. Because that pin is a
-placeholder in the tree, a local `cd installer && npm install` will not resolve it;
-use the published package, or stamp a version locally first.
-
-`scripts/version.mjs` **refuses to resolve downwards**: if the template would
-produce a version that is not strictly greater than what is published, it exits
-non-zero. That turns a mistaken downward edit of `VERSION` into a loud CI failure
-instead of a registry 409 partway through publishing.
-
-Useful locally (all read-only against npm):
+**The git tag is the version.** There is no template, no auto-bump on merge, and
+nothing to hand-edit before a release.
 
 ```sh
-node scripts/version.mjs resolve                 # what would ship right now
-node scripts/version.mjs resolve --published X.Y.Z   # resolve against a hypothetical
-node scripts/version.mjs check                   # assert all 6 derived strings are the placeholder
+git tag v1.2.3
+git push origin v1.2.3
 ```
 
-The algorithm has exactly one implementation, `src/mcp/vice/version.ts` — the
-CLI, the MCP server's advertised version, and CI all call into it. Do not re-derive
-the rules anywhere else; a test greps for that regression.
+That tag triggers the `publish-npm` job, which derives `1.2.3` from the ref,
+stamps it into both `package.json` files with `npm version`, pins the installer's
+`@henols/vice-mcp` dependency to that exact version, and publishes
+`@henols/vice-mcp` first, then `@henols/c64-re-tools`. A manual
+`workflow_dispatch` with an explicit version does the same thing without a tag;
+do not use both for one version, or the loser gets a 409.
 
-The two escape hatches still exist if you need them: pushing a `v<version>` tag by
-hand, or Actions -> **CI** -> **Run workflow** with an explicit version
-(`workflow_dispatch`). Do not combine either with a `main` push for the same
-version — both paths would publish it and the loser gets a 409.
+Merging to `main` publishes nothing. It runs the build job — typecheck, the MCP
+server suite, the installer suite and the skill suites — and stops there.
+
+Every publishable version string in the working tree carries the self-evident
+placeholder `0.0.0-dev`: both `package.json` `.version` fields, the installer's
+`@henols/vice-mcp` pin, and the plugin manifests. `npm version` overwrites the
+first three inside CI's ephemeral checkout at publish time. Never pre-bump one by
+hand — a test asserts they are all still the placeholder. Because the pin is a
+placeholder in the tree, a local `cd installer && npm install` will not resolve
+it; use the published package.
+
+The plugin itself is **not** distributed as a release artifact. It installs from
+this repository (`/plugin marketplace add henols/c64-re-tools`), so there is no
+zip to build and none is attached to a release.
 
 Publishing uses **npm Trusted Publishing (OIDC)** — no `NPM_TOKEN` secret. Each
 package has a Trusted Publisher configured on npmjs.com pointing at this repo and
 `ci.yml`; the `publish-npm` job runs with `id-token: write` and authenticates to
 npm directly, and npm records provenance automatically.
+
 
 ## Developing / testing the MCP server
 

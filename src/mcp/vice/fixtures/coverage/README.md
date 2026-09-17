@@ -231,7 +231,7 @@ Three invariants are **enforced by the generator, not asserted about**:
 
 ## These do not ship
 
-`scripts/check-npm-packages.mjs`'s `assertLeanTarball()` refuses any packed file under
+The retired tarball checker refused any packed file under
 `fixtures/`, in both tarballs. The filename `make-coverage-fixtures.mjs` deliberately carries no
 test suffix: `ci-suite-coverage.test.ts` derives the set of directories holding committed test
 files from the repository itself and requires a CI step for each, so a `*.test.mjs` here would

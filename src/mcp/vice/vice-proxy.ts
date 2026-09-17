@@ -395,10 +395,7 @@ process.stdout.on("error", (err) => {
 // repo-root `VERSION` template -- rendered as `<resolved>-dev` -- only in a
 // git checkout, degrading to `0.0.0-dev` if neither is available. Reused,
 // unchanged, as MCPServer's own `version` field below.
-const PROXY_VERSION = runtimeVersion({
-  pkgJsonPath: join(HERE_DIR, "package.json"),
-  repoRoot: () => repoRoot(),
-});
+const PROXY_VERSION = runtimeVersion({ pkgJsonPath: join(HERE_DIR, "package.json") });
 
 // --------------------------------------------------------------- tools/list
 //

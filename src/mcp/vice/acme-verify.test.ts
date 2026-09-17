@@ -2098,6 +2098,6 @@ test("acme-verify.ts is absent from package.json's files[] array (test-only, mec
     pkg.files.includes("anno-export-asm.ts"),
     true,
     "anno-export-asm.ts is shipped runtime -- it is reachable from vice-proxy.ts through anno-cli.ts's export-asm " +
-      "verb, and check-npm-packages.mjs's closure walk fails the pack when a reachable module is unlisted"
+      "verb, and a closure walk over the published set fails when a reachable module is unlisted"
   );
 });

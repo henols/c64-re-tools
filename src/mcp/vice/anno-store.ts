@@ -50,7 +50,7 @@
 // THIS MODULE MUST BE LISTED IN `package.json`'s `files[]`, and the reason is
 // NOT the reachability reason `prg-image.ts:30-36` gives for itself. This
 // module is not yet reachable from the published entry point's import closure,
-// and `scripts/check-npm-packages.mjs` asserts only one direction -- every
+// and only one direction was ever asserted mechanically -- every
 // REACHABLE module must be listed -- never the converse. The real reason to
 // list it: the shipped-module assertion scans `shippedTsModules()`, which is derived
 // from `files[]`, so an unlisted module makes that assertion VACUOUS. It would

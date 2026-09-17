@@ -1,7 +1,7 @@
 // Regression coverage for wireMcp() -- the only function in this repository
 // that reads, edits and rewrites a file it does not own (a consumer
 // project's .mcp.json). Before this file, PKG-01's merge half had zero
-// automated coverage: `scripts/package.sh` validates only that the vice
+// automated coverage: the retired packaging script validated only that the vice
 // server's args mention the plugin-root variable, never non-clobbering or
 // refusal behaviour.
 //

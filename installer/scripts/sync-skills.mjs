@@ -9,8 +9,8 @@
 // committed skill test suites (*.test.mjs) and their shared test-only helper
 // (test-corpus.mjs) reached the published @henols/c64-re-tools tarball with
 // nothing to stop them -- Phase 16's own verification found this while
-// scripts/check-npm-packages.mjs still exited 0. The exclusion rule below is
-// deliberately re-expressed HERE, independently of check-npm-packages.mjs's
+// the tarball checker still exited 0. The exclusion rule below is
+// deliberately expressed HERE, independently of any external checker's
 // own assertLeanTarball() check, rather than shared from one place: the gate
 // must be able to catch this producer being wrong, which it cannot do if it
 // shares the producer's own rule. Two narrower fixes were considered and

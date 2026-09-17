@@ -131,7 +131,7 @@ import { renderMemoryMap, checkRenderedMemoryMap } from "./anno-memmap-render.ts
 // one. `acme-verify.ts` -- the module that DOES spawn ACME -- is deliberately
 // NOT imported here and must never be: it is test-only (it is absent from
 // `package.json`'s `files[]` on purpose), so a shipped module importing it
-// would drag it into the published closure `check-npm-packages.mjs` walks.
+// would drag it into the published closure.
 import { exportAsmTree } from "./anno-export-asm.ts";
 import type { ExportAsmTreeResult } from "./anno-export-asm.ts";
 // The coverage instrument. It declares its own input shapes

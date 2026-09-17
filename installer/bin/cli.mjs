@@ -42,7 +42,7 @@ const SKILLS_SRC = join(PKG_ROOT, "skills");
 // implementation of the resolution algorithm; there is no template/`-`
 // handling here because this package is never resolved from `VERSION`,
 // only ever published with a concrete version already stamped in. That
-// number is PRODUCED elsewhere: `scripts/version.mjs stamp` writes the
+// number is PRODUCED elsewhere: `npm version` writes the
 // working-tree placeholder, and CI's `npm version` writes the real one at
 // publish time. Do not reimplement the seam's own VERSION-template
 // parsing and prefix-resolution rules here.

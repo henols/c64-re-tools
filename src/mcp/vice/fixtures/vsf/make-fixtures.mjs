@@ -30,7 +30,7 @@
 //     patterns are closed-form functions of the index.
 //   - Never add `fixtures/vsf` to `package.json`'s `files[]`. These are
 //     test-support, the sibling `fixtures/binmon/` is deliberately excluded
-//     for the same reason, and `scripts/check-npm-packages.mjs` fails a pack
+//     for the same reason, and a pack must not include
 //     that leaks a fixture.
 import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";

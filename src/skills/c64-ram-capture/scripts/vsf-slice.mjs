@@ -13,7 +13,7 @@
 // `@henols/vice-mcp`, whose `files[]` lists only `src/mcp/vice/` contents,
 // while `src/skills/**` ships in the other package (`@henols/c64-re-tools`).
 // A plain `import` from a skill script into the MCP tree resolves on neither
-// npm-installer route, and `scripts/check-npm-packages.mjs`'s transitive
+// npm-installer route, and a transitive
 // closure walk over `files[]` would fail the pack the moment a reachable
 // module sat outside the listed set.
 //

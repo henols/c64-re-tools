@@ -409,8 +409,6 @@ test("`.gitignore` and install-resources.ts's deployed set (resourceEntries() + 
 const EXPECTED_TRACKED_SHELL_SCRIPTS = [
   "src/mcp/vice/resources/vice-launcher.sh",
   "scripts/ensure-mcp-deps.sh",
-  "scripts/package.sh",
-  "scripts/release-assets.sh",
   ".planning/phases/29-the-mcp-surface/29-15-e2e.sh",
 ].sort();
 
