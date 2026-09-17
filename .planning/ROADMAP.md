@@ -588,6 +588,7 @@ v0.6.0's for the window-slicing reason recorded there.
 </details>
 
 ### ✅ v1.0.0 The Rebuild Half (Phases 45-50, 52, 55, 56) — SHIPPED 2026-09-16
+
 *(Phases 51, 53, 54 and 57 below are **carried forward** with live requirement
 text; they are not part of v1.1.0 and their checklist entries stay unticked.)*
 
@@ -1464,6 +1465,7 @@ a pattern hole ships a guard that is green on the citations it was built to catc
 **Plans**: 5 plans
 
 Plans:
+
 - [x] 53-01-PLAN.md — Rewrite the 30 citations in the ten npm-published modules
 - [x] 53-02-PLAN.md — Rewrite the 32 citations in the probe script, the fixture module and the fixture tree
 - [x] 53-03-PLAN.md — Rewrite the 21 citations in the thirteen test files
@@ -1838,10 +1840,11 @@ four carried phases.
   `resources/*.mjs` artifact is regenerated for the first time in Phase 60, where
   that risk is isolated and carries its own evidence.
 
-**Plans**: 2 plans
+**Plans**: 1/2 plans executed
 
 Plans:
-- [ ] 58-01-PLAN.md — The declaration proven end to end: one tracer record wired
+
+- [x] 58-01-PLAN.md — The declaration proven end to end: one tracer record wired
   through the JSON file, its structural test, the `files[]` entry, the tarball
   assertion and a Node-18 CI job, then expanded to all eight records with every
   remedy string traced to a named source
@@ -2227,7 +2230,7 @@ check. No test reads this table now.
 | 55. Restore the Fork Removal's Dropped Capabilities and Re-Baseline the Proxy Test | v1.0.0 | 6/6 | Complete ⚠️ no gate | 2026-09-14 |
 | 56. Remove `shipped-modules.ts` and Its Embedded Source Scans | v1.0.0 | 11/11 | Complete | 2026-09-15 |
 | 57. Nothing Is Installed Automatically | v1.0.0 → carried | 0/0 | **Carried forward** | - |
-| 58. One Declaration, Four Places That Can No Longer Disagree | v1.1.0 | 0/2 | Planned | - |
+| 58. One Declaration, Four Places That Can No Longer Disagree | v1.1.0 | 1/2 | In Progress | - |
 | 59. The Tool-Location Seam and Its Precedence Order | v1.1.0 | 0/? | Not started | - |
 | 60. The Seam Wired Into the Code That Ships | v1.1.0 | 0/? | Not started | - |
 | 61. `vice-mcp doctor`, Reachable on a Node Too Old to Run the Server | v1.1.0 | 0/? | Not started | - |

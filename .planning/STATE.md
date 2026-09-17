@@ -4,12 +4,12 @@ milestone: v1.1.0
 milestone_name: The Prerequisite Doctor
 current_phase: 58
 current_phase_name: One Declaration, Four Places That Can No Longer Disagree
-status: planning
+status: executing
 stopped_at: Phase 58 planned - 2 plans in 2 waves, plan-checker passed
-last_updated: "2026-09-17T10:06:21.023Z"
+last_updated: "2026-09-17T13:58:59.202Z"
 last_activity: 2026-09-17
-last_activity_desc: Phase 58 planned (plan-phase) - 2 plans, 2 waves, verification passed
-state_head: 08308d01ba2baadbd3932b80bc6806d918eee1fd
+last_activity_desc: Phase 58 execution started
+state_head: d0e9fb2e1d5ae8c64fd3a6c9d4ecc920cc45fe4e
 progress:
   total_phases: 5
   completed_phases: 0
@@ -17,10 +17,12 @@ progress:
   completed_plans: 0
   percent: 0
 carried_forward_phases:
+
   - 51
   - 53
   - 54
   - 57
+
 ---
 
 # Project State
@@ -42,13 +44,13 @@ sits entirely upstream of it — it is about the user's first hour, before a
 session drives anything — and produces no evidence bearing on the ONE thing, so
 restating it here would be a sixth repetition with nothing behind it.*
 
-**Current focus:** **Milestone v1.1.0 "The Prerequisite Doctor"**, opened
-2026-09-16. Requirements defined and **roadmap created the same day — five
-phases, 58-62, with 24/24 requirements mapped, each to exactly one phase.**
-Nothing is planned or executed yet; the next action is `/gsd-plan-phase 58`. One
-hypothesis: *a person who has just installed this plugin can find out what is
-missing in one command, and tell the plugin where an unusually-located tool
-lives, without reading source.*
+**Current focus:** **Phase 58 — One Declaration, Four Places That Can No
+Longer Disagree**, executing. It is the first phase of **Milestone v1.1.0 "The
+Prerequisite Doctor"**, opened 2026-09-16. Requirements defined and **roadmap
+created the same day — five phases, 58-62, with 24/24 requirements mapped, each
+to exactly one phase.** One hypothesis: *a person who has just installed this
+plugin can find out what is missing in one command, and tell the plugin where an
+unusually-located tool lives, without reading source.*
 
 **What this milestone builds**, per the owner's framing — *"a standard
 installation tool and how the different tools that are needed for being able to
@@ -333,10 +335,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 58 (One Declaration, Four Places That Can No Longer Disagree) — READY TO EXECUTE
-Plan: 0/2 executed - 58-01 (Wave 1), 58-02 (Wave 2, depends on 58-01)
-Status: Phase 58 planned - research, patterns and validation strategy written; plan-checker returned VERIFICATION PASSED; requirements 4/4 and decisions 15/15 covered
-Last activity: 2026-09-17 — Phase 53 (Operator-Owned `docs/`) executed: 27 evidence documents relocated out of docs/, 83 product-source citations rewritten as reasons, criterion 6 withdrawn
+Phase: 58 (One Declaration, Four Places That Can No Longer Disagree) — EXECUTING
+Plan: 1 of 2
+Status: Executing Phase 58
+Last activity: 2026-09-17 — Phase 58 execution started
 
 **Milestone shape, so no reader has to rebuild it from the ROADMAP:** Phase 58
 declares the prerequisites; Phase 59 builds the tool-location seam and its
