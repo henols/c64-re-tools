@@ -32,14 +32,14 @@ by name rather than filling in a plausible number.
 > Checked live against each ecosystem on 2026-08-18. `CPUHISTORY_GET`, the
 > opcode behind this project's exact cycle stopwatch, requires **VICE >= 3.10**
 
-`.planning/REQUIREMENTS.md:85` records the opposite, and is the later
+`.planning/REQUIREMENTS.md:86` records the opposite, and is the later
 evidence:
 
 > Reporting a VICE, ACME, Ghidra or dxa version number | No shipped tool
 > refuses on one. `vice_cpu_history` runs over the text channel (`chis`); the
 > VICE >= 3.10 floor is on `CPUHISTORY_GET`, an opcode no shipped tool calls
 
-**`.planning/REQUIREMENTS.md:85` wins.** It is both the later statement (the
+**`.planning/REQUIREMENTS.md:86` wins.** It is both the later statement (the
 README prose dates to 2026-08-18; the REQUIREMENTS.md row was written for the
 v1.1.0 milestone opened 2026-09-16) and the measured one: `vice_cpu_history`
 is served over the text channel's `chis` command, not the binary monitor's
@@ -128,6 +128,15 @@ document carries `measured` -- `prerequisites.test.ts`'s
 `"D-14/D-15: exactly one remedy entry in the whole document is graded
 measured"` case asserts this as a relation, not a count that happens to be
 one today.
+
+**What "measured" covers, stated precisely.** The grade attests to the
+*effective* package-manager invocation -- the manager and the package name,
+`apt-get install -y acme` -- not a byte-identical copy of the workflow's own
+line, which wraps the call in a `retry_apt` helper a user has no access to
+and has no reason to type. This is a weaker sense of `measured` than the
+parity case below it, where a dedicated test asserts byte equality between
+the JSON and the README cell. No remedy string in `prerequisites.json` is
+changed by this note; it only makes the grade's own meaning explicit.
 
 ## Case four: the two Node floors
 
@@ -273,6 +282,60 @@ citation is stale, the correction is deliberately deferred (it needs to
 touch both `CLAUDE.md` and `.planning/PROJECT.md` at once, since the former
 is mirrored from the latter), and this doc does not close it.
 
+## Case six: the ninth tool this declaration does not name
+
+`prerequisites.json` declares eight tool records. A ninth, genuine,
+user-installed external host binary exists in this codebase and is not one
+of them: `unp64`, the packer-identification oracle. It is resolved through
+`resolveOracleCommand()`'s two environment variables,
+`src/mcp/vice/host-tool.mts:2799` (`UNP64` and `UNP64_PATH`, checked in that
+order), and its host-side install step is documented in the recon skill,
+`src/skills/c64-program-recon/SKILL.md:117-125` ("install an external
+identifier on the **host** and point `UNP64` or `UNP64_PATH` at it in the
+environment the host broker process sees"). Neither citation is invented --
+both are the same seam every other record in this declaration is traced
+from.
+
+**Why it is deliberately absent, not an oversight.** ROADMAP Success
+Criterion 1 for `DECL-01` is a closed, itemised eight-tool list --
+`x64sc`, `c1541`, `petcat`, the ACME binary, ACME's standard library,
+Ghidra, dxa and Node -- that does not name `unp64`, and
+`prerequisites.test.ts`'s required-id case asserts exactly that closed list
+as a subset relation. This is not a gap in the list; it is the list's own
+scope. This project has also treated the oracle as an optional, live-gated
+dependency whose absence is an expected, visibly-skipped state since the
+2026-08-24 decision,
+`.planning/phases/19-absorbed-procedures-and-the-coverage-instrument/19-DECISIONS.md:151`
+-- qualitatively different from the eight load-bearing tools this
+declaration exists to make actionable. A load-bearing tool's absence blocks
+a skill outright; the oracle's absence degrades one verdict field to
+`unknown` and the recon skill says so in writing.
+
+**The omission is owned, not left to be rediscovered.** `DECL-F3` (added to
+`.planning/REQUIREMENTS.md`'s Future Requirements this same task) is the
+requirement that carries adding a `unp64` record. The first phase that
+feels the consequence of its absence is Phase 61: its own Success Criterion
+1 states the doctor's answer must be "capability-shaped, not binary-shaped
+... a user missing ACME learns that `acme-build` is blocked and that the
+other skills are not, rather than reading a bare red row"
+(`.planning/ROADMAP.md:1980-1983`). A user missing `unp64` gets no
+equivalently-named row today -- there is no `unp64` record for a
+capability-shaped report to point at -- and that is exactly the gap
+`DECL-F3` exists to close, in Phase 61's own generation or whichever phase
+implements it.
+
+**Settling the attribution question, on the evidence.** The two oracle
+MCP ids, `oracle.probe` and `oracle.run`, are members of `HOST_TOOL_IDS`
+and the `node` record's `unblocks.mcp` list enumerates every member of
+that closed vocabulary -- so they are not misfiled there. Node genuinely
+does unblock them (nothing runs without it), and removing them from the
+`node` record would make that record wrong. What is actually missing is
+the *second* gate: `unp64`'s absence is the common reason those two ops
+report unavailable even when Node is present, and no record says so today.
+No `prerequisites.json` edit is made here, because correcting it properly
+needs the ninth record `DECL-F3` defers -- this paragraph is the correction
+until then.
+
 ## Citation ledger
 
 This ledger is machine-read by `src/mcp/vice/phase58-citation-ledger.test.ts`.
@@ -284,7 +347,11 @@ its entry here, or letting an entry drift off its anchor, fails the build.
 
 ```json
 [
-  { "citation": ".planning/REQUIREMENTS.md:85", "anchor": "No shipped tool refuses on one." },
+  { "citation": ".planning/REQUIREMENTS.md:86", "anchor": "No shipped tool refuses on one." },
+  { "citation": "src/mcp/vice/host-tool.mts:2799", "anchor": "ORACLE_ENV_VARS: readonly string[] = Object.freeze([\"UNP64\", \"UNP64_PATH\"])" },
+  { "citation": "src/skills/c64-program-recon/SKILL.md:117-125", "anchor": "install an external identifier on the **host** and point `UNP64` or `UNP64_PATH` at it" },
+  { "citation": ".planning/phases/19-absorbed-procedures-and-the-coverage-instrument/19-DECISIONS.md:151", "anchor": "**Decided:** 2026-08-24" },
+  { "citation": ".planning/ROADMAP.md:1980-1983", "anchor": "a user missing ACME learns that" },
   { "citation": "README.md:96-97", "anchor": "Checked live against each ecosystem on 2026-08-18." },
   { "citation": "README.md:117-123", "anchor": "No shipped tool in this project refuses on a VICE version." },
   { "citation": "src/mcp/vice/host-tool.mts:1559", "anchor": "host_tool \"${request.tool}\" refuses: \"c1541\" does not exist" },

@@ -71,6 +71,7 @@ Acknowledged, deferred, not in this roadmap.
 
 - **DECL-F1**: The installer package consumes the declaration to print a "what you will need" message at install time.
 - **DECL-F2**: `acme-build/SKILL.md`'s ACME prefix list generated from the declaration rather than kept in prose.
+- **DECL-F3**: The declaration gains a `unp64` record for the packer-identification oracle, with `unblocks.mcp` naming `oracle.probe` and `oracle.run` and a remedy carried from the recon skill's host-install step.
 
 ## Out of Scope
 
