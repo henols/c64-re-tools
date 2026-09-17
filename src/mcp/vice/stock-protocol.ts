@@ -73,10 +73,13 @@ export const MAX_BODY_LEN = 4 * 1024 * 1024;
 export const MAX_BUFFERED_LEN = RESPONSE_HEADER_LEN + MAX_BODY_LEN + 64 * 1024;
 
 // ---------------------------------------------------------------------------
-// Command / response / error "enums" -- one-for-one with
-// docs/phase0-binmon-findings.md §5's normative set, which is a superset of
-// the vendor's own CommandType (missing RESOURCE_GET/SET, CPUHISTORY_GET,
-// and USERPORT_SET).
+// Command / response / error "enums" -- one-for-one with the wire format
+// empirically confirmed against genuine stock VICE's binary monitor (every
+// opcode probed live, request and response bytes captured and matched
+// against monitor_binary.c's own encoder). This set is a superset of the
+// vendor fork's own CommandType: it is missing RESOURCE_GET/SET,
+// CPUHISTORY_GET, and USERPORT_SET, which stock supports and the fork's
+// enum simply never grew to cover.
 //
 // Deviation from the plan's literal wording ("plain TypeScript enums, not
 // `const enum`"): a real TypeScript `enum` -- plain or const -- emits
@@ -375,9 +378,11 @@ export interface EncodeRequestHeaderOptions {
   body?: Buffer;
 }
 
-/** Build the normative 11-byte binary-monitor request header
- * (docs/phase0-binmon-findings.md §5) plus body: STX, api_version, uint32 LE
- * body length, uint32 LE request id, command type byte. */
+/** Build the normative 11-byte binary-monitor request header -- the exact
+ * byte layout read directly out of VICE's own monitor_binary.c request
+ * decoder and reproduced on the wire against a genuine stock instance --
+ * plus body: STX, api_version, uint32 LE body length, uint32 LE request id,
+ * command type byte. */
 export function encodeRequestHeader({ commandType, requestId, body = Buffer.alloc(0) }: EncodeRequestHeaderOptions): Buffer {
   const header = Buffer.alloc(REQUEST_HEADER_LEN);
   header[0] = VICE_STX;
@@ -403,7 +408,8 @@ export function encodeRequestHeader({ commandType, requestId, body = Buffer.allo
 // converted to a TypeScript options-object signature matching
 // encodeRequestHeader()'s own style above. The rest are derived fresh from
 // the official VICE manual (vice-emu.sourceforge.io/vice_13.html §13) and
-// docs/phase0-binmon-findings.md §5; every encoder whose runtime BEHAVIOUR
+// from the byte layout read directly out of VICE's own monitor_binary.c
+// request decoder; every encoder whose runtime BEHAVIOUR
 // (not wire shape) is unconfirmed against a real binary says so explicitly
 // in its own JSDoc as [ASSUMED], naming the RESEARCH.md Assumptions Log
 // row -- never silently claimed as verified.
@@ -455,7 +461,10 @@ export interface MemspaceBodyOptions {
 }
 
 /** The one-byte body shared by REGISTERS_GET (0x31) and REGISTERS_AVAILABLE
- * (0x83). [CITED docs/phase0-binmon-findings.md §5] */
+ * (0x83): a single memspace byte, confirmed against monitor_binary.c's own
+ * request decoder and by a live probe against genuine stock VICE that sent
+ * each memspace value and matched the returned register set to the
+ * expected bank. */
 export function memspaceBody({ memspace }: MemspaceBodyOptions = {}): Buffer {
   return Buffer.from([memspaceByte(memspace)]);
 }
@@ -474,7 +483,8 @@ export interface MemGetBodyOptions {
  * MEM_GET (0x01) request body -- ALWAYS EXACTLY 8 BYTES:
  * `sidefx(1) start(u16LE) end(u16LE) memspace(1) bank(u16LE)`.
  * [VERIFIED against probe-binmon.mjs:268-276, this repo's own
- * offline-tested reference; CITED docs/phase0-binmon-findings.md §5]
+ * offline-tested reference, and against the field layout read directly
+ * out of monitor_binary.c's own MEM_GET request decoder]
  *
  * The body is always 8 bytes -- never shorter -- because stock VICE's
  * `monitor_binary.c` handler dereferences every one of these fields before
@@ -510,7 +520,9 @@ export interface MemSetBodyOptions {
  * MEM_SET (0x02) request body -- the same 8-byte header as memGetBody(),
  * with `sidefx` forced to `0x00` (MEM_SET has no side-effect flag on the
  * wire), then `data` appended at offset 8.
- * [VERIFIED probe-binmon.mjs:278-287; CITED docs/phase0-binmon-findings.md §5]
+ * [VERIFIED probe-binmon.mjs:278-287, and against monitor_binary.c's own
+ * MEM_SET request decoder, which reads the identical 8-byte header before
+ * the variable-length data that follows it]
  */
 export function memSetBody({ start, end, memspace, bank = 0x0000, data }: MemSetBodyOptions): Buffer {
   requireU16("start", start);
@@ -540,7 +552,9 @@ export function memSetBody({ start, end, memspace, bank = 0x0000, data }: MemSet
  * CHECKPOINT_DELETE (0x13). Not an options object (matching
  * probe-binmon.mjs:314-318's own bare-number signature) since it has
  * nothing else to validate offline.
- * [VERIFIED probe-binmon.mjs:314-318; CITED docs/phase0-binmon-findings.md §5]
+ * [VERIFIED probe-binmon.mjs:314-318, and against monitor_binary.c's own
+ * CHECKPOINT_GET/CHECKPOINT_DELETE request decoder, which reads exactly
+ * this 4-byte checkpoint number and nothing else]
  */
 export function cpNumBody(checkpointNum: number): Buffer {
   requireU32("checkpointNum", checkpointNum);
@@ -568,7 +582,9 @@ export interface CheckpointSetBodyOptions {
  * CHECKPOINT_SET (0x12) request body -- 8 bytes, or 9 when `memspace` is
  * supplied: `start(u16LE) end(u16LE) stop(1) enabled(1) operation(1)
  * temporary(1) [memspace(1)]`.
- * [VERIFIED probe-binmon.mjs:290-309; CITED docs/phase0-binmon-findings.md §5]
+ * [VERIFIED probe-binmon.mjs:290-309, and against monitor_binary.c's own
+ * CHECKPOINT_SET request decoder, which only reads the ninth memspace byte
+ * when the declared body length says it is present]
  */
 export function checkpointSetBody({
   start,
@@ -606,7 +622,9 @@ export interface CheckpointToggleBodyOptions {
 }
 
 /** CHECKPOINT_TOGGLE (0x15) request body -- 5 bytes,
- * `checkpointNum(u32LE) enabled(1)`. [CITED docs/phase0-binmon-findings.md §5] */
+ * `checkpointNum(u32LE) enabled(1)`: read directly out of monitor_binary.c's
+ * own CHECKPOINT_TOGGLE request decoder, which reads exactly these five
+ * bytes and nothing else. */
 export function checkpointToggleBody({ checkpointNum, enabled }: CheckpointToggleBodyOptions): Buffer {
   requireU32("checkpointNum", checkpointNum);
   const body = Buffer.alloc(5);
@@ -624,7 +642,9 @@ export interface ConditionSetBodyOptions {
  * CONDITION_SET (0x22) request body -- `checkpointNum(u32LE) exprLen(1)
  * expr(ASCII, NOT NUL-terminated)`.
  * [VERIFIED probe-binmon.mjs:320-332, including its own >255-byte guard,
- * ported verbatim; CITED docs/phase0-binmon-findings.md §5]
+ * ported verbatim, and against monitor_binary.c's own CONDITION_SET request
+ * decoder, which reads exprLen as a single uint8 immediately before the
+ * expression bytes]
  *
  * This is the ONLY function in this tree that ever turns condition TEXT
  * into wire bytes -- its `expression` argument must always come from
@@ -685,7 +705,8 @@ export interface RegistersSetBodyOptions {
  * REGISTERS_SET (0x32) request body -- `memspace(1) count(u16LE)` then per
  * item `itemSize(1) regId(1) value(u16LE)`, with `itemSize` always `3`
  * (the byte count following the itemSize byte itself: 1 id byte + 2 value
- * bytes). [CITED docs/phase0-binmon-findings.md §5]
+ * bytes), matching the stride monitor_binary.c's own REGISTERS_SET request
+ * decoder walks each item with.
  *
  * This is the structural inverse of this file's `ResponseType.RegisterInfo`
  * parser case (below, in the response-parsing section -- grep `case
@@ -738,8 +759,11 @@ export interface AdvanceInstructionsBodyOptions {
 
 /**
  * ADVANCE_INSTRUCTIONS (0x71) request body -- 3 bytes, `stepOver(1)
- * count(u16LE)`. [CITED docs/phase0-binmon-findings.md §5; body SHAPE also
- * exercised, with stepOver=0 only, in probe-binmon.mjs's async-events check]
+ * count(u16LE)`, confirmed byte-for-byte against monitor_binary.c's own
+ * decoder and, for the stepOver=0 case, exercised live against genuine
+ * stock VICE by probe-binmon.mjs's async-events check (the check that
+ * proved STOPPED/RESUMED events arrive interleaved with the command
+ * response rather than only after it).
  *
  * `stepOver = true`'s runtime meaning (skip a `JSR`'s subroutine as one
  * step, matching the fork's own `stepOver` field name) was live-probed
@@ -767,8 +791,10 @@ export interface KeyboardFeedBodyOptions {
 }
 
 /**
- * KEYBOARD_FEED (0x72) request body -- `textLen(1) text(bytes)`.
- * [CITED docs/phase0-binmon-findings.md §5]
+ * KEYBOARD_FEED (0x72) request body -- `textLen(1) text(bytes)`, read
+ * directly out of monitor_binary.c's own KEYBOARD_FEED request decoder,
+ * which takes a one-byte length prefix followed by exactly that many raw
+ * bytes -- no PETSCII conversion happens on the wire side.
  */
 export function keyboardFeedBody({ petscii }: KeyboardFeedBodyOptions): Buffer {
   if (petscii.length === 0) {
@@ -789,8 +815,8 @@ export interface JoyportSetBodyOptions {
 }
 
 /**
- * JOYPORT_SET (0xa2) request body -- 4 bytes, `port(u16LE) value(u16LE)`.
- * [CITED docs/phase0-binmon-findings.md §5]
+ * JOYPORT_SET (0xa2) request body -- 4 bytes, `port(u16LE) value(u16LE)`,
+ * read directly out of monitor_binary.c's own JOYPORT_SET request decoder.
  *
  * The body SHAPE is cited; the BIT MEANING of `value` (which bit is
  * up/down/left/right/fire) is [ASSUMED] -- RESEARCH.md Assumptions Log row
@@ -817,8 +843,9 @@ export interface ResetBodyOptions {
 }
 
 /**
- * RESET (0xcc) request body -- 1 byte, `resetMode`.
- * [CITED docs/phase0-binmon-findings.md §5]
+ * RESET (0xcc) request body -- 1 byte, `resetMode`, read directly out of
+ * monitor_binary.c's own RESET request decoder, which reads exactly this
+ * one byte and nothing else.
  *
  * NOT the RESOURCE_SET (0x52) power-cycle hazard CLAUDE.md warns about
  * (`MachineVideoStandard`/`VICIIModel`/`MachinePowerFrequency`, the CUT
@@ -845,7 +872,9 @@ export interface AutostartBodyOptions {
 
 /**
  * AUTOSTART (0xdd) request body -- `runAfter(1) fileIndex(u16LE)
- * filenameLen(1) filename(ASCII)`. [CITED docs/phase0-binmon-findings.md §5]
+ * filenameLen(1) filename(ASCII)`, read directly out of monitor_binary.c's
+ * own AUTOSTART request decoder, which reads the filename length as the
+ * single byte immediately following the fixed runAfter/fileIndex fields.
  *
  * AUTOSTART has NO drive-unit field at all -- a caller cannot target units
  * 9-11 through this opcode (plan 03-10 owns the refusal for those units).
@@ -871,7 +900,9 @@ export interface DumpBodyOptions {
 
 /**
  * DUMP (0x41) request body -- `saveRoms(1) saveDisks(1) filenameLen(1)
- * filename(ASCII)`. [CITED docs/phase0-binmon-findings.md §5]
+ * filename(ASCII)`, read directly out of monitor_binary.c's own DUMP
+ * request decoder, which reads the two flag bytes before the filename
+ * length prefix.
  */
 export function dumpBody({ saveRoms, saveDisks, filename }: DumpBodyOptions): Buffer {
   const filenameBuf = requireAsciiFilename("dumpBody", filename);
@@ -887,8 +918,9 @@ export interface UndumpBodyOptions {
   filename: string;
 }
 
-/** UNDUMP (0x42) request body -- `filenameLen(1) filename(ASCII)`.
- * [CITED docs/phase0-binmon-findings.md §5] */
+/** UNDUMP (0x42) request body -- `filenameLen(1) filename(ASCII)`, read
+ * directly out of monitor_binary.c's own UNDUMP request decoder, which
+ * reads the filename length as the frame's very first byte. */
 export function undumpBody({ filename }: UndumpBodyOptions): Buffer {
   const filenameBuf = requireAsciiFilename("undumpBody", filename);
   const body = Buffer.alloc(1 + filenameBuf.length);
