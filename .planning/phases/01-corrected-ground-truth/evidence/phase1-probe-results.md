@@ -169,7 +169,7 @@ the leaked breakpoint would re-fire on essentially every instruction. The probe 
 deletes the checkpoint in a `finally`. Treat the *non-recovery* as partly
 probe-induced; the *trigger* remains the open question described above.
 
-This does not contradict any corrected claim in `docs/phase0-binmon-findings.md` or
+This does not contradict any corrected claim in `.planning/phases/01-corrected-ground-truth/evidence/phase0-binmon-findings.md` or
 `docs/stock-vice-parity.md` — neither document claims a `stop=1` checkpoint is guaranteed to
 halt cleanly on its first condition match under a maximally broad address range with a
 condition that can re-match many times before the halt takes effect. It is new information,
@@ -263,7 +263,7 @@ ADVANCE_INSTRUCTIONS ..... event slice: [RESUMED, REGISTER_INFO, STOPPED]
 drive ROM MEM_SET ........ silent-no-op
 unsolicited event sequence (full session) -> REGISTER_INFO -> STOPPED -> RESUMED -> REGISTER_INFO -> STOPPED -> RESUMED -> REGISTER_INFO -> STOPPED -> RESUMED -> REGISTER_INFO -> STOPPED -> RESUMED -> CHECKPOINT_INFO -> REGISTER_INFO -> STOPPED -> RESUMED -> REGISTER_INFO -> STOPPED -> RESUMED
 
-VICE >= 3.10 is the gate for CPUHISTORY_GET, not a compile flag -- see docs/phase1-probe-results.md for the recorded run.
+VICE >= 3.10 is the gate for CPUHISTORY_GET, not a compile flag -- see .planning/phases/01-corrected-ground-truth/evidence/phase1-probe-results.md for the recorded run.
    [async event] REGISTER_INFO PC=$000a
    [async event] STOPPED PC=$e5d4
 ```
@@ -337,7 +337,7 @@ ADVANCE_INSTRUCTIONS ..... event slice: [?]
 drive ROM MEM_SET ........ skipped-precondition-unmet
 unsolicited event sequence (full session) -> REGISTER_INFO -> STOPPED -> RESUMED -> REGISTER_INFO -> STOPPED -> RESUMED -> REGISTER_INFO -> STOPPED -> RESUMED -> REGISTER_INFO -> STOPPED -> RESUMED -> CHECKPOINT_INFO -> CHECKPOINT_INFO -> CHECKPOINT_INFO -> CHECKPOINT_INFO -> CHECKPOINT_INFO -> CHECKPOINT_INFO -> CHECKPOINT_INFO -> CHECKPOINT_INFO -> CHECKPOINT_INFO -> CHECKPOINT_INFO -> CHECKPOINT_INFO -> CHECKPOINT_INFO -> CHECKPOINT_INFO -> CHECKPOINT_INFO -> CHECKPOINT_INFO -> CHECKPOINT_INFO -> CHECKPOINT_INFO -> CHECKPOINT_INFO
 
-VICE >= 3.10 is the gate for CPUHISTORY_GET, not a compile flag -- see docs/phase1-probe-results.md for the recorded run.
+VICE >= 3.10 is the gate for CPUHISTORY_GET, not a compile flag -- see .planning/phases/01-corrected-ground-truth/evidence/phase1-probe-results.md for the recorded run.
 ```
 
 *(The fork-run node process and the fork `x64sc` process were terminated by hand, by known
@@ -349,5 +349,5 @@ neither port 6502 nor 6503 was listening after cleanup.)*
 ---
 
 *Recorded as part of Phase 1 Plan 04. Supersedes the "outstanding" framing in
-`docs/phase0-binmon-findings.md`'s empirical-step section and resolves
+`.planning/phases/01-corrected-ground-truth/evidence/phase0-binmon-findings.md`'s empirical-step section and resolves
 `.planning/intel/constraints.md`'s `CON-probe-outstanding`.*

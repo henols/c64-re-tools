@@ -42,7 +42,7 @@ would have fabricated code from the fixture's own planted-unknown ground
 truth. It was not applied here.
 
 Ghidra ran with NO `preScript`/`entrypointsPath` for any of the six fixtures
-(mirrors plan 45-01's own precedent, `docs/phase45-wave0-measurements.md`
+(mirrors plan 45-01's own precedent, `.planning/phases/45-decomposition-to-closure-disagreement-first/evidence/phase45-wave0-measurements.md`
 MEASUREMENT A — entrypointsPath requires a preScript on the wire and
 `## REFERENCES` is measured unchanged by the volatile carve, so it buys
 nothing for this xref-only import). Route per `fixtures/decomp-execution-manifest.json`:

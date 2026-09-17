@@ -196,13 +196,13 @@ restore it. The authoritative implementations are
 and its hostile-input regressions in `stock-protocol.test.ts`; this section and
 those must be changed together.
 
-## The empirical probe has been run — see docs/phase1-probe-results.md
+## The empirical probe has been run — see .planning/phases/01-corrected-ground-truth/evidence/phase1-probe-results.md
 
 `src/mcp/vice/probe-binmon.mjs` has been run against both a stock `x64sc
 -binarymonitor` (VICE 3.9, `/usr/bin/x64sc`) and the barryw fork's binary monitor
 (VICE 3.10, `/usr/local/bin/x64sc`, not a stock 3.10 build — see the recorded
 caveat). The full run, including raw output and per-item dispositions, is
-recorded in `docs/phase1-probe-results.md`. In short: it confirmed the
+recorded in `.planning/phases/01-corrected-ground-truth/evidence/phase1-probe-results.md`. In short: it confirmed the
 `CPUHISTORY_GET` version gate (`INVALID_TYPE` on 3.9, success on the 3.10-vintage
 fork), the `RL`/`CY` condition acceptance-and-firing behaviour, `PALETTE_GET`'s
 16-entry table, and `DISPLAY_GET`'s geometry — and it surfaced one new anomaly

@@ -1,6 +1,6 @@
 # Phase 42: Text-Format Drift Citations — Evidence Record
 
-This is Phase 42's own citation record, in the shape `docs/phase41-text-channel-live-evidence.md`
+This is Phase 42's own citation record, in the shape `.planning/phases/41-the-text-channel-its-serialization-authority-and-the-content/evidence/phase41-text-channel-live-evidence.md`
 established: one claim per block, each carrying a file path, a line number, the raw quoted
 line, which tree it was read in, and an honest label — measured or source-traced.
 

@@ -190,7 +190,7 @@ resource.
 The `CPUHISTORY_GET` bullet's re-citation does not need a new live run from
 THIS plan -- Phase 39 already independently re-confirmed `chis` on genuine
 stock 3.9 with its own fixture batch:
-`docs/phase39-dual-channel-coexistence-gate-findings.md` §7,
+`.planning/phases/39-the-dual-channel-coexistence-gate-go-degrade-no-go/evidence/phase39-dual-channel-coexistence-gate-findings.md` §7,
 `FIXTURE_UNSUPPORTED: none` -- `chis` succeeded on genuine stock VICE 3.9
 over the text channel, returning real per-entry cycle counts, and the
 binary-monitor side's `CPUHISTORY_GET` (0x86) `>= 3.10` version floor does

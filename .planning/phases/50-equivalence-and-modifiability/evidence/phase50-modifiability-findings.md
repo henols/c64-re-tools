@@ -20,7 +20,7 @@ inputs:
 ---
 
 This document carries YAML frontmatter, mirroring
-`docs/phase49-the-reassembly-gate-findings.md`: `EQUIV-03` requires a
+`.planning/phases/49-the-reassembly-gate-committed-before-the-phase-it-gates/evidence/phase49-the-reassembly-gate-findings.md`: `EQUIV-03` requires a
 machine-readable `green` / `acknowledged` / `red` verdict for the MODIFIED
 hazard subject, and a prose sentence in the body is not a machine-readable
 verdict. ROADMAP Phase 50 criterion 4 requires the modified source
@@ -175,7 +175,7 @@ declared input-key names appear **at column zero** in this document
 (`grep -ac '^\(tree_rebuild\|...\):'`). This document's frontmatter instead
 nests every input key two spaces under a YAML `inputs:` mapping, on
 `50-03-PLAN.md`'s own explicit instruction to carry "an `inputs:` block
-with `tree_rebuild`, `movement_rebuild`, ...". `docs/phase49-the-reassembly-gate-findings.md`
+with `tree_rebuild`, `movement_rebuild`, ...". `.planning/phases/49-the-reassembly-gate-committed-before-the-phase-it-gates/evidence/phase49-the-reassembly-gate-findings.md`
 carries the identical nested structure, and the same literal column-zero
 grep against that committed file also returns `0` -- measured directly as
 part of this override. The rule found not to match reality is this plan's

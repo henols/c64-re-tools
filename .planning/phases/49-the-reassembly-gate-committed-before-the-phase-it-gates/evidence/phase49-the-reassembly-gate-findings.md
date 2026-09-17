@@ -22,7 +22,7 @@ inputs:
 ---
 
 This document carries YAML frontmatter, mirroring
-`docs/phase39-dual-channel-coexistence-gate-findings.md`: `BUILD-06` requires
+`.planning/phases/39-the-dual-channel-coexistence-gate-go-degrade-no-go/evidence/phase39-dual-channel-coexistence-gate-findings.md`: `BUILD-06` requires
 a machine-readable `green` / `acknowledged` / `red` verdict a downstream
 phase reads as a precondition, and a prose sentence in the body is not a
 machine-readable verdict. `SCHEMA.md` §5 fixed this document's key order,

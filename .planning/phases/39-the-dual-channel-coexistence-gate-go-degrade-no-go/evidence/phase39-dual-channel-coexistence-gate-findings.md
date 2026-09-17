@@ -19,7 +19,7 @@ inputs:
 
 This document carries YAML frontmatter, unlike its sibling probe documents under
 `.planning/phases/39-the-dual-channel-coexistence-gate-go-degrade-no-go/evidence/`, which have
-none — the departure is deliberate, mirroring `docs/phase33-reproducible-run-gate-findings.md`
+none — the departure is deliberate, mirroring `.planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/evidence/phase33-reproducible-run-gate-findings.md`
 for the same reason it was taken there: `CHAN-01` requires a machine-readable `go` / `degrade` /
 `no-go` verdict that a downstream planner reads as a gate, and a prose sentence in the body is
 **not** a machine-readable verdict. `SCHEMA.md` § 4 fixed these keys, in this order, before this

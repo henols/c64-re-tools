@@ -15,22 +15,22 @@ inputs:
   hazard_disposition: acknowledged # evidence/50-08-exported-edit-gate-run.md:61
   diff_scope_coverage: complete    # baseline: evidence/50-08-exported-edit-gate-run.md:54 (complete), movement: evidence/50-08-exported-edit-gate-run.md:58 (complete) -- both occurrences complete
   red_controls: all-observed       # evidence/50-08-exported-edit-gate-run.md:149
-  second_path_guard: held          # evidence/50-08-exported-edit-gate-run.md:192 -- NARROWER evidence than Phase 49's own, on the identical ground docs/phase50-modifiability-findings.md's own second_path_guard value already stands on. See "## What this document does not claim" below.
+  second_path_guard: held          # evidence/50-08-exported-edit-gate-run.md:192 -- NARROWER evidence than Phase 49's own, on the identical ground .planning/phases/50-equivalence-and-modifiability/evidence/phase50-modifiability-findings.md's own second_path_guard value already stands on. See "## What this document does not claim" below.
   ordering_proof: held             # evidence/50-08-exported-edit-gate-run.md:241
 ---
 
 This document carries YAML frontmatter, mirroring
-`docs/phase49-the-reassembly-gate-findings.md` and
-`docs/phase50-modifiability-findings.md`: `EQUIV-03` requires a
+`.planning/phases/49-the-reassembly-gate-committed-before-the-phase-it-gates/evidence/phase49-the-reassembly-gate-findings.md` and
+`.planning/phases/50-equivalence-and-modifiability/evidence/phase50-modifiability-findings.md`: `EQUIV-03` requires a
 machine-readable `green` / `acknowledged` / `red` verdict, and a prose
 sentence in the body is not a machine-readable verdict. ROADMAP Phase 50
 criterion 4 requires the source "reassembled through Phase 49's gate" --
 this document is that re-run's own record, over a NEW subject, through the
-identical unmodified gate module. Unlike `docs/phase50-modifiability-
-findings.md`, which records the gate against the hand-written
-`hazard-subject-modified.prg`, this document records the gate against
-`hazard-subject-exported-edit.prg` -- the same two behaviour changes made
-this time in a file `exportAsmTree()` itself emitted.
+identical unmodified gate module. Unlike
+`.planning/phases/50-equivalence-and-modifiability/evidence/phase50-modifiability-findings.md`,
+which records the gate against the hand-written `hazard-subject-modified.prg`, this
+document records the gate against `hazard-subject-exported-edit.prg` -- the same
+two behaviour changes made this time in a file `exportAsmTree()` itself emitted.
 
 **The transcription rule, which is the whole basis of the verdict's
 honesty.** Every value in this document is taken from a literal outcome
@@ -88,7 +88,7 @@ first-match-wins means nothing below it is evaluated.
   made in `scope_087a.a` -- the alignment routine's own scope file
   `exportAsmTree()` emits, resolved from that export's own `files` list
   rather than assumed -- and nowhere else. This is the property
-  `docs/phase50-modifiability-findings.md`'s own hand-written twin does not
+  `.planning/phases/50-equivalence-and-modifiability/evidence/phase50-modifiability-findings.md`'s own hand-written twin does not
   carry: that document's two changes live in
   `src/mcp/vice/fixtures/hazard-subject/hazard-subject-align-nosprite.a`,
   a hand-written fixture source, never a file the decomposition's own
@@ -153,7 +153,7 @@ own `files` list, not assumed by naming convention -- and nowhere else. The
 pre-registered manifest driving both,
 `src/mcp/vice/fixtures/hazard-subject/exported-edit.manifest.json`, is
 committed before the assembler ever ran against the edited tree. This is
-the property `docs/phase50-modifiability-findings.md`'s own hand-written
+the property `.planning/phases/50-equivalence-and-modifiability/evidence/phase50-modifiability-findings.md`'s own hand-written
 twin does not carry: its two changes live in a hand-written fixture source
 (`hazard-subject-align-nosprite.a`), never a file the decomposition's own
 exporter wrote. Neither change here is a new construction: each is anchored
@@ -204,12 +204,12 @@ bytes its own exporter expects and that its hazard report is fully
 disposed, never that the removed or added behaviour is actually observed
 taking effect on real hardware or in a real emulator. The live transcript
 this plan's own Task 3 commits
-(`docs/phase50-exported-modifiability-transcript.md`) is where that
+(`.planning/phases/50-equivalence-and-modifiability/evidence/phase50-exported-modifiability-transcript.md`) is where that
 evidence lives. This document does not substitute for it and is not
 evidence that the two behaviour changes above are visible at runtime.
 
 This document's `second_path_guard` value is also narrower than Phase 49's
-own, on the identical ground `docs/phase50-modifiability-findings.md`'s own
+own, on the identical ground `.planning/phases/50-equivalence-and-modifiability/evidence/phase50-modifiability-findings.md`'s own
 value already stands on: `src/mcp/vice/acme-seam.test.ts`, the tree-wide
 frozen-set guard Phase 49's own finding cited, was removed in commit
 `276c15c9` after Phase 49 closed. This run's own `held` value rests on

@@ -171,7 +171,7 @@ for the migrated packer module is its colocated `packer-finding.test.mjs`, not
   each plan's own recorded planner assumptions (`A-01` through `A-14`).
 - `.planning/seeds/host-tool-executor.md` — the owner's original rule and the stateless-tool
   framing SEAM-07 departs from for Ghidra.
-- `docs/phase33-reproducible-run-gate-findings.md` — the house shape this document follows
+- `.planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/evidence/phase33-reproducible-run-gate-findings.md` — the house shape this document follows
   for a machine-greppable verdict beside measured inputs and a stated reversal condition.
 - `src/mcp/vice/broker-control.mts` — the in-repo convention of citing a `.planning/`-adjacent
   prose record from a source header for a decision recorded outside a test.

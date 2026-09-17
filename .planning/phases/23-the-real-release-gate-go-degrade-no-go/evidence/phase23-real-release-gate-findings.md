@@ -39,8 +39,8 @@ criteria:
   c4_unreplaced: 0
 ---
 
-This document carries YAML frontmatter, unlike `docs/phase1-probe-results.md` and
-`docs/phase2-backend-probe-evidence.md`, both of which have none — the departure is
+This document carries YAML frontmatter, unlike `.planning/phases/01-corrected-ground-truth/evidence/phase1-probe-results.md` and
+`.planning/phases/02-stock-backend-connection/evidence/phase2-backend-probe-evidence.md`, both of which have none — the departure is
 deliberate: criterion 5 requires a machine-readable `go` / `degrade` / `no-go` verdict that
 Phase 24's planner reads as a gate, and a prose sentence buried in the body is not that.
 The precedent is the phase-9 probe findings document, which took the same
@@ -418,7 +418,7 @@ Nothing here is folded into a pass count; **there is no pass count in this phase
 | 2 | PROOF-02 | `could-not-run` | none — file was never produced | `evidence/criterion2-ghidra-dispatch.txt` (absent) |
 | 3 | PROOF-03 | `could-not-run` | none — file was never produced | `evidence/criterion3-bank-divergence.txt` (absent) |
 | 4 | PROOF-04 | audited: `26`, replaced `23`, lost-accepted `3`, **unreplaced `0`** | `C4_CAPABILITIES_AUDITED: 26` / `C4_REPLACED: 23` / `C4_LOST_ACCEPTED: 3` / `C4_UNREPLACED_CAPABILITIES: 0` | `evidence/criterion4-analyzer-audit.md` |
-| 5 | PROOF-05 | **`no-go`, rule `R1`** | this document's frontmatter | `docs/phase23-real-release-gate-findings.md` + `evidence/DECISION-RULE.md` |
+| 5 | PROOF-05 | **`no-go`, rule `R1`** | this document's frontmatter | `.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/phase23-real-release-gate-findings.md` + `evidence/DECISION-RULE.md` |
 
 ## Criterion 1
 

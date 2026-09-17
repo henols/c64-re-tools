@@ -1001,7 +1001,7 @@ red one above:
 ### 8. Emulator shutdown for this run
 
 The same broker session served both this capture and the modifiability capture
-in `docs/phase50-modifiability-transcript.md`, and was stopped in the same
+in `.planning/phases/50-equivalence-and-modifiability/evidence/phase50-modifiability-transcript.md`, and was stopped in the same
 session as the last emulator call. The stop time is taken from the unit's own
 journal (`journalctl --user -u vice-broker.service -o short-iso` →
 `2026-09-15T21:51:17+02:00 … Stopped vice-broker.service`), not clocked at the

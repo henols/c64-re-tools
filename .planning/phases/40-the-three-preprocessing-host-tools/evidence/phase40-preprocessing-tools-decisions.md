@@ -23,11 +23,11 @@ related_decisions: [D-30, D-31, D-32]
 ---
 
 This document carries YAML frontmatter, unlike most of this project's phase-level
-prose, mirroring `docs/phase39-dual-channel-coexistence-gate-findings.md` for the
+prose, mirroring `.planning/phases/39-the-dual-channel-coexistence-gate-go-degrade-no-go/evidence/phase39-dual-channel-coexistence-gate-findings.md` for the
 same reason it was taken there: a decision that reverses a previously locked
 statement needs a machine-findable record of exactly which statements it
 reverses and where each was amended, not a sentence buried in phase prose that
-a later reader has to re-discover. `docs/phase39-dual-channel-coexistence-gate-findings.md`
+a later reader has to re-discover. `.planning/phases/39-the-dual-channel-coexistence-gate-go-degrade-no-go/evidence/phase39-dual-channel-coexistence-gate-findings.md`
 is the shape this follows; the substance here is a design decision reached
 during phase discussion, not a probe verdict.
 

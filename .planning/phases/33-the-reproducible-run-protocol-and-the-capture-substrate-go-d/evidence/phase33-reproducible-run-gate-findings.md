@@ -28,7 +28,7 @@ corpus:
 
 This document carries YAML frontmatter, unlike its sibling probe documents under
 `.planning/phases/33-…/evidence/`, which have none — the departure is deliberate and is
-carried forward from `docs/phase23-real-release-gate-findings.md` for the same reason it was
+carried forward from `.planning/phases/23-the-real-release-gate-go-degrade-no-go/evidence/phase23-real-release-gate-findings.md` for the same reason it was
 taken there: `GATE-01` requires a machine-readable `go` / `degrade` / `no-go` verdict that a
 downstream planner reads as a gate, and a prose sentence in the body is **not** a
 machine-readable verdict. `SCHEMA.md` § 5 fixed these keys, in this order, before this file

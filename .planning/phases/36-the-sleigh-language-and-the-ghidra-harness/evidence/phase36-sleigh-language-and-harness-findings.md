@@ -1,7 +1,7 @@
 # Phase 36: The SLEIGH Language and the Ghidra Harness — Findings
 
-Following the structure of `docs/phase33-reproducible-run-gate-findings.md` and
-`docs/phase34-host-tool-seam-decisions.md`: numbered parts, each recording what was measured,
+Following the structure of `.planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/evidence/phase33-reproducible-run-gate-findings.md` and
+`.planning/phases/34-the-host-tool-execution-seam/evidence/phase34-host-tool-seam-decisions.md`: numbered parts, each recording what was measured,
 the exact command, the output, and the disposition. Every line reference below names a file
 and a symbol rather than a bare line number, since line numbers in this repository drift
 between phases.
@@ -198,7 +198,7 @@ same game (`saeger.d64`). See Part 8.
 - **CI has no Ghidra provisioning step.** Every live Ghidra assertion in this phase routes to
   the manual tier (`MANUAL_ONLY_TESTS`) and is never exercised by `npm run test:automated` or
   any `ci.yml` job. This is carried forward from Phase 34's own Assumption A3
-  (`docs/phase34-host-tool-seam-decisions.md`) and is explicitly OUT OF SCOPE here — this
+  (`.planning/phases/34-the-host-tool-execution-seam/evidence/phase34-host-tool-seam-decisions.md`) and is explicitly OUT OF SCOPE here — this
   phase's own `ROADMAP.md` notes name it as an unresolved, carried cost, not a gap this phase
   closes.
 - **The corpus exercise ran on the `.prg` route** because no committed flat-64K capture of a

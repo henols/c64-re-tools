@@ -30,17 +30,17 @@ was produced by a command actually run on 2026-09-16, or read directly out of
 a committed capture. Nothing here is written from memory, and nothing is
 transcribed by hand.
 
-`docs/phase50-exported-edit-findings.md` is the **gate** record for this same
+`.planning/phases/50-equivalence-and-modifiability/evidence/phase50-exported-edit-findings.md` is the **gate** record for this same
 subject, and it says outright that it "records a gate verdict for the
 EXPORTED-EDIT subject and nothing about behaviour in a running emulator" and
 that "the live transcript this plan's own Task 3 commits
-(`docs/phase50-exported-modifiability-transcript.md`) is where that evidence
+(`.planning/phases/50-equivalence-and-modifiability/evidence/phase50-exported-modifiability-transcript.md`) is where that evidence
 lives". This is that transcript.
 
 ## Instrument and procedure
 
-Same instrument `docs/phase50-equivalence-transcript.md` and
-`docs/phase50-modifiability-transcript.md` both used: `/usr/bin/x64sc`,
+Same instrument `.planning/phases/50-equivalence-and-modifiability/evidence/phase50-equivalence-transcript.md` and
+`.planning/phases/50-equivalence-and-modifiability/evidence/phase50-modifiability-transcript.md` both used: `/usr/bin/x64sc`,
 reporting `VICE 3.9.0.0` over the binary monitor (`vice_ping`'s own
 `viceVersion` field, quoted below). ACME `release 0.97 ("Zem"), 31 Jan 2021`.
 The broker ran as a systemd user unit
@@ -146,12 +146,12 @@ The checkpoint trapped on the first poll:
 The COMMITTED subject's own registers at the identical checkpoint, quoted
 from `run-a.bundle.json` for direct comparison:
 `{"PC":4239,"A":0,"X":234,"Y":0,"SP":251,"FL":7,"LIN":2,"CYC":9}`. `A` is `0`
-in **both** captures here — unlike `docs/phase50-modifiability-transcript.md`'s
+in **both** captures here — unlike `.planning/phases/50-equivalence-and-modifiability/evidence/phase50-modifiability-transcript.md`'s
 own comparison, where the hand-written subject's added `jsr` sits
 **immediately before the routine's `rts`** and its own construction leaves
 `A` at `5`. This subject's added `jsr` sits **inside the freed sprite
 region, before the routine's own `lda #0 / sta $0400` screen write** (see
-`docs/phase50-exported-edit-findings.md`'s "The two behaviour changes"), and
+`.planning/phases/50-equivalence-and-modifiability/evidence/phase50-exported-edit-findings.md`'s "The two behaviour changes"), and
 that later `lda #0` overwrites whatever the self-modifying construction left
 in `A` before the checkpoint is ever reached. `CYC` is `30` here where the
 committed subject's is `9`, and `LIN` is `3` where the committed subject's is
@@ -205,7 +205,7 @@ wrote .planning/phases/50-equivalence-and-modifiability/evidence/captures/export
 
 **Anchor `$088B`, finding `page-alignment`, mechanism
 `sprite-pointer-names-aligned-base`.** The gate record for this finding is
-`docs/phase50-exported-edit-findings.md`, which records that the committed
+`.planning/phases/50-equivalence-and-modifiability/evidence/phase50-exported-edit-findings.md`, which records that the committed
 subject's report carries this finding and that the exported-edit subject's
 report does **not** — "the construction that produced it was removed by this
 edit".
@@ -274,7 +274,7 @@ Decoded, the original carries four stores the exported-edit subject does not:
 | `A9 64 8D 00 D0` | `lda #$64` / `sta $D000` | positions sprite 0 in X |
 | `A9 64 8D 01 D0` | `lda #$64` / `sta $D001` | positions sprite 0 in Y |
 
-Where `docs/phase50-modifiability-transcript.md`'s own subject replaces this
+Where `.planning/phases/50-equivalence-and-modifiability/evidence/phase50-modifiability-transcript.md`'s own subject replaces this
 same 20-byte region with an unbroken run of `nop` and places its own added
 `jsr` at the region's own END, this subject's added `jsr` sits at the
 region's own START — `20 39 08` (`jsr $0839`) immediately after the `sta
@@ -288,7 +288,7 @@ machine actually executed.
 
 **Anchor `$0825`, finding `self-modifying-code`, mechanism
 `store-target-in-instruction-opcode-byte`.** The gate record is again
-`docs/phase50-exported-edit-findings.md`, which records that this finding's
+`.planning/phases/50-equivalence-and-modifiability/evidence/phase50-exported-edit-findings.md`, which records that this finding's
 own bytes are unchanged — the construction was always present in the
 committed subject — but that "its reachability moves from never-called to
 called once".
@@ -348,7 +348,7 @@ is the patched operand. The decoded VIC-II answer agrees: `borderColour: 5`.
 **So the second self-modifying construction now runs, it builds its pointer
 at runtime, and it rewrites the operand byte in place** — all three observed
 in a real capture rather than predicted from the source, exactly as
-`docs/phase50-modifiability-transcript.md` observed for its own,
+`.planning/phases/50-equivalence-and-modifiability/evidence/phase50-modifiability-transcript.md` observed for its own,
 hand-written subject.
 
 ## Green: comparison with the pre-registered allowlist
@@ -506,7 +506,7 @@ volatile (excluded from the verdict): 4
 ```
 
 The three stack-page bytes ($01F8-$01FA) are the same class of noise
-`docs/phase50-modifiability-transcript.md`'s own run named, consistent with
+`.planning/phases/50-equivalence-and-modifiability/evidence/phase50-modifiability-transcript.md`'s own run named, consistent with
 the added `jsr` pushing a different return address. `$D012` (the raster-line
 compare register) differing is new to THIS pair, consistent with the two
 runs' extra self-modifying-construction cycles landing the checkpoint hit on
@@ -558,7 +558,7 @@ All four checks agree the broker and every emulator it launched are gone.
 
 ## What this document establishes
 
-`docs/phase50-modifiability-transcript.md` already established that this
+`.planning/phases/50-equivalence-and-modifiability/evidence/phase50-modifiability-transcript.md` already established that this
 subject's two behaviour changes take effect on genuine stock VICE, and that
 the pre-registered allowlist carries real work in that comparison. This
 document establishes the same two facts a second time, against a
@@ -574,9 +574,9 @@ a file the exporter emitted, edited, reassembled and observed live.
 This document does not claim byte-identity with `hazard-subject-modified.prg`
 as any kind of criterion — the two subjects place their added `jsr` at
 different byte offsets within the same freed region by design, and
-`docs/phase50-exported-edit-findings.md` and this document's own "removed
+`.planning/phases/50-equivalence-and-modifiability/evidence/phase50-exported-edit-findings.md` and this document's own "removed
 behaviour" section above both state plainly that this was never a goal. It
 does not claim anything about CI: the CI boundary this phase established in
-`docs/phase50-ci-boundary.md` is unchanged by this plan, and this live half
+`.planning/phases/50-equivalence-and-modifiability/evidence/phase50-ci-boundary.md` is unchanged by this plan, and this live half
 was run by a developer against a real host emulator, exactly as every prior
 live half in this phase was.

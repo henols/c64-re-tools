@@ -31,7 +31,7 @@ one added. Every value below was produced by a command actually run on
 directly out of a committed capture. Nothing here is written from memory, and
 nothing is transcribed by hand.
 
-`docs/phase50-modifiability-findings.md` is the **gate** record for this same
+`.planning/phases/50-equivalence-and-modifiability/evidence/phase50-modifiability-findings.md` is the **gate** record for this same
 subject, and it says outright that it "records a gate verdict for the MODIFIED
 subject and nothing about behaviour in a running emulator" and that "the live
 transcript that plan 50-06 commits is where that evidence lives". This is that
@@ -39,7 +39,7 @@ transcript.
 
 ## Instrument and procedure
 
-The capture repeats `docs/phase50-equivalence-transcript.md`'s
+The capture repeats `.planning/phases/50-equivalence-and-modifiability/evidence/phase50-equivalence-transcript.md`'s
 `## Capture procedure` without change — same driver (`evidence/capture-run.mjs`,
 through the same `dispatchStock()` seam), same route-d load, same `snapshot`
 route, same logical checkpoint, same broker argv, same genuine unpatched stock
@@ -180,7 +180,7 @@ wrote …/captures/modified.state.json
 
 **Anchor `$088B`, finding `page-alignment`, mechanism
 `sprite-pointer-names-aligned-base`.** The gate record for this finding is
-`docs/phase50-modifiability-findings.md`, which records that the committed
+`.planning/phases/50-equivalence-and-modifiability/evidence/phase50-modifiability-findings.md`, which records that the committed
 subject's report carries this finding and that the modified subject's report
 does **not** — "the construction that produced it was removed by this
 modification".
@@ -249,7 +249,7 @@ in the original capture's sidecar and `$00` in the modified one.
 
 **Anchor `$0825`, finding `self-modifying-code`, mechanism
 `store-target-in-instruction-opcode-byte`.** The gate record is again
-`docs/phase50-modifiability-findings.md`, which records that this finding's own
+`.planning/phases/50-equivalence-and-modifiability/evidence/phase50-modifiability-findings.md`, which records that this finding's own
 bytes are unchanged — the construction was always present in the committed
 subject — but that "its reachability moves from never-called to called once".
 
@@ -494,7 +494,7 @@ Recorded plainly, without overclaiming:
 - **Each change is cross-referenced to a named committed finding** — `$088B`
   `page-alignment` `sprite-pointer-names-aligned-base`, and `$0825`
   `self-modifying-code` `store-target-in-instruction-opcode-byte` — both
-  recorded in `docs/phase50-modifiability-findings.md`, which is the gate
+  recorded in `.planning/phases/50-equivalence-and-modifiability/evidence/phase50-modifiability-findings.md`, which is the gate
   record ROADMAP criterion 4 binds the demonstration to.
 - **It establishes that the allowlist is carrying real work**, because the same
   pair fails without it with 32 DIVERGENCE rows and exit status 1.
@@ -503,7 +503,7 @@ Recorded plainly, without overclaiming:
   also have covered a difference inside that range nobody intended. That is a
   property of a pre-registered range entry and is stated rather than hidden.
 - **It does not re-establish the instrument's sensitivity.** That rests on the
-  red control in `docs/phase50-equivalence-transcript.md`, committed before any
+  red control in `.planning/phases/50-equivalence-and-modifiability/evidence/phase50-equivalence-transcript.md`, committed before any
   green result existed.
 - **It says nothing about the three volatile-bucket addresses.** They were
   excluded by the mask before anything examined them.

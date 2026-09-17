@@ -130,7 +130,7 @@ callers under two different `$01` values (`$34` then `$33`). Its shared
 plan 45-07's own real, quoted join result:
 `{"address": 53248, "outcome": "declined", "reason": "no recovered
 processor-port value reaches $d000 -- declining rather than defaulting to
-the power-on state"}`, `docs/phase45-ghidra-derivation-evidence.md`). This
+the power-on state"}`, `.planning/phases/45-decomposition-to-closure-disagreement-first/evidence/phase45-ghidra-derivation-evidence.md`). This
 plan persists that decline as ONE committed `DECLINED:` comment at $082c,
 carrying the join's own reason text and naming BOTH candidate meanings:
 
@@ -141,7 +141,7 @@ carrying the join's own reason text and naming BOTH candidate meanings:
 > (LORAM=HIRAM=0) the read sees RAM. anno_join_memmap declined both
 > candidate addresses here (reason: "no recovered processor-port value
 > reaches $d000 -- declining rather than defaulting to the power-on
-> state", docs/phase45-ghidra-derivation-evidence.md) rather than
+> state", .planning/phases/45-decomposition-to-closure-disagreement-first/evidence/phase45-ghidra-derivation-evidence.md) rather than
 > defaulting to either meaning -- no single symbol is correct, and none is
 > asserted
 

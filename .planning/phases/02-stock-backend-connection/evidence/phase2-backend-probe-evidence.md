@@ -39,14 +39,14 @@ not exist here.
 **What was done instead:** all three were generated from the normative
 protocol spec rather than captured:
 
-- `docs/phase0-binmon-findings.md` §5 — the 12-byte response header layout
+- `.planning/phases/01-corrected-ground-truth/evidence/phase0-binmon-findings.md` §5 — the 12-byte response header layout
   (STX, api_version, body length, response type, error code, request id)
   every frame in all three fixtures uses.
-- `docs/phase0-binmon-findings.md` §3 and `probe-binmon.mjs`'s
+- `.planning/phases/01-corrected-ground-truth/evidence/phase0-binmon-findings.md` §3 and `probe-binmon.mjs`'s
   `parseDisplayGet()` — the `DISPLAY_GET` body layout, with the geometry
-  `docs/phase1-probe-results.md` already recorded from a real probe run
+  `.planning/phases/01-corrected-ground-truth/evidence/phase1-probe-results.md` already recorded from a real probe run
   (`dw=504 dh=312 xo=136 yo=51 iw=320 ih=200 bpp=8`).
-- `docs/phase0-binmon-findings.md` §4 (pause/run model) plus this
+- `.planning/phases/01-corrected-ground-truth/evidence/phase0-binmon-findings.md` §4 (pause/run model) plus this
   repository's own `CLAUDE.md` protocol constraints (five unsolicited
   message types at `0xffffffff`; `REGISTER_INFO` recurs on every `STOPPED`
   transition, not only at monitor open) — the event ordering in
@@ -89,7 +89,7 @@ mistaken for, a hardware-recorded capture.
 fixtures for:
 
 1. `display-get.bin`'s exact geometry fields (`dw`/`dh`/`xo`/`yo`/`iw`/`ih`/`bpp`)
-   — confirmed once already in `docs/phase1-probe-results.md`, but not
+   — confirmed once already in `.planning/phases/01-corrected-ground-truth/evidence/phase1-probe-results.md`, but not
    against the same build these synthetic bytes assume.
 2. `event-interleaved.bin`'s actual event ordering and count for a
    single-instruction `ADVANCE_INSTRUCTIONS` step — this plan's ordering
@@ -122,7 +122,7 @@ The two previously-unverified readings above resolved as follows:
    the command's own correlated reply first, then `RESUMED`, then
    `REGISTER_INFO`, then `STOPPED`. This **differs** from this section's
    synthetic model (`RESUMED, STOPPED, REGISTER_INFO,` then the reply) but
-   **matches** `docs/phase1-probe-results.md` line 248/262's
+   **matches** `.planning/phases/01-corrected-ground-truth/evidence/phase1-probe-results.md` line 248/262's
    already-recorded order. The real capture's broadcast frames around each
    `CHECKPOINT_SET` call — never modeled by the synthetic fixture — also
    required correcting `checkpoint-list.bin`'s `correlat:` test's

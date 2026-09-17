@@ -4,8 +4,8 @@ This document is the phase's own closure record, organised against
 `.planning/ROADMAP.md`'s five Phase 45 success criteria. Each criterion
 section below names what was measured, where the underlying evidence
 lives, and what the result was — never restating the two family closure
-documents (`docs/phase45-closure-dxa-family.md`,
-`docs/phase45-closure-ghidra-family.md`) that already carry the per-fixture
+documents (`.planning/phases/45-decomposition-to-closure-disagreement-first/evidence/phase45-closure-dxa-family.md`,
+`.planning/phases/45-decomposition-to-closure-disagreement-first/evidence/phase45-closure-ghidra-family.md`) that already carry the per-fixture
 detail.
 
 ## Criterion 5 — hardware register writes render as named enum members, with a multi-bit register decomposed
@@ -204,17 +204,17 @@ numeric stop condition) reports `exit=0` and `GATE: PASS` for all nine
 fixtures, with `undefined: 0 of <denominator>` in every byte census. Verbatim
 per-fixture gate output lives in:
 
-- `docs/phase45-closure-dxa-family.md` §"The gate, per fixture, real CLI
+- `.planning/phases/45-decomposition-to-closure-disagreement-first/evidence/phase45-closure-dxa-family.md` §"The gate, per fixture, real CLI
   output" — `dxa/tracer.prg`, `dxa/fixture.prg`, `dxa/basic-stub.prg`,
   `export-asm/smc.prg`, `petcat/computed-sys.prg`, `petcat/not-basic.prg`
   (all six `exit=0`).
-- `docs/phase45-closure-ghidra-family.md` §"Final green gate output, per
+- `.planning/phases/45-decomposition-to-closure-disagreement-first/evidence/phase45-closure-ghidra-family.md` §"Final green gate output, per
   fixture" — `ghidra/bank.prg`, `ghidra/bank-path-dependent.prg`,
   `ghidra/charset-phantom.prg` (all three `exit=0`).
 
 The gate's refusal to render without the disagreement input, observed going
 RED for real (never merely asserted present), is recorded in
-`docs/phase45-planted-control-evidence.md` — three controls, each captured
+`.planning/phases/45-decomposition-to-closure-disagreement-first/evidence/phase45-planted-control-evidence.md` — three controls, each captured
 verbatim: Control 1 (the input omitted entirely), Control 2 (the input
 emptied with a foreign run identity), Control 3 (the required-field guard
 deleted from a scratch copy). Two of the three are pinned as permanent,
@@ -238,10 +238,10 @@ resolution path was never exercised.**
 fixtures' real, live-executed (or, for the three not-executed fixtures,
 genuinely run-free) stores, reports `disagreementCount: 0` in every case:
 
-- Six fixtures (`docs/phase45-closure-dxa-family.md` §"The disagreement
+- Six fixtures (`.planning/phases/45-decomposition-to-closure-disagreement-first/evidence/phase45-closure-dxa-family.md` §"The disagreement
   oracle"): `disagreementCount: 0` for every one of the six, both before and
   after that plan's own closure edits.
-- Three fixtures (`docs/phase45-closure-ghidra-family.md` §"The disagreement
+- Three fixtures (`.planning/phases/45-decomposition-to-closure-disagreement-first/evidence/phase45-closure-ghidra-family.md` §"The disagreement
   oracle: nothing to accept anywhere in this family"): `disagreementCount: 0`
   for `bank.prg`, `bank-path-dependent.prg` and `charset-phantom.prg` alike.
 
@@ -263,17 +263,17 @@ itself is unit-tested directly in `anno-store-export.test.ts` (Test 6) and
 
 Survivor search: `anno-decomp-closure.test.ts`'s Test 2/4 asserts
 `survivors.length === 0`, by name, for all nine fixtures, on every CI run —
-a real, non-vacuous check (`docs/phase45-planted-control-evidence.md`'s own
+a real, non-vacuous check (`.planning/phases/45-decomposition-to-closure-disagreement-first/evidence/phase45-planted-control-evidence.md`'s own
 controls establish the survivor predicate is load-bearing, and the searched
 set is genuinely populated: all nine fixtures carry real authored labels,
 per plan 45-08/45-09's own naming passes).
 
 Per-entry-point purpose comments, table by table:
 
-- `docs/phase45-closure-dxa-family.md` §"Task 1 — entry points, by address" —
+- `.planning/phases/45-decomposition-to-closure-disagreement-first/evidence/phase45-closure-dxa-family.md` §"Task 1 — entry points, by address" —
   all six fixtures, one row per entry point, each with the four labelled
   elements (`function:`/`inputs:`/`outputs:`/`side effects:`) present.
-- `docs/phase45-closure-ghidra-family.md` §"Entry points by fixture" —
+- `.planning/phases/45-decomposition-to-closure-disagreement-first/evidence/phase45-closure-ghidra-family.md` §"Entry points by fixture" —
   `bank.prg` (1 gate-required entry point), `bank-path-dependent.prg` (2),
   `charset-phantom.prg` (513, including the measured correction that the
   real gate's own `buildEntryPoints()` counts every chained `jsr` target as
@@ -294,11 +294,11 @@ symbol:
    canonical example) — ONE `DECLINED:` comment naming BOTH candidate
    meanings (`$01=$33` → Character ROM, `$01=$34` → RAM), carrying
    `anno_join_memmap`'s own real decline reason verbatim.
-   `docs/phase45-closure-ghidra-family.md` §"Criterion 4's canonical decline
+   `.planning/phases/45-decomposition-to-closure-disagreement-first/evidence/phase45-closure-ghidra-family.md` §"Criterion 4's canonical decline
    -- ONE record, both bank states".
 2. **`export-asm/smc.prg`'s $0802** — the self-modified operand byte,
    genuinely path-dependent by construction (its value varies per loop
-   iteration). `docs/phase45-closure-dxa-family.md` §"Task 2 — declines and
+   iteration). `.planning/phases/45-decomposition-to-closure-disagreement-first/evidence/phase45-closure-dxa-family.md` §"Task 2 — declines and
    accepted disagreements, by address".
 3. **`petcat/computed-sys.prg`'s $0805** — the computed `SYS
    peek(43)+256*peek(44)` handover, whose target depends on the runtime
@@ -371,9 +371,9 @@ bytes for all nine — that narrower claim (D-03's literal wording,
 "regenerate deterministically from the bytes") was independently
 established, BEFORE this phase's closure passes added any authored content,
 for four of the nine fixtures: `dxa/tracer.prg`, `export-asm/smc.prg`,
-`petcat/not-basic.prg` (`docs/phase45-derivation-execution-evidence.md`
+`petcat/not-basic.prg` (`.planning/phases/45-decomposition-to-closure-disagreement-first/evidence/phase45-derivation-execution-evidence.md`
 §"Task 3 (3) — idempotence") and `ghidra/bank.prg`
-(`docs/phase45-ghidra-derivation-evidence.md` §"Task 3 (3) — idempotence").
+(`.planning/phases/45-decomposition-to-closure-disagreement-first/evidence/phase45-ghidra-derivation-evidence.md` §"Task 3 (3) — idempotence").
 The remaining five fixtures' raw-derivation idempotence
 (`dxa/fixture.prg`, `dxa/basic-stub.prg`, `ghidra/bank-path-dependent.prg`,
 `ghidra/charset-phantom.prg`, `petcat/computed-sys.prg`) was **not**
@@ -427,7 +427,7 @@ $ npm run test:automated > /tmp/gsd-45-10-suite-baseline.log 2>&1; echo "EXITCOD
 | `audit-root-args.test.ts` | `check-skill-fork-honesty: every spelling that RESOLVES to the repository root is accepted` |
 | `text-protocol.test.ts` | `Control 2 (planted RED, without the fix): a quiescence window of 0ms accepts prompt-shaped mid-stream text as final, losing the real output` |
 
-**Set difference against `docs/phase45-wave0-measurements.md`'s own named
+**Set difference against `.planning/phases/45-decomposition-to-closure-disagreement-first/evidence/phase45-wave0-measurements.md`'s own named
 baseline** (`anno-register.test.ts` ×3, `anno-tools.test.ts` Task 3 Test 3,
 `audit-root-args.test.ts` check-skill-fork-honesty):
 

@@ -5,7 +5,7 @@ four surfaces, the single positive fact it is licensed to assert, the four
 buckets its reconciliation query reports, how a run is identified, and the
 limits accepted along the way -- named rather than smoothed over. It does not
 restate EVID-06's A/B verdict; that verdict lives in
-`docs/phase43-instrumentation-perturbation-ab.md` and is cited here by
+`.planning/phases/43-the-runtime-evidence-layer/evidence/phase43-instrumentation-perturbation-ab.md` and is cited here by
 reference, so there is exactly one place it can go stale and exactly one
 place it gets corrected.
 
@@ -90,7 +90,7 @@ there is one place a run becomes an identity, not two that could disagree.
 
 Whether this composite needed a fourth, run-class-shaped column was an open
 question this phase measured rather than assumed, and the answer is recorded
-in `docs/phase43-instrumentation-perturbation-ab.md`. That document is the
+in `.planning/phases/43-the-runtime-evidence-layer/evidence/phase43-instrumentation-perturbation-ab.md`. That document is the
 one place the measurement, its rule, and its selected schema consequence
 live; this section points at it rather than repeating any of the three.
 
@@ -100,7 +100,7 @@ Named individually, because a limit smoothed into a paragraph is a limit the
 next reader will not notice:
 
 1. **The A/B's authority is narrowed to this project's own dials.** The
-   measurement in `docs/phase43-instrumentation-perturbation-ab.md` licenses
+   measurement in `.planning/phases/43-the-runtime-evidence-layer/evidence/phase43-instrumentation-perturbation-ab.md` licenses
    a claim about the two text-monitor commands this layer itself issues, at
    the anchor hit depths it actually ran. It says nothing about a VICE build
    without the capability `memmapshow`/`chis` already require, and nothing
