@@ -65,6 +65,7 @@
     "anno-symbols.ts",
     "anno-regbits-gen.ts",
     "anno-regbits.json",
+    "prerequisites.json",
     "anno-enum-gen.ts",
     "anno-acme-ident.ts",
     "anno-confidence.ts",

@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "tools": {
+    "x64sc": {
+      "id": "x64sc",
+      "unblocks": {
+        "skills": [
+          "c64-program-recon",
+          "c64-ram-capture",
+          "vice-wedge-triage"
+        ],
+        "mcp": [
+          "c1541.bam",
+          "c1541.dir",
+          "c1541.entry",
+          "c1541.chain",
+          "c1541.read",
+          "petcat.decode"
+        ]
+      },
+      "remedies": {
+        "linux": [
+          {
+            "ecosystem": "debian-trixie",
+            "text": "sudo apt install vice (enable the contrib component first — VICE ships there, not main; a stock debian:trixie installation has no vice candidate until it is)",
+            "provenance": "carried",
+            "source": "README.md:101"
+          },
+          {
+            "ecosystem": "debian-forky",
+            "text": "sudo apt install vice (same contrib-component requirement as trixie)",
+            "provenance": "carried",
+            "source": "README.md:102"
+          },
+          {
+            "ecosystem": "ubuntu-2510",
+            "text": "sudo apt install vice (enable multiverse first)",
+            "provenance": "carried",
+            "source": "README.md:103"
+          },
+          {
+            "ecosystem": "arch",
+            "text": "sudo pacman -S vice",
+            "provenance": "carried",
+            "source": "README.md:104"
+          },
+          {
+            "ecosystem": "fedora-rpmfusion",
+            "text": "enable RPM Fusion Non-Free, then sudo dnf install vice",
+            "provenance": "carried",
+            "source": "README.md:105"
+          },
+          {
+            "ecosystem": "alpine-edge",
+            "text": "enable the edge/testing repo, then apk add vice",
+            "provenance": "carried",
+            "source": "README.md:106"
+          },
+          {
+            "ecosystem": "homebrew",
+            "text": "brew install vice",
+            "provenance": "carried",
+            "source": "README.md:107"
+          }
+        ],
+        "darwin": [
+          {
+            "ecosystem": "homebrew",
+            "text": "brew install vice",
+            "provenance": "carried",
+            "source": "README.md:107"
+          }
+        ],
+        "win32": [
+          {
+            "ecosystem": "windows-official",
+            "text": "download the GTK3/SDL2 win64 zip",
+            "provenance": "carried",
+            "source": "README.md:108"
+          }
+        ]
+      }
+    }
+  }
+}

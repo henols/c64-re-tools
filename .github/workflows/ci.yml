@@ -261,3 +261,36 @@ jobs:
           npm version "${{ steps.ver.outputs.version }}" --no-git-tag-version --allow-same-version
           npm pkg set "dependencies.@henols/vice-mcp=${{ steps.ver.outputs.version }}"
           npm publish
+
+  # DECL-02 (phase 58 plan 01): src/mcp/vice/prerequisites.json must parse
+  # under the LOW end of this project's Node support -- the installer
+  # package's own floor (installer/package.json's engines.node), which
+  # Phase 61's doctor cell will pin to the same number -- even though the
+  # MCP server itself requires Node >= 24. This job is deliberately
+  # standalone: no `needs:` edge to or from `build`, `release` or
+  # `publish-npm`, so it fails its own check independently and the publish
+  # chain's blast radius stays exactly what it is today. It provisions Node
+  # 18 via `actions/setup-node@v4` only -- a language runtime, not an
+  # install of an external prerequisite -- and never reaches for a package
+  # manager, matching the governing never-auto-install constraint exactly as
+  # it binds shipped code.
+  decl-02-node18-proof:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+      - name: Prove prerequisites.json parses on the installer's own Node floor
+        run: |
+          node -e '
+            const fs = require("fs");
+            const doc = JSON.parse(fs.readFileSync("src/mcp/vice/prerequisites.json", "utf8"));
+            if (!doc || typeof doc !== "object" || typeof doc.tools !== "object") {
+              console.error("prerequisites.json did not parse into the expected shape under Node 18");
+              process.exit(1);
+            }
+            console.log(`prerequisites.json parsed on Node 18 -- ${Object.keys(doc.tools).length} tool record(s)`);
+          '
