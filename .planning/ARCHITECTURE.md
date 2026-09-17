@@ -12,34 +12,40 @@ boundaries explicit so implementation plans can be checked against them consiste
 1. Preserve a clear separation between MCP tool routing, backend transport, derived tools,
    emulator lifecycle management, and host/container boundary handling.
 2. Keep backend-specific behavior behind explicit seams.
-3. Never advertise a capability that the selected backend cannot honestly provide.
+3. Never advertise a capability that stock VICE cannot honestly provide.
 4. Prefer one authoritative source for capability, path, and protocol facts rather than copies.
 5. Treat live emulator behavior and external tools as part of the architecture's verification
    surface, not merely as optional integration tests.
 
 ## Runtime Topology
 
+⚠ **CORRECTED 2026-09-17 — the two-backend topology this section described is gone.**
+Phase 52 (`1bd2928e`, `599b5c77`) deleted the fork transport, its HTTP MCP endpoint, its
+manifest and `vice.ts`'s `call()` seam. This section and Rules A1-A3 are RESTATED against
+the surviving path rather than kept as a dead record, because they are load-bearing for new
+work — unlike Rule A21 below, which governs a subsystem nobody can reach any more.
+
 ```text
 Claude Code / MCP client
         |
         v
-stdio MCP proxy
+stdio MCP proxy                   (vice-proxy.ts)
         |
         v
-backend selection
+stock dispatch seam               (stock-dispatch.ts)
         |
-        +----------------------+----------------------+
-        |                                             |
-        v                                             v
-Stock VICE backend                              Fork VICE backend
-(binary monitor)                                (HTTP MCP endpoint)
-        |                                             |
-        v                                             v
-upstream x64sc                                  barryw/vice-mcp VICE
+        v
+binary monitor + text channel     (stock-connect.ts / stock-protocol.ts)
+        |
+        v
+host broker                       (vice-broker.mts)
+        |
+        v
+upstream x64sc
 ```
 
-Backend selection is project-level for one MCP server process. The selected backend owns the
-runtime capability surface for that process.
+There is one emulator target and nothing to select. The stock path owns the whole runtime
+capability surface for the process.
 
 ## Direct Tool Flow
 
@@ -47,16 +53,17 @@ Direct tools map to a backend operation and follow the normal forwarding path.
 
 ```text
 tool call
-  -> MCP dispatch
-  -> forwardToVice()
+  -> MCP dispatch                            (vice-proxy.ts)
   -> argument/path rewriting where required
-  -> vice.ts call() transport seam
-  -> selected backend
+  -> stock dispatch seam                     (stock-dispatch.ts)
+  -> binary monitor / text channel           (stock-connect.ts)
 ```
 
 ### Rule A1 — Direct transport seam
 
-Direct tools may use `vice.ts`'s `call()` seam for backend transport.
+Direct tools reach the emulator through `stock-dispatch.ts`'s session wrappers
+(`withStockSession()`, `withDerivedTool()`), which own the one transport seam. The former
+`vice.ts` `call()` seam was deleted with the fork transport in `1bd2928e`.
 
 ### Rule A2 — Do not bypass the transport seam casually
 
@@ -75,13 +82,14 @@ tool call
   -> backend primitive(s), if required
 ```
 
-### Rule A3 — Derived tools intercept before `forwardToVice()`
+### Rule A3 — Derived tools intercept before host-path rewriting
 
-Derived tools MUST be intercepted before `forwardToVice()` performs argument rewriting.
+Derived tools MUST be intercepted before the proxy rewrites host paths in their arguments.
 
-Reason: host-path rewriting happens before the backend `call()` seam. A client-side derived tool
-placed behind `call()` can receive host-translated paths and then incorrectly act on them inside
-the container.
+Reason: host-path rewriting happens before the transport seam. A client-side derived tool placed
+behind that seam can receive host-translated paths and then incorrectly act on them inside the
+container. This rule was written as "before `forwardToVice()`" until `1bd2928e`; the function
+went with the fork transport, the ordering constraint did not.
 
 ### Rule A4 — Keep derived implementations outside the proxy monolith
 
@@ -89,15 +97,19 @@ New client-side derivations should live in dedicated sibling modules rather than
 `vice-proxy.ts` indefinitely. `vice-proxy.ts` remains the routing surface, not the home for all
 backend-specific logic.
 
-## Backend Capability Model
+## Capability Model
 
-The stock and fork backends intentionally expose different tool surfaces.
+⚠ **CORRECTED 2026-09-17 — there is no second backend to be honest *between*.** Phase 52
+removed the fork, so the per-backend framing below is restated as a per-tool one. The
+surviving obligation is the one `CLAUDE.md` states: the stdio surface advertises only what
+this project implements against stock VICE, and a capability with no stock route is recorded
+as a permanent loss in `docs/stock-hard-losses.md`, not left as a gap awaiting a workaround.
 
-### Rule A5 — Honest per-backend exposure
+### Rule A5 — Honest exposure
 
-A backend must advertise only tools it can actually serve.
+The server must advertise only tools it can actually serve.
 
-A tool available on both backends must preserve:
+Any change to an already-advertised tool must preserve:
 
 - its tool name;
 - backward-compatible argument shapes;
@@ -106,15 +118,16 @@ A tool available on both backends must preserve:
 
 ### Rule A6 — Capability metadata has one authoritative source
 
-Backend support metadata must come from the project's canonical capability registry and/or
-backend manifests. Do not create hand-maintained duplicate support tables.
+Capability metadata must come from `tools-manifest.stock.json`, the one committed snapshot,
+read offline at `tools/list`. Do not create a hand-maintained duplicate support table.
 
-Generated documentation should be derived from those sources and drift-checked.
+The generated tool-support table, its generator and its drift guard were retired in `af987e37`
+and deliberately NOT replaced — do not reintroduce one without an architecture decision.
 
 ### Rule A7 — Refuse unsupported capabilities explicitly
 
-When a capability is unavailable on the selected backend, fail by name with an actionable message
-that states the supported route where one exists. Do not silently emulate a capability if doing so
+When a capability is unavailable on stock VICE, fail by name with an actionable message that
+states the supported route where one exists, or names it as a permanent loss. Do not silently emulate a capability if doing so
 would produce weaker or misleading semantics.
 
 ## Stock VICE Binary Monitor
@@ -392,6 +405,18 @@ six-step Architecture Change Procedure above for that reversal.
    two names — `spawn-seam.test.ts` and `anno-durability.test.ts` — are what
    `docs-absorbed-decisions.test.ts`'s `GUARD_FILENAMES` checks this section
    for by containment.*
+
+   *Addendum, 2026-09-17. Two of the three names in the addendum above no
+   longer resolve either, so the pointer-rot it was written to stop happened
+   again one layer up. `276c15c9` (quick task 260914-poo) deleted 43
+   source-text-scanning tests, `spawn-seam.test.ts` and
+   `docs-absorbed-decisions.test.ts` among them. Nothing now checks this
+   section by containment, and no single guard carries the spawn-site
+   discipline forward — it is asserted piecemeal by `broker-launch.test.ts`,
+   `vice-broker-acquire.test.ts` and `vice-proxy.test.ts`. Of the three names
+   the 2026-08-29 addendum left you, only `anno-durability.test.ts` still
+   exists. Treat every guard name in this document as a claim to verify
+   against the tree before relying on it, not as a fact.*
 
 6. **Only then implement.** Plan 18-03 is the first implementing plan of this
    reversal — it lands `anno-session.ts`, the long-lived session primitive,

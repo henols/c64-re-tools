@@ -114,7 +114,7 @@ served entirely proxy-locally and touches no emulator at all.
 | Annotation CLI | `vice-mcp anno <verb>` ergonomics layer over the same store | `src/mcp/vice/anno-cli.ts` |
 | Annotation derivations | Address index, derived answers, composed address detail, coverage census, ACME export, memory-map render, symbol round trip, enum/regbit generation, type vocabulary, confidence grades | `src/mcp/vice/anno-index.ts`, `anno-derive.ts`, `anno-details.ts`, `anno-coverage.ts`, `anno-export-asm.ts`, `anno-memmap-render.ts`, `anno-symbols.ts`, `anno-enum-gen.ts`, `anno-regbits-gen.ts`, `anno-types.ts`, `anno-confidence.ts` |
 | Pure 6510 disassembler | Committed 256-entry opcode table, pure `decode()`, pure `render()` — import-free of any `stock-*`/`vice*` module | `src/mcp/vice/disasm-opcodes.ts`, `disasm-decoder.ts`, `disasm-renderer.ts` |
-| Pure C64 byte layout | `.prg` load-address/body split, flat-64K load address, `.d64` directory listing and entry extraction, block-type translation | `src/mcp/vice/prg-image.ts`, `anno-d64.ts`, `block-class.ts` |
+| Pure C64 byte layout | `.prg` load-address/body split, flat-64K load address, block-type translation. `.d64` reading is NOT in-process: the one route is the `c1541.*` host-tool family (7d36844c retired the second, in-process parser) | `src/mcp/vice/prg-image.ts`, `block-class.ts`, `host-tool.mts` |
 | ACME gate / verify | The ONE ACME availability gate and the three-outcome reassembly verdict | `src/mcp/vice/acme-gate.ts`, `acme-verify.ts` |
 | Broker client | Container-side broker protocol: acquire/release/recycle plus monitor claim/release, over a TCP control session | `src/mcp/vice/vice-broker-client.ts` |
 | Checkpoint sync helpers | The single-resume-per-wait checkpoint invariant, ported here in event-driven form (no polling on `hit_count`) | `src/mcp/vice/stock-run-until.ts` |
@@ -124,7 +124,7 @@ served entirely proxy-locally and touches no emulator at all.
 | Host/container paths | Container→host and host→container path translation | `src/mcp/vice/hostpath.ts`, `containerpath.ts`, `stock-paths.ts` |
 | Incident capture | Writes a pre-kill incident record before any recycle/kill | `src/mcp/vice/incident-record.ts` |
 | Host broker daemon | Pool manager: port allocation, warm floor, crash supervision, TCP control listener | `src/mcp/vice/vice-broker.mts` (+ `broker-*.mts`) |
-| Structural-guard seams | Shipped-module enumerator + comment/string stripper every guard test scans with; the committed capability-vs-glue module record; the manual-vs-automated test gate; the single version algorithm | `src/mcp/vice/shipped-modules.ts`, `module-classification.ts`, `test-gate.mjs`, `version.ts` |
+| Structural-guard seams | The manual-vs-automated test gate and the single version algorithm. The shipped-module enumerator and the capability-vs-glue record are GONE -- phase 56 removed `shipped-modules.ts` and its source-text scans, and 276c15c9 removed `module-classification.ts` | `src/mcp/vice/test-gate.mjs`, `version.ts` |
 | Build step | Compiles host-bound `.mts` sources into committed, banner-marked `.mjs` under `resources/` | `src/mcp/vice/build.ts` |
 | Advertised tool surface | The advertised tool surface is a committed snapshot read offline at `tools/list`; nothing regenerates it from a live host | `src/mcp/vice/tools-manifest.stock.json`, resolved through `src/mcp/vice/stock-dispatch.ts` |
 | Plugin manifest | Declares `./src/skills/`, `./.mcp.json`, SessionStart hook | `.claude-plugin/plugin.json` |
@@ -158,11 +158,12 @@ per-project backend selection (FORKRM-01).
 - **No build step for the shipped server.** `vice-proxy.ts` and its `.ts`
   siblings run directly under Node's native type-stripping (Node ≥ 24);
   `package.json`'s `bin` points straight at a `.ts` file.
-- **Structural guards as architecture.** A large share of the 129 test files
-  are guards over the architecture itself, not over behaviour: import-cycle
-  and seam-bypass scans, docs line-reference checks
-  (`docs-linerefs.test.ts`), shipped-`files[]` coverage, module
-  classification, skill honesty checks.
+- **Structural guards as architecture.** A share of the 136 test files guard
+  the architecture itself, not behaviour: import-cycle and seam-bypass scans,
+  shipped-`files[]` coverage, and skill honesty checks. This category SHRANK
+  deliberately -- 276c15c9 deleted 43 source-text-scanning tests and phase 56
+  removed the enumerator they scanned with, so do not assume a guard exists
+  for a given rule without checking the tree.
 - **Documentation-as-code.** Source files carry long structured headers
   recording *why* a decision was made, the incident behind it, and explicit
   "do not revert this" warnings. Treat them as part of the architecture
@@ -193,8 +194,8 @@ per-project backend selection (FORKRM-01).
   `vice-broker-client.ts`), stock backend (`stock-*.ts`,
   `disasm-*.ts`), annotation store (`anno-*.ts`, `block-class.ts`,
   `prg-image.ts`), path/root seams (`repo-root.ts`, `hostpath.ts`,
-  `containerpath.ts`, `install-resources.ts`), guard seams
-  (`shipped-modules.ts`, `module-classification.ts`, `version.ts`).
+  `containerpath.ts`, `install-resources.ts`), guard seams (`version.ts`,
+  `test-gate.mjs`).
 - Depends on: `@mastra/mcp` / `@mastra/core` for stdio framing,
   `@modelcontextprotocol/sdk` (transitive) for `CallToolRequestSchema`,
   `node:sqlite` (in exactly one module), `node:net` (in exactly one module).
@@ -361,7 +362,7 @@ Four named flows, each walked step by step below.
 - Purpose: Knowledge with no I/O, safe to unit-test exhaustively and to reuse
   offline.
 - Examples: `disasm-opcodes.ts` (committed 256-entry table),
-  `disasm-decoder.ts`, `disasm-renderer.ts`, `prg-image.ts`, `anno-d64.ts`,
+  `disasm-decoder.ts`, `disasm-renderer.ts`, `prg-image.ts`,
   `anno-regbits.json`, `anno-acme-ident.ts`.
 - Pattern: Deliberately import-free of any `stock-*`/`vice*` module.
 
@@ -417,9 +418,9 @@ Four named flows, each walked step by step below.
 - `src/mcp/vice/smoke.mjs`, `probe-binmon.mjs` — handshake smoke test and a
   raw binary-monitor probe.
 - `scripts/package.sh`, `scripts/check-npm-packages.mjs`,
-  `scripts/generate-tool-support-table.mjs`, `scripts/audit-gate.mjs`,
   `scripts/ensure-mcp-deps.sh` — release packaging, tarball validation,
-  `docs/tool-support.md` generation, audit gate, SessionStart `npm ci`.
+  SessionStart `npm ci`. The tool-support table and its generator were
+  retired by af987e37, and the audit gate by e4759250.
 
 ## Architectural Constraints
 
@@ -440,8 +441,8 @@ Four named flows, each walked step by step below.
 - **Container/host boundary is load-bearing everywhere.** Any host-facing
   path or hostname must go through `hostpath.ts` / `containerpath.ts` /
   `stock-paths.ts` / `container-guard.mts`; the project maintains a tested
-  *closed consumer set* for host-path logic
-  (`hostpath-consumers.test.ts`, `skill-consumer-paths.test.ts`).
+  *closed consumer set* for host-path logic (`hostpath-consumers.test.ts`;
+  its skill-side companion was deleted in 276c15c9).
 - **No build step for the shipped server.** Container-side `.ts` modules run
   under Node's native type-stripping (Node ≥ 24). Only host-bound `.mts`
   files are compiled, by `build.ts`, because they run on a bare host Node.
@@ -488,13 +489,14 @@ of a cross-cutting seam.
 `mcpHost()`'s header in `vice-errors.ts` documents three separate inlined
 copies of `process.env.VICE_MCP_HOST || "host.docker.internal"`;
 `repo-root.ts`'s header documents a depth-assumption bug from copy-pasted
-hop counts; `shipped-modules.ts`'s header documents **four** hand copies of
-`shippedTsModules()` whose filter logic had silently diverged, each still
-passing because a guard that scans nothing finds nothing.
+hop counts. A third case is recorded only in history now: `shipped-modules.ts`
+documented **four** hand copies of `shippedTsModules()` whose filter logic had
+silently diverged, each still passing because a guard that scans nothing finds
+nothing. Phase 56 removed that module and its scans outright, so the lesson
+survives while the file does not.
 **Do this instead:** Import `repoRoot()`/`supervisorDir()` from
-`repo-root.ts`, `mcpHost()` from `vice-errors.ts`, `isInsideContainer()`
-from `container-guard.mts`, and `shippedTsModules()` from
-`shipped-modules.ts`.
+`repo-root.ts`, `mcpHost()` from `vice-errors.ts`, and `isInsideContainer()`
+from `container-guard.mts`.
 
 ### Deleting by name glob
 
@@ -505,9 +507,11 @@ implemented capabilities unrelated to the analyser (disk geometry, register
 bit layout, ACME identifier legality, coverage census, confidence grades,
 label round trip). A glob would have taken them silently, inside a diff too
 large to read.
-**Do this instead:** Consult `module-classification.ts` — the committed
-capability-vs-glue record, enforced by `module-classification.test.ts` — and
-classify before deleting, not under deletion pressure.
+**Do this instead:** classify before deleting, not under deletion pressure.
+There is no committed capability-vs-glue record to consult any more —
+276c15c9 deleted `module-classification.ts` and its guard — so the
+classification is now a judgement you must make and state in the plan, file by
+file, against a diff small enough to read.
 
 ### Killing/relaunching preemptively to serve a newer request
 
