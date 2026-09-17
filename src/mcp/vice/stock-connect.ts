@@ -67,8 +67,9 @@ export interface StockConnectBrokerControl {
 
 // ---------------------------------------------------------------------------
 // Capabilities -- BACK-04's version-gated answer set. Today this is just
-// CPUHISTORY_GET's three-way outcome (docs/phase0-binmon-findings.md §5,
-// D-10): 0x00 OK on the 3.10 fork, 0x83 INVALID_TYPE (opcode absent) on
+// CPUHISTORY_GET's three-way outcome, confirmed by probing both a stock
+// 3.9 build and the fork's 3.10-vintage build over the wire (D-10): 0x00 OK
+// on the 3.10 fork, 0x83 INVALID_TYPE (opcode absent) on
 // stock 3.9, 0x8f CMD_FAILURE (compiled without support) as the distinct
 // third case. A later plan adding a second version-gated opcode extends this
 // type, not a parallel mechanism.
@@ -327,12 +328,12 @@ async function safeDisconnect(client: ViceMonitorClient): Promise<void> {
 
 /**
  * CR-02 (code review 2026-08-13). THE load-bearing counterpart to every
- * command this handshake sends. docs/phase0-binmon-findings.md §4, read from
- * VICE's own source, is explicit: `monitor_check_binary()` calls
- * `monitor_startup_trap()` on ANY INBOUND BYTE (monitor_binary.c:281), and
- * that check runs every vsync -- so the bare `PING` (0x81) below halts the
- * emulated C64 within roughly one frame and emits `STOPPED` (0x62). `EXIT`
- * (0xaa) is the ONLY thing that resumes it.
+ * command this handshake sends. Confirmed by reading directly from VICE's
+ * own source rather than any external summary: `monitor_check_binary()`
+ * calls `monitor_startup_trap()` on ANY INBOUND BYTE (monitor_binary.c:281),
+ * and that check runs every vsync -- so the bare `PING` (0x81) below halts
+ * the emulated C64 within roughly one frame and emits `STOPPED` (0x62).
+ * `EXIT` (0xaa) is the ONLY thing that resumes it.
  *
  * Before this function existed, nothing in this tree ever sent 0xaa: the
  * first `vice_ping` on the stock backend froze the machine and left it frozen
@@ -431,8 +432,9 @@ export async function stockConnect({ host, port, targetId, brokerControl, deps =
     // Step 3: api_version assertion. A non-0x02 api_version rejects this
     // send() call directly with a StockFramingError naming the observed
     // value -- see this function's own header comment. NOTE (CR-02): this
-    // single byte HALTS the emulated machine (any inbound byte does --
-    // docs/phase0-binmon-findings.md §4); step 7's EXIT is what undoes it.
+    // single byte HALTS the emulated machine (any inbound byte does, per
+    // monitor_check_binary()'s own vsync-driven trap -- see the CR-02
+    // comment above for the full mechanism); step 7's EXIT is what undoes it.
     await client.send(CommandType.Ping);
 
     // Step 4: build identity.

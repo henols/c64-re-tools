@@ -7,8 +7,10 @@
 // `handleExecutionUntilReturn` as `StockSessionHandler`s -- dispatch-table
 // and manifest wiring belong to plans 03-12/03-13, not here.
 //
-// WHY THIS FILE EXISTS: docs/phase0-binmon-findings.md §4 -- ANY inbound byte
-// halts the emulated machine (`monitor_startup_trap()` runs every vsync), so
+// WHY THIS FILE EXISTS: ANY inbound byte halts the emulated machine --
+// `monitor_check_binary()` calls `monitor_startup_trap()` on every byte the
+// monitor socket receives (`monitor_binary.c:281`), and that check runs
+// every vsync -- so
 // a bare PING (0x81) is the documented, side-effect-minimal way to trigger a
 // halt on demand, and EXIT (0xaa) is the ONLY thing that resumes it. D-05
 // means this client never sends an unrequested EXIT, which in turn means an

@@ -12,7 +12,9 @@
 // vice_registers_set takes a register NAME (D-03: stock keeps the fork's
 // argument shape). VICE enumerates its own register ids through
 // REGISTERS_AVAILABLE, and those ids are NOT guaranteed identical across
-// builds (docs/phase0-binmon-findings.md) -- so a caller must resolve a
+// builds -- confirmed by reading VICE's own mon_register.c, which assigns
+// ids from a per-machine table that is never pinned to a fixed numbering
+// across ports -- so a caller must resolve a
 // name through the CONNECTED build's own answer, never a table this
 // module wrote down in advance. This file is the one seam that performs
 // that resolution, caches it per session (so every call after the first

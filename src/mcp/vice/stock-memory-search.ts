@@ -2,8 +2,9 @@
 // stock-memory-search.ts
 //
 // vice_memory_search / vice_memory_compare -- the DERIV-01 pair. Both are
-// DERIVED tools: the binary monitor's confirmed command set
-// (docs/phase0-binmon-findings.md §5) has no MEMORY_SEARCH or MEMORY_COMPARE
+// DERIVED tools: the binary monitor's confirmed command set -- read directly
+// out of VICE's own monitor_binary.c and reproduced by probing every opcode
+// live against genuine stock VICE -- has no MEMORY_SEARCH or MEMORY_COMPARE
 // opcode at all, so both answers are computed CLIENT-SIDE from one bounded
 // MEM_GET read per range -- the same shape stock-disassemble.ts already
 // uses. Registered through withDerivedTool("...", { needsSession: true },

@@ -14,8 +14,8 @@
 // and a re-set must be refused rather than silently doubling up. Separately,
 // a `stop:false` checkpoint emits a CHECKPOINT_INFO frame per hit
 // SYNCHRONOUSLY, from inside the emulator's CPU loop, over the blocking
-// monitor socket (docs/phase0-binmon-findings.md §1; mon_breakpoint.c:557-562
-// calls mon_breakpoint_event() before checking cp->stop) -- on a hot address
+// monitor socket -- confirmed directly from VICE's own source: mon_breakpoint.c:557-562
+// calls mon_breakpoint_event() before checking cp->stop -- so on a hot address
 // this can stall the emulator thread and deadlock this client. Both guards
 // are correctness-as-safety issues, not polish, so they belong in the same
 // module as the tools that create the hazard.
