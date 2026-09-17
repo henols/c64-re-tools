@@ -2190,7 +2190,7 @@ check. No test reads this table now.
 | 55. Restore the Fork Removal's Dropped Capabilities and Re-Baseline the Proxy Test | v1.0.0 | 6/6 | Complete ⚠️ no gate | 2026-09-14 |
 | 56. Remove `shipped-modules.ts` and Its Embedded Source Scans | v1.0.0 | 11/11 | Complete | 2026-09-15 |
 | 57. Nothing Is Installed Automatically | v1.0.0 → carried | 0/0 | **Carried forward** | - |
-| 58. One Declaration, Four Places That Can No Longer Disagree | v1.1.0 | 0/? | Not started | - |
+| 58. One Declaration, Four Places That Can No Longer Disagree | v1.1.0 | 0/2 | Planned | - |
 | 59. The Tool-Location Seam and Its Precedence Order | v1.1.0 | 0/? | Not started | - |
 | 60. The Seam Wired Into the Code That Ships | v1.1.0 | 0/? | Not started | - |
 | 61. `vice-mcp doctor`, Reachable on a Node Too Old to Run the Server | v1.1.0 | 0/? | Not started | - |
