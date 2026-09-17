@@ -29,8 +29,9 @@
 //
 // WHY THE DISCOVERY PATTERN IS `phase50-*-transcript.md` AND NOT `phase50-*.md`
 // ---------------------------------------------------------------------------
-// `docs/` also holds `phase50-modifiability-findings.md` (a gate record) and
-// `phase50-ci-boundary.md` (this plan's own boundary document). Neither is a
+// The phase's evidence directory also holds `phase50-modifiability-findings.md`
+// (a gate record) and `phase50-ci-boundary.md` (this plan's own boundary
+// document). Neither is a
 // transcript and neither carries a `subjects:` block. Widening the pattern to
 // every `phase50-*.md` would force this file to sniff each document's content
 // to decide whether it counts -- and a real transcript that LOST its
@@ -86,7 +87,13 @@ function findRepoRoot(from: string): string {
 }
 
 const REPO_ROOT = findRepoRoot(HERE);
-const DOCS_DIR = join(REPO_ROOT, "docs");
+/** These transcripts are committed evidence artifacts of phase 50, so they
+ * live under that phase's own `evidence/` directory rather than the
+ * repository's operator-owned `docs/` -- moved there in phase 53. Renaming
+ * or archiving this phase directory will break this guard; it reads a
+ * committed artifact by path the same way `anno-derivation.test.ts` and
+ * `host-scripts.test.ts` already do. */
+const DOCS_DIR = join(REPO_ROOT, ".planning/phases/50-equivalence-and-modifiability/evidence");
 
 /** Discovery is by NAME PATTERN, never by a hardcoded list -- a transcript
  * added by a later plan is covered without touching this file. */
@@ -107,7 +114,8 @@ export interface TranscriptSubject {
 }
 
 export interface TranscriptAuditOptions {
-  /** Directory the transcripts are discovered in -- the repository's `docs/`
+  /** Directory the transcripts are discovered in -- the phase 50 evidence
+   * directory (`.planning/phases/50-equivalence-and-modifiability/evidence/`)
    * for the committed case, a scratch directory for this file's own negative
    * cases. */
   docsDir: string;
@@ -293,7 +301,7 @@ test("every committed phase-50 transcript is fresh, unorphaned, and pairs its gr
   );
 });
 
-test("the committed docs/ directory really does hold at least two phase-50 transcripts", () => {
+test("the committed phase-50 evidence directory really does hold at least two phase-50 transcripts", () => {
   // Guards the guard: every negative case below is meaningless if the
   // discovery pattern silently matches nothing in the real tree.
   const found = readdirSync(DOCS_DIR).filter((f) => TRANSCRIPT_PATTERN.test(f)).sort();

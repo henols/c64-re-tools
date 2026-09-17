@@ -39,7 +39,13 @@ function findRepoRoot(from: string): string {
 }
 
 const REPO_ROOT = findRepoRoot(HERE);
-const DOCS_DIR = join(REPO_ROOT, "docs");
+/** These findings documents are committed evidence artifacts of phase 50, so
+ * they live under that phase's own `evidence/` directory rather than the
+ * repository's operator-owned `docs/` -- moved there in phase 53. Renaming
+ * or archiving this phase directory will break this guard; it reads a
+ * committed artifact by path the same way `anno-derivation.test.ts` and
+ * `host-scripts.test.ts` already do. */
+const DOCS_DIR = join(REPO_ROOT, ".planning/phases/50-equivalence-and-modifiability/evidence");
 
 /** The seven inputs keys that must appear in every EQUIV-03 findings document,
  * INDENTED under the `inputs:` YAML mapping -- not at column 0. The pattern
@@ -192,7 +198,7 @@ test("every phase-50 findings document carries its contract: EQUIV-03 verdict, a
   );
 });
 
-test("the committed docs/ directory really does hold exactly the expected phase-50 findings documents", () => {
+test("the committed phase-50 evidence directory really does hold exactly the expected phase-50 findings documents", () => {
   // Guards the guard: the discovery pattern and the contract assertions are
   // only meaningful if the real tree holds the files they were written to protect.
   const found = readdirSync(DOCS_DIR)
