@@ -6,8 +6,9 @@
 // ---------------------------------------------------------------------------
 // WHY THIS FILE EXISTS
 // ---------------------------------------------------------------------------
-// `docs/phase49-the-reassembly-gate-findings.md`'s committed `acknowledged`
-// verdict (rule `R10`) is against the UNMODIFIED committed subject. ROADMAP
+// The reassembly gate's committed `acknowledged` verdict (rule `R10`,
+// recorded the first time the gate ran against this hazard subject) is
+// against the UNMODIFIED committed subject. ROADMAP
 // Phase 50 criterion 4 requires the MODIFIED source -- one behaviour removed,
 // one added, both anchored to a named hazard-report finding -- to be
 // "reassembled through Phase 49's gate". That is a NEW run against NEW

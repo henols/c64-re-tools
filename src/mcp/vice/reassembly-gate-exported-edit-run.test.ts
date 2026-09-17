@@ -6,8 +6,9 @@
 // ---------------------------------------------------------------------------
 // WHY THIS FILE EXISTS
 // ---------------------------------------------------------------------------
-// `docs/phase50-modifiability-findings.md`'s `acknowledged` verdict (rule
-// `R10`) is against the hand-written MODIFIED subject
+// The reassembly gate's committed `acknowledged` verdict (rule `R10`,
+// recorded the same way as the modified-run case's sibling file above) is
+// against the hand-written MODIFIED subject
 // (`hazard-subject-modified.prg`, plan 50-02's own output). ROADMAP Phase 50
 // criterion 4 also requires the same modifiability claim demonstrated in the
 // source the decomposition itself EMITS -- plan 50-08's `hazard-subject-

@@ -1128,8 +1128,10 @@ test("D-16 Test 4: an enum usage naming an enum the store does not hold is REFUS
 // ---------------------------------------------------------------------------
 
 /** `lda #$00` / `sta $d020` / `rts` at `$c000` -- `$D020` (VIC-II border
- * colour) is CONFIRMED ABSENT from the committed `anno-regbits.json`
- * (`docs/phase45-closure-dxa-family.md`, Task 3). */
+ * colour) is CONFIRMED ABSENT from the committed `anno-regbits.json`: it is
+ * name-shaped like a register the table covers, but the table carries no
+ * entry for it at all, which is what makes it the CR-01 regression case
+ * this fixture exercises. */
 const D020_WRITE_PRG = prgBytes(0xc000, [0xa9, 0x00, 0x8d, 0x20, 0xd0, 0x60]);
 
 test("CR-01 Fix Test C: a register-shaped enum name for a register anno-regbits.json has NO entry for ($D020) renders through the plain single-symbol path, not a throw", async () => {
@@ -1157,7 +1159,9 @@ test("CR-01 Fix Test C: a register-shaped enum name for a register anno-regbits.
 
 /** `lda #$01` (bit #0 set) / `sta $dd00` / `rts` at `$c000` -- `$DD00` IS
  * present in the committed table but covers only bits #2-#7, so bit #0 is
- * uncovered (the disclosed `docs/phase45-closure-gate.md` gap class). */
+ * uncovered: a register with a real table entry whose bit-name fields do
+ * not span every bit, the gap class this fixture exercises alongside the
+ * fully-absent case above. */
 const DD00_WRITE_PRG = prgBytes(0xc000, [0xa9, 0x01, 0x8d, 0x00, 0xdd, 0x60]);
 
 test("CR-01 Fix Test D: a register PRESENT in the table but not fully covered by its fields ($DD00) still refuses loudly -- the membership-test fix does not weaken T-45-21", async () => {
@@ -2903,8 +2907,9 @@ test("anno_evid_disagreements and anno_evid_runs are curated (derived from ANNO_
 /**
  * The run-class vocabulary this store schema ACTUALLY supports, derived from
  * `anno-types.ts`'s own exports rather than hand-typed. On the `promote`
- * branch (`docs/phase43-instrumentation-perturbation-ab.md`) this would be
- * `anno-types.ts`'s own exported `RUN_CLASSES` (`"frame-exact" |
+ * branch of this project's own frame-exact-vs-instrumented A/B decision --
+ * the branch not taken here -- this would be `anno-types.ts`'s own exported
+ * `RUN_CLASSES` (`"frame-exact" |
  * "instrumented"`). On the `no-change` branch this project's own live A/B
  * actually selected, `anno-types.ts` exports no such array at all: there is
  * exactly ONE implicit run class -- the bare `(imageSha256, argvDigest,

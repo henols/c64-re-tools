@@ -4,10 +4,11 @@
 // ---------------------------------------------------------------------------
 // WHY THIS FILE EXISTS
 // ---------------------------------------------------------------------------
-// Phase 45's evidence, up to this plan, is nine terminal transcripts --
-// `docs/phase45-closure-dxa-family.md` and `docs/phase45-closure-ghidra-family.md`
-// each carry a verbatim capture of the real `decomp-completeness` gate
-// passing against a real derived-and-executed store, taken on 2026-09-11.
+// Phase 45's evidence, up to this plan, is nine terminal transcripts, split
+// across two independently-derived families -- one dxa-derived, one
+// Ghidra-derived -- each a verbatim capture of the real `decomp-completeness`
+// gate passing against a real derived-and-executed store, both taken on
+// 2026-09-11.
 // A transcript decays the moment someone edits a fixture: nothing re-checks
 // it on the next commit. This file is the regression that keeps the phase's
 // own closure claim true on EVERY CI run, mechanically, using nothing but

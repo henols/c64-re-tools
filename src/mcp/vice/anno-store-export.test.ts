@@ -471,7 +471,7 @@ const rawLiveStorePath = process.env[LIVE_STORE_ENV];
 const LIVE_SKIP_REASON: string | false =
   rawLiveStorePath === undefined || rawLiveStorePath === ""
     ? `anno-store-export.test.ts's live tier is opt-in and default-skipped -- set ${LIVE_STORE_ENV}=/path/to/real.annostore ` +
-      `(a store dxa+Ghidra actually derived, e.g. dxa/tracer.prg per docs/phase45-wave0-measurements.md) to run it. A synthetic ` +
+      `(a store dxa+Ghidra actually derived by disassembling and executing a real binary end to end, e.g. dxa/tracer.prg run through that pipeline) to run it. A synthetic ` +
       `store built by this test file only carries the rows this test's author thought of; a real derived store carries whatever ` +
       `the derivation route actually writes.`
     : !existsSync(rawLiveStorePath)

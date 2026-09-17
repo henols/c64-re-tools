@@ -161,7 +161,7 @@ test("hasRegBitsEntry: true for every real committed table key, exhaustively -- 
   }
 });
 
-test("hasRegBitsEntry: false for $D020/$D021 -- CONFIRMED ABSENT from anno-regbits.json (docs/phase45-closure-dxa-family.md, Task 3), the exact CR-01 regression case", () => {
+test("hasRegBitsEntry: false for $D020/$D021 -- these registers are name-shaped but CONFIRMED ABSENT from the committed anno-regbits.json table, the exact CR-01 regression case where a name-shaped register with no table entry must not be mistaken for one that has one", () => {
   assert.equal(ALL_REGISTER_KEYS.includes("$D020"), false, "precondition: $D020 really is absent from the committed table");
   assert.equal(ALL_REGISTER_KEYS.includes("$D021"), false, "precondition: $D021 really is absent from the committed table");
   assert.equal(hasRegBitsEntry("$D020"), false);
