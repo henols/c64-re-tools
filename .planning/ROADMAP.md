@@ -1840,7 +1840,7 @@ four carried phases.
   `resources/*.mjs` artifact is regenerated for the first time in Phase 60, where
   that risk is isolated and carries its own evidence.
 
-**Plans**: 2/2 plans executed
+**Plans**: 3 plans — 2/2 executed, 1 gap-closure plan pending
 
 Plans:
 
@@ -1851,6 +1851,10 @@ Plans:
 - [x] 58-02-PLAN.md — The provenance record of which source won each
   disagreement, and the README prose correction the declaration's
   no-version-data rule requires
+- [ ] 58-03-PLAN.md — Gap closure: correct the two wrong `file:line` citations
+  in the provenance record, and add a CI-wired citation-ledger guard that fails
+  when a citation drifts off the anchor text it claims to quote; records the
+  `unp64` ninth-tool deferral decision
 
 ### Phase 59: The Tool-Location Seam and Its Precedence Order
 
@@ -2230,7 +2234,7 @@ check. No test reads this table now.
 | 55. Restore the Fork Removal's Dropped Capabilities and Re-Baseline the Proxy Test | v1.0.0 | 6/6 | Complete ⚠️ no gate | 2026-09-14 |
 | 56. Remove `shipped-modules.ts` and Its Embedded Source Scans | v1.0.0 | 11/11 | Complete | 2026-09-15 |
 | 57. Nothing Is Installed Automatically | v1.0.0 → carried | 0/0 | **Carried forward** | - |
-| 58. One Declaration, Four Places That Can No Longer Disagree | v1.1.0 | 2/2 | Gaps Found | - |
+| 58. One Declaration, Four Places That Can No Longer Disagree | v1.1.0 | 2/3 | Gaps Found | - |
 | 59. The Tool-Location Seam and Its Precedence Order | v1.1.0 | 0/? | Not started | - |
 | 60. The Seam Wired Into the Code That Ships | v1.1.0 | 0/? | Not started | - |
 | 61. `vice-mcp doctor`, Reachable on a Node Too Old to Run the Server | v1.1.0 | 0/? | Not started | - |
