@@ -501,9 +501,11 @@ appears in `src/mcp/vice/package.json`'s `files[]`, `dependencies`, or
 VICE is GPL-2 and this repository is MIT. **No opcode fact, protocol
 constant, or line of code in this repository is sourced from VICE's own
 source tree.** The stock backend is built against the binary-monitor
-**protocol** as documented in `docs/phase0-binmon-findings.md`, derived from
-independent probing against a running VICE binary, never from reading VICE's
-own C source.
+**protocol** this project independently reverse-engineered and specified as
+its own normative wire format -- the 11-byte request header, 12-byte
+response header, and confirmed command/response/error code set -- derived
+from independent probing against a running VICE binary, never from reading
+VICE's own C source.
 
 ## Explicitly NOT a source: `fluffy-6502`
 

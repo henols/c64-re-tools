@@ -142,13 +142,18 @@ const RULES_LINE = "------------- ------ ------------- ------";
 
 /** VICE's own cold-profiler sentence, quoted byte-for-byte -- including its
  * embedded double quotes and its trailing period -- from
- * `text-protocol.ts`'s `TEXT_COMMAND_ALLOWLIST` doc comment and
- * `docs/phase42-text-format-drift-citations.md`'s Block 9. Unlike this
+ * `text-protocol.ts`'s `TEXT_COMMAND_ALLOWLIST` doc comment. Unlike this
  * module's siblings' source-traced strings, this one is MEASURED: observed
  * live against genuine stock `x64sc (VICE 3.9)`, 2026-09-09. `prof flat`
  * alone, on a freshly connected session that has never issued `prof on`,
  * returns exactly this sentence -- the profiler subsystem is compiled in
- * and the command itself is fine, it simply has nothing recorded yet. */
+ * and the command itself is fine, it simply has nothing recorded yet. This
+ * was a genuinely new live finding, present in neither committed fixture:
+ * VICE's flat profiler defaults OFF, and no production handler in this
+ * tree issues `prof on` before dialing `prof flat`, so `vice_profile_flat`
+ * as shipped cannot yet produce real profile rows against a freshly
+ * launched instance -- a real, separately-tracked gap this live run
+ * surfaced rather than silently absorbed. */
 export const PROFILING_NOT_STARTED_TEXT = 'No profiling data available. Start profiling with "prof on".';
 
 /** The narrow no-break space (U+202F) VICE uses as its thousands separator

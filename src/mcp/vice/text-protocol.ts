@@ -301,9 +301,12 @@ export const HAZARD_SUBJECT_PRG_RELPATHS = Object.freeze({
    * `exportAsmTree()` itself emitted (`scope_087a.a`) rather than in the
    * hand-written `modified` fixture family, reassembled through the same
    * single oracle against a pre-registered byte manifest committed at
-   * `fixtures/hazard-subject/exported-edit.manifest.json`. See
-   * `docs/phase50-exported-edit-findings.md` and
-   * `docs/phase50-exported-modifiability-transcript.md`. */
+   * `fixtures/hazard-subject/exported-edit.manifest.json`. Both the
+   * rebuild and the live-behaviour gate came back acknowledged: the
+   * reassembly reproduced the manifest byte-for-byte and both behaviour
+   * changes were independently confirmed to take effect in a running
+   * genuine stock VICE session via checkpoint-driven RAM captures, not
+   * just in the rebuilt bytes on disk. */
   "exported-edit": Object.freeze([
     "src",
     "mcp",

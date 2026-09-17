@@ -92,9 +92,13 @@ export interface IngestRunIdentity {
 }
 
 /** `runIdentityFrom()`'s answer: the bare `(imageSha256, argvDigest, seed)`
- * triple the `no-change` run-identity decision selected (plan 43-01,
- * `docs/phase43-instrumentation-perturbation-ab.md`) -- no `runClass`
- * discriminator field exists on this type. */
+ * triple the `no-change` run-identity decision selected -- measured by an
+ * A/B capture comparison that ran the identical anchor-counted AUTOSTART
+ * sequence with and without runtime evidence dialed over the text channel
+ * and found the two byte-for-byte equivalent at both tested anchor depths,
+ * so recording evidence does not perturb the capture and the run identity
+ * needs no extra discriminator -- no `runClass` discriminator field exists
+ * on this type. */
 export interface RunIdentity {
   readonly imageSha256: string;
   readonly argvDigest: string;
