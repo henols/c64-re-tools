@@ -214,7 +214,7 @@ test("every ok-answer from this module carries runState", async () => {
 // --------------------------------------------------------- handleSnapshotSave / handleSnapshotLoad
 //
 // A temp directory stands in for the repo root (following
-// refresh-manifest.test.ts's own temp-dir discipline) so no real workspace
+// repo-root.test.ts's own temp-dir discipline) so no real workspace
 // is ever touched: CLAUDE_PROJECT_DIR unconditionally wins repoRoot()'s
 // precedence ladder (branch 0), so pointing it at a fresh mkdtempSync()
 // directory per test makes snapshotPathFor()/snapshotMetaPathFor() resolve

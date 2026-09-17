@@ -2113,7 +2113,7 @@ function parseCaptureArgs(argv) {
 
 // Write via a tmp-sibling then rename -- never a direct in-place write --
 // matching this repo's established atomic-write convention
-// (refresh-manifest.ts's writeManifestAtomic()).
+// (see build.ts's staging-then-rename discipline).
 function writeAtomic(path, data) {
   const tmpPath = `${path}.tmp-${process.pid}-${Date.now()}`;
   writeFileSync(tmpPath, data);
