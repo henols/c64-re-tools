@@ -5,16 +5,16 @@ milestone_name: The Prerequisite Doctor
 current_phase: 58
 current_phase_name: One Declaration, Four Places That Can No Longer Disagree
 status: executing
-stopped_at: Phase 58 gap-closure planned (58-03), awaiting /gsd-execute-phase 58 --gaps-only
-last_updated: "2026-09-17T18:34:40.492Z"
+stopped_at: Completed 58-03-PLAN.md (gap closure) - ready for /gsd-verify-work 58
+last_updated: "2026-09-17T19:14:36.415Z"
 last_activity: 2026-09-17
-last_activity_desc: Phase 58 gap-closure plan 58-03 created and verified (plan-checker PASSED)
-state_head: 4416fd81d739764f882503824d7bba9d4a747242
+last_activity_desc: Phase 58 execution started
+state_head: 678534cb7375de37e7802841d7bf6b6d932c423c
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 3
-  completed_plans: 2
+  completed_plans: 3
   percent: 0
 carried_forward_phases:
 
@@ -335,15 +335,17 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 58 (One Declaration, Four Places That Can No Longer Disagree) — READY TO EXECUTE
-Plan: 2 of 3 — 58-03 gap-closure plan created, not yet executed
-Status: Phase 58 verified GAPS FOUND — 3/5 roadmap criteria verified. Both plans
-executed and all gates green (typecheck, 4113 tests across the four CI suites,
-0 failures); the gap is citation accuracy in
-docs/phase58-declaration-provenance.md (two wrong file:line pointers, reasoning
-sound). DECL-04 and DECL-05 verified complete; DECL-01 and DECL-02 reverted to
-incomplete. Next: /gsd-plan-phase 58 --gaps
-Last activity: 2026-09-17 — Phase 58 verification returned gaps_found
+Phase: 58 (One Declaration, Four Places That Can No Longer Disagree) — AWAITING VERIFICATION
+Plan: 3 of 3 — all plans executed, gap-closure plan 58-03 complete
+Status: Gap-closure plan 58-03 complete. A citation-ledger structural guard
+(src/mcp/vice/phase58-citation-ledger.test.ts) now runs inside
+npm run test:automated; both wrong file:line citations 58-VERIFICATION.md
+flagged are corrected by live re-derivation; unp64's exclusion is recorded as
+DECL-F3. DECL-01 marked Complete; DECL-02 remains Gaps Found pending the
+unpushed decl-02-node18-proof real-runner execution (human verification, not
+plannable). DECL-04 and DECL-05 unchanged (already Complete). Next:
+/gsd-verify-work 58.
+Last activity: 2026-09-17 — Phase 58 gap-closure plan 58-03 executed
 
 **Milestone shape, so no reader has to rebuild it from the ROADMAP:** Phase 58
 declares the prerequisites; Phase 59 builds the tool-location seam and its
@@ -712,6 +714,7 @@ than a matter of discipline.
 | Phase 50 P03 | 35 min | 3 tasks | 4 files |
 | Phase 50 P08 | 95min | 3 tasks | 16 files |
 | Phase 58 P02 | 25min | 2 tasks | 2 files |
+| Phase 58 P03 | 55min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -1568,6 +1571,7 @@ Recent decisions affecting current work:
 - [Phase 50]: Task 2 took the primary, stronger store route: exported the COMMITTED annotation store directly against hazard-subject-exported-edit.prg, never adding a third SUBJECTS entry to make-hazard-subject-annostore.mjs. — The edit's one-for-one byte-length preservation was measured to round-trip byte-identical before the gate test was written; this is the stronger claim ROADMAP criterion 4 asks for.
 - [Phase 50]: Reused hazard-subject-modified.allowlist.json completely unchanged for the exported-edit subject's live comparison. — Its broad code-range entry (2170..4095) covers this subject's differing bytes regardless of exact jsr placement; confirmed live with PASS (allowlisted) vs FAIL (--no-allowlist) against the identical pair, so no allowlist edit was needed or made.
 - [Phase 58]: Phase 58 plan 02: the prerequisite declaration's provenance reasoning lives in docs/phase58-declaration-provenance.md (JSON tag for tests, doc for humans), and README.md's VICE-version prose is corrected to state the measured fact that no shipped tool refuses on a VICE version. — Criterion 5's second half ("records which was chosen and why") is satisfied by a doc a human reads, not by prose stuffed inside the JSON declaration a test asserts on. The README correction was scoped to only the section Phase 62 does not generate, since a hand-edit to the generated table would be silently overwritten.
+- [Phase 58]: Phase 58 gap closure (58-03): built a citation-ledger structural guard for docs/phase58-declaration-provenance.md, corrected both wrong file:line citations 58-VERIFICATION.md flagged, and recorded unp64's exclusion as DECL-F3 rather than adding a ninth prerequisites.json record.
 
 ### Pending Todos
 
@@ -2801,8 +2805,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-17T14:38:31.503Z
-Stopped at: Completed 58-02-PLAN.md
+Last session: 2026-09-17T19:14:36.267Z
+Stopped at: Completed 58-03-PLAN.md (gap closure) - ready for /gsd-verify-work 58
 Resume file: None
 
 Earlier: Milestone v1.0.0 "The Rebuild Half" closed and archived on its delivered scope (9 phases, 73 plans, 33/33 in-scope requirements, `override_closeout`). Phases 51, 53, 54 and 57 carried forward with their ROADMAP sections live.
@@ -3330,4 +3334,5 @@ Resume file: .planning/phases/32-the-deletion-and-the-grep-gate/32-CONTEXT.md
 
 ## Operator Next Steps
 
-- Plan the first phase of v1.1.0 with /gsd-plan-phase 58
+- Run /gsd-verify-work 58 to re-verify Phase 58 against the 58-03 gap closure
+- Then /gsd-plan-phase 59
