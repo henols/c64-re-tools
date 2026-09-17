@@ -306,7 +306,7 @@
     {
       "number": "58",
       "name": "One Declaration, Four Places That Can No Longer Disagree",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "number": "59",
@@ -330,9 +330,9 @@
     }
   ],
   "next": {
-    "command": "/gsd:execute-phase 58",
-    "label": "Execute phase 58 (2 plans, 2 waves)",
-    "reason": "Phase 58 planned and verified - 2 plans ready to execute"
+    "command": "/gsd:progress --next",
+    "label": "Advance to the next step",
+    "reason": "Phase 58 of 5 · 0% · executing"
   },
-  "updated_at": "2026-09-17T10:06:21.109Z"
+  "updated_at": "2026-09-17T14:37:28.630Z"
 }

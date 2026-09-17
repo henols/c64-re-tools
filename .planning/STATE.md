@@ -5,16 +5,16 @@ milestone_name: The Prerequisite Doctor
 current_phase: 58
 current_phase_name: One Declaration, Four Places That Can No Longer Disagree
 status: executing
-stopped_at: Phase 58 planned - 2 plans in 2 waves, plan-checker passed
-last_updated: "2026-09-17T13:58:59.202Z"
+stopped_at: Completed 58-02-PLAN.md
+last_updated: "2026-09-17T14:38:31.631Z"
 last_activity: 2026-09-17
 last_activity_desc: Phase 58 execution started
-state_head: d0e9fb2e1d5ae8c64fd3a6c9d4ecc920cc45fe4e
+state_head: ba52be37e534cef9b49a27274305057ecd33faef
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 2
-  completed_plans: 0
+  completed_plans: 2
   percent: 0
 carried_forward_phases:
 
@@ -335,10 +335,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 58 (One Declaration, Four Places That Can No Longer Disagree) — EXECUTING
-Plan: 1 of 2
-Status: Executing Phase 58
-Last activity: 2026-09-17 — Phase 58 execution started
+Phase: 58 (One Declaration, Four Places That Can No Longer Disagree) — Plan 2 of 2 complete
+Plan: 2 of 2
+Status: Phase 58 complete, ready for verification
+Last activity: 2026-09-17 — Completed 58-02-PLAN.md
 
 **Milestone shape, so no reader has to rebuild it from the ROADMAP:** Phase 58
 declares the prerequisites; Phase 59 builds the tool-location seam and its
@@ -706,6 +706,7 @@ than a matter of discipline.
 | Phase 50 P02 | ~40min | 3 tasks | 10 files |
 | Phase 50 P03 | 35 min | 3 tasks | 4 files |
 | Phase 50 P08 | 95min | 3 tasks | 16 files |
+| Phase 58 P02 | 25min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -1561,6 +1562,7 @@ Recent decisions affecting current work:
 - [Phase 50]: Placed the added jsr hazard_smc2_entry at the START of the freed sprite region in scope_087a.a (right after sta $d011) rather than immediately before rts, so the second, dependent manifest edit has a naturally unique find-context. — Produces a real, measured runtime difference from the hand-written modified subject: A reads 0 at the checkpoint (matching original) rather than 5, since the routine's later lda #0/sta $0400 overwrites A before the checkpoint.
 - [Phase 50]: Task 2 took the primary, stronger store route: exported the COMMITTED annotation store directly against hazard-subject-exported-edit.prg, never adding a third SUBJECTS entry to make-hazard-subject-annostore.mjs. — The edit's one-for-one byte-length preservation was measured to round-trip byte-identical before the gate test was written; this is the stronger claim ROADMAP criterion 4 asks for.
 - [Phase 50]: Reused hazard-subject-modified.allowlist.json completely unchanged for the exported-edit subject's live comparison. — Its broad code-range entry (2170..4095) covers this subject's differing bytes regardless of exact jsr placement; confirmed live with PASS (allowlisted) vs FAIL (--no-allowlist) against the identical pair, so no allowlist edit was needed or made.
+- [Phase 58]: Phase 58 plan 02: the prerequisite declaration's provenance reasoning lives in docs/phase58-declaration-provenance.md (JSON tag for tests, doc for humans), and README.md's VICE-version prose is corrected to state the measured fact that no shipped tool refuses on a VICE version. — Criterion 5's second half ("records which was chosen and why") is satisfied by a doc a human reads, not by prose stuffed inside the JSON declaration a test asserts on. The README correction was scoped to only the section Phase 62 does not generate, since a hand-edit to the generated table would be silently overwritten.
 
 ### Pending Todos
 
@@ -2794,9 +2796,9 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-16T16:58:26.829Z
-Stopped at: Phase 58 context gathered
-Resume file: .planning/phases/58-one-declaration-four-places-that-can-no-longer-disagree/58-CONTEXT.md
+Last session: 2026-09-17T14:38:31.503Z
+Stopped at: Completed 58-02-PLAN.md
+Resume file: None
 
 Earlier: Milestone v1.0.0 "The Rebuild Half" closed and archived on its delivered scope (9 phases, 73 plans, 33/33 in-scope requirements, `override_closeout`). Phases 51, 53, 54 and 57 carried forward with their ROADMAP sections live.
 
