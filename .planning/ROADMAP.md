@@ -1412,10 +1412,13 @@ Notes:
 
 ### Phase 53: Operator-Owned `docs/`
 
-**Goal**: `docs/` contains only what the operator put there. The 21
-`docs/phase*.md` evidence documents return to the phase artifact tree, the
-`src/**` and `tools/**` citations that kept them outside `.planning/` become the
-reasons they stood for, and a guard prevents the precedent recurring.
+**Goal**: `docs/` contains only what the operator put there. The 27
+`docs/phase*.md` evidence documents return to the phase artifact tree and the
+`src/**` citations that kept them outside `.planning/` become the reasons they
+stood for. No guard is built: criterion 6 was withdrawn 2026-09-17 and the
+recurrence risk is accepted (`tools/**` is out of scope — that directory no
+longer exists). Re-measured 2026-09-17: 27 documents, 83 citation occurrences
+across 34 files, `src/skills/**` already at zero.
 
 **Requirements**: `DOCS-01`, `DOCS-02`, `DOCS-03`, `DOCS-04`
 
@@ -1441,10 +1444,31 @@ a pattern hole ships a guard that is green on the citations it was built to catc
   5. A diff whose net effect is deleting explanatory comments FAILS this phase,
      on the same terms Phase 51 sets. The WHY headers are house style and must
      survive the rewrite.
-  6. A guard reds on a `docs/phase*` path appearing in `src/**` or `tools/**`, runs
-     in `npm run test:automated`, and is proven non-vacuous by a planted citation.
+  6. ~~A guard reds on a `docs/phase*` path appearing in `src/**` or `tools/**`, runs
+     in `npm run test:automated`, and is proven non-vacuous by a planted citation.~~
+     **WITHDRAWN 2026-09-17 — it asks for a test this project banned one day after
+     this phase was written.** Such a guard scans source text by construction. Quick
+     task `260914-poo` (2026-09-14, `276c15c9` / `e4759250`) locked D-1 "No test may
+     assert on text at all", D-2 "Only data-driven tests of production code are kept"
+     and D-6 "retired outright ... no successor", and deleted 60 files on those
+     grounds — including the four text-scanning CI checkers and `audit-gate.mjs`, so
+     moving the check into CI rather than a test does not escape it either. Its own
+     summary records `textmon-seam.test.ts` being "deleted rather than patched"
+     precisely because "it imports only node builtins and scans source". This phase's
+     notes are stamped MEASURED 2026-09-13; the policy landed 2026-09-14, and the two
+     were never reconciled. The owner settled it on 2026-09-17: honour the newer
+     decision, drop the guard. **The recurrence risk is accepted and named** — nothing
+     mechanical now stops a future plan writing evidence to `docs/` again. `DOCS-04`
+     closes as SUPERSEDED, not met.
 
-**Plans**: TBD
+**Plans**: 5 plans
+
+Plans:
+- [ ] 53-01-PLAN.md — Rewrite the 30 citations in the ten npm-published modules
+- [ ] 53-02-PLAN.md — Rewrite the 32 citations in the probe script, the fixture module and the fixture tree
+- [ ] 53-03-PLAN.md — Rewrite the 21 citations in the thirteen test files
+- [ ] 53-04-PLAN.md — `git mv` the 27 documents, repoint the two guard tests, record the orphan decision
+- [ ] 53-05-PLAN.md — Repair the 98 references the move stranded, and demonstrate criteria 1-5
 
 Notes:
 
