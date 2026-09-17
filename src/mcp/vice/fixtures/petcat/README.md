@@ -127,8 +127,9 @@ entirely as data), `provenance: "derived"`, zero xrefs, zero labels, zero
 comments. Both carry an EMPTY `execObservations` array, matching
 `fixtures/decomp-execution-manifest.json`'s own `"not-executed"` disposition
 for both -- rendered explicitly as `NOT EXECUTED` (never a silent omission)
-by `anno decomp-completeness`, recorded in
-`docs/phase45-derivation-execution-evidence.md`.
+by `anno decomp-completeness`, which asserts on the manifest's own declared
+disposition rather than inferring absence-of-evidence from an empty
+`execObservations` array by itself.
 
 The authored half is filled by plan 45-08's own closure pass, never this
 one (D-12). The derived half regenerates byte-identically from the same

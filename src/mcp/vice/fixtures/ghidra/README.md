@@ -495,7 +495,9 @@ this family (see the ".prg`-route two-byte offset" section above); either
 route was equally usable for this specific fixture, which has no internal
 `jsr`. `execObservations` were added by a real, live stock-VICE run
 (image_sha256 `e46e71...ded2384`, matching this file's own table above) --
-see `docs/phase45-ghidra-derivation-evidence.md` for the full transcript.
+a checkpoint armed at `probe`'s own shared `RTS` (`$0832`) halted the
+machine on every hit, and `memmapshow` captured the bank state at that
+halt.
 The authored half (labels, purpose comments, declines) is empty until plan
 45-09. Per D-03, the derived half regenerates byte-identically on a re-run
 (MEASURED this plan, `git status --porcelain` empty after) while the
@@ -510,10 +512,16 @@ fixture's own internal `jsr probe` target, per the finding already recorded
 in this file). Hand-typed `byte`/`code` split (stub+pad `$0801-$080f`,
 `start`+`probe` `$0810-$0832`). `anno_join_memmap` was run with this run's
 own real recovered `$01` const-write facts (`$0813=0x34`, `$081a=0x33`,
-`$0821=0x37`) and DECLINED both `$d000` and `$d020` -- see
-`docs/phase45-ghidra-derivation-evidence.md` for the exact decline reasons
-and the disclosed finding about why they read `"no recovered value
-reaches"` rather than `"disagreeing processor-port values"`. Neither
+`$0821=0x37`) and DECLINED both `$d000` and `$d020`, both with the reason
+`"no recovered processor-port value reaches"` rather than the
+`"disagreeing processor-port values"` shape the plan's own action text
+names as the illustrative example: `GHIDRA_REFTYPE_TO_ACCESS_KIND` maps
+only READ/WRITE/READ_WRITE/COMPUTED_JUMP/COMPUTED_CALL onto the store's
+xref-access vocabulary, so an ordinary direct `JSR` (imported as
+`UNCONDITIONAL_CALL`) is dropped and the reachability graph has no edge
+from either const-write into `probe`'s body at all -- a genuine limit of
+the importer's reachability graph for a direct-call fixture, not a
+disagreement between multiple reaching values. Neither
 decline is persisted as a store comment in this export -- persistence is
 plan 45-09's own authored-closure job, written FROM this derived evidence.
 `execObservations` come from a real live run that deliberately waited for
@@ -541,7 +549,10 @@ table, or as any `data`-shaped type at all: it is typed `code`, end to
 end.** This is not a contradiction of the earlier section; it is the SAME
 fixture behaving exactly as its own header comment says a phantom routine
 should. A real, live stock-VICE execution run (plan 45-07's own Task 2,
-full transcript in `docs/phase45-ghidra-derivation-evidence.md`) OBSERVED
+bounded to an explicit 4000-instruction single-step run from the entry
+point because the 511-level `jsr`/`rts` chain overflows the hardware
+stack and never reliably returns, so no checkpoint at the predicted
+unwind address ever fires) OBSERVED
 640 of the range's 2048 bytes executing for real (the chain's own `jsr`/
 `rts` opcode bytes) -- and Phase 45's own soundness rule, DECOMP-01, is
 one-directional and unconditional here: **a range observed executing IS

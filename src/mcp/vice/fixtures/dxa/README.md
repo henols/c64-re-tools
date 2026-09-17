@@ -194,8 +194,11 @@ labels -- zero xrefs for all three fixtures, MEASURED: none has a JSR/JMP
 or a seeded entry point Ghidra's own default auto-analysis recognises).
 `tracer.annostore.json` and `fixture.annostore.json` additionally carry a
 non-empty `execObservations` array -- real runtime-execution evidence from
-a genuine stock VICE run under Phase 33's reproducible-run protocol
-(`docs/phase45-derivation-execution-evidence.md`); `basic-stub.annostore.json`
+a genuine stock VICE run under Phase 33's reproducible-run protocol -- an
+explicit checkpoint at each fixture's own known post-entry address (or a
+bounded step count for the one fixture whose loader parks in an idle
+wait), captured against genuine, unpatched stock VICE, never the vendor
+fork; `basic-stub.annostore.json`
 carries none, matching the manifest's own `"not-executed"` disposition for
 that fixture.
 
@@ -207,8 +210,8 @@ byte-identically from these same tool versions and routes: it is
 REGENERATED, never hand-edited, on that half; the authored half, once
 reviewed, is frozen (D-03). Re-deriving one fixture of this family
 (`tracer.prg`) into a fresh scratch store and re-exporting reproduced the
-ranges/labels/comments/xrefs fields exactly, MEASURED this session
-(`docs/phase45-derivation-execution-evidence.md`).
+ranges/labels/comments/xrefs fields exactly, MEASURED this session against
+the same dxa and Ghidra tool versions this file's own table names above.
 
 ## The DXA-03 real-image exercise (35-04, Task 3)
 

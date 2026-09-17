@@ -20,15 +20,19 @@ provenance can never again be established by omission.
 **Re-recorded (3): `display-get`, `event-interleaved`, `checkpoint-list`.**
 2026-08-13 override of D-19: no stock VICE binary was reachable in the
 environment plan 02-02 executed in, so these three were originally generated
-from the normative protocol spec (`docs/phase0-binmon-findings.md` §5,
-`../../probe-binmon.mjs`'s own body layouts) rather than captured from a live
-`x64sc -binarymonitor` session. That override is now resolved: the
+from the normative protocol spec -- the wire layout confirmed against
+VICE's own monitor_binary.c encoder/decoder pair, plus
+`../../probe-binmon.mjs`'s own body layouts -- rather than captured from a
+live `x64sc -binarymonitor` session. That override is now resolved: the
 external-verification phase re-recorded all three against a real, running
 `x64sc` (the patched, non-upstream fork build at `/usr/local/bin/x64sc` --
 see `CLAUDE.md`'s framing of that binary -- shadowing genuine stock VICE
-earlier on `$PATH` on the host that ran the capture). See
-`docs/phase2-backend-probe-evidence.md` for the original override record and
-`13-CAPTURE-TRANSCRIPT.md` for the re-capture evidence: frame-by-frame
+earlier on `$PATH` on the host that ran the capture). The override happened
+because no stock VICE binary was reachable from the execution environment
+plan 02-02 ran in, so `probe-binmon.mjs --capture` could not be run there
+at all; explicit user direction on 2026-08-13 accepted spec-derived
+fixtures rather than blocking on hardware that did not exist in that
+environment. See `13-CAPTURE-TRANSCRIPT.md` for the re-capture evidence: frame-by-frame
 decoding, the `display-get` geometry match, the `event-interleaved` order
 verdict, and the `checkpoint-list` terminator verdict. Each now carries
 `"synthetic": false` and a `capturedFrom` naming the real binary's kind and
@@ -124,9 +128,12 @@ the "unsupported" fixture with a successful 52-byte history frame while its
 sidecar still read *"against a build without FEATURE_CPUMEMHISTORY"*.
 
 `--capture`'s `MAX_CAPTURE_FRAMES` cap (32 frames per case) exists so a
-runaway case -- in particular `checkpoint-list`, whose fork-build flood is
-recorded in `docs/phase1-probe-results.md` -- aborts and writes no `.bin`
-rather than consuming the whole capture session's time budget. An aborted
+runaway case -- in particular `checkpoint-list`, whose full-range,
+non-temporary, stop=1 checkpoint was observed live on a vendor-fork 3.10
+build to re-fire eighteen times with no interleaved STOPPED/RESUMED
+between hits and every later command on that connection then timing out --
+aborts and writes no `.bin` rather than consuming the whole capture
+session's time budget. An aborted
 case leaves its row above unchanged (still whatever it was before the
 aborted run -- synthetic or a stale real capture) rather than writing a
 partial fixture.

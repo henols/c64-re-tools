@@ -76,11 +76,11 @@ All four typed ranges are `dataType: "code"` (dxa, given the entry point
 `lda #$00` / `inc $0802` / `sta $d020` / `jmp $0801`), `provenance:
 "derived"`, zero xrefs (Ghidra's own auto-analysis recognises no JSR/JMP
 target here beyond the self-jump). `execObservations` is non-empty: this
-fixture's own `jmp $0801` NEVER HALTS, so its real execution run
-(`docs/phase45-derivation-execution-evidence.md`) bounded the run to an
-EXPLICIT 8-instruction step count (two full loop iterations) after setting
-the entry point directly and disabling interrupts -- never a free-run to
-natural termination, which does not exist for this fixture.
+fixture's own `jmp $0801` NEVER HALTS, so its real execution run bounded
+itself to an EXPLICIT 8-instruction step count (two full loop iterations)
+after setting the entry point directly and disabling interrupts --
+necessarily a step count and never a free-run, since no natural
+termination exists for a self-jump.
 
 The authored half is EMPTY (zero labels, zero comments) -- filled by plan
 45-08's own closure pass (D-12). The derived half regenerates
