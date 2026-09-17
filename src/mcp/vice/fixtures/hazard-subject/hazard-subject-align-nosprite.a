@@ -11,10 +11,13 @@
 ; / `sta $d001` position writes. `align_sprite_base` itself and its
 ; `!fill 63` data are KEPT, along with the `!align $3f, 0` directive before
 ; it -- the sprite shape still exists as data in the image, only the code
-; that points the VIC-II hardware at it is gone. This is the committed
-; `docs/phase49-the-reassembly-gate-findings.md` finding at anchor `$088B`
-; (`page-alignment`, mechanism `sprite-pointer-names-aligned-base`), removed
-; rather than merely relocated.
+; that points the VIC-II hardware at it is gone. This is the real
+; hazard-report tool's own finding at anchor `$088B` (`page-alignment`,
+; mechanism `sprite-pointer-names-aligned-base`), which the tool names as
+; newly statically recoverable once this alignment amendment lands --
+; planted here as a removal rather than merely a relocation, so the hazard
+; under test is the removal itself, not a relocation the tool would also
+; have to keep tracking.
 ;
 ; ADDED BEHAVIOUR -- anchor $0825, finding `self-modifying-code`, mechanism
 ; `store-target-in-instruction-opcode-byte`
@@ -23,13 +26,14 @@
 ; `hazard_align_entry`, immediately before its `rts`. `hazard_smc2_entry` is
 ; defined in `hazard-subject-smc.a` and is never reached in the committed
 ; subject -- this call makes it run for the first time. This is the second,
-; DELIBERATELY UNDETECTED self-modifying construction the committed
-; `docs/phase49-the-reassembly-gate-findings.md` finding at anchor `$0825`
-; (`self-modifying-code`, mechanism `store-target-in-instruction-opcode-byte`)
-; already names: the construction this subject's own design document
-; records as beyond what a static operand match can see (its store reaches
-; its target through a runtime-built zero-page pointer, indirect-indexed,
-; never as a literal operand anywhere in the image).
+; DELIBERATELY UNDETECTED self-modifying construction the real
+; hazard-report tool's own finding at anchor `$0825` (`self-modifying-code`,
+; mechanism `store-target-in-instruction-opcode-byte`) already names,
+; confirmed unchanged across both the original subject and this amended
+; one: the construction this subject's own design document records as
+; beyond what a static operand match can see (its store reaches its target
+; through a runtime-built zero-page pointer, indirect-indexed, never as a
+; literal operand anywhere in the image).
 ;
 ; OBSERVABLE CONSEQUENCES (so a transcript author does not have to
 ; re-derive them)

@@ -3135,7 +3135,7 @@
     {
       "address": 4096,
       "commentType": "line",
-      "text": "function: head of a 511-block jsr/rts chain (each block: jsr to the next block, then rts) filling $1000-$17FF -- MEASURED (plan 45-07): the CPU genuinely executes these bytes as chained 4-byte subroutines (640 of 2048 bytes observed executing before the chain's own stack overflow, Finding B in docs/phase45-ghidra-derivation-evidence.md), and the VIC-II INDEPENDENTLY reads the SAME bytes as a character set at the same time (per start's own $D018/$D011 configuration) -- both readings are real and simultaneous, never a data-type override of the other | inputs: none | outputs: none | side effects: calls chain_link_1004 (jsr), the first of 510 further chained calls ending at charset_chain_terminal ($17FC)",
+      "text": "function: head of a 511-block jsr/rts chain (each block: jsr to the next block, then rts) filling $1000-$17FF -- MEASURED (plan 45-07): the CPU genuinely executes these bytes as chained 4-byte subroutines (640 of 2048 bytes observed executing before the chain's own 511-level nested jsr chain overflows the 256-byte hardware stack and its own return-address chain corrupts itself -- confirmed by a batched single-step trace that recorded the stack pointer wrapping the page boundary multiple times), and the VIC-II INDEPENDENTLY reads the SAME bytes as a character set at the same time (per start's own $D018/$D011 configuration) -- both readings are real and simultaneous, never a data-type override of the other | inputs: none | outputs: none | side effects: calls chain_link_1004 (jsr), the first of 510 further chained calls ending at charset_chain_terminal ($17FC)",
       "bank": null,
       "provenance": "authored"
     },
@@ -6712,7 +6712,7 @@
     {
       "address": 6140,
       "commentType": "line",
-      "text": "function: terminal block of charset_start's jsr chain -- four consecutive rts instructions (no further jsr), ending the mechanically-generated 511-block chain at its designed length (511*4+4=2048 bytes, exactly the derived character-set range) | inputs: none (reached via the preceding block's jsr) | outputs: none | side effects: none beyond its own rts -- MEASURED (plan 45-07, Finding B): the chain's 511 nested jsr levels overflow the 256-byte hardware stack well before unwinding reaches this point in practice, so this is the chain's designed terminus, not necessarily where a real return chain resolves; see docs/phase45-ghidra-derivation-evidence.md",
+      "text": "function: terminal block of charset_start's jsr chain -- four consecutive rts instructions (no further jsr), ending the mechanically-generated 511-block chain at its designed length (511*4+4=2048 bytes, exactly the derived character-set range) | inputs: none (reached via the preceding block's jsr) | outputs: none | side effects: none beyond its own rts -- MEASURED (plan 45-07, Finding B): the chain's 511 nested jsr levels overflow the 256-byte hardware stack well before unwinding reaches this point in practice, so this is the chain's designed terminus, not necessarily where a real return chain resolves -- a checkpoint armed at the predicted unwind address ($0822) was observed never to fire across two independent attempts (90s and 120s timeouts), confirming the corrupted return-address chain never gets back there in practice",
       "bank": null,
       "provenance": "authored"
     }

@@ -369,7 +369,7 @@ const record = {
   committed_subject_prg_bytes: committedImage.length,
   committed_subject_prg_sha256: sha256(committedImage),
   optional_extra_comparison_to_hand_written_modified_subject: modifiedComparison,
-  note_on_optional_extra: "Byte-identity to hazard-subject-modified.prg is NOT this plan's acceptance criterion and is not aimed for -- see docs/phase50-exported-edit-findings.md.",
+  note_on_optional_extra: "Byte-identity to hazard-subject-modified.prg was never this plan's acceptance criterion and is not aimed for. What this comparison demonstrates instead is that the same two behaviour changes, made this time through exportAsmTree()'s own round trip rather than by hand, still pass the identical reassembly gate hazard-subject-modified.prg passed.",
 };
 writeFileSync(RECORD, JSON.stringify(record, null, 2) + "\n");
 
