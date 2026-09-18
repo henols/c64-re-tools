@@ -6,15 +6,15 @@ current_phase: 60
 current_phase_name: The Seam Wired Into the Code That Ships
 status: executing
 stopped_at: Phase 60 planned — 5 plans in 4 waves, checker passed first iteration
-last_updated: "2026-09-18T13:03:19.012Z"
+last_updated: "2026-09-18T13:47:33.601Z"
 last_activity: 2026-09-18
-last_activity_desc: Phase 60 planned — 5 plans in 4 waves
-state_head: d4c91139ba2191df165f6f7825f0587847378e3a
+last_activity_desc: Phase 60 execution started
+state_head: eb532af05d80d56cd646e5e2b98bad5208b7bef3
 progress:
   total_phases: 5
   completed_phases: 2
   total_plans: 13
-  completed_plans: 8
+  completed_plans: 9
   percent: 40
 carried_forward_phases:
 
@@ -44,13 +44,12 @@ sits entirely upstream of it — it is about the user's first hour, before a
 session drives anything — and produces no evidence bearing on the ONE thing, so
 restating it here would be a sixth repetition with nothing behind it.*
 
-**Current focus:** **Phase 59 — The Tool-Location Seam and Its Precedence
-Order**, executing — plan 59-01 (the seam module) complete, plan 59-02 next.
-**Phase 58 (One Declaration, Four Places That Can No
-Longer Disagree) closed 2026-09-17** at 5/5 roadmap success criteria, UAT 1/1,
-`threats_open: 0` and `nyquist_compliant: true` — its last open item, the
-`decl-02-node18-proof` job proven green on a real GitHub Actions runner, was
-discharged by run `35270271098` (Node v18.20.8). Phase 59 is the second phase of
+**Current focus:** Phase 60 — The Seam Wired Into the Code That Ships,
+executing — plan 60-01 (the seam wired into `backend-detect.mts`,
+`vice-broker.mts` and `vice-proxy.ts`, three host-bound artifacts regenerated)
+complete, plan 60-02 next. **Phase 59 (The Tool-Location Seam and Its
+Precedence Order) closed 2026-09-18** at 5/5 roadmap success criteria. Phase 60
+is the third phase of
 **Milestone v1.1.0 "The Prerequisite Doctor"**, opened 2026-09-16. Requirements defined and **roadmap
 created the same day — five phases, 58-62, with 24/24 requirements mapped, each
 to exactly one phase.** One hypothesis: *a person who has just installed this
@@ -340,17 +339,15 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 60 (The Seam Wired Into the Code That Ships) — READY TO EXECUTE
-Plan: Not started
-Status: Ready to execute
-Stopped at: Phase 60 planned — 5 plans across 4 waves, research + pattern map + validation
-strategy written, plan-checker passed with zero blockers and zero warnings on the first
-iteration. One repair was applied to the generated plans before the checker ran: all 35
-`<automated>` verify commands had been emitted with HTML entities (`&amp;&amp;` for `&&`,
-`&gt;` for `>`), which are shell syntax errors; all 35 were unescaped and re-confirmed to
-parse under `bash -n` (commit d4c91139).
-Next: execute Phase 60 — wire the seam into the code that ships.
-Last activity: 2026-09-18 — Phase 60 planned (5 plans, 4 waves)
+Phase: 60 (The Seam Wired Into the Code That Ships) — EXECUTING
+Plan: 1 of 5 executed, 2 of 5 next
+Status: Executing
+Stopped at: Completed 60-01-PLAN.md — resolvedBackend() now consults the tool-location
+seam for x64sc, the resolved value threaded through vice-broker.mts (including its
+crash-respawn path) and vice-proxy.ts, and the three affected host-bound artifacts
+regenerated and committed. Full plan-level verification green (251 tests, 0 fail).
+Next: execute plan 60-02.
+Last activity: 2026-09-18 — Plan 60-01 executed
 
 **Milestone shape, so no reader has to rebuild it from the ROADMAP:** Phase 58
 declares the prerequisites; Phase 59 builds the tool-location seam and its
@@ -727,6 +724,7 @@ than a matter of discipline.
 | Phase 59 P03 | 55 min | 2 tasks | 3 files |
 | Phase 59 P04 | 35 min | 2 tasks | 1 files |
 | Phase 59 P05 | 50 min | 2 tasks | 5 files |
+| Phase 60 P01 | 38min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -1591,6 +1589,7 @@ Recent decisions affecting current work:
 - [Phase 59]: assertNoReservedToolId flags any tool id beginning with an underscore (single or double leading), a deliberate superset of the D-11 unknown-key exemption's exact single-leading-underscore predicate -- because no declared tool id has any legitimate reason to begin with one at all.
 - [Phase 59]: toolsFileTemplate()'s emission order and omission rules follow the plan's locked shape exactly: three reserved prose keys unconditionally, then one bare-string key per resolved id the declaration both knows and marks fileOverridable, in declaration order, with no invented path for an id the caller did not resolve.
 - [Phase 59]: The placement document's citation-ledger anchor for 59-CONTEXT.md:55-57 was corrected from a paraphrase to the live text's exact wording after the newly-added citation-ledger test case caught the drift on its first run -- the mechanism this ledger exists to provide, exercised on this plan's own first draft.
+- [Phase 60]: Plan 60-01: backend-detect.mts loads the tool-location seam through node:module's createRequire() (existsSync-gated dual candidate: compiled resources/tool-location.mjs first, else unbuilt tool-location.mts) rather than a static ESM import, because this file ships two ways and a static specifier would crash vice-proxy.ts at startup. — Verified empirically: a static value import of a compiled-only sibling breaks Node's native ESM resolution when the importing module is loaded unbuilt (as vice-proxy.ts, this project's real production entry point, does). The lazy require-based loader preserves one seam implementation with no #ifdef-style split, and both shipped forms were confirmed working.
 
 ### Pending Todos
 
@@ -2845,7 +2844,7 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-18T11:19:52.054Z
+Last session: 2026-09-18T13:47:33.446Z
 Stopped at: Phase 59 complete, ready to plan Phase 60
 Resume file: None
 

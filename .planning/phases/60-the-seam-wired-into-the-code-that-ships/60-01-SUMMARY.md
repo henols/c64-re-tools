@@ -21,6 +21,7 @@ actuals:
   tokens: 14322
   tasks: 3
   commits: 3
+plan_head_before: 2980d0eb64fe5121ffd6c4ecd5ffc2696035739f
 
 # Tech tracking
 tech-stack:
@@ -207,3 +208,7 @@ None - no external service configuration required.
 ---
 *Phase: 60-the-seam-wired-into-the-code-that-ships*
 *Completed: 2026-09-18*
+
+## Self-Check: PASSED
+
+All 8 created/modified key files verified present on disk; all 4 commit hashes (`2abb7ff6`, `984e35ca`, `9dbc0644`, `eb532af0`) verified present in `git log --oneline --all`.
