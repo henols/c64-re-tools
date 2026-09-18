@@ -343,8 +343,9 @@ suppressed/acknowledged rows are recorded in their own sections.
 Phase: 59 (The Tool-Location Seam and Its Precedence Order) — EXECUTING
 Plan: 4 of 5
 Status: Ready to execute
-Stopped at: Completed 59-03-PLAN.md
-prerequisites.json records carry a location/kind block. Next: continue with plan 59-03.
+Stopped at: Completed 59-03-PLAN.md — validateToolsFile() judges tools.json alone with no
+resolution, and resolveTool()'s file layer implements the amended LOC-06 triad plus the
+file-layer-only executable-bit check. Next: continue with plan 59-04.
 Last activity: 2026-09-18 — Phase 59 execution started
 
 **Milestone shape, so no reader has to rebuild it from the ROADMAP:** Phase 58
@@ -2835,7 +2836,7 @@ and are v1.0.0's inheritance.
 ## Session Continuity
 
 Last session: 2026-09-18T10:43:13.318Z
-Stopped at: Completed 59-01-PLAN.md
+Stopped at: Completed 59-03-PLAN.md
 Resume file: None
 
 Earlier: Milestone v1.0.0 "The Rebuild Half" closed and archived on its delivered scope (9 phases, 73 plans, 33/33 in-scope requirements, `override_closeout`). Phases 51, 53, 54 and 57 carried forward with their ROADMAP sections live.
