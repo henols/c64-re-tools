@@ -4,16 +4,16 @@ milestone: v1.1.0
 milestone_name: The Prerequisite Doctor
 current_phase: 60
 current_phase_name: The Seam Wired Into the Code That Ships
-status: planning
-stopped_at: Phase 59 complete, ready to plan Phase 60
-last_updated: "2026-09-18T11:52:42.280Z"
+status: executing
+stopped_at: Phase 60 planned — 5 plans in 4 waves, checker passed first iteration
+last_updated: "2026-09-18T13:03:19.012Z"
 last_activity: 2026-09-18
-last_activity_desc: Phase 59 complete, transitioned to Phase 60
-state_head: 884e68c87fbbd19d2b8d07f42280f98bfa14ee0f
+last_activity_desc: Phase 60 planned — 5 plans in 4 waves
+state_head: d4c91139ba2191df165f6f7825f0587847378e3a
 progress:
   total_phases: 5
   completed_phases: 2
-  total_plans: 8
+  total_plans: 13
   completed_plans: 8
   percent: 40
 carried_forward_phases:
@@ -340,15 +340,17 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 60 — The Seam Wired Into the Code That Ships
+Phase: 60 (The Seam Wired Into the Code That Ships) — READY TO EXECUTE
 Plan: Not started
-Status: Ready to plan
-Stopped at: Phase 59 complete — all 5 plans executed, verified 12/12 at the fixed tip,
-and two confirmed code-review findings closed on top (an Object.prototype-shaped tool id
-bypassing the unknown-id guard, and a malformed tools.json falling through to $PATH
-instead of refusing by name).
-Next: plan Phase 60 — wire the seam into the code that ships.
-Last activity: 2026-09-18 — Phase 59 complete, transitioned to Phase 60
+Status: Ready to execute
+Stopped at: Phase 60 planned — 5 plans across 4 waves, research + pattern map + validation
+strategy written, plan-checker passed with zero blockers and zero warnings on the first
+iteration. One repair was applied to the generated plans before the checker ran: all 35
+`<automated>` verify commands had been emitted with HTML entities (`&amp;&amp;` for `&&`,
+`&gt;` for `>`), which are shell syntax errors; all 35 were unescaped and re-confirmed to
+parse under `bash -n` (commit d4c91139).
+Next: execute Phase 60 — wire the seam into the code that ships.
+Last activity: 2026-09-18 — Phase 60 planned (5 plans, 4 waves)
 
 **Milestone shape, so no reader has to rebuild it from the ROADMAP:** Phase 58
 declares the prerequisites; Phase 59 builds the tool-location seam and its
