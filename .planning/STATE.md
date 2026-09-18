@@ -12,10 +12,10 @@ last_activity_desc: Phase 59 complete, transitioned to Phase 60
 state_head: 884e68c87fbbd19d2b8d07f42280f98bfa14ee0f
 progress:
   total_phases: 5
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 8
   completed_plans: 8
-  percent: 20
+  percent: 40
 carried_forward_phases:
 
   - 51
@@ -343,11 +343,11 @@ suppressed/acknowledged rows are recorded in their own sections.
 Phase: 60 — The Seam Wired Into the Code That Ships
 Plan: Not started
 Status: Ready to plan
-Stopped at: Completed 59-05-PLAN.md (phase 59 complete)
-(assertLocationBlockShape, assertKindAndMarker, assertNoReservedToolId) added to
-prerequisites.test.ts, plus a packaging case proving the compiled tool-location seam
-artifact and the declaration sit in the packed tarball's file list, one directory apart.
-Next: continue with plan 59-05.
+Stopped at: Phase 59 complete — all 5 plans executed, verified 12/12 at the fixed tip,
+and two confirmed code-review findings closed on top (an Object.prototype-shaped tool id
+bypassing the unknown-id guard, and a malformed tools.json falling through to $PATH
+instead of refusing by name).
+Next: plan Phase 60 — wire the seam into the code that ships.
 Last activity: 2026-09-18 — Phase 59 complete, transitioned to Phase 60
 
 **Milestone shape, so no reader has to rebuild it from the ROADMAP:** Phase 58
