@@ -269,7 +269,7 @@ function readEchoedArgv(dir: string): string[] {
  * reachable by a bare-name $PATH walk, which cares about the FILENAME, not
  * the extension; the shebang line still selects the interpreter regardless
  * of what the file is named. */
-function writeFakeAcme(dir: string, mode: "nonzero" | "zerobyte" | "utf8" | "echoargv", fileName = "fake-acme.mjs"): string {
+function writeFakeAcme(dir: string, mode: "nonzero" | "zerobyte" | "utf8" | "echoargv" | "echoenv", fileName = "fake-acme.mjs"): string {
   const scriptPath = join(dir, fileName);
   const utf8Text = "héllo wörld 日本語\n";
   const echoPath = echoedArgvPath(dir);
@@ -301,6 +301,15 @@ function writeFakeAcme(dir: string, mode: "nonzero" | "zerobyte" | "utf8" | "ech
       // argv, only the digested outputs.
       'if (mode === "echoargv") {',
       "  writeFileSync(echoPath, JSON.stringify(argv));",
+      "  if (outPath) writeFileSync(outPath, Buffer.alloc(0));",
+      "  process.exit(0);",
+      "}",
+      // Plan 60-03, Task 2 Test 4: echoes the child's OWN `ACME` environment
+      // variable (never argv) -- proves what reached the spawned process's
+      // env, the one place findAcmeLib()'s resolved library path is actually
+      // consumed (runHostTool()'s spawnEnv injection).
+      'if (mode === "echoenv") {',
+      "  writeFileSync(echoPath, JSON.stringify({ ACME: process.env.ACME ?? null }));",
       "  if (outPath) writeFileSync(outPath, Buffer.alloc(0));",
       "  process.exit(0);",
       "}",
@@ -1432,6 +1441,264 @@ async function withFakeGhidraHome<T>(fn: (ghidraHome: string) => Promise<T> | T,
     }
   });
 }
+
+/** Plan 60-03, Task 2: builds a fake Ghidra installation directory's on-disk
+ * shape (support/analyzeHeadless launcher, one declared language matching
+ * FAKE_GHIDRA_HOME_LANGUAGE_ID) at `dir`, WITHOUT touching
+ * process.env.GHIDRA_HOME -- unlike withFakeGhidraHome() above, which sets
+ * the environment variable as a side effect of building the SAME shape.
+ * Callers of this helper decide for themselves whether `dir` is reached via
+ * the environment, a tools.json entry, or both, so env-vs-file precedence is
+ * testable without withFakeGhidraHome()'s own env-setting baked in.
+ * `opts.sentinelName`, when given, makes the launcher touch a file of that
+ * name INSIDE `dir` when actually invoked -- the SAME distinguishing-side-
+ * effect idiom writeFakeAcme()'s "echoargv" mode uses, so a test can prove
+ * WHICH of two candidate installations was the one actually spawned. */
+function writeFakeGhidraInstallDir(dir: string, opts: { sentinelName?: string } = {}): void {
+  const supportDir = join(dir, "support");
+  mkdirSync(supportDir, { recursive: true });
+  const languagesDir = join(dir, "Ghidra", "Processors", "fake6502", "data", "languages");
+  mkdirSync(languagesDir, { recursive: true });
+  writeFileSync(
+    join(languagesDir, "fake6502.ldefs"),
+    `<?xml version="1.0" encoding="UTF-8"?>\n<language_definitions>\n  <language processor="fake" endian="little" size="16" variant="default" version="1.0" slafile="fake6502.sla" processorspec="fake6502.pspec" id="${FAKE_GHIDRA_HOME_LANGUAGE_ID}">\n    <description>fake</description>\n    <compiler name="default" spec="fake6502.cspec" id="default"/>\n  </language>\n</language_definitions>\n`,
+    "utf8",
+  );
+  writeFileSync(join(languagesDir, "fake6502.sla"), "", "utf8");
+  const sentinelLine = opts.sentinelName ? `touch "${join(dir, opts.sentinelName)}"\n` : "";
+  writeFileSync(join(supportDir, "analyzeHeadless"), `#!/bin/sh\n${sentinelLine}exit 0\n`, "utf8");
+  chmodSync(join(supportDir, "analyzeHeadless"), 0o755);
+}
+
+// ---------------------------------------------------------------------------
+// Plan 60-03, Task 2 (LOC-01, DECL-03, PD-07): ghidra/acme-lib resolved
+// through the tool-location seam alongside ACME's four fixed-prefix probe
+// list (widened, not replaced), and dxa.disassemble's refusal carries the
+// declaration's own remedy -- with dxa itself still un-overridable.
+// ---------------------------------------------------------------------------
+
+test("Plan 60-03 Task 2 Test 1: a tools.json entry for ghidra resolves ghidra.analyze's launcher, with GHIDRA_HOME unset", async () => {
+  await withTempDir(async (dir) => {
+    writeFileSync(join(dir, "x.bin"), "tiny\n", "utf8");
+    const ghidraDir = join(dir, "ghidra-install");
+    writeFakeGhidraInstallDir(ghidraDir);
+    writeToolsJson(dir, { ghidra: ghidraDir });
+    const previous = process.env.GHIDRA_HOME;
+    delete process.env.GHIDRA_HOME;
+    try {
+      const response = await runHostTool(
+        { tool: "ghidra.analyze", args: { runId: "t2-r1", importPath: "x.bin", processor: FAKE_GHIDRA_HOME_LANGUAGE_ID, importRoute: "flat64k" } },
+        { repoRoot: dir },
+      );
+      assert.equal(response.ok, true, response.ok ? "" : JSON.stringify(response));
+    } finally {
+      if (previous === undefined) delete process.env.GHIDRA_HOME;
+      else process.env.GHIDRA_HOME = previous;
+    }
+  });
+});
+
+test("Plan 60-03 Task 2 Test 2: the GHIDRA_HOME environment variable wins over a present tools.json entry", async () => {
+  await withTempDir(async (dir) => {
+    writeFileSync(join(dir, "x.bin"), "tiny\n", "utf8");
+    const envDir = join(dir, "env-ghidra");
+    const fileDir = join(dir, "file-ghidra");
+    writeFakeGhidraInstallDir(envDir, { sentinelName: "env-ran" });
+    writeFakeGhidraInstallDir(fileDir, { sentinelName: "file-ran" });
+    writeToolsJson(dir, { ghidra: fileDir });
+    const previous = process.env.GHIDRA_HOME;
+    process.env.GHIDRA_HOME = envDir;
+    try {
+      const response = await runHostTool(
+        { tool: "ghidra.analyze", args: { runId: "t2-r2", importPath: "x.bin", processor: FAKE_GHIDRA_HOME_LANGUAGE_ID, importRoute: "flat64k" } },
+        { repoRoot: dir },
+      );
+      assert.equal(response.ok, true, response.ok ? "" : JSON.stringify(response));
+      assert.ok(existsSync(join(envDir, "env-ran")), "the GHIDRA_HOME-named installation must have been the one invoked");
+      assert.ok(!existsSync(join(fileDir, "file-ran")), "the tools.json-named installation must NOT have been invoked when GHIDRA_HOME is set");
+    } finally {
+      if (previous === undefined) delete process.env.GHIDRA_HOME;
+      else process.env.GHIDRA_HOME = previous;
+    }
+  });
+});
+
+test("Plan 60-03 Task 2 Test 3a: with neither GHIDRA_HOME nor tools.json set, ghidra.analyze refuses by name and a scratch declaration's distinctive remedy appears in the message", async () => {
+  await withTempDir(async (dir) => {
+    writeFileSync(join(dir, "x.bin"), "tiny\n", "utf8");
+    const declDir = join(dir, "decl");
+    mkdirSync(declDir, { recursive: true });
+    const distinctiveSentence = "run scratch-declaration-only-remedy-ghi1 to install Ghidra, never the real one.";
+    writeScratchDeclaration(declDir, { ghidra: distinctiveSentence });
+    const previous = process.env.GHIDRA_HOME;
+    delete process.env.GHIDRA_HOME;
+    try {
+      const response = await runHostTool(
+        { tool: "ghidra.analyze", args: { runId: "t2-r3a", importPath: "x.bin", processor: FAKE_GHIDRA_HOME_LANGUAGE_ID, importRoute: "flat64k" } },
+        { repoRoot: dir, here: declDir },
+      );
+      assert.equal(response.ok, false);
+      if (response.ok) return;
+      assert.ok(response.message.includes(distinctiveSentence), `expected the scratch ghidra remedy in: ${response.message}`);
+    } finally {
+      if (previous === undefined) delete process.env.GHIDRA_HOME;
+      else process.env.GHIDRA_HOME = previous;
+    }
+  });
+});
+
+test("Plan 60-03 Task 2 Test 3b: ghidra.installExtension's own runHostTool() pre-check refuses by name and carries the scratch declaration's distinctive remedy", async () => {
+  const realRepoRoot = resolvePath(HERE, "..", "..", "..");
+  const declDir = mkdtempSync(join(tmpdir(), "host-tool-ghidra-decl-"));
+  try {
+    const distinctiveSentence = "run scratch-declaration-only-remedy-ghi2 to install Ghidra, never the real one.";
+    writeScratchDeclaration(declDir, { ghidra: distinctiveSentence });
+    const previous = process.env.GHIDRA_HOME;
+    delete process.env.GHIDRA_HOME;
+    try {
+      const response = await runHostTool(
+        { tool: "ghidra.installExtension", args: { sourceDir: "src/mcp/vice/vendor/ghidra-ext", moduleName: "t2-mod-3b" } },
+        { repoRoot: realRepoRoot, here: declDir },
+      );
+      assert.equal(response.ok, false);
+      if (response.ok) return;
+      assert.ok(response.message.includes(distinctiveSentence), `expected the scratch ghidra remedy in: ${response.message}`);
+    } finally {
+      if (previous === undefined) delete process.env.GHIDRA_HOME;
+      else process.env.GHIDRA_HOME = previous;
+    }
+  } finally {
+    rmSync(declDir, { recursive: true, force: true });
+  }
+});
+
+test("Plan 60-03 Task 2 Test 3c: ghidra.installExtension's own buildHostToolArgv() re-check refuses by name and carries the scratch declaration's distinctive remedy", async () => {
+  await withTempDir(async (dir) => {
+    const declDir = join(dir, "decl");
+    mkdirSync(declDir, { recursive: true });
+    const distinctiveSentence = "run scratch-declaration-only-remedy-ghi3 to install Ghidra, never the real one.";
+    writeScratchDeclaration(declDir, { ghidra: distinctiveSentence });
+    const previous = process.env.GHIDRA_HOME;
+    delete process.env.GHIDRA_HOME;
+    try {
+      const built = buildHostToolArgv(
+        { tool: "ghidra.installExtension", args: { sourceDir: "src/mcp/vice/vendor/ghidra-ext", moduleName: "t2-mod-3c" } },
+        { sourceDirPath: join(dir, "vendored-ghidra-ext"), moduleName: "t2-mod-3c" },
+        undefined,
+        { toolsDir: join(dir, ".c64-re-tools"), projectRoot: dir, here: declDir },
+      );
+      assert.equal(built.ok, false);
+      if (built.ok) return;
+      assert.ok(built.message.includes(distinctiveSentence), `expected the scratch ghidra remedy in: ${built.message}`);
+    } finally {
+      if (previous === undefined) delete process.env.GHIDRA_HOME;
+      else process.env.GHIDRA_HOME = previous;
+    }
+  });
+});
+
+test("Plan 60-03 Task 2 Test 4a: a tools.json entry for acme-lib reaches the child's ACME environment variable", async () => {
+  await withTempDir(async (dir) => {
+    writeFileSync(join(dir, "a.a"), "; test source\n", "utf8");
+    const acmeStub = writeFakeAcme(dir, "echoenv");
+    const libDir = join(dir, "acme-lib");
+    mkdirSync(join(libDir, "cbm", "c64"), { recursive: true });
+    writeFileSync(join(libDir, "cbm", "c64", "vic.a"), "; stub\n", "utf8");
+    writeToolsJson(dir, { acme: acmeStub, "acme-lib": libDir });
+    const previousAcmeBin = process.env.ACME_BIN;
+    const previousAcme = process.env.ACME;
+    delete process.env.ACME_BIN;
+    delete process.env.ACME;
+    try {
+      const response = await runHostTool({ tool: "acme.build", args: { source: "a.a", noReport: true } }, { repoRoot: dir });
+      assert.equal(response.ok, true, response.ok ? "" : JSON.stringify(response));
+      const echoed = JSON.parse(readFileSync(echoedArgvPath(dir), "utf8")) as { ACME: string | null };
+      assert.equal(echoed.ACME, libDir, `expected the tools.json-resolved acme-lib path in the child's ACME env var, got ${JSON.stringify(echoed)}`);
+    } finally {
+      if (previousAcmeBin === undefined) delete process.env.ACME_BIN;
+      else process.env.ACME_BIN = previousAcmeBin;
+      if (previousAcme === undefined) delete process.env.ACME;
+      else process.env.ACME = previousAcme;
+    }
+  });
+});
+
+test("Plan 60-03 Task 2 Test 4b: with no tools.json entry and no ACME env var, a directory planted at one of the four documented fixed prefixes is still found and still reaches the child environment", async () => {
+  await withTempDir(async (dir) => {
+    writeFileSync(join(dir, "a.a"), "; test source\n", "utf8");
+    const acmeStub = writeFakeAcme(dir, "echoenv");
+    writeToolsJson(dir, { acme: acmeStub }); // acme only -- no acme-lib entry
+    // A scratch HOME so the fourth documented prefix (`<HOME>/.acme`) is
+    // reachable without touching the real host's HOME; the assertion below
+    // tolerates any of the four documented candidates matching, since a
+    // real system install at one of the other three (e.g. a CI host that
+    // apt-installed ACME under /usr/share/acme) is an equally correct answer.
+    const fakeHome = join(dir, "fake-home");
+    mkdirSync(join(fakeHome, ".acme", "cbm", "c64"), { recursive: true });
+    writeFileSync(join(fakeHome, ".acme", "cbm", "c64", "vic.a"), "; stub\n", "utf8");
+    const previousAcmeBin = process.env.ACME_BIN;
+    const previousAcme = process.env.ACME;
+    const previousHome = process.env.HOME;
+    delete process.env.ACME_BIN;
+    delete process.env.ACME;
+    process.env.HOME = fakeHome;
+    try {
+      const response = await runHostTool({ tool: "acme.build", args: { source: "a.a", noReport: true } }, { repoRoot: dir });
+      assert.equal(response.ok, true, response.ok ? "" : JSON.stringify(response));
+      const echoed = JSON.parse(readFileSync(echoedArgvPath(dir), "utf8")) as { ACME: string | null };
+      const fourDocumentedPrefixes = [join(fakeHome, ".acme"), "/usr/local/share/acme", "/usr/share/acme", "/usr/lib/acme"];
+      assert.ok(
+        echoed.ACME !== null && fourDocumentedPrefixes.includes(echoed.ACME),
+        `expected one of the four documented fixed prefixes in the child's ACME env var, got ${JSON.stringify(echoed)}`,
+      );
+    } finally {
+      if (previousAcmeBin === undefined) delete process.env.ACME_BIN;
+      else process.env.ACME_BIN = previousAcmeBin;
+      if (previousAcme === undefined) delete process.env.ACME;
+      else process.env.ACME = previousAcme;
+      if (previousHome === undefined) delete process.env.HOME;
+      else process.env.HOME = previousHome;
+    }
+  });
+});
+
+test("Plan 60-03 Task 2 Test 5: dxa.disassemble resolves only through its vendored path -- a tools.json entry naming dxa changes nothing, and its refusal carries the declared remedy", async () => {
+  await withTempDir(async (dir) => {
+    // A tools.json entry naming dxa -- Phase 59 D-16/LOC-05: never consulted.
+    const bogusDxaPath = join(dir, "not-the-real-dxa");
+    writeFileSync(bogusDxaPath, "#!/bin/sh\nexit 0\n", "utf8");
+    chmodSync(bogusDxaPath, 0o755);
+    writeToolsJson(dir, { dxa: bogusDxaPath });
+    const declDir = join(dir, "decl");
+    mkdirSync(declDir, { recursive: true });
+    const distinctiveSentence = "run scratch-declaration-only-remedy-dxa to rebuild dxa, never the real one.";
+    writeScratchDeclaration(declDir, { dxa: distinctiveSentence });
+    writeFileSync(join(dir, "image.prg"), Buffer.from([0x01, 0x08, 0xa9, 0x00, 0x60]));
+    const response = await runHostTool({ tool: "dxa.disassemble", args: { image: "image.prg", imageKind: "prg" } }, { repoRoot: dir, here: declDir });
+    assert.equal(response.ok, false);
+    if (response.ok) return;
+    assert.ok(response.message.includes(distinctiveSentence), `expected the scratch dxa remedy in: ${response.message}`);
+    assert.doesNotMatch(response.message, /not-the-real-dxa/, "the tools.json-named dxa path must never be consulted");
+  });
+});
+
+test("Plan 60-03 Task 2 Test 6: ghidra's resolution returns the installation directory itself, never the marker-joined launcher path -- the launcher path is still joined by the caller", async () => {
+  await withTempDir(async (dir) => {
+    const ghidraDir = join(dir, "ghidra-install");
+    writeFakeGhidraInstallDir(ghidraDir);
+    writeToolsJson(dir, { ghidra: ghidraDir });
+    const built = buildHostToolArgv(
+      { tool: "ghidra.analyze", args: { runId: "t2-r6", importPath: "x.bin", processor: FAKE_GHIDRA_HOME_LANGUAGE_ID, loaderBaseAddr: "0x0" } },
+      { importPath: "/repo/x.bin", projectLocation: "/repo/proj", projectName: "t2-r6" },
+      undefined,
+      { toolsDir: join(dir, ".c64-re-tools"), projectRoot: dir },
+    );
+    assert.equal(built.ok, true, built.ok ? "" : JSON.stringify(built));
+    if (!built.ok) return;
+    assert.equal(built.toolPath, join(ghidraDir, "support", "analyzeHeadless"));
+    assert.notEqual(ghidraDir, built.toolPath, "the seam's own resolution must be the bare directory, not the joined launcher path");
+  });
+});
 
 test('normaliseHostToolRequest({ tool: "ghidra.analyze", args: { runId: "r1", importPath: "x.bin", bogusKey: "x" } }) is refused BY NAME, never dropped', () => {
   const result = normaliseHostToolRequest({ tool: "ghidra.analyze", args: { runId: "r1", importPath: "x.bin", bogusKey: "x" } });
