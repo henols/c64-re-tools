@@ -138,8 +138,12 @@ import { resolvedBackend } from "./backend-detect.mjs";
 // `remedyTextsFor` is `DECL-03`'s remedy reader (plan 60-02) -- every refusal
 // this module returns for `acme`, `acme-lib`, `ghidra` or `dxa` composes its
 // closing sentence from this function's return value, never a re-authored
-// literal.
-import { resolveTool, remedyTextsFor } from "./tool-location.mjs";
+// literal. `resolveOnPath` is plan 60-04's addition (`LOC-04`, PD-08):
+// `findSiblingBinary()`'s own inline `$PATH` loop now calls this exported
+// walk instead of carrying a second copy of the same algorithm -- the
+// SECOND of Phase 59 `D-02`'s three coexisting `$PATH`-walk copies to
+// collapse (plan 60-01 collapsed the first, inside `backend-detect.mts`).
+import { resolveTool, remedyTextsFor, resolveOnPath } from "./tool-location.mjs";
 // This module's own directory, used ONLY to compute the vendored dxa
 // binary's fixed path. Never an environment-variable override: dxa is
 // vendored AND built by this project (unlike ACME_BIN/GHIDRA_HOME, which
@@ -961,8 +965,13 @@ export function buildHostToolArgv(request, resolved, log, locate) {
         const stem = join(outDirPath, basename(sourcePath).replace(/\.(a|asm|s)$/i, ""));
         const prg = `${stem}.prg`;
         // Overridable local variable named for what it holds -- never `binPath`/
-        // `viceBin`/`VICE_BIN`/`x64sc`, which spawn-seam.test.ts's
-        // EMULATOR_BIN_SHAPE would misclassify as an emulator spawn site.
+        // `viceBin`/`VICE_BIN`/`x64sc`. Kept deliberately, by CONVENTION, since
+        // the test that once scanned for those four tokens (its own file,
+        // its own EMULATOR_BIN_SHAPE classifier) was deleted in commit
+        // `276c15c9` and is not revived here -- no guard enforces this naming
+        // rule today. What IS mechanically enforced, over the four tool-location
+        // environment-variable names this seam reads, is the closed consumer set
+        // `tool-location-consumers.test.ts` (plan 60-05) asserts.
         // Resolved through the seam (LOC-01) rather than a direct read of the
         // declared ACME environment variable: env -> tools.json -> $PATH, in
         // that order, the one precedence this tree now states once. A malformed
@@ -1043,8 +1052,13 @@ export function buildHostToolArgv(request, resolved, log, locate) {
         }
         const ghidraHome = ghidraResolved.path;
         // Overridable local variable named for what it holds -- never `binPath`/
-        // `viceBin`/`VICE_BIN`/`x64sc`, which spawn-seam.test.ts's
-        // EMULATOR_BIN_SHAPE would misclassify as an emulator spawn site.
+        // `viceBin`/`VICE_BIN`/`x64sc`. Kept deliberately, by CONVENTION, since
+        // the test that once scanned for those four tokens (its own file,
+        // its own EMULATOR_BIN_SHAPE classifier) was deleted in commit
+        // `276c15c9` and is not revived here -- no guard enforces this naming
+        // rule today. What IS mechanically enforced, over the four tool-location
+        // environment-variable names this seam reads, is the closed consumer set
+        // `tool-location-consumers.test.ts` (plan 60-05) asserts.
         const ghidraPath = join(ghidraHome, "support", "analyzeHeadless");
         if (!existsSync(ghidraPath)) {
             return {
@@ -1221,20 +1235,23 @@ export function buildHostToolArgv(request, resolved, log, locate) {
         request.tool === "c1541.chain" ||
         request.tool === "c1541.read") {
         const { imagePath, outDirPath } = resolved;
-        // Resolved as a SIBLING of whichever x64sc backend-detect.mts already
-        // resolved -- never a bare-name spawn, which a host carrying both a
-        // stock and a fork build would silently answer with whichever build's
-        // directory happens to sort first on $PATH (MEASURED live on this
-        // project's own dev host, see the import comment above).
+        // A tools.json entry for "c1541" (plan 60-04, LOC-04) is honoured FIRST
+        // (PD-08) -- c1541 carries no environment variable of its own (Phase 59
+        // D-06), so this is its only override route. Absent one, resolved as a
+        // SIBLING of whichever x64sc backend-detect.mts already resolved --
+        // never a bare-name spawn, which a host carrying both a stock and a
+        // fork build would silently answer with whichever build's directory
+        // happens to sort first on $PATH (MEASURED live on this project's own
+        // dev host, see the import comment above).
         // `resolvedBackend()` with no `supervisorDir` never touches the on-disk
         // cache; it still memoises in-process, which is what keeps a
         // long-running broker's SECOND call here free -- see the import
         // comment's own memoisation posture.
-        const c1541Found = findSiblingBinary("c1541", resolvedBackend().binPath, log);
+        const c1541Found = findSiblingBinary("c1541", resolvedBackend().binPath, log, loc);
         if (c1541Found.path === null) {
             return {
                 ok: false,
-                message: `host_tool "${request.tool}" refuses: "c1541" does not exist (tried: ${c1541Found.tried.join(", ")})`,
+                message: withRemedy(`host_tool "${request.tool}" refuses: "c1541" does not exist (tried: ${c1541Found.tried.join(", ")})`, "c1541", loc.here),
             };
         }
         const c1541Path = c1541Found.path;
@@ -1296,14 +1313,16 @@ export function buildHostToolArgv(request, resolved, log, locate) {
     }
     if (request.tool === "petcat.decode") {
         const { imagePath, outDirPath } = resolved;
-        // Resolved as a SIBLING of whichever x64sc backend-detect.mts already
-        // resolved, never a bare-name spawn, with a logged $PATH-fallback
-        // warning -- the same mechanism c1541.* already use above.
-        const petcatFound = findSiblingBinary("petcat", resolvedBackend().binPath, log);
+        // Same precedence as c1541.* above (plan 60-04, LOC-04, PD-08): a
+        // tools.json entry for "petcat" wins first, then a SIBLING of whichever
+        // x64sc backend-detect.mts already resolved, never a bare-name spawn,
+        // with a logged $PATH-fallback warning -- the same mechanism c1541.*
+        // already use above.
+        const petcatFound = findSiblingBinary("petcat", resolvedBackend().binPath, log, loc);
         if (petcatFound.path === null) {
             return {
                 ok: false,
-                message: `host_tool "petcat.decode" refuses: "petcat" does not exist (tried: ${petcatFound.tried.join(", ")})`,
+                message: withRemedy(`host_tool "petcat.decode" refuses: "petcat" does not exist (tried: ${petcatFound.tried.join(", ")})`, "petcat", loc.here),
             };
         }
         const petcatPath = petcatFound.path;
@@ -1847,11 +1866,20 @@ function findAcmeLib(locate) {
 // only when it does not exist, and return every candidate tried so a
 // refusal can name them all. Unlike findDxaBinary() (a FIXED,
 // project-vendored path) and findAcmeLib() (a FIXED list of well-known
-// host install locations), this probe's first candidate is COMPUTED per
+// host install locations), this probe's SECOND candidate is COMPUTED per
 // call, from whichever x64sc backend-detect.mts already resolved -- see
 // the resolvedBackend() import comment above for why that call is cheap
 // here. No version probe: deliberately withdrawn by the project owner --
 // this stays a name-and-location probe only and must not gain one back.
+//
+// Plan 60-04 (LOC-04, PD-08) adds a FIRST candidate ahead of the sibling:
+// c1541 and petcat carry no environment-variable location of their own
+// (Phase 59 D-06), so `tools.json` is their only override route, and
+// ROADMAP criterion 4 requires it sit AHEAD of the sibling probe -- a
+// sibling that happens to exist must never silently outrank a path the
+// user explicitly wrote in the file. The resulting order: tools.json (via
+// the seam), then the sibling-of-x64sc candidate (unchanged), then $PATH
+// (now the seam's own exported walk, not a second hand-written copy).
 // ---------------------------------------------------------------------------
 /** Memoised per binary name for the process lifetime -- mirrors
  * backend-detect.mts's own stated posture of resolving once per process,
@@ -1865,12 +1893,45 @@ function findAcmeLib(locate) {
  * memoised, so re-deriving it per call would just re-walk $PATH for no new
  * information). */
 const siblingBinaryMemo = new Map();
-function findSiblingBinary(binaryName, resolvedX64scPath, log) {
+/** `locate` threads the caller's `HostToolLocator` into the seam call below
+ * (`buildHostToolArgv()`'s own `loc`, itself built from `locatorFrom()`) --
+ * absent when the caller omits it, exactly like `buildHostToolArgv()`'s own
+ * `locate` parameter, and falling back to the SAME `locatorFrom()` helper.
+ *
+ * The seam call is deliberately NOT trusted for its own internal `$PATH`
+ * layer (layer 3 inside `resolveTool()`, which fires for any
+ * executable-kind id -- both `c1541` and `petcat` are -- once neither the
+ * environment nor `tools.json` answered). Only a `layer === "file"` answer
+ * is accepted as this function's file-layer result: accepting a
+ * `"probe"`-layer answer here too would let the seam's OWN `$PATH` walk
+ * silently win over the sibling candidate below, before this function ever
+ * got a chance to try it -- inverting PD-08's precedence (tools.json, THEN
+ * sibling, THEN `$PATH`) and resolving to a `$PATH` match with NO shadowing
+ * warning, the one thing this function exists to prevent. A `refusal` (a
+ * named `tools.json` entry that failed its own checks) is always terminal
+ * regardless of layer, matching the seam's own file-layer contract
+ * (`tool-location.mts`, D-09) -- it never falls through to the sibling
+ * candidate. */
+function findSiblingBinary(binaryName, resolvedX64scPath, log, locate) {
     const memoised = siblingBinaryMemo.get(binaryName);
     if (memoised)
         return memoised;
     const tried = [];
-    // First candidate: the SAME directory the resolved x64sc itself lives in.
+    // Layer 1 (PD-08): the tools.json seam, ahead of the sibling candidate.
+    const loc = locatorFrom(locate);
+    const seamResolved = resolveTool(binaryName, { toolsDir: loc.toolsDir, projectRoot: loc.projectRoot, here: loc.here });
+    tried.push(...seamResolved.tried);
+    if (seamResolved.refusal) {
+        const result = { path: null, tried };
+        siblingBinaryMemo.set(binaryName, result);
+        return result;
+    }
+    if (seamResolved.path !== null && seamResolved.layer === "file") {
+        const result = { path: seamResolved.path, tried };
+        siblingBinaryMemo.set(binaryName, result);
+        return result;
+    }
+    // Layer 2: the SAME directory the resolved x64sc itself lives in.
     const siblingCandidate = join(dirname(resolvedX64scPath), binaryName);
     tried.push(siblingCandidate);
     if (existsSync(siblingCandidate)) {
@@ -1878,23 +1939,20 @@ function findSiblingBinary(binaryName, resolvedX64scPath, log) {
         siblingBinaryMemo.set(binaryName, result);
         return result;
     }
-    // Fallback: a $PATH walk (mirrors defaultResolveBinPath()'s own algorithm,
-    // backend-detect.mts), logging a warning naming the resolved x64sc path,
-    // the PATH match, and that this MAY be a DIFFERENT VICE build than the
-    // emulator -- never a silent PATH fallback.
-    const pathEnv = process.env.PATH ?? "";
-    for (const dir of pathEnv.split(":")) {
-        if (!dir)
-            continue;
-        const candidate = join(dir, binaryName);
-        tried.push(candidate);
-        if (existsSync(candidate)) {
-            log?.(`host_tool: "${binaryName}" was not found alongside the resolved x64sc (${resolvedX64scPath}); ` +
-                `falling back to a $PATH match at ${candidate} -- this may be a DIFFERENT VICE build than the emulator`);
-            const result = { path: candidate, tried };
-            siblingBinaryMemo.set(binaryName, result);
-            return result;
-        }
+    // Layer 3: the seam's own exported $PATH walk (resolveOnPath(), the
+    // SECOND of Phase 59 D-02's three coexisting copies to collapse -- plan
+    // 60-01 collapsed the first, inside backend-detect.mts). Mirrors
+    // defaultResolveBinPath()'s own algorithm exactly; the warning stays HERE
+    // rather than inside the seam, because only this function knows the
+    // resolved x64sc a $PATH match is being compared against.
+    const probe = resolveOnPath(binaryName, process.env);
+    tried.push(...probe.tried);
+    if (probe.path) {
+        log?.(`host_tool: "${binaryName}" was not found alongside the resolved x64sc (${resolvedX64scPath}); ` +
+            `falling back to a $PATH match at ${probe.path} -- this may be a DIFFERENT VICE build than the emulator`);
+        const result = { path: probe.path, tried };
+        siblingBinaryMemo.set(binaryName, result);
+        return result;
     }
     const result = { path: null, tried };
     siblingBinaryMemo.set(binaryName, result);
