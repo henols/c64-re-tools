@@ -93,17 +93,27 @@ function topLevelProductionModules(dir: string = HERE): string[] {
     .filter((name) => !/\.test\.[a-zA-Z0-9]+$/.test(name));
 }
 
-/** RED-PHASE STUB (TDD): always reports "no read", regardless of source.
- * Deliberately wrong -- Task 1's GREEN phase replaces this with the real
- * three-shape predicate the plan's own action text describes. A stub rather
- * than an omitted export, matching plan 60-02's own established RED-phase
- * idiom: an omitted export would make this whole file fail to load
- * (`ERR_MODULE_NOT_FOUND`/a TypeScript compile error), which classifies as
- * `fixture_or_load_failure` (INVALID_RED, #3770), not a genuine
- * assertion-level RED. This stub instead lets the real assertions below run
- * and fail on their own merits. */
-function envReadPredicateFor(_name: string): (strippedSrc: string) => boolean {
-  return (_strippedSrc: string) => false;
+/** Builds a predicate that matches a real property-access or bracket-index
+ * read of `name` (one of the four declared tool-location environment-
+ * variable names) against COMMENT-STRIPPED source, in the shapes:
+ *   - a dotted read on any binding whose identifier ends in `env`
+ *     (case-insensitive) -- covers `process.env.<NAME>` itself, since `env`
+ *     is such a binding, and covers an aliased or destructured binding like
+ *     `const hostEnv = process.env; ... hostEnv.<NAME>` (Test 5) -- the
+ *     shape the pre-rewiring code in this tree actually used;
+ *   - a bracket read with a single- or double-quoted string literal, on the
+ *     same class of env-like binding (Test 6).
+ * Anchored on a word boundary at both ends of `name`, so `ACME` cannot match
+ * inside `ACME_BIN` and `ACME_BIN` cannot match a source that only reads
+ * `ACME` (Test 8) -- `_` is a word character, so `\b` does not fire between
+ * `ACME` and the `_BIN` that follows it in a genuine `ACME_BIN` read. Never
+ * matches a bare occurrence of `name` with no env-like accessor in front of
+ * it -- the whole reason a comment or string-literal mention (Test 7) is
+ * harmless once `stripCommentLines()` has already removed the comment case. */
+function envReadPredicateFor(name: string): (strippedSrc: string) => boolean {
+  const dottedRe = new RegExp(`\\b(?:[A-Za-z_$][\\w$]*)?env\\.${name}\\b`, "i");
+  const bracketRe = new RegExp(`\\b(?:[A-Za-z_$][\\w$]*)?env\\s*\\[\\s*(["'])${name}\\1\\s*\\]`, "i");
+  return (strippedSrc: string) => dottedRe.test(strippedSrc) || bracketRe.test(strippedSrc);
 }
 
 /** The set of production modules whose stripped source reads `name` through
@@ -184,7 +194,7 @@ test("Plan 60-05 Test 7 (clean control): a name mentioned only in a line comment
     const planted = [
       `// this module never reads process.env.${name}`,
       `/* also never reads env.${name} here */`,
-      `export const EXAMPLE_TEXT = "process.env.${name} is refused by name";`,
+      `export const EXAMPLE_TEXT = "the ${name} environment variable is refused by name";`,
       `export function useIt() { return EXAMPLE_TEXT; }`,
       "",
     ].join("\n");

@@ -415,8 +415,8 @@ const SLAFILE_ATTR_PATTERN = /\bslafile\s*=\s*"([^"]*)"/;
  * whether that `slafile` exists on disk beside its own `.ldefs` -- a SORTED
  * list (by `id`) so any assertion over the result is order-independent.
  *
- * `ghidraHome` is an explicit parameter, never read from
- * `process.env.GHIDRA_HOME` internally, so the whole function is drivable
+ * `ghidraHome` is an explicit parameter; this function never reads the
+ * `GHIDRA_HOME` environment variable internally, so the whole function is drivable
  * against a synthetic directory tree with no real Ghidra installation
  * present.
  *
