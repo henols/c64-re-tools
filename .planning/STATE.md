@@ -4,17 +4,17 @@ milestone: v1.1.0
 milestone_name: The Prerequisite Doctor
 current_phase: 59
 current_phase_name: The Tool-Location Seam and Its Precedence Order
-status: executing
+status: verifying
 stopped_at: Completed 59-04-PLAN.md
-last_updated: "2026-09-18T10:56:57.462Z"
+last_updated: "2026-09-18T11:19:52.245Z"
 last_activity: 2026-09-18
 last_activity_desc: Phase 59 plan 04 executed
-state_head: 813062f3e78e35082b7cc7ca791aa7139fea11c3
+state_head: eee67456a4539c87ab267aa51fcd16380c85b893
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 8
-  completed_plans: 6
+  completed_plans: 8
   percent: 20
 carried_forward_phases:
 
@@ -342,8 +342,8 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 Phase: 59 (The Tool-Location Seam and Its Precedence Order) — EXECUTING
 Plan: 5 of 5
-Status: Ready to execute
-Stopped at: Completed 59-04-PLAN.md — three new named validators
+Status: Phase complete — ready for verification
+Stopped at: Completed 59-05-PLAN.md (phase 59 complete)
 (assertLocationBlockShape, assertKindAndMarker, assertNoReservedToolId) added to
 prerequisites.test.ts, plus a packaging case proving the compiled tool-location seam
 artifact and the declaration sit in the packed tarball's file list, one directory apart.
@@ -723,6 +723,7 @@ than a matter of discipline.
 | Phase 59 P02 | 25 min | 2 tasks | 4 files |
 | Phase 59 P03 | 55 min | 2 tasks | 3 files |
 | Phase 59 P04 | 35 min | 2 tasks | 1 files |
+| Phase 59 P05 | 50 min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -1585,6 +1586,8 @@ Recent decisions affecting current work:
 - [Phase 59]: Phase 59-03: the D-11 underscore-prose exemption is scoped to a SINGLE leading underscore (second character not itself an underscore), not any leading underscore -- this is what keeps a JavaScript dunder key like __proto__ reported as unknown with no separate branch, while _readme/_viceBrokerNode stay exempt. — The plan's own action text said to skip any key starting with underscore, but its own embedded verify gate requires __proto__ (two leading underscores) to be reported as unknown -- a direct conflict. A single-leading-underscore qualifier satisfies both without adding a __proto__-specific branch.
 - [Phase 59]: Phase 59-03 Task 2 completes the amended LOC-06 triad's "absent path" clause inside resolveTool() itself, which plan 59-02 had explicitly deferred to this plan's validator/resolver split -- six pre-existing tests were repaired to match the new terminal file-layer behaviour.
 - [Phase 59]: assertNoReservedToolId flags any tool id beginning with an underscore (single or double leading), a deliberate superset of the D-11 unknown-key exemption's exact single-leading-underscore predicate -- because no declared tool id has any legitimate reason to begin with one at all.
+- [Phase 59]: toolsFileTemplate()'s emission order and omission rules follow the plan's locked shape exactly: three reserved prose keys unconditionally, then one bare-string key per resolved id the declaration both knows and marks fileOverridable, in declaration order, with no invented path for an id the caller did not resolve.
+- [Phase 59]: The placement document's citation-ledger anchor for 59-CONTEXT.md:55-57 was corrected from a paraphrase to the live text's exact wording after the newly-added citation-ledger test case caught the drift on its first run -- the mechanism this ledger exists to provide, exercised on this plan's own first draft.
 
 ### Pending Todos
 
@@ -2839,8 +2842,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-18T10:55:48.067Z
-Stopped at: Completed 59-04-PLAN.md
+Last session: 2026-09-18T11:19:52.054Z
+Stopped at: Completed 59-05-PLAN.md (phase 59 complete)
 Resume file: None
 
 Earlier: Milestone v1.0.0 "The Rebuild Half" closed and archived on its delivered scope (9 phases, 73 plans, 33/33 in-scope requirements, `override_closeout`). Phases 51, 53, 54 and 57 carried forward with their ROADMAP sections live.

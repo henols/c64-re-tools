@@ -36,9 +36,9 @@ withdrawing them is Phase 57's goal, and Phase 57 is not in this milestone.
 - [ ] **LOC-02**: One resolver seam owns the precedence order — environment variable, then `tools.json`, then `$PATH` or sibling probe — and both the doctor and the live dispatch path resolve through that same seam.
 - [ ] **LOC-03**: An existing `VICE_BIN`, `ACME_BIN`, `ACME` or `GHIDRA_HOME` override still wins over the file, so no current developer setup, test invocation or CI step changes behaviour.
 - [ ] **LOC-04**: `c1541` and `petcat` become locatable by the user, closing a gap where they are resolvable only as siblings of `x64sc`.
-- [ ] **LOC-05**: dxa stays un-overridable by file or environment, and a `tools.json` entry naming it is refused by name rather than silently ignored.
+- [x] **LOC-05**: dxa stays un-overridable by file or environment, and a `tools.json` entry naming it is refused by name rather than silently ignored.
 - [x] **LOC-06**: A `tools.json` entry naming a path that is absent, not executable, or a directory is refused by name, and the refusal says the file supplied it.
-- [ ] **LOC-07**: `VICE_BROKER_NODE` stays environment-only, and that exclusion is documented where a reader would otherwise expect it in the file.
+- [x] **LOC-07**: `VICE_BROKER_NODE` stays environment-only, and that exclusion is documented where a reader would otherwise expect it in the file.
 
 ### The Doctor
 
@@ -117,9 +117,9 @@ be read as sloppiness:
 | DECL-02 | Phase 58 | Complete |
 | DECL-04 | Phase 58 | Complete |
 | DECL-05 | Phase 58 | Complete |
-| LOC-05 | Phase 59 | Pending |
+| LOC-05 | Phase 59 | Complete |
 | LOC-06 | Phase 59 | Complete |
-| LOC-07 | Phase 59 | Pending |
+| LOC-07 | Phase 59 | Complete |
 | LOC-01 | Phase 60 | Pending |
 | LOC-02 | Phase 60 | Pending |
 | LOC-03 | Phase 60 | Pending |

@@ -1908,7 +1908,7 @@ resolves and the remedy text its refusals quote.
   as an explicit string, exactly as `backend-detect.mts` already does for the
   supervisor directory, so the host-bound module keeps no import cycle.
 
-**Plans**: 4/5 plans executed, 4 waves
+**Plans**: 5/5 plans executed, 4 waves
 
 Plans:
 
@@ -1916,7 +1916,7 @@ Plans:
 - [x] 59-02-PLAN.md — the remaining seven `location`/`kind`/`marker` blocks, and `resolveTool()` branching on the record: directory kinds, absent env vars, and the two ids it must not resolve at all (wave 2)
 - [x] 59-03-PLAN.md — `validateToolsFile()` and the file layer's refusal contract: the amended `LOC-06` triad, the executable-bit check, both exclusions refused by name, every family with a planted violation (wave 3)
 - [x] 59-04-PLAN.md — the declaration's new fields validated in its own structural gate, and the compiled artifact proven present in the packed tarball's own file list (wave 3)
-- [ ] 59-05-PLAN.md — the `tools.json` template as an export documenting both exclusions, and `docs/phase59-tool-location-placement.md` answering criterion 5 with Phase 60's bill itemised (wave 4)
+- [x] 59-05-PLAN.md — the `tools.json` template as an export documenting both exclusions, and `docs/phase59-tool-location-placement.md` answering criterion 5 with Phase 60's bill itemised (wave 4)
 
 ### Phase 60: The Seam Wired Into the Code That Ships
 
@@ -2243,7 +2243,7 @@ check. No test reads this table now.
 | 56. Remove `shipped-modules.ts` and Its Embedded Source Scans | v1.0.0 | 11/11 | Complete | 2026-09-15 |
 | 57. Nothing Is Installed Automatically | v1.0.0 → carried | 0/0 | **Carried forward** | - |
 | 58. One Declaration, Four Places That Can No Longer Disagree | v1.1.0 | 3/3 | Awaiting Verification | - |
-| 59. The Tool-Location Seam and Its Precedence Order | v1.1.0 | 4/5 | In Progress | - |
+| 59. The Tool-Location Seam and Its Precedence Order | v1.1.0 | 5/5 | Awaiting Verification | - |
 | 60. The Seam Wired Into the Code That Ships | v1.1.0 | 0/? | Not started | - |
 | 61. `vice-mcp doctor`, Reachable on a Node Too Old to Run the Server | v1.1.0 | 0/? | Not started | - |
 | 62. The Install Tables Generated, and a Guard That Compares Facts | v1.1.0 | 0/? | Not started | - |
