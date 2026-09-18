@@ -6,10 +6,10 @@ current_phase: 60
 current_phase_name: The Seam Wired Into the Code That Ships
 status: executing
 stopped_at: Phase 60 gap-closure planned — 2 gap plans (60-06, 60-07) in waves 5-6, checker passed first iteration
-last_updated: "2026-09-18T17:35:41.510Z"
+last_updated: "2026-09-18T17:41:06.946Z"
 last_activity: 2026-09-18
-last_activity_desc: Phase 60 gap-closure planned (LOC-03)
-state_head: f37f913ac1fc5cbbcc57cbde84104b9f424a1b69
+last_activity_desc: Phase 60 gap-closure executed; LOC-03 still open (4/5)
+state_head: a7c403aa113271caafabfeded2a61932b7e8d852
 progress:
   total_phases: 5
   completed_phases: 2
@@ -343,27 +343,50 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 60 (The Seam Wired Into the Code That Ships) — READY TO EXECUTE
-Plan: 5 of 7 executed (60-06, 60-07 planned, not yet executed)
-Status: Gap-closure planned — LOC-03 still open
-Stopped at: Phase 60 gap-closure planning (60-06-PLAN.md, 60-07-PLAN.md)
-All five plans executed and summarized; full-glob suite green (3996 tests, 0
-fail, 81 skipped) and typecheck clean. Verification scored 4/5: LOC-01, LOC-02,
-LOC-04 and DECL-03 verified directly against the tree, LOC-03 FAILED. The seam's
-environment layer statSyncs an env-var value against process.cwd() with no $PATH
-fallback, so a slash-free VICE_BIN/ACME_BIN is silently discarded and resolution
-falls through to a $PATH probe for the declared id -- spawning a different binary
-with refusal: null. A regression: the pre-phase code walked $PATH for a
-slash-free name deliberately. Reproduced independently by the code review
-(CR-01), the orchestrator and the verifier. No test exercises a slash-free env
-value, which is why the green suite did not catch it.
-Gap-closure planning has now run: 60-06 (wave 5) widens the environment layer to
-walk $PATH for the developer's own value and makes an unresolvable override a
-terminal refusal instead of a fall-through; 60-07 (wave 6) fixes WR-01, records
-the WR-02 deferral, and re-measures the unchanged-behaviour claim as a
-failing-set diff against baseline ce890041. Both carry gap_closure: true.
-Next: /gsd-execute-phase 60 --gaps-only.
-Last activity: 2026-09-18 — Phase 60 gap-closure planned, 2 plans
+Phase: 60 (The Seam Wired Into the Code That Ships) — GAPS FOUND (round 2)
+Plan: 7 of 7 executed
+Status: Gap-closure executed; re-verification scored 4/5 — LOC-03 still open
+Stopped at: Phase 60 gap-closure re-verification (60-VERIFICATION.md, round 2)
+Plans 60-06 and 60-07 executed and summarized. Full-glob suite green (4020 tests,
+3939 pass, 0 fail, 81 skipped) and typecheck clean; failing set empty. The
+incremental code review closed CR-01 and WR-01 and accepted WR-02 as a recorded
+open decision, and raised one new warning, WR-03. Re-verification scored 4/5
+again: LOC-01, LOC-02, LOC-04 and DECL-03 verified, LOC-03 FAILED for a SECOND
+input shape.
+What 60-06 fixed: a slash-free VICE_BIN/ACME_BIN now walks $PATH for the
+developer's own value and refuses by name when it resolves nowhere, instead of
+silently substituting a same-named $PATH binary. Proven through the real spawn
+wiring.
+What is still open: a separator-CONTAINING override that resolves to nothing
+still falls through to a declared-id $PATH probe and returns a different binary
+with refusal: null. 60-06 scoped its fix to separator-free values deliberately,
+because its own must_haves truth says a separator-containing value "behaves
+exactly as today" while its Task 2 Test E says such a value refuses — a
+contradiction inside one plan. The executor chose the must_have and kept
+`vice-broker-acquire.test.ts`'s "Plan 60-01 Test 4" green.
+Why that reasoning does not hold, established by the verifier's git archaeology
+and confirmed independently: "exactly as today" is false. Pre-phase
+`defaultResolveBinPath()` (commit d54d98a1) returned null for a slash-containing
+value with NO $PATH fallback, so the old code failed honestly on the literal
+missing path. The fall-through is a regression THIS phase introduced in plan
+60-01, and "Plan 60-01 Test 4" (commit 2abb7ff6) pins that regression rather
+than legacy behaviour. It does assert the decoy path, so 60-06 read the test
+fairly — but the test is not a contract worth preserving. LOC-03's text draws no
+separator-based carve-out, so the requirement is unmet.
+Also open, not blocking: WR-03 — `envUnresolved` is not gated on
+`record.kind === "executable"`, so the refusal a user reads for a directory-kind
+id (ghidra/GHIDRA_HOME, acme-lib/ACME) claims a $PATH-substitution risk that
+cannot exist for that kind. Reproduced live at `ghidra.analyze`'s refusal.
+IN-02: `findAcmeLib()` discards `.refusal`, masking the same message for
+acme-lib.
+Two human-verification items from plans 60-03 and 60-05 remain unrun under
+`human_verify_mode: end-of-phase` and must not be forgotten when the phase
+seals: (1) ACME_BIN at a nonexistent path — confirm the acme.build refusal
+shape; (2) a real stock x64sc in tools.json with the broker as its systemd unit
+— confirm the spawned binary matches, for the recorded path and for a bare
+$PATH-resolved VICE_BIN.
+Next: /gsd-plan-phase 60 --gaps.
+Last activity: 2026-09-18 — Phase 60 gap-closure executed, LOC-03 still open
 
 **Milestone shape, so no reader has to rebuild it from the ROADMAP:** Phase 58
 declares the prerequisites; Phase 59 builds the tool-location seam and its
