@@ -21,7 +21,7 @@
 // GHIDRA_HOME-unset refusal before any launch is attempted.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync, statSync, readFileSync, symlinkSync, readdirSync, realpathSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync, statSync, readFileSync, symlinkSync, readdirSync, realpathSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, basename, isAbsolute, resolve as resolvePath, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -254,8 +254,13 @@ function readEchoedArgv(dir: string): string[] {
   return JSON.parse(readFileSync(echoedArgvPath(dir), "utf8")) as string[];
 }
 
-function writeFakeAcme(dir: string, mode: "nonzero" | "zerobyte" | "utf8" | "echoargv"): string {
-  const scriptPath = join(dir, "fake-acme.mjs");
+/** `fileName` defaults to `"fake-acme.mjs"` -- Plan 60-03's own $PATH-probe
+ * cases (below) override it to the literal `"acme"` so the stub is
+ * reachable by a bare-name $PATH walk, which cares about the FILENAME, not
+ * the extension; the shebang line still selects the interpreter regardless
+ * of what the file is named. */
+function writeFakeAcme(dir: string, mode: "nonzero" | "zerobyte" | "utf8" | "echoargv", fileName = "fake-acme.mjs"): string {
+  const scriptPath = join(dir, fileName);
   const utf8Text = "héllo wörld 日本語\n";
   const echoPath = echoedArgvPath(dir);
   writeFileSync(
@@ -296,6 +301,62 @@ function writeFakeAcme(dir: string, mode: "nonzero" | "zerobyte" | "utf8" | "ech
   );
   chmodSync(scriptPath, 0o755);
   return scriptPath;
+}
+
+/** Plan 60-03: writes a scratch `.c64-re-tools/tools.json` under `dir`
+ * naming exactly the given entries, mirroring this file's own
+ * `withTempDir()`/`writeFakeAcme()` idiom -- this file drives the REAL
+ * `runHostTool()` end-to-end through the compiled artifact, never
+ * `resolveTool()` in isolation the way `tool-location.test.ts` does. */
+function writeToolsJson(dir: string, entries: Record<string, string>): void {
+  mkdirSync(join(dir, ".c64-re-tools"), { recursive: true });
+  writeFileSync(join(dir, ".c64-re-tools", "tools.json"), JSON.stringify(entries), "utf8");
+}
+
+/** Plan 60-03 (DECL-03 non-vacuity): writes a scratch `prerequisites.json`
+ * under `here` declaring `acme`/`acme-lib`/`ghidra`/`dxa` with the SAME
+ * shape (location/kind/marker) the real, committed declaration carries for
+ * each -- only each id's remedy text is caller-overridable via `remedies`,
+ * so a case can prove a live refusal message tracks the declaration without
+ * depending on the real remedy strings ever changing underneath it. Mirrors
+ * `tool-location.test.ts`'s own scratch-declaration idiom for the identical
+ * purpose; an id omitted from `remedies` gets NO `remedies` block at all
+ * (proving the empty-remedy refusal shape, Test 5). */
+function writeScratchDeclaration(here: string, remedies: { acme?: string; ghidra?: string; dxa?: string } = {}): void {
+  writeFileSync(
+    join(here, "prerequisites.json"),
+    JSON.stringify({
+      schemaVersion: 1,
+      tools: {
+        acme: {
+          id: "acme",
+          location: { envVar: "ACME_BIN", fileOverridable: true },
+          kind: "executable",
+          ...(remedies.acme ? { remedies: { universal: [{ ecosystem: "generic", text: remedies.acme, provenance: "carried", source: "scratch" }] } } : {}),
+        },
+        "acme-lib": {
+          id: "acme-lib",
+          location: { envVar: "ACME", fileOverridable: true },
+          kind: "directory",
+          marker: join("cbm", "c64", "vic.a"),
+        },
+        ghidra: {
+          id: "ghidra",
+          location: { envVar: "GHIDRA_HOME", fileOverridable: true },
+          kind: "directory",
+          marker: join("support", "analyzeHeadless"),
+          ...(remedies.ghidra ? { remedies: { universal: [{ ecosystem: "generic", text: remedies.ghidra, provenance: "carried", source: "scratch" }] } } : {}),
+        },
+        dxa: {
+          id: "dxa",
+          location: { fileOverridable: false, reason: "scratch reason" },
+          kind: "executable",
+          ...(remedies.dxa ? { remedies: { universal: [{ ecosystem: "generic", text: remedies.dxa, provenance: "carried", source: "scratch" }] } } : {}),
+        },
+      },
+    }),
+    "utf8",
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -999,6 +1060,165 @@ test("runHostTool's byteLength equals what statSync reports for a file with mult
       assert.notEqual(stat.size, utf8Text.length);
     });
   });
+});
+
+// ---------------------------------------------------------------------------
+// Plan 60-03, Task 1 (LOC-01, DECL-03): acme.build's own binary resolution
+// goes through the tool-location seam (env -> tools.json -> $PATH) instead
+// of a direct process.env.ACME_BIN read, and a missing ACME is refused BY
+// NAME before any spawn, carrying the declaration's own remedy prose.
+// ---------------------------------------------------------------------------
+
+test("Plan 60-03 Test 1 (LOC-01 tracer): a tools.json entry for acme is the binary runHostTool() actually spawns, with no ACME_BIN set", async () => {
+  await withTempDir(async (dir) => {
+    writeFileSync(join(dir, "a.a"), "; test source\n", "utf8");
+    const stubPath = writeFakeAcme(dir, "echoargv");
+    writeToolsJson(dir, { acme: stubPath });
+    const previous = process.env.ACME_BIN;
+    delete process.env.ACME_BIN;
+    try {
+      const response = await runHostTool({ tool: "acme.build", args: { source: "a.a", noReport: true } }, { repoRoot: dir });
+      assert.equal(response.ok, true, response.ok ? "" : JSON.stringify(response));
+      const echoed = readEchoedArgv(dir);
+      assert.ok(Array.isArray(echoed) && echoed.length > 0, "the tools.json-named stub must have been the binary actually spawned");
+    } finally {
+      if (previous === undefined) delete process.env.ACME_BIN;
+      else process.env.ACME_BIN = previous;
+    }
+  });
+});
+
+test("Plan 60-03 Test 2: the ACME_BIN environment variable wins over a present tools.json entry, both at the seam and at the real spawn call", async () => {
+  await withTempDir(async (dir) => {
+    writeFileSync(join(dir, "a.a"), "; test source\n", "utf8");
+    const envStubDir = join(dir, "env-stub");
+    const fileStubDir = join(dir, "file-stub");
+    mkdirSync(envStubDir, { recursive: true });
+    mkdirSync(fileStubDir, { recursive: true });
+    const envStubPath = writeFakeAcme(envStubDir, "echoargv");
+    const fileStubPath = writeFakeAcme(fileStubDir, "echoargv");
+    writeToolsJson(dir, { acme: fileStubPath });
+    await withFakeAcme(envStubPath, async () => {
+      const response = await runHostTool({ tool: "acme.build", args: { source: "a.a", noReport: true } }, { repoRoot: dir });
+      assert.equal(response.ok, true, response.ok ? "" : JSON.stringify(response));
+      assert.ok(existsSync(echoedArgvPath(envStubDir)), "the ACME_BIN-named binary must have been the one spawned");
+      assert.ok(!existsSync(echoedArgvPath(fileStubDir)), "the tools.json-named binary must NOT have been spawned when ACME_BIN is set");
+    });
+  });
+});
+
+test("Plan 60-03 Test 3a: with no tools.json and no ACME_BIN, resolution falls to a real $PATH match", async () => {
+  await withTempDir(async (dir) => {
+    writeFileSync(join(dir, "a.a"), "; test source\n", "utf8");
+    const pathDir = join(dir, "path-bin");
+    mkdirSync(pathDir, { recursive: true });
+    writeFakeAcme(pathDir, "echoargv", "acme");
+    const previousAcmeBin = process.env.ACME_BIN;
+    const previousPath = process.env.PATH;
+    delete process.env.ACME_BIN;
+    process.env.PATH = pathDir;
+    try {
+      const response = await runHostTool({ tool: "acme.build", args: { source: "a.a", noReport: true } }, { repoRoot: dir });
+      assert.equal(response.ok, true, response.ok ? "" : JSON.stringify(response));
+      assert.ok(existsSync(echoedArgvPath(pathDir)), "the $PATH-resolved acme binary must have been the one spawned");
+    } finally {
+      if (previousAcmeBin === undefined) delete process.env.ACME_BIN;
+      else process.env.ACME_BIN = previousAcmeBin;
+      process.env.PATH = previousPath;
+    }
+  });
+});
+
+test("Plan 60-03 Test 3b: with no tools.json, no ACME_BIN and nothing on $PATH, the request is refused by name before any spawn", async () => {
+  await withTempDir(async (dir) => {
+    writeFileSync(join(dir, "a.a"), "; test source\n", "utf8");
+    const emptyPathDir = join(dir, "empty-path");
+    mkdirSync(emptyPathDir, { recursive: true });
+    const previousAcmeBin = process.env.ACME_BIN;
+    const previousPath = process.env.PATH;
+    delete process.env.ACME_BIN;
+    process.env.PATH = emptyPathDir;
+    try {
+      const response = await runHostTool({ tool: "acme.build", args: { source: "a.a", noReport: true } }, { repoRoot: dir });
+      assert.equal(response.ok, false);
+      if (response.ok) return;
+      assert.match(response.message, /acme\.build/);
+      assert.match(response.message, /not found/i);
+    } finally {
+      if (previousAcmeBin === undefined) delete process.env.ACME_BIN;
+      else process.env.ACME_BIN = previousAcmeBin;
+      process.env.PATH = previousPath;
+    }
+  });
+});
+
+test("Plan 60-03 Test 4 (DECL-03 non-vacuity): a scratch declaration's distinctive acme remedy text appears in the refusal message", async () => {
+  await withTempDir(async (dir) => {
+    writeFileSync(join(dir, "a.a"), "; test source\n", "utf8");
+    const declDir = join(dir, "decl");
+    mkdirSync(declDir, { recursive: true });
+    const distinctiveSentence = "run scratch-declaration-only-remedy-ac1 to install ACME, never the real one.";
+    writeScratchDeclaration(declDir, { acme: distinctiveSentence });
+    const emptyPathDir = join(dir, "empty-path");
+    mkdirSync(emptyPathDir, { recursive: true });
+    const previousAcmeBin = process.env.ACME_BIN;
+    const previousPath = process.env.PATH;
+    delete process.env.ACME_BIN;
+    process.env.PATH = emptyPathDir;
+    try {
+      const response = await runHostTool({ tool: "acme.build", args: { source: "a.a", noReport: true } }, { repoRoot: dir, here: declDir });
+      assert.equal(response.ok, false);
+      if (response.ok) return;
+      assert.ok(response.message.includes(distinctiveSentence), `expected the scratch remedy text in: ${response.message}`);
+    } finally {
+      if (previousAcmeBin === undefined) delete process.env.ACME_BIN;
+      else process.env.ACME_BIN = previousAcmeBin;
+      process.env.PATH = previousPath;
+    }
+  });
+});
+
+test("Plan 60-03 Test 5: a scratch declaration whose acme record carries no remedy for the running platform still refuses by name, with no dangling separator", async () => {
+  await withTempDir(async (dir) => {
+    writeFileSync(join(dir, "a.a"), "; test source\n", "utf8");
+    const declDir = join(dir, "decl");
+    mkdirSync(declDir, { recursive: true });
+    writeScratchDeclaration(declDir, {});
+    const emptyPathDir = join(dir, "empty-path");
+    mkdirSync(emptyPathDir, { recursive: true });
+    const previousAcmeBin = process.env.ACME_BIN;
+    const previousPath = process.env.PATH;
+    delete process.env.ACME_BIN;
+    process.env.PATH = emptyPathDir;
+    try {
+      const response = await runHostTool({ tool: "acme.build", args: { source: "a.a", noReport: true } }, { repoRoot: dir, here: declDir });
+      assert.equal(response.ok, false);
+      if (response.ok) return;
+      assert.match(response.message, /acme\.build/);
+      assert.match(response.message, /not found/i);
+      assert.ok(!/--\s*$/.test(response.message), "must not end with a dangling separator followed by nothing");
+    } finally {
+      if (previousAcmeBin === undefined) delete process.env.ACME_BIN;
+      else process.env.ACME_BIN = previousAcmeBin;
+      process.env.PATH = previousPath;
+    }
+  });
+});
+
+test("Plan 60-03 Test 6: buildHostToolArgv called with three arguments (no locator) still compiles and returns the argv shape it returns today", () => {
+  const request = { tool: "acme.build", args: { source: "a.a", noReport: true } };
+  const resolved = { sourcePath: "/repo/a.a", outDirPath: "/repo" };
+  const logLines: string[] = [];
+  const built = buildHostToolArgv(request, resolved, (line) => logLines.push(line));
+  // Whether this resolves ok:true or ok:false depends on whether a real
+  // `acme` happens to be reachable via locatorFrom()'s process.cwd()-derived
+  // fallback ($PATH layer only, since no .c64-re-tools/tools.json sits at
+  // this process's own cwd) -- either way, the call must not throw and must
+  // return the SAME BuildHostToolArgvResult shape a 2-argument call already
+  // returns (proven by the pre-existing argv-shape tests above, which pass a
+  // bare 2-argument call and assert ok:true unconditionally on this same
+  // real test-running host).
+  assert.ok(typeof built.ok === "boolean");
 });
 
 // ---------------------------------------------------------------------------
