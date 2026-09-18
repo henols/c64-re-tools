@@ -940,6 +940,116 @@ test("an environment override naming a file with no executable bit still resolve
   });
 });
 
+test("resolveTool(\"x64sc\", …) refuses a whole-file JSON parse failure by name, naming the file, and never falls through to $PATH for it (planted violation); valid JSON is a clean control", () => {
+  withScratch((dir) => {
+    const pathDir = join(dir, "bin");
+    mkdirSync(pathDir, { recursive: true });
+    const pathBin = join(pathDir, "x64sc");
+    writeFileSync(pathBin, "");
+    chmodSync(pathBin, 0o755);
+    const filePath = join(dir, "tools.json");
+    writeFileSync(filePath, "{ this is not json");
+
+    const broken = resolveTool("x64sc", { toolsDir: dir, projectRoot: dir, env: { PATH: pathDir } });
+
+    assert.equal(broken.path, null);
+    assert.equal(broken.layer, null);
+    assert.equal(broken.mechanism, null);
+    assert.ok(broken.refusal, "expected a refusal for a whole-file parse failure");
+    assert.ok(broken.refusal!.includes(filePath));
+    assert.ok(!broken.tried.includes(pathBin), "must never fall through to $PATH after a whole-file parse failure");
+
+    writeFileSync(filePath, "{}");
+    const clean = resolveTool("x64sc", { toolsDir: dir, projectRoot: dir, env: { PATH: pathDir } });
+    assert.equal(clean.path, pathBin);
+    assert.equal(clean.layer, "probe");
+    assert.equal(clean.refusal, null);
+  });
+});
+
+test("resolveTool(\"x64sc\", …) refuses a non-object tools.json top level by name (planted violation); an object top level is a clean control", () => {
+  withScratch((dir) => {
+    const filePath = join(dir, "tools.json");
+    writeFileSync(filePath, "[]");
+
+    const arrayTop = resolveTool("x64sc", { toolsDir: dir, projectRoot: dir, env: {} });
+    assert.equal(arrayTop.path, null);
+    assert.ok(arrayTop.refusal && arrayTop.refusal.includes(filePath));
+
+    writeFileSync(filePath, "{}");
+    const clean = resolveTool("x64sc", { toolsDir: dir, projectRoot: dir, env: {} });
+    assert.equal(clean.refusal, null);
+    assert.equal(clean.path, null);
+    assert.equal(clean.layer, null);
+  });
+});
+
+test("resolveTool(\"x64sc\", …) refuses a non-string tools.json entry for the requested id by name (planted violations); a real string entry is a clean control", () => {
+  withScratch((dir) => {
+    const filePath = join(dir, "tools.json");
+
+    for (const badValue of [null, false, 0, [], {}]) {
+      writeFileSync(filePath, JSON.stringify({ x64sc: badValue }));
+      const result = resolveTool("x64sc", { toolsDir: dir, projectRoot: dir, env: {} });
+      assert.equal(result.path, null, `expected a refusal for value ${JSON.stringify(badValue)}`);
+      assert.equal(result.layer, null);
+      assert.ok(result.refusal && result.refusal.includes("x64sc"), `expected a named refusal for value ${JSON.stringify(badValue)}`);
+    }
+
+    const goodBin = join(dir, "x64sc-good");
+    writeFileSync(goodBin, "");
+    chmodSync(goodBin, 0o755);
+    writeFileSync(filePath, JSON.stringify({ x64sc: goodBin }));
+    const clean = resolveTool("x64sc", { toolsDir: dir, projectRoot: dir, env: {} });
+    assert.equal(clean.path, goodBin);
+    assert.equal(clean.layer, "file");
+    assert.equal(clean.refusal, null);
+  });
+});
+
+test("one non-string acme entry refuses acme by name; a well-formed x64sc entry in the same file still resolves (one-bad-entry blast radius)", () => {
+  withScratch((dir) => {
+    const x64scBin = join(dir, "x64sc-good");
+    writeFileSync(x64scBin, "");
+    chmodSync(x64scBin, 0o755);
+    writeFileSync(join(dir, "tools.json"), JSON.stringify({ acme: 12345, x64sc: x64scBin }));
+
+    const acmeResult = resolveTool("acme", { toolsDir: dir, projectRoot: dir, env: {} });
+    const x64scResult = resolveTool("x64sc", { toolsDir: dir, projectRoot: dir, env: {} });
+
+    assert.equal(acmeResult.path, null);
+    assert.ok(acmeResult.refusal && acmeResult.refusal.includes("acme"));
+    assert.equal(x64scResult.path, x64scBin);
+    assert.equal(x64scResult.layer, "file");
+    assert.equal(x64scResult.refusal, null);
+  });
+});
+
+test("resolveTool: an absent tools.json, a zero-byte one, and a bare {} one each keep falling through silently with no refusal", () => {
+  withScratch((dir) => {
+    const pathDir = join(dir, "bin");
+    mkdirSync(pathDir, { recursive: true });
+    const pathBin = join(pathDir, "x64sc");
+    writeFileSync(pathBin, "");
+    chmodSync(pathBin, 0o755);
+    const deps = { toolsDir: dir, projectRoot: dir, env: { PATH: pathDir } };
+
+    const absent = resolveTool("x64sc", deps);
+    assert.equal(absent.refusal, null);
+    assert.equal(absent.path, pathBin);
+
+    writeFileSync(join(dir, "tools.json"), "");
+    const zeroByte = resolveTool("x64sc", deps);
+    assert.equal(zeroByte.refusal, null);
+    assert.equal(zeroByte.path, pathBin);
+
+    writeFileSync(join(dir, "tools.json"), "{}");
+    const emptyObject = resolveTool("x64sc", deps);
+    assert.equal(emptyObject.refusal, null);
+    assert.equal(emptyObject.path, pathBin);
+  });
+});
+
 test("after a file-layer refusal, tried contains no candidate built from a PATH directory for that call", () => {
   withScratch((dir) => {
     const pathDir = join(dir, "bin");
