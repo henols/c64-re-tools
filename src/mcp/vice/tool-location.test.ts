@@ -31,7 +31,7 @@ import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { build } from "./build.ts";
-import { resolveTool, toolsFileTemplate, validateToolsFile } from "./tool-location.mts";
+import { remedyTextsFor, resolveTool, toolsFileTemplate, validateToolsFile } from "./tool-location.mts";
 
 /** This test file's own directory -- used only to locate the real,
  * committed `prerequisites.json` for the two exclusion tests below, which
@@ -1199,4 +1199,120 @@ test("compiled artifact: toolsFileTemplate produces the same three reserved keys
     compiled.toolsFileTemplate({ x64sc: "/opt/vice/bin/x64sc" }),
   ) as Record<string, unknown>;
   assert.equal(withOne.x64sc, "/opt/vice/bin/x64sc");
+});
+
+// -----------------------------------------------------------------------
+// Plan 60-02, Task 1: `remedyTextsFor()` -- the declaration's FIRST runtime
+// reader of the `remedies` arrays (DECL-03). The real declaration read here
+// is the committed `prerequisites.json`, unless a case points `here` at a
+// scratch declaration.
+// -----------------------------------------------------------------------
+
+interface RemedyEntryFixture {
+  ecosystem: string;
+  text: string;
+  provenance: string;
+  source: string;
+}
+
+interface PrerequisitesDocFixture {
+  tools: Record<string, { remedies?: Record<string, RemedyEntryFixture[]> }>;
+}
+
+function readCommittedPrerequisites(): PrerequisitesDocFixture {
+  return JSON.parse(readFileSync(join(HERE_DIR, "prerequisites.json"), "utf8")) as PrerequisitesDocFixture;
+}
+
+test("remedyTextsFor(\"dxa\") against the real committed declaration returns exactly one string, byte-identical to remedies.universal[0].text", () => {
+  const prereq = readCommittedPrerequisites();
+  const declaredText = prereq.tools.dxa!.remedies!.universal![0]!.text;
+
+  const result = remedyTextsFor("dxa");
+
+  assert.deepEqual(result, [declaredText]);
+});
+
+test("non-vacuity (DECL-03): pointing here at a scratch declaration with a distinctive dxa remedy sentence returns that sentence, proving the string is not a literal inside the module", () => {
+  withScratch((here) => {
+    const distinctiveSentence = "run scratch-declaration-only-remedy-9f3c to rebuild dxa, never the real one.";
+    writeFileSync(
+      join(here, "prerequisites.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        tools: {
+          dxa: {
+            id: "dxa",
+            location: { fileOverridable: false, reason: "scratch reason" },
+            kind: "executable",
+            remedies: { universal: [{ ecosystem: "generic", text: distinctiveSentence, provenance: "carried", source: "scratch" }] },
+          },
+        },
+      }),
+    );
+
+    const result = remedyTextsFor("dxa", { here });
+
+    assert.deepEqual(result, [distinctiveSentence]);
+  });
+});
+
+test("remedyTextsFor(\"acme\", { platform: \"linux\" }) returns the two linux entries in declaration order followed by the universal entry, stable across repeated calls", () => {
+  const prereq = readCommittedPrerequisites();
+  const acme = prereq.tools.acme!.remedies!;
+  const expected = [...acme.linux!.map((e) => e.text), ...acme.universal!.map((e) => e.text)];
+
+  const first = remedyTextsFor("acme", { platform: "linux" });
+  const second = remedyTextsFor("acme", { platform: "linux" });
+
+  assert.deepEqual(first, expected);
+  assert.deepEqual(second, first);
+});
+
+test("empty cases: a record with no remedies block returns [], a platform with no matching key returns only universal entries, and an undeclared id returns [] without throwing", () => {
+  withScratch((dir) => {
+    writeFileSync(
+      join(dir, "prerequisites.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        tools: {
+          "no-remedies-tool": { id: "no-remedies-tool", location: { fileOverridable: true }, kind: "executable" },
+        },
+      }),
+    );
+
+    assert.deepEqual(remedyTextsFor("no-remedies-tool", { here: dir }), []);
+  });
+
+  const prereq = readCommittedPrerequisites();
+  const acmeUniversalTexts = prereq.tools.acme!.remedies!.universal!.map((e) => e.text);
+  assert.deepEqual(remedyTextsFor("acme", { platform: "win32" }), acmeUniversalTexts);
+
+  assert.doesNotThrow(() => remedyTextsFor("not-a-real-tool"));
+  assert.deepEqual(remedyTextsFor("not-a-real-tool"), []);
+});
+
+test("encoding: the c1541 linux entry containing a non-ASCII em dash is returned intact, with its string length unchanged from the parsed declaration's own value", () => {
+  const prereq = readCommittedPrerequisites();
+  const emDashEntry = prereq.tools.c1541!.remedies!.linux!.find((e) => e.text.includes("—"));
+  assert.ok(emDashEntry, "expected the committed c1541 declaration to carry an em-dash remedy entry");
+
+  const result = remedyTextsFor("c1541", { platform: "linux" });
+
+  assert.ok(result.includes(emDashEntry!.text));
+  const returned = result.find((t) => t === emDashEntry!.text)!;
+  assert.equal(returned.length, emDashEntry!.text.length);
+  assert.equal(returned.includes("—"), true);
+});
+
+test("compiled artifact: importing the regenerated resources/tool-location.mjs and calling remedyTextsFor returns the same answer as the unbuilt source", async () => {
+  build();
+  const compiled = (await import(new URL("./resources/tool-location.mjs", import.meta.url).href)) as unknown as {
+    remedyTextsFor: typeof remedyTextsFor;
+  };
+
+  const fromSource = remedyTextsFor("dxa");
+  const fromCompiled = compiled.remedyTextsFor("dxa");
+
+  assert.deepEqual(fromCompiled, fromSource);
+  assert.ok(fromCompiled.length > 0);
 });
