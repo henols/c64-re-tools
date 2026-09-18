@@ -200,17 +200,21 @@ export function repoRoot({ from = HERE, env = process.env, exists = existsSync }
  *     deployed launcher path), and vice.ts + vice-broker-client.ts, both via
  *     `supervisorDir()` (`supervisor`, the broker state directory -- one
  *     writer, two readers).
- *   - FOUR files cannot import this container-side module at all, so each
+ *   - FIVE files cannot import this container-side module at all, so each
  *     joins `".c64-re-tools"` with its own trailing segment(s) directly,
  *     matching this function's shape by CONVENTION, never by shared code:
  *     install-resources.ts's `installTargetDir()` (`bin` -- module-cycle
  *     avoidance, since THIS file's own bottom-of-module call invokes it),
  *     vice-broker.mts's `parseArgs()` state-dir fallback (`supervisor` --
- *     host-bound, compiled separately by build.ts), host-tool.mts's
- *     `oracle.run` scratch directory (`runs/oracle` -- host-bound), and
+ *     host-bound, compiled separately by build.ts) and its `run()` tool-
+ *     location deps (the bare root -- same host-bound reason), host-tool.mts's
+ *     `oracle.run` scratch directory (`runs/oracle` -- host-bound),
  *     ghidra-project.mts's `ghidraRunsRoot()`/`ghidraRunsRealRoot()`
  *     (`runs/ghidra` -- host-bound, reached through a symlinked alias
- *     handle, see below). Every one of these four must keep its literal
+ *     handle, see below), and backend-detect.mts's `resolvedBackend()`
+ *     cwd-relative fallback (the bare root -- host-bound, and the ONE place
+ *     the emulator binary's own location is resolved, Phase 60 LOC-01/LOC-02).
+ *     Every one of these five must keep its literal
  *     equal to `join(toolsDir(...), <same segments>)`, by convention, or the
  *     two halves of this codebase silently disagree on where the root is.
  *
@@ -218,8 +222,8 @@ export function repoRoot({ from = HERE, env = process.env, exists = existsSync }
  * files that call this function directly -- it is host-bound
  * (ghidra-project.mts) and cannot import this file at all.
  *
- * The literal string ".c64-re-tools" therefore has exactly 6 non-comment
- * occurrences in this codebase, across 5 files. repo-root.test.ts's census
+ * The literal string ".c64-re-tools" therefore has exactly 8 non-comment
+ * occurrences in this codebase, across 6 files. repo-root.test.ts's census
  * gate reads BOTH the count and this file list straight out of this
  * sentence and the bullet list below -- never duplicated by hand a second
  * time in the test -- and compares both against the real tree, with a
@@ -229,10 +233,13 @@ export function repoRoot({ from = HERE, env = process.env, exists = existsSync }
  *   - repo-root.ts -- this definition, the line below (1)
  *   - install-resources.ts -- `installTargetDir()`'s `bin` join (1)
  *   - vice-broker.mts -- `parseArgs()`'s state-dir fallback, BOTH branches
- *     of one ternary on the same line (2)
+ *     of one ternary on the same line (2), plus `run()`'s `toolsDir` for the
+ *     once-per-process emulator-binary resolution (1) = 3
  *   - ghidra-project.mts -- `GHIDRA_RUNS_HANDLE_TARGET`, the alias handle's
  *     relative symlink target (1)
  *   - host-tool.mts -- `oracle.run`'s scratch-directory join (1)
+ *   - backend-detect.mts -- `resolvedBackend()`'s cwd-relative `toolsDir`
+ *     fallback, used only when no caller supplied one (1)
  *
  * The Ghidra alias handle: a non-dotted sibling of this root
  * (`<repoRoot>/c64-re-tools`, no leading dot), a symlink whose RELATIVE

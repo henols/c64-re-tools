@@ -318,7 +318,7 @@ const HERE_DIR = dirname(fileURLToPath(import.meta.url));
 // (2026-08-19 finding, closed as a documentation fix by Phase 15 plan 15-09
 // rather than a per-request requery, which would be a behavioural change out
 // of a disposition phase's remit).
-const RESOLVED_BINARY = backendDetect.resolvedBackend({ toolsDir: toolsDir(), projectRoot: repoRoot() });
+const RESOLVED_BINARY = backendDetect.resolvedBackend({ toolsDir: toolsDir({ from: HERE_DIR }), projectRoot: repoRoot({ from: HERE_DIR }) });
 
 // -------------------------------------------------------------- JSON-RPC
 //

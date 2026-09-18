@@ -41,20 +41,25 @@ Phase 60's.
 
 ## What this costs Phase 60
 
-1. **The precedence order for `x64sc` lives in two places until Phase 60 removes the second.**
-   `resolvedBackend()` keeps its own `env.VICE_BIN ?? "x64sc"` read
-   (`src/mcp/vice/backend-detect.mts:312`) for its current direct callers — the broker's own launch
-   path chief among them — because Phase 59 does not touch that file at all. Phase 60's own
-   criterion 2, "the precedence order exists in exactly one place"
-   (`.planning/ROADMAP.md:1939-1942`), is therefore a real deliverable of that phase, not something
-   Phase 59 leaves already true.
+1. **The precedence order for `x64sc` lived in two places until Phase 60 removed the second.**
+   `resolvedBackend()` kept its own `env.VICE_BIN ?? "x64sc"` read for its direct callers — the
+   broker's own launch path chief among them — because Phase 59 does not touch that file at all.
+   Phase 60's own criterion 2, "the precedence order exists in exactly one place"
+   (`.planning/ROADMAP.md:1939-1942`), was therefore a real deliverable of that phase, not
+   something Phase 59 left already true. **Closed by Phase 60 plan 60-01:** that read is gone —
+   `resolvedBackend()` now resolves through the seam and keeps no ordering of its own
+   (`src/mcp/vice/backend-detect.mts:404-418`), and `broker-launch.mts` became a pure consumer of
+   the one resolved string.
 
-2. **Three `$PATH`-walk implementations coexist for exactly one phase.** The seam's own exported
-   `resolveOnPath()` (`src/mcp/vice/tool-location.mts:227-242`) is the third. The first two are
-   untouched: `defaultResolveBinPath()` (`src/mcp/vice/backend-detect.mts:204-216`) and the fallback
-   loop inside `findSiblingBinary()` (`src/mcp/vice/host-tool.mts:2273-2311`), whose own comment
-   already says it "mirrors `defaultResolveBinPath()`'s own algorithm." Phase 60 collapses all three
-   into one when it rewires the live callsites — named work rather than rediscovered duplication.
+2. **Three `$PATH`-walk implementations coexisted for exactly one phase.** The seam's own exported
+   `resolveOnPath()` (`src/mcp/vice/tool-location.mts:256-271`) was the third. The first two were
+   untouched by Phase 59: `defaultResolveBinPath()` (`src/mcp/vice/backend-detect.mts:278-280`) and
+   the fallback loop inside `findSiblingBinary()` (`src/mcp/vice/host-tool.mts:2273-2311`), whose
+   own comment already says it "mirrors `defaultResolveBinPath()`'s own algorithm." Phase 60
+   collapses all three into one when it rewires the live callsites — named work rather than
+   rediscovered duplication. **Plan 60-01 collapsed the first:** `defaultResolveBinPath()` is now a
+   one-line delegation to the seam's `resolveOnPath()`. The `findSiblingBinary()` loop is plan
+   60-04's.
 
 3. **`resolvedBackend()`'s final role is an open question Phase 59 deliberately does not pre-empt.**
    Phase 60 must decide there whether it is reduced to identity and capability caching over a path
@@ -142,10 +147,10 @@ live text on every run.
 ```json
 [
   { "citation": ".planning/ROADMAP.md:1959", "anchor": "the **first** regeneration of the committed" },
-  { "citation": "src/mcp/vice/backend-detect.mts:312", "anchor": "const viceBin = deps.viceBin ?? env.VICE_BIN ?? \"x64sc\";" },
+  { "citation": "src/mcp/vice/backend-detect.mts:404-418", "anchor": "viceBin = \"x64sc\";" },
   { "citation": ".planning/ROADMAP.md:1939-1942", "anchor": "The precedence order exists in exactly one place." },
-  { "citation": "src/mcp/vice/tool-location.mts:227-242", "anchor": "export function resolveOnPath(bin: string, env: NodeJS.ProcessEnv): { path: string | null; tried: string[] } {" },
-  { "citation": "src/mcp/vice/backend-detect.mts:204-216", "anchor": "function defaultResolveBinPath(bin: string, env: NodeJS.ProcessEnv): string | null {" },
+  { "citation": "src/mcp/vice/tool-location.mts:256-271", "anchor": "export function resolveOnPath(bin: string, env: NodeJS.ProcessEnv): { path: string | null; tried: string[] } {" },
+  { "citation": "src/mcp/vice/backend-detect.mts:278-280", "anchor": "function defaultResolveBinPath(bin: string, env: NodeJS.ProcessEnv): string | null {" },
   { "citation": "src/mcp/vice/host-tool.mts:2273-2311", "anchor": "function findSiblingBinary(binaryName: string, resolvedX64scPath: string, log?: (line: string) => void): { path: string | null; tried: string[] } {" },
   { "citation": ".planning/phases/59-the-tool-location-seam-and-its-precedence-order/59-CONTEXT.md:55-57", "anchor": "Phase 60 must decide there whether `resolvedBackend()` is reduced to" },
   { "citation": ".planning/phases/59-the-tool-location-seam-and-its-precedence-order/59-01-PLAN.md:145", "anchor": "the `sibling-of-x64sc`, `fixed-prefix-list` and `vendored-path` implementations when it collapses" },
