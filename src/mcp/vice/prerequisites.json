@@ -88,6 +88,10 @@
     },
     "c1541": {
       "id": "c1541",
+      "location": {
+        "fileOverridable": true
+      },
+      "kind": "executable",
       "unblocks": {
         "skills": [
           "c64-disk-access"
@@ -165,6 +169,10 @@
     },
     "petcat": {
       "id": "petcat",
+      "location": {
+        "fileOverridable": true
+      },
+      "kind": "executable",
       "unblocks": {
         "skills": [
           "c64-petcat",
@@ -239,6 +247,11 @@
     },
     "acme": {
       "id": "acme",
+      "location": {
+        "envVar": "ACME_BIN",
+        "fileOverridable": true
+      },
+      "kind": "executable",
       "unblocks": {
         "skills": [
           "acme-build"
@@ -274,6 +287,12 @@
     },
     "acme-lib": {
       "id": "acme-lib",
+      "location": {
+        "envVar": "ACME",
+        "fileOverridable": true
+      },
+      "kind": "directory",
+      "marker": "cbm/c64/vic.a",
       "unblocks": {
         "skills": [
           "acme-build"
@@ -295,6 +314,12 @@
     },
     "ghidra": {
       "id": "ghidra",
+      "location": {
+        "envVar": "GHIDRA_HOME",
+        "fileOverridable": true
+      },
+      "kind": "directory",
+      "marker": "support/analyzeHeadless",
       "unblocks": {
         "skills": [
           "c64-program-recon"
@@ -317,6 +342,11 @@
     },
     "dxa": {
       "id": "dxa",
+      "location": {
+        "fileOverridable": false,
+        "reason": "dxa is vendored and built by this project, so an override could only select a binary it did not build and did not pin."
+      },
+      "kind": "executable",
       "unblocks": {
         "skills": [
           "routine-queue-walker"
@@ -339,6 +369,11 @@
     "node": {
       "id": "node",
       "versionFloor": ">=24.0.0",
+      "location": {
+        "fileOverridable": false,
+        "reason": "vice-launcher.sh is bash and reads VICE_BROKER_NODE before any working Node exists to parse JSON with."
+      },
+      "kind": "executable",
       "unblocks": {
         "skills": [
           "acme-build",
