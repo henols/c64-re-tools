@@ -16,7 +16,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 
 import { build } from "./build.ts";
 import { resolveTool } from "./tool-location.mts";
@@ -28,6 +28,25 @@ function withScratch<T>(fn: (dir: string) => T): T {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+}
+
+/** Builds a scratch `prerequisites.json` declaring one directory-kind tool
+ * id with no env var, for the trailing-separator test below -- the real
+ * committed declaration carries no directory-kind record until plan 59-02,
+ * so this test drives the declaration-resolution logic (`deps.here`)
+ * against a fixture rather than the real file, exactly as the compiled-
+ * artifact case above does for a different reason. */
+function withDirectoryKindFixture<T>(fn: (here: string) => T): T {
+  return withScratch((here) => {
+    writeFileSync(
+      join(here, "prerequisites.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        tools: { "test-dir-tool": { id: "test-dir-tool", location: { fileOverridable: true }, kind: "directory" } },
+      }),
+    );
+    return fn(here);
+  });
 }
 
 test("environment layer wins over a competing tools.json entry", () => {
@@ -147,6 +166,136 @@ test("compiled artifact: the same three layers answer from resources/tool-locati
     assert.equal(result.path, probeBin);
     assert.equal(result.layer, "probe");
     assert.equal(result.mechanism, "$PATH");
+  });
+});
+
+test("a tools.json value beginning ~/ expands against the injected HOME and resolves absolute", () => {
+  withScratch((dir) => {
+    const home = join(dir, "home");
+    const binDir = join(home, "bin");
+    mkdirSync(binDir, { recursive: true });
+    const bin = join(binDir, "x64sc");
+    writeFileSync(bin, "");
+    writeFileSync(join(dir, "tools.json"), JSON.stringify({ x64sc: "~/bin/x64sc" }));
+
+    const result = resolveTool("x64sc", {
+      toolsDir: dir,
+      projectRoot: dir,
+      env: { HOME: home },
+    });
+
+    assert.equal(result.path, bin);
+    assert.equal(isAbsolute(result.path as string), true);
+    assert.equal(result.layer, "file");
+  });
+});
+
+test("a bare ~ with no separator is joined against projectRoot rather than expanded", () => {
+  withScratch((dir) => {
+    const projectRoot = join(dir, "project");
+    const bin = join(projectRoot, "~");
+    mkdirSync(projectRoot, { recursive: true });
+    writeFileSync(bin, "");
+    writeFileSync(join(dir, "tools.json"), JSON.stringify({ x64sc: "~" }));
+
+    const result = resolveTool("x64sc", {
+      toolsDir: dir,
+      projectRoot,
+      env: { HOME: join(dir, "should-not-be-used") },
+    });
+
+    assert.equal(result.path, bin);
+  });
+});
+
+test("a relative tools.json value resolves against projectRoot, not toolsDir and not process cwd", () => {
+  withScratch((dir) => {
+    const toolsDir = join(dir, "tools-dir-unrelated");
+    const projectRoot = join(dir, "project-root");
+    mkdirSync(toolsDir, { recursive: true });
+    mkdirSync(join(projectRoot, "vendor"), { recursive: true });
+    const bin = join(projectRoot, "vendor", "x64sc");
+    writeFileSync(bin, "");
+    writeFileSync(join(toolsDir, "tools.json"), JSON.stringify({ x64sc: "vendor/x64sc" }));
+
+    const result = resolveTool("x64sc", {
+      toolsDir,
+      projectRoot,
+      env: {},
+    });
+
+    assert.equal(result.path, bin);
+  });
+});
+
+test("a non-ASCII tools.json path segment round-trips byte-identically", () => {
+  withScratch((dir) => {
+    const segment = "båt-åäö";
+    const binDir = join(dir, segment);
+    mkdirSync(binDir, { recursive: true });
+    const bin = join(binDir, "x64sc");
+    writeFileSync(bin, "");
+    writeFileSync(join(dir, "tools.json"), JSON.stringify({ x64sc: join(dir, segment, "x64sc") }));
+
+    const result = resolveTool("x64sc", {
+      toolsDir: dir,
+      projectRoot: dir,
+      env: {},
+    });
+
+    assert.equal(result.path, bin);
+    assert.ok(result.path && result.path.includes(segment));
+  });
+});
+
+test("a directory-kind candidate with a trailing separator resolves to the same path as one without", () => {
+  withDirectoryKindFixture((here) => {
+    withScratch((dir) => {
+      const libDir = join(dir, "lib");
+      mkdirSync(libDir, { recursive: true });
+      writeFileSync(join(dir, "tools.json"), JSON.stringify({ "test-dir-tool": `${libDir}/` }));
+
+      const withSlash = resolveTool("test-dir-tool", { toolsDir: dir, projectRoot: dir, env: {}, here });
+
+      writeFileSync(join(dir, "tools.json"), JSON.stringify({ "test-dir-tool": libDir }));
+      const withoutSlash = resolveTool("test-dir-tool", { toolsDir: dir, projectRoot: dir, env: {}, here });
+
+      assert.equal(withSlash.path, libDir);
+      assert.equal(withSlash.path, withoutSlash.path);
+    });
+  });
+});
+
+test("no cache: a binary appearing on the injected PATH between two calls is found by the second call", () => {
+  withScratch((dir) => {
+    const pathDir = join(dir, "bin");
+    mkdirSync(pathDir, { recursive: true });
+    const probeBin = join(pathDir, "x64sc");
+
+    const first = resolveTool("x64sc", { toolsDir: dir, projectRoot: dir, env: { PATH: pathDir } });
+    assert.equal(first.path, null);
+
+    writeFileSync(probeBin, "");
+
+    const second = resolveTool("x64sc", { toolsDir: dir, projectRoot: dir, env: { PATH: pathDir } });
+    assert.equal(second.path, probeBin);
+  });
+});
+
+test("many concurrent resolveTool calls against one scratch tree each match the same call made alone", async () => {
+  await withScratch(async (dir) => {
+    const pathDir = join(dir, "bin");
+    mkdirSync(pathDir, { recursive: true });
+    const probeBin = join(pathDir, "x64sc");
+    writeFileSync(probeBin, "");
+    const deps = { toolsDir: dir, projectRoot: dir, env: { PATH: pathDir } };
+
+    const solo = resolveTool("x64sc", deps);
+    const concurrent = await Promise.all(Array.from({ length: 20 }, () => Promise.resolve(resolveTool("x64sc", deps))));
+
+    for (const result of concurrent) {
+      assert.deepEqual(result, solo);
+    }
   });
 });
 
