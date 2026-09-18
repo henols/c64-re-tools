@@ -42,18 +42,23 @@ function withScratch<T>(fn: (dir: string) => T): T {
 }
 
 /** Builds a scratch `prerequisites.json` declaring one directory-kind tool
- * id with no env var, for the trailing-separator test below -- the real
- * committed declaration carries no directory-kind record until plan 59-02,
- * so this test drives the declaration-resolution logic (`deps.here`)
- * against a fixture rather than the real file, exactly as the compiled-
- * artifact case above does for a different reason. */
+ * id with no env var, for the trailing-separator test below -- this test
+ * drives the declaration-resolution logic (`deps.here`) against a fixture
+ * rather than the real file, exactly as the compiled-artifact case above
+ * does for a different reason. Carries a `marker`, matching the shape
+ * every real directory-kind record declares (D-07): plan 59-02's
+ * kind-aware existence check requires one for a directory-kind id, and a
+ * marker-less fixture would test a record shape the real declaration
+ * never produces. */
 function withDirectoryKindFixture<T>(fn: (here: string) => T): T {
   return withScratch((here) => {
     writeFileSync(
       join(here, "prerequisites.json"),
       JSON.stringify({
         schemaVersion: 1,
-        tools: { "test-dir-tool": { id: "test-dir-tool", location: { fileOverridable: true }, kind: "directory" } },
+        tools: {
+          "test-dir-tool": { id: "test-dir-tool", location: { fileOverridable: true }, kind: "directory", marker: "marker-file" },
+        },
       }),
     );
     return fn(here);
@@ -264,6 +269,7 @@ test("a directory-kind candidate with a trailing separator resolves to the same 
     withScratch((dir) => {
       const libDir = join(dir, "lib");
       mkdirSync(libDir, { recursive: true });
+      writeFileSync(join(libDir, "marker-file"), "");
       writeFileSync(join(dir, "tools.json"), JSON.stringify({ "test-dir-tool": `${libDir}/` }));
 
       const withSlash = resolveTool("test-dir-tool", { toolsDir: dir, projectRoot: dir, env: {}, here });

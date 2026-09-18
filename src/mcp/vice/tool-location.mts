@@ -111,10 +111,9 @@ export interface ResolveToolDeps {
   /** Defaults to `existsSync`. Overridable so a test can drive candidate
    * existence without touching the real filesystem. */
   exists?: (p: string) => boolean;
-  /** Defaults to a `statSync`-based classifier. Not yet read by this
-   * module's own resolution logic -- kind-based validation is a later
-   * phase's job -- but declared here now so that phase adds no new
-   * parameter shape to this deps object. */
+  /** Defaults to a `statSync`-based classifier. Read by `resolveTool()`'s
+   * kind-aware existence check for every layer it reaches, so a test can
+   * drive that check without touching the real filesystem. */
   statKind?: (p: string) => "file" | "directory" | null;
   /** Defaults to a UTF-8 `readFileSync`. Overridable so a test can drive
    * file contents without touching the real filesystem. */
@@ -178,8 +177,9 @@ function readDeclaration(here: string): ToolDeclaration {
 }
 
 /** Classifies a path as a statable file, a statable directory, or neither.
- * The real default behind `deps.statKind` above -- not yet called anywhere
- * in this module's own resolution logic (see that field's own comment). */
+ * The real default behind `deps.statKind` above -- called by
+ * `resolveTool()`'s own kind-aware existence check for every layer it
+ * reaches. */
 function defaultStatKind(p: string): "file" | "directory" | null {
   try {
     const st = statSync(p);
@@ -250,6 +250,7 @@ function normalizeFileLayerValue(rawValue: string, env: NodeJS.ProcessEnv, proje
 export function resolveTool(id: string, deps: ResolveToolDeps): ResolveToolResult {
   const env = deps.env ?? process.env;
   const exists = deps.exists ?? existsSync;
+  const statKind = deps.statKind ?? defaultStatKind;
   const readFile = deps.readFile ?? ((p: string) => readFileSync(p, "utf8"));
   const here = deps.here ?? HERE;
 
@@ -268,19 +269,60 @@ export function resolveTool(id: string, deps: ResolveToolDeps): ResolveToolResul
     };
   }
 
-  // Layer 1: the environment.
+  // A record declared `fileOverridable: false` has exactly one legitimate
+  // location, and that location is not any of the three layers this
+  // function walks (D-16). No layer is consulted at all -- not the
+  // environment, not `tools.json`, not `$PATH` -- because walking any of
+  // them is precisely the substitution the exclusion exists to refuse.
+  // The refusal quotes the declaration's own `reason` field verbatim
+  // (LOC-05, LOC-07): this module never re-authors that sentence.
+  if (record.location?.fileOverridable === false) {
+    return {
+      id,
+      path: null,
+      tried: [],
+      layer: null,
+      mechanism: null,
+      refusal: `"${id}" may not be located through an environment variable, tools.json, or $PATH: ${record.location.reason ?? ""}`,
+    };
+  }
+
+  /** Whether `candidate` matches this record's declared `kind` -- a
+   * statable file for an `executable` record, or a statable directory
+   * containing the declared `marker` for a `directory` record. This is an
+   * EXISTENCE test widened to be kind-aware (D-07), not the executable-bit
+   * check that arrives in a later plan and applies to the file layer
+   * alone (D-08). */
+  const matchesDeclaredKind = (candidate: string): boolean => {
+    if (record.kind === "directory") {
+      return statKind(candidate) === "directory" && typeof record.marker === "string" && exists(join(candidate, record.marker));
+    }
+    return statKind(candidate) === "file";
+  };
+
+  // Layer 1: the environment. Kept at today's existence-only posture
+  // (D-08): a candidate that exists but fails the kind check simply does
+  // not match here -- it is not refused, only not found -- and resolution
+  // falls through to the next layer.
   const envVarName = record.location?.envVar;
   if (envVarName) {
     const envValue = env[envVarName];
     if (typeof envValue === "string" && envValue !== "") {
       tried.push(envValue);
-      if (exists(envValue)) {
+      if (matchesDeclaredKind(envValue)) {
         return { id, path: envValue, tried, layer: "env", mechanism: envVarName, refusal: null };
       }
     }
   }
 
-  // Layer 2: `.c64-re-tools/tools.json`.
+  // Layer 2: `.c64-re-tools/tools.json`. This is the one layer D-08 scopes
+  // validation to: an entry that resolves to something ON DISK but is not
+  // what its record's `kind` declares -- the wrong kind, or a directory
+  // missing its marker -- is refused by name (D-09, the LOC-06 criterion
+  // amendment), rather than silently falling through to `$PATH`. An entry
+  // that resolves to nothing at all on disk is NOT refused: it is simply
+  // absent, and resolution proceeds to the next layer exactly as it did
+  // before this record's `kind` existed.
   const toolsJsonPath = join(deps.toolsDir, "tools.json");
   if (exists(toolsJsonPath)) {
     let parsed: unknown = null;
@@ -294,15 +336,30 @@ export function resolveTool(id: string, deps: ResolveToolDeps): ResolveToolResul
       if (typeof rawValue === "string" && rawValue !== "") {
         const resolvedPath = normalizeFileLayerValue(rawValue, env, deps.projectRoot);
         tried.push(resolvedPath);
-        if (exists(resolvedPath)) {
-          return { id, path: resolvedPath, tried, layer: "file", mechanism: "tools.json", refusal: null };
+        const onDiskKind = statKind(resolvedPath);
+        if (onDiskKind !== null) {
+          if (matchesDeclaredKind(resolvedPath)) {
+            return { id, path: resolvedPath, tried, layer: "file", mechanism: "tools.json", refusal: null };
+          }
+          return {
+            id,
+            path: null,
+            tried,
+            layer: null,
+            mechanism: null,
+            refusal:
+              record.kind === "directory"
+                ? `"${id}"'s tools.json entry (${resolvedPath}) is a directory but is missing its required marker (${record.marker ?? ""})`
+                : `"${id}"'s tools.json entry (${resolvedPath}) does not resolve to a ${record.kind ?? "executable"}`,
+          };
         }
       }
     }
   }
 
   // Layer 3: `$PATH`, executable-kind ids only (a directory has no
-  // meaningful `$PATH` candidate).
+  // meaningful `$PATH` candidate, and recording one nobody meant would be
+  // misleading in a later doctor's output -- D-15).
   if (record.kind === "executable") {
     const probe = resolveOnPath(id, env);
     tried.push(...probe.tried);
@@ -313,8 +370,3 @@ export function resolveTool(id: string, deps: ResolveToolDeps): ResolveToolResul
 
   return { id, path: null, tried, layer: null, mechanism: null, refusal: null };
 }
-
-// Referenced only in this module's own doc comments above until a later
-// phase reads it -- kept here, unused, so `defaultStatKind` is a real
-// function and not a promise this file makes without keeping it.
-void defaultStatKind;
