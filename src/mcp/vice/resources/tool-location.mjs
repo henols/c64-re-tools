@@ -52,7 +52,7 @@
 //   - Do not hand-edit the compiled artifact under resources/. This file is
 //     the source; the compiled copy is generated and committed, and a
 //     hand-edit there is silently overwritten by the next build.
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { accessSync, constants as fsConstants, existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 /** This module's own directory. Computed once, at module load, purely as
@@ -271,6 +271,7 @@ export function resolveTool(id, deps) {
     const env = deps.env ?? process.env;
     const exists = deps.exists ?? existsSync;
     const statKind = deps.statKind ?? defaultStatKind;
+    const access = deps.access ?? ((p, mode) => accessSync(p, mode));
     const readFile = deps.readFile ?? ((p) => readFileSync(p, "utf8"));
     const here = deps.here ?? HERE;
     const tried = [];
@@ -307,13 +308,56 @@ export function resolveTool(id, deps) {
      * statable file for an `executable` record, or a statable directory
      * containing the declared `marker` for a `directory` record. This is an
      * EXISTENCE test widened to be kind-aware (D-07), not the executable-bit
-     * check that arrives in a later plan and applies to the file layer
-     * alone (D-08). */
+     * check below, which lives in `passesFileLayerCheck` and applies to the
+     * file layer alone (D-08). */
     const matchesDeclaredKind = (candidate) => {
         if (record.kind === "directory") {
             return statKind(candidate) === "directory" && typeof record.marker === "string" && exists(join(candidate, record.marker));
         }
         return statKind(candidate) === "file";
+    };
+    /** Whether `candidate` satisfies this record's declared `kind` on the
+     * FILE LAYER specifically (D-08, LOC-06's amended triad): everything
+     * `matchesDeclaredKind` already tests, PLUS -- for an `executable`-kind
+     * record only -- a real executable-bit check via `accessSync(candidate,
+     * fsConstants.X_OK)` inside a `try`/`catch`, never mode-bit arithmetic.
+     * A `directory`-kind candidate is never subjected to this additional
+     * check at all: emptiness or permission bits on a directory are not this
+     * criterion's concern, only its marker is. */
+    const passesFileLayerCheck = (candidate) => {
+        if (!matchesDeclaredKind(candidate))
+            return false;
+        if (record.kind === "directory")
+            return true;
+        try {
+            access(candidate, fsConstants.X_OK);
+            return true;
+        }
+        catch {
+            return false;
+        }
+    };
+    /** Builds the file layer's refusal sentence for a `candidate` that
+     * failed `passesFileLayerCheck` -- naming the tool id, quoting the
+     * offending path, saying `tools.json` supplied it (the half of LOC-06
+     * that tells a user which of the three layers to go fix), and naming
+     * which condition failed: absent, wrong kind, a missing marker, or a
+     * missing executable bit. */
+    const buildFileLayerRefusal = (candidate) => {
+        const onDiskKind = statKind(candidate);
+        if (onDiskKind === null) {
+            return `"${id}"'s tools.json entry (${candidate}) does not exist on disk; tools.json supplied this path`;
+        }
+        if (record.kind === "directory") {
+            if (onDiskKind !== "directory") {
+                return `"${id}"'s tools.json entry (${candidate}) is a ${onDiskKind}, but the declaration requires a directory; tools.json supplied this path`;
+            }
+            return `"${id}"'s tools.json entry (${candidate}) is a directory but is missing its required marker (${record.marker ?? ""}); tools.json supplied this path`;
+        }
+        if (onDiskKind !== "file") {
+            return `"${id}"'s tools.json entry (${candidate}) is a ${onDiskKind}, but the declaration requires an executable file; tools.json supplied this path`;
+        }
+        return `"${id}"'s tools.json entry (${candidate}) exists but is not executable (missing the executable bit); tools.json supplied this path`;
     };
     // Layer 1: the environment. Kept at today's existence-only posture
     // (D-08): a candidate that exists but fails the kind check simply does
@@ -330,13 +374,18 @@ export function resolveTool(id, deps) {
         }
     }
     // Layer 2: `.c64-re-tools/tools.json`. This is the one layer D-08 scopes
-    // validation to: an entry that resolves to something ON DISK but is not
-    // what its record's `kind` declares -- the wrong kind, or a directory
-    // missing its marker -- is refused by name (D-09, the LOC-06 criterion
-    // amendment), rather than silently falling through to `$PATH`. An entry
-    // that resolves to nothing at all on disk is NOT refused: it is simply
-    // absent, and resolution proceeds to the next layer exactly as it did
-    // before this record's `kind` existed.
+    // validation to, and the amended LOC-06 triad applies in full here: a
+    // named entry is refused by name when the path is absent, is not what
+    // its record's `kind` declares, or -- for a `directory` kind -- does
+    // not contain its declared marker, or -- for an `executable` kind --
+    // exists but carries no executable bit. Once a non-empty entry names a
+    // candidate for this id, resolution is TERMINAL for this call: it either
+    // accepts the candidate or refuses it, and never falls through to
+    // `$PATH` afterward (D-09) -- silently continuing would resolve a
+    // different binary than the one the file named and report success,
+    // which is exactly the failure LOC-06 exists to replace. An id that
+    // tools.json does not mention at all is simply absent from the file,
+    // which is unaffected by any of this and falls through as before.
     const toolsJsonPath = join(deps.toolsDir, "tools.json");
     if (exists(toolsJsonPath)) {
         let parsed = null;
@@ -351,22 +400,17 @@ export function resolveTool(id, deps) {
             if (typeof rawValue === "string" && rawValue !== "") {
                 const resolvedPath = normalizeFileLayerValue(rawValue, env, deps.projectRoot);
                 tried.push(resolvedPath);
-                const onDiskKind = statKind(resolvedPath);
-                if (onDiskKind !== null) {
-                    if (matchesDeclaredKind(resolvedPath)) {
-                        return { id, path: resolvedPath, tried, layer: "file", mechanism: "tools.json", refusal: null };
-                    }
-                    return {
-                        id,
-                        path: null,
-                        tried,
-                        layer: null,
-                        mechanism: null,
-                        refusal: record.kind === "directory"
-                            ? `"${id}"'s tools.json entry (${resolvedPath}) is a directory but is missing its required marker (${record.marker ?? ""})`
-                            : `"${id}"'s tools.json entry (${resolvedPath}) does not resolve to a ${record.kind ?? "executable"}`,
-                    };
+                if (passesFileLayerCheck(resolvedPath)) {
+                    return { id, path: resolvedPath, tried, layer: "file", mechanism: "tools.json", refusal: null };
                 }
+                return {
+                    id,
+                    path: null,
+                    tried,
+                    layer: null,
+                    mechanism: null,
+                    refusal: buildFileLayerRefusal(resolvedPath),
+                };
             }
         }
     }
