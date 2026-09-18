@@ -343,17 +343,22 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 60 (The Seam Wired Into the Code That Ships) — EXECUTING
-Plan: 5 of 5 executed, 2 of 5 next
-Status: Ready to execute
-Stopped at: Completed 60-05-PLAN.md
-Plan 60-03 wired acme/acme-lib/ghidra/dxa through the tool-location seam inside
-host-tool.mts's own executor (both routes), a missing ACME now refused by name
-before any spawn with the declared remedy, and resources/host-tool.mjs
-regenerated and committed. Full plan-level verification green (184 tests, 0
-fail); full automated suite green (3823 tests, 0 fail, 9 skipped).
-Next: execute plan 60-04.
-Last activity: 2026-09-18 — Plan 60-03 executed
+Phase: 60 (The Seam Wired Into the Code That Ships) — GAPS FOUND
+Plan: 5 of 5 executed
+Status: Verified, 4/5 must-haves met — not complete
+Stopped at: Phase 60 verification (60-VERIFICATION.md)
+All five plans executed and summarized; full-glob suite green (3996 tests, 0
+fail, 81 skipped) and typecheck clean. Verification scored 4/5: LOC-01, LOC-02,
+LOC-04 and DECL-03 verified directly against the tree, LOC-03 FAILED. The seam's
+environment layer statSyncs an env-var value against process.cwd() with no $PATH
+fallback, so a slash-free VICE_BIN/ACME_BIN is silently discarded and resolution
+falls through to a $PATH probe for the declared id -- spawning a different binary
+with refusal: null. A regression: the pre-phase code walked $PATH for a
+slash-free name deliberately. Reproduced independently by the code review
+(CR-01), the orchestrator and the verifier. No test exercises a slash-free env
+value, which is why the green suite did not catch it.
+Next: /gsd-plan-phase 60 --gaps, then re-run execute-phase.
+Last activity: 2026-09-18 — Phase 60 executed and verified, 1 gap found
 
 **Milestone shape, so no reader has to rebuild it from the ROADMAP:** Phase 58
 declares the prerequisites; Phase 59 builds the tool-location seam and its
