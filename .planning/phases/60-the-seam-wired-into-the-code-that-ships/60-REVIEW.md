@@ -2,201 +2,138 @@
 phase: 60-the-seam-wired-into-the-code-that-ships
 reviewed: 2026-09-18T00:00:00Z
 depth: standard
-files_reviewed: 14
+files_reviewed: 6
 files_reviewed_list:
-  - docs/phase58-declaration-provenance.md
-  - docs/phase59-tool-location-placement.md
-  - src/mcp/vice/backend-detect.mts
-  - src/mcp/vice/backend-detect.test.ts
-  - src/mcp/vice/host-tool.mts
-  - src/mcp/vice/host-tool.test.ts
-  - src/mcp/vice/resources/backend-detect.mjs
-  - src/mcp/vice/resources/host-tool.mjs
-  - src/mcp/vice/resources/tool-location.mjs
-  - src/mcp/vice/resources/vice-broker.mjs
   - src/mcp/vice/tool-location.mts
   - src/mcp/vice/tool-location.test.ts
   - src/mcp/vice/vice-broker-acquire.test.ts
-  - src/mcp/vice/vice-broker.mts
+  - src/mcp/vice/resources/tool-location.mjs
+  - docs/phase58-declaration-provenance.md
+  - docs/phase59-tool-location-placement.md
 findings:
   critical: 0
-  warning: 1
+  warning: 0
   info: 1
-  total: 2
-status: issues_found
+  total: 1
+status: clean
 ---
 
-# Phase 60: Code Review Report (incremental re-review)
+# Phase 60: Code Review Report (incremental re-review, round 2)
 
 **Reviewed:** 2026-09-18
 **Depth:** standard
-**Files Reviewed:** 14
-**Status:** issues_found
+**Files Reviewed:** 6
+**Status:** clean
 
 ## Summary
 
-This is an incremental re-review of Phase 60 scoped to what changed between
-the first review's commit (`546782a2`) and HEAD -- plans 60-06 and 60-07,
-which were dispatched specifically to close the first review's CR-01 and
-WR-01 findings and to record WR-02 as a deliberate, open decision.
+This is a second incremental re-review of Phase 60, scoped to what plan 60-08 changed
+since the prior round's commit `e002897a`. Plan 60-08 was dispatched specifically to
+close the prior review's WR-03 (the environment layer's terminal refusal falsely
+claiming a `$PATH`-substitution risk for a `directory`-kind id) and to correct a
+same-phase regression plan 60-06 had left in place (a separator-containing,
+unresolvable declared-variable value silently falling through to the declared-id
+`$PATH` probe, which plan 60-01 had made reachable and which pre-phase-60 code never
+exhibited).
 
-**Prior findings, disposition:**
+Every claim in the incoming context was independently verified against the actual
+diff and the actual running tests, not assumed:
 
-- **CR-01** ("a bare, `$PATH`-relying `VICE_BIN`/`ACME_BIN` override is
-  silently dropped, and can silently resolve to a different binary") --
-  **CLOSED.** `tool-location.mts`'s environment layer now widens a
-  slash-free candidate onto `$PATH` for its own literal value first
-  (`resolveOnPath(envValue, env)`, never the declared id), and refuses by
-  name, before the declared-id `$PATH` probe, when nothing answers. The
-  closure is proven end to end: `vice-broker-acquire.test.ts`'s Plan 60-06
-  Test 2 drives a decoy binary literally named `x64sc` on the injected
-  `PATH` and asserts the real spawn call's first argument is the
-  developer's own unresolved string, never the decoy's path. Verified
-  directly against the compiled artifact (`resources/tool-location.mjs`
-  carries the same widened logic byte-for-byte with the source). The
-  closure's own residual scope (a separator-*containing* value that
-  resolves to nothing keeps the old silent-fallthrough posture, by design,
-  to hold `vice-broker-acquire.test.ts`'s pre-existing "Plan 60-01 Test 4"
-  green) is exactly the narrow, documented limit this review's own context
-  names as deliberate and graded -- not re-reported here as a defect.
-- **WR-01** ("`findSiblingBinary()` discards the seam's specific `tools.json`
-  refusal reason for c1541/petcat, reporting a generic 'does not exist'") --
-  **CLOSED.** `findSiblingBinary()`'s return shape now carries an explicit
-  `refusal: string | null` field, both `c1541.*` and `petcat.decode` branch
-  on it before the generic not-found sentence, and a refusal is quoted
-  verbatim with **no** remedy appended -- mirroring the ACME branch's own
-  precedent. Six new tests (`host-tool.test.ts`, "Plan 60-07 Test 1"
-  through "Test 6") exercise the absent-on-disk case, the missing-executable-
-  bit case, the genuine not-found case (remedy still present), the
-  no-remedy-on-refusal case for both tools, and the memo replaying a
-  refusal verbatim on a second call. Verified against the compiled artifact.
-- **WR-02** ("`findSiblingBinary()`'s memo contradicts the seam's own
-  no-memo rationale") -- **recorded as an open, deliberately unresolved
-  decision**, as intended. `siblingBinaryMemo`'s own header now states the
-  tension explicitly, names why no reset hatch was added, and names the
-  trigger for revisiting it (the sibling-probe mechanism moving inside the
-  seam itself). That is an adequate record of a real, live tension, not an
-  oversight -- no further finding raised here.
-- **IN-01** ("`resolvedBackend()`'s reported `viceBin` is always the
-  literal `"x64sc"`") -- **superseded/closed** as a side effect of the
-  same plan: the PD-01 branch's display name now falls back to the seam's
-  own `envCandidate` (the value the developer actually wrote) before
-  falling back to the literal `"x64sc"`, and the 60-06 diff's own comment
-  explicitly retires this note.
+- **`envUnresolved = true` moved out of the separator-gated branch.** Confirmed at
+  `tool-location.mts:677-695`. Before this plan, the assignment sat inside `if
+  (!envValue.includes("/")) { ... }`, so a value containing a `/` never registered as
+  unresolved and fell through silently to Layer 3's declared-id `$PATH` probe — the
+  regression `60-VERIFICATION.md` traced to plan 60-01, not to pre-phase behaviour.
+  The assignment is now unconditional for any declared variable's non-empty value,
+  whatever its shape, while the narrower `!envValue.includes("/") && record.kind ===
+  "executable"` test still gates the `$PATH` *walk* alone — two genuinely distinct
+  expressions, confirmed by reading both, not merely by the header comment's own
+  claim to that effect.
+- **`buildEnvLayerRefusal()` branches its trailing clause on `record.kind`.** Confirmed
+  at `tool-location.mts:711-723`: an `executable`-kind record keeps the
+  `$PATH`-shadowing sentence byte-for-byte; a `directory`-kind record gets a
+  kind-appropriate sentence ("resolution is terminal for ...; tools.json was
+  consulted and had nothing to say ... either") that asserts no mechanism the seam
+  does not actually have. This message is reached only after Layer 2 (`tools.json`)
+  has already returned or fallen through, so the claim "tools.json ... had nothing to
+  say" is accurate at every call site that reaches it — traced by hand, not assumed.
+  This directly closes WR-03 as filed: the two negative-assertion tests
+  ("Plan 60-06 Test G", "Plan 60-08 Test 8") and the one positive control ("Plan
+  60-08 Test 7") that pin this are present and pass.
+- **The two shipped tests rewritten in place both retain their stated surviving
+  intents.** `vice-broker-acquire.test.ts`'s "Plan 60-01 Test 4" still proves the two
+  original properties (two `resolveTool()` calls in one process agree on
+  path/layer/mechanism; the environment candidate is tried before any `$PATH`
+  candidate — now vacuously true, since no declared-id `$PATH` candidate exists once
+  the variable is left unresolved) while its assertions on the *outcome* are
+  reversed to match the corrected contract (refuses, rather than silently resolving
+  through the probe). `tool-location.test.ts`'s separator-containing case was
+  rewritten the same way, with a companion clean-positive-control case (Test 4)
+  proving a resolving separator-containing value still wins outright — so the
+  rewrite narrows the assertion correctly rather than merely weakening it.
+- **`resources/tool-location.mjs` is in sync with its source.** Read side by side
+  with `tool-location.mts`; every changed expression (the moved `envUnresolved`
+  assignment, the kind-branched `buildEnvLayerRefusal()`) is present in the compiled
+  artifact in the same shape, and the compiled-artifact tests (`tool-location.test.ts`'s
+  "Plan 60-08 Test 12", `vice-broker-acquire.test.ts`'s dynamic-import-driven cases)
+  exercise it directly, not only the unbuilt source.
+- **The two doc files' four-line diffs are citation-line-number churn only**, caused
+  by the header comment growing in `tool-location.mts` and shifting
+  `resolveOnPath()`'s own line range. Confirmed via `git diff`: no prose changed, and
+  `phase58-citation-ledger.test.ts` (11 cases) passes against both documents'
+  regenerated line numbers.
 
-One new, genuine defect was found in the gap-closure code itself (below),
-plus one point recorded as Info for completeness. Both are inside the
-`tool-location.mts`/`resources/tool-location.mjs` diff introduced by plan
-60-06, not restatements of anything the prior review already raised.
+All 86 cases in `tool-location.test.ts`, all 35 in `vice-broker-acquire.test.ts`, and
+all 11 in `phase58-citation-ledger.test.ts` were run directly (no live broker or
+`x64sc` process was running beforehand) and pass. No new defect was introduced by
+this plan's diff. One Info item is carried forward from the prior round, downgraded
+from "hiding a wrong message" to "an existing stylistic inconsistency with no live
+consequence," now that the message it was hiding is fixed.
 
-## Warnings
+**Prior findings, disposition after this round:**
 
-### WR-03: The environment layer's terminal refusal message falsely claims a `$PATH`-substitution risk for a `directory`-kind id, which structurally cannot occur for that kind
-
-**File:** `src/mcp/vice/tool-location.mts:665-674` (`envUnresolved` set
-unconditionally) and `:685-692` (`buildEnvLayerRefusal()`'s message text),
-surfaced verbatim at `src/mcp/vice/host-tool.mts:1471-1483`
-(`ghidra.analyze`'s refusal). Present identically in the compiled artifact,
-`src/mcp/vice/resources/tool-location.mjs:481-497`.
-
-**Issue:** The widened environment layer's step 2 (the `$PATH` walk of the
-raw env value) is correctly gated to `record.kind === "executable"` only --
-`tool-location.mts`'s own header and Layer 3's own comment both say a
-`$PATH` search for a directory-kind id is "meaningless" (D-15), and the
-code enforces this (`if (record.kind === "executable") { ... }`). But the
-`envUnresolved = true` assignment that follows sits **outside** that
-kind-gated block, so it fires for a `directory`-kind record's bare,
-unresolved env value exactly as it does for an `executable`-kind one. Two
-of the eight declared ids are `directory`-kind with a declared `envVar`:
-`ghidra` (`GHIDRA_HOME`) and `acme-lib` (`ACME`).
-
-The consequence is not that resolution behaves differently (a directory-kind
-id was always going to end up `path: null` either way -- Layer 3 never runs
-for it) but that the **refusal message composed for it is factually wrong**:
-
-```
-$ node --experimental-strip-types -e '...'
-"ghidra"'s GHIDRA_HOME environment variable is set to "ghidra-bare-name",
-which did not resolve to a directory carrying its required marker
-(support/analyzeHeadless) (tried: ghidra-bare-name); the seam will not
-fall back to searching $PATH for "ghidra" itself, because that could
-start a different binary than the one GHIDRA_HOME named
-```
-
-The seam never had a `$PATH` fallback to decline for `ghidra` in the first
-place -- Layer 3 is gated to `executable`-kind ids only, so there was no
-substitution risk this refusal is protecting against for a directory. This
-is not merely cosmetic: this project's own convention treats a `reason`/
-`refusal` field as "prose a caller shows a user directly... not a code
-meant to be mapped later" (CLAUDE.md, Errors), and this specific sentence
-is reached at a real, live call site -- `host-tool.mts:1472-1483`'s
-`ghidra.analyze` branch quotes `ghidraResolved.refusal` verbatim into the
-MCP tool's own error response. A user debugging a bad `GHIDRA_HOME` reads a
-claim about a `$PATH`-search mechanism that never existed for their case,
-which will send them looking for a nonexistent risk instead of the real
-one (their `GHIDRA_HOME` value simply is not a directory carrying the
-required marker).
-
-For `acme-lib` the same wrong refusal is computed inside `resolveTool()`
-but is currently invisible to a user: `findAcmeLib()`
-(`host-tool.mts:2451-2452`) discards `seamResolved.refusal` entirely and
-falls through to its own fixed-prefix probe regardless of what the seam
-says (by design, and unrelated to this defect) -- so the wrong message is
-wasted work today, not a live user-facing bug, but it is one edit away
-(making `findAcmeLib()` surface `refusal` the way `ghidra.analyze` already
-does, which is the natural next step given the ACME *binary* branch's own
-precedent two hundred lines above it) from becoming one.
-
-This is baked into plan 60-06's own design text, not only a coding slip --
-the plan's own refusal-message prose (`60-06-PLAN.md:251-252`) states the
-sentence generically ("say plainly that the seam will not fall back to
-searching `$PATH` for the tool id") without carving out the directory-kind
-case, and the shipped test that proves a directory-kind bare value refuses
-(`tool-location.test.ts`'s "Plan 60-06 Test G") only asserts the message
-`.includes("GHIDRA_HOME")` and `.includes("ghidra-bare-name")` -- it never
-asserts on (and so never caught) the specific, kind-inapplicable
-justification clause.
-
-**Fix:** Either (a) compose two different `wants`-shaped refusal sentences
-in `buildEnvLayerRefusal()` -- the `$PATH`-substitution clause only for
-`record.kind === "executable"`, and a plainer "did not resolve to a
-directory carrying its required marker" sentence with no `$PATH` clause at
-all for `record.kind === "directory"` -- or (b) if a terminal refusal is
-still wanted for a directory-kind bare value (as `60-06-PLAN.md`'s own Test
-G requires), keep the refusal but simplify its justification to something
-true for every kind ("no value matching what this variable requires was
-found; tools.json was also not consulted for a different candidate" or
-similar), dropping the `$PATH`-specific clause for a `directory`-kind
-record. Add an assertion to "Plan 60-06 Test G" that the message does
-**not** contain the substitution-risk clause, so the fix stays pinned.
+- **CR-01, WR-01, WR-02** (from the first-round review, commit `546782a2`): unaffected
+  by this round's diff. Not re-verified against source in this pass since none of the
+  files this round touches (`tool-location.mts`, its tests, `vice-broker-acquire.test.ts`,
+  the compiled artifact, the two docs) overlap the modules those findings were about
+  (`host-tool.mts`'s `findSiblingBinary()`). Their prior disposition (both closed, per
+  the second-round review) stands un-relitigated here; this round's scope is narrower
+  than a full re-audit.
+- **WR-03** ("the environment layer's terminal refusal message falsely claims a
+  `$PATH`-substitution risk for a `directory`-kind id") — **CLOSED, independently
+  confirmed.** `buildEnvLayerRefusal()` now composes a kind-appropriate sentence, the
+  false claim is gone for both `ghidra` (`GHIDRA_HOME`) and `acme-lib` (`ACME`), and
+  the fix is proven by a positive control (an executable-kind refusal still carries
+  the clause) as well as two negative assertions (a directory-kind refusal does not).
+- **IN-02** ("`findAcmeLib()` silently discards the seam's `refusal` for `acme-lib`,
+  unlike every other seam consumer in this file") — **disposition unchanged, and now
+  moot as a hazard.** `host-tool.mts` is untouched by this round's diff (confirmed:
+  it does not appear in `git diff --stat` against the prior round's commit), so
+  `findAcmeLib()` still discards `seamResolved.refusal` exactly as before. The prior
+  review's own conditional guidance — "if WR-03 is fixed by correcting the message
+  text, no change is required here" — is now satisfied: WR-03 was fixed by option
+  (a), not by routing `findAcmeLib()` to surface `refusal`, so the inconsistency
+  `IN-02` named is real but no longer masks a wrong message. Restated below as an
+  Info item purely for completeness, not as a live defect.
 
 ## Info
 
-### IN-02: `findAcmeLib()` silently discards the seam's `refusal` for `acme-lib`, unlike every other seam consumer in this file
+### IN-02 (carried forward, disposition updated): `findAcmeLib()` still discards the seam's `refusal` for `acme-lib`, unlike every other seam consumer in this file
 
-**File:** `src/mcp/vice/host-tool.mts:2444-2452`.
+**File:** `src/mcp/vice/host-tool.mts:2444-2452` (unchanged by this round's diff).
 
-**Issue:** Every other `resolveTool()` call site touched by this phase
-(`acme.build`'s `acmeResolved`, `ghidra.analyze`'s `ghidraResolved` at two
-call sites, and, as of plan 60-07's WR-01 fix, `findSiblingBinary()`'s
-`c1541`/`petcat` callers) branches on `.refusal` and surfaces it verbatim
-before falling to a generic not-found sentence. `findAcmeLib()` is the one
-remaining seam consumer that does not: its own comment says a refusal is
-"folded into 'not found' here rather than surfaced separately," which
-predates this phase and is not itself new. Noted only because this phase
-made every *sibling* consumer of the exact same pattern consistent with
-the ACME-binary branch's own precedent, leaving `findAcmeLib()` as the one
-remaining inconsistency in the same file -- and because WR-03 above means
-that inconsistency is currently *hiding* a wrong refusal message rather
-than merely dropping a right one. Not a functional defect on its own
-(falling through to the fixed-prefix probe on any seam failure, refusal or
-not, is defensible UX), but worth fixing in the same pass as WR-03 so the
-two changes do not have to be reconciled twice.
+**Issue:** Every other `resolveTool()` call site in this file branches on `.refusal`
+and surfaces it verbatim before falling back to a generic not-found sentence.
+`findAcmeLib()` remains the one exception, per its own pre-existing comment ("folded
+into 'not found' here rather than surfaced separately"). This was previously
+significant because it was silently discarding a *wrong* message (WR-03); now that
+WR-03 is fixed, discarding the (now-correct) refusal is a plain, pre-existing
+stylistic inconsistency with the rest of the file — defensible UX (falling through to
+the fixed-prefix probe on any seam failure), not a functional defect.
 
-**Fix:** If WR-03 is fixed by correcting the message text, no change is
-required here. If `findAcmeLib()` is ever changed to surface `refusal` the
-way `ghidra.analyze` already does, do so only after WR-03 is fixed, not
-before.
+**Fix:** None required. If `findAcmeLib()` is ever changed to surface `refusal` the
+way `ghidra.analyze` already does, the message it would surface is now correct, so
+there is no remaining reason to sequence that change after anything else.
 
 ---
 
