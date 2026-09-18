@@ -97,6 +97,10 @@ test("file layer answers when the environment variable is unset", () => {
   withScratch((dir) => {
     const fileBin = join(dir, "x64sc-file");
     writeFileSync(fileBin, "");
+    // x64sc is an executable-kind id, so plan 59-03 Task 2's file-layer
+    // executable-bit check reaches this candidate; the exec bit must be set
+    // for this to remain the "file layer answers" case rather than a refusal.
+    chmodSync(fileBin, 0o755);
     writeFileSync(join(dir, "tools.json"), JSON.stringify({ x64sc: fileBin }));
 
     const result = resolveTool("x64sc", {
@@ -108,6 +112,7 @@ test("file layer answers when the environment variable is unset", () => {
     assert.equal(result.path, fileBin);
     assert.equal(result.layer, "file");
     assert.equal(result.mechanism, "tools.json");
+    assert.equal(result.refusal, null);
   });
 });
 
@@ -133,8 +138,11 @@ test("$PATH probe answers when neither the environment nor tools.json do", () =>
 test("nothing answers: path/layer/mechanism are null and tried lists the environment candidate first, PATH candidates last", () => {
   withScratch((dir) => {
     const envBin = join(dir, "does-not-exist-env");
-    const fileBin = join(dir, "does-not-exist-file");
-    writeFileSync(join(dir, "tools.json"), JSON.stringify({ x64sc: fileBin }));
+    // No tools.json entry for x64sc at all -- the file has nothing to say
+    // about this id, which is distinct from (and falls through unlike)
+    // plan 59-03 Task 2's new behaviour for an entry that NAMES a path that
+    // does not exist: that is now refused, per the amended LOC-06 triad.
+    writeFileSync(join(dir, "tools.json"), JSON.stringify({}));
     const pathDirA = join(dir, "bin-a");
     const pathDirB = join(dir, "bin-b");
     mkdirSync(pathDirA, { recursive: true });
@@ -173,6 +181,7 @@ test("compiled artifact: the same three layers answer from resources/tool-locati
   withScratch((dir) => {
     const fileBin = join(dir, "x64sc-file");
     writeFileSync(fileBin, "");
+    chmodSync(fileBin, 0o755);
     writeFileSync(join(dir, "tools.json"), JSON.stringify({ x64sc: fileBin }));
     const result = compiled.resolveTool("x64sc", { toolsDir: dir, projectRoot: dir, env: {} });
     assert.equal(result.path, fileBin);
@@ -199,6 +208,7 @@ test("a tools.json value beginning ~/ expands against the injected HOME and reso
     mkdirSync(binDir, { recursive: true });
     const bin = join(binDir, "x64sc");
     writeFileSync(bin, "");
+    chmodSync(bin, 0o755);
     writeFileSync(join(dir, "tools.json"), JSON.stringify({ x64sc: "~/bin/x64sc" }));
 
     const result = resolveTool("x64sc", {
@@ -219,6 +229,7 @@ test("a bare ~ with no separator is joined against projectRoot rather than expan
     const bin = join(projectRoot, "~");
     mkdirSync(projectRoot, { recursive: true });
     writeFileSync(bin, "");
+    chmodSync(bin, 0o755);
     writeFileSync(join(dir, "tools.json"), JSON.stringify({ x64sc: "~" }));
 
     const result = resolveTool("x64sc", {
@@ -239,6 +250,7 @@ test("a relative tools.json value resolves against projectRoot, not toolsDir and
     mkdirSync(join(projectRoot, "vendor"), { recursive: true });
     const bin = join(projectRoot, "vendor", "x64sc");
     writeFileSync(bin, "");
+    chmodSync(bin, 0o755);
     writeFileSync(join(toolsDir, "tools.json"), JSON.stringify({ x64sc: "vendor/x64sc" }));
 
     const result = resolveTool("x64sc", {
@@ -258,6 +270,7 @@ test("a non-ASCII tools.json path segment round-trips byte-identically", () => {
     mkdirSync(binDir, { recursive: true });
     const bin = join(binDir, "x64sc");
     writeFileSync(bin, "");
+    chmodSync(bin, 0o755);
     writeFileSync(join(dir, "tools.json"), JSON.stringify({ x64sc: join(dir, segment, "x64sc") }));
 
     const result = resolveTool("x64sc", {
@@ -376,6 +389,10 @@ test("resolveTool(\"ghidra\", …) resolves through tools.json to the directory 
     assert.equal(result.path, ghidraHome);
     assert.equal(result.layer, "file");
     assert.equal(result.mechanism, "tools.json");
+    // The amended-triad control (LOC-06 CRITERION AMENDMENT): a directory
+    // is the CORRECT state for this id and must never be refused for being
+    // one -- this is the assertion that keeps the amendment honest.
+    assert.equal(result.refusal, null);
   });
 });
 
@@ -390,6 +407,7 @@ test("resolveTool(\"ghidra\", …) refuses a tools.json directory that exists bu
     assert.equal(result.path, null);
     assert.ok(result.refusal && result.refusal.length > 0);
     assert.ok(result.refusal.includes("ghidra"));
+    assert.ok(result.refusal.includes("support/analyzeHeadless"), "the refusal must name the missing marker");
   });
 });
 
@@ -753,5 +771,174 @@ test("validateToolsFile: several distinct problems are returned one per problem,
       ["unknown_first", "x64sc", "dxa"],
     );
     assert.deepEqual(second, first);
+  });
+});
+
+// -----------------------------------------------------------------------
+// Plan 59-03, Task 2: the file layer's refusal contract inside
+// `resolveTool()` -- the amended LOC-06 triad (absent, wrong kind, missing
+// marker), the executable-bit check scoped to the file layer alone, and
+// the one-bad-entry-refuses-one-tool blast radius.
+// -----------------------------------------------------------------------
+
+test("resolveTool(\"x64sc\", …) refuses a tools.json entry naming a path that does not exist, and the refusal names the file", () => {
+  withScratch((dir) => {
+    const missingBin = join(dir, "does-not-exist");
+    writeFileSync(join(dir, "tools.json"), JSON.stringify({ x64sc: missingBin }));
+
+    const result = resolveTool("x64sc", { toolsDir: dir, projectRoot: dir, env: {} });
+
+    assert.equal(result.path, null);
+    assert.equal(result.layer, null);
+    assert.ok(result.refusal, "expected a refusal");
+    assert.ok(result.refusal!.includes("x64sc"));
+    assert.ok(result.refusal!.includes(missingBin));
+    assert.ok(result.refusal!.includes("tools.json"));
+  });
+});
+
+test("resolveTool(\"x64sc\", …) refuses a tools.json entry naming an existing directory, because the record declares an executable file", () => {
+  withScratch((dir) => {
+    const dirAsFile = join(dir, "x64sc-is-a-dir");
+    mkdirSync(dirAsFile, { recursive: true });
+    writeFileSync(join(dir, "tools.json"), JSON.stringify({ x64sc: dirAsFile }));
+
+    const result = resolveTool("x64sc", { toolsDir: dir, projectRoot: dir, env: {} });
+
+    assert.equal(result.path, null);
+    assert.ok(result.refusal && result.refusal.includes("x64sc"));
+  });
+});
+
+test("resolveTool(\"x64sc\", …) refuses a tools.json entry with no executable bit (planted violation), and resolves once the bit is set (clean control)", () => {
+  withScratch((dir) => {
+    const bin = join(dir, "x64sc-file");
+    writeFileSync(bin, "");
+    chmodSync(bin, 0o644);
+    writeFileSync(join(dir, "tools.json"), JSON.stringify({ x64sc: bin }));
+
+    const refused = resolveTool("x64sc", { toolsDir: dir, projectRoot: dir, env: {} });
+    assert.equal(refused.path, null);
+    assert.ok(refused.refusal && refused.refusal.includes("x64sc"));
+
+    chmodSync(bin, 0o755);
+    const resolved = resolveTool("x64sc", { toolsDir: dir, projectRoot: dir, env: {} });
+    assert.equal(resolved.path, bin);
+    assert.equal(resolved.layer, "file");
+    assert.equal(resolved.refusal, null);
+  });
+});
+
+test("resolveTool(\"ghidra\", …) refuses a tools.json entry naming an existing regular file, because the record declares a directory", () => {
+  withScratch((dir) => {
+    const fileNotDir = join(dir, "ghidra-is-a-file");
+    writeFileSync(fileNotDir, "");
+    writeFileSync(join(dir, "tools.json"), JSON.stringify({ ghidra: fileNotDir }));
+
+    const result = resolveTool("ghidra", { toolsDir: dir, projectRoot: dir, env: {} });
+
+    assert.equal(result.path, null);
+    assert.ok(result.refusal && result.refusal.includes("ghidra"));
+  });
+});
+
+test("a directory-kind entry's own permission bits are never executable-bit checked: mode 0o555 and 0o755 both resolve", () => {
+  withScratch((dir) => {
+    const ghidraHome = join(dir, "ghidra-home-perm");
+    mkdirSync(join(ghidraHome, "support"), { recursive: true });
+    writeFileSync(join(ghidraHome, "support", "analyzeHeadless"), "");
+    writeFileSync(join(dir, "tools.json"), JSON.stringify({ ghidra: ghidraHome }));
+
+    chmodSync(ghidraHome, 0o555);
+    const restrictive = resolveTool("ghidra", { toolsDir: dir, projectRoot: dir, env: {} });
+
+    chmodSync(ghidraHome, 0o755);
+    const permissive = resolveTool("ghidra", { toolsDir: dir, projectRoot: dir, env: {} });
+
+    assert.equal(restrictive.path, ghidraHome);
+    assert.equal(restrictive.refusal, null);
+    assert.equal(permissive.path, ghidraHome);
+    assert.equal(permissive.refusal, null);
+  });
+});
+
+test("one malformed acme entry refuses acme by name; x64sc still resolves through the same file in the same call sequence (D-09 blast radius)", () => {
+  withScratch((dir) => {
+    const x64scBin = join(dir, "x64sc-good");
+    writeFileSync(x64scBin, "");
+    chmodSync(x64scBin, 0o755);
+    const missingAcme = join(dir, "does-not-exist-acme");
+    writeFileSync(join(dir, "tools.json"), JSON.stringify({ acme: missingAcme, x64sc: x64scBin }));
+
+    const acmeResult = resolveTool("acme", { toolsDir: dir, projectRoot: dir, env: {} });
+    const x64scResult = resolveTool("x64sc", { toolsDir: dir, projectRoot: dir, env: {} });
+
+    assert.equal(acmeResult.path, null);
+    assert.ok(acmeResult.refusal && acmeResult.refusal.includes("acme"));
+    assert.equal(x64scResult.path, x64scBin);
+    assert.equal(x64scResult.layer, "file");
+    assert.equal(x64scResult.refusal, null);
+  });
+});
+
+test("an environment override naming a file with no executable bit still resolves, unchanged from plan 59-01's behaviour (D-08)", () => {
+  withScratch((dir) => {
+    const envBin = join(dir, "x64sc-env-noexec");
+    writeFileSync(envBin, "");
+    chmodSync(envBin, 0o644);
+
+    const result = resolveTool("x64sc", { toolsDir: dir, projectRoot: dir, env: { VICE_BIN: envBin } });
+
+    assert.equal(result.path, envBin);
+    assert.equal(result.layer, "env");
+    assert.equal(result.refusal, null);
+  });
+});
+
+test("after a file-layer refusal, tried contains no candidate built from a PATH directory for that call", () => {
+  withScratch((dir) => {
+    const pathDir = join(dir, "bin");
+    mkdirSync(pathDir, { recursive: true });
+    const pathBin = join(pathDir, "x64sc");
+    writeFileSync(pathBin, "");
+    chmodSync(pathBin, 0o755);
+    writeFileSync(join(dir, "tools.json"), JSON.stringify({ x64sc: join(dir, "does-not-exist") }));
+
+    const result = resolveTool("x64sc", { toolsDir: dir, projectRoot: dir, env: { PATH: pathDir } });
+
+    assert.equal(result.path, null);
+    assert.ok(result.refusal);
+    assert.ok(!result.tried.includes(pathBin), "no PATH-built candidate must appear in tried after a file-layer refusal");
+  });
+});
+
+test("a tools.json rewritten between calls yields one complete state or the other, never a merge (backstop, T-59-13)", async () => {
+  await withScratch(async (dir) => {
+    const binA = join(dir, "x64sc-a");
+    writeFileSync(binA, "");
+    chmodSync(binA, 0o755);
+    const binB = join(dir, "x64sc-b");
+    writeFileSync(binB, "");
+    chmodSync(binB, 0o755);
+
+    const toolsJsonPath = join(dir, "tools.json");
+    const writeStateA = () => writeFileSync(toolsJsonPath, JSON.stringify({ x64sc: binA }));
+    const writeStateB = () => writeFileSync(toolsJsonPath, JSON.stringify({ x64sc: binB }));
+
+    const deps = { toolsDir: dir, projectRoot: dir, env: {} };
+
+    const results = await Promise.all(
+      Array.from({ length: 20 }, (_, i) => {
+        (i % 2 === 0 ? writeStateA : writeStateB)();
+        return Promise.resolve(resolveTool("x64sc", deps));
+      }),
+    );
+
+    for (const result of results) {
+      const isStateA = result.path === binA && result.refusal === null;
+      const isStateB = result.path === binB && result.refusal === null;
+      const isParseRefusal = result.path === null && typeof result.refusal === "string";
+      assert.ok(isStateA || isStateB || isParseRefusal, `unexpected mixed result: ${JSON.stringify(result)}`);
+    }
   });
 });
