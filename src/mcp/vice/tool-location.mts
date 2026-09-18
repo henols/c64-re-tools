@@ -444,8 +444,18 @@ export function resolveTool(id: string, deps: ResolveToolDeps): ResolveToolResul
   const tried: string[] = [];
 
   const declaration = readDeclaration(here);
-  const record = declaration.tools[id];
-  if (!record) {
+
+  // Exact, case-sensitive ARRAY membership against the declaration's own
+  // key set -- never a bracket property lookup keyed by the raw string --
+  // so an id shaped like an inherited Object.prototype member (constructor,
+  // toString, valueOf, hasOwnProperty, ...) refuses exactly like any other
+  // undeclared id, with no separate branch. Mirrors `validateToolsFile()`'s
+  // own unknown-key check one function over: that function already carries
+  // this exact defence for the same hazard, and this lookup previously did
+  // not, which let such an id slip past this guard and reach the
+  // tools.json layer below for an id nobody declared.
+  const declaredIds = Object.keys(declaration.tools);
+  if (!declaredIds.includes(id)) {
     return {
       id,
       path: null,
@@ -455,6 +465,7 @@ export function resolveTool(id: string, deps: ResolveToolDeps): ResolveToolResul
       refusal: `"${id}" is not a declared tool id`,
     };
   }
+  const record = declaration.tools[id]!;
 
   // A record declared `fileOverridable: false` has exactly one legitimate
   // location, and that location is not any of the three layers this
@@ -566,21 +577,28 @@ export function resolveTool(id: string, deps: ResolveToolDeps): ResolveToolResul
       parsed = null;
     }
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      const rawValue = (parsed as Record<string, unknown>)[id];
-      if (typeof rawValue === "string" && rawValue !== "") {
-        const resolvedPath = normalizeFileLayerValue(rawValue, env, deps.projectRoot);
-        tried.push(resolvedPath);
-        if (passesFileLayerCheck(resolvedPath)) {
-          return { id, path: resolvedPath, tried, layer: "file", mechanism: "tools.json", refusal: null };
+      const doc = parsed as Record<string, unknown>;
+      // Same defence as the declaration lookup above, applied symmetrically:
+      // exact array membership against this file's own keys, never a bare
+      // bracket lookup keyed by `id`, so an inherited Object.prototype
+      // member never answers for a key the file itself did not write.
+      if (Object.keys(doc).includes(id)) {
+        const rawValue = doc[id];
+        if (typeof rawValue === "string" && rawValue !== "") {
+          const resolvedPath = normalizeFileLayerValue(rawValue, env, deps.projectRoot);
+          tried.push(resolvedPath);
+          if (passesFileLayerCheck(resolvedPath)) {
+            return { id, path: resolvedPath, tried, layer: "file", mechanism: "tools.json", refusal: null };
+          }
+          return {
+            id,
+            path: null,
+            tried,
+            layer: null,
+            mechanism: null,
+            refusal: buildFileLayerRefusal(resolvedPath),
+          };
         }
-        return {
-          id,
-          path: null,
-          tried,
-          layer: null,
-          mechanism: null,
-          refusal: buildFileLayerRefusal(resolvedPath),
-        };
       }
     }
   }
