@@ -320,7 +320,13 @@ export function buildViceArgs(port, { backend, mcpHost, binmonHost, viceArgsEnv,
 function spawnAndRecordInstance(reason, port, deps) {
     const spawnFn = deps.spawn ?? ((cmd, args, opts) => nodeSpawn(cmd, args, opts));
     const now = deps.now ?? (() => Date.now());
-    const viceBin = deps.viceBin ?? process.env.VICE_BIN ?? "x64sc";
+    // Phase 60 (LOC-02): no environment-variable fallback here any more -- the
+    // real broker resolves the binary ONCE at startup through backend-detect.mts's
+    // resolvedBackend() (which itself now consults the tool-location seam) and
+    // threads that SAME value down through deps.viceBin on every call. The
+    // literal "x64sc" default below is only ever reached by a caller (a test)
+    // that supplies neither.
+    const viceBin = deps.viceBin ?? "x64sc";
     const backend = deps.backend ?? "stock";
     // The ONE construction site for a fresh InstanceRecord asserts the
     // invariant every downstream consumer (HeldLease, textConnect(), etc.) was
@@ -1156,7 +1162,10 @@ function launchSupervised(reason, port, deps, crashTimes, backoffMs, remoteMonit
     const logDir = deps.epoch.instanceLogDirFor(deps.stateDir, port);
     mkdirSync(logDir, { recursive: true });
     const epoch = deps.epoch.nextEpochFor(supervisorDir);
-    const viceBin = deps.viceBin ?? process.env.VICE_BIN ?? "x64sc";
+    // Phase 60 (LOC-02): same narrowing as spawnAndRecordInstance() above --
+    // no environment-variable fallback here, the real broker always threads
+    // its once-resolved viceBin down through deps.viceBin.
+    const viceBin = deps.viceBin ?? "x64sc";
     // Timestamp PLUS the epoch number: Date.now() alone can collide across
     // two respawns inside the same millisecond when the injected sleepMs
     // resolves immediately (exactly what this module's own tests do to stay

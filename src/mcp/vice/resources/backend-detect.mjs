@@ -47,8 +47,34 @@
 //     is the exact failure class the 2026-08-01 triple-launch outage came
 //     from (D-03/T-02-25) -- unchanged reasoning from before this plan, only
 //     the mechanism inside resolvedBackend() changed.
+//
+// Phase 60 (LOC-01/LOC-02, PD-01/PD-02/PD-03): resolvedBackend() gains a real
+// VALUE dependency on the tool-location seam (tool-location.mts) for the
+// emulator binary's own resolution -- when neither `viceBin` nor
+// `resolveBinPath` is injected, resolution goes through the seam's
+// `resolveTool("x64sc", ...)` instead of this file's own ordering, so a
+// `.c64-re-tools/tools.json` entry for `x64sc` now changes what this broker
+// actually spawns. `defaultResolveBinPath()` collapses into a thin wrapper
+// over the seam's own exported `resolveOnPath()` -- the first of Phase 59
+// D-02's three independent `$PATH`-walk copies to collapse.
+//
+// This file ships two ways (see the cache-section comment below): unbuilt,
+// imported directly by container-side .ts (vice-proxy.ts's own `import *
+// as backendDetect from "./backend-detect.mts"`), and compiled into
+// resources/ for the host (vice-broker.mts's own `./backend-detect.mjs`
+// value import). A STATIC `import ... from "./tool-location.mjs"` would
+// resolve in only the SECOND form -- that file exists as a real sibling
+// only once both are compiled into resources/, never beside the unbuilt
+// source. Loading it instead through node:module's `createRequire()`
+// (`toolLocationSeam()` below) defers resolution to the call site rather
+// than parse time, so trying the compiled sibling first and falling back to
+// the unbuilt source sibling keeps this ONE seam call working in both
+// shipped forms -- one implementation, no #ifdef-style split, and every
+// existing unbuilt importer of this file needs no change at all.
 import { existsSync, readFileSync, writeFileSync, chmodSync, renameSync, mkdirSync, statSync, } from "node:fs";
-import { join, resolve as resolvePath } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 /** The client-side capability-decision schema version stamped into every
  * capability record this module writes (see BackendCacheRecord's own field
  * comment). BUMP THIS whenever the client's capability probing or the
@@ -124,20 +150,36 @@ function writeCacheRecordAtomic(supervisorDir, record) {
     writeFileSync(tmpPath, JSON.stringify(record, null, 2) + "\n");
     renameSync(tmpPath, finalPath);
 }
+/** This module's own directory. Computed once, purely to seed
+ * `toolLocationSeam()`'s two-candidate join below -- mirrors
+ * `tool-location.mts`'s own `HERE` constant and its `readDeclaration()`
+ * "beside `here`, take the first that exists" idiom exactly. */
+const HERE = dirname(fileURLToPath(import.meta.url));
+/** Loads the tool-location seam through `node:module`'s `createRequire()`
+ * rather than a static ESM import -- see this file's own header for why a
+ * static specifier cannot work in both of this file's two shipped forms.
+ * `require()` resolves at THIS call site, not at parse time, so trying the
+ * compiled resources/ sibling first and falling back to the unbuilt source
+ * sibling (the exact two-candidate order `tool-location.mts`'s own
+ * `readDeclaration()` already uses for `prerequisites.json`) lets the SAME
+ * source file resolve correctly whichever way this file itself was loaded.
+ * Never memoised here -- `resolvedBackend()`'s own `memoisedResult` already
+ * ensures this runs at most once in the one production path that reaches
+ * it, and a test process that resets that memo between scenarios must be
+ * free to call this again, cheaply, rather than replay a stale answer. */
+function toolLocationSeam() {
+    const req = createRequire(import.meta.url);
+    const specifier = existsSync(join(HERE, "tool-location.mjs")) ? "./tool-location.mjs" : "./tool-location.mts";
+    return req(specifier);
+}
+/** Reduced (Phase 60) to a thin wrapper over the seam's own exported
+ * `resolveOnPath()` -- the first of Phase 59 D-02's three independent
+ * `$PATH`-walk copies to collapse. Kept as a named function (rather than
+ * inlined at its one call site) only because `ResolvedBackendDeps.resolveBinPath`
+ * needs a real default to fall back to when a caller supplies `viceBin` but
+ * not this override (PD-02). */
 function defaultResolveBinPath(bin, env) {
-    if (bin.includes("/")) {
-        const abs = resolvePath(bin);
-        return existsSync(abs) ? abs : null;
-    }
-    const pathEnv = env.PATH ?? "";
-    for (const dir of pathEnv.split(":")) {
-        if (!dir)
-            continue;
-        const candidate = join(dir, bin);
-        if (existsSync(candidate))
-            return candidate;
-    }
-    return null;
+    return toolLocationSeam().resolveOnPath(bin, env).path;
 }
 function defaultStat(resolvedPath) {
     try {
@@ -190,11 +232,30 @@ export function resolvedBackend(deps = {}) {
     if (memoisedResult !== null)
         return memoisedResult;
     const env = deps.env ?? process.env;
-    const viceBin = deps.viceBin ?? env.VICE_BIN ?? "x64sc";
-    const resolveBinPath = deps.resolveBinPath ?? defaultResolveBinPath;
     const stat = deps.stat ?? defaultStat;
     const now = deps.now ?? (() => Date.now());
-    const resolvedPath = resolveBinPath(viceBin, env);
+    let viceBin;
+    let resolvedPath;
+    if (deps.viceBin !== undefined || deps.resolveBinPath !== undefined) {
+        // PD-02: an explicit override bypasses the seam entirely -- byte-for-byte
+        // the same behaviour every existing injected test case already exercises.
+        viceBin = deps.viceBin ?? "x64sc";
+        const resolveBinPath = deps.resolveBinPath ?? defaultResolveBinPath;
+        resolvedPath = resolveBinPath(viceBin, env);
+    }
+    else {
+        // PD-01: resolvedBackend() gains the tools.json layer internally by
+        // calling the seam; it keeps no ordering of its own. The display name
+        // handed to binPathFields() below stays the literal "x64sc" regardless
+        // of which layer answered -- that field is what a caller reads as
+        // "which file did you actually mean", not which layer answered.
+        viceBin = "x64sc";
+        const projectRoot = deps.projectRoot ?? (deps.supervisorDir !== undefined ? dirname(dirname(deps.supervisorDir)) : process.cwd());
+        const toolsDir = deps.toolsDir ?? (deps.supervisorDir !== undefined ? dirname(deps.supervisorDir) : join(process.cwd(), ".c64-re-tools"));
+        const locate = deps.locate ?? toolLocationSeam().resolveTool;
+        const locateDeps = { toolsDir, projectRoot, env };
+        resolvedPath = locate("x64sc", locateDeps).path;
+    }
     const identity = resolvedPath ? stat(resolvedPath) : null;
     const cacheEligible = resolvedPath !== null && identity !== null && typeof deps.supervisorDir === "string";
     if (cacheEligible) {
