@@ -1908,7 +1908,14 @@ resolves and the remedy text its refusals quote.
   as an explicit string, exactly as `backend-detect.mts` already does for the
   supervisor directory, so the host-bound module keeps no import cycle.
 
-**Plans**: TBD
+**Plans**: 5 plans, 4 waves
+
+Plans:
+- [ ] 59-01-PLAN.md — the file format locked at a decision checkpoint, then one tool resolved end to end through env → `tools.json` → `$PATH`, compiled into `resources/` and proven from the compiled artifact; plus all path handling and the no-cache proof (wave 1)
+- [ ] 59-02-PLAN.md — the remaining seven `location`/`kind`/`marker` blocks, and `resolveTool()` branching on the record: directory kinds, absent env vars, and the two ids it must not resolve at all (wave 2)
+- [ ] 59-03-PLAN.md — `validateToolsFile()` and the file layer's refusal contract: the amended `LOC-06` triad, the executable-bit check, both exclusions refused by name, every family with a planted violation (wave 3)
+- [ ] 59-04-PLAN.md — the declaration's new fields validated in its own structural gate, and the compiled artifact proven present in the packed tarball's own file list (wave 3)
+- [ ] 59-05-PLAN.md — the `tools.json` template as an export documenting both exclusions, and `docs/phase59-tool-location-placement.md` answering criterion 5 with Phase 60's bill itemised (wave 4)
 
 ### Phase 60: The Seam Wired Into the Code That Ships
 
