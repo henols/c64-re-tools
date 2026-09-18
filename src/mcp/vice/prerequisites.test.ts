@@ -31,7 +31,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { build } from "./build.ts";
+import { build, HOST_BOUND_ARTIFACTS } from "./build.ts";
 // Type-only: erased at compile time, so importing it directly from the
 // host-bound `.mts` source (rather than the built `resources/host-tool.mjs`
 // artifact) never triggers that module's own runtime resolution of its
@@ -63,6 +63,9 @@ export interface ToolRecord {
   id: string;
   unblocks: { skills: string[]; mcp: string[] };
   versionFloor?: string;
+  location?: { envVar?: string; fileOverridable: boolean; reason?: string };
+  kind?: "executable" | "directory";
+  marker?: string;
   remedies?: Record<string, RemedyEntry[]>;
 }
 
@@ -165,6 +168,83 @@ export function assertSourcesResolve(doc: PrerequisitesDoc): string[] {
         }
       }
     }
+  }
+  return offenders;
+}
+
+const ENV_VAR_NAME_RE = /^[A-Z][A-Z0-9_]*$/;
+const LOCATION_KEYS = new Set(["envVar", "fileOverridable", "reason"]);
+
+/** LOC-05 mitigation (D-05 shape lock, T-59-14): every record's `location`
+ * block must be a plain object -- never absent, never an array -- whose
+ * `fileOverridable` is a boolean, whose `envVar` (when present) is a
+ * plausible upper-snake-case environment-variable name, whose `reason` is a
+ * non-empty string whenever `fileOverridable` is `false` (a Phase 60 refusal
+ * quotes that field verbatim, so an absent or empty one produces a refusal
+ * with nothing in it), and which carries no key outside the three D-05
+ * locks. Offenders are named `${id}.location.${field}` so a failure states
+ * both the record and the field. */
+export function assertLocationBlockShape(doc: PrerequisitesDoc): string[] {
+  const offenders: string[] = [];
+  for (const [id, record] of Object.entries(doc.tools)) {
+    const location = (record as unknown as { location?: unknown }).location;
+    if (location === null || location === undefined || typeof location !== "object" || Array.isArray(location)) {
+      offenders.push(`${id}.location`);
+      continue;
+    }
+    const loc = location as Record<string, unknown>;
+    for (const key of Object.keys(loc)) {
+      if (!LOCATION_KEYS.has(key)) offenders.push(`${id}.location.${key}`);
+    }
+    if (typeof loc.fileOverridable !== "boolean") {
+      offenders.push(`${id}.location.fileOverridable`);
+    } else if (loc.fileOverridable === false && (typeof loc.reason !== "string" || loc.reason.length === 0)) {
+      offenders.push(`${id}.location.reason`);
+    }
+    if (loc.envVar !== undefined && (typeof loc.envVar !== "string" || !ENV_VAR_NAME_RE.test(loc.envVar))) {
+      offenders.push(`${id}.location.envVar`);
+    }
+  }
+  return offenders;
+}
+
+/** D-07 / amended-LOC-06 mitigation (T-59-15): every record's `kind` must be
+ * exactly `"executable"` or `"directory"`; a `directory` record must carry a
+ * non-empty `marker` (without one the directory check degenerates to "is a
+ * directory", accepting any directory a user names as a tool root); an
+ * `executable` record must carry no `marker` at all, since the seam never
+ * joins one onto a file candidate. */
+export function assertKindAndMarker(doc: PrerequisitesDoc): string[] {
+  const offenders: string[] = [];
+  for (const [id, record] of Object.entries(doc.tools)) {
+    const kind = (record as unknown as { kind?: unknown }).kind;
+    const marker = (record as unknown as { marker?: unknown }).marker;
+    if (kind !== "executable" && kind !== "directory") {
+      offenders.push(`${id}.kind`);
+      continue;
+    }
+    if (kind === "directory" && (typeof marker !== "string" || marker.length === 0)) {
+      offenders.push(`${id}.marker`);
+    } else if (kind === "executable" && marker !== undefined) {
+      offenders.push(`${id}.marker`);
+    }
+  }
+  return offenders;
+}
+
+/** D-11 mitigation (T-59-17): no declared tool id may begin with an
+ * underscore. `validateToolsFile()`'s own unknown-key check (plan 59-03)
+ * exempts a single-leading-underscore key as reserved prose before its
+ * unknown-key check ever runs, so a real tool id shaped that way would be
+ * silently unreachable through `tools.json`. This validator is deliberately
+ * a superset of that exemption's exact predicate -- it flags every
+ * underscore-led id, not only the single-leading-underscore ones the
+ * exemption actually swallows -- because no declared tool id has any
+ * legitimate reason to begin with one at all. */
+export function assertNoReservedToolId(doc: PrerequisitesDoc): string[] {
+  const offenders: string[] = [];
+  for (const id of Object.keys(doc.tools)) {
+    if (id.startsWith("_")) offenders.push(id);
   }
   return offenders;
 }
@@ -338,6 +418,137 @@ test("encoding: prerequisites.json has no UTF-8 BOM and every key is ASCII-only"
   assert.deepEqual(nonAsciiKeys, []);
 });
 
+test("assertLocationBlockShape: passes on the real document", () => {
+  const doc = readPrerequisites();
+  assert.deepEqual(assertLocationBlockShape(doc), []);
+});
+
+test("structural (LOC-05/T-59-14): assertLocationBlockShape reports a record whose location is missing, not an object, or an array (non-vacuity)", () => {
+  const doc = readPrerequisites();
+  assert.deepEqual(assertLocationBlockShape(doc), [], "the real, unmodified document must pass");
+
+  const missing = structuredClone(doc);
+  delete (missing.tools.x64sc as unknown as { location?: unknown }).location;
+  assert.deepEqual(assertLocationBlockShape(missing), ["x64sc.location"]);
+
+  const notObject = structuredClone(doc);
+  (notObject.tools.x64sc as unknown as { location: unknown }).location = "VICE_BIN";
+  assert.deepEqual(assertLocationBlockShape(notObject), ["x64sc.location"]);
+
+  const arrayShaped = structuredClone(doc);
+  (arrayShaped.tools.x64sc as unknown as { location: unknown }).location = [];
+  assert.deepEqual(assertLocationBlockShape(arrayShaped), ["x64sc.location"]);
+});
+
+test("structural (LOC-05/T-59-14): a non-boolean fileOverridable is reported (non-vacuity)", () => {
+  const doc = readPrerequisites();
+  const mutated = structuredClone(doc);
+  (mutated.tools.x64sc!.location as unknown as { fileOverridable: unknown }).fileOverridable = "true";
+  assert.deepEqual(assertLocationBlockShape(mutated), ["x64sc.location.fileOverridable"]);
+});
+
+test("structural (LOC-05/T-59-14): a fileOverridable:false record with no reason is reported (non-vacuity)", () => {
+  const doc = readPrerequisites();
+  const mutated = structuredClone(doc);
+  delete (mutated.tools.dxa!.location as unknown as { reason?: unknown }).reason;
+  assert.deepEqual(assertLocationBlockShape(mutated), ["dxa.location.reason"]);
+});
+
+test("structural (LOC-05/T-59-14): a fileOverridable:false record with an empty-string reason is reported (non-vacuity)", () => {
+  const doc = readPrerequisites();
+  const mutated = structuredClone(doc);
+  (mutated.tools.node!.location as unknown as { reason: unknown }).reason = "";
+  assert.deepEqual(assertLocationBlockShape(mutated), ["node.location.reason"]);
+});
+
+test("structural (LOC-05/T-59-14): a lowercase envVar is reported (non-vacuity)", () => {
+  const doc = readPrerequisites();
+  const mutated = structuredClone(doc);
+  (mutated.tools.x64sc!.location as unknown as { envVar: unknown }).envVar = "vice_bin";
+  assert.deepEqual(assertLocationBlockShape(mutated), ["x64sc.location.envVar"]);
+});
+
+test("structural (LOC-05/T-59-14): an envVar with a leading digit, or a character outside [A-Z0-9_], is reported (non-vacuity)", () => {
+  const doc = readPrerequisites();
+  const leadingDigit = structuredClone(doc);
+  (leadingDigit.tools.acme!.location as unknown as { envVar: unknown }).envVar = "1ACME_BIN";
+  assert.deepEqual(assertLocationBlockShape(leadingDigit), ["acme.location.envVar"]);
+
+  const badChar = structuredClone(doc);
+  (badChar.tools.ghidra!.location as unknown as { envVar: unknown }).envVar = "GHIDRA-HOME";
+  assert.deepEqual(assertLocationBlockShape(badChar), ["ghidra.location.envVar"]);
+});
+
+test("structural (LOC-05/T-59-14): an extra key inside location is reported (D-05 locks, non-vacuity)", () => {
+  const doc = readPrerequisites();
+  const mutated = structuredClone(doc) as unknown as { tools: Record<string, ToolRecord & { location: Record<string, unknown> }> };
+  mutated.tools["acme-lib"]!.location.extraKey = "unexpected";
+  assert.deepEqual(assertLocationBlockShape(mutated as unknown as PrerequisitesDoc), ["acme-lib.location.extraKey"]);
+});
+
+test("assertKindAndMarker: passes on the real document", () => {
+  const doc = readPrerequisites();
+  assert.deepEqual(assertKindAndMarker(doc), []);
+});
+
+test("structural (D-07/T-59-15): assertKindAndMarker reports a record whose kind is missing or unrecognised (non-vacuity)", () => {
+  const doc = readPrerequisites();
+  const missing = structuredClone(doc);
+  delete (missing.tools.x64sc as unknown as { kind?: unknown }).kind;
+  assert.deepEqual(assertKindAndMarker(missing), ["x64sc.kind"]);
+
+  const bogus = structuredClone(doc);
+  (bogus.tools.x64sc as unknown as { kind: unknown }).kind = "symlink";
+  assert.deepEqual(assertKindAndMarker(bogus), ["x64sc.kind"]);
+});
+
+test("structural (D-07/T-59-15): a directory record with no marker, or an empty-string marker, is reported (non-vacuity)", () => {
+  const doc = readPrerequisites();
+  const missingMarker = structuredClone(doc);
+  delete (missingMarker.tools["acme-lib"] as unknown as { marker?: unknown }).marker;
+  assert.deepEqual(assertKindAndMarker(missingMarker), ["acme-lib.marker"]);
+
+  const emptyMarker = structuredClone(doc);
+  (emptyMarker.tools.ghidra as unknown as { marker: unknown }).marker = "";
+  assert.deepEqual(assertKindAndMarker(emptyMarker), ["ghidra.marker"]);
+});
+
+test("structural (D-07/T-59-15): an executable record carrying a marker is reported (non-vacuity)", () => {
+  const doc = readPrerequisites();
+  const mutated = structuredClone(doc) as unknown as { tools: Record<string, ToolRecord & { marker?: string }> };
+  mutated.tools.x64sc!.marker = "should-not-be-here";
+  assert.deepEqual(assertKindAndMarker(mutated as unknown as PrerequisitesDoc), ["x64sc.marker"]);
+});
+
+test("assertNoReservedToolId: passes on the real document and reports a planted underscore-prefixed id (D-11, non-vacuity)", () => {
+  const doc = readPrerequisites();
+  assert.deepEqual(assertNoReservedToolId(doc), [], "the real, unmodified document must pass");
+
+  const mutated = structuredClone(doc) as unknown as { tools: Record<string, ToolRecord> };
+  mutated.tools._readme = { ...mutated.tools.x64sc! };
+  assert.deepEqual(assertNoReservedToolId(mutated as unknown as PrerequisitesDoc), ["_readme"]);
+});
+
+test("every record's id still equals its own key (subset relation, never a record count)", () => {
+  const doc = readPrerequisites();
+  const mismatched = Object.entries(doc.tools).filter(([key, record]) => record.id !== key);
+  assert.deepEqual(mismatched, []);
+});
+
+test("D-05: the four declared environment-variable names match their tool ids (relation, not a count)", () => {
+  const doc = readPrerequisites();
+  assert.equal(doc.tools.x64sc!.location!.envVar, "VICE_BIN");
+  assert.equal(doc.tools.acme!.location!.envVar, "ACME_BIN");
+  assert.equal(doc.tools["acme-lib"]!.location!.envVar, "ACME");
+  assert.equal(doc.tools.ghidra!.location!.envVar, "GHIDRA_HOME");
+});
+
+test("D-07: the two declared directory markers match their tool ids (relation, not a count)", () => {
+  const doc = readPrerequisites();
+  assert.equal(doc.tools["acme-lib"]!.marker, "cbm/c64/vic.a");
+  assert.equal(doc.tools.ghidra!.marker, "support/analyzeHeadless");
+});
+
 // ---------------------------------------------------------------------------
 // DECL-05 packaging proof (T-58-02 mitigation). Reads the PACKED tarball's
 // OWN file list via `npm pack --dry-run --json` -- never a repo-path
@@ -358,5 +569,34 @@ test("packaging (DECL-05): prerequisites.json is present in the packed tarball's
   assert.ok(
     files.includes("prerequisites.json"),
     "vice-mcp: missing prerequisites.json in the packed tarball -- DECL-05 requires the same remedies to reach a user who installed rather than cloned",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// LOC-05/LOC-06/LOC-07 packaging proof (T-59-16 mitigation). Reuses the same
+// packedFileList() helper above -- no second `npm pack` invocation, no
+// repository-path existsSync -- and derives the artifact's own filename from
+// build.ts's HOST_BOUND_ARTIFACTS list rather than a fresh string literal, so
+// the assertion and the build list cannot drift apart.
+// ---------------------------------------------------------------------------
+
+test("packaging (T-59-16): the compiled seam artifact and its declaration are both packed, one directory apart", () => {
+  const seamArtifactName = HOST_BOUND_ARTIFACTS.find((name) => name.startsWith("tool-location."));
+  assert.ok(seamArtifactName, "HOST_BOUND_ARTIFACTS in ./build.ts must still list the tool-location seam artifact");
+  const seamPath = `resources/${seamArtifactName}`;
+
+  const files = packedFileList();
+  assert.ok(
+    files.includes(seamPath),
+    `vice-mcp: missing ${seamPath} in the packed tarball -- an artifact that does not survive packing reaches a user who cloned and never reaches a user who installed, who then gets a seam that cannot find the declaration with no signal anything is missing`,
+  );
+  assert.ok(
+    files.includes("prerequisites.json"),
+    "vice-mcp: missing prerequisites.json in the packed tarball alongside the compiled seam artifact",
+  );
+  assert.equal(
+    seamPath.split("/").length,
+    2,
+    "the seam artifact must sit exactly one directory below the declaration's own package root -- the sibling relationship the seam's declaration lookup depends on",
   );
 });
