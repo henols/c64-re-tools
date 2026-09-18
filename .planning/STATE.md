@@ -4,17 +4,17 @@ milestone: v1.1.0
 milestone_name: The Prerequisite Doctor
 current_phase: 60
 current_phase_name: The Seam Wired Into the Code That Ships
-status: executing
+status: verifying
 stopped_at: Phase 60 gap-closure planned — 2 gap plans (60-06, 60-07) in waves 5-6, checker passed first iteration
-last_updated: "2026-09-18T19:34:01.209Z"
+last_updated: "2026-09-18T20:09:30.112Z"
 last_activity: 2026-09-18
-last_activity_desc: Phase 60 round-2 gap-closure plan 60-08 created and verified; ready to execute
-state_head: 107d3f9e359cfc5c8f390d9947c8fc05c831ef91
+last_activity_desc: Phase 60 execution started
+state_head: d896c076c6c1788a91d232c40728de6911c64183
 progress:
   total_phases: 5
   completed_phases: 2
   total_plans: 16
-  completed_plans: 13
+  completed_plans: 16
   percent: 40
 carried_forward_phases:
 
@@ -343,50 +343,48 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 60 (The Seam Wired Into the Code That Ships) — READY TO EXECUTE
-Plan: 7 of 8 executed (60-08 planned, not started)
-Status: Round-2 gap-closure plan 60-08 created and plan-checker verified — LOC-03 open, ready to execute
-Stopped at: Phase 60 gap-closure re-verification (60-VERIFICATION.md, round 2)
-Plans 60-06 and 60-07 executed and summarized. Full-glob suite green (4020 tests,
-3939 pass, 0 fail, 81 skipped) and typecheck clean; failing set empty. The
-incremental code review closed CR-01 and WR-01 and accepted WR-02 as a recorded
-open decision, and raised one new warning, WR-03. Re-verification scored 4/5
-again: LOC-01, LOC-02, LOC-04 and DECL-03 verified, LOC-03 FAILED for a SECOND
-input shape.
-What 60-06 fixed: a slash-free VICE_BIN/ACME_BIN now walks $PATH for the
-developer's own value and refuses by name when it resolves nowhere, instead of
-silently substituting a same-named $PATH binary. Proven through the real spawn
-wiring.
-What is still open: a separator-CONTAINING override that resolves to nothing
-still falls through to a declared-id $PATH probe and returns a different binary
-with refusal: null. 60-06 scoped its fix to separator-free values deliberately,
-because its own must_haves truth says a separator-containing value "behaves
-exactly as today" while its Task 2 Test E says such a value refuses — a
-contradiction inside one plan. The executor chose the must_have and kept
-`vice-broker-acquire.test.ts`'s "Plan 60-01 Test 4" green.
-Why that reasoning does not hold, established by the verifier's git archaeology
-and confirmed independently: "exactly as today" is false. Pre-phase
-`defaultResolveBinPath()` (commit d54d98a1) returned null for a slash-containing
-value with NO $PATH fallback, so the old code failed honestly on the literal
-missing path. The fall-through is a regression THIS phase introduced in plan
-60-01, and "Plan 60-01 Test 4" (commit 2abb7ff6) pins that regression rather
-than legacy behaviour. It does assert the decoy path, so 60-06 read the test
-fairly — but the test is not a contract worth preserving. LOC-03's text draws no
-separator-based carve-out, so the requirement is unmet.
-Also open, not blocking: WR-03 — `envUnresolved` is not gated on
-`record.kind === "executable"`, so the refusal a user reads for a directory-kind
-id (ghidra/GHIDRA_HOME, acme-lib/ACME) claims a $PATH-substitution risk that
-cannot exist for that kind. Reproduced live at `ghidra.analyze`'s refusal.
-IN-02: `findAcmeLib()` discards `.refusal`, masking the same message for
-acme-lib.
+Phase: 60 (The Seam Wired Into the Code That Ships) — ALL 8 PLANS EXECUTED
+Plan: 8 of 8 executed (60-08, round-2 gap closure, complete)
+Status: Phase complete — ready for verification
+Stopped at: Completed 60-08-PLAN.md
+Plan 60-08 closed LOC-03's residual: the environment layer is now terminal for
+a declared variable's non-empty value WHATEVER its shape (not only a
+separator-free one) — a stale absolute VICE_BIN/ACME_BIN/ACME/GHIDRA_HOME now
+refuses by name instead of letting a same-named $PATH binary silently start in
+its place, proven end to end through resolvedBackend() to the real
+handleAcquire() cold-spawn call. It also fixed WR-03: buildEnvLayerRefusal()'s
+trailing justification clause is now branched on record.kind, so a
+directory-kind id's refusal (ghidra/GHIDRA_HOME, acme-lib/ACME) no longer
+claims a $PATH-substitution protection that cannot structurally apply to it,
+while an executable-kind id's refusal keeps that warning byte-for-byte.
+The two shipped tests whose contracts this reverses — vice-broker-acquire.test.ts's
+"Plan 60-01 Test 4" and tool-location.test.ts's separator-containing case —
+were rewritten in place with their surviving intents kept, correcting plan
+60-06's own SUMMARY, which had mischaracterised the fall-through those tests
+pinned as pre-phase behaviour. 60-VERIFICATION.md's own read of the pre-phase
+source (commit d54d98a1) established that the fall-through was itself a
+same-phase regression introduced by plan 60-01, not legacy behaviour — this
+plan's rewrite corrects the record rather than merely reversing it.
+A third failing-set-difference evidence note
+(evidence/phase60-loc03-terminal-env-set-diff.md) re-measured the
+unchanged-behaviour claim against baseline d7d5a151 with the full test glob:
+regression list empty, and the carried-forward accepted limit from plan
+60-07's own evidence note (a separator-containing override still substituting
+silently) is now stated CLOSED.
+All five of this phase's requirement ids (LOC-01, LOC-02, LOC-03, LOC-04,
+DECL-03) are now Complete in REQUIREMENTS.md — LOC-03 was the last one open.
 Two human-verification items from plans 60-03 and 60-05 remain unrun under
 `human_verify_mode: end-of-phase` and must not be forgotten when the phase
-seals: (1) ACME_BIN at a nonexistent path — confirm the acme.build refusal
-shape; (2) a real stock x64sc in tools.json with the broker as its systemd unit
-— confirm the spawned binary matches, for the recorded path and for a bare
-$PATH-resolved VICE_BIN.
-Next: /gsd-plan-phase 60 --gaps.
-Last activity: 2026-09-18 — Phase 60 gap-closure executed, LOC-03 still open
+seals: (1) ACME_BIN at a nonexistent path — plan 60-08 UPDATED this
+expectation: before this plan an absolute, nonexistent ACME_BIN fell through
+to a $PATH probe; after this plan it hits the seam's terminal refusal instead
+— confirm the refusal is what's shown, then confirm the contrasting case
+(ACME genuinely absent) shows the declaration's remedy text; (2) a real stock
+x64sc in tools.json with the broker as its systemd unit — confirm the spawned
+binary matches, for the recorded path and for a bare $PATH-resolved VICE_BIN
+(unchanged from plan 60-05).
+Next: /gsd-verify-work 60.
+Last activity: 2026-09-18 — Phase 60 fully executed (8/8 plans); LOC-03 and WR-03 closed by plan 60-08
 
 **Milestone shape, so no reader has to rebuild it from the ROADMAP:** Phase 58
 declares the prerequisites; Phase 59 builds the tool-location seam and its
@@ -768,6 +766,7 @@ than a matter of discipline.
 | Phase 60 P03 | 59min | 3 tasks | 7 files |
 | Phase 60 P04 | 38min | 3 tasks | 7 files |
 | Phase 60 P05 | 245min | 2 tasks | 9 files |
+| Phase 60 P08 | 65min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -1640,6 +1639,8 @@ Recent decisions affecting current work:
 - [Phase 60]: findSiblingBinary()'s new tools.json seam call accepts only a layer:"file" answer, never resolveTool()'s own internal $PATH layer -- accepting it would let the seam silently outrank the sibling-of-x64sc candidate before it is ever tried, inverting PD-08's precedence and losing the shadowing warning.
 - [Phase 60]: Fixed a latent bug in the shared Phase 40 c1541/petcat test fixture: withFakeC1541()'s resetResolvedBackendForTests() targeted the unbuilt backend-detect.mts module, not the compiled backend-detect.mjs this suite actually resolves through -- replaced with resetResolvedBackendMjs() everywhere in host-tool.test.ts.
 - [Phase 60]: Plan 60-05 found and fixed two genuine production regressions (absent from the pre-rewiring baseline) via its own required real-process full-suite diff: vice-broker.mts's real onAcquire wiring never threaded resolvedViceBin into handleAcquire(), and a deployed broker could not find prerequisites.json at all -- both invisible to Phase 60's own unit tests. — Both fixed within 60-05 rather than deferred, since Task 2's own acceptance criteria state the task is NOT done while a regression exists, and 60-05 is Phase 60's last plan -- no later plan exists to hand the fix to.
+- [Phase 60]: The environment layer's terminal refusal (envUnresolved) now fires for any non-empty declared value that resolves through neither Layer 1 step, not only a separator-free one, correcting plan 60-06's own scoping decision per 60-VERIFICATION.md's direct read of the pre-phase source.
+- [Phase 60]: WR-03 fixed by branching the refusal message on record.kind (PD-21), not by deleting the $PATH-shadowing clause for every kind -- the clause stays for executable-kind ids and is dropped only where it is structurally false.
 
 ### Pending Todos
 
@@ -2894,8 +2895,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-18T16:32:55.869Z
-Stopped at: Completed 60-05-PLAN.md
+Last session: 2026-09-18T20:09:29.915Z
+Stopped at: Completed 60-08-PLAN.md
 Resume file: None
 
 Earlier: Milestone v1.0.0 "The Rebuild Half" closed and archived on its delivered scope (9 phases, 73 plans, 33/33 in-scope requirements, `override_closeout`). Phases 51, 53, 54 and 57 carried forward with their ROADMAP sections live.
