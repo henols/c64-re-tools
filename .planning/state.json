@@ -306,17 +306,17 @@
     {
       "number": "58",
       "name": "One Declaration, Four Places That Can No Longer Disagree",
-      "status": "pending"
+      "status": "complete"
     },
     {
       "number": "59",
       "name": "The Tool-Location Seam and Its Precedence Order",
-      "status": "pending"
+      "status": "complete"
     },
     {
       "number": "60",
       "name": "The Seam Wired Into the Code That Ships",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "number": "61",
@@ -331,8 +331,8 @@
   ],
   "next": {
     "command": "/gsd:progress --next",
-    "label": "Advance to the next step (plan phase 59)",
-    "reason": "Phase 59 of 5 — needs a plan"
+    "label": "Advance to the next step",
+    "reason": "Phase 60 of 5 · 40% · executing"
   },
-  "updated_at": "2026-09-17T20:36:05.673Z"
+  "updated_at": "2026-09-18T19:34:01.307Z"
 }
