@@ -1,5 +1,7 @@
-// phase58-citation-ledger.test.ts -- the citation-ledger audit for
-// docs/phase58-declaration-provenance.md.
+// phase58-citation-ledger.test.ts -- the citation-ledger audit, originally
+// written for docs/phase58-declaration-provenance.md and now auditing every
+// phase provenance document that carries a "## Citation ledger" section
+// (plan 59-05 adds docs/phase59-tool-location-placement.md as the second).
 //
 // WHY THIS FILE EXISTS: two file:line citations in that provenance document
 // pointed at the wrong lines -- one landed on an unrelated row of
@@ -42,6 +44,7 @@ function findRepoRoot(from: string): string {
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = findRepoRoot(HERE);
 const DOC_PATH = join(REPO_ROOT, "docs", "phase58-declaration-provenance.md");
+const PHASE59_DOC_PATH = join(REPO_ROOT, "docs", "phase59-tool-location-placement.md");
 
 /** One ledger entry: the citation string as it appears in the document body,
  * and the literal substring the cited line range must contain. */
@@ -239,6 +242,10 @@ export function auditProvenanceCitations(options: CitationAuditOptions): string[
 
 test("the committed provenance document's citation ledger is complete and every anchor resolves", () => {
   assert.deepEqual(auditProvenanceCitations({ docPath: DOC_PATH, repoRoot: REPO_ROOT }), []);
+});
+
+test("the committed phase59 placement document's citation ledger is complete and every anchor resolves", () => {
+  assert.deepEqual(auditProvenanceCitations({ docPath: PHASE59_DOC_PATH, repoRoot: REPO_ROOT }), []);
 });
 
 test("structural (non-vacuity): a citation whose line number is shifted off its anchor is reported, and the corrected twin is not", () => {
