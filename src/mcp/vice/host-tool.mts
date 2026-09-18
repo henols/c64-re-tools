@@ -1718,6 +1718,18 @@ export function buildHostToolArgv(
     // long-running broker's SECOND call here free -- see the import
     // comment's own memoisation posture.
     const c1541Found = findSiblingBinary("c1541", resolvedBackend().binPath, log, loc);
+    // WR-01 (plan 60-07): a refusal from the seam's own file layer (a
+    // malformed tools.json entry -- wrong kind, missing executable bit, path
+    // absent on disk) is quoted verbatim with NO remedy appended, mirroring
+    // buildHostToolArgv()'s own ACME branch above -- the declaration's
+    // remedy is prose for "c1541 is missing", not for "your tools.json entry
+    // is wrong", and appending it here would send a user with a working
+    // c1541 install to the wrong fix. Only the true not-found case (no
+    // refusal, path still null) keeps today's generic sentence and its
+    // withRemedy() call.
+    if (c1541Found.refusal) {
+      return { ok: false, message: `host_tool "${request.tool}" refuses: ${c1541Found.refusal}` };
+    }
     if (c1541Found.path === null) {
       return {
         ok: false,
@@ -1799,6 +1811,12 @@ export function buildHostToolArgv(
     // with a logged $PATH-fallback warning -- the same mechanism c1541.*
     // already use above.
     const petcatFound = findSiblingBinary("petcat", resolvedBackend().binPath, log, loc);
+    // WR-01 (plan 60-07): same refusal-first branch as the c1541 case above
+    // -- a seam refusal is quoted verbatim with no remedy appended; only the
+    // true not-found case carries the remedy.
+    if (petcatFound.refusal) {
+      return { ok: false, message: `host_tool "petcat.decode" refuses: ${petcatFound.refusal}` };
+    }
     if (petcatFound.path === null) {
       return {
         ok: false,
@@ -2479,8 +2497,28 @@ function findAcmeLib(locate?: HostToolLocator): { path: string | null; tried: st
  * -- this probe's OWN per-binary-name memo exists because its first
  * candidate is computed from a resolvedBackend() call that is itself
  * memoised, so re-deriving it per call would just re-walk $PATH for no new
- * information). */
-const siblingBinaryMemo = new Map<string, { path: string | null; tried: string[] }>();
+ * information).
+ *
+ * **`WR-02` (plan 60-07, code review): this memo's caching of a `tools.json`
+ * answer is inconsistent with the seam's own no-memo rationale.**
+ * `tool-location.mts`'s own module header states plainly that the seam
+ * "deliberately holds no memo" and that caching a resolved location would
+ * make a stale answer structurally possible. This memo does exactly that for
+ * the one layer the whole phase exists to make user-editable: an edited
+ * `tools.json` entry for `c1541`/`petcat` has NO EFFECT until this process
+ * restarts, while the identical edit for `acme`/`acme-lib`/`ghidra` (neither
+ * of which is memoised this way) takes effect on the very next call. The
+ * roadmap's own cross-cutting constraint for this phase requires this memo
+ * keep its current semantics -- widening what it can resolve (this plan's
+ * own `refusal` field, below) must not change WHEN it caches -- so this
+ * tension is recorded here, not resolved: no reset hatch is added, and no
+ * guard enforces the tension away. The trigger for revisiting it is named in
+ * `60-01-PLAN.md`'s own assumption-delta note: when the sibling-probe
+ * mechanism this memo exists for moves inside the seam itself, the memo
+ * moves with it or is dropped with it -- that is the right moment to
+ * reconcile this function's caching posture with the seam's stated
+ * no-memo rationale, not before. */
+const siblingBinaryMemo = new Map<string, { path: string | null; tried: string[]; refusal: string | null }>();
 
 /** `locate` threads the caller's `HostToolLocator` into the seam call below
  * (`buildHostToolArgv()`'s own `loc`, itself built from `locatorFrom()`) --
@@ -2506,7 +2544,7 @@ function findSiblingBinary(
   resolvedX64scPath: string,
   log?: (line: string) => void,
   locate?: HostToolLocator,
-): { path: string | null; tried: string[] } {
+): { path: string | null; tried: string[]; refusal: string | null } {
   const memoised = siblingBinaryMemo.get(binaryName);
   if (memoised) return memoised;
 
@@ -2517,12 +2555,15 @@ function findSiblingBinary(
   const seamResolved = resolveTool(binaryName, { toolsDir: loc.toolsDir, projectRoot: loc.projectRoot, here: loc.here });
   tried.push(...seamResolved.tried);
   if (seamResolved.refusal) {
-    const result = { path: null, tried };
+    // WR-01 (plan 60-07): the seam's own reason is carried verbatim rather
+    // than discarded -- this is the one field the two call sites below now
+    // read instead of composing their own generic "does not exist" sentence.
+    const result = { path: null, tried, refusal: seamResolved.refusal };
     siblingBinaryMemo.set(binaryName, result);
     return result;
   }
   if (seamResolved.path !== null && seamResolved.layer === "file") {
-    const result = { path: seamResolved.path, tried };
+    const result = { path: seamResolved.path, tried, refusal: null };
     siblingBinaryMemo.set(binaryName, result);
     return result;
   }
@@ -2531,7 +2572,7 @@ function findSiblingBinary(
   const siblingCandidate = join(dirname(resolvedX64scPath), binaryName);
   tried.push(siblingCandidate);
   if (existsSync(siblingCandidate)) {
-    const result = { path: siblingCandidate, tried };
+    const result = { path: siblingCandidate, tried, refusal: null };
     siblingBinaryMemo.set(binaryName, result);
     return result;
   }
@@ -2549,12 +2590,12 @@ function findSiblingBinary(
       `host_tool: "${binaryName}" was not found alongside the resolved x64sc (${resolvedX64scPath}); ` +
         `falling back to a $PATH match at ${probe.path} -- this may be a DIFFERENT VICE build than the emulator`,
     );
-    const result = { path: probe.path, tried };
+    const result = { path: probe.path, tried, refusal: null };
     siblingBinaryMemo.set(binaryName, result);
     return result;
   }
 
-  const result = { path: null, tried };
+  const result = { path: null, tried, refusal: null };
   siblingBinaryMemo.set(binaryName, result);
   return result;
 }

@@ -1724,19 +1724,27 @@ test("Plan 60-04 Test 6: petcat.decode behaves identically to c1541 -- file-laye
   });
 });
 
-test("Plan 60-04 Test 7: when nothing answers, the refusal names the tool id, lists tried (including the file-layer candidate the seam inspected), and carries the declaration's remedy -- for both c1541 and petcat, changing with a scratch declaration", async () => {
+test("Plan 60-04 Test 7: when nothing answers, the refusal names the tool id, lists tried (including the sibling-of-x64sc candidate the probe inspected), and carries the declaration's remedy -- for both c1541 and petcat, changing with a scratch declaration", async () => {
+  // Plan 60-07 (WR-01) note: this case previously named a tools.json entry
+  // that pointed at a NONEXISTENT path -- but the seam's own file layer
+  // classifies "named but absent on disk" as a REFUSAL
+  // (buildFileLayerRefusal(), tool-location.mts), and findSiblingBinary()
+  // now carries that refusal verbatim with NO remedy appended (this is
+  // exactly the WR-01 fix, covered by the new Plan 60-07 tests below). This
+  // case is rewritten to exercise the genuinely-absent path instead --
+  // "nothing said about it in the file" (a bare `{}`, which
+  // tool-location.mts's own comment states is NOT malformed) -- so it keeps
+  // testing the unchanged not-found+remedy behaviour this test's name
+  // describes, rather than silently drifting onto the now-refused case.
   await withTempDir(async (siblingDir) => {
     await withTempDir(async (declDir) => {
       await withTempDir(async (dir) => {
         const fakeX64scPath = join(siblingDir, "fake-x64sc");
         writeFileSync(fakeX64scPath, "not a real binary -- only its path/directory matter for sibling resolution\n", "utf8");
-        // A tools.json entry that names a candidate the file layer will
-        // inspect and reject (absent on disk) -- so `tried` carries a
-        // concrete file-layer candidate, and resolution is terminal at the
-        // file layer (never falls through to the sibling/$PATH layers).
-        const badC1541Path = join(dir, "nonexistent-c1541-stub");
-        const badPetcatPath = join(dir, "nonexistent-petcat-stub");
-        writeToolsJson(dir, { c1541: badC1541Path, petcat: badPetcatPath });
+        // A present-but-empty tools.json -- the file layer has nothing to
+        // say for either id, so resolution falls through to the sibling and
+        // $PATH layers exactly as before this plan.
+        writeToolsJson(dir, {});
         const c1541Sentence = "run scratch-declaration-only-remedy-c1541 to install VICE, never the real one.";
         const petcatSentence = "run scratch-declaration-only-remedy-petcat to install VICE, never the real one.";
         writeScratchDeclaration(declDir, { c1541: c1541Sentence, petcat: petcatSentence });
@@ -1759,7 +1767,10 @@ test("Plan 60-04 Test 7: when nothing answers, the refusal names the tool id, li
           assert.match(c1541Response.message, /"c1541"/);
           assert.match(c1541Response.message, /does not exist/);
           assert.match(c1541Response.message, /tried:/);
-          assert.ok(c1541Response.message.includes(badC1541Path), "tried must include the file-layer candidate the seam inspected");
+          assert.ok(
+            c1541Response.message.includes(join(siblingDir, "c1541")),
+            "tried must include the sibling-of-x64sc candidate the probe inspected",
+          );
           assert.ok(c1541Response.message.includes(c1541Sentence), `expected the scratch remedy text in: ${c1541Response.message}`);
 
           const runPetcatFresh = fresh.runHostTool as unknown as typeof runPetcatHostTool;
@@ -1770,13 +1781,262 @@ test("Plan 60-04 Test 7: when nothing answers, the refusal names the tool id, li
           assert.match(petcatResponse.message, /"petcat"/);
           assert.match(petcatResponse.message, /does not exist/);
           assert.match(petcatResponse.message, /tried:/);
-          assert.ok(petcatResponse.message.includes(badPetcatPath), "tried must include the file-layer candidate the seam inspected");
+          assert.ok(
+            petcatResponse.message.includes(join(siblingDir, "petcat")),
+            "tried must include the sibling-of-x64sc candidate the probe inspected",
+          );
           assert.ok(petcatResponse.message.includes(petcatSentence), `expected the scratch remedy text in: ${petcatResponse.message}`);
         } finally {
           if (previousBin === undefined) delete process.env.VICE_BIN;
           else process.env.VICE_BIN = previousBin;
           if (previousPath === undefined) delete process.env.PATH;
           else process.env.PATH = previousPath;
+          await resetResolvedBackendMjs();
+        }
+      });
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Plan 60-07 (WR-01, WR-02): findSiblingBinary()'s seam refusal now reaches
+// the c1541/petcat call sites verbatim instead of being discarded into a
+// generic "does not exist" sentence, mirroring buildHostToolArgv()'s own
+// ACME branch (refusal quoted verbatim, no remedy appended). Every case
+// below uses freshHostTool() -- see that helper's own doc comment for why a
+// shared module instance cannot be used here.
+// ---------------------------------------------------------------------------
+
+test("Plan 60-07 Test 1 (the tracer, end to end through the built artifact): a tools.json path for c1541 that does not exist on disk produces the seam's own reason, not the generic sentence", async () => {
+  await withTempDir(async (siblingDir) => {
+    await withTempDir(async (declDir) => {
+      await withTempDir(async (dir) => {
+        const fakeX64scPath = join(siblingDir, "fake-x64sc");
+        writeFileSync(fakeX64scPath, "not a real binary -- only its path/directory matter for sibling resolution\n", "utf8");
+        const badC1541Path = join(dir, "nonexistent-c1541-stub");
+        writeToolsJson(dir, { c1541: badC1541Path });
+        writeScratchDeclaration(declDir, { c1541: "Plan 60-07 Test 1's own distinctive remedy sentence, never expected here." });
+        writeFileSync(join(dir, "x.d64"), "tiny\n", "utf8");
+
+        const previousBin = process.env.VICE_BIN;
+        process.env.VICE_BIN = fakeX64scPath;
+        await resetResolvedBackendMjs();
+        const fresh = await freshHostTool();
+        try {
+          const response = await fresh.runHostTool({ tool: "c1541.dir", args: { image: "x.d64" } }, { repoRoot: dir, here: declDir });
+          assert.equal(response.ok, false);
+          if (response.ok) return;
+          assert.match(response.message, /c1541\.dir/);
+          assert.match(response.message, /"c1541"/);
+          assert.ok(response.message.includes(badC1541Path), "the seam's own quoted path must appear verbatim");
+          assert.match(response.message, /tools\.json supplied this path/, "the seam's own 'the file supplied this path' clause must appear");
+          assert.match(response.message, /does not exist on disk/);
+        } finally {
+          if (previousBin === undefined) delete process.env.VICE_BIN;
+          else process.env.VICE_BIN = previousBin;
+          await resetResolvedBackendMjs();
+        }
+      });
+    });
+  });
+});
+
+test("Plan 60-07 Test 2: a tools.json entry naming a real, non-executable file for c1541 produces the seam's executable-bit reason", async () => {
+  await withTempDir(async (siblingDir) => {
+    await withTempDir(async (declDir) => {
+      await withTempDir(async (dir) => {
+        const fakeX64scPath = join(siblingDir, "fake-x64sc");
+        writeFileSync(fakeX64scPath, "not a real binary -- only its path/directory matter for sibling resolution\n", "utf8");
+        // A real file with NO executable bit -- writeFileSync's default
+        // mode carries no +x, and this is deliberately never chmodSync'd,
+        // unlike writeMarkerC1541()'s stubs elsewhere in this file.
+        const nonExecPath = join(dir, "non-executable-c1541-stub");
+        writeFileSync(nonExecPath, "#!/usr/bin/env node\n", "utf8");
+        writeToolsJson(dir, { c1541: nonExecPath });
+        writeScratchDeclaration(declDir, { c1541: "Plan 60-07 Test 2's own distinctive remedy sentence, never expected here." });
+        writeFileSync(join(dir, "x.d64"), "tiny\n", "utf8");
+
+        const previousBin = process.env.VICE_BIN;
+        process.env.VICE_BIN = fakeX64scPath;
+        await resetResolvedBackendMjs();
+        const fresh = await freshHostTool();
+        try {
+          const response = await fresh.runHostTool({ tool: "c1541.dir", args: { image: "x.d64" } }, { repoRoot: dir, here: declDir });
+          assert.equal(response.ok, false);
+          if (response.ok) return;
+          assert.match(response.message, /c1541\.dir/);
+          assert.match(response.message, /"c1541"/);
+          assert.ok(response.message.includes(nonExecPath), "the seam's own quoted path must appear verbatim");
+          assert.match(response.message, /not executable/);
+          assert.match(response.message, /missing the executable bit/);
+        } finally {
+          if (previousBin === undefined) delete process.env.VICE_BIN;
+          else process.env.VICE_BIN = previousBin;
+          await resetResolvedBackendMjs();
+        }
+      });
+    });
+  });
+});
+
+test("Plan 60-07 Test 3 (the clean control): with nothing said about c1541 in the file and no binary anywhere, the refusal is unchanged -- tool id, absence, tried list, and the declaration's remedy", async () => {
+  await withTempDir(async (siblingDir) => {
+    await withTempDir(async (declDir) => {
+      await withTempDir(async (dir) => {
+        const fakeX64scPath = join(siblingDir, "fake-x64sc");
+        writeFileSync(fakeX64scPath, "not a real binary -- only its path/directory matter for sibling resolution\n", "utf8");
+        // No tools.json entry for c1541 at all -- the file layer has
+        // nothing to say. Empty $PATH and no sibling binary either, so
+        // nothing answers at any layer.
+        writeToolsJson(dir, {});
+        const remedySentence = "Plan 60-07 Test 3's own distinctive remedy sentence, asserted for present below.";
+        writeScratchDeclaration(declDir, { c1541: remedySentence });
+        writeFileSync(join(dir, "x.d64"), "tiny\n", "utf8");
+
+        const previousBin = process.env.VICE_BIN;
+        const previousPath = process.env.PATH;
+        const emptyPathDir = join(dir, "empty-path");
+        mkdirSync(emptyPathDir, { recursive: true });
+        process.env.VICE_BIN = fakeX64scPath;
+        process.env.PATH = emptyPathDir;
+        await resetResolvedBackendMjs();
+        const fresh = await freshHostTool();
+        try {
+          const response = await fresh.runHostTool({ tool: "c1541.dir", args: { image: "x.d64" } }, { repoRoot: dir, here: declDir });
+          assert.equal(response.ok, false);
+          if (response.ok) return;
+          assert.match(response.message, /c1541\.dir/);
+          assert.match(response.message, /"c1541"/);
+          assert.match(response.message, /does not exist/);
+          assert.match(response.message, /tried:/);
+          assert.ok(
+            response.message.includes(remedySentence),
+            `expected the scratch declaration's own distinctive remedy sentence in: ${response.message}`,
+          );
+        } finally {
+          if (previousBin === undefined) delete process.env.VICE_BIN;
+          else process.env.VICE_BIN = previousBin;
+          if (previousPath === undefined) delete process.env.PATH;
+          else process.env.PATH = previousPath;
+          await resetResolvedBackendMjs();
+        }
+      });
+    });
+  });
+});
+
+test("Plan 60-07 Test 4 (no remedy on a refusal): the malformed-entry message does NOT contain the scratch declaration's remedy sentence, matching the ACME branch's precedent", async () => {
+  await withTempDir(async (siblingDir) => {
+    await withTempDir(async (declDir) => {
+      await withTempDir(async (dir) => {
+        const fakeX64scPath = join(siblingDir, "fake-x64sc");
+        writeFileSync(fakeX64scPath, "not a real binary -- only its path/directory matter for sibling resolution\n", "utf8");
+        const badC1541Path = join(dir, "nonexistent-c1541-stub");
+        writeToolsJson(dir, { c1541: badC1541Path });
+        const remedySentence = "Plan 60-07 Test 4's own distinctive remedy sentence, asserted ABSENT below.";
+        writeScratchDeclaration(declDir, { c1541: remedySentence });
+        writeFileSync(join(dir, "x.d64"), "tiny\n", "utf8");
+
+        const previousBin = process.env.VICE_BIN;
+        process.env.VICE_BIN = fakeX64scPath;
+        await resetResolvedBackendMjs();
+        const fresh = await freshHostTool();
+        try {
+          const response = await fresh.runHostTool({ tool: "c1541.dir", args: { image: "x.d64" } }, { repoRoot: dir, here: declDir });
+          assert.equal(response.ok, false);
+          if (response.ok) return;
+          assert.match(response.message, /does not exist on disk/, "sanity: this must be the malformed-entry refusal, not some other failure");
+          assert.ok(
+            !response.message.includes(remedySentence),
+            `a malformed-entry refusal must never carry the declaration's remedy text, got: ${response.message}`,
+          );
+        } finally {
+          if (previousBin === undefined) delete process.env.VICE_BIN;
+          else process.env.VICE_BIN = previousBin;
+          await resetResolvedBackendMjs();
+        }
+      });
+    });
+  });
+});
+
+test("Plan 60-07 Test 5 (the second tool): the same malformed-entry case for petcat through petcat.decode, proving the change is in the shared helper", async () => {
+  await withTempDir(async (siblingDir) => {
+    await withTempDir(async (declDir) => {
+      await withTempDir(async (dir) => {
+        const fakeX64scPath = join(siblingDir, "fake-x64sc");
+        writeFileSync(fakeX64scPath, "not a real binary -- only its path/directory matter for sibling resolution\n", "utf8");
+        const badPetcatPath = join(dir, "nonexistent-petcat-stub");
+        writeToolsJson(dir, { petcat: badPetcatPath });
+        const remedySentence = "Plan 60-07 Test 5's own distinctive remedy sentence, asserted ABSENT below.";
+        writeScratchDeclaration(declDir, { petcat: remedySentence });
+        writeFileSync(join(dir, "x.prg"), "tiny\n", "utf8");
+
+        const previousBin = process.env.VICE_BIN;
+        process.env.VICE_BIN = fakeX64scPath;
+        await resetResolvedBackendMjs();
+        const fresh = await freshHostTool();
+        const runPetcatFresh = fresh.runHostTool as unknown as typeof runPetcatHostTool;
+        try {
+          const response = await runPetcatFresh({ tool: "petcat.decode", args: { image: "x.prg" } }, { repoRoot: dir, here: declDir });
+          assert.equal(response.ok, false);
+          if (response.ok) return;
+          assert.match(response.message, /petcat\.decode/);
+          assert.match(response.message, /"petcat"/);
+          assert.ok(response.message.includes(badPetcatPath), "the seam's own quoted path must appear verbatim");
+          assert.match(response.message, /tools\.json supplied this path/);
+          assert.match(response.message, /does not exist on disk/);
+          assert.ok(
+            !response.message.includes(remedySentence),
+            `a malformed-entry refusal must never carry the declaration's remedy text, got: ${response.message}`,
+          );
+        } finally {
+          if (previousBin === undefined) delete process.env.VICE_BIN;
+          else process.env.VICE_BIN = previousBin;
+          await resetResolvedBackendMjs();
+        }
+      });
+    });
+  });
+});
+
+test("Plan 60-07 Test 6 (the memo is unchanged): within one module instance, a second call for the same binary name replays the memoised refusal without re-reading tools.json", async () => {
+  await withTempDir(async (siblingDir) => {
+    await withTempDir(async (declDir) => {
+      await withTempDir(async (dir) => {
+        const fakeX64scPath = join(siblingDir, "fake-x64sc");
+        writeFileSync(fakeX64scPath, "not a real binary -- only its path/directory matter for sibling resolution\n", "utf8");
+        const badC1541Path = join(dir, "nonexistent-c1541-stub");
+        writeToolsJson(dir, { c1541: badC1541Path });
+        writeScratchDeclaration(declDir, { c1541: "Plan 60-07 Test 6's own remedy sentence, irrelevant to this case." });
+        writeFileSync(join(dir, "x.d64"), "tiny\n", "utf8");
+
+        const previousBin = process.env.VICE_BIN;
+        process.env.VICE_BIN = fakeX64scPath;
+        await resetResolvedBackendMjs();
+        const fresh = await freshHostTool();
+        try {
+          const first = await fresh.runHostTool({ tool: "c1541.dir", args: { image: "x.d64" } }, { repoRoot: dir, here: declDir });
+          assert.equal(first.ok, false);
+          if (first.ok) return;
+          assert.match(first.message, /does not exist on disk/, "sanity: the first call must be the malformed-entry refusal");
+          const firstMessage = first.message;
+
+          // Change EVERYTHING a fresh probe would find: overwrite
+          // tools.json with a WORKING entry that would resolve successfully
+          // -- proving no filesystem re-probe happens on the second call for
+          // the same binary name, only the memoised refusal is replayed.
+          const workingPath = writeMarkerC1541(dir, "SECOND-CALL-MUST-NOT-BE-SEEN", "second-call-c1541-stub");
+          writeToolsJson(dir, { c1541: workingPath });
+
+          const second = await fresh.runHostTool({ tool: "c1541.dir", args: { image: "x.d64" } }, { repoRoot: dir, here: declDir });
+          assert.equal(second.ok, false, "the memoised refusal must still be returned, never a fresh success from the mutated file");
+          if (!second.ok) {
+            assert.equal(second.message, firstMessage, "the second call must replay the exact memoised refusal message");
+          }
+        } finally {
+          if (previousBin === undefined) delete process.env.VICE_BIN;
+          else process.env.VICE_BIN = previousBin;
           await resetResolvedBackendMjs();
         }
       });
