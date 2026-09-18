@@ -65,6 +65,31 @@
 //     the source; the compiled copy is generated and committed, and a
 //     hand-edit there is silently overwritten by the next build.
 //
+// Phase 60 gap closure (LOC-03, PD-13/PD-14/PD-16): the environment layer
+// (Layer 1) is AMENDED from Phase 59's D-08 existence-only posture, but only
+// for a SEPARATOR-FREE value -- the shape 60-VERIFICATION.md's own
+// independent reproduction names ("a slash-free env-var value"). It now
+// resolves a CANDIDATE, not only a literal path: a slash-free value on an
+// `executable`-kind record is additionally walked on `$PATH`, reusing this
+// module's own exported `resolveOnPath()`. When a declared variable was set
+// to a separator-free value that resolves through NEITHER check (whatever
+// the record's `kind`), resolution refuses by name -- naming the variable,
+// its value, and every candidate tried -- immediately before the declared-id
+// `$PATH` probe, so a same-named binary sitting on `$PATH` is never silently
+// substituted for the one the developer wrote. A value CONTAINING a `/` that
+// fails to match keeps D-08's exact prior posture -- not refused, only not
+// found, falling through silently -- because a `$PATH` search could never
+// plausibly have answered for it in the first place; this is what keeps an
+// absolute, nonexistent override's pre-phase-60 behaviour genuinely
+// unchanged. `.c64-re-tools/tools.json` is still consulted first (PD-14): an
+// entry a developer wrote down is a statement of intent, not a guess, so the
+// ONE fall-through this removes is the declared-id `$PATH` probe for a bare
+// candidate, not the file layer and not an absolute-path candidate. The
+// executable-bit check stays the FILE LAYER's alone -- D-08's untouched half
+// -- and this layer gains no memo, no reset hatch, and no fall-through to a
+// `$PATH` search for the declared ID once a bare-candidate variable was set
+// non-empty and left unresolved.
+//
 // `remedyTextsFor()` is the FIRST runtime reader of the declaration's
 // `remedies` arrays -- every one of the eight records' `remedies` blocks has
 // existed as data only, read by no shipped code path, since Phase 58 wrote
@@ -114,6 +139,18 @@ export interface ResolveToolResult {
    * refusal -- `refusal` stays `null` and `path`/`layer`/`mechanism` stay
    * `null` instead. */
   refusal: string | null;
+  /** The non-empty value the declared environment variable held for this
+   * call, or `null` when the record declares no variable, or the variable
+   * was unset or empty (PD-13/PD-16, LOC-03 gap closure). Populated on
+   * EVERY return path of `resolveTool()`, whatever the outcome. Exists so a
+   * CONSUMER of this seam's result -- most pointedly `backend-detect.mts`'s
+   * `resolvedBackend()` -- can report or attempt what the developer
+   * actually typed without itself reading the variable by name: LOC-02's
+   * closed-consumer-set scan (`tool-location-consumers.test.ts`) stays
+   * empty only if no sibling module re-reads one of the four declared names
+   * to recover this same information, and this field is what makes that
+   * re-read unnecessary. */
+  envCandidate: string | null;
 }
 
 /** `resolveTool()`'s injection surface -- a single destructured options
@@ -492,6 +529,7 @@ export function resolveTool(id: string, deps: ResolveToolDeps): ResolveToolResul
       layer: null,
       mechanism: null,
       refusal: `"${id}" is not a declared tool id`,
+      envCandidate: null,
     };
   }
   const record = declaration.tools[id]!;
@@ -511,6 +549,7 @@ export function resolveTool(id: string, deps: ResolveToolDeps): ResolveToolResul
       layer: null,
       mechanism: null,
       refusal: `"${id}" may not be located through an environment variable, tools.json, or $PATH: ${record.location.reason ?? ""}`,
+      envCandidate: null,
     };
   }
 
@@ -569,20 +608,88 @@ export function resolveTool(id: string, deps: ResolveToolDeps): ResolveToolResul
     return `"${id}"'s tools.json entry (${candidate}) exists but is not executable (missing the executable bit); tools.json supplied this path`;
   };
 
-  // Layer 1: the environment. Kept at today's existence-only posture
-  // (D-08): a candidate that exists but fails the kind check simply does
-  // not match here -- it is not refused, only not found -- and resolution
-  // falls through to the next layer.
+  // Layer 1: the environment (PD-13/PD-14/PD-16, LOC-03 gap closure --
+  // amends Phase 59's D-08 existence-only posture for this layer alone).
+  // Three ordered steps for a declared, non-empty `envVarName` value:
+  //   1. Today's behaviour, unchanged: the raw value IS the candidate. If it
+  //      matches the record's declared kind, it wins outright.
+  //   2. NEW, and only for an `executable`-kind record whose value contains
+  //      no `/`: the value names a bare command a user expects `$PATH` (and,
+  //      before this phase, `spawn()`'s own search) to resolve -- so this
+  //      layer now walks `$PATH` for exactly that value, through this
+  //      module's own exported `resolveOnPath()` (never a second, private
+  //      copy of that walk). A `directory`-kind value is never widened this
+  //      way (PD-14/D-08's untouched half): a `$PATH` search for a directory
+  //      is meaningless.
+  //   3. Neither step found a match, AND the value contains no `/`: the
+  //      variable WAS set to a bare name and nothing answered it. This is
+  //      recorded (`envUnresolved`) but not yet returned --
+  //      `.c64-re-tools/tools.json` still gets its say (PD-14: an entry a
+  //      developer wrote down is a statement of intent, not a guess), and
+  //      only once THAT layer also has nothing to say for this id does
+  //      resolution refuse, immediately before the declared-id `$PATH`
+  //      probe (Layer 3) -- see the refusal below, right before that probe.
+  //      The one fall-through this removes is exactly that probe: a `$PATH`
+  //      search for the DECLARED ID once a variable named a BARE candidate
+  //      that resolved nothing, which could silently start a different
+  //      binary than the one the developer named (the reported LOC-03 gap,
+  //      independently reproduced against exactly this shape of value --
+  //      "a slash-free env-var value" -- in 60-VERIFICATION.md).
+  //
+  //      A value CONTAINING a `/` that fails `matchesDeclaredKind()` is,
+  //      deliberately, NOT recorded as `envUnresolved` and keeps today's
+  //      D-08 posture exactly: not refused, only not found, and resolution
+  //      falls through silently -- this is the phase's own must-have truth
+  //      ("a value containing a path separator behaves exactly as today")
+  //      and it is what keeps `vice-broker-acquire.test.ts`'s own Plan
+  //      60-01 Test 4 (an absolute, nonexistent `VICE_BIN`) green,
+  //      unchanged. The distinguishing question PD-13 asks is narrower than
+  //      "did this value resolve": it is "could `$PATH` plausibly have
+  //      answered for it at all" -- true only for a bare, separator-free
+  //      candidate, whatever the record's `kind`.
+  //
+  // The executable-bit check stays the FILE LAYER's alone (D-08's untouched
+  // half): `matchesDeclaredKind()` is an existence/kind check only, and
+  // neither step above gains `passesFileLayerCheck()`'s `accessSync` call.
   const envVarName = record.location?.envVar;
+  let envCandidate: string | null = null;
+  let envUnresolved = false;
   if (envVarName) {
     const envValue = env[envVarName];
     if (typeof envValue === "string" && envValue !== "") {
+      envCandidate = envValue;
       tried.push(envValue);
       if (matchesDeclaredKind(envValue)) {
-        return { id, path: envValue, tried, layer: "env", mechanism: envVarName, refusal: null };
+        return { id, path: envValue, tried, layer: "env", mechanism: envVarName, refusal: null, envCandidate };
+      }
+      if (!envValue.includes("/")) {
+        if (record.kind === "executable") {
+          const envProbe = resolveOnPath(envValue, env);
+          tried.push(...envProbe.tried);
+          if (envProbe.path && matchesDeclaredKind(envProbe.path)) {
+            return { id, path: envProbe.path, tried, layer: "env", mechanism: envVarName, refusal: null, envCandidate };
+          }
+        }
+        envUnresolved = true;
       }
     }
   }
+
+  /** Builds the environment layer's terminal refusal sentence (PD-13):
+   * composed only when `envUnresolved` fired above AND `.c64-re-tools/tools.json`
+   * had nothing to say for this id either. Names the tool id, the declared
+   * variable, the value it held, what was looked for, every candidate
+   * tried so far, and says plainly that the seam will not fall back to
+   * searching `$PATH` for the DECLARED ID -- mirroring `buildFileLayerRefusal()`'s
+   * own prose idiom one section below. */
+  const buildEnvLayerRefusal = (varName: string, value: string): string => {
+    const wants = record.kind === "directory" ? `a directory carrying its required marker (${record.marker ?? ""})` : "an executable file";
+    return (
+      `"${id}"'s ${varName} environment variable is set to "${value}", which did not resolve to ${wants} ` +
+      `(tried: ${tried.join(", ") || "nothing"}); the seam will not fall back to searching $PATH for "${id}" itself, ` +
+      `because that could start a different binary than the one ${varName} named`
+    );
+  };
 
   // Layer 2: `.c64-re-tools/tools.json`. This is the one layer D-08 scopes
   // validation to, and the amended LOC-06 triad applies in full here: a
@@ -630,6 +737,7 @@ export function resolveTool(id: string, deps: ResolveToolDeps): ResolveToolResul
           layer: null,
           mechanism: null,
           refusal: `${toolsJsonPath} could not be parsed: its bytes are not valid JSON`,
+          envCandidate,
         };
       }
 
@@ -641,6 +749,7 @@ export function resolveTool(id: string, deps: ResolveToolDeps): ResolveToolResul
           layer: null,
           mechanism: null,
           refusal: `${toolsJsonPath} must be a plain object mapping a declared tool id to a path string; found ${describeValueShape(parsed)}`,
+          envCandidate,
         };
       }
 
@@ -659,13 +768,14 @@ export function resolveTool(id: string, deps: ResolveToolDeps): ResolveToolResul
             layer: null,
             mechanism: null,
             refusal: `"${id}"'s tools.json entry must be a non-empty string naming a path; found ${describeValueShape(rawValue)}`,
+            envCandidate,
           };
         }
 
         const resolvedPath = normalizeFileLayerValue(rawValue, env, deps.projectRoot);
         tried.push(resolvedPath);
         if (passesFileLayerCheck(resolvedPath)) {
-          return { id, path: resolvedPath, tried, layer: "file", mechanism: "tools.json", refusal: null };
+          return { id, path: resolvedPath, tried, layer: "file", mechanism: "tools.json", refusal: null, envCandidate };
         }
         return {
           id,
@@ -674,9 +784,31 @@ export function resolveTool(id: string, deps: ResolveToolDeps): ResolveToolResul
           layer: null,
           mechanism: null,
           refusal: buildFileLayerRefusal(resolvedPath),
+          envCandidate,
         };
       }
     }
+  }
+
+  // PD-13/PD-14 (LOC-03 gap closure): the environment layer's TERMINAL
+  // refusal. Reached only when a declared variable was set to a non-empty
+  // value that resolved through neither Layer 1 step (`envUnresolved`,
+  // above), AND `.c64-re-tools/tools.json` had nothing to say for this id
+  // either (a present, well-formed, resolving entry already returned above;
+  // an ABSENT entry falls through to here, same as before this phase). This
+  // is what makes the declared-id `$PATH` probe below UNREACHABLE once a
+  // variable was set non-empty and unresolved -- the one fall-through this
+  // gap-closure plan removes.
+  if (envUnresolved) {
+    return {
+      id,
+      path: null,
+      tried,
+      layer: null,
+      mechanism: null,
+      refusal: buildEnvLayerRefusal(envVarName as string, envCandidate as string),
+      envCandidate,
+    };
   }
 
   // Layer 3: `$PATH`, executable-kind ids only (a directory has no
@@ -686,11 +818,11 @@ export function resolveTool(id: string, deps: ResolveToolDeps): ResolveToolResul
     const probe = resolveOnPath(id, env);
     tried.push(...probe.tried);
     if (probe.path) {
-      return { id, path: probe.path, tried, layer: "probe", mechanism: "$PATH", refusal: null };
+      return { id, path: probe.path, tried, layer: "probe", mechanism: "$PATH", refusal: null, envCandidate };
     }
   }
 
-  return { id, path: null, tried, layer: null, mechanism: null, refusal: null };
+  return { id, path: null, tried, layer: null, mechanism: null, refusal: null, envCandidate };
 }
 
 /** `toolsFileTemplate()`'s injection surface -- deliberately just the one

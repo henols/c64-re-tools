@@ -441,6 +441,142 @@ test("Plan 60-01 Test 4: two resolutions of x64sc in one process agree on path/l
   }
 });
 
+// ---------------------------------------------------------------------------
+// Plan 60-06 (LOC-03 gap closure, tracer): the widened, terminal environment
+// layer proven end to end -- seam, `resolvedBackend()` consumer, and the
+// REAL spawn call `handleAcquire()` makes, one path, all the way down. This
+// is the tracer's own proof that the fix reaches the production spawn
+// wiring, not only the seam in isolation.
+// ---------------------------------------------------------------------------
+
+test("Plan 60-06 Test 1 (tracer, LOC-03): a bare-string VICE_BIN naming a stub on the injected PATH is the exact string the real spawn call receives", async () => {
+  const { handleAcquire } = await loadBrokerModule();
+  const projectRoot = mkdtempSync(join(tmpdir(), "vice-broker-acquire-6006-t1-root-"));
+  const stateDir = mkdtempSync(join(tmpdir(), "vice-broker-acquire-6006-t1-state-"));
+  const pathDir = mkdtempSync(join(tmpdir(), "vice-broker-acquire-6006-t1-path-"));
+  try {
+    const toolsDir = join(projectRoot, ".c64-re-tools");
+    const stubPath = writeStubExecutable(pathDir, "stub-x64sc-custom");
+
+    resetResolvedBackendForTests();
+    const backendResult = resolvedBackend({ toolsDir, projectRoot, env: { VICE_BIN: "stub-x64sc-custom", PATH: pathDir } });
+    assert.equal(backendResult.binPath, stubPath, "the bare-string override must resolve to the stub's absolute path");
+    assert.equal(backendResult.binPathResolved, true);
+    assert.equal(backendResult.locationRefusal, null);
+
+    const spawnCalls: string[] = [];
+    const outcome = await handleAcquire("6006-t1", stateDir, createState(), {
+      backend: "stock",
+      viceBin: backendResult.binPath,
+      allocateRemoteMonitorPort: stubAllocateRemoteMonitorPort(),
+      buildColdSpawnFactory: capturingColdSpawnFactory(spawnCalls),
+    });
+    assert.equal(outcome.ok, true, `expected a successful grant, got ${JSON.stringify(outcome)}`);
+    assert.equal(spawnCalls[0], stubPath, "the real spawn call's first argument must equal the stub's absolute path, not merely a substring match");
+  } finally {
+    rmSync(projectRoot, { recursive: true, force: true });
+    rmSync(stateDir, { recursive: true, force: true });
+    rmSync(pathDir, { recursive: true, force: true });
+  }
+});
+
+test("Plan 60-06 Test 2 (LOC-03, the substitution case): a bare-string VICE_BIN that exists nowhere, with a decoy executable literally named x64sc on the injected PATH, never reaches the decoy at the real spawn call", async () => {
+  const { handleAcquire } = await loadBrokerModule();
+  const projectRoot = mkdtempSync(join(tmpdir(), "vice-broker-acquire-6006-t2-root-"));
+  const stateDir = mkdtempSync(join(tmpdir(), "vice-broker-acquire-6006-t2-state-"));
+  const pathDir = mkdtempSync(join(tmpdir(), "vice-broker-acquire-6006-t2-path-"));
+  try {
+    const toolsDir = join(projectRoot, ".c64-re-tools");
+    const decoyPath = writeStubExecutable(pathDir, "x64sc");
+
+    resetResolvedBackendForTests();
+    const backendResult = resolvedBackend({ toolsDir, projectRoot, env: { VICE_BIN: "x64sc-absent-everywhere", PATH: pathDir } });
+    assert.equal(backendResult.binPathResolved, false);
+    assert.equal(backendResult.binPath, "x64sc-absent-everywhere", "the configured name shown on failure must be the developer's own value");
+    assert.ok(
+      backendResult.locationRefusal &&
+        backendResult.locationRefusal.includes("VICE_BIN") &&
+        backendResult.locationRefusal.includes("x64sc-absent-everywhere"),
+      "locationRefusal must name both the variable and the value it held",
+    );
+
+    // Even though resolvedBackend() reports failure (binPath is the
+    // unresolved configured name), a real caller wiring this into
+    // handleAcquire() would refuse to launch a broker with no resolved
+    // binary in practice -- this test's own job is narrower: prove that
+    // IF something downstream did spawn using this failure's own binPath,
+    // it would never be the decoy's path, because resolvedBackend() itself
+    // never returned the decoy.
+    assert.notEqual(backendResult.binPath, decoyPath, "the decoy's absolute path must never be what resolvedBackend() reports");
+
+    const spawnCalls: string[] = [];
+    const outcome = await handleAcquire("6006-t2", stateDir, createState(), {
+      backend: "stock",
+      viceBin: backendResult.binPath,
+      allocateRemoteMonitorPort: stubAllocateRemoteMonitorPort(),
+      buildColdSpawnFactory: capturingColdSpawnFactory(spawnCalls),
+    });
+    assert.equal(outcome.ok, true, `expected a successful grant, got ${JSON.stringify(outcome)}`);
+    assert.notEqual(spawnCalls[0], decoyPath, "a decoy match at the real spawn call is exactly the defect this plan exists to close");
+    assert.equal(spawnCalls[0], "x64sc-absent-everywhere", "the real spawn call receives the developer's own unresolved value, never a substituted binary");
+  } finally {
+    rmSync(projectRoot, { recursive: true, force: true });
+    rmSync(stateDir, { recursive: true, force: true });
+    rmSync(pathDir, { recursive: true, force: true });
+  }
+});
+
+test("Plan 60-06 Test 3 (seam-level): resolveTool() for the Test 2 scenario returns null path/layer/mechanism, a refusal naming the variable and value, and a tried list with no declared-id candidate", () => {
+  const projectRoot = mkdtempSync(join(tmpdir(), "vice-broker-acquire-6006-t3-root-"));
+  const pathDir = mkdtempSync(join(tmpdir(), "vice-broker-acquire-6006-t3-path-"));
+  try {
+    const toolsDir = join(projectRoot, ".c64-re-tools");
+    writeStubExecutable(pathDir, "x64sc");
+
+    const result = resolveTool("x64sc", { toolsDir, projectRoot, env: { VICE_BIN: "x64sc-absent-everywhere", PATH: pathDir } });
+
+    assert.equal(result.path, null);
+    assert.equal(result.layer, null);
+    assert.equal(result.mechanism, null);
+    assert.ok(result.refusal && result.refusal.includes("VICE_BIN") && result.refusal.includes("x64sc-absent-everywhere"));
+    assert.ok(result.tried.includes(join(pathDir, "x64sc-absent-everywhere")), "the widened PATH walk of the developer's own value must be present in tried");
+    assert.equal(result.tried.includes(join(pathDir, "x64sc")), false, "tried must contain no candidate built by joining PATH to the declared id");
+  } finally {
+    rmSync(projectRoot, { recursive: true, force: true });
+    rmSync(pathDir, { recursive: true, force: true });
+  }
+});
+
+test("Plan 60-06 Test 4 (PD-14 control): the file layer stays reachable when VICE_BIN is an unresolvable bare name and tools.json names a real executable", async () => {
+  const projectRoot = mkdtempSync(join(tmpdir(), "vice-broker-acquire-6006-t4-root-"));
+  const stateDir = mkdtempSync(join(tmpdir(), "vice-broker-acquire-6006-t4-state-"));
+  try {
+    const { handleAcquire } = await loadBrokerModule();
+    const toolsDir = join(projectRoot, ".c64-re-tools");
+    const stubPath = writeStubExecutable(join(projectRoot, "bin"), "stub-x64sc-t4");
+    writeToolsJsonFile(toolsDir, { x64sc: stubPath });
+
+    resetResolvedBackendForTests();
+    const backendResult = resolvedBackend({ toolsDir, projectRoot, env: { VICE_BIN: "definitely-not-anywhere" } });
+    assert.equal(backendResult.binPath, stubPath, "tools.json must still answer when VICE_BIN resolves nowhere (PD-14)");
+    assert.equal(backendResult.binPathResolved, true);
+    assert.equal(backendResult.locationRefusal, null);
+
+    const spawnCalls: string[] = [];
+    const outcome = await handleAcquire("6006-t4", stateDir, createState(), {
+      backend: "stock",
+      viceBin: backendResult.binPath,
+      allocateRemoteMonitorPort: stubAllocateRemoteMonitorPort(),
+      buildColdSpawnFactory: capturingColdSpawnFactory(spawnCalls),
+    });
+    assert.equal(outcome.ok, true, `expected a successful grant, got ${JSON.stringify(outcome)}`);
+    assert.equal(spawnCalls[0], stubPath);
+  } finally {
+    rmSync(projectRoot, { recursive: true, force: true });
+    rmSync(stateDir, { recursive: true, force: true });
+  }
+});
+
 // Plan 41-05 (folded todo): the warm-floor-specific I-1 composition test that
 // used to sit here (driving _maintainWarmFloorForRealBroker() directly, with
 // no injected spawn override) is REMOVED along with the function it drove --

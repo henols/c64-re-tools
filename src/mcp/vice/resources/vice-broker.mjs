@@ -992,6 +992,18 @@ async function run(args) {
     // from resolvedBackend() a second time and never re-derived locally.
     const resolvedViceBin = backendResult.binPath;
     process.stderr.write(`vice-broker: backend "${backend}" (binary: ${backendResult.binPath})\n`);
+    // Phase 60 gap closure (LOC-03, PD-13/T-60-15): written only when the
+    // tool-location seam refused a declared environment-variable override --
+    // `backendResult.locationRefusal` is `null` in every other case, including
+    // the PD-02 injected-override branch, which never reaches the seam at
+    // all. This is the ONE readable record a host operator has of "which
+    // binary did this broker refuse to substitute, and why" -- no throw here:
+    // this process's own uncaught-exception handlers kill the whole pool, and
+    // only one of this broker's callers (the emulator spawn itself) needed
+    // this value to be correct.
+    if (backendResult.locationRefusal !== null) {
+        process.stderr.write(`vice-broker: ${backendResult.locationRefusal}\n`);
+    }
     // THE BROKER mints/verifies the
     // Ghidra runs-root handle here -- after the unconditional startup reap
     // above, and BEFORE the control listener below accepts a single

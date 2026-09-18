@@ -311,6 +311,16 @@ export interface ResolvedBackendResult {
    * the two it has, instead of a reader having to guess from whether the string
    * happens to contain a slash. */
   binPathResolved: boolean;
+  /** Phase 60 gap closure (LOC-03, PD-13): the tool-location seam's own
+   * `ResolveToolResult.refusal` verbatim, carried through unchanged, when
+   * resolution went through the seam (the PD-01 branch below) AND the seam
+   * refused. `null` in every other case -- including the PD-02
+   * injected-override branch, which never calls the seam at all and so has
+   * no refusal to carry. This is what lets `vice-broker.mts` write a
+   * readable startup line naming which environment-variable override was
+   * refused and why, without itself reading any of the four declared
+   * variable names. */
+  locationRefusal: string | null;
 }
 
 export interface ResolvedBackendDeps {
@@ -397,6 +407,12 @@ export function resolvedBackend(deps: ResolvedBackendDeps = {}): ResolvedBackend
 
   let viceBin: string;
   let resolvedPath: string | null;
+  // Phase 60 gap closure (LOC-03, PD-13): non-null only in the PD-01 branch
+  // below, and only when the seam itself refused. Carried verbatim onto the
+  // returned result's own `locationRefusal` field (see that field's own doc
+  // comment for why); this module reads no environment variable to compose
+  // it, and reads none to name it here either.
+  let locationRefusal: string | null = null;
 
   if (deps.viceBin !== undefined || deps.resolveBinPath !== undefined) {
     // PD-02: an explicit override bypasses the seam entirely -- byte-for-byte
@@ -406,16 +422,21 @@ export function resolvedBackend(deps: ResolvedBackendDeps = {}): ResolvedBackend
     resolvedPath = resolveBinPath(viceBin, env);
   } else {
     // PD-01: resolvedBackend() gains the tools.json layer internally by
-    // calling the seam; it keeps no ordering of its own. The display name
-    // handed to binPathFields() below stays the literal "x64sc" regardless
-    // of which layer answered -- that field is what a caller reads as
-    // "which file did you actually mean", not which layer answered.
-    viceBin = "x64sc";
+    // calling the seam; it keeps no ordering of its own. The seam's WHOLE
+    // result is taken here (PD-13), not only its `path`: the display name
+    // handed to binPathFields() below falls back to the seam's own
+    // `envCandidate` -- the value the developer actually wrote -- when the
+    // seam reports one, and to the literal "x64sc" only when it does not
+    // (retiring the hardcoded display name IN-01 logged). `refusal` is
+    // carried onto `locationRefusal` above unchanged.
     const projectRoot = deps.projectRoot ?? (deps.supervisorDir !== undefined ? dirname(dirname(deps.supervisorDir)) : process.cwd());
     const toolsDir = deps.toolsDir ?? (deps.supervisorDir !== undefined ? dirname(deps.supervisorDir) : join(process.cwd(), ".c64-re-tools"));
     const locate: ResolveToolFn = deps.locate ?? toolLocationSeam().resolveTool;
     const locateDeps: ResolveToolDeps = { toolsDir, projectRoot, env };
-    resolvedPath = locate("x64sc", locateDeps).path;
+    const locateResult = locate("x64sc", locateDeps);
+    resolvedPath = locateResult.path;
+    viceBin = locateResult.envCandidate ?? "x64sc";
+    locationRefusal = locateResult.refusal;
   }
 
   const identity = resolvedPath ? stat(resolvedPath) : null;
@@ -439,7 +460,7 @@ export function resolvedBackend(deps: ResolvedBackendDeps = {}): ResolvedBackend
     }
   }
 
-  const result: ResolvedBackendResult = { backend: "stock", ...binPathFields(resolvedPath, viceBin) };
+  const result: ResolvedBackendResult = { backend: "stock", ...binPathFields(resolvedPath, viceBin), locationRefusal };
   memoisedResult = result;
   return result;
 }
