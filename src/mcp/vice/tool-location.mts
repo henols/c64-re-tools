@@ -215,6 +215,27 @@ export function resolveOnPath(bin: string, env: NodeJS.ProcessEnv): { path: stri
   return { path: null, tried };
 }
 
+/** Normalises a raw `tools.json` value into an absolute path. Applied ONLY
+ * to a value that came out of `tools.json` (D-08) -- the environment and
+ * probe layers keep today's `existsSync`-only behaviour and see none of
+ * this. Exactly two steps, in order:
+ *   1. A value beginning `~/` has the `~` replaced by the injected
+ *      environment's `HOME`. A bare `~` with no following separator is
+ *      left alone -- it is a legal relative path name, and guessing what a
+ *      user meant by it is worse than not.
+ *   2. The result is handed to `node:path`'s own `resolve`, seeded with
+ *      `projectRoot` -- which both resolves a still-relative value against
+ *      `projectRoot` (never against `toolsDir` and never against the
+ *      process working directory) and is the ONLY normalisation applied:
+ *      no case folding, no Unicode normalisation, no comparison against a
+ *      normalised form. A non-ASCII segment survives byte-identically, and
+ *      a trailing separator resolves to the same path as the same value
+ *      without one. */
+function normalizeFileLayerValue(rawValue: string, env: NodeJS.ProcessEnv, projectRoot: string): string {
+  const expanded = rawValue.startsWith("~/") ? join(env.HOME ?? "", rawValue.slice(2)) : rawValue;
+  return resolvePath(projectRoot, expanded);
+}
+
 /** Resolves one declared tool id through, in order: an environment
  * variable (using the env-var name the declaration's own `location.envVar`
  * names -- never a name hardcoded in this file), `.c64-re-tools/tools.json`,
@@ -271,13 +292,7 @@ export function resolveTool(id: string, deps: ResolveToolDeps): ResolveToolResul
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       const rawValue = (parsed as Record<string, unknown>)[id];
       if (typeof rawValue === "string" && rawValue !== "") {
-        // A later addition to this file expands a leading `~/` against the
-        // injected environment's HOME and resolves a relative value against
-        // `projectRoot`, applied ONLY here in the file layer. This first cut
-        // proves the three-layer wiring itself against an already-absolute
-        // value; the normalisation lands as its own, separately reviewable
-        // change to this exact spot.
-        const resolvedPath = rawValue;
+        const resolvedPath = normalizeFileLayerValue(rawValue, env, deps.projectRoot);
         tried.push(resolvedPath);
         if (exists(resolvedPath)) {
           return { id, path: resolvedPath, tried, layer: "file", mechanism: "tools.json", refusal: null };

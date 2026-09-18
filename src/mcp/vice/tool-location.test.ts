@@ -1,13 +1,24 @@
 // tool-location.test.ts
 //
 // Colocated test for tool-location.mts (see that module's own header for
-// what it is and what it deliberately is not). Six behaviours are proven
-// here: the environment layer winning over a competing `tools.json` entry,
-// the file layer answering when the environment is unset, the `$PATH`
-// probe answering when neither of the first two do, the "nothing answered"
-// case's `tried` ordering, the same three layers surviving compilation into
-// resources/tool-location.mjs, and an unknown tool id's refusal without
-// `tools.json` ever being touched.
+// what it is and what it deliberately is not). Two groups of behaviours are
+// proven here.
+//
+// The three-layer wiring itself (Task 2): the environment layer winning
+// over a competing `tools.json` entry, the file layer answering when the
+// environment is unset, the `$PATH` probe answering when neither of the
+// first two do, the "nothing answered" case's `tried` ordering, the same
+// three layers surviving compilation into resources/tool-location.mjs, and
+// an unknown tool id's refusal without `tools.json` ever being touched.
+//
+// The file-layer path normalisation and the two no-state proofs (Task 3):
+// `~/` expansion against an injected HOME, a bare `~` left un-expanded and
+// joined against `projectRoot` instead, a relative value resolved against
+// `projectRoot` rather than `toolsDir` or the process cwd, a non-ASCII
+// segment surviving byte-identically, a directory-kind trailing separator
+// resolving to the same path as one without, a binary appearing on `$PATH`
+// between two calls being found by the second with no reset call, and many
+// concurrent calls against one scratch tree each matching a solo call.
 //
 // Every fixture is a real scratch directory built with mkdtempSync, and
 // every path handed to `resolveTool()` is a real file on disk -- this
