@@ -26,7 +26,7 @@ withdrawing them is Phase 57's goal, and Phase 57 is not in this milestone.
 
 - [x] **DECL-01**: One committed declaration names every prerequisite, and for each one records its id, which skills and MCP capabilities it unblocks, and its remedy text per platform.
 - [x] **DECL-02**: The declaration is plain JSON, adds no new runtime dependency, and is readable by a Node below the MCP server's own version floor.
-- [ ] **DECL-03**: The remedy text a user sees when a tool is missing comes from the declaration at every site that emits one, so a live refusal and the doctor cannot name different remedies for the same tool.
+- [x] **DECL-03**: The remedy text a user sees when a tool is missing comes from the declaration at every site that emits one, so a live refusal and the doctor cannot name different remedies for the same tool.
 - [x] **DECL-04**: The declaration carries a version floor only for a tool whose absence at that version makes a shipped code path refuse. Today that is Node alone — no tool carries a version-floor field that nothing enforces.
 - [x] **DECL-05**: The declaration ships in the published package, so a user who installed rather than cloned gets the same remedies.
 
@@ -35,7 +35,7 @@ withdrawing them is Phase 57's goal, and Phase 57 is not in this milestone.
 - [x] **LOC-01**: A user can record a tool's absolute path in `.c64-re-tools/tools.json` and have every code path that resolves that tool honour it.
 - [ ] **LOC-02**: One resolver seam owns the precedence order — environment variable, then `tools.json`, then `$PATH` or sibling probe — and both the doctor and the live dispatch path resolve through that same seam.
 - [ ] **LOC-03**: An existing `VICE_BIN`, `ACME_BIN`, `ACME` or `GHIDRA_HOME` override still wins over the file, so no current developer setup, test invocation or CI step changes behaviour.
-- [ ] **LOC-04**: `c1541` and `petcat` become locatable by the user, closing a gap where they are resolvable only as siblings of `x64sc`.
+- [x] **LOC-04**: `c1541` and `petcat` become locatable by the user, closing a gap where they are resolvable only as siblings of `x64sc`.
 - [x] **LOC-05**: dxa stays un-overridable by file or environment, and a `tools.json` entry naming it is refused by name rather than silently ignored.
 - [x] **LOC-06**: A `tools.json` entry naming a path that is absent, not executable, or a directory is refused by name, and the refusal says the file supplied it.
 - [x] **LOC-07**: `VICE_BROKER_NODE` stays environment-only, and that exclusion is documented where a reader would otherwise expect it in the file.
@@ -123,8 +123,8 @@ be read as sloppiness:
 | LOC-01 | Phase 60 | Complete |
 | LOC-02 | Phase 60 | Pending |
 | LOC-03 | Phase 60 | Pending |
-| LOC-04 | Phase 60 | Pending |
-| DECL-03 | Phase 60 | Pending |
+| LOC-04 | Phase 60 | Complete |
+| DECL-03 | Phase 60 | Complete |
 | DOCTOR-01 | Phase 61 | Pending |
 | DOCTOR-02 | Phase 61 | Pending |
 | DOCTOR-03 | Phase 61 | Pending |

@@ -6,15 +6,15 @@ current_phase: 60
 current_phase_name: The Seam Wired Into the Code That Ships
 status: executing
 stopped_at: Phase 60 planned — 5 plans in 4 waves, checker passed first iteration
-last_updated: "2026-09-18T15:00:34.602Z"
+last_updated: "2026-09-18T15:43:24.690Z"
 last_activity: 2026-09-18
 last_activity_desc: Phase 60 execution started
-state_head: f752a3bc8224abb8583010f8180540577315dd0e
+state_head: b55a3d5ddd9d4f6c3b9691b80b8cef015d4517ea
 progress:
   total_phases: 5
   completed_phases: 2
   total_plans: 13
-  completed_plans: 11
+  completed_plans: 12
   percent: 40
 carried_forward_phases:
 
@@ -344,9 +344,9 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 60 (The Seam Wired Into the Code That Ships) — EXECUTING
-Plan: 3 of 5 executed, 2 of 5 next
+Plan: 4 of 5 executed, 2 of 5 next
 Status: Ready to execute
-Stopped at: Completed 60-03-PLAN.md
+Stopped at: Completed 60-04-PLAN.md
 Plan 60-03 wired acme/acme-lib/ghidra/dxa through the tool-location seam inside
 host-tool.mts's own executor (both routes), a missing ACME now refused by name
 before any spawn with the declared remedy, and resources/host-tool.mjs
@@ -733,6 +733,7 @@ than a matter of discipline.
 | Phase 60 P01 | 38min | 3 tasks | 8 files |
 | Phase 60 P02 | 25min | 2 tasks | 4 files |
 | Phase 60 P03 | 59min | 3 tasks | 7 files |
+| Phase 60 P04 | 38min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -1602,6 +1603,8 @@ Recent decisions affecting current work:
 - [Phase 60]: assertRemedyBlockShape and assertRemedyIsProseNotArgv are two separate validators (shape vs. never-auto-install prose constraint) rather than one, matching the plan's own two named exports and keeping each offender list about one concern.
 - [Phase 60]: host-tool.mts imports the tool-location seam as a plain static ./tool-location.mjs value import, not backend-detect.mts's lazy createRequire() dance -- verified by exhaustive grep that host-tool.mts is never imported unbuilt anywhere in this tree. — Every real consumer (vice-broker.mts's value import, host-tool-client.ts's direct host spawn, every test file) reaches only the COMPILED resources/host-tool.mjs artifact, so the dual-shipping hazard the lazy-load pattern guards against does not apply to this file.
 - [Phase 60]: findAcmeLib() was widened per PD-07 rather than replaced: the seam answers the environment and tools.json layers ahead of the SAME fixed four-prefix well-known-install-location list this function has always carried, which stays as its probe layer. — 60-PATTERNS.md's earlier claim that resolveTool("acme-lib", ...) is "a drop-in for this whole function's body" was wrong -- a directory-kind id gets no PATH probe layer at all, so replacing the function outright would delete the fixed-prefix list and start refusing every developer who installed ACME from a distribution package without setting the environment variable, a direct LOC-03 violation.
+- [Phase 60]: findSiblingBinary()'s new tools.json seam call accepts only a layer:"file" answer, never resolveTool()'s own internal $PATH layer -- accepting it would let the seam silently outrank the sibling-of-x64sc candidate before it is ever tried, inverting PD-08's precedence and losing the shadowing warning.
+- [Phase 60]: Fixed a latent bug in the shared Phase 40 c1541/petcat test fixture: withFakeC1541()'s resetResolvedBackendForTests() targeted the unbuilt backend-detect.mts module, not the compiled backend-detect.mjs this suite actually resolves through -- replaced with resetResolvedBackendMjs() everywhere in host-tool.test.ts.
 
 ### Pending Todos
 
@@ -2856,8 +2859,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-18T15:00:34.396Z
-Stopped at: Completed 60-03-PLAN.md
+Last session: 2026-09-18T15:43:24.569Z
+Stopped at: Completed 60-04-PLAN.md
 Resume file: None
 
 Earlier: Milestone v1.0.0 "The Rebuild Half" closed and archived on its delivered scope (9 phases, 73 plans, 33/33 in-scope requirements, `override_closeout`). Phases 51, 53, 54 and 57 carried forward with their ROADMAP sections live.
