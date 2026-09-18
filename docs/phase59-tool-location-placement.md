@@ -54,7 +54,7 @@ Phase 60's.
 2. **Three `$PATH`-walk implementations coexisted for exactly one phase.** The seam's own exported
    `resolveOnPath()` (`src/mcp/vice/tool-location.mts:256-271`) was the third. The first two were
    untouched by Phase 59: `defaultResolveBinPath()` (`src/mcp/vice/backend-detect.mts:278-280`) and
-   the fallback loop inside `findSiblingBinary()` (`src/mcp/vice/host-tool.mts:2273-2311`), whose
+   the fallback loop inside `findSiblingBinary()` (`src/mcp/vice/host-tool.mts:2449-2487`), whose
    own comment already says it "mirrors `defaultResolveBinPath()`'s own algorithm." Phase 60
    collapses all three into one when it rewires the live callsites — named work rather than
    rediscovered duplication. **Plan 60-01 collapsed the first:** `defaultResolveBinPath()` is now a
@@ -151,7 +151,7 @@ live text on every run.
   { "citation": ".planning/ROADMAP.md:1939-1942", "anchor": "The precedence order exists in exactly one place." },
   { "citation": "src/mcp/vice/tool-location.mts:256-271", "anchor": "export function resolveOnPath(bin: string, env: NodeJS.ProcessEnv): { path: string | null; tried: string[] } {" },
   { "citation": "src/mcp/vice/backend-detect.mts:278-280", "anchor": "function defaultResolveBinPath(bin: string, env: NodeJS.ProcessEnv): string | null {" },
-  { "citation": "src/mcp/vice/host-tool.mts:2273-2311", "anchor": "function findSiblingBinary(binaryName: string, resolvedX64scPath: string, log?: (line: string) => void): { path: string | null; tried: string[] } {" },
+  { "citation": "src/mcp/vice/host-tool.mts:2449-2487", "anchor": "function findSiblingBinary(binaryName: string, resolvedX64scPath: string, log?: (line: string) => void): { path: string | null; tried: string[] } {" },
   { "citation": ".planning/phases/59-the-tool-location-seam-and-its-precedence-order/59-CONTEXT.md:55-57", "anchor": "Phase 60 must decide there whether `resolvedBackend()` is reduced to" },
   { "citation": ".planning/phases/59-the-tool-location-seam-and-its-precedence-order/59-01-PLAN.md:145", "anchor": "the `sibling-of-x64sc`, `fixed-prefix-list` and `vendored-path` implementations when it collapses" },
   { "citation": ".planning/ROADMAP.md:1947", "anchor": "`resources-sync.test.ts` is green against **regenerated and committed**" },

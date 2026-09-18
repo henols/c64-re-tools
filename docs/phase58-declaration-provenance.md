@@ -58,18 +58,18 @@ asserting the losing side until this phase.
 ## Case two: the shared c1541/petcat remedy
 
 The `c1541` and `petcat` refusals in `src/mcp/vice/host-tool.mts` carry no
-remedy text of their own. The `c1541.*` refusal, `src/mcp/vice/host-tool.mts:1559`:
+remedy text of their own. The `c1541.*` refusal, `src/mcp/vice/host-tool.mts:1707`:
 
 > `host_tool "${request.tool}" refuses: "c1541" does not exist (tried:
 > ${c1541Found.tried.join(", ")})`
 
-The `petcat.decode` refusal, `src/mcp/vice/host-tool.mts:1634`, is the same
+The `petcat.decode` refusal, `src/mcp/vice/host-tool.mts:1782`, is the same
 shape:
 
 > `host_tool "petcat.decode" refuses: "petcat" does not exist (tried:
 > ${petcatFound.tried.join(", ")})`
 
-Both name only the paths `findSiblingBinary()` (`src/mcp/vice/host-tool.mts:2273-2311`)
+Both name only the paths `findSiblingBinary()` (`src/mcp/vice/host-tool.mts:2449-2487`)
 tried -- neither carries a sentence a user could act on. There is therefore
 nothing to literally carry from the refusal itself, and the only remedy for
 either binary anywhere in this tree is the VICE install table
@@ -264,15 +264,21 @@ writing `prerequisites.json` (plan 58-01) and this doc (plan 58-02):
 
 ## The ACME library probe prefixes
 
-`findAcmeLib()` (`src/mcp/vice/host-tool.mts:2231-2245`) is now the only
-place in this tree that lists the directories this project probes for
-ACME's standard library. It checks, in order: `$ACME` (the environment
-variable, unconditionally first if set), then `/usr/local/share/acme`, then
-`/usr/share/acme`, then `/usr/lib/acme`, then `~/.acme` (built from
-`$HOME`). Each candidate is accepted only if it contains the marker file
-`ACME_LIB_MARKER` (`src/mcp/vice/host-tool.mts:2205`, the relative path
-`cbm/c64/vic.a`) -- a directory that exists but does not hold that file is
-not treated as a match. This list has no other home in the tree since D-02:
+`findAcmeLib()` (`src/mcp/vice/host-tool.mts:2395-2421`) is now the only
+place in this tree that lists the FIXED, well-known-install-location
+directories this project probes for ACME's standard library:
+`/usr/local/share/acme`, then `/usr/share/acme`, then `/usr/lib/acme`, then
+`~/.acme` (built from `$HOME`). Each candidate is accepted only if it
+contains the marker file `ACME_LIB_MARKER`
+(`src/mcp/vice/host-tool.mts:2369`, the relative path `cbm/c64/vic.a`) -- a
+directory that exists but does not hold that file is not treated as a
+match. **Corrected (Phase 60, plan 60-03, PD-07):** `$ACME` no longer heads
+this function's own candidate list -- it moved to the tool-location seam's
+environment layer (`resolveTool("acme-lib", ...)`), consulted BEFORE this
+fixed-prefix list, which is now the seam's probe layer rather than the
+whole story. The net resolution order a caller observes is unchanged
+(`$ACME` still wins over every fixed prefix); only which function reads the
+environment variable moved. This list has no other home in the tree since D-02:
 `src/skills/acme-build/SKILL.md:211-212` states in as many words that these
 prefixes are "none of them documented a second time here", so this doc is
 now the one place a reader who does not want to open `host-tool.mts` can
@@ -288,7 +294,7 @@ is mirrored from the latter), and this doc does not close it.
 user-installed external host binary exists in this codebase and is not one
 of them: `unp64`, the packer-identification oracle. It is resolved through
 `resolveOracleCommand()`'s two environment variables,
-`src/mcp/vice/host-tool.mts:2799` (`UNP64` and `UNP64_PATH`, checked in that
+`src/mcp/vice/host-tool.mts:3007` (`UNP64` and `UNP64_PATH`, checked in that
 order), and its host-side install step is documented in the recon skill,
 `src/skills/c64-program-recon/SKILL.md:117-125` ("install an external
 identifier on the **host** and point `UNP64` or `UNP64_PATH` at it in the
@@ -348,15 +354,15 @@ its entry here, or letting an entry drift off its anchor, fails the build.
 ```json
 [
   { "citation": ".planning/REQUIREMENTS.md:86", "anchor": "No shipped tool refuses on one." },
-  { "citation": "src/mcp/vice/host-tool.mts:2799", "anchor": "ORACLE_ENV_VARS: readonly string[] = Object.freeze([\"UNP64\", \"UNP64_PATH\"])" },
+  { "citation": "src/mcp/vice/host-tool.mts:3007", "anchor": "ORACLE_ENV_VARS: readonly string[] = Object.freeze([\"UNP64\", \"UNP64_PATH\"])" },
   { "citation": "src/skills/c64-program-recon/SKILL.md:117-125", "anchor": "install an external identifier on the **host** and point `UNP64` or `UNP64_PATH` at it" },
   { "citation": ".planning/phases/19-absorbed-procedures-and-the-coverage-instrument/19-DECISIONS.md:151", "anchor": "**Decided:** 2026-08-24" },
   { "citation": ".planning/ROADMAP.md:1995-1999", "anchor": "a user missing ACME learns that" },
   { "citation": "README.md:96-97", "anchor": "Checked live against each ecosystem on 2026-08-18." },
   { "citation": "README.md:117-123", "anchor": "No shipped tool in this project refuses on a VICE version." },
-  { "citation": "src/mcp/vice/host-tool.mts:1559", "anchor": "host_tool \"${request.tool}\" refuses: \"c1541\" does not exist" },
-  { "citation": "src/mcp/vice/host-tool.mts:1634", "anchor": "host_tool \"petcat.decode\" refuses: \"petcat\" does not exist" },
-  { "citation": "src/mcp/vice/host-tool.mts:2273-2311", "anchor": "function findSiblingBinary(" },
+  { "citation": "src/mcp/vice/host-tool.mts:1707", "anchor": "host_tool \"${request.tool}\" refuses: \"c1541\" does not exist" },
+  { "citation": "src/mcp/vice/host-tool.mts:1782", "anchor": "host_tool \"petcat.decode\" refuses: \"petcat\" does not exist" },
+  { "citation": "src/mcp/vice/host-tool.mts:2449-2487", "anchor": "function findSiblingBinary(" },
   { "citation": "README.md:99-108", "anchor": "| Ecosystem | Install command | Version it ships | Clears the 3.10 gate? |" },
   { "citation": ".github/workflows/ci.yml:78", "anchor": "retry_apt install -y acme" },
   { "citation": ".github/workflows/ci.yml:18", "anchor": "runs-on: ubuntu-latest" },
@@ -367,8 +373,8 @@ its entry here, or letting an entry drift off its anchor, fails the build.
   { "citation": "installer/package.json:15-16", "anchor": "\"node\": \">=18\"" },
   { "citation": "src/mcp/vice/resources/vice-launcher.sh:156", "anchor": "NODE_FLOOR_MAJOR=24" },
   { "citation": "README.md:107", "anchor": "brew install vice" },
-  { "citation": "src/mcp/vice/host-tool.mts:2231-2245", "anchor": "function findAcmeLib()" },
-  { "citation": "src/mcp/vice/host-tool.mts:2205", "anchor": "ACME_LIB_MARKER = join(\"cbm\", \"c64\", \"vic.a\")" },
+  { "citation": "src/mcp/vice/host-tool.mts:2395-2421", "anchor": "function findAcmeLib(locate?: HostToolLocator): { path: string | null; tried: string[] } {" },
+  { "citation": "src/mcp/vice/host-tool.mts:2369", "anchor": "ACME_LIB_MARKER = join(\"cbm\", \"c64\", \"vic.a\")" },
   { "citation": "src/skills/acme-build/SKILL.md:211-212", "anchor": "documented a second time here" },
   { "citation": "src/skills/acme-build/SKILL.md:254", "anchor": "Install ACME." },
   { "citation": "src/mcp/vice/resources/vice-launcher.sh:266", "anchor": "NODE_MAJOR\" -lt \"$NODE_FLOOR_MAJOR\"" }

@@ -222,7 +222,7 @@ export function repoRoot({ from = HERE, env = process.env, exists = existsSync }
  * files that call this function directly -- it is host-bound
  * (ghidra-project.mts) and cannot import this file at all.
  *
- * The literal string ".c64-re-tools" therefore has exactly 8 non-comment
+ * The literal string ".c64-re-tools" therefore has exactly 10 non-comment
  * occurrences in this codebase, across 6 files. repo-root.test.ts's census
  * gate reads BOTH the count and this file list straight out of this
  * sentence and the bullet list below -- never duplicated by hand a second
@@ -237,7 +237,11 @@ export function repoRoot({ from = HERE, env = process.env, exists = existsSync }
  *     once-per-process emulator-binary resolution (1) = 3
  *   - ghidra-project.mts -- `GHIDRA_RUNS_HANDLE_TARGET`, the alias handle's
  *     relative symlink target (1)
- *   - host-tool.mts -- `oracle.run`'s scratch-directory join (1)
+ *   - host-tool.mts -- `oracle.run`'s scratch-directory join (1), plus
+ *     Phase 60 (LOC-01, plan 60-03)'s `HostToolLocator` plumbing:
+ *     `locatorFrom()`'s `process.cwd()`-derived fallback (1) and
+ *     `runHostTool()`'s own locator built from its already-resolved
+ *     `repoRootAbs` (1) = 3
  *   - backend-detect.mts -- `resolvedBackend()`'s cwd-relative `toolsDir`
  *     fallback, used only when no caller supplied one (1)
  *
