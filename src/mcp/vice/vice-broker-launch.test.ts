@@ -52,12 +52,27 @@ const SIMULATED_CONTAINER_ENV = { CONTAINER_WORKSPACE_PATH: HERE };
  * imported a bare specifier. The broker's own relative sibling imports
  * (./container-guard.mjs etc.) still resolve, since every sibling is
  * copied alongside it -- this is the SAME deploy shape
- * install-resources.ts produces on a real host. */
+ * install-resources.ts produces on a real host.
+ *
+ * Also copies `prerequisites.json` (Plan 60-05 fix, found by this exact
+ * test file's own real-process failures during the required full-suite
+ * baseline diff): `resolveTool()`'s `readDeclaration()` locates the
+ * declaration "beside `here`" or one directory up from wherever the
+ * compiled module actually runs, and once `vice-broker.mts` started
+ * resolving `x64sc` through the seam at startup (Plan 60-01), a
+ * deployment with no copy of `prerequisites.json` anywhere near it makes
+ * `readDeclaration()` throw before the broker ever writes `broker.json`.
+ * `install-resources.ts`'s own real deploy walks the WHOLE `resources/`
+ * directory (not just `HOST_BOUND_ARTIFACTS`), so a committed
+ * `resources/prerequisites.json` (build.ts now copies it there) already
+ * reaches a real host; this helper must copy it too or its simulation
+ * stops matching the real deploy shape it claims to be. */
 function freshDeployDir(): string {
   const dir = mkdtempSync(join(tmpdir(), "vice-broker-launch-"));
   for (const rel of HOST_BOUND_ARTIFACTS) {
     copyFileSync(join(HERE, "resources", rel), join(dir, rel));
   }
+  copyFileSync(join(HERE, "resources", "prerequisites.json"), join(dir, "prerequisites.json"));
   return dir;
 }
 

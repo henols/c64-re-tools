@@ -1237,6 +1237,20 @@ async function run(args: ParsedArgs): Promise<void> {
       onAcquire: (requestId, profile) =>
         handleAcquire(requestId, args.stateDir, state, {
           backend,
+          // The ONCE-resolved `resolvedViceBin` local from this function's
+          // own top (LOC-01/LOC-02) -- found missing here by Plan 60-05's
+          // own required full-suite baseline diff (broker-e2e.test.ts's
+          // "wired disconnect-while-queued" case): this real onAcquire
+          // wiring is the ONE production call site that turns a tools.json
+          // or VICE_BIN resolution into what the broker actually spawns,
+          // and it was never supplying `viceBin` at all -- every unit test
+          // calling handleAcquire() directly injects `viceBin` itself, so
+          // this gap was invisible until an end-to-end, real-process test
+          // exercised the genuine `run()` wiring. Without this, every real
+          // acquire silently fell through to broker-launch.mts's own
+          // "x64sc"-literal last-resort default, regardless of what
+          // tools.json or VICE_BIN named.
+          viceBin: resolvedViceBin,
           // Threaded down to
           // acquirePortAndLaunch()'s own gate (backend === "stock"); this
           // callback does not re-read any environment variable itself.

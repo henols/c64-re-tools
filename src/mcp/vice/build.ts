@@ -11,6 +11,7 @@
 // under bare `node`, exactly like vice-broker.mts.
 import { execFileSync } from "node:child_process";
 import {
+  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -52,6 +53,27 @@ export const HOST_BOUND_ARTIFACTS: string[] = [
   "ghidra-project.mjs",
   "tool-location.mjs",
 ];
+
+/** A plain data file that travels WITH the compiled artifacts above, never
+ * compiled by `tsc` and never asserted against `HOST_BOUND_ARTIFACTS`'s own
+ * emitted-file-set check (that check is `.mjs`-only, per
+ * `emittedMjsFilesUnder()` below). Found missing by Plan 60-05's own
+ * required full-suite baseline diff: `tool-location.mts`'s
+ * `readDeclaration()` locates `prerequisites.json` "beside `here`" or one
+ * directory up from wherever the compiled module actually runs. That
+ * candidate pair only ever resolved correctly while the compiled artifact
+ * ran IN PLACE inside `src/mcp/vice/resources/` (one directory up lands on
+ * `src/mcp/vice/prerequisites.json`) -- once `vice-broker.mts` started
+ * resolving `x64sc` through the seam at STARTUP (Plan 60-01), a real
+ * deployment into a consuming project's `.c64-re-tools/bin/` (where
+ * neither candidate exists) made the broker throw before it ever wrote
+ * `broker.json`. Copying it into `resources/` here, alongside every
+ * compiled artifact, makes `install-resources.ts`'s own generic recursive
+ * walk of `resources/` deploy it automatically -- no separate deploy-side
+ * code needed -- and gives `readDeclaration()`'s FIRST candidate ("beside
+ * `here`") a real file at every location the compiled module ever runs
+ * from, deployed or not. */
+export const HOST_BOUND_DATA_FILES: string[] = ["prerequisites.json"];
 
 /** The generated-file banner (01.6-RESEARCH.md §F), a function of the
  * source's relative path. Prepended to every emitted file by build() below --
@@ -231,6 +253,24 @@ export function build({ outDir = "resources" }: BuildOptions = {}): void {
       }
     }
 
+    // HOST_BOUND_DATA_FILES: a plain copy, never compiled by tsc and never
+    // part of the emitted-file-set assertion above (that check is
+    // `.mjs`-only). Staged and renamed the SAME atomic way as every
+    // compiled artifact -- never exposed at an `outDir` path half-written --
+    // so it must be moved into place BEFORE the leftover check below, or its
+    // own staged copy would itself register as an unexplained leftover.
+    for (const rel of HOST_BOUND_DATA_FILES) {
+      const staged = join(stagingDir, rel);
+      copyFileSync(join(HERE, rel), staged);
+      const to = join(outDirAbs, rel);
+      try {
+        renameSync(staged, to);
+      } catch (e) {
+        const detail = (e as NodeJS.ErrnoException).code === "EXDEV" ? " (EXDEV: staging dir and outDir are on different filesystems -- outDir must be reachable via a same-filesystem sibling)" : "";
+        throw new Error(`build: failed to move staged data file into place: ${staged} -> ${to}${detail}`, { cause: e });
+      }
+    }
+
     // tsc emits exactly HOST_BOUND_ARTIFACTS today (verified). A leftover
     // here means the compiler started emitting something this list does not
     // describe -- fail loudly rather than silently drop a file that used to
@@ -264,7 +304,7 @@ if (process.argv[1] && resolvePath(process.argv[1]) === fileURLToPath(import.met
   try {
     build(opts);
     const outDirAbs = resolveOutDirAbs(opts.outDir ?? "resources");
-    process.stderr.write(`build: wrote ${HOST_BOUND_ARTIFACTS.length} artifact(s) to ${outDirAbs}\n`);
+    process.stderr.write(`build: wrote ${HOST_BOUND_ARTIFACTS.length} artifact(s) and ${HOST_BOUND_DATA_FILES.length} data file(s) to ${outDirAbs}\n`);
   } catch (e) {
     process.stderr.write(`build: FAILED -- ${(e as Error).message}\n`);
     process.exitCode = 1;
