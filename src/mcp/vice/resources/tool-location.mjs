@@ -71,30 +71,50 @@
 //     the source; the compiled copy is generated and committed, and a
 //     hand-edit there is silently overwritten by the next build.
 //
-// Phase 60 gap closure (LOC-03, PD-13/PD-14/PD-16): the environment layer
-// (Layer 1) is AMENDED from Phase 59's D-08 existence-only posture, but only
-// for a SEPARATOR-FREE value -- the shape 60-VERIFICATION.md's own
-// independent reproduction names ("a slash-free env-var value"). It now
-// resolves a CANDIDATE, not only a literal path: a slash-free value on an
+// Phase 60 gap closure (LOC-03, PD-13/PD-14/PD-16, corrected by plan 60-08):
+// the environment layer (Layer 1) is AMENDED from Phase 59's D-08
+// existence-only posture. Before this phase, a declared variable's value
+// that failed to resolve simply fell through, silently, to a `$PATH` probe
+// for the DECLARED ID -- and for a value that already named a specific
+// location (an absolute path, or any value containing a `/`), that
+// fall-through produced an honest operating-system failure at the eventual
+// `spawn()` call, because `$PATH` was never going to answer for a literal
+// path in the first place. Plan 60-01's rewiring of `resolvedBackend()`
+// through this seam added an UNCONDITIONAL declared-id `$PATH` probe
+// reachable after any unresolved value, of any shape -- which turned that
+// honest failure into a same-named binary silently starting under a name
+// the developer had pinned. Plan 60-06 closed this for a separator-free
+// value only, on the belief that the separator-containing shape's
+// fall-through was itself pre-phase-60 behaviour worth preserving;
+// `60-VERIFICATION.md` read the pre-phase source directly (`git show
+// d54d98a1:src/mcp/vice/backend-detect.mts`) and found that a
+// separator-containing value which resolved nowhere returned `null` with NO
+// `$PATH` walk for the bare id at all -- so the fall-through plan 60-06 kept
+// was itself a regression plan 60-01 introduced earlier in this same phase,
+// not a pre-phase truth. Plan 60-08 corrects this: the environment layer is
+// now terminal for a declared variable's non-empty value WHATEVER its
+// shape.
+//
+// The surviving distinction is between two different questions. The `$PATH`
+// WALK still asks only whether `$PATH` could plausibly answer for the raw
+// value itself -- true only for a bare, separator-free candidate on an
+// `executable`-kind record, since a `$PATH` search of an absolute path or of
+// a directory-kind value is meaningless. The REFUSAL asks a different,
+// shape-independent question: was the variable set to something non-empty
+// that resolved through neither check. A slash-free value on an
 // `executable`-kind record is additionally walked on `$PATH`, reusing this
 // module's own exported `resolveOnPath()`. When a declared variable was set
-// to a separator-free value that resolves through NEITHER check (whatever
-// the record's `kind`), resolution refuses by name -- naming the variable,
-// its value, and every candidate tried -- immediately before the declared-id
-// `$PATH` probe, so a same-named binary sitting on `$PATH` is never silently
-// substituted for the one the developer wrote. A value CONTAINING a `/` that
-// fails to match keeps D-08's exact prior posture -- not refused, only not
-// found, falling through silently -- because a `$PATH` search could never
-// plausibly have answered for it in the first place; this is what keeps an
-// absolute, nonexistent override's pre-phase-60 behaviour genuinely
-// unchanged. `.c64-re-tools/tools.json` is still consulted first (PD-14): an
-// entry a developer wrote down is a statement of intent, not a guess, so the
-// ONE fall-through this removes is the declared-id `$PATH` probe for a bare
-// candidate, not the file layer and not an absolute-path candidate. The
-// executable-bit check stays the FILE LAYER's alone -- D-08's untouched half
-// -- and this layer gains no memo, no reset hatch, and no fall-through to a
-// `$PATH` search for the declared ID once a bare-candidate variable was set
-// non-empty and left unresolved.
+// to a non-empty value that resolves through NEITHER check, resolution
+// refuses by name -- naming the variable, its value, and every candidate
+// tried -- immediately before the declared-id `$PATH` probe, so a same-named
+// binary sitting on `$PATH` is never silently substituted for the one the
+// developer wrote, whatever the value's shape. `.c64-re-tools/tools.json` is
+// still consulted first (PD-14): an entry a developer wrote down is a
+// statement of intent, not a guess, so the ONE fall-through this removes is
+// the declared-id `$PATH` probe for a bare candidate, not the file layer.
+// The executable-bit check stays the FILE LAYER's alone -- D-08's untouched
+// half -- and this layer gains no memo, no cache, and no reset hatch, here
+// or anywhere else in this module.
 //
 // `remedyTextsFor()` is the FIRST runtime reader of the declaration's
 // `remedies` arrays -- every one of the eight records' `remedies` blocks has
@@ -424,49 +444,50 @@ export function resolveTool(id, deps) {
         }
         return `"${id}"'s tools.json entry (${candidate}) exists but is not executable (missing the executable bit); tools.json supplied this path`;
     };
-    // Layer 1: the environment (PD-13/PD-14/PD-16, LOC-03 gap closure --
-    // amends Phase 59's D-08 existence-only posture for this layer alone).
-    // Three ordered steps for a declared, non-empty `envVarName` value:
+    // Layer 1: the environment (PD-13/PD-14/PD-16/PD-20, LOC-03 gap closure --
+    // amends Phase 59's D-08 existence-only posture for this layer alone, and
+    // corrected by plan 60-08 -- see this module's own header for the
+    // incident and the correction). Two ordered steps for a declared,
+    // non-empty `envVarName` value:
     //   1. Today's behaviour, unchanged: the raw value IS the candidate. If it
     //      matches the record's declared kind, it wins outright.
-    //   2. NEW, and only for an `executable`-kind record whose value contains
-    //      no `/`: the value names a bare command a user expects `$PATH` (and,
-    //      before this phase, `spawn()`'s own search) to resolve -- so this
-    //      layer now walks `$PATH` for exactly that value, through this
-    //      module's own exported `resolveOnPath()` (never a second, private
-    //      copy of that walk). A `directory`-kind value is never widened this
-    //      way (PD-14/D-08's untouched half): a `$PATH` search for a directory
-    //      is meaningless.
-    //   3. Neither step found a match, AND the value contains no `/`: the
-    //      variable WAS set to a bare name and nothing answered it. This is
-    //      recorded (`envUnresolved`) but not yet returned --
-    //      `.c64-re-tools/tools.json` still gets its say (PD-14: an entry a
-    //      developer wrote down is a statement of intent, not a guess), and
-    //      only once THAT layer also has nothing to say for this id does
-    //      resolution refuse, immediately before the declared-id `$PATH`
-    //      probe (Layer 3) -- see the refusal below, right before that probe.
-    //      The one fall-through this removes is exactly that probe: a `$PATH`
-    //      search for the DECLARED ID once a variable named a BARE candidate
-    //      that resolved nothing, which could silently start a different
-    //      binary than the one the developer named (the reported LOC-03 gap,
-    //      independently reproduced against exactly this shape of value --
-    //      "a slash-free env-var value" -- in 60-VERIFICATION.md).
+    //   2. Only for an `executable`-kind record whose value contains no `/`:
+    //      the value names a bare command a user expects `$PATH` (and, before
+    //      this phase, `spawn()`'s own search) to resolve -- so this layer
+    //      walks `$PATH` for exactly that value, through this module's own
+    //      exported `resolveOnPath()` (never a second, private copy of that
+    //      walk). A `directory`-kind value is never widened this way
+    //      (PD-14/D-08's untouched half): a `$PATH` search for a directory is
+    //      meaningless. This is the ONE separator test in this block, and it
+    //      guards this walk alone.
     //
-    //      A value CONTAINING a `/` that fails `matchesDeclaredKind()` is,
-    //      deliberately, NOT recorded as `envUnresolved` and keeps today's
-    //      D-08 posture exactly: not refused, only not found, and resolution
-    //      falls through silently -- this is the phase's own must-have truth
-    //      ("a value containing a path separator behaves exactly as today")
-    //      and it is what keeps `vice-broker-acquire.test.ts`'s own Plan
-    //      60-01 Test 4 (an absolute, nonexistent `VICE_BIN`) green,
-    //      unchanged. The distinguishing question PD-13 asks is narrower than
-    //      "did this value resolve": it is "could `$PATH` plausibly have
-    //      answered for it at all" -- true only for a bare, separator-free
-    //      candidate, whatever the record's `kind`.
+    //   If neither step found a match, the variable WAS set non-empty and
+    //   nothing answered it (`envUnresolved`) -- WHATEVER the value's shape.
+    //   This is recorded but not yet returned -- `.c64-re-tools/tools.json`
+    //   still gets its say (PD-14: an entry a developer wrote down is a
+    //   statement of intent, not a guess), and only once THAT layer also has
+    //   nothing to say for this id does resolution refuse, immediately before
+    //   the declared-id `$PATH` probe (Layer 3) -- see the refusal below,
+    //   right before that probe. The one fall-through this removes is exactly
+    //   that probe: a `$PATH` search for the DECLARED ID once a variable
+    //   named a candidate that resolved nothing, which could silently start a
+    //   different binary than the one the developer named.
+    //
+    //   PD-20 (plan 60-08): before this fix, a value CONTAINING a `/` that
+    //   failed `matchesDeclaredKind()` was deliberately NOT recorded as
+    //   `envUnresolved`, on the belief that this matched pre-phase-60
+    //   behaviour. `60-VERIFICATION.md` read the pre-phase source directly and
+    //   found that belief was wrong -- see this module's own header. The
+    //   separator test above still gates the `$PATH` WALK (that surviving
+    //   distinction is real and unchanged: a `$PATH` search of an absolute
+    //   path is still meaningless), but it no longer gates the
+    //   `envUnresolved` ASSIGNMENT -- those are two distinct expressions in
+    //   this file and must stay that way.
     //
     // The executable-bit check stays the FILE LAYER's alone (D-08's untouched
-    // half): `matchesDeclaredKind()` is an existence/kind check only, and
-    // neither step above gains `passesFileLayerCheck()`'s `accessSync` call.
+    // half): `matchesDeclaredKind()` is an existence/kind check only, and the
+    // walk above gains no `passesFileLayerCheck()` `accessSync` call. This
+    // layer gains no memo, no cache, and no reset hatch.
     const envVarName = record.location?.envVar;
     let envCandidate = null;
     let envUnresolved = false;
@@ -478,16 +499,14 @@ export function resolveTool(id, deps) {
             if (matchesDeclaredKind(envValue)) {
                 return { id, path: envValue, tried, layer: "env", mechanism: envVarName, refusal: null, envCandidate };
             }
-            if (!envValue.includes("/")) {
-                if (record.kind === "executable") {
-                    const envProbe = resolveOnPath(envValue, env);
-                    tried.push(...envProbe.tried);
-                    if (envProbe.path && matchesDeclaredKind(envProbe.path)) {
-                        return { id, path: envProbe.path, tried, layer: "env", mechanism: envVarName, refusal: null, envCandidate };
-                    }
+            if (!envValue.includes("/") && record.kind === "executable") {
+                const envProbe = resolveOnPath(envValue, env);
+                tried.push(...envProbe.tried);
+                if (envProbe.path && matchesDeclaredKind(envProbe.path)) {
+                    return { id, path: envProbe.path, tried, layer: "env", mechanism: envVarName, refusal: null, envCandidate };
                 }
-                envUnresolved = true;
             }
+            envUnresolved = true;
         }
     }
     /** Builds the environment layer's terminal refusal sentence (PD-13):
@@ -598,15 +617,16 @@ export function resolveTool(id, deps) {
             }
         }
     }
-    // PD-13/PD-14 (LOC-03 gap closure): the environment layer's TERMINAL
-    // refusal. Reached only when a declared variable was set to a non-empty
-    // value that resolved through neither Layer 1 step (`envUnresolved`,
-    // above), AND `.c64-re-tools/tools.json` had nothing to say for this id
-    // either (a present, well-formed, resolving entry already returned above;
-    // an ABSENT entry falls through to here, same as before this phase). This
-    // is what makes the declared-id `$PATH` probe below UNREACHABLE once a
+    // PD-13/PD-14/PD-20 (LOC-03 gap closure, plan 60-08): the environment
+    // layer's TERMINAL refusal. Reached only when a declared variable was set
+    // to a non-empty value that resolved through neither Layer 1 step
+    // (`envUnresolved`, above -- now set WHATEVER the value's shape), AND
+    // `.c64-re-tools/tools.json` had nothing to say for this id either (a
+    // present, well-formed, resolving entry already returned above; an
+    // ABSENT entry falls through to here, same as before this phase). This is
+    // what makes the declared-id `$PATH` probe below UNREACHABLE once a
     // variable was set non-empty and unresolved -- the one fall-through this
-    // gap-closure plan removes.
+    // gap-closure plan removes, for both value shapes.
     if (envUnresolved) {
         return {
             id,

@@ -414,6 +414,20 @@ test("Plan 60-01 Test 3: with no tools.json file present at all, resolution -- a
   }
 });
 
+// REWRITTEN IN PLACE (Plan 60-08, LOC-03 gap closure, deliberate correction,
+// in the idiom plan 60-06 already used for its own in-place rewrite): this
+// test's ORIGINAL two intents survive -- two resolveTool() calls in one
+// process must agree on path/layer/mechanism, and the environment
+// candidate's index in `tried` must be strictly less than any $PATH
+// candidate's -- but its OLD assertions (`first.layer === "probe"` and
+// `first.path === onPathStub`) pinned behaviour introduced EARLIER IN THIS
+// SAME PHASE (plan 60-01's unconditional declared-id `$PATH` probe), not
+// pre-phase behaviour, as plan 60-06's own SUMMARY (Deviation #1) recorded
+// when it chose to keep this test green rather than rewrite it.
+// `60-VERIFICATION.md` read the pre-phase source directly (`git show
+// d54d98a1:src/mcp/vice/backend-detect.mts`) and found the pre-phase tree
+// returned `null` with no `$PATH` walk at all for this shape -- so this
+// rewrite corrects the pinned contract rather than merely changing it.
 test("Plan 60-01 Test 4: two resolutions of x64sc in one process agree on path/layer/mechanism, and the environment candidate is tried before any $PATH candidate", () => {
   const projectRoot = mkdtempSync(join(tmpdir(), "vice-broker-acquire-t4-root-"));
   const pathDir = mkdtempSync(join(tmpdir(), "vice-broker-acquire-t4-path-"));
@@ -427,14 +441,22 @@ test("Plan 60-01 Test 4: two resolutions of x64sc in one process agree on path/l
     assert.equal(first.path, second.path, "two resolutions in one process must agree on path");
     assert.equal(first.layer, second.layer, "two resolutions in one process must agree on layer");
     assert.equal(first.mechanism, second.mechanism, "two resolutions in one process must agree on mechanism");
-    assert.equal(first.layer, "probe");
-    assert.equal(first.path, onPathStub);
+    assert.equal(first.path, null, "a separator-containing value that resolves nowhere must now refuse, not silently resolve through the declared-id probe");
+    assert.equal(first.layer, null);
+    assert.equal(first.mechanism, null);
+    assert.ok(
+      first.refusal && first.refusal.includes("VICE_BIN") && first.refusal.includes("/definitely/does/not/exist/x64sc"),
+      "the refusal must name both the variable and the value",
+    );
+    assert.notEqual(first.path, onPathStub, "the on-PATH stub must never be returned once a variable was set and left unresolved");
 
     const envIndex = first.tried.indexOf("/definitely/does/not/exist/x64sc");
-    const pathIndex = first.tried.indexOf(onPathStub);
     assert.notEqual(envIndex, -1, "the environment candidate must appear in tried");
-    assert.notEqual(pathIndex, -1, "the $PATH candidate must appear in tried");
-    assert.ok(envIndex < pathIndex, "the environment candidate must be tried before any $PATH candidate");
+    assert.equal(
+      first.tried.includes(onPathStub),
+      false,
+      "no $PATH candidate for the declared id may appear in tried once the environment variable was set and left unresolved -- vacuously satisfying 'tried before any $PATH candidate' since none exists",
+    );
   } finally {
     rmSync(projectRoot, { recursive: true, force: true });
     rmSync(pathDir, { recursive: true, force: true });
@@ -543,6 +565,68 @@ test("Plan 60-06 Test 3 (seam-level): resolveTool() for the Test 2 scenario retu
     assert.equal(result.tried.includes(join(pathDir, "x64sc")), false, "tried must contain no candidate built by joining PATH to the declared id");
   } finally {
     rmSync(projectRoot, { recursive: true, force: true });
+    rmSync(pathDir, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Plan 60-08 (LOC-03 gap closure, tracer): the SEPARATOR-CONTAINING shape of
+// the same defect plan 60-06 closed for a bare name -- a stale ABSOLUTE
+// VICE_BIN refuses by name instead of starting a decoy, proven end to end at
+// the real handleAcquire() cold-spawn call, mirroring "Plan 60-06 Test 2"'s
+// own structure and differing only in the value's shape.
+// ---------------------------------------------------------------------------
+
+test("Plan 60-08 Test 1a (tracer seam, LOC-03): resolvedBackend() for a stale absolute VICE_BIN with a decoy x64sc on the injected PATH reports binPathResolved=false, the unresolved value as binPath, and a locationRefusal naming both", () => {
+  const projectRoot = mkdtempSync(join(tmpdir(), "vice-broker-acquire-6008-t1a-root-"));
+  const pathDir = mkdtempSync(join(tmpdir(), "vice-broker-acquire-6008-t1a-path-"));
+  try {
+    const toolsDir = join(projectRoot, ".c64-re-tools");
+    const decoyPath = writeStubExecutable(pathDir, "x64sc");
+    const staleAbsolute = "/definitely/does/not/exist/x64sc";
+
+    resetResolvedBackendForTests();
+    const backendResult = resolvedBackend({ toolsDir, projectRoot, env: { VICE_BIN: staleAbsolute, PATH: pathDir } });
+    assert.equal(backendResult.binPathResolved, false);
+    assert.equal(backendResult.binPath, staleAbsolute, "the configured name shown on failure must be the developer's own value");
+    assert.ok(
+      backendResult.locationRefusal && backendResult.locationRefusal.includes("VICE_BIN") && backendResult.locationRefusal.includes(staleAbsolute),
+      "locationRefusal must name both the variable and the value it held",
+    );
+    assert.notEqual(backendResult.binPath, decoyPath, "the decoy's absolute path must never be what resolvedBackend() reports");
+  } finally {
+    rmSync(projectRoot, { recursive: true, force: true });
+    rmSync(pathDir, { recursive: true, force: true });
+  }
+});
+
+test("Plan 60-08 Test 1b (tracer spawn, LOC-03): the real handleAcquire() cold-spawn call receives the unresolved absolute VICE_BIN value, never the decoy's absolute path", async () => {
+  const { handleAcquire } = await loadBrokerModule();
+  const projectRoot = mkdtempSync(join(tmpdir(), "vice-broker-acquire-6008-t1b-root-"));
+  const stateDir = mkdtempSync(join(tmpdir(), "vice-broker-acquire-6008-t1b-state-"));
+  const pathDir = mkdtempSync(join(tmpdir(), "vice-broker-acquire-6008-t1b-path-"));
+  try {
+    const toolsDir = join(projectRoot, ".c64-re-tools");
+    const decoyPath = writeStubExecutable(pathDir, "x64sc");
+    const staleAbsolute = "/definitely/does/not/exist/x64sc";
+
+    resetResolvedBackendForTests();
+    const backendResult = resolvedBackend({ toolsDir, projectRoot, env: { VICE_BIN: staleAbsolute, PATH: pathDir } });
+    assert.equal(backendResult.binPathResolved, false);
+
+    const spawnCalls: string[] = [];
+    const outcome = await handleAcquire("6008-t1b", stateDir, createState(), {
+      backend: "stock",
+      viceBin: backendResult.binPath,
+      allocateRemoteMonitorPort: stubAllocateRemoteMonitorPort(),
+      buildColdSpawnFactory: capturingColdSpawnFactory(spawnCalls),
+    });
+    assert.equal(outcome.ok, true, `expected a successful grant, got ${JSON.stringify(outcome)}`);
+    assert.notEqual(spawnCalls[0], decoyPath, "a decoy match at the real spawn call is exactly the defect this plan exists to close, for the separator-containing shape");
+    assert.equal(spawnCalls[0], staleAbsolute, "the real spawn call receives the developer's own unresolved value, never a substituted binary");
+  } finally {
+    rmSync(projectRoot, { recursive: true, force: true });
+    rmSync(stateDir, { recursive: true, force: true });
     rmSync(pathDir, { recursive: true, force: true });
   }
 });

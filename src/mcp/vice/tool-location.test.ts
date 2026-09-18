@@ -24,15 +24,24 @@
 // a bare-name declared-variable value that resolves nowhere refuses by name
 // (one case per declared variable, matching the two the phase verification
 // named as the minimum bar), a resolving bare-name value wins for a second
-// declared variable, an absolute-path value that resolves nowhere keeps
-// D-08's exact prior posture and falls through silently (the must-have
-// truth this fix must NOT regress -- see the comment beside that test), an
-// empty-string value is still treated as unset, a directory-kind value is
-// never walked on `$PATH` whether it resolves or not, the file layer stays
-// reachable after an unresolvable environment value (PD-14), and the
-// `envCandidate` field is populated on both the resolving and refusing
-// paths. The one shipped test that pinned the defect ("nothing answers")
-// is rewritten in place, not deleted, to pin the fix instead.
+// declared variable, an empty-string value is still treated as unset, a
+// directory-kind value is never walked on `$PATH` whether it resolves or
+// not, the file layer stays reachable after an unresolvable environment
+// value (PD-14), and the `envCandidate` field is populated on both the
+// resolving and refusing paths. The one shipped test that pinned the defect
+// ("nothing answers") is rewritten in place, not deleted, to pin the fix
+// instead.
+//
+// The environment layer becomes TERMINAL FOR BOTH VALUE SHAPES (Plan 60-08,
+// LOC-03 gap closure, correcting plan 60-06): plan 60-06 kept a
+// separator-containing unresolvable value falling through silently to the
+// declared-id `$PATH` probe, on the belief that this was pre-phase-60
+// behaviour. `60-VERIFICATION.md` traced that belief to be wrong -- the
+// pre-phase source returned `null` with no `$PATH` walk at all for that
+// shape -- so this plan closes it: a separator-containing unresolvable
+// value now refuses by name exactly like a bare-name one already did, and
+// the shipped case that pinned the old (regressed) fall-through is
+// rewritten in place to pin the corrected contract instead.
 //
 // Every fixture is a real scratch directory built with mkdtempSync, and
 // every path handed to `resolveTool()` is a real file on disk -- this
@@ -196,16 +205,22 @@ test("an environment variable set to a bare name that resolves nowhere refuses, 
   });
 });
 
-// The must-have control this rewrite exists beside: an ABSOLUTE-PATH
-// environment value that resolves nowhere is UNCHANGED by this plan -- a
-// `$PATH` search could never plausibly have answered for a value that
-// already names a specific location, so this layer keeps D-08's exact prior
-// posture (not refused, only not found) and resolution falls through
-// silently to the declared-id probe, exactly as it did before this plan.
-// This is the scenario `vice-broker-acquire.test.ts`'s own "Plan 60-01 Test
-// 4" already exercises end to end; this test pins the seam-level half of
-// the same guarantee directly.
-test("an environment variable set to an absolute path that does not exist behaves exactly as today: not refused, falling through to the declared-id $PATH probe", () => {
+// REWRITTEN IN PLACE (Plan 60-08, LOC-03 gap closure, deliberate correction):
+// this case previously pinned an absolute-path environment value that
+// resolves nowhere as falling through silently to the declared-id `$PATH`
+// probe, on the belief that this was pre-phase-60 behaviour unchanged by
+// plan 60-01's rewiring. `60-VERIFICATION.md` read the pre-phase source
+// directly (`git show d54d98a1:src/mcp/vice/backend-detect.mts`) and found
+// that a separator-containing `VICE_BIN` which resolved nowhere returned
+// `null` with NO `$PATH` walk for the bare id at all -- `spawn()` would then
+// have produced an honest `ENOENT`. Plan 60-01's unconditional declared-id
+// probe turned that honest failure into a same-named binary silently
+// starting instead -- so what this case pinned was itself a same-phase
+// regression, not pre-phase behaviour. This case now pins the corrected
+// contract: the environment layer is terminal for a declared variable's
+// non-empty value WHATEVER its shape, so a stale absolute path refuses by
+// name exactly like a stale bare name already does.
+test("Plan 60-08 Test 2: an environment variable set to a separator-containing value that resolves nowhere refuses, naming the variable and the value, with a decoy on PATH never answering", () => {
   withScratch((dir) => {
     const envBin = join(dir, "does-not-exist-env");
     writeFileSync(join(dir, "tools.json"), JSON.stringify({}));
@@ -213,6 +228,11 @@ test("an environment variable set to an absolute path that does not exist behave
     const pathDirB = join(dir, "bin-b");
     mkdirSync(pathDirA, { recursive: true });
     mkdirSync(pathDirB, { recursive: true });
+    // A decoy literally named "x64sc" on the injected PATH -- proves the
+    // refusal holds even when a same-named binary is sitting right there.
+    const decoyPath = join(pathDirA, "x64sc");
+    writeFileSync(decoyPath, "");
+    chmodSync(decoyPath, 0o755);
 
     const result = resolveTool("x64sc", {
       toolsDir: dir,
@@ -223,10 +243,79 @@ test("an environment variable set to an absolute path that does not exist behave
     assert.equal(result.path, null);
     assert.equal(result.layer, null);
     assert.equal(result.mechanism, null);
-    assert.equal(result.refusal, null, "a separator-containing value must not be refused -- must-have truth, unchanged from before this plan");
+    assert.ok(result.refusal && result.refusal.includes("VICE_BIN") && result.refusal.includes(envBin), "the refusal must name both the variable and the value verbatim");
     assert.equal(result.envCandidate, envBin);
-    assert.equal(result.tried[0], envBin);
-    assert.deepEqual(result.tried.slice(-2), [join(pathDirA, "x64sc"), join(pathDirB, "x64sc")], "the declared-id probe still runs for a separator-containing unresolved value");
+    assert.equal(result.tried[0], envBin, "the raw environment candidate is tried first");
+  });
+});
+
+// The walk-gate proof beside Test 2's refusal: a separator-containing value
+// is never walked on $PATH for itself (that gate is unchanged by this
+// plan), and the declared-id probe never runs either (that reachability
+// change is this plan's own fix). Asserted as a distinctly-named test so a
+// future regression in either direction fails on its own.
+test("Plan 60-08 Test 3: a separator-containing unresolvable value is never walked on $PATH for itself, and the declared-id probe never runs either", () => {
+  withScratch((dir) => {
+    const envBin = join(dir, "does-not-exist-env-2");
+    writeFileSync(join(dir, "tools.json"), JSON.stringify({}));
+    const pathDirA = join(dir, "bin-a2");
+    const pathDirB = join(dir, "bin-b2");
+    mkdirSync(pathDirA, { recursive: true });
+    mkdirSync(pathDirB, { recursive: true });
+
+    const result = resolveTool("x64sc", {
+      toolsDir: dir,
+      projectRoot: dir,
+      env: { VICE_BIN: envBin, PATH: `${pathDirA}:${pathDirB}` },
+    });
+
+    assert.equal(result.path, null);
+    assert.equal(result.tried.includes(join(pathDirA, envBin)), false, "the raw value must never be walked on $PATH -- it contains a separator");
+    assert.equal(result.tried.includes(join(pathDirB, envBin)), false);
+    assert.equal(result.tried.includes(join(pathDirA, "x64sc")), false, "the declared-id probe must never run once a variable was set and left unresolved, whatever its shape");
+    assert.equal(result.tried.includes(join(pathDirB, "x64sc")), false);
+  });
+});
+
+// The positive control beside Tests 2/3: a separator-containing value that
+// DOES resolve still wins outright through the environment layer -- Test
+// 2's promotion is a promotion of the REFUSAL, not a new obstacle to a value
+// that was always going to answer.
+test("Plan 60-08 Test 4: a separator-containing VICE_BIN naming a real executable still resolves outright through the environment layer", () => {
+  withScratch((dir) => {
+    const envBin = join(dir, "x64sc-real");
+    writeFileSync(envBin, "");
+    chmodSync(envBin, 0o755);
+
+    const result = resolveTool("x64sc", { toolsDir: dir, projectRoot: dir, env: { VICE_BIN: envBin } });
+
+    assert.equal(result.path, envBin);
+    assert.equal(result.layer, "env");
+    assert.equal(result.mechanism, "VICE_BIN");
+    assert.equal(result.refusal, null);
+  });
+});
+
+// PD-14 unchanged for the newly-terminal shape: a separator-containing
+// unresolvable override still lets a valid tools.json entry answer from the
+// file layer -- an entry a developer wrote down is a statement of intent,
+// and this plan's terminal refusal fires only once THAT layer also has
+// nothing to say.
+test("Plan 60-08 Test 5 (PD-14): a separator-containing unresolvable VICE_BIN still lets a valid tools.json entry answer from the file layer", () => {
+  withScratch((dir) => {
+    const envBin = join(dir, "does-not-exist-env-3");
+    const fileBin = join(dir, "x64sc-from-tools-json");
+    writeFileSync(fileBin, "");
+    chmodSync(fileBin, 0o755);
+    writeFileSync(join(dir, "tools.json"), JSON.stringify({ x64sc: fileBin }));
+
+    const result = resolveTool("x64sc", { toolsDir: dir, projectRoot: dir, env: { VICE_BIN: envBin } });
+
+    assert.equal(result.path, fileBin);
+    assert.equal(result.layer, "file");
+    assert.equal(result.mechanism, "tools.json");
+    assert.equal(result.refusal, null);
+    assert.equal(result.envCandidate, envBin, "envCandidate still names what the developer wrote, even though the file layer answered instead");
   });
 });
 
@@ -265,6 +354,23 @@ test("compiled artifact: the same three layers answer from resources/tool-locati
     assert.equal(result.path, probeBin);
     assert.equal(result.layer, "probe");
     assert.equal(result.mechanism, "$PATH");
+  });
+});
+
+test("Plan 60-08 Test 6: compiled artifact -- the terminal refusal for a separator-containing value answers from resources/tool-location.mjs, not only from the unbuilt source", async () => {
+  build();
+  const compiled = (await import(new URL("./resources/tool-location.mjs", import.meta.url).href)) as unknown as {
+    resolveTool: typeof resolveTool;
+  };
+
+  withScratch((dir) => {
+    const envBin = join(dir, "does-not-exist-compiled");
+    writeFileSync(join(dir, "tools.json"), JSON.stringify({}));
+    const result = compiled.resolveTool("x64sc", { toolsDir: dir, projectRoot: dir, env: { VICE_BIN: envBin } });
+    assert.equal(result.path, null);
+    assert.equal(result.layer, null);
+    assert.equal(result.mechanism, null);
+    assert.ok(result.refusal && result.refusal.includes("VICE_BIN") && result.refusal.includes(envBin));
   });
 });
 
