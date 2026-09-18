@@ -310,6 +310,194 @@ test("many concurrent resolveTool calls against one scratch tree each match the 
   });
 });
 
+// -----------------------------------------------------------------------
+// Task 2: kind-aware resolution, the two directory-kind tool ids, and the
+// two ids this project must never resolve through any layer at all.
+// -----------------------------------------------------------------------
+
+/** Builds a scratch declaration carrying one non-file-overridable tool id
+ * with a caller-chosen `reason`, so a test can prove the refusal text is
+ * read from the declaration at call time rather than duplicated in the
+ * module -- change the reason here, and the refusal must change with it. */
+function withExclusionFixture<T>(reason: string, fn: (here: string) => T): T {
+  return withScratch((here) => {
+    writeFileSync(
+      join(here, "prerequisites.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        tools: { "test-excluded-tool": { id: "test-excluded-tool", location: { fileOverridable: false, reason }, kind: "executable" } },
+      }),
+    );
+    return fn(here);
+  });
+}
+
+test("resolveTool(\"acme-lib\", …) resolves through the environment variable to the directory itself, never the marker-joined path", () => {
+  withScratch((dir) => {
+    const libDir = join(dir, "acme-lib-dir");
+    mkdirSync(join(libDir, "cbm", "c64"), { recursive: true });
+    writeFileSync(join(libDir, "cbm", "c64", "vic.a"), "");
+
+    const result = resolveTool("acme-lib", {
+      toolsDir: dir,
+      projectRoot: dir,
+      env: { ACME: libDir },
+    });
+
+    assert.equal(result.path, libDir);
+    assert.equal(result.layer, "env");
+    assert.equal(result.mechanism, "ACME");
+    assert.equal((result.path as string).endsWith("vic.a"), false);
+  });
+});
+
+test("resolveTool(\"ghidra\", …) resolves through tools.json to the directory when its marker is present", () => {
+  withScratch((dir) => {
+    const ghidraHome = join(dir, "ghidra-home");
+    mkdirSync(join(ghidraHome, "support"), { recursive: true });
+    writeFileSync(join(ghidraHome, "support", "analyzeHeadless"), "");
+    writeFileSync(join(dir, "tools.json"), JSON.stringify({ ghidra: ghidraHome }));
+
+    const result = resolveTool("ghidra", { toolsDir: dir, projectRoot: dir, env: {} });
+
+    assert.equal(result.path, ghidraHome);
+    assert.equal(result.layer, "file");
+    assert.equal(result.mechanism, "tools.json");
+  });
+});
+
+test("resolveTool(\"ghidra\", …) refuses a tools.json directory that exists but lacks its marker", () => {
+  withScratch((dir) => {
+    const ghidraHome = join(dir, "ghidra-home-no-marker");
+    mkdirSync(ghidraHome, { recursive: true });
+    writeFileSync(join(dir, "tools.json"), JSON.stringify({ ghidra: ghidraHome }));
+
+    const result = resolveTool("ghidra", { toolsDir: dir, projectRoot: dir, env: {} });
+
+    assert.equal(result.path, null);
+    assert.ok(result.refusal && result.refusal.length > 0);
+    assert.ok(result.refusal.includes("ghidra"));
+  });
+});
+
+test("resolveTool(\"c1541\", …) consults no environment variable at all", () => {
+  withScratch((dir) => {
+    const pathDir = join(dir, "bin");
+    mkdirSync(pathDir, { recursive: true });
+    const probeBin = join(pathDir, "c1541");
+    writeFileSync(probeBin, "");
+
+    const withRandomEnv = resolveTool("c1541", {
+      toolsDir: dir,
+      projectRoot: dir,
+      env: { C1541_BIN: join(dir, "should-never-be-read"), PATH: pathDir },
+    });
+    const withNoEnv = resolveTool("c1541", { toolsDir: dir, projectRoot: dir, env: { PATH: pathDir } });
+
+    assert.equal(withRandomEnv.path, probeBin);
+    assert.equal(withRandomEnv.layer, "probe");
+    assert.deepEqual(withRandomEnv, withNoEnv);
+  });
+});
+
+test("resolveTool(\"dxa\", …) refuses through every layer with the declared reason, even when tools.json, env and PATH all name real files", () => {
+  withScratch((dir) => {
+    const pathDir = join(dir, "bin");
+    mkdirSync(pathDir, { recursive: true });
+    writeFileSync(join(pathDir, "dxa"), "");
+    const fileBin = join(dir, "dxa-file");
+    writeFileSync(fileBin, "");
+    writeFileSync(join(dir, "tools.json"), JSON.stringify({ dxa: fileBin }));
+
+    const result = resolveTool("dxa", {
+      toolsDir: dir,
+      projectRoot: dir,
+      env: { PATH: pathDir },
+    });
+
+    assert.equal(result.path, null);
+    assert.equal(result.layer, null);
+    assert.equal(result.mechanism, null);
+    assert.deepEqual(result.tried, []);
+    assert.ok(result.refusal && result.refusal.includes("dxa is vendored and built by this project"));
+  });
+});
+
+test("resolveTool(\"node\", …) refuses through every layer with the declared reason, even when VICE_BROKER_NODE names a real executable", () => {
+  withScratch((dir) => {
+    const pathDir = join(dir, "bin");
+    mkdirSync(pathDir, { recursive: true });
+    writeFileSync(join(pathDir, "node"), "");
+    const brokerNode = join(dir, "broker-node");
+    writeFileSync(brokerNode, "");
+    writeFileSync(join(dir, "tools.json"), JSON.stringify({ node: brokerNode }));
+
+    const result = resolveTool("node", {
+      toolsDir: dir,
+      projectRoot: dir,
+      env: { VICE_BROKER_NODE: brokerNode, PATH: pathDir },
+    });
+
+    assert.equal(result.path, null);
+    assert.equal(result.layer, null);
+    assert.equal(result.mechanism, null);
+    assert.deepEqual(result.tried, []);
+    assert.ok(result.refusal && result.refusal.includes("vice-launcher.sh is bash"));
+  });
+});
+
+test("a directory-kind id is not walked on $PATH: no environment and no file entry leaves tried with no PATH candidate", () => {
+  withScratch((dir) => {
+    const resultAcmeLib = resolveTool("acme-lib", { toolsDir: dir, projectRoot: dir, env: { PATH: join(dir, "bin") } });
+    const resultGhidra = resolveTool("ghidra", { toolsDir: dir, projectRoot: dir, env: { PATH: join(dir, "bin") } });
+
+    assert.equal(resultAcmeLib.path, null);
+    assert.deepEqual(resultAcmeLib.tried, []);
+    assert.equal(resultGhidra.path, null);
+    assert.deepEqual(resultGhidra.tried, []);
+  });
+});
+
+test("the exclusion refusal is read from the declaration at call time, not duplicated in the module", () => {
+  const reasonA = "reason-A for the record.";
+  const reasonB = "a completely different reason-B for the record.";
+
+  withExclusionFixture(reasonA, (hereA) => {
+    const resultA = resolveTool("test-excluded-tool", { toolsDir: hereA, projectRoot: hereA, env: {}, here: hereA });
+    assert.ok(resultA.refusal && resultA.refusal.includes(reasonA));
+  });
+
+  withExclusionFixture(reasonB, (hereB) => {
+    const resultB = resolveTool("test-excluded-tool", { toolsDir: hereB, projectRoot: hereB, env: {}, here: hereB });
+    assert.ok(resultB.refusal && resultB.refusal.includes(reasonB));
+  });
+});
+
+test("compiled artifact: the two directory-kind ids and the two excluded ids behave the same as the unbuilt source", async () => {
+  build();
+  const compiled = (await import(new URL("./resources/tool-location.mjs", import.meta.url).href)) as unknown as {
+    resolveTool: typeof resolveTool;
+  };
+
+  withScratch((dir) => {
+    const libDir = join(dir, "acme-lib-dir");
+    mkdirSync(join(libDir, "cbm", "c64"), { recursive: true });
+    writeFileSync(join(libDir, "cbm", "c64", "vic.a"), "");
+    const result = compiled.resolveTool("acme-lib", { toolsDir: dir, projectRoot: dir, env: { ACME: libDir } });
+    assert.equal(result.path, libDir);
+    assert.equal(result.layer, "env");
+  });
+
+  withScratch((dir) => {
+    const pathDir = join(dir, "bin");
+    mkdirSync(pathDir, { recursive: true });
+    writeFileSync(join(pathDir, "dxa"), "");
+    const result = compiled.resolveTool("dxa", { toolsDir: dir, projectRoot: dir, env: { PATH: pathDir } });
+    assert.equal(result.path, null);
+    assert.ok(result.refusal && result.refusal.includes("dxa is vendored and built by this project"));
+  });
+});
+
 test("an undeclared tool id is refused by name, and tools.json is never touched to answer it", () => {
   withScratch((dir) => {
     const result = resolveTool("not-a-real-tool", {
