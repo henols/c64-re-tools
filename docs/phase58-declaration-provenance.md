@@ -59,12 +59,12 @@ asserting the losing side until this phase.
 
 The `c1541` and `petcat` refusals in `src/mcp/vice/host-tool.mts` carried no
 remedy text of their own when this document was first written. The
-`c1541.*` refusal, `src/mcp/vice/host-tool.mts:1725`:
+`c1541.*` refusal, `src/mcp/vice/host-tool.mts:1737`:
 
 > `host_tool "${request.tool}" refuses: "c1541" does not exist (tried:
 > ${c1541Found.tried.join(", ")})`
 
-The `petcat.decode` refusal, `src/mcp/vice/host-tool.mts:1806`, is the same
+The `petcat.decode` refusal, `src/mcp/vice/host-tool.mts:1824`, is the same
 shape:
 
 > `host_tool "petcat.decode" refuses: "petcat" does not exist (tried:
@@ -77,8 +77,25 @@ read from exactly the `remedies` tree the rest of this section describes.
 `findSiblingBinary()` (`src/mcp/vice/host-tool.mts:2504-2560`) is what
 resolves `tried`, and, as of plan 60-04, also the FIRST layer either
 refusal can be produced by: a named-but-failing `tools.json` entry refuses
-before the sibling or `$PATH` layers are ever consulted. The underlying
-cause the byte-for-byte remedy copy exists for is unchanged and structural:
+before the sibling or `$PATH` layers are ever consulted.
+
+**Corrected again (Phase 60, plan 60-07, WR-01):** "a named-but-failing
+`tools.json` entry refuses" above understated what that refusal actually
+said until this plan -- `findSiblingBinary()` discarded the seam's own
+specific reason (wrong kind, missing executable bit, absent on disk) and
+composed the SAME generic sentence quoted above, plus the remedy, exactly
+as if nothing had been found at all. A user who chmod-forgot their
+`tools.json` entry was told to go install VICE. `findSiblingBinary()` now
+carries the seam's own `refusal` string verbatim through its return shape
+and its memo, and the two call sites branch on it before the null-path
+branch, mirroring the ACME branch's own precedent a few hundred lines above
+(`src/mcp/vice/host-tool.mts:1396-1409`): a refusal is quoted verbatim with
+no remedy appended, since the declaration's remedy is prose for "the tool
+is missing," not for "your `tools.json` entry is wrong." Only the genuine
+not-found case -- nothing said about the id in `tools.json` at all -- still
+produces the generic sentence quoted above, with the remedy.
+
+The underlying cause the byte-for-byte remedy copy exists for is unchanged and structural:
 `findSiblingBinary()` resolves `c1541` and `petcat` as siblings of
 whichever `x64sc` `resolvedBackend()` already found (absent an overriding
 `tools.json` entry), because installing the VICE package installs all
@@ -276,7 +293,7 @@ directories this project probes for ACME's standard library:
 `/usr/local/share/acme`, then `/usr/share/acme`, then `/usr/lib/acme`, then
 `~/.acme` (built from `$HOME`). Each candidate is accepted only if it
 contains the marker file `ACME_LIB_MARKER`
-(`src/mcp/vice/host-tool.mts:2396`, the relative path `cbm/c64/vic.a`) -- a
+(`src/mcp/vice/host-tool.mts:2414`, the relative path `cbm/c64/vic.a`) -- a
 directory that exists but does not hold that file is not treated as a
 match. **Corrected (Phase 60, plan 60-03, PD-07):** `$ACME` no longer heads
 this function's own candidate list -- it moved to the tool-location seam's
@@ -300,7 +317,7 @@ is mirrored from the latter), and this doc does not close it.
 user-installed external host binary exists in this codebase and is not one
 of them: `unp64`, the packer-identification oracle. It is resolved through
 `resolveOracleCommand()`'s two environment variables,
-`src/mcp/vice/host-tool.mts:3080` (`UNP64` and `UNP64_PATH`, checked in that
+`src/mcp/vice/host-tool.mts:3121` (`UNP64` and `UNP64_PATH`, checked in that
 order), and its host-side install step is documented in the recon skill,
 `src/skills/c64-program-recon/SKILL.md:117-125` ("install an external
 identifier on the **host** and point `UNP64` or `UNP64_PATH` at it in the
@@ -330,7 +347,7 @@ feels the consequence of its absence is Phase 61: its own Success Criterion
 1 states the doctor's answer must be "capability-shaped, not binary-shaped
 ... a user missing ACME learns that `acme-build` is blocked and that the
 other skills are not, rather than reading a bare red row"
-(`.planning/ROADMAP.md:1995-1999`). A user missing `unp64` gets no
+(`.planning/ROADMAP.md:1999-2002`). A user missing `unp64` gets no
 equivalently-named row today -- there is no `unp64` record for a
 capability-shaped report to point at -- and that is exactly the gap
 `DECL-F3` exists to close, in Phase 61's own generation or whichever phase
@@ -360,15 +377,16 @@ its entry here, or letting an entry drift off its anchor, fails the build.
 ```json
 [
   { "citation": ".planning/REQUIREMENTS.md:86", "anchor": "No shipped tool refuses on one." },
-  { "citation": "src/mcp/vice/host-tool.mts:3080", "anchor": "ORACLE_ENV_VARS: readonly string[] = Object.freeze([\"UNP64\", \"UNP64_PATH\"])" },
+  { "citation": "src/mcp/vice/host-tool.mts:3121", "anchor": "ORACLE_ENV_VARS: readonly string[] = Object.freeze([\"UNP64\", \"UNP64_PATH\"])" },
   { "citation": "src/skills/c64-program-recon/SKILL.md:117-125", "anchor": "install an external identifier on the **host** and point `UNP64` or `UNP64_PATH` at it" },
   { "citation": ".planning/phases/19-absorbed-procedures-and-the-coverage-instrument/19-DECISIONS.md:151", "anchor": "**Decided:** 2026-08-24" },
-  { "citation": ".planning/ROADMAP.md:1995-1999", "anchor": "a user missing ACME learns that" },
+  { "citation": ".planning/ROADMAP.md:1999-2002", "anchor": "a user missing ACME learns that" },
   { "citation": "README.md:96-97", "anchor": "Checked live against each ecosystem on 2026-08-18." },
   { "citation": "README.md:117-123", "anchor": "No shipped tool in this project refuses on a VICE version." },
-  { "citation": "src/mcp/vice/host-tool.mts:1725", "anchor": "host_tool \"${request.tool}\" refuses: \"c1541\" does not exist" },
-  { "citation": "src/mcp/vice/host-tool.mts:1806", "anchor": "host_tool \"petcat.decode\" refuses: \"petcat\" does not exist" },
+  { "citation": "src/mcp/vice/host-tool.mts:1737", "anchor": "host_tool \"${request.tool}\" refuses: \"c1541\" does not exist" },
+  { "citation": "src/mcp/vice/host-tool.mts:1824", "anchor": "host_tool \"petcat.decode\" refuses: \"petcat\" does not exist" },
   { "citation": "src/mcp/vice/host-tool.mts:2504-2560", "anchor": "function findSiblingBinary(" },
+  { "citation": "src/mcp/vice/host-tool.mts:1396-1409", "anchor": "host_tool \"acme.build\" refuses: ${acmeResolved.refusal}" },
   { "citation": ".github/workflows/ci.yml:78", "anchor": "retry_apt install -y acme" },
   { "citation": ".github/workflows/ci.yml:18", "anchor": "runs-on: ubuntu-latest" },
   { "citation": ".github/workflows/ci.yml:80-81", "anchor": "grep -qi acme /tmp/acme-banner.txt" },
@@ -379,7 +397,7 @@ its entry here, or letting an entry drift off its anchor, fails the build.
   { "citation": "src/mcp/vice/resources/vice-launcher.sh:156", "anchor": "NODE_FLOOR_MAJOR=24" },
   { "citation": "README.md:107", "anchor": "brew install vice" },
   { "citation": "src/mcp/vice/host-tool.mts:2422-2448", "anchor": "function findAcmeLib(locate?: HostToolLocator): { path: string | null; tried: string[] } {" },
-  { "citation": "src/mcp/vice/host-tool.mts:2396", "anchor": "ACME_LIB_MARKER = join(\"cbm\", \"c64\", \"vic.a\")" },
+  { "citation": "src/mcp/vice/host-tool.mts:2414", "anchor": "ACME_LIB_MARKER = join(\"cbm\", \"c64\", \"vic.a\")" },
   { "citation": "src/skills/acme-build/SKILL.md:211-212", "anchor": "documented a second time here" },
   { "citation": "src/skills/acme-build/SKILL.md:254", "anchor": "Install ACME." },
   { "citation": "src/mcp/vice/resources/vice-launcher.sh:266", "anchor": "NODE_MAJOR\" -lt \"$NODE_FLOOR_MAJOR\"" }
