@@ -1452,15 +1452,27 @@ export function buildHostToolArgv(
       dataRangesPathResolved,
     } = resolved as ResolvedGhidraAnalyzePaths;
 
-    // Named environment variable, never a guessed install location and
-    // never this repository's own local probe directory (T-34-16).
-    const ghidraHome = process.env.GHIDRA_HOME;
-    if (ghidraHome === undefined || ghidraHome === "") {
+    // Resolved through the seam (LOC-01) -- env (GHIDRA_HOME) -> tools.json
+    // -> no $PATH probe at all (a `directory`-kind id gets no probe layer,
+    // D-15) -- never a guessed install location and never this repository's
+    // own local probe directory (T-34-16). Ghidra has no fixed-prefix
+    // fallback by design (unlike ACME's library, PD-07 below), so this
+    // preserves today's env-only-then-refuse behaviour exactly while adding
+    // the file layer between the environment and the refusal.
+    const ghidraResolved = resolveTool("ghidra", { toolsDir: loc.toolsDir, projectRoot: loc.projectRoot, here: loc.here });
+    if (ghidraResolved.path === null) {
       return {
         ok: false,
-        message: `host_tool "ghidra.analyze" requires the GHIDRA_HOME environment variable to name a Ghidra installation directory; it is unset`,
+        message: withRemedy(
+          `host_tool "ghidra.analyze" refuses: no Ghidra installation directory is known${
+            ghidraResolved.refusal ? `: ${ghidraResolved.refusal}` : ` (tried: ${ghidraResolved.tried.join(", ")})`
+          }`,
+          "ghidra",
+          loc.here,
+        ),
       };
     }
+    const ghidraHome = ghidraResolved.path;
     // Overridable local variable named for what it holds -- never `binPath`/
     // `viceBin`/`VICE_BIN`/`x64sc`, which spawn-seam.test.ts's
     // EMULATOR_BIN_SHAPE would misclassify as an emulator spawn site.
@@ -1468,7 +1480,11 @@ export function buildHostToolArgv(
     if (!existsSync(ghidraPath)) {
       return {
         ok: false,
-        message: `host_tool "ghidra.analyze" refuses: GHIDRA_HOME's resolved launcher does not exist on disk (${ghidraPath})`,
+        message: withRemedy(
+          `host_tool "ghidra.analyze" refuses: the resolved Ghidra installation directory (${ghidraHome}) does not contain "support/analyzeHeadless"`,
+          "ghidra",
+          loc.here,
+        ),
       };
     }
 
@@ -1570,15 +1586,26 @@ export function buildHostToolArgv(
     const { args } = request;
     const { imagePath, outDirPath, entrypointsPath, datablocksPath, labelsPath } = resolved as ResolvedDxaDisassemblePaths;
 
-    // A-01: fixed, computed path -- never an env-var override (see the HERE
-    // and findDxaBinary() comments above). Refuses BY NAME when the vendored
-    // binary does not exist at EITHER candidate location, naming build.bash
-    // as the remedy, per PLAN.md item 6.
+    // A-01: fixed, computed path -- never an env-var override, never
+    // tools.json, never the seam at all (Phase 59 D-16, LOC-05: dxa is
+    // vendored and built by this project, so an override could only ever
+    // select a binary this project did not build and did not pin -- see the
+    // HERE and findDxaBinary() comments above). Refuses BY NAME when the
+    // vendored binary does not exist at EITHER candidate location; the
+    // remedy sentence is the declaration's own (DECL-03, `remedyTextsFor()`),
+    // never a literal re-authored here -- it happens to match the previous
+    // hardcoded build-script sentence's text by coincidence of two
+    // independently-authored strings, and after this change there is one
+    // source.
     const dxaFound = findDxaBinary(HERE);
     if (dxaFound.path === null) {
       return {
         ok: false,
-        message: `host_tool "dxa.disassemble" refuses: the vendored dxa binary does not exist (tried: ${dxaFound.tried.join(", ")}) -- run "bash vendor/dxa/build.bash build" to produce it`,
+        message: withRemedy(
+          `host_tool "dxa.disassemble" refuses: the vendored dxa binary does not exist (tried: ${dxaFound.tried.join(", ")})`,
+          "dxa",
+          loc.here,
+        ),
       };
     }
     const dxaPath = dxaFound.path;
@@ -1612,25 +1639,37 @@ export function buildHostToolArgv(
     const { moduleName } = resolved as ResolvedGhidraInstallExtensionPaths;
 
     // Independently re-derived rather than threaded through `resolved` --
-    // mirrors ghidra.analyze's own branch above, which reads GHIDRA_HOME
-    // itself instead of accepting it as a resolved field. Both existence
-    // checks were already performed (and, for the copy, already acted on)
-    // by runHostTool()'s own resolution branch before this function was
-    // ever called; re-checking here is defense in depth, the same posture
-    // buildAnalyzeHeadlessArgv()'s own independent dot-segment re-check
-    // takes for a caller that bypassed the resolution branch entirely.
-    const ghidraHome = process.env.GHIDRA_HOME;
-    if (ghidraHome === undefined || ghidraHome === "") {
+    // mirrors ghidra.analyze's own branch above, which resolves GHIDRA_HOME
+    // through the seam itself instead of accepting it as a resolved field.
+    // Both existence checks were already performed (and, for the copy,
+    // already acted on) by runHostTool()'s own resolution branch before this
+    // function was ever called; re-checking here is defense in depth, the
+    // same posture buildAnalyzeHeadlessArgv()'s own independent dot-segment
+    // re-check takes for a caller that bypassed the resolution branch
+    // entirely.
+    const ghidraResolved = resolveTool("ghidra", { toolsDir: loc.toolsDir, projectRoot: loc.projectRoot, here: loc.here });
+    if (ghidraResolved.path === null) {
       return {
         ok: false,
-        message: `host_tool "ghidra.installExtension" requires the GHIDRA_HOME environment variable to name a Ghidra installation directory; it is unset`,
+        message: withRemedy(
+          `host_tool "ghidra.installExtension" refuses: no Ghidra installation directory is known${
+            ghidraResolved.refusal ? `: ${ghidraResolved.refusal}` : ` (tried: ${ghidraResolved.tried.join(", ")})`
+          }`,
+          "ghidra",
+          loc.here,
+        ),
       };
     }
+    const ghidraHome = ghidraResolved.path;
     const sleighPath = join(ghidraHome, "support", "sleigh");
     if (!existsSync(sleighPath)) {
       return {
         ok: false,
-        message: `host_tool "ghidra.installExtension" refuses: GHIDRA_HOME's resolved "support/sleigh" does not exist on disk (${sleighPath})`,
+        message: withRemedy(
+          `host_tool "ghidra.installExtension" refuses: the resolved Ghidra installation directory (${ghidraHome}) does not contain "support/sleigh"`,
+          "ghidra",
+          loc.here,
+        ),
       };
     }
 
@@ -2308,11 +2347,21 @@ function spawnHostTool(
 // ---------------------------------------------------------------------------
 // The ACME library probe. Moved server-side from acme.mjs's own
 // findAcmeLib(): the project owner's rule is that a container has no PATH
-// to a host binary, and these five candidates are HOST paths -- so probing
-// them belongs on the host side of the seam, not in the container-side
-// skill script. Behaviourally identical to the removed client-side
-// function: same candidate order, same marker file, same "first candidate
-// whose marker exists wins" rule.
+// to a host binary, and these candidates are HOST paths -- so probing them
+// belongs on the host side of the seam, not in the container-side skill
+// script.
+//
+// PD-07 (Phase 60, correcting an earlier claim in 60-PATTERNS.md that this
+// function is "a drop-in" for the seam): WIDENED, not replaced. The seam's
+// probe layer is a $PATH walk for executable-kind ids ONLY -- a
+// directory-kind id (acme-lib's own declared `kind`) gets no probe layer at
+// all -- so the seam now answers the environment (`ACME`) and `tools.json`
+// layers ahead of this function's own fixed, well-known-install-location
+// list, and that list stays as the probe layer beneath both: same order,
+// same marker file, same "first candidate whose marker exists wins" rule it
+// has always had. Only the environment-variable candidate is gone from the
+// list below -- the seam's own env layer already covers it, reading the
+// SAME `ACME` name from the declaration rather than a literal here.
 // ---------------------------------------------------------------------------
 
 /** The marker file used to validate a candidate ACME library directory --
@@ -2343,10 +2392,22 @@ export function findDxaBinary(here: string): { path: string | null; tried: strin
   return { path: null, tried };
 }
 
-function findAcmeLib(): { path: string | null; tried: string[] } {
+function findAcmeLib(locate?: HostToolLocator): { path: string | null; tried: string[] } {
+  const loc = locatorFrom(locate);
   const tried: string[] = [];
+
+  // The seam layer FIRST (PD-07): env (`ACME`) -> tools.json. A malformed
+  // tools.json entry for `acme-lib` is a REFUSAL the seam already detected;
+  // this function has no `refusal`-shaped return of its own (its callers
+  // never had one), so a refusal is folded into "not found" here rather than
+  // surfaced separately -- the caller's own conditional stderr hint (below,
+  // in runHostTool()) already treats a null `path` uniformly regardless of
+  // why.
+  const seamResolved = resolveTool("acme-lib", { toolsDir: loc.toolsDir, projectRoot: loc.projectRoot, here: loc.here });
+  tried.push(...seamResolved.tried);
+  if (seamResolved.path !== null) return { path: seamResolved.path, tried };
+
   const candidates = [
-    process.env.ACME,
     "/usr/local/share/acme",
     "/usr/share/acme",
     "/usr/lib/acme",
@@ -2498,7 +2559,7 @@ export async function runHostTool(raw: unknown, deps: HostToolDeps): Promise<Hos
     }
 
     built = buildHostToolArgv(request, { sourcePath: sourceResolved.path, outDirPath, includePaths }, undefined, hostToolLocator);
-    acmeLib = findAcmeLib();
+    acmeLib = findAcmeLib(hostToolLocator);
   } else if (request.tool === "ghidra.analyze") {
     // Converted from a previous `if (acme.build) … else (ghidra.analyze)`
     // shape into an explicit per-tool branch -- the `else`'s own comment
@@ -2663,18 +2724,33 @@ export async function runHostTool(raw: unknown, deps: HostToolDeps): Promise<Hos
       };
     }
 
-    const ghidraHome = process.env.GHIDRA_HOME;
-    if (ghidraHome === undefined || ghidraHome === "") {
+    const ghidraResolvedPre = resolveTool("ghidra", {
+      toolsDir: hostToolLocator.toolsDir,
+      projectRoot: hostToolLocator.projectRoot,
+      here: hostToolLocator.here,
+    });
+    if (ghidraResolvedPre.path === null) {
       return {
         ok: false,
-        message: `host_tool "ghidra.installExtension" requires the GHIDRA_HOME environment variable to name a Ghidra installation directory; it is unset`,
+        message: withRemedy(
+          `host_tool "ghidra.installExtension" refuses: no Ghidra installation directory is known${
+            ghidraResolvedPre.refusal ? `: ${ghidraResolvedPre.refusal}` : ` (tried: ${ghidraResolvedPre.tried.join(", ")})`
+          }`,
+          "ghidra",
+          hostToolLocator.here,
+        ),
       };
     }
+    const ghidraHome = ghidraResolvedPre.path;
     const sleighPath = join(ghidraHome, "support", "sleigh");
     if (!existsSync(sleighPath)) {
       return {
         ok: false,
-        message: `host_tool "ghidra.installExtension" refuses: GHIDRA_HOME's resolved "support/sleigh" does not exist on disk (${sleighPath})`,
+        message: withRemedy(
+          `host_tool "ghidra.installExtension" refuses: the resolved Ghidra installation directory (${ghidraHome}) does not contain "support/sleigh"`,
+          "ghidra",
+          hostToolLocator.here,
+        ),
       };
     }
     const stockLanguagesDir = join(ghidraHome, "Ghidra", "Processors", "6502", "data", "languages");

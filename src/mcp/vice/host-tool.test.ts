@@ -21,7 +21,7 @@
 // GHIDRA_HOME-unset refusal before any launch is attempted.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync, statSync, readFileSync, symlinkSync, readdirSync, realpathSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync, statSync, readFileSync, symlinkSync, readdirSync, realpathSync, existsSync, renameSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, basename, isAbsolute, resolve as resolvePath, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1662,24 +1662,50 @@ test("Plan 60-03 Task 2 Test 4b: with no tools.json entry and no ACME env var, a
   });
 });
 
-test("Plan 60-03 Task 2 Test 5: dxa.disassemble resolves only through its vendored path -- a tools.json entry naming dxa changes nothing, and its refusal carries the declared remedy", async () => {
+test("Plan 60-03 Task 2 Test 5a: a tools.json entry naming dxa never changes the resolved binary -- proven regardless of whether the real vendored dxa happens to be built on this host", async () => {
   await withTempDir(async (dir) => {
-    // A tools.json entry naming dxa -- Phase 59 D-16/LOC-05: never consulted.
+    // A tools.json entry naming dxa -- Phase 59 D-16/LOC-05: never
+    // consulted. The bogus stub touches a sentinel if it is EVER spawned and
+    // exits non-zero; the assertion below holds whether the real vendored
+    // dxa is built here (response.ok true) or not (response.ok false) --
+    // either way, THIS path must never be the one that ran.
     const bogusDxaPath = join(dir, "not-the-real-dxa");
-    writeFileSync(bogusDxaPath, "#!/bin/sh\nexit 0\n", "utf8");
+    const sentinelPath = join(dir, "bogus-dxa-ran");
+    writeFileSync(bogusDxaPath, `#!/bin/sh\ntouch "${sentinelPath}"\nexit 1\n`, "utf8");
     chmodSync(bogusDxaPath, 0o755);
     writeToolsJson(dir, { dxa: bogusDxaPath });
-    const declDir = join(dir, "decl");
-    mkdirSync(declDir, { recursive: true });
-    const distinctiveSentence = "run scratch-declaration-only-remedy-dxa to rebuild dxa, never the real one.";
-    writeScratchDeclaration(declDir, { dxa: distinctiveSentence });
     writeFileSync(join(dir, "image.prg"), Buffer.from([0x01, 0x08, 0xa9, 0x00, 0x60]));
-    const response = await runHostTool({ tool: "dxa.disassemble", args: { image: "image.prg", imageKind: "prg" } }, { repoRoot: dir, here: declDir });
-    assert.equal(response.ok, false);
-    if (response.ok) return;
-    assert.ok(response.message.includes(distinctiveSentence), `expected the scratch dxa remedy in: ${response.message}`);
-    assert.doesNotMatch(response.message, /not-the-real-dxa/, "the tools.json-named dxa path must never be consulted");
+    await runHostTool({ tool: "dxa.disassemble", args: { image: "image.prg", imageKind: "prg" } }, { repoRoot: dir });
+    assert.ok(!existsSync(sentinelPath), "the tools.json-named dxa path must never be consulted");
   });
+});
+
+test("Plan 60-03 Task 2 Test 5b: when the vendored dxa binary is genuinely absent, the refusal carries the declared remedy, changing with a scratch declaration", async () => {
+  // dxa has no locator (LOC-05): the only way to exercise its genuine
+  // "not found" refusal is to make it genuinely not found, regardless of
+  // whether this host happens to have already run `bash
+  // vendor/dxa/build.bash build`. Temporarily renamed aside and restored in
+  // `finally`, unconditionally -- moved back even if the assertions below
+  // throw.
+  const realDxaPath = join(HERE, "vendor", "dxa", "dxa");
+  const hiddenDxaPath = join(HERE, "vendor", "dxa", "dxa.hidden-by-60-03-test");
+  const existedBefore = existsSync(realDxaPath);
+  if (existedBefore) renameSync(realDxaPath, hiddenDxaPath);
+  try {
+    await withTempDir(async (dir) => {
+      const declDir = join(dir, "decl");
+      mkdirSync(declDir, { recursive: true });
+      const distinctiveSentence = "run scratch-declaration-only-remedy-dxa to rebuild dxa, never the real one.";
+      writeScratchDeclaration(declDir, { dxa: distinctiveSentence });
+      writeFileSync(join(dir, "image.prg"), Buffer.from([0x01, 0x08, 0xa9, 0x00, 0x60]));
+      const response = await runHostTool({ tool: "dxa.disassemble", args: { image: "image.prg", imageKind: "prg" } }, { repoRoot: dir, here: declDir });
+      assert.equal(response.ok, false);
+      if (response.ok) return;
+      assert.ok(response.message.includes(distinctiveSentence), `expected the scratch dxa remedy in: ${response.message}`);
+    });
+  } finally {
+    if (existedBefore && existsSync(hiddenDxaPath)) renameSync(hiddenDxaPath, realDxaPath);
+  }
 });
 
 test("Plan 60-03 Task 2 Test 6: ghidra's resolution returns the installation directory itself, never the marker-joined launcher path -- the launcher path is still joined by the caller", async () => {
