@@ -1967,7 +1967,8 @@ sources).
   project's history. A location file makes that recoverable; it does not make it
   stop mattering, so the warning stays.
 
-**Plans**: 5/5 plans executed
+**Plans**: 5/7 plans executed — verification found `LOC-03` unmet, so two gap-closure plans
+were added after the first execution
 
 Plans:
 
@@ -1976,6 +1977,8 @@ Plans:
 - [x] 60-03-PLAN.md — ACME, ACME's standard library and Ghidra resolved through the seam inside the host-tool executor, with declaration-sourced refusals (wave 2)
 - [x] 60-04-PLAN.md — the sibling probe widened so `c1541` and `petcat` become locatable, and four comments citing a deleted guard corrected (wave 3)
 - [x] 60-05-PLAN.md — the closed consumer set for the four environment variables, and the unchanged-behaviour claim measured as a failing-set difference (wave 4)
+- [ ] 60-06-PLAN.md — gap closure for `LOC-03`: the environment layer resolves the binary the developer actually named, and refuses by name instead of substituting a same-named `$PATH` binary (wave 5)
+- [ ] 60-07-PLAN.md — gap closure follow-on: the seam's own reason reaches the `c1541`/`petcat` refusals, the memo decision is recorded rather than dropped, and the unchanged-behaviour claim is re-measured (wave 6)
 
 ### Phase 61: `vice-mcp doctor`, Reachable on a Node Too Old to Run the Server
 
