@@ -568,15 +568,53 @@ export function resolveTool(id: string, deps: ResolveToolDeps): ResolveToolResul
   // which is exactly the failure LOC-06 exists to replace. An id that
   // tools.json does not mention at all is simply absent from the file,
   // which is unaffected by any of this and falls through as before.
+  //
+  // A malformed FILE is refused too, not silently treated as "nothing to
+  // say" -- mirroring the exact three problem shapes `validateToolsFile()`
+  // already detects and reports, so a JSON typo never silently downgrades
+  // an intended override into a $PATH search with no signal at all. An
+  // absent file, a zero-byte one, and a bare `{}` one are NOT malformed --
+  // each is the default state of an installation that has not written a
+  // file yet -- and each keeps falling through silently exactly as before.
+  // Unparseable JSON and a non-object top level affect every id in the same
+  // way `validateToolsFile()`'s own file-level problems do (no per-id entry
+  // can be read from either shape at all); a present-but-not-a-non-empty-
+  // string value affects only the id it names, so a sibling id's own
+  // well-formed entry in the same file still resolves.
   const toolsJsonPath = join(deps.toolsDir, "tools.json");
   if (exists(toolsJsonPath)) {
-    let parsed: unknown = null;
-    try {
-      parsed = JSON.parse(readFile(toolsJsonPath));
-    } catch {
-      parsed = null;
-    }
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+    const rawText = readFile(toolsJsonPath);
+    if (rawText.trim() !== "") {
+      let parsed: unknown;
+      let parseFailed = false;
+      try {
+        parsed = JSON.parse(rawText);
+      } catch {
+        parseFailed = true;
+      }
+
+      if (parseFailed) {
+        return {
+          id,
+          path: null,
+          tried,
+          layer: null,
+          mechanism: null,
+          refusal: `${toolsJsonPath} could not be parsed: its bytes are not valid JSON`,
+        };
+      }
+
+      if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return {
+          id,
+          path: null,
+          tried,
+          layer: null,
+          mechanism: null,
+          refusal: `${toolsJsonPath} must be a plain object mapping a declared tool id to a path string; found ${describeValueShape(parsed)}`,
+        };
+      }
+
       const doc = parsed as Record<string, unknown>;
       // Same defence as the declaration lookup above, applied symmetrically:
       // exact array membership against this file's own keys, never a bare
@@ -584,21 +622,30 @@ export function resolveTool(id: string, deps: ResolveToolDeps): ResolveToolResul
       // member never answers for a key the file itself did not write.
       if (Object.keys(doc).includes(id)) {
         const rawValue = doc[id];
-        if (typeof rawValue === "string" && rawValue !== "") {
-          const resolvedPath = normalizeFileLayerValue(rawValue, env, deps.projectRoot);
-          tried.push(resolvedPath);
-          if (passesFileLayerCheck(resolvedPath)) {
-            return { id, path: resolvedPath, tried, layer: "file", mechanism: "tools.json", refusal: null };
-          }
+        if (typeof rawValue !== "string" || rawValue === "") {
           return {
             id,
             path: null,
             tried,
             layer: null,
             mechanism: null,
-            refusal: buildFileLayerRefusal(resolvedPath),
+            refusal: `"${id}"'s tools.json entry must be a non-empty string naming a path; found ${describeValueShape(rawValue)}`,
           };
         }
+
+        const resolvedPath = normalizeFileLayerValue(rawValue, env, deps.projectRoot);
+        tried.push(resolvedPath);
+        if (passesFileLayerCheck(resolvedPath)) {
+          return { id, path: resolvedPath, tried, layer: "file", mechanism: "tools.json", refusal: null };
+        }
+        return {
+          id,
+          path: null,
+          tried,
+          layer: null,
+          mechanism: null,
+          refusal: buildFileLayerRefusal(resolvedPath),
+        };
       }
     }
   }
