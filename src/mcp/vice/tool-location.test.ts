@@ -550,6 +550,51 @@ test("an undeclared tool id is refused by name, and tools.json is never touched 
   });
 });
 
+test("an id shaped like an inherited Object.prototype member is refused by name like any other undeclared id, and tools.json is never touched to answer it (planted violation); a real declared id in the same file still resolves (clean control)", () => {
+  withScratch((dir) => {
+    for (const prototypeShapedId of ["constructor", "toString", "valueOf", "hasOwnProperty"]) {
+      const result = resolveTool(prototypeShapedId, {
+        toolsDir: dir,
+        projectRoot: dir,
+        env: {},
+        exists: () => {
+          throw new Error(`resolveTool must not check any tools.json-related candidate for "${prototypeShapedId}"`);
+        },
+        readFile: () => {
+          throw new Error(`resolveTool must not read tools.json for "${prototypeShapedId}"`);
+        },
+      });
+
+      assert.equal(result.path, null, `expected "${prototypeShapedId}" to be refused, not resolved`);
+      assert.equal(result.layer, null);
+      assert.equal(result.mechanism, null);
+      assert.ok(
+        result.refusal && result.refusal.includes(prototypeShapedId),
+        `expected a named refusal naming "${prototypeShapedId}", got ${JSON.stringify(result.refusal)}`,
+      );
+    }
+
+    // Clean control: tools.json genuinely NAMES "constructor" (the exact
+    // hazard the review measured -- a real entry sitting under a
+    // prototype-shaped key must never be read back as that key's answer),
+    // alongside a real declared id. The prototype-shaped key must still
+    // refuse and the real id must still resolve through the same file.
+    const x64scBin = join(dir, "x64sc-real");
+    writeFileSync(x64scBin, "");
+    chmodSync(x64scBin, 0o755);
+    writeFileSync(join(dir, "tools.json"), JSON.stringify({ constructor: "/should-never-be-read", x64sc: x64scBin }));
+
+    const stillRefused = resolveTool("constructor", { toolsDir: dir, projectRoot: dir, env: {} });
+    assert.equal(stillRefused.path, null);
+    assert.ok(stillRefused.refusal && stillRefused.refusal.includes("constructor"));
+
+    const cleanControl = resolveTool("x64sc", { toolsDir: dir, projectRoot: dir, env: {} });
+    assert.equal(cleanControl.path, x64scBin);
+    assert.equal(cleanControl.layer, "file");
+    assert.equal(cleanControl.refusal, null);
+  });
+});
+
 // -----------------------------------------------------------------------
 // Plan 59-03, Task 1: `validateToolsFile()` -- the file judged alone, with
 // no resolution performed. The real declaration read here is the committed
