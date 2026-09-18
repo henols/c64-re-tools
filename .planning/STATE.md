@@ -6,15 +6,15 @@ current_phase: 59
 current_phase_name: The Tool-Location Seam and Its Precedence Order
 status: executing
 stopped_at: Completed 59-01-PLAN.md
-last_updated: "2026-09-18T10:15:24.941Z"
+last_updated: "2026-09-18T10:43:28.721Z"
 last_activity: 2026-09-18
 last_activity_desc: Phase 59 execution started
-state_head: a88c94c25fbf2c2e65f373a5059f19b997585270
+state_head: ead7a041328cb89eb60fa0035bd75539602f5696
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 8
-  completed_plans: 5
+  completed_plans: 6
   percent: 20
 carried_forward_phases:
 
@@ -341,9 +341,9 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 59 (The Tool-Location Seam and Its Precedence Order) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Status: Ready to execute
-Stopped at: Completed 59-02-PLAN.md — resolveTool() is kind-aware; all eight
+Stopped at: Completed 59-03-PLAN.md
 prerequisites.json records carry a location/kind block. Next: continue with plan 59-03.
 Last activity: 2026-09-18 — Phase 59 execution started
 
@@ -718,6 +718,7 @@ than a matter of discipline.
 | Phase 58 P03 | 55min | 3 tasks | 3 files |
 | Phase 59 P01 | unknown | 3 tasks | 7 files |
 | Phase 59 P02 | 25 min | 2 tasks | 4 files |
+| Phase 59 P03 | 55 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -1577,6 +1578,8 @@ Recent decisions affecting current work:
 - [Phase 58]: Phase 58 gap closure (58-03): built a citation-ledger structural guard for docs/phase58-declaration-provenance.md, corrected both wrong file:line citations 58-VERIFICATION.md flagged, and recorded unp64's exclusion as DECL-F3 rather than adding a ninth prerequisites.json record.
 - [Phase 59]: D-12 (human, one-way): .c64-re-tools/tools.json entries are bare strings, e.g. {"x64sc": "/opt/vice/bin/x64sc"}, never the object form {"x64sc": {"path": "..."}}. Selected at plan 59-01's Task 1 checkpoint. The reserved-key rule D-11 rides with it: a key beginning `_` is reserved for prose and exempt from the unknown-key refusal.
 - [Phase 59]: the LOC-06 criterion amendment's 'path is absent' refusal clause was scoped out of resolveTool() -- only wrong-kind and missing-marker for an on-disk entry produce a refusal, matching this plan's tested behavior; absent entries still fall through unchanged. — Scoped to what this plan's tests actually assert, not a re-derivation of the full LOC-06 triad, which belongs to D-10's separate validateToolsFile() export.
+- [Phase 59]: Phase 59-03: the D-11 underscore-prose exemption is scoped to a SINGLE leading underscore (second character not itself an underscore), not any leading underscore -- this is what keeps a JavaScript dunder key like __proto__ reported as unknown with no separate branch, while _readme/_viceBrokerNode stay exempt. — The plan's own action text said to skip any key starting with underscore, but its own embedded verify gate requires __proto__ (two leading underscores) to be reported as unknown -- a direct conflict. A single-leading-underscore qualifier satisfies both without adding a __proto__-specific branch.
+- [Phase 59]: Phase 59-03 Task 2 completes the amended LOC-06 triad's "absent path" clause inside resolveTool() itself, which plan 59-02 had explicitly deferred to this plan's validator/resolver split -- six pre-existing tests were repaired to match the new terminal file-layer behaviour.
 
 ### Pending Todos
 
@@ -2831,7 +2834,7 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-18T10:15:24.827Z
+Last session: 2026-09-18T10:43:13.318Z
 Stopped at: Completed 59-01-PLAN.md
 Resume file: None
 
