@@ -25,12 +25,19 @@
 // suite has no mocking library, matching this project's own convention.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { build } from "./build.ts";
-import { resolveTool } from "./tool-location.mts";
+import { resolveTool, validateToolsFile } from "./tool-location.mts";
+
+/** This test file's own directory -- used only to locate the real,
+ * committed `prerequisites.json` for the two exclusion tests below, which
+ * read its `reason` fields directly rather than duplicating those
+ * sentences as string literals in this file. */
+const HERE_DIR = dirname(fileURLToPath(import.meta.url));
 
 function withScratch<T>(fn: (dir: string) => T): T {
   const dir = mkdtempSync(join(tmpdir(), "tool-location-test-"));
@@ -522,5 +529,229 @@ test("an undeclared tool id is refused by name, and tools.json is never touched 
     assert.equal(result.layer, null);
     assert.equal(result.mechanism, null);
     assert.ok(result.refusal && result.refusal.includes("not-a-real-tool"));
+  });
+});
+
+// -----------------------------------------------------------------------
+// Plan 59-03, Task 1: `validateToolsFile()` -- the file judged alone, with
+// no resolution performed. The real declaration read here is the committed
+// `prerequisites.json`, unless a case uses `withExclusionFixture`/`here`.
+// -----------------------------------------------------------------------
+
+test("validateToolsFile: an absent tools.json, a zero-byte one and a bare {} one each return no problems", () => {
+  withScratch((dir) => {
+    const absent = validateToolsFile({ toolsDir: dir, projectRoot: dir });
+    assert.deepEqual(absent, []);
+
+    writeFileSync(join(dir, "tools.json"), "");
+    const emptyBytes = validateToolsFile({ toolsDir: dir, projectRoot: dir });
+    assert.deepEqual(emptyBytes, []);
+
+    writeFileSync(join(dir, "tools.json"), "{}");
+    const emptyObject = validateToolsFile({ toolsDir: dir, projectRoot: dir });
+    assert.deepEqual(emptyObject, []);
+  });
+});
+
+test("validateToolsFile: unparseable JSON is exactly one file-level problem naming the file path (planted violation), and valid JSON is a clean control", () => {
+  withScratch((dir) => {
+    const filePath = join(dir, "tools.json");
+    writeFileSync(filePath, "{");
+
+    const problems = validateToolsFile({ toolsDir: dir, projectRoot: dir });
+
+    assert.equal(problems.length, 1);
+    assert.equal(problems[0]!.toolId, null);
+    assert.ok(problems[0]!.message.includes(filePath));
+
+    writeFileSync(filePath, "{}");
+    const clean = validateToolsFile({ toolsDir: dir, projectRoot: dir });
+    assert.deepEqual(clean, []);
+  });
+});
+
+test("validateToolsFile: a non-object top level (array) is exactly one file-level problem (planted violation); an object top level is a clean control", () => {
+  withScratch((dir) => {
+    writeFileSync(join(dir, "tools.json"), "[]");
+    const arrayTop = validateToolsFile({ toolsDir: dir, projectRoot: dir });
+    assert.equal(arrayTop.length, 1);
+    assert.equal(arrayTop[0]!.toolId, null);
+
+    writeFileSync(join(dir, "tools.json"), "{}");
+    const objectTop = validateToolsFile({ toolsDir: dir, projectRoot: dir });
+    assert.deepEqual(objectTop, []);
+  });
+});
+
+test("validateToolsFile: an unknown key is one problem naming it (planted violation); a declared id with a valid value is a clean control", () => {
+  withScratch((dir) => {
+    writeFileSync(join(dir, "tools.json"), JSON.stringify({ vice: "/some/path" }));
+    const unknown = validateToolsFile({ toolsDir: dir, projectRoot: dir });
+    assert.equal(unknown.length, 1);
+    assert.equal(unknown[0]!.key, "vice");
+    assert.ok(unknown[0]!.message.includes("vice"));
+
+    writeFileSync(join(dir, "tools.json"), JSON.stringify({ x64sc: "/opt/vice/bin/x64sc" }));
+    const clean = validateToolsFile({ toolsDir: dir, projectRoot: dir });
+    assert.deepEqual(clean, []);
+  });
+});
+
+test("validateToolsFile: a key beginning with an underscore is never reported as unknown, whatever its value", () => {
+  withScratch((dir) => {
+    writeFileSync(join(dir, "tools.json"), JSON.stringify({ _readme: "hello", _viceBrokerNode: 42, _anything: null }));
+    const problems = validateToolsFile({ toolsDir: dir, projectRoot: dir });
+    assert.deepEqual(problems, []);
+  });
+});
+
+test("validateToolsFile: a case-variant, whitespace-padded, or decomposed-Unicode key is reported as unknown rather than silently matched (planted violations); the exact declared id is a clean control", () => {
+  withScratch((dir) => {
+    writeFileSync(join(dir, "tools.json"), JSON.stringify({ X64SC: "/x" }));
+    const caseVariant = validateToolsFile({ toolsDir: dir, projectRoot: dir });
+    assert.equal(caseVariant.length, 1);
+    assert.equal(caseVariant[0]!.key, "X64SC");
+
+    writeFileSync(join(dir, "tools.json"), JSON.stringify({ "x64sc ": "/x" }));
+    const whitespacePadded = validateToolsFile({ toolsDir: dir, projectRoot: dir });
+    assert.equal(whitespacePadded.length, 1);
+    assert.equal(whitespacePadded[0]!.key, "x64sc ");
+
+    const decomposed = "acme-lib".replace("a", "á"); // combining acute accent, never a real id
+    writeFileSync(join(dir, "tools.json"), JSON.stringify({ [decomposed]: "/x" }));
+    const decomposedResult = validateToolsFile({ toolsDir: dir, projectRoot: dir });
+    assert.equal(decomposedResult.length, 1);
+    assert.equal(decomposedResult[0]!.key, decomposed);
+
+    writeFileSync(join(dir, "tools.json"), JSON.stringify({ x64sc: "/x" }));
+    const clean = validateToolsFile({ toolsDir: dir, projectRoot: dir });
+    assert.deepEqual(clean, []);
+  });
+});
+
+test("validateToolsFile: a JavaScript-prototype-shaped key is reported as unknown with no separate branch (planted violation)", () => {
+  withScratch((dir) => {
+    writeFileSync(join(dir, "tools.json"), '{"__proto__":"/x"}');
+    const problems = validateToolsFile({ toolsDir: dir, projectRoot: dir });
+    assert.equal(problems.length, 1);
+    assert.equal(problems[0]!.key, "__proto__");
+
+    // Prose (a comment) is allowed to name "__proto__" to explain the
+    // exemption's shape; a CODE branch keyed on the literal is not. This
+    // greps for the code-shaped forms specifically, never the bare
+    // substring, so a comment mentioning the name does not fail this check.
+    const moduleSource = readFileSync(new URL("./tool-location.mts", import.meta.url), "utf8");
+    assert.ok(
+      !/[=!]==?\s*["']__proto__["']/.test(moduleSource),
+      "the module must contain no comparison branch keyed on the literal __proto__",
+    );
+  });
+});
+
+test("validateToolsFile: a non-string value for a declared id is one problem per shape (planted violations); a non-empty string is the clean control", () => {
+  withScratch((dir) => {
+    for (const badValue of [null, false, 0, [], {}, ""]) {
+      writeFileSync(join(dir, "tools.json"), JSON.stringify({ x64sc: badValue }));
+      const problems = validateToolsFile({ toolsDir: dir, projectRoot: dir });
+      assert.equal(problems.length, 1, `expected exactly one problem for value ${JSON.stringify(badValue)}`);
+      assert.equal(problems[0]!.toolId, "x64sc");
+    }
+
+    writeFileSync(join(dir, "tools.json"), JSON.stringify({ x64sc: "/opt/vice/bin/x64sc" }));
+    const clean = validateToolsFile({ toolsDir: dir, projectRoot: dir });
+    assert.deepEqual(clean, []);
+  });
+});
+
+test("validateToolsFile: naming the vendored disassembler is one problem quoting the declaration's own reason verbatim (planted violation); omitting it is a clean control", () => {
+  withScratch((dir) => {
+    const prereq = JSON.parse(readFileSync(join(HERE_DIR, "prerequisites.json"), "utf8")) as {
+      tools: Record<string, { location?: { reason?: string } }>;
+    };
+    const dxaReason = prereq.tools.dxa!.location!.reason!;
+
+    writeFileSync(join(dir, "tools.json"), JSON.stringify({ dxa: "/some/dxa" }));
+    const problems = validateToolsFile({ toolsDir: dir, projectRoot: dir });
+    assert.equal(problems.length, 1);
+    assert.equal(problems[0]!.toolId, "dxa");
+    assert.ok(problems[0]!.message.includes(dxaReason));
+
+    writeFileSync(join(dir, "tools.json"), JSON.stringify({}));
+    const clean = validateToolsFile({ toolsDir: dir, projectRoot: dir });
+    assert.deepEqual(clean, []);
+  });
+});
+
+test("validateToolsFile: naming the Node interpreter is one problem quoting the declaration's own reason verbatim (planted violation); omitting it is a clean control", () => {
+  withScratch((dir) => {
+    const prereq = JSON.parse(readFileSync(join(HERE_DIR, "prerequisites.json"), "utf8")) as {
+      tools: Record<string, { location?: { reason?: string } }>;
+    };
+    const nodeReason = prereq.tools.node!.location!.reason!;
+
+    writeFileSync(join(dir, "tools.json"), JSON.stringify({ node: "/some/node" }));
+    const problems = validateToolsFile({ toolsDir: dir, projectRoot: dir });
+    assert.equal(problems.length, 1);
+    assert.equal(problems[0]!.toolId, "node");
+    assert.ok(problems[0]!.message.includes(nodeReason));
+
+    writeFileSync(join(dir, "tools.json"), JSON.stringify({}));
+    const clean = validateToolsFile({ toolsDir: dir, projectRoot: dir });
+    assert.deepEqual(clean, []);
+  });
+});
+
+test("validateToolsFile: pointing `here` at a scratch declaration with different reason strings changes both exclusion messages, proving neither sentence is a literal in the module", () => {
+  withScratch((here) => {
+    const reasonA = "reason-A, unique to this scratch declaration.";
+    const reasonB = "a completely different reason-B, also unique to this scratch declaration.";
+    writeFileSync(
+      join(here, "prerequisites.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        tools: {
+          "test-dxa": { id: "test-dxa", location: { fileOverridable: false, reason: reasonA }, kind: "executable" },
+          "test-node": { id: "test-node", location: { fileOverridable: false, reason: reasonB }, kind: "executable" },
+        },
+      }),
+    );
+
+    withScratch((dir) => {
+      writeFileSync(join(dir, "tools.json"), JSON.stringify({ "test-dxa": "/x", "test-node": "/y" }));
+      const problems = validateToolsFile({ toolsDir: dir, projectRoot: dir, here });
+
+      assert.equal(problems.length, 2);
+      const dxaProblem = problems.find((p) => p.key === "test-dxa");
+      const nodeProblem = problems.find((p) => p.key === "test-node");
+      assert.ok(dxaProblem && dxaProblem.message.includes(reasonA));
+      assert.ok(nodeProblem && nodeProblem.message.includes(reasonB));
+    });
+  });
+});
+
+test("validateToolsFile: one unknown key plus one valid entry returns exactly one problem, naming the unknown key", () => {
+  withScratch((dir) => {
+    writeFileSync(join(dir, "tools.json"), JSON.stringify({ vice: "/some/path", x64sc: "/opt/vice/bin/x64sc" }));
+    const problems = validateToolsFile({ toolsDir: dir, projectRoot: dir });
+    assert.equal(problems.length, 1);
+    assert.equal(problems[0]!.key, "vice");
+  });
+});
+
+test("validateToolsFile: several distinct problems are returned one per problem, in file key order, deterministically across repeated calls", () => {
+  withScratch((dir) => {
+    writeFileSync(
+      join(dir, "tools.json"),
+      JSON.stringify({ unknown_first: "/x", x64sc: null, dxa: "/y", acme: "/opt/acme" }),
+    );
+    const first = validateToolsFile({ toolsDir: dir, projectRoot: dir });
+    const second = validateToolsFile({ toolsDir: dir, projectRoot: dir });
+
+    assert.equal(first.length, 3);
+    assert.deepEqual(
+      first.map((p) => p.key),
+      ["unknown_first", "x64sc", "dxa"],
+    );
+    assert.deepEqual(second, first);
   });
 });
