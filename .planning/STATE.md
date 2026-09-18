@@ -2,14 +2,14 @@
 gsd_state_version: "1.0"
 milestone: v1.1.0
 milestone_name: The Prerequisite Doctor
-current_phase: 59
-current_phase_name: The Tool-Location Seam and Its Precedence Order
-status: verifying
-stopped_at: Completed 59-04-PLAN.md
-last_updated: "2026-09-18T11:19:52.245Z"
+current_phase: 60
+current_phase_name: The Seam Wired Into the Code That Ships
+status: planning
+stopped_at: Phase 59 complete, ready to plan Phase 60
+last_updated: "2026-09-18T11:52:42.280Z"
 last_activity: 2026-09-18
-last_activity_desc: Phase 59 plan 04 executed
-state_head: eee67456a4539c87ab267aa51fcd16380c85b893
+last_activity_desc: Phase 59 complete, transitioned to Phase 60
+state_head: 884e68c87fbbd19d2b8d07f42280f98bfa14ee0f
 progress:
   total_phases: 5
   completed_phases: 1
@@ -340,15 +340,15 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 59 (The Tool-Location Seam and Its Precedence Order) — EXECUTING
-Plan: 5 of 5
-Status: Phase complete — ready for verification
+Phase: 60 — The Seam Wired Into the Code That Ships
+Plan: Not started
+Status: Ready to plan
 Stopped at: Completed 59-05-PLAN.md (phase 59 complete)
 (assertLocationBlockShape, assertKindAndMarker, assertNoReservedToolId) added to
 prerequisites.test.ts, plus a packaging case proving the compiled tool-location seam
 artifact and the declaration sit in the packed tarball's file list, one directory apart.
 Next: continue with plan 59-05.
-Last activity: 2026-09-18 — Phase 59 plan 04 executed
+Last activity: 2026-09-18 — Phase 59 complete, transitioned to Phase 60
 
 **Milestone shape, so no reader has to rebuild it from the ROADMAP:** Phase 58
 declares the prerequisites; Phase 59 builds the tool-location seam and its
@@ -366,7 +366,7 @@ than a matter of discipline.
 
 **Velocity:**
 
-- Total plans completed: 441
+- Total plans completed: 446
 - Average duration: —
 - Total execution time: —
 
@@ -422,6 +422,7 @@ than a matter of discipline.
 | 56 | 11 | - | - |
 | 50 | 8 | - | - |
 | 58 | 3 | - | - |
+| 59 | 5 | - | - |
 
 **Recent Trend:**
 
@@ -2843,7 +2844,7 @@ and are v1.0.0's inheritance.
 ## Session Continuity
 
 Last session: 2026-09-18T11:19:52.054Z
-Stopped at: Completed 59-05-PLAN.md (phase 59 complete)
+Stopped at: Phase 59 complete, ready to plan Phase 60
 Resume file: None
 
 Earlier: Milestone v1.0.0 "The Rebuild Half" closed and archived on its delivered scope (9 phases, 73 plans, 33/33 in-scope requirements, `override_closeout`). Phases 51, 53, 54 and 57 carried forward with their ROADMAP sections live.
