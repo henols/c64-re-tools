@@ -2,14 +2,14 @@
 gsd_state_version: "1.0"
 milestone: v1.1.0
 milestone_name: The Prerequisite Doctor
-current_phase: 60
-current_phase_name: The Seam Wired Into the Code That Ships
-status: verifying
-stopped_at: Phase 60 gap-closure planned — 2 gap plans (60-06, 60-07) in waves 5-6, checker passed first iteration
-last_updated: "2026-09-18T20:09:30.112Z"
+current_phase: 61
+current_phase_name: "`vice-mcp doctor`, Reachable on a Node Too Old to Run the Server"
+status: planning
+stopped_at: Phase 60 complete, ready to plan Phase 61
+last_updated: "2026-09-18T20:33:50.648Z"
 last_activity: 2026-09-18
-last_activity_desc: Phase 60 execution started
-state_head: d896c076c6c1788a91d232c40728de6911c64183
+last_activity_desc: Phase 60 complete, transitioned to Phase 61
+state_head: 1a2a827f9f6866becf43f10e207eb9d4a9c75b8c
 progress:
   total_phases: 5
   completed_phases: 2
@@ -343,9 +343,9 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 60 (The Seam Wired Into the Code That Ships) — ALL 8 PLANS EXECUTED
-Plan: 8 of 8 executed (60-08, round-2 gap closure, complete)
-Status: Phase complete — ready for verification
+Phase: 61 — `vice-mcp doctor`, Reachable on a Node Too Old to Run the Server
+Plan: Not started
+Status: Ready to plan
 Stopped at: Completed 60-08-PLAN.md
 Plan 60-08 closed LOC-03's residual: the environment layer is now terminal for
 a declared variable's non-empty value WHATEVER its shape (not only a
@@ -384,7 +384,7 @@ x64sc in tools.json with the broker as its systemd unit — confirm the spawned
 binary matches, for the recorded path and for a bare $PATH-resolved VICE_BIN
 (unchanged from plan 60-05).
 Next: /gsd-verify-work 60.
-Last activity: 2026-09-18 — Phase 60 fully executed (8/8 plans); LOC-03 and WR-03 closed by plan 60-08
+Last activity: 2026-09-18 — Phase 60 complete, transitioned to Phase 61
 
 **Milestone shape, so no reader has to rebuild it from the ROADMAP:** Phase 58
 declares the prerequisites; Phase 59 builds the tool-location seam and its
@@ -402,7 +402,7 @@ than a matter of discipline.
 
 **Velocity:**
 
-- Total plans completed: 446
+- Total plans completed: 454
 - Average duration: —
 - Total execution time: —
 
@@ -459,6 +459,7 @@ than a matter of discipline.
 | 50 | 8 | - | - |
 | 58 | 3 | - | - |
 | 59 | 5 | - | - |
+| 60 | 8 | - | - |
 
 **Recent Trend:**
 
@@ -2896,7 +2897,7 @@ and are v1.0.0's inheritance.
 ## Session Continuity
 
 Last session: 2026-09-18T20:09:29.915Z
-Stopped at: Completed 60-08-PLAN.md
+Stopped at: Phase 60 complete, ready to plan Phase 61
 Resume file: None
 
 Earlier: Milestone v1.0.0 "The Rebuild Half" closed and archived on its delivered scope (9 phases, 73 plans, 33/33 in-scope requirements, `override_closeout`). Phases 51, 53, 54 and 57 carried forward with their ROADMAP sections live.
