@@ -220,10 +220,6 @@ function resolveCeilingForRecord(): number {
   return Number.isFinite(n) ? n : 16;
 }
 
-function resolveViceBinForHostState(): string {
-  return process.env.VICE_BIN ?? "x64sc";
-}
-
 /** Duplicates vice-broker-client.ts's readBrokerLiveness() classification
  * logic (never_started / stale / alive against BROKER_STALE_MS) rather than
  * importing it -- confirmed empirically (plan 02's own SUMMARY) that
@@ -301,10 +297,17 @@ function writeBrokerRecordFile(stateDir: string, record: BrokerRecord): string {
  * caller-supplied `stdio`. Merging in the other order would silently
  * redirect a launch's output away from the per-instance log file the
  * epoch record names, breaking the per-instance forensic logs while
- * appearing to work. */
-function makeLoggingSpawn(logDir: string): { spawn: (cmd: string, args: string[], options?: SpawnOptionsWithoutStdio) => ReturnType<typeof nodeSpawn>; logRelPath: string } {
+ * appearing to work.
+ *
+ * `viceBin` (Phase 60, LOC-02) names the ALREADY-resolved binary this launch
+ * is about to spawn -- the log filename's own stem, via `basename()`, rather
+ * than a fresh read of the emulator environment variable on its own.
+ * Optional, defaulting to the literal "x64sc" for a caller (a test) that
+ * supplies neither this nor a real resolution up its own call chain, so the
+ * filename shape is unchanged for it. */
+function makeLoggingSpawn(logDir: string, viceBin?: string): { spawn: (cmd: string, args: string[], options?: SpawnOptionsWithoutStdio) => ReturnType<typeof nodeSpawn>; logRelPath: string } {
   mkdirSync(logDir, { recursive: true });
-  const viceBinForLog = basename(process.env.VICE_BIN ?? "x64sc");
+  const viceBinForLog = basename(viceBin ?? "x64sc");
   const logName = `${viceBinForLog}-${Date.now()}.log`;
   const logFd = openSync(join(logDir, logName), "a");
   return {
@@ -376,13 +379,25 @@ function writeEpochForLaunch(record: InstanceRecord, logRelPath: string): void {
  * always `undefined` in production right now; the parameter exists so that
  * adding one later cannot reintroduce exactly this divergence between a
  * launch's argv and its respawn's argv. */
-function superviseDepsFor(stateDir: string, state: BrokerState, backend: ViceBackend, binmonHost?: string): SuperviseChildDeps {
+/** Phase 60 (LOC-01/LOC-02): `viceBin` is now a REQUIRED-in-spirit fourth
+ * argument (kept optional only for source compatibility with a caller that
+ * has none to give) -- before this plan, a crash respawn's own
+ * SuperviseChildDeps.viceBin was silently left unset here, and
+ * broker-launch.mts's own launchSupervised() covered the gap by falling
+ * through to a fresh read of the emulator environment variable. That fallback is gone (see
+ * broker-launch.mts's own header for why); leaving this builder unchanged
+ * would have made a crash-respawned instance silently spawn the bare
+ * "x64sc" literal instead of the SAME binary a tools.json entry or
+ * VICE_BIN resolved for the launch it replaces -- exactly the
+ * disagreement LOC-02 exists to remove. */
+function superviseDepsFor(stateDir: string, state: BrokerState, backend: ViceBackend, viceBin?: string, binmonHost?: string): SuperviseChildDeps {
   return {
     state,
     stateDir,
     epoch: { epochPathFor, instanceLogDirFor, nextEpochFor, writeEpochRecord },
     log: (line: string) => process.stderr.write(`${line}\n`),
     backend,
+    viceBin,
     binmonHost,
   };
 }
@@ -444,6 +459,15 @@ export interface HandleAcquireDeps {
    * per-acquire). Defaults to `"stock"` -- broker-launch.mts's own
    * buildViceArgs() default -- when a caller omits it entirely. */
   backend?: ViceBackend;
+  /** The emulator binary this acquire's cold-launch arm should spawn --
+   * mirrors `backend`'s own contract exactly: the real broker wiring (run()'s
+   * onAcquire callback below) resolves this ONCE at startup via
+   * backend-detect.mts's resolvedBackend() (Phase 60's tool-location-seam
+   * consumer) and passes the SAME resolved value on every call. This
+   * function never re-reads any environment variable and never re-calls the
+   * seam itself -- omitted entirely, broker-launch.mts's own default
+   * ("x64sc") is what a caller (a test) that supplies neither gets. */
+  viceBin?: string;
   /** Threaded straight through to the cold-launch arm's own
    * acquirePortAndLaunch() call -- see that function's own doc comment
    * (broker-launch.mts) for the exclude/degrade contract on the
@@ -697,6 +721,10 @@ export async function handleAcquire(requestId: string, stateDir: string, state: 
   // verdict handleAcquire already uses for buildViceArgs() -- on stock the port
   // speaks the binary monitor, so an HTTP POST there can never succeed.
   const backend = deps.backend ?? "stock";
+  // Same threaded-down-once discipline as `backend` immediately above --
+  // this function never resolves it itself. See HandleAcquireDeps.viceBin's
+  // own doc comment.
+  const viceBin = deps.viceBin;
   const probe = deps.probe ?? ((port: number) => probeReady(port, { backend }));
   // Textually a verifiedKill( call site, not merely a reference -- reused
   // UNCHANGED from broker-kill.mts, never re-derived, and never replaced by
@@ -731,6 +759,11 @@ export async function handleAcquire(requestId: string, stateDir: string, state: 
       // supervision deps below, so a crash-respawn of this instance can never
       // build a different backend's argv than the launch it replaces.
       backend,
+      // The SAME local `viceBin` const, threaded down unchanged -- see this
+      // function's own binding above and HandleAcquireDeps.viceBin's doc
+      // comment. `undefined` here is exactly what broker-launch.mts's own
+      // "x64sc"-literal default is for.
+      viceBin,
       allocateRemoteMonitorPort: deps.allocateRemoteMonitorPort,
       // The profile the warm arm just
       // refused to compromise on reaches buildViceArgs() here, and is
@@ -744,9 +777,9 @@ export async function handleAcquire(requestId: string, stateDir: string, state: 
         deps.buildColdSpawnFactory ??
         ((port: number) => {
           const supervisorDir = join(stateDir, String(port));
-          const { spawn, logRelPath } = makeLoggingSpawn(join(supervisorDir, "logs"));
+          const { spawn, logRelPath } = makeLoggingSpawn(join(supervisorDir, "logs"), viceBin);
           lastLogRelPath = logRelPath;
-          return withCrashSupervision("acquire", port, spawn, superviseDepsFor(stateDir, state, backend));
+          return withCrashSupervision("acquire", port, spawn, superviseDepsFor(stateDir, state, backend, viceBin));
         }),
     });
 
@@ -1138,9 +1171,25 @@ async function run(args: ParsedArgs): Promise<void> {
   // There is nothing left to detect -- the resolved
   // `backend` is always `"stock"`; what this call still does is resolve the
   // binary's own identity for the log line below and initialise the
-  // capability cache backend-detect.mts's own record depends on.
-  const backendResult = resolvedBackend({ supervisorDir: args.stateDir });
+  // capability cache backend-detect.mts's own record depends on. Phase 60
+  // (LOC-01/LOC-02): `toolsDir`/`projectRoot` are passed explicitly rather
+  // than left to backend-detect.mts's own supervisorDir-derived fallback
+  // (PD-03) -- this IS the one real call site with a genuine repoRoot to
+  // hand it, so there is no reason to make it guess. This is the ONE call
+  // in the whole real broker that ever reaches the tool-location seam; the
+  // resolved value below is threaded down through every real launch call
+  // site from here, never re-resolved per acquire.
+  const backendResult = resolvedBackend({
+    supervisorDir: args.stateDir,
+    toolsDir: join(args.repoRoot, ".c64-re-tools"),
+    projectRoot: args.repoRoot,
+  });
   const backend: ViceBackend = backendResult.backend;
+  // The ONE value this process ever spawns as the emulator binary --
+  // resolved once, here, and threaded down through HandleAcquireDeps.viceBin
+  // (below) and onHostState's own `viceBin` field (task 2). Never re-read
+  // from resolvedBackend() a second time and never re-derived locally.
+  const resolvedViceBin = backendResult.binPath;
   process.stderr.write(
     `vice-broker: backend "${backend}" (binary: ${backendResult.binPath})\n`,
   );
@@ -1226,7 +1275,13 @@ async function run(args: ParsedArgs): Promise<void> {
         pid: process.pid,
         startedAt,
         nodeVersion: process.version,
-        viceBin: resolveViceBinForHostState(),
+        // The SAME value THIS process just spawned (this function's own
+        // `resolvedViceBin` closure binding, above) -- the deleted
+        // per-host-state helper this file used to call here re-read the
+        // emulator environment variable fresh on every call, which could
+        // report a DIFFERENT binary than the one this broker actually
+        // launched -- exactly the disagreement LOC-02 exists to remove.
+        viceBin: resolvedViceBin,
         maxInstances: resolveCeilingForRecord(),
         basePort: resolveBasePort(),
         // The verdict THIS process resolved once, at

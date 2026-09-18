@@ -302,21 +302,23 @@ const HERE_DIR = dirname(fileURLToPath(import.meta.url));
 //
 // `RESOLVED_BINARY.binPath` is what `vice_ping`'s `resolvedBinaryPath` field
 // reports (see stock-dispatch.ts's `handlePing()`). It is resolved exactly
-// ONCE here, at MCP-server process startup, by a bare `x64sc` `$PATH` probe
-// run in THIS process's own environment -- it is NOT re-probed per request
-// and has no connection to the broker, a separate, already-running process
-// that leases whichever instance it chose to whatever request comes in. On a
-// host where bare `x64sc` resolves to one build, `resolvedBinaryPath` reports
-// that build's path on every ping, even when the broker actually launched
-// (or later recycled to) a different one. The authoritative per-instance
-// answer lives in the broker's own launch record (`epoch.json`'s `vice_bin`
-// field, written by `broker-epoch.mts`) -- Phase 8.2 plan 04's own
+// ONCE here, at MCP-server process startup -- Phase 60 (LOC-01/LOC-02) routes
+// that resolution through the tool-location seam (a `.c64-re-tools/tools.json`
+// entry for `x64sc`, then a bare `x64sc` `$PATH` probe, in THIS process's own
+// environment) rather than a `$PATH` probe alone -- it is NOT re-probed per
+// request and has no connection to the broker, a separate, already-running
+// process that leases whichever instance it chose to whatever request comes
+// in. On a host where the seam resolves to one build, `resolvedBinaryPath`
+// reports that build's path on every ping, even when the broker actually
+// launched (or later recycled to) a different one. The authoritative
+// per-instance answer lives in the broker's own launch record (`epoch.json`'s
+// `vice_bin` field, written by `broker-epoch.mts`) -- Phase 8.2 plan 04's own
 // walkthrough had to route around this field entirely and prove backend
 // identity from that launch record plus a live `ps -o args=` read instead
 // (2026-08-19 finding, closed as a documentation fix by Phase 15 plan 15-09
 // rather than a per-request requery, which would be a behavioural change out
 // of a disposition phase's remit).
-const RESOLVED_BINARY = backendDetect.resolvedBackend();
+const RESOLVED_BINARY = backendDetect.resolvedBackend({ toolsDir: toolsDir(), projectRoot: repoRoot() });
 
 // -------------------------------------------------------------- JSON-RPC
 //
