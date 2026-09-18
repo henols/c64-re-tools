@@ -1967,7 +1967,14 @@ sources).
   project's history. A location file makes that recoverable; it does not make it
   stop mattering, so the warning stays.
 
-**Plans**: TBD
+**Plans**: 5 plans
+
+Plans:
+- [ ] 60-01-PLAN.md — the emulator binary resolved once through the seam at broker startup and threaded to the real spawn, outside the `inFlight` guard (wave 1)
+- [ ] 60-02-PLAN.md — the seam's first runtime reader of the declaration's remedy prose, and the structural gate that polices its shape (wave 1)
+- [ ] 60-03-PLAN.md — ACME, ACME's standard library and Ghidra resolved through the seam inside the host-tool executor, with declaration-sourced refusals (wave 2)
+- [ ] 60-04-PLAN.md — the sibling probe widened so `c1541` and `petcat` become locatable, and four comments citing a deleted guard corrected (wave 3)
+- [ ] 60-05-PLAN.md — the closed consumer set for the four environment variables, and the unchanged-behaviour claim measured as a failing-set difference (wave 4)
 
 ### Phase 61: `vice-mcp doctor`, Reachable on a Node Too Old to Run the Server
 

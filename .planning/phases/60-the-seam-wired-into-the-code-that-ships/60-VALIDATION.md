@@ -59,16 +59,25 @@ Filled by the planner as tasks are authored; each row must name a real
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 60-01-01 | 01 | 1 | LOC-02 | — | N/A | structural | `node --test --test-reporter=tap <env-var-consumers>.test.ts` | ❌ W0 | ⬜ pending |
-| 60-01-02 | 01 | 1 | LOC-01 | T-60-01 | A `tools.json` value never reaches a shell string; argv-array spawn only | integration | `node --test --test-reporter=tap broker-launch.test.ts` | ✅ (new cases) | ⬜ pending |
-| 60-02-01 | 02 | 2 | LOC-04 | T-60-02 | Tool-id lookup by array membership, never bracket access | unit | `node --test --test-reporter=tap host-tool.test.ts` | ✅ (new cases) | ⬜ pending |
-| 60-02-02 | 02 | 2 | DECL-03 | — | Refusal text tracks the declaration, not a re-authored literal | unit | `node --test --test-reporter=tap host-tool.test.ts prerequisites.test.ts` | ✅ (new cases) | ⬜ pending |
-| 60-03-01 | 03 | 3 | LOC-03 | — | N/A | regression | `npm test` full glob, pass/fail SET diffed against the pre-change baseline | ✅ | ⬜ pending |
+| 60-01-T1 | 01 | 1 | LOC-01, LOC-02, LOC-03 | T-60-01, T-60-05 | A `tools.json` value never reaches a shell string; argv-array spawn only; no seam call inside the `inFlight` guard | integration | `node --test --test-reporter=tap vice-broker-acquire.test.ts backend-detect.test.ts broker-launch.test.ts` | ✅ (new cases) | ⬜ pending |
+| 60-01-T2 | 01 | 1 | LOC-02 | T-60-04 | Reporting fields consume the once-resolved value, never a second read | unit | `node --test --test-reporter=tap vice-broker-acquire.test.ts vice-proxy.test.ts broker-control.test.ts` | ✅ | ⬜ pending |
+| 60-01-T3 | 01 | 1 | LOC-03 | — | N/A | regression | `node build.ts` then `node --test --test-reporter=tap resources-sync.test.ts` | ✅ | ⬜ pending |
+| 60-02-T1 | 02 | 1 | DECL-03 | T-60-06 | Remedy prose is returned, never executed; the seam imports no child-process API | unit | `node --test --test-reporter=tap tool-location.test.ts` | ✅ (new cases) | ⬜ pending |
+| 60-02-T2 | 02 | 1 | DECL-03 | T-60-06, T-60-07 | A structured-argv remedy field is reported by a named validator | structural | `node --test --test-reporter=tap prerequisites.test.ts` | ✅ (new cases) | ⬜ pending |
+| 60-03-T1 | 03 | 2 | LOC-01, DECL-03 | T-60-08 | Pre-spawn existence check refuses by name and installs nothing | integration | `node --test --test-reporter=tap host-tool.test.ts` | ✅ (new cases) | ⬜ pending |
+| 60-03-T2 | 03 | 2 | LOC-01, LOC-03, DECL-03 | T-60-02, T-60-03 | Tool-id lookup by array membership; no new path normalisation at a callsite | unit | `node --test --test-reporter=tap host-tool.test.ts dxa-seam.test.ts acme-verify.test.ts` | ✅ (new cases) | ⬜ pending |
+| 60-03-T3 | 03 | 2 | LOC-03 | — | N/A | regression | `node build.ts` then `node --test --test-reporter=tap resources-sync.test.ts` | ✅ | ⬜ pending |
+| 60-04-T1 | 04 | 3 | LOC-04, DECL-03 | T-60-09 | The `$PATH`-shadowing warning survives; a file hit is never warned about | unit | `node --test --test-reporter=tap host-tool.test.ts` | ✅ (new cases) | ⬜ pending |
+| 60-04-T2 | 04 | 3 | LOC-02 | T-60-10 | No comment asserts a guard that is not on disk | structural | `node --test --test-reporter=tap host-tool.test.ts host-tool-transport.test.ts acme-verify.test.ts` | ✅ | ⬜ pending |
+| 60-04-T3 | 04 | 3 | LOC-03 | — | N/A | regression | `node build.ts` then `node --test --test-reporter=tap resources-sync.test.ts` | ✅ | ⬜ pending |
+| 60-05-T1 | 05 | 4 | LOC-02 | T-60-11 | A vacuous scan cannot report a clean tree — three planted shapes plus a module-list floor | structural | `node --test --test-reporter=tap tool-location-consumers.test.ts` | ❌ W0 (new file) | ⬜ pending |
+| 60-05-T2 | 05 | 4 | LOC-03 | T-60-12, T-60-13 | Full glob, no live broker, exit status read directly, SET comparison not totals | regression | `npm test` in both trees, failing SETs compared with `comm` | ✅ | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
-*Task IDs above are placeholders seeded from the research's requirement→test map;
-the planner replaces them with the real plan/task numbering.*
+*`❌ W0` marks the one file this phase creates: `src/mcp/vice/tool-location-consumers.test.ts`,
+delivered by 60-05-T1. Every other row runs against a file that already exists, with cases
+added by the task itself.*
 
 ---
 
@@ -77,16 +86,25 @@ the planner replaces them with the real plan/task numbering.*
 - [ ] A structural **closed-consumer-set** test for the four env-var names
       (`VICE_BIN`, `ACME_BIN`, `ACME`, `GHIDRA_HOME`), mirroring the
       `hostpath-consumers.test.ts` idiom — covers `LOC-02`.
+      **Assigned to 60-05-T1** as `src/mcp/vice/tool-location-consumers.test.ts`.
+      It lands in wave 4 rather than wave 0 because it asserts the POST-rewiring
+      state: authored earlier it would sit red in the committed suite for three
+      waves. Each rewiring plan carries its own narrower source scan in its
+      task verify blocks so nothing is unguarded in the meantime.
 - [ ] New `host-tool.test.ts` cases for `c1541` / `petcat` resolving via a scratch
       `tools.json`, and still resolving as siblings when the file says nothing —
-      covers `LOC-04`.
+      covers `LOC-04`. **Assigned to 60-04-T1** (seven behavioural cases).
 - [ ] New `host-tool.test.ts` / `prerequisites.test.ts` cases proving a refusal
       message **tracks a mutated declaration string** (mutate the remedy text in a
       scratch copy, confirm the live refusal changes to match) — covers `DECL-03`
       and supplies the non-vacuity proof `ENGINEERING_RULES.md` §6 requires of a
-      refusal test.
+      refusal test. **Assigned to 60-02-T1** (the reader itself), **60-03-T1 and
+      60-03-T2** (`acme`, `ghidra`, `dxa` refusals) and **60-04-T1** (`c1541`,
+      `petcat` refusals).
 - [ ] A pre-and-post-rewiring full-suite **baseline SET diff** — a verification
-      procedure, not a new test file — covers `LOC-03`.
+      procedure, not a new test file — covers `LOC-03`. **Assigned to 60-05-T2**,
+      against the tree at commit `884e68c8` (the last commit touching
+      `src/mcp/vice/` before this phase began).
 
 Every structural scan in the above must use `grep -a`:
 `src/mcp/vice/anno-memmap-render.ts` and `src/mcp/vice/prerequisites.test.ts`
