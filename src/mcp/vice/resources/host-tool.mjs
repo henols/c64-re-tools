@@ -117,6 +117,29 @@ import { resolveGhidraProject, buildAnalyzeHeadlessArgv, hasDotPrefixedSegment, 
 // once per broker lifetime -- never re-probed per c1541.* call within the
 // SAME process, per findSiblingBinary()'s own memo below.
 import { resolvedBackend } from "./backend-detect.mjs";
+// This module's THIRD sibling import, and its own use of the `.mjs`-extension
+// rule for a host-bound sibling -- the same form the `backend-detect.mjs`
+// import immediately above already uses, a plain static VALUE import, never
+// the lazy `createRequire()` dual-path load `backend-detect.mts`'s own
+// `toolLocationSeam()` uses. That dance exists ONLY for a module that ships
+// two ways -- unbuilt, imported directly by a real no-build-step entry point,
+// AND compiled -- and `host-tool.mts` does not: every real consumer (this
+// project's own broker, the direct host-spawn route, and every test file
+// that reaches `runHostTool()`) imports the COMPILED `resources/host-tool.mjs`
+// artifact only, exactly like the `ghidra-project.mjs` import above already
+// does; the unbuilt `.mts` source is never loaded as a live ESM module by
+// anything in this tree (confirmed: no import specifier anywhere in this
+// repository names `"./host-tool.mts"`). A static `"./tool-location.mjs"`
+// specifier is therefore safe here the same way it is safe for
+// `ghidra-project.mjs`: it only ever resolves once both compiled siblings sit
+// together in `resources/`, which `build.ts`'s `HOST_BOUND_ARTIFACTS` already
+// guarantees for both. `resolveTool` is `LOC-01`'s seam call (a `tools.json`
+// entry for `acme`/`acme-lib`/`ghidra` reaching this module's spawn);
+// `remedyTextsFor` is `DECL-03`'s remedy reader (plan 60-02) -- every refusal
+// this module returns for `acme`, `acme-lib`, `ghidra` or `dxa` composes its
+// closing sentence from this function's return value, never a re-authored
+// literal.
+import { resolveTool, remedyTextsFor } from "./tool-location.mjs";
 // This module's own directory, used ONLY to compute the vendored dxa
 // binary's fixed path. Never an environment-variable override: dxa is
 // vendored AND built by this project (unlike ACME_BIN/GHIDRA_HOME, which
@@ -891,13 +914,47 @@ export function resolveWorkspacePath(repoRoot, relative) {
     }
     return { ok: true, path: walkedCandidate.path };
 }
+/** Returns `locate` verbatim when supplied, or -- when absent -- a locator
+ * derived from `process.cwd()` (PD-06). The production route
+ * (`runHostTool()`) always supplies a real locator built from its own
+ * already-resolved `repoRootAbs`; this fallback exists only so the argv-shape
+ * test call sites across this file's own test suite -- which exercise argv
+ * construction alone -- keep compiling and keep returning the same argv they
+ * return today, with no per-call-site edit required. Documented as a last
+ * resort, not a guess: a working directory with no `.c64-re-tools/tools.json`
+ * makes the file layer a silent no-op for that call, so this fallback can
+ * only WIDEN resolution (adding the environment and `$PATH`/fixed-prefix
+ * layers a bare literal never had) where a real project root already happens
+ * to be the working directory -- mirrors `backend-detect.mts`'s own
+ * `ResolvedBackendDeps` derivation (PD-03) for the identical reason. */
+function locatorFrom(locate) {
+    if (locate)
+        return locate;
+    const projectRoot = process.cwd();
+    return { toolsDir: join(projectRoot, ".c64-re-tools"), projectRoot };
+}
+/** Appends a declared tool's remedy prose (`remedyTextsFor()`, DECL-03) to a
+ * refusal `base` sentence, joined with `"; "` -- appending NOTHING at all
+ * when the declaration carries no remedy for the running platform, so a
+ * refusal never ends in a dangling separator with nothing after it. `here`
+ * threads `HostToolLocator.here` through so a test pointing resolution at a
+ * scratch declaration (see that field's own doc comment) reads the remedy
+ * text from the SAME scratch declaration, never the real committed one. */
+function withRemedy(base, id, here) {
+    const remedies = remedyTextsFor(id, here !== undefined ? { here } : {});
+    return remedies.length > 0 ? `${base} -- ${remedies.join("; ")}` : base;
+}
 /** Deterministic: the same typed request and the same resolved paths yield
  * a byte-identical argv array on two successive calls -- no randomness, no
  * timestamp, no environment-dependent ordering. `log` is OPTIONAL and used
  * ONLY by the c1541.dir branch to report a PATH-fallback binary resolution
  * -- every pre-existing branch ignores it, exactly as they already ignore
- * any parameter they do not need. */
-export function buildHostToolArgv(request, resolved, log) {
+ * any parameter they do not need. `locate` is OPTIONAL (PD-06): the one
+ * production caller, `runHostTool()`, always supplies it; every other call
+ * site -- this file's own argv-shape tests foremost -- may omit it and falls
+ * back to `locatorFrom()`'s own `process.cwd()`-derived pair. */
+export function buildHostToolArgv(request, resolved, log, locate) {
+    const loc = locatorFrom(locate);
     if (request.tool === "acme.build") {
         const { args } = request;
         const { sourcePath, outDirPath, includePaths } = resolved;
@@ -906,7 +963,27 @@ export function buildHostToolArgv(request, resolved, log) {
         // Overridable local variable named for what it holds -- never `binPath`/
         // `viceBin`/`VICE_BIN`/`x64sc`, which spawn-seam.test.ts's
         // EMULATOR_BIN_SHAPE would misclassify as an emulator spawn site.
-        const acmePath = process.env.ACME_BIN && process.env.ACME_BIN !== "" ? process.env.ACME_BIN : "acme";
+        // Resolved through the seam (LOC-01) rather than a direct read of the
+        // declared ACME environment variable: env -> tools.json -> $PATH, in
+        // that order, the one precedence this tree now states once. A malformed
+        // tools.json entry is a REFUSAL (quoted verbatim, no remedy appended --
+        // the declaration's remedy is prose for "ACME is missing", not for "your
+        // tools.json entry is wrong"); a well-formed-but-nonexistent path anywhere
+        // along the chain is "not found", which DOES carry the declared remedy.
+        // This existence check is NEW behaviour (T-60-08): today there is none at
+        // all, and a missing ACME surfaces only as a raw operating-system spawn
+        // error inside spawnErrorMessage.
+        const acmeResolved = resolveTool("acme", { toolsDir: loc.toolsDir, projectRoot: loc.projectRoot, here: loc.here });
+        if (acmeResolved.refusal) {
+            return { ok: false, message: `host_tool "acme.build" refuses: ${acmeResolved.refusal}` };
+        }
+        if (acmeResolved.path === null) {
+            return {
+                ok: false,
+                message: withRemedy(`host_tool "acme.build" refuses: the ACME binary was not found (tried: ${acmeResolved.tried.join(", ")})`, "acme", loc.here),
+            };
+        }
+        const acmePath = acmeResolved.path;
         // Fixed flags first, in the SAME order src/skills/acme-build/scripts/
         // acme.mjs's build() uses today, then one -D per define and one -I pair
         // per include in caller-given order, then --setpc if given, then the
@@ -950,15 +1027,21 @@ export function buildHostToolArgv(request, resolved, log) {
     }
     if (request.tool === "ghidra.analyze") {
         const { importPath, projectLocation, projectName, preScriptPath, postScriptPath, scriptPathResolved, entrypointsPathResolved, exportPathResolved, dataRangesPathResolved, } = resolved;
-        // Named environment variable, never a guessed install location and
-        // never this repository's own local probe directory (T-34-16).
-        const ghidraHome = process.env.GHIDRA_HOME;
-        if (ghidraHome === undefined || ghidraHome === "") {
+        // Resolved through the seam (LOC-01) -- env (GHIDRA_HOME) -> tools.json
+        // -> no $PATH probe at all (a `directory`-kind id gets no probe layer,
+        // D-15) -- never a guessed install location and never this repository's
+        // own local probe directory (T-34-16). Ghidra has no fixed-prefix
+        // fallback by design (unlike ACME's library, PD-07 below), so this
+        // preserves today's env-only-then-refuse behaviour exactly while adding
+        // the file layer between the environment and the refusal.
+        const ghidraResolved = resolveTool("ghidra", { toolsDir: loc.toolsDir, projectRoot: loc.projectRoot, here: loc.here });
+        if (ghidraResolved.path === null) {
             return {
                 ok: false,
-                message: `host_tool "ghidra.analyze" requires the GHIDRA_HOME environment variable to name a Ghidra installation directory; it is unset`,
+                message: withRemedy(`host_tool "ghidra.analyze" refuses: no Ghidra installation directory is known${ghidraResolved.refusal ? `: ${ghidraResolved.refusal}` : ` (tried: ${ghidraResolved.tried.join(", ")})`}`, "ghidra", loc.here),
             };
         }
+        const ghidraHome = ghidraResolved.path;
         // Overridable local variable named for what it holds -- never `binPath`/
         // `viceBin`/`VICE_BIN`/`x64sc`, which spawn-seam.test.ts's
         // EMULATOR_BIN_SHAPE would misclassify as an emulator spawn site.
@@ -966,7 +1049,7 @@ export function buildHostToolArgv(request, resolved, log) {
         if (!existsSync(ghidraPath)) {
             return {
                 ok: false,
-                message: `host_tool "ghidra.analyze" refuses: GHIDRA_HOME's resolved launcher does not exist on disk (${ghidraPath})`,
+                message: withRemedy(`host_tool "ghidra.analyze" refuses: the resolved Ghidra installation directory (${ghidraHome}) does not contain "support/analyzeHeadless"`, "ghidra", loc.here),
             };
         }
         // The checked, NON-MATERIALISING language preflight -- refuses by
@@ -1054,15 +1137,22 @@ export function buildHostToolArgv(request, resolved, log) {
     if (request.tool === "dxa.disassemble") {
         const { args } = request;
         const { imagePath, outDirPath, entrypointsPath, datablocksPath, labelsPath } = resolved;
-        // A-01: fixed, computed path -- never an env-var override (see the HERE
-        // and findDxaBinary() comments above). Refuses BY NAME when the vendored
-        // binary does not exist at EITHER candidate location, naming build.bash
-        // as the remedy, per PLAN.md item 6.
+        // A-01: fixed, computed path -- never an env-var override, never
+        // tools.json, never the seam at all (Phase 59 D-16, LOC-05: dxa is
+        // vendored and built by this project, so an override could only ever
+        // select a binary this project did not build and did not pin -- see the
+        // HERE and findDxaBinary() comments above). Refuses BY NAME when the
+        // vendored binary does not exist at EITHER candidate location; the
+        // remedy sentence is the declaration's own (DECL-03, `remedyTextsFor()`),
+        // never a literal re-authored here -- it happens to match the previous
+        // hardcoded build-script sentence's text by coincidence of two
+        // independently-authored strings, and after this change there is one
+        // source.
         const dxaFound = findDxaBinary(HERE);
         if (dxaFound.path === null) {
             return {
                 ok: false,
-                message: `host_tool "dxa.disassemble" refuses: the vendored dxa binary does not exist (tried: ${dxaFound.tried.join(", ")}) -- run "bash vendor/dxa/build.bash build" to produce it`,
+                message: withRemedy(`host_tool "dxa.disassemble" refuses: the vendored dxa binary does not exist (tried: ${dxaFound.tried.join(", ")})`, "dxa", loc.here),
             };
         }
         const dxaPath = dxaFound.path;
@@ -1095,25 +1185,27 @@ export function buildHostToolArgv(request, resolved, log) {
     if (request.tool === "ghidra.installExtension") {
         const { moduleName } = resolved;
         // Independently re-derived rather than threaded through `resolved` --
-        // mirrors ghidra.analyze's own branch above, which reads GHIDRA_HOME
-        // itself instead of accepting it as a resolved field. Both existence
-        // checks were already performed (and, for the copy, already acted on)
-        // by runHostTool()'s own resolution branch before this function was
-        // ever called; re-checking here is defense in depth, the same posture
-        // buildAnalyzeHeadlessArgv()'s own independent dot-segment re-check
-        // takes for a caller that bypassed the resolution branch entirely.
-        const ghidraHome = process.env.GHIDRA_HOME;
-        if (ghidraHome === undefined || ghidraHome === "") {
+        // mirrors ghidra.analyze's own branch above, which resolves GHIDRA_HOME
+        // through the seam itself instead of accepting it as a resolved field.
+        // Both existence checks were already performed (and, for the copy,
+        // already acted on) by runHostTool()'s own resolution branch before this
+        // function was ever called; re-checking here is defense in depth, the
+        // same posture buildAnalyzeHeadlessArgv()'s own independent dot-segment
+        // re-check takes for a caller that bypassed the resolution branch
+        // entirely.
+        const ghidraResolved = resolveTool("ghidra", { toolsDir: loc.toolsDir, projectRoot: loc.projectRoot, here: loc.here });
+        if (ghidraResolved.path === null) {
             return {
                 ok: false,
-                message: `host_tool "ghidra.installExtension" requires the GHIDRA_HOME environment variable to name a Ghidra installation directory; it is unset`,
+                message: withRemedy(`host_tool "ghidra.installExtension" refuses: no Ghidra installation directory is known${ghidraResolved.refusal ? `: ${ghidraResolved.refusal}` : ` (tried: ${ghidraResolved.tried.join(", ")})`}`, "ghidra", loc.here),
             };
         }
+        const ghidraHome = ghidraResolved.path;
         const sleighPath = join(ghidraHome, "support", "sleigh");
         if (!existsSync(sleighPath)) {
             return {
                 ok: false,
-                message: `host_tool "ghidra.installExtension" refuses: GHIDRA_HOME's resolved "support/sleigh" does not exist on disk (${sleighPath})`,
+                message: withRemedy(`host_tool "ghidra.installExtension" refuses: the resolved Ghidra installation directory (${ghidraHome}) does not contain "support/sleigh"`, "ghidra", loc.here),
             };
         }
         const installLanguagesDir = join(ghidraHome, "Ghidra", "Extensions", moduleName, "data", "languages");
@@ -1680,11 +1772,21 @@ function spawnHostTool(toolPath, argv, timeoutMs, env, cwd) {
 // ---------------------------------------------------------------------------
 // The ACME library probe. Moved server-side from acme.mjs's own
 // findAcmeLib(): the project owner's rule is that a container has no PATH
-// to a host binary, and these five candidates are HOST paths -- so probing
-// them belongs on the host side of the seam, not in the container-side
-// skill script. Behaviourally identical to the removed client-side
-// function: same candidate order, same marker file, same "first candidate
-// whose marker exists wins" rule.
+// to a host binary, and these candidates are HOST paths -- so probing them
+// belongs on the host side of the seam, not in the container-side skill
+// script.
+//
+// PD-07 (Phase 60, correcting an earlier claim in 60-PATTERNS.md that this
+// function is "a drop-in" for the seam): WIDENED, not replaced. The seam's
+// probe layer is a $PATH walk for executable-kind ids ONLY -- a
+// directory-kind id (acme-lib's own declared `kind`) gets no probe layer at
+// all -- so the seam now answers the environment (`ACME`) and `tools.json`
+// layers ahead of this function's own fixed, well-known-install-location
+// list, and that list stays as the probe layer beneath both: same order,
+// same marker file, same "first candidate whose marker exists wins" rule it
+// has always had. Only the environment-variable candidate is gone from the
+// list below -- the seam's own env layer already covers it, reading the
+// SAME `ACME` name from the declaration rather than a literal here.
 // ---------------------------------------------------------------------------
 /** The marker file used to validate a candidate ACME library directory --
  * the layout fact `acme.mjs`'s own troubleshooting hint names. */
@@ -1712,10 +1814,21 @@ export function findDxaBinary(here) {
     }
     return { path: null, tried };
 }
-function findAcmeLib() {
+function findAcmeLib(locate) {
+    const loc = locatorFrom(locate);
     const tried = [];
+    // The seam layer FIRST (PD-07): env (`ACME`) -> tools.json. A malformed
+    // tools.json entry for `acme-lib` is a REFUSAL the seam already detected;
+    // this function has no `refusal`-shaped return of its own (its callers
+    // never had one), so a refusal is folded into "not found" here rather than
+    // surfaced separately -- the caller's own conditional stderr hint (below,
+    // in runHostTool()) already treats a null `path` uniformly regardless of
+    // why.
+    const seamResolved = resolveTool("acme-lib", { toolsDir: loc.toolsDir, projectRoot: loc.projectRoot, here: loc.here });
+    tried.push(...seamResolved.tried);
+    if (seamResolved.path !== null)
+        return { path: seamResolved.path, tried };
     const candidates = [
-        process.env.ACME,
         "/usr/local/share/acme",
         "/usr/share/acme",
         "/usr/lib/acme",
@@ -1815,6 +1928,13 @@ export async function runHostTool(raw, deps) {
     if (request.tool === "oracle.run")
         return runOracleRun(request.args, deps);
     const repoRootAbs = resolvePath(deps.repoRoot);
+    // Built ONCE, from the already-computed repoRootAbs (PD-06), and passed as
+    // the fourth argument to every buildHostToolArgv() call site below plus
+    // findAcmeLib() and ghidra.installExtension's own pre-materialisation
+    // resolution -- one locator, not a per-branch re-derivation. `here` is
+    // `deps.here`, always undefined in production (HostToolDeps.here's own
+    // doc comment).
+    const hostToolLocator = { toolsDir: join(repoRootAbs, ".c64-re-tools"), projectRoot: repoRootAbs, here: deps.here };
     let built;
     let acmeLib = null;
     // resolveGhidraProject() (below, in the ghidra.analyze branch) RESERVES
@@ -1853,8 +1973,8 @@ export async function runHostTool(raw, deps) {
                 return { ok: false, message: includeResolved.message };
             includePaths.push(includeResolved.path);
         }
-        built = buildHostToolArgv(request, { sourcePath: sourceResolved.path, outDirPath, includePaths });
-        acmeLib = findAcmeLib();
+        built = buildHostToolArgv(request, { sourcePath: sourceResolved.path, outDirPath, includePaths }, undefined, hostToolLocator);
+        acmeLib = findAcmeLib(hostToolLocator);
     }
     else if (request.tool === "ghidra.analyze") {
         // Converted from a previous `if (acme.build) … else (ghidra.analyze)`
@@ -1938,7 +2058,7 @@ export async function runHostTool(raw, deps) {
             entrypointsPathResolved,
             exportPathResolved,
             dataRangesPathResolved,
-        });
+        }, undefined, hostToolLocator);
     }
     else if (request.tool === "dxa.disassemble") {
         // (35-01, item 7). `image` and each present optional path resolved
@@ -1986,7 +2106,7 @@ export async function runHostTool(raw, deps) {
             entrypointsPath,
             datablocksPath,
             labelsPath,
-        });
+        }, undefined, hostToolLocator);
     }
     else if (request.tool === "ghidra.installExtension") {
         // `sourceDir`
@@ -2018,18 +2138,23 @@ export async function runHostTool(raw, deps) {
                     `installation; got ${JSON.stringify(request.args.sourceDir)}, which resolves to ${sourceDirResolved.path}`,
             };
         }
-        const ghidraHome = process.env.GHIDRA_HOME;
-        if (ghidraHome === undefined || ghidraHome === "") {
+        const ghidraResolvedPre = resolveTool("ghidra", {
+            toolsDir: hostToolLocator.toolsDir,
+            projectRoot: hostToolLocator.projectRoot,
+            here: hostToolLocator.here,
+        });
+        if (ghidraResolvedPre.path === null) {
             return {
                 ok: false,
-                message: `host_tool "ghidra.installExtension" requires the GHIDRA_HOME environment variable to name a Ghidra installation directory; it is unset`,
+                message: withRemedy(`host_tool "ghidra.installExtension" refuses: no Ghidra installation directory is known${ghidraResolvedPre.refusal ? `: ${ghidraResolvedPre.refusal}` : ` (tried: ${ghidraResolvedPre.tried.join(", ")})`}`, "ghidra", hostToolLocator.here),
             };
         }
+        const ghidraHome = ghidraResolvedPre.path;
         const sleighPath = join(ghidraHome, "support", "sleigh");
         if (!existsSync(sleighPath)) {
             return {
                 ok: false,
-                message: `host_tool "ghidra.installExtension" refuses: GHIDRA_HOME's resolved "support/sleigh" does not exist on disk (${sleighPath})`,
+                message: withRemedy(`host_tool "ghidra.installExtension" refuses: the resolved Ghidra installation directory (${ghidraHome}) does not contain "support/sleigh"`, "ghidra", hostToolLocator.here),
             };
         }
         const stockLanguagesDir = join(ghidraHome, "Ghidra", "Processors", "6502", "data", "languages");
@@ -2055,7 +2180,7 @@ export async function runHostTool(raw, deps) {
                 message: `host_tool "ghidra.installExtension" failed to materialise the extension at ${installDir}: ${e instanceof Error ? e.message : String(e)}`,
             };
         }
-        built = buildHostToolArgv(request, { sourceDirPath: sourceDirResolved.path, moduleName: request.args.moduleName });
+        built = buildHostToolArgv(request, { sourceDirPath: sourceDirResolved.path, moduleName: request.args.moduleName }, undefined, hostToolLocator);
     }
     else {
         // request.tool is one of the five c1541.* ids or petcat.decode -- every
@@ -2080,7 +2205,7 @@ export async function runHostTool(raw, deps) {
         else {
             outDirPath = dirname(imageResolved.path);
         }
-        built = buildHostToolArgv(request, { imagePath: imageResolved.path, outDirPath }, deps.log);
+        built = buildHostToolArgv(request, { imagePath: imageResolved.path, outDirPath }, deps.log, hostToolLocator);
     }
     if (!built.ok) {
         // buildHostToolArgv()'s own GHIDRA_HOME/launcher/language preflight
