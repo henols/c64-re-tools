@@ -318,7 +318,7 @@ feels the consequence of its absence is Phase 61: its own Success Criterion
 1 states the doctor's answer must be "capability-shaped, not binary-shaped
 ... a user missing ACME learns that `acme-build` is blocked and that the
 other skills are not, rather than reading a bare red row"
-(`.planning/ROADMAP.md:1980-1983`). A user missing `unp64` gets no
+(`.planning/ROADMAP.md:1995-1999`). A user missing `unp64` gets no
 equivalently-named row today -- there is no `unp64` record for a
 capability-shaped report to point at -- and that is exactly the gap
 `DECL-F3` exists to close, in Phase 61's own generation or whichever phase
@@ -351,7 +351,7 @@ its entry here, or letting an entry drift off its anchor, fails the build.
   { "citation": "src/mcp/vice/host-tool.mts:2799", "anchor": "ORACLE_ENV_VARS: readonly string[] = Object.freeze([\"UNP64\", \"UNP64_PATH\"])" },
   { "citation": "src/skills/c64-program-recon/SKILL.md:117-125", "anchor": "install an external identifier on the **host** and point `UNP64` or `UNP64_PATH` at it" },
   { "citation": ".planning/phases/19-absorbed-procedures-and-the-coverage-instrument/19-DECISIONS.md:151", "anchor": "**Decided:** 2026-08-24" },
-  { "citation": ".planning/ROADMAP.md:1980-1983", "anchor": "a user missing ACME learns that" },
+  { "citation": ".planning/ROADMAP.md:1995-1999", "anchor": "a user missing ACME learns that" },
   { "citation": "README.md:96-97", "anchor": "Checked live against each ecosystem on 2026-08-18." },
   { "citation": "README.md:117-123", "anchor": "No shipped tool in this project refuses on a VICE version." },
   { "citation": "src/mcp/vice/host-tool.mts:1559", "anchor": "host_tool \"${request.tool}\" refuses: \"c1541\" does not exist" },
