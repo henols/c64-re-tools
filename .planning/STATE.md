@@ -5,15 +5,15 @@ milestone_name: The Prerequisite Doctor
 current_phase: 60
 current_phase_name: The Seam Wired Into the Code That Ships
 status: executing
-stopped_at: Phase 60 planned — 5 plans in 4 waves, checker passed first iteration
-last_updated: "2026-09-18T16:32:56.058Z"
+stopped_at: Phase 60 gap-closure planned — 2 gap plans (60-06, 60-07) in waves 5-6, checker passed first iteration
+last_updated: "2026-09-18T17:35:41.510Z"
 last_activity: 2026-09-18
-last_activity_desc: Phase 60 execution started
-state_head: f2366bd778bc840f0216b867268d39bd3d1e6431
+last_activity_desc: Phase 60 gap-closure planned (LOC-03)
+state_head: f37f913ac1fc5cbbcc57cbde84104b9f424a1b69
 progress:
   total_phases: 5
   completed_phases: 2
-  total_plans: 13
+  total_plans: 15
   completed_plans: 13
   percent: 40
 carried_forward_phases:
@@ -343,10 +343,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 60 (The Seam Wired Into the Code That Ships) — GAPS FOUND
-Plan: 5 of 5 executed
-Status: Verified, 4/5 must-haves met — not complete
-Stopped at: Phase 60 verification (60-VERIFICATION.md)
+Phase: 60 (The Seam Wired Into the Code That Ships) — READY TO EXECUTE
+Plan: 5 of 7 executed (60-06, 60-07 planned, not yet executed)
+Status: Gap-closure planned — LOC-03 still open
+Stopped at: Phase 60 gap-closure planning (60-06-PLAN.md, 60-07-PLAN.md)
 All five plans executed and summarized; full-glob suite green (3996 tests, 0
 fail, 81 skipped) and typecheck clean. Verification scored 4/5: LOC-01, LOC-02,
 LOC-04 and DECL-03 verified directly against the tree, LOC-03 FAILED. The seam's
@@ -357,8 +357,13 @@ with refusal: null. A regression: the pre-phase code walked $PATH for a
 slash-free name deliberately. Reproduced independently by the code review
 (CR-01), the orchestrator and the verifier. No test exercises a slash-free env
 value, which is why the green suite did not catch it.
-Next: /gsd-plan-phase 60 --gaps, then re-run execute-phase.
-Last activity: 2026-09-18 — Phase 60 executed and verified, 1 gap found
+Gap-closure planning has now run: 60-06 (wave 5) widens the environment layer to
+walk $PATH for the developer's own value and makes an unresolvable override a
+terminal refusal instead of a fall-through; 60-07 (wave 6) fixes WR-01, records
+the WR-02 deferral, and re-measures the unchanged-behaviour claim as a
+failing-set diff against baseline ce890041. Both carry gap_closure: true.
+Next: /gsd-execute-phase 60 --gaps-only.
+Last activity: 2026-09-18 — Phase 60 gap-closure planned, 2 plans
 
 **Milestone shape, so no reader has to rebuild it from the ROADMAP:** Phase 58
 declares the prerequisites; Phase 59 builds the tool-location seam and its
