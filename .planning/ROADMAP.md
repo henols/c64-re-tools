@@ -1967,8 +1967,10 @@ sources).
   project's history. A location file makes that recoverable; it does not make it
   stop mattering, so the warning stays.
 
-**Plans**: 7/7 plans executed — verification found `LOC-03` unmet, so two gap-closure plans
-were added after the first execution
+**Plans**: 8 plans — 7/8 executed. The first verification found `LOC-03` unmet and two
+gap-closure plans were added; re-verification found `LOC-03` still unmet in its
+separator-containing shape, traced to a regression plan 60-01 introduced in this same phase, so
+an eighth gap-closure plan was added
 
 Plans:
 
@@ -1979,6 +1981,7 @@ Plans:
 - [x] 60-05-PLAN.md — the closed consumer set for the four environment variables, and the unchanged-behaviour claim measured as a failing-set difference (wave 4)
 - [x] 60-06-PLAN.md — gap closure for `LOC-03`: the environment layer resolves the binary the developer actually named, and refuses by name instead of substituting a same-named `$PATH` binary (wave 5)
 - [x] 60-07-PLAN.md — gap closure follow-on: the seam's own reason reaches the `c1541`/`petcat` refusals, the memo decision is recorded rather than dropped, and the unchanged-behaviour claim is re-measured (wave 6)
+- [ ] 60-08-PLAN.md — gap closure round 2 for `LOC-03`: the environment layer becomes terminal for a separator-containing value too, the refusal stops claiming a `$PATH` protection a directory-kind id never had, and the unchanged-behaviour claim is measured a third time with the reversed test contract named as deliberate (wave 7)
 
 ### Phase 61: `vice-mcp doctor`, Reachable on a Node Too Old to Run the Server
 
@@ -2255,7 +2258,7 @@ check. No test reads this table now.
 | 57. Nothing Is Installed Automatically | v1.0.0 → carried | 0/0 | **Carried forward** | - |
 | 58. One Declaration, Four Places That Can No Longer Disagree | v1.1.0 | 3/3 | Complete | 2026-09-17 |
 | 59. The Tool-Location Seam and Its Precedence Order | v1.1.0 | 5/5 | Complete | 2026-09-18 |
-| 60. The Seam Wired Into the Code That Ships | v1.1.0 | 7/7 | In Progress | - |
+| 60. The Seam Wired Into the Code That Ships | v1.1.0 | 7/8 | In Progress | - |
 | 61. `vice-mcp doctor`, Reachable on a Node Too Old to Run the Server | v1.1.0 | 0/? | Not started | - |
 | 62. The Install Tables Generated, and a Guard That Compares Facts | v1.1.0 | 0/? | Not started | - |
 
