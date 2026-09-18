@@ -5,11 +5,11 @@ milestone_name: The Prerequisite Doctor
 current_phase: 59
 current_phase_name: The Tool-Location Seam and Its Precedence Order
 status: planning
-stopped_at: Phase 58 complete, ready to plan Phase 59
-last_updated: "2026-09-17T20:36:05.591Z"
+stopped_at: Phase 59 context gathered
+last_updated: "2026-09-18T08:06:56.371Z"
 last_activity: 2026-09-17
 last_activity_desc: Phase 58 complete, transitioned to Phase 59
-state_head: ca56f1d988ba26c5d99b2305677c3e06b34fb27c
+state_head: b1f11548f19454330e99b21a5b5fc98ac111d1a4
 progress:
   total_phases: 5
   completed_phases: 1
@@ -2831,9 +2831,9 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-17T20:40:00.000Z
-Stopped at: Phase 58 complete and verified (UAT 1/1, verification 5/5 passed, security threats_open 0, nyquist_compliant true); ready to plan Phase 59
-Resume file: None
+Last session: 2026-09-18T08:06:56.125Z
+Stopped at: Phase 59 context gathered
+Resume file: .planning/phases/59-the-tool-location-seam-and-its-precedence-order/59-CONTEXT.md
 
 Earlier: Milestone v1.0.0 "The Rebuild Half" closed and archived on its delivered scope (9 phases, 73 plans, 33/33 in-scope requirements, `override_closeout`). Phases 51, 53, 54 and 57 carried forward with their ROADMAP sections live.
 
