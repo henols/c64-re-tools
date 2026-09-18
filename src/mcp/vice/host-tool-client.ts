@@ -40,9 +40,13 @@
 // this new family off that five-member list entirely, by construction.
 //
 // Do not write the tokens `binPath`, `viceBin`, `VICE_BIN` or `x64sc`
-// anywhere in this file -- it ships (package.json `files[]`) and is scanned
-// by spawn-seam.test.ts, which would misclassify a bare identifier match as
-// an emulator spawn site.
+// anywhere in this file -- it ships (package.json `files[]`). This is kept
+// deliberately, by CONVENTION, not by a mechanical guard: the test that once
+// scanned for those four tokens (its own file) was deleted in commit
+// `276c15c9` and is not revived here. What IS mechanically enforced, over
+// the four tool-location environment-variable names this project reads, is
+// the closed consumer set `tool-location-consumers.test.ts` (plan 60-05)
+// asserts.
 import { readFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { connect } from "node:net";

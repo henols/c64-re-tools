@@ -78,11 +78,11 @@
 //     error` are fatal here.
 //   - Never re-derive the ACME binary name from the environment in this file.
 //     It is IMPORTED from `acme-gate.ts`, the one home of that name.
-//   - Never name a local `binPath`, `viceBin`, `VICE_BIN` or `x64sc`.
-//     `spawn-seam.test.ts` scans for exactly those four tokens and asserts an
-//     exactly-one-entry set. Test-only placement means that scan cannot see
-//     this module today; the rule costs nothing and survives a later decision
-//     to ship it.
+//   - Never name a local `binPath`, `viceBin`, `VICE_BIN` or `x64sc`. Kept
+//     deliberately, by CONVENTION, not by a mechanical guard: the test that
+//     once scanned for those four tokens (that file itself) was deleted
+//     in commit `276c15c9` and is not revived here. The rule still costs
+//     nothing to keep.
 //
 // ---------------------------------------------------------------------------
 // WHAT THIS FILE DOES NOT CHECK

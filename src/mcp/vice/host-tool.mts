@@ -1376,8 +1376,13 @@ export function buildHostToolArgv(
     const stem = join(outDirPath, basename(sourcePath).replace(/\.(a|asm|s)$/i, ""));
     const prg = `${stem}.prg`;
     // Overridable local variable named for what it holds -- never `binPath`/
-    // `viceBin`/`VICE_BIN`/`x64sc`, which spawn-seam.test.ts's
-    // EMULATOR_BIN_SHAPE would misclassify as an emulator spawn site.
+    // `viceBin`/`VICE_BIN`/`x64sc`. Kept deliberately, by CONVENTION, since
+    // the test that once scanned for those four tokens (its own file,
+    // its own EMULATOR_BIN_SHAPE classifier) was deleted in commit
+    // `276c15c9` and is not revived here -- no guard enforces this naming
+    // rule today. What IS mechanically enforced, over the four tool-location
+    // environment-variable names this seam reads, is the closed consumer set
+    // `tool-location-consumers.test.ts` (plan 60-05) asserts.
     // Resolved through the seam (LOC-01) rather than a direct read of the
     // declared ACME environment variable: env -> tools.json -> $PATH, in
     // that order, the one precedence this tree now states once. A malformed
@@ -1478,8 +1483,13 @@ export function buildHostToolArgv(
     }
     const ghidraHome = ghidraResolved.path;
     // Overridable local variable named for what it holds -- never `binPath`/
-    // `viceBin`/`VICE_BIN`/`x64sc`, which spawn-seam.test.ts's
-    // EMULATOR_BIN_SHAPE would misclassify as an emulator spawn site.
+    // `viceBin`/`VICE_BIN`/`x64sc`. Kept deliberately, by CONVENTION, since
+    // the test that once scanned for those four tokens (its own file,
+    // its own EMULATOR_BIN_SHAPE classifier) was deleted in commit
+    // `276c15c9` and is not revived here -- no guard enforces this naming
+    // rule today. What IS mechanically enforced, over the four tool-location
+    // environment-variable names this seam reads, is the closed consumer set
+    // `tool-location-consumers.test.ts` (plan 60-05) asserts.
     const ghidraPath = join(ghidraHome, "support", "analyzeHeadless");
     if (!existsSync(ghidraPath)) {
       return {
