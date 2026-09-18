@@ -6,15 +6,15 @@ current_phase: 60
 current_phase_name: The Seam Wired Into the Code That Ships
 status: executing
 stopped_at: Phase 60 planned — 5 plans in 4 waves, checker passed first iteration
-last_updated: "2026-09-18T14:00:19.154Z"
+last_updated: "2026-09-18T15:00:34.602Z"
 last_activity: 2026-09-18
 last_activity_desc: Phase 60 execution started
-state_head: 370a6527bcec3b4f7ac9b1861676cecd9f2032d2
+state_head: f752a3bc8224abb8583010f8180540577315dd0e
 progress:
   total_phases: 5
   completed_phases: 2
   total_plans: 13
-  completed_plans: 10
+  completed_plans: 11
   percent: 40
 carried_forward_phases:
 
@@ -46,9 +46,13 @@ restating it here would be a sixth repetition with nothing behind it.*
 
 **Current focus:** Phase 60 — The Seam Wired Into the Code That Ships,
 executing — plan 60-01 (the seam wired into `backend-detect.mts`,
-`vice-broker.mts` and `vice-proxy.ts`, three host-bound artifacts regenerated)
-complete, plan 60-02 next. **Phase 59 (The Tool-Location Seam and Its
-Precedence Order) closed 2026-09-18** at 5/5 roadmap success criteria. Phase 60
+`vice-broker.mts` and `vice-proxy.ts`, three host-bound artifacts regenerated),
+plan 60-02 (`remedyTextsFor()`, DECL-03's first runtime reader of the
+declaration's `remedies` arrays) and plan 60-03 (`acme`/`acme-lib`/`ghidra`/
+`dxa` wired through the seam inside `host-tool.mts`'s own executor, a missing
+ACME refused by name before any spawn) all complete, plan 60-04 next. **Phase
+59 (The Tool-Location Seam and Its Precedence Order) closed 2026-09-18** at
+5/5 roadmap success criteria. Phase 60
 is the third phase of
 **Milestone v1.1.0 "The Prerequisite Doctor"**, opened 2026-09-16. Requirements defined and **roadmap
 created the same day — five phases, 58-62, with 24/24 requirements mapped, each
@@ -340,14 +344,16 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 60 (The Seam Wired Into the Code That Ships) — EXECUTING
-Plan: 2 of 5 executed, 2 of 5 next
+Plan: 3 of 5 executed, 2 of 5 next
 Status: Ready to execute
-Stopped at: Completed 60-02-PLAN.md
-seam for x64sc, the resolved value threaded through vice-broker.mts (including its
-crash-respawn path) and vice-proxy.ts, and the three affected host-bound artifacts
-regenerated and committed. Full plan-level verification green (251 tests, 0 fail).
-Next: execute plan 60-02.
-Last activity: 2026-09-18 — Plan 60-01 executed
+Stopped at: Completed 60-03-PLAN.md
+Plan 60-03 wired acme/acme-lib/ghidra/dxa through the tool-location seam inside
+host-tool.mts's own executor (both routes), a missing ACME now refused by name
+before any spawn with the declared remedy, and resources/host-tool.mjs
+regenerated and committed. Full plan-level verification green (184 tests, 0
+fail); full automated suite green (3823 tests, 0 fail, 9 skipped).
+Next: execute plan 60-04.
+Last activity: 2026-09-18 — Plan 60-03 executed
 
 **Milestone shape, so no reader has to rebuild it from the ROADMAP:** Phase 58
 declares the prerequisites; Phase 59 builds the tool-location seam and its
@@ -726,6 +732,7 @@ than a matter of discipline.
 | Phase 59 P05 | 50 min | 2 tasks | 5 files |
 | Phase 60 P01 | 38min | 3 tasks | 8 files |
 | Phase 60 P02 | 25min | 2 tasks | 4 files |
+| Phase 60 P03 | 59min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -1593,6 +1600,8 @@ Recent decisions affecting current work:
 - [Phase 60]: Plan 60-01: backend-detect.mts loads the tool-location seam through node:module's createRequire() (existsSync-gated dual candidate: compiled resources/tool-location.mjs first, else unbuilt tool-location.mts) rather than a static ESM import, because this file ships two ways and a static specifier would crash vice-proxy.ts at startup. — Verified empirically: a static value import of a compiled-only sibling breaks Node's native ESM resolution when the importing module is loaded unbuilt (as vice-proxy.ts, this project's real production entry point, does). The lazy require-based loader preserves one seam implementation with no #ifdef-style split, and both shipped forms were confirmed working.
 - [Phase 60]: RED phase used a stub remedyTextsFor() that always returns [] (rather than omitting the export) so the six new tests fail on their real assertions, not on a missing-export module-load crash -- confirmed via gsd-tools check tdd-red-evidence (RED_EVIDENCE_OK).
 - [Phase 60]: assertRemedyBlockShape and assertRemedyIsProseNotArgv are two separate validators (shape vs. never-auto-install prose constraint) rather than one, matching the plan's own two named exports and keeping each offender list about one concern.
+- [Phase 60]: host-tool.mts imports the tool-location seam as a plain static ./tool-location.mjs value import, not backend-detect.mts's lazy createRequire() dance -- verified by exhaustive grep that host-tool.mts is never imported unbuilt anywhere in this tree. — Every real consumer (vice-broker.mts's value import, host-tool-client.ts's direct host spawn, every test file) reaches only the COMPILED resources/host-tool.mjs artifact, so the dual-shipping hazard the lazy-load pattern guards against does not apply to this file.
+- [Phase 60]: findAcmeLib() was widened per PD-07 rather than replaced: the seam answers the environment and tools.json layers ahead of the SAME fixed four-prefix well-known-install-location list this function has always carried, which stays as its probe layer. — 60-PATTERNS.md's earlier claim that resolveTool("acme-lib", ...) is "a drop-in for this whole function's body" was wrong -- a directory-kind id gets no PATH probe layer at all, so replacing the function outright would delete the fixed-prefix list and start refusing every developer who installed ACME from a distribution package without setting the environment variable, a direct LOC-03 violation.
 
 ### Pending Todos
 
@@ -2847,8 +2856,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-18T14:00:18.935Z
-Stopped at: Phase 59 complete, ready to plan Phase 60
+Last session: 2026-09-18T15:00:34.396Z
+Stopped at: Completed 60-03-PLAN.md
 Resume file: None
 
 Earlier: Milestone v1.0.0 "The Rebuild Half" closed and archived on its delivered scope (9 phases, 73 plans, 33/33 in-scope requirements, `override_closeout`). Phases 51, 53, 54 and 57 carried forward with their ROADMAP sections live.

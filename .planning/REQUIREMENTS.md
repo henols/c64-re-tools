@@ -32,7 +32,7 @@ withdrawing them is Phase 57's goal, and Phase 57 is not in this milestone.
 
 ### Tool Location Resolution
 
-- [ ] **LOC-01**: A user can record a tool's absolute path in `.c64-re-tools/tools.json` and have every code path that resolves that tool honour it.
+- [x] **LOC-01**: A user can record a tool's absolute path in `.c64-re-tools/tools.json` and have every code path that resolves that tool honour it.
 - [ ] **LOC-02**: One resolver seam owns the precedence order — environment variable, then `tools.json`, then `$PATH` or sibling probe — and both the doctor and the live dispatch path resolve through that same seam.
 - [ ] **LOC-03**: An existing `VICE_BIN`, `ACME_BIN`, `ACME` or `GHIDRA_HOME` override still wins over the file, so no current developer setup, test invocation or CI step changes behaviour.
 - [ ] **LOC-04**: `c1541` and `petcat` become locatable by the user, closing a gap where they are resolvable only as siblings of `x64sc`.
@@ -120,7 +120,7 @@ be read as sloppiness:
 | LOC-05 | Phase 59 | Complete |
 | LOC-06 | Phase 59 | Complete |
 | LOC-07 | Phase 59 | Complete |
-| LOC-01 | Phase 60 | Pending |
+| LOC-01 | Phase 60 | Complete |
 | LOC-02 | Phase 60 | Pending |
 | LOC-03 | Phase 60 | Pending |
 | LOC-04 | Phase 60 | Pending |
