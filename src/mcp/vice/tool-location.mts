@@ -236,6 +236,166 @@ function normalizeFileLayerValue(rawValue: string, env: NodeJS.ProcessEnv, proje
   return resolvePath(projectRoot, expanded);
 }
 
+/** One problem `validateToolsFile()` found while judging `.c64-re-tools/tools.json`
+ * alone. `toolId` is the declared id the problem is about, or `null` for a
+ * problem about the file as a whole (unparseable JSON, a non-object top
+ * level, or an unrecognised key that names no declared tool at all --
+ * there is no tool for that problem to be "about"). `key` is the raw key
+ * exactly as written in the file, or the empty string for a file-level
+ * problem with no single key to blame. `message` is prose a caller shows
+ * a user directly -- this project's `reason`-style convention, never a
+ * code meant to be mapped later. */
+export interface ToolsFileProblem {
+  toolId: string | null;
+  key: string;
+  message: string;
+}
+
+/** `validateToolsFile()`'s injection surface. `toolsDir` and `projectRoot`
+ * are both required, matching `ResolveToolDeps`'s own convention, even
+ * though this validator's job (D-10) never resolves a path and so never
+ * reads either field for that purpose -- a caller building both deps
+ * objects from the same call site never has to special-case this one.
+ * `raw`, unique to this deps object, lets a test hand the validator file
+ * text directly without writing a scratch file to disk; when it is
+ * absent the validator reads `join(toolsDir, "tools.json")` through
+ * `readFile`. The remaining optional fields mirror `ResolveToolDeps`'s
+ * own names for the same forward-compatibility reason `log` is declared
+ * there: this validator does not call them today. */
+export interface ValidateToolsFileDeps {
+  toolsDir: string;
+  projectRoot: string;
+  env?: NodeJS.ProcessEnv;
+  exists?: (p: string) => boolean;
+  statKind?: (p: string) => "file" | "directory" | null;
+  access?: (p: string, mode: number) => void;
+  readFile?: (p: string) => string;
+  here?: string;
+  /** Test-only override: when supplied, this exact text is judged instead
+   * of reading `tools.json` from disk. A message this function returns
+   * still names the conceptual `join(toolsDir, "tools.json")` location
+   * regardless, so a refusal sentence a caller shows a user is stable
+   * whether or not a test used this override. */
+  raw?: string;
+}
+
+/** Describes a value's shape for a refusal message -- `null`, `false` and
+ * a number render with their own literal, an array or a plain object
+ * renders as its JSON shape name, and a string renders quoted (or as "an
+ * empty string"). Deliberately local rather than importing `host-tool.mts`'s
+ * own `describe()`: this module's header forbids importing that sibling. */
+function describeValueShape(value: unknown): string {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "an array";
+  if (typeof value === "object") return "an object";
+  if (typeof value === "string") return value === "" ? "an empty string" : `a string (${JSON.stringify(value)})`;
+  return `a ${typeof value} (${JSON.stringify(value)})`;
+}
+
+/** Judges `.c64-re-tools/tools.json` alone and returns every file-level
+ * problem it finds -- unparseable JSON, a top level that is not a plain
+ * object, a key that names no declared tool, a value that is not a
+ * non-empty string, and an entry naming a tool this declaration says the
+ * file may never name -- WITHOUT resolving anything (D-10). This function
+ * does not walk `$PATH`, does not read the environment for a location,
+ * and does not stat a declared path; that is `resolveTool()`'s job. An
+ * absent file, a zero-byte file and a bare `{}` are not problems -- they
+ * are the default state of an installation that has not written one yet
+ * -- so each returns an empty array. Problems are returned in file key
+ * order, so the same file always produces the same output, and each
+ * problem is independent: one bad key changes nothing about a report on
+ * any other key in the same file. */
+export function validateToolsFile(deps: ValidateToolsFileDeps): ToolsFileProblem[] {
+  const exists = deps.exists ?? existsSync;
+  const readFile = deps.readFile ?? ((p: string) => readFileSync(p, "utf8"));
+  const here = deps.here ?? HERE;
+  const filePath = join(deps.toolsDir, "tools.json");
+
+  let text: string;
+  if (deps.raw !== undefined) {
+    text = deps.raw;
+  } else {
+    if (!exists(filePath)) return [];
+    text = readFile(filePath);
+  }
+  if (text.trim() === "") return [];
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return [{ toolId: null, key: "", message: `${filePath} could not be parsed: its bytes are not valid JSON` }];
+  }
+
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return [
+      {
+        toolId: null,
+        key: "",
+        message: `${filePath} must be a plain object mapping a declared tool id to a path string; found ${describeValueShape(parsed)}`,
+      },
+    ];
+  }
+
+  const doc = parsed as Record<string, unknown>;
+  const declaration = readDeclaration(here);
+  const acceptedIds = Object.keys(declaration.tools);
+
+  const problems: ToolsFileProblem[] = [];
+  for (const key of Object.keys(doc)) {
+    // D-11: a key beginning with a SINGLE leading underscore (its second
+    // character is anything other than another underscore) is reserved for
+    // prose and is skipped before the unknown-key check runs -- never
+    // reported, whatever its value. The single-underscore qualifier is
+    // deliberate: it is what the template's own "_readme"/"_viceBrokerNode"
+    // keys look like, and it is what keeps a double-underscore JavaScript
+    // dunder name -- "__proto__" foremost -- OUT of the exemption, so that
+    // key falls through to the ordinary array-membership check below and is
+    // reported as unknown like any other unrecognised value, with no
+    // separate branch naming it.
+    if (key[0] === "_" && key[1] !== "_") continue;
+
+    // Exact, case-sensitive ARRAY membership against the declaration's own
+    // key set -- never an object-property lookup keyed by the raw string --
+    // so a prototype-shaped key (e.g. "__proto__") refuses exactly like any
+    // other unrecognised value, with no separate branch (T-59-09).
+    if (!acceptedIds.includes(key)) {
+      problems.push({
+        toolId: null,
+        key,
+        message: `"${key}" is not a declared tool id; ${filePath} may only name one of ${acceptedIds.join(", ")}`,
+      });
+      continue;
+    }
+
+    const record = declaration.tools[key]!;
+
+    // A record declared `fileOverridable: false` may not be named in
+    // tools.json at all (LOC-05, LOC-07): the refusal quotes the
+    // declaration's own `reason` field verbatim, read at call time, never
+    // duplicated in this module.
+    if (record.location?.fileOverridable === false) {
+      problems.push({
+        toolId: key,
+        key,
+        message: `"${key}" may not be named in tools.json: ${record.location.reason ?? ""}`,
+      });
+      continue;
+    }
+
+    const value = doc[key];
+    if (typeof value !== "string" || value === "") {
+      problems.push({
+        toolId: key,
+        key,
+        message: `"${key}"'s tools.json entry must be a non-empty string naming a path; found ${describeValueShape(value)}`,
+      });
+    }
+  }
+
+  return problems;
+}
+
 /** Resolves one declared tool id through, in order: an environment
  * variable (using the env-var name the declaration's own `location.envVar`
  * names -- never a name hardcoded in this file), `.c64-re-tools/tools.json`,
