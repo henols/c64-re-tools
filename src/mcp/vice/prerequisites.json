@@ -3,6 +3,11 @@
   "tools": {
     "x64sc": {
       "id": "x64sc",
+      "location": {
+        "envVar": "VICE_BIN",
+        "fileOverridable": true
+      },
+      "kind": "executable",
       "unblocks": {
         "skills": [
           "c64-program-recon",

@@ -50,6 +50,7 @@ export const HOST_BOUND_ARTIFACTS: string[] = [
   "backend-detect.mjs",
   "host-tool.mjs",
   "ghidra-project.mjs",
+  "tool-location.mjs",
 ];
 
 /** The generated-file banner (01.6-RESEARCH.md §F), a function of the
