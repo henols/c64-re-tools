@@ -1879,10 +1879,27 @@ with five of them never checked.
 
 ## Current Milestone: v1.1.0 The Prerequisite Doctor
 
-**Goal:** A user can find out in one command, before any session exists, which of
-this plugin's prerequisites are present and what each missing one costs them —
-and when a tool is installed somewhere unusual, point at it once in a file
-instead of hunting for the right environment variable.
+**AMENDED 2026-09-18 — the doctor itself was dropped at owner decision**, during
+`/gsd-discuss-phase 61` and before any plan for it existed. The owner's words:
+*"I don't want the doctor — if something is called that isn't there, the tool or
+script tells a short message that it's broken."* That behaviour already ships:
+`DECL-03` closed in Phase 60, so every missing-tool refusal carries the
+declaration's own remedy text. `DOCTOR-01..09` moved to `REQUIREMENTS.md` §
+Future Requirements, unbuilt and un-retracted; the README-generation phase
+renumbered 62 → 61; the milestone now runs four phases and keeps the name it
+opened under. The five scoping decisions below are kept as written, because they
+record what was decided at the open — decision 1 and the doctor-specific entries
+under *Active* are superseded by this amendment, not deleted.
+
+**Goal (amended):** A user learns what is missing at the moment they ask for the
+thing that needs it — a refusal that names the tool and prints the remedy — and
+when a tool is installed somewhere unusual, points at it once in a file instead
+of hunting for the right environment variable.
+
+**Goal (as opened, superseded):** A user can find out in one command, before any
+session exists, which of this plugin's prerequisites are present and what each
+missing one costs them — and when a tool is installed somewhere unusual, point at
+it once in a file instead of hunting for the right environment variable.
 
 **Scoped 2026-09-16 from the owner's framing**: *"we need to focus on using a
 standard installation tool and how the different tools that are needed for being

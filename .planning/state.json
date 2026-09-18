@@ -316,15 +316,10 @@
     {
       "number": "60",
       "name": "The Seam Wired Into the Code That Ships",
-      "status": "in_progress"
+      "status": "complete"
     },
     {
       "number": "61",
-      "name": "`vice-mcp doctor`, Reachable on a Node Too Old to Run the Server",
-      "status": "pending"
-    },
-    {
-      "number": "62",
       "name": "The Install Tables Generated, and a Guard That Compares Facts",
       "status": "pending"
     }
@@ -332,7 +327,7 @@
   "next": {
     "command": "/gsd:progress --next",
     "label": "Advance to the next step (plan phase 61)",
-    "reason": "Phase 61 of 5 — needs a plan"
+    "reason": "Phase 61 of 4 — needs a plan"
   },
-  "updated_at": "2026-09-18T20:33:50.722Z"
+  "updated_at": "2026-09-18T21:58:47.335Z"
 }

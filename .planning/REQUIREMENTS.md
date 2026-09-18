@@ -40,17 +40,31 @@ withdrawing them is Phase 57's goal, and Phase 57 is not in this milestone.
 - [x] **LOC-06**: A `tools.json` entry naming a path that is absent, not executable, or a directory is refused by name, and the refusal says the file supplied it.
 - [x] **LOC-07**: `VICE_BROKER_NODE` stays environment-only, and that exclusion is documented where a reader would otherwise expect it in the file.
 
-### The Doctor
+### The Doctor — DROPPED 2026-09-18
 
-- [ ] **DOCTOR-01**: A user can run one command and see, per skill and per MCP capability, whether it is ready and which missing tool blocks it.
-- [ ] **DOCTOR-02**: The doctor starts and delivers its Node-floor verdict on a Node too old to run the MCP server.
-- [ ] **DOCTOR-03**: Every tool row names the resolved path and which source supplied it — environment variable, `tools.json`, `$PATH`, or sibling probe.
-- [ ] **DOCTOR-04**: The doctor reports no version number for any tool except Node, and reports ACME's standard library as its own row separate from the ACME binary.
-- [ ] **DOCTOR-05**: The doctor resolves every tool by calling the same functions the live dispatch path calls, and contains no second detection implementation that could disagree with them.
-- [ ] **DOCTOR-06**: The doctor's exit code distinguishes all-ready, only-optional-missing, and blocking-missing, and a test proves the exit code agrees with what was printed.
-- [ ] **DOCTOR-07**: The doctor installs nothing, offers to install nothing, and has no flag that would install anything — it prints the remedy for the user to run.
-- [ ] **DOCTOR-08**: A user can have the doctor write a commented `tools.json` template that contains no path the doctor did not itself resolve.
-- [ ] **DOCTOR-09**: The doctor runs as a one-shot process and is never resident, so the per-process memoisation in the probes it reuses cannot serve a stale answer.
+**The doctor is not built.** Owner decision, 2026-09-18, taken during
+`/gsd-discuss-phase 61` before any plan existed: *"I don't want the doctor — if
+something is called that isn't there, the tool or script tells a short message
+that it's broken."*
+
+That behaviour is already shipped. `DECL-03` closed in Phase 60, so every
+missing-tool refusal in `host-tool.mts` appends the declaration's own remedy
+text (`withRemedy()`, `host-tool.mts:1345`) — a machine without ACME gets a
+refusal that names `acme` and prints the install line, at the moment the user
+asks for the thing that needs it. A separate command that answers the same
+question in advance was judged not worth its cost.
+
+`DOCTOR-01`..`DOCTOR-09` move to § Future Requirements unchanged. Nothing about
+them was found wrong; they are unbuilt, not retracted.
+
+**One known gap this decision leaves open, recorded rather than fixed:** the MCP
+server is launched as `node .../vice-proxy.ts` (`.mcp.json`), and on a Node below
+the `>=24.0.0` floor that is a bare `SyntaxError` with no message saying what is
+wrong — the one refusal in this tree that does not follow the owner's own stated
+principle, because the failure is a parse error in the file that would have
+carried the message. The bash broker launcher already refuses by name at
+`resources/vice-launcher.sh:266`; the server entry point has no equivalent. Not
+scoped to any phase.
 
 ### Generated Documentation
 
@@ -63,6 +77,20 @@ withdrawing them is Phase 57's goal, and Phase 57 is not in this milestone.
 Acknowledged, deferred, not in this roadmap.
 
 ### The Doctor
+
+Dropped from v1.1.0 on 2026-09-18 (see above). Carried here verbatim, unbuilt
+and un-retracted, so a later milestone that wants them does not have to
+reconstruct them:
+
+- **DOCTOR-01**: A user can run one command and see, per skill and per MCP capability, whether it is ready and which missing tool blocks it.
+- **DOCTOR-02**: The doctor starts and delivers its Node-floor verdict on a Node too old to run the MCP server.
+- **DOCTOR-03**: Every tool row names the resolved path and which source supplied it — environment variable, `tools.json`, `$PATH`, or sibling probe.
+- **DOCTOR-04**: The doctor reports no version number for any tool except Node, and reports ACME's standard library as its own row separate from the ACME binary.
+- **DOCTOR-05**: The doctor resolves every tool by calling the same functions the live dispatch path calls, and contains no second detection implementation that could disagree with them.
+- **DOCTOR-06**: The doctor's exit code distinguishes all-ready, only-optional-missing, and blocking-missing, and a test proves the exit code agrees with what was printed.
+- **DOCTOR-07**: The doctor installs nothing, offers to install nothing, and has no flag that would install anything — it prints the remedy for the user to run.
+- **DOCTOR-08**: A user can have the doctor write a commented `tools.json` template that contains no path the doctor did not itself resolve.
+- **DOCTOR-09**: The doctor runs as a one-shot process and is never resident, so the per-process memoisation in the probes it reuses cannot serve a stale answer.
 
 - **DOCTOR-F1**: `--json` machine-readable output, for a CI step or another agent to consume.
 - **DOCTOR-F2**: A per-user machine-level location file (`~/.config/c64-re-tools/tools.json`) layered beneath the project-local one, since tool paths vary per machine rather than per checkout.
@@ -125,29 +153,23 @@ be read as sloppiness:
 | LOC-03 | Phase 60 | Complete |
 | LOC-04 | Phase 60 | Complete |
 | DECL-03 | Phase 60 | Complete |
-| DOCTOR-01 | Phase 61 | Pending |
-| DOCTOR-02 | Phase 61 | Pending |
-| DOCTOR-03 | Phase 61 | Pending |
-| DOCTOR-04 | Phase 61 | Pending |
-| DOCTOR-05 | Phase 61 | Pending |
-| DOCTOR-06 | Phase 61 | Pending |
-| DOCTOR-07 | Phase 61 | Pending |
-| DOCTOR-08 | Phase 61 | Pending |
-| DOCTOR-09 | Phase 61 | Pending |
-| GEN-01 | Phase 62 | Pending |
-| GEN-02 | Phase 62 | Pending |
-| GEN-03 | Phase 62 | Pending |
+| GEN-01 | Phase 61 | Pending |
+| GEN-02 | Phase 61 | Pending |
+| GEN-03 | Phase 61 | Pending |
 
 **Coverage:**
 
-- v1.1.0 requirements: 24 total
-- Mapped to phases: 24
+- v1.1.0 requirements: 15 total
+- Mapped to phases: 15
 - Unmapped: 0 ✓
+
+The nine `DOCTOR-*` requirements were in this table until 2026-09-18, when the
+owner dropped the doctor outright (see § The Doctor below). They are not
+unmapped — they are no longer v1.1.0 requirements.
 
 **Per phase:** Phase 58 — 4 (`DECL-01`, `DECL-02`, `DECL-04`, `DECL-05`);
 Phase 59 — 3 (`LOC-05`, `LOC-06`, `LOC-07`); Phase 60 — 5 (`LOC-01`, `LOC-02`,
-`LOC-03`, `LOC-04`, `DECL-03`); Phase 61 — 9 (`DOCTOR-01`..`DOCTOR-09`);
-Phase 62 — 3 (`GEN-01`, `GEN-02`, `GEN-03`).
+`LOC-03`, `LOC-04`, `DECL-03`); Phase 61 — 3 (`GEN-01`, `GEN-02`, `GEN-03`).
 
 **Not in this milestone and not in this table:** `VOCAB-01`..`06`,
 `DOCS-01`..`04` and `INSTALL-01`..`05`, held by the carried Phases 51, 53, 54 and

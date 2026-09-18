@@ -16,7 +16,7 @@
 - ✅ **v0.9.0 The Text Channel and the Runtime Evidence Layer** — Phases 39-44 (opened 2026-09-06, shipped 2026-09-10; 20/20 requirements, 51 plans, 123 tasks; `CHAN-01` returned **`go`** by rule `R15` — the first `go` of this project's four gates). Requirement count was corrected 20→19 on 2026-09-08 when `PREP-03` was removed by owner direction, then back to 20 the same day when `PREP-05` was added by owner direction during the Phase 40 UAT; see `docs/phase40-preprocessing-tools-decisions.md`
 
 - ✅ **v1.0.0 The Rebuild Half** — Phases 45-50, 52, 55, 56 (opened 2026-09-10, **shipped 2026-09-16**; 9 phases, 73 plans, 203 tasks, 33/33 in-scope requirements, `override_closeout`). **Phases 51, 53, 54 and 57 are CARRIED FORWARD** with their requirement text live — `VOCAB-01..06`, `DOCS-01..04` and `INSTALL-01..05`, 15 requirements in total — following the same rule v0.6.0's held Phases 24 and 26 were kept under. Two of those three families need **re-scoping rather than resumption**: an owner-directed quick task on 2026-09-14 retired the planning-vocabulary convention outright and deleted the guards `VOCAB-*` and `DOCS-04` are written against. The original scoping note follows, unedited: opened 2026-09-10; 15/15 requirements mapped: `DECOMP-01..04`, `BUILD-01..07`, `EQUIV-01..04`). The three phases cut at the v0.5.0 close, taken forward a third time and finally standing on a substrate where nothing they depend on is hypothetical. **No opening go/degrade/no-go gate phase** — a recorded decision, reasoned in the phase section below; the gate discipline is distributed as a red-observed control in every phase, plus `BUILD-06`'s own gate phase (49) standing before the phase it gates (50)
-- 🚧 **v1.1.0 The Prerequisite Doctor** — Phases 58-62 (opened 2026-09-16, roadmap created 2026-09-16; **24/24 requirements mapped, each to exactly one phase** — `DECL-01..05`, `LOC-01..07`, `DOCTOR-01..09`, `GEN-01..03`). The user's **first hour**, deliberately upstream of the Core Value and extending none of it: one command that says what is missing and what each absence costs, one file that says where an oddly-located tool lives, and one declaration standing behind both. **Phases 51, 53, 54 and 57 stay CARRIED and are NOT in this milestone** — their 15 requirements (`VOCAB-01..06`, `DOCS-01..04`, `INSTALL-01..05`) stay live and untouched. Phase 57 shares this milestone's subject matter and is excluded on purpose: its goal is to *withdraw* the three never-auto-install carve-outs, and the owner chose at this open to keep them.
+- 🚧 **v1.1.0 The Prerequisite Doctor** — Phases 58-61 (opened 2026-09-16, roadmap created 2026-09-16; **15/15 requirements mapped, each to exactly one phase** — `DECL-01..05`, `LOC-01..07`, `GEN-01..03`). **The doctor itself was dropped on 2026-09-18 at owner decision** — `DOCTOR-01..09` moved to Future Requirements and the README-generation phase renumbered 62 → 61; see `REQUIREMENTS.md` § The Doctor for the reason and for the one gap it leaves open. The milestone name is kept as the label it opened under. The user's **first hour**, deliberately upstream of the Core Value and extending none of it: a live refusal that says what is missing and what to run, one file that says where an oddly-located tool lives, and one declaration standing behind both. **Phases 51, 53, 54 and 57 stay CARRIED and are NOT in this milestone** — their 15 requirements (`VOCAB-01..06`, `DOCS-01..04`, `INSTALL-01..05`) stay live and untouched. Phase 57 shares this milestone's subject matter and is excluded on purpose: its goal is to *withdraw* the three never-auto-install carve-outs, and the owner chose at this open to keep them.
 
 *v0.8.0 continues phase numbering from Phase 32 — it starts at Phase **33**.
 Phase numbers are continuous across milestones and are **never** reused,
@@ -52,7 +52,7 @@ The rules are unchanged, and one of them now bites: no number is reset and none
 is reused, and the four **carried** numbers are not free. Phases 51, 53, 54 and
 57 still hold live requirement text that is not this milestone's, so 58 is the
 first available number rather than 51. Phase directories are again not archived,
-so Phases 58-62 land alongside the directories already under `.planning/phases/`.*
+so Phases 58-61 land alongside the directories already under `.planning/phases/`.*
 
 ## Standing Constraints
 
@@ -686,7 +686,7 @@ success criteria are preserved verbatim in
 
 `wrapPossiblyChunked()`'s only call site and `stock-recycle.ts`'s bounded post-kill epoch poll restored; 2,826 lines of assertions about five confirmed-gone fork-era mechanisms removed, each naming its successor or its settled no-successor disposition. **Shipped with no VERIFICATION.md, VALIDATION.md or REVIEW.md** — see the v1.0.0 Known Gaps in `MILESTONES.md`.
 
-### 🚧 v1.1.0 The Prerequisite Doctor (Phases 58-62)
+### 🚧 v1.1.0 The Prerequisite Doctor (Phases 58-61)
 
 **Goal:** A user can find out in one command, before any session exists, which of
 this plugin's prerequisites are present and what each missing one costs them —
@@ -698,8 +698,10 @@ it.** It is about the user's first hour, before a session drives anything. No
 success criterion below is a claim about driving an emulator, and none should be
 read as one.
 
-**24 requirements, all mapped, each to exactly one phase** — `DECL-01..05`,
-`LOC-01..07`, `DOCTOR-01..09`, `GEN-01..03`. Cross-checked mechanically against
+**15 requirements, all mapped, each to exactly one phase** — `DECL-01..05`,
+`LOC-01..07`, `GEN-01..03`. (Opened as 24 across five phases; the nine
+`DOCTOR-*` were dropped on 2026-09-18 at owner decision and the phase count fell
+to four.) Cross-checked mechanically against
 the per-phase `**Requirements**:` lines further below rather than by eye, because
 this project has a recorded history of a requirement owned by two phases or by
 none.
@@ -721,10 +723,13 @@ be satisfied by code that invokes a package manager** — not a fixture, not a
 workflow step, not a convenience flag.
 
 **Two orderings below are structural rather than tidy, and a reader re-planning
-this milestone must keep both.** The resolver seam lands **before** the doctor,
+this milestone must keep both.** ~~The resolver seam lands **before** the doctor,
 because `DOCTOR-05` forbids a second detection path and a doctor built first
 would grow one — the ordering is what makes that requirement enforceable instead
-of a matter of discipline. And wiring the seam into today's consumers is its
+of a matter of discipline.~~ *(The first of the two is moot as of 2026-09-18: the
+doctor was dropped at owner decision. The seam landed first anyway, so nothing
+was violated. The second ordering below still binds.)* And wiring the seam into
+today's consumers is its
 **own** phase, because it is the first regeneration of the committed
 `resources/*.mjs` artifacts `resources-sync.test.ts` guards byte-identically, and
 because `LOC-03`'s success condition is that *nothing changed* — a claim that
@@ -733,8 +738,7 @@ needs its own evidence rather than a corner of a larger phase.
 - [x] **Phase 58: One Declaration, Four Places That Can No Longer Disagree** - Every prerequisite described once — what it unblocks and the remedy per platform — in plain JSON a Node too old to run the server can still parse, and present in the published package (completed 2026-09-17)
 - [x] **Phase 59: The Tool-Location Seam and Its Precedence Order** - One module owns *where is this tool*, in one order — environment variable, then `tools.json`, then `$PATH` or sibling probe — naming the source that answered and refusing a bad entry by name instead of falling through (completed 2026-09-18)
 - [x] **Phase 60: The Seam Wired Into the Code That Ships** - Every live resolution goes through the seam and every live remedy comes from the declaration, with a developer who already has `VICE_BIN` set noticing nothing at all (completed 2026-09-18)
-- [ ] **Phase 61: `vice-mcp doctor`, Reachable on a Node Too Old to Run the Server** - One command reports per skill and per MCP capability what is ready and what blocks it, naming every resolved path and which source supplied it, and printing remedies it never runs
-- [ ] **Phase 62: The Install Tables Generated, and a Guard That Compares Facts** - `README.md`'s per-platform install tables come from the declaration, and divergence fails the build by comparing parsed records rather than bytes
+- [ ] **Phase 61: The Install Tables Generated, and a Guard That Compares Facts** - `README.md`'s per-platform install tables come from the declaration, and divergence fails the build by comparing parsed records rather than bytes
 
 **Phase details, the dependency edges and the sequencing rationale** are in the
 two v1.1.0 sections further below, placed after v1.0.0's for the window-slicing
@@ -1983,67 +1987,7 @@ Plans:
 - [x] 60-07-PLAN.md — gap closure follow-on: the seam's own reason reaches the `c1541`/`petcat` refusals, the memo decision is recorded rather than dropped, and the unchanged-behaviour claim is re-measured (wave 6)
 - [x] 60-08-PLAN.md — gap closure round 2 for `LOC-03`: the environment layer becomes terminal for a separator-containing value too, the refusal stops claiming a `$PATH` protection a directory-kind id never had, and the unchanged-behaviour claim is measured a third time with the reversed test contract named as deliberate (wave 7)
 
-### Phase 61: `vice-mcp doctor`, Reachable on a Node Too Old to Run the Server
-
-**Goal**: A user who has just installed this plugin runs one command and learns,
-per skill and per MCP capability, what is ready, what is blocked, which missing
-tool blocks it, where each present tool was found and which source said so — and
-what to run to fix it, which the doctor prints and never runs.
-
-**Requirements**: `DOCTOR-01`, `DOCTOR-02`, `DOCTOR-03`, `DOCTOR-04`,
-`DOCTOR-05`, `DOCTOR-06`, `DOCTOR-07`, `DOCTOR-08`, `DOCTOR-09`.
-
-**Depends on**: Phase 60 — the seam must already BE the live resolution path
-before the doctor exists. A doctor built first grows the second detection path
-`DOCTOR-05` forbids, and no amount of discipline substitutes for the ordering.
-
-**Success Criteria** (what must be TRUE):
-
-  1. **The answer is capability-shaped, not binary-shaped.** One command reports,
-     per skill and per MCP capability, whether it is ready and which missing tool
-     blocks it — a user missing ACME learns that `acme-build` is blocked and that
-     the other skills are not, rather than reading a bare red row (`DOCTOR-01`).
-  2. **The doctor starts where the server cannot.** It delivers its Node-floor
-     verdict running under a Node below the server's own floor, proven by a CI
-     matrix cell that runs it on a genuinely pre-24 Node — a unit test cannot
-     prove "starts on a Node that cannot parse the server" (`DOCTOR-02`).
-  3. **Every row explains itself and claims nothing it cannot support.** Each
-     tool row names the resolved path and the source that supplied it; no version
-     number is reported for any tool except Node; and ACME's standard library is
-     its own row, separate from the ACME binary (`DOCTOR-03`, `DOCTOR-04`).
-  4. **There is no second opinion available to disagree with.** The doctor
-     resolves every tool by calling the same functions the live dispatch path
-     calls, a differential check shows the two agreeing per tool, and the doctor
-     runs one-shot and is never resident — so the per-process memoisation inside
-     those probes cannot serve it a stale answer (`DOCTOR-05`, `DOCTOR-09`).
-  5. **The exit code agrees with the page, and the only thing the doctor writes
-     is a template of its own findings.** Exit codes distinguish all-ready,
-     only-optional-missing and blocking-missing, with a test proving the code
-     agrees with what was printed; the doctor installs nothing, offers to install
-     nothing and has no flag that would; and on request it writes a commented
-     `tools.json` template containing no path it did not itself resolve
-     (`DOCTOR-06`, `DOCTOR-07`, `DOCTOR-08`).
-
-**Cross-cutting constraints:**
-
-- **No `--fix` flag, under any name.** Named out of scope at the open precisely
-  so it is not re-proposed later as a convenience; Claude Code's own `/doctor`
-  crossed that line in a later version.
-- The doctor must not spawn `x64sc`. The set of modules that spawn the emulator
-  is deliberately frozen **empty**, and a version probe would reopen it for a
-  number nothing acts on.
-- The entry point may not reach `@mastra/*` or `vice-proxy.ts` on any import
-  path. A stray import turns the low-floor guarantee into a parse error on the
-  exact Node the user most needs an answer on, so the import graph is checked,
-  not assumed.
-- The doctor is a CLI verb following the `vice-mcp anno <verb>` precedent, not an
-  MCP tool: an MCP tool answering from the container cannot see the host's
-  `$PATH` without a broker round trip, and would be unreachable before `.mcp.json`
-  is wired.
-
-**Plans**: TBD
-
-### Phase 62: The Install Tables Generated, and a Guard That Compares Facts
+### Phase 61: The Install Tables Generated, and a Guard That Compares Facts
 
 **Goal**: `README.md`'s per-platform install tables stop being maintained by
 hand. They are generated from the declaration, and a build-failing guard catches
@@ -2051,9 +1995,11 @@ divergence between the two by comparing parsed records — never bytes.
 
 **Requirements**: `GEN-01`, `GEN-02`, `GEN-03`.
 
-**Depends on**: Phase 58 for the declaration. Sequenced **after** Phase 61 so the
-doctor and the README are generated from one source and cannot tell a user two
-different stories about the same tool.
+**Depends on**: Phase 58 for the declaration, and nothing else. It was
+originally sequenced after the doctor phase so both would be generated from one
+source; that phase was dropped on 2026-09-18, and this phase's only real edge —
+the declaration existing — has been satisfied since Phase 58. It is now the last
+phase of the milestone.
 
 **Success Criteria** (what must be TRUE):
 
@@ -2089,7 +2035,10 @@ different stories about the same tool.
 
 **Five phases, and the research-proposed build order survived scrutiny**
 (declaration → resolver seam → wire into consumers → doctor CLI → README
-generator). It was adopted because every edge in it is a structural dependency
+generator). *Superseded in part on 2026-09-18: the doctor CLI was dropped at
+owner decision and the milestone finishes in four phases. Everything below is
+kept as the reasoning that was actually used at the open, annotated where it no
+longer describes the plan.* It was adopted because every edge in it is a structural dependency
 verified against the tree rather than a preference: the declaration supplies the
 tool ids the seam resolves; the seam must be the live resolution path before the
 doctor exists; and the README generator consumes the same declaration. Five
@@ -2117,6 +2066,8 @@ the two requirements that only become true once the shipped code resolves throug
 it. `LOC-02`'s doctor half is left structurally forced rather than unowned: at the
 end of Phase 60 there is exactly one resolution path and no doctor yet, so
 `DOCTOR-05` in Phase 61 has nothing to reimplement even if someone tried.
+*(2026-09-18: with the doctor dropped, `LOC-02`'s doctor half is moot and the
+single resolution path stands on Phase 60's own evidence alone.)*
 
 **Phases 59 and 60 are separate on purpose, and merging them would hide the
 risk.** Phase 60 is the first regeneration of the committed `resources/*.mjs`
@@ -2127,19 +2078,12 @@ also introduces a new module gets asserted rather than measured. Given a separat
 phase, it gets its own evidence: the existing tests, CI steps and live-test
 invocations that set those variables, run unchanged.
 
-**The doctor stays one phase despite owning nine of the 24 requirements.** The
-tempting split — low-floor entry point first, report content second — would
-produce a phase whose deliverable is an executable that prints nothing a user can
-act on, which is not a verifiable capability. The nine requirements describe one
-command and one output; they decompose into plans, not into phases. The weight is
-acknowledged here so the planner expects it rather than discovers it.
-
-**`DOCTOR-02` owns a CI change, not just a code change.** "Starts on a Node too
-old to run the server" cannot be proven by a unit test running on Node 24 — the
-proof is a matrix cell running the real entry point on a genuinely pre-24 Node.
-Whichever plan closes `DOCTOR-02` owns that workflow edit, and it must land
-without introducing a package-manager invocation, which this milestone's
-governing constraint forbids in CI exactly as in shipped code.
+**~~The doctor stays one phase despite owning nine of the 24 requirements.~~**
+**~~`DOCTOR-02` owns a CI change, not just a code change.~~** Both paragraphs
+described the doctor phase and are struck: it was dropped on 2026-09-18 at owner
+decision, before any plan existed. The reason and the one gap the decision leaves
+open are in `REQUIREMENTS.md` § The Doctor. Nothing in this milestone now owns a
+CI matrix change.
 
 **`GEN-02` must NOT be byte-identical, and that is a design task rather than a
 constraint to route around.** The owner decision of 2026-09-13 removed that whole
@@ -2163,12 +2107,14 @@ not control. v1.1.0 has no unknown of that shape. Every probe it reports through
 already ships and is already tested; research returned HIGH confidence on all
 four axes with **zero new npm packages and zero new host prerequisites**; and the
 one thing genuinely outside this project's control — whether a given Node parses
-the entry point — is settled by the CI cell inside `DOCTOR-02` rather than by a
-gate standing in front of the milestone. What replaces the gate is the same
-distributed discipline v1.0.0 used: a control observed going **RED** at the point
-of use — the refused `tools.json` entries in 59, the unchanged-behaviour evidence
-in 60, the differential doctor-versus-dispatch check and the exit-code agreement
-test in 61, and `GEN-03`'s planted divergence in 62.
+the entry point — was to have been settled by the CI cell inside `DOCTOR-02`
+rather than by a gate standing in front of the milestone. *(2026-09-18: with the
+doctor dropped, nothing in this milestone probes that question, and it is
+recorded as an open gap in `REQUIREMENTS.md` § The Doctor rather than silently
+closed.)* What replaces the gate is the same distributed discipline v1.0.0 used:
+a control observed going **RED** at the point of use — the refused `tools.json`
+entries in 59, the unchanged-behaviour evidence in 60, and `GEN-03`'s planted
+divergence in 61.
 
 **What no phase here may absorb:** Phases 51, 53, 54 and 57, and the 2026-09-14
 retirement reconciliation. All were weighed at this open and left standing on the
@@ -2259,8 +2205,7 @@ check. No test reads this table now.
 | 58. One Declaration, Four Places That Can No Longer Disagree | v1.1.0 | 3/3 | Complete | 2026-09-17 |
 | 59. The Tool-Location Seam and Its Precedence Order | v1.1.0 | 5/5 | Complete | 2026-09-18 |
 | 60. The Seam Wired Into the Code That Ships | v1.1.0 | 8/8 | Complete | 2026-09-18 |
-| 61. `vice-mcp doctor`, Reachable on a Node Too Old to Run the Server | v1.1.0 | 0/? | Not started | - |
-| 62. The Install Tables Generated, and a Guard That Compares Facts | v1.1.0 | 0/? | Not started | - |
+| 61. The Install Tables Generated, and a Guard That Compares Facts | v1.1.0 | 0/? | Not started | - |
 
 **Milestone roll-up:** v0.2.0 — 9 phases, 87 plans, 51/51 in-scope requirements,
 shipped 2026-08-19 (audit round 4 `tech_debt`; 13 deferred items at close).
@@ -2374,4 +2319,6 @@ scoped work above rather than doing it.
 *v0.9.0 shipped and collapsed 2026-09-10 → `milestones/v0.9.0-ROADMAP.md`. Phase directories again NOT archived (`--no-archive-phases`), per the standing v0.4.0 decision re-measured at the v0.7.0 close. The `## Progress` per-phase table was deliberately KEPT rather than collapsed to a per-milestone summary — `comment-phase-pointers.test.ts` parses it, and collapsing it empties the cut-phase set and reds four of its tests.*
 *v0.9.0's requirement count reads 20/20, not the 19/19 recorded in the line above: `PREP-05` was added by owner direction at the Phase 40 UAT after `PREP-03` was struck, restoring the total the same day.*
 *v1.0.0 roadmap created 2026-09-10 — Phases 45-50, continuing numbering from Phase 44, 15/15 requirements mapped (`DECOMP-01..04`, `BUILD-01..07`, `EQUIV-01..04`), each to exactly one phase. `BUILD-04`'s purpose-built synthetic subject ships inside its detector's phase (48) by owner decision 2026-09-10 ("Strategy B"); `BUILD-06`'s gate is its own phase (49), standing before the phase it gates (50). No opening go/degrade/no-go gate phase, reasoned in the phase section rather than omitted silently.*
+*v1.1.0 AMENDED 2026-09-18 — the doctor phase was dropped at owner decision before any plan existed, `DOCTOR-01..09` moved to `REQUIREMENTS.md` § Future Requirements, and the README-generation phase renumbered 62 → 61. The milestone now runs Phases 58-61 with 15/15 requirements mapped. The milestone name is kept as the label it opened under. Original creation record follows, unedited.*
+
 *v1.1.0 roadmap created 2026-09-16 — Phases 58-62, continuing numbering from Phase 57, 24/24 requirements mapped (`DECL-01..05`, `LOC-01..07`, `DOCTOR-01..09`, `GEN-01..03`), each to exactly one phase. Phases 51, 53, 54 and 57 stay carried and are NOT in this milestone. `DECL-03` is owned by Phase 60 rather than the declaration phase, and `LOC-01`/`LOC-02` by Phase 60 rather than the seam phase — both departures from the researched shape are reasoned in "Sequencing Rationale (v1.1.0)" rather than left to be noticed.*

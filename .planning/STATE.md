@@ -3,19 +3,19 @@ gsd_state_version: "1.0"
 milestone: v1.1.0
 milestone_name: The Prerequisite Doctor
 current_phase: 61
-current_phase_name: "`vice-mcp doctor`, Reachable on a Node Too Old to Run the Server"
+current_phase_name: "The Install Tables Generated, and a Guard That Compares Facts"
 status: planning
-stopped_at: Phase 60 complete, ready to plan Phase 61
-last_updated: "2026-09-18T20:33:50.648Z"
+stopped_at: Phase 61 (the doctor) removed at owner decision; ready to plan Phase 61 (README generation)
+last_updated: "2026-09-18T21:58:47.251Z"
 last_activity: 2026-09-18
-last_activity_desc: Phase 60 complete, transitioned to Phase 61
-state_head: 1a2a827f9f6866becf43f10e207eb9d4a9c75b8c
+last_activity_desc: Doctor phase dropped at owner decision; README-generation phase renumbered 62 -> 61
+state_head: 3e3ab3d279100ad283794c6900b6edd3b304da94
 progress:
-  total_phases: 5
+  total_phases: 4
   completed_phases: 2
   total_plans: 16
   completed_plans: 16
-  percent: 40
+  percent: 50
 carried_forward_phases:
 
   - 51
@@ -29,7 +29,7 @@ carried_forward_phases:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (last substantive update 2026-09-16 at the **v1.1.0 milestone open**; reviewed again at the Phase 58 transition 2026-09-17 with no evolution write — v1.1.0 is 1 of 5 phases in, so no requirement graduated to Validated —
+See: .planning/PROJECT.md (last substantive update 2026-09-16 at the **v1.1.0 milestone open**; reviewed again at the Phase 58 transition 2026-09-17 with no evolution write — v1.1.0 is 1 of 4 phases in, so no requirement graduated to Validated —
 a milestone-start write, not an evolution review: a `## Current Milestone`
 section carrying the goal, the five scoping decisions and what is explicitly out
 of scope, plus a `TAKEN as v1.1.0's scope` block in Active. Core Value untouched
