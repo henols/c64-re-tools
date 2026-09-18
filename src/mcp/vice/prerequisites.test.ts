@@ -249,6 +249,81 @@ export function assertNoReservedToolId(doc: PrerequisitesDoc): string[] {
   return offenders;
 }
 
+/** DECL-03 mitigation (T-60-remedies): the `remedies` shape
+ * `tool-location.mts`'s `remedyTextsFor()` (plan 60-02 Task 1) depends on --
+ * policed here, in the one authoritative structural gate, rather than a
+ * second file. Reports a record whose `remedies` value is present but is
+ * not a plain object; a platform key outside the closed set `linux` /
+ * `darwin` / `win32` / `universal`; a platform value that is not an array;
+ * an entry that is not a plain object; an entry whose `text` is missing,
+ * not a string, or an empty string; and an entry whose `provenance` is not
+ * one of `measured` / `carried` / `authored` (Phase 58 `D-03`'s
+ * three-valued tag). A record with no `remedies` key at all is legal and
+ * reports nothing -- `remedyTextsFor()` returns `[]` for it. Offenders are
+ * named `${id}.remedies[.platform[[index].field]]` so a failure states
+ * exactly where it went wrong. */
+export function assertRemedyBlockShape(doc: PrerequisitesDoc): string[] {
+  const offenders: string[] = [];
+  for (const [id, record] of Object.entries(doc.tools)) {
+    const remedies = (record as unknown as { remedies?: unknown }).remedies;
+    if (remedies === undefined) continue;
+    if (remedies === null || typeof remedies !== "object" || Array.isArray(remedies)) {
+      offenders.push(`${id}.remedies`);
+      continue;
+    }
+    for (const [platform, entries] of Object.entries(remedies as Record<string, unknown>)) {
+      if (!PLATFORM_KEYS.has(platform)) {
+        offenders.push(`${id}.remedies.${platform}`);
+        continue;
+      }
+      if (!Array.isArray(entries)) {
+        offenders.push(`${id}.remedies.${platform}`);
+        continue;
+      }
+      entries.forEach((entry, i) => {
+        if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+          offenders.push(`${id}.remedies.${platform}[${i}]`);
+          return;
+        }
+        const e = entry as Record<string, unknown>;
+        if (typeof e.text !== "string" || e.text.length === 0) {
+          offenders.push(`${id}.remedies.${platform}[${i}].text`);
+        }
+        if (typeof e.provenance !== "string" || !PROVENANCE_VALUES.has(e.provenance)) {
+          offenders.push(`${id}.remedies.${platform}[${i}].provenance`);
+        }
+      });
+    }
+  }
+  return offenders;
+}
+
+/** Phase 58 `D-09` made structural (T-60-06): rejects any remedy entry
+ * carrying a structured-argv-shaped field -- an `args` key, a `cmd` key, or
+ * a `text` value that is an array rather than a string. A remedy is a
+ * prose sentence containing a command, never a structured argv a future
+ * reader is one `execFile()` away from handing straight to a process
+ * spawner -- the never-auto-install constraint expressed as a shape rather
+ * than only stated in a comment. */
+export function assertRemedyIsProseNotArgv(doc: PrerequisitesDoc): string[] {
+  const offenders: string[] = [];
+  for (const [id, record] of Object.entries(doc.tools)) {
+    const remedies = (record as unknown as { remedies?: unknown }).remedies;
+    if (remedies === null || remedies === undefined || typeof remedies !== "object" || Array.isArray(remedies)) continue;
+    for (const [platform, entries] of Object.entries(remedies as Record<string, unknown>)) {
+      if (!Array.isArray(entries)) continue;
+      entries.forEach((entry, i) => {
+        if (entry === null || typeof entry !== "object") return;
+        const e = entry as Record<string, unknown>;
+        if (Object.prototype.hasOwnProperty.call(e, "args")) offenders.push(`${id}.remedies.${platform}[${i}].args`);
+        if (Object.prototype.hasOwnProperty.call(e, "cmd")) offenders.push(`${id}.remedies.${platform}[${i}].cmd`);
+        if (Array.isArray(e.text)) offenders.push(`${id}.remedies.${platform}[${i}].text`);
+      });
+    }
+  }
+  return offenders;
+}
+
 test("readPrerequisites: schemaVersion is 1 and tools carries x64sc", () => {
   const doc = readPrerequisites();
   assert.equal(doc.schemaVersion, 1);
@@ -527,6 +602,74 @@ test("assertNoReservedToolId: passes on the real document and reports a planted 
   const mutated = structuredClone(doc) as unknown as { tools: Record<string, ToolRecord> };
   mutated.tools._readme = { ...mutated.tools.x64sc! };
   assert.deepEqual(assertNoReservedToolId(mutated as unknown as PrerequisitesDoc), ["_readme"]);
+});
+
+test("assertRemedyBlockShape: passes on the real document", () => {
+  const doc = readPrerequisites();
+  assert.deepEqual(assertRemedyBlockShape(doc), []);
+});
+
+test("structural (DECL-03): assertRemedyBlockShape reports a non-object remedies value, a platform key outside the closed set, and a non-array platform value (non-vacuity)", () => {
+  const doc = readPrerequisites();
+  assert.deepEqual(assertRemedyBlockShape(doc), [], "the real, unmodified document must pass");
+
+  const notObject = structuredClone(doc) as unknown as { tools: Record<string, { remedies?: unknown }> };
+  notObject.tools.x64sc!.remedies = "not-an-object";
+  assert.deepEqual(assertRemedyBlockShape(notObject as unknown as PrerequisitesDoc), ["x64sc.remedies"]);
+
+  const badPlatformKey = structuredClone(doc) as unknown as { tools: Record<string, { remedies: Record<string, unknown> }> };
+  badPlatformKey.tools.acme!.remedies.freebsd = [{ ecosystem: "generic", text: "pkg install acme", provenance: "carried", source: "scratch" }];
+  assert.deepEqual(assertRemedyBlockShape(badPlatformKey as unknown as PrerequisitesDoc), ["acme.remedies.freebsd"]);
+
+  const nonArrayPlatformValue = structuredClone(doc) as unknown as { tools: Record<string, { remedies: Record<string, unknown> }> };
+  nonArrayPlatformValue.tools.acme!.remedies.universal = { ecosystem: "generic" };
+  assert.deepEqual(assertRemedyBlockShape(nonArrayPlatformValue as unknown as PrerequisitesDoc), ["acme.remedies.universal"]);
+});
+
+test("structural (DECL-03): assertRemedyBlockShape reports a non-object entry, a missing/empty/non-string text, and an invalid provenance (non-vacuity)", () => {
+  const doc = readPrerequisites();
+
+  const nonObjectEntry = structuredClone(doc) as unknown as { tools: Record<string, { remedies: { universal: unknown[] } }> };
+  nonObjectEntry.tools.dxa!.remedies.universal = ["not-an-object"];
+  assert.deepEqual(assertRemedyBlockShape(nonObjectEntry as unknown as PrerequisitesDoc), ["dxa.remedies.universal[0]"]);
+
+  for (const badText of [undefined, "", 42]) {
+    const missingText = structuredClone(doc) as unknown as { tools: Record<string, ToolRecord> };
+    const entry = missingText.tools.dxa!.remedies!.universal![0]! as unknown as Record<string, unknown>;
+    if (badText === undefined) delete entry.text;
+    else entry.text = badText;
+    assert.deepEqual(
+      assertRemedyBlockShape(missingText as unknown as PrerequisitesDoc),
+      ["dxa.remedies.universal[0].text"],
+      `expected a text offender for ${JSON.stringify(badText)}`,
+    );
+  }
+
+  const badProvenance = structuredClone(doc) as unknown as { tools: Record<string, ToolRecord> };
+  (badProvenance.tools.dxa!.remedies!.universal![0] as unknown as { provenance: unknown }).provenance = "invented";
+  assert.deepEqual(assertRemedyBlockShape(badProvenance as unknown as PrerequisitesDoc), ["dxa.remedies.universal[0].provenance"]);
+});
+
+test("assertRemedyIsProseNotArgv: passes on the real document", () => {
+  const doc = readPrerequisites();
+  assert.deepEqual(assertRemedyIsProseNotArgv(doc), []);
+});
+
+test("structural (D-09/T-60-06): assertRemedyIsProseNotArgv reports a planted args key, a cmd key, and an array-shaped text (non-vacuity)", () => {
+  const doc = readPrerequisites();
+  assert.deepEqual(assertRemedyIsProseNotArgv(doc), [], "the real, unmodified document must pass");
+
+  const withArgs = structuredClone(doc) as unknown as { tools: Record<string, ToolRecord> };
+  (withArgs.tools.dxa!.remedies!.universal![0] as unknown as { args?: unknown }).args = ["build.bash", "build"];
+  assert.deepEqual(assertRemedyIsProseNotArgv(withArgs as unknown as PrerequisitesDoc), ["dxa.remedies.universal[0].args"]);
+
+  const withCmd = structuredClone(doc) as unknown as { tools: Record<string, ToolRecord> };
+  (withCmd.tools.dxa!.remedies!.universal![0] as unknown as { cmd?: unknown }).cmd = "bash";
+  assert.deepEqual(assertRemedyIsProseNotArgv(withCmd as unknown as PrerequisitesDoc), ["dxa.remedies.universal[0].cmd"]);
+
+  const arrayText = structuredClone(doc) as unknown as { tools: Record<string, ToolRecord> };
+  (arrayText.tools.dxa!.remedies!.universal![0] as unknown as { text: unknown }).text = ["bash", "vendor/dxa/build.bash", "build"];
+  assert.deepEqual(assertRemedyIsProseNotArgv(arrayText as unknown as PrerequisitesDoc), ["dxa.remedies.universal[0].text"]);
 });
 
 test("every record's id still equals its own key (subset relation, never a record count)", () => {
