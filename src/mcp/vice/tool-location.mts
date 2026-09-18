@@ -694,20 +694,32 @@ export function resolveTool(id: string, deps: ResolveToolDeps): ResolveToolResul
     }
   }
 
-  /** Builds the environment layer's terminal refusal sentence (PD-13):
+  /** Builds the environment layer's terminal refusal sentence (PD-13/PD-21):
    * composed only when `envUnresolved` fired above AND `.c64-re-tools/tools.json`
    * had nothing to say for this id either. Names the tool id, the declared
-   * variable, the value it held, what was looked for, every candidate
-   * tried so far, and says plainly that the seam will not fall back to
-   * searching `$PATH` for the DECLARED ID -- mirroring `buildFileLayerRefusal()`'s
-   * own prose idiom one section below. */
+   * variable, the value it held, what was looked for, and every candidate
+   * tried so far -- mirroring `buildFileLayerRefusal()`'s own prose idiom
+   * one section below. The trailing justification clause is branched on
+   * `record.kind` (PD-21, plan 60-08, fixing WR-03): an `executable`-kind
+   * record keeps the `$PATH`-shadowing warning byte-for-byte, because
+   * Layer 3's declared-id probe below is real for it (gated on the same
+   * `record.kind === "executable"` test) and IS what this refusal declines
+   * to run. A `directory`-kind record gets no such warning: Layer 3 is
+   * gated to executable records only (D-15), so there is no `$PATH`
+   * fallback to decline for a directory-kind id, and asserting one would
+   * name a protection mechanism that structurally cannot apply. */
   const buildEnvLayerRefusal = (varName: string, value: string): string => {
     const wants = record.kind === "directory" ? `a directory carrying its required marker (${record.marker ?? ""})` : "an executable file";
-    return (
+    const base =
       `"${id}"'s ${varName} environment variable is set to "${value}", which did not resolve to ${wants} ` +
-      `(tried: ${tried.join(", ") || "nothing"}); the seam will not fall back to searching $PATH for "${id}" itself, ` +
-      `because that could start a different binary than the one ${varName} named`
-    );
+      `(tried: ${tried.join(", ") || "nothing"})`;
+    if (record.kind === "executable") {
+      return (
+        `${base}; the seam will not fall back to searching $PATH for "${id}" itself, ` +
+        `because that could start a different binary than the one ${varName} named`
+      );
+    }
+    return `${base}; resolution is terminal for ${varName}, and .c64-re-tools/tools.json was consulted and had nothing to say for "${id}" either`;
   };
 
   // Layer 2: `.c64-re-tools/tools.json`. This is the one layer D-08 scopes

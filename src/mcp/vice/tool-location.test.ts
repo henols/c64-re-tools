@@ -602,6 +602,132 @@ test("Plan 60-06 Test G: a directory-kind GHIDRA_HOME set to a bare name that is
     assert.equal(result.path, null);
     assert.ok(result.refusal && result.refusal.includes("GHIDRA_HOME") && result.refusal.includes("ghidra-bare-name"));
     assert.equal(result.tried.some((t) => t.startsWith(pathDir)), false, "no PATH-joined candidate may appear in tried for a directory-kind id");
+    // Plan 60-08 (WR-03 fix, PD-21): a directory-kind id has no $PATH probe
+    // layer at all (D-15), so its refusal must not claim one was declined --
+    // the negative half of the kind-correct justification clause.
+    assert.equal(result.refusal.includes("could start a different binary"), false, "a directory-kind refusal must not assert a $PATH-shadowing protection that structurally cannot apply");
+    assert.ok(result.refusal.includes("marker-file") === false, "sanity: this fixture's own record carries no 'marker-file' string to accidentally satisfy a later assertion");
+  });
+});
+
+// Plan 60-08 (WR-03 fix, PD-21): the clean control beside "Plan 60-06 Test
+// G"'s negative assertion above -- an executable-kind id's refusal DOES
+// carry the $PATH-shadowing clause, proving the fix branches the message on
+// `record.kind` rather than deleting the clause for every kind.
+test("Plan 60-08 Test 7 (clean control): an executable-kind refusal still carries the $PATH-shadowing justification clause", () => {
+  const result = resolveTool("x64sc", { toolsDir: "/nonexistent-tools-dir", projectRoot: "/nonexistent-project-root", env: { VICE_BIN: "x64sc-absent-everywhere" } });
+  assert.equal(result.path, null);
+  assert.ok(result.refusal && result.refusal.includes("could start a different binary"), "an executable-kind refusal must still carry the $PATH-shadowing clause");
+});
+
+// Plan 60-08 (WR-03 fix, PD-21): the second directory-kind id, proving the
+// fix lives in the shared buildEnvLayerRefusal() builder and not in one id's
+// own branch.
+test("Plan 60-08 Test 8: the acme-lib directory-kind refusal (via ACME) also carries no $PATH-shadowing clause", () => {
+  withScratch((dir) => {
+    const pathDir = join(dir, "bin");
+    mkdirSync(pathDir, { recursive: true });
+    writeFileSync(join(pathDir, "acme-lib-bare-name"), "");
+
+    const result = resolveTool("acme-lib", { toolsDir: dir, projectRoot: dir, env: { ACME: "acme-lib-bare-name", PATH: pathDir } });
+
+    assert.equal(result.path, null);
+    assert.ok(result.refusal && result.refusal.includes("ACME") && result.refusal.includes("acme-lib-bare-name"));
+    assert.equal(result.refusal.includes("could start a different binary"), false, "the acme-lib directory-kind refusal must not assert a $PATH-shadowing protection either");
+  });
+});
+
+// Plan 60-08 Test 9: the directory-kind sentence is still USEFUL -- it names
+// what was actually looked for (a directory carrying its required marker),
+// so dropping the wrong clause did not leave the message uninformative.
+test("Plan 60-08 Test 9: the ghidra refusal names the marker it required, even without the $PATH clause", () => {
+  withScratch((dir) => {
+    const pathDir = join(dir, "bin");
+    mkdirSync(pathDir, { recursive: true });
+    writeFileSync(join(pathDir, "ghidra-bare-name-2"), "");
+
+    const result = resolveTool("ghidra", { toolsDir: dir, projectRoot: dir, env: { GHIDRA_HOME: "ghidra-bare-name-2", PATH: pathDir } });
+
+    assert.ok(result.refusal && result.refusal.includes("support/analyzeHeadless"), "the refusal must still name the record's own marker string");
+  });
+});
+
+// Plan 60-08 Test 10 (the generalized invariant, LOC-03/DECL-03-adjacent):
+// enumerated from the committed declaration itself rather than a hand-typed
+// id list, so a newly declared id with an envVar is covered the day it is
+// added -- for every declared id carrying a `location.envVar`, an
+// unresolvable value of EITHER shape refuses, and never yields a path from
+// a different mechanism.
+test("Plan 60-08 Test 10 (invariant, enumerated from prerequisites.json): every declared id with an envVar refuses for both an unresolvable bare name and an unresolvable separator-containing value", () => {
+  const declPath = join(HERE_DIR, "prerequisites.json");
+  const decl = JSON.parse(readFileSync(declPath, "utf8")) as { tools: Record<string, { location?: { envVar?: string } }> };
+  const idsWithEnvVar = Object.keys(decl.tools).filter((toolId) => typeof decl.tools[toolId]?.location?.envVar === "string");
+  assert.ok(idsWithEnvVar.length >= 4, "sanity: the declaration must name at least the four known env-backed ids");
+
+  for (const toolId of idsWithEnvVar) {
+    const envVar = decl.tools[toolId]!.location!.envVar as string;
+    withScratch((dir) => {
+      const pathDir = join(dir, "bin");
+      mkdirSync(pathDir, { recursive: true });
+
+      // pathDir is real but deliberately empty -- the bare value must name
+      // nothing $PATH can answer for, so this proves the REFUSAL, not a
+      // resolution.
+      const bareValue = `${toolId}-bare-unresolvable`;
+      const bareResult = resolveTool(toolId, { toolsDir: dir, projectRoot: dir, env: { [envVar]: bareValue, PATH: pathDir } });
+      assert.equal(bareResult.path, null, `${toolId}: a bare unresolvable ${envVar} must refuse`);
+      assert.equal(bareResult.layer, null, `${toolId}: layer must be null`);
+      assert.equal(bareResult.mechanism, null, `${toolId}: mechanism must be null`);
+      assert.ok(bareResult.refusal, `${toolId}: a non-null refusal is required`);
+      assert.equal(bareResult.tried.includes(join(pathDir, toolId)), false, `${toolId}: no PATH-joined candidate for the declared id itself may appear in tried`);
+
+      const separatorValue = join(dir, `${toolId}-separator-unresolvable`);
+      const sepResult = resolveTool(toolId, { toolsDir: dir, projectRoot: dir, env: { [envVar]: separatorValue, PATH: pathDir } });
+      assert.equal(sepResult.path, null, `${toolId}: a separator-containing unresolvable ${envVar} must refuse`);
+      assert.equal(sepResult.layer, null, `${toolId}: layer must be null`);
+      assert.equal(sepResult.mechanism, null, `${toolId}: mechanism must be null`);
+      assert.ok(sepResult.refusal, `${toolId}: a non-null refusal is required`);
+    });
+  }
+});
+
+// Plan 60-08 Test 11 (LOC-03 concurrency edge): many concurrent resolutions
+// of a separator-containing unresolvable value each match a solo call --
+// the seam gains no cache, no memo and no reset hatch from this plan.
+test("Plan 60-08 Test 11 (concurrency): many concurrent resolutions of a separator-containing unresolvable value each return the same fields as a solo call", async () => {
+  await withScratch(async (dir) => {
+    const envBin = join(dir, "does-not-exist-concurrent");
+    const deps = { toolsDir: dir, projectRoot: dir, env: { VICE_BIN: envBin } };
+
+    const solo = resolveTool("x64sc", deps);
+    const concurrent = await Promise.all(Array.from({ length: 20 }, () => Promise.resolve(resolveTool("x64sc", deps))));
+    for (const r of concurrent) {
+      assert.equal(r.path, solo.path);
+      assert.equal(r.layer, solo.layer);
+      assert.equal(r.mechanism, solo.mechanism);
+      assert.equal(r.refusal, solo.refusal);
+    }
+  });
+});
+
+// Plan 60-08 Test 12: the kind-correct refusal and the invariant both hold
+// through the freshly built resources/tool-location.mjs, not only the
+// unbuilt source.
+test("Plan 60-08 Test 12: compiled artifact -- the kind-correct refusal (no $PATH clause for a directory-kind id) answers from resources/tool-location.mjs", async () => {
+  build();
+  const compiled = (await import(new URL("./resources/tool-location.mjs", import.meta.url).href)) as unknown as {
+    resolveTool: typeof resolveTool;
+  };
+
+  withScratch((dir) => {
+    const pathDir = join(dir, "bin");
+    mkdirSync(pathDir, { recursive: true });
+    writeFileSync(join(pathDir, "ghidra-compiled-bare-name"), "");
+
+    const result = compiled.resolveTool("ghidra", { toolsDir: dir, projectRoot: dir, env: { GHIDRA_HOME: "ghidra-compiled-bare-name", PATH: pathDir } });
+    assert.equal(result.path, null);
+    assert.ok(result.refusal && result.refusal.includes("GHIDRA_HOME"));
+    assert.equal(result.refusal.includes("could start a different binary"), false);
   });
 });
 
