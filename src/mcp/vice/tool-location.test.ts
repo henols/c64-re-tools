@@ -31,7 +31,7 @@ import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { build } from "./build.ts";
-import { resolveTool, validateToolsFile } from "./tool-location.mts";
+import { resolveTool, toolsFileTemplate, validateToolsFile } from "./tool-location.mts";
 
 /** This test file's own directory -- used only to locate the real,
  * committed `prerequisites.json` for the two exclusion tests below, which
@@ -941,4 +941,107 @@ test("a tools.json rewritten between calls yields one complete state or the othe
       assert.ok(isStateA || isStateB || isParseRefusal, `unexpected mixed result: ${JSON.stringify(result)}`);
     }
   });
+});
+
+// -----------------------------------------------------------------------
+// Plan 59-05, Task 1: `toolsFileTemplate()` -- the exported template the
+// doctor (Phase 61, DOCTOR-08) will write, never a committed static example.
+// -----------------------------------------------------------------------
+
+test("toolsFileTemplate({}) returns exactly the three reserved keys and no tool id", () => {
+  const parsed = JSON.parse(toolsFileTemplate({})) as Record<string, unknown>;
+  assert.deepEqual(Object.keys(parsed).sort(), ["_dxa", "_readme", "_viceBrokerNode"]);
+});
+
+test("toolsFileTemplate with one resolved id emits it as a bare string alongside the three reserved keys, and nothing else", () => {
+  const parsed = JSON.parse(toolsFileTemplate({ x64sc: "/opt/vice/bin/x64sc" })) as Record<string, unknown>;
+  assert.deepEqual(Object.keys(parsed).sort(), ["_dxa", "_readme", "_viceBrokerNode", "x64sc"]);
+  assert.equal(parsed.x64sc, "/opt/vice/bin/x64sc");
+});
+
+test("toolsFileTemplate: _viceBrokerNode quotes the node record's declared reason verbatim and names VICE_BROKER_NODE as the route instead", () => {
+  const prereq = JSON.parse(readFileSync(join(HERE_DIR, "prerequisites.json"), "utf8")) as {
+    tools: Record<string, { location?: { reason?: string } }>;
+  };
+  const nodeReason = prereq.tools.node!.location!.reason!;
+  const parsed = JSON.parse(toolsFileTemplate({})) as Record<string, string>;
+  assert.ok(parsed._viceBrokerNode.includes(nodeReason));
+  assert.ok(parsed._viceBrokerNode.includes("VICE_BROKER_NODE"));
+});
+
+test("toolsFileTemplate: _dxa quotes the dxa record's declared reason verbatim", () => {
+  const prereq = JSON.parse(readFileSync(join(HERE_DIR, "prerequisites.json"), "utf8")) as {
+    tools: Record<string, { location?: { reason?: string } }>;
+  };
+  const dxaReason = prereq.tools.dxa!.location!.reason!;
+  const parsed = JSON.parse(toolsFileTemplate({})) as Record<string, string>;
+  assert.ok(parsed._dxa.includes(dxaReason));
+});
+
+test("toolsFileTemplate: pointing here at a scratch declaration with different reason strings changes both prose values, proving neither sentence is a literal in the module", () => {
+  withScratch((here) => {
+    const reasonA = "reason-A-template, unique to this scratch declaration.";
+    const reasonB = "reason-B-template, also unique to this scratch declaration.";
+    writeFileSync(
+      join(here, "prerequisites.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        tools: {
+          dxa: { id: "dxa", location: { fileOverridable: false, reason: reasonA }, kind: "executable" },
+          node: { id: "node", location: { fileOverridable: false, reason: reasonB }, kind: "executable" },
+        },
+      }),
+    );
+
+    const parsed = JSON.parse(toolsFileTemplate({}, { here })) as Record<string, string>;
+    assert.ok(parsed._dxa.includes(reasonA));
+    assert.ok(parsed._viceBrokerNode.includes(reasonB));
+  });
+});
+
+test("toolsFileTemplate: an id the declaration says may not be named by the file is omitted even when present in resolved", () => {
+  const parsed = JSON.parse(toolsFileTemplate({ dxa: "/somewhere/dxa", node: "/somewhere/node" })) as Record<string, unknown>;
+  assert.equal("dxa" in parsed, false);
+  assert.equal("node" in parsed, false);
+});
+
+test("toolsFileTemplate: an id the declaration does not know at all is silently omitted, not emitted", () => {
+  const parsed = JSON.parse(toolsFileTemplate({ "not-a-real-tool": "/x" })) as Record<string, unknown>;
+  assert.equal("not-a-real-tool" in parsed, false);
+});
+
+test("toolsFileTemplate: the returned string ends with a newline and two calls with identical inputs return identical strings", () => {
+  const first = toolsFileTemplate({ x64sc: "/opt/vice/bin/x64sc" });
+  const second = toolsFileTemplate({ x64sc: "/opt/vice/bin/x64sc" });
+  assert.ok(first.endsWith("\n"));
+  assert.equal(first, second);
+});
+
+test("toolsFileTemplate: writing its output to a scratch tools.json whose named path exists and satisfies its kind yields zero problems from validateToolsFile()", () => {
+  withScratch((dir) => {
+    const bin = join(dir, "x64sc-bin");
+    writeFileSync(bin, "");
+    chmodSync(bin, 0o755);
+
+    const template = toolsFileTemplate({ x64sc: bin });
+    writeFileSync(join(dir, "tools.json"), template);
+
+    const problems = validateToolsFile({ toolsDir: dir, projectRoot: dir });
+    assert.deepEqual(problems, []);
+  });
+});
+
+test("compiled artifact: toolsFileTemplate produces the same three reserved keys as the unbuilt source", async () => {
+  build();
+  const compiled = (await import(new URL("./resources/tool-location.mjs", import.meta.url).href)) as unknown as {
+    toolsFileTemplate: typeof toolsFileTemplate;
+  };
+
+  const parsed = JSON.parse(compiled.toolsFileTemplate({})) as Record<string, unknown>;
+  assert.deepEqual(Object.keys(parsed).sort(), ["_dxa", "_readme", "_viceBrokerNode"]);
+
+  const withOne = JSON.parse(
+    compiled.toolsFileTemplate({ x64sc: "/opt/vice/bin/x64sc" }),
+  ) as Record<string, unknown>;
+  assert.equal(withOne.x64sc, "/opt/vice/bin/x64sc");
 });

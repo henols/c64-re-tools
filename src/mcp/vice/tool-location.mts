@@ -27,6 +27,24 @@
 // stale answer structurally possible, and no result this module returns is
 // worth that risk.
 //
+// Two of the eight declared ids may never be located through any layer this
+// module walks, and each has exactly one legitimate route instead --
+// documented here as well as refused by name (`resolveTool()`) and reported
+// by name (`validateToolsFile()`), because criterion 4 of this phase asks for
+// both: refused in code, and documented "where a reader would look for it".
+//   - `node`: `vice-launcher.sh` is bash and reads `VICE_BROKER_NODE` before
+//     any working Node interpreter exists to parse a `tools.json` file with,
+//     so the environment variable is the only route and this file has no say
+//     at all.
+//   - `dxa`: it is vendored and built by this project against a pinned
+//     source, so an override here could only ever select a binary this
+//     project did not build and did not pin.
+// `toolsFileTemplate()` ships a reserved `_viceBrokerNode` key and a reserved
+// `_dxa` key so a reader editing the file by hand finds both exclusions and
+// their reasons without opening this module -- the reason text itself is
+// read from `prerequisites.json` at call time, never re-authored here, for
+// the same reason `resolveTool()`'s own refusal sentences are.
+//
 // WHAT NOT TO DO, each because of something already recorded above:
 //   - Do not call the emulator-identity resolver in backend-detect.mts, and
 //     do not import backend-detect.mjs or host-tool.mjs. A location query
@@ -579,4 +597,64 @@ export function resolveTool(id: string, deps: ResolveToolDeps): ResolveToolResul
   }
 
   return { id, path: null, tried, layer: null, mechanism: null, refusal: null };
+}
+
+/** `toolsFileTemplate()`'s injection surface -- deliberately just the one
+ * optional field, matching `ResolveToolDeps`/`ValidateToolsFileDeps`'s own
+ * `here` override so a test can drive this builder against a scratch
+ * declaration instead of the real, committed one. */
+export interface ToolsFileTemplateDeps {
+  here?: string;
+}
+
+/** Builds the text a doctor (Phase 61's `DOCTOR-08`) writes as
+ * `.c64-re-tools/tools.json` -- an EXPORT of this seam, never a committed
+ * static example, so the doctor fills in paths it itself resolved through
+ * `resolveTool()` and this project never carries two templates that can
+ * disagree (D-12's locked bare-string shape rides along: every emitted tool
+ * entry is the caller's path unchanged, never wrapped in an object).
+ *
+ * `resolved` is a read-only map from declared tool id to an absolute path
+ * the CALLER resolved -- this function invents no path and supplies no
+ * default for an id `resolved` does not name; `DOCTOR-08` requires the
+ * emitted template contain no path the doctor did not itself resolve, and a
+ * plausible-looking default is exactly the invented-remedy failure this
+ * milestone exists to remove.
+ *
+ * The emitted object's keys, in order: `_readme` (what the file is, the
+ * precedence order in words, and the underscore-prose rule that makes the
+ * next two keys legal), `_viceBrokerNode` and `_dxa` (D-11's reserved keys,
+ * quoting the `node`/`dxa` records' own declared `reason` fields verbatim,
+ * read from the declaration at call time -- never duplicated as a literal
+ * in this module, for the same reason `resolveTool()`'s own exclusion
+ * refusals read them), then one key per entry in `resolved` whose id both
+ * the declaration knows and marks `fileOverridable`, in declaration order,
+ * with the caller's path as a bare string. An id `resolved` names that the
+ * declaration does not know, or that the declaration says the file may
+ * never name, is silently omitted -- this builder emits a template, it does
+ * not judge its caller's map; `validateToolsFile()` is what judges a file. */
+export function toolsFileTemplate(resolved: Readonly<Record<string, string>>, deps: ToolsFileTemplateDeps = {}): string {
+  const here = deps.here ?? HERE;
+  const declaration = readDeclaration(here);
+
+  const nodeReason = declaration.tools.node?.location?.reason ?? "";
+  const dxaReason = declaration.tools.dxa?.location?.reason ?? "";
+
+  const out: Record<string, string> = {
+    _readme:
+      "This file overrides where c64-re-tools looks for an external tool. " +
+      "Precedence order, highest first: an environment variable, then this file, then a $PATH search or probe. " +
+      "Any key beginning with an underscore is prose for a human reader and is ignored.",
+    _viceBrokerNode: `${nodeReason} Set the VICE_BROKER_NODE environment variable instead -- this file has no say over it.`,
+    _dxa: `${dxaReason} There is no environment-variable or tools.json override for it.`,
+  };
+
+  for (const id of Object.keys(declaration.tools)) {
+    if (!(id in resolved)) continue;
+    const record = declaration.tools[id]!;
+    if (record.location?.fileOverridable === false) continue;
+    out[id] = resolved[id]!;
+  }
+
+  return JSON.stringify(out, null, 2) + "\n";
 }
