@@ -1,7 +1,7 @@
 ---
 phase: 60-the-seam-wired-into-the-code-that-ships
 verified: 2026-09-18T22:10:00Z
-status: human_needed
+status: passed
 score: 5/5 must-haves verified
 covered_files: [".planning/REQUIREMENTS.md",".planning/phases/60-the-seam-wired-into-the-code-that-ships/60-01-PLAN.md",".planning/phases/60-the-seam-wired-into-the-code-that-ships/60-01-SUMMARY.md",".planning/phases/60-the-seam-wired-into-the-code-that-ships/60-02-PLAN.md",".planning/phases/60-the-seam-wired-into-the-code-that-ships/60-02-SUMMARY.md",".planning/phases/60-the-seam-wired-into-the-code-that-ships/60-03-PLAN.md",".planning/phases/60-the-seam-wired-into-the-code-that-ships/60-03-SUMMARY.md",".planning/phases/60-the-seam-wired-into-the-code-that-ships/60-04-PLAN.md",".planning/phases/60-the-seam-wired-into-the-code-that-ships/60-04-SUMMARY.md",".planning/phases/60-the-seam-wired-into-the-code-that-ships/60-05-PLAN.md",".planning/phases/60-the-seam-wired-into-the-code-that-ships/60-05-SUMMARY.md",".planning/phases/60-the-seam-wired-into-the-code-that-ships/60-06-PLAN.md",".planning/phases/60-the-seam-wired-into-the-code-that-ships/60-06-SUMMARY.md",".planning/phases/60-the-seam-wired-into-the-code-that-ships/60-07-PLAN.md",".planning/phases/60-the-seam-wired-into-the-code-that-ships/60-07-SUMMARY.md",".planning/phases/60-the-seam-wired-into-the-code-that-ships/60-08-PLAN.md",".planning/phases/60-the-seam-wired-into-the-code-that-ships/60-08-SUMMARY.md",".planning/phases/60-the-seam-wired-into-the-code-that-ships/60-REVIEW.md",".planning/phases/60-the-seam-wired-into-the-code-that-ships/evidence/phase60-gap-closure-suite-set-diff.md",".planning/phases/60-the-seam-wired-into-the-code-that-ships/evidence/phase60-loc03-terminal-env-set-diff.md",".planning/phases/60-the-seam-wired-into-the-code-that-ships/evidence/phase60-suite-set-diff.md","docs/phase58-declaration-provenance.md","docs/phase59-tool-location-placement.md","src/mcp/vice/acme-verify.ts","src/mcp/vice/backend-detect.mts","src/mcp/vice/backend-detect.test.ts","src/mcp/vice/broker-launch.mts","src/mcp/vice/host-tool-client.ts","src/mcp/vice/host-tool.mts","src/mcp/vice/host-tool.test.ts","src/mcp/vice/resources/backend-detect.mjs","src/mcp/vice/resources/host-tool.mjs","src/mcp/vice/resources/tool-location.mjs","src/mcp/vice/resources/vice-broker.mjs","src/mcp/vice/tool-location-consumers.test.ts","src/mcp/vice/tool-location.mts","src/mcp/vice/tool-location.test.ts","src/mcp/vice/vice-broker-acquire.test.ts","src/mcp/vice/vice-broker.mts","src/mcp/vice/vice-proxy.ts"]
 covered_digest: "v1:sha256:e75a7fc276573886cf097ff3359ec9c9d3371d8e890979dabfbf34682cae9ec0"
@@ -287,3 +287,29 @@ live-test against a genuine, unpatched `/usr/bin/x64sc` rather than defer indefi
 
 _Verified: 2026-09-18T22:10:00Z_
 _Verifier: Claude (gsd-verifier)_
+
+---
+
+## Human-verification resolution (added by the execute-phase orchestrator, 2026-09-18)
+
+Both items this report left open were RUN LIVE on the project owner's own host and both
+PASS. Full evidence, including verbatim refusal text and OS-level `/proc` confirmation, is
+in `60-UAT.md` (status: passed) alongside this file.
+
+- **Item 1 (`ACME_BIN` at a nonexistent absolute path).** Confirmed against the shipped
+  compiled artifact `resources/host-tool.mjs`: the refusal names `ACME_BIN`, quotes the
+  value verbatim, and carries no remedy -- the updated expectation this round introduced.
+  The contrasting genuinely-absent case still carries the declaration's remedy.
+- **Item 2 (real stock `x64sc` via `tools.json`, broker as a systemd unit).** The broker,
+  started as a real transient systemd unit, logged `backend "stock" (binary: /usr/bin/x64sc)`
+  and the emulator it spawned was confirmed at the OS level by `/proc/<pid>/exe` ->
+  `/usr/bin/x64sc`, while `command -v x64sc` -> `/usr/local/bin/x64sc`. The recorded path
+  beat a same-named binary earlier on `$PATH`, on a host where that shadowing is genuine.
+  The bare-`$PATH` `VICE_BIN` sub-case resolved to the `$PATH` binary, as designed.
+
+One non-blocking finding was raised and is recorded in `60-UAT.md`: `prerequisites.json`
+declares the identical apt remedy for `acme` under both `ubuntu` and `debian`, so a Linux
+refusal prints that line twice. This is redundant declaration data, not a seam defect;
+DECL-03 is unaffected (the same remedy twice is not two different remedies).
+
+Status is therefore raised from `human_needed` to `passed`.
