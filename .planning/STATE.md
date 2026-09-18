@@ -6,15 +6,15 @@ current_phase: 59
 current_phase_name: The Tool-Location Seam and Its Precedence Order
 status: executing
 stopped_at: Completed 59-01-PLAN.md
-last_updated: "2026-09-18T09:54:05.293Z"
+last_updated: "2026-09-18T10:15:24.941Z"
 last_activity: 2026-09-18
 last_activity_desc: Phase 59 execution started
-state_head: 74e5ce05547a40cde27f7a2f4fe08a37883aa602
+state_head: a88c94c25fbf2c2e65f373a5059f19b997585270
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 8
-  completed_plans: 4
+  completed_plans: 5
   percent: 20
 carried_forward_phases:
 
@@ -341,11 +341,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 59 (The Tool-Location Seam and Its Precedence Order) — EXECUTING
-Plan: 2 of 5
-Status: Executing
-Stopped at: Completed 59-01-PLAN.md — tool-location.mts resolves x64sc through
-env/tools.json/$PATH, compiled into resources/tool-location.mjs and proven from
-both forms; nothing calls it yet (Phase 60's job). Next: continue with plan 59-02.
+Plan: 3 of 5
+Status: Ready to execute
+Stopped at: Completed 59-02-PLAN.md — resolveTool() is kind-aware; all eight
+prerequisites.json records carry a location/kind block. Next: continue with plan 59-03.
 Last activity: 2026-09-18 — Phase 59 execution started
 
 **Milestone shape, so no reader has to rebuild it from the ROADMAP:** Phase 58
@@ -718,6 +717,7 @@ than a matter of discipline.
 | Phase 58 P02 | 25min | 2 tasks | 2 files |
 | Phase 58 P03 | 55min | 3 tasks | 3 files |
 | Phase 59 P01 | unknown | 3 tasks | 7 files |
+| Phase 59 P02 | 25 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -1576,6 +1576,7 @@ Recent decisions affecting current work:
 - [Phase 58]: Phase 58 plan 02: the prerequisite declaration's provenance reasoning lives in docs/phase58-declaration-provenance.md (JSON tag for tests, doc for humans), and README.md's VICE-version prose is corrected to state the measured fact that no shipped tool refuses on a VICE version. — Criterion 5's second half ("records which was chosen and why") is satisfied by a doc a human reads, not by prose stuffed inside the JSON declaration a test asserts on. The README correction was scoped to only the section Phase 62 does not generate, since a hand-edit to the generated table would be silently overwritten.
 - [Phase 58]: Phase 58 gap closure (58-03): built a citation-ledger structural guard for docs/phase58-declaration-provenance.md, corrected both wrong file:line citations 58-VERIFICATION.md flagged, and recorded unp64's exclusion as DECL-F3 rather than adding a ninth prerequisites.json record.
 - [Phase 59]: D-12 (human, one-way): .c64-re-tools/tools.json entries are bare strings, e.g. {"x64sc": "/opt/vice/bin/x64sc"}, never the object form {"x64sc": {"path": "..."}}. Selected at plan 59-01's Task 1 checkpoint. The reserved-key rule D-11 rides with it: a key beginning `_` is reserved for prose and exempt from the unknown-key refusal.
+- [Phase 59]: the LOC-06 criterion amendment's 'path is absent' refusal clause was scoped out of resolveTool() -- only wrong-kind and missing-marker for an on-disk entry produce a refusal, matching this plan's tested behavior; absent entries still fall through unchanged. — Scoped to what this plan's tests actually assert, not a re-derivation of the full LOC-06 triad, which belongs to D-10's separate validateToolsFile() export.
 
 ### Pending Todos
 
@@ -2830,7 +2831,7 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-18T09:54:05.163Z
+Last session: 2026-09-18T10:15:24.827Z
 Stopped at: Completed 59-01-PLAN.md
 Resume file: None
 
