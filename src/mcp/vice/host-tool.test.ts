@@ -39,10 +39,17 @@ import { acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
 import { dxaSkipReasonFor, assertDxaRequiredIfEnvSet } from "./dxa-gate.ts";
 // FORKRM-01 (plan 52-06): resolvedBackend()'s own environment-variable
 // backend override was the ONLY path that bypassed its module-level memo --
-// deleted along with the override itself, so withFakeC1541() below now
-// resets the memo directly instead, to force a fresh resolution honouring
-// the VICE_BIN it just set.
-import { resetResolvedBackendForTests } from "./backend-detect.mts";
+// deleted along with the override itself, so withFakeC1541() and Plan
+// 60-04's own c1541/petcat cases (below) force a fresh resolution instead,
+// honouring whichever VICE_BIN was just set. Plan 60-04 (LOC-04): this
+// suite reaches c1541/petcat resolution through the BUILT `resources/
+// host-tool.mjs` artifact (this file's own line-88 comment), which imports
+// `resolvedBackend()` from the BUILT `resources/backend-detect.mjs`
+// sibling -- a DIFFERENT module instance, with its OWN memo, than this
+// unbuilt `.mts` import. Calling THIS import's `resetResolvedBackendForTests()`
+// resets a memo nothing here ever reads; `resetResolvedBackendMjs()` (below,
+// near `freshHostTool()`) resets the one that matters, by dynamically
+// importing the SAME compiled sibling `host-tool.mjs` itself imports.
 // Gap G-40-1 (plan 40-08/40-09): the physical Ghidra runs location and its
 // non-dotted, broker-minted handle -- imported so this file's own
 // assertions below cannot drift from ghidra-project.mts's one authoritative
@@ -166,10 +173,13 @@ const runOracleHostTool = runHostTool as unknown as (
  * petcat.decode's response carries two fields (entrypoint/entrypointReason)
  * no other tool id's response does, so widening runHostTool's own generic
  * return type to include them would let every OTHER tool's response satisfy
- * a narrowing check against those fields too. */
+ * a narrowing check against those fields too. `deps.here` added by Plan
+ * 60-04's own Test 7 (DECL-03 non-vacuity for petcat) -- the runtime
+ * function already accepted it (HostToolDeps.here, plan 60-03); only this
+ * test-file-local alias's type was not yet widened to match. */
 const runPetcatHostTool = runHostTool as unknown as (
   raw: unknown,
-  deps: { repoRoot: string; log?: (line: string) => void; timeoutMs?: number },
+  deps: { repoRoot: string; log?: (line: string) => void; timeoutMs?: number; here?: string },
 ) => Promise<
   | {
       ok: true;
@@ -340,8 +350,14 @@ function writeToolsJson(dir: string, entries: Record<string, string>): void {
  * depending on the real remedy strings ever changing underneath it. Mirrors
  * `tool-location.test.ts`'s own scratch-declaration idiom for the identical
  * purpose; an id omitted from `remedies` gets NO `remedies` block at all
- * (proving the empty-remedy refusal shape, Test 5). */
-function writeScratchDeclaration(here: string, remedies: { acme?: string; ghidra?: string; dxa?: string } = {}): void {
+ * (proving the empty-remedy refusal shape, Test 5).
+ *
+ * Plan 60-04 widens the `remedies` bag with `c1541`/`petcat` -- both
+ * declared `fileOverridable: true` with NO `envVar` (Phase 59 D-06,
+ * mirroring the real declaration exactly), so a Plan 60-04 case can prove
+ * `findSiblingBinary()`'s refusal tracks the declaration the same way the
+ * acme/ghidra cases above already do for theirs. */
+function writeScratchDeclaration(here: string, remedies: { acme?: string; ghidra?: string; dxa?: string; c1541?: string; petcat?: string } = {}): void {
   writeFileSync(
     join(here, "prerequisites.json"),
     JSON.stringify({
@@ -372,10 +388,108 @@ function writeScratchDeclaration(here: string, remedies: { acme?: string; ghidra
           kind: "executable",
           ...(remedies.dxa ? { remedies: { universal: [{ ecosystem: "generic", text: remedies.dxa, provenance: "carried", source: "scratch" }] } } : {}),
         },
+        c1541: {
+          id: "c1541",
+          location: { fileOverridable: true },
+          kind: "executable",
+          ...(remedies.c1541 ? { remedies: { universal: [{ ecosystem: "generic", text: remedies.c1541, provenance: "carried", source: "scratch" }] } } : {}),
+        },
+        petcat: {
+          id: "petcat",
+          location: { fileOverridable: true },
+          kind: "executable",
+          ...(remedies.petcat ? { remedies: { universal: [{ ecosystem: "generic", text: remedies.petcat, provenance: "carried", source: "scratch" }] } } : {}),
+        },
       },
     }),
     "utf8",
   );
+}
+
+/** Plan 60-04: dynamically re-imports the compiled `host-tool.mjs` artifact
+ * under a distinct query-string URL, so this returns a FRESH module
+ * instance with its OWN, empty `siblingBinaryMemo` -- production code
+ * carries no reset hatch for that memo (must_haves.prohibitions), and the
+ * shared top-level `hostTool` import above already has its `"c1541"`/
+ * `"petcat"` memo entries populated by the Phase 40 fixtures further down
+ * this file (module load order is irrelevant here: whichever test touches
+ * the shared instance's memo FIRST decides it for every later test sharing
+ * that instance). Every Plan 60-04 case below that resolves `c1541` or
+ * `petcat` through `runHostTool()` uses a module returned by this function
+ * instead of the shared top-level bindings, so no case can observe another
+ * case's memoised answer. Typed identically to the shared `hostTool` cast
+ * above -- same runtime shape, a fresh identity only. */
+let freshHostToolCounter = 0;
+async function freshHostTool(): Promise<typeof hostTool> {
+  freshHostToolCounter += 1;
+  const url = new URL(`./resources/host-tool.mjs?plan6004fresh=${freshHostToolCounter}`, import.meta.url).href;
+  return (await import(url)) as unknown as typeof hostTool;
+}
+
+/** Plan 60-04: resets `resolvedBackend()`'s module-level memo in the SAME
+ * `backend-detect.mjs` instance every `host-tool.mjs` instance actually
+ * imports internally -- fresh or shared, EVERY module returned by
+ * `freshHostTool()` above (and the shared top-level `hostTool`) resolves
+ * `"./backend-detect.mjs"` with no query string, so ES module caching gives
+ * them all the SAME single `backend-detect.mjs` instance and its ONE
+ * `resolvedBackend()` memo, process-wide -- `freshHostTool()`'s own
+ * query-busting only ever creates a fresh IDENTITY for `host-tool.mjs`
+ * itself, never for a module it statically imports by an unchanged
+ * specifier. This file's OTHER `resetResolvedBackendForTests()` (imported,
+ * historically, from the UNBUILT `./backend-detect.mts` source) resets a
+ * COMPLETELY SEPARATE module instance -- the one the unbuilt source itself
+ * would use, which nothing in this suite actually reaches, since every real
+ * call here goes through the compiled `host-tool.mjs` artifact (this file's
+ * own line-88 comment). Calling the `.mts` one was consequently a no-op for
+ * every c1541/petcat case in this file; it went unnoticed before Plan 60-04
+ * because Phase 40's own `withFakeC1541()` never needed the reset to take
+ * effect (it always set the SAME VICE_BIN value, so a stale-but-unreset
+ * memo happened to already hold the right answer) -- Plan 60-04's own
+ * earlier cases, each pointing VICE_BIN at a DIFFERENT scratch path per
+ * test, do need a working reset, which surfaced the gap. */
+async function resetResolvedBackendMjs(): Promise<void> {
+  const mod = (await import(new URL("./resources/backend-detect.mjs", import.meta.url).href)) as {
+    resetResolvedBackendForTests: () => void;
+  };
+  mod.resetResolvedBackendForTests();
+}
+
+/** Plan 60-04: a minimal, throwaway c1541-shaped stand-in whose only job is
+ * to prove WHICH resolved candidate actually ran -- it prints `marker` to
+ * stdout unconditionally, ignoring argv entirely (unlike the module-scope
+ * `FAKE_C1541_PATH` fixture further down this file, which branches on the
+ * `-dir`/`-bam`/... flag; every Plan 60-04 case here only ever issues
+ * `c1541.dir`, so a single unconditional pair of lines is enough) -- the
+ * SECOND line satisfies `classifyC1541DirOutput()`'s own required `"<N>
+ * blocks free"` trailer, so `runHostTool()` always resolves `ok: true`
+ * regardless of which candidate answered, letting a case read `marker` back
+ * off the digested output file. `fileName` defaults to `"c1541"` so the
+ * stub is reachable by both a bare-name `$PATH` walk and a
+ * sibling-of-x64sc probe; a case naming it via `tools.json` overrides
+ * `fileName` to something else, since a `tools.json` entry names an
+ * explicit path, never a bare name. */
+function writeMarkerC1541(dir: string, marker: string, fileName = "c1541"): string {
+  const scriptPath = join(dir, fileName);
+  writeFileSync(
+    scriptPath,
+    ["#!/usr/bin/env node", `console.log(${JSON.stringify(marker)});`, 'console.log("662 blocks free.");', "process.exit(0);", ""].join("\n"),
+    "utf8",
+  );
+  chmodSync(scriptPath, 0o755);
+  return scriptPath;
+}
+
+/** Plan 60-04: petcat's own equivalent of `writeMarkerC1541()` above --
+ * prints a banner classifyPetcatDecodeOutput() accepts (`;<marker>
+ * ==0801==`) so `runHostTool()`'s petcat.decode verdict always resolves
+ * `ok: true` regardless of which candidate answered, letting a case read
+ * `marker` back off the digested output file the same way the c1541 cases
+ * do. */
+function writeMarkerPetcat(dir: string, marker: string, fileName = "petcat"): string {
+  const scriptPath = join(dir, fileName);
+  writeFileSync(scriptPath, ["#!/usr/bin/env node", `console.log(";" + ${JSON.stringify(marker)} + " ==0801==");`, "process.exit(0);", ""].join("\n"), "utf8");
+  chmodSync(scriptPath, 0o755);
+  return scriptPath;
 }
 
 // ---------------------------------------------------------------------------
@@ -1245,6 +1359,429 @@ test("Plan 60-03 Test 6: buildHostToolArgv called with three arguments (no locat
   // bare 2-argument call and assert ok:true unconditionally on this same
   // real test-running host).
   assert.ok(typeof built.ok === "boolean");
+});
+
+// ---------------------------------------------------------------------------
+// Plan 60-04 (LOC-04): findSiblingBinary()'s new tools.json layer, ahead of
+// the sibling-of-x64sc candidate (PD-08). Every case below uses
+// freshHostTool() -- see that helper's own doc comment for why a shared
+// module instance cannot be used here.
+// ---------------------------------------------------------------------------
+
+test("Plan 60-04 Test 1 (LOC-04 tracer): a tools.json entry for c1541 is honoured even when a sibling of the resolved emulator also exists", async () => {
+  await withTempDir(async (siblingDir) => {
+    await withTempDir(async (dir) => {
+      const fakeX64scPath = join(siblingDir, "fake-x64sc");
+      writeFileSync(fakeX64scPath, "not a real binary -- only its path/directory matter for sibling resolution\n", "utf8");
+      writeMarkerC1541(siblingDir, "FROM-SIBLING"); // same dir as the fake x64sc, named "c1541"
+      const fileStubPath = writeMarkerC1541(dir, "FROM-FILE", "file-c1541-stub");
+      writeToolsJson(dir, { c1541: fileStubPath });
+      writeFileSync(join(dir, "x.d64"), "tiny\n", "utf8");
+
+      const previousBin = process.env.VICE_BIN;
+      process.env.VICE_BIN = fakeX64scPath;
+      await resetResolvedBackendMjs();
+      const fresh = await freshHostTool();
+      try {
+        const response = await fresh.runHostTool({ tool: "c1541.dir", args: { image: "x.d64" } }, { repoRoot: dir });
+        assert.equal(response.ok, true, response.ok ? "" : response.message);
+        if (!response.ok) return;
+        const content = readFileSync(response.results[0]!.path, "utf8");
+        assert.match(content, /FROM-FILE/, "the tools.json entry must win over a sibling that also exists");
+      } finally {
+        if (previousBin === undefined) delete process.env.VICE_BIN;
+        else process.env.VICE_BIN = previousBin;
+        await resetResolvedBackendMjs();
+      }
+    });
+  });
+});
+
+test("Plan 60-04 Test 2: with no tools.json entry for c1541, a binary planted beside the resolved emulator is found, exactly as today, and no warning is logged", async () => {
+  await withTempDir(async (siblingDir) => {
+    await withTempDir(async (dir) => {
+      const fakeX64scPath = join(siblingDir, "fake-x64sc");
+      writeFileSync(fakeX64scPath, "not a real binary -- only its path/directory matter for sibling resolution\n", "utf8");
+      writeMarkerC1541(siblingDir, "FROM-SIBLING");
+      writeFileSync(join(dir, "x.d64"), "tiny\n", "utf8");
+      // No tools.json at all -- the file layer has nothing to say. $PATH is
+      // deliberately left UNTOUCHED (not emptied): findSiblingBinary() always
+      // tries the sibling candidate BEFORE $PATH, so this case proves the
+      // sibling answers regardless of what $PATH holds -- and emptying $PATH
+      // would break the fake stub's own `#!/usr/bin/env node` shebang, which
+      // needs a reachable `node` to launch at all.
+      const previousBin = process.env.VICE_BIN;
+      process.env.VICE_BIN = fakeX64scPath;
+      await resetResolvedBackendMjs();
+      const fresh = await freshHostTool();
+      const logLines: string[] = [];
+      try {
+        const response = await fresh.runHostTool(
+          { tool: "c1541.dir", args: { image: "x.d64" } },
+          { repoRoot: dir, log: (line) => logLines.push(line) },
+        );
+        assert.equal(response.ok, true, response.ok ? "" : response.message);
+        if (!response.ok) return;
+        const content = readFileSync(response.results[0]!.path, "utf8");
+        assert.match(content, /FROM-SIBLING/);
+        // deps.log ALSO carries runHostTool()'s own per-invocation summary
+        // line (tool/exit/elapsed_ms/timeout_ms/bin) on every attempted
+        // spawn, whichever candidate answered -- assert only that the
+        // DISTINCT $PATH-shadowing warning text is absent, never that the
+        // callback received nothing at all.
+        assert.ok(
+          !logLines.some((line) => /DIFFERENT VICE build/.test(line)),
+          `the sibling candidate must not log the $PATH-shadowing warning, got: ${JSON.stringify(logLines)}`,
+        );
+      } finally {
+        if (previousBin === undefined) delete process.env.VICE_BIN;
+        else process.env.VICE_BIN = previousBin;
+        await resetResolvedBackendMjs();
+      }
+    });
+  });
+});
+
+test("Plan 60-04 Test 3: with neither the file nor a sibling answering, the $PATH walk still finds the binary AND the shadowing warning is logged", async () => {
+  await withTempDir(async (siblingDir) => {
+    await withTempDir(async (pathDir) => {
+      await withTempDir(async (dir) => {
+        const fakeX64scPath = join(siblingDir, "fake-x64sc");
+        writeFileSync(fakeX64scPath, "not a real binary -- only its path/directory matter for sibling resolution\n", "utf8");
+        // No c1541 beside the fake x64sc, and no tools.json entry either.
+        writeMarkerC1541(pathDir, "FROM-PATH");
+        writeFileSync(join(dir, "x.d64"), "tiny\n", "utf8");
+
+        const previousBin = process.env.VICE_BIN;
+        const previousPath = process.env.PATH;
+        process.env.VICE_BIN = fakeX64scPath;
+        // PREPENDED, never a replacement (mirrors Plan 60-03 Test 3a's own
+        // fix): the stub's own shebang (`#!/usr/bin/env node`) needs `node`
+        // still reachable on PATH to launch at all, and the walk returns the
+        // FIRST match in PATH order -- prepending puts this stub ahead of any
+        // real `c1541` already installed on this host.
+        process.env.PATH = `${pathDir}:${previousPath ?? ""}`;
+        await resetResolvedBackendMjs();
+        const fresh = await freshHostTool();
+        const logLines: string[] = [];
+        try {
+          const response = await fresh.runHostTool(
+            { tool: "c1541.dir", args: { image: "x.d64" } },
+            { repoRoot: dir, log: (line) => logLines.push(line) },
+          );
+          assert.equal(response.ok, true, response.ok ? "" : response.message);
+          if (!response.ok) return;
+          const content = readFileSync(response.results[0]!.path, "utf8");
+          assert.match(content, /FROM-PATH/);
+          // deps.log ALSO carries runHostTool()'s own per-invocation summary
+          // line -- filter to the DISTINCT $PATH-shadowing warning text
+          // rather than asserting the callback's total call count.
+          const shadowLines = logLines.filter((line) => /DIFFERENT VICE build/.test(line));
+          assert.equal(shadowLines.length, 1, `the $PATH-shadowing warning must be logged exactly once, got: ${JSON.stringify(logLines)}`);
+          assert.match(shadowLines[0]!, /"c1541"/);
+        } finally {
+          if (previousBin === undefined) delete process.env.VICE_BIN;
+          else process.env.VICE_BIN = previousBin;
+          if (previousPath === undefined) delete process.env.PATH;
+          else process.env.PATH = previousPath;
+          await resetResolvedBackendMjs();
+        }
+      });
+    });
+  });
+});
+
+test("Plan 60-04 Test 4: a tools.json hit logs NOTHING through the warning callback", async () => {
+  await withTempDir(async (siblingDir) => {
+    await withTempDir(async (dir) => {
+      const fakeX64scPath = join(siblingDir, "fake-x64sc");
+      writeFileSync(fakeX64scPath, "not a real binary -- only its path/directory matter for sibling resolution\n", "utf8");
+      const fileStubPath = writeMarkerC1541(dir, "FROM-FILE", "file-c1541-stub");
+      writeToolsJson(dir, { c1541: fileStubPath });
+      writeFileSync(join(dir, "x.d64"), "tiny\n", "utf8");
+
+      const previousBin = process.env.VICE_BIN;
+      process.env.VICE_BIN = fakeX64scPath;
+      await resetResolvedBackendMjs();
+      const fresh = await freshHostTool();
+      const logLines: string[] = [];
+      try {
+        const response = await fresh.runHostTool(
+          { tool: "c1541.dir", args: { image: "x.d64" } },
+          { repoRoot: dir, log: (line) => logLines.push(line) },
+        );
+        assert.equal(response.ok, true, response.ok ? "" : response.message);
+        assert.ok(
+          !logLines.some((line) => /DIFFERENT VICE build/.test(line)),
+          `a tools.json hit must not log the $PATH-shadowing warning, got: ${JSON.stringify(logLines)}`,
+        );
+      } finally {
+        if (previousBin === undefined) delete process.env.VICE_BIN;
+        else process.env.VICE_BIN = previousBin;
+        await resetResolvedBackendMjs();
+      }
+    });
+  });
+});
+
+test("Plan 60-04 Test 5 (memo semantics): a c1541 resolution is memoised for the process lifetime -- changing tools.json and the sibling candidate between two calls has no effect on the second", async () => {
+  await withTempDir(async (siblingDir) => {
+    await withTempDir(async (dir) => {
+      const fakeX64scPath = join(siblingDir, "fake-x64sc");
+      writeFileSync(fakeX64scPath, "not a real binary -- only its path/directory matter for sibling resolution\n", "utf8");
+      const fileStubPath = writeMarkerC1541(dir, "FIRST-CALL-STUB", "file-c1541-stub-1");
+      writeToolsJson(dir, { c1541: fileStubPath });
+      writeFileSync(join(dir, "x.d64"), "tiny\n", "utf8");
+
+      const previousBin = process.env.VICE_BIN;
+      process.env.VICE_BIN = fakeX64scPath;
+      await resetResolvedBackendMjs();
+      const fresh = await freshHostTool();
+      try {
+        const first = await fresh.runHostTool({ tool: "c1541.dir", args: { image: "x.d64" } }, { repoRoot: dir });
+        assert.equal(first.ok, true, first.ok ? "" : first.message);
+        if (!first.ok) return;
+        assert.match(readFileSync(first.results[0]!.path, "utf8"), /FIRST-CALL-STUB/);
+
+        // Change EVERYTHING a fresh probe would find: drop the tools.json
+        // entry entirely and plant a DIFFERENT marker at the sibling
+        // location -- proving no filesystem re-probe happens on the second
+        // call, only the memo is consulted.
+        writeToolsJson(dir, {});
+        writeMarkerC1541(siblingDir, "SECOND-CALL-SIBLING");
+
+        const second = await fresh.runHostTool({ tool: "c1541.dir", args: { image: "x.d64" } }, { repoRoot: dir });
+        assert.equal(second.ok, true, second.ok ? "" : second.message);
+        if (!second.ok) return;
+        assert.match(
+          readFileSync(second.results[0]!.path, "utf8"),
+          /FIRST-CALL-STUB/,
+          "the second call must still resolve the memoised FIRST result, never re-probing",
+        );
+      } finally {
+        if (previousBin === undefined) delete process.env.VICE_BIN;
+        else process.env.VICE_BIN = previousBin;
+        await resetResolvedBackendMjs();
+      }
+    });
+  });
+});
+
+test("Plan 60-04 Test 6: petcat.decode behaves identically to c1541 -- file-layer precedence, sibling retention with no warning, $PATH retention with the warning, and memo timing", async () => {
+  // (a) tools.json wins over a sibling that also exists.
+  await withTempDir(async (siblingDir) => {
+    await withTempDir(async (dir) => {
+      const fakeX64scPath = join(siblingDir, "fake-x64sc");
+      writeFileSync(fakeX64scPath, "not a real binary -- only its path/directory matter for sibling resolution\n", "utf8");
+      writeMarkerPetcat(siblingDir, "FROM-SIBLING");
+      const fileStubPath = writeMarkerPetcat(dir, "FROM-FILE", "file-petcat-stub");
+      writeToolsJson(dir, { petcat: fileStubPath });
+      writeFileSync(join(dir, "x.prg"), "tiny\n", "utf8");
+
+      const previousBin = process.env.VICE_BIN;
+      process.env.VICE_BIN = fakeX64scPath;
+      await resetResolvedBackendMjs();
+      const fresh = await freshHostTool();
+      const runPetcatFresh = fresh.runHostTool as unknown as typeof runPetcatHostTool;
+      const logLines: string[] = [];
+      try {
+        const response = await runPetcatFresh(
+          { tool: "petcat.decode", args: { image: "x.prg" } },
+          { repoRoot: dir, log: (line) => logLines.push(line) },
+        );
+        assert.equal(response.ok, true, response.ok ? "" : response.message);
+        if (!response.ok) return;
+        const content = readFileSync(response.results[0]!.path, "utf8");
+        assert.match(content, /FROM-FILE/, "the tools.json entry must win over a sibling that also exists");
+        assert.ok(
+          !logLines.some((line) => /DIFFERENT VICE build/.test(line)),
+          `a tools.json hit must not log the $PATH-shadowing warning, got: ${JSON.stringify(logLines)}`,
+        );
+      } finally {
+        if (previousBin === undefined) delete process.env.VICE_BIN;
+        else process.env.VICE_BIN = previousBin;
+        await resetResolvedBackendMjs();
+      }
+    });
+  });
+
+  // (b) sibling still answers when the file is silent, no warning logged.
+  await withTempDir(async (siblingDir) => {
+    await withTempDir(async (dir) => {
+      const fakeX64scPath = join(siblingDir, "fake-x64sc");
+      writeFileSync(fakeX64scPath, "not a real binary -- only its path/directory matter for sibling resolution\n", "utf8");
+      writeMarkerPetcat(siblingDir, "FROM-SIBLING");
+      writeFileSync(join(dir, "x.prg"), "tiny\n", "utf8");
+      // $PATH deliberately left UNTOUCHED here too -- see Test 2's own
+      // comment for why emptying it would break the fake stub's shebang.
+
+      const previousBin = process.env.VICE_BIN;
+      process.env.VICE_BIN = fakeX64scPath;
+      await resetResolvedBackendMjs();
+      const fresh = await freshHostTool();
+      const runPetcatFresh = fresh.runHostTool as unknown as typeof runPetcatHostTool;
+      const logLines: string[] = [];
+      try {
+        const response = await runPetcatFresh(
+          { tool: "petcat.decode", args: { image: "x.prg" } },
+          { repoRoot: dir, log: (line) => logLines.push(line) },
+        );
+        assert.equal(response.ok, true, response.ok ? "" : response.message);
+        if (!response.ok) return;
+        const content = readFileSync(response.results[0]!.path, "utf8");
+        assert.match(content, /FROM-SIBLING/);
+        assert.ok(
+          !logLines.some((line) => /DIFFERENT VICE build/.test(line)),
+          `the sibling candidate must not log the $PATH-shadowing warning, got: ${JSON.stringify(logLines)}`,
+        );
+      } finally {
+        if (previousBin === undefined) delete process.env.VICE_BIN;
+        else process.env.VICE_BIN = previousBin;
+        await resetResolvedBackendMjs();
+      }
+    });
+  });
+
+  // (c) neither file nor sibling answers; $PATH finds it, warning logged.
+  await withTempDir(async (siblingDir) => {
+    await withTempDir(async (pathDir) => {
+      await withTempDir(async (dir) => {
+        const fakeX64scPath = join(siblingDir, "fake-x64sc");
+        writeFileSync(fakeX64scPath, "not a real binary -- only its path/directory matter for sibling resolution\n", "utf8");
+        writeMarkerPetcat(pathDir, "FROM-PATH");
+        writeFileSync(join(dir, "x.prg"), "tiny\n", "utf8");
+
+        const previousBin = process.env.VICE_BIN;
+        const previousPath = process.env.PATH;
+        process.env.VICE_BIN = fakeX64scPath;
+        // PREPENDED, never a replacement -- see Plan 60-04 Test 3's own
+        // comment for why.
+        process.env.PATH = `${pathDir}:${previousPath ?? ""}`;
+        await resetResolvedBackendMjs();
+        const fresh = await freshHostTool();
+        const runPetcatFresh = fresh.runHostTool as unknown as typeof runPetcatHostTool;
+        const logLines: string[] = [];
+        try {
+          const response = await runPetcatFresh(
+            { tool: "petcat.decode", args: { image: "x.prg" } },
+            { repoRoot: dir, log: (line) => logLines.push(line) },
+          );
+          assert.equal(response.ok, true, response.ok ? "" : response.message);
+          if (!response.ok) return;
+          const content = readFileSync(response.results[0]!.path, "utf8");
+          assert.match(content, /FROM-PATH/);
+          const shadowLines = logLines.filter((line) => /DIFFERENT VICE build/.test(line));
+          assert.equal(shadowLines.length, 1, `the $PATH-shadowing warning must be logged exactly once, got: ${JSON.stringify(logLines)}`);
+          assert.match(shadowLines[0]!, /"petcat"/);
+        } finally {
+          if (previousBin === undefined) delete process.env.VICE_BIN;
+          else process.env.VICE_BIN = previousBin;
+          if (previousPath === undefined) delete process.env.PATH;
+          else process.env.PATH = previousPath;
+          await resetResolvedBackendMjs();
+        }
+      });
+    });
+  });
+
+  // (d) memo semantics: the second call ignores a changed tools.json/sibling.
+  await withTempDir(async (siblingDir) => {
+    await withTempDir(async (dir) => {
+      const fakeX64scPath = join(siblingDir, "fake-x64sc");
+      writeFileSync(fakeX64scPath, "not a real binary -- only its path/directory matter for sibling resolution\n", "utf8");
+      const fileStubPath = writeMarkerPetcat(dir, "FIRST-CALL-STUB", "file-petcat-stub-1");
+      writeToolsJson(dir, { petcat: fileStubPath });
+      writeFileSync(join(dir, "x.prg"), "tiny\n", "utf8");
+
+      const previousBin = process.env.VICE_BIN;
+      process.env.VICE_BIN = fakeX64scPath;
+      await resetResolvedBackendMjs();
+      const fresh = await freshHostTool();
+      const runPetcatFresh = fresh.runHostTool as unknown as typeof runPetcatHostTool;
+      try {
+        const first = await runPetcatFresh({ tool: "petcat.decode", args: { image: "x.prg" } }, { repoRoot: dir });
+        assert.equal(first.ok, true, first.ok ? "" : first.message);
+        if (!first.ok) return;
+        assert.match(readFileSync(first.results[0]!.path, "utf8"), /FIRST-CALL-STUB/);
+
+        writeToolsJson(dir, {});
+        writeMarkerPetcat(siblingDir, "SECOND-CALL-SIBLING");
+
+        const second = await runPetcatFresh({ tool: "petcat.decode", args: { image: "x.prg" } }, { repoRoot: dir });
+        assert.equal(second.ok, true, second.ok ? "" : second.message);
+        if (!second.ok) return;
+        assert.match(
+          readFileSync(second.results[0]!.path, "utf8"),
+          /FIRST-CALL-STUB/,
+          "the second call must still resolve the memoised FIRST result",
+        );
+      } finally {
+        if (previousBin === undefined) delete process.env.VICE_BIN;
+        else process.env.VICE_BIN = previousBin;
+        await resetResolvedBackendMjs();
+      }
+    });
+  });
+});
+
+test("Plan 60-04 Test 7: when nothing answers, the refusal names the tool id, lists tried (including the file-layer candidate the seam inspected), and carries the declaration's remedy -- for both c1541 and petcat, changing with a scratch declaration", async () => {
+  await withTempDir(async (siblingDir) => {
+    await withTempDir(async (declDir) => {
+      await withTempDir(async (dir) => {
+        const fakeX64scPath = join(siblingDir, "fake-x64sc");
+        writeFileSync(fakeX64scPath, "not a real binary -- only its path/directory matter for sibling resolution\n", "utf8");
+        // A tools.json entry that names a candidate the file layer will
+        // inspect and reject (absent on disk) -- so `tried` carries a
+        // concrete file-layer candidate, and resolution is terminal at the
+        // file layer (never falls through to the sibling/$PATH layers).
+        const badC1541Path = join(dir, "nonexistent-c1541-stub");
+        const badPetcatPath = join(dir, "nonexistent-petcat-stub");
+        writeToolsJson(dir, { c1541: badC1541Path, petcat: badPetcatPath });
+        const c1541Sentence = "run scratch-declaration-only-remedy-c1541 to install VICE, never the real one.";
+        const petcatSentence = "run scratch-declaration-only-remedy-petcat to install VICE, never the real one.";
+        writeScratchDeclaration(declDir, { c1541: c1541Sentence, petcat: petcatSentence });
+        writeFileSync(join(dir, "x.d64"), "tiny\n", "utf8");
+        writeFileSync(join(dir, "x.prg"), "tiny\n", "utf8");
+
+        const previousBin = process.env.VICE_BIN;
+        const previousPath = process.env.PATH;
+        const emptyPathDir = join(dir, "empty-path");
+        mkdirSync(emptyPathDir, { recursive: true });
+        process.env.VICE_BIN = fakeX64scPath;
+        process.env.PATH = emptyPathDir;
+        await resetResolvedBackendMjs();
+        const fresh = await freshHostTool();
+        try {
+          const c1541Response = await fresh.runHostTool({ tool: "c1541.dir", args: { image: "x.d64" } }, { repoRoot: dir, here: declDir });
+          assert.equal(c1541Response.ok, false);
+          if (c1541Response.ok) return;
+          assert.match(c1541Response.message, /c1541\.dir/);
+          assert.match(c1541Response.message, /"c1541"/);
+          assert.match(c1541Response.message, /does not exist/);
+          assert.match(c1541Response.message, /tried:/);
+          assert.ok(c1541Response.message.includes(badC1541Path), "tried must include the file-layer candidate the seam inspected");
+          assert.ok(c1541Response.message.includes(c1541Sentence), `expected the scratch remedy text in: ${c1541Response.message}`);
+
+          const runPetcatFresh = fresh.runHostTool as unknown as typeof runPetcatHostTool;
+          const petcatResponse = await runPetcatFresh({ tool: "petcat.decode", args: { image: "x.prg" } }, { repoRoot: dir, here: declDir });
+          assert.equal(petcatResponse.ok, false);
+          if (petcatResponse.ok) return;
+          assert.match(petcatResponse.message, /petcat\.decode/);
+          assert.match(petcatResponse.message, /"petcat"/);
+          assert.match(petcatResponse.message, /does not exist/);
+          assert.match(petcatResponse.message, /tried:/);
+          assert.ok(petcatResponse.message.includes(badPetcatPath), "tried must include the file-layer candidate the seam inspected");
+          assert.ok(petcatResponse.message.includes(petcatSentence), `expected the scratch remedy text in: ${petcatResponse.message}`);
+        } finally {
+          if (previousBin === undefined) delete process.env.VICE_BIN;
+          else process.env.VICE_BIN = previousBin;
+          if (previousPath === undefined) delete process.env.PATH;
+          else process.env.PATH = previousPath;
+          await resetResolvedBackendMjs();
+        }
+      });
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -3031,20 +3568,29 @@ test("CLI entry point: HOST_TOOL_TEST_FORCE_CLI_REJECT=1 forces runHostTool() to
 // fixtures/petcat/README.md).
 //
 // c1541/petcat have NO env-var override of their own location (D-13/D-14/
-// D-15: resolution is ONLY sibling-of-x64sc or a $PATH walk, deliberately,
-// never a configurable override this test could point elsewhere directly).
-// These tests redirect the SIBLING probe instead, by pointing VICE_BIN at a
+// D-15: resolution is env-less by design -- a `tools.json` entry (plan
+// 60-04, LOC-04) or a sibling-of-x64sc/$PATH walk are the only routes,
+// deliberately, never a configurable environment variable). These tests
+// below redirect the SIBLING probe instead, by pointing VICE_BIN at a
 // throwaway file whose own directory holds fake, controllable c1541/petcat
 // stand-ins. FORKRM-01 (plan 52-06) deleted resolvedBackend()'s own
 // environment-variable backend override branch -- the ONE path that used to
 // bypass its module-level memo -- so withFakeC1541() below calls
-// resetResolvedBackendForTests() directly instead, forcing a fresh
-// resolution that honours the VICE_BIN it just set. findSiblingBinary()'s
-// OWN per-binary-name memo (host-tool.mts) is shared across every test in
-// THIS file, so every c1541.*/petcat.decode case below must use the SAME
-// fakes -- created once, at module scope, since no earlier test in this
-// file ever exercises either tool (the first call therefore determines the
-// memo for the rest of the run).
+// resetResolvedBackendMjs() instead, forcing a fresh resolution that honours
+// the VICE_BIN it just set (see that helper's own doc comment, near
+// freshHostTool() above, for why the PLAIN `.mts`-sourced
+// resetResolvedBackendForTests() cannot reach the memo this suite actually
+// reads). findSiblingBinary()'s OWN per-binary-name memo (host-tool.mts) is
+// shared across every test that reaches it through the SAME module
+// instance -- every c1541.*/petcat.decode case below (reached through the
+// SHARED top-level `hostTool` import) must therefore use the SAME fakes,
+// created once at module scope. Plan 60-04's own earlier c1541/petcat cases
+// are exempt: each uses freshHostTool() to reach c1541/petcat through its
+// OWN, separately-memoised module instance instead of this shared one, so
+// "no earlier test in this file ever exercises either tool" (this
+// section's own historical framing) is no longer literally true, but
+// remains true FOR THIS SHARED INSTANCE specifically, which is what
+// actually matters here.
 // ---------------------------------------------------------------------------
 
 const FAKE_C1541_DIR = mkdtempSync(join(tmpdir(), "host-tool-fake-c1541-"));
@@ -3116,13 +3662,13 @@ chmodSync(FAKE_PETCAT_PATH, 0o755);
 async function withFakeC1541<T>(fn: () => Promise<T> | T): Promise<T> {
   const previousBin = process.env.VICE_BIN;
   process.env.VICE_BIN = FAKE_X64SC_PATH;
-  resetResolvedBackendForTests();
+  await resetResolvedBackendMjs();
   try {
     return await fn();
   } finally {
     if (previousBin === undefined) delete process.env.VICE_BIN;
     else process.env.VICE_BIN = previousBin;
-    resetResolvedBackendForTests();
+    await resetResolvedBackendMjs();
   }
 }
 
