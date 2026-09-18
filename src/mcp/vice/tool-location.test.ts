@@ -20,6 +20,20 @@
 // between two calls being found by the second with no reset call, and many
 // concurrent calls against one scratch tree each matching a solo call.
 //
+// The widened, terminal environment layer (Plan 60-06, LOC-03 gap closure):
+// a bare-name declared-variable value that resolves nowhere refuses by name
+// (one case per declared variable, matching the two the phase verification
+// named as the minimum bar), a resolving bare-name value wins for a second
+// declared variable, an absolute-path value that resolves nowhere keeps
+// D-08's exact prior posture and falls through silently (the must-have
+// truth this fix must NOT regress -- see the comment beside that test), an
+// empty-string value is still treated as unset, a directory-kind value is
+// never walked on `$PATH` whether it resolves or not, the file layer stays
+// reachable after an unresolvable environment value (PD-14), and the
+// `envCandidate` field is populated on both the resolving and refusing
+// paths. The one shipped test that pinned the defect ("nothing answers")
+// is rewritten in place, not deleted, to pin the fix instead.
+//
 // Every fixture is a real scratch directory built with mkdtempSync, and
 // every path handed to `resolveTool()` is a real file on disk -- this
 // suite has no mocking library, matching this project's own convention.
@@ -135,12 +149,24 @@ test("$PATH probe answers when neither the environment nor tools.json do", () =>
   });
 });
 
-test("nothing answers: path/layer/mechanism are null and tried lists the environment candidate first, PATH candidates last", () => {
+// REWRITTEN IN PLACE (Plan 60-06, LOC-03 gap closure, deliberate): this test
+// used to be named "nothing answers: path/layer/mechanism are null and tried
+// lists the environment candidate first, PATH candidates last", and it
+// asserted `refusal === null` plus a `tried` list ending in TWO PATH-joined
+// candidates for the DECLARED id ("x64sc") built from a bare-name-shaped
+// scenario. That assertion PINNED the defect 60-VERIFICATION.md's
+// independent reproduction (CR-01) found: a slash-free environment-variable
+// value that resolves nowhere silently fell through to a `$PATH` search for
+// the declared id -- exactly the shape that could silently start a
+// different binary. This gap-closure plan changes the assertion on purpose:
+// the same scenario now refuses, naming the variable and its value, and
+// `tried` holds no PATH-joined candidate for the declared id at all.
+test("an environment variable set to a bare name that resolves nowhere refuses, and resolution never reaches the declared-id $PATH probe", () => {
   withScratch((dir) => {
-    const envBin = join(dir, "does-not-exist-env");
+    const envBin = "does-not-exist-on-path";
     // No tools.json entry for x64sc at all -- the file has nothing to say
     // about this id, which is distinct from (and falls through unlike)
-    // plan 59-03 Task 2's new behaviour for an entry that NAMES a path that
+    // plan 59-03 Task 2's own behaviour for an entry that NAMES a path that
     // does not exist: that is now refused, per the amended LOC-06 triad.
     writeFileSync(join(dir, "tools.json"), JSON.stringify({}));
     const pathDirA = join(dir, "bin-a");
@@ -157,9 +183,50 @@ test("nothing answers: path/layer/mechanism are null and tried lists the environ
     assert.equal(result.path, null);
     assert.equal(result.layer, null);
     assert.equal(result.mechanism, null);
-    assert.equal(result.refusal, null);
+    assert.ok(result.refusal && result.refusal.includes("VICE_BIN") && result.refusal.includes(envBin));
+    assert.equal(result.envCandidate, envBin);
+    assert.equal(result.tried[0], envBin, "the raw environment candidate is tried first");
+    // The widened $PATH walk of the ENVIRONMENT VALUE ITSELF is present...
+    assert.ok(result.tried.includes(join(pathDirA, envBin)));
+    assert.ok(result.tried.includes(join(pathDirB, envBin)));
+    // ...but no candidate was ever built by joining a PATH directory to the
+    // DECLARED tool id ("x64sc") -- the declared-id probe is unreachable.
+    assert.equal(result.tried.includes(join(pathDirA, "x64sc")), false, "the declared-id probe must never run once a variable was set and left unresolved");
+    assert.equal(result.tried.includes(join(pathDirB, "x64sc")), false);
+  });
+});
+
+// The must-have control this rewrite exists beside: an ABSOLUTE-PATH
+// environment value that resolves nowhere is UNCHANGED by this plan -- a
+// `$PATH` search could never plausibly have answered for a value that
+// already names a specific location, so this layer keeps D-08's exact prior
+// posture (not refused, only not found) and resolution falls through
+// silently to the declared-id probe, exactly as it did before this plan.
+// This is the scenario `vice-broker-acquire.test.ts`'s own "Plan 60-01 Test
+// 4" already exercises end to end; this test pins the seam-level half of
+// the same guarantee directly.
+test("an environment variable set to an absolute path that does not exist behaves exactly as today: not refused, falling through to the declared-id $PATH probe", () => {
+  withScratch((dir) => {
+    const envBin = join(dir, "does-not-exist-env");
+    writeFileSync(join(dir, "tools.json"), JSON.stringify({}));
+    const pathDirA = join(dir, "bin-a");
+    const pathDirB = join(dir, "bin-b");
+    mkdirSync(pathDirA, { recursive: true });
+    mkdirSync(pathDirB, { recursive: true });
+
+    const result = resolveTool("x64sc", {
+      toolsDir: dir,
+      projectRoot: dir,
+      env: { VICE_BIN: envBin, PATH: `${pathDirA}:${pathDirB}` },
+    });
+
+    assert.equal(result.path, null);
+    assert.equal(result.layer, null);
+    assert.equal(result.mechanism, null);
+    assert.equal(result.refusal, null, "a separator-containing value must not be refused -- must-have truth, unchanged from before this plan");
+    assert.equal(result.envCandidate, envBin);
     assert.equal(result.tried[0], envBin);
-    assert.deepEqual(result.tried.slice(-2), [join(pathDirA, "x64sc"), join(pathDirB, "x64sc")]);
+    assert.deepEqual(result.tried.slice(-2), [join(pathDirA, "x64sc"), join(pathDirB, "x64sc")], "the declared-id probe still runs for a separator-containing unresolved value");
   });
 });
 
@@ -333,6 +400,183 @@ test("many concurrent resolveTool calls against one scratch tree each match the 
     for (const result of concurrent) {
       assert.deepEqual(result, solo);
     }
+  });
+});
+
+// -----------------------------------------------------------------------
+// Plan 60-06 (LOC-03 gap closure): the widened, terminal environment layer,
+// one case per declared variable and per record kind. Test A/B below prove
+// the widening is driven by the declaration's own `envVar` field for a
+// SECOND declared variable (ACME_BIN), not hardcoded for VICE_BIN alone --
+// the two cases 60-VERIFICATION.md itself named as the minimum bar (a
+// slash-free value with no $PATH match at all, and one with a same-named
+// decoy on $PATH) are the "bare name resolves"/"bare name refuses" tests
+// above plus these two.
+// -----------------------------------------------------------------------
+
+test("Plan 60-06 Test A: a slash-free ACME_BIN naming an executable on the injected PATH resolves through the environment layer for acme", () => {
+  withScratch((dir) => {
+    const pathDir = join(dir, "bin");
+    mkdirSync(pathDir, { recursive: true });
+    const realAcme = join(pathDir, "acme-custom-name");
+    writeFileSync(realAcme, "");
+    chmodSync(realAcme, 0o755);
+
+    const result = resolveTool("acme", { toolsDir: dir, projectRoot: dir, env: { ACME_BIN: "acme-custom-name", PATH: pathDir } });
+
+    assert.equal(result.path, realAcme);
+    assert.equal(result.layer, "env");
+    assert.equal(result.mechanism, "ACME_BIN");
+    assert.equal(result.refusal, null);
+    assert.equal(result.envCandidate, "acme-custom-name");
+  });
+});
+
+test("Plan 60-06 Test B: a slash-free ACME_BIN that exists nowhere, with a decoy executable literally named acme on the injected PATH, refuses and never returns the decoy", () => {
+  withScratch((dir) => {
+    const pathDir = join(dir, "bin");
+    mkdirSync(pathDir, { recursive: true });
+    const decoy = join(pathDir, "acme");
+    writeFileSync(decoy, "");
+    chmodSync(decoy, 0o755);
+
+    const result = resolveTool("acme", { toolsDir: dir, projectRoot: dir, env: { ACME_BIN: "acme-dev-build", PATH: pathDir } });
+
+    assert.notEqual(result.path, decoy, "a decoy match here is exactly the defect this plan exists to close");
+    assert.equal(result.path, null);
+    assert.ok(result.refusal && result.refusal.includes("ACME_BIN") && result.refusal.includes("acme-dev-build"));
+    assert.equal(result.tried.includes(decoy), false, "no candidate built by joining PATH to the declared id (acme) may appear in tried");
+  });
+});
+
+test("Plan 60-06 Test C: an empty-string declared variable is treated as unset -- envCandidate is null and resolution falls through to the file layer and then the probe layer", () => {
+  withScratch((dir) => {
+    const pathDir = join(dir, "bin");
+    mkdirSync(pathDir, { recursive: true });
+    const probeBin = join(pathDir, "x64sc");
+    writeFileSync(probeBin, "");
+
+    const result = resolveTool("x64sc", { toolsDir: dir, projectRoot: dir, env: { VICE_BIN: "", PATH: pathDir } });
+
+    assert.equal(result.path, probeBin);
+    assert.equal(result.layer, "probe");
+    assert.equal(result.refusal, null);
+    assert.equal(result.envCandidate, null, "an empty string must never be reported as the developer's candidate");
+  });
+});
+
+test("Plan 60-06 Test D: an unset ACME_BIN with a real acme on the injected PATH still answers from the probe layer -- the shape CI's ACME job depends on", () => {
+  withScratch((dir) => {
+    const pathDir = join(dir, "bin");
+    mkdirSync(pathDir, { recursive: true });
+    const probeAcme = join(pathDir, "acme");
+    writeFileSync(probeAcme, "");
+
+    const result = resolveTool("acme", { toolsDir: dir, projectRoot: dir, env: { PATH: pathDir } });
+
+    assert.equal(result.path, probeAcme);
+    assert.equal(result.layer, "probe");
+    assert.equal(result.mechanism, "$PATH");
+    assert.equal(result.envCandidate, null);
+  });
+});
+
+test("Plan 60-06 Test G: a directory-kind GHIDRA_HOME set to a bare name that is not a directory is never walked on $PATH, and refuses", () => {
+  withScratch((dir) => {
+    const pathDir = join(dir, "bin");
+    mkdirSync(pathDir, { recursive: true });
+    // A same-named FILE on PATH -- proves this candidate is never even
+    // considered for a directory-kind record, since a $PATH search for a
+    // directory is meaningless (truth: "a directory-kind variable is never
+    // walked on $PATH").
+    writeFileSync(join(pathDir, "ghidra-bare-name"), "");
+
+    const result = resolveTool("ghidra", { toolsDir: dir, projectRoot: dir, env: { GHIDRA_HOME: "ghidra-bare-name", PATH: pathDir } });
+
+    assert.equal(result.path, null);
+    assert.ok(result.refusal && result.refusal.includes("GHIDRA_HOME") && result.refusal.includes("ghidra-bare-name"));
+    assert.equal(result.tried.some((t) => t.startsWith(pathDir)), false, "no PATH-joined candidate may appear in tried for a directory-kind id");
+  });
+});
+
+test("Plan 60-06 Test I (PD-14): a declared variable set to an unresolvable bare name still lets a valid tools.json entry answer from the file layer", () => {
+  withScratch((dir) => {
+    const fileBin = join(dir, "x64sc-from-tools-json");
+    writeFileSync(fileBin, "");
+    chmodSync(fileBin, 0o755);
+    writeFileSync(join(dir, "tools.json"), JSON.stringify({ x64sc: fileBin }));
+
+    const result = resolveTool("x64sc", { toolsDir: dir, projectRoot: dir, env: { VICE_BIN: "definitely-not-on-any-path" } });
+
+    assert.equal(result.path, fileBin);
+    assert.equal(result.layer, "file");
+    assert.equal(result.mechanism, "tools.json");
+    assert.equal(result.refusal, null);
+    assert.equal(result.envCandidate, "definitely-not-on-any-path", "envCandidate still names what the developer wrote, even though the file layer answered instead");
+  });
+});
+
+test("Plan 60-06 Test K (no memo): a bare-name environment value whose target does not yet exist refuses; once the binary is created on the injected PATH, the very next call in the same process resolves it, with no reset", () => {
+  withScratch((dir) => {
+    const pathDir = join(dir, "bin");
+    mkdirSync(pathDir, { recursive: true });
+    const deps = { toolsDir: dir, projectRoot: dir, env: { VICE_BIN: "not-yet-on-path", PATH: pathDir } };
+
+    const first = resolveTool("x64sc", deps);
+    assert.equal(first.path, null);
+    assert.ok(first.refusal);
+
+    const laterBin = join(pathDir, "not-yet-on-path");
+    writeFileSync(laterBin, "");
+
+    const second = resolveTool("x64sc", deps);
+    assert.equal(second.path, laterBin);
+    assert.equal(second.layer, "env");
+    assert.equal(second.refusal, null);
+  });
+});
+
+test("Plan 60-06 Test K (concurrency): many concurrent resolveTool calls for a slash-free environment value against one scratch tree each match the same call made alone", async () => {
+  await withScratch(async (dir) => {
+    const pathDir = join(dir, "bin");
+    mkdirSync(pathDir, { recursive: true });
+    const realBin = join(pathDir, "custom-x64sc-name");
+    writeFileSync(realBin, "");
+    const deps = { toolsDir: dir, projectRoot: dir, env: { VICE_BIN: "custom-x64sc-name", PATH: pathDir } };
+
+    const solo = resolveTool("x64sc", deps);
+    assert.equal(solo.path, realBin);
+    assert.equal(solo.layer, "env");
+    const concurrent = await Promise.all(Array.from({ length: 20 }, () => Promise.resolve(resolveTool("x64sc", deps))));
+
+    for (const result of concurrent) {
+      assert.deepEqual(result, solo);
+    }
+  });
+});
+
+test("Plan 60-06 Test L (compiled artifact): the widened environment layer answers from resources/tool-location.mjs too, not only from the unbuilt source", async () => {
+  build();
+  const compiled = (await import(new URL("./resources/tool-location.mjs", import.meta.url).href)) as unknown as {
+    resolveTool: typeof resolveTool;
+  };
+
+  withScratch((dir) => {
+    const pathDir = join(dir, "bin");
+    mkdirSync(pathDir, { recursive: true });
+    const realBin = join(pathDir, "compiled-custom-x64sc");
+    writeFileSync(realBin, "");
+    const hit = compiled.resolveTool("x64sc", { toolsDir: dir, projectRoot: dir, env: { VICE_BIN: "compiled-custom-x64sc", PATH: pathDir } });
+    assert.equal(hit.path, realBin);
+    assert.equal(hit.layer, "env");
+    assert.equal(hit.mechanism, "VICE_BIN");
+
+    const decoy = join(pathDir, "x64sc");
+    writeFileSync(decoy, "");
+    const miss = compiled.resolveTool("x64sc", { toolsDir: dir, projectRoot: dir, env: { VICE_BIN: "compiled-absent-name", PATH: pathDir } });
+    assert.notEqual(miss.path, decoy);
+    assert.equal(miss.path, null);
+    assert.ok(miss.refusal && miss.refusal.includes("VICE_BIN"));
   });
 });
 

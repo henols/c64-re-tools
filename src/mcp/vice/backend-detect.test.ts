@@ -249,6 +249,71 @@ test("resolvedBackend: repeated calls return the exact same result object (in-pr
 });
 
 // ===========================================================================
+// Plan 60-06 (LOC-03 gap closure, PD-13): `locationRefusal` -- the seam's
+// own `refusal` carried onto `ResolvedBackendResult` -- and the PD-01
+// branch's fallback to the seam's own `envCandidate` as the configured
+// name shown when resolution fails. Both are consumer-side controls: they
+// prove `resolvedBackend()` propagates what `resolveTool()` reported rather
+// than re-deriving or discarding it, without this file ever reading one of
+// the four declared environment-variable names itself
+// (`tool-location-consumers.test.ts` is what polices that).
+// ===========================================================================
+
+test("resolvedBackend: the PD-02 injected-override branch always reports locationRefusal null, even when resolution fails", () => {
+  resetResolvedBackendForTests();
+  const result = resolvedBackend(stubDeps({ viceBin: "x64sc", resolveBinPath: () => null }));
+  assert.equal(result.binPathResolved, false);
+  assert.equal(result.locationRefusal, null, "the injected-override branch never reaches the seam and so never has a refusal to carry");
+});
+
+test("resolvedBackend: the PD-01 seam branch reports locationRefusal null when the seam resolves successfully", () => {
+  withScratchDir((dir) => {
+    resetResolvedBackendForTests();
+    const result = resolvedBackend({
+      toolsDir: dir,
+      projectRoot: dir,
+      env: {},
+      locate: () => ({ id: "x64sc", path: "/resolved/x64sc", tried: ["/resolved/x64sc"], layer: "env", mechanism: "VICE_BIN", refusal: null, envCandidate: "/resolved/x64sc" }),
+      stat: () => ({ mtimeMs: 1000, sizeBytes: 5000 }),
+    });
+    assert.equal(result.binPath, "/resolved/x64sc");
+    assert.equal(result.binPathResolved, true);
+    assert.equal(result.locationRefusal, null);
+  });
+});
+
+test("resolvedBackend: the PD-01 seam branch carries the seam's own refusal verbatim, and reports the developer's own value as the configured name (binPathResolved false)", () => {
+  withScratchDir((dir) => {
+    resetResolvedBackendForTests();
+    const refusalText = '"x64sc"\'s VICE_BIN environment variable is set to "x64sc-absent", which did not resolve to an executable file';
+    const result = resolvedBackend({
+      toolsDir: dir,
+      projectRoot: dir,
+      env: {},
+      locate: () => ({ id: "x64sc", path: null, tried: ["x64sc-absent"], layer: null, mechanism: null, refusal: refusalText, envCandidate: "x64sc-absent" }),
+    });
+    assert.equal(result.binPath, "x64sc-absent", "the configured name shown on failure must be the developer's own value, not the literal x64sc");
+    assert.equal(result.binPathResolved, false);
+    assert.equal(result.locationRefusal, refusalText, "the seam's refusal must be carried verbatim, never re-authored");
+  });
+});
+
+test("resolvedBackend: the PD-01 seam branch falls back to the literal x64sc as the configured name when the seam reports no envCandidate", () => {
+  withScratchDir((dir) => {
+    resetResolvedBackendForTests();
+    const result = resolvedBackend({
+      toolsDir: dir,
+      projectRoot: dir,
+      env: {},
+      locate: () => ({ id: "x64sc", path: null, tried: [], layer: null, mechanism: null, refusal: null, envCandidate: null }),
+    });
+    assert.equal(result.binPath, "x64sc", "with no envCandidate at all (e.g. an unset variable), the configured name stays the literal x64sc");
+    assert.equal(result.binPathResolved, false);
+    assert.equal(result.locationRefusal, null);
+  });
+});
+
+// ===========================================================================
 // readCapabilityRecord()/writeCapabilityRecord() -- BACK-04's round trip.
 // Unaffected by FORKRM-01: neither function ever encoded a backend verdict
 // of its own.
