@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 44
+open_count: 45
 waived_count: 14
 fixed_count: 9
-total_count: 67
-last_updated: 2026-09-16T05:31:50.462Z
+total_count: 68
+last_updated: 2026-09-18T09:48:57.189Z
 ---
 
 # Broken Windows Ledger
@@ -82,6 +82,7 @@ last_updated: 2026-09-16T05:31:50.462Z
 | 65 | quick-260913-mql | deviation | src/mcp/vice/broker-e2e.test.ts | 403 | Pre-existing, out-of-scope failure discovered while measuring the 12 MANUAL_ONLY_TESTS CI delta: 'wired warm-hit (plan 41-05)' fails deterministically (reproduced twice) on a real broker crash-respawn deadline, unrelated to any file this quick task touched. | open |  | 2026-09-13T14:56:52.250Z |  |
 | 66 | 51 | deviation | src/mcp/vice/anno-register.ts |  | 63 requirement-id citations left unresolved: the file's requirements[] traceability data is mechanically validated against real, declared REQUIREMENTS.md ids by anno-register.test.ts, and removing the ids would gut the only thing the file exists to check; unshipping it breaks anno-seam.test.ts's completeness guard. Genuine architectural decision (Rule 4), deferred rather than resolved unilaterally. | open |  | 2026-09-14T16:02:40.848Z |  |
 | 67 | 50 | unmet-truth | docs/phase50-ci-boundary.md |  | ROADMAP criterion 5's 'a broken step is observed reddening CI' was observed against CI's exact command and environment LOCALLY, never on a GitHub runner; EQUIV-04 withheld pending a real CI run or a dated developer decline | open |  | 2026-09-16T05:31:50.462Z |  |
+| 68 | 59 | deviation | .planning/ROADMAP.md | 1980 | phase58-citation-ledger.test.ts: anchor "a user missing ACME learns that" cited at ROADMAP.md:1980-1983 but actually at :1989 (line-shift); pre-existing, found during 59-01 Task 3, not caused by 59-01's changes | open |  | 2026-09-18T09:48:57.189Z |  |
 
 ````json
 [
@@ -889,6 +890,19 @@ last_updated: 2026-09-16T05:31:50.462Z
     "recorded_at": "2026-09-16T05:31:50.462Z",
     "resolved_at": null,
     "milestone": "v1.0.0"
+  },
+  {
+    "id": 68,
+    "kind": "deviation",
+    "phase": "59",
+    "file": ".planning/ROADMAP.md",
+    "line": 1980,
+    "description": "phase58-citation-ledger.test.ts: anchor \"a user missing ACME learns that\" cited at ROADMAP.md:1980-1983 but actually at :1989 (line-shift); pre-existing, found during 59-01 Task 3, not caused by 59-01's changes",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-18T09:48:57.189Z",
+    "resolved_at": null,
+    "milestone": "v1.1.0"
   }
 ]
 ````

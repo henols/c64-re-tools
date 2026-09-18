@@ -5,16 +5,16 @@ milestone_name: The Prerequisite Doctor
 current_phase: 59
 current_phase_name: The Tool-Location Seam and Its Precedence Order
 status: executing
-stopped_at: Phase 59 context gathered
-last_updated: "2026-09-18T09:01:09.729Z"
-last_activity: 2026-09-17
-last_activity_desc: Phase 58 complete, transitioned to Phase 59
-state_head: aa33bb26aa2a6316231118634f0b63a849112b86
+stopped_at: Completed 59-01-PLAN.md
+last_updated: "2026-09-18T09:54:05.293Z"
+last_activity: 2026-09-18
+last_activity_desc: Phase 59 execution started
+state_head: 74e5ce05547a40cde27f7a2f4fe08a37883aa602
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 8
-  completed_plans: 3
+  completed_plans: 4
   percent: 20
 carried_forward_phases:
 
@@ -45,7 +45,8 @@ session drives anything — and produces no evidence bearing on the ONE thing, s
 restating it here would be a sixth repetition with nothing behind it.*
 
 **Current focus:** **Phase 59 — The Tool-Location Seam and Its Precedence
-Order**, ready to plan. **Phase 58 (One Declaration, Four Places That Can No
+Order**, executing — plan 59-01 (the seam module) complete, plan 59-02 next.
+**Phase 58 (One Declaration, Four Places That Can No
 Longer Disagree) closed 2026-09-17** at 5/5 roadmap success criteria, UAT 1/1,
 `threats_open: 0` and `nyquist_compliant: true` — its last open item, the
 `decl-02-node18-proof` job proven green on a real GitHub Actions runner, was
@@ -339,15 +340,13 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 59 (The Tool-Location Seam and Its Precedence Order) — READY TO EXECUTE
-Plan: Not started
-Status: Ready to execute
-Stopped at: Phase 59 planned — 5 plans across 4 waves, plan-checker passed with
-zero blockers and zero warnings. Research, pattern map and validation strategy are
-written and committed. Plan 59-01 is autonomous: false — it opens with a blocking
-decision checkpoint on the tools.json value shape (bare string vs object). Next:
-/gsd-execute-phase 59.
-Last activity: 2026-09-17 — Phase 58 complete, transitioned to Phase 59
+Phase: 59 (The Tool-Location Seam and Its Precedence Order) — EXECUTING
+Plan: 2 of 5
+Status: Executing
+Stopped at: Completed 59-01-PLAN.md — tool-location.mts resolves x64sc through
+env/tools.json/$PATH, compiled into resources/tool-location.mjs and proven from
+both forms; nothing calls it yet (Phase 60's job). Next: continue with plan 59-02.
+Last activity: 2026-09-18 — Phase 59 execution started
 
 **Milestone shape, so no reader has to rebuild it from the ROADMAP:** Phase 58
 declares the prerequisites; Phase 59 builds the tool-location seam and its
@@ -718,6 +717,7 @@ than a matter of discipline.
 | Phase 50 P08 | 95min | 3 tasks | 16 files |
 | Phase 58 P02 | 25min | 2 tasks | 2 files |
 | Phase 58 P03 | 55min | 3 tasks | 3 files |
+| Phase 59 P01 | unknown | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -1575,6 +1575,7 @@ Recent decisions affecting current work:
 - [Phase 50]: Reused hazard-subject-modified.allowlist.json completely unchanged for the exported-edit subject's live comparison. — Its broad code-range entry (2170..4095) covers this subject's differing bytes regardless of exact jsr placement; confirmed live with PASS (allowlisted) vs FAIL (--no-allowlist) against the identical pair, so no allowlist edit was needed or made.
 - [Phase 58]: Phase 58 plan 02: the prerequisite declaration's provenance reasoning lives in docs/phase58-declaration-provenance.md (JSON tag for tests, doc for humans), and README.md's VICE-version prose is corrected to state the measured fact that no shipped tool refuses on a VICE version. — Criterion 5's second half ("records which was chosen and why") is satisfied by a doc a human reads, not by prose stuffed inside the JSON declaration a test asserts on. The README correction was scoped to only the section Phase 62 does not generate, since a hand-edit to the generated table would be silently overwritten.
 - [Phase 58]: Phase 58 gap closure (58-03): built a citation-ledger structural guard for docs/phase58-declaration-provenance.md, corrected both wrong file:line citations 58-VERIFICATION.md flagged, and recorded unp64's exclusion as DECL-F3 rather than adding a ninth prerequisites.json record.
+- [Phase 59]: D-12 (human, one-way): .c64-re-tools/tools.json entries are bare strings, e.g. {"x64sc": "/opt/vice/bin/x64sc"}, never the object form {"x64sc": {"path": "..."}}. Selected at plan 59-01's Task 1 checkpoint. The reserved-key rule D-11 rides with it: a key beginning `_` is reserved for prose and exempt from the unknown-key refusal.
 
 ### Pending Todos
 
@@ -2829,9 +2830,9 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-18T08:06:56.125Z
-Stopped at: Phase 59 context gathered
-Resume file: .planning/phases/59-the-tool-location-seam-and-its-precedence-order/59-CONTEXT.md
+Last session: 2026-09-18T09:54:05.163Z
+Stopped at: Completed 59-01-PLAN.md
+Resume file: None
 
 Earlier: Milestone v1.0.0 "The Rebuild Half" closed and archived on its delivered scope (9 phases, 73 plans, 33/33 in-scope requirements, `override_closeout`). Phases 51, 53, 54 and 57 carried forward with their ROADMAP sections live.
 
