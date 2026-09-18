@@ -787,10 +787,24 @@ export interface RemedyTextsForDeps {
  * no second reader, no memo (Phase 59 `D-03`), and no reset-for-tests
  * hatch. */
 export function remedyTextsFor(id: string, deps: RemedyTextsForDeps = {}): string[] {
-  // RED stub (plan 60-02, TDD gate): intentionally always empty so the new
-  // behavior tests fail on their assertions rather than on a missing export.
-  // Task 1's GREEN commit replaces this body with the real declaration read.
-  void id;
-  void deps;
-  return [];
+  const platform = deps.platform ?? process.platform;
+  const here = deps.here ?? HERE;
+
+  const declaration = readDeclaration(here);
+
+  // Exact, case-sensitive ARRAY membership against the declaration's own key
+  // set -- never a bracket property lookup on the raw string -- mirroring
+  // resolveTool()'s and validateToolsFile()'s own defence against an id
+  // shaped like an inherited Object.prototype member (T-60-02).
+  const declaredIds = Object.keys(declaration.tools);
+  if (!declaredIds.includes(id)) return [];
+
+  const record = declaration.tools[id]!;
+  const remedies = record.remedies;
+  if (remedies === undefined || remedies === null || typeof remedies !== "object") return [];
+
+  const platformEntries = remedies[platform as keyof RemedyBlock] ?? [];
+  const universalEntries = remedies.universal ?? [];
+
+  return [...platformEntries, ...universalEntries].map((entry) => entry.text);
 }

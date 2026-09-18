@@ -70,6 +70,16 @@
 //   - Do not hand-edit the compiled artifact under resources/. This file is
 //     the source; the compiled copy is generated and committed, and a
 //     hand-edit there is silently overwritten by the next build.
+//
+// `remedyTextsFor()` is the FIRST runtime reader of the declaration's
+// `remedies` arrays -- every one of the eight records' `remedies` blocks has
+// existed as data only, read by no shipped code path, since Phase 58 wrote
+// them. It exists because of `DECL-03`: a live refusal and a future doctor
+// must never be able to name different remedies for the same tool, which is
+// only true if both read the same declaration through the same reader. A
+// caller composes its own sentence around the strings this returns and never
+// re-types one, and nothing in this tree may execute a remedy string -- the
+// never-auto-install constraint made structural, not merely documented.
 import { accessSync, constants as fsConstants, existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -551,4 +561,43 @@ export function toolsFileTemplate(resolved, deps = {}) {
         out[id] = resolved[id];
     }
     return JSON.stringify(out, null, 2) + "\n";
+}
+/** Reads a declared tool id's remedy prose out of `prerequisites.json`,
+ * ordered and byte-identical, for a caller to compose its own refusal
+ * sentence around -- `DECL-03`'s FIRST runtime reader of the `remedies`
+ * arrays (see this module's header). Collects, in order, every entry's
+ * `text` under the key matching `platform` (one of `linux`, `darwin`,
+ * `win32`), then every entry's `text` under `universal`, preserving
+ * declaration order within each key. Returns the strings exactly as parsed
+ * -- no trimming, no case change, no Unicode normalisation, no joining.
+ *
+ * An id the declaration does not carry, and a record with no `remedies`
+ * block, both return `[]` rather than throwing: this module returns
+ * structured results, and `vice-errors.ts` is not reached from here. The id
+ * lookup is exact ARRAY membership against the declaration's own key set,
+ * never a bracket property lookup on an unchecked string (T-60-02) -- the
+ * same defence `resolveTool()` and `validateToolsFile()` already carry for
+ * the identical hazard (an id shaped like an inherited Object.prototype
+ * member must refuse like any other undeclared id, with no separate
+ * branch). Reads through the existing private `readDeclaration(here)`; adds
+ * no second reader, no memo (Phase 59 `D-03`), and no reset-for-tests
+ * hatch. */
+export function remedyTextsFor(id, deps = {}) {
+    const platform = deps.platform ?? process.platform;
+    const here = deps.here ?? HERE;
+    const declaration = readDeclaration(here);
+    // Exact, case-sensitive ARRAY membership against the declaration's own key
+    // set -- never a bracket property lookup on the raw string -- mirroring
+    // resolveTool()'s and validateToolsFile()'s own defence against an id
+    // shaped like an inherited Object.prototype member (T-60-02).
+    const declaredIds = Object.keys(declaration.tools);
+    if (!declaredIds.includes(id))
+        return [];
+    const record = declaration.tools[id];
+    const remedies = record.remedies;
+    if (remedies === undefined || remedies === null || typeof remedies !== "object")
+        return [];
+    const platformEntries = remedies[platform] ?? [];
+    const universalEntries = remedies.universal ?? [];
+    return [...platformEntries, ...universalEntries].map((entry) => entry.text);
 }
