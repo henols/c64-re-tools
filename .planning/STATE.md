@@ -4,16 +4,16 @@ milestone: v1.1.0
 milestone_name: The Prerequisite Doctor
 current_phase: 59
 current_phase_name: The Tool-Location Seam and Its Precedence Order
-status: planning
+status: executing
 stopped_at: Phase 59 context gathered
-last_updated: "2026-09-18T08:06:56.371Z"
+last_updated: "2026-09-18T09:01:09.729Z"
 last_activity: 2026-09-17
 last_activity_desc: Phase 58 complete, transitioned to Phase 59
-state_head: b1f11548f19454330e99b21a5b5fc98ac111d1a4
+state_head: aa33bb26aa2a6316231118634f0b63a849112b86
 progress:
   total_phases: 5
   completed_phases: 1
-  total_plans: 3
+  total_plans: 8
   completed_plans: 3
   percent: 20
 carried_forward_phases:
@@ -339,16 +339,14 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 59 — The Tool-Location Seam and Its Precedence Order
+Phase: 59 (The Tool-Location Seam and Its Precedence Order) — READY TO EXECUTE
 Plan: Not started
-Status: Ready to plan
-(src/mcp/vice/phase58-citation-ledger.test.ts) now runs inside
-npm run test:automated; both wrong file:line citations 58-VERIFICATION.md
-flagged are corrected by live re-derivation; unp64's exclusion is recorded as
-DECL-F3. DECL-01 marked Complete; DECL-02 remains Gaps Found pending the
-unpushed decl-02-node18-proof real-runner execution (human verification, not
-plannable). DECL-04 and DECL-05 unchanged (already Complete). Next:
-/gsd-verify-work 58.
+Status: Ready to execute
+Stopped at: Phase 59 planned — 5 plans across 4 waves, plan-checker passed with
+zero blockers and zero warnings. Research, pattern map and validation strategy are
+written and committed. Plan 59-01 is autonomous: false — it opens with a blocking
+decision checkpoint on the tools.json value shape (bare string vs object). Next:
+/gsd-execute-phase 59.
 Last activity: 2026-09-17 — Phase 58 complete, transitioned to Phase 59
 
 **Milestone shape, so no reader has to rebuild it from the ROADMAP:** Phase 58
