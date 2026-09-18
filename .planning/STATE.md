@@ -6,15 +6,15 @@ current_phase: 60
 current_phase_name: The Seam Wired Into the Code That Ships
 status: executing
 stopped_at: Phase 60 planned — 5 plans in 4 waves, checker passed first iteration
-last_updated: "2026-09-18T13:47:33.601Z"
+last_updated: "2026-09-18T14:00:19.154Z"
 last_activity: 2026-09-18
 last_activity_desc: Phase 60 execution started
-state_head: eb532af05d80d56cd646e5e2b98bad5208b7bef3
+state_head: 370a6527bcec3b4f7ac9b1861676cecd9f2032d2
 progress:
   total_phases: 5
   completed_phases: 2
   total_plans: 13
-  completed_plans: 9
+  completed_plans: 10
   percent: 40
 carried_forward_phases:
 
@@ -340,9 +340,9 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 60 (The Seam Wired Into the Code That Ships) — EXECUTING
-Plan: 1 of 5 executed, 2 of 5 next
-Status: Executing
-Stopped at: Completed 60-01-PLAN.md — resolvedBackend() now consults the tool-location
+Plan: 2 of 5 executed, 2 of 5 next
+Status: Ready to execute
+Stopped at: Completed 60-02-PLAN.md
 seam for x64sc, the resolved value threaded through vice-broker.mts (including its
 crash-respawn path) and vice-proxy.ts, and the three affected host-bound artifacts
 regenerated and committed. Full plan-level verification green (251 tests, 0 fail).
@@ -725,6 +725,7 @@ than a matter of discipline.
 | Phase 59 P04 | 35 min | 2 tasks | 1 files |
 | Phase 59 P05 | 50 min | 2 tasks | 5 files |
 | Phase 60 P01 | 38min | 3 tasks | 8 files |
+| Phase 60 P02 | 25min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -1590,6 +1591,8 @@ Recent decisions affecting current work:
 - [Phase 59]: toolsFileTemplate()'s emission order and omission rules follow the plan's locked shape exactly: three reserved prose keys unconditionally, then one bare-string key per resolved id the declaration both knows and marks fileOverridable, in declaration order, with no invented path for an id the caller did not resolve.
 - [Phase 59]: The placement document's citation-ledger anchor for 59-CONTEXT.md:55-57 was corrected from a paraphrase to the live text's exact wording after the newly-added citation-ledger test case caught the drift on its first run -- the mechanism this ledger exists to provide, exercised on this plan's own first draft.
 - [Phase 60]: Plan 60-01: backend-detect.mts loads the tool-location seam through node:module's createRequire() (existsSync-gated dual candidate: compiled resources/tool-location.mjs first, else unbuilt tool-location.mts) rather than a static ESM import, because this file ships two ways and a static specifier would crash vice-proxy.ts at startup. — Verified empirically: a static value import of a compiled-only sibling breaks Node's native ESM resolution when the importing module is loaded unbuilt (as vice-proxy.ts, this project's real production entry point, does). The lazy require-based loader preserves one seam implementation with no #ifdef-style split, and both shipped forms were confirmed working.
+- [Phase 60]: RED phase used a stub remedyTextsFor() that always returns [] (rather than omitting the export) so the six new tests fail on their real assertions, not on a missing-export module-load crash -- confirmed via gsd-tools check tdd-red-evidence (RED_EVIDENCE_OK).
+- [Phase 60]: assertRemedyBlockShape and assertRemedyIsProseNotArgv are two separate validators (shape vs. never-auto-install prose constraint) rather than one, matching the plan's own two named exports and keeping each offender list about one concern.
 
 ### Pending Todos
 
@@ -2844,7 +2847,7 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-18T13:47:33.446Z
+Last session: 2026-09-18T14:00:18.935Z
 Stopped at: Phase 59 complete, ready to plan Phase 60
 Resume file: None
 
