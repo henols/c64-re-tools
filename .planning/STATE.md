@@ -3,19 +3,19 @@ gsd_state_version: "1.0"
 milestone: v1.1.0
 milestone_name: The Prerequisite Doctor
 current_phase: 61
-current_phase_name: "The Install Tables Generated, and a Guard That Compares Facts"
+current_phase_name: The Install Tables Generated, and a Guard That Compares Facts
 status: planning
-stopped_at: Phase 61 (the doctor) removed at owner decision; ready to plan Phase 61 (README generation)
-last_updated: "2026-09-18T21:58:47.251Z"
-last_activity: 2026-09-18
-last_activity_desc: Doctor phase dropped at owner decision; README-generation phase renumbered 62 -> 61
-state_head: 3e3ab3d279100ad283794c6900b6edd3b304da94
+stopped_at: Phase 61 context gathered; ready to plan
+last_updated: "2026-09-18T22:39:53.396Z"
+last_activity: 2026-09-19
+last_activity_desc: Phase 61 context gathered — declaration frozen at owner decision, generated region scoped to the table
+state_head: 49ccd00aefdc9cf3306b849ebe57384daf19e770
 progress:
   total_phases: 4
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 16
   completed_plans: 16
-  percent: 50
+  percent: 75
 carried_forward_phases:
 
   - 51
@@ -343,11 +343,12 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 61 — `vice-mcp doctor`, Reachable on a Node Too Old to Run the Server
+Phase: 61 — The Install Tables Generated, and a Guard That Compares Facts
 Plan: Not started
 Status: Ready to plan
-Stopped at: Completed 60-08-PLAN.md
-Plan 60-08 closed LOC-03's residual: the environment layer is now terminal for
+Stopped at: Phase 61 context gathered — 61-CONTEXT.md written, 13 decisions recorded.
+
+Prior phase, for continuity: Plan 60-08 closed LOC-03's residual: the environment layer is now terminal for
 a declared variable's non-empty value WHATEVER its shape (not only a
 separator-free one) — a stale absolute VICE_BIN/ACME_BIN/ACME/GHIDRA_HOME now
 refuses by name instead of letting a same-named $PATH binary silently start in
@@ -2896,9 +2897,9 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-18T20:09:29.915Z
-Stopped at: Phase 60 complete, ready to plan Phase 61
-Resume file: None
+Last session: 2026-09-18T22:39:53.207Z
+Stopped at: Phase 61 context gathered
+Resume file: .planning/phases/61-the-install-tables-generated-and-a-guard-that-compares-facts/61-CONTEXT.md
 
 Earlier: Milestone v1.0.0 "The Rebuild Half" closed and archived on its delivered scope (9 phases, 73 plans, 33/33 in-scope requirements, `override_closeout`). Phases 51, 53, 54 and 57 carried forward with their ROADMAP sections live.
 
