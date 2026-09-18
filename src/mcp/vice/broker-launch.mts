@@ -387,6 +387,14 @@ export interface TryLaunchDeps {
    * that offers one. */
   spawn?: (command: string, args: string[], options?: SpawnOptionsWithoutStdio) => ChildProcess;
   now?: () => number;
+  /** The emulator binary to spawn -- optional, defaulting to the literal
+   * "x64sc" when omitted (a caller, in practice only a test, that supplies
+   * neither this nor a resolved value up its own call chain). The real
+   * broker resolves this ONCE at startup through backend-detect.mts's
+   * resolvedBackend() (itself now a tool-location-seam consumer, Phase 60
+   * LOC-01/LOC-02) and threads the SAME resolved value down through every
+   * real launch call site -- this file reads no environment variable and
+   * calls no seam itself. */
   viceBin?: string;
   mcpHost?: string;
   /** Which backend's argv shape to build -- optional and defaulting to
@@ -442,7 +450,13 @@ export interface TryLaunchDeps {
 function spawnAndRecordInstance(reason: string, port: number, deps: TryLaunchDeps): InstanceRecord {
   const spawnFn = deps.spawn ?? ((cmd: string, args: string[], opts?: SpawnOptionsWithoutStdio) => nodeSpawn(cmd, args, opts));
   const now = deps.now ?? ((): number => Date.now());
-  const viceBin = deps.viceBin ?? process.env.VICE_BIN ?? "x64sc";
+  // Phase 60 (LOC-02): no environment-variable fallback here any more -- the
+  // real broker resolves the binary ONCE at startup through backend-detect.mts's
+  // resolvedBackend() (which itself now consults the tool-location seam) and
+  // threads that SAME value down through deps.viceBin on every call. The
+  // literal "x64sc" default below is only ever reached by a caller (a test)
+  // that supplies neither.
+  const viceBin = deps.viceBin ?? "x64sc";
   const backend = deps.backend ?? "stock";
   // The ONE construction site for a fresh InstanceRecord asserts the
   // invariant every downstream consumer (HeldLease, textConnect(), etc.) was
@@ -592,6 +606,11 @@ export interface AcquirePortAndLaunchDeps {
    * factory's result is assigned directly to the `spawn` field above. */
   spawnFactory?: (port: number) => (command: string, args: string[], options?: SpawnOptionsWithoutStdio) => ChildProcess;
   now?: () => number;
+  /** See TryLaunchDeps.viceBin's own doc comment above -- same optional,
+   * same "x64sc"-when-omitted default, threaded straight through to
+   * spawnAndRecordInstance() unchanged. The real broker resolves this ONCE
+   * at startup through the tool-location seam and never re-reads any
+   * environment variable per acquire. */
   viceBin?: string;
   mcpHost?: string;
   /** See TryLaunchDeps's own doc comment -- same optional, same
@@ -1520,7 +1539,10 @@ function launchSupervised(
   mkdirSync(logDir, { recursive: true });
 
   const epoch = deps.epoch.nextEpochFor(supervisorDir);
-  const viceBin = deps.viceBin ?? process.env.VICE_BIN ?? "x64sc";
+  // Phase 60 (LOC-02): same narrowing as spawnAndRecordInstance() above --
+  // no environment-variable fallback here, the real broker always threads
+  // its once-resolved viceBin down through deps.viceBin.
+  const viceBin = deps.viceBin ?? "x64sc";
   // Timestamp PLUS the epoch number: Date.now() alone can collide across
   // two respawns inside the same millisecond when the injected sleepMs
   // resolves immediately (exactly what this module's own tests do to stay

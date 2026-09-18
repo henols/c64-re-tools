@@ -35,7 +35,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { mkdtempSync, writeFileSync, chmodSync, rmSync, existsSync, readFileSync, readdirSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync, existsSync, readFileSync, readdirSync } from "node:fs";
 // `HERE` (below) is this directory, so the structural tests at the foot of
 // this file read vice-broker.mts's own source from it -- the same idiom
 // broker-control.test.ts uses for its own structural gates.
@@ -50,6 +50,14 @@ import type { LaunchProfile } from "./broker-launch.mts";
 import type { HandleAcquireDeps } from "./vice-broker.mts";
 import type { AcquireOutcome } from "./broker-control.mts";
 import type { KillStage } from "./broker-kill.mts";
+// Plan 60-01 (LOC-01/LOC-02): both value-imported UNBUILT, exactly like
+// backend-detect.test.ts's own convention -- backend-detect.mts has zero
+// STATIC sibling value imports (its own tool-location seam dependency loads
+// lazily through node:module's createRequire(), never a top-level ESM
+// import; see that file's own header), and tool-location.mts has zero
+// sibling imports of any kind, so both remain safely importable this way.
+import { resolvedBackend, resetResolvedBackendForTests } from "./backend-detect.mts";
+import { resolveTool } from "./tool-location.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BROKER_ARTIFACT_URL = new URL("./resources/vice-broker.mjs", import.meta.url).href;
@@ -216,7 +224,6 @@ async function waitForProcessExit(pid: number, timeoutMs = 2000): Promise<void> 
 test("handleAcquire cold acquire (real makeLoggingSpawn + withCrashSupervision composition, buildColdSpawnFactory OMITTED): a stock launch's real nodeSpawn call gets a fresh scratch XDG_CONFIG_HOME (BACK-02)", async () => {
   const { handleAcquire } = await loadBrokerModule();
   const stateDir = mkdtempSync(join(tmpdir(), "vice-broker-acquire-i1-state-"));
-  const savedViceBin = process.env.VICE_BIN;
   const savedRecordFile = process.env.VICE_BROKER_TEST_RECORD_FILE;
   const savedAmbientXdg = process.env.XDG_CONFIG_HOME;
   const scratchDirs: string[] = [stateDir];
@@ -231,10 +238,19 @@ test("handleAcquire cold acquire (real makeLoggingSpawn + withCrashSupervision c
     const stockOutDir = mkdtempSync(join(tmpdir(), "vice-broker-acquire-i1-out-"));
     scratchDirs.push(stockOutDir);
     const stockOutFile = join(stockOutDir, "stock.txt");
-    process.env.VICE_BIN = stockScript.scriptPath;
     process.env.VICE_BROKER_TEST_RECORD_FILE = stockOutFile;
 
-    const stockOutcome = await handleAcquire("i1-stock", stateDir, stockState, { backend: "stock", allocateRemoteMonitorPort: stubAllocateRemoteMonitorPort() });
+    // Plan 60-01 (LOC-02): handleAcquire() no longer falls through to
+    // process.env.VICE_BIN -- the real broker threads its once-resolved
+    // viceBin down through HandleAcquireDeps.viceBin instead (this file's
+    // own unit-level stand-in for that resolution). Supplied explicitly
+    // here, where prior to this plan the ambient VICE_BIN env var alone
+    // was enough to steer the real spawn at the recorder script.
+    const stockOutcome = await handleAcquire("i1-stock", stateDir, stockState, {
+      backend: "stock",
+      viceBin: stockScript.scriptPath,
+      allocateRemoteMonitorPort: stubAllocateRemoteMonitorPort(),
+    });
     assert.equal(stockOutcome.ok, true, `expected a successful grant, got ${JSON.stringify(stockOutcome)}`);
     if (!stockOutcome.ok) return;
     const stockRecord = stockState.instances.get(stockOutcome.grant.port);
@@ -253,8 +269,6 @@ test("handleAcquire cold acquire (real makeLoggingSpawn + withCrashSupervision c
     killTestInstance(stockState, stockOutcome.grant.port);
     await waitForProcessExit(stockRecord!.pid!);
   } finally {
-    if (savedViceBin === undefined) delete process.env.VICE_BIN;
-    else process.env.VICE_BIN = savedViceBin;
     if (savedRecordFile === undefined) delete process.env.VICE_BROKER_TEST_RECORD_FILE;
     else process.env.VICE_BROKER_TEST_RECORD_FILE = savedRecordFile;
     if (savedAmbientXdg === undefined) delete process.env.XDG_CONFIG_HOME;
@@ -262,6 +276,168 @@ test("handleAcquire cold acquire (real makeLoggingSpawn + withCrashSupervision c
     for (const dir of scratchDirs) {
       rmSync(dir, { recursive: true, force: true });
     }
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Plan 60-01 (LOC-01/LOC-02): the tools.json-reaches-spawn tracer proof, its
+// environment-precedence counterpart, the no-file control, and resolution
+// stability -- the FOUR new cases the plan's own behavior block names as
+// Tests 1-4 (Test 5 is backend-detect.test.ts's own existing suite, run
+// unmodified). Every real spawn below is a STUB (buildColdSpawnFactory
+// capturing the resolved command argument), never a real process -- unlike
+// the BACK-02 composition test above, these four are about WHICH STRING
+// reaches the spawn call, not about the spawn composition itself.
+// ---------------------------------------------------------------------------
+
+/** Writes a tiny, real, chmod 0o755 file at `dir/name` -- never executed by
+ * any test in this section (every handleAcquire() call below supplies its
+ * own buildColdSpawnFactory stub), but real enough on disk to satisfy the
+ * seam's own file-layer existence/kind/executable-bit checks. */
+function writeStubExecutable(dir: string, name: string): string {
+  mkdirSync(dir, { recursive: true });
+  const p = join(dir, name);
+  writeFileSync(p, "#!/bin/sh\nexit 0\n");
+  chmodSync(p, 0o755);
+  return p;
+}
+
+function writeToolsJsonFile(toolsDir: string, entries: Record<string, string>): void {
+  mkdirSync(toolsDir, { recursive: true });
+  writeFileSync(join(toolsDir, "tools.json"), JSON.stringify(entries));
+}
+
+/** Like stubColdSpawnFactory() above, but captures the resolved COMMAND
+ * argument itself (spawnAndRecordInstance()'s own `viceBin`) rather than
+ * merely the port -- this section's whole point is proving WHICH STRING
+ * reaches the real spawn call, not merely that a spawn happened. */
+function capturingColdSpawnFactory(calls: string[]): (port: number) => (command: string, args: string[]) => ChildProcess {
+  return (_port: number) => {
+    return (command: string): ChildProcess => {
+      calls.push(command);
+      return { pid: 9000 + calls.length } as unknown as ChildProcess;
+    };
+  };
+}
+
+test("Plan 60-01 Test 1 (LOC-01 tracer): a bare-string x64sc entry in tools.json is the exact string the real spawn call receives, with no emulator env var set", async () => {
+  const { handleAcquire } = await loadBrokerModule();
+  const projectRoot = mkdtempSync(join(tmpdir(), "vice-broker-acquire-t1-root-"));
+  const stateDir = mkdtempSync(join(tmpdir(), "vice-broker-acquire-t1-state-"));
+  try {
+    const toolsDir = join(projectRoot, ".c64-re-tools");
+    const stubPath = writeStubExecutable(join(projectRoot, "bin"), "stub-x64sc-t1");
+    writeToolsJsonFile(toolsDir, { x64sc: stubPath });
+
+    resetResolvedBackendForTests();
+    const backendResult = resolvedBackend({ toolsDir, projectRoot, env: {} });
+    assert.equal(backendResult.binPath, stubPath, "tools.json's own path must be the resolved binPath, with no emulator env var set");
+    assert.equal(backendResult.binPathResolved, true);
+
+    const spawnCalls: string[] = [];
+    const outcome = await handleAcquire("t1", stateDir, createState(), {
+      backend: "stock",
+      viceBin: backendResult.binPath,
+      allocateRemoteMonitorPort: stubAllocateRemoteMonitorPort(),
+      buildColdSpawnFactory: capturingColdSpawnFactory(spawnCalls),
+    });
+    assert.equal(outcome.ok, true, `expected a successful grant, got ${JSON.stringify(outcome)}`);
+    assert.equal(spawnCalls[0], stubPath, "the real spawn call's first argument must equal the tools.json path");
+  } finally {
+    rmSync(projectRoot, { recursive: true, force: true });
+    rmSync(stateDir, { recursive: true, force: true });
+  }
+});
+
+test("Plan 60-01 Test 2: the emulator env var wins over a present tools.json entry, both at the seam and at the real spawn call", async () => {
+  const { handleAcquire } = await loadBrokerModule();
+  const projectRoot = mkdtempSync(join(tmpdir(), "vice-broker-acquire-t2-root-"));
+  const stateDir = mkdtempSync(join(tmpdir(), "vice-broker-acquire-t2-state-"));
+  try {
+    const toolsDir = join(projectRoot, ".c64-re-tools");
+    const fileStubPath = writeStubExecutable(join(projectRoot, "bin"), "stub-x64sc-t2-file");
+    const envStubPath = writeStubExecutable(join(projectRoot, "bin"), "stub-x64sc-t2-env");
+    writeToolsJsonFile(toolsDir, { x64sc: fileStubPath });
+
+    const directResult = resolveTool("x64sc", { toolsDir, projectRoot, env: { VICE_BIN: envStubPath } });
+    assert.equal(directResult.layer, "env", "the environment variable must win over a present tools.json entry");
+    assert.equal(directResult.path, envStubPath);
+
+    resetResolvedBackendForTests();
+    const backendResult = resolvedBackend({ toolsDir, projectRoot, env: { VICE_BIN: envStubPath } });
+    assert.equal(backendResult.binPath, envStubPath, "resolvedBackend() must report the SAME env-layer path the seam itself reported");
+
+    const spawnCalls: string[] = [];
+    const outcome = await handleAcquire("t2", stateDir, createState(), {
+      backend: "stock",
+      viceBin: backendResult.binPath,
+      allocateRemoteMonitorPort: stubAllocateRemoteMonitorPort(),
+      buildColdSpawnFactory: capturingColdSpawnFactory(spawnCalls),
+    });
+    assert.equal(outcome.ok, true, `expected a successful grant, got ${JSON.stringify(outcome)}`);
+    assert.equal(spawnCalls[0], envStubPath, "the real spawn call must receive the environment path, never the tools.json path");
+  } finally {
+    rmSync(projectRoot, { recursive: true, force: true });
+    rmSync(stateDir, { recursive: true, force: true });
+  }
+});
+
+test("Plan 60-01 Test 3: with no tools.json file present at all, resolution -- and the real spawn call -- are exactly what they are today", async () => {
+  const { handleAcquire } = await loadBrokerModule();
+  const projectRoot = mkdtempSync(join(tmpdir(), "vice-broker-acquire-t3-root-"));
+  const stateDir = mkdtempSync(join(tmpdir(), "vice-broker-acquire-t3-state-"));
+  const pathDir = mkdtempSync(join(tmpdir(), "vice-broker-acquire-t3-path-"));
+  try {
+    // Deliberately never created -- an absent .c64-re-tools/tools.json is
+    // the default state of an installation that has not written one yet.
+    const toolsDir = join(projectRoot, ".c64-re-tools");
+    const onPathStub = writeStubExecutable(pathDir, "x64sc");
+
+    resetResolvedBackendForTests();
+    const backendResult = resolvedBackend({ toolsDir, projectRoot, env: { PATH: pathDir } });
+    assert.equal(backendResult.binPath, onPathStub, "an absent tools.json must fall straight through to the $PATH walk, unchanged from before this plan");
+    assert.equal(backendResult.binPathResolved, true);
+
+    const spawnCalls: string[] = [];
+    const outcome = await handleAcquire("t3", stateDir, createState(), {
+      backend: "stock",
+      viceBin: backendResult.binPath,
+      allocateRemoteMonitorPort: stubAllocateRemoteMonitorPort(),
+      buildColdSpawnFactory: capturingColdSpawnFactory(spawnCalls),
+    });
+    assert.equal(outcome.ok, true, `expected a successful grant, got ${JSON.stringify(outcome)}`);
+    assert.equal(spawnCalls[0], onPathStub);
+  } finally {
+    rmSync(projectRoot, { recursive: true, force: true });
+    rmSync(stateDir, { recursive: true, force: true });
+    rmSync(pathDir, { recursive: true, force: true });
+  }
+});
+
+test("Plan 60-01 Test 4: two resolutions of x64sc in one process agree on path/layer/mechanism, and the environment candidate is tried before any $PATH candidate", () => {
+  const projectRoot = mkdtempSync(join(tmpdir(), "vice-broker-acquire-t4-root-"));
+  const pathDir = mkdtempSync(join(tmpdir(), "vice-broker-acquire-t4-path-"));
+  try {
+    const toolsDir = join(projectRoot, ".c64-re-tools"); // never created -- falls through
+    const onPathStub = writeStubExecutable(pathDir, "x64sc");
+    const deps = { toolsDir, projectRoot, env: { VICE_BIN: "/definitely/does/not/exist/x64sc", PATH: pathDir } };
+
+    const first = resolveTool("x64sc", deps);
+    const second = resolveTool("x64sc", deps);
+    assert.equal(first.path, second.path, "two resolutions in one process must agree on path");
+    assert.equal(first.layer, second.layer, "two resolutions in one process must agree on layer");
+    assert.equal(first.mechanism, second.mechanism, "two resolutions in one process must agree on mechanism");
+    assert.equal(first.layer, "probe");
+    assert.equal(first.path, onPathStub);
+
+    const envIndex = first.tried.indexOf("/definitely/does/not/exist/x64sc");
+    const pathIndex = first.tried.indexOf(onPathStub);
+    assert.notEqual(envIndex, -1, "the environment candidate must appear in tried");
+    assert.notEqual(pathIndex, -1, "the $PATH candidate must appear in tried");
+    assert.ok(envIndex < pathIndex, "the environment candidate must be tried before any $PATH candidate");
+  } finally {
+    rmSync(projectRoot, { recursive: true, force: true });
+    rmSync(pathDir, { recursive: true, force: true });
   }
 });
 
