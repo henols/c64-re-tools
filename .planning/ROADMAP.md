@@ -1967,7 +1967,7 @@ sources).
   project's history. A location file makes that recoverable; it does not make it
   stop mattering, so the warning stays.
 
-**Plans**: 4/5 plans executed
+**Plans**: 5/5 plans executed
 
 Plans:
 
@@ -1975,7 +1975,7 @@ Plans:
 - [x] 60-02-PLAN.md — the seam's first runtime reader of the declaration's remedy prose, and the structural gate that polices its shape (wave 1)
 - [x] 60-03-PLAN.md — ACME, ACME's standard library and Ghidra resolved through the seam inside the host-tool executor, with declaration-sourced refusals (wave 2)
 - [x] 60-04-PLAN.md — the sibling probe widened so `c1541` and `petcat` become locatable, and four comments citing a deleted guard corrected (wave 3)
-- [ ] 60-05-PLAN.md — the closed consumer set for the four environment variables, and the unchanged-behaviour claim measured as a failing-set difference (wave 4)
+- [x] 60-05-PLAN.md — the closed consumer set for the four environment variables, and the unchanged-behaviour claim measured as a failing-set difference (wave 4)
 
 ### Phase 61: `vice-mcp doctor`, Reachable on a Node Too Old to Run the Server
 
@@ -2252,7 +2252,7 @@ check. No test reads this table now.
 | 57. Nothing Is Installed Automatically | v1.0.0 → carried | 0/0 | **Carried forward** | - |
 | 58. One Declaration, Four Places That Can No Longer Disagree | v1.1.0 | 3/3 | Complete | 2026-09-17 |
 | 59. The Tool-Location Seam and Its Precedence Order | v1.1.0 | 5/5 | Complete | 2026-09-18 |
-| 60. The Seam Wired Into the Code That Ships | v1.1.0 | 4/5 | In Progress | - |
+| 60. The Seam Wired Into the Code That Ships | v1.1.0 | 5/5 | In Progress|  |
 | 61. `vice-mcp doctor`, Reachable on a Node Too Old to Run the Server | v1.1.0 | 0/? | Not started | - |
 | 62. The Install Tables Generated, and a Guard That Compares Facts | v1.1.0 | 0/? | Not started | - |
 
