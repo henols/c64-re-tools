@@ -1967,7 +1967,7 @@ sources).
   project's history. A location file makes that recoverable; it does not make it
   stop mattering, so the warning stays.
 
-**Plans**: 6/7 plans executed — verification found `LOC-03` unmet, so two gap-closure plans
+**Plans**: 7/7 plans executed — verification found `LOC-03` unmet, so two gap-closure plans
 were added after the first execution
 
 Plans:
@@ -1978,7 +1978,7 @@ Plans:
 - [x] 60-04-PLAN.md — the sibling probe widened so `c1541` and `petcat` become locatable, and four comments citing a deleted guard corrected (wave 3)
 - [x] 60-05-PLAN.md — the closed consumer set for the four environment variables, and the unchanged-behaviour claim measured as a failing-set difference (wave 4)
 - [x] 60-06-PLAN.md — gap closure for `LOC-03`: the environment layer resolves the binary the developer actually named, and refuses by name instead of substituting a same-named `$PATH` binary (wave 5)
-- [ ] 60-07-PLAN.md — gap closure follow-on: the seam's own reason reaches the `c1541`/`petcat` refusals, the memo decision is recorded rather than dropped, and the unchanged-behaviour claim is re-measured (wave 6)
+- [x] 60-07-PLAN.md — gap closure follow-on: the seam's own reason reaches the `c1541`/`petcat` refusals, the memo decision is recorded rather than dropped, and the unchanged-behaviour claim is re-measured (wave 6)
 
 ### Phase 61: `vice-mcp doctor`, Reachable on a Node Too Old to Run the Server
 
@@ -2255,7 +2255,7 @@ check. No test reads this table now.
 | 57. Nothing Is Installed Automatically | v1.0.0 → carried | 0/0 | **Carried forward** | - |
 | 58. One Declaration, Four Places That Can No Longer Disagree | v1.1.0 | 3/3 | Complete | 2026-09-17 |
 | 59. The Tool-Location Seam and Its Precedence Order | v1.1.0 | 5/5 | Complete | 2026-09-18 |
-| 60. The Seam Wired Into the Code That Ships | v1.1.0 | 6/7 | In Progress|  |
+| 60. The Seam Wired Into the Code That Ships | v1.1.0 | 7/7 | In Progress|  |
 | 61. `vice-mcp doctor`, Reachable on a Node Too Old to Run the Server | v1.1.0 | 0/? | Not started | - |
 | 62. The Install Tables Generated, and a Guard That Compares Facts | v1.1.0 | 0/? | Not started | - |
 
