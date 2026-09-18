@@ -122,6 +122,29 @@ import {
 // once per broker lifetime -- never re-probed per c1541.* call within the
 // SAME process, per findSiblingBinary()'s own memo below.
 import { resolvedBackend } from "./backend-detect.mjs";
+// This module's THIRD sibling import, and its own use of the `.mjs`-extension
+// rule for a host-bound sibling -- the same form the `backend-detect.mjs`
+// import immediately above already uses, a plain static VALUE import, never
+// the lazy `createRequire()` dual-path load `backend-detect.mts`'s own
+// `toolLocationSeam()` uses. That dance exists ONLY for a module that ships
+// two ways -- unbuilt, imported directly by a real no-build-step entry point,
+// AND compiled -- and `host-tool.mts` does not: every real consumer (this
+// project's own broker, the direct host-spawn route, and every test file
+// that reaches `runHostTool()`) imports the COMPILED `resources/host-tool.mjs`
+// artifact only, exactly like the `ghidra-project.mjs` import above already
+// does; the unbuilt `.mts` source is never loaded as a live ESM module by
+// anything in this tree (confirmed: no import specifier anywhere in this
+// repository names `"./host-tool.mts"`). A static `"./tool-location.mjs"`
+// specifier is therefore safe here the same way it is safe for
+// `ghidra-project.mjs`: it only ever resolves once both compiled siblings sit
+// together in `resources/`, which `build.ts`'s `HOST_BOUND_ARTIFACTS` already
+// guarantees for both. `resolveTool` is `LOC-01`'s seam call (a `tools.json`
+// entry for `acme`/`acme-lib`/`ghidra` reaching this module's spawn);
+// `remedyTextsFor` is `DECL-03`'s remedy reader (plan 60-02) -- every refusal
+// this module returns for `acme`, `acme-lib`, `ghidra` or `dxa` composes its
+// closing sentence from this function's return value, never a re-authored
+// literal.
+import { resolveTool, remedyTextsFor } from "./tool-location.mjs";
 
 // This module's own directory, used ONLY to compute the vendored dxa
 // binary's fixed path. Never an environment-variable override: dxa is
@@ -1274,13 +1297,75 @@ export type BuildHostToolArgvResult =
     }
   | { ok: false; message: string };
 
+/** The two facts `buildHostToolArgv()` needs to resolve `acme`/`acme-lib`/
+ * `ghidra` through the tool-location seam (PD-06) -- deliberately NOT the
+ * seam's own full `ResolveToolDeps` shape (`tool-location.mts`), whose
+ * remaining fields all carry real defaults no production caller here ever
+ * needs to override. `toolsDir` and `projectRoot` are both required, mirroring
+ * `ResolveToolDeps`'s own convention: this module derives neither from the
+ * other and derives neither from anywhere else. `here` is an ADDITIONAL,
+ * test-only field, absent from PD-06's own two-field description -- it
+ * mirrors `ResolveToolDeps.here`/`RemedyTextsForDeps.here` and exists solely
+ * so a test can point BOTH the seam's tool resolution and the declaration's
+ * remedy text (`remedyTextsFor()`, DECL-03) at a scratch `prerequisites.json`
+ * copy instead of the real, committed one -- without it, DECL-03's
+ * non-vacuity claim (a mutated remedy sentence changes what a live refusal
+ * prints) would be unprovable end-to-end through `runHostTool()`, since this
+ * suite carries no mocking library to fake the module import instead.
+ * `runHostTool()`'s own locator never sets it. */
+export interface HostToolLocator {
+  toolsDir: string;
+  projectRoot: string;
+  here?: string;
+}
+
+/** Returns `locate` verbatim when supplied, or -- when absent -- a locator
+ * derived from `process.cwd()` (PD-06). The production route
+ * (`runHostTool()`) always supplies a real locator built from its own
+ * already-resolved `repoRootAbs`; this fallback exists only so the argv-shape
+ * test call sites across this file's own test suite -- which exercise argv
+ * construction alone -- keep compiling and keep returning the same argv they
+ * return today, with no per-call-site edit required. Documented as a last
+ * resort, not a guess: a working directory with no `.c64-re-tools/tools.json`
+ * makes the file layer a silent no-op for that call, so this fallback can
+ * only WIDEN resolution (adding the environment and `$PATH`/fixed-prefix
+ * layers a bare literal never had) where a real project root already happens
+ * to be the working directory -- mirrors `backend-detect.mts`'s own
+ * `ResolvedBackendDeps` derivation (PD-03) for the identical reason. */
+function locatorFrom(locate?: HostToolLocator): HostToolLocator {
+  if (locate) return locate;
+  const projectRoot = process.cwd();
+  return { toolsDir: join(projectRoot, ".c64-re-tools"), projectRoot };
+}
+
+/** Appends a declared tool's remedy prose (`remedyTextsFor()`, DECL-03) to a
+ * refusal `base` sentence, joined with `"; "` -- appending NOTHING at all
+ * when the declaration carries no remedy for the running platform, so a
+ * refusal never ends in a dangling separator with nothing after it. `here`
+ * threads `HostToolLocator.here` through so a test pointing resolution at a
+ * scratch declaration (see that field's own doc comment) reads the remedy
+ * text from the SAME scratch declaration, never the real committed one. */
+function withRemedy(base: string, id: string, here?: string): string {
+  const remedies = remedyTextsFor(id, here !== undefined ? { here } : {});
+  return remedies.length > 0 ? `${base} -- ${remedies.join("; ")}` : base;
+}
+
 /** Deterministic: the same typed request and the same resolved paths yield
  * a byte-identical argv array on two successive calls -- no randomness, no
  * timestamp, no environment-dependent ordering. `log` is OPTIONAL and used
  * ONLY by the c1541.dir branch to report a PATH-fallback binary resolution
  * -- every pre-existing branch ignores it, exactly as they already ignore
- * any parameter they do not need. */
-export function buildHostToolArgv(request: HostToolRequest, resolved: ResolvedHostToolPaths, log?: (line: string) => void): BuildHostToolArgvResult {
+ * any parameter they do not need. `locate` is OPTIONAL (PD-06): the one
+ * production caller, `runHostTool()`, always supplies it; every other call
+ * site -- this file's own argv-shape tests foremost -- may omit it and falls
+ * back to `locatorFrom()`'s own `process.cwd()`-derived pair. */
+export function buildHostToolArgv(
+  request: HostToolRequest,
+  resolved: ResolvedHostToolPaths,
+  log?: (line: string) => void,
+  locate?: HostToolLocator,
+): BuildHostToolArgvResult {
+  const loc = locatorFrom(locate);
   if (request.tool === "acme.build") {
     const { args } = request;
     const { sourcePath, outDirPath, includePaths } = resolved as ResolvedAcmeBuildPaths;
@@ -1289,7 +1374,31 @@ export function buildHostToolArgv(request: HostToolRequest, resolved: ResolvedHo
     // Overridable local variable named for what it holds -- never `binPath`/
     // `viceBin`/`VICE_BIN`/`x64sc`, which spawn-seam.test.ts's
     // EMULATOR_BIN_SHAPE would misclassify as an emulator spawn site.
-    const acmePath = process.env.ACME_BIN && process.env.ACME_BIN !== "" ? process.env.ACME_BIN : "acme";
+    // Resolved through the seam (LOC-01) rather than a direct read of the
+    // declared ACME environment variable: env -> tools.json -> $PATH, in
+    // that order, the one precedence this tree now states once. A malformed
+    // tools.json entry is a REFUSAL (quoted verbatim, no remedy appended --
+    // the declaration's remedy is prose for "ACME is missing", not for "your
+    // tools.json entry is wrong"); a well-formed-but-nonexistent path anywhere
+    // along the chain is "not found", which DOES carry the declared remedy.
+    // This existence check is NEW behaviour (T-60-08): today there is none at
+    // all, and a missing ACME surfaces only as a raw operating-system spawn
+    // error inside spawnErrorMessage.
+    const acmeResolved = resolveTool("acme", { toolsDir: loc.toolsDir, projectRoot: loc.projectRoot, here: loc.here });
+    if (acmeResolved.refusal) {
+      return { ok: false, message: `host_tool "acme.build" refuses: ${acmeResolved.refusal}` };
+    }
+    if (acmeResolved.path === null) {
+      return {
+        ok: false,
+        message: withRemedy(
+          `host_tool "acme.build" refuses: the ACME binary was not found (tried: ${acmeResolved.tried.join(", ")})`,
+          "acme",
+          loc.here,
+        ),
+      };
+    }
+    const acmePath = acmeResolved.path;
 
     // Fixed flags first, in the SAME order src/skills/acme-build/scripts/
     // acme.mjs's build() uses today, then one -D per define and one -I pair
@@ -1842,6 +1951,12 @@ export interface HostToolDeps {
   repoRoot: string;
   log?: (line: string) => void;
   timeoutMs?: number;
+  /** Test-only override threaded into the `HostToolLocator` runHostTool()
+   * builds internally (see `HostToolLocator.here`'s own doc comment for why
+   * it exists). No production caller sets this -- vice-broker.mts's own
+   * `onHostTool` callback and host-tool-client.ts's direct host route both
+   * construct `HostToolDeps` with `repoRoot` alone. */
+  here?: string;
 }
 
 /** Which tool ids write NO output file of their own -- their "output" IS
@@ -2337,6 +2452,13 @@ export async function runHostTool(raw: unknown, deps: HostToolDeps): Promise<Hos
   if (request.tool === "oracle.run") return runOracleRun(request.args, deps);
 
   const repoRootAbs = resolvePath(deps.repoRoot);
+  // Built ONCE, from the already-computed repoRootAbs (PD-06), and passed as
+  // the fourth argument to every buildHostToolArgv() call site below plus
+  // findAcmeLib() and ghidra.installExtension's own pre-materialisation
+  // resolution -- one locator, not a per-branch re-derivation. `here` is
+  // `deps.here`, always undefined in production (HostToolDeps.here's own
+  // doc comment).
+  const hostToolLocator: HostToolLocator = { toolsDir: join(repoRootAbs, ".c64-re-tools"), projectRoot: repoRootAbs, here: deps.here };
 
   let built: BuildHostToolArgvResult;
   let acmeLib: { path: string | null; tried: string[] } | null = null;
@@ -2375,7 +2497,7 @@ export async function runHostTool(raw: unknown, deps: HostToolDeps): Promise<Hos
       includePaths.push(includeResolved.path);
     }
 
-    built = buildHostToolArgv(request, { sourcePath: sourceResolved.path, outDirPath, includePaths });
+    built = buildHostToolArgv(request, { sourcePath: sourceResolved.path, outDirPath, includePaths }, undefined, hostToolLocator);
     acmeLib = findAcmeLib();
   } else if (request.tool === "ghidra.analyze") {
     // Converted from a previous `if (acme.build) … else (ghidra.analyze)`
@@ -2444,17 +2566,22 @@ export async function runHostTool(raw: unknown, deps: HostToolDeps): Promise<Hos
     if (!projectResolved.ok) return { ok: false, message: projectResolved.message };
     ghidraReservedProjectLocation = projectResolved.projectLocation;
 
-    built = buildHostToolArgv(request, {
-      importPath: importResolved.path,
-      projectLocation: projectResolved.projectLocation,
-      projectName: projectResolved.projectName,
-      preScriptPath,
-      postScriptPath,
-      scriptPathResolved,
-      entrypointsPathResolved,
-      exportPathResolved,
-      dataRangesPathResolved,
-    });
+    built = buildHostToolArgv(
+      request,
+      {
+        importPath: importResolved.path,
+        projectLocation: projectResolved.projectLocation,
+        projectName: projectResolved.projectName,
+        preScriptPath,
+        postScriptPath,
+        scriptPathResolved,
+        entrypointsPathResolved,
+        exportPathResolved,
+        dataRangesPathResolved,
+      },
+      undefined,
+      hostToolLocator,
+    );
   } else if (request.tool === "dxa.disassemble") {
     // (35-01, item 7). `image` and each present optional path resolved
     // through the SAME resolveWorkspacePath() site acme.build's `source`
@@ -2492,13 +2619,18 @@ export async function runHostTool(raw: unknown, deps: HostToolDeps): Promise<Hos
       labelsPath = labelsResolved.path;
     }
 
-    built = buildHostToolArgv(request, {
-      imagePath: imageResolved.path,
-      outDirPath,
-      entrypointsPath,
-      datablocksPath,
-      labelsPath,
-    });
+    built = buildHostToolArgv(
+      request,
+      {
+        imagePath: imageResolved.path,
+        outDirPath,
+        entrypointsPath,
+        datablocksPath,
+        labelsPath,
+      },
+      undefined,
+      hostToolLocator,
+    );
   } else if (request.tool === "ghidra.installExtension") {
     // `sourceDir`
     // resolved through the SAME resolveWorkspacePath() site every other
@@ -2569,7 +2701,7 @@ export async function runHostTool(raw: unknown, deps: HostToolDeps): Promise<Hos
       };
     }
 
-    built = buildHostToolArgv(request, { sourceDirPath: sourceDirResolved.path, moduleName: request.args.moduleName });
+    built = buildHostToolArgv(request, { sourceDirPath: sourceDirResolved.path, moduleName: request.args.moduleName }, undefined, hostToolLocator);
   } else {
     // request.tool is one of the five c1541.* ids or petcat.decode -- every
     // remaining id resolves the SAME two fields, so this one branch covers
@@ -2592,7 +2724,7 @@ export async function runHostTool(raw: unknown, deps: HostToolDeps): Promise<Hos
       outDirPath = dirname(imageResolved.path);
     }
 
-    built = buildHostToolArgv(request, { imagePath: imageResolved.path, outDirPath }, deps.log);
+    built = buildHostToolArgv(request, { imagePath: imageResolved.path, outDirPath }, deps.log, hostToolLocator);
   }
   if (!built.ok) {
     // buildHostToolArgv()'s own GHIDRA_HOME/launcher/language preflight

@@ -110,10 +110,20 @@ const hostTool = (await import(new URL("./resources/host-tool.mjs", import.meta.
     // acme.build's own (sourcePath/outDirPath) -- this cast is test-file-
     // local typing only, not the module's own exported type.
     resolved: Record<string, unknown>,
+    // Plan 60-03 (PD-06): the two OPTIONAL trailing parameters
+    // buildHostToolArgv() gained -- `log` (pre-existing, now named here for
+    // the first time) and `locate`, a HostToolLocator-shaped bag. Widened
+    // the same way `resolved` above is, for the identical reason.
+    log?: (line: string) => void,
+    locate?: { toolsDir: string; projectRoot: string; here?: string },
   ) => { ok: true; toolPath: string; argv: string[]; outputs: string[]; cwd?: string } | { ok: false; message: string };
   runHostTool: (
     raw: unknown,
-    deps: { repoRoot: string; log?: (line: string) => void; timeoutMs?: number },
+    // Plan 60-03: `here` is a TEST-ONLY optional override (HostToolDeps.here's
+    // own doc comment) -- threaded into the HostToolLocator runHostTool()
+    // builds internally, so a case can point resolution at a scratch
+    // prerequisites.json (DECL-03 non-vacuity) without a mocking library.
+    deps: { repoRoot: string; log?: (line: string) => void; timeoutMs?: number; here?: string },
   ) => Promise<
     | { ok: true; tool: string; exitStatus: number | null; results: Array<{ path: string; sha256: string; byteLength: number }>; stderrTail: string }
     | { ok: false; message: string }
@@ -1116,7 +1126,14 @@ test("Plan 60-03 Test 3a: with no tools.json and no ACME_BIN, resolution falls t
     const previousAcmeBin = process.env.ACME_BIN;
     const previousPath = process.env.PATH;
     delete process.env.ACME_BIN;
-    process.env.PATH = pathDir;
+    // PREPENDED, never a replacement: the stub's own shebang (`#!/usr/bin/env
+    // node`) needs `node` still reachable on PATH to launch at all, and the
+    // seam's own $PATH walk (resolveOnPath()) returns the FIRST match in
+    // PATH order -- prepending puts this stub ahead of any real `acme`
+    // already installed on this host (measured present in this project's own
+    // dev/CI environment), so the assertion below proves THIS stub answered,
+    // not merely that resolution succeeded some other way.
+    process.env.PATH = `${pathDir}:${previousPath ?? ""}`;
     try {
       const response = await runHostTool({ tool: "acme.build", args: { source: "a.a", noReport: true } }, { repoRoot: dir });
       assert.equal(response.ok, true, response.ok ? "" : JSON.stringify(response));

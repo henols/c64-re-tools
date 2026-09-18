@@ -1505,12 +1505,31 @@ test("the binary-token divergence is DISCHARGED: both sides resolve the ACME bin
   const skillSrc = stripComments(readFileSync(ACME_BUILD_ARGV_PATH, "utf8"));
   const verifySrc = stripComments(readFileSync(VERIFY_MODULE_PATH, "utf8"));
 
+  // Phase 60 (LOC-01, plan 60-03): host-tool.mts's buildHostToolArgv() no
+  // longer reads process.env.ACME_BIN directly -- it resolves "acme" through
+  // the tool-location seam (env -> tools.json -> $PATH), which reads the
+  // SAME environment-variable name, but from prerequisites.json's own
+  // declaration rather than a literal in this file. The convention this test
+  // discharges (34-04, SEAM-05) is therefore now a TWO-PART claim: the
+  // executor delegates to the seam for this id, AND the declaration still
+  // names ACME_BIN as the overridable variable -- together, the same
+  // overridable-env-var guarantee the old direct read gave, just relocated
+  // to the one place LOC-02 requires it live.
   assert.match(
     skillSrc,
-    /process\.env\.ACME_BIN/,
-    "host-tool.mts's buildHostToolArgv() is expected to resolve the ACME binary from process.env.ACME_BIN, the SAME " +
-      "convention acme-gate.ts's own ACME_BIN uses -- if it now spawns a hardcoded literal again, the divergence this " +
-      "test discharged (34-04, SEAM-05) has come back and belongs in DECLARED_DIVERGENCES again"
+    /resolveTool\(\s*"acme"\s*,/,
+    'host-tool.mts\'s buildHostToolArgv() is expected to resolve the ACME binary through resolveTool("acme", ...) -- ' +
+      "the tool-location seam -- if it now spawns a hardcoded literal or reads process.env.ACME_BIN directly again, " +
+      "the divergence this test discharged (34-04, SEAM-05) has come back and belongs in DECLARED_DIVERGENCES again"
+  );
+  const prerequisitesDoc = JSON.parse(readFileSync(join(HERE, "prerequisites.json"), "utf8")) as {
+    tools: Record<string, { location?: { envVar?: string } }>;
+  };
+  assert.equal(
+    prerequisitesDoc.tools.acme?.location?.envVar,
+    "ACME_BIN",
+    "prerequisites.json must still declare ACME_BIN as \"acme\"'s overridable environment variable -- the seam reads " +
+      "this name at call time, so a rename here is the same divergence a direct process.env.ACME_BIN read used to guard"
   );
   assert.doesNotMatch(
     skillSrc,
