@@ -597,6 +597,17 @@ export interface StockReconnectOptions {
  * quad means a restart that swapped the underlying binary never inherits
  * the old build's capability answers (resolveCapabilities()'s own staleness
  * check above).
+ *
+ * Plan 63-02 (SESS-02): a dead RELAY connection is now one of the
+ * conditions StockConnectionClosedError/"this socket died" above covers --
+ * the binary channel's relay may be re-established, unlike the text
+ * channel's (text-connect.ts's own header comment states the opposite
+ * policy for that channel, deliberately). `stockConnect()` inside this
+ * function's own re-run reaches through `session.deps.dialMonitorSocket`
+ * (or its default, dialMonitorRelay() against the broker's fixed endpoint)
+ * exactly like the original connect did -- never a direct dial to the
+ * emulator's own port -- so a reconnect after a relay death dials the
+ * relay again, not the emulator directly.
  */
 export async function stockReconnect(session: StockConnectSession, { lastToolCall = null }: StockReconnectOptions = {}): Promise<StockConnectSession> {
   const readEpochFn = session.deps.readEpochFn ?? readEpoch;

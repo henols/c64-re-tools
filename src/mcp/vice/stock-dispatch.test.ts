@@ -2593,6 +2593,19 @@ async function withConformanceTextServer<T>(onLine: (line: string, socket: Socke
   }
 }
 
+// Phase 63 (SESS-02): textConnect()'s default socket source is now a relay
+// dial against a broker that is not running in this test process -- mirrors
+// text-connect.test.ts's/text-tools.test.ts's own directDialMonitorSocket
+// exactly: dials the stub text-monitor server DIRECTLY and resolves an
+// empty pending Buffer, byte-identical handshake behaviour to the pre-relay
+// direct dial this replaces.
+const directTextDialMonitorSocket: DialMonitorSocketFn = (opts) =>
+  new Promise((resolve, reject) => {
+    const socket = netConnect({ host: opts.host, port: opts.port });
+    socket.once("connect", () => resolve({ socket, pending: Buffer.alloc(0) }));
+    socket.once("error", reject);
+  });
+
 function buildTextConformanceDeps(port: number, overrides: Partial<StockDispatchDeps> = {}): StockDispatchDeps {
   const lease: HeldLease = {
     host: "127.0.0.1",
@@ -2605,6 +2618,7 @@ function buildTextConformanceDeps(port: number, overrides: Partial<StockDispatch
   };
   return {
     ensureLease: async () => ({ ok: true as const, lease }),
+    dialMonitorSocket: directTextDialMonitorSocket,
     ...overrides,
   };
 }

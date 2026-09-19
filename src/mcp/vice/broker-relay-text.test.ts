@@ -324,3 +324,83 @@ test("handover: prompt bytes delivered in the same write as the attach reply are
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });
+
+// ===========================================================================
+// Task 2 (SESS-02): the text channel's relay-death policy -- FATAL, never a
+// reconnect. Mirrors broker-relay.test.ts's own binary-side proving case
+// but asserts the OPPOSITE outcome: no second connection, ever.
+// ===========================================================================
+
+test("relay death (text): after the text relay is destroyed, the next text command rejects with a refusal naming the text channel, no second connection ever reaches the stub text monitor, and the claim can still be released", async () => {
+  resetChannelLockForTests();
+  let emulatorSocket: Socket | null = null;
+  let resolveEmulatorAccepted: () => void = () => {};
+  const emulatorAccepted = new Promise<void>((resolve) => {
+    resolveEmulatorAccepted = resolve;
+  });
+  await withStubTextMonitorServer(
+    (socket) => {
+      emulatorSocket = socket;
+      resolveEmulatorAccepted();
+      // Never replies -- this test never completes a successful command;
+      // the relay dies while the connection is idle.
+    },
+    async (textPort, connectionCount) => {
+      await withRelayTestBroker(textPort, "grant-relay-death-text", async ({ listenerPort, token, state }) => {
+        const claimOutcome = handleMonitorClaim("claim-relay-death-text", "grant-relay-death-text", "text", state);
+        assert.ok(claimOutcome.ok, `expected the claim to succeed: ${JSON.stringify(claimOutcome)}`);
+        if (!claimOutcome.ok) return;
+
+        const dialResult = await dialMonitorRelay({
+          targetId: "grant-relay-death-text",
+          channel: "text",
+          handle: claimOutcome.handle,
+          token,
+          port: listenerPort,
+          candidates: ["127.0.0.1"],
+        });
+        assert.ok(dialResult.ok, `expected a successful relay dial: ${JSON.stringify(dialResult)}`);
+        if (!dialResult.ok) return;
+
+        const client = new TextMonitorClient();
+        client.attach(dialResult.socket, { pending: dialResult.pending });
+        assert.ok(client.connected);
+
+        // The broker dials the emulator ASYNCHRONOUSLY inside
+        // spliceRelay() -- the attach reply (and this dial's own
+        // resolution) can arrive before the emulator-side TCP handshake
+        // completes, so wait for the stub text monitor to actually accept
+        // the connection before destroying it.
+        await emulatorAccepted;
+
+        // Destroy the EMULATOR side of the splice -- this cascades through
+        // spliceRelay()'s own "close" wiring to destroy the client's relay
+        // socket too, exactly as an unexpected mid-session relay death
+        // would (never a controlled disconnect()).
+        const clientClosed = new Promise<void>((resolve) => client.once("close", () => resolve()));
+        emulatorSocket!.destroy();
+        await clientClosed;
+        assert.equal(client.connected, false, "the relay death must be observable through the SAME connected getter a direct-dial death would flip");
+
+        await assert.rejects(
+          () => withTextChannelLock("device c:", () => client.command("device c:")),
+          (err: unknown) => {
+            assert.ok(err instanceof Error);
+            assert.match((err as Error).message, /text channel/i, "the refusal must name the text channel");
+            assert.match((err as Error).message, /lost account/i, "the refusal must state the session lost account of what happened on it");
+            return true;
+          },
+        );
+
+        assert.equal(connectionCount(), 1, "the text channel must never reconnect -- exactly one lifetime connection to the stub text monitor");
+
+        // Even after a fatal relay death, the claim itself must still be
+        // releasable -- disconnect() on an already-dead socket, followed
+        // by releaseMonitor(), must not be blocked by the dead connection.
+        await client.disconnect();
+        const releaseOutcome = handleMonitorRelease("release-relay-death-text", "grant-relay-death-text", "text", state);
+        assert.ok(releaseOutcome.ok, `expected the text claim to still be releasable after a fatal relay death: ${JSON.stringify(releaseOutcome)}`);
+      });
+    },
+  );
+});

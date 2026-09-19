@@ -955,7 +955,21 @@ export class TextMonitorClient extends EventEmitter {
       );
     }
     if (this.#closed || !this.connected || !this.#socket) {
-      return Promise.reject(new ViceError("text-protocol: cannot send, the text-monitor connection is not open"));
+      // Plan 63-02 (deviation, Rule 2): the ONE place a text command
+      // discovers a dead socket -- named as a refusal of the TEXT CHANNEL
+      // specifically, and stating explicitly that the session has lost
+      // account of what happened on it, since text-connect.ts's own header
+      // comment forbids ever building a textReconnect() to paper over
+      // exactly this loss. A caller that catches this must never retry
+      // against the same session; a fresh textConnect() is the only way
+      // forward.
+      return Promise.reject(
+        new ViceError(
+          "text-protocol: refusing command -- the text channel's connection is not open; a text-channel " +
+            "connection that dies is never silently reconnected, so this session has lost account of what " +
+            "happened on the text channel while it was down",
+        ),
+      );
     }
     if (this.#pending) {
       return Promise.reject(new ViceError("text-protocol: a command is already outstanding on this connection"));

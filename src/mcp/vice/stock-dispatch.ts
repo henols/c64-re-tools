@@ -32,7 +32,7 @@ import { resolve, join } from "node:path";
 
 import type { ToolInfo } from "./vice-errors.ts";
 import { type HeldLease } from "./vice-broker-client.ts";
-import { stockConnect, stockDisconnect, stockReconnect, type StockConnectSession, type StockConnectDeps } from "./stock-connect.ts";
+import { stockConnect, stockDisconnect, stockReconnect, type StockConnectSession, type StockConnectDeps, type DialMonitorSocketFn } from "./stock-connect.ts";
 import {
   isErrorText,
   convertHandshakeError,
@@ -211,6 +211,18 @@ export interface StockDispatchDeps {
    * default. Exists so a test can observe a ChannelLockTimeoutError (and its
    * refusal text) without waiting out the real ~630-second default. */
   channelLockTimeoutMs?: number;
+  /** Test-only override of the relay socket source (Phase 63, plan 63-02)
+   * -- threaded into stockConnectDepsFor() below for the binary channel
+   * AND passed directly to text-tools.ts's own withTextTool() -> textConnect()
+   * call for the text channel, so ONE field lets a test dial a stub server
+   * directly for EITHER channel without reaching for the heavier
+   * `connect`/`reconnect` full-function overrides above. Production passes
+   * neither; both channels' own module-level defaults (dialMonitorRelay()
+   * against the broker's fixed endpoint) apply. */
+  dialMonitorSocket?: DialMonitorSocketFn;
+  /** Test-only override paired with dialMonitorSocket above -- see that
+   * field's own comment. Production passes neither. */
+  controlToken?: string;
 }
 
 export type EnsureStockSessionOutcome = { ok: true; session: StockConnectSession } | { ok: false; message: string };
@@ -442,6 +454,8 @@ function stockConnectDepsFor(lease: HeldLease, deps: StockDispatchDeps): StockCo
   if (lease.epochFile) connectDeps.epochPath = lease.epochFile;
   if (lease.supervisorDir) connectDeps.supervisorDir = lease.supervisorDir;
   if (deps.resolvedBinaryPath) connectDeps.binPath = deps.resolvedBinaryPath;
+  if (deps.dialMonitorSocket) connectDeps.dialMonitorSocket = deps.dialMonitorSocket;
+  if (deps.controlToken) connectDeps.controlToken = deps.controlToken;
   return connectDeps;
 }
 

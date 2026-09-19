@@ -13,6 +13,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, connect as netConnect, type Server, type Socket, type AddressInfo } from "node:net";
+import { mkdtempSync, writeFileSync, rmSync, readFileSync, existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { execFileSync } from "node:child_process";
 
 import { readAttachLine, MAX_ATTACH_LINE_BYTES } from "./broker-relay.mts";
 import {
@@ -33,6 +38,10 @@ import { ViceMonitorClient, CommandType, ResponseType, ErrorCode, REQUEST_HEADER
 import { encodeResponseFrame } from "./binmon-fixtures.ts";
 import { build } from "./build.ts";
 import type { Socket as NetSocket } from "node:net";
+import { stockConnect, stockReconnect, stockDisconnect, type StockConnectBrokerControl, type DialMonitorSocketFn } from "./stock-connect.ts";
+import { MachineRestartedError } from "./vice-errors.ts";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
 
 // ---------------------------------------------------------------------------
 // vice-broker.mts is host-bound: it VALUE-imports sibling ".mjs" artifacts
@@ -657,4 +666,267 @@ test("concurrency: two relay connections attached to two DIFFERENT grants on one
     await new Promise<void>((resolve) => serverA.close(() => resolve()));
     await new Promise<void>((resolve) => serverB.close(() => resolve()));
   }
+});
+
+// ===========================================================================
+// Task 2 (plan 63-02, SESS-02): the binary channel's relay-death policy --
+// re-establishable, unlike the text channel's. Every server below is a
+// full-handshake stub (PING/VICE_INFO/CPUHISTORY_GET/EXIT), mirroring
+// stock-connect.test.ts's own happyPathResponder() shape, standing in for
+// a well-behaved stock build -- never a real emulator.
+// ===========================================================================
+
+interface DecodedRequest {
+  requestId: number;
+  commandType: number;
+  total: number;
+}
+
+function decodeOneRequest(buf: Buffer): DecodedRequest | null {
+  if (buf.length < REQUEST_HEADER_LEN) return null;
+  const bodyLength = buf.readUInt32LE(2);
+  const total = REQUEST_HEADER_LEN + bodyLength;
+  if (buf.length < total) return null;
+  return { requestId: buf.readUInt32LE(6), commandType: buf[10]!, total };
+}
+
+/** A full-handshake responder for PING/VICE_INFO/CPUHISTORY_GET/EXIT --
+ * mirrors stock-connect.test.ts's own happyPathResponder() (this file
+ * cannot import that one; it is private to its own file), the minimum
+ * stockConnect()'s own handshake needs to complete against a stub. */
+function happyPathResponder(): (socket: Socket) => void {
+  return (socket) => {
+    let buf = Buffer.alloc(0);
+    socket.on("data", (chunk: Buffer) => {
+      buf = Buffer.concat([buf, chunk]);
+      for (;;) {
+        const decoded = decodeOneRequest(buf);
+        if (!decoded) break;
+        buf = buf.subarray(decoded.total);
+        switch (decoded.commandType) {
+          case CommandType.Ping:
+            socket.write(encodeResponseFrame({ responseType: ResponseType.Ping, errorCode: ErrorCode.Ok, requestId: decoded.requestId }));
+            break;
+          case CommandType.ViceInfo:
+            socket.write(
+              encodeResponseFrame({
+                responseType: ResponseType.ViceInfo,
+                errorCode: ErrorCode.Ok,
+                requestId: decoded.requestId,
+                body: Buffer.concat([Buffer.from([4]), Buffer.from([3, 9, 0, 0]), Buffer.from([0])]),
+              }),
+            );
+            break;
+          case CommandType.CpuHistoryGet:
+            socket.write(
+              encodeResponseFrame({ responseType: ResponseType.CpuHistoryGet, errorCode: ErrorCode.Ok, requestId: decoded.requestId, body: Buffer.alloc(4) }),
+            );
+            break;
+          case CommandType.Exit:
+            socket.write(
+              Buffer.concat([
+                encodeResponseFrame({ responseType: ResponseType.Exit, errorCode: ErrorCode.Ok, requestId: decoded.requestId }),
+                encodeResponseFrame({ responseType: ResponseType.Resumed, errorCode: ErrorCode.Ok, requestId: VICE_BROADCAST_REQUEST_ID, body: Buffer.from([0x31, 0xea]) }),
+              ]),
+            );
+            break;
+          default:
+            break;
+        }
+      }
+    });
+  };
+}
+
+/** Mirrors stock-connect.test.ts's own withTempEpochFile() -- a real
+ * temp-directory epoch.json, so stockReconnect()'s identity-proof path has
+ * genuine evidence to read rather than an injected stub. */
+function withTempEpochFile<T>(fn: (epochPath: string, writeEpoch: (epoch: number) => void) => Promise<T>): Promise<T> {
+  const dir = mkdtempSync(join(tmpdir(), "broker-relay-epoch-"));
+  const epochPath = join(dir, "epoch.json");
+  const writeEpoch = (epoch: number) => {
+    writeFileSync(epochPath, JSON.stringify({ epoch, spawned_at: new Date().toISOString(), pid: 1234 }));
+  };
+  return fn(epochPath, writeEpoch).finally(() => rmSync(dir, { recursive: true, force: true }));
+}
+
+/** A StockConnectBrokerControl whose claimMonitor()/releaseMonitor() call
+ * vice-broker.mts's own handleMonitorClaim()/handleMonitorRelease()
+ * DIRECTLY, in-process, against the SAME BrokerState this test's relay
+ * listener is wired to -- there is no real control-plane wire in this
+ * suite (broker-relay.test.ts talks to the listener only for the relay's
+ * own hello/attach handshake), so stockConnect()'s own claim step needs a
+ * stand-in that reaches the SAME production functions the wire would. */
+function makeRealBrokerControl(state: BrokerState, targetId: string): StockConnectBrokerControl {
+  let claimSeq = 0;
+  let releaseSeq = 0;
+  return {
+    async claimMonitor({ channel }) {
+      claimSeq += 1;
+      const outcome = handleMonitorClaim(`claim-${targetId}-${claimSeq}`, targetId, channel ?? "binary", state);
+      // broker-control.mts's own MonitorClaimOutcome (`code`) is a
+      // DIFFERENT shape from vice-broker-client.ts's wire-level
+      // ClaimMonitorOutcome (`reason`) this interface expects -- this
+      // stand-in reaches the server-side function directly, in-process,
+      // so it must translate the outcome the same way the real control-
+      // plane wire's own JSON encode/decode round trip would.
+      if (outcome.ok) return outcome;
+      if (outcome.code === "monitor_owned") return { ok: false, reason: "monitor_owned", holder: outcome.holder };
+      return { ok: false, reason: outcome.code };
+    },
+    async releaseMonitor({ channel }) {
+      releaseSeq += 1;
+      const outcome = handleMonitorRelease(`release-${targetId}-${releaseSeq}`, targetId, channel ?? "binary", state);
+      if (outcome.ok) return outcome;
+      return { ok: false, reason: outcome.code };
+    },
+  };
+}
+
+test("stockReconnect: after the binary relay is destroyed, a fresh session establishment dials the relay again and succeeds on a matching epoch", async () => {
+  await withTempEpochFile(async (epochPath, writeEpoch) => {
+    writeEpoch(42);
+    let emulatorSocket: Socket | null = null;
+    let resolveEmulatorAccepted: () => void = () => {};
+    let emulatorAccepted = new Promise<void>((resolve) => {
+      resolveEmulatorAccepted = resolve;
+    });
+    await withStubEmulatorServer(
+      (socket) => {
+        emulatorSocket = socket;
+        resolveEmulatorAccepted();
+        happyPathResponder()(socket);
+      },
+      async (emulatorPort) => {
+        await withRelayTestBroker(emulatorPort, "grant-reconnect-binary", async ({ listenerPort, token, state }) => {
+          const brokerControl = makeRealBrokerControl(state, "grant-reconnect-binary");
+          const dialMonitorSocket: DialMonitorSocketFn = async (opts) => {
+            const result = await dialMonitorRelay({
+              targetId: opts.targetId,
+              channel: opts.channel,
+              handle: opts.handle,
+              token,
+              port: listenerPort,
+              candidates: ["127.0.0.1"],
+            });
+            if (!result.ok) throw new Error(result.reason);
+            return { socket: result.socket, pending: result.pending };
+          };
+
+          const session = await stockConnect({
+            host: "127.0.0.1",
+            port: emulatorPort,
+            targetId: "grant-reconnect-binary",
+            brokerControl,
+            deps: { dialMonitorSocket, epochPath },
+          });
+          assert.ok(session.client.connected, "the first handshake must dial the relay and connect");
+
+          // Destroy the EMULATOR side of the splice -- cascades through
+          // spliceRelay()'s own close wiring to destroy the client's relay
+          // socket too, exactly as an unexpected relay death would.
+          const clientClosed = new Promise<void>((resolve) => session.client.once("close", () => resolve()));
+          emulatorSocket!.destroy();
+          await clientClosed;
+          assert.equal(session.client.connected, false, "the relay death must be observable through connected, exactly as a direct-dial death would be");
+
+          // The next connection this stub emulator accepts is stockReconnect()'s
+          // own fresh dial -- reset the "accepted" promise to observe it.
+          emulatorAccepted = new Promise<void>((resolve) => {
+            resolveEmulatorAccepted = resolve;
+          });
+
+          const reconnected = await stockReconnect(session);
+          assert.ok(reconnected.client.connected, "stockReconnect() must dial the relay again and complete a fresh handshake on a matching epoch");
+          await emulatorAccepted; // the stub emulator must have accepted a SECOND connection -- the relay redialled it
+          await stockDisconnect(reconnected);
+        });
+      },
+    );
+  });
+});
+
+test("stockReconnect: after the binary relay is destroyed, an advanced epoch rejects with MachineRestartedError rather than reusing the dead relay", async () => {
+  await withTempEpochFile(async (epochPath, writeEpoch) => {
+    writeEpoch(1);
+    let emulatorSocket: Socket | null = null;
+    let resolveEmulatorAccepted: () => void = () => {};
+    const emulatorAccepted = new Promise<void>((resolve) => {
+      resolveEmulatorAccepted = resolve;
+    });
+    await withStubEmulatorServer(
+      (socket) => {
+        emulatorSocket = socket;
+        resolveEmulatorAccepted();
+        happyPathResponder()(socket);
+      },
+      async (emulatorPort) => {
+        await withRelayTestBroker(emulatorPort, "grant-reconnect-restarted", async ({ listenerPort, token, state }) => {
+          const brokerControl = makeRealBrokerControl(state, "grant-reconnect-restarted");
+          const dialMonitorSocket: DialMonitorSocketFn = async (opts) => {
+            const result = await dialMonitorRelay({
+              targetId: opts.targetId,
+              channel: opts.channel,
+              handle: opts.handle,
+              token,
+              port: listenerPort,
+              candidates: ["127.0.0.1"],
+            });
+            if (!result.ok) throw new Error(result.reason);
+            return { socket: result.socket, pending: result.pending };
+          };
+
+          const session = await stockConnect({
+            host: "127.0.0.1",
+            port: emulatorPort,
+            targetId: "grant-reconnect-restarted",
+            brokerControl,
+            deps: { dialMonitorSocket, epochPath },
+          });
+
+          const clientClosed = new Promise<void>((resolve) => session.client.once("close", () => resolve()));
+          emulatorSocket!.destroy();
+          await clientClosed;
+
+          // The epoch advances BETWEEN the original connect and the
+          // reconnect attempt -- the machine underneath is not the one this
+          // session originally handshook with, whether or not the relay
+          // itself could be re-dialled.
+          writeEpoch(2);
+
+          await assert.rejects(stockReconnect(session), (err: unknown) => {
+            assert.ok(err instanceof MachineRestartedError, `expected MachineRestartedError, got ${String(err)}`);
+            return true;
+          });
+        });
+      },
+    );
+  });
+});
+
+// ===========================================================================
+// Structural (Task 2): the text path declares no reconnect entry point.
+// ===========================================================================
+
+test("structural: no exported identifier on the text path contains a reconnect entry point", () => {
+  const files = ["text-connect.ts", "text-protocol.ts", "text-tools.ts"];
+  const source = files.map((f) => readFileSync(join(HERE, f), "utf8")).join("\n");
+  const stripped = source
+    .split("\n")
+    .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
+    .join("\n");
+  const matches = stripped.match(/export (async )?function text[A-Za-z]*[Rr]econnect/g) ?? [];
+  assert.deepEqual(matches, [], `the text path must declare no reconnect entry point: ${JSON.stringify(matches)}`);
+});
+
+test("structural: text-connect.ts's header still states, in place, that no reconnect is ever to be built there", () => {
+  const source = readFileSync(join(HERE, "text-connect.ts"), "utf8");
+  assert.ok(source.includes("Never build a textReconnect()"), "text-connect.ts's header must still carry this exact phrase");
+});
+
+test("structural: broker-relay-text.test.ts is present and is not on git's own untracked list -- both channels' proving suites exist as real files", () => {
+  const output = execFileSync("git", ["ls-files"], { cwd: HERE, encoding: "utf8" });
+  const files = output.split("\n").map((f) => f.trim());
+  assert.ok(files.includes("broker-relay-text.test.ts"), "broker-relay-text.test.ts must be a tracked file");
+  assert.ok(existsSync(join(HERE, "broker-relay-text.test.ts")), "broker-relay-text.test.ts must exist on disk");
 });

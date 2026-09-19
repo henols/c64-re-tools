@@ -125,11 +125,19 @@ async function withTextTool(
 
   let session;
   try {
+    // Phase 63, plan 63-02 (deviation, Rule 3): threads deps.dialMonitorSocket/
+    // .controlToken through to textConnect() -- the SAME test-only relay-
+    // socket-source override stockConnectDepsFor() above gives the binary
+    // channel, so a test can dial a stub server directly for EITHER channel
+    // without textConnect()'s own default reaching for a broker that is not
+    // running in the test process. Production passes neither field.
     session = await textConnect({
       host: lease.host,
       remoteMonitorPort: lease.remoteMonitorPort,
       targetId: lease.targetId,
       brokerControl: lease.brokerControl,
+      dialMonitorSocket: deps.dialMonitorSocket,
+      controlToken: deps.controlToken,
     });
   } catch (err) {
     if (err instanceof MonitorOwnershipError) {

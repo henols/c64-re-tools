@@ -11,7 +11,7 @@
 // convention (text-connect.test.ts, text-protocol.test.ts).
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { createServer, type Server, type Socket } from "node:net";
+import { createServer, connect as netConnect, type Server, type Socket } from "node:net";
 import type { AddressInfo } from "node:net";
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
@@ -22,7 +22,24 @@ import { handleDeviceConsole, handleWarpSet, handleMemmapShow, handleMemmapZap, 
 import { dispatchStock } from "./stock-dispatch.ts";
 import type { StockDispatchDeps } from "./stock-dispatch.ts";
 import type { StockToolResult } from "./stock-handler.ts";
-import type { StockConnectBrokerControl } from "./stock-connect.ts";
+import type { StockConnectBrokerControl, DialMonitorSocketFn } from "./stock-connect.ts";
+
+// ---------------------------------------------------------------------------
+// Phase 63 (SESS-02): textConnect()'s default socket source is now a relay
+// dial against a broker that is not running in this test process -- mirrors
+// text-connect.test.ts's own directDialMonitorSocket exactly: dials the stub
+// text-monitor server DIRECTLY and resolves an empty pending Buffer,
+// byte-identical handshake behaviour to the pre-relay direct dial this
+// replaces. Threaded into every deps builder below via the new
+// StockDispatchDeps.dialMonitorSocket seam (stock-dispatch.ts, plan 63-02).
+// ---------------------------------------------------------------------------
+
+const directDialMonitorSocket: DialMonitorSocketFn = (opts) =>
+  new Promise((resolve, reject) => {
+    const socket = netConnect({ host: opts.host, port: opts.port });
+    socket.once("connect", () => resolve({ socket, pending: Buffer.alloc(0) }));
+    socket.once("error", reject);
+  });
 import { currentChannelLockHolder, channelLockRefusalMessage, resetChannelLockForTests, acquireChannelLock } from "./channel-lock.ts";
 import type { HeldLease } from "./vice-broker-client.ts";
 import { loadTextFixture } from "./textmon-fixtures.ts";
@@ -136,6 +153,7 @@ function makeDeps(port: number, overrides: Partial<StockDispatchDeps> = {}): Sto
   };
   return {
     ensureLease: async () => ({ ok: true, lease }),
+    dialMonitorSocket: directDialMonitorSocket,
     ...overrides,
   };
 }
@@ -161,6 +179,7 @@ function makeDepsWithBrokerIdentity(
   };
   return {
     ensureLease: async () => ({ ok: true, lease }),
+    dialMonitorSocket: directDialMonitorSocket,
     resolvedBinaryPath,
     resolvedBinaryPathIsResolved: true,
   };

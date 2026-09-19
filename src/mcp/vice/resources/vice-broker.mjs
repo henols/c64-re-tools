@@ -843,6 +843,21 @@ export function handleRelayAttach(targetId, channel, presentedHandle, clientSock
     holder.attached = true;
     const host = resolveBinmonHost();
     spliceRelay({ clientSocket, host, port: target.port, pending });
+    // Plan 63-02 (deviation, Rule 1): clears the attached marker the instant
+    // THIS relay connection closes, for either side's reason (client death,
+    // emulator death, or an explicit teardown) -- without this, a dead relay
+    // leaves the channel permanently unattachable, which silently breaks the
+    // very reconnect this plan's own must_haves require (a re-attach on the
+    // SAME channel would otherwise be refused `denied` forever, since
+    // nothing else in this tree ever flips `attached` back to false short of
+    // a full monitor_release/recycle/exit clearing the WHOLE entry). This is
+    // deliberately the narrow fix -- one boolean, no incident record, no
+    // idle timeout -- leaving broker-incident.mts's own handleRelayDeath()
+    // (a later plan in this phase) to build the richer machinery on top of
+    // this same "close" event.
+    clientSocket.once("close", () => {
+        holder.attached = false;
+    });
     return { ok: true };
 }
 /** Answers `monitor_release` (per-channel): clears ONLY the named
