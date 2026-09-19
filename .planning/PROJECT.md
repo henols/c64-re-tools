@@ -2278,6 +2278,14 @@ see the scope shrink was measured, not argued.*
   subdirectories** under `.c64-re-tools/` (`snapshots/`, `runs/ghidra/`, and so
   on), not in one new inbox folder. That layout is already the single
   tool-written root (D-33) and this milestone does not reopen it.
+- **Wire shape: one endpoint, multiple tagged connections.** Owner decision,
+  2026-09-19. "One socket" means one *endpoint*, not one physical connection: a
+  long-lived connection relays binary-monitor traffic while short-lived
+  stateless connections carry files and skill-script calls, all dialling the
+  same fixed port. This needs **no new envelope format** and leaves
+  `stock-protocol.ts`'s socket-consumption contract untouched. The literal
+  single-multiplexed-socket reading was considered and rejected: it buys no
+  behaviour and makes the one unavoidable atomic cutover substantially larger.
 - **`PKG-04` is REVERSED at this open: the broker no longer binds `0.0.0.0`.**
   Owner decision, 2026-09-19. Deleting `broker.json` deletes the only
   distribution channel for the per-boot capability token, and the same socket
