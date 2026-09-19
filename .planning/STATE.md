@@ -5,16 +5,16 @@ milestone_name: One Broker, One Socket
 current_phase: 63
 current_phase_name: The Monitor Channel Relayed, and the Connection as the Session
 status: executing
-stopped_at: Completed 63-02-PLAN.md
-last_updated: "2026-09-19T21:15:45.838Z"
+stopped_at: Completed 63-03-PLAN.md
+last_updated: "2026-09-19T21:56:37.249Z"
 last_activity: 2026-09-19
 last_activity_desc: Phase 63 execution started
-state_head: bba7a44e40de93b453a7e49595579c7db52af709
+state_head: 022e3b0af0202ed1ab55269e5a3f57711df5ef1c
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 11
-  completed_plans: 7
+  completed_plans: 8
   percent: 17
 carried_forward_phases:
 
@@ -80,7 +80,7 @@ closure still needs to be recorded as one.
 ## Current Position
 
 Phase: 63 (The Monitor Channel Relayed, and the Connection as the Session) — EXECUTING
-Plan: 3 of 6
+Plan: 4 of 6
 Status: Ready to execute
 Progress: [██░░░░░░░░] 17% (1 of 6 v2.0.0 phases complete; Phases 62-67)
 Last activity: 2026-09-19 — Phase 63 execution started
@@ -476,6 +476,7 @@ Phase 66 completes.
 | Phase 62 P05 | 24min | 2 tasks | 4 files |
 | Phase 63 P01 | 75min | 3 tasks | 26 files |
 | Phase 63 P02 | 60min | 2 tasks | 16 files |
+| Phase 63 P03 | 45min | 3 tasks | 33 files |
 
 ## Accumulated Context
 
@@ -1368,6 +1369,8 @@ Recent decisions affecting current work:
 - [Phase 63]: Unified the Buffer-mode pre-splice reader across every control-plane connection at Task 1 time, not deferred to Task 2 — The eight pre-existing ASCII ops decode byte-identically either way, and one reader is what proves the boundary-one case
 - [Phase 63]: Fixed a real bug: InstanceRecord.monitorClients[channel].attached was never reset on a relay connection's own death, which would have permanently blocked the binary channel's own reconnect. Scoped the fix to one close listener rather than building the fuller incident/idle-timeout machinery a later plan owns.
 - [Phase 63]: Added StockDispatchDeps.dialMonitorSocket/.controlToken as a test-only relay-socket-source override reaching both channels, fixing text-tools.test.ts's and stock-dispatch.test.ts's own conformance tests after textConnect()'s default socket source became the relay.
+- [Phase 63]: GrantRecord.operation is REQUIRED (not optional), matching pid's own convention -- every grant is created with it explicitly null, never absent.
+- [Phase 63]: broker-incident.mts is a small, purpose-built host-bound writer, never a parameterised incident-record.ts -- OQ3's own plan-level decision.
 
 ### Pending Todos
 
@@ -2701,8 +2704,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-19T21:15:45.686Z
-Stopped at: Completed 63-02-PLAN.md
+Last session: 2026-09-19T21:56:37.087Z
+Stopped at: Completed 63-03-PLAN.md
 Resume file: None
 
 Earlier: **v2.0.0 roadmap created.** 36/36 requirements (`ENDPOINT-01..05`,
