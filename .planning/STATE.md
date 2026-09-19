@@ -2,20 +2,20 @@
 gsd_state_version: "1.0"
 milestone: v2.0.0
 milestone_name: One Broker, One Socket
-current_phase: 62
-current_phase_name: The Fixed Endpoint and the Broker That Owns the Machine
-status: executing
-stopped_at: Completed 62-05-PLAN.md
-last_updated: "2026-09-19T16:50:24.000Z"
+current_phase: 63
+current_phase_name: The Monitor Channel Relayed, and the Connection as the Session
+status: planning
+stopped_at: Phase 62 complete, ready to plan Phase 63
+last_updated: "2026-09-19T17:16:18.481Z"
 last_activity: 2026-09-19
-last_activity_desc: Phase 62 plan 5 of 5 executed (service definitions + never-invoke gate + README)
-state_head: 214cb330bb7724cfca1dfee4fdfa36db7c6b602d
+last_activity_desc: Phase 62 complete, transitioned to Phase 63
+state_head: 836f4c5d3a5763975cf1bd1a099a69e25d1190a5
 progress:
   total_phases: 6
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 5
   completed_plans: 5
-  percent: 0
+  percent: 17
 carried_forward_phases:
 
   - 51
@@ -78,11 +78,11 @@ closure still needs to be recorded as one.
 
 ## Current Position
 
-Phase: 62 (The Fixed Endpoint and the Broker That Owns the Machine) — EXECUTING
-Plan: 5 of 5 complete (62-05 done — all phase 62 plans executed)
-Status: Plan 62-05 complete — committed systemd unit + launchd agent, a structural gate proving neither is ever auto-applied and no client spawns the broker, and README documentation (BROKER-02/BROKER-05)
-Progress: [░░░░░░░░░░] 0% (0 of 6 v2.0.0 phases complete; Phases 62-67)
-Last activity: 2026-09-19 — Phase 62 plan 5 of 5 executed
+Phase: 63 — The Monitor Channel Relayed, and the Connection as the Session
+Plan: Not started
+Status: Ready to plan
+Progress: [██░░░░░░░░] 17% (1 of 6 v2.0.0 phases complete; Phases 62-67)
+Last activity: 2026-09-19 — Phase 62 complete, transitioned to Phase 63
 
 **The milestone's exit criterion lives in Phase 66 and nowhere else.** The
 hypothesis is falsifiable: the old boundary seam must be *gone from production
@@ -97,7 +97,7 @@ Phase 66 completes.
 
 **Velocity:**
 
-- Total plans completed: 457
+- Total plans completed: 462
 - Average duration: —
 - Total execution time: —
 
@@ -156,6 +156,7 @@ Phase 66 completes.
 | 59 | 5 | - | - |
 | 60 | 8 | - | - |
 | 61 | 3 | - | - |
+| 62 | 5 | - | - |
 
 **Recent Trend:**
 
@@ -2694,7 +2695,7 @@ and are v1.0.0's inheritance.
 ## Session Continuity
 
 Last session: 2026-09-19T16:49:46.944Z
-Stopped at: Completed 62-05-PLAN.md
+Stopped at: Phase 62 complete, ready to plan Phase 63
 Resume file: None
 
 Earlier: **v2.0.0 roadmap created.** 36/36 requirements (`ENDPOINT-01..05`,

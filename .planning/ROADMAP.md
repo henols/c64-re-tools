@@ -838,7 +838,7 @@ re-planning this milestone must keep all three.**
    tree first — while its expected set is still the current one and the suite
    stays green — and only then is the expected set flipped to empty.
 
-- [ ] **Phase 62: The Fixed Endpoint and the Broker That Owns the Machine** - One manually-started broker per machine, found by every client with nothing on disk: one fixed port dialled in a fixed order under per-candidate timeouts, a handshake that proves who answered and at what version, and a bind narrowed to loopback plus the bridge gateways it enumerates
+- [x] **Phase 62: The Fixed Endpoint and the Broker That Owns the Machine** - One manually-started broker per machine, found by every client with nothing on disk: one fixed port dialled in a fixed order under per-candidate timeouts, a handshake that proves who answered and at what version, and a bind narrowed to loopback plus the bridge gateways it enumerates (completed 2026-09-19)
 - [ ] **Phase 63: The Monitor Channel Relayed, and the Connection as the Session** - Every tool call reaches the emulator over a relayed connection instead of a direct dial, and the connection IS the session — reclaimed from socket events alone even when the client is `SIGKILL`ed, with the incident record written before the instance is taken and a live session a user can positively identify as theirs
 - [ ] **Phase 64: Files as Bytes, Both Directions** - The four file-carrying tools work with no shared filesystem at all: bytes over the socket, integrity-checked and size-capped, traversal refused rather than sanitised in both directions, staged files swept when their session dies
 - [ ] **Phase 65: Every Skill Script Through the One Endpoint, and CI With It** - Exactly one module dials the endpoint and every skill script reaches it through the existing resolution ladder with no second copy, leaving no route that works only on the host — and CI's ACME tests standing on their own feet before the hatch they lean on is deleted
@@ -2630,7 +2630,7 @@ check. No test reads this table now.
 | 59. The Tool-Location Seam and Its Precedence Order | v1.1.0 | 5/5 | Complete | 2026-09-18 |
 | 60. The Seam Wired Into the Code That Ships | v1.1.0 | 8/8 | Complete | 2026-09-18 |
 | 61. The Install Tables Generated, and a Guard That Compares Facts | v1.1.0 | 3/3 | Complete | 2026-09-19 |
-| 62. The Fixed Endpoint and the Broker That Owns the Machine | v2.0.0 | 5/5 | In Progress | - |
+| 62. The Fixed Endpoint and the Broker That Owns the Machine | v2.0.0 | 5/5 | Complete | 2026-09-19 |
 | 63. The Monitor Channel Relayed, and the Connection as the Session | v2.0.0 | — | Not started | - |
 | 64. Files as Bytes, Both Directions | v2.0.0 | — | Not started | - |
 | 65. Every Skill Script Through the One Endpoint, and CI With It | v2.0.0 | — | Not started | - |
