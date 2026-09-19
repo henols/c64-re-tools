@@ -135,16 +135,73 @@ Explicitly excluded. Documented to prevent scope creep.
 
 ## Traceability
 
-Which phases cover which requirements. Filled during roadmap creation.
+Which phases cover which requirements. Filled at roadmap creation, 2026-09-19.
+Every requirement below is owned by **exactly one** phase; the mapping was
+cross-checked mechanically against `ROADMAP.md`'s per-phase `**Requirements**:`
+lines rather than by eye, because this project has a recorded history of a
+requirement owned by two phases or by none.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (pending roadmap) | — | Pending |
+| ENDPOINT-01 | Phase 62 | Pending |
+| ENDPOINT-02 | Phase 62 | Pending |
+| ENDPOINT-03 | Phase 62 | Pending |
+| ENDPOINT-04 | Phase 62 | Pending |
+| ENDPOINT-05 | Phase 62 | Pending |
+| BROKER-01 | Phase 62 | Pending |
+| BROKER-02 | Phase 62 | Pending |
+| BROKER-03 | Phase 62 | Pending |
+| BROKER-04 | Phase 62 | Pending |
+| BROKER-05 | Phase 62 | Pending |
+| BROKER-06 | Phase 62 | Pending |
+| SESS-01 | Phase 63 | Pending |
+| SESS-02 | Phase 63 | Pending |
+| SESS-03 | Phase 63 | Pending |
+| SESS-04 | Phase 63 | Pending |
+| SESS-05 | Phase 63 | Pending |
+| SESS-06 | Phase 63 | Pending |
+| XFER-01 | Phase 64 | Pending |
+| XFER-02 | Phase 64 | Pending |
+| XFER-03 | Phase 64 | Pending |
+| XFER-04 | Phase 64 | Pending |
+| XFER-05 | Phase 64 | Pending |
+| XFER-06 | Phase 64 | Pending |
+| XFER-07 | Phase 64 | Pending |
+| XFER-08 | Phase 64 | Pending |
+| SEAM-01 | Phase 65 | Pending |
+| SEAM-02 | Phase 65 | Pending |
+| SEAM-03 | Phase 65 | Pending |
+| RM-01 | Phase 66 | Pending |
+| RM-02 | Phase 66 | Pending |
+| RM-03 | Phase 66 | Pending |
+| RM-04 | Phase 66 | Pending |
+| RM-05 | Phase 66 | Pending |
+| RM-06 | Phase 67 | Pending |
+| RM-07 | Phase 66 | Pending |
+| RM-08 | Phase 65 | Pending |
 
 **Coverage:**
 - v2.0.0 requirements: 36 total
-- Mapped to phases: 0
-- Unmapped: 36 ⚠️
+- Mapped to phases: 36
+- Unmapped: 0 ✅
+
+**Phase ownership at a glance** (Phases 62-67, continuing numbering from Phase 61):
+
+| Phase | Name | Requirements |
+|-------|------|--------------|
+| 62 | The Fixed Endpoint and the Broker That Owns the Machine | `ENDPOINT-01..05`, `BROKER-01..06` (11) |
+| 63 | The Monitor Channel Relayed, and the Connection as the Session | `SESS-01..06` (6) |
+| 64 | Files as Bytes, Both Directions | `XFER-01..08` (8) |
+| 65 | Every Skill Script Through the One Endpoint, and CI With It | `SEAM-01..03`, `RM-08` (4) |
+| 66 | The Deletion Cutover — Gone, Not Bypassed | `RM-01..05`, `RM-07` (6) |
+| 67 | Ghidra's Runs Root Without the Alias | `RM-06` (1) |
+
+**`RM-08` sits in Phase 65 and not in Phase 66 on purpose** — the deletion phase
+removes the bare-host escape hatch CI's ACME tests currently depend on, so the
+replacement must land first. **`RM-07` sits in Phase 66 with the deletions it
+guards**, because its widening has to happen *before* the corresponding deletion
+or the widened test passes vacuously over a region that no longer exists; that is
+an ordering edge inside the phase, not across phases.
 
 ---
 *Requirements defined: 2026-09-19*

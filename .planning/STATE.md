@@ -3,10 +3,10 @@ gsd_state_version: "1.0"
 milestone: v2.0.0
 milestone_name: One Broker, One Socket
 status: planning
-last_updated: "2026-09-19T09:52:55.871Z"
+last_updated: "2026-09-19T12:40:00.000Z"
 last_activity: 2026-09-19
 progress:
-  total_phases: 0
+  total_phases: 6
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -42,7 +42,9 @@ because "keep working when the emulator misbehaves" is exactly what a
 connection-is-the-session broker changes the mechanics of.*
 
 **Current focus:** **Milestone v2.0.0 "One Broker, One Socket" opened
-2026-09-19**, at the defining-requirements stage. One manually-started broker per
+2026-09-19**, with requirements defined and the roadmap created — **Phases
+62-67**, 36/36 requirements mapped, each to exactly one phase. One
+manually-started broker per
 machine serves every session from every project over a single fixed TCP endpoint;
 every file moves as bytes over that socket; the host/container distinction stops
 existing in the code. Major version chosen deliberately — an existing install
@@ -69,10 +71,20 @@ closure still needs to be recorded as one.
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-09-19 — Milestone v2.0.0 started
+Phase: 62 — The Fixed Endpoint and the Broker That Owns the Machine (not started)
+Plan: — (no plans written yet)
+Status: Roadmap created — ready to discuss or plan Phase 62
+Progress: [....................] 0% (0 of 6 v2.0.0 phases complete; Phases 62-67)
+Last activity: 2026-09-19 — v2.0.0 roadmap created, 36/36 requirements mapped
+
+**The milestone's exit criterion lives in Phase 66 and nowhere else.** The
+hypothesis is falsifiable: the old boundary seam must be *gone from production
+code rather than merely bypassed*, and a retained fallback route falsifies it.
+The convergence metric that measures it — the count of real importers of
+`hostpath.ts` / `containerpath.ts` / `stock-paths.ts` — stands at **6** at this
+open (`containerpath.ts`, `host-tool-client.ts`, `install-resources.ts`,
+`stock-machine.ts`, `stock-paths.ts`, `vice-proxy.ts`) and must reach **0** before
+Phase 66 completes.
 
 ## Performance Metrics
 
@@ -2658,9 +2670,32 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-19T08:10:51.693Z
-Stopped at: Phase 61 complete — all phases complete
+Last session: 2026-09-19 — v2.0.0 roadmap created
+Stopped at: v2.0.0 roadmap written — Phases 62-67, 36/36 requirements mapped, each to exactly one phase; `REQUIREMENTS.md` Traceability filled
 Resume file: None
+
+Earlier: **v2.0.0 roadmap created.** 36/36 requirements (`ENDPOINT-01..05`,
+  `BROKER-01..06`, `SESS-01..06`, `XFER-01..08`, `SEAM-01..03`, `RM-01..08`)
+  mapped to six phases (62-67) in `.planning/ROADMAP.md`, each carrying
+  Goal / Depends on / Shape / Requirements / Success Criteria / Cross-cutting
+  constraints, plus a "Sequencing Rationale (v2.0.0)" section justifying six
+  phases against the research's suggested eight (the client module and the
+  machine-level broker deployment merge into Phase 62 because the handshake is a
+  two-sided protocol; `RM-08`'s CI work rides Phase 65 with `SEAM-03`).
+  `.planning/REQUIREMENTS.md`'s Traceability table and Coverage block are filled
+  in (36 mapped, 0 unmapped). **Two phases are atomic and neither may be split**
+  — 63 because `ensureStockSession()` is a single choke point by design, 66
+  because `hostpath-consumers.test.ts` asserts a closed, exact consumer set that
+  cannot be half-true. **Two open questions were flagged on Phase 62 rather than
+  silently resolved**: whether `install-resources.ts`'s per-project deployment
+  survives "one broker per machine" (it blocks Phase 66's census reaching 0), and
+  how prominently `ENDPOINT-04`'s refusal message should disclose the
+  rootless-Docker `host.docker.internal` gap. Phases 51, 53, 54 and 57 stay
+  carried and are NOT in this milestone.
+
+Earlier: Phase 61 complete — all phases complete; milestone v1.1.0 "The
+  Prerequisite Doctor" shipped 2026-09-19 (4 phases, 19 plans, 15/15
+  requirements, `override_closeout`).
 
 Earlier: Milestone v1.0.0 "The Rebuild Half" closed and archived on its delivered scope (9 phases, 73 plans, 33/33 in-scope requirements, `override_closeout`). Phases 51, 53, 54 and 57 carried forward with their ROADMAP sections live.
 
@@ -3187,4 +3222,9 @@ Resume file: .planning/phases/32-the-deletion-and-the-grep-gate/32-CONTEXT.md
 
 ## Operator Next Steps
 
-- Start the next milestone with /gsd-new-milestone
+- Review the v2.0.0 roadmap in `.planning/ROADMAP.md` (Phases 62-67, plus
+  "Sequencing Rationale (v2.0.0)")
+- Then `/gsd-discuss-phase 62`, or `/gsd-plan-phase 62` to go straight to plans
+- Phase 62 carries two flagged open questions that want an owner answer during
+  its discussion: `install-resources.ts`'s disposition, and how prominently the
+  no-broker refusal should disclose the rootless-Docker gap

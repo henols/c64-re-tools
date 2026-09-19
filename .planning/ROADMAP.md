@@ -17,6 +17,7 @@
 
 - ✅ **v1.0.0 The Rebuild Half** — Phases 45-50, 52, 55, 56 (opened 2026-09-10, **shipped 2026-09-16**; 9 phases, 73 plans, 203 tasks, 33/33 in-scope requirements, `override_closeout`). **Phases 51, 53, 54 and 57 are CARRIED FORWARD** with their requirement text live — `VOCAB-01..06`, `DOCS-01..04` and `INSTALL-01..05`, 15 requirements in total — following the same rule v0.6.0's held Phases 24 and 26 were kept under. Two of those three families need **re-scoping rather than resumption**: an owner-directed quick task on 2026-09-14 retired the planning-vocabulary convention outright and deleted the guards `VOCAB-*` and `DOCS-04` are written against. The original scoping note follows, unedited: opened 2026-09-10; 15/15 requirements mapped: `DECOMP-01..04`, `BUILD-01..07`, `EQUIV-01..04`). The three phases cut at the v0.5.0 close, taken forward a third time and finally standing on a substrate where nothing they depend on is hypothetical. **No opening go/degrade/no-go gate phase** — a recorded decision, reasoned in the phase section below; the gate discipline is distributed as a red-observed control in every phase, plus `BUILD-06`'s own gate phase (49) standing before the phase it gates (50)
 - ✅ **v1.1.0 The Prerequisite Doctor** — Phases 58-61 (opened 2026-09-16, **shipped 2026-09-19**; 4 phases, 19 plans, 44 tasks; **15/15 requirements mapped, each to exactly one phase, and all 15 Complete** — `DECL-01..05`, `LOC-01..07`, `GEN-01..03`; `override_closeout`). **The doctor itself was dropped on 2026-09-18 at owner decision** — `DOCTOR-01..09` moved to Future Requirements and the README-generation phase renumbered 62 → 61; see [`milestones/v1.1.0-REQUIREMENTS.md`](milestones/v1.1.0-REQUIREMENTS.md) § The Doctor for the reason and for the one gap it leaves open (`REQUIREMENTS.md` itself is removed at each close). The milestone name is kept as the label it opened under. The user's **first hour**, deliberately upstream of the Core Value and extending none of it: a live refusal that says what is missing and what to run, one file that says where an oddly-located tool lives, and one declaration standing behind both. **Phases 51, 53, 54 and 57 stay CARRIED and are NOT in this milestone** — their 15 requirements (`VOCAB-01..06`, `DOCS-01..04`, `INSTALL-01..05`) stay live and untouched. Phase 57 shares this milestone's subject matter and is excluded on purpose: its goal is to *withdraw* the three never-auto-install carve-outs, and the owner chose at this open to keep them.
+- 🚧 **v2.0.0 One Broker, One Socket** — Phases 62-67 (opened 2026-09-19; 6 phases, **36/36 requirements mapped, each to exactly one phase** — `ENDPOINT-01..05`, `BROKER-01..06`, `SESS-01..06`, `XFER-01..08`, `SEAM-01..03`, `RM-01..08`). One manually-started broker per machine, reached by every client through one fixed TCP endpoint, with every file carried as bytes over that socket — so nothing in the tree needs to know whether it runs on the host or inside a devcontainer. **Major version chosen deliberately:** an existing install does not keep working unchanged. The milestone carries a **falsifiable hypothesis** and one phase where it is answered: the old boundary seam must be *gone from production code rather than merely bypassed*, and **Phase 66** is where that becomes true or false. **Phases 51, 53, 54 and 57 stay CARRIED and are NOT in this milestone** — their 15 requirements (`VOCAB-01..06`, `DOCS-01..04`, `INSTALL-01..05`) stay live and untouched, a third milestone running. Everything in PROJECT.md's `## Next Milestone Goals` was put to the owner at this open and declined for this milestone: excluded by decision, not by oversight.
 
 *v0.8.0 continues phase numbering from Phase 32 — it starts at Phase **33**.
 Phase numbers are continuous across milestones and are **never** reused,
@@ -53,6 +54,12 @@ is reused, and the four **carried** numbers are not free. Phases 51, 53, 54 and
 57 still hold live requirement text that is not this milestone's, so 58 is the
 first available number rather than 51. Phase directories are again not archived,
 so Phases 58-61 land alongside the directories already under `.planning/phases/`.*
+
+*v2.0.0 continues phase numbering from Phase 61 — it starts at Phase **62**.
+The rules are unchanged and the same one still bites: no number is reset, none
+is reused, and the four **carried** numbers (51, 53, 54, 57) are not free.
+Phase directories are again not archived, so Phases 62-67 land alongside the
+directories already under `.planning/phases/`.*
 
 ## Standing Constraints
 
@@ -686,7 +693,7 @@ success criteria are preserved verbatim in
 
 `wrapPossiblyChunked()`'s only call site and `stock-recycle.ts`'s bounded post-kill epoch poll restored; 2,826 lines of assertions about five confirmed-gone fork-era mechanisms removed, each naming its successor or its settled no-successor disposition. **Shipped with no VERIFICATION.md, VALIDATION.md or REVIEW.md** — see the v1.0.0 Known Gaps in `MILESTONES.md`.
 
-### 🚧 v1.1.0 The Prerequisite Doctor (Phases 58-61)
+### ✅ v1.1.0 The Prerequisite Doctor (Phases 58-61) — SHIPPED 2026-09-19
 
 **Goal:** A user can find out in one command, before any session exists, which of
 this plugin's prerequisites are present and what each missing one costs them —
@@ -746,6 +753,101 @@ archived at the 2026-09-19 close into
 pointer that replaced them is the `## v1.1.0 ... SHIPPED` section further below,
 still placed after v1.0.0's for the window-slicing reason recorded above
 `### Phase 23`.
+
+### 🚧 v2.0.0 One Broker, One Socket (Phases 62-67)
+
+**Goal:** One manually-started broker per machine serves every session from
+every project, reached by every client — the `vice` MCP server and every skill
+script alike — through a single fixed TCP endpoint, with all file movement
+carried as bytes over that socket, so nothing anywhere needs to know whether it
+is running on the host or inside a devcontainer.
+
+**This milestone has a falsifiable hypothesis and exactly one phase where it is
+answered.** PROJECT.md states it: the old boundary seam is **gone from
+production code, not merely bypassed**. **Phase 66 is where that becomes true or
+false** — it is the one phase whose exit criterion *is* the hypothesis rather
+than a step toward it. A retained fallback route to the old seam falsifies it
+directly, and keeping one "for safety" is the failure this milestone exists to
+prevent, not a mitigation of it.
+
+**36 requirements, all mapped, each to exactly one phase** — `ENDPOINT-01..05`,
+`BROKER-01..06`, `SESS-01..06`, `XFER-01..08`, `SEAM-01..03`, `RM-01..08`.
+Cross-checked mechanically against the per-phase `**Requirements**:` lines
+further below rather than by eye, because this project has a recorded history of
+a requirement owned by two phases or by none.
+
+**Phase numbering continues at 62**, and the four carried numbers are not free.
+**Phases 51, 53, 54 and 57 stay carried** with `VOCAB-01..06`, `DOCS-01..04` and
+`INSTALL-01..05` live; none is in this milestone and no phase below may quietly
+absorb one.
+
+**Six owner decisions bind every phase below and are NOT open for
+re-derivation.** They are recorded in full at the top of `REQUIREMENTS.md`. The
+two that first-principles reasoning most often walks back into are named here so
+a planner meets them before reasoning past them:
+
+- **There is no token and no credential of any kind, and the bind is never
+  `0.0.0.0`.** `PKG-04` is REVERSED (owner, 2026-09-19). The bind is narrowed —
+  loopback plus the container bridge gateway address(es) the broker enumerates
+  at startup — and the per-boot token is **dropped**, because narrowing removed
+  its job. **No phase may plan an auth mechanism, a credential file or a
+  wildcard bind.** If an implementer's reasoning suggests re-widening the bind
+  "so containers can reach it", the answer is the enumeration, not the wildcard;
+  and a hardcoded `172.17.0.1` is wrong, because a custom Docker network has its
+  own gateway.
+- **"One socket" means one *endpoint*, not one physical connection.** A
+  long-lived connection relays binary-monitor traffic; short-lived stateless
+  connections carry files and skill-script calls; all dial the same fixed port.
+  This needs **no new envelope format** and leaves `stock-protocol.ts`'s
+  socket-consumption contract untouched. The literal single-multiplexed-socket
+  reading was considered and rejected on 2026-09-19 as a materially larger and
+  riskier cutover for no behavioural gain. **No phase may reopen it.**
+
+**Four file-carrying tools, not six.** `vice_autostart`, `vice_disk_attach`,
+`vice_snapshot_save`, `vice_snapshot_load`. **`vice_symbols_load` and
+`vice_program_load` are NOT file-carrying and no phase may plan file-transfer
+work for either** — `vice_program_load` refuses a filename outright and takes an
+enumerated subject id (`src/mcp/vice/text-tools.ts:859`); `vice_symbols_load`
+reads client-side with `readFileSync` under `needsSession: false`
+(`src/mcp/vice/stock-symbols.ts:350`). This was verified against the tree, not
+assumed, and the six-tool figure it corrects is struck through in PROJECT.md
+rather than deleted.
+
+**The convergence metric, carried from this open to Phase 66's exit.** The count
+of real importers of `hostpath.ts` / `containerpath.ts` / `stock-paths.ts`
+stands at **6** — `containerpath.ts`, `host-tool-client.ts`,
+`install-resources.ts`, `stock-machine.ts`, `stock-paths.ts` and `vice-proxy.ts`
+— and must reach **0** before Phase 66 completes. The other ~32 textual mentions
+are *"never import hostpath.ts"* guard comments documenting NON-consumption:
+dead documentation to strip, not code to rewire. Every phase below records the
+census as it leaves it, measured rather than predicted.
+
+**Three orderings below are structural rather than tidy, and a reader
+re-planning this milestone must keep all three.**
+
+1. **Phase 63's cut is atomic at the seam level, not incremental.**
+   `ensureStockSession()` is a single choke point by design, so there is no way
+   to migrate 30% of tool calls onto the new attach mechanism while the rest
+   still direct-dial — every `vice_*` call reaches that one function.
+2. **`RM-08` lands in Phase 65, before Phase 66 deletes the escape hatch CI's
+   ACME tests depend on.** Discovering that dependency from a red CI run after
+   the deletion is the exact failure the ordering exists to prevent.
+3. **`RM-07`'s widening happens before the corresponding deletion, inside Phase
+   66.** A structural test that scans a named region goes **vacuously green** the
+   moment that region is deleted, so the scan surface is widened to the whole
+   tree first — while its expected set is still the current one and the suite
+   stays green — and only then is the expected set flipped to empty.
+
+- [ ] **Phase 62: The Fixed Endpoint and the Broker That Owns the Machine** - One manually-started broker per machine, found by every client with nothing on disk: one fixed port dialled in a fixed order under per-candidate timeouts, a handshake that proves who answered and at what version, and a bind narrowed to loopback plus the bridge gateways it enumerates
+- [ ] **Phase 63: The Monitor Channel Relayed, and the Connection as the Session** - Every tool call reaches the emulator over a relayed connection instead of a direct dial, and the connection IS the session — reclaimed from socket events alone even when the client is `SIGKILL`ed, with the incident record written before the instance is taken and a live session a user can positively identify as theirs
+- [ ] **Phase 64: Files as Bytes, Both Directions** - The four file-carrying tools work with no shared filesystem at all: bytes over the socket, integrity-checked and size-capped, traversal refused rather than sanitised in both directions, staged files swept when their session dies
+- [ ] **Phase 65: Every Skill Script Through the One Endpoint, and CI With It** - Exactly one module dials the endpoint and every skill script reaches it through the existing resolution ladder with no second copy, leaving no route that works only on the host — and CI's ACME tests standing on their own feet before the hatch they lean on is deleted
+- [ ] **Phase 66: The Deletion Cutover — Gone, Not Bypassed** - The three path-translation modules deleted, `broker.json` and every reader gone, the two-route branch gone, the importer census at 0 from 6, and every structural guard rewritten to assert absence instead of passing vacuously — the phase where the milestone's hypothesis becomes true or false
+- [ ] **Phase 67: Ghidra's Runs Root Without the Alias** - Ghidra runs land on a broker-side root with no dot-prefixed segment, so the symlink alias, its minting at broker startup and its live guard tests are deleted rather than relocated — measured against real Ghidra, not argued from the transport change
+
+**Phase details, the dependency edges and the sequencing rationale** are in the
+`## v2.0.0 ... (Phase Details)` section further below, placed after v1.1.0's for
+the same window-slicing reason recorded above `### Phase 23`.
 
 ## v0.6.0 Own the substrate — CLOSED INCOMPLETE (Phase Details)
 
@@ -1829,6 +1931,607 @@ sequencing rationale rather than left to be noticed. Both requirements are about
 what the *shipped code* does, which cannot be true when only the module exists.
 
 
+## v2.0.0 One Broker, One Socket — IN PROGRESS (Phase Details)
+
+*Created 2026-09-19 at the v2.0.0 roadmap. Phases 62-67, continuing numbering
+from Phase 61. Placed after v1.1.0's archived pointer, before `## Progress`.*
+
+### Phase 62: The Fixed Endpoint and the Broker That Owns the Machine
+
+**Goal**: A user starts one broker on their machine, by hand, and every client —
+the MCP server on a bare host, the MCP server inside a devcontainer, a skill
+script anywhere — finds it with nothing on disk telling them where it is. The
+dial order *is* the host/container detection, so no code reads
+`isInsideContainer()` to decide how to reach the broker.
+
+**Requirements**: ENDPOINT-01, ENDPOINT-02, ENDPOINT-03, ENDPOINT-04, ENDPOINT-05, BROKER-01, BROKER-02, BROKER-03, BROKER-04, BROKER-05, BROKER-06.
+
+**Depends on**: Nothing. First phase of v2.0.0, continuing from Phase 61. Every
+other phase in this milestone depends on it.
+
+**Shape**: Incremental and additive. `broker.json`, `hostpath.ts` /
+`containerpath.ts` / `stock-paths.ts`, the eight existing control ops and the
+direct-dial path all keep working, untouched, in parallel for the whole phase.
+Nothing is deleted here.
+
+**Success Criteria** (what must be TRUE):
+
+  1. **A client finds the broker with nothing on disk.** With no discovery record
+     anywhere, a client on a bare host and a client inside a devcontainer both
+     reach the same broker by dialling one fixed port — `127.0.0.1` first, then
+     `host.docker.internal` — taking the first candidate that completes a
+     handshake. Each candidate is bounded by its **own** timeout, demonstrated by
+     a wedged listener parked on the first candidate that does not prevent the
+     second from being tried (ENDPOINT-01, ENDPOINT-02).
+  2. **"Something else answered" reads differently from "nothing is listening".**
+     A foreign process or a stale pre-v2.0.0 broker squatting the port is refused
+     by name as the wrong listener, and a genuine broker at an incompatible
+     version is refused by name saying which side to update — the two npm
+     packages update independently, so skew is expected rather than exceptional
+     (ENDPOINT-03, ENDPOINT-05).
+  3. **A client that finds no broker refuses by name with the exact start command
+     for the user's platform, and no client ever starts one.** This is the same
+     detect-then-refuse-by-name shape the project already holds for `x64sc`,
+     `c1541`, `petcat`, ACME, Ghidra and dxa (ENDPOINT-04, BROKER-02).
+  4. **The broker binds narrowly and refuses loudly.** It listens on loopback plus
+     the container bridge gateway address(es) it enumerated from the live
+     interface list at startup — never `0.0.0.0`, never a hardcoded `172.17.0.1`
+     — and when its port is already held it refuses by name at startup rather
+     than racing or failing silently (BROKER-03, BROKER-04).
+  5. **One broker serves two projects at once and keeps its state out of both.**
+     Two sessions from two unrelated project directories run against the single
+     broker simultaneously; everything the broker writes for itself — state,
+     staging, run scratch — lands under a machine-level root with nothing inside
+     any project's `.c64-re-tools/`. A systemd `--user` unit and a launchd plist
+     are committed and never auto-applied, with a documented foreground command
+     as the universal fallback (BROKER-01, BROKER-05, BROKER-06).
+
+**Plans**: TBD
+
+**Cross-cutting constraints:**
+
+- **No token, no credential, no `0.0.0.0`.** Settled owner decision 5; the bind
+  narrowing IS the security posture. `broker-control.mts`'s own header still says
+  *"Bind: 0.0.0.0 explicitly, never 127.0.0.1"* — a planner who reads it and
+  faithfully preserves it implements the reversed decision. Rewriting that
+  comment is `RM-04` and lands in Phase 66; until then treat it as known-stale.
+- **The enumeration must be real.** A custom Docker network has its own gateway,
+  so a hardcoded bridge address is wrong. Enumerate at startup from the live
+  interface list, and refuse by name if no candidate can be bound.
+- **`broker-launch.mts`'s `inFlight` guard is untouched.** The broker still spawns
+  `x64sc`; nothing about who dials the broker changes how the broker spawns its
+  own children. The synchronous check-and-set with no `await` between stays
+  exactly as it is — it exists because of the 2026-08-01 triple-launch outage.
+- **No third dial candidate for plain Linux Docker Engine.** No hostname and no IP
+  fixes a missing `--add-host=host.docker.internal:host-gateway`; the remedy is
+  documented in the refusal, not worked around in code.
+- **Every module that spawns the emulator binary does it in argv-array form**, and
+  the set of modules that spawn it at all is frozen at one. A machine-level broker
+  does not change that.
+
+**Open questions this phase must answer, flagged rather than silently resolved:**
+
+  1. **Does `install-resources.ts`'s per-project deployment survive "one broker per
+     machine"?** Its entire job is deploying host launcher scripts into *this*
+     consuming project's `.c64-re-tools/bin/` on first use — the on-demand,
+     per-project model this milestone retires. It is also one of the six
+     path-translation importers, so **Phase 66's census cannot reach 0 while this
+     is undecided**. Strongly implied obsolete, but **not named in the milestone's
+     stated scope**, so it is raised here for an explicit decision rather than
+     deleted by inference. `repo-root.ts`'s bottom-of-module
+     `ensureResourcesInstalled()` call goes or stays with it.
+  2. **How prominently should `ENDPOINT-04`'s refusal message disclose the
+     rootless-Docker gap?** RootlessKit's `slirp4netns --disable-host-loopback`
+     may block host access even with `--add-host` set. The claim is
+     community-sourced with no vendor confirmation (MEDIUM confidence) and the
+     answer shapes the message text, so it is a wording-and-prominence decision
+     rather than a capability question. Podman >= 5.0's `pasta` default is the
+     adjacent question and is explicitly **deferred** as `DEFER-01`, not answered
+     here.
+
+**Notes:**
+
+- Port **19510** is retained — today's `VICE_BROKER_CONTROL_PORT` default, outside
+  every OS's ephemeral range, no IANA conflict. That also makes the stale-broker
+  collision **near-certain during upgrade** rather than hypothetical: a
+  pre-v2.0.0 broker defaults to this exact port. The handshake is what tells them
+  apart, and a bare TCP accept proves nothing about who is listening.
+- **Convergence metric at this phase's exit: still 6.** Nothing is deleted here and
+  the count is expected not to move. Recording it unchanged is the point — the
+  metric is a countdown, and a countdown needs a recorded start.
+- Testing traps to design around from the start, all four already measured on this
+  project: a live broker on the fixed port deterministically reddens an existing
+  test, so every test broker uses a dynamically allocated port or explicitly
+  refuses to run against an unexpected listener; `node --test` silently skips a
+  missing or typo'd test file and still exits 0; piping `npm test` reports the
+  pipe's exit code and fakes a green baseline; and this suite has a recorded
+  history of races on scratch files written into the repo tree.
+
+### Phase 63: The Monitor Channel Relayed, and the Connection as the Session
+
+**Goal**: Every `vice_*` tool call reaches the emulator over a connection the
+broker relays rather than a socket the client dialled itself, and the broker —
+not the client — owns holding and reclaiming that session. The connection IS the
+session: when the socket dies the instance is reclaimed, whatever killed the
+client.
+
+**Requirements**: SESS-01, SESS-02, SESS-03, SESS-04, SESS-05, SESS-06.
+
+**Depends on**: Phase 62 — the endpoint must exist, and something must be
+listening on it to attach to.
+
+**Shape**: **ATOMIC at the seam level.** `ensureStockSession()`'s
+`deps.ensureLease` is a single choke point by design; every advertised tool
+reaches the emulator through that one function, so there is no meaningful way to
+migrate part of the tool surface while the rest still direct-dials. Build it
+behind a short-lived development flag if a rollback lever is wanted during
+implementation, but the cut itself happens for all tools at once, never tool by
+tool.
+
+**Success Criteria** (what must be TRUE):
+
+  1. **The relay is byte-transparent.** A register read, a memory write, a
+     checkpoint that fires and a `JAM` all behave exactly as they did over the
+     direct dial: `stock-protocol.ts` is handed a different socket and frames,
+     parses and demuxes identically, with its own content unchanged.
+  2. **Two call shapes, each holding exactly what it should.** An MCP server's
+     connection stays open for the life of that process and the broker holds that
+     connection's emulator instance for exactly as long as the socket lives; a
+     skill script's call opens, sends, receives and closes, binding no emulator
+     and holding no lease — observable in broker status rather than merely
+     intended (SESS-01, SESS-02).
+  3. **A client that dies badly is still cleaned up.** A client killed with
+     `SIGKILL` — which sends no goodbye at all — has its instance reclaimed from
+     socket events alone, and a client whose death produces no `FIN` at all is
+     detected within a bounded time rather than waiting out the operating
+     system's ~2-hour keepalive default (SESS-03, SESS-04).
+  4. **A drop mid-operation leaves evidence before it leaves nothing.** When a
+     connection drops while an operation is in flight, an incident record exists
+     **before** the instance is reclaimed, carrying a broker-minted reason naming
+     the operation that was in flight, and any capture or checkpoint run that was
+     live is marked void (SESS-05).
+  5. **A user can say "that one is mine".** Looking at broker status on a machine
+     running sessions from several unrelated projects, a user positively
+     identifies their own live session instead of guessing from port numbers, so
+     a stuck emulator in a shared broker is diagnosable rather than ambiguous
+     (SESS-06).
+
+**Plans**: TBD
+
+**Cross-cutting constraints:**
+
+- **Demux by request id, one layer up.** VICE sends five unsolicited message types
+  at request-id `0xffffffff`, two of which share a response type with a
+  legitimate command reply. If the relayed path ever correlates responses by
+  arrival order — a FIFO `pending.shift()` — it reintroduces at the relay layer
+  the exact defect class `stock-protocol.ts` already solves. Either port the
+  keyed request-id demux, or document **and test** a strictly
+  one-in-flight-request-per-connection constraint. Do not leave it implicit.
+- **`stock-protocol.ts` and `text-protocol.ts` keep their contracts.** Their role is
+  unchanged and their content is not this phase's subject: only the *source* of
+  the socket they are handed changes. Owner decision 6 forbids an outer envelope
+  around binmon bytes, so nothing here may make either module parse a frame it
+  does not parse today.
+- **One machine-wide broker makes the single-binmon-client collision more likely,
+  not merely as likely.** Stock VICE services exactly one binary-monitor client; a
+  second `connect()` sits unserviced in the backlog with no reply and no EOF,
+  indistinguishable from a wedge. Every monitor dial path must still go through
+  the claim discipline, and the broker must never diagnose that state as a hang.
+- **The existing "connection close IS the release" mechanism is extended, not
+  reinvented.** `broker-control.mts` already documents its close handler as
+  covering client `SIGKILL`. This phase generalizes that path; it does not build
+  a second one beside it.
+- **Ownership is checked per operation, never by bare target id.** One broker now
+  holds sessions from unrelated projects, so one project's recycle or diagnose
+  must not be able to reach another's instance.
+
+**Notes:**
+
+- **Convergence metric at this phase's exit: expected 5** — the direct-dial path
+  loses its last live caller, but `stock-machine.ts` still imports
+  `stock-paths.ts` for the file-carrying tools until Phase 64 and `vice-proxy.ts`
+  until Phase 66. Measure it; do not assume it.
+- `CR-01` — the inert `timeoutMs` in `TextMonitorClient.command()` at
+  `src/mcp/vice/text-protocol.ts:850` — is carried debt, explicitly out of scope,
+  and it sits inside the transport this phase rewires. If a plan here touches
+  that line it must say so: an accidental closure of a carried Critical still has
+  to be recorded as one rather than absorbed silently.
+- A non-stopping checkpoint emits a `CHECKPOINT_INFO` frame per hit
+  **synchronously, over the blocking socket, from inside the CPU loop**. On a hot
+  address that stalls the emulator thread — and now stalls a process shared with
+  other projects rather than a per-project one. Checkpoint-wait code must keep
+  resolving state from a response field such as `hit_count`, never from elapsed
+  time.
+- Test the lifecycle with a synthetic client/server pair over real loopback
+  sockets in the style of `stock-run-until.ts`, driven through `socket.destroy()`
+  (abrupt), `socket.end()` (graceful) and simply never sending (idle), with
+  injected `now()`/timer overrides so the idle and keepalive cases do not wait out
+  real wall-clock minutes.
+
+
+### Phase 64: Files as Bytes, Both Directions
+
+**Goal**: The four file-carrying tools work with no shared filesystem between
+client and broker at all. Bytes cross the socket; the client writes only under
+its own `.c64-re-tools/`; the broker chooses and owns every path on its own side;
+neither ever names a path the other must be able to open.
+
+**Requirements**: XFER-01, XFER-02, XFER-03, XFER-04, XFER-05, XFER-06, XFER-07, XFER-08.
+
+**Depends on**: Phase 63 — a relayed session must exist before a file-carrying
+tool can issue its binmon command over it — and Phase 62 for the endpoint the
+transfer rides.
+
+**Shape**: Incremental, per tool. The four tools are independent of each other
+and can be migrated and merged one at a time. The file-transfer protocol
+underneath them — framing, hashing, staging, cleanup, atomic write and
+**both-direction** traversal refusal — is the load-bearing work and lands before
+the first tool rides it.
+
+**Success Criteria** (what must be TRUE):
+
+  1. **All four tools work with no shared filesystem.** `vice_autostart`,
+     `vice_disk_attach`, `vice_snapshot_save` and `vice_snapshot_load` each
+     complete end to end against a client that can see none of the broker's paths
+     and a broker that can see none of the client's (XFER-08).
+  2. **A produced file comes back as bytes and is reported by its local path.** A
+     saved snapshot's bytes arrive over the socket, the client writes them under
+     its own `.c64-re-tools/snapshots/`, and the tool result names that local path
+     and no broker-side path. A consumed file is read client-side from a
+     caller-supplied local path and streamed to the broker (XFER-01, XFER-02).
+  3. **Bytes survive, and a bad transfer is refused rather than half-written.** A
+     payload that is not valid UTF-8 round-trips byte for byte; every transfer is
+     integrity-checked end to end; one that exceeds the size cap is refused with a
+     message naming the limit; and a connection dropped mid-transfer never leaves
+     a file visible at its final name (XFER-05, XFER-06).
+  4. **Traversal is refused in both directions, and refused rather than
+     sanitised.** A broker-supplied destination name carrying `..`, an absolute
+     path, a separator or a NUL byte fails closed — `../../etc/passwd`,
+     `/etc/passwd`, `C:\` and a NUL-embedded name all refused. In the other
+     direction the client never supplies a broker-side path at all: the broker
+     chooses its own staging path and the client refers to a staged file only by
+     an opaque handle the broker minted (XFER-03, XFER-04).
+  5. **Staged files do not accumulate.** A session's staged files are gone when its
+     connection closes, a stateless request's scratch is gone once its response is
+     fully written, and an age-based sweep removes what a crashed broker or a
+     vanished client left behind (XFER-07).
+
+**Plans**: TBD
+
+**Cross-cutting constraints:**
+
+- **`vice_symbols_load` and `vice_program_load` get no transport work here.** Both
+  were verified NOT file-carrying. `vice_program_load` refuses a filename outright
+  and takes an enumerated subject id (`text-tools.ts:859`); `vice_symbols_load`
+  reads client-side with `readFileSync` under `needsSession: false`
+  (`stock-symbols.ts:350`). Planning transfer work for either is a scope error,
+  not a thoroughness bonus.
+- **String accumulation corrupts binary.** The existing framers accumulate as UTF-8
+  strings (`vice-broker-client.ts:457`, `vice-broker-client.ts:895`,
+  `broker-control.mts:556`). The byte segment needs a Buffer-accumulation path and
+  string mode must never touch a payload.
+- **Backpressure is not optional.** A payload buffered whole into memory is a silent
+  OOM ceiling that moves with whichever tool produces the largest artifact next.
+  Stream with real flow control — pause on backpressure, resume on `drain` — and
+  prove it with a receiver that deliberately stops reading.
+- **Files land in the existing per-kind subdirectories** (`snapshots/`,
+  `runs/ghidra/`, and so on) under `.c64-re-tools/`, not in one new inbox folder.
+  Decided at the open; D-33's single tool-written root is not reopened here.
+- **Ownership is checked per operation.** A file-transfer op targeting an instance
+  runs through the same connection-holds-grant check the existing recycle path
+  uses, never a bare `target_id` lookup.
+
+**Notes:**
+
+- **Convergence metric at this phase's exit: expected 4** — `stock-machine.ts` stops
+  importing `stock-paths.ts` when the last of the four tools migrates.
+  `stock-paths.ts` itself survives until Phase 66 deletes it.
+- Test the path-containment validator as a **pure function** over traversal fixture
+  strings with no I/O at all, and test the write path separately against a real
+  `mkdtempSync` directory and a real loopback socket carrying a real
+  multi-megabyte buffer. Scratch fixtures go under a fresh temp directory per
+  test, never a fixed path inside the repository tree.
+- Whether a staged upload is deleted as soon as its `AUTOSTART` reply confirms
+  consumption, or retained for the life of the session so a re-attach needs no
+  second upload, is a real design choice for the plans. `XFER-07`'s sweep must
+  exist either way.
+
+### Phase 65: Every Skill Script Through the One Endpoint, and CI With It
+
+**Goal**: There is exactly one module in the tree that dials the endpoint and
+speaks the wire protocol, and everything reaches the broker through it — the MCP
+server by an ordinary in-package import, every skill script through the
+resolution ladder that already exists. No skill script has a route left that
+works only because it happens to be running on the host, and CI's ACME tests
+stand on their own feet before the hatch they lean on is deleted.
+
+**Requirements**: SEAM-01, SEAM-02, SEAM-03, RM-08.
+
+**Depends on**: Phase 62 for the module and the endpoint, and Phase 64 for any
+skill call that carries a file. Independent of Phase 63's internals — skill
+scripts never touched `stock-connect.ts` directly.
+
+**Shape**: Incremental, per script. The scripts are independent of each other and
+each can be swapped and merged on its own.
+
+**Success Criteria** (what must be TRUE):
+
+  1. **One module, no second copy.** A whole-tree census finds exactly one module
+     that dials the endpoint and speaks the wire protocol, with no duplicate of it
+     in the skills package, and both the MCP server and every skill script reach
+     the broker through that one module (SEAM-01).
+  2. **The ladder is unchanged and still resolves on both distribution routes.**
+     Skill scripts reach the module through the existing three-rung ladder —
+     `VICE_MCP_DIR` override, in-repo relative path, `require.resolve()` against
+     the published package — and it resolves from an in-repo checkout and from an
+     installed package alike, with no cross-package `npm` dependency and no third
+     package (SEAM-02).
+  3. **The same script gives the same answer from anywhere.** Every skill script
+     that needs a host tool goes through the single endpoint; running one inside a
+     container and on a bare host produces the same result, and no route remains
+     that depends on running on the host (SEAM-03).
+  4. **CI passes without the escape hatch.** The ACME tests in
+     `.github/workflows/ci.yml` pass without `hostToolOverHostRoute()`'s bare-host
+     direct spawn, so Phase 66 can delete it without CI being the thing that
+     discovers the dependency (RM-08).
+
+**Plans**: TBD
+
+**Cross-cutting constraints:**
+
+- **The duplication route is closed by precedent, not by preference.** `mcpHost()`'s
+  three inlined copies are this project's named incident for re-deriving a
+  cross-cutting seam locally, and a wire-protocol client is exactly the class of
+  seam a silent two-copy divergence breaks invisibly — one side changes the dial
+  order or the frame shape and the failure is a hang, not a compile error.
+- **A cross-package `npm` dependency does not work on the plugin route** and is not
+  an alternative to the ladder. A plugin install never runs `npm install` for
+  either package, so a declared dependency is simply never fetched — the same
+  "resolves on neither route" problem `mcp-module.mjs`'s own header already
+  documents, restated as a dependency edge instead of a bare import.
+- **Never auto-install anything.** `CLAUDE.md`'s standing rule (owner, 2026-09-08)
+  binds this phase's CI work as much as its shipped code. Whatever replaces the
+  bare-host route must not reach for a package manager to make a missing tool
+  appear.
+- **Never `spawnSync` an external binary from a skill script.** The app runs on the
+  host, so the call must cross the container-out seam.
+
+**The decision this phase takes at its discussion — an operational choice, not an
+open research question:** how `.github/workflows/ci.yml`'s flat-runner ACME build
+tests keep working once the bare-host route is gone. The likely answer is a step
+that starts a throwaway broker before the job that needs it; the alternative is
+moving those tests to a manual-only gate. Either has a known cost, and the choice
+must be taken here rather than discovered by a red CI run after Phase 66.
+
+**Notes:**
+
+- **Convergence metric at this phase's exit: expected 3** — `host-tool-client.ts`'s
+  two-route branch loses its last live caller here, but the import itself is not
+  removed until Phase 66's atomic commit.
+- `installer/skills/**`, the synced mirror, inherits this through
+  `installer/scripts/sync-skills.mjs` — a real step with a real test, not an
+  automatic consequence.
+- The host-tool seam is **14 referencing modules**: 8 under `src/mcp/vice/`
+  (including two generated `resources/` mirrors) and 6 under `src/skills/`.
+  Regenerating the `resources/*.mjs` artifacts is part of the work, and
+  `resources-sync.test.ts` fails CI on drift.
+
+
+### Phase 66: The Deletion Cutover — Gone, Not Bypassed
+
+**Goal**: The old boundary seam is deleted from production code. Path
+translation, the discovery record, the two-route host/container branch and the
+guard comments that documented them all stop existing, and the structural tests
+that used to watch them are rewritten to assert their absence instead of passing
+vacuously over a region that is no longer there.
+
+**Requirements**: RM-01, RM-02, RM-03, RM-04, RM-05, RM-07.
+
+**Depends on**: Phases 63, 64 and 65 all landed and green. `RM-08` (Phase 65) is
+a **hard** precondition: this phase deletes the escape hatch CI's ACME tests
+depend on, and Phase 62's `install-resources.ts` question must also have been
+answered, because the census cannot reach 0 while it stands open.
+
+**Shape**: **ATOMIC and forced.** `hostpath-consumers.test.ts` asserts a closed,
+exact consumer set that cannot be half-true: a state with some callers gone and
+others not produces no passing version of that test without either rewriting it
+mid-migration (defeating its purpose as a tripwire) or leaving it red on purpose
+(defeating the green-suite discipline). The deletion lands in one commit.
+
+**Success Criteria** (what must be TRUE):
+
+  1. **The three modules are gone and the census reads zero.** `hostpath.ts`,
+     `containerpath.ts` and `stock-paths.ts` do not exist in the tree, and a
+     whole-tree count of their real importers reads **0** — it read **6** at the
+     milestone open. The same sweep finds no surviving `isInsideContainer()` call
+     site that decides transport reachability (RM-01).
+  2. **The discovery record and the second route are gone.** `broker.json` is
+     neither written nor read anywhere and every reader of it is deleted; the
+     host-tool client has one route rather than two, and container detection
+     survives only where the broker guards its own startup — the one job it keeps
+     (RM-02, RM-03).
+  3. **No comment still teaches a rule that no longer exists.** Nothing anywhere
+     instructs a reader that the broker must bind `0.0.0.0`, and the ~32 dead
+     *"never import hostpath.ts"* guard comments are stripped (RM-04, RM-05).
+  4. **Every structural guard asserts absence over the whole tree.** Each test that
+     used to guard a deleted seam now scans the whole tree and fails if the thing
+     comes back, and each is proven non-vacuous by a planted violation. The
+     widening lands **before** the deletion it guards, or the test proves nothing
+     (RM-07).
+  5. **The milestone's hypothesis is answered here, and this is the phase that
+     answers it.** The full suite is green with **no** broker running and green
+     again **with** one running while all four file-carrying tools are exercised
+     end to end — and **no fallback route to the old seam is retained anywhere**.
+     A retained fallback falsifies the hypothesis directly; keeping one "for
+     safety" is the failure this milestone exists to prevent, not a mitigation of
+     it.
+
+**Plans**: TBD
+
+**Cross-cutting constraints:**
+
+- **`install-resources.ts` must be decided before this phase can finish.** It is one
+  of the six importers, so the census cannot reach 0 while its disposition is
+  open. That disposition is Phase 62's first flagged question; if the module is
+  deleted, `repo-root.ts`'s bottom-of-module `ensureResourcesInstalled()` call
+  goes with it.
+- **A live broker deterministically reddens at least one existing test.** That is
+  measured, not a flake. The no-broker green run and the with-broker green run are
+  **two separate observations** and both are required; a single run cannot stand
+  for both.
+- **Do not pipe `npm test`.** A pipe reports the pipe's exit code and fakes a green
+  baseline. Redirect to a file and read `$?` on the same command line.
+- **The ordering inside the phase is load-bearing:** widen the scan surface first,
+  while the expected set is still the current one and the suite stays green; then
+  delete; then flip the expected set to empty. Reversing those two steps produces
+  a test that is green for the wrong reason, which is `RM-07`'s entire subject.
+- **Deleting is the deliverable, and this project's tooling fights it.**
+  `cleanup-wave` refuses any branch whose diff contains a deletion, so this
+  phase's branches are merged by hand after their scope is verified. Plan for it;
+  do not treat it as a surprise.
+
+**Notes:**
+
+- `hostpath-consumers.test.ts` is the subject of the deletion as much as a witness
+  to it — it is either deleted cleanly or rewritten to assert non-existence, and
+  which one happens is an explicit recorded choice rather than a side effect.
+- `vice-errors.ts`'s `mcpHost()` / `activeUrl` / `LEGACY_DEFAULT_PORT` are the
+  fourth copy of "guess the host" and should not outlive the second and third.
+  Confirm their disposition here rather than leaving them as a residue nobody
+  named.
+- **Convergence metric at this phase's exit: 0.** That number is this phase's
+  headline evidence, not a footnote.
+
+### Phase 67: Ghidra's Runs Root Without the Alias
+
+**Goal**: A Ghidra run lands on a broker-side root whose absolute path carries no
+dot-prefixed segment, so Ghidra accepts it outright and the symlink alias that
+used to reconcile "dot-free for Ghidra" with "physically inside a dotted project
+tree" is deleted rather than relocated.
+
+**Requirements**: RM-06.
+
+**Depends on**: Phase 62 for a machine-level state root to relocate into, and
+Phase 64 for broker-side staging and the byte-return path for results.
+Independent of Phase 66 and deliberately placed after it.
+
+**Shape**: Incremental, and its test signal is a **deliberate** regression rather
+than a surprise: `repo-root.test.ts`'s literal-string census goes red the moment
+`GHIDRA_RUNS_HANDLE_TARGET` disappears, and that redness is the checklist for
+what else needs rewriting in the same commit.
+
+**Success Criteria** (what must be TRUE):
+
+  1. **Ghidra accepts the path with no trick.** A real `analyzeHeadless` run
+     completes against a broker-side runs root whose absolutized path contains no
+     dot-prefixed segment anywhere — no alias, no symlink, no per-run indirection
+     — and the run's results reach the caller as bytes, landing under the caller's
+     own `.c64-re-tools/runs/ghidra/`.
+  2. **The mechanism is gone, not dormant.** `GHIDRA_RUNS_HANDLE_TARGET`,
+     `ensureGhidraRunsHandle()`, the broker-startup symlink minting and the
+     refuse-by-name-when-occupied logic do not exist, and nothing recreates the
+     handle at any later startup.
+  3. **The census and its guards agree with the tree again.** `repo-root.ts`'s
+     literal-string census and `repo-root.test.ts` are updated in the same commit
+     that changes the count, and `ghidra-live.test.ts`'s SYMLINK GUARD cases are
+     **deleted** rather than left red — an explicit recorded choice, not a side
+     effect.
+
+**Plans**: TBD
+
+**Cross-cutting constraints:**
+
+- **The rule survives even though the mechanism does not.** Ghidra's
+  `ProjectLocator` calls `getAbsolutePath()`, never `getCanonicalPath()` —
+  MEASURED against real Ghidra 12.1.3 — so it absolutizes a relative argument but
+  does not resolve a symlink, and it refuses any dot-prefixed segment wherever the
+  run physically lands. Keep `hasDotPrefixedSegment()` as a cheap, free-standing
+  assertion before every `analyzeHeadless` invocation; it costs nothing and
+  catches a future accidental dot in whatever the broker's naming scheme becomes.
+- **The removal must be measured, not assumed.** PROJECT.md calls the alias an
+  *expected* removal precisely so no phase quietly rebuilds it — and equally so
+  that its removal is demonstrated against real Ghidra rather than argued from the
+  transport change. A synthetic string fed to this project's own
+  `hasDotPrefixedSegment()` observes this project, never Ghidra; that mistake was
+  made once already and corrected on 2026-09-08.
+- **Ghidra is declared by version at a user-chosen path and is never
+  auto-installed.** Search for `analyzeHeadless`; never guess a prefix.
+
+**Notes:**
+
+- **Convergence metric: unaffected.** This phase touches none of the three
+  path-translation modules, which are already gone by Phase 66.
+- `ghidraRunsRoot()` / `ghidraRunsRealRoot()` currently take a caller-supplied
+  `repoRoot` threaded through `host-tool.mts`'s `--repo-root` argument. A
+  broker-owned root keyed by session id is the shape this phase is heading for;
+  the `--repo-root` argument's remaining meaning should be settled rather than
+  left half-used.
+
+## Sequencing Rationale (v2.0.0)
+
+**Six phases, not the eight research suggested, and the two merges are
+deliberate.** The research draft proposed a separate "new client module" phase
+and a separate "machine-level broker deployment" phase. Those are two halves of
+one seam and are merged into **Phase 62**: the handshake is a two-sided protocol,
+so a client cannot be tested dialling a broker that does not bind the addresses
+it dials, and a bind cannot be tested without a client that tries both
+candidates. The research's own pitfall-to-phase mapping already groups Pitfalls
+1-4 under one logical phase — *"fixed-endpoint bind & handshake"* — which is
+exactly what Phase 62 is. The research also proposed a standalone CI phase for
+`RM-08`; it is a single requirement whose subject is the escape hatch the
+skill-script phase removes the justification for, so it rides **Phase 65**
+alongside `SEAM-03` rather than standing alone as a phase whose goal would be an
+internal-quality one.
+
+**What was NOT merged, and why.** The Ghidra relocation (`RM-06`) is a single
+requirement and by the same compression rule is a candidate to fold — it is kept
+separate on purpose. Folding it into Phase 66 would put an incremental relocation
+inside a forced atomic deletion commit whose exit criterion is the milestone's own
+hypothesis, muddying the one measurement this milestone exists to take; folding it
+into Phase 64 would add it to the hazard-densest phase in the milestone. It is
+independent, it can come last, and it comes last.
+
+**Two phases are atomic, and they are atomic for different reasons.** Phase 63 is
+atomic because `ensureStockSession()` is a single choke point **by design**: every
+`vice_*` call reaches the emulator through that one function, so there is no
+30%-migrated state to occupy. Phase 66 is atomic because
+`hostpath-consumers.test.ts` asserts a closed, exact consumer set that cannot be
+half-true — there the constraint is a test's shape, not a runtime seam's. Neither
+is a preference and neither can be softened by splitting the phase; a reader who
+splits either one will find out which by watching the suite go red with no honest
+way to make it green.
+
+**The three hard orderings, restated as the edges they are.** `RM-08` (Phase 65)
+→ `RM-03` (Phase 66): the deletion removes the route CI currently depends on.
+`RM-07`'s widening → every `RM-01`/`RM-02` deletion, an edge **inside** Phase 66:
+a structural test that scans a named region is vacuously green once the region is
+gone, so the scan is widened while the expected set is still non-empty. And Phase
+62 → everything else: the endpoint is the thing the whole milestone is named
+after, and it is also where every later phase's live testing gets a real broker
+to test against.
+
+**Why there is no opening go / degrade / no-go gate phase.** Four prior
+milestones opened with one (Phases 9, 23, 33, 39) and v1.0.0 recorded the
+decision not to. Each of those gates probed a fact about something this project
+does **not** control. v2.0.0 has one candidate unknown of that shape — whether a
+containerized client can reach a host-bound broker across every supported
+container runtime — and it is not gate-shaped: it has a **documented remedy**
+rather than a verdict (`--add-host=host.docker.internal:host-gateway` on plain
+Linux Docker Engine), it is already scoped to a refusal message rather than to a
+capability, and its one genuinely unverified corner (rootless Docker, Podman
+>= 5.0's `pasta`) is flagged MEDIUM and deferred as `DEFER-01` rather than
+gambled on. The gate discipline is **distributed instead**, in the stronger form
+this project has used since v1.0.0: every phase carries at least one control that
+must be observed going **RED** at the point of use — a wedged listener that must
+not swallow the fallback (62), a `SIGKILL`ed client that must still be reclaimed
+(63), a traversal string that must be refused (64), a planted violation that must
+fail the widened structural guard (66).
+
+**Where the milestone's own falsifiable claim is checked.** Phase 66, and nowhere
+else. Every phase before it moves the convergence metric from 6 toward 0; Phase
+66 is the one whose exit criterion **is** the hypothesis rather than a step
+toward it.
+
 ## Progress
 
 **Keep this per-phase table. Keep its column order. Keep every row, including
@@ -1912,6 +2615,12 @@ check. No test reads this table now.
 | 59. The Tool-Location Seam and Its Precedence Order | v1.1.0 | 5/5 | Complete | 2026-09-18 |
 | 60. The Seam Wired Into the Code That Ships | v1.1.0 | 8/8 | Complete | 2026-09-18 |
 | 61. The Install Tables Generated, and a Guard That Compares Facts | v1.1.0 | 3/3 | Complete | 2026-09-19 |
+| 62. The Fixed Endpoint and the Broker That Owns the Machine | v2.0.0 | — | Not started | - |
+| 63. The Monitor Channel Relayed, and the Connection as the Session | v2.0.0 | — | Not started | - |
+| 64. Files as Bytes, Both Directions | v2.0.0 | — | Not started | - |
+| 65. Every Skill Script Through the One Endpoint, and CI With It | v2.0.0 | — | Not started | - |
+| 66. The Deletion Cutover — Gone, Not Bypassed | v2.0.0 | — | Not started | - |
+| 67. Ghidra's Runs Root Without the Alias | v2.0.0 | — | Not started | - |
 
 **Milestone roll-up:** v0.2.0 — 9 phases, 87 plans, 51/51 in-scope requirements,
 shipped 2026-08-19 (audit round 4 `tech_debt`; 13 deferred items at close).
@@ -2039,3 +2748,5 @@ scoped work above rather than doing it.
 *v1.1.0 AMENDED 2026-09-18 — the doctor phase was dropped at owner decision before any plan existed, `DOCTOR-01..09` moved to `REQUIREMENTS.md` § Future Requirements, and the README-generation phase renumbered 62 → 61. The milestone now runs Phases 58-61 with 15/15 requirements mapped. The milestone name is kept as the label it opened under. Original creation record follows, unedited.*
 
 *v1.1.0 roadmap created 2026-09-16 — Phases 58-62, continuing numbering from Phase 57, 24/24 requirements mapped (`DECL-01..05`, `LOC-01..07`, `DOCTOR-01..09`, `GEN-01..03`), each to exactly one phase. Phases 51, 53, 54 and 57 stay carried and are NOT in this milestone. `DECL-03` is owned by Phase 60 rather than the declaration phase, and `LOC-01`/`LOC-02` by Phase 60 rather than the seam phase — both departures from the researched shape are reasoned in "Sequencing Rationale (v1.1.0)" rather than left to be noticed.*
+
+*v2.0.0 roadmap created 2026-09-19 — Phases 62-67, continuing numbering from Phase 61, **36/36 requirements mapped, each to exactly one phase** (`ENDPOINT-01..05`, `BROKER-01..06`, `SESS-01..06`, `XFER-01..08`, `SEAM-01..03`, `RM-01..08`). Six phases rather than the eight the research suggested: the client module and the machine-level broker deployment are two halves of one two-sided seam and merge into Phase 62, and `RM-08`'s CI work rides Phase 65 with `SEAM-03` rather than standing alone. Phases 51, 53, 54 and 57 stay carried and are NOT in this milestone. Two phases are atomic for different reasons and neither may be split — Phase 63 because `ensureStockSession()` is a single choke point by design, Phase 66 because `hostpath-consumers.test.ts` asserts a closed set that cannot be half-true. **Phase 66 is where the milestone's falsifiable hypothesis becomes true or false**, and the convergence metric it must drive to 0 (the count of real `hostpath.ts`/`containerpath.ts`/`stock-paths.ts` importers) stands at **6** at this open. No opening go/degrade/no-go gate phase, reasoned in "Sequencing Rationale (v2.0.0)" rather than omitted silently.*
