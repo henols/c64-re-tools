@@ -5,16 +5,16 @@ milestone_name: One Broker, One Socket
 current_phase: 63
 current_phase_name: The Monitor Channel Relayed, and the Connection as the Session
 status: executing
-stopped_at: Phase 63 planned — 6 plans in 5 waves, verification passed, ready to execute
-last_updated: "2026-09-19T18:39:22.510Z"
+stopped_at: Completed 63-01-PLAN.md
+last_updated: "2026-09-19T20:38:44.033Z"
 last_activity: 2026-09-19
-last_activity_desc: Phase 63 planned — 6 plans, 5 waves
-state_head: a7cec4222b2e67aea3c60959eb7161b28c4d112d
+last_activity_desc: Phase 63 execution started
+state_head: fac62acb7ca7cd4ebd44c7b82084ab30e404bec3
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 11
-  completed_plans: 5
+  completed_plans: 6
   percent: 17
 carried_forward_phases:
 
@@ -46,7 +46,7 @@ v2.0.0 close is where it can be weighed — and it will have evidence to weigh,
 because "keep working when the emulator misbehaves" is exactly what a
 connection-is-the-session broker changes the mechanics of.*
 
-**Current focus:** Phase 63 — The Monitor Channel Relayed, and the Connection
+**Current focus:** Phase 63 — The Monitor Channel Relayed, and the Connection as the Session
 as the Session, ready to plan. Phase 62 closed 2026-09-19: all 5 of 5 plans
 executed, verification passed 11/11, `ENDPOINT-01..05` and `BROKER-01..06`
 complete. **Milestone v2.0.0 "One Broker, One
@@ -79,11 +79,11 @@ closure still needs to be recorded as one.
 
 ## Current Position
 
-Phase: 63 (The Monitor Channel Relayed, and the Connection as the Session) — READY TO EXECUTE
-Plan: Not started
+Phase: 63 (The Monitor Channel Relayed, and the Connection as the Session) — EXECUTING
+Plan: 2 of 6
 Status: Ready to execute
 Progress: [██░░░░░░░░] 17% (1 of 6 v2.0.0 phases complete; Phases 62-67)
-Last activity: 2026-09-19 — Phase 63 planned (6 plans, 5 waves), plan-checker passed
+Last activity: 2026-09-19 — Phase 63 execution started
 
 **The milestone's exit criterion lives in Phase 66 and nowhere else.** The
 hypothesis is falsifiable: the old boundary seam must be *gone from production
@@ -474,6 +474,7 @@ Phase 66 completes.
 | Phase 62 P03 | 70min | 2 tasks | 9 files |
 | Phase 62 P04 | 31min | 2 tasks | 10 files |
 | Phase 62 P05 | 24min | 2 tasks | 4 files |
+| Phase 63 P01 | 75min | 3 tasks | 26 files |
 
 ## Accumulated Context
 
@@ -1363,6 +1364,7 @@ Recent decisions affecting current work:
 - [Phase 62]: Plan 62-04: the four state-directory precedence cases could not be unit-tested by importing parseArgs() directly from vice-broker.mts in a .test.ts (its sibling .mjs imports only exist beside the compiled artifact under resources/), so all four are proven via real spawns of the emitted artifact instead.
 - [Phase 62]: Plan 62-04: the two-project case's "two clients configured against two project directories" is proven as two independent control-plane sessions opened against the broker's own machine-level state directory, rather than by varying each session's own dial target -- there is deliberately no per-project discovery path any more under this phase's design.
 - [Phase 62]: Plan 62-05: BROKER_START_COMMAND's literal text lives in the launchd plist's leading XML comment (its functional ProgramArguments is necessarily a split array) and in the systemd unit's actual ExecStart line -- both asserted byte-identical to the exported constant by the same test.
+- [Phase 63]: Unified the Buffer-mode pre-splice reader across every control-plane connection at Task 1 time, not deferred to Task 2 — The eight pre-existing ASCII ops decode byte-identically either way, and one reader is what proves the boundary-one case
 
 ### Pending Todos
 
@@ -2696,8 +2698,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-19T17:20:00.000Z
-Stopped at: Phase 62 complete, ready to plan Phase 63
+Last session: 2026-09-19T20:38:43.852Z
+Stopped at: Completed 63-01-PLAN.md
 Resume file: None
 
 Earlier: **v2.0.0 roadmap created.** 36/36 requirements (`ENDPOINT-01..05`,
