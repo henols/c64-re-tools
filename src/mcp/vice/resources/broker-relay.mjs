@@ -143,11 +143,25 @@ export function spliceRelay(opts) {
         bytesEmulatorToClient: () => bytesEmulatorToClient,
     };
 }
-// ---------------------------------------------------------------------------
-// Idle/keepalive defaults -- DECLARED here now, CONSUMED by Plan 63-04. This
-// task wires neither timer; a relay connection today lives exactly as long
-// as both of its sockets stay open, with no idle-timeout of its own.
-// ---------------------------------------------------------------------------
+/**
+ * Resolves which emulator port an `attach` on `channel` should dial: the
+ * instance record's own primary `port` for the binary channel, its own
+ * `remoteMonitorPort` for the text channel. Never `instance.port` as a
+ * fallback for a missing `remoteMonitorPort` -- that would dial the WRONG
+ * emulator socket (the binary monitor) for a text attach, silently.
+ */
+export function resolveRelayChannelTarget(channel, targetId, instance) {
+    if (channel === "text") {
+        if (typeof instance.remoteMonitorPort !== "number") {
+            return {
+                ok: false,
+                reason: `attach: target ${targetId} has no text-monitor port recorded -- refusing to dial the binary port or a guessed one`,
+            };
+        }
+        return { ok: true, port: instance.remoteMonitorPort };
+    }
+    return { ok: true, port: instance.port };
+}
 /** Default idle timeout (ms) a future plan (63-04) will apply to a relay
  * connection carrying no traffic in either direction. Not consulted by
  * anything in this file yet. */

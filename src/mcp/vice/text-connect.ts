@@ -32,10 +32,25 @@
 //     interface, extended (plan 41-03, D-14) with an optional `channel`
 //     field on the options object claimMonitor()/releaseMonitor() already
 //     take, never a second interface.
+//   - Phase 63 (SESS-02): never dial the emulator's own text-monitor port
+//     from this process again, full stop -- the ONE `client.connect(host,
+//     remoteMonitorPort, ...)` call this handshake used to make is now
+//     `dialMonitorSocket` (default: dialMonitorRelay() against the broker's
+//     fixed endpoint, tagged for the text channel, never the emulator
+//     directly). The socket now comes from the broker, already spliced
+//     through to the real text-monitor port on the broker's own side. A
+//     future edit that reintroduces a direct `net.createConnection`/
+//     `client.connect(host, port)` call in this file is reopening the exact
+//     single-client-services-exactly-one hazard the relay exists to close.
+//   - Never build a textReconnect() here EITHER, on the relay socket -- see
+//     the bullet above this one. The relay changes WHERE the socket comes
+//     from, never WHETHER a dead one may be silently re-established.
 import { TextMonitorClient } from "./text-protocol.ts";
 import { ViceError } from "./vice-errors.ts";
-import type { StockConnectBrokerControl } from "./stock-connect.ts";
-import { MonitorOwnershipError } from "./vice-broker-client.ts";
+import type { StockConnectBrokerControl, DialMonitorSocketFn } from "./stock-connect.ts";
+import { MonitorOwnershipError, type MonitorClaimChannel } from "./vice-broker-client.ts";
+import { dialMonitorRelay } from "./broker-endpoint.ts";
+import type { Socket } from "node:net";
 
 // ---------------------------------------------------------------------------
 // Session shape.
@@ -58,7 +73,44 @@ export interface TextConnectOptions {
   remoteMonitorPort: number | null | undefined;
   targetId: string;
   brokerControl: StockConnectBrokerControl;
-  connectTimeoutMs?: number;
+  /** Injectable socket source (Phase 63, SESS-02) -- the SAME seam
+   * stock-connect.ts's StockConnectDeps.dialMonitorSocket exposes, reused
+   * as-is (the type Plan 63-01 exported, never a second declaration).
+   * Omitted means the module's OWN default: dialMonitorRelay() against the
+   * broker's fixed endpoint, tagged for the text channel, authenticated
+   * with `controlToken`. */
+  dialMonitorSocket?: DialMonitorSocketFn;
+  /** The per-boot control token the DEFAULT dialMonitorSocket needs to
+   * authenticate its own `attach` line over the fixed endpoint -- the SAME
+   * credential this handshake's own `brokerControl` already used to open
+   * its control-plane session. A caller supplying its own
+   * `dialMonitorSocket` (every test in this file) never needs this field. */
+  controlToken?: string;
+}
+
+/** The default DialMonitorSocketFn for the text channel: dials the
+ * broker's fixed endpoint via dialMonitorRelay(), authenticated with
+ * `controlToken`, and unwraps its discriminated result into either a
+ * resolved socket/pending pair or a thrown ViceError naming the broker's
+ * own refusal text. Mirrors stock-connect.ts's own defaultDialMonitorSocket
+ * exactly (that function is not exported, so this is a small, deliberate
+ * duplicate rather than a shared import -- the two channels' defaults
+ * differ only in which channel they always pass, and stock-connect.ts's
+ * own header comment forbids this file from reaching into it). */
+async function defaultDialMonitorSocket(
+  opts: { host: string; port: number; targetId: string; channel: MonitorClaimChannel; handle: string },
+  controlToken: string | undefined,
+): Promise<{ socket: Socket; pending: Buffer }> {
+  const result = await dialMonitorRelay({
+    targetId: opts.targetId,
+    channel: opts.channel,
+    handle: opts.handle,
+    token: controlToken ?? "",
+  });
+  if (!result.ok) {
+    throw new ViceError(result.reason);
+  }
+  return { socket: result.socket, pending: result.pending };
 }
 
 function isValidPort(port: unknown): port is number {
@@ -98,7 +150,8 @@ export async function textConnect({
   remoteMonitorPort,
   targetId,
   brokerControl,
-  connectTimeoutMs,
+  dialMonitorSocket,
+  controlToken,
 }: TextConnectOptions): Promise<TextConnectSession> {
   if (!isValidPort(remoteMonitorPort)) {
     throw new ViceError(
@@ -125,7 +178,16 @@ export async function textConnect({
 
   const client = new TextMonitorClient();
   try {
-    await client.connect(host, remoteMonitorPort, connectTimeoutMs !== undefined ? { timeoutMs: connectTimeoutMs } : {});
+    // Phase 63 (SESS-02): the ONE dial this handshake now makes is a relay
+    // connection -- never a direct dial to the emulator's own text-monitor
+    // port. The resolved socket has ALREADY completed the broker's own
+    // attach handshake by the time it is handed to attach(); `pending` is
+    // whatever arrived, in the same chunk, past that handshake's own
+    // terminator, seeded straight into the client's own parse buffer
+    // rather than being stranded.
+    const dial = dialMonitorSocket ?? ((opts) => defaultDialMonitorSocket(opts, controlToken));
+    const { socket, pending } = await dial({ host, port: remoteMonitorPort, targetId, channel: "text", handle: claimOutcome.handle });
+    client.attach(socket, { pending });
     return { client, host, port: remoteMonitorPort, targetId, brokerControl };
   } catch (err) {
     await safeDisconnect(client);

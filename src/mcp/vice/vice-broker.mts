@@ -73,7 +73,7 @@ import {
 // build.ts pass (both source and target are listed in
 // HOST_BOUND_ARTIFACTS/tsconfig.build.json's include[] in this same
 // change).
-import { spliceRelay } from "./broker-relay.mjs";
+import { spliceRelay, resolveRelayChannelTarget } from "./broker-relay.mjs";
 // resolvedBackend() resolves the emulator binary's identity -- ViceBackend's
 // own definition lives in backend-detect.mts too (narrowed to a single
 // literal now that the fork backend has been removed entirely), so
@@ -997,13 +997,14 @@ export function handleMonitorClaim(requestId: string, targetId: string, channel:
  *
  * On success: marks the channel `attached`, resolves the emulator's own
  * host through resolveBinmonHost() (the SAME resolver the argv builder
- * uses -- never a second literal) and its port from the instance record's
- * own primary `port` field for the binary channel (the `remoteMonitorPort`
- * field for the text channel, Plan 63-03's own concern -- this task's own
- * `channel` parameter is threaded through now so that split needs no
- * signature change later), calls spliceRelay(), and keeps the returned
- * session on nothing this function itself owns -- the splice's own
- * "close" handling is spliceRelay()'s own concern, not this callback's. */
+ * uses -- never a second literal) and its port through
+ * broker-relay.mts's own resolveRelayChannelTarget() (plan 63-02) -- the
+ * instance record's primary `port` field for the binary channel, its own
+ * `remoteMonitorPort` for the text channel, with NO fallback from one to
+ * the other on a missing value (T-63-08) -- calls spliceRelay(), and keeps
+ * the returned session on nothing this function itself owns -- the
+ * splice's own "close" handling is spliceRelay()'s own concern, not this
+ * callback's. */
 export function handleRelayAttach(
   targetId: string,
   channel: MonitorChannel,
@@ -1024,10 +1025,18 @@ export function handleRelayAttach(
   if (!timingSafeEqual(stored, presented)) return { ok: false, code: "denied" };
   if (holder.attached) return { ok: false, code: "denied" };
 
+  // Plan 63-02: resolved BEFORE the channel is marked attached -- a target
+  // whose record carries no text-monitor port must be refused, by name,
+  // without leaving the channel's holder in a half-attached state.
+  const target = resolveRelayChannelTarget(channel, targetId, instance);
+  if (!target.ok) {
+    console.error(`vice-broker: ${target.reason}`);
+    return { ok: false, code: "bad_request" };
+  }
+
   holder.attached = true;
   const host = resolveBinmonHost();
-  const port = channel === "text" ? instance.remoteMonitorPort ?? instance.port : instance.port;
-  spliceRelay({ clientSocket, host, port, pending });
+  spliceRelay({ clientSocket, host, port: target.port, pending });
   return { ok: true };
 }
 

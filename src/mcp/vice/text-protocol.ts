@@ -729,6 +729,19 @@ export interface TextConnectSocketOptions {
   timeoutMs?: number;
 }
 
+/** Options for attach() (Phase 63, SESS-02) -- the socket-injection entry
+ * point beside connect(host, port), mirroring stock-protocol.ts's own
+ * AttachOptions exactly. `pending` carries whatever bytes the caller
+ * already read off this socket before handing it to attach(): the relay's
+ * own attach-reply line can be followed, in the SAME TCP segment, by bytes
+ * belonging to the text-monitor protocol (a passively-arriving banner, or --
+ * in the ordinary case -- nothing at all, since D-13(a) means stock's text
+ * monitor sends zero bytes on connect). Absent or empty means nothing was
+ * left over. */
+export interface TextAttachOptions {
+  pending?: Buffer;
+}
+
 export interface TextCommandOptions {
   timeoutMs?: number;
 }
@@ -784,18 +797,80 @@ export class TextMonitorClient extends EventEmitter {
     return this.#pending !== null;
   }
 
+  /**
+   * D-11/attach(): the ONE place a live socket's three listeners
+   * (data/close/error) are wired to this client's private state, shared by
+   * connect() (a socket this class dialled itself) and attach() (a socket
+   * the caller already holds, live, from elsewhere -- Phase 63's relay).
+   * Factored out of connect()'s own success path rather than duplicated, so
+   * the two entry points can never wire a socket two different ways.
+   * Mirrors stock-protocol.ts's ViceMonitorClient#wireSocket() exactly.
+   */
+  #wireSocket(socket: net.Socket, port: number | null): void {
+    this.#socket = socket;
+    this.#buffer = Buffer.alloc(0);
+    this.#port = port;
+    this.#closed = false;
+    socket.on("data", this.#onDataBound);
+    socket.on("close", this.#onCloseBound);
+    socket.on("error", this.#onErrorBound);
+  }
+
+  /**
+   * The live-socket refusal both connect() and attach() enforce: this class
+   * answers to exactly one socket at a time (stock VICE itself services
+   * exactly one text-monitor client), so a caller must disconnect() before
+   * either entry point can hand it a new one. Mirrors stock-protocol.ts's
+   * ViceMonitorClient#refuseIfLive() exactly.
+   */
+  #refuseIfLive(where: string): ViceError | null {
+    if (this.#socket != null && !this.#socket.destroyed) {
+      return new ViceError(
+        `${where} refused: this client already holds a live socket to port ${this.#port} -- ` +
+          `call disconnect() first (stock VICE services exactly one text-monitor client)`,
+      );
+    }
+    return null;
+  }
+
+  /**
+   * Socket-injection entry point (Phase 63, SESS-02): reuses connect()'s
+   * three-listener wiring for a socket the CALLER already holds, live --
+   * the relay's own dialMonitorRelay() result -- rather than dialling one
+   * itself. Resolves synchronously (no Promise, unlike connect()): there is
+   * nothing to wait for, the socket is already connected, and D-13(a)
+   * already means this class never reads or waits for a connect banner
+   * (stock's text monitor sends zero bytes on connect, so there is no
+   * banner-vs-attach-reply race to resolve here either). `opts.pending`
+   * (bytes that arrived in the SAME segment as the relay's attach reply,
+   * before this client ever saw the socket) is run through the SAME parse
+   * path a live 'data' event would use, via #onData(), so those bytes are
+   * never stranded -- see TextAttachOptions' own header comment.
+   *
+   * D-11: this method, like connect(), answers "this socket died" only. It
+   * adds no reconnect logic -- text-connect.ts's own header comment states,
+   * and this phase preserves, that a text-channel relay death is FATAL for
+   * the session, never something to silently reconnect.
+   */
+  attach(socket: net.Socket, opts: TextAttachOptions = {}): void {
+    const refusal = this.#refuseIfLive("attach");
+    if (refusal) throw refusal;
+
+    this.#wireSocket(socket, socket.remotePort ?? null);
+
+    if (opts.pending && opts.pending.length > 0) {
+      this.#onData(opts.pending);
+    }
+  }
+
   connect(host: string, port: number, { timeoutMs = 5000 }: TextConnectSocketOptions = {}): Promise<void> {
     // Mirrors stock-protocol.ts's WR-13(b) fix: refuse to connect over a
     // socket that is still live, rather than silently overwriting #socket
     // and leaking the previous socket and its listeners. A reconnect must go
     // through disconnect() first.
-    if (this.#socket != null && !this.#socket.destroyed) {
-      return Promise.reject(
-        new ViceError(
-          `connect to ${host}:${port} refused: this client already holds a live socket to port ${this.#port} -- ` +
-            `call disconnect() first (stock VICE services exactly one text-monitor client)`,
-        ),
-      );
+    const refusal = this.#refuseIfLive(`connect to ${host}:${port}`);
+    if (refusal) {
+      return Promise.reject(refusal);
     }
 
     return new Promise((resolve, reject) => {
@@ -804,13 +879,7 @@ export class TextMonitorClient extends EventEmitter {
       const onConnect = () => {
         clearTimeout(timer);
         socket.removeListener("error", onConnectError);
-        this.#socket = socket;
-        this.#buffer = Buffer.alloc(0);
-        this.#port = port;
-        this.#closed = false;
-        socket.on("data", this.#onDataBound);
-        socket.on("close", this.#onCloseBound);
-        socket.on("error", this.#onErrorBound);
+        this.#wireSocket(socket, port);
         // D-13(a): resolve immediately -- never read or wait for a connect
         // banner. Stock's text monitor sends zero bytes on connect.
         resolve();

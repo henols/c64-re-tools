@@ -8,15 +8,15 @@
 // than declaring a parallel one.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createServer, type Server } from "node:net";
+import { createServer, connect as netConnect, type Server } from "node:net";
 import type { AddressInfo } from "node:net";
 import { execFileSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { textConnect, textDisconnect } from "./text-connect.ts";
-import type { StockConnectBrokerControl } from "./stock-connect.ts";
+import { textConnect as textConnectReal, textDisconnect, type TextConnectOptions } from "./text-connect.ts";
+import type { StockConnectBrokerControl, DialMonitorSocketFn } from "./stock-connect.ts";
 import {
   MonitorOwnershipError,
   type ClaimMonitorOutcome,
@@ -26,6 +26,33 @@ import {
 } from "./vice-broker-client.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+
+// ---------------------------------------------------------------------------
+// Phase 63 (SESS-02): textConnect()'s default socket source is now a relay
+// dial against a broker that is not running in this test process -- every
+// call site in this file is about the HANDSHAKE (claim ordering, the
+// port validation, the release-on-failure discipline), not about the
+// socket source. Mirrors stock-connect.test.ts's own
+// directDialMonitorSocket/shadowing-wrapper shape exactly: dials the stub
+// text-monitor server DIRECTLY (this file's own withStubTextServer(),
+// never a real broker) and resolves an empty pending Buffer --
+// byte-identical handshake behaviour to the pre-relay direct dial this
+// replaces. `textConnect` below SHADOWS the real export with a thin
+// wrapper so every existing call site (unchanged) picks up the default
+// automatically; a call site that supplies its own `dialMonitorSocket`
+// still wins.
+// ---------------------------------------------------------------------------
+
+const directDialMonitorSocket: DialMonitorSocketFn = (opts) =>
+  new Promise((resolve, reject) => {
+    const socket = netConnect({ host: opts.host, port: opts.port });
+    socket.once("connect", () => resolve({ socket, pending: Buffer.alloc(0) }));
+    socket.once("error", reject);
+  });
+
+function textConnect(opts: TextConnectOptions): ReturnType<typeof textConnectReal> {
+  return textConnectReal({ ...opts, dialMonitorSocket: opts.dialMonitorSocket ?? directDialMonitorSocket });
+}
 
 // ---------------------------------------------------------------------------
 // Stub broker control -- mirrors stock-connect.test.ts's makeStubBrokerControl().
@@ -201,7 +228,7 @@ test("textConnect: a dial failure after a successful claim releases the claim be
   // bound by this test) -- forces client.connect() to fail with ECONNREFUSED
   // rather than hang.
   await assert.rejects(
-    () => textConnect({ host: "127.0.0.1", remoteMonitorPort: 1, targetId: "grant-7", brokerControl, connectTimeoutMs: 2000 }),
+    () => textConnect({ host: "127.0.0.1", remoteMonitorPort: 1, targetId: "grant-7", brokerControl }),
   );
   assert.equal(state.claimCalls, 1, "the claim must have been attempted");
   assert.equal(state.releaseCalls, 1, "a failed dial must release the claim it just took, before propagating");
@@ -211,7 +238,7 @@ test("textConnect: a dial failure after a successful claim releases the claim be
 test("textConnect: the ORIGINAL dial failure is preserved even when the release itself also fails", async () => {
   const { brokerControl, state } = makeStubBrokerControl({ releaseOutcome: { ok: false, reason: "internal" } });
   await assert.rejects(
-    () => textConnect({ host: "127.0.0.1", remoteMonitorPort: 1, targetId: "grant-8", brokerControl, connectTimeoutMs: 2000 }),
+    () => textConnect({ host: "127.0.0.1", remoteMonitorPort: 1, targetId: "grant-8", brokerControl }),
     (err: unknown) => {
       // The original connect failure, never replaced by the release's own
       // { ok: false } outcome -- WR-07's own precedent from stock-connect.ts.
@@ -282,6 +309,11 @@ test("structural (D-14): git ls-files agrees -- the identifier appears only in t
     // broker-control.test.ts's own copy of this same guard.
     "broker-relay.mts",
     "broker-relay.test.ts",
+    // Phase 63, plan 63-02 (SESS-02): the text channel's own relay-lifecycle
+    // test file, constructing the SAME raw InstanceRecord literals every
+    // other allowed *.test.ts file above does. Kept in sync with
+    // broker-control.test.ts's own copy of this same guard.
+    "broker-relay-text.test.ts",
   ]);
   const offenders: string[] = [];
   for (const rel of files) {

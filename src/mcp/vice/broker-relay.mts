@@ -222,6 +222,60 @@ export function spliceRelay(opts: SpliceRelayOptions): RelaySession {
 // as both of its sockets stay open, with no idle-timeout of its own.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Channel-to-emulator-port resolution (Phase 63, plan 63-02, SESS-02
+// continued into the text channel). vice-broker.mts's handleRelayAttach()
+// used to compute this as an inline conditional
+// (`channel === "text" ? instance.remoteMonitorPort ?? instance.port : ...`)
+// that FELL BACK to the binary port when the text-monitor port was absent
+// -- exactly the guessed-port hazard text-connect.ts's own client-side
+// validation already refuses by name. Factored here so the branch lives in
+// ONE place and the fallback cannot silently reappear.
+// ---------------------------------------------------------------------------
+
+/**
+ * The minimal shape of an instance record this resolver needs -- never the
+ * whole InstanceRecord, so this file (imported unbuilt by its own unit
+ * tests) never has to construct one.
+ */
+export interface RelayChannelInstance {
+  port: number;
+  remoteMonitorPort?: number;
+}
+
+/**
+ * The channel-to-emulator-port resolution result: either the port to dial
+ * for this channel, or a named refusal. `ok: false` covers exactly one
+ * case today -- a text attach against an instance record carrying no
+ * recorded text-monitor port -- refused BY NAME (T-63-08) rather than
+ * falling back to the binary port or a guessed one. `reason` is prose for
+ * an operator-visible log line, mirroring text-connect.ts's own
+ * `isValidPort()` refusal wording; it is not itself sent to the relay
+ * client (broker-control.mts's existing `attach refused: ${code}` wire
+ * message is unchanged by this resolver).
+ */
+export type RelayChannelTarget = { ok: true; port: number } | { ok: false; reason: string };
+
+/**
+ * Resolves which emulator port an `attach` on `channel` should dial: the
+ * instance record's own primary `port` for the binary channel, its own
+ * `remoteMonitorPort` for the text channel. Never `instance.port` as a
+ * fallback for a missing `remoteMonitorPort` -- that would dial the WRONG
+ * emulator socket (the binary monitor) for a text attach, silently.
+ */
+export function resolveRelayChannelTarget(channel: MonitorChannel, targetId: string, instance: RelayChannelInstance): RelayChannelTarget {
+  if (channel === "text") {
+    if (typeof instance.remoteMonitorPort !== "number") {
+      return {
+        ok: false,
+        reason: `attach: target ${targetId} has no text-monitor port recorded -- refusing to dial the binary port or a guessed one`,
+      };
+    }
+    return { ok: true, port: instance.remoteMonitorPort };
+  }
+  return { ok: true, port: instance.port };
+}
+
 /** Default idle timeout (ms) a future plan (63-04) will apply to a relay
  * connection carrying no traffic in either direction. Not consulted by
  * anything in this file yet. */

@@ -881,6 +881,11 @@ test("structural (D-14): no halting-path module reads monitorClients -- the only
     // allowed *.test.ts file above does.
     "broker-relay.mts",
     "broker-relay.test.ts",
+    // Phase 63, plan 63-02 (SESS-02): the text channel's own relay-lifecycle
+    // test file, constructing the SAME raw InstanceRecord literals every
+    // other allowed *.test.ts file above does. Kept in sync with
+    // text-connect.test.ts's own copy of this same guard.
+    "broker-relay-text.test.ts",
   ]);
   const offenders: string[] = [];
   for (const rel of files) {

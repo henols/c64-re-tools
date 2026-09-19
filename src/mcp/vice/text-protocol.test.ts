@@ -32,7 +32,7 @@
 //   code, not a reimplementation of it.
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { createServer, type Server } from "node:net";
+import { createServer, connect as netConnect, type Server } from "node:net";
 import type { AddressInfo } from "node:net";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -57,6 +57,7 @@ import {
   TEXT_MAX_BUFFERED_LEN,
   TEXT_QUIESCENCE_MS,
   withTextChannelLock,
+  type TextAttachOptions,
 } from "./text-protocol.ts";
 import { TEXTMON_FIXTURE_DIR, listTextFixtures, loadTextFixture } from "./textmon-fixtures.ts";
 import { resetChannelLockForTests } from "./channel-lock.ts";
@@ -637,6 +638,87 @@ test("textConnect (D-13(a)): connect() never reads or waits for a connect banner
       await client.connect("127.0.0.1", port);
       const elapsedMs = Date.now() - start;
       assert.ok(elapsedMs < 1000, `connect() must resolve immediately with no banner wait, took ${elapsedMs}ms`);
+      await client.disconnect();
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// attach() -- the socket-injection entry point (Phase 63, SESS-02).
+// ---------------------------------------------------------------------------
+
+test("attach(): resolves synchronously with no banner read, and the attached socket's own command reply is framed exactly like connect()'s", async () => {
+  await withStubNetServer(
+    (socket) => {
+      socket.on("data", () => socket.write(Buffer.from("Setting default device to `Computer'\n(C:$e5d1) ", "utf8")));
+    },
+    async (port) => {
+      const raw = await new Promise<import("node:net").Socket>((resolve, reject) => {
+        const s = netConnect({ host: "127.0.0.1", port });
+        s.once("connect", () => resolve(s));
+        s.once("error", reject);
+      });
+      const client = new TextMonitorClient();
+      // attach() returns void, synchronously -- not a Promise, unlike connect().
+      const result = client.attach(raw);
+      assert.equal(result, undefined, "attach() must resolve synchronously (void), never a Promise");
+      assert.ok(client.connected, "attach() must wire the given socket exactly like connect() would");
+      const payload = await withTextChannelLock("device c:", () => client.command("device c:"));
+      assert.equal(payload, "Setting default device to `Computer'\n");
+      await client.disconnect();
+    },
+  );
+});
+
+test("attach(): refused by name when this client already holds a live socket, naming the port and saying to disconnect first", async () => {
+  await withStubNetServer(
+    () => {
+      /* accept only */
+    },
+    async (port) => {
+      const client = new TextMonitorClient();
+      await client.connect("127.0.0.1", port);
+      const secondRaw = await new Promise<import("node:net").Socket>((resolve, reject) => {
+        const s = netConnect({ host: "127.0.0.1", port });
+        s.once("connect", () => resolve(s));
+        s.once("error", reject);
+      });
+      assert.throws(
+        () => client.attach(secondRaw),
+        (err: unknown) => {
+          assert.ok(err instanceof Error);
+          assert.match((err as Error).message, /attach refused: this client already holds a live socket to port/);
+          assert.match((err as Error).message, /call disconnect\(\) first/);
+          return true;
+        },
+      );
+      secondRaw.destroy();
+      await client.disconnect();
+    },
+  );
+});
+
+test("attach(): opts.pending is run through the SAME parse path a live 'data' event would use -- a passively-arriving banner in the pending bytes is drained, not dropped", async () => {
+  const bannerFrame = Buffer.from("BREAK: 3 A 08FE  A9 00       LDA #$00\n(C:$08fe) ", "utf8");
+  await withStubNetServer(
+    () => {
+      /* the banner bytes are seeded as `pending`, never written by the server itself */
+    },
+    async (port) => {
+      const raw = await new Promise<import("node:net").Socket>((resolve, reject) => {
+        const s = netConnect({ host: "127.0.0.1", port });
+        s.once("connect", () => resolve(s));
+        s.once("error", reject);
+      });
+      const client = new TextMonitorClient();
+      const banners: string[] = [];
+      client.on("banner", (text: string) => banners.push(text));
+      const opts: TextAttachOptions = { pending: bannerFrame };
+      client.attach(raw, opts);
+      await sleep(100); // let the quiescence window elapse
+      assert.equal(client.bannerFramesDrained, 1, "the pending bytes must be drained through the SAME banner path a live 'data' event uses");
+      assert.equal(banners.length, 1);
+      assert.match(banners[0]!, /BREAK: 3 A 08FE/);
       await client.disconnect();
     },
   );
