@@ -5,16 +5,16 @@ milestone_name: One Broker, One Socket
 current_phase: 62
 current_phase_name: The Fixed Endpoint and the Broker That Owns the Machine
 status: executing
-stopped_at: Completed 62-03-PLAN.md
-last_updated: "2026-09-19T15:52:13.811Z"
+stopped_at: Completed 62-04-PLAN.md
+last_updated: "2026-09-19T16:28:34.835Z"
 last_activity: 2026-09-19
 last_activity_desc: Phase 62 execution started
-state_head: 882616566838c38198322c64c3470a3327e65441
+state_head: dd04aa194f19e2d5fa344be53a8506642dfaa5bc
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 5
-  completed_plans: 3
+  completed_plans: 4
   percent: 0
 carried_forward_phases:
 
@@ -78,10 +78,10 @@ closure still needs to be recorded as one.
 ## Current Position
 
 Phase: 62 (The Fixed Endpoint and the Broker That Owns the Machine) — EXECUTING
-Plan: 3 of 5 complete (62-03 done; 62-04 next)
-Status: Plan 62-03 complete — interface enumeration, bind narrowing and startup wiring (BROKER-03/BROKER-04)
+Plan: 4 of 5 complete (62-04 done; 62-05 next)
+Status: Plan 62-04 complete — vice-cli.mjs binary entry (floor refusal + broker dispatch) and machine-level state fallback (BROKER-01/BROKER-06)
 Progress: [░░░░░░░░░░] 0% (0 of 6 v2.0.0 phases complete; Phases 62-67)
-Last activity: 2026-09-19 — Phase 62 plan 3 of 5 executed
+Last activity: 2026-09-19 — Phase 62 plan 4 of 5 executed
 
 **The milestone's exit criterion lives in Phase 66 and nowhere else.** The
 hypothesis is falsifiable: the old boundary seam must be *gone from production
@@ -469,6 +469,7 @@ Phase 66 completes.
 | Phase 62 P01 | 55min | 3 tasks | 5 files |
 | Phase 62 P02 | 19min | 2 tasks | 9 files |
 | Phase 62 P03 | 70min | 2 tasks | 9 files |
+| Phase 62 P04 | 31min | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -1353,6 +1354,9 @@ Recent decisions affecting current work:
 - [Phase 62]: brokerStateDir() honours VICE_SUPERVISOR_DIR as a second, lower-priority alias for the same directory VICE_POOL_DIR wins for, since no production module currently reads that variable (62-02, D-14).
 - [Phase 62]: bindHosts[0] is the one address treated as loopback for fatality purposes in both explicit-host and enumerated modes
 - [Phase 62]: Every successfully-bound listener is closed before a fatal early return, fixing a real hang where an open bridge listener kept the process alive after a loopback bind failure
+- [Phase 62]: Plan 62-04: vice-cli.mjs's floor check reuses one exported resolveFloorMajor(manifestPath) for both the real startup path and the test's fixture-manifest assertions, rather than deriving the floor inline from an already-parsed package.json object -- one source of truth for the derivation a test also exercises directly.
+- [Phase 62]: Plan 62-04: the four state-directory precedence cases could not be unit-tested by importing parseArgs() directly from vice-broker.mts in a .test.ts (its sibling .mjs imports only exist beside the compiled artifact under resources/), so all four are proven via real spawns of the emitted artifact instead.
+- [Phase 62]: Plan 62-04: the two-project case's "two clients configured against two project directories" is proven as two independent control-plane sessions opened against the broker's own machine-level state directory, rather than by varying each session's own dial target -- there is deliberately no per-project discovery path any more under this phase's design.
 
 ### Pending Todos
 
@@ -2686,8 +2690,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-19T15:52:13.678Z
-Stopped at: Completed 62-03-PLAN.md
+Last session: 2026-09-19T16:28:34.746Z
+Stopped at: Completed 62-04-PLAN.md
 Resume file: None
 
 Earlier: **v2.0.0 roadmap created.** 36/36 requirements (`ENDPOINT-01..05`,
