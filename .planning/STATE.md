@@ -5,16 +5,16 @@ milestone_name: One Broker, One Socket
 current_phase: 62
 current_phase_name: The Fixed Endpoint and the Broker That Owns the Machine
 status: executing
-stopped_at: Completed 62-01-PLAN.md
-last_updated: "2026-09-19T14:54:17.105Z"
+stopped_at: Completed 62-02-PLAN.md
+last_updated: "2026-09-19T15:14:17.885Z"
 last_activity: 2026-09-19
 last_activity_desc: Phase 62 execution started
-state_head: 55ed4064f78cf8cf42cc3b3971b99895b0a5eb84
+state_head: 7ba2ead2591eeb5a78f15bc599fd6c0e33b16384
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 5
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 carried_forward_phases:
 
@@ -78,10 +78,10 @@ closure still needs to be recorded as one.
 ## Current Position
 
 Phase: 62 (The Fixed Endpoint and the Broker That Owns the Machine) — EXECUTING
-Plan: 1 of 5 complete (62-01 done; 62-02 next)
-Status: Plan 62-01 complete — hello handshake, concurrent dial, and four ranked refusals proven end to end
+Plan: 2 of 5 complete (62-02 done; 62-03 next)
+Status: Plan 62-02 complete — machine-level broker home (VICE_BROKER_HOME) and three rewritten client-side comments
 Progress: [░░░░░░░░░░] 0% (0 of 6 v2.0.0 phases complete; Phases 62-67)
-Last activity: 2026-09-19 — Phase 62 plan 1 of 5 executed
+Last activity: 2026-09-19 — Phase 62 plan 2 of 5 executed
 
 **The milestone's exit criterion lives in Phase 66 and nowhere else.** The
 hypothesis is falsifiable: the old boundary seam must be *gone from production
@@ -467,6 +467,7 @@ Phase 66 completes.
 | Phase 61 P02 | 45min | 2 tasks | 1 files |
 | Phase 61 P03 | 20min | 2 tasks | 2 files |
 | Phase 62 P01 | 55min | 3 tasks | 5 files |
+| Phase 62 P02 | 19min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -1347,6 +1348,8 @@ Recent decisions affecting current work:
 - [Phase 62]: hello dispatches before tokensMatch(), proven with a source-offset assertion
 - [Phase 62]: dialBrokerEndpoint uses a genuine race (onSocket callback) rather than Promise.all so the first COMPLETED handshake wins by settle order
 - [Phase 62]: Rank-4 refusal names both @henols/vice-mcp and @henols/c64-re-tools per D-05's lockstep-publish fact
+- [Phase 62]: brokerEpochFile()'s default anchors to the machine root's own default supervisor path, never to brokerStateDir()'s own (possibly overridden) result, keeping the four legacy directory variables' effects mutually independent (62-02).
+- [Phase 62]: brokerStateDir() honours VICE_SUPERVISOR_DIR as a second, lower-priority alias for the same directory VICE_POOL_DIR wins for, since no production module currently reads that variable (62-02, D-14).
 
 ### Pending Todos
 
@@ -2680,8 +2683,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-19T14:54:16.980Z
-Stopped at: Completed 62-01-PLAN.md
+Last session: 2026-09-19T15:14:17.742Z
+Stopped at: Completed 62-02-PLAN.md
 Resume file: None
 
 Earlier: **v2.0.0 roadmap created.** 36/36 requirements (`ENDPOINT-01..05`,
