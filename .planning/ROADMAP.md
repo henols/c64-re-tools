@@ -2029,7 +2029,13 @@ phase of the milestone.
   that reads differently after generation is a `DECL-01` authoring defect
   surfaced late, not a formatting decision to be taken here.
 
-**Plans**: TBD
+**Plans**: 3 plans, 2 waves
+
+Plans:
+
+- [ ] 61-01-PLAN.md — the generator and its guard, wired end-to-end: the VICE ecosystem table and the eight-record prerequisite overview generated from the declaration into two marker-delimited README regions, with the citation ledger re-anchored in the same commits that move the lines (wave 1)
+- [ ] 61-02-PLAN.md — the guard watched failing: five planted divergences against the real declaration and README in a temp tree, plus the tolerance and round-trip cases that prove it compares facts rather than bytes (wave 2)
+- [ ] 61-03-PLAN.md — the three prose passages the dropped version columns leave false, rewritten once; the circular `source` citations, the one known rendering defect and the regeneration procedure recorded in the provenance document (wave 2)
 
 ## Sequencing Rationale (v1.1.0)
 
