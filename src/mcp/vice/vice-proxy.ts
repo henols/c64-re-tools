@@ -817,7 +817,7 @@ function brokerWarmingMessage(elapsedMs: number): string {
  * `broker.json` is read from the shared filesystem, not over the control
  * connection, so the freshness computation had a perfectly good timestamp
  * and would have returned `alive` -- the failure was one layer later, at
- * the connect (dialing `0.0.0.0`, the broker's own BIND address, from
+ * the connect (dialing the broker's own recorded bind address, from
  * inside this container). Reporting that connect failure with the
  * heartbeat/stale-threshold wording sent the reader chasing a threshold
  * that was never exceeded, costing that session roughly a dozen tool
@@ -826,9 +826,11 @@ function brokerWarmingMessage(elapsedMs: number): string {
  * failure kind sets it), degrading to the outcome's own `message` for a
  * kind that never got that far (missing broker.json fields). States
  * plainly that `broker.json`'s own `control_host` field is the broker's
- * BIND address -- valid on the host where the broker wrote it, structurally
- * undialable from inside this container -- so a reader is pointed at the
- * connectivity problem, never at broker health. Carries NO secret: not
+ * BIND address -- loopback or one of its enumerated bridge-gateway
+ * addresses (D-09), valid on the host where the broker wrote it,
+ * structurally undialable from inside this container -- so a reader is
+ * pointed at the connectivity problem, never at broker health. Carries NO
+ * secret: not
  * `control_token`, not any other field of the record, only the resolved
  * target and the fixed prose below. Follows the broker-absent family's own
  * stated conventions (quotes `brokerHostPath()` purely as a reference, the

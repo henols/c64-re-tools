@@ -48,10 +48,11 @@ import { isInsideContainer, type ContainerGuardDeps } from "./container-guard.mt
 // detector is a bug waiting to happen here.
 //
 // Non-container branch is 127.0.0.1 rather than "localhost" DELIBERATELY:
-// "localhost" may resolve to ::1 first, and the broker binds 0.0.0.0 --
-// IPv4-only (broker-control.mts's documented bind), so an IPv6 loopback
-// connect would be refused by a listener that is in fact running. An
-// explicit IPv4 literal cannot pick the wrong family. It also classifies as
+// "localhost" may resolve to ::1 first, and the broker's bound set is IPv4
+// loopback plus its enumerated bridge-gateway addresses -- IPv4-only end to
+// end (broker-control.mts's documented bind), so an IPv6 loopback connect
+// would be refused by a listener that is in fact running. An explicit IPv4
+// literal cannot pick the wrong family. It also classifies as
 // `loopback` under vice-broker-client.ts's classifyConnectHost(), which
 // that resolver deliberately does NOT refuse, and is not `wildcard_bind`,
 // so it does not trip the pre-connect refusal.

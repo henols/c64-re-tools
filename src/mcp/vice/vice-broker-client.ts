@@ -191,15 +191,21 @@ export function readBrokerLiveness(path: string = brokerJsonPath()): BrokerLiven
 // -------------------------------------------------------- dial resolution
 //
 // `broker.json`'s `control_host` field is the broker's BIND address
-// (vice-broker.mts:782 writes `listener.host` into it, which is
-// deliberately `0.0.0.0` per broker-control.mts:16-20's own rule: "Bind:
-// 0.0.0.0 explicitly, never 127.0.0.1 -- host.docker.internal is the bridge
-// address, not loopback"). A bind address is not a dial address: `0.0.0.0`
-// dialed from inside THIS container reaches this container's own network
-// stack, where nothing listens. Both connect sites below (the tracer's own
+// (vice-broker.mts:782 writes `listener.host` into it). The rule as settled
+// for v2.0.0 (D-09, D-11): the broker binds IPv4 loopback plus the
+// enumerated bridge-gateway addresses it finds at startup from an
+// interface-name allowlist (`docker0`, `br-*`, `podman*`, `cni-*`), and
+// never the wildcard address. A bind address is still not a dial address:
+// `control_host` is one member of that enumerated set, and the recorded
+// value flows through below as diagnostic text only, never as a candidate
+// dial target. Both connect sites below (the tracer's own
 // acquireOverControlPlane() and openBrokerControl() further down) resolve
 // their target through resolveControlTarget() and never read `control_host`
-// as anything but diagnostic text.
+// as anything but diagnostic text. This narrowing IS the broker's access
+// control now, not a convenience -- the per-boot capability token is
+// dropped under the new dial model (the `hello` handshake, plan 62-01), so a
+// bind address only the intended network can reach is the mechanism
+// standing in its place.
 //
 // `VICE_BROKER_CONTROL_DIAL_HOST` is a NEW variable, deliberately not a
 // homonym of the EXISTING `VICE_BROKER_CONTROL_HOST` (the broker's own BIND
