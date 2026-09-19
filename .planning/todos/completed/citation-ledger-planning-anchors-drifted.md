@@ -3,6 +3,9 @@ title: Repair five drifted .planning/ citation-ledger anchors (suite is 2-fail u
 date: 2026-09-19
 priority: high
 source: /gsd-execute-phase 61 — measured pre-dispatch and re-measured at phase close
+audit_acknowledged:
+  milestone: v1.1.0
+  at: 2026-09-19
 ---
 
 # The citation ledger cites five `.planning/` anchors that no longer resolve
@@ -57,3 +60,42 @@ refusal applies here.
 None of 61-01, 61-02 or 61-03 declared `.planning/ROADMAP.md` or `.planning/REQUIREMENTS.md` in
 `files_modified`, so repairing them was outside every executor's sanctioned scope. All three were
 told explicitly not to touch them, and all three complied.
+
+## Resolution — 2026-09-19, at the v1.1.0 milestone close
+
+**All five anchors repaired; `phase58-citation-ledger.test.ts` exits 0 (11/11).**
+
+Repaired during `/gsd-complete-milestone v1.1.0` rather than in a phase, because the close
+itself rewrites both cited files: `milestone.complete` archives `.planning/ROADMAP.md` and
+`git rm`s `.planning/REQUIREMENTS.md`, so every citation into them had to be re-pointed at the
+close or be broken by it. Fixing the drift and surviving the close are the same edit.
+
+**The four line-drift anchors were NOT line-bumped.** Bumping them to the numbers this file
+records (114, 1963, 1943, 1951) would have been correct for about ten minutes: the close then
+collapsed 305 lines out of `ROADMAP.md` and deleted `REQUIREMENTS.md` outright. All four now
+cite the **archives**, which are immutable once written:
+
+| Was | Now |
+|---|---|
+| `.planning/REQUIREMENTS.md:86` | `.planning/milestones/v1.1.0-REQUIREMENTS.md:123` |
+| `.planning/ROADMAP.md:1959` | `.planning/milestones/v1.1.0-ROADMAP.md:1963` |
+| `.planning/ROADMAP.md:1939-1942` | `.planning/milestones/v1.1.0-ROADMAP.md:1943-1946` |
+| `.planning/ROADMAP.md:1947` | `.planning/milestones/v1.1.0-ROADMAP.md:1951` |
+
+**The deleted target took option 1** — re-cite a surviving statement that genuinely makes the
+same claim. `.planning/ROADMAP.md:2002-2005` ("a user missing ACME learns that") becomes
+`.planning/PROJECT.md:2083`, anchor "a user missing ACME should learn that": PROJECT.md's v1.1.0
+scoping decision 4, which is the owner-decision record the deleted roadmap criterion was itself
+derived from. The citing sentence in `docs/phase58-declaration-provenance.md` was rewritten to
+quote what it now cites and to state on the record that the roadmap criterion was deleted on
+2026-09-18 when the doctor was dropped — the support was withdrawn, and saying so is part of the
+fix rather than a footnote to it.
+
+**Surfaces touched:** the ledger JSON block and the document body in both
+`docs/phase58-declaration-provenance.md` and `docs/phase59-tool-location-placement.md`. Neither
+document carries `.planning/` citations in its YAML frontmatter, so the third surface this file
+warns about did not apply here — checked rather than assumed.
+
+**This todo was `audit_acknowledged` at the v1.1.0 close before being fixed.** The
+acknowledgment is left in the frontmatter as written: it records what was true when the audit
+ran. STATE.md's Deferred Items table for v1.1.0 carries the correction.

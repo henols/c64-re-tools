@@ -3,6 +3,9 @@ title: Close the prereq-readme-gen audit-key gap, and correct CLAUDE.md's NUL-fi
 date: 2026-09-19
 priority: medium
 source: /gsd-execute-phase 61 — 61-REVIEW.md (WR-01, WR-02, IN-01) plus an orchestrator NUL census
+audit_acknowledged:
+  milestone: v1.1.0
+  at: 2026-09-19
 ---
 
 # Two follow-ups from the Phase 61 code review

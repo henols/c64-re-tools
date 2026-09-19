@@ -122,6 +122,20 @@ target, and the three capabilities it provably cannot have are recorded as
 permanent accepted losses in `docs/stock-hard-losses.md` rather than routed
 elsewhere.
 
+**As of v1.1.0 the setup story has one source.** The eight host tools this
+project reaches — `x64sc`, `c1541`, `petcat`, `acme`, `acme-lib`, `ghidra`, `dxa`
+and `node` itself — are declared once in `src/mcp/vice/prerequisites.json`, with
+what each unblocks and its remedy per platform. One module answers *where is this
+tool*, in one order — environment variable, then `.c64-re-tools/tools.json`, then
+`$PATH` or a sibling probe — naming the layer that answered and refusing a bad
+entry by name instead of falling through. Every live missing-tool refusal quotes
+its remedy from that declaration, and `README.md`'s per-platform install tables
+are generated from it with a guard that fails the build when a fact diverges.
+Nothing is ever installed automatically: the plugin detects what is present and
+otherwise refuses by name with the remedy for the user to run.
+
+
+
 ## Core Value
 
 A Claude session can reliably drive a real C64 emulator to reverse-engineer a
@@ -314,6 +328,11 @@ rather than re-confirmed a fifth time.
 - ✓ The fork backend removed outright, leaving one honest single-backend story — v1.0.0 Phase 52 (`FORKRM-01`..`07`, verification `passed` 8/8). `FORK-01` reversed in place, `vice.ts` and the fork manifest deleted whole, `vice-proxy.ts` collapsed to one dispatch path (~1,800 lines), `capability-registry.ts` and its runtime refusal deleted after confirming the migration landed, and `ViceBackend` narrowed to the single literal `"stock"`. All 27 fork-mentioning lines across nine shipped skill files are now either a stated permanent limitation citing `docs/stock-hard-losses.md` or a collapsed single-backend fact. The three hardware-level capabilities with no route on stock (SID read-back, matrix keyboard, RESTORE-NMI) are recorded as **permanent, accepted losses** rather than a gap awaiting a workaround.
 - ✓ `shipped-modules.ts` and every embedded source scan removed, under the owner's data-driven-tests-only rule — v1.0.0 Phase 56 (`SC-1`..`SC-5`, verification `passed` 5/5). 116 source-scanning cases removed across eleven plans with **zero collateral loss** — a test that merely *contained* a scanning assertion kept every other assertion it had — and the suite's measured 3753→3637 drop reconciled case by case against the 100 embedded removals plus the 16-case whole-file deletion, so a silently broken file could not hide inside the expected decrease.
 - ⚠️ Capabilities orphaned by the fork removal, restored and the proxy test re-baselined — v1.0.0 Phase 55 (`PROXY-01`..`06`). **Delivered and self-measured, but this phase shipped with no VERIFICATION.md, VALIDATION.md or REVIEW.md** — the milestone audit scored it `partial` for want of a gate, not for want of delivery, and the integration checker independently traced both restorations to live code. `wrapPossiblyChunked()`'s only call site is restored (a 23,290-character result had been crossing a 200-character advertised cap whole), `stock-recycle.ts`'s bounded post-kill epoch poll gives `epoch_after` a producer again, and 2,826 lines of assertions about five confirmed-gone fork-era mechanisms were removed with every one naming its successor or its settled no-successor disposition. Its central claim was re-measured independently at the milestone audit and **holds**: the full `npm test` glob is green with an empty failing set.
+- ✓ Every host prerequisite declared once, in one file a Node too old to run the server can still parse — v1.1.0 Phase 58 (`DECL-01`, `DECL-02`, `DECL-04`, `DECL-05`, verification `passed` 5/5). `src/mcp/vice/prerequisites.json` carries all eight — `x64sc`, `c1541`, `petcat`, `acme`, `acme-lib`, `ghidra`, `dxa`, `node` — with per-platform remedies and three-valued provenance, shipped in `files[]` and proven parseable by a **standalone Node-18 CI job**, because a declaration whose most basic fact is *"your Node is too old"* has to be readable on a Node that is too old. The four places that used to hold the same facts and could silently disagree — `README.md`'s per-distro tables, `acme-build/SKILL.md`'s prefix list, and inline refusal strings in `host-tool.mts` — now have one source behind them. A machine-read citation ledger in `docs/phase58-declaration-provenance.md`, enforced by its own structural gate, records all five disagreements the declaration had to settle and `unp64`'s exclusion as `DECL-F3`.
+- ✓ One module owns *where is this tool*, in one order, refusing a bad entry by name rather than falling through — v1.1.0 Phase 59 (`LOC-05`, `LOC-06`, `LOC-07`, verification `passed`). `tool-location.mts`'s `resolveTool()` resolves environment variable → `.c64-re-tools/tools.json` → `$PATH` or sibling probe, **names the layer that answered**, validates a directory candidate against its declared marker, applies a file-layer `accessSync(path, X_OK)` executable-bit check, and refuses outright the two ids (`dxa`, `node`) that may never be located through any layer — every refusal quoting the declaration itself. It caches nothing, and is proven from both the unbuilt source and the compiled `resources/tool-location.mjs` artifact. `toolsFileTemplate()` builds the `tools.json` text from paths it itself resolved rather than from a committed static example.
+- ✓ Every live resolution goes through that seam and every live remedy comes from the declaration — v1.1.0 Phase 60 (`LOC-01`..`04`, `DECL-03`, verification `passed` 8/8 after one gap-closure round). `resolvedBackend()`, `buildHostToolArgv()` and `findSiblingBinary()` were rewired with **zero duplicated ordering** left in any of them, making `c1541`/`petcat` locatable through the file for the first time; `remedyTextsFor()` became the one exported reader of the declaration's remedy prose — the first runtime path any of the eight records' text had ever reached. A closed-consumer-set structural scan proves no production module reads a tool-location environment variable by name except one declared exception. The phase's real-process full-suite comparison against the pre-rewiring tree **caught two genuine regressions its own unit tests could not see** — the real broker never threaded its resolved binary into a live acquire, and a deployed broker could not find `prerequisites.json` at all — and a third failing-set-difference note closes `LOC-03`'s residual: a stale absolute `VICE_BIN` now refuses by name instead of letting a same-named `$PATH` binary start silently in its place.
+- ✓ README.md's install tables are generated from the declaration, and divergence fails the build by comparing facts rather than bytes — v1.1.0 Phase 61 (`GEN-01`..`03`, verification `passed` 4/4). `prereq-readme-gen.ts` derives the VICE ecosystem table and the eight-record prerequisite overview; `auditGeneratedReadme()` parses the committed region back into records and compares them against the same derivation, **forgiving a reflow and never a changed fact**, proven by five planted-divergence cases watched failing and naming what moved plus round-trip and tolerance cases. The two dropped VICE version columns' false prose was rewritten rather than left standing, and the provenance record now states why 27 declaration citations are historical and how to regenerate the tables safely.
+- ✗ **`DOCTOR-01`..`09` — the prerequisite doctor — dropped at owner decision 2026-09-18, unbuilt and un-retracted.** Recorded here rather than in Out of Scope because it is not out of scope: it moved to Future Requirements with its text intact. The owner's ruling at the Phase 61 discussion, before any plan existed: *"I don't want the doctor — if something is called that isn't there, the tool or script tells a short message that it's broken."* `DECL-03` had already shipped that behaviour in Phase 60. **The gap it leaves is real and named**: nothing answers *"what is missing?"* in one command before a session exists — only one refusal at a time, at the moment each tool is wanted, which is the ground truth the milestone opened against.
 
 ### Active
 
@@ -336,28 +355,25 @@ at this close, as this project does. All **15 of the original 15** are satisfied
 and independently re-checked by the milestone audit, which traced the whole
 export → reassembly → gate → equivalence chain and found no broken link.
 
-**TAKEN as v1.1.0's scope, 2026-09-16 — the install and prerequisite story.**
-One hypothesis, and it is about the *user's first hour* rather than about
-driving an emulator: **a person who has just installed this plugin can find out
-what is missing in one command, and tell the plugin where an unusually-located
-tool lives, without reading source.** The ground truth it is measured against is
-that a wrong or absent prerequisite today surfaces only as an individual refusal
-at the moment a skill needs the tool — seven independent probes, each discovered
-separately, with the remedy text living in four places that have no mechanism
-saying when they disagree.
+**v1.1.0's stated hypothesis is Validated in part and is no longer listed here,
+and the part that is not Validated was withdrawn rather than missed.** It read:
+*a person who has just installed this plugin can find out what is missing in one
+command, and tell the plugin where an unusually-located tool lives, without
+reading source.* The **second half shipped** — `DECL-01`..`05`, `LOC-01`..`07`
+and `GEN-01`..`03`, 15 of 15 Complete. The **first half was dropped at owner
+decision on 2026-09-18**, mid-milestone and before any plan for it existed:
+`DOCTOR-01`..`09` moved to Future Requirements unbuilt, because `DECL-03` had
+already made every missing-tool refusal quote its own remedy. *"In one command,
+before any session exists"* is therefore still **not** answered, and that is a
+live gap rather than a closed one — see the ✗ entry at the end of Validated.
 
-This is deliberately **not** a Core Value milestone. It sits entirely upstream of
-"a Claude session can reliably drive a real C64 emulator" and adds nothing to
-what a session does once it is running. It is taken now because every capability
-this project has shipped across eight milestones is reachable only after a setup
-step whose failure modes have never been given a single surface.
-
-**Nothing from the carried-forward list below is taken with it.** Phases 51, 53,
-54 and 57 all stand unchanged into v1.1.0 and beyond it; the owner scoped this
+**Nothing from the carried-forward list below was taken with it, and nothing on
+it moved.** Phases 51, 53,
+54 and 57 stood unchanged through v1.1.0 and stand into the next milestone; the owner scoped this
 milestone to the install story alone, and the 2026-09-14 retirement
 reconciliation named as "the first task of the next milestone" was put as a
 candidate at this open and declined for it. It is still owed. See
-`## Current Milestone: v1.1.0 The Prerequisite Doctor` for the five scoping
+`## Shipped: v1.1.0 The Prerequisite Doctor` for the five scoping
 decisions taken, including why Phase 57 in particular is *not* this milestone
 despite sharing its subject matter.
 
@@ -555,6 +571,21 @@ here — withdrawn requirements belong in `REQUIREMENTS.md`'s Excluded table, an
 that convention is unchanged.*
 
 
+*Re-audited at the v1.1.0 close, 2026-09-19. **Every entry's reasoning still
+holds, none was removed, and nothing was added.** Two are worth naming because
+this milestone touched their subject directly. **The never-auto-install rule and
+its three carve-outs were re-put to the owner at this milestone's open and
+explicitly kept** — withdrawing them was offered as the stricter alternative and
+declined, which is why Phase 57 stayed carried rather than executed; the boundary
+is now owner-affirmed twice (2026-09-08, 2026-09-16) rather than once.
+**`DOCTOR-01`..`09` are deliberately NOT here.** The doctor was dropped
+mid-milestone on 2026-09-18, but it moved to Future Requirements in
+[`milestones/v1.1.0-REQUIREMENTS.md`](milestones/v1.1.0-REQUIREMENTS.md) — unbuilt
+and un-retracted — not to Out of Scope. Recording it as a boundary would assert a
+reasoning nobody gave: the owner judged the doctor unnecessary given `DECL-03`'s
+per-refusal remedies, which is not the same as judging the capability unwanted.*
+
+
 - **Client-side SID write-shadowing mitigation** — **SUPERSEDED** (2026-09-12): switchability no longer covers this. The fork backend SID read-back depended on for `vice_sid_get_state` has been removed, so SID read-back is now a permanent, accepted hardware loss rather than a routed one — `$D400`–`$D418` is write-only in hardware and the binary monitor has no SID read command, a property of the chip, not an unbuilt feature. See `docs/stock-hard-losses.md` for the acceptance record. A client-side write-shadow was never going to substitute for the loss regardless: it could only ever capture writes the client itself issued, never the running program's, so it was never parity. (Originally recorded as resolving ingest WARNING W1; that resolution is superseded by the acceptance above, not retracted.)
 - **Re-adding the fork backend, or any second backend, once removed** — the `barryw/vice-mcp` fork backend was removed on 2026-09-12; the hedge rationale that once justified keeping it (it covered stock's three hard losses: SID read-back, matrix keyboard, RESTORE/NMI) is withdrawn, not merely reduced. What is out of scope now is *re-adding* a second backend, not deprecating the one that existed — that has already happened. See `docs/stock-hard-losses.md` for the three losses this acceptance costs. *Reaffirmed at v0.2.0 close: the fork's 62-tool surface shipped unchanged, before removal. Formalised by FORK-01 (Key Decisions): retained 2026-08-22, reversed 2026-09-12 — see that row for the full record rather than treating this bullet as the sole one.*
 - **Upstreaming a `KEYBOARD_MATRIX_SET` opcode to VICE** — genuinely worth doing (~60 lines in `monitor_binary.c` calling `keyboard_set_keyarr_any`, and it would close the hardest loss for everyone), but it is an upstream contribution, not a deliverable of this project. Recorded as a follow-up.
@@ -572,6 +603,39 @@ that convention is unchanged.*
 - **The v0.8.0 exclusion "dialling the `-remotemonitor` text channel at all" is deliberately REVERSED by v0.9.0** *(2026-09-06)* — it is left standing in `milestones/v0.8.0-REQUIREMENTS.md` as the correct decision *for that milestone*, and is superseded here rather than deleted there. The reversal is not a change of mind about the risk: the risk named at the time (the text monitor halts the machine on command, so it is a second channel needing the same serialization discipline, and interleaved text+binary command behaviour was never probed) is unchanged and is now the explicit gate on v0.9.0's first phase rather than a reason to stay out. What changed is that `PROOF-01` shipped with a named reversal condition — "a binary-monitor-reachable execution oracle, or a decision to open the text channel" — and this is that decision, made deliberately and on the record.
 
 ## Context
+
+**Codebase as of the v1.1.0 close, 2026-09-19.** ~212.5k lines of TypeScript /
+`.mts` / `.mjs` under `src/` (`git ls-files`, `wc -l`, vendored sources
+excluded) — up ~3.5k from the ~209k measured at the v0.9.0 close, the smallest
+milestone-over-milestone growth this project has recorded, which is what a
+milestone that adds no session capability should look like. Node ≥ 24 for the MCP
+server, running its `.ts` sources directly under native type-stripping with no
+build step at runtime; Node ≥ 18 for the plain-`.mjs` installer. **No new npm
+runtime dependency was added**: `@mastra/mcp` and `@mastra/core` plus the
+built-in `node:sqlite` are still the whole list. **Nine skills ship**, unchanged.
+The `vice` tool surface is **47 tools in the stock manifest** plus **30 `anno_*`
+tools** registered directly and backend-independent by construction.
+
+**The prerequisite list is now a declaration rather than prose, and this is the
+milestone's structural change.** `src/mcp/vice/prerequisites.json` names all
+**eight** — `x64sc`, `c1541`, `petcat`, `acme`, `acme-lib`, `ghidra`, `dxa`,
+`node` — each with what it unblocks, its remedy per platform, and three-valued
+provenance. Nothing was added to the list; what changed is that it is now one
+list. `README.md`'s install tables are generated from it and guarded against
+divergence, `remedyTextsFor()` is the one runtime reader of its remedy prose, and
+`tool-location.mts` is the one answer to where any of them lives. The standing
+never-auto-install rule is unchanged and was re-affirmed by the owner at this
+milestone's open: detect, then refuse by name with the remedy — never install.
+
+**Known issues carried into the next milestone** are enumerated in
+`## Next Milestone Goals` rather than summarised here, because several of them
+are now old enough that a summary would soften them: the 2026-09-14 retirement is
+unreconciled for a second milestone, `50-REVIEW.md`'s `CR-01` is an unresolved
+Critical re-verified live at this close, Phase 55 still carries no verification
+artifact of any kind, and four phases (51, 53, 54, 57) have now been carried
+through two closes with their 15 requirements live and untouched.
+
+*The v0.9.0-era measurement that stood here is kept below as the prior record.*
 
 **Codebase as of the v0.9.0 close, 2026-09-10.** ~209k lines of TypeScript /
 `.mts` / `.mjs` under `src/` (`git ls-files`, `wc -l`, vendored sources
@@ -872,6 +936,11 @@ ceiling is explicitly recorded.
 | Close v1.0.0 on the 33 requirements it delivered, and carry Phases 51, 53, 54 and 57 forward with their requirement text live, rather than closing all 13 phases as `override_closeout` (milestone close, 2026-09-16) | The milestone audit found the split clean and the two halves unlike each other: the *stated* scope — the rebuild pipeline, `DECOMP`/`BUILD`/`EQUIV` — is 15/15 delivered, verified, and independently re-traced end to end. What failed the audit is everything the milestone accumulated *after* that roadmap was written: three phases never started, one half-executed, one closed with no gate. Archiving 15 unsatisfied requirements as "shipped with known gaps" would file delivered work and never-started work under one verdict and make the tag mean less. Holding them live follows this project's own v0.6.0 precedent, where Phases 24 and 26 were held with their requirement text carried into v0.8.0 | ✓ Good — the split lands exactly on `REQUIREMENTS.md`'s own checkboxes (33 `[x]`, 15 `[ ]`) with no judgement call needed at the boundary, and the carried phases keep their ROADMAP sections rather than needing reconstruction from an archive |
 | Retire the planning-vocabulary convention outright, mid-phase, deleting 60 files including 44 tests and four CI checkers (owner-directed quick task `260914-poo`, 2026-09-14) | The owner's rule is that only data-driven tests exercising production code are kept. The convention's guards were structural scanners over source text, not tests of behaviour, and the owner judged the whole class unproductive | ⚠️ Revisit — the decision is the owner's and stands, and the quick task executed it faithfully and recorded its consequences honestly. What went wrong is downstream: its own summary said the orchestrator would reconcile `STATE.md`/`ROADMAP.md`/`REQUIREMENTS.md` afterwards, and **that never happened**, leaving nine plans and four requirements pointed at a deleted guard for two days until the milestone audit found it. The lesson is not about the deletion — it is that a quick task retiring a *convention* must reconcile the documents that drive execution in the same pass, or name an owner who will |
 | Record `BUILD-06`'s reassembly gate as `red` under rule `R7` and ship it, rather than tuning the gate or the subject until it read green (Phase 49, 2026-09-13) | The red is honest and specific: the baseline rebuild's own diff-scope coverage is incomplete because the subject carries one permanently-unclassified VIC-II region, unrelated to any byte-level defect. A gate that is adjusted until its first real run passes has measured nothing | ✓ Good — the gate was frozen in git *before* any measurement existed, watched turning red on three named failure shapes, and proven by 864-combination enumeration to admit no non-clean hazard disposition to green. Phase 50 then ran it independently over a different subject and got `acknowledged` under `R10`, so the table discriminates rather than always refusing |
+| Layer tool locations *under* the existing environment variables rather than replacing them (v1.1.0 open, 2026-09-16) | Replacing them outright would break every existing `VICE_BIN=...` consumer including CI and the live-test paths, in a milestone whose whole subject is making setup easier to get right | ✓ Good — `resolveTool()`'s order is env → `tools.json` → `$PATH`/sibling, and `LOC-03`'s "a developer with `VICE_BIN` set notices nothing" claim was **measured** against the real pre-rewiring tree rather than asserted. That measurement is what caught two regressions the phase's own unit tests could not see |
+| Make the prerequisite declaration data-only, and prove it parseable on Node 18 in CI (Phase 58) | A declaration whose most basic fact is *"your Node is too old"* is worthless if reading it needs the Node it is complaining about | ✓ Good — `prerequisites.json` is plain JSON in `files[]` with a standalone Node-18 CI job over it. It also made the later phases cheap: `remedyTextsFor()` and `prereq-readme-gen.ts` are both readers of one file rather than four |
+| Give `LOC-01`/`LOC-02` to the phase that wires the seam, not the phase that builds it (v1.1.0 roadmap, 2026-09-16) | Both requirements are claims about what the *shipped code* does; neither can be true when only the module exists | ✓ Good — and it is why Phase 60 is a phase rather than a corner of Phase 59: it is the first regeneration of the committed `resources/*.mjs` artifacts, and a success condition of "nothing changed" needs its own evidence |
+| Guard the generated README by parsing the committed region back into records and comparing facts, never bytes (Phase 61) | A byte comparison fails on a reflow, which trains a reader to regenerate without looking; a fact comparison fails only when a fact moved | ✓ Good — five planted-divergence cases were watched failing and naming what moved, plus round-trip and tolerance cases proving it forgives reflow. Consistent with the owner's 2026-09-13 removal of every byte-identical assertion |
+| Drop the doctor mid-milestone rather than build it (owner decision, 2026-09-18, during `/gsd-discuss-phase 61`) | *"I don't want the doctor — if something is called that isn't there, the tool or script tells a short message that it's broken."* `DECL-03` had already shipped exactly that in Phase 60, so the doctor would have been a second surface over facts already surfaced | ⚠️ Revisit — correct on its own terms and taken before any plan existed, which is the cheapest moment to take it. But the milestone's opening ground truth is **not** closed by it: a user still discovers missing prerequisites one refusal at a time, which is the thing the milestone was opened to fix. `DOCTOR-01..09` are parked in Future Requirements unbuilt and un-retracted, and the gap is recorded as live rather than resolved |
 ## Evolution
 
 This document evolves at phase transitions and milestone boundaries.
@@ -891,6 +960,76 @@ This document evolves at phase transitions and milestone boundaries.
 
 
 ## Current State
+
+**Shipped: v1.1.0 The Prerequisite Doctor** — 2026-09-19.
+4 phases (58-61 — no inserted decimals), 19 plans, 44 tasks,
+15/15 in-scope requirements, 4 days, 193 commits since the `v1.0.0` tag,
+`override_closeout`.
+Full record: [`MILESTONES.md`](MILESTONES.md) ·
+[`milestones/v1.1.0-ROADMAP.md`](milestones/v1.1.0-ROADMAP.md) ·
+[`milestones/v1.1.0-REQUIREMENTS.md`](milestones/v1.1.0-REQUIREMENTS.md)
+
+**This milestone is the first that adds nothing to what a session can do.** It
+sits entirely upstream of the Core Value, and that was decided at the open rather
+than discovered at the close. What it changes is the hour *before* a session
+exists: the eight host prerequisites this project depends on are declared once in
+`src/mcp/vice/prerequisites.json`, every live answer to *where is this tool* comes
+from one seam in one order, and every live refusal for a missing tool quotes its
+remedy from that same declaration instead of from a string typed near the call.
+
+**The knowledge that was in four places is now in one.** Before this milestone the
+same facts lived in `README.md`'s hand-kept per-distro tables, `acme-build/SKILL.md`'s
+prefix list, and inline refusal strings in `host-tool.mts` — four sources with no
+mechanism that could say when they disagreed. The declaration ships in `files[]`
+and is proven parseable by a standalone **Node-18** CI job, because a declaration
+whose most basic fact is *"your Node is too old"* has to be readable on a Node
+that is too old. README.md's install tables are now generated from it, and
+`auditGeneratedReadme()` fails the build on divergence by comparing **parsed
+records rather than bytes** — it forgives a reflow and never a changed fact,
+proven by five planted-divergence cases watched failing and naming what moved.
+
+**One seam, one order, and nothing cached.** `tool-location.mts`'s `resolveTool()`
+resolves through environment variable → `.c64-re-tools/tools.json` → `$PATH` or
+sibling probe, names the layer that answered, validates a directory candidate
+against its marker, and refuses a bad file entry **by name** rather than falling
+through to the next layer. `resolvedBackend()`, `buildHostToolArgv()` and
+`findSiblingBinary()` were all rewired onto it with no duplicated ordering left
+behind, making `c1541`/`petcat` locatable through the file for the first time; a
+closed-consumer-set structural scan proves no production module reads a
+tool-location environment variable by name except one declared exception.
+
+**The rewiring's own evidence is the part worth keeping.** `LOC-03`'s success
+condition was that *nothing changed* — a claim that cannot be proven by the unit
+tests of the thing that changed. The required real-process full-suite comparison
+against the pre-rewiring tree found **two genuine regressions those unit tests
+could not see**: the real broker never threaded its resolved binary into a live
+acquire, and a deployed broker could not find `prerequisites.json` at all. Three
+committed failing-set-difference notes record the method, and the last of them
+closes the residual: a stale absolute `VICE_BIN` now refuses by name instead of
+letting a same-named `$PATH` binary start silently in its place.
+
+**The milestone's own centrepiece was dropped mid-flight, on the record.** At the
+Phase 61 discussion, before any plan for it existed, the owner ruled: *"I don't
+want the doctor — if something is called that isn't there, the tool or script
+tells a short message that it's broken."* That behaviour had already shipped as
+`DECL-03` in Phase 60. `DOCTOR-01`..`09` moved to Future Requirements **unbuilt
+and un-retracted**, the README-generation phase renumbered 62 → 61, and the
+milestone kept the name it opened under as a label rather than a claim.
+
+**What this close does not claim.** **No milestone audit was run** — the close
+rests on four `verification_status: passed` phases and the 15/15 traceability
+table instead, which makes it the sixth of this project’s ten closes to go without one — and the first since v1.0.0 broke a five-close streak by running one and finding 15 requirements unimplementable as written. The dropped
+doctor leaves one question genuinely unanswered and it is recorded rather than
+implied: nothing answers *"what is missing?"* in one command before a session
+exists — only one refusal at a time, at the moment each tool is wanted. Two
+carry-forward todos are this milestone's own debt, filed at the Phase 61 close
+rather than found by the audit: the Phase 58 citation ledger cites five
+`.planning/` anchors that no longer resolve, and two Phase 61 code-review
+follow-ups are untaken. And **Phases 51, 53, 54 and 57 stay carried for a second
+milestone** with their 15 requirements live — two of the three families still
+need re-scoping rather than resumption.
+
+*The v1.0.0 record that stood here is kept below as the prior close's narrative.*
 
 **Shipped: v1.0.0 The Rebuild Half** — 2026-09-16.
 9 phases (45-50, 52, 55, 56 — no inserted decimals), 73 plans, 203 tasks,
@@ -1877,7 +2016,13 @@ with five of them never checked.
 
 **Phase numbering continues at 45.**
 
-## Current Milestone: v1.1.0 The Prerequisite Doctor
+## Shipped: v1.1.0 The Prerequisite Doctor
+
+*Closed 2026-09-19 on all 15 requirements it mapped. What follows is the scoping
+record written at the 2026-09-16 open plus the 2026-09-18 amendment that dropped
+the doctor, both kept as written rather than rewritten at the close. Read them as
+the record of what was decided when, not as current intent — current intent is
+`## Current State` and `## Next Milestone Goals`.*
 
 **AMENDED 2026-09-18 — the doctor itself was dropped at owner decision**, during
 `/gsd-discuss-phase 61` and before any plan for it existed. The owner's words:
@@ -2044,138 +2189,101 @@ re-proposed as an oversight:
 
 ## Next Milestone Goals
 
-*Rewritten 2026-09-16 at the v1.0.0 close. The section this replaces was written
-at the v0.9.0 close and its single item — the rebuild half — is now **shipped**.*
+*Rewritten 2026-09-19 at the v1.1.0 close. The section this replaces was written
+at the v1.0.0 close. **Its item 1 was not done and is repeated below as item 1
+again** — that repetition is the point, not an oversight in the rewrite.*
 
-**The next milestone starts with an unusual inheritance: four phases that already
-exist, already have ROADMAP sections, and mostly should not be executed as
-written.** That is the honest shape of what v1.0.0 leaves behind, and it is the
-first thing `/gsd-new-milestone` has to deal with.
+**The inheritance is the same four phases as last time, one milestone older.**
+Phases 51, 53, 54 and 57 have now been carried through two closes with their
+requirement text live and untouched. v1.1.0 took a different scope by owner
+decision and said so at its open; it did not resolve any of them.
 
-**1. Reconcile the 2026-09-14 retirement before planning anything on top of it.**
-An owner-directed quick task (`260914-poo`) retired the planning-vocabulary
+**1. Reconcile the 2026-09-14 retirement. Second time of asking.** An
+owner-directed quick task (`260914-poo`) retired the planning-vocabulary
 convention outright, with no successor, and deleted 60 files — 44 tests, one
 production module, four CI checkers and one audit gate. The decision is the
-owner's and stands. Its *own summary* said the orchestrator would then reconcile
-`STATE.md`, `ROADMAP.md` and `REQUIREMENTS.md`; that never happened, and the
-milestone audit found nine live plans and four requirements still pointed at a
-deleted guard two days later. **This is the first task of the next milestone, not
-a cleanup item** — until it is done, Phase 51's remaining plans and `DOCS-04` are
-instructions to rebuild something deliberately removed.
+owner's and stands. Its own summary said the orchestrator would then reconcile
+`STATE.md`, `ROADMAP.md` and `REQUIREMENTS.md`; that has still not happened five
+days later. Until it does, Phase 51's remaining nine plans and `DOCS-04` are
+instructions to rebuild something deliberately removed. **This should be the
+first task of the next milestone, and this time it should actually be one** —
+naming it as such at the v1.0.0 close did not make it happen.
 
-**2. Decide what, if anything, replaces the deleted enforcement.** Three separate
-requirement families were written against guards that no longer exist. The
-question is not "how do we restore them" — it is whether each rule still earns a
-mechanism under the data-driven-tests-only rule:
-- Planning vocabulary in shipped source (`VOCAB-*`): the *sweep* was valuable
-  independently of the guard — 755 citations across `host-tool.mts` and twelve
-  `anno-*` modules became the reasons they stood for, which is better source for
-  a reader with no `.planning/` tree. Whether anything should stop it recurring
-  is open.
-- `docs/phase*.md` in the operator's tree (`DOCS-*`): measured **27** files now,
-  up from the 21 that motivated the requirement — Phase 50 added six *after* it
-  was written, precisely because the guard was gone. The precedent recurred
-  within three days, which is itself the strongest argument either way.
-- Byte-identical assertions (Phase 54): owner decision 2026-09-13 to remove them
-  all, including the three tree-sync guards. **No requirement ids were ever
-  declared** — they stand at `TBD`, so this needs requirements written before it
-  needs plans.
+**2. Decide what, if anything, replaces the deleted enforcement.** Unchanged from
+the v1.0.0 close and still open. Three requirement families are written against
+guards that no longer exist; the question is not how to restore them but whether
+each rule still earns a mechanism under the data-driven-tests-only rule.
+`VOCAB-*` (the sweep was valuable independently of the guard), `DOCS-*` (measured
+27 `docs/phase*.md` files at the last count, and this milestone added two more —
+`phase58-declaration-provenance.md` and `phase59-tool-location-placement.md` — so
+the trend the requirement was written against is still running), and Phase 54's
+byte-identical assertions, which still stand at `TBD` and need **requirements
+written before plans**.
 
-**3. Close the two bookkeeping gaps this milestone is shipping with.** Phase 55
-has no VERIFICATION.md, VALIDATION.md or REVIEW.md (`/gsd-verify-work 55`), and
-`FORKRM-02`'s literal requirement — that `docs-fork-decision.test.ts` be
-*rewritten rather than deleted* — was satisfied by Phase 52 and then undone.
-Neither is a delivery gap; both are records that disagree with the tree.
+**3. The doctor question, now explicitly parked rather than pending.**
+`DOCTOR-01`..`09` sit in v1.1.0's archived requirements under § Future
+Requirements, unbuilt and un-retracted. The gap they name is real and this close
+does not pretend otherwise: nothing answers *"what is missing?"* in one command
+before a session exists. The owner's position is that per-refusal remedies are
+enough, and `DECL-03` delivers them. Re-propose the doctor only with new evidence
+that the one-refusal-at-a-time shape actually costs a user something — the
+scoping argument was already had and decided.
 
-**4. `INSTALL-01`..`05` should be re-scoped before being re-planned.** The
-constraint they encode is settled, documented in `CLAUDE.md`, and not up for
-re-litigation: never auto-install; detect, then refuse by name with the remedy.
-What is missing is enforcement — and `INSTALL-04`'s own text already records that
-**no in-workflow change can satisfy it**, because it needs a pre-provisioned
-runner image. A requirement that names its own impossibility should be rewritten
-or retired, not carried a second milestone.
+**4. Two bookkeeping gaps from the v1.0.0 close, both still open.** Neither was
+touched by v1.1.0. **Phase 55 still has no `VERIFICATION.md`, `VALIDATION.md` or
+`REVIEW.md`** — verified absent on disk at this close — so `PROXY-01`..`06` remain
+Complete on delivery rather than on verification (`/gsd-verify-work 55`). And
+`FORKRM-02`'s literal requirement, that `docs-fork-decision.test.ts` be
+*rewritten rather than deleted*, was satisfied by Phase 52 and then undone.
 
-**5. The long-standing items, unchanged and still owed.** Each has now survived
-more than one milestone and is listed so none is inherited silently:
-- **`PROOF-03` on real cracked code.** The bank-boundary claim is proven in both
+**5. `INSTALL-01`..`05` still need re-scoping before re-planning** (Phase 57).
+Unchanged, and now explicitly re-affirmed: at the v1.1.0 open the owner was asked
+whether to withdraw the three never-auto-install carve-outs and **declined**, so
+Phase 57's goal as written is not what the owner wants. `INSTALL-04`'s own text
+records that no in-workflow change can satisfy it, because it needs a
+pre-provisioned runner image. A requirement naming its own impossibility should
+be rewritten or retired, not carried a third milestone.
+
+**6. This milestone's own two todos.** Filed deliberately at the Phase 61 close,
+not found by an audit. `citation-ledger-planning-anchors-drifted.md` (**high**):
+the Phase 58 citation ledger cites five `.planning/` anchors that no longer
+resolve — the machinery works, the anchors drifted, and a ledger that cites a
+dead anchor is exactly the failure it was built to catch.
+`prereq-audit-key-collision-and-nul-census.md` (**medium**): two Phase 61
+code-review follow-ups the phase did not take.
+
+**7. The long-standing items, each now carried across more milestones than the
+last time this list was written.**
+- **`PROOF-03` on real cracked code.** The bank-boundary claim is proven both
   directions on a *synthetic* two-caller fixture; the `danish.d64` question is
   open. The last of the four PROOF requirements still owing a real-code
   measurement.
-- **`ANNO-14` / `ANNO-15` — the symbol round trip.** Still unowned for a fifth
-  milestone. Phase 45's D-15 reclaimed `ANNO-13`'s enum half only and explicitly
-  does not extend here.
-- **`50-REVIEW.md` `CR-01`, an unresolved Critical.** `TextMonitorClient.command()`
-  ignores its own `timeoutMs`; seven call sites pass `30000` and hold no bound,
-  and a non-responding VICE hangs inside the held channel-lock mutex. Traced to
-  `fad65de8 feat(41-01)` — a Phase 41 defect, carried not closed.
-- **`audit-root-args.test.ts`'s scratch-fixture race**, orthogonal to the D-27
-  `mkdtemp` fix and untouched by it.
-- **The false `vice-proxy.test.ts` hang warning** in `50-VALIDATION.md`,
-  `50-07-PLAN.md` and `56-RESEARCH.md`. Measured false — the full glob runs in
-  with an empty failing set (measured twice, 67.6s and 193s — the counts
-  identical, the duration load-dependent) — and currently steering planners away
-  from the suite CI actually runs.
+- **`ANNO-14` / `ANNO-15` — the symbol round trip.** Still unowned, now for a
+  sixth milestone.
+- **`50-REVIEW.md` `CR-01`, an unresolved Critical — re-verified live at this
+  close and still present.** `TextMonitorClient.command()` in
+  `src/mcp/vice/text-protocol.ts:850` takes its options as `_opts` and arms no
+  timer, so the `timeoutMs` its own `TextCommandOptions` declares is inert and
+  the seven `text-tools.ts` call sites passing `30000` hold no bound; a
+  non-responding VICE hangs inside the held channel-lock mutex. Traced to
+  `fad65de8 feat(41-01)` — a Phase 41 defect, carried not closed, for a third
+  milestone.
+- **The false `vice-proxy.test.ts` hang warning**, still present in
+  `50-VALIDATION.md`, `50-07-PLAN.md` and `56-RESEARCH.md` — verified still there
+  at this close. It is measured false and is steering planners away from the
+  suite CI actually runs. It is three string edits.
+- **The scratch-fixture race** carried from the v1.0.0 close needs
+  **re-measuring rather than restating**: the file it named,
+  `audit-root-args.test.ts`, no longer exists in the tree. Whether the race
+  survived under another test is unknown, and repeating the old sentence would
+  assert something no longer checked.
 
 **What is NOT next, recorded so it is not re-proposed.** VICE's `a`/`d`
 assemble/disassemble commands and `x64` ↔ `x64sc` mode switching were explicitly
-declined by owner decision on 2026-09-06 as carrying no value here. Applying the
-pipeline to a real copyrighted title remains downstream use, not a milestone's
-evidence — the committed-synthetic-fixtures-only bar is unchanged.
-*The v0.9.0-era version of this section follows, kept as the prior close's record.*
-
-**The item that stood here is now unblocked, and v0.9.0 is why.** At the v0.8.0
-close this section said the rebuild half was next but that the runtime-evidence
-layer sat upstream of it. That layer now exists, so the dependency is discharged
-rather than merely restated.
-
-**v1.0.0 — the rebuild half, on a substrate that is now complete.** v0.5.0's
-three cut phases, rewritten: decomposition to closure, rebuildable source and
-the reassembly gate, equivalence and modifiability — carrying `DECOMP-01..04`,
-`BUILD-01..06` and `EQUIV-01..04`, whose text stands in
-[`milestones/v0.5.0-REQUIREMENTS.md`](milestones/v0.5.0-REQUIREMENTS.md) and has
-never been re-scoped since it was cut. `BUILD-01` is already reworded from "per
-the external analyser scope" to "per annotation-store scope". Re-mapped v0.7.0 →
-v0.9.0 → v1.0.0; this is the third scoping conversation it enters, and the first
-one where nothing it depends on is hypothetical.
-
-**What v0.9.0 changes about that plan** (2026-09-10, recorded at its close so the
-next scoping conversation starts from evidence rather than the 2026-09-06
-framing):
-
-- **`DECOMP-01`'s hardest input is now measured, not guessed.** Its code-vs-data
-  boundary problem in `$8000-$BFFF` is exactly what an execution oracle answers,
-  and that oracle shipped: `memmapshow`'s execute bit, parsed, stored per-address
-  in `anno_evid_exec`, and joined against the byte-derived block table by
-  `reconcileObservedExecution()`. The join reports **disagreement first**, so
-  `DECOMP-01` can start from where the two classifiers conflict rather than from
-  a flat listing. Note the asymmetry it must respect: observed-executing **is**
-  code, but never-observed proves nothing and cannot be rendered as `data`.
-- **`EQUIV-*`'s ceiling now has an instrument under it.** The ceiling itself is
-  unchanged — `(PC, hit_count, (LIN, CYC))` plus the 64K comparison, exact
-  through anchor hit 50, lost from 75. What changed is that `chis` over the text
-  channel returns per-entry cycle counts on genuine **3.9** and is now a shipped,
-  parsed tool (`vice_cpu_history`). Whether that lifts the ceiling is the first
-  question `EQUIV-*` should answer, and it is now answerable on this host rather
-  than blocked on VICE ≥ 3.10.
-- **`BUILD-*` still has its oracle, unchanged.** v0.7.0's real-ACME byte-diff
-  verify path refuses to read an exit status, refuses to trust the aggregate
-  line, and carries `skipped` as a third outcome that is never a pass. A
-  reassembly gate should reuse it rather than mint a second one.
-- **Two of the three carried weaknesses named at the v0.8.0 close are now
-  closed; the other two are not.** `PROOF-01`'s absent external check is
-  **delivered** (`PROOF-04`), and one of the two scratch-fixture races is fixed
-  (D-27's `mkdtemp` sites). Still open and now explicitly inherited by v1.0.0:
-  **`PROOF-03` unproven on real cracked code**, the **`audit-root-args.test.ts`
-  race** (a second, orthogonal hazard the D-27 fix does not touch), and the
-  **3-failure `test:automated` floor** in `anno-register`/`anno-import`.
-- **`ANNO-13` / `ANNO-14` / `ANNO-15` still have no route and still no owner.**
-  v0.9.0 did not restore them and was never scoped to; the 2026-08-26 "no parity
-  is owed" decision now stands for a third milestone running.
-- **A new capability is available and unscoped.** The text channel opens more
-  than the five parsed formats. VICE's `a` / `d` (assemble / disassemble) and
-  `x64` ↔ `x64sc` mode switching were **explicitly declined by owner decision on
-  2026-09-06** as carrying no value here — recorded so a later reader does not
-  read them as oversights.
+declined by owner decision on 2026-09-06 as carrying no value here. Withdrawing
+the three never-auto-install carve-outs was put at the v1.1.0 open and declined.
+Fork-backend parity is not owed and has not been since 2026-08-26 — now standing
+for a fourth milestone.
 
 
 ---
@@ -2627,6 +2735,45 @@ two-projects halves; `ANNO-03`'s licence, which the Phase 9 probe falsified as
 written).
 
 </details>
+
+---
+
+*Last updated: 2026-09-19 at the **close of milestone v1.1.0 "The Prerequisite
+Doctor"** — a full evolution review, the first since the v1.0.0 close on
+2026-09-16.*
+
+*What changed in this review, so a later reader does not have to diff it.
+**"What This Is"** gained a v1.1.0 paragraph: the setup story now has one source,
+and that is the only user-visible change this milestone makes. **Core Value is
+untouched and was deliberately not re-weighed for the second time running** —
+this milestone sits entirely upstream of it and produced no evidence bearing on
+whether "a Claude session can reliably drive a real C64 emulator" is still the
+ONE thing, so re-confirming it here would be a seventh restatement with nothing
+behind it. **Requirements → Validated** gained four ✓ entries (`DECL-*`, `LOC-*`,
+`GEN-*` across Phases 58-61) and — unusually — **one ✗ entry**, recording
+`DOCTOR-01..09` as dropped-unbuilt with the gap it leaves named, because filing
+it silently under Out of Scope or omitting it would both have made the milestone
+read as fully delivered. **Requirements → Active** had its `TAKEN as v1.1.0's
+scope` block replaced by the part-Validated statement above it. **Out of Scope**
+was re-audited with **no entry added, removed or reworded** — only a dated note
+recording that the never-auto-install boundary is now owner-affirmed twice, and
+that `DOCTOR-*` is deliberately not a boundary. **Key Decisions** gained five
+rows, four ✓ Good and one ⚠️ Revisit (dropping the doctor — correct on its own
+terms, but the milestone's opening ground truth is not closed by it).
+**Context** was re-measured for the first time since the v0.9.0 close: ~212.5k
+lines, nine skills, 47 + 30 tools, no new runtime dependency, and eight declared
+prerequisites — no new external prerequisite, only a first declaration of the
+existing ones. **Current State** and **Next Milestone Goals** were rewritten;
+the latter repeats its own item 1 verbatim from the v1.0.0 close because it was
+not done, which is recorded as a repetition rather than smoothed over.
+**`## Current Milestone: v1.1.0` was renamed `## Shipped: v1.1.0`**, its scoping
+record kept as written.*
+
+*What this review deliberately did NOT do. It did not reconcile the 2026-09-14
+retirement, did not re-scope the four carried phases, and did not close any of
+the long-standing items — all of which belong to a milestone's work rather than
+to its close, and all of which are named in `## Next Milestone Goals` instead of
+being quietly absorbed here.*
 
 ---
 

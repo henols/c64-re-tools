@@ -31,7 +31,7 @@ the work.
 
 Phase 60 calls itself, in its own cross-cutting constraints, "the **first** regeneration of the
 committed `resources/*.mjs`
-artifacts" (`.planning/ROADMAP.md:1959`), and scopes itself to treat "the byte-level sync guard as a
+artifacts" (`.planning/milestones/v1.1.0-ROADMAP.md:1963`), and scopes itself to treat "the byte-level sync guard as a
 deliverable of this phase, not as a hazard discovered during it." Any Phase 59 edit to
 `backend-detect.mts` would regenerate `resources/backend-detect.mjs` early, taking that
 first-regeneration deliverable off Phase 60 in a phase this milestone's roadmap otherwise scopes as
@@ -45,7 +45,7 @@ Phase 60's.
    `resolvedBackend()` kept its own `env.VICE_BIN ?? "x64sc"` read for its direct callers — the
    broker's own launch path chief among them — because Phase 59 does not touch that file at all.
    Phase 60's own criterion 2, "the precedence order exists in exactly one place"
-   (`.planning/ROADMAP.md:1939-1942`), was therefore a real deliverable of that phase, not
+   (`.planning/milestones/v1.1.0-ROADMAP.md:1943-1946`), was therefore a real deliverable of that phase, not
    something Phase 59 left already true. **Closed by Phase 60 plan 60-01:** that read is gone —
    `resolvedBackend()` now resolves through the seam and keeps no ordering of its own
    (`src/mcp/vice/backend-detect.mts:423-431`), and `broker-launch.mts` became a pure consumer of
@@ -77,7 +77,7 @@ Phase 60's.
 5. **Phase 60 regenerates both pre-existing compiled artifacts.** `resources/backend-detect.mjs`
    and `resources/host-tool.mjs` are both regenerated when Phase 60 rewires their live callsites
    through the seam, and `resources-sync.test.ts` must be green against that **regenerated and
-   committed** output (`.planning/ROADMAP.md:1947`) as measured evidence, not an assertion.
+   committed** output (`.planning/milestones/v1.1.0-ROADMAP.md:1951`) as measured evidence, not an assertion.
 
 ## The six decisions this phase added
 
@@ -147,15 +147,15 @@ live text on every run.
 
 ```json
 [
-  { "citation": ".planning/ROADMAP.md:1959", "anchor": "the **first** regeneration of the committed" },
+  { "citation": ".planning/milestones/v1.1.0-ROADMAP.md:1963", "anchor": "the **first** regeneration of the committed" },
   { "citation": "src/mcp/vice/backend-detect.mts:423-431", "anchor": "it keeps no ordering of its own" },
-  { "citation": ".planning/ROADMAP.md:1939-1942", "anchor": "The precedence order exists in exactly one place." },
+  { "citation": ".planning/milestones/v1.1.0-ROADMAP.md:1943-1946", "anchor": "The precedence order exists in exactly one place." },
   { "citation": "src/mcp/vice/tool-location.mts:313-328", "anchor": "export function resolveOnPath(bin: string, env: NodeJS.ProcessEnv): { path: string | null; tried: string[] } {" },
   { "citation": "src/mcp/vice/backend-detect.mts:278-280", "anchor": "function defaultResolveBinPath(bin: string, env: NodeJS.ProcessEnv): string | null {" },
   { "citation": "src/mcp/vice/host-tool.mts:2504-2560", "anchor": "function findSiblingBinary(" },
   { "citation": ".planning/phases/59-the-tool-location-seam-and-its-precedence-order/59-CONTEXT.md:55-57", "anchor": "Phase 60 must decide there whether `resolvedBackend()` is reduced to" },
   { "citation": ".planning/phases/59-the-tool-location-seam-and-its-precedence-order/59-01-PLAN.md:145", "anchor": "the `sibling-of-x64sc`, `fixed-prefix-list` and `vendored-path` implementations when it collapses" },
-  { "citation": ".planning/ROADMAP.md:1947", "anchor": "`resources-sync.test.ts` is green against **regenerated and committed**" },
+  { "citation": ".planning/milestones/v1.1.0-ROADMAP.md:1951", "anchor": "`resources-sync.test.ts` is green against **regenerated and committed**" },
   { "citation": ".planning/phases/59-the-tool-location-seam-and-its-precedence-order/59-01-PLAN.md:115", "anchor": "D-12: a `tools.json` value is a bare string." },
   { "citation": ".planning/phases/59-the-tool-location-seam-and-its-precedence-order/59-01-PLAN.md:125", "anchor": "D-13: the compiled-artifact proof is two proofs, and neither is a new gate." },
   { "citation": ".planning/phases/59-the-tool-location-seam-and-its-precedence-order/59-01-PLAN.md:134", "anchor": "D-14: the module is `src/mcp/vice/tool-location.mts`." },

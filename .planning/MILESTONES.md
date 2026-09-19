@@ -1,5 +1,109 @@
 # Milestones
 
+## v1.1.0 The Prerequisite Doctor (Shipped: 2026-09-19)
+
+**Phases completed:** 4 phases (58-61 — no inserted decimals), 19 plans, 44 tasks
+**Timeline:** 2026-09-16 → 2026-09-19 (4 days, 193 commits since the `v1.0.0` tag)
+**Requirements:** 15/15 in-scope Complete (`DECL-01`..`05`, `LOC-01`..`07`, `GEN-01`..`03`)
+**Closeout type:** `override_closeout`
+**Known verification overrides:** 3 newly acknowledged, 49 carried forward from prior closes, 8 permanently un-acknowledgeable and disclosed (see STATE.md Deferred Items)
+
+**Delivered: the user's first hour — deliberately upstream of the Core Value and
+extending none of it.** Every host prerequisite this project needs is now
+declared once, in one file a Node too old to run the server can still parse.
+Every live resolution of *where is this tool* goes through one seam in one order,
+and every live refusal for a missing tool quotes its remedy from that same
+declaration. README.md's install tables are generated from it, and a guard fails
+the build when they disagree. **The milestone kept the name it opened under but
+not its centrepiece:** the doctor command was dropped at owner decision on
+2026-09-18, after `DECL-03` had already shipped the behaviour it was wanted for.
+
+**Key accomplishments:**
+
+- **One declaration behind four places that used to disagree** (`DECL-01`,
+  `DECL-02`, `DECL-04`, `DECL-05`, Phase 58). `src/mcp/vice/prerequisites.json`
+  declares all eight host prerequisites — `x64sc`, `c1541`, `petcat`, `acme`,
+  `acme-lib`, `ghidra`, `dxa`, `node` — with per-platform remedies and
+  three-valued provenance, shipped in `files[]` and proven parseable by a
+  standalone **Node-18** CI job, because a declaration whose most basic fact is
+  *"your Node is too old"* must be readable on a Node that is too old. A machine-
+  read citation ledger in `docs/phase58-declaration-provenance.md`, enforced by
+  its own structural gate, records all five disagreements the declaration had to
+  settle.
+
+- **One seam owns "where is this tool", in one order** (`LOC-05`, `LOC-06`,
+  `LOC-07`, Phase 59). `tool-location.mts`'s `resolveTool()` resolves through
+  environment variable → `.c64-re-tools/tools.json` → `$PATH` or sibling probe,
+  names the layer that answered, validates a directory candidate against its
+  marker, refuses a bad file entry by name rather than falling through to the
+  next layer, and refuses outright the two ids (`dxa`, `node`) that may never be
+  located through any layer. It caches nothing, and is proven from both the
+  unbuilt source and the compiled `resources/tool-location.mjs` artifact.
+
+- **Everything that ships now goes through it** (`LOC-01`..`04`, `DECL-03`, Phase
+  60). `resolvedBackend()`, `buildHostToolArgv()` and `findSiblingBinary()` were
+  rewired onto the seam with zero duplicated ordering left behind, making
+  `c1541`/`petcat` locatable through the file for the first time; `remedyTextsFor()`
+  became the one reader of the declaration's remedy prose — the first runtime path
+  any of those eight records' text had ever reached. A closed-consumer-set
+  structural scan proves no production module reads a tool-location environment
+  variable by name except one declared exception.
+
+- **The rewiring's own evidence caught what its unit tests could not.** The
+  required real-process full-suite comparison against the pre-rewiring tree found
+  two genuine regressions: the real broker never threaded its resolved binary
+  into a live acquire, and a deployed broker could not find `prerequisites.json`
+  at all. Three committed failing-set-difference notes record the method, and the
+  last of them closes `LOC-03`'s residual — a stale absolute `VICE_BIN` now
+  refuses by name instead of letting a same-named `$PATH` binary start silently
+  in its place.
+
+- **The install tables are generated, and divergence fails the build**
+  (`GEN-01`..`03`, Phase 61). `prereq-readme-gen.ts` derives README.md's VICE
+  ecosystem table and eight-record prerequisite overview from the declaration;
+  `auditGeneratedReadme()` parses the committed region back into records and
+  compares *facts*, not bytes — proven by five planted-divergence cases watching
+  it fail and name what moved, and by round-trip cases proving it forgives reflow
+  but never a changed fact.
+
+- **The doctor was dropped, on the record, rather than built and unused.** At the
+  Phase 61 discussion the owner ruled: *"I don't want the doctor — if something
+  is called that isn't there, the tool or script tells a short message that it's
+  broken."* That behaviour had already shipped as `DECL-03` in Phase 60.
+  `DOCTOR-01`..`09` moved to `REQUIREMENTS.md` § Future Requirements **unbuilt and
+  un-retracted**, and the README-generation phase renumbered 62 → 61.
+
+### Known Gaps
+
+- **No `/gsd-audit-milestone` was run for v1.1.0.** The close rests on the four
+  per-phase verifications (all `passed`) and the 15/15 requirements traceability
+  table instead. This is the sixth of this project’s ten closes to go
+  without one, and the first since v1.0.0 ran one and found 15 requirements
+  unimplementable as written — recorded here rather than implied.
+
+- **`DOCTOR-01`..`09` leave one question open**, named in `REQUIREMENTS.md` §
+  The Doctor: nothing now answers *"what is missing?"* in one command before a
+  session exists — only one refusal at a time, at the moment each tool is
+  wanted. That is the owner's accepted trade.
+
+- **One carry-forward todo**, filed by this milestone at the Phase 61 close rather
+  than found by the audit: two Phase 61 code-review follow-ups are untaken
+  (`prereq-audit-key-collision-and-nul-census.md`, medium). Its sibling — five
+  drifted `.planning/` citation anchors — was acknowledged by the audit and then
+  **closed during this close**, because the archive and `git rm` steps rewrite the
+  two files those anchors cite; all five now point at the immutable milestone
+  archives or at PROJECT.md's surviving record of the same decision, and
+  `phase58-citation-ledger.test.ts` exits 0 at 11/11.
+
+- **Phases 51, 53, 54 and 57 stay CARRIED, untouched, for a second milestone** —
+  `VOCAB-01`..`06`, `DOCS-01`..`04` and `INSTALL-01`..`05`, 15 requirements. Two
+  of the three families still need **re-scoping rather than resumption**: they
+  are written against guards deleted on 2026-09-14. Phase 57 shares this
+  milestone's subject matter and was excluded on purpose — its goal is to
+  withdraw the three never-auto-install carve-outs, which the owner chose to keep.
+
+---
+
 ## v1.0.0 The Rebuild Half (Shipped: 2026-09-16)
 
 **Phases completed:** 9 phases (45-50, 52, 55, 56), 73 plans, 203 tasks

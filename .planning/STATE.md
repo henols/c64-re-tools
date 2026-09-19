@@ -2,14 +2,12 @@
 gsd_state_version: "1.0"
 milestone: v1.1.0
 milestone_name: The Prerequisite Doctor
-current_phase: 61
-current_phase_name: The Install Tables Generated, and a Guard That Compares Facts
-status: completed
+status: Awaiting next milestone
 stopped_at: Phase 61 complete — all phases complete
-last_updated: "2026-09-19T08:32:50.854Z"
+last_updated: "2026-09-19T08:54:53.334Z"
 last_activity: 2026-09-19
-last_activity_desc: Phase 61 complete
-state_head: 039f21f14cc28c05370d325a76dec349eaefceec
+last_activity_desc: Milestone v1.1.0 completed and archived
+state_head: 373f60daf3a560ba931dcc711e6c126426b0a7fb
 progress:
   total_phases: 4
   completed_phases: 4
@@ -23,392 +21,50 @@ carried_forward_phases:
   - 54
   - 57
 
+current_phase: 61
+current_phase_name: The Install Tables Generated, and a Guard That Compares Facts
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (last substantive update 2026-09-16 at the **v1.1.0 milestone open**; reviewed again at the Phase 58 transition 2026-09-17 with no evolution write — v1.1.0 is 1 of 4 phases in, so no requirement graduated to Validated —
-a milestone-start write, not an evolution review: a `## Current Milestone`
-section carrying the goal, the five scoping decisions and what is explicitly out
-of scope, plus a `TAKEN as v1.1.0's scope` block in Active. Core Value untouched
-and deliberately not re-weighed. The v1.0.0 close's full evolution review stands
-below it and remains current.)
+See: .planning/PROJECT.md (last substantive update **2026-09-19 at the v1.1.0
+milestone close** — a full evolution review, the first since the v1.0.0 close.
+"What This Is" gained a v1.1.0 paragraph; four ✓ entries and one ✗ entry moved
+into Validated; Out of Scope was re-audited with nothing added or removed; Key
+Decisions gained five rows; Context was re-measured for the first time since the
+v0.9.0 close; Current State and Next Milestone Goals were rewritten; and
+`## Current Milestone: v1.1.0` became `## Shipped: v1.1.0`.)
 
 **Core value:** A Claude session can reliably drive a real C64 emulator to
 reverse-engineer a program — read and write memory, set checkpoints, capture
 RAM, inspect chip state — and keep working when the emulator misbehaves.
-*Untouched at the v1.1.0 open and deliberately NOT re-confirmed. This milestone
-sits entirely upstream of it — it is about the user's first hour, before a
-session drives anything — and produces no evidence bearing on the ONE thing, so
-restating it here would be a sixth repetition with nothing behind it.*
+*Deliberately NOT re-weighed at the v1.1.0 close, for the second time running
+and for the same stated reason: this milestone sat entirely upstream of the ONE
+thing — it is about the user's first hour, before a session drives anything — and
+produced no evidence bearing on whether it is still the right priority.*
 
-**Current focus:** Phase 61 — The Install Tables Generated, and a Guard That
-Compares Facts, executing — plan 61-01 (README.md's two install tables generated
-from `src/mcp/vice/prerequisites.json`, plus `auditGeneratedReadme()`, the guard
-that parses the committed region back into records and compares them against the
-same derivation), then wave 2's plan 61-02 (the guard watched failing on a
-planted divergence, and proven to stay green through a reflow that changes no
-fact) and plan 61-03 (the prose citing the two dropped version columns, and the
-provenance record generation made circular). **Phase 60 (The Seam Wired Into the
-Code That Ships) closed 2026-09-18** at 8/8 roadmap success criteria. Phase 61
-is the fourth phase of
-**Milestone v1.1.0 "The Prerequisite Doctor"**, opened 2026-09-16. Requirements defined and **roadmap
-created the same day — five phases, 58-62, with 24/24 requirements mapped, each
-to exactly one phase.** One hypothesis: *a person who has just installed this
-plugin can find out what is missing in one command, and tell the plugin where an
-unusually-located tool lives, without reading source.*
+**Current focus:** None — **milestone v1.1.0 "The Prerequisite Doctor" closed
+2026-09-19**, 4 phases (58-61), 19 plans, 44 tasks, 15/15 in-scope requirements,
+`override_closeout`. The next action is `/gsd-new-milestone`.
 
-**What this milestone builds**, per the owner's framing — *"a standard
-installation tool and how the different tools that are needed for being able to
-use the skills and the mcp"* — resolved at the open to a prerequisite **doctor**,
-not an installer:
-
-| Deliverable | Shape |
-|---|---|
-| Prerequisite declaration | One committed source of truth per tool: version floor, what it unblocks, remedy per platform |
-| `vice-mcp doctor` | Host-side CLI verb, following the `vice-mcp anno <verb>` precedent. Must start on a Node too old to run the server |
-| Capability-mapped report | Answers per skill and per MCP capability, naming which source supplied each resolved path |
-| `.c64-re-tools/tools.json` | User-authored tool locations, gitignored. Resolution: env var → file → `$PATH`/sibling → refuse by name |
-| Generated README tables | From the same declaration, guarded semantically — never byte-identically (Phase 54's owner decision stands) |
-
-**The standing constraint this milestone must not violate:** never auto-install.
-`CLAUDE.md`'s rule (owner, 2026-09-08) holds unchanged and its three carve-outs
-stay. Every surface added here **detects and reports**; the user runs every
-install command. Nothing shipped by this milestone may invoke a package manager.
-
-**Four phases remain carried and are NOT in this milestone** — 51, 53, 54 and 57,
-holding `VOCAB-01`..`06`, `DOCS-01`..`04` and `INSTALL-01`..`05`. Phase 57 shares
-this milestone's subject matter and is still excluded on purpose: its goal is to
-*withdraw* the three never-auto-install carve-outs, and the owner chose to keep
-them. The 2026-09-14 retirement reconciliation (`260914-poo`) that the v1.0.0
-close named as "the first task of the next milestone" was put as a candidate at
-this open and declined for it. **It is still owed**, and the nine live plans and
-four requirements pointing at a deleted guard are still pointing at it.
-
-**The governing constraint, which no phase may violate:** the tool reports; the
-end-user decides what gets reverse-engineered. No phase delivers behaviour that
-removes, strips, drops or excludes part of a subject binary on the tool's own
-judgement. `BUILD-07` made that structural rather than stated, and it shipped.
-
----
-
-*Everything below in this section is the v1.0.0 and v0.9.0 in-flight narrative as
-written during execution, kept as the historical record rather than rewritten at
-the close. It is superseded by the block above wherever the two disagree.*
-
-**Superseded — v1.0.0 in-flight focus:** Phase 51 — Planning Vocabulary Out of the Shipped Server (in flight at 8/17 plans)
-
-**Current focus:** Phase 51 — Planning Vocabulary Out of the Shipped Server (already
-in flight at 8/17 plans)
-Gates. It runs against Phase 48's purpose-built subject; see the Phase 48 entry
-under Blockers/Concerns before interpreting that subject's emulator behaviour.
-
-**Core value:** A Claude session can reliably drive a real C64 emulator to
-reverse-engineer a program — read and write memory, set checkpoints, capture
-RAM, inspect chip state — and keep working when the emulator misbehaves.
-*Confirmed still correct at the v0.9.0 close: the milestone widened what "drive"
-means — two concurrent monitor channels to one machine, with contention reported
-by name rather than misdiagnosed as a wedge — without moving the ONE thing.*
-
-**Current focus:** Phase 48 — The Movement-Hazard Report and Its Purpose-Built Subject
-Milestone **v1.0.0 "The Rebuild Half"**, roadmap created 2026-09-10, Phases 45-50,
-15/15 requirements mapped. The presumptive scope recorded at the
-v0.9.0 close is now the committed one: `DECOMP-01..04`, `BUILD-01..07` (the text
-grew by one — `BUILD-07` was added at this open to make `BUILD-05`'s reworded
-invariant checkable) and `EQUIV-01..04`. The one stated blocker — the
-runtime-evidence layer sitting upstream of the rebuild half — v0.9.0 discharged,
-and `DECOMP-01`'s completeness gate now takes `anno_evid_disagreements` as a
-**required** input rather than an optional cross-check.
-
-**Next action:** execute Phase 45 (`/gsd-execute-phase 45`) — 10 plans, 5 waves. Phase 48 carries a
-research flag — the hazard classes have essentially no reusable prior art and
-need a variant taxonomy per class written before implementation.
-
-**The governing constraint, which no phase may violate:** the tool reports; the
-end-user decides what gets reverse-engineered. No phase delivers behaviour that
-removes, strips, drops or excludes part of a subject binary on the tool's own
-judgement. Phase 46 makes that structural rather than stated.
-
-*Everything below in this section is the v0.9.0 milestone narrative as written
-during execution, kept as the historical record rather than rewritten at the
-close. It is superseded by the paragraph above wherever the two disagree.*
-
-**Superseded — v0.9.0 in-flight focus:** Phase 44 — PROOF-04 — The Independent External Check
-**v0.9.0 The Text Channel and the Runtime Evidence Layer**, opened 2026-09-06.
-Roadmap created 2026-09-06 — **six phases, 39-44**, continuing numbering from
-Phase 38 rather than resetting, with 20/20 requirements mapped and cross-checked
-mechanically. Four of the six are complete: Phase 39 on 2026-09-08 (8/8 plans),
-returning `go` on rule `R15`; Phase 40 on 2026-09-08 (11/11); Phase 41 on
-2026-09-09 (6/6); and Phase 42 on 2026-09-10 (16/16, across two gap-closure
-rounds), verification `passed` 5/5 with `PARSE-01`..`PARSE-04` all Complete.
-Phase 43 is not yet planned.
-
-Milestone scope, decided at the open: **claim the `-remotemonitor` text channel**
-that `broker-launch.mjs:165` has appended to every stock launch since Phase 3 and
-that nothing has ever dialed, behind a live probe of the one Unverified item
-(whether a text client and a binary client can be connected at once without one's
-halt/resume corrupting the other's view — bind-time coexistence is confirmed,
-interleaved command behaviour is not); **parser seams** for `memmapshow`,
-`prof flat`, `chis`, `bt` and `io`, one owning module per format with pinned
-fixtures; a **runtime evidence layer in `.annostore`** holding run-keyed,
-monotonically accumulating observations joined against the byte-derived block
-table by a query that reports agreement *and* disagreement rather than
-overwriting; **`PROOF-01`'s named reversal condition closed** by using
-`memmapshow`'s execute bit as the independent execution oracle it shipped
-without; and **`c1541` / `petcat` / `cartconv`** reached over v0.8.0's existing
-`host_tool` control op.
-
-**Out of scope by owner decision 2026-09-06:** VICE's text-monitor assemble and
-disassemble (`a` / `d`), and `x64` ↔ `x64sc` mode switching — both become
-available the moment the channel opens and both were declined on the spot.
-**v0.8.0's exclusion "dialling the `-remotemonitor` text channel at all" is
-deliberately reversed here**, superseded rather than deleted, and the risk it
-named (the text monitor halts the machine on command, so it needs the same
-serialization discipline `vice-sync.ts` holds for the binary side) is unchanged
-and is now the gate on the first phase rather than a reason to stay out.
-
-**Three claims from the exploration input are MEASURED FALSE and must not
-re-enter scope**: VICE event record/replay does not exist (`event.c` has six event
-options, none `-record`; `x64sc -record` exits 255) — it was v0.8.0's false
-premise and had to be corrected mid-milestone, so run identity needs a different
-mechanism; "text monitor as a concurrent first-class channel" collides with
-stock's one-client rule and is precisely what the gate probes; and its flat warp
-advice would erase a subtler recorded position rather than sharpen it.
-
-**The rebuild half (`DECOMP-*`, `BUILD-*`, `EQUIV-*`) re-maps from v0.9.0 to
-v1.0.0**, because the runtime-evidence layer is upstream of it: `DECOMP-01`'s
-code-vs-data boundary guessing is what an execution oracle answers, and
-`EQUIV-*`'s measured ceiling is one `chis`-on-3.9 may lift.
-
-**Phase directories were deliberately NOT archived at the v0.7.0 close, and are
-not archived at the v0.8.0 or the v0.9.0 open either.** Archival was tried at that close and measured
-to redden 9 tests across 5 files, so the 28 directories under
-`.planning/phases/` were restored and stay. `phases.clear` was therefore skipped
-in the v0.8.0 open and skipped again in this v0.9.0 `/gsd-new-milestone` run — this is a measured project decision, not an
-omission. v0.8.0's phases (33-38) landed alongside them and v0.9.0's (39+) will too — 34 directories now.
-
-**Shipped:** v0.7.0 Own the Annotation Store — 2026-09-01 (6 phases 27-32, 80
-plans, 214 tasks, 28/28 requirements, 690 commits, 7 days, `override_closeout`).
-This project stopped renting its analysis state: The external analyser is deleted and
-`.annostore` replaced it, reached through 18 `anno_*` tools registered
-proxy-locally. **No milestone audit was run** — the third close in a row without
-one, and the cost is named rather than absorbed: `STORE-03`'s traceability row
-contradicts its own prose and ships unresolved, because Phase 29 routed it to
-exactly the verification pass or audit this close did not run.
-
-**Core value:** A Claude session can reliably drive a real C64 emulator to
-reverse-engineer a program — read and write memory, set checkpoints, capture RAM,
-inspect chip state — and keep working when the emulator misbehaves.
-*Flag discharged 2026-08-23 by `CORE-01` (Phase 17, plan 17-02): the verdict is
-**keep-dated** — the statement above is left byte-identical, and PROJECT.md →
-Core Value now carries the dated record of the evidence weighed, the case against
-the verdict, and a specific reversal condition. Pinned by
-`docs-core-value-decision.test.ts`. It still says nothing about findings that
-outlive the session; that omission is now a decision rather than a default.*
-
-**Closed incomplete:** v0.6.0 Own the substrate — 2026-08-26, after 1 of 4
-phases. Phase 23 was written as a pre-committed go / degrade / no-go gate with the
-authority to narrow or cancel every phase after it, and it **fired**: `no-go`,
-rule `R1`, on the input `C0_CORPUS: partial`
-(`docs/phase23-real-release-gate-findings.md`). Six of its eleven plans executed
-and five were deliberately not dispatched. **Phases 24 and 26 are held** with live
-requirement text for v0.8.0, blocked on a frame-exact emulator stop that nothing
-owns; **Phase 25 was taken forward** as the whole of v0.7.0. No milestone audit was
-run, and that is a statement rather than an omission — the gate had already
-recorded, under three accepted overrides, that the intent was not delivered, and
-Phase 23's findings document is the audit of record. Neither `ROADMAP.md` nor
-`REQUIREMENTS.md` was archived, because Phases 24 and 26 are held with live text.
-**Shipped:** v0.5.0 Persistent Session and the Coverage Instrument —
-2026-08-25 (2 executed phases, 27 plans, 61 tasks, 13/27 requirements,
-`override_closeout`). an external analyser session now survives many tool calls
-with crash recovery and a FIFO queue; all five upstream analyze procedures are
-absorbed and attributed at a pinned commit as a seventh skill joins the set; and
-a derived-from-bytes coverage census exists that the store's own block table
-cannot move by a single byte. Phases 20-22 were **cut** on 2026-08-25 by the
-dxa+Ghidra pivot — nothing was attempted and failed, and their 14 requirements
-(DECOMP-*, BUILD-*, EQUIV-*) are held for v0.7.0.
-**Previously:** v0.4.0 Debt discharged, decisions settled — 2026-08-23 (6 phases,
-44 plans, 119 tasks, 16/16 requirements, audit round 1 `tech_debt` with zero
-blockers and zero open gaps). The inherited ledger drained from 19 items to
-**0**; `FORK-01` (**retain**) and `CORE-01` (**keep-dated**) are dated decisions
-pinned by their own guards; `scripts/audit-gate.mjs` makes a clean audit status
-impossible over a red docs guard, and was observed refusing all four write
-routes; and the plugin payload now lives under `src/` with both tarballs still
-validated.
-**Before that:** v0.3.0 the external analyser static-analysis backend — 2026-08-21 (4
-phases, 36 plans, 12/12 in-scope requirements, audit round 2 `passed`). Recon
-findings are queryable state: 17 curated `anno_*` tools and 7 `vice-mcp anno`
-CLI verbs over a persistent annotation store, container-side and structurally
-incapable of touching VICE.
-**And before that:** v0.2.0 Switchable stock-VICE backend — 2026-08-19 (9 phases, 87
-plans, 51/51 in-scope requirements). Stock upstream `x64sc` is a first-class,
-project-selectable backend with 38 tools; the fork keeps its 62 unchanged.
-
-**Current focus:** Phase 28 — The Store Core
-Milestone **v0.7.0 Own the Annotation Store**, opened 2026-08-26. 28 requirements
-(`SEAM-*`, `STORE-*`, `MCP-*`, `EXPORT-*`, `REPOINT-*`, `CUT-*`), all 28 mapped to
-**six** phases in `.planning/ROADMAP.md` (Phases **27-32**) — one requirement to
-one phase, no orphans and no duplicates, verified mechanically against the
-roadmap's own per-phase `**Requirements**:` lines rather than by eye. What the
-milestone delivers: this project owns the annotation state it has been renting
-from the external analyser, the five already-absorbed analysis procedures run on that
-store, and the external analyser is deleted outright behind a gate observed biting.
-
-**Two owner decisions taken at the open**, both narrowing v0.6.0's Phase 25 text:
-**no parity is owed to the external analyser** — the "same facts" deletion gate and
-`STORE-04`'s `ANNO-11` carry-across are both removed — and **the Phase 24 engine
-coupling is dropped**, so the store stands on the `disasm-*` decoders this project
-already owns.
-
-**This milestone carries no corpus dependency, which is why it is reachable while
-Phase 23's recorded `no-go` (rule `R1`) stands.** That verdict is **not**
-overridden here: it gates work needing a depacked real-release capture, and
-nothing in Phases 27-32 needs one. Every external oracle this milestone leans on
-is already installed and was run live during research — a real ACME 0.97,
-`node:sqlite` at the declared Node floor, and this repository's own tree at HEAD.
-
-**The sequence is constrained, not preferred.** Eight hard ordering constraints,
-each derived from code, are recorded per phase in `ROADMAP.md` and collected in
-its `## Sequencing Rationale (v0.7.0)`. The two most easily got wrong: the
-**registration-time** guards move in **Phase 29**, because two CI gates break on
-the *rename* and not on the deletion (research calls this the single most
-important sequencing fact); and the real-ACME oracle must stand at **Phase 30**,
-before the deletion window opens at **Phase 32**, or every claim made inside that
-window sits at fixture level.
-
-**Held and future scope, deliberately unmapped and not in this milestone's
-denominator.** `DXA-*`, `GHID-*`, `OPC-*`, `AUTO-*` and `PROOF-*` stay held with
-v0.6.0's **Phases 24 and 26**, whose numbers are reserved and whose requirement
-text is live for v0.8.0 — blocked on one thing, a **frame-exact emulator stop**,
-which nothing owns
-(`todos/pending/2026-08-26-frame-exact-emulator-stop-is-unowned.md`).
-`DECOMP-01..04`, `BUILD-01..06` and `EQUIV-01..04` were re-mapped to **v0.9.0** on
-2026-08-26; `DECOMP-01` is precisely what `STORE-01`'s 12-member type vocabulary
-is sized for, which is why that vocabulary is the milestone's one irreversible
-decision and is settled in Phase 28.
-**Phase numbering starts at 27**, and no number is ever reused: Phases 20-22 were
-cut, Phases 24 and 26 are held with their numbers reserved, and Phase 25's
-*content* was taken forward into v0.7.0 while its *number* retired with v0.6.0.
-**Phase directories are NOT archived**, and the reason has grown rather than
-weakened: five committed tests read live paths under `.planning/phases/`, two of
-them by hard-coded relative path to Phase 19's `upstream-procedure-manifest.json`
-— which is a **design input** to this milestone, not merely a guard's fixture.
-Every close therefore passes `--no-archive-phases`.
-**What became of `R1`'s two named branches, recorded precisely rather than
-smoothed over.** `R1` said *secure a corpus first, or re-scope v0.6.0 to a claim
-explicitly qualified as fixture-only.* **Neither branch was literally taken.**
-v0.6.0 was closed incomplete instead, and the one part of it with no corpus
-dependency — its Phase 25 — was taken forward as v0.7.0, with Phases 24 and 26
-held against the unowned frame-exact-stop blocker. That is a third resolution, not
-one of the two the rule pre-named, and it is written down here rather than
-presented as though the rule anticipated it.
-
-**Collapsed history.** `ROADMAP.md` carries all four shipped milestones collapsed,
-with full detail in `milestones/v0.2.0-ROADMAP.md`,
-`milestones/v0.3.0-ROADMAP.md`, `milestones/v0.4.0-ROADMAP.md` and
-`milestones/v0.5.0-ROADMAP.md`. v0.6.0 is **not** collapsed and **not** archived —
-its phase details live in `ROADMAP.md` under
-`## v0.6.0 Own the substrate — CLOSED INCOMPLETE (Phase Details)`, below v0.7.0's,
-because Phases 24 and 26 are held with live requirement text.
-
-The Deferred Items ledger below reads **14 open** pending todos, computed
-directly from the count of files in `.planning/todos/pending/` rather than by
-subtraction from a prior figure (it read 0 at the v0.4.0 close; eleven were
-filed after it, then `capability-registry-manifest-claim-stale` and
-`2026-09-13-vice-proxy-test-leaks-scratch-dirs-into-planning-root`, and on
-2026-09-14 three more — `installer-skill-provenance-stamp` and
-`stale-six-skills-count` from the skill-installer route survey, and
-`audit-gate-shared-budget-reds-tail-guards`, measured during phase 51's
-execution). Five
-were closed before this update — CR-05 by Phase 34 plan
-34-11, and the Ghidra one-command decompile-wrapper proposal by Phase 36 — and
-**Phase 40 plan 40-07 closed three more**: the `host-tool.mts` never-throws
-contract's two holes (`WR-03`), consolidating every tool-written file under
-`.c64-re-tools/`, and the installer's self-ignore gap (resolved as moot by the
-consolidation landing first) — each moved to `.planning/todos/completed/`
-with its own `## Resolution` section, dropping pending 10 → 7 in that plan's
-own commit. One more pending todo was filed during this same gap-closure
-round's own diagnosis — a guard proving Ghidra still accepts the
-broker-minted symlink handle, explicitly blocked on gap `G-40-1` landing
-first — and was closed by plan 40-11 once `G-40-1` landed, so the count moved
-7 → 8 → 7 within this round rather than silently reading correct again. Since
-that round closed, three more were filed and none closed — the
-MCP-surface-via-stateless-broker proposal (2026-09-11), the
-`capability-registry-manifest-claim-stale` finding, and the
-`2026-09-13-vice-proxy-test-leaks-scratch-dirs-into-planning-root` finding —
-bringing the count from 7 to the current 10. The
-suppressed/acknowledged rows are recorded in their own sections.
-
+**What the next milestone inherits, in one line each** (the full statement is
+PROJECT.md's `## Next Milestone Goals`): the 2026-09-14 planning-vocabulary
+retirement is still unreconciled and is repeated verbatim as item 1 from the
+v1.0.0 close; Phases **51, 53, 54 and 57** stay carried with 15 requirements live
+after a second close, two of the three families needing re-scoping rather than
+resumption; Phase 55 still carries no verification artifact of any kind;
+`50-REVIEW.md`'s `CR-01` is an unresolved Critical, re-verified live at this
+close in `src/mcp/vice/text-protocol.ts:850`; and `DOCTOR-01`..`09` sit in
+Future Requirements unbuilt, with the question they leave open — *what is
+missing, in one command, before a session exists* — genuinely unanswered.
 ## Current Position
 
-Phase: 61 (The Install Tables Generated, and a Guard That Compares Facts) — COMPLETE
-Plan: 3 of 3 executed
-Status: Phase complete — verification passed, milestone v1.1.0 ready to close
-Stopped at: Phase 61 complete and verified (4/4 roadmap criteria); D-08 resolved by owner decision; gap-closure plan owed for the five drifted .planning/ citation anchors
-
-Gate override (plan-phase §13a, 2026-09-19): the decision-coverage gate returned
-`passed: false` with reason `could-not-parse` and an EMPTY `uncovered` array — it could
-not read four bullets in 61-CONTEXT.md (D-09's title carries inner colons inside backticked
-code; the three `### Claude's Discretion` entries for D-01/D-04/D-11 are back-references,
-not decision definitions). This is a parser limit, not a dropped decision: all thirteen
-decisions were audited by hand against the plans and every one is cited —
-D-01→61-01, D-02→61-01/61-03, D-03→61-01, D-04→61-01, D-05→61-01/61-02/61-03,
-D-06→61-01/61-03, D-07→61-03, D-08→61-01/61-03, D-09→61-03, D-10→61-01, D-11→61-01,
-D-12→61-02, D-13→61-01. 61-CONTEXT.md was deliberately NOT reworded to satisfy the
-parser — it is a signed-off owner-decision record. verify-phase should re-surface this.
-
-Prior phase, for continuity: Plan 60-08 closed LOC-03's residual: the environment layer is now terminal for
-a declared variable's non-empty value WHATEVER its shape (not only a
-separator-free one) — a stale absolute VICE_BIN/ACME_BIN/ACME/GHIDRA_HOME now
-refuses by name instead of letting a same-named $PATH binary silently start in
-its place, proven end to end through resolvedBackend() to the real
-handleAcquire() cold-spawn call. It also fixed WR-03: buildEnvLayerRefusal()'s
-trailing justification clause is now branched on record.kind, so a
-directory-kind id's refusal (ghidra/GHIDRA_HOME, acme-lib/ACME) no longer
-claims a $PATH-substitution protection that cannot structurally apply to it,
-while an executable-kind id's refusal keeps that warning byte-for-byte.
-The two shipped tests whose contracts this reverses — vice-broker-acquire.test.ts's
-"Plan 60-01 Test 4" and tool-location.test.ts's separator-containing case —
-were rewritten in place with their surviving intents kept, correcting plan
-60-06's own SUMMARY, which had mischaracterised the fall-through those tests
-pinned as pre-phase behaviour. 60-VERIFICATION.md's own read of the pre-phase
-source (commit d54d98a1) established that the fall-through was itself a
-same-phase regression introduced by plan 60-01, not legacy behaviour — this
-plan's rewrite corrects the record rather than merely reversing it.
-A third failing-set-difference evidence note
-(evidence/phase60-loc03-terminal-env-set-diff.md) re-measured the
-unchanged-behaviour claim against baseline d7d5a151 with the full test glob:
-regression list empty, and the carried-forward accepted limit from plan
-60-07's own evidence note (a separator-containing override still substituting
-silently) is now stated CLOSED.
-All five of this phase's requirement ids (LOC-01, LOC-02, LOC-03, LOC-04,
-DECL-03) are now Complete in REQUIREMENTS.md — LOC-03 was the last one open.
-Two human-verification items from plans 60-03 and 60-05 remain unrun under
-`human_verify_mode: end-of-phase` and must not be forgotten when the phase
-seals: (1) ACME_BIN at a nonexistent path — plan 60-08 UPDATED this
-expectation: before this plan an absolute, nonexistent ACME_BIN fell through
-to a $PATH probe; after this plan it hits the seam's terminal refusal instead
-— confirm the refusal is what's shown, then confirm the contrasting case
-(ACME genuinely absent) shows the declaration's remedy text; (2) a real stock
-x64sc in tools.json with the broker as its systemd unit — confirm the spawned
-binary matches, for the recorded path and for a bare $PATH-resolved VICE_BIN
-(unchanged from plan 60-05).
-Next: /gsd-verify-work 60.
-Last activity: 2026-09-19 — Phase 61 complete
-
-**Milestone shape, so no reader has to rebuild it from the ROADMAP:** Phase 58
-declares the prerequisites; Phase 59 builds the tool-location seam and its
-precedence order; Phase 60 wires that seam into the code that ships; Phase 61 is
-`vice-mcp doctor` itself; Phase 62 generates the README install tables from the
-declaration. **Phases 51, 53, 54 and 57 remain carried and are not part of this
-milestone** — Phase 57 shares the subject and is excluded on purpose.
-
-**The ordering 59 → 60 → 61 is load-bearing, not tidy.** `DOCTOR-05` forbids the
-doctor from having a second detection path; the doctor arriving last, after the
-seam is already the live resolution path, is what makes that structural rather
-than a matter of discipline.
+Phase: Milestone v1.1.0 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-09-19 — Milestone v1.1.0 completed and archived
 
 ## Performance Metrics
 
@@ -2765,6 +2421,85 @@ close should recognise them by this note and **re-disclose rather than
 re-investigate**. The fix belongs upstream in the scanner, not in this project's
 evidence files.
 
+### Acknowledged at the v1.1.0 close (2026-09-19)
+
+The pre-close artifact audit reported **11** open items against **49** already
+suppressed by earlier closes. **3 were newly acknowledged through
+`query audit-open acknowledge`** — 2 pending todos and 1 phase UAT gap. Verified
+by re-running the scan: `counts.total` 11 → 8, `acknowledged.total` 49 → 52. The
+remaining **8 could not be acknowledged by any CLI path** and are disclosed below
+rather than suppressed. They are the *same* 8 as at the v0.7.0, v0.8.0, v0.9.0
+and v1.0.0 closes.
+
+**Fifth consecutive close, same 8, same mechanism.** All 8 refuse with
+`no deferred item matched --text`, and all 8 are markdown **table rows** in
+`.planning/phases/23-the-real-release-gate-go-degrade-no-go/deferred-items.md`
+(the 4-row run-log table at lines 71-74 and the 4-row timing-verdict table at
+lines 149-152), not deferred-item bullets. Re-confirmed by reading the file at
+this close: the scanner is reading two data tables, so no entry it names is a
+deferred work item at all. Following the standing v0.8.0 instruction this close
+**re-disclosed rather than re-investigated**, and did not halt on the refusals —
+a refusal recorded is not a refusal discarded. Planting a `resolved` cell to
+quiet the scanner remains unavailable: that table records `159` and `2410` as
+`unresolved` in an adjacent cell, and writing `resolved` beside `unresolved`
+would falsify a v0.6.0 evidence record.
+
+**Neither newly-acknowledged category is a delivery gap.** The UAT item is
+bookkeeping: `60-UAT.md` reads `status: passed` with **0 pending scenarios**, and
+the scanner counts the file rather than an open scenario. The two todos were
+filed deliberately at the Phase 61 close (commit `373f60da`, *"record the two
+carry-forward gaps as pending todos"*) — they are this milestone's own recorded
+carry-forward, not something the audit discovered.
+
+The three counts that actually gate a phase close: `uat_gaps` **1** (the
+zero-scenario bookkeeping row above), `verification_gaps` **0**,
+`context_questions` **0**.
+
+Acknowledgment is verdict-preserving and self-invalidating: it never rewrites an
+artifact's own verdict, and the suppression lapses the moment the artifact's
+observed state changes again.
+
+**Counts:** 3 newly acknowledged, 49 carried forward from prior closes, 8
+disclosed-but-unsuppressable. `closeout_type=override_closeout`.
+
+| Category | Item | Status | Deferred At | Milestone |
+|----------|------|--------|-------------|-----------|
+| todos | citation-ledger-planning-anchors-drifted.md | acknowledged, then **CLOSED during this close** | 2026-09-19 | v1.1.0 |
+| todos | prereq-audit-key-collision-and-nul-census.md | pending (medium) | 2026-09-19 | v1.1.0 |
+| uat_gaps | 60/60-UAT.md | passed (0 pending scenarios) | 2026-09-19 | v1.1.0 |
+
+**One of the two todos was closed by this close itself.**
+`citation-ledger-planning-anchors-drifted.md` (high) recorded five `.planning/`
+anchors that no longer resolved — the ledger machinery working, the anchors
+drifted. It was acknowledged above **before** being worked, and then repaired
+here rather than deferred, because the close rewrites both files it cites: the
+ROADMAP collapse and the `git rm` of REQUIREMENTS.md would have broken every one
+of those citations regardless. All five now cite the immutable milestone archives
+(four) or PROJECT.md's surviving statement of the same owner decision (one, whose
+original target was deleted with the doctor). `phase58-citation-ledger.test.ts`
+exits 0 at 11/11, and the todo moved to `.planning/todos/completed/` with its
+Resolution section. The acknowledgment row is left standing as written — it
+records what the audit saw, and rewriting it would falsify the scan.
+`prereq-audit-key-collision-and-nul-census.md` (medium) carries two Phase 61
+code-review follow-ups and is genuinely carried forward.
+
+#### Disclosed, not suppressed — the 8 permanently un-acknowledgeable rows
+
+All from `.planning/phases/23-the-real-release-gate-go-degrade-no-go/deferred-items.md`.
+They resurface at every close for as long as Phase 23 sits in `.planning/phases/`,
+which is for as long as Phases 24 and 26 are held.
+
+| # | Row text (truncated) | Refusal |
+|---|---|---|
+| 1 | `1 — 1 — (not captured)` | `no deferred item matched --text` |
+| 2 | `2 — 4 — 159 wired disconnect-while-queued; 916 anno call-timeout/crash-counter; …` | `no deferred item matched --text` |
+| 3 | `3 — 1 — (not captured)` | `no deferred item matched --text` |
+| 4 | `4 — 1 — 2408 BACK-05 D-G ordering at the wire` | `no deferred item matched --text` |
+| 5 | `2408 — 23-03, 23-10 — yes — broker-caused, deterministic — proven both directions` | `no deferred item matched --text` |
+| 6 | `916 — 23-04 — no (broker dead since 2026-08-20) — genuinely load-sensitive` | `no deferred item matched --text` |
+| 7 | `159 — 23-03/23-10 — yes — unresolved — never observed without a live broker` | `no deferred item matched --text` |
+| 8 | `2410 — 23-03/23-10 — yes — unresolved — never observed without a live broker` | `no deferred item matched --text` |
+
 ### Acknowledged at the v1.0.0 close (2026-09-16)
 
 The pre-close artifact audit reported **19** open items against **38** already
@@ -3444,5 +3179,4 @@ Resume file: .planning/phases/32-the-deletion-and-the-grep-gate/32-CONTEXT.md
 
 ## Operator Next Steps
 
-- Run /gsd-verify-work 58 to re-verify Phase 58 against the 58-03 gap closure
-- Then /gsd-plan-phase 59
+- Start the next milestone with /gsd-new-milestone

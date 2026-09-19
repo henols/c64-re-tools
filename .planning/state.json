@@ -325,9 +325,9 @@
     }
   ],
   "next": {
-    "command": "/gsd-complete-milestone",
-    "label": "Close milestone v1.1.0",
-    "reason": "Phase 61 of 4 · 100% · all phases complete"
+    "command": "/gsd:progress",
+    "label": "Show progress",
+    "reason": "Unsure of state — showing progress"
   },
-  "updated_at": "2026-09-19T08:32:50.980Z"
+  "updated_at": "2026-09-19T08:54:53.418Z"
 }

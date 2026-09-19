@@ -6,6 +6,10 @@ started: 2026-09-18T22:25:00Z
 updated: 2026-09-18T22:32:00Z
 executed_by: orchestrator (live, on the project owner's own host)
 host: ho-laptop, Linux 6.12.107+deb13-amd64, Node v24.20.0
+audit_acknowledged:
+  milestone: v1.1.0
+  at: 2026-09-19
+  gap_snapshot: "passed::scenarios=0"
 ---
 
 ## Why this file exists

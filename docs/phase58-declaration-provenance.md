@@ -32,14 +32,14 @@ by name rather than filling in a plausible number.
 > Checked live against each ecosystem on 2026-08-18. `CPUHISTORY_GET`, the
 > opcode behind this project's exact cycle stopwatch, requires **VICE >= 3.10**
 
-`.planning/REQUIREMENTS.md:86` records the opposite, and is the later
+`.planning/milestones/v1.1.0-REQUIREMENTS.md:123` records the opposite, and is the later
 evidence:
 
 > Reporting a VICE, ACME, Ghidra or dxa version number | No shipped tool
 > refuses on one. `vice_cpu_history` runs over the text channel (`chis`); the
 > VICE >= 3.10 floor is on `CPUHISTORY_GET`, an opcode no shipped tool calls
 
-**`.planning/REQUIREMENTS.md:86` wins.** It is both the later statement (the
+**`.planning/milestones/v1.1.0-REQUIREMENTS.md:123` wins.** It is both the later statement (the
 README prose dates to 2026-08-18; the REQUIREMENTS.md row was written for the
 v1.1.0 milestone opened 2026-09-16) and the measured one: `vice_cpu_history`
 is served over the text channel's `chis` command, not the binary monitor's
@@ -344,10 +344,13 @@ a skill outright; the oracle's absence degrades one verdict field to
 `.planning/REQUIREMENTS.md`'s Future Requirements this same task) is the
 requirement that carries adding a `unp64` record. The first phase that
 feels the consequence of its absence is Phase 61: its own Success Criterion
-1 states the doctor's answer must be "capability-shaped, not binary-shaped
-... a user missing ACME learns that `acme-build` is blocked and that the
-other skills are not, rather than reading a bare red row"
-(`.planning/ROADMAP.md:2002-2005`). A user missing `unp64` gets no
+1 stated the doctor's answer must be capability-shaped rather than
+binary-shaped: "a user missing ACME should learn that `acme-build` is blocked
+and the other six skills are not, rather than reading a bare red row"
+(`.planning/PROJECT.md:2083`). That criterion was **deleted from the roadmap on
+2026-09-18** when the doctor was dropped at owner decision, so this citation now
+points at the surviving statement of the same decision in PROJECT.md's v1.1.0
+scoping record rather than at the removed phase section. A user missing `unp64` gets no
 equivalently-named row today -- there is no `unp64` record for a
 capability-shaped report to point at -- and that is exactly the gap
 `DECL-F3` exists to close, in Phase 61's own generation or whichever phase
@@ -448,11 +451,11 @@ its entry here, or letting an entry drift off its anchor, fails the build.
 
 ```json
 [
-  { "citation": ".planning/REQUIREMENTS.md:86", "anchor": "No shipped tool refuses on one." },
+  { "citation": ".planning/milestones/v1.1.0-REQUIREMENTS.md:123", "anchor": "No shipped tool refuses on one." },
   { "citation": "src/mcp/vice/host-tool.mts:3121", "anchor": "ORACLE_ENV_VARS: readonly string[] = Object.freeze([\"UNP64\", \"UNP64_PATH\"])" },
   { "citation": "src/skills/c64-program-recon/SKILL.md:117-125", "anchor": "install an external identifier on the **host** and point `UNP64` or `UNP64_PATH` at it" },
   { "citation": ".planning/phases/19-absorbed-procedures-and-the-coverage-instrument/19-DECISIONS.md:151", "anchor": "**Decided:** 2026-08-24" },
-  { "citation": ".planning/ROADMAP.md:2002-2005", "anchor": "a user missing ACME learns that" },
+  { "citation": ".planning/PROJECT.md:2083", "anchor": "a user missing ACME should learn that" },
   { "citation": "README.md:119-120", "anchor": "Checked live against each ecosystem on 2026-08-18." },
   { "citation": "README.md:146-152", "anchor": "No shipped tool in this project refuses on a VICE version." },
   { "citation": "src/mcp/vice/host-tool.mts:1737", "anchor": "host_tool \"${request.tool}\" refuses: \"c1541\" does not exist" },
