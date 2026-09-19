@@ -1,451 +1,217 @@
-# Architecture Research: Prerequisite Doctor + Layered Tool-Location Resolver
+# Architecture Research — v2.0.0 "One Broker, One Socket"
 
-**Domain:** Integration into an existing, opinionated TypeScript/Node MCP-plugin codebase (`c64-re-tools`)
-**Researched:** 2026-09-16
-**Confidence:** HIGH for structural claims (all cite file:line read directly from the tree). MEDIUM for a few build-order sequencing calls that are judgment, not fact. Explicit open questions are marked as such, not guessed.
+**Domain:** Integration redesign of an existing shipping Node/TypeScript MCP plugin (transport + deployment model)
+**Researched:** 2026-09-19
+**Confidence:** MEDIUM-HIGH — every file-level claim below was read from the tree on this date and the two headline blast-radius figures were independently re-derived (see "Verifying the blast radius" at the end). The exact wire-level shape of the new single-endpoint protocol (Q2/Q3's envelope) is a recommendation, not something already decided in the codebase, and is flagged as such throughout.
 
-This is not a generic architecture survey — the milestone (`v1.1.0 The Prerequisite
-Doctor`, `.planning/PROJECT.md:1880-1975`) already fixed five decisions. This
-document works out *how* those decisions land on the actual files.
+---
 
-## Answer to the key question first (Q1's `.mts`/`.ts` placement)
+## 0. What changes and what does not (one paragraph)
 
-**The new location-resolution seam must be authored as a host-bound `.mts` file,
-added to `build.ts`'s `HOST_BOUND_ARTIFACTS` array, and it must NOT statically
-import `repo-root.ts`.** It receives the resolved root/tools-dir as an explicit
-string parameter from its caller, exactly like `backend-detect.mts` already does
-for `supervisorDir`. This is not a stylistic preference — it is forced, and the
-precedent already exists verbatim in the tree:
+Today the container dials the broker **only** for lifecycle (acquire / monitor_claim / host_tool), then dials the emulator's own dynamically-allocated binmon port **directly**, with `hostpath.ts`/`containerpath.ts` translating the filename arguments and the URL host in between. v2.0.0 deletes the direct dial and the translation layer wholesale: the client (MCP server *or* skill script) reaches **only** a fixed, well-known broker port, in a fixed host-candidate order, and the broker becomes the sole thing that ever speaks to `x64sc` or touches its filesystem. Everything that used to cross the container/host boundary as a *path* now crosses it as *bytes*, carried inside the same client↔broker wire protocol that already exists for control operations. The six binmon opcodes that carry a filename, the annotation store (local, untouched), and the dispatch/refusal discipline (`dispatchStock()` matches-or-refuses, D-09) are the only things this milestone does **not** change the meaning of — it changes how a request and its files travel, never what the request means.
 
-> `src/mcp/vice/backend-detect.mts:60-80` — *"`supervisorDir` is ALWAYS an
-> explicit string this module receives from its caller, never a default this
-> module derives itself... This file cannot import repo-root.ts's VALUE as a
-> static import and still compile as a host-bound artifact: repo-root.ts (and
-> its own dependency install-resources.ts) use `.ts`-extension imports that
-> only resolve under Node's native type-stripping, unbuilt — exactly the mode a
-> bare host running this module's COMPILED resources/backend-detect.mjs cannot
-> rely on... Passing the resolved string in, rather than importing the
-> resolver, is what keeps this file importable UNBUILT from a container-side
-> `.ts` (exactly like container-guard.mts's own precedent) AND compilable into
-> resources/ for the host, from the SAME source, with no `#ifdef`-style split."*
+---
 
-Every production runtime consumer of a tool location today is host-bound:
+## 1. Component-by-component integration map
 
-| Consumer | File:line | What it resolves | Compiled? |
+Legend: **DELETED** = file/mechanism removed outright · **REPLACED** = mechanism removed, a new mechanism serves the same need differently · **MODIFIED** = file survives, its role changes · **UNTOUCHED** = no change of any kind is implied by this milestone.
+
+### 1.1 Path translation and container detection
+
+| Component | File | Disposition | Why |
 |---|---|---|---|
-| `resolvedBackend()` | `backend-detect.mts:283` (`env.VICE_BIN ?? "x64sc"`) | `x64sc` | Yes — in `HOST_BOUND_ARTIFACTS` (`build.ts:43-53`) |
-| `spawnAndRecordInstance` default | `broker-launch.mts:445`, `:1523` (`process.env.VICE_BIN ?? "x64sc"`) | `x64sc` (the broker's own spawn target) | Yes |
-| ACME binary | `host-tool.mts:1292` (`process.env.ACME_BIN ... : "acme"`) | `acme` | Yes |
-| ACME library dir | `host-tool.mts:2231-2245` (`findAcmeLib()`, fixed candidate list + `process.env.ACME`) | ACME stdlib dir | Yes |
-| Ghidra install dir | `host-tool.mts:1348-1362`, `:1513-1524`, `:2534-2545` (`process.env.GHIDRA_HOME`) | `analyzeHeadless`, `support/sleigh` | Yes |
-| c1541/petcat siblings | `host-tool.mts:2273-2311` (`findSiblingBinary()`, sibling-of-x64sc probe + `$PATH` fallback) | `c1541`, `petcat` | Yes |
-| dxa | `host-tool.mts:2223-2229` (`findDxaBinary()`, FIXED vendored path, deliberately never env-overridable) | vendored `dxa` | Yes |
-| Node interpreter | `resources/vice-launcher.sh:189-222` | `node` itself | N/A — hand-authored bash, not compiled |
+| Host↔container path translation | `src/mcp/vice/hostpath.ts` | **DELETED** | Its entire reason to exist — "a container path means nothing to a process running on the host" — stops applying once nothing ever hands a path to the other side; files cross as bytes instead. No non-boundary use exists: `hostpath-consumers.test.ts` pins its production consumer set to exactly four modules (`containerpath.ts`, `install-resources.ts`, `stock-paths.ts`, `vice-proxy.ts`), and all four exist *because of* the problem this milestone deletes. |
+| Container↔host inverse translation | `src/mcp/vice/containerpath.ts` | **DELETED** | Same reasoning, inverse direction. Its two real jobs — `containerPath()` (rewriting a broker-granted host-rooted field) and `containerHost()` (rewriting a loopback URL to `host.docker.internal`) — both existed only to make a **direct dial to the emulator's own port** work from inside a container. There is no more direct dial to rewrite a coordinate for. |
+| D-17's declared emulator-side-path table + wrapper | `src/mcp/vice/stock-paths.ts` | **DELETED** | `withEmulatorSidePath()` is the one function that called `hostPath()`/`tryHostPaths()` on the four (now six, see 1.4) filename-carrying tool arguments before writing them into a binmon request body. Once the broker resolves and owns every emulator-side filename itself, there is no "translate a container path to a host path" step left to declare a table for. Roughly thirty other `stock-*.ts` modules carry a **comment**, not an import, of the form "never import `hostpath.ts` — this tool takes no path argument" (`stock-cia.ts:64`, `stock-vicii.ts:58`, `stock-sprites.ts:27`, `stock-disassemble.ts:21`, `stock-memory-search.ts:14`, `stock-symbols.ts:16-23`, `vsf-slice.ts:75-79`, several `anno-*.ts` headers, `memmap-lookup.ts:8`, `requirement-ids.ts:60`). Those comments become **dead documentation** the moment the files they warn against are deleted, and should be stripped in the same phase as a cleanup, not left describing a rule that no longer has anything to violate. |
+| Container detector | `src/mcp/vice/container-guard.mts` | **MODIFIED, narrowed — not deleted** | Two of its current consumers are being removed for different reasons and one survives: (a) `host-tool-client.ts`'s `isInsideContainer()`-gated two-route branch is **DELETED** (see 1.3 — the dial order replaces this specific decision); (b) `vice-errors.ts`'s `mcpHost()` (`isInsideContainer(deps) ? "host.docker.internal" : "127.0.0.1"`) is **REPLACED** by the new fixed dial-order client (Q2) — it picked *one* candidate by guessing container-ness, the new client tries *both* in order and keeps whichever answers first; (c) `vice-broker.mts`'s own startup check — the broker refuses to run *as* a container, because it must be the thing with real host filesystem/process access — is **UNTOUCHED**. The broker is still a host-side daemon; nothing about where *it* must physically run changes. Also untouched: `stock-paths.ts`'s `isInsideContainerFn()` injection point dies with the file it lives in (1.4), not because the detector itself changed. |
+| Legacy HTTP-transport host resolver | `src/mcp/vice/vice-errors.ts` (`mcpHost()`, `activeUrl`, `LEGACY_DEFAULT_PORT`) | **DELETED** | This is the fork-backend-era HTTP transport's own host-guessing helper (`VICE_MCP_URL`/`VICE_MCP_HOST` env override plus the same container-guessing logic `containerHost()`/`host-tool-client.ts` also carry). It is functionally superseded by the new dial-order client and should not survive as a fourth copy of "guess the host" once the second and third copies (`containerHost()`, `host-tool-client.ts`'s branch) are gone. |
 
-The one place that reads `ACME_BIN` **outside** the host-bound set is
-`acme-gate.ts:71` — but that module is explicitly **test-only**
-(`acme-gate.ts:32-34`: *"must never appear in `package.json`'s `files[]`... must
-never be imported by a production module — only by `*.test.ts` files"*). It is
-a separate, deliberately duplicate probe used by the test suite, not a
-production consumer. **It is not a caller the new seam needs to serve for
-correctness of the shipped product** — though see the "doctor vs. real refusal
-agreement" section below for why it must not become a third opinion either.
+### 1.2 The two existing wire protocols
 
-Given that every production caller is host-bound and compiled, and the one
-container-side `.ts` reader (`acme-gate.ts`) is test-only, the seam's home is
-settled: it lives beside `backend-detect.mts` as a new `*-location.mts` (or
-similar) file, is added to `HOST_BOUND_ARTIFACTS`, and takes `toolsDir`/
-`repoRoot` as a parameter — never a static import of `repo-root.ts`.
+| Component | File | Disposition | Why |
+|---|---|---|---|
+| Binary-monitor wire codec | `src/mcp/vice/stock-protocol.ts` | **UNTOUCHED in role, unchanged in content — but its *reachability* changes** | This file remains the **one** module in the whole tree that imports `node:net` for binmon bytes and the one place that frames/parses/demuxes them (CLAUDE.md's non-negotiable). What changes is *what socket it is handed*: today `stock-connect.ts` opens a `net.Socket` by dialling the emulator's own host:port directly; after this milestone it is handed a **relayed duplex stream** obtained from the new broker client (Q2) instead. `ViceMonitorClient`'s own constructor takes a socket-like object; nothing about its parsing, demuxing, or request-id correlation needs to change, because the relay is byte-transparent (see §3, and the design decision in §2.3). |
+| Text-monitor wire codec | `src/mcp/vice/text-protocol.ts` | **UNTOUCHED in role, same reachability change as stock-protocol.ts** | The sibling "one module owns node:net for THIS wire" rule, for the `-remotemonitor` text channel. The existing `monitor_claim`/`monitor_release` control op already models "binary" vs "text" as two values of one `channel` field (`broker-control.mts`'s `MonitorChannel`) — the new attach mechanism (§2.3) is a direct extension of that existing distinction, not an invented one. |
+| Lease-to-session seam | `src/mcp/vice/stock-dispatch.ts` (`ensureStockSession()`, `heldSession`) | **MODIFIED, narrowly** | `ensureStockSession()`'s contract — "resolve a lease, get-or-reconnect a `StockConnectSession`, never construct a session bypassing this function" — is preserved unchanged. Only its `deps.ensureLease` implementation changes what it does internally (dial the new attach op instead of `acquireOverControlPlane()` + direct dial). `dispatchStock()`'s match-or-refuse table (D-09) is **untouched**: this milestone does not add, remove, or reinterpret any tool. |
+| Control-plane protocol (framing, token gate, ops) | `src/mcp/vice/broker-control.mts` | **MODIFIED — extended, not replaced** | The newline-delimited-JSON framing, the constant-time token gate, and the ownership-by-connection-identity discipline (`ownsTarget()`) are exactly the right primitives for the new ops and are kept. `ControlRequestKind` grows at least two new members, added the same way `host_tool` was added — "a **whole subsystem**, not a per-tool member" (the file's own header comment on `host_tool` states this convention explicitly and the new ops should follow it): an `attach` op (folds acquire + `monitor_claim` + "become a relay" into one step, replacing `acquireOverControlPlane()`+direct-dial+`monitor_claim` as three separate steps) and a `file_transfer` op-family (upload/download, scoped to a session or a bare request id — see §4). `acquire`/`release`/`recycle`/`status`/`host_state`/`monitor_claim`/`monitor_release`/`host_tool` do **not** need to be deleted on day one — see the build order (§6) for why they should be superseded incrementally rather than deleted in the same breath they're extended. |
+| Container-side broker client | `src/mcp/vice/vice-broker-client.ts` | **MODIFIED, substantially — see §2 for the recommended consolidation** | `acquireOverControlPlane()` and `readBrokerLiveness()`/`brokerJsonPath()` are **DELETED** (they exist only to read the now-deleted `broker.json` discovery record). `openBrokerControl()`/`BrokerControlSession`/`HeldLease` are **the right shape to keep and extend** — "the connection IS the lease" is already this file's own stated tolerance decision, and the new `attach` op is a generalization of exactly that idea, not a departure from it. `REQUEST_ID_PATTERN`/`newRequestId()`/`isValidRequestId()` are untouched utility primitives. |
 
-### Why it cannot live inside `host-tool.mts`
+### 1.3 The host-tool execution seam
 
-`backend-detect.mts` is imported BY `host-tool.mts` (`host-tool.mts:124`,
-`import { resolvedBackend } from "./backend-detect.mjs"`). A tool-location
-resolver that both `backend-detect.mts` (for `VICE_BIN`/`x64sc`) and
-`host-tool.mts` (for `ACME_BIN`/`GHIDRA_HOME`/sibling probes) need to call
-cannot live inside `host-tool.mts`, because that would make `backend-detect.mts`
-depend on `host-tool.mts` depend on `backend-detect.mts` — the exact module
-cycle `repo-root.ts`'s own header names as a hazard class this codebase
-rejects (`repo-root.ts:9-33`, and the "module-cycle avoidance is deliberate and
-documented" architectural constraint in `CLAUDE.md`). It must be its own file,
-sitting *below* both `backend-detect.mts` and `host-tool.mts` in the import
-graph, so both can depend on it without depending on each other.
+| Component | File | Disposition | Why |
+|---|---|---|---|
+| Container-side host-tool client, two-route branch | `src/mcp/vice/host-tool-client.ts` | **MODIFIED — the two-route branch is DELETED, the module becomes the seed of the new unified client** | `runHostToolFromContainer()`'s `isInsideContainer() ? hostToolOverControlPlane() : hostToolOverHostRoute()` branch is exactly the kind of "route chosen by container detection" the milestone's dial-order feature explicitly replaces. `hostToolOverHostRoute()` — the direct-spawn-on-a-bare-host escape hatch this file's own header says exists *specifically* because `.github/workflows/ci.yml` runs `acme.mjs build` on a flat GitHub Actions runner with no container and no broker — **loses its justification** once "no client may spawn [the broker]" and "a client that finds none refuses by name" become universal rules with no bare-host exception. This is a real, non-cosmetic consequence for CI (flagged again in §6) and must be resolved (give CI a broker, or accept the tests move to a manual/live-only gate) **before** this branch is deleted, not discovered after. |
+| Host-tool executor (host-bound) | `src/mcp/vice/host-tool.mts` | **UNTOUCHED in its own logic; its callers change** | The allowlist, argv construction, per-tool timeouts, and the "resolves on every failure path" never-throw contract are unaffected. It already runs where the broker runs (host-side) and already accepts a `--repo-root` it uses to resolve workspace-relative paths — see §5 for the one real change this file needs (Ghidra's runs-root argument). |
+| Broker's `host_tool` control-plane dispatch | `src/mcp/vice/broker-control.mts` (`onHostTool`, the eighth `ControlRequestKind`) | **UNTOUCHED as a mechanism, reused as the template** | This is already "a whole subsystem as one op, never one op per tool" — precisely the shape the new `attach` and `file_transfer` ops should copy. |
 
-### Can `vice-launcher.sh` consume a JSON location file?
+### 1.4 The six file-carrying tools
 
-**Only in a degraded, hand-rolled way, and there is a real bootstrapping
-problem that argues against trying.** `vice-launcher.sh` reads
-`VICE_BROKER_NODE` (`resources/vice-launcher.sh:189-222`) *before* it has a
-working Node interpreter — that variable's whole job is finding one. A `tools.json`
-reader that used `node -e '...'` to parse the file would need to already have
-resolved a Node to run it, which is the very question being answered. The
-launcher could grep/sed a single well-known JSON key out of a flat file
-without a full parser, but that reintroduces a second, fragile, hand-rolled
-JSON reader outside the one seam this design is trying to consolidate around
-— the exact anti-pattern ("re-deriving a cross-cutting seam locally") this
-project already names. **Recommendation: `VICE_BROKER_NODE` stays env-var-only,
-explicitly out of `tools.json`'s scope.** State this as a documented exception
-in the prerequisite declaration and in `tools.json`'s own generated comment
-header, not as an oversight. (This matches the milestone's own framing — it
-lists `VICE_BROKER_NODE` as one of the five pre-existing overrides in three
-naming conventions, `.planning/PROJECT.md:1926-1932`, without ever proposing to
-unify it into the file.)
+| Tool | Handler file | Direction | Disposition |
+|---|---|---|---|
+| `vice_autostart` | `stock-machine.ts` (`handleAutostart`) | inbound | **MODIFIED** — `withEmulatorSidePath()` call replaced by "push bytes to broker staging, embed the broker-native staged path in the AUTOSTART body" (see §3, inbound trace). |
+| `vice_disk_attach` | `stock-machine.ts` (`handleDiskAttach`) | inbound | **MODIFIED**, same shape as `vice_autostart` (both ride the same AUTOSTART (0xdd) wire opcode, D-14). |
+| `vice_snapshot_save` | `stock-machine.ts` (`handleSnapshotSave`) | outbound | **MODIFIED** — after DUMP succeeds, fetch the resulting `.vsf` bytes from broker staging instead of relying on a shared bind mount; write locally under `.c64-re-tools/snapshots/`. |
+| `vice_snapshot_load` | `stock-machine.ts` (`handleSnapshotLoad`) | inbound | **MODIFIED**, mirror of `vice_snapshot_save`. |
+| `vice_symbols_load` | `stock-symbols.ts` | inbound (new) | **MODIFIED** — today this tool reads a local labels file with a plain `readFileSync()` **in the container process itself** (no host/container translation happens at all today; it is not in `STOCK_EMULATOR_SIDE_PATH_TOOLS`). It only needs the new file-transfer path if the broker (rather than the container process) will end up needing its own copy of the bytes — confirm this before assuming it changes at all; if the symbol table is consumed entirely client-side (as it appears to be today, reading into an in-process table), this tool may need **no** transport change, only a naming/classification correction in the next milestone-open document. Flagged here as a discrepancy between the milestone's own blast-radius note and this file's actual current behavior. |
+| `vice_program_load` | dispatched via `stock-derived.ts`'s `withDerivedTool(..., { needsSession: false }, handleProgramLoad)`, a text-channel tool (`text-tools.ts`) | inbound (new) | **MODIFIED**, same caveat as `vice_symbols_load` above — `stock-derived.ts:148` documents this tool as deliberately having "no `isInsideContainer()` branch, no `hostPathCandidates()`" today, i.e. it is already transport-agnostic. Verify at plan time whether this tool needs new plumbing or is already fine. |
+| Ghidra / dxa / host-tool artifact paths | `host-tool.mts`, `ghidra-project.mts`, `dxa-*.ts` | both | **MODIFIED** — see §5 for Ghidra specifically; dxa's file handling follows the same "stage inbound, stream outbound" shape as the six tools above. |
 
-## 1. Where the seam lives, and what it looks like
+### 1.5 Deployment / per-project machinery
 
-**New file (proposed name, not yet in the tree):** `src/mcp/vice/tool-location.mts`
+| Component | File | Disposition | Why |
+|---|---|---|---|
+| Per-project resource deployment | `src/mcp/vice/install-resources.ts` | **Very likely DELETED — flagged for owner confirmation, not asserted** | This module's entire job is "deploy the broker's host launcher scripts into *this* consuming project's `.c64-re-tools/bin/` on first use," which is the on-demand, per-project broker model the milestone explicitly retires ("one manually-started broker per **machine**... never spawned by a client"). Its `hostpath.ts` import (one of the four pinned consumers) has no purpose left once there is nothing project-scoped to deploy. The milestone's own scope list does not name this file, so treat this as a **strongly implied, not yet decided** consequence — raise it explicitly at the first planning session rather than silently deleting or silently keeping it. |
+| Repo-root's side-effect install call | `src/mcp/vice/repo-root.ts` (bottom-of-module `ensureResourcesInstalled({ root: repoRoot() })`) | **Depends on the decision above** | If `install-resources.ts` goes, this call goes with it — it exists purely to trigger deployment on first import. |
+| Broker discovery record | `broker.json` (written by `vice-broker.mts`, read by `vice-broker-client.ts`/`host-tool-client.ts`) | **DELETED** | Explicit, stated in the milestone scope: "The `broker.json` discovery record is DELETED." Every reader (`readJsonMaybe(brokerJsonPath(...))` in both client files) goes with it. |
+| Broker CLI / launcher | `src/mcp/vice/vice-broker.mts`, `resources/vice-launcher.sh` | **MODIFIED** | Still the daemon; its `--repo-root`/`--state-dir` CLI args change meaning (§4) — from "which project is this broker serving" to "where does this machine-wide broker keep its own state," and its control listener grows the new ops (§1.2). |
 
-- Added to `build.ts`'s `HOST_BOUND_ARTIFACTS` (`build.ts:42-53`), which
-  bumps that array from 10 entries to 11 and is asserted exactly
-  (`build.ts:192-205` fails loudly on an unexpected emit).
-- Exports one function, shaped like `resolvedBackend()`:
-  `resolveToolLocation(toolId, deps): { path: string | null; source:
-  "env" | "file" | "path" | "sibling" | "vendored" | "not-found"; tried:
-  string[] }`, where `deps` carries `env?`, `toolsJsonPath?` (an explicit
-  string — never self-resolved), and any per-tool probe overrides needed for
-  testing (mirrors `ResolvedBackendDeps`'s injection-seam idiom,
-  `backend-detect.mts:252-265`).
-- Precedence inside the function: `env var → tools.json entry → $PATH/sibling
-  probe → not found` (milestone decision #5, `.planning/PROJECT.md:1922-1932`).
-  This is a *reordering/wrapping* of existing per-tool logic, not new probing
-  logic — `findSiblingBinary()`, `findAcmeLib()`, `resolvedBackend()`'s own
-  `$PATH` walk, and `findDxaBinary()`'s fixed-path check all already exist
-  and must be called, not reimplemented (milestone's own explicit warning:
-  *"Minting a second detection path is the specific mistake to avoid here"*,
-  `.planning/PROJECT.md:1936-1940`).
-- **`findDxaBinary()` stays outside the env/file override layer.**
-  `host-tool.mts:126-131` states this as a deliberate, argued rule: dxa is
-  vendored and built by this project, so an override "could only ever select
-  a binary this project did not build and did not pin — a substitution this
-  seam must never allow." The new seam should special-case `dxa` (and any
-  future project-vendored tool) to skip the `env`/`file` precedence steps
-  entirely and go straight to the fixed vendored-path probe. Get this wrong
-  and the new seam silently reopens a hole the current code deliberately
-  closed.
+### 1.6 Genuinely untouched
 
-### Which existing modules must call it
+| Component | File | Why untouched |
+|---|---|---|
+| Annotation store and tool family | `anno-store.ts`, `anno-tools.ts`, `anno-*.ts` (14 modules) | Backend-independent by design already — "no emulator, no HTTP, no socket," served entirely proxy-locally against local `node:sqlite`. This milestone changes transport to the emulator; the annotation family never had one. |
+| Pure decoders | `disasm-opcodes.ts`, `disasm-decoder.ts`, `disasm-renderer.ts`, `prg-image.ts`, `block-class.ts` | Import-free of any `stock-*`/`vice*` module by design; nothing here touches a socket or a path. |
+| Single-owner launch guard | `broker-launch.mts` (`inFlight`) | The broker still spawns `x64sc` children exactly as today — nothing about *who dials the broker* changes *how the broker spawns its own children*. The synchronous check-and-set-with-no-`await`-between invariant is unrelated to this milestone and must not be touched. |
+| Stock dispatch table contents | `stock-dispatch.ts`'s `STOCK_DISPATCH_TABLE` | No tool is added, removed, or reinterpreted — "This milestone changes *how* a request and its files reach the broker... not any tool's semantics" (PROJECT.md, explicit). |
+| Three permanent stock losses | `docs/stock-hard-losses.md` | Explicitly out of scope; a transport redesign cannot recover a hardware-channel limitation. |
 
-| Module | Current resolution code (to be routed through the seam) |
-|---|---|
-| `backend-detect.mts:283` | `deps.viceBin ?? env.VICE_BIN ?? "x64sc"` |
-| `broker-launch.mts:445`, `:1523` | `process.env.VICE_BIN ?? "x64sc"` |
-| `host-tool.mts:1292` | ACME binary path |
-| `host-tool.mts:1348-1362`, `:1513-1524`, `:2534-2545` | `GHIDRA_HOME`-derived paths |
-| `host-tool.mts:2231-2245` (`findAcmeLib`) | ACME library dir candidates |
-| `host-tool.mts:2273-2311` (`findSiblingBinary`) | c1541/petcat siblings |
+---
 
-`findDxaBinary()` (`host-tool.mts:2223-2229`) is **not** rerouted through the
-`env`/`file` layers per above, but the seam should still expose it (or wrap
-it) so the *doctor* has one call surface for all seven tools, including dxa.
+## 2. The new seam — where the shared client lives (Q2, the deepest question)
 
-**Open question — should `broker-launch.mts` and `backend-detect.mts`
-literally call into the new module, or should `resolvedBackend()` itself grow
-a `toolsJsonPath` deps field and stay the sole `VICE_BIN` authority, with the
-new seam calling *it* rather than the reverse?** Both directions avoid a
-cycle (neither file currently imports the other — `backend-detect.mts` has no
-import of `host-tool.mts` or vice versa apart from the one-directional
-`host-tool.mts → backend-detect.mjs` edge already shown above). The codebase's
-own "single seam per concern" rule argues for **`resolvedBackend()` gaining
-the `tools.json` precedence step internally** (since it is already the one
-authoritative place for `x64sc` resolution, per its own header,
-`backend-detect.mts:1-23`) while the *other* six tools (ACME binary, ACME lib,
-Ghidra, c1541, petcat, dxa) route through the new seam module, which
-`host-tool.mts` already sits next to. This keeps `resolvedBackend()` as the
-one `x64sc` authority (unchanged) and makes the new module the one authority
-for everything host-tool.mts. **This is a design choice for the phase to make
-explicitly, not a fact this research measured — flagged as a decision point,
-not a gap.**
+### 2.1 The constraint, restated precisely
 
-## 2. Where the doctor runs, and the disagreement risk
+`@henols/vice-mcp` ships `src/mcp/vice/**` only (its `files[]`). `@henols/c64-re-tools` ships `src/skills/**` only. A plain `import` from a skill script into `src/mcp/vice/` resolves on **neither** distribution route: not the plugin route (both trees happen to share one checkout, but a plugin install of just one package doesn't guarantee the other is present at a resolvable location) and not the npm route (the two are separately-installed packages; nothing requires a consumer who installed `@henols/c64-re-tools` to have `@henols/vice-mcp` installed too — the installer's `--vendor` flag is opt-in precisely because that pairing is **not** assumed). This exact problem, for exactly one seam (`host-tool-client.ts`), is already solved in this codebase and already has a name for its own header comment to point at: `src/skills/c64-ram-capture/scripts/mcp-module.mjs`'s three-rung resolution ladder (`VICE_MCP_DIR` override → in-repo relative path → `require.resolve()` against the published `@henols/vice-mcp` package) plus a subprocess spawn (`process.execPath <resolved-path> run --tool <id> --args <json>`).
 
-**The doctor is a plain host-side process, and it must call the *same*
-compiled artifacts the broker calls — not re-import unbuilt `.mts` source and
-not reimplement any probe.** Concretely:
+### 2.2 Options considered
 
-- The doctor's own entry point cannot be a `.ts` file requiring Node ≥24
-  type-stripping (`bin.vice-mcp` → `vice-proxy.ts`,
-  `src/mcp/vice/package.json:6-9`, `engines.node: >=24.0.0`,
-  `package.json:104-106`) — the milestone states this as a hard constraint,
-  not a preference (`.planning/PROJECT.md:1938-1944`).
-- `resources/*.mjs` is already **plain, type-stripped, ES2022 JavaScript** —
-  the committed output of `build.ts`'s `tsc` pass
-  (`GENERATED_BANNER`, `build.ts:60-69`). It runs on any Node capable of
-  ES2022 modules, with no type-stripping needed at all. This is the doctor's
-  way out of the Node-version bind: **author the doctor's CLI entry as a new
-  host-bound `.mts` file** (mirroring `vice-broker.mts`'s and `host-tool.mts`'s
-  own bottom-of-file CLI blocks — see `vice-broker.mts:121-150`'s `parseArgs()`
-  and `host-tool.mts:2991-3018`'s `run --repo-root <path> --request <json>`
-  CLI), add it to `HOST_BOUND_ARTIFACTS`, and let `build.ts` emit a plain
-  `.mjs` that needs no type-stripping to run. Ship it as a **second `bin`
-  entry** in `src/mcp/vice/package.json` (today only `vice-mcp` →
-  `vice-proxy.ts`, `package.json:6-9`) pointing at the compiled artifact under
-  `resources/`.
-- **Crucially, the doctor imports the same compiled `resources/*.mjs` modules
-  the broker imports** — `resolvedBackend` from `backend-detect.mjs`, and the
-  probe functions from the new `tool-location.mjs` (and, transitively,
-  whatever of `host-tool.mts`'s probe functions the seam wraps). This is what
-  answers Q2 directly: **yes, the doctor can call the resolution seam
-  in-process, host-side, with no broker round trip, and get the identical
-  answer — because it is calling the exact same function, not a
-  reimplementation.** The risk named in the prompt ("a doctor that can
-  disagree with the real refusal") is avoided by construction, not by
-  cross-checking two independent probes.
+**(a) Extend the existing resolve-then-spawn pattern.** The shared client module lives in `src/mcp/vice/` (same package as `vice-proxy.ts`, `stock-connect.ts`). Same-package callers (`vice-proxy.ts`, `stock-connect.ts`, `dxa-run.ts`, `ghidra-run.ts`) `import` it directly — an ordinary in-package value import, zero cross-package concern. Skill scripts in the *other* package reach it exactly as `acme.mjs`/`packer-finding.mjs`/`vsf-slice.mjs` already reach `host-tool-client.ts` today: `resolveMcpModule("broker-client.ts")` (or whatever the file is named) via `mcp-module.mjs`'s existing ladder, then `spawn(process.execPath, [resolvedPath, "run", "--op", opId, "--args", json])`, reading one JSON line back from stdout — the module grows its own `IS_ENTRY_POINT` CLI block exactly as `host-tool-client.ts` already has one.
 
-### Memoisation is the one place this needs care
+**(b) Duplicate the client into both packages.** Copy the dial/handshake/framing logic into a second file under `src/skills/<shared>/`. Rejected: this is precisely the anti-pattern this codebase has direct, named history of and actively guards against — `.planning/codebase/ARCHITECTURE.md`'s own "Anti-Patterns" section opens with "Re-deriving a cross-cutting seam locally," citing `mcpHost()`'s three inlined copies as the concrete incident that motivated consolidating it into one file. A wire-protocol client is exactly the class of seam a silent two-copy divergence would break invisibly (one side updates the dial order or the frame shape, the other doesn't, and the failure mode is a hang or a malformed frame, not a compile error).
 
-`resolvedBackend()` and `findSiblingBinary()` are both **memoised per process
-lifetime** (`backend-detect.mts:271-277`'s `memoisedResult`;
-`host-tool.mts:2260-2271`'s `siblingBinaryMemo`, including a documented
-"a `null` answer is memoised too" rule). This is correct and desired *inside
-a single long-running broker* — it is explicitly *not* correct to import if
-copied into a long-lived doctor daemon. It is a non-issue for a **doctor
-invoked as a one-shot CLI**, since a fresh process means a fresh, empty memo
-on every run — which is exactly the behaviour a "check what's missing right
-now" command wants. State this explicitly as a constraint on the doctor's
-shape: **it must be a one-shot process, never a resident/watch-mode process**,
-or the memoisation semantics that are safe for the broker become stale
-answers for the doctor.
+**(c) Make one package `npm depend` on the other.** Rejected on two independent grounds. First, it is backwards-incompatible with an existing, deliberate decoupling: CLAUDE.md records that `installer/bin/cli.mjs`'s `npm install -D @henols/vice-mcp` "runs only behind the explicit `--vendor` opt-in" — i.e. `@henols/c64-re-tools` is *designed* to not require `@henols/vice-mcp`. Second, and more fatally, it doesn't even work on the **plugin** distribution route: a Claude Code plugin install copies files from `.claude-plugin/plugin.json`'s declared skill/MCP paths, it does not run `npm install` for either package's `package.json` dependency list, so a declared `dependencies` entry is simply never fetched or resolved on that route regardless of what it says — this is the exact same "resolves on neither route" problem `mcp-module.mjs`'s own header already documents, restated as a dependency edge instead of a bare import.
 
-`resolvedBackend()`'s cache-eligibility path also takes an *optional*
-`supervisorDir` (`backend-detect.mts:283`, `deps.supervisorDir`) for the
-on-disk `backend.json` capability cache. The doctor should almost certainly
-**not** pass a `supervisorDir` at all — persisting a capability cache from a
-doctor run that never actually connects to a live VICE instance would write a
-half-true record (identity, no `versionQuad`) into the same file the broker
-maintains, for no benefit. Passing `deps.supervisorDir` unset makes this a
-pure no-op there (`backend-detect.mts:82-88`: *"When supervisorDir is omitted
-entirely, every cache read/write below is a no-op"*) — cite this behaviour
-explicitly in the doctor's own header so a future reader does not "helpfully"
-wire it up.
+**(d) Ship the client as a third package.** Rejected as unnecessary complexity that solves nothing option (a) doesn't already solve. It adds a third publish target and a third version-compatibility surface (two packages to keep in lockstep becomes three), and it still needs the **same** disk-based resolution ladder for the plugin-install route (a third package has no npm-dependency resolution on that route either, for the identical reason (c) fails) — so you would end up maintaining *both* a package boundary and a ladder, for a module small enough that the ladder alone already suffices.
 
-## 3. The prerequisite declaration and its consumers
+### 2.3 Recommendation
 
-**Format: plain JSON (or equivalently simple, dependency-free data — not
-TypeScript, not YAML requiring a parser dependency).** This follows directly
-from how the installer package already handles the identical Node-floor
-problem: `installer/bin/cli.mjs:32-48` explicitly does **not** import
-`src/mcp/vice/version.ts` (the project's real "single version-resolution
-seam") because the installer targets Node ≥18
-(`installer/package.json:15-17`) and cannot type-strip a `.ts` import the
-way the `vice-mcp` package's Node ≥24 runtime can — it hand-copies one
-literal (`MCP_DEV_PLACEHOLDER`) instead, with a comment explaining the
-disclosed divergence. **The prerequisite declaration will hit the exact same
-wall if it is authored as a `.ts`/`.mts` module**, because its three named
-consumers — the doctor (old-Node CLI), the README generator, and
-`host-tool.mts`'s refusal messages — do not share one Node floor. A plain
-`.json` file sidesteps this entirely: every consumer can `JSON.parse` it with
-zero dependency and zero Node-version requirement.
+**Use (a).** Concretely:
 
-### The three consumers, concretely
+- **Consolidate, don't add a fourth file.** `vice-broker-client.ts` (control-plane dial/session primitives) and `host-tool-client.ts` (the resolve-then-spawn CLI pattern) already do almost exactly the two halves of what the new client needs. Fold the new dial-order-and-fixed-port logic, the `attach` op, and the `file_transfer` op into **one** successor module in `src/mcp/vice/` — name it, e.g., `broker-client.ts` — rather than inventing a third sibling. This keeps "exactly one module owns dialling the endpoint and speaking the wire protocol" literally true by file count, not just by convention.
+- **Same-package callers import it directly.** `vice-proxy.ts` (the stateful MCP session — opened once at server startup, held for the process's life), `stock-connect.ts` (the low-level socket-acquisition step `ensureStockSession()`'s `deps.ensureLease` delegates to), `dxa-run.ts`, `ghidra-run.ts` — all same-package, all ordinary value imports, zero new packaging concern.
+- **Cross-package callers spawn it.** Every skill script that needs a stateless call (disk read/write, symbol/label conversion, RAM-capture slicing, ACME build, host-tool artifact fetch) resolves it via `mcp-module.mjs`'s **unchanged** ladder and spawns it exactly as `host-tool-client.ts`'s current `IS_ENTRY_POINT` block already demonstrates. No change to `mcp-module.mjs` itself is needed — it takes a filename and returns a path; it has no opinion about what the file does. `installer/skills/**` (the synced copy) inherits this for free the same way it inherits everything else, via `installer/scripts/sync-skills.mjs`.
+- **No `build.ts` change for this module.** It is a plain `.ts` file (not `.mts`) — it runs unbuilt under Node's native type-stripping wherever the calling process's Node lives (container for the MCP server, whatever Node is on `$PATH` for a spawned skill script), exactly like every other container-side `stock-*.ts` module today. The **broker-side** half of the new ops (the `attach`/`file_transfer` handlers in `broker-control.mts`/`vice-broker.mts`) is already inside the existing `HOST_BOUND_ARTIFACTS` compiled set (`broker-control.mjs`, `vice-broker.mjs` are already listed in `build.ts`) — extending those two files' contents needs no new entry in that array.
 
-1. **The doctor.** Reads the declaration to know what to probe and what each
-   tool unblocks per skill; calls `resolveToolLocation()` per tool; renders
-   the capability-mapped report.
-2. **Runtime refusal messages in `host-tool.mts`.** Today these are inline
-   string literals at the point of refusal — e.g. `host-tool.mts:1352`
-   (`` `host_tool "ghidra.analyze" requires the GHIDRA_HOME environment
-   variable...` ``), `:1362`, `:1472`, `:1517`, `:1559`, `:1634`. **These
-   should NOT be rewritten to interpolate the declaration at runtime** — that
-   would add a JSON-read-and-template step to the hot refusal path for no
-   real benefit, and would risk the refusal text silently drifting from what
-   the doctor reports if the interpolation logic itself diverges. The safer
-   integration is the reverse: the declaration's per-tool "remedy" text
-   should be **authored to match** these existing refusal strings (a
-   cross-check test, not a runtime coupling), so a reader who hits the live
-   refusal and a reader who runs the doctor see consistent guidance without
-   the refusal path taking on a new dependency. This is consistent with the
-   milestone's own framing of README generation as "guarded **semantically**,
-   not byte-identically" (`.planning/PROJECT.md:1965-1968`) — the same
-   semantic-not-literal relationship should hold here.
-3. **README.md's install table generator.** Today `README.md`'s per-distro
-   VICE table is entirely hand-kept (`README.md:101-110`); there is no
-   equivalent table for ACME or Ghidra there at all — ACME's install guidance
-   lives separately, in `src/skills/acme-build/SKILL.md:211,254` (prefix list
-   and a table row). The generator's job is to **produce** (or verify) these
-   tables from the one declaration, closing the milestone's named
-   fragmentation (*"today that knowledge is split across README.md's
-   hand-kept per-distro tables, acme-build/SKILL.md's prefix list, and
-   inline refusal strings in host-tool.mts — four places that can disagree"*,
-   `.planning/PROJECT.md:1949-1953`).
+---
 
-### Does the declaration need to be in `files[]`?
+## 3. Data flow, both directions, module by module
 
-- **`src/mcp/vice/package.json`'s `files[]`: yes, if the doctor's compiled
-  `.mjs` entry (or `host-tool.mjs`, transitively) reads it at runtime.**
-  The published tarball only ships what `files[]` lists
-  (`package.json:10-99`) plus the whole `resources/` directory
-  (`package.json:98`, the line reading `"resources"`). A `.json` data file
-  living inside `src/mcp/vice/` needs its own `files[]` entry (like
-  `anno-regbits.json` already has at `package.json:66`, or
-  `tools-manifest.stock.json` at `package.json:97`) — it will not ship
-  automatically just by existing in the source tree, and it will not be
-  covered by the `"resources"` entry unless it is physically placed inside
-  `resources/` (which would be a category error: it is authored/curated data,
-  not a build artifact, so it should NOT go through `build.ts`'s staging/
-  banner/atomic-rename pipeline, and should NOT live inside the directory
-  `resources-sync.test.ts` walks looking for stale builds).
-- **`installer/package.json`'s `files[]` (`bin/`, `skills/`, `README.md`,
-  `THIRD-PARTY-NOTICES.md`, `installer/package.json:9-14`): only if the
-  installer's own README generator or CLI reads the declaration directly.**
-  Given the installer targets Node ≥18 and already avoids importing
-  `vice-mcp`'s TS seams for exactly this reason (`cli.mjs:32-48`), if the
-  installer needs the declaration (e.g. to print "what you'll need" at
-  install time) it should read it as **plain JSON via `fs.readFileSync` +
-  `JSON.parse`**, never via a TypeScript import — and the file must then be
-  vendored into the installer package's own `files[]` (most likely by
-  `scripts/sync-skills.mjs`'s existing copy step, or a new equivalent), not
-  imported cross-package at publish time. **Open question: does the
-  installer actually need to consume the declaration in v1.1.0, or is that
-  out of scope ("No install path is added, removed or collapsed",
-  `.planning/PROJECT.md:1972-1974`)?** The milestone's own scoping note
-  suggests the installer's *install paths* stay untouched — reading a
-  declaration to print information is not an install-path change, but this
-  is a judgment call the phase should make explicitly, not something this
-  research can settle from the tree as written.
+### 3.1 Outbound: `vice_snapshot_save`
 
-## 4. Build order
+1. `vice-proxy.ts` receives `tools/call` for `vice_snapshot_save`, routes to `stockDispatch.dispatchStock("vice_snapshot_save", args, deps)`.
+2. `stock-dispatch.ts`'s `ensureStockSession(deps)` resolves the session via `deps.ensureLease()` — under the new design this calls the consolidated `broker-client.ts`'s `attach()`, which dials the fixed port in the fixed candidate order, sends the `attach` control line, and receives back a relayed duplex stream standing in for the emulator's binmon socket (see §2.3 and the design note in §3.3). `stock-connect.ts` wraps it exactly as it wraps a real `net.Socket` today.
+3. `stock-machine.ts`'s `handleSnapshotSave()` builds the `.vsf` target name via `snapshotPathFor(name)` — **this function's role changes**: today it returns a **container path** later translated to a host path by `withEmulatorSidePath()` (deleted, §1.1); after this milestone it instead asks `broker-client.ts` for a **broker-native staging path** scoped to this session (a new client call, e.g. `requestStagingPath(sessionId, "snapshot", name)`), which the broker answers without the client needing to know or care what that path looks like.
+4. The DUMP (0x41) request is sent over the relayed binmon stream (`stock-protocol.ts`, unchanged) naming that broker-native path. The emulator, a plain child process of the broker, writes the `.vsf` at that path on **its own** (the broker's) local disk — no translation needed anywhere, because the path was never anything but broker-native.
+5. On a successful DUMP reply, `handleSnapshotSave()` calls the new client's stateless fetch op (e.g. `fetchStagedFile(sessionId, path)`) — a **separate, short-lived connection** to the same fixed port (open/send/receive/close), carrying the session id so the broker knows which staging area to read from.
+6. The broker streams the file's bytes back in the response; the client-side handler writes them under `.c64-re-tools/snapshots/<name>.vsf` (the **existing** per-kind subdirectory — PROJECT.md's decision "files land in the existing per-kind subdirectories... this milestone does not reopen it").
+7. The tool result carries the **local** path (`.c64-re-tools/snapshots/<name>.vsf`), never a broker-side path.
+8. Broker-side staged-file lifetime and deletion: see §4 — the broker, not the client, owns cleaning up its own staging copy once the fetch completes (or on session close, or via an age-based sweep for a crashed client that never fetched).
 
-Dependencies flow one direction: the declaration and the resolver are
-data/logic that everything else consumes; the doctor and the README generator
-are consumers. Suggested phase sequence:
+### 3.2 Inbound: `vice_disk_attach`
 
-1. **The prerequisite declaration (data only).** New file, e.g.
-   `src/mcp/vice/tools.declaration.json` (name TBD by the phase). No code
-   changes to `host-tool.mts` or `backend-detect.mts` yet. Content: per tool
-   (`x64sc`, `c1541`, `petcat`, ACME binary, ACME library dir, Ghidra, dxa) —
-   version floor (where known), which skill(s)/MCP capability it unblocks,
-   per-platform remedy text. Cross-check its remedy strings against the
-   existing inline refusal messages listed in §3 as part of this phase's
-   acceptance, not a later one.
-2. **The location-resolution seam (`tool-location.mts`), new module, added
-   to `HOST_BOUND_ARTIFACTS`.** Depends on nothing from step 1 structurally
-   (the resolver's precedence logic — env → `tools.json` → probe — is
-   independent of the *declaration's* content), but should be built with the
-   declaration's tool-id vocabulary already fixed, so the two agree on names.
-   This step also defines `tools.json`'s own schema (the *user-facing*,
-   `.c64-re-tools/tools.json` override file — distinct from the
-   *declaration*, which is developer-authored and committed). Unit-testable
-   directly against its own unbuilt `.mts` source, following
-   `backend-detect.test.ts`'s own precedent of importing `./backend-detect.mts`
-   directly rather than only through the control-plane.
-3. **Wire the seam into existing consumers.** Modify `host-tool.mts`'s five
-   resolution sites (§1's table) and, per the open design question in §1,
-   either `resolvedBackend()` internally or `broker-launch.mts`'s two
-   `VICE_BIN` reads. This is the first step that touches
-   `resources-sync.test.ts`-guarded files, so it is also the first step that
-   requires `node build.ts` to be re-run and the diff of `resources/*.mjs`
-   committed.
-4. **The doctor CLI.** Depends on steps 1-3 existing: it reads the
-   declaration (step 1) to know what to probe and how to describe it, and
-   calls the seam (steps 2-3) to get real answers. New host-bound `.mts`
-   entry point, new `HOST_BOUND_ARTIFACTS` member, new `bin` entry in
-   `src/mcp/vice/package.json`.
-5. **The README generator.** Depends on step 1 (the declaration) only,
-   structurally — but should land after step 4 so it can borrow the doctor's
-   own per-tool descriptions rather than inventing a third rendering of the
-   same data. Guarded semantically, per the milestone's own instruction
-   (`.planning/PROJECT.md:1965-1968`), not byte-for-byte.
+1. Caller supplies a **local** `.d64` path (already on the client's own filesystem, e.g. a workspace file the container can see directly).
+2. `stock-machine.ts`'s `handleDiskAttach()` reads the local file's bytes itself (`node:fs`, same process — no seam needed for *this* read, since the file is already local to the client).
+3. It calls the new client's stateless upload op (e.g. `stageFile(sessionId, bytes, hintName)`) — one connection, one request carrying the bytes, one response carrying the broker-native staged path, then close.
+4. The broker writes the bytes to its own per-session staging directory (§4) and returns that absolute broker-native path in the response.
+5. `handleDiskAttach()` embeds that broker-native path in the AUTOSTART (0xdd) request body, sent over the same relayed binmon stream (`stock-protocol.ts`, unchanged) the session already has open.
+6. `x64sc`, the broker's own child process, opens the file directly off the broker's local disk — again no translation, because the path handed to it was always broker-native.
+7. Cleanup: the broker may delete the staged upload once the AUTOSTART reply confirms it was consumed, or retain it for the life of the session (a re-attach of the same disk shouldn't need a second upload) — this is a real design choice for the plan, not settled by this research; §4 states the constraint the choice must satisfy (an orphan sweep must exist regardless of which policy is picked).
 
-**New components:** the declaration file, the `tool-location.mts` seam
-module, the doctor CLI entry (`.mts` + compiled `.mjs` + new `bin` entry), the
-README generator script, a `tools.json` schema/loader, a `tools.json` template
-writer ("the doctor writes a commented template on request",
-`.planning/PROJECT.md:1954-1955`).
+### 3.3 The design decision this trace depends on, made explicit
 
-**Modified components:** `build.ts` (`HOST_BOUND_ARTIFACTS` array, twice —
-once for the seam, once for the doctor entry), `host-tool.mts` (five
-resolution sites rerouted through the seam), `backend-detect.mts` and/or
-`broker-launch.mts` (per the §1 open design question), `src/mcp/vice/
-package.json` (`files[]` gains the declaration; `bin` gains the doctor
-entry), possibly `installer/package.json`'s `files[]` (open question, §3),
-`README.md` (becomes generated/verified rather than hand-kept, at least for
-the VICE table), `src/skills/acme-build/SKILL.md` (its prefix list becomes a
-candidate for sourcing from the same declaration rather than being a fourth
-hand-kept copy — not required by the milestone but worth flagging as the
-same fragmentation class).
+The trace above assumes: **one long-lived relayed connection carries binmon bytes for the life of an MCP session; file transfer rides separate, short-lived, session-tagged stateless connections to the same fixed port.** This is a recommendation, not something already settled in the codebase, made for a concrete reason: file bytes never travel over the binmon wire at all, even today — VICE performs its own local disk I/O when it executes DUMP/UNDUMP/AUTOSTART, and the wire only ever carries a *filename*. Interleaving JSON control frames or raw file bytes into the same physical stream as `stock-protocol.ts`'s binmon frames would require inventing an outer multiplexing envelope with no existing precedent in this codebase and would force a change to `stock-protocol.ts` itself (violating "the one module that handles node:net and binary-monitor bytes" by making it also handle an envelope around those bytes). Two logical uses of **one fixed endpoint**, realized as (potentially) more than one physical TCP connection tagged by a shared session id, satisfies "one broker, one socket" as "one place everything is reached," without inventing new framing inside the wire whose parsing correctness is exactly what CLAUDE.md singles out as load-bearing. **Flag this explicitly for the first planning session**: if the milestone intends literal single-physical-socket multiplexing, that is a materially larger and riskier build (a new envelope format, a change to `stock-protocol.ts`'s socket-consumption contract, and new tests for frame interleaving) and should be scoped as its own phase rather than assumed.
 
-## 5. What must NOT change
+---
 
-Every one of these is a named, tested invariant in the tree today — not
-general advice:
+## 4. What the broker must now own that it did not before
 
-- **The broker's synchronous `inFlight` launch guard
-  (`broker-launch.mts:80-94`, checked at `:574-579` and `:679-684`).**
-  `backend-detect.mts`'s own header states this explicitly:
-  *"Do not call resolvedBackend() from inside broker-launch.mts's `inFlight`
-  single-owner launch guard. This still performs filesystem I/O... anything
-  that can block inside that synchronous check-and-set window is the exact
-  failure class the 2026-08-01 triple-launch outage came from"*
-  (`backend-detect.mts:37-43`). **The new seam inherits this constraint
-  exactly** — it also performs filesystem I/O (`tools.json` read, plus
-  whatever probes it wraps), and must never be called from inside that
-  synchronous window either. If `broker-launch.mts` is one of the modules
-  rerouted through the seam (§1's open question), this is the single most
-  important thing to get right.
-- **`resources-sync.test.ts`'s byte-identical build comparison** — every new
-  `HOST_BOUND_ARTIFACTS` addition (the seam, the doctor entry) must be
-  produced by `node build.ts` and the resulting `resources/*.mjs` committed;
-  a hand-edited `resources/*.mjs` fails this test outright, by design
-  (`resources-sync.test.ts:1-8`).
-- **Memoisation semantics of `resolvedBackend()` and `findSiblingBinary()`**
-  — both are correct *because* they are per-process, including a memoised
-  `null`. The new seam must either delegate to these functions unchanged
-  (preferred) or, if it introduces its own memoisation layer, must not
-  contradict them (e.g. must not re-derive a `$PATH` walk that could answer
-  differently on a second call within the same broker process).
-- **The container-out seam for spawning.** `host-tool.mts` is "the ONE place
-  that turns an untrusted wire request into a real child process on the
-  HOST" (`host-tool.mts:3-11`) and does so only via `spawn` (async, never
-  `spawnSync`, never a shell string — `host-tool.mts:22-25`). Nothing about
-  location resolution should introduce a *second* spawn site. The seam
-  resolves paths; it must never itself launch a probe subprocess outside the
-  existing `spawnAndRecordInstance`/`runHostTool` spawn points — a
-  version-probe subprocess (explicitly withdrawn already, per
-  `host-tool.mts:2256-2257`: *"No version probe: deliberately withdrawn by
-  the project owner — this stays a name-and-location probe only and must not
-  gain one back"*) would violate both this rule and a standing owner
-  decision in one move.
-- **`findDxaBinary()`'s immunity to override** (`host-tool.mts:126-131`,
-  §1 above) — do not let the new `env → file → probe` precedence chain apply
-  to a project-vendored, project-built binary.
-- **The never-auto-install rule and its three carve-outs**
-  (`CLAUDE.md`'s "Dependency" bullet; restated as unchanged by the milestone,
-  `.planning/PROJECT.md:1901-1906`). The doctor detects and reports; it must
-  never invoke a package manager, never fetch-and-build, and never `npx -y` a
-  third-party package on a user's behalf. This is explicitly *not*
-  re-litigated by this milestone.
-- **The seven-synchronized-edit-sites discipline for `HostToolId`**
-  (`host-tool.mts:140-166`, enforced by `host-tool.test.ts`'s "both-directions
-  census"). The doctor probing ACME/Ghidra/c1541/petcat/dxa/x64sc does **not**
-  require adding any of them as a new `HostToolId` — they already have
-  dedicated probe functions outside that allowlist (`findAcmeLib`,
-  `findDxaBinary`, `findSiblingBinary`, `resolvedBackend`). Do not conflate
-  "the doctor needs to check this tool" with "this tool needs a new
-  `host_tool` wire operation" — the milestone is explicit that this is a
-  reporting/location surface over existing probes, not a new capability
-  (`.planning/PROJECT.md:1976-1980`).
+| New responsibility | Where it lives (recommended) | Why it's new |
+|---|---|---|
+| Per-connection session state, keyed to the connection rather than a lease id alone | Extends `broker-state.mts`'s existing `InstanceRecord` map — no new *kind* of state, but the key space changes: today a grant/lease is scoped to a control-plane connection that is itself scoped to **one project's** broker instance; tomorrow one broker's map holds sessions from **many unrelated projects** simultaneously, with no project identity implied by which state directory they're reading. | "One broker for every project on the machine" — the broker can no longer assume a 1:1 relationship between itself and the project whose files it's touching. |
+| A server-side staging area for transferred files | A **new** directory tree under the broker's own machine-level state root (not `.c64-re-tools/` — that is now exclusively the *client's* directory), e.g. `<broker-state-root>/sessions/<session-id>/{uploads,downloads}/` for stateful sessions and `<broker-state-root>/requests/<request-id>/` for stateless (skill-script) calls. | Files now physically land on the broker's disk before/after crossing the wire; nothing about today's per-project `.vice-supervisor`/`.c64-re-tools/supervisor` layout anticipated holding arbitrary uploaded/staged file bytes for a project it has no other relationship to. |
+| Cleanup ownership for staged files | A close handler on the stateful connection (mirrors the existing "connection close IS the release" discipline in `broker-control.mts`'s `attachControlProtocol()`) deletes that session's staging directory; a stateless request deletes its own request-scoped scratch immediately after the response is fully written; a periodic age-based sweep is the backstop for a broker crash that skips both close and completion events. | Today, nothing sweeps `.c64-re-tools/` at all — it is the user's own project directory, left alone by convention. The broker's *own* staging area has no such owner unless the broker itself is one, because the client that produced the bytes is (by design) no longer able to see or clean up anything on the broker's filesystem. |
+| Instance lifecycle keyed to connections, not projects | Already the direction `HeldLease`/`BrokerControlSession` point in today ("the connection IS the lease and the open IS the claim") — this generalizes without a new *principle*, only without a *project-rooted* state directory backing it. | No new mechanism needed, just no more assumption that a grant's `supervisor_dir` sits inside any particular project's tree. |
+| A machine-level (not project-level) default state directory | `vice-broker.mts`'s `parseArgs()` already accepts `--state-dir`; its **default** changes from a project-relative `toolsDir()`-derived path to a machine-scoped default (e.g. an XDG-style state directory, or a path a systemd unit template pins explicitly) — a real, if small, code change, not merely a documentation update. | The whole premise of `repo-root.ts`'s `toolsDir()`/`supervisorDir()` is "where is *this project's* tool-written root" — a manually-started, machine-wide broker has no such project to root itself in at startup at all. |
 
-## Open Questions (not determined from the tree — do not guess these away)
+---
 
-- Whether `resolvedBackend()` itself should gain the `tools.json` precedence
-  step internally (keeping it the sole `x64sc` authority) versus the new
-  seam wrapping it externally (§1). Both avoid a cycle; this is a design
-  call for the phase, not a fact this research found in the code.
-- Whether the installer package needs to consume the declaration at all in
-  this milestone, or whether that is out of scope under "no install path is
-  added, removed or collapsed" (§3). The milestone's text is ambiguous
-  between "the installer prints prerequisite info" (arguably in scope, not
-  an install-path change) and "nothing about the installer changes" (also a
-  defensible reading).
-- The exact filename/location for the declaration and for `tool-location.mts`
-  are proposals in this document, not settled names — nothing in the tree
-  today names them, so the phase is free to choose, but should pick names
-  consistent with the existing `*-detect.mts` / `*-tool.mts` naming pattern.
-- Whether `vice.json`/`tools.json`'s template-writing behavior ("the doctor
-  writes a commented template on request", `.planning/PROJECT.md:1954-1955`)
-  needs its own schema-validation pass, or whether `resolveToolLocation()`'s
-  own defensive `isPlainObject()`-style narrowing (matching
-  `backend-detect.mts:129-131`'s existing idiom) is sufficient. Not resolved
-  by this research — a schema-validation library would be a new dependency,
-  which this codebase visibly avoids elsewhere (no `.eslintrc`, no
-  `biome.json`, hand-rolled narrowing throughout `host-tool.mts`).
+## 5. The Ghidra symlink question, answered carefully
+
+**The mechanism is removable in full; the underlying rule it satisfied is not, and must be satisfied a different way.**
+
+The dot-segment refusal (`ghidra-project.mts`'s `hasDotPrefixedSegment()`, MEASURED against real Ghidra 12.1.3: `ProjectLocator` calls `getAbsolutePath()`, never `getCanonicalPath()`, and refuses any dot-prefixed segment in the *absolutized* path it is handed) is a property of Ghidra itself and applies **wherever the run physically lands** — this does not go away because the transport changed. What goes away is the specific **reason** this project needed the symlink trick at all: `ensureGhidraRunsHandle()` exists solely to let Ghidra's run data live *physically inside* `.c64-re-tools/` (a project's dotted, single-tool-written-root convention, D-33) while presenting Ghidra a **non-dotted alias** (`<repoRoot>/c64-re-tools`) that both a container and a host process could resolve to the same bytes across a bind mount.
+
+Once Ghidra runs entirely broker-side, staged in the broker's **own** state root (§4) rather than nested inside any specific project's `.c64-re-tools/`, there is no bind-mount-reachability problem left to solve and no reason the runs root needs to sit inside a dotted directory at all — the broker is free to choose a staging root with **zero** dot-prefixed segments anywhere in its absolute path from the start (e.g. `<broker-state-root>/ghidra-runs/<run-id>/`, where `<broker-state-root>` is itself chosen without a leading dot). Ghidra accepts that path outright, with no alias, no symlink, and no per-run indirection.
+
+So, precisely:
+- **Removable, not merely relocated:** `GHIDRA_RUNS_HANDLE_TARGET`, `ensureGhidraRunsHandle()`, the broker-startup symlink-minting call in `vice-broker.mts`, and the "refuse-by-name when something unexpected occupies the handle path" logic. These exist only to reconcile "must be dot-free for Ghidra" with "must physically live inside a dotted tree for D-33" — a tension that dissolves once the second constraint no longer applies to the broker's own staging area.
+- **Relocated, not removed:** the *data* — Ghidra's actual runs directory moves from being nested under a specific project's `.c64-re-tools/runs/ghidra/` to the broker's own machine-level `ghidra-runs/` root. This is a real code change: `ghidra-project.mts`'s `ghidraRunsRoot()`/`ghidraRunsRealRoot()` currently take a caller-supplied `repoRoot` (today, the container's own project root, passed through `host-tool.mts`'s `--repo-root` argument); they need a broker-owned root instead, most likely keyed by session id rather than by any repo root at all.
+- **Kept as-is, and should be:** the pure `hasDotPrefixedSegment()` check itself, run as a cheap, free-standing assertion before every `analyzeHeadless` invocation regardless of where the runs root lives — it costs nothing and catches a future accidental dot in whatever naming scheme the broker's state root ends up using.
+- **Follow-on housekeeping this forces:** `repo-root.ts`'s own header comment maintains a literal census ("the literal string `.c64-re-tools` therefore has exactly 10 non-comment occurrences... across 6 files," one of which is `ghidra-project.mts`'s `GHIDRA_RUNS_HANDLE_TARGET`) and `repo-root.test.ts` asserts that census mechanically against the tree. Removing the symlink target changes that count and that file list — the test **should** go red the moment this change lands, and that redness is the correct, intended signal that the comment and the test both need updating in the same commit, not a regression to chase separately.
+
+---
+
+## 6. Suggested build order
+
+Each phase names its dependency on the phase(s) before it, whether it is safely incremental (the suite stays green throughout, old and new can coexist) or a forced atomic cutover (the suite cannot stay green with both mechanisms half-present), and the test(s) that will surface a break.
+
+### Phase 1 — New client module, additive only
+**Depends on:** nothing. **Shape:** incremental/safe.
+Build the consolidated `broker-client.ts` (§2.3) with the dial-order-and-fixed-port logic, and extend `broker-control.mts`'s `ControlRequestKind` with `attach` and `file_transfer` (or your chosen names), wired in `vice-broker.mts`. The **existing** `acquire`/`release`/`recycle`/`status`/`host_state`/`monitor_claim`/`monitor_release`/`host_tool` ops, `broker.json`, `hostpath.ts`/`containerpath.ts`/`stock-paths.ts`, and the direct-dial path all keep working, untouched, in parallel.
+**Tests that catch a break:** new unit tests mirroring `broker-control.mts`'s existing per-op test shape; a new cross-file wire-shape assertion (the same pattern `host-tool-client.ts`'s `HOST_TOOL_REQUEST_TIMEOUT_MS` cross-seam-ordering test already uses to keep two files' numbers from drifting) for the new ops' request/response fields.
+
+### Phase 2 — Machine-level broker deployment
+**Depends on:** nothing structurally, but sequence it early because every later phase's live testing needs a real running broker to test against. **Shape:** incremental/safe (a new start mechanism, not yet the only one).
+Change `vice-broker.mts`'s `--state-dir` default from project-relative to machine-scoped; add whatever start-up CLI/systemd-unit-template ergonomics the milestone wants for "manually started, once per machine." Retire per-project auto-deploy (`install-resources.ts`, §1.5) here **if** the owner confirms that decision at this phase's discussion — do not assume it silently.
+**Tests:** `vice-broker.test.mjs`'s startup/CLI-arg tests; a new live smoke test that starts a broker with the new default and confirms it answers on the fixed port.
+
+### Phase 3 — Monitor-channel cutover (the first genuinely atomic seam)
+**Depends on:** Phase 1 (the `attach` op must exist and be tested), Phase 2 (something to attach to). **Shape:** atomic at the seam level, even though it is one phase among many. `ensureStockSession()`'s `deps.ensureLease` is a **single choke point** by design (D-09's whole point is that there is exactly one such seam) — there is no meaningful way to migrate 30% of tool calls onto the new attach mechanism while the rest still direct-dial; every `vice_*` tool call reaches this same function. Build it behind a short-lived flag if you want a rollback lever during development, but the cut itself happens for all tools at once, not tool-by-tool.
+**Tests that catch a break:** the full `stock-*.test.ts` suite (every family handler reaches a session through this seam); `stock-dispatch.test.ts`'s D-09 refusal assertions; a new live test dialling a real broker end-to-end for a representative non-file tool (e.g. a register read) to prove the relay is byte-transparent to `stock-protocol.ts`.
+
+### Phase 4 — File-carrying tools, one at a time
+**Depends on:** Phase 3 (a live relayed connection must exist before a file-carrying tool can issue its binmon command over it) and Phase 1's `file_transfer` op. **Shape:** incremental — the six tools in §1.4 are independent of each other and can be migrated and merged individually, each swapping its `withEmulatorSidePath()` call for the stage/fetch calls traced in §3. Confirm the `vice_symbols_load`/`vice_program_load` discrepancy noted in §1.4 **before** writing a plan for them — they may need no transport change at all.
+**Tests:** `stock-machine.test.ts`, `stock-symbols.test.ts`, a new broker-side staging-area test (upload → binmon call → download round-trip, per tool), and a live test per tool against real `x64sc`.
+
+### Phase 5 — Skill-script migration
+**Depends on:** Phase 1 (the ops exist) and, for file-carrying skill calls, Phase 4. Independent of Phase 3's internal detail (skill scripts never touched `stock-connect.ts` directly). **Shape:** incremental, six-ish independent scripts (`c1541.mjs`, `petcat.mjs`, `vsf-slice.mjs`, `acme.mjs`, `packer-finding.mjs`, and whichever others call `host-tool-client.ts` today), each swapped from the old CLI verbs to the new ones on the same resolved module.
+**Tests:** `mcp-module.test.mjs` (resolution ladder unaffected, verify it stays that way), each skill's own script tests, `host-tool-transport.test.ts`'s successor.
+
+### Phase 6 — CI's bare-host route (must land before Phase 7 deletes it)
+**Depends on:** Phase 2 (CI needs something to start). **Shape:** a decision, then a small, incremental implementation. Decide how `.github/workflows/ci.yml`'s flat-runner ACME build tests keep working once `host-tool-client.ts`'s `hostToolOverHostRoute()` escape hatch is gone (§1.3): most likely, add a CI step that starts a throwaway broker before the job that needs it. Resolve this **before** Phase 7, not as a surprise discovered by a red CI run after the deletion lands.
+
+### Phase 7 — Atomic deletion cutover
+**Depends on:** Phases 3, 4, 5, 6 all landed and green. **Shape:** must be atomic, in one commit/PR. Delete `hostpath.ts`, `containerpath.ts`, `stock-paths.ts`, `broker.json` and its readers (`readBrokerLiveness`/`brokerJsonPath`/`acquireOverControlPlane`), `vice-errors.ts`'s `mcpHost()`/`activeUrl`/`LEGACY_DEFAULT_PORT`, `host-tool-client.ts`'s `isInsideContainer()` branch and `hostToolOverHostRoute()`, the old direct-dial code path in `stock-connect.ts`, and the ~30 now-dead "never import hostpath.ts" header comments (§1.1). It must be atomic because `hostpath-consumers.test.ts` asserts a **closed, exact** consumer set — a half-migrated state (some callers gone, others not) cannot produce a passing version of that test without either rewriting it mid-migration (defeating its purpose as a tripwire) or leaving it red on purpose (defeating the whole "keep the suite green" discipline). The same commit must retire or rewrite `hostpath-consumers.test.ts` itself, since its subject no longer exists.
+**Tests that tell you it worked:** `hostpath-consumers.test.ts` either deleted cleanly or rewritten to assert non-existence; `npm test`'s full glob green with **no broker running** (per this project's own standing note that a live broker deterministically reddens at least one existing test — confirm that note's target test, if it survives, still passes clean); a full live pass **with** a broker running, exercising every one of the six file-carrying tools end to end.
+
+### Phase 8 — Ghidra runs-root relocation
+**Depends on:** Phase 4 (broker-side staging must exist) and Phase 2 (a machine-level state root to relocate into). **Shape:** incremental, but its test signal is a deliberate regression, not a surprise: `repo-root.test.ts`'s literal-string census (§5) **will** go red the moment `GHIDRA_RUNS_HANDLE_TARGET` disappears — treat that redness as the checklist for what else in `repo-root.ts`'s own header comment needs rewriting in the same commit, not as evidence something broke.
+**Tests:** `ghidra-project.test.ts` (or successor), `ghidra-live.test.ts`'s symlink-guard cases (which should be **deleted**, not left red, once the mechanism they guard is gone), `repo-root.test.ts`.
+
+### Where the milestone's own falsifiable claim is checked
+PROJECT.md states the hypothesis explicitly: "the old boundary seam is gone from production code rather than bypassed." Phase 7 is where that claim is either true or false — it is the one phase whose exit criterion **is** the hypothesis, not a step toward it.
+
+---
+
+## Verifying the blast radius
+
+Both headline figures from the milestone's opening note were checked against the tree on 2026-09-19 rather than repeated on trust:
+
+- **"~38 non-test production modules touch path translation."** A plain text search for the three filenames (`hostpath`, `containerpath`, `stock-paths`) across every non-test `.ts`/`.mts` file in `src/mcp/vice/` returns **exactly 38** files — the figure is accurate as a textual measurement. However, narrowing to files that actually **`import`** one of the three (rather than merely mentioning it) returns only **6**: `containerpath.ts`, `host-tool-client.ts`, `install-resources.ts`, `stock-machine.ts`, `stock-paths.ts`, `vice-proxy.ts`. The other ~32 are `stock-*.ts`/`anno-*.ts` header comments of the form "never import `hostpath.ts`" — a deliberately maintained negative-space discipline (documenting *non*-consumption), not consumption. The actionable rewiring surface for Phase 7 is the 6; the other ~32 are a cosmetic comment-cleanup riding along in the same commit.
+- **"14 touch `host-tool-client.ts`."** Confirmed exactly: 8 files in `src/mcp/vice/` (`dxa-listing.ts`, `dxa-run.ts`, `ghidra-run.ts`, `host-tool-client.ts` itself, `host-tool.mts`, `vice-broker.mts`, plus the two generated `resources/host-tool.mjs`/`resources/vice-broker.mjs` mirrors) and 6 in `src/skills/` (`acme.mjs`, `c1541.mjs`, `petcat.mjs`, `packer-finding.mjs`, `mcp-module.mjs`, `vsf-slice.mjs`), excluding test files and excluding the `installer/skills/` synced mirror of the same 6.
+- **"76 advertised tools... six carry files by name."** `tools-manifest.stock.json` carries exactly **47** manifest-driven tools; CLAUDE.md's own stated 47+29=76 (the 29 being the `anno_*` family plus proxy-local tools registered outside the manifest loop) checks out arithmetically against that file.
+
+---
+
+*Architecture research for: v2.0.0 "One Broker, One Socket" integration*
+*Researched: 2026-09-19*
