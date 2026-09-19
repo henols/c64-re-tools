@@ -17,6 +17,7 @@
     "backend-detect.mts",
     "host-tool.mts",
     "ghidra-project.mts",
-    "tool-location.mts"
+    "tool-location.mts",
+    "broker-home.mts"
   ]
 }
