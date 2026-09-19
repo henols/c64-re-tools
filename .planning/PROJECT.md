@@ -2243,12 +2243,34 @@ on the host or inside a devcontainer.
   path had to mean the same thing on both sides. Once bytes cross the socket,
   they do not.
 
-**Measured blast radius at the open** (so the scope is not guessed at later):
-~38 non-test production modules touch path translation; 14 touch
-`host-tool-client.ts`; 76 advertised tools, of which six carry files by name —
-`vice_autostart`, `vice_disk_attach`, `vice_symbols_load`, `vice_program_load`
-(inbound), `vice_snapshot_save` (outbound) and `vice_snapshot_load` (inbound) —
-plus the Ghidra, dxa and host-tool artifact paths.
+**Measured blast radius at the open** (so the scope is not guessed at later).
+*Two figures first stated here on 2026-09-19 were re-measured during research the
+same day and were WRONG in the direction of overstating the work. The corrected
+figures are below; the originals are kept struck through so a later reader can
+see the scope shrink was measured, not argued.*
+
+- **Path translation: ~~~38 production modules~~ → SIX real importers.** The 38
+  was a textual-mention count. Only `containerpath.ts`, `host-tool-client.ts`,
+  `install-resources.ts`, `stock-machine.ts`, `stock-paths.ts` and
+  `vice-proxy.ts` actually import `hostpath.ts` / `containerpath.ts` /
+  `stock-paths.ts`. The other ~32 mentions are *"never import hostpath.ts"*
+  guard comments documenting NON-consumption — dead documentation to strip once
+  the seam is gone, not code to rewire.
+- **Host-tool seam: 14 referencing modules.** Confirmed exactly — 8 under
+  `src/mcp/vice/` (including two generated `resources/` mirrors) and 6 under
+  `src/skills/`.
+- **File-carrying tools: ~~six~~ → FOUR.** 76 tools are advertised;
+  `vice_autostart` and `vice_disk_attach` (inbound), `vice_snapshot_save`
+  (outbound) and `vice_snapshot_load` (inbound) carry files, plus the Ghidra,
+  dxa and host-tool artifact paths. **`vice_symbols_load` and
+  `vice_program_load` were listed here in error and are NOT file-carrying.**
+  `vice_program_load` refuses a filename outright — it takes an enumerated
+  subject id and says so in its own refusal text
+  (`src/mcp/vice/text-tools.ts:859`); `vice_symbols_load` reads its file
+  client-side with `readFileSync` under `needsSession: false`
+  (`src/mcp/vice/stock-symbols.ts:350`, `stock-dispatch.ts:780`) and needs no
+  transfer either before or after this redesign. **No phase should plan
+  file-transfer work for either.**
 
 **Decided at the open, recorded so they are not re-litigated:**
 
@@ -2256,6 +2278,21 @@ plus the Ghidra, dxa and host-tool artifact paths.
   subdirectories** under `.c64-re-tools/` (`snapshots/`, `runs/ghidra/`, and so
   on), not in one new inbox folder. That layout is already the single
   tool-written root (D-33) and this milestone does not reopen it.
+- **`PKG-04` is REVERSED at this open: the broker no longer binds `0.0.0.0`.**
+  Owner decision, 2026-09-19. Deleting `broker.json` deletes the only
+  distribution channel for the per-boot capability token, and the same socket
+  now carries file bytes and all skill-script traffic — a materially wider
+  surface than the acquire/release/recycle-only plane `PKG-04` accepted the
+  wildcard bind for on 2026-08-22. Rather than invent a new way to ship a
+  secret, **the bind is narrowed and the token is dropped**: the broker listens
+  on loopback plus the container bridge gateway address(es), enumerated at
+  startup, so the LAN cannot reach it and the token has no job left. This is a
+  stronger posture than today's `0.0.0.0`-plus-token, and it keeps the owner's
+  "no files needed to make communication possible" rule fully intact — a
+  credential file would have broken it. **The enumeration must be real**: a
+  hardcoded `172.17.0.1` is wrong, because a custom Docker network has its own
+  gateway. `PKG-04`'s row stays in Key Decisions as history; this bullet is its
+  reversal, not an amendment to it.
 - **The Ghidra symlink alias is expected to become unnecessary**, not preserved.
   The `<repoRoot>/c64-re-tools` → `.c64-re-tools` alias exists only so a Ghidra
   run's project data is physically reachable from both sides of a bind mount.
