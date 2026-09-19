@@ -5,16 +5,16 @@ milestone_name: One Broker, One Socket
 current_phase: 62
 current_phase_name: The Fixed Endpoint and the Broker That Owns the Machine
 status: executing
-stopped_at: Completed 62-04-PLAN.md
-last_updated: "2026-09-19T16:28:34.835Z"
+stopped_at: Completed 62-05-PLAN.md
+last_updated: "2026-09-19T16:50:24.000Z"
 last_activity: 2026-09-19
-last_activity_desc: Phase 62 execution started
-state_head: dd04aa194f19e2d5fa344be53a8506642dfaa5bc
+last_activity_desc: Phase 62 plan 5 of 5 executed (service definitions + never-invoke gate + README)
+state_head: 214cb330bb7724cfca1dfee4fdfa36db7c6b602d
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 5
-  completed_plans: 4
+  completed_plans: 5
   percent: 0
 carried_forward_phases:
 
@@ -47,7 +47,8 @@ because "keep working when the emulator misbehaves" is exactly what a
 connection-is-the-session broker changes the mechanics of.*
 
 **Current focus:** Phase 62 — The Fixed Endpoint and the Broker That Owns the
-Machine, plan 1 of 5 complete (2026-09-19). **Milestone v2.0.0 "One Broker, One
+Machine, all 5 of 5 plans complete (2026-09-19); phase closure/verification
+still pending. **Milestone v2.0.0 "One Broker, One
 Socket" opened 2026-09-19**, with requirements defined and the roadmap created — **Phases
 62-67**, 36/36 requirements mapped, each to exactly one phase. One
 manually-started broker per
@@ -78,10 +79,10 @@ closure still needs to be recorded as one.
 ## Current Position
 
 Phase: 62 (The Fixed Endpoint and the Broker That Owns the Machine) — EXECUTING
-Plan: 4 of 5 complete (62-04 done; 62-05 next)
-Status: Plan 62-04 complete — vice-cli.mjs binary entry (floor refusal + broker dispatch) and machine-level state fallback (BROKER-01/BROKER-06)
+Plan: 5 of 5 complete (62-05 done — all phase 62 plans executed)
+Status: Plan 62-05 complete — committed systemd unit + launchd agent, a structural gate proving neither is ever auto-applied and no client spawns the broker, and README documentation (BROKER-02/BROKER-05)
 Progress: [░░░░░░░░░░] 0% (0 of 6 v2.0.0 phases complete; Phases 62-67)
-Last activity: 2026-09-19 — Phase 62 plan 4 of 5 executed
+Last activity: 2026-09-19 — Phase 62 plan 5 of 5 executed
 
 **The milestone's exit criterion lives in Phase 66 and nowhere else.** The
 hypothesis is falsifiable: the old boundary seam must be *gone from production
@@ -470,6 +471,7 @@ Phase 66 completes.
 | Phase 62 P02 | 19min | 2 tasks | 9 files |
 | Phase 62 P03 | 70min | 2 tasks | 9 files |
 | Phase 62 P04 | 31min | 2 tasks | 10 files |
+| Phase 62 P05 | 24min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -1357,6 +1359,7 @@ Recent decisions affecting current work:
 - [Phase 62]: Plan 62-04: vice-cli.mjs's floor check reuses one exported resolveFloorMajor(manifestPath) for both the real startup path and the test's fixture-manifest assertions, rather than deriving the floor inline from an already-parsed package.json object -- one source of truth for the derivation a test also exercises directly.
 - [Phase 62]: Plan 62-04: the four state-directory precedence cases could not be unit-tested by importing parseArgs() directly from vice-broker.mts in a .test.ts (its sibling .mjs imports only exist beside the compiled artifact under resources/), so all four are proven via real spawns of the emitted artifact instead.
 - [Phase 62]: Plan 62-04: the two-project case's "two clients configured against two project directories" is proven as two independent control-plane sessions opened against the broker's own machine-level state directory, rather than by varying each session's own dial target -- there is deliberately no per-project discovery path any more under this phase's design.
+- [Phase 62]: Plan 62-05: BROKER_START_COMMAND's literal text lives in the launchd plist's leading XML comment (its functional ProgramArguments is necessarily a split array) and in the systemd unit's actual ExecStart line -- both asserted byte-identical to the exported constant by the same test.
 
 ### Pending Todos
 
@@ -2690,8 +2693,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-19T16:28:34.746Z
-Stopped at: Completed 62-04-PLAN.md
+Last session: 2026-09-19T16:49:46.944Z
+Stopped at: Completed 62-05-PLAN.md
 Resume file: None
 
 Earlier: **v2.0.0 roadmap created.** 36/36 requirements (`ENDPOINT-01..05`,

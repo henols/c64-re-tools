@@ -48,10 +48,10 @@ for re-derivation during planning:
 ### Broker — one per machine, started by the user
 
 - [x] **BROKER-01**: One broker serves every session from every project on the machine, whether the client runs on the host or in a devcontainer
-- [ ] **BROKER-02**: No client ever spawns the broker; the user starts it
+- [x] **BROKER-02**: No client ever spawns the broker; the user starts it
 - [x] **BROKER-03**: The broker listens on loopback plus the container bridge gateway address(es) it enumerates at startup, and never on `0.0.0.0` or a hardcoded gateway address
 - [x] **BROKER-04**: The broker refuses by name at startup when its port is already in use, rather than racing or silently failing
-- [ ] **BROKER-05**: A service definition ships for Linux and macOS, committed but never auto-applied, with a documented foreground command as the universal fallback
+- [x] **BROKER-05**: A service definition ships for Linux and macOS, committed but never auto-applied, with a documented foreground command as the universal fallback
 - [x] **BROKER-06**: Broker-owned state and staged files live under a machine-level root, never inside any project's `.c64-re-tools/`
 
 ### Session — the connection is the session
@@ -149,10 +149,10 @@ requirement owned by two phases or by none.
 | ENDPOINT-04 | Phase 62 | Complete |
 | ENDPOINT-05 | Phase 62 | Complete |
 | BROKER-01 | Phase 62 | Complete |
-| BROKER-02 | Phase 62 | Pending |
+| BROKER-02 | Phase 62 | Complete |
 | BROKER-03 | Phase 62 | Complete |
 | BROKER-04 | Phase 62 | Complete |
-| BROKER-05 | Phase 62 | Pending |
+| BROKER-05 | Phase 62 | Complete |
 | BROKER-06 | Phase 62 | Complete |
 | SESS-01 | Phase 63 | Pending |
 | SESS-02 | Phase 63 | Pending |

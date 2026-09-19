@@ -1985,7 +1985,7 @@ Nothing is deleted here.
      are committed and never auto-applied, with a documented foreground command
      as the universal fallback (BROKER-01, BROKER-05, BROKER-06).
 
-**Plans**: 4/5 plans executed
+**Plans**: 5/5 plans executed
 
 Plans:
 **Wave 1**
@@ -2003,7 +2003,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 62-05-PLAN.md — Two committed, never-applied service definitions, a structural gate that provably bites, and the README that names the one start command
+- [x] 62-05-PLAN.md — Two committed, never-applied service definitions, a structural gate that provably bites, and the README that names the one start command
 
 **Cross-cutting constraints:**
 
@@ -2630,7 +2630,7 @@ check. No test reads this table now.
 | 59. The Tool-Location Seam and Its Precedence Order | v1.1.0 | 5/5 | Complete | 2026-09-18 |
 | 60. The Seam Wired Into the Code That Ships | v1.1.0 | 8/8 | Complete | 2026-09-18 |
 | 61. The Install Tables Generated, and a Guard That Compares Facts | v1.1.0 | 3/3 | Complete | 2026-09-19 |
-| 62. The Fixed Endpoint and the Broker That Owns the Machine | v2.0.0 | 4/5 | In Progress | - |
+| 62. The Fixed Endpoint and the Broker That Owns the Machine | v2.0.0 | 5/5 | In Progress | - |
 | 63. The Monitor Channel Relayed, and the Connection as the Session | v2.0.0 | — | Not started | - |
 | 64. Files as Bytes, Both Directions | v2.0.0 | — | Not started | - |
 | 65. Every Skill Script Through the One Endpoint, and CI With It | v2.0.0 | — | Not started | - |
