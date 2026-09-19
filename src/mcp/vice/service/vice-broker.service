@@ -1,0 +1,44 @@
+# vice-broker.service -- a systemd USER unit for the vice broker daemon
+# (src/mcp/vice/vice-broker.mts). Reached through this fixed start command
+# (src/mcp/vice/vice-cli.mjs's `broker` subcommand):
+#   npx -y @henols/vice-mcp broker
+#
+# COMMITTED HERE BUT NEVER APPLIED BY ANY CODE IN THIS REPOSITORY. Nothing in
+# this tree runs `systemctl` on your behalf -- installing and enabling this
+# unit is a step YOU take by hand, following this repository's README
+# ("Starting the broker"). A structural gate
+# (src/mcp/vice/service-no-invoke.test.ts) asserts no module here invokes a
+# service manager, and is proven to bite on a planted violation before its
+# clean scan is ever trusted.
+#
+# ONE BROKER PER MACHINE, ONE BROKER PER LOGGED-IN USER (BROKER-01). This is
+# a --user unit, never a system unit: installing or running it needs no
+# administrative privilege, and the broker never runs with more authority
+# than the user who started it.
+#
+# NO MACHINE-SPECIFIC PATH ANYWHERE IN THIS FILE. `ExecStart` below is the
+# exact same fixed, path-free command documented everywhere else in this
+# project (README.md, the launchd agent beside this file, and the dial
+# refusal text `BROKER_START_COMMAND` exports from
+# src/mcp/vice/broker-endpoint.ts) -- it needs no per-machine rendering step.
+
+[Unit]
+Description=vice broker -- the on-demand VICE emulator broker for c64-re-tools
+Documentation=https://github.com/henols/c64-re-tools#readme
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/env npx -y @henols/vice-mcp broker
+Restart=on-failure
+RestartSec=5
+
+# Uncomment and fill in an ABSOLUTE path to a Node interpreter if this unit's
+# own execution context carries no usable `node`/`npx` on PATH -- a systemd
+# user unit does not always inherit an interactive shell's PATH the way a
+# terminal session does. This is exactly the path-less service case
+# VICE_BROKER_NODE exists for. Its value is machine-specific, so it is left
+# for you to fill in below rather than shipped as a guessed default.
+#Environment=VICE_BROKER_NODE=/path/to/your/node
+
+[Install]
+WantedBy=default.target

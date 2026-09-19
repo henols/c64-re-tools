@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  com.henols.vice-broker.plist -- a launchd AGENT definition for the vice
+  broker daemon (src/mcp/vice/vice-broker.mts, reached through
+  `npx -y @henols/vice-mcp broker`, src/mcp/vice/vice-cli.mjs's `broker`
+  subcommand).
+
+  COMMITTED HERE BUT NEVER APPLIED BY ANY CODE IN THIS REPOSITORY. Nothing in
+  this tree runs `launchctl` on your behalf -- installing and loading this
+  agent is a step YOU take by hand, following this repository's README
+  ("Starting the broker"). A structural gate
+  (src/mcp/vice/service-no-invoke.test.ts) asserts no module here invokes a
+  service manager, and is proven to bite on a planted violation before its
+  clean scan is ever trusted.
+
+  ONE BROKER PER MACHINE, ONE BROKER PER LOGGED-IN USER (BROKER-01). This is
+  a per-user LaunchAgent, never a system-wide LaunchDaemon, so installing or
+  running it needs no administrative privilege, and the broker never runs
+  with more authority than the user who started it.
+
+  NO MACHINE-SPECIFIC ABSOLUTE PATH ANYWHERE IN THIS FILE. ProgramArguments
+  below spells out the exact same fixed, path-free command documented
+  everywhere else in this project (README.md, the systemd unit beside this
+  file, and the dial refusal text BROKER_START_COMMAND exports from
+  src/mcp/vice/broker-endpoint.ts) -- it needs no per-machine rendering step.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.henols.vice-broker</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>npx</string>
+        <string>-y</string>
+        <string>@henols/vice-mcp</string>
+        <string>broker</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>~/Library/Logs/vice-broker.log</string>
+    <key>StandardErrorPath</key>
+    <string>~/Library/Logs/vice-broker.err.log</string>
+</dict>
+</plist>
