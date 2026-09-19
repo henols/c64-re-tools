@@ -41,7 +41,9 @@ import {
   type PendingAcquireEntry,
   type MonitorClaimOutcome,
   type MonitorReleaseOutcome,
+  type RelayAttachOutcome,
 } from "./broker-control.mts";
+import type { Socket } from "node:net";
 // Plan 41-03 (D-14): the channel contract's one host-bound declaration.
 import type { MonitorChannel } from "./broker-state.mts";
 // Phase 33, plan 33-06 (D-15): the profile shape is imported from its one
@@ -120,6 +122,11 @@ interface StubDeps {
   onHostState?: () => HostStateFields;
   onMonitorClaim?: (requestId: string, targetId: string, channel: MonitorChannel) => MonitorClaimOutcome;
   onMonitorRelease?: (requestId: string, targetId: string, channel: MonitorChannel) => MonitorReleaseOutcome;
+  /** Phase 63, plan 63-01: a required field on StartControlListenerOptions
+   * as of this plan -- no pre-63-01 test in this file exercises `attach`
+   * (broker-relay.test.ts is the home for that coverage), so the default
+   * below is a no-op refusal, never called by any pre-existing case here. */
+  onRelayAttach?: (targetId: string, channel: MonitorChannel, presentedHandle: string, socket: Socket, pending: Buffer) => RelayAttachOutcome;
   onHostTool?: (raw: unknown) => Promise<unknown>;
   /** Plan 62-01: the `hello` reply's injectable version override, passed
    * straight through to StartControlListenerOptions.helloVersion. Absent by
@@ -176,6 +183,8 @@ async function startTestListener(deps: StubDeps = {}): Promise<{
       monitorReleaseChannels.push(channel);
       return deps.onMonitorRelease?.(requestId, targetId, channel) ?? ({ ok: false, code: "internal" } as MonitorReleaseOutcome);
     },
+    onRelayAttach:
+      deps.onRelayAttach ?? ((): RelayAttachOutcome => ({ ok: false, code: "internal" })),
     // Phase 34, plan 34-01: a required field on StartControlListenerOptions
     // as of this plan -- no existing test in this file exercises host_tool
     // yet (task 2 adds that coverage), so this default is a no-op refusal,
@@ -442,7 +451,7 @@ async function acquireGrant(client: ReturnType<typeof makeClient>, token: string
 test("monitor_claim: an ok stub answers the monitor_claimed response kind", async () => {
   const { listener, token, monitorClaimCalls } = await startTestListener({
     onAcquire: grantingAcquire(),
-    onMonitorClaim: () => ({ ok: true }),
+    onMonitorClaim: () => ({ ok: true, handle: "test-handle" }),
   });
   const client = makeClient(listener.port);
   try {
@@ -494,7 +503,7 @@ test("monitor_claim (D-14): claiming 'text' on an instance whose 'binary' channe
       if (channel === "binary" && targetId !== "req-a") {
         return { ok: false, code: "monitor_owned", holder: { grantId: "req-a", claimedAt: 111, pid: 4242, channel: "binary" } };
       }
-      return { ok: true };
+      return { ok: true, handle: "test-handle" };
     },
   });
   const client = makeClient(listener.port);
@@ -535,7 +544,7 @@ test("monitor_claim (D-14): a 'text' claim from a second grant while a first gra
 test("monitor_claim (D-14): an unrecognised non-empty channel value is bad_request, naming both accepted values", async () => {
   const { listener, token, monitorClaimCalls } = await startTestListener({
     onAcquire: grantingAcquire(),
-    onMonitorClaim: () => ({ ok: true }),
+    onMonitorClaim: () => ({ ok: true, handle: "test-handle" }),
   });
   const client = makeClient(listener.port);
   try {
@@ -556,7 +565,7 @@ test("monitor_claim (D-14): an unrecognised non-empty channel value is bad_reque
 test("monitor_claim (D-14): no channel field at all behaves exactly as channel: 'binary' -- the backward-compatibility case", async () => {
   const { listener, token, monitorClaimChannels } = await startTestListener({
     onAcquire: grantingAcquire(),
-    onMonitorClaim: () => ({ ok: true }),
+    onMonitorClaim: () => ({ ok: true, handle: "test-handle" }),
   });
   const client = makeClient(listener.port);
   try {
@@ -628,7 +637,7 @@ test("status (D-14): hasMonitorClient is true when only the text channel is clai
 test("monitor_claim: a repeated claim from the same grant id is idempotent -- the stub answers ok both times, no conflict", async () => {
   const { listener, token, monitorClaimCalls } = await startTestListener({
     onAcquire: grantingAcquire(),
-    onMonitorClaim: (_requestId, targetId) => (targetId === "req-a" ? { ok: true } : { ok: false, code: "internal" }),
+    onMonitorClaim: (_requestId, targetId) => (targetId === "req-a" ? { ok: true, handle: "test-handle" } : { ok: false, code: "internal" }),
   });
   const client = makeClient(listener.port);
   try {
@@ -673,7 +682,7 @@ test("monitor_claim: a target_id this connection holds but the broker cannot res
 test("CR-03 monitor_claim: a connection holding grant A is DENIED when it names grant B, and the callback never runs", async () => {
   const { listener, token, monitorClaimCalls } = await startTestListener({
     onAcquire: grantingAcquire(),
-    onMonitorClaim: () => ({ ok: true }),
+    onMonitorClaim: () => ({ ok: true, handle: "test-handle" }),
   });
   const client = makeClient(listener.port);
   try {
@@ -712,7 +721,7 @@ test("CR-03 monitor_release: a connection holding grant A is DENIED when it trie
 
 test("CR-03: a connection that never acquired anything is DENIED both monitor ops, whatever target_id it names", async () => {
   const { listener, token, monitorClaimCalls, monitorReleaseCalls } = await startTestListener({
-    onMonitorClaim: () => ({ ok: true }),
+    onMonitorClaim: () => ({ ok: true, handle: "test-handle" }),
     onMonitorRelease: () => ({ ok: true }),
   });
   const client = makeClient(listener.port);
@@ -738,7 +747,7 @@ test("CR-03: a connection that never acquired anything is DENIED both monitor op
 test("CR-03: an explicit `release` drops the connection's grant, after which its own monitor ops are denied too", async () => {
   const { listener, token, monitorClaimCalls } = await startTestListener({
     onAcquire: grantingAcquire(),
-    onMonitorClaim: () => ({ ok: true }),
+    onMonitorClaim: () => ({ ok: true, handle: "test-handle" }),
   });
   const client = makeClient(listener.port);
   try {
@@ -1109,7 +1118,7 @@ test("structural: attemptAcquire()'s own comment names which half bounds which f
   assert.match(comment, /does NOT eliminate that race/i);
 });
 
-test("ControlRequestKind (34-01/62-01, A-01/D-06): now exactly nine members -- host_tool is the whole host-tool subsystem (never widened again per-tool), hello is plan 62-01's pre-token-gate handshake op", () => {
+test("ControlRequestKind (34-01/62-01/63-01, A-01/D-06): now exactly ten members -- host_tool is the whole host-tool subsystem (never widened again per-tool), hello is plan 62-01's pre-token-gate handshake op, attach is plan 63-01's post-token-gate relay handshake op", () => {
   const source = readFileSync(join(HERE, "broker-control.mts"), "utf8");
   const match = source.match(/export type ControlRequestKind = ([^;]+);/);
   assert.ok(match, "ControlRequestKind's own type declaration must be found");
@@ -1118,12 +1127,15 @@ test("ControlRequestKind (34-01/62-01, A-01/D-06): now exactly nine members -- h
   // second tool (dxa, Ghidra, c1541, petcat, cartconv, ...) is a new entry
   // in host-tool.mts's own HOST_TOOL_IDS allowlist, never a further
   // ControlRequestKind member -- this union is not widened again per-tool.
-  // Plan 62-01 (D-06/ENDPOINT-03) adds the ninth and, so far, last member:
-  // "hello", the pre-token-gate handshake op -- see handleLine()'s own
-  // dispatch-order comment for why it is answered BEFORE tokensMatch().
+  // Plan 62-01 (D-06/ENDPOINT-03) adds the ninth member: "hello", the
+  // pre-token-gate handshake op -- see handleLine()'s own dispatch-order
+  // comment for why it is answered BEFORE tokensMatch(). Plan 63-01
+  // (SESS-02) adds the tenth and, so far, last member: "attach", UNLIKE
+  // hello dispatched AFTER the token gate, in the same post-gate chain as
+  // every other target-naming op.
   assert.equal(match![1].trim(),
-    '"acquire" | "release" | "recycle" | "status" | "host_state" | "monitor_claim" | "monitor_release" | "host_tool" | "hello"',
-    "the union must be exactly the prior eight members plus plan 62-01's hello (D-06)",
+    '"acquire" | "release" | "recycle" | "status" | "host_state" | "monitor_claim" | "monitor_release" | "host_tool" | "hello" | "attach"',
+    "the union must be exactly the prior nine members plus plan 63-01's attach (SESS-02)",
   );
 });
 
@@ -1585,7 +1597,7 @@ async function startProfileRecordingListener(): Promise<{
   return { listener, token, received };
 }
 
-test("ControlRequestKind (34-01/62-01, A-01/D-06): now exactly nine members -- host_tool is a reviewed eighth op, hello is plan 62-01's reviewed ninth op, and this union is never widened again per-tool", () => {
+test("ControlRequestKind (34-01/62-01/63-01, A-01/D-06): now exactly ten members -- host_tool is a reviewed eighth op, hello is plan 62-01's reviewed ninth op, attach is plan 63-01's reviewed tenth op, and this union is never widened again PER-TOOL", () => {
   // Read off the type's own declaration in the source rather than a
   // hand-maintained list here: a second list would be the very drift this
   // asserts against. The union is a single line by convention in this file.
@@ -1597,10 +1609,10 @@ test("ControlRequestKind (34-01/62-01, A-01/D-06): now exactly nine members -- h
     .map((s) => s.trim().replace(/^"|"$/g, ""))
     .filter((s) => s !== "");
   assert.deepEqual(members,
-    ["acquire", "release", "recycle", "status", "host_state", "monitor_claim", "monitor_release", "host_tool", "hello"],
-    "the message set must be exactly the prior eight plus plan 62-01's hello (D-06) -- a genuinely reviewed " +
-      "widening, not a per-tool one: a second host tool is a new HOST_TOOL_IDS entry in host-tool.mts, never a " +
-      "tenth ControlRequestKind member",
+    ["acquire", "release", "recycle", "status", "host_state", "monitor_claim", "monitor_release", "host_tool", "hello", "attach"],
+    "the message set must be exactly the prior nine plus plan 63-01's attach (SESS-02) -- a genuinely reviewed " +
+      "widening, not a per-tool one: a second host tool is still a new HOST_TOOL_IDS entry in host-tool.mts, " +
+      "never an eleventh ControlRequestKind member",
   );
 });
 
@@ -1823,7 +1835,7 @@ test("acquire profile (33-06): the profile survives being QUEUED behind an in-fl
 
 const BROKER_CONTROL_MTS = join(HERE, "broker-control.mts");
 
-test("the ControlRequestKind union has exactly nine members including hello, and the hello arm's dispatch sits before the tokensMatch() call", () => {
+test("the ControlRequestKind union has exactly ten members including hello and attach, and the hello arm's dispatch sits before the tokensMatch() call", () => {
   const source = readFileSync(BROKER_CONTROL_MTS, "utf8");
 
   const unionMatch = source.match(/export type ControlRequestKind = ([^;]+);/);
@@ -1832,8 +1844,9 @@ test("the ControlRequestKind union has exactly nine members including hello, and
     .split("|")
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
-  assert.equal(members.length, 9, `expected 9 ControlRequestKind members, got ${members.length}: ${JSON.stringify(members)}`);
+  assert.equal(members.length, 10, `expected 10 ControlRequestKind members, got ${members.length}: ${JSON.stringify(members)}`);
   assert.ok(members.includes('"hello"'), `hello must be a member of ControlRequestKind, got ${JSON.stringify(members)}`);
+  assert.ok(members.includes('"attach"'), `attach must be a member of ControlRequestKind, got ${JSON.stringify(members)}`);
 
   const helloArmOffset = source.indexOf('req.op === "hello"');
   const tokensMatchCallOffset = source.indexOf("tokensMatch(token, opts.token)");
@@ -2083,8 +2096,9 @@ test("startControlListenerOnHosts: two listeners on two different bound addresse
       basePort: 6600,
       backend: "stock" as const,
     }),
-    onMonitorClaim: (): MonitorClaimOutcome => ({ ok: true }),
+    onMonitorClaim: (): MonitorClaimOutcome => ({ ok: true, handle: "test-handle" }),
     onMonitorRelease: (): MonitorReleaseOutcome => ({ ok: true }),
+    onRelayAttach: (): RelayAttachOutcome => ({ ok: false, code: "internal" }),
     onHostTool: async () => ({ ok: false, message: "not exercised by this test" }),
   };
 

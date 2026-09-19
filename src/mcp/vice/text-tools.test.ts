@@ -79,7 +79,7 @@ async function withStubTextServer<T>(onLine: (line: string, socket: Socket) => v
 function makeStubBrokerControl(): StockConnectBrokerControl {
   return {
     async claimMonitor() {
-      return { ok: true };
+      return { ok: true, handle: "test-handle" };
     },
     async releaseMonitor() {
       return { ok: true };

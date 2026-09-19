@@ -153,8 +153,31 @@ export interface InstanceRecord {
    * that channel and cleared by clearMonitorClient(). `pid` mirrors
    * GrantRecord.pid's own convention -- the EMULATOR CHILD PROCESS's pid
    * (this instance's own `pid` field at claim time), not the connecting
-   * client's pid, which this broker cannot observe over TCP. */
-  monitorClients: Partial<Record<MonitorChannel, { grantId: string; claimedAt: number; pid: number | null }>>;
+   * client's pid, which this broker cannot observe over TCP.
+   *
+   * Widened (Phase 63, SESS-02) with two fields neither of which existed
+   * before a relay connection could exist at all:
+   *   - `handle`: a 16-byte random hex string MINTED by
+   *     vice-broker.mts's handleMonitorClaim() at claim time (an idempotent
+   *     repeat claim from the SAME grant on the SAME channel returns the
+   *     SAME stored handle, never a fresh one). A relay connection is a
+   *     DIFFERENT socket from the control connection that holds the grant --
+   *     it carries no `requestIdForThisConnection` of its own -- so this
+   *     handle, presented on the `attach` op and checked constant-time
+   *     against this stored copy, is the only authority an attach can ever
+   *     have. Written ONCE, by the claim, and read (never re-written) by
+   *     the attach path.
+   *   - `attached`: whether a relay connection is CURRENTLY spliced to this
+   *     channel -- written by vice-broker.mts's handleRelayAttach() on a
+   *     successful splice, and the reason a SECOND attach attempt on an
+   *     already-spliced channel is refused rather than silently spliced
+   *     twice (there is exactly one emulator socket per channel to splice
+   *     to). Cleared alongside the rest of this entry by
+   *     clearMonitorClient() -- a relay that dies never leaves this
+   *     channel permanently marked attached. */
+  monitorClients: Partial<
+    Record<MonitorChannel, { grantId: string; claimedAt: number; pid: number | null; handle: string; attached: boolean }>
+  >;
   // ------------------------------------------------------------------
   // Made MANDATORY on every stock record: the SECOND, broker-allocated
   // port stock's

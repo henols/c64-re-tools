@@ -346,6 +346,11 @@ async function startFullBrokerListener(deps: FullBrokerDeps = {}): Promise<{
       (() => ({ pid: process.pid, startedAt: "2026-01-01T00:00:00Z", nodeVersion: process.version, viceBin: "x64sc", warmFloor: 3, maxInstances: 16, basePort: 6600, backend: "stock" as const })),
     onMonitorClaim: deps.onMonitorClaim ?? (() => ({ ok: false, code: "internal" })),
     onMonitorRelease: deps.onMonitorRelease ?? (() => ({ ok: false, code: "internal" })),
+    // Phase 63, plan 63-01: a required field on StartControlListenerOptions
+    // as of this plan -- this client-focused fixture never exercises
+    // `attach` itself (broker-relay.test.ts is the home for that coverage),
+    // so this stub exists only to satisfy the type.
+    onRelayAttach: () => ({ ok: false, code: "internal" as const }),
     // Phase 34, plan 34-01: a required field on StartControlListenerOptions
     // as of this plan -- this client-focused fixture never exercises
     // host_tool itself, so this stub exists only to satisfy the type.
@@ -892,7 +897,7 @@ async function heldGrantId(session: BrokerControlSession): Promise<string> {
 test("monitor_claim: claimMonitor() against a stub answering ok resolves a success outcome, and never dials a second socket", async () => {
   const { server, dir, rawLines } = await startFullBrokerListener({
     onAcquire: GRANTING_ACQUIRE,
-    onMonitorClaim: () => ({ ok: true }),
+    onMonitorClaim: () => ({ ok: true, handle: "test-handle" }),
   });
   try {
     const opened = await openBrokerControl(dir);
@@ -900,7 +905,7 @@ test("monitor_claim: claimMonitor() against a stub answering ok resolves a succe
     if (!opened.ok) return;
     const targetId = await heldGrantId(opened.session);
     const result = await opened.session.claimMonitor({ targetId });
-    assert.deepEqual(result, { ok: true });
+    assert.deepEqual(result, { ok: true, handle: "test-handle" });
     assert.ok(
       rawLines.some((l) => l.op === "monitor_claim" && l.target_id === targetId),
       `expected a monitor_claim line naming target_id ${targetId}: ${JSON.stringify(rawLines)}`,
@@ -919,7 +924,7 @@ test("monitor_claim: claimMonitor() against a stub answering ok resolves a succe
 test("monitor_claim (D-14): claimMonitor() with no channel puts 'binary' on the wire", async () => {
   const { server, dir, rawLines } = await startFullBrokerListener({
     onAcquire: GRANTING_ACQUIRE,
-    onMonitorClaim: () => ({ ok: true }),
+    onMonitorClaim: () => ({ ok: true, handle: "test-handle" }),
   });
   try {
     const opened = await openBrokerControl(dir);
@@ -927,7 +932,7 @@ test("monitor_claim (D-14): claimMonitor() with no channel puts 'binary' on the 
     if (!opened.ok) return;
     const targetId = await heldGrantId(opened.session);
     const result = await opened.session.claimMonitor({ targetId });
-    assert.deepEqual(result, { ok: true });
+    assert.deepEqual(result, { ok: true, handle: "test-handle" });
     const claimLine = rawLines.find((l) => l.op === "monitor_claim" && l.target_id === targetId);
     assert.equal(claimLine?.channel, "binary", `expected channel 'binary' on the wire: ${JSON.stringify(rawLines)}`);
     await opened.session.release();
@@ -940,7 +945,7 @@ test("monitor_claim (D-14): claimMonitor() with no channel puts 'binary' on the 
 test("monitor_claim (D-14): claimMonitor({ channel: 'text' }) puts 'text' on the wire", async () => {
   const { server, dir, rawLines } = await startFullBrokerListener({
     onAcquire: GRANTING_ACQUIRE,
-    onMonitorClaim: () => ({ ok: true }),
+    onMonitorClaim: () => ({ ok: true, handle: "test-handle" }),
   });
   try {
     const opened = await openBrokerControl(dir);
@@ -948,7 +953,7 @@ test("monitor_claim (D-14): claimMonitor({ channel: 'text' }) puts 'text' on the
     if (!opened.ok) return;
     const targetId = await heldGrantId(opened.session);
     const result = await opened.session.claimMonitor({ targetId, channel: "text" });
-    assert.deepEqual(result, { ok: true });
+    assert.deepEqual(result, { ok: true, handle: "test-handle" });
     const claimLine = rawLines.find((l) => l.op === "monitor_claim" && l.target_id === targetId);
     assert.equal(claimLine?.channel, "text", `expected channel 'text' on the wire: ${JSON.stringify(rawLines)}`);
     await opened.session.release();
@@ -1192,7 +1197,7 @@ test("CR-03: claimMonitor()/releaseMonitor() naming a grant this connection does
     onAcquire: GRANTING_ACQUIRE,
     onMonitorClaim: (_requestId, targetId) => {
       claimCalls.push(targetId);
-      return { ok: true };
+      return { ok: true, handle: "test-handle" };
     },
     onMonitorRelease: (_requestId, targetId) => {
       releaseCalls.push(targetId);

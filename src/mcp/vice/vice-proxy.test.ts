@@ -1948,6 +1948,10 @@ async function startControlBroker(dir: string, deps: StubBrokerDeps = {}) {
     // satisfy StartControlListenerOptions's now-required fields.
     onMonitorClaim: () => ({ ok: false, code: "internal" }),
     onMonitorRelease: () => ({ ok: false, code: "internal" }),
+    // Phase 63, plan 63-01: a required field on StartControlListenerOptions
+    // as of this plan -- this proxy-focused fixture never exercises
+    // `attach` itself, so this stub exists only to satisfy the type.
+    onRelayAttach: () => ({ ok: false, code: "internal" as const }),
     // Phase 34, plan 34-01: a required field on StartControlListenerOptions
     // as of this plan -- this proxy-focused fixture never exercises
     // host_tool itself, so this stub exists only to satisfy the type.

@@ -2094,6 +2094,12 @@ async function startListenerWithSpies(repoRootForHostTool: string): Promise<{ li
       spies.onMonitorRelease.push(true);
       return { ok: false, code: "internal" };
     },
+    // Phase 63, plan 63-01: a required field on StartControlListenerOptions
+    // as of this plan -- NOT one of this file's own tracked "seven VICE
+    // callbacks" (no host_tool request can ever reach `attach`, so it is
+    // never spied on here; broker-relay.test.ts is the home for `attach`
+    // coverage).
+    onRelayAttach: () => ({ ok: false, code: "internal" as const }),
     onHostTool: (raw: unknown) => runHostTool(raw, { repoRoot: repoRootForHostTool }),
   });
   return { listener, token, spies };

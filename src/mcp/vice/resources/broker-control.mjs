@@ -378,20 +378,54 @@ export function bindControlListener(host, port) {
  * public surface); this module's own tests exercise the two independently. */
 function attachControlProtocol(server, opts, pendingAcquires) {
     server.on("connection", (socket) => {
-        let buffer = "";
+        // Buffer-mode carry (Phase 63, SESS-02) -- REPLACES the earlier
+        // string accumulator (`let buffer = ""`) for every connection, not
+        // only a relay one, because the corruption this guards against
+        // happens at DECODE TIME: `chunk.toString("utf8")` on a whole chunk
+        // mangles any non-UTF-8 byte in it (a lone 0x80-0xFF run, an embedded
+        // 0x00) regardless of which line that byte logically belongs to. The
+        // eight pre-existing JSON-line ops never carry such a byte, so this is
+        // byte-identical behaviour for them; the NEW `attach` op's own
+        // leftover bytes -- the FIRST thing in this whole protocol that is
+        // NOT guaranteed to be ASCII -- are what make this the load-bearing
+        // half. The terminator search is a byte-level `indexOf(0x0a)`, never a
+        // string search; a line is decoded to a string ONLY for its own
+        // `JSON.parse()` call, never the accumulator as a whole.
+        let carry = Buffer.alloc(0);
         let requestIdForThisConnection = null;
+        // Set by the `attach` dispatch arm below, BEFORE onRelayAttach() is
+        // ever called -- once true, this socket's OWN "data" listener becomes
+        // a no-op forever: every further byte belongs to
+        // broker-relay.mts's spliceRelay(), which installs its OWN "data"
+        // listeners on this SAME socket from inside onRelayAttach(). Node
+        // fires every listener on an event, in the order each was added, so
+        // this flag is what stops THIS listener from also decoding those
+        // bytes as JSON lines once the splice takes over.
+        let relayMode = false;
         socket.on("data", (chunk) => {
-            buffer += chunk.toString("utf8");
-            if (Buffer.byteLength(buffer, "utf8") > MAX_LINE_BYTES) {
+            if (relayMode)
+                return;
+            const combined = Buffer.concat([carry, chunk]);
+            if (combined.length > MAX_LINE_BYTES) {
                 socket.destroy();
                 return;
             }
+            let cursor = combined;
             let newlineIdx;
-            while ((newlineIdx = buffer.indexOf("\n")) !== -1) {
-                const line = buffer.slice(0, newlineIdx);
-                buffer = buffer.slice(newlineIdx + 1);
-                handleLine(line);
+            while ((newlineIdx = cursor.indexOf(0x0a)) !== -1) {
+                const lineBuf = cursor.subarray(0, newlineIdx);
+                const remainder = cursor.subarray(newlineIdx + 1);
+                handleLine(lineBuf.toString("utf8"), remainder);
+                if (relayMode) {
+                    // The line just handled was `attach`, and it has already handed
+                    // `remainder` to onRelayAttach() as `pending` -- those bytes are
+                    // now the splice's, not this reader's. Nothing left in `cursor`
+                    // is ever re-examined as a JSON line.
+                    return;
+                }
+                cursor = remainder;
             }
+            carry = cursor;
         });
         socket.on("close", () => {
             // Connection close IS the release -- including on the client's own
@@ -523,7 +557,12 @@ function attachControlProtocol(server, opts, pendingAcquires) {
                 return true;
             });
         }
-        function handleLine(line) {
+        /** `remainderAfterLine` is every byte the per-connection reader above
+         * had already sliced past THIS line's own terminator, within whatever
+         * chunk delivered it -- a raw Buffer, never decoded. Every existing
+         * op ignores it; the NEW `attach` arm below is the one branch that
+         * reads it, and only after it has already flipped `relayMode`. */
+        function handleLine(line, remainderAfterLine) {
             if (line.trim() === "")
                 return;
             let parsed;
@@ -703,7 +742,7 @@ function attachControlProtocol(server, opts, pendingAcquires) {
                 const requestId = typeof req.id === "string" && req.id !== "" ? req.id : defaultRequestId("claim");
                 const outcome = opts.onMonitorClaim(requestId, targetId, channel);
                 if (outcome.ok) {
-                    writeLine(socket, { kind: "monitor_claimed" });
+                    writeLine(socket, { kind: "monitor_claimed", handle: outcome.handle });
                 }
                 else if (outcome.code === "monitor_owned") {
                     // Ownership conflict, named by holder AND channel -- deliberately
@@ -757,6 +796,46 @@ function attachControlProtocol(server, opts, pendingAcquires) {
                 }
                 else {
                     writeLine(socket, { kind: "error", code: outcome.code, message: `monitor_release refused: ${outcome.code}` });
+                }
+            }
+            else if (req.op === "attach") {
+                // Phase 63 (SESS-02). Deliberately NOT gated by ownsTarget(): this
+                // connection is a brand-new relay socket, never the one that ran
+                // monitor_claim, so requestIdForThisConnection is null on it -- the
+                // per-claim `handle` presented below is the ONLY authority this
+                // arm can check (T-63-01). Sits AFTER the token gate, unlike
+                // `hello` -- see ControlRequestKind's own comment on this op.
+                const targetId = typeof req.target_id === "string" ? req.target_id : "";
+                const presentedHandle = typeof req.handle === "string" ? req.handle : "";
+                if (targetId === "" || presentedHandle === "") {
+                    writeLine(socket, { kind: "error", code: "bad_request", message: "attach requires target_id and handle" });
+                    return;
+                }
+                const channel = resolveMonitorChannel(req.channel);
+                if (channel === "bad_request") {
+                    writeLine(socket, {
+                        kind: "error",
+                        code: "bad_request",
+                        message: `attach: unrecognised channel ${JSON.stringify(req.channel)} -- accepted values are "binary" and "text"`,
+                    });
+                    return;
+                }
+                // Flipped BEFORE onRelayAttach() is ever called -- a synchronous
+                // splice inside that callback (spliceRelay() installs its own
+                // "data" listeners on THIS socket) must never race this
+                // connection's own reader over the next "data" event. See the
+                // relayMode declaration's own header comment above.
+                relayMode = true;
+                const outcome = opts.onRelayAttach(targetId, channel, presentedHandle, socket, remainderAfterLine);
+                if (outcome.ok) {
+                    writeLine(socket, { kind: "attached" });
+                }
+                else {
+                    // The attach FAILED -- this socket never became a relay, so its
+                    // line reader must resume rather than silently going deaf on a
+                    // connection the caller may still retry `attach` over.
+                    relayMode = false;
+                    writeLine(socket, { kind: "error", code: outcome.code, message: `attach refused: ${outcome.code}` });
                 }
             }
             else {

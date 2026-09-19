@@ -92,6 +92,7 @@ test("dialBrokerEndpoint completes a real handshake end to end against a real li
     }),
     onMonitorClaim: () => ({ ok: false, code: "internal" as const }),
     onMonitorRelease: () => ({ ok: false, code: "internal" as const }),
+    onRelayAttach: () => ({ ok: false, code: "internal" as const }),
     onHostTool: async () => ({ ok: false, message: "no onHostTool stub configured" }),
   });
   try {
@@ -180,6 +181,7 @@ async function startHealthyListener(overrides: { helloVersion?: string } = {}) {
     }),
     onMonitorClaim: () => ({ ok: false, code: "internal" as const }),
     onMonitorRelease: () => ({ ok: false, code: "internal" as const }),
+    onRelayAttach: () => ({ ok: false, code: "internal" as const }),
     onHostTool: async () => ({ ok: false, message: "no onHostTool stub configured" }),
     helloVersion: overrides.helloVersion,
   });

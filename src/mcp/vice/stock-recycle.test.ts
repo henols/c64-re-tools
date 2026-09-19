@@ -272,7 +272,7 @@ function makeLeaseDeps(opts: {
       hostState: async () => {
         throw new Error("hostState must not be called by handleRecycleStock");
       },
-      claimMonitor: async () => ({ ok: true }),
+      claimMonitor: async () => ({ ok: true, handle: "test-handle" }),
       releaseMonitor: async () => ({ ok: true }),
     },
   };

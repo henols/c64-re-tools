@@ -7,14 +7,22 @@
 // an injected stub -- never a real broker process.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createServer, type Server, type Socket } from "node:net";
+import { createServer, connect as netConnect, type Server, type Socket } from "node:net";
 import type { AddressInfo } from "node:net";
 import { mkdtempSync, writeFileSync, rmSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { stockConnect, stockDisconnect, stockReconnect, clampCpuHistoryCount, type StockConnectBrokerControl } from "./stock-connect.ts";
+import {
+  stockConnect as stockConnectReal,
+  stockDisconnect,
+  stockReconnect,
+  clampCpuHistoryCount,
+  type StockConnectBrokerControl,
+  type StockConnectOptions,
+  type DialMonitorSocketFn,
+} from "./stock-connect.ts";
 import {
   ViceMonitorClient,
   CommandType,
@@ -39,6 +47,33 @@ import {
 } from "./vice-broker-client.ts";
 import { MachineRestartedError } from "./vice-errors.ts";
 import { encodeResponseFrame } from "./binmon-fixtures.ts";
+
+// ---------------------------------------------------------------------------
+// Phase 63 (SESS-02): stockConnect()'s default socket source is now a relay
+// dial against a broker that is not running in this test process -- every
+// call site in this file is about the HANDSHAKE (claim ordering, the
+// api-version assertion, the identity read, the capability gate, the
+// reconnect identity proof), not about the socket source. ONE shared helper
+// gives every one of them a `dialMonitorSocket` that dials the stub
+// emulator DIRECTLY (this file's own withStockStubServer(), never a real
+// broker) and resolves an empty pending Buffer -- byte-identical handshake
+// behaviour to the pre-relay direct dial this replaces. `stockConnect`
+// below SHADOWS the real export with a thin wrapper that merges this
+// default in, so every existing call site in this file (unchanged) picks
+// it up automatically; a call site that supplies its own `deps` still wins
+// on any field it sets explicitly (object-spread, right side last).
+// ---------------------------------------------------------------------------
+
+const directDialMonitorSocket: DialMonitorSocketFn = (opts) =>
+  new Promise((resolve, reject) => {
+    const socket = netConnect({ host: opts.host, port: opts.port });
+    socket.once("connect", () => resolve({ socket, pending: Buffer.alloc(0) }));
+    socket.once("error", reject);
+  });
+
+function stockConnect(opts: StockConnectOptions): ReturnType<typeof stockConnectReal> {
+  return stockConnectReal({ ...opts, deps: { dialMonitorSocket: directDialMonitorSocket, ...opts.deps } });
+}
 
 // ---------------------------------------------------------------------------
 // Request-decoding stub server -- the ViceMonitorClient-facing counterpart of
@@ -190,7 +225,7 @@ function makeStubBrokerControl(opts: StubBrokerControlOptions = {}): {
     async claimMonitor(claimOpts) {
       state.claimCalls += 1;
       state.claimedWith.push(claimOpts);
-      return opts.claimOutcome ?? { ok: true };
+      return opts.claimOutcome ?? { ok: true, handle: "test-handle" };
     },
     async releaseMonitor(releaseOpts) {
       state.releaseCalls += 1;
@@ -412,7 +447,7 @@ test("WR-07: a releaseMonitor that THROWS during failure cleanup does not replac
     async (port) => {
       const brokerControl: StockConnectBrokerControl = {
         async claimMonitor() {
-          return { ok: true };
+          return { ok: true, handle: "test-handle" };
         },
         async releaseMonitor() {
           throw new Error("test: the broker connection dropped during cleanup");
@@ -440,7 +475,7 @@ test("WR-07: a releaseMonitor that answers { ok: false } during failure cleanup 
       let releaseCalls = 0;
       const brokerControl: StockConnectBrokerControl = {
         async claimMonitor() {
-          return { ok: true };
+          return { ok: true, handle: "test-handle" };
         },
         async releaseMonitor() {
           releaseCalls += 1;

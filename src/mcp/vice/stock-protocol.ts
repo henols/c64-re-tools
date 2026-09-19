@@ -1959,6 +1959,17 @@ export interface ViceMonitorClientOptions {
   initialRequestId?: number;
 }
 
+/** Options for attach() (Phase 63, SESS-02) -- the socket-injection entry
+ * point beside connect(host, port). `pending` carries whatever bytes the
+ * caller already read off this socket before handing it to attach(): the
+ * broker's REGISTER_INFO frame can land in the SAME TCP segment as the
+ * relay's own attach-reply line, and those bytes must reach this client's
+ * parser, not be dropped on the floor. Absent or empty means nothing was
+ * left over. */
+export interface AttachOptions {
+  pending?: Buffer;
+}
+
 export interface ViceMonitorClientCounters {
   desyncBytes: number;
   /** Incremented by #dispatch() (plan 02-06) on a duplicate reply for an
@@ -2035,6 +2046,65 @@ export class ViceMonitorClient extends EventEmitter {
     return id;
   }
 
+  /**
+   * D-11/attach(): the ONE place a live socket's three listeners
+   * (data/close/error) are wired to this client's private state, shared by
+   * connect() (a socket this class dialled itself) and attach() (a socket
+   * the caller already holds, live, from elsewhere -- Phase 63's relay).
+   * Factored out of connect()'s own success path rather than duplicated, so
+   * the two entry points can never wire a socket two different ways.
+   */
+  #wireSocket(socket: net.Socket, port: number | null): void {
+    this.#socket = socket;
+    this.#buffer = Buffer.alloc(0);
+    this.#port = port;
+    this.#closed = false;
+    socket.on("data", this.#onDataBound);
+    socket.on("close", this.#onCloseBound);
+    socket.on("error", this.#onErrorBound);
+  }
+
+  /**
+   * The live-socket refusal both connect() and attach() enforce: this class
+   * answers to exactly one socket at a time (stock VICE itself services
+   * exactly one binmon client), so a caller must disconnect() before either
+   * entry point can hand it a new one.
+   */
+  #refuseIfLive(where: string): ViceError | null {
+    if (this.#socket != null && !this.#socket.destroyed) {
+      return new ViceError(
+        `${where} refused: this client already holds a live socket to port ${this.#port} -- call disconnect() first (stock VICE services exactly one binmon client)`,
+      );
+    }
+    return null;
+  }
+
+  /**
+   * Socket-injection entry point (Phase 63, SESS-02): reuses connect()'s
+   * three-listener wiring for a socket the CALLER already holds, live --
+   * the relay's own dialMonitorRelay() result -- rather than dialling one
+   * itself. No reconnect-timeout race here: unlike connect(), there is
+   * nothing to wait for, the socket is already connected. `opts.pending`
+   * (bytes that arrived in the SAME segment as the relay's attach reply,
+   * before this client ever saw the socket) is run through the SAME parse
+   * path a live 'data' event would use, via #onData(), so those bytes are
+   * never stranded -- see AttachOptions' own header comment.
+   *
+   * D-11: this method, like connect(), answers "this socket died" only. It
+   * adds no reconnect or machine-identity logic -- that stays one layer up,
+   * in stock-connect.ts.
+   */
+  attach(socket: net.Socket, opts: AttachOptions = {}): void {
+    const refusal = this.#refuseIfLive("attach");
+    if (refusal) throw refusal;
+
+    this.#wireSocket(socket, socket.remotePort ?? null);
+
+    if (opts.pending && opts.pending.length > 0) {
+      this.#onData(opts.pending);
+    }
+  }
+
   connect(host: string, port: number, { timeoutMs = 5000 }: ConnectOptions = {}): Promise<void> {
     // WR-13(b): refuse to connect over a socket that is still live. Before this,
     // a second connect() simply OVERWROTE #socket, leaking the previous socket
@@ -2044,12 +2114,9 @@ export class ViceMonitorClient extends EventEmitter {
     // stockReconnect() already does by building a fresh client -- rather than
     // letting this method silently accumulate sockets against an emulator that
     // services exactly one binmon client.
-    if (this.#socket != null && !this.#socket.destroyed) {
-      return Promise.reject(
-        new ViceError(
-          `connect to ${host}:${port} refused: this client already holds a live socket to port ${this.#port} -- call disconnect() first (stock VICE services exactly one binmon client)`,
-        ),
-      );
+    const refusal = this.#refuseIfLive(`connect to ${host}:${port}`);
+    if (refusal) {
+      return Promise.reject(refusal);
     }
 
     return new Promise((resolve, reject) => {
@@ -2058,13 +2125,7 @@ export class ViceMonitorClient extends EventEmitter {
       const onConnect = () => {
         clearTimeout(timer);
         socket.removeListener("error", onConnectError);
-        this.#socket = socket;
-        this.#buffer = Buffer.alloc(0);
-        this.#port = port;
-        this.#closed = false;
-        socket.on("data", this.#onDataBound);
-        socket.on("close", this.#onCloseBound);
-        socket.on("error", this.#onErrorBound);
+        this.#wireSocket(socket, port);
         resolve();
       };
       const onConnectError = (err: Error) => {

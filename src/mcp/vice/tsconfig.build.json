@@ -18,6 +18,7 @@
     "host-tool.mts",
     "ghidra-project.mts",
     "tool-location.mts",
-    "broker-home.mts"
+    "broker-home.mts",
+    "broker-relay.mts"
   ]
 }

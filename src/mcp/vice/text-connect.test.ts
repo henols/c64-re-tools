@@ -45,7 +45,7 @@ function makeStubBrokerControl(opts: StubBrokerControlOptions = {}): {
     async claimMonitor(claimOpts) {
       state.claimCalls += 1;
       state.claimedWith.push(claimOpts);
-      return opts.claimOutcome ?? { ok: true };
+      return opts.claimOutcome ?? { ok: true, handle: "test-handle" };
     },
     async releaseMonitor(releaseOpts) {
       state.releaseCalls += 1;

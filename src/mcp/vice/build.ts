@@ -53,6 +53,7 @@ export const HOST_BOUND_ARTIFACTS: string[] = [
   "ghidra-project.mjs",
   "tool-location.mjs",
   "broker-home.mjs",
+  "broker-relay.mjs",
 ];
 
 /** A plain data file that travels WITH the compiled artifacts above, never

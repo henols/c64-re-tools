@@ -30,6 +30,14 @@
 //     a connect() that silently sits unserviced in the backlog (PROTO-08,
 //     D-13, vice-broker-client.ts's own MonitorOwnershipError header
 //     comment).
+//   - Phase 63 (SESS-02): never dial the emulator's own port from this
+//     process again, full stop -- the ONE `client.connect(host, port)`
+//     call this handshake used to make is now `deps.dialMonitorSocket`
+//     (default: dialMonitorRelay() against the broker's fixed endpoint,
+//     never the emulator directly). A future edit that reintroduces a
+//     direct `net.createConnection`/`client.connect(host, port)` call in
+//     this file is reopening the exact single-client-services-exactly-one
+//     hazard the relay exists to close.
 import {
   ViceMonitorClient,
   CommandType,
@@ -49,7 +57,10 @@ import {
   type ClaimMonitorOutcome,
   type ReleaseMonitorOptions,
   type ReleaseMonitorOutcome,
+  type MonitorClaimChannel,
 } from "./vice-broker-client.ts";
+import { dialMonitorRelay } from "./broker-endpoint.ts";
+import type { Socket } from "node:net";
 
 // ---------------------------------------------------------------------------
 // Broker control surface this handshake needs -- deliberately narrower than
@@ -274,6 +285,17 @@ async function resolveCapabilities(client: ViceMonitorClient, versionQuad: strin
 // stockConnect() -- the handshake itself.
 // ---------------------------------------------------------------------------
 
+/** The socket-source seam (Phase 63, SESS-02): resolves a LIVE, already-
+ * spliced-on-the-broker-side socket for the given claim, plus whatever
+ * bytes arrived, in the same chunk, past the broker's own attach reply
+ * (e.g. stock VICE's REGISTER_INFO frame) -- a raw Buffer, never decoded.
+ * Never throws in a well-behaved implementation is NOT required here: this
+ * function MAY reject, and stockConnect()'s own try/catch around the whole
+ * handshake is what turns that rejection into the usual
+ * resume-disconnect-release cleanup, exactly like every other step already
+ * does. */
+export type DialMonitorSocketFn = (opts: { host: string; port: number; targetId: string; channel: MonitorClaimChannel; handle: string }) => Promise<{ socket: Socket; pending: Buffer }>;
+
 export interface StockConnectDeps {
   /** The binary this handshake is connected to -- the SAME key
    * backend-detect.mts's cache is written under. Omitted entirely disables
@@ -291,6 +313,40 @@ export interface StockConnectDeps {
   readCapabilityRecordFn?: typeof readCapabilityRecord;
   writeCapabilityRecordFn?: typeof writeCapabilityRecord;
   readEpochFn?: typeof readEpoch;
+  /** Injectable socket source (Phase 63, SESS-02) -- an injectable seam in
+   * this project's standing register (D-11/RESEARCH's own "no runtime
+   * rollback flag" decision), giving tests and a manual bisect the same
+   * lever a hidden mode flag would, without leaving one behind as carried
+   * debt. Omitted means the module's OWN default: dialMonitorRelay()
+   * against the broker's fixed endpoint, tagged for the binary channel,
+   * authenticated with `deps.controlToken`. */
+  dialMonitorSocket?: DialMonitorSocketFn;
+  /** The per-boot control token the DEFAULT dialMonitorSocket needs to
+   * authenticate its own `attach` line over the fixed endpoint -- the SAME
+   * credential this handshake's own `brokerControl` already used to open
+   * its control-plane session. A caller supplying its own
+   * `dialMonitorSocket` (every test in this file) never needs this field;
+   * it is read ONLY by the default implementation below. */
+  controlToken?: string;
+}
+
+/** The default DialMonitorSocketFn: dials the broker's fixed endpoint via
+ * dialMonitorRelay(), authenticated with `controlToken`, and unwraps its
+ * discriminated result into either a resolved socket/pending pair or a
+ * thrown ViceError naming the broker's own refusal text -- the SAME
+ * "reject with a named error, let the caller's try/catch clean up"
+ * contract every other step of this handshake already follows. */
+async function defaultDialMonitorSocket(opts: { host: string; port: number; targetId: string; channel: MonitorClaimChannel; handle: string }, controlToken: string | undefined): Promise<{ socket: Socket; pending: Buffer }> {
+  const result = await dialMonitorRelay({
+    targetId: opts.targetId,
+    channel: opts.channel,
+    handle: opts.handle,
+    token: controlToken ?? "",
+  });
+  if (!result.ok) {
+    throw new ViceError(result.reason);
+  }
+  return { socket: result.socket, pending: result.pending };
 }
 
 export interface StockConnectOptions {
@@ -427,7 +483,17 @@ export async function stockConnect({ host, port, targetId, brokerControl, deps =
   let resumeAttempted = false;
 
   try {
-    await client.connect(host, port);
+    // Phase 63 (SESS-02): the ONE dial this handshake now makes is a relay
+    // connection -- never a direct dial to the emulator's own port. The
+    // resolved socket has ALREADY completed the broker's own attach
+    // handshake by the time it is handed to attach(); `pending` is
+    // whatever arrived, in the same chunk, past that handshake's own
+    // terminator (stock VICE's REGISTER_INFO frame, on every monitor
+    // open, is the concrete case this exists for) and is seeded straight
+    // into the client's own parse buffer rather than being stranded.
+    const dial = deps.dialMonitorSocket ?? ((opts) => defaultDialMonitorSocket(opts, deps.controlToken));
+    const { socket, pending } = await dial({ host, port, targetId, channel: "binary", handle: claimOutcome.handle });
+    client.attach(socket, { pending });
 
     // Step 3: api_version assertion. A non-0x02 api_version rejects this
     // send() call directly with a StockFramingError naming the observed

@@ -75,7 +75,15 @@ import type { ViceBackend } from "./backend-detect.mjs";
 // `tokensMatch()` runs at all, because the handshake by design carries no
 // credential. See attachControlProtocol()'s handleLine() for the dispatch
 // site and its own comment on why that placement is load-bearing.
-export type ControlRequestKind = "acquire" | "release" | "recycle" | "status" | "host_state" | "monitor_claim" | "monitor_release" | "host_tool" | "hello";
+// `attach` joins as the TENTH member, Phase 63 (SESS-02) -- UNLIKE `hello`,
+// it sits AFTER the token gate, in the same post-gate chain as every other
+// target-naming op. Sent on a connection dedicated solely to becoming a
+// relay splice: this listener answers it once, then that socket's own line
+// reader stops running (see the relayMode flag inside
+// attachControlProtocol()) and every further byte belongs to
+// broker-relay.mts's spliceRelay(), never to this JSON-line dispatcher
+// again.
+export type ControlRequestKind = "acquire" | "release" | "recycle" | "status" | "host_state" | "monitor_claim" | "monitor_release" | "host_tool" | "hello" | "attach";
 // `no_free_text_port` joins the vocabulary as its OWN code -- a stock
 // acquire that fails only on the SECOND (`-remotemonitor`) allocation is
 // reported distinctly from `no_free_port` (which still means the
@@ -191,7 +199,27 @@ export interface MonitorHolder {
  * identity, because a refusal answered "someone else has it, and here is
  * who" is what makes this an ownership conflict rather than an unexplained
  * hang. */
-export type MonitorClaimOutcome = { ok: true } | { ok: false; code: "monitor_owned"; holder: MonitorHolder } | { ok: false; code: "bad_request" | "internal" };
+/** Widened (Phase 63, SESS-02): a successful claim now carries the per-claim
+ * `handle` vice-broker.mts's handleMonitorClaim() minted (or, on an
+ * idempotent repeat, the SAME handle it minted the first time) -- the ONLY
+ * authority an `attach` op on a SEPARATE relay connection can ever present,
+ * since that connection holds no grant of its own. */
+export type MonitorClaimOutcome =
+  | { ok: true; handle: string }
+  | { ok: false; code: "monitor_owned"; holder: MonitorHolder }
+  | { ok: false; code: "bad_request" | "internal" };
+
+/** Discriminated outcome for `attach` (Phase 63, SESS-02): resolved by
+ * vice-broker.mts's own handleRelayAttach(). `denied` covers every
+ * authorisation failure -- an unrecognised handle, a handle presented for a
+ * channel with no current holder, or a channel that is already spliced --
+ * deliberately collapsed to ONE code rather than three, so a probing caller
+ * cannot distinguish "wrong handle" from "already attached" by the code
+ * alone (both are refused with the same ownership wording, never an
+ * emulator-fault wording -- see T-63-01). `bad_request` is reserved for an
+ * unknown target id (the same meaning `monitor_claim`'s own `bad_request`
+ * carries). */
+export type RelayAttachOutcome = { ok: true } | { ok: false; code: "denied" | "bad_request" | "internal" };
 
 /** Discriminated outcome for `monitor_release` (plan 05, T-02-01): `denied`
  * is refused WITHOUT clearing the record -- a non-holder cannot release
@@ -275,6 +303,18 @@ export interface StartControlListenerOptions {
    * NOT the current holder of `channel` -- see MonitorReleaseOutcome's own
    * header comment for the already-cleared tolerance. */
   onMonitorRelease: (requestId: string, targetId: string, channel: MonitorChannel) => MonitorReleaseOutcome;
+  /** Called on `attach` (Phase 63, SESS-02), AFTER the token check has
+   * already passed AND after this listener has already stopped its own
+   * line reader on this socket (see the relayMode flag inside
+   * attachControlProtocol()) -- a synchronous splice inside this callback
+   * can never race this connection's next `"data"` event. `presentedHandle`
+   * is whatever the wire line named, narrowed to a string but NOT yet
+   * checked against anything -- that check (constant-time, length-gated)
+   * is this callback's own job. `socket` is the live relay connection
+   * itself; `pending` is every byte that arrived, in the SAME chunk, past
+   * the attach line's own terminator -- a raw Buffer, never decoded, to
+   * hand straight to spliceRelay() as its own `pending` option. */
+  onRelayAttach: (targetId: string, channel: MonitorChannel, presentedHandle: string, socket: Socket, pending: Buffer) => RelayAttachOutcome;
   /** Called on `host_tool`, AFTER the token check has already passed --
    * the SAME gate every other op runs. Handed its OWN function, declared
    * alongside these seven and NEVER composed from any of them -- that is
@@ -333,8 +373,16 @@ export type ControlResponse =
       /** See HostStateFields.backend for why this is still on the wire. */
       backend: ViceBackend;
     }
-  | { kind: "monitor_claimed" }
+  // Widened (Phase 63, SESS-02) with the per-claim handle -- see
+  // MonitorClaimOutcome's own header comment for what mints it and why an
+  // idempotent repeat claim echoes the SAME value.
+  | { kind: "monitor_claimed"; handle: string }
   | { kind: "monitor_released" }
+  // Phase 63 (SESS-02): the successful reply to `attach` -- sent BEFORE
+  // this socket becomes a raw byte splice, so the caller has one
+  // deterministic signal that the handshake completed before any binmon
+  // byte can arrive on this same connection.
+  | { kind: "attached" }
   // Answered BEFORE the token gate (see handleLine()'s own dispatch-order
   // comment) -- carries no token, username, hostname, home directory,
   // absolute path or per-instance detail, since anything reachable at a
@@ -736,21 +784,54 @@ export function bindControlListener(host: string, port: number): Promise<BoundLi
  * public surface); this module's own tests exercise the two independently. */
 function attachControlProtocol(server: Server, opts: StartControlListenerOptions, pendingAcquires: PendingAcquireQueue): void {
   server.on("connection", (socket: Socket) => {
-    let buffer = "";
+    // Buffer-mode carry (Phase 63, SESS-02) -- REPLACES the earlier
+    // string accumulator (`let buffer = ""`) for every connection, not
+    // only a relay one, because the corruption this guards against
+    // happens at DECODE TIME: `chunk.toString("utf8")` on a whole chunk
+    // mangles any non-UTF-8 byte in it (a lone 0x80-0xFF run, an embedded
+    // 0x00) regardless of which line that byte logically belongs to. The
+    // eight pre-existing JSON-line ops never carry such a byte, so this is
+    // byte-identical behaviour for them; the NEW `attach` op's own
+    // leftover bytes -- the FIRST thing in this whole protocol that is
+    // NOT guaranteed to be ASCII -- are what make this the load-bearing
+    // half. The terminator search is a byte-level `indexOf(0x0a)`, never a
+    // string search; a line is decoded to a string ONLY for its own
+    // `JSON.parse()` call, never the accumulator as a whole.
+    let carry: Buffer = Buffer.alloc(0);
     let requestIdForThisConnection: string | null = null;
+    // Set by the `attach` dispatch arm below, BEFORE onRelayAttach() is
+    // ever called -- once true, this socket's OWN "data" listener becomes
+    // a no-op forever: every further byte belongs to
+    // broker-relay.mts's spliceRelay(), which installs its OWN "data"
+    // listeners on this SAME socket from inside onRelayAttach(). Node
+    // fires every listener on an event, in the order each was added, so
+    // this flag is what stops THIS listener from also decoding those
+    // bytes as JSON lines once the splice takes over.
+    let relayMode = false;
 
     socket.on("data", (chunk: Buffer) => {
-      buffer += chunk.toString("utf8");
-      if (Buffer.byteLength(buffer, "utf8") > MAX_LINE_BYTES) {
+      if (relayMode) return;
+      const combined = Buffer.concat([carry, chunk]);
+      if (combined.length > MAX_LINE_BYTES) {
         socket.destroy();
         return;
       }
+      let cursor = combined;
       let newlineIdx: number;
-      while ((newlineIdx = buffer.indexOf("\n")) !== -1) {
-        const line = buffer.slice(0, newlineIdx);
-        buffer = buffer.slice(newlineIdx + 1);
-        handleLine(line);
+      while ((newlineIdx = cursor.indexOf(0x0a)) !== -1) {
+        const lineBuf = cursor.subarray(0, newlineIdx);
+        const remainder = cursor.subarray(newlineIdx + 1);
+        handleLine(lineBuf.toString("utf8"), remainder);
+        if (relayMode) {
+          // The line just handled was `attach`, and it has already handed
+          // `remainder` to onRelayAttach() as `pending` -- those bytes are
+          // now the splice's, not this reader's. Nothing left in `cursor`
+          // is ever re-examined as a JSON line.
+          return;
+        }
+        cursor = remainder;
       }
+      carry = cursor;
     });
 
     socket.on("close", () => {
@@ -885,7 +966,12 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
         });
     }
 
-    function handleLine(line: string): void {
+    /** `remainderAfterLine` is every byte the per-connection reader above
+     * had already sliced past THIS line's own terminator, within whatever
+     * chunk delivered it -- a raw Buffer, never decoded. Every existing
+     * op ignores it; the NEW `attach` arm below is the one branch that
+     * reads it, and only after it has already flipped `relayMode`. */
+    function handleLine(line: string, remainderAfterLine: Buffer): void {
       if (line.trim() === "") return;
 
       let parsed: unknown;
@@ -1060,7 +1146,7 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
         const requestId = typeof req.id === "string" && req.id !== "" ? req.id : defaultRequestId("claim");
         const outcome = opts.onMonitorClaim(requestId, targetId, channel);
         if (outcome.ok) {
-          writeLine(socket, { kind: "monitor_claimed" });
+          writeLine(socket, { kind: "monitor_claimed", handle: outcome.handle });
         } else if (outcome.code === "monitor_owned") {
           // Ownership conflict, named by holder AND channel -- deliberately
           // worded to never suggest the emulator itself has stopped
@@ -1110,6 +1196,44 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
           writeLine(socket, { kind: "monitor_released" });
         } else {
           writeLine(socket, { kind: "error", code: outcome.code, message: `monitor_release refused: ${outcome.code}` });
+        }
+      } else if (req.op === "attach") {
+        // Phase 63 (SESS-02). Deliberately NOT gated by ownsTarget(): this
+        // connection is a brand-new relay socket, never the one that ran
+        // monitor_claim, so requestIdForThisConnection is null on it -- the
+        // per-claim `handle` presented below is the ONLY authority this
+        // arm can check (T-63-01). Sits AFTER the token gate, unlike
+        // `hello` -- see ControlRequestKind's own comment on this op.
+        const targetId = typeof req.target_id === "string" ? req.target_id : "";
+        const presentedHandle = typeof req.handle === "string" ? req.handle : "";
+        if (targetId === "" || presentedHandle === "") {
+          writeLine(socket, { kind: "error", code: "bad_request" as ControlErrorCode, message: "attach requires target_id and handle" });
+          return;
+        }
+        const channel = resolveMonitorChannel(req.channel);
+        if (channel === "bad_request") {
+          writeLine(socket, {
+            kind: "error",
+            code: "bad_request" as ControlErrorCode,
+            message: `attach: unrecognised channel ${JSON.stringify(req.channel)} -- accepted values are "binary" and "text"`,
+          });
+          return;
+        }
+        // Flipped BEFORE onRelayAttach() is ever called -- a synchronous
+        // splice inside that callback (spliceRelay() installs its own
+        // "data" listeners on THIS socket) must never race this
+        // connection's own reader over the next "data" event. See the
+        // relayMode declaration's own header comment above.
+        relayMode = true;
+        const outcome = opts.onRelayAttach(targetId, channel, presentedHandle, socket, remainderAfterLine);
+        if (outcome.ok) {
+          writeLine(socket, { kind: "attached" });
+        } else {
+          // The attach FAILED -- this socket never became a relay, so its
+          // line reader must resume rather than silently going deaf on a
+          // connection the caller may still retry `attach` over.
+          relayMode = false;
+          writeLine(socket, { kind: "error", code: outcome.code, message: `attach refused: ${outcome.code}` });
         }
       } else {
         writeLine(socket, { kind: "error", code: "bad_request" as ControlErrorCode, message: `unknown op: ${String(req.op)}` });

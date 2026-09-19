@@ -221,6 +221,15 @@ function dialOneCandidate(
   connectFn: BrokerEndpointConnectFn,
   clientVersion: string,
   onSocket: (socket: Socket) => void,
+  // Phase 63 (SESS-02): optional `tag`, appended as the LAST parameter so
+  // every pre-existing call site (dialBrokerEndpoint()'s own two, and this
+  // file's own tests) keeps compiling and behaving byte-identically --
+  // omitted means the same untagged `{"op":"hello"}` line this function
+  // has always sent. dialMonitorRelay() below is the one caller that
+  // supplies RELAY_TAG_BINARY/RELAY_TAG_TEXT, so the broker's own `hello`
+  // reply echoes which KIND of connection this is before the attach line
+  // ever follows.
+  tag?: string,
 ): Promise<CandidateOutcome> {
   return new Promise((resolvePromise) => {
     let settled = false;
@@ -251,7 +260,7 @@ function dialOneCandidate(
     socket.once("connect", () => {
       if (settled) return;
       clearTimeout(connectTimer);
-      socket.write(`${JSON.stringify({ op: "hello" })}\n`);
+      socket.write(`${JSON.stringify(tag ? { op: "hello", tag } : { op: "hello" })}\n`);
 
       // Bounds the wait for a reply SEPARATELY from the connect timeout --
       // a listener that accepts and never writes a byte (a "wedged"
@@ -541,4 +550,230 @@ export function describeDialFailure(failure: DialFailure): string {
     case 4:
       return rank4Message(failure);
   }
+}
+
+// ---------------------------------------------------------------------------
+// dialMonitorRelay() -- Phase 63 (SESS-02). Every binary-monitor byte now
+// travels through a connection dialled HERE, never through a direct dial to
+// the emulator's own port (stock-connect.ts's own header comment names this
+// as the one thing that module must never do again). Reuses the SAME
+// fixed-endpoint, two-candidate hello race dialBrokerEndpoint() runs above --
+// same ranks, same never-throw posture -- but on the FIRST completed
+// handshake this function does the opposite of dialBrokerEndpoint(): it
+// KEEPS that winning socket alive (destroying only the losing candidate's),
+// then writes ONE `attach` line over it and reads the reply with a
+// byte-level terminator search, because stock VICE emits a REGISTER_INFO
+// frame on every monitor open and those bytes can land in the SAME TCP
+// segment as this broker's own attach reply (Task 2's own boundary two).
+// ---------------------------------------------------------------------------
+
+/** The two handshake tags a relay connection identifies itself with on its
+ * OWN `hello` line -- before the `attach` line that follows it. Distinct
+ * from RELAY_TAG_TEXT so a future observer of broker-side logs (or a
+ * `status` projection) can tell which channel a given relay connection was
+ * FOR without waiting on its `attach` line at all. */
+export const RELAY_TAG_BINARY = "monitor-binary";
+export const RELAY_TAG_TEXT = "monitor-text";
+
+export interface DialMonitorRelayOptions {
+  /** The grant this relay is attaching on behalf of -- the SAME `targetId`
+   * the caller's own monitor_claim already succeeded with. */
+  targetId: string;
+  channel: "binary" | "text";
+  /** The per-claim handle monitor_claim's own reply returned -- the ONLY
+   * authority this dial can present; see broker-control.mts's own
+   * RelayAttachOutcome header comment. */
+  handle: string;
+  /** The per-boot control token -- the SAME credential every other op on
+   * this control plane requires. */
+  token: string;
+  port?: number;
+  candidates?: readonly string[];
+  connectTimeoutMs?: number;
+  replyTimeoutMs?: number;
+  connect?: BrokerEndpointConnectFn;
+  clientVersion?: string;
+}
+
+export interface DialMonitorRelaySuccess {
+  ok: true;
+  /** The live, already-spliced-on-the-broker-side socket -- handed
+   * straight to ViceMonitorClient.attach()/TextMonitorClient.attach() by
+   * this dial's own caller. Carries NO listeners of this module's own by
+   * the time this result is produced -- every listener performAttach()
+   * installed is removed before this resolves. */
+  socket: Socket;
+  host: string;
+  port: number;
+  /** Bytes that arrived, in the SAME chunk, past the attach reply's own
+   * terminator -- e.g. stock VICE's REGISTER_INFO frame, emitted on every
+   * monitor open. Raw, never decoded; the caller seeds its own parser from
+   * this Buffer via AttachOptions.pending. */
+  pending: Buffer;
+}
+
+export interface DialMonitorRelayFailure {
+  ok: false;
+  /** Human-readable, act-on-able refusal text -- either
+   * describeDialFailure()'s own text (no candidate completed a hello at
+   * all, reusing the SAME four-rank classification dialBrokerEndpoint()
+   * uses) or a message naming the broker's own `attach` refusal by name
+   * (an ownership conflict, a bad request, or a reply timeout on an
+   * otherwise-live connection). Never a bare error object -- this
+   * function, like dialBrokerEndpoint(), never throws. */
+  reason: string;
+}
+
+export type DialMonitorRelayResult = DialMonitorRelaySuccess | DialMonitorRelayFailure;
+
+/** Writes the `attach` line over an already-hello'd, already-kept-alive
+ * socket and reads its reply with a BYTE-level terminator search --
+ * `chunk.toString("utf8")` on the whole accumulator would corrupt any
+ * REGISTER_INFO bytes landing in the same chunk, exactly the corruption
+ * broker-control.mts's own pre-splice reader guards against on the other
+ * side of this same connection. Settles exactly once: on a parsed
+ * `{"kind":"attached"}` line (success, `pending` is whatever followed the
+ * terminator), on a parsed `{"kind":"error",...}` line (failure, naming the
+ * broker's own refusal), on a reply timeout, or on the socket closing/
+ * erroring before either -- every path is `ok: false`, never a throw. */
+function performAttach(socket: Socket, host: string, port: number, opts: DialMonitorRelayOptions, replyTimeoutMs: number, resolveOuter: (result: DialMonitorRelayResult) => void): void {
+  let carry: Buffer = Buffer.alloc(0);
+  let settled = false;
+
+  const timer = setTimeout(() => {
+    finish({
+      ok: false,
+      reason: `vice: broker at ${host}:${port} accepted the relay connection but never answered the attach request within ${replyTimeoutMs}ms`,
+    });
+  }, replyTimeoutMs);
+  if (typeof timer.unref === "function") timer.unref();
+
+  function finish(result: DialMonitorRelayResult): void {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    socket.removeAllListeners("data");
+    socket.removeAllListeners("error");
+    socket.removeAllListeners("close");
+    if (!result.ok && !socket.destroyed) socket.destroy();
+    resolveOuter(result);
+  }
+
+  socket.on("data", (chunk: Buffer) => {
+    carry = Buffer.concat([carry, chunk]);
+    const idx = carry.indexOf(0x0a);
+    if (idx === -1) return; // keep accumulating -- bounded by the reply timer above, not a byte cap
+    const lineText = carry.subarray(0, idx).toString("utf8");
+    const pending = carry.subarray(idx + 1);
+    let parsed: unknown = null;
+    try {
+      parsed = JSON.parse(lineText);
+    } catch {
+      parsed = null;
+    }
+    if (typeof parsed === "object" && parsed !== null && (parsed as Record<string, unknown>).kind === "attached") {
+      finish({ ok: true, socket, host, port, pending });
+      return;
+    }
+    const message =
+      typeof parsed === "object" && parsed !== null && typeof (parsed as Record<string, unknown>).message === "string"
+        ? ((parsed as Record<string, unknown>).message as string)
+        : "the broker refused the attach request with an unrecognisable reply";
+    finish({ ok: false, reason: `vice: ${message}` });
+  });
+
+  socket.once("error", () => {
+    finish({ ok: false, reason: `vice: relay connection to ${host}:${port} failed before the attach reply arrived` });
+  });
+  socket.once("close", () => {
+    finish({ ok: false, reason: `vice: relay connection to ${host}:${port} closed before the attach reply arrived` });
+  });
+
+  socket.write(`${JSON.stringify({ op: "attach", target_id: opts.targetId, channel: opts.channel, handle: opts.handle, token: opts.token })}\n`);
+}
+
+/** Dials the fixed endpoint for a relay connection: the SAME two-candidate
+ * hello race dialBrokerEndpoint() runs, tagged RELAY_TAG_BINARY/
+ * RELAY_TAG_TEXT, but on the FIRST completed handshake this function keeps
+ * that winning socket alive (destroying only the losing candidate's) and
+ * writes ONE `attach` line over it -- see performAttach() above for the
+ * reply's own byte-level read. Never throws. `ok: false` covers BOTH "no
+ * candidate could even complete a hello" (reusing describeDialFailure()'s
+ * own ranked text) and "a candidate completed hello but the broker refused
+ * the attach by name" -- the caller (stock-connect.ts's own
+ * dialMonitorSocket default) does not need to tell the two apart; both mean
+ * this dial produced no usable socket. */
+export function dialMonitorRelay(options: DialMonitorRelayOptions): Promise<DialMonitorRelayResult> {
+  const port = options.port ?? DEFAULT_CONTROL_PORT;
+  const candidates = options.candidates ?? DIAL_CANDIDATES;
+  const connectTimeoutMs = options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
+  const replyTimeoutMs = options.replyTimeoutMs ?? DEFAULT_REPLY_TIMEOUT_MS;
+  const connectFn = options.connect ?? connect;
+  const clientVersion = options.clientVersion ?? CLIENT_VERSION;
+  const tag = options.channel === "text" ? RELAY_TAG_TEXT : RELAY_TAG_BINARY;
+
+  return new Promise<DialMonitorRelayResult>((resolveOuter) => {
+    const sockets: (Socket | null)[] = candidates.map(() => null);
+    const observations: (DialCandidateObservation | undefined)[] = candidates.map(() => undefined);
+    let settledCount = 0;
+    let outerSettled = false;
+
+    function destroyAllSockets(): void {
+      for (const s of sockets) {
+        if (s && !s.destroyed) s.destroy();
+      }
+    }
+
+    function destroyLosers(winnerIdx: number): void {
+      sockets.forEach((s, idx) => {
+        if (idx !== winnerIdx && s && !s.destroyed) s.destroy();
+      });
+    }
+
+    candidates.forEach((host, idx) => {
+      dialOneCandidate(
+        host,
+        port,
+        connectTimeoutMs,
+        replyTimeoutMs,
+        connectFn,
+        clientVersion,
+        (socket) => {
+          sockets[idx] = socket;
+        },
+        tag,
+      ).then((outcome) => {
+        settledCount++;
+        if (outerSettled) return;
+        const classification = outcome.classification;
+        if (classification.completed) {
+          outerSettled = true;
+          destroyLosers(idx);
+          const winnerSocket = sockets[idx];
+          if (!winnerSocket) {
+            // Structurally unreachable: dialOneCandidate's own onSocket
+            // callback fires synchronously before this .then() can ever
+            // run. Guarded anyway -- never a throw out of this function.
+            resolveOuter({ ok: false, reason: "vice: internal error -- relay dial completed with no live socket" });
+            return;
+          }
+          performAttach(winnerSocket, outcome.host, port, options, replyTimeoutMs, resolveOuter);
+          return;
+        }
+        observations[idx] = {
+          host: outcome.host,
+          resolved: outcome.resolved,
+          rank: classification.rank,
+          version: classification.rank === 4 ? classification.version : undefined,
+        };
+        if (settledCount === candidates.length && !outerSettled) {
+          outerSettled = true;
+          destroyAllSockets();
+          const finalObservations = observations as DialCandidateObservation[];
+          const highestRank = finalObservations.reduce<DialRank>((max, o) => (o.rank > max ? o.rank : max), 1);
+          resolveOuter({ ok: false, reason: describeDialFailure({ ok: false, port, clientVersion, rank: highestRank, observations: finalObservations }) });
+        }
+      });
+    });
+  });
 }

@@ -295,27 +295,34 @@ test("InstanceRecord.monitorClients: present and empty on a freshly constructed 
   assert.ok(Object.prototype.hasOwnProperty.call(instance, "monitorClients"), "a freshly constructed record must carry a monitorClients KEY");
   assert.deepEqual(instance.monitorClients, {}, "and it must be an EMPTY map, never an absent field");
 
-  instance.monitorClients.binary = { grantId: "req-1-2-3abc1234", claimedAt: 111, pid: 4242 };
-  assert.deepEqual(instance.monitorClients.binary, { grantId: "req-1-2-3abc1234", claimedAt: 111, pid: 4242 });
+  // Phase 63 (SESS-02): `handle`/`attached` are widened-in, non-optional
+  // fields on this entry now -- see broker-state.mts's own
+  // InstanceRecord.monitorClients header comment.
+  instance.monitorClients.binary = { grantId: "req-1-2-3abc1234", claimedAt: 111, pid: 4242, handle: "test-handle", attached: false };
+  assert.deepEqual(instance.monitorClients.binary, { grantId: "req-1-2-3abc1234", claimedAt: 111, pid: 4242, handle: "test-handle", attached: false });
 });
 
 test("clearMonitorClient(record, 'text'): clears only the text entry, leaving the binary entry intact", () => {
   const instance = makeInstance({
     monitorClients: {
-      binary: { grantId: "req-bin", claimedAt: 100, pid: 4242 },
-      text: { grantId: "req-txt", claimedAt: 200, pid: 4242 },
+      binary: { grantId: "req-bin", claimedAt: 100, pid: 4242, handle: "handle-bin", attached: false },
+      text: { grantId: "req-txt", claimedAt: 200, pid: 4242, handle: "handle-txt", attached: false },
     },
   });
   clearMonitorClient(instance, "text");
-  assert.deepEqual(instance.monitorClients.binary, { grantId: "req-bin", claimedAt: 100, pid: 4242 }, "the binary entry must survive a text-scoped clear");
+  assert.deepEqual(
+    instance.monitorClients.binary,
+    { grantId: "req-bin", claimedAt: 100, pid: 4242, handle: "handle-bin", attached: false },
+    "the binary entry must survive a text-scoped clear",
+  );
   assert.equal(instance.monitorClients.text, undefined);
 });
 
 test("clearMonitorClient(record): with no channel argument, clears BOTH channels", () => {
   const instance = makeInstance({
     monitorClients: {
-      binary: { grantId: "req-bin", claimedAt: 100, pid: 4242 },
-      text: { grantId: "req-txt", claimedAt: 200, pid: 4242 },
+      binary: { grantId: "req-bin", claimedAt: 100, pid: 4242, handle: "handle-bin", attached: false },
+      text: { grantId: "req-txt", claimedAt: 200, pid: 4242, handle: "handle-txt", attached: false },
     },
   });
   clearMonitorClient(instance);
@@ -331,7 +338,7 @@ test("clearMonitorClient: a no-op, and does not throw, when the targeted channel
 });
 
 test("clearMonitorClient: leaves every other field on the record untouched", () => {
-  const instance = makeInstance({ monitorClients: { binary: { grantId: "req-1", claimedAt: 111, pid: 4242 } }, reason: "acquire" });
+  const instance = makeInstance({ monitorClients: { binary: { grantId: "req-1", claimedAt: 111, pid: 4242, handle: "handle-1", attached: false } }, reason: "acquire" });
   clearMonitorClient(instance);
   assert.equal(instance.reason, "acquire");
   assert.equal(instance.pid, 4242);

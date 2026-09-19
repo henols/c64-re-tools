@@ -73,6 +73,31 @@ let warnedBinmonBindWidened = false;
 // and not the other, though in practice both resolve from the same
 // `binmonHost` value below).
 let warnedRemoteMonitorBindWidened = false;
+/**
+ * Resolves the host the emulator's binary/text monitor binds to and the
+ * host the broker's own relay dials to REACH that same emulator (Phase 63,
+ * SESS-02) -- ONE owner for both, so they can never drift onto two
+ * different literals. Precedence, unchanged from what buildViceArgs()
+ * always resolved inline: the explicit `binmonHost` argument, then the
+ * `VICE_BROKER_BINMON_HOST` environment variable, then the loopback
+ * literal `127.0.0.1`. Emits the SAME one-time widened-bind warning
+ * buildViceArgs() always emitted for the binary-monitor bind (gated on
+ * `warnedBinmonBindWidened` above, exactly as before) -- a caller resolving
+ * only for the RELAY dial (never touching argv) still gets that warning
+ * once, since a widened bind is exactly as security-relevant for a splice
+ * target as it is for a launch flag.
+ */
+export function resolveBinmonHost(binmonHost) {
+    const host = binmonHost ?? process.env.VICE_BROKER_BINMON_HOST ?? "127.0.0.1";
+    if (host !== "127.0.0.1" && !warnedBinmonBindWidened) {
+        warnedBinmonBindWidened = true;
+        process.stderr.write(`vice-broker: stock binary-monitor bind widened to ${host} -- VICE's binary monitor is ` +
+            `unauthenticated and grants full memory read/write plus process control to anything that can ` +
+            `reach it; the default of 127.0.0.1 is the safe posture for a host-native install, widen only ` +
+            `when the MCP server itself runs in a container that must reach the host emulator\n`);
+    }
+    return host;
+}
 /** The random seed the stock determinism block pins, and the exact value
  * the reproduction was measured with on this host -- exported so a capture
  * record's reproducibility key can cite ONE definition rather than
@@ -162,14 +187,11 @@ export function buildViceArgs(port, { backend, mcpHost, binmonHost, viceArgsEnv,
         return rawViceArgs.trim().split(/\s+/);
     }
     if (backend === "stock") {
-        const host = binmonHost ?? process.env.VICE_BROKER_BINMON_HOST ?? "127.0.0.1";
-        if (host !== "127.0.0.1" && !warnedBinmonBindWidened) {
-            warnedBinmonBindWidened = true;
-            process.stderr.write(`vice-broker: stock binary-monitor bind widened to ${host} -- VICE's binary monitor is ` +
-                `unauthenticated and grants full memory read/write plus process control to anything that can ` +
-                `reach it; the default of 127.0.0.1 is the safe posture for a host-native install, widen only ` +
-                `when the MCP server itself runs in a container that must reach the host emulator\n`);
-        }
+        // Both argv sites below (the binary-monitor address and, further down,
+        // the text-monitor address) read this ONE resolved value -- resolveBinmonHost()
+        // is now the one owner of this precedence, shared with vice-broker.mts's
+        // relay dial (Phase 63, SESS-02), never a second literal.
+        const host = resolveBinmonHost(binmonHost);
         // Audit item I-2 (§4.2, FINDING-C1): a broker-launched stock x64sc used
         // to boot with Drive8Type=0 (NONE) -- nothing answers unit 8, so
         // LOAD"*",8,1 fails ?DEVICE NOT PRESENT ERROR and the entry-point

@@ -694,7 +694,13 @@ export interface ReleaseMonitorOptions {
  * should construct a MonitorOwnershipError from this outcome's own fields
  * (see that class's own header comment). */
 export type ClaimMonitorOutcome =
-  | { ok: true }
+  // Widened (Phase 63, SESS-02): `handle` is the per-claim handle
+  // broker-control.mts's own `monitor_claimed` reply now always carries --
+  // the ONLY authority a later `attach` on a SEPARATE relay connection can
+  // present (see broker-control.mts's RelayAttachOutcome header comment).
+  // A missing or non-string value on the wire is a protocol failure,
+  // refused by name below, never defaulted to an empty string.
+  | { ok: true; handle: string }
   | { ok: false; reason: "monitor_owned"; holder: MonitorClaimHolder }
   // "denied": the broker's control plane refused because the grant
   // named is not the one THIS connection holds. In a correct client that is
@@ -1150,7 +1156,16 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
     if (raw.line.kind !== "monitor_claimed") {
       return { ok: false, reason: "internal" };
     }
-    return { ok: true };
+    // Phase 63 (SESS-02): a missing or non-string `handle` is a protocol
+    // failure -- this broker's own writeLine() always includes it on a
+    // successful reply now, so its absence means something between this
+    // client and the broker disagrees about the wire shape, never a
+    // legitimate "no handle" state to paper over with a fabricated value.
+    const handle = raw.line.handle;
+    if (typeof handle !== "string" || handle === "") {
+      return { ok: false, reason: "internal" };
+    }
+    return { ok: true, handle };
   }
 
   /** Releases a previously claimed monitor socket, sending

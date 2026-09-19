@@ -28,6 +28,7 @@ import { readFileSync, mkdirSync, openSync, writeFileSync, chmodSync, renameSync
 import { join, basename, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn as nodeSpawn } from "node:child_process";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import { containerGuardReport, containerGuardEnforce } from "./container-guard.mjs";
 // countReady/countTotal/countLaunching are DROPPED from this import -- they
 // were used only as maintainWarmFloorForRealBroker()'s own deps for the
@@ -42,7 +43,19 @@ import { acquirePortAndLaunch, deleteInstanceRecord,
 // connection is the lease now, so there is no separate floor left to
 // keep warm); this is ONLY the launching -> ready promotion sweep the
 // floor used to carry as its own step 1.
-promoteLaunchingInstances, probeReady, runBrokerPass, withCrashSupervision, } from "./broker-launch.mjs";
+promoteLaunchingInstances, probeReady, runBrokerPass, withCrashSupervision, 
+// The ONE owner of the binmon host precedence (Phase 63, SESS-02) --
+// the argv builder's own resolution and this file's relay-dial resolution
+// below both go through this single function, never a second literal.
+resolveBinmonHost, } from "./broker-launch.mjs";
+// A VALUE import of the splice primitive (Phase 63, SESS-02) -- safe here
+// for the SAME reason every other sibling value import in this file is:
+// this file is ALWAYS run from its own compiled resources/ form, and
+// "./broker-relay.mjs" is compiled into that same directory by the same
+// build.ts pass (both source and target are listed in
+// HOST_BOUND_ARTIFACTS/tsconfig.build.json's include[] in this same
+// change).
+import { spliceRelay } from "./broker-relay.mjs";
 // resolvedBackend() resolves the emulator binary's identity -- ViceBackend's
 // own definition lives in backend-detect.mts too (narrowed to a single
 // literal now that the fork backend has been removed entirely), so
@@ -762,13 +775,67 @@ export function handleMonitorClaim(requestId, targetId, channel, state) {
         return { ok: false, code: "bad_request" };
     const existing = instance.monitorClients[channel];
     if (!existing) {
-        instance.monitorClients[channel] = { grantId: targetId, claimedAt: Date.now(), pid: instance.pid };
-        return { ok: true };
+        // Phase 63 (SESS-02): mints the per-claim handle a relay connection's
+        // `attach` will later have to present -- 16 random bytes rendered as
+        // hex, the SAME rendering newControlToken() already uses for the
+        // per-boot control token, at a size chosen only for the constant-time
+        // comparison's own length gate (handleRelayAttach() below), not for
+        // any wire-format reason.
+        const handle = randomBytes(16).toString("hex");
+        instance.monitorClients[channel] = { grantId: targetId, claimedAt: Date.now(), pid: instance.pid, handle, attached: false };
+        return { ok: true, handle };
     }
     if (existing.grantId === targetId) {
-        return { ok: true }; // idempotent repeat from the SAME grant on the SAME channel -- no second holder
+        return { ok: true, handle: existing.handle }; // idempotent repeat from the SAME grant on the SAME channel -- SAME handle, no second holder minted
     }
     return { ok: false, code: "monitor_owned", holder: { grantId: existing.grantId, claimedAt: existing.claimedAt, pid: existing.pid, channel } };
+}
+/** Answers `attach` (Phase 63, SESS-02): the ONE place a relay connection's
+ * presented handle is checked, and the ONE place spliceRelay() is ever
+ * called from production wiring. Resolves the instance the SAME way every
+ * other target-naming op resolves its own (resolveInstanceForMonitorTarget()
+ * above); refuses `bad_request` for an unknown target, matching
+ * handleMonitorClaim()'s own posture for the identical failure.
+ *
+ * Every OTHER failure is `denied`, deliberately collapsed into one code
+ * (RelayAttachOutcome's own header comment explains why): no current
+ * holder on this channel at all, a holder whose stored handle differs in
+ * LENGTH from what was presented (checked before ever calling
+ * timingSafeEqual(), which throws on a length mismatch rather than
+ * returning false), a byte-for-byte mismatch under timingSafeEqual()
+ * itself, or a channel that is already `attached` -- one emulator socket
+ * to splice to, so a second attach on the same channel is refused rather
+ * than silently spliced twice.
+ *
+ * On success: marks the channel `attached`, resolves the emulator's own
+ * host through resolveBinmonHost() (the SAME resolver the argv builder
+ * uses -- never a second literal) and its port from the instance record's
+ * own primary `port` field for the binary channel (the `remoteMonitorPort`
+ * field for the text channel, Plan 63-03's own concern -- this task's own
+ * `channel` parameter is threaded through now so that split needs no
+ * signature change later), calls spliceRelay(), and keeps the returned
+ * session on nothing this function itself owns -- the splice's own
+ * "close" handling is spliceRelay()'s own concern, not this callback's. */
+export function handleRelayAttach(targetId, channel, presentedHandle, clientSocket, pending, state) {
+    const instance = resolveInstanceForMonitorTarget(targetId, state);
+    if (!instance)
+        return { ok: false, code: "bad_request" };
+    const holder = instance.monitorClients[channel];
+    if (!holder)
+        return { ok: false, code: "denied" };
+    const stored = Buffer.from(holder.handle, "utf8");
+    const presented = Buffer.from(presentedHandle, "utf8");
+    if (stored.length !== presented.length)
+        return { ok: false, code: "denied" };
+    if (!timingSafeEqual(stored, presented))
+        return { ok: false, code: "denied" };
+    if (holder.attached)
+        return { ok: false, code: "denied" };
+    holder.attached = true;
+    const host = resolveBinmonHost();
+    const port = channel === "text" ? instance.remoteMonitorPort ?? instance.port : instance.port;
+    spliceRelay({ clientSocket, host, port, pending });
+    return { ok: true };
 }
 /** Answers `monitor_release` (per-channel): clears ONLY the named
  * channel's entry, ONLY when `targetId` names that channel's CURRENT
@@ -1172,6 +1239,7 @@ async function run(args) {
             }),
             onMonitorClaim: (requestId, targetId, channel) => handleMonitorClaim(requestId, targetId, channel, state),
             onMonitorRelease: (requestId, targetId, channel) => handleMonitorRelease(requestId, targetId, channel, state),
+            onRelayAttach: (targetId, channel, presentedHandle, socket, pending) => handleRelayAttach(targetId, channel, presentedHandle, socket, pending, state),
             onHostState: () => ({
                 pid: process.pid,
                 startedAt,

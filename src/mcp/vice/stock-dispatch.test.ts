@@ -8,7 +8,7 @@ import { test, beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, mkdtempSync, writeFileSync, rmSync, mkdirSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { createServer, type Socket, type AddressInfo } from "node:net";
+import { createServer, connect as netConnect, type Socket, type AddressInfo } from "node:net";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
@@ -31,7 +31,7 @@ import { encodeResponseFrame } from "./binmon-fixtures.ts";
 import { MachineRestartedError, type ToolInfo } from "./vice-errors.ts";
 import { MonitorOwnershipError } from "./vice-broker-client.ts";
 import type { HeldLease, BrokerControlSession } from "./vice-broker-client.ts";
-import type { StockConnectSession, StockConnectOptions } from "./stock-connect.ts";
+import { stockConnect, type StockConnectSession, type StockConnectOptions, type DialMonitorSocketFn } from "./stock-connect.ts";
 import { resetRunStateTrackersForTest, attachRunStateTracker } from "./stock-runstate.ts";
 import type { StockSessionHandler, StockToolResult } from "./stock-handler.ts";
 import { checkAgainstSchema } from "./stock-schema-check.ts";
@@ -769,7 +769,23 @@ test("CR-06: the real stockConnect, driven against a loopback binmon stub throug
 
   try {
     const lease = makeLease({ host: "127.0.0.1", port, targetId: "grant-real-1", brokerControl: STUB_BROKER_CONTROL, epochFile: epochPath, supervisorDir: dir });
-    const outcome = await ensureStockSession({ ensureLease: async () => ({ ok: true, lease }) });
+    // Phase 63 (SESS-02): stockConnect()'s default socket source is now a
+    // relay dial against a broker that is not running in this test process.
+    // This test is specifically about the REAL stockConnect handshake, not
+    // about the socket source, so `connect` is wrapped with a
+    // dialMonitorSocket that dials the loopback stub server above directly
+    // -- byte-identical handshake behaviour to the pre-relay direct dial
+    // this replaces.
+    const directDialMonitorSocket: DialMonitorSocketFn = (opts) =>
+      new Promise((resolve, reject) => {
+        const socket = netConnect({ host: opts.host, port: opts.port });
+        socket.once("connect", () => resolve({ socket, pending: Buffer.alloc(0) }));
+        socket.once("error", reject);
+      });
+    const outcome = await ensureStockSession({
+      ensureLease: async () => ({ ok: true, lease }),
+      connect: (opts) => stockConnect({ ...opts, deps: { dialMonitorSocket: directDialMonitorSocket, ...opts.deps } }),
+    });
     assert.ok(outcome.ok, `expected a live session: ${JSON.stringify(outcome)}`);
     assert.equal(outcome.session.baselineEpoch, 7, "the reconnect baseline must be the epoch the lease's own epoch.json carries, not null");
     assert.equal(outcome.session.versionQuad, "3.9.0.0");
