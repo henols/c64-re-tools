@@ -273,6 +273,15 @@ test("structural (D-14): git ls-files agrees -- the identifier appears only in t
     // literal string "monitorClients" as the identifier it searches for --
     // not a halting-path reference to the field.
     "text-connect.test.ts",
+    // Phase 63, plan 63-01 (SESS-02): broker-relay.mts's own module header
+    // comment NAMES the field (documenting where the per-claim handle it
+    // checks is minted) without ever reading it -- handleRelayAttach()'s
+    // own read lives in vice-broker.mts, already allowed above. Its test
+    // file constructs the same raw InstanceRecord literals every other
+    // allowed *.test.ts file above does. Kept in sync with
+    // broker-control.test.ts's own copy of this same guard.
+    "broker-relay.mts",
+    "broker-relay.test.ts",
   ]);
   const offenders: string[] = [];
   for (const rel of files) {

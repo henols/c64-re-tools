@@ -627,6 +627,10 @@ const JUSTIFIED_NETWORK_CALLERS: Record<string, string> = {
     "Plan 02, C4: defaultPortInUse() binds-and-releases a candidate port on 127.0.0.1 to answer 'is a TCP listener already bound here' for the broker's OWN port allocator (never a readiness check against the emulator itself). Host-side broker code inspecting its own host's ports; not container-side code reaching the emulator.",
   "broker-launch.mts":
     "D-05's permitted-route note, as amended by P-05 (Phase 01.6.2.1 plan 02): probeReady() is now a single in-process mechanism -- a POST against the instance's own /mcp endpoint using the global fetch, matching vice-broker.sh's own curl-based probe_ready(). This is host-side broker code owning the emulator's lifecycle (it already probes today, per RESEARCH.md D-05) -- not container-side code reaching the emulator outside mcp__vice__*.",
+  "broker-relay.mts":
+    "Phase 63, plan 63-01 (SESS-02): this IS the byte-transparent splice -- the one module whose entire purpose is dialling the emulator's binary/text monitor socket (net.connect) and joining it to a relay connection with Socket.prototype.pipe(). This is host-side broker code owning the emulator's lifecycle (the SAME role broker-control.mts's own justification above already covers for its acceptor half); not container-side code reaching the emulator outside mcp__vice__*.",
+  "vice-broker.mts":
+    "Phase 63, plan 63-01 (SESS-02): a type-only `import type { Socket } from \"node:net\"` for handleRelayAttach()'s own `clientSocket` parameter -- this pattern set matches on the import SPECIFIER textually, not on whether the import is type-only. handleRelayAttach() itself never dials anything (spliceRelay(), in the already-justified broker-relay.mts, is the one call site that does); this file only resolves the emulator host/port and hands the already-accepted socket onward.",
 };
 
 test("structural: every host-bound source containing a network-call construct carries an explicit justification; the launcher stays network-free", () => {

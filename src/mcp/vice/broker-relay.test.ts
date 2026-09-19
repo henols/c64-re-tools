@@ -140,6 +140,17 @@ function setupBrokerState(emulatorPort: number, targetId: string): BrokerState {
   return state;
 }
 
+/** Task 3 (SESS-02, concurrency edge): the same builder, generalised to N
+ * grant/instance pairs -- one broker, multiple UNRELATED sessions. */
+function setupMultiGrantBrokerState(grants: Array<{ port: number; targetId: string }>): BrokerState {
+  const state = createBrokerState();
+  for (const { port, targetId } of grants) {
+    state.instances.set(port, makeGrantedInstance(port));
+    state.grants.set(targetId, { id: targetId, port, grantedAt: Date.now(), pid: 4242 });
+  }
+  return state;
+}
+
 interface RelayTestBrokerContext {
   listener: StartControlListenerResult;
   listenerPort: number;
@@ -147,13 +158,14 @@ interface RelayTestBrokerContext {
   state: BrokerState;
 }
 
-/** Stands up a REAL startControlListener() on port zero, wired to
- * vice-broker.mts's own handleMonitorClaim()/handleMonitorRelease()/
- * handleRelayAttach() against a fresh BrokerState carrying one grant on
- * `emulatorPort`. Every other callback is a no-op stub -- this suite never
- * exercises acquire/release/recycle/status/host_state/host_tool. */
-async function withRelayTestBroker<T>(emulatorPort: number, targetId: string, fn: (ctx: RelayTestBrokerContext) => Promise<T>): Promise<T> {
-  const state = setupBrokerState(emulatorPort, targetId);
+/** Stands up a REAL startControlListener() on port zero against an
+ * ALREADY-BUILT BrokerState, wired to vice-broker.mts's own
+ * handleMonitorClaim()/handleMonitorRelease()/handleRelayAttach() -- the
+ * shared listener-standup both withRelayTestBroker() (one grant) and
+ * withMultiRelayTestBroker() (N grants, Task 3's concurrency case) build
+ * on. Every other callback is a no-op stub -- this suite never exercises
+ * acquire/release/recycle/status/host_state/host_tool. */
+async function startRelayListenerForState(state: BrokerState): Promise<{ listener: StartControlListenerResult; token: string }> {
   const token = newControlToken();
   const listener = await startControlListener({
     host: "127.0.0.1",
@@ -185,6 +197,25 @@ async function withRelayTestBroker<T>(emulatorPort: number, targetId: string, fn
     onRelayAttach: (tId, channel, presentedHandle, socket, pending) => handleRelayAttach(tId, channel, presentedHandle, socket, pending, state),
     onHostTool: async () => ({ ok: false, message: "not exercised by broker-relay.test.ts" }),
   });
+  return { listener, token };
+}
+
+async function withRelayTestBroker<T>(emulatorPort: number, targetId: string, fn: (ctx: RelayTestBrokerContext) => Promise<T>): Promise<T> {
+  const state = setupBrokerState(emulatorPort, targetId);
+  const { listener, token } = await startRelayListenerForState(state);
+  try {
+    return await fn({ listener, listenerPort: listener.port, token, state });
+  } finally {
+    listener.server.close();
+  }
+}
+
+/** Task 3 (SESS-02, concurrency edge): ONE control listener shared across
+ * N grants -- the assertion that proves one broker serving two unrelated
+ * sessions does not cross-wire them. */
+async function withMultiRelayTestBroker<T>(grants: Array<{ port: number; targetId: string }>, fn: (ctx: RelayTestBrokerContext) => Promise<T>): Promise<T> {
+  const state = setupMultiGrantBrokerState(grants);
+  const { listener, token } = await startRelayListenerForState(state);
   try {
     return await fn({ listener, listenerPort: listener.port, token, state });
   } finally {
@@ -492,4 +523,138 @@ test("boundary one overflow: a relay connection buffering past MAX_ATTACH_LINE_B
       });
     },
   );
+});
+
+// ===========================================================================
+// Task 3: two grants relay at once on one broker without cross-wiring.
+// ===========================================================================
+
+test("concurrency: two relay connections attached to two DIFFERENT grants on one broker run independently, and destroying one leaves the other carrying bytes", async () => {
+  const receivedA: Buffer[] = [];
+  const receivedB: Buffer[] = [];
+  let resolveGotA: () => void = () => {};
+  let resolveGotB: () => void = () => {};
+  const gotA = new Promise<void>((resolve) => {
+    resolveGotA = resolve;
+  });
+  const gotB = new Promise<void>((resolve) => {
+    resolveGotB = resolve;
+  });
+
+  const socketsA = new Set<Socket>();
+  const socketsB = new Set<Socket>();
+  let emulatorASocket: Socket | null = null;
+
+  const serverA: Server = createServer((socket) => {
+    emulatorASocket = socket;
+    socketsA.add(socket);
+    socket.on("close", () => socketsA.delete(socket));
+    socket.on("data", (chunk: Buffer) => {
+      receivedA.push(Buffer.from(chunk));
+      resolveGotA();
+    });
+  });
+  const serverB: Server = createServer((socket) => {
+    socketsB.add(socket);
+    socket.on("close", () => socketsB.delete(socket));
+    socket.on("data", (chunk: Buffer) => {
+      receivedB.push(Buffer.from(chunk));
+      resolveGotB();
+    });
+  });
+
+  await Promise.all([
+    new Promise<void>((resolve) => serverA.listen(0, "127.0.0.1", () => resolve())),
+    new Promise<void>((resolve) => serverB.listen(0, "127.0.0.1", () => resolve())),
+  ]);
+  const portA = (serverA.address() as AddressInfo).port;
+  const portB = (serverB.address() as AddressInfo).port;
+
+  try {
+    await withMultiRelayTestBroker(
+      [
+        { port: portA, targetId: "grant-multi-a" },
+        { port: portB, targetId: "grant-multi-b" },
+      ],
+      async ({ listenerPort, token, state }) => {
+        const claimA = handleMonitorClaim("claim-multi-a", "grant-multi-a", "binary", state);
+        const claimB = handleMonitorClaim("claim-multi-b", "grant-multi-b", "binary", state);
+        assert.ok(claimA.ok && claimB.ok, `expected both claims to succeed: ${JSON.stringify(claimA)} ${JSON.stringify(claimB)}`);
+        if (!claimA.ok || !claimB.ok) return;
+
+        const dialA = await dialMonitorRelay({
+          targetId: "grant-multi-a",
+          channel: "binary",
+          handle: claimA.handle,
+          token,
+          port: listenerPort,
+          candidates: ["127.0.0.1"],
+        });
+        const dialB = await dialMonitorRelay({
+          targetId: "grant-multi-b",
+          channel: "binary",
+          handle: claimB.handle,
+          token,
+          port: listenerPort,
+          candidates: ["127.0.0.1"],
+        });
+        assert.ok(dialA.ok && dialB.ok, `expected both relay dials to succeed: ${JSON.stringify(dialA)} ${JSON.stringify(dialB)}`);
+        if (!dialA.ok || !dialB.ok) return;
+
+        // Interleave: write on relay A, then relay B -- each payload must
+        // arrive ONLY at its own emulator.
+        const payloadA = Buffer.from("payload-for-A-only", "utf8");
+        const payloadB = Buffer.from("payload-for-B-only", "utf8");
+        dialA.socket.write(payloadA);
+        await gotA;
+        dialB.socket.write(payloadB);
+        await gotB;
+
+        assert.ok(Buffer.concat(receivedA).equals(payloadA), "relay A's payload must arrive at emulator A byte-identical, asserted with Buffer.equals");
+        assert.ok(Buffer.concat(receivedB).equals(payloadB), "relay B's payload must arrive at emulator B byte-identical, asserted with Buffer.equals");
+        assert.equal(receivedA.length, 1, "emulator A must never observe a second, cross-wired chunk");
+        assert.equal(receivedB.length, 1, "emulator B must never observe a second, cross-wired chunk");
+
+        // Destroy relay A -- emulator B's connection must survive and stay
+        // able to carry bytes. Wait on the REAL close propagation through
+        // the splice (never a timer) before asserting on B.
+        const emulatorAClosed = new Promise<void>((resolve) => {
+          if (!emulatorASocket || emulatorASocket.destroyed) {
+            resolve();
+            return;
+          }
+          emulatorASocket.once("close", () => resolve());
+        });
+        dialA.socket.destroy();
+        await emulatorAClosed;
+
+        let resolveGotBAgain: () => void = () => {};
+        const gotBAgain = new Promise<void>((resolve) => {
+          resolveGotBAgain = resolve;
+        });
+        for (const s of socketsB) {
+          s.removeAllListeners("data");
+          s.on("data", (chunk: Buffer) => {
+            receivedB.push(Buffer.from(chunk));
+            resolveGotBAgain();
+          });
+        }
+        const payloadB2 = Buffer.from("still-alive-B", "utf8");
+        assert.ok(!dialB.socket.destroyed, "relay B's own socket must still be open after relay A was destroyed");
+        dialB.socket.write(payloadB2);
+        await gotBAgain;
+        assert.ok(
+          Buffer.from(receivedB[receivedB.length - 1]!).equals(payloadB2),
+          "emulator B's connection must still be open and able to carry bytes after relay A is destroyed",
+        );
+
+        dialB.socket.destroy();
+      },
+    );
+  } finally {
+    for (const s of socketsA) s.destroy();
+    for (const s of socketsB) s.destroy();
+    await new Promise<void>((resolve) => serverA.close(() => resolve()));
+    await new Promise<void>((resolve) => serverB.close(() => resolve()));
+  }
 });
