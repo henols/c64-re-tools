@@ -80,6 +80,18 @@ export interface EcosystemRow {
   text: string;
 }
 
+/** One row of the generated prerequisite overview: a declared record's id,
+ * what it unblocks (split into its two declared arrays so each cell carries
+ * one kind of data), its one-line remedy, and how its location can be
+ * overridden. */
+export interface OverviewRow {
+  id: string;
+  skills: string[];
+  mcp: string[];
+  remedy: string;
+  locationOverride: string;
+}
+
 /** The result of splicing a generated body into a marker-delimited region:
  * the (possibly unchanged) full text, whether it actually changed, and a
  * named failure when the markers could not be found unambiguously. Never
@@ -139,6 +151,41 @@ export const ECOSYSTEM_TABLE_COLUMNS: readonly string[] = ["Ecosystem", "Platfor
 /** The region name for the VICE ecosystem table -- one of the two regions
  * this module owns inside README.md. */
 export const ECOSYSTEM_REGION = "vice-ecosystems";
+
+/** The region name for the eight-record prerequisite overview -- the second
+ * region this module owns inside README.md. */
+export const OVERVIEW_REGION = "prerequisite-overview";
+
+/** The generated prerequisite overview table's header row, in column order.
+ * "What it unblocks" is split into its two declared arrays (skills, MCP
+ * tools) so each cell carries one kind of data and the guard's comparison
+ * stays total (D-11). */
+export const OVERVIEW_TABLE_COLUMNS: readonly string[] = [
+  "Prerequisite",
+  "Unblocks (skills)",
+  "Unblocks (MCP tools)",
+  "Remedy",
+  "Location override",
+];
+
+/** The overview's Remedy cell for a record with no `universal` remedy of its
+ * own -- `x64sc`, `c1541` and `petcat`, whose remedies are ecosystem-specific
+ * and already rendered once in the VICE ecosystem table. Deliberately not a
+ * positional phrase naming a table "above" or "below": the cell must not go
+ * false if README.md's sections are ever reordered. */
+export const OVERVIEW_REMEDY_POINTER = "See the VICE per-package-manager table.";
+
+/** The overview's "Unblocks" cell text for a record whose `unblocks.skills`
+ * or `unblocks.mcp` array is empty. */
+export const EMPTY_UNBLOCKS = "none";
+
+/** The overview's Location override cell for a record with no `envVar` but
+ * with `location.fileOverridable === true`. */
+export const FILE_ONLY_OVERRIDE = ".c64-re-tools/tools.json";
+
+/** The overview's Location override cell for a record with neither an
+ * `envVar` nor `location.fileOverridable === true`. */
+export const NO_LOCATION_OVERRIDE = "none";
 
 /** Returns the literal HTML-comment marker pair that delimits a named
  * generated region inside README.md. */
@@ -219,6 +266,49 @@ export function renderEcosystemTable(rows: EcosystemRow[]): string {
   return [header, separator, ...dataLines].join("\n");
 }
 
+/** Derives the prerequisite overview's rows: one per entry of `tools`, in
+ * the declaration's own key order. `skills` and `mcp` come from
+ * `unblocks.skills` and `unblocks.mcp` verbatim; `remedy` is the first entry
+ * of `remedies.universal` when that key exists and is non-empty, taken
+ * character for character (D-05), and otherwise `OVERVIEW_REMEDY_POINTER`;
+ * `locationOverride` is `location.envVar` when present, otherwise
+ * `FILE_ONLY_OVERRIDE` when `location.fileOverridable` is exactly `true`,
+ * otherwise `NO_LOCATION_OVERRIDE`. Pure function: no I/O, never throws. */
+export function deriveOverviewRows(declaration: ToolDeclaration): OverviewRow[] {
+  return Object.entries(declaration.tools).map(([id, record]) => {
+    const universal = record.remedies.universal;
+    const remedy = universal && universal.length > 0 ? universal[0]!.text : OVERVIEW_REMEDY_POINTER;
+    const locationOverride = record.location.envVar
+      ? record.location.envVar
+      : record.location.fileOverridable === true
+        ? FILE_ONLY_OVERRIDE
+        : NO_LOCATION_OVERRIDE;
+    return {
+      id,
+      skills: record.unblocks.skills,
+      mcp: record.unblocks.mcp,
+      remedy,
+      locationOverride,
+    };
+  });
+}
+
+/** Renders `rows` as a markdown table whose header is `OVERVIEW_TABLE_COLUMNS`:
+ * the raw id; the skills joined with `", "` or `EMPTY_UNBLOCKS` when empty;
+ * the mcp ids joined the same way; the remedy exactly as derived; and the
+ * location override exactly as derived. No backticks, no escaping, no
+ * wrapping (D-05). */
+export function renderOverviewTable(rows: OverviewRow[]): string {
+  const header = `| ${OVERVIEW_TABLE_COLUMNS.join(" | ")} |`;
+  const separator = `| ${OVERVIEW_TABLE_COLUMNS.map(() => "---").join(" | ")} |`;
+  const dataLines = rows.map((row) => {
+    const skillsCell = row.skills.length > 0 ? row.skills.join(", ") : EMPTY_UNBLOCKS;
+    const mcpCell = row.mcp.length > 0 ? row.mcp.join(", ") : EMPTY_UNBLOCKS;
+    return `| ${row.id} | ${skillsCell} | ${mcpCell} | ${row.remedy} | ${row.locationOverride} |`;
+  });
+  return [header, separator, ...dataLines].join("\n");
+}
+
 /** The comment inserted at the top of every generated region, naming the
  * exact command that reproduces it. The only place this text is produced --
  * a guard comparing regions never re-derives it. */
@@ -285,6 +375,15 @@ export function writeGeneratedRegions({
   } else if (ecosystemResult.changed) {
     text = ecosystemResult.text;
     rewrote.push(ECOSYSTEM_REGION);
+  }
+
+  const overviewBody = renderOverviewTable(deriveOverviewRows(declaration));
+  const overviewResult = spliceRegion(text, OVERVIEW_REGION, overviewBody);
+  if (overviewResult.error) {
+    errors.push(overviewResult.error);
+  } else if (overviewResult.changed) {
+    text = overviewResult.text;
+    rewrote.push(OVERVIEW_REGION);
   }
 
   if (text !== originalText) {

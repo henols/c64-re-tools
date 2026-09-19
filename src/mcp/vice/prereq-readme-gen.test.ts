@@ -22,9 +22,12 @@ import { fileURLToPath } from "node:url";
 import {
   ECOSYSTEM_REGION,
   ECOSYSTEM_TABLE_COLUMNS,
+  OVERVIEW_REGION,
+  OVERVIEW_TABLE_COLUMNS,
   REGENERATE_COMMAND,
   VICE_PACKAGE_TOOL_IDS,
   deriveEcosystemRows,
+  deriveOverviewRows,
   readDeclarationFile,
   regionMarkers,
 } from "./prereq-readme-gen.ts";
@@ -198,6 +201,85 @@ export function auditGeneratedReadme({ declPath, readmePath }: { declPath: strin
     }
   }
 
+  failures.push(...auditOverviewRegion(readmeText, declaration));
+
+  return failures;
+}
+
+/** Audits the prerequisite overview region with the same relations
+ * `auditGeneratedReadme` already applies to the ecosystem region: marker
+ * well-formedness, an exact header match against `OVERVIEW_TABLE_COLUMNS`, a
+ * non-empty data-row set, every declared record id present as a row, every
+ * row id present in the declaration, and per-id equality of all four
+ * remaining cells. Never throws; every failure names `REGENERATE_COMMAND`. */
+function auditOverviewRegion(readmeText: string, declaration: ToolDeclaration): string[] {
+  const failures: string[] = [];
+
+  const parsed = parseGeneratedRegion(readmeText, OVERVIEW_REGION);
+  if (parsed.errors.length > 0) {
+    return parsed.errors.map((e) => `${OVERVIEW_REGION}: ${e} -- run \`${REGENERATE_COMMAND}\``);
+  }
+
+  if (JSON.stringify(parsed.header) !== JSON.stringify(OVERVIEW_TABLE_COLUMNS)) {
+    failures.push(
+      `${OVERVIEW_REGION}: header row is ${JSON.stringify(parsed.header)}, expected ${JSON.stringify(OVERVIEW_TABLE_COLUMNS)} -- run \`${REGENERATE_COMMAND}\``,
+    );
+  }
+
+  const expectedRows = deriveOverviewRows(declaration);
+  const expectedById = new Map(expectedRows.map((row) => [row.id, row]));
+  const actualById = new Map<string, { skills: string; mcp: string; remedy: string; locationOverride: string }>();
+  for (const row of parsed.rows) {
+    const [id, skills, mcp, remedy, locationOverride] = row;
+    if (id === undefined) continue;
+    actualById.set(id, {
+      skills: skills ?? "",
+      mcp: mcp ?? "",
+      remedy: remedy ?? "",
+      locationOverride: locationOverride ?? "",
+    });
+  }
+
+  for (const [id, expected] of expectedById) {
+    const actual = actualById.get(id);
+    if (!actual) {
+      failures.push(
+        `${OVERVIEW_REGION}: ${id}: declared in prerequisites.json but has no row in README.md -- run \`${REGENERATE_COMMAND}\``,
+      );
+      continue;
+    }
+    const expectedSkills = expected.skills.length > 0 ? expected.skills.join(", ") : "none";
+    const expectedMcp = expected.mcp.length > 0 ? expected.mcp.join(", ") : "none";
+    if (actual.skills !== expectedSkills) {
+      failures.push(
+        `${OVERVIEW_REGION}: ${id}: skills mismatch -- declaration says "${expectedSkills}", README says "${actual.skills}" -- run \`${REGENERATE_COMMAND}\``,
+      );
+    }
+    if (actual.mcp !== expectedMcp) {
+      failures.push(
+        `${OVERVIEW_REGION}: ${id}: mcp mismatch -- declaration says "${expectedMcp}", README says "${actual.mcp}" -- run \`${REGENERATE_COMMAND}\``,
+      );
+    }
+    if (actual.remedy !== expected.remedy) {
+      failures.push(
+        `${OVERVIEW_REGION}: ${id}: remedy mismatch -- declaration says ${JSON.stringify(expected.remedy)}, README says ${JSON.stringify(actual.remedy)} -- run \`${REGENERATE_COMMAND}\``,
+      );
+    }
+    if (actual.locationOverride !== expected.locationOverride) {
+      failures.push(
+        `${OVERVIEW_REGION}: ${id}: location override mismatch -- declaration says ${JSON.stringify(expected.locationOverride)}, README says ${JSON.stringify(actual.locationOverride)} -- run \`${REGENERATE_COMMAND}\``,
+      );
+    }
+  }
+
+  for (const id of actualById.keys()) {
+    if (!expectedById.has(id)) {
+      failures.push(
+        `${OVERVIEW_REGION}: ${id}: row in README names a record prerequisites.json does not declare -- run \`${REGENERATE_COMMAND}\``,
+      );
+    }
+  }
+
   return failures;
 }
 
@@ -217,6 +299,21 @@ test("all three VICE_PACKAGE_TOOL_IDS derive identical ecosystem rows", () => {
       `${toolId} must derive the same ecosystem rows as ${first} -- rendering the VICE remedy tree once is only justified if all three package members agree`,
     );
   }
+});
+
+test("every declared record id has exactly one overview row, and every overview row id is a declared record", () => {
+  const declaration = readDeclarationFile({ declPath: DECL_PATH });
+  const declaredIds = Object.keys(declaration.tools);
+  const overviewRows = deriveOverviewRows(declaration);
+  const rowIds = overviewRows.map((row) => row.id);
+  assert.deepEqual(new Set(rowIds), new Set(declaredIds), "the overview's row-id set must equal the declaration's own id set");
+  assert.equal(rowIds.length, declaredIds.length, "no declared id may produce more than one overview row");
+});
+
+test("the committed overview region audits clean", () => {
+  const readmeText = readFileSync(README_PATH, "utf8");
+  const declaration = readDeclarationFile({ declPath: DECL_PATH });
+  assert.deepEqual(auditOverviewRegion(readmeText, declaration), []);
 });
 
 test("prereq-readme-gen.ts is absent from package.json's files[] array (repo tooling, never shipped)", () => {

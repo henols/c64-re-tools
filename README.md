@@ -85,6 +85,16 @@ any lockfile change, gated on a hash so normal starts are a cheap no-op. This
 needs `node` and `npm` on `PATH` and network access to the npm registry on the
 consumer's machine.
 
+## Prerequisites at a glance
+
+Every prerequisite this project declares, in one place: what it unblocks, its
+one-line remedy, and how to tell this project where an unusually-located one
+lives. The remedies themselves are the table's own data — nothing here
+restates one in prose.
+
+<!-- prereq-gen:prerequisite-overview:start -->
+<!-- prereq-gen:prerequisite-overview:end -->
+
 ## Installing VICE
 
 The `vice` MCP server does not bundle an emulator — it drives one running on
