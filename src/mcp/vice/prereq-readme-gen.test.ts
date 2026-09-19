@@ -37,6 +37,7 @@ import { fileURLToPath } from "node:url";
 import {
   ECOSYSTEM_REGION,
   ECOSYSTEM_TABLE_COLUMNS,
+  EMPTY_UNBLOCKS,
   OVERVIEW_REGION,
   OVERVIEW_TABLE_COLUMNS,
   REGENERATE_COMMAND,
@@ -45,8 +46,11 @@ import {
   deriveOverviewRows,
   readDeclarationFile,
   regionMarkers,
+  renderEcosystemTable,
+  renderOverviewTable,
+  spliceRegion,
 } from "./prereq-readme-gen.ts";
-import type { ToolDeclaration, ToolDeclarationRecord } from "./prereq-readme-gen.ts";
+import type { EcosystemRow, OverviewRow, ToolDeclaration, ToolDeclarationRecord } from "./prereq-readme-gen.ts";
 
 /** The plain `.git`-marker walk, copied from `phase58-citation-ledger.test.ts`
  * (itself mirrored from `phase50-findings-contract.test.ts`) -- this is
@@ -363,6 +367,102 @@ function deleteRegionMarker(readmeText: string, regionName: string, which: "star
   return readmeText.slice(0, idx) + readmeText.slice(idx + marker.length);
 }
 
+/** Wraps `body` in a named region's own start/end markers -- lets the
+ * round-trip cases feed a freshly rendered table straight back into
+ * `parseGeneratedRegion` without duplicating `spliceRegion`'s marker
+ * bookkeeping. */
+function wrapAsRegion(regionName: string, body: string): string {
+  const { start, end } = regionMarkers(regionName);
+  return `${start}\n${body}\n${end}`;
+}
+
+/** Re-renders a parsed table with `extraPad` spaces of padding around every
+ * cell delimiter -- content unchanged, whitespace only (roadmap criterion 4). */
+function renderPaddedTable(header: string[], rows: string[][], extraPad: number): string {
+  const pad = " ".repeat(extraPad);
+  const renderRow = (cells: string[]) => `|${pad}${cells.join(`${pad}|${pad}`)}${pad}|`;
+  const sep = `|${pad}${header.map(() => "---").join(`${pad}|${pad}`)}${pad}|`;
+  return [renderRow(header), sep, ...rows.map(renderRow)].join("\n");
+}
+
+/** Re-renders a parsed table with its data rows in reverse order -- the
+ * header and separator are untouched, only row ORDER changes. */
+function renderReversedTable(header: string[], rows: string[][]): string {
+  const renderRow = (cells: string[]) => `| ${cells.join(" | ")} |`;
+  const sep = `| ${header.map(() => "---").join(" | ")} |`;
+  return [renderRow(header), sep, ...[...rows].reverse().map(renderRow)].join("\n");
+}
+
+/** Re-renders a parsed table with a blank line inserted between the header
+ * and the separator, and between every subsequent row -- content and order
+ * unchanged. `parseGeneratedRegion` drops every non-`|` line, so this must
+ * leave the audit clean. */
+function renderTableWithBlankLines(header: string[], rows: string[][]): string {
+  const renderRow = (cells: string[]) => `| ${cells.join(" | ")} |`;
+  const sep = `| ${header.map(() => "---").join(" | ")} |`;
+  const lines = [renderRow(header), "", sep, ""];
+  for (const row of rows) {
+    lines.push(renderRow(row), "");
+  }
+  return lines.join("\n");
+}
+
+/** All three tolerances (padding, row order, blank lines) applied to the
+ * same table at once -- the plan's "all of the above" case. */
+function renderTableAllTolerances(header: string[], rows: string[][]): string {
+  const pad = "   ";
+  const renderRow = (cells: string[]) => `|${pad}${cells.join(`${pad}|${pad}`)}${pad}|`;
+  const sep = `|${pad}${header.map(() => "---").join(`${pad}|${pad}`)}${pad}|`;
+  const lines = [renderRow(header), "", sep, ""];
+  for (const row of [...rows].reverse()) {
+    lines.push(renderRow(row), "");
+  }
+  return lines.join("\n");
+}
+
+/** Re-renders a parsed table with its HEADER row's columns reordered --
+ * every data cell is untouched. A header that no longer matches the
+ * module's exported column constants means the parse is reading DIFFERENT
+ * columns: a real divergence, never tolerated by the same leniency that
+ * forgives padding, row order and blank lines. */
+function renderTableReorderedHeader(header: string[], rows: string[][]): string {
+  const reordered = [...header].reverse();
+  const renderRow = (cells: string[]) => `| ${cells.join(" | ")} |`;
+  const sep = `| ${reordered.map(() => "---").join(" | ")} |`;
+  return [renderRow(reordered), sep, ...rows.map(renderRow)].join("\n");
+}
+
+/** Maps one parsed ecosystem row's raw cells back into an `EcosystemRow` --
+ * the exact inverse of `renderEcosystemTable`'s per-row rendering -- used by
+ * the round-trip fidelity cases to prove the parser reconstructs every
+ * field the renderer produces. */
+function parsedEcosystemRow(cells: string[]): EcosystemRow {
+  const [ecosystem, platforms, text] = cells;
+  const platformsCell = platforms ?? "";
+  return {
+    ecosystem: ecosystem ?? "",
+    platforms: platformsCell.length > 0 ? platformsCell.split(", ") : [],
+    text: text ?? "",
+  };
+}
+
+/** Maps one parsed overview row's raw cells back into an `OverviewRow` --
+ * the exact inverse of `renderOverviewTable`'s per-row rendering, including
+ * `EMPTY_UNBLOCKS`'s sentinel round-tripping back to an empty array rather
+ * than a one-element array containing the sentinel word itself. */
+function parsedOverviewRow(cells: string[]): OverviewRow {
+  const [id, skills, mcp, remedy, locationOverride] = cells;
+  const toList = (cell: string | undefined): string[] =>
+    cell === undefined || cell === EMPTY_UNBLOCKS || cell.length === 0 ? [] : cell.split(", ");
+  return {
+    id: id ?? "",
+    skills: toList(skills),
+    mcp: toList(mcp),
+    remedy: remedy ?? "",
+    locationOverride: locationOverride ?? "",
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Existing coverage from plan 61-01.
 // ---------------------------------------------------------------------------
@@ -516,6 +616,184 @@ test("GEN-03: a removed end marker is reported as a malformed region and never t
     assert.ok(
       failures.some((f) => f.includes(OVERVIEW_REGION)),
       `the malformed region must be named; got ${JSON.stringify(failures)}`,
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Tolerance cases (roadmap criterion 4): a change that alters no FACT --
+// only whitespace, padding or row order -- must leave the guard green.
+// ---------------------------------------------------------------------------
+
+test("widened cell padding in both generated regions leaves the audit clean (roadmap criterion 4)", () => {
+  const { declPath, readmePath, cleanup } = withScratchPair();
+  try {
+    let text = readFileSync(readmePath, "utf8");
+    for (const regionName of [ECOSYSTEM_REGION, OVERVIEW_REGION]) {
+      const parsed = parseGeneratedRegion(text, regionName);
+      const body = renderPaddedTable(parsed.header!, parsed.rows, 3);
+      text = spliceRegion(text, regionName, body).text;
+    }
+    writeFileSyncNode(readmePath, text, "utf8");
+
+    assert.deepEqual(auditGeneratedReadme({ declPath, readmePath }), []);
+  } finally {
+    cleanup();
+  }
+});
+
+test("a different row order, applied independently in each generated region, leaves the audit clean (roadmap criterion 4)", () => {
+  for (const regionName of [ECOSYSTEM_REGION, OVERVIEW_REGION]) {
+    const { declPath, readmePath, cleanup } = withScratchPair();
+    try {
+      const text = readFileSync(readmePath, "utf8");
+      const parsed = parseGeneratedRegion(text, regionName);
+      const body = renderReversedTable(parsed.header!, parsed.rows);
+      const reflowed = spliceRegion(text, regionName, body).text;
+      writeFileSyncNode(readmePath, reflowed, "utf8");
+
+      assert.deepEqual(
+        auditGeneratedReadme({ declPath, readmePath }),
+        [],
+        `reversing ${regionName}'s row order alone must not be reported as a divergence`,
+      );
+    } finally {
+      cleanup();
+    }
+  }
+});
+
+test("blank lines inserted inside both generated regions leave the audit clean (roadmap criterion 4)", () => {
+  const { declPath, readmePath, cleanup } = withScratchPair();
+  try {
+    let text = readFileSync(readmePath, "utf8");
+    for (const regionName of [ECOSYSTEM_REGION, OVERVIEW_REGION]) {
+      const parsed = parseGeneratedRegion(text, regionName);
+      const body = renderTableWithBlankLines(parsed.header!, parsed.rows);
+      text = spliceRegion(text, regionName, body).text;
+    }
+    writeFileSyncNode(readmePath, text, "utf8");
+
+    assert.deepEqual(auditGeneratedReadme({ declPath, readmePath }), []);
+  } finally {
+    cleanup();
+  }
+});
+
+test("padding, row order and blank lines applied together in one scratch README leave the audit clean (roadmap criterion 4)", () => {
+  const { declPath, readmePath, cleanup } = withScratchPair();
+  try {
+    let text = readFileSync(readmePath, "utf8");
+    for (const regionName of [ECOSYSTEM_REGION, OVERVIEW_REGION]) {
+      const parsed = parseGeneratedRegion(text, regionName);
+      const body = renderTableAllTolerances(parsed.header!, parsed.rows);
+      text = spliceRegion(text, regionName, body).text;
+    }
+    writeFileSyncNode(readmePath, text, "utf8");
+
+    assert.deepEqual(auditGeneratedReadme({ declPath, readmePath }), []);
+  } finally {
+    cleanup();
+  }
+});
+
+// A reordered HEADER is NOT a reflow: it means the parser would be reading a
+// DIFFERENT column under the same position, silently corrupting every
+// comparison below it. Roadmap criterion 4's tolerance list is padding, row
+// order and blank lines -- deliberately not the header -- and this case is
+// what stops that tolerance from being widened later by a reader who assumes
+// any whitespace-adjacent change is safe.
+test("a reordered header row in a generated region is NOT tolerated -- it is a different table, not a reflow", () => {
+  const { declPath, readmePath, cleanup } = withScratchPair();
+  try {
+    const text = readFileSync(readmePath, "utf8");
+    const parsed = parseGeneratedRegion(text, ECOSYSTEM_REGION);
+    const body = renderTableReorderedHeader(parsed.header!, parsed.rows);
+    const reflowed = spliceRegion(text, ECOSYSTEM_REGION, body).text;
+    writeFileSyncNode(readmePath, reflowed, "utf8");
+
+    const failures = auditGeneratedReadme({ declPath, readmePath });
+    assert.ok(failures.length > 0, "a reordered header must be reported as a divergence, never tolerated as a reflow");
+    assert.ok(
+      failures.some((f) => f.includes("header row")),
+      `the failure must identify the header mismatch; got ${JSON.stringify(failures)}`,
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Round-trip fidelity: the parser must reconstruct exactly what the renderer
+// produced, over the REAL declaration, for both regions. This is what stops
+// the renderer and the parser sharing a bug and passing each other.
+// ---------------------------------------------------------------------------
+
+test("round trip: parseGeneratedRegion(renderEcosystemTable(deriveEcosystemRows(decl))) reconstructs the derived rows exactly", () => {
+  const declaration = readDeclarationFile({ declPath: DECL_PATH });
+  const derived = deriveEcosystemRows(declaration);
+  const rendered = renderEcosystemTable(derived);
+  const wrapped = wrapAsRegion(ECOSYSTEM_REGION, rendered);
+  const parsed = parseGeneratedRegion(wrapped, ECOSYSTEM_REGION);
+  assert.deepEqual(parsed.errors, []);
+  const roundTripped = parsed.rows.map(parsedEcosystemRow);
+  assert.deepEqual(roundTripped, derived);
+});
+
+test("round trip: parseGeneratedRegion(renderOverviewTable(deriveOverviewRows(decl))) reconstructs the derived rows exactly", () => {
+  const declaration = readDeclarationFile({ declPath: DECL_PATH });
+  const derived = deriveOverviewRows(declaration);
+  const rendered = renderOverviewTable(derived);
+  const wrapped = wrapAsRegion(OVERVIEW_REGION, rendered);
+  const parsed = parseGeneratedRegion(wrapped, OVERVIEW_REGION);
+  assert.deepEqual(parsed.errors, []);
+  const roundTripped = parsed.rows.map(parsedOverviewRow);
+  assert.deepEqual(roundTripped, derived);
+});
+
+test("round trip preserves the debian-trixie remedy text's em dash exactly -- no Unicode normalisation, no case folding, no whitespace collapsing", () => {
+  const declaration = readDeclarationFile({ declPath: DECL_PATH });
+  const derived = deriveEcosystemRows(declaration);
+  const trixieRow = derived.find((row) => row.ecosystem === "debian-trixie")!;
+  assert.ok(
+    trixieRow.text.includes("—"),
+    "the source declaration's debian-trixie remedy must contain an em dash for this assertion to mean anything",
+  );
+
+  const rendered = renderEcosystemTable(derived);
+  const wrapped = wrapAsRegion(ECOSYSTEM_REGION, rendered);
+  const parsed = parseGeneratedRegion(wrapped, ECOSYSTEM_REGION);
+  const parsedTrixie = parsed.rows.map(parsedEcosystemRow).find((row) => row.ecosystem === "debian-trixie")!;
+  assert.equal(
+    parsedTrixie.text,
+    trixieRow.text,
+    "the em dash, and every other character, must survive render-then-parse exactly",
+  );
+});
+
+test("this guard compares facts, not bytes: the committed pair and a reflowed copy of it both audit clean", () => {
+  const { declPath, readmePath, cleanup } = withScratchPair();
+  try {
+    assert.deepEqual(
+      auditGeneratedReadme({ declPath, readmePath }),
+      [],
+      "an untouched scratch copy of the committed pair must audit clean",
+    );
+
+    let text = readFileSync(readmePath, "utf8");
+    for (const regionName of [ECOSYSTEM_REGION, OVERVIEW_REGION]) {
+      const parsed = parseGeneratedRegion(text, regionName);
+      const body = renderTableAllTolerances(parsed.header!, parsed.rows);
+      text = spliceRegion(text, regionName, body).text;
+    }
+    writeFileSyncNode(readmePath, text, "utf8");
+
+    assert.deepEqual(
+      auditGeneratedReadme({ declPath, readmePath }),
+      [],
+      "a deliberately reflowed copy of the same pair must ALSO audit clean -- the guard compares parsed records, not rendered bytes",
     );
   } finally {
     cleanup();
