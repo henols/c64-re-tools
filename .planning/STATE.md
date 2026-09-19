@@ -4,16 +4,16 @@ milestone: v1.1.0
 milestone_name: The Prerequisite Doctor
 current_phase: 61
 current_phase_name: The Install Tables Generated, and a Guard That Compares Facts
-status: planning
-stopped_at: Phase 61 context gathered; ready to plan
-last_updated: "2026-09-18T22:39:53.396Z"
+status: executing
+stopped_at: Phase 61 planned — 3 plans in 2 waves; ready to execute
+last_updated: "2026-09-19T07:00:48.627Z"
 last_activity: 2026-09-19
-last_activity_desc: Phase 61 context gathered — declaration frozen at owner decision, generated region scoped to the table
-state_head: 49ccd00aefdc9cf3306b849ebe57384daf19e770
+last_activity_desc: Phase 61 planned — 3 plans, 2 waves, plan-checker passed on iteration 1
+state_head: 491900acdf410123b78a6017b957ee0233563eed
 progress:
   total_phases: 4
   completed_phases: 3
-  total_plans: 16
+  total_plans: 19
   completed_plans: 16
   percent: 75
 carried_forward_phases:
@@ -343,10 +343,21 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 61 — The Install Tables Generated, and a Guard That Compares Facts
+Phase: 61 (The Install Tables Generated, and a Guard That Compares Facts) — READY TO EXECUTE
 Plan: Not started
-Status: Ready to plan
-Stopped at: Phase 61 context gathered — 61-CONTEXT.md written, 13 decisions recorded.
+Status: Ready to execute
+Stopped at: Phase 61 planned — 61-01/61-02/61-03 written, 2 waves, plan-checker PASSED on iteration 1.
+
+Gate override (plan-phase §13a, 2026-09-19): the decision-coverage gate returned
+`passed: false` with reason `could-not-parse` and an EMPTY `uncovered` array — it could
+not read four bullets in 61-CONTEXT.md (D-09's title carries inner colons inside backticked
+code; the three `### Claude's Discretion` entries for D-01/D-04/D-11 are back-references,
+not decision definitions). This is a parser limit, not a dropped decision: all thirteen
+decisions were audited by hand against the plans and every one is cited —
+D-01→61-01, D-02→61-01/61-03, D-03→61-01, D-04→61-01, D-05→61-01/61-02/61-03,
+D-06→61-01/61-03, D-07→61-03, D-08→61-01/61-03, D-09→61-03, D-10→61-01, D-11→61-01,
+D-12→61-02, D-13→61-01. 61-CONTEXT.md was deliberately NOT reworded to satisfy the
+parser — it is a signed-off owner-decision record. verify-phase should re-surface this.
 
 Prior phase, for continuity: Plan 60-08 closed LOC-03's residual: the environment layer is now terminal for
 a declared variable's non-empty value WHATEVER its shape (not only a
