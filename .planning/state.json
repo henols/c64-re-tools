@@ -326,7 +326,7 @@
     {
       "number": "62",
       "name": "The Fixed Endpoint and the Broker That Owns the Machine",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "number": "63",
@@ -359,5 +359,5 @@
     "label": "Advance to the next step",
     "reason": "Phase 62 of 6 · 0% · executing"
   },
-  "updated_at": "2026-09-19T14:53:53.011Z"
+  "updated_at": "2026-09-19T15:13:43.587Z"
 }
