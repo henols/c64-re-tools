@@ -567,7 +567,7 @@ function attachControlProtocol(server, opts, pendingAcquires) {
          * callback with the same request id instead of silently dropping the
          * grant it produced.
          */
-        function attemptAcquire(requestId, profile) {
+        function attemptAcquire(requestId, profile, label) {
             // Half one: a queued entry whose owning socket is already gone is
             // settled immediately, WITHOUT ever calling onAcquire() -- this is
             // what keeps a retried drain pass from performing a real, ownerless
@@ -575,12 +575,12 @@ function attachControlProtocol(server, opts, pendingAcquires) {
             if (socket.destroyed)
                 return Promise.resolve(true);
             return opts
-                // The profile is threaded through THIS shared helper, which both
-                // the immediate first attempt and every later
-                // drainPendingAcquires() retry go through -- so a request that
-                // queued behind an in-flight launch is retried later with the
-                // profile it was MADE with, never with a profile-less one.
-                .onAcquire(requestId, profile)
+                // The profile AND the already-sanitised label (Phase 63, SESS-06)
+                // are threaded through THIS shared helper, which both the immediate
+                // first attempt and every later drainPendingAcquires() retry go
+                // through -- so a request that queued behind an in-flight launch is
+                // retried later with the SAME profile and label it was MADE with.
+                .onAcquire(requestId, profile, label)
                 .then((outcome) => {
                 if (outcome.ok) {
                     // Half two: the pre-check above ran before this call; a
@@ -722,9 +722,15 @@ function attachControlProtocol(server, opts, pendingAcquires) {
                 // gone, there is one backend and it always has that route, so the
                 // condition this refused can no longer occur -- deleted rather than
                 // left as a check against a value that can never disagree.
-                void attemptAcquire(requestId, profile).then((settled) => {
+                // Phase 63 (SESS-06): the label is sanitised HERE, once, before
+                // either the immediate attempt or a later queued retry ever sees
+                // it -- the SAME sanitiseSessionLabel() the `operation` op's own
+                // declared name already goes through. An absent or hostile value
+                // collapses to `null`, never fabricated.
+                const label = sanitiseSessionLabel(req.label);
+                void attemptAcquire(requestId, profile, label).then((settled) => {
                     if (!settled) {
-                        enqueueAcquire(pendingAcquires, { requestId, attempt: () => attemptAcquire(requestId, profile) });
+                        enqueueAcquire(pendingAcquires, { requestId, attempt: () => attemptAcquire(requestId, profile, label) });
                     }
                 });
             }

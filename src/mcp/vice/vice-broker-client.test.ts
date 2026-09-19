@@ -25,6 +25,7 @@ import {
   resolveControlTarget,
   CONTROL_CONNECT_TIMEOUT_MS,
   MonitorOwnershipError,
+  resolveSessionLabel,
   type BrokerControlSession,
 } from "./vice-broker-client.ts";
 // The bridge alias itself (quick-260805-9ha) -- used only to assert
@@ -308,8 +309,10 @@ function startRawSocketServer(): Promise<{ server: Server; port: number; sockets
 interface FullBrokerDeps {
   /** Phase 33, plan 33-06: widened with the same OPTIONAL second parameter
    * StartControlListenerOptions.onAcquire took, so a test can observe the
-   * profile that ARRIVED on the host side as well as the bytes that left. */
-  onAcquire?: (id: string, profile?: LaunchProfile) => Promise<AcquireOutcome>;
+   * profile that ARRIVED on the host side as well as the bytes that left.
+   * Widened AGAIN, Phase 63, plan 63-05 (SESS-06), with the same OPTIONAL
+   * THIRD parameter carrying the already-sanitised session label. */
+  onAcquire?: (id: string, profile?: LaunchProfile, label?: string | null) => Promise<AcquireOutcome>;
   onRelease?: (id: string) => void;
   onRecycle?: (targetId: string) => Promise<RecycleOutcome>;
   onStatus?: () => StatusInstanceEntry[];
@@ -1464,6 +1467,11 @@ test("the client module's export list is exactly the surviving surface", () => {
     // that prefers to raise on a monitor-ownership conflict rather than
     // branch on ClaimMonitorOutcome constructs this directly.
     "MonitorOwnershipError",
+    // Phase 63, plan 63-05 (SESS-06): the session-label resolver, exported
+    // so a test (or a future non-agent caller wanting the SAME resolution
+    // rule) can call it directly rather than re-deriving the env/cwd/pid
+    // fallback chain.
+    "resolveSessionLabel",
   ].sort();
   assert.deepEqual(
     actualKeys,
@@ -1628,7 +1636,15 @@ test("acquire profile (33-06, write site 1 of 2, edge: empty): acquireOverContro
       false,
       "the key must be OMITTED, not written as null or {} -- this is what keeps a profile-less acquire's wire line byte-identical",
     );
-    assert.deepEqual(Object.keys(acquireLine!).sort(), ["id", "op", "token"], "the profile-less line's key set must be exactly the three keys it always was");
+    // Phase 63 (SESS-06): a `label` key now ALWAYS joins the wire line
+    // (resolveSessionLabel() always produces a non-empty string against the
+    // real process) -- the profile-less line is byte-identical on every OTHER
+    // key, but "the three keys it always was" is no longer true of the full
+    // set, so this asserts the widened set explicitly rather than reverting
+    // to the pre-63-05 three.
+    assert.deepEqual(Object.keys(acquireLine!).sort(), ["id", "label", "op", "token"], "the profile-less line's key set must be exactly id/label/op/token");
+    assert.equal(typeof acquireLine!.label, "string");
+    assert.notEqual(acquireLine!.label, "", "the label must never be sent as an empty string");
     assert.equal(received[0], undefined);
   } finally {
     server.close();
@@ -1689,12 +1705,105 @@ test("acquire profile (33-06, write site 2 of 2, edge: empty): openBrokerControl
     const acquireLine = rawLines.find((l) => l.op === "acquire");
     assert.ok(acquireLine);
     assert.equal(Object.prototype.hasOwnProperty.call(acquireLine!, "profile"), false);
-    assert.deepEqual(Object.keys(acquireLine!).sort(), ["id", "op", "token"]);
+    // Phase 63 (SESS-06): see write site 1's own "edge: empty" test above for
+    // why the key set is now id/label/op/token rather than the pre-63-05
+    // three.
+    assert.deepEqual(Object.keys(acquireLine!).sort(), ["id", "label", "op", "token"]);
+    assert.equal(typeof acquireLine!.label, "string");
     assert.equal(received[0], undefined);
     await opened.session.release();
   } finally {
     server.close();
   }
+});
+
+// ------------------------------------------------- resolveSessionLabel() (Phase 63, SESS-06)
+
+test("resolveSessionLabel(): returns the agent-session environment value verbatim when it is a non-empty string", () => {
+  const label = resolveSessionLabel({ env: { CLAUDE_CODE_SESSION_ID: "session-abc-123" }, cwd: () => "/home/henrik/dev/some-repo", pid: 999 });
+  assert.equal(label, "session-abc-123");
+});
+
+test("resolveSessionLabel(): falls back to the working directory's base name joined to the process id when the env var is unset", () => {
+  const label = resolveSessionLabel({ env: {}, cwd: () => "/home/henrik/dev/c64-re-tools", pid: 4242 });
+  assert.equal(label, "c64-re-tools-4242");
+});
+
+test("resolveSessionLabel(): falls back the same way when the env var is present but empty", () => {
+  const label = resolveSessionLabel({ env: { CLAUDE_CODE_SESSION_ID: "" }, cwd: () => "/tmp/some-project", pid: 1 });
+  assert.equal(label, "some-project-1");
+});
+
+test("resolveSessionLabel(): with no overrides at all, returns a non-empty string derived from the REAL process", () => {
+  const label = resolveSessionLabel();
+  assert.equal(typeof label, "string");
+  assert.notEqual(label, "");
+});
+
+test("acquire label (63-05, write site 1 of 2): acquireOverControlPlane() puts a resolved session label on the wire and it arrives at the broker's onAcquire's third argument", async () => {
+  const receivedLabels: Array<string | null | undefined> = [];
+  const { server, dir, rawLines } = await startFullBrokerListener({
+    onAcquire: async (_id: string, _profile?: LaunchProfile, label?: string | null) => {
+      receivedLabels.push(label);
+      return ALWAYS_GRANT();
+    },
+  });
+  const savedEnv = process.env.CLAUDE_CODE_SESSION_ID;
+  process.env.CLAUDE_CODE_SESSION_ID = "test-session-write-site-1";
+  try {
+    const handle = await acquireOverControlPlane(dir);
+    handle.release();
+    const acquireLine = rawLines.find((l) => l.op === "acquire");
+    assert.ok(acquireLine);
+    assert.equal(acquireLine!.label, "test-session-write-site-1", "the raw BYTES leaving the client must carry the resolved label");
+    assert.equal(receivedLabels[0], "test-session-write-site-1", "and it must arrive at the broker's own onAcquire, sanitised but unchanged");
+  } finally {
+    if (savedEnv === undefined) delete process.env.CLAUDE_CODE_SESSION_ID;
+    else process.env.CLAUDE_CODE_SESSION_ID = savedEnv;
+    server.close();
+  }
+});
+
+test("acquire label (63-05, write site 2 of 2): openBrokerControl().acquire() puts a resolved session label on the wire and it arrives at the broker's onAcquire's third argument", async () => {
+  const receivedLabels: Array<string | null | undefined> = [];
+  const { server, dir, rawLines } = await startFullBrokerListener({
+    onAcquire: async (_id: string, _profile?: LaunchProfile, label?: string | null) => {
+      receivedLabels.push(label);
+      return ALWAYS_GRANT();
+    },
+  });
+  const savedEnv = process.env.CLAUDE_CODE_SESSION_ID;
+  process.env.CLAUDE_CODE_SESSION_ID = "test-session-write-site-2";
+  try {
+    const opened = await openBrokerControl(dir);
+    assert.equal(opened.ok, true);
+    if (!opened.ok) return;
+    const acquired = await opened.session.acquire();
+    assert.equal(acquired.ok, true);
+    const acquireLine = rawLines.find((l) => l.op === "acquire");
+    assert.ok(acquireLine);
+    assert.equal(acquireLine!.label, "test-session-write-site-2");
+    assert.equal(receivedLabels[0], "test-session-write-site-2");
+    await opened.session.release();
+  } finally {
+    if (savedEnv === undefined) delete process.env.CLAUDE_CODE_SESSION_ID;
+    else process.env.CLAUDE_CODE_SESSION_ID = savedEnv;
+    server.close();
+  }
+});
+
+test("structural (63-05): BOTH acquire write sites in vice-broker-client.ts include the label fragment -- the same 'a field added to only one would silently never arrive' risk the profile fragment's own structural test polices", () => {
+  const source = readFileSync(join(HERE, "vice-broker-client.ts"), "utf8");
+  const acquireWriteSites = [...source.matchAll(/op: "acquire"[^\n]*/g)].map((m) => m[0]);
+  assert.equal(acquireWriteSites.length, 2, `expected exactly two acquire write sites; found ${acquireWriteSites.length}: ${JSON.stringify(acquireWriteSites)}`);
+  for (const site of acquireWriteSites) {
+    assert.match(site, /acquireLabelFragment\(/, `every acquire write site must spread the shared label fragment; this one does not: ${site}`);
+  }
+  assert.equal(
+    [...source.matchAll(/function acquireLabelFragment\(/g)].length,
+    1,
+    "acquireLabelFragment() must be declared exactly once -- it is the single decision site for whether the key appears at all",
+  );
 });
 
 test("structural (33-06): BOTH acquire write sites in vice-broker-client.ts include the profile fragment -- a field added to only one would silently never arrive for callers on the other path", () => {

@@ -48,7 +48,7 @@ import type { BrokerState, InstanceRecord } from "./broker-state.mts";
 // the production modules import it -- never a second local shape.
 import type { LaunchProfile } from "./broker-launch.mts";
 import type { HandleAcquireDeps } from "./vice-broker.mts";
-import type { AcquireOutcome } from "./broker-control.mts";
+import type { AcquireOutcome, StatusInstanceEntry } from "./broker-control.mts";
 import type { KillStage } from "./broker-kill.mts";
 // Plan 60-01 (LOC-01/LOC-02): both value-imported UNBUILT, exactly like
 // backend-detect.test.ts's own convention -- backend-detect.mts has zero
@@ -65,6 +65,13 @@ const BROKER_ARTIFACT_URL = new URL("./resources/vice-broker.mjs", import.meta.u
 interface BrokerModule {
   handleAcquire: (requestId: string, stateDir: string, state: BrokerState, deps?: HandleAcquireDeps) => Promise<AcquireOutcome>;
   handleRelease: (requestId: string, state: BrokerState) => void;
+  /** Phase 63, plan 63-05 (SESS-06). Exported alongside handleAcquire/
+   * handleRelease above so the identity resolution it performs (matching an
+   * instance to its owning grant by port AND pid, the same comparison
+   * handleRelease() already makes before it kills anything) is directly
+   * testable against a hand-built BrokerState, not merely through the wire
+   * protocol's own StatusInstanceEntry shape. */
+  handleStatus: (state: BrokerState) => StatusInstanceEntry[];
   /** Phase 63, plan 63-03 (SESS-05). `channel` is accepted for wire-shape
    * symmetry but not itself stored -- see the function's own header comment
    * in vice-broker.mts. */
@@ -796,7 +803,7 @@ test("handleAcquire: an instance released through handleRelease() is never promo
   const { handleAcquire, handleRelease } = await loadBrokerModule();
   const state = createState();
   state.instances.set(6600, makeReadyInstance({ port: 6600, state: "granted", pid: 5001, expectedIdentity: "x64sc" }));
-  state.grants.set("req-4", { id: "req-4", port: 6600, grantedAt: Date.now(), pid: 5001, operation: null });
+  state.grants.set("req-4", { id: "req-4", port: 6600, grantedAt: Date.now(), pid: 5001, operation: null, sessionLabel: null });
 
   // The real release path -- deletes the grant and the instance record
   // synchronously; the identity-verified kill it fires is a fire-and-forget
@@ -838,7 +845,7 @@ test("handleRelease: a grant whose recorded pid does not match the port's curren
   state.instances.set(6600, makeReadyInstance({ port: 6600, state: "granted", pid: 7777, expectedIdentity: "x64sc" }));
   // The stale grant still names port 6600 but recorded a DIFFERENT
   // (now-dead) pid at grant time.
-  state.grants.set("req-stale", { id: "req-stale", port: 6600, grantedAt: Date.now(), pid: 5001, operation: null });
+  state.grants.set("req-stale", { id: "req-stale", port: 6600, grantedAt: Date.now(), pid: 5001, operation: null, sessionLabel: null });
 
   handleRelease("req-stale", state);
 
@@ -854,7 +861,7 @@ test("handleRelease: a grant naming a port with NO current occupant at all (an a
   const state = createState();
   // No instance at port 6600 at all -- e.g. the instance already exited and
   // its exit handler already deleted the record via a separate path.
-  state.grants.set("req-gone", { id: "req-gone", port: 6600, grantedAt: Date.now(), pid: 5001, operation: null });
+  state.grants.set("req-gone", { id: "req-gone", port: 6600, grantedAt: Date.now(), pid: 5001, operation: null, sessionLabel: null });
 
   handleRelease("req-gone", state);
 
@@ -1616,7 +1623,7 @@ test("handleOperationNote: an unknown grant answers bad_request", async () => {
 test("handleOperationNote: a declaration on a known grant sets the name and stamps declaredAt from the injected clock", async () => {
   const { handleOperationNote } = await loadBrokerModule();
   const state = createState();
-  state.grants.set("grant-1", { id: "grant-1", port: 6600, grantedAt: 0, pid: 4242, operation: null });
+  state.grants.set("grant-1", { id: "grant-1", port: 6600, grantedAt: 0, pid: 4242, operation: null, sessionLabel: null });
 
   const outcome = handleOperationNote("grant-1", "binary", "vice_run_until", state, { now: () => 999 });
   assert.deepEqual(outcome, { ok: true });
@@ -1626,7 +1633,7 @@ test("handleOperationNote: a declaration on a known grant sets the name and stam
 test("handleOperationNote: name null clears an already-declared operation", async () => {
   const { handleOperationNote } = await loadBrokerModule();
   const state = createState();
-  state.grants.set("grant-1", { id: "grant-1", port: 6600, grantedAt: 0, pid: 4242, operation: { name: "vice_run_until", declaredAt: 111 } });
+  state.grants.set("grant-1", { id: "grant-1", port: 6600, grantedAt: 0, pid: 4242, operation: { name: "vice_run_until", declaredAt: 111 }, sessionLabel: null });
 
   const outcome = handleOperationNote("grant-1", "binary", null, state);
   assert.deepEqual(outcome, { ok: true });
@@ -1636,7 +1643,7 @@ test("handleOperationNote: name null clears an already-declared operation", asyn
 test("handleOperationNote: clearing an ALREADY-clear operation answers ok, not an error -- matching monitor_release's own tolerance", async () => {
   const { handleOperationNote } = await loadBrokerModule();
   const state = createState();
-  state.grants.set("grant-1", { id: "grant-1", port: 6600, grantedAt: 0, pid: 4242, operation: null });
+  state.grants.set("grant-1", { id: "grant-1", port: 6600, grantedAt: 0, pid: 4242, operation: null, sessionLabel: null });
 
   const outcome = handleOperationNote("grant-1", "binary", null, state);
   assert.deepEqual(outcome, { ok: true });
@@ -1646,7 +1653,7 @@ test("handleOperationNote: clearing an ALREADY-clear operation answers ok, not a
 test("handleOperationNote: the SAME grant's operation is shared across channel -- declaring on 'text' after clearing on 'binary' is a plain overwrite, never a second field", async () => {
   const { handleOperationNote } = await loadBrokerModule();
   const state = createState();
-  state.grants.set("grant-1", { id: "grant-1", port: 6600, grantedAt: 0, pid: 4242, operation: null });
+  state.grants.set("grant-1", { id: "grant-1", port: 6600, grantedAt: 0, pid: 4242, operation: null, sessionLabel: null });
 
   handleOperationNote("grant-1", "binary", "vice_run_until", state, { now: () => 1 });
   const outcome = handleOperationNote("grant-1", "text", "vice_device_console", state, { now: () => 2 });
@@ -1656,4 +1663,126 @@ test("handleOperationNote: the SAME grant's operation is shared across channel -
     { name: "vice_device_console", declaredAt: 2 },
     "one grant has exactly one in-flight operation at a time, regardless of which channel declared it -- channel-lock.ts's own cross-channel mutex is what already guarantees only one is ever running",
   );
+});
+
+// ---------------------------------------------------------------------------
+// Phase 63, plan 63-05 (SESS-06): handleAcquire() records the ALREADY-
+// SANITISED session label onto the single grant it creates, and
+// handleStatus()'s status projection resolves each instance's owning grant
+// by the SAME (port, pid) identity comparison handleRelease() already uses
+// before it kills anything -- exported test coverage for the read_first
+// region named "the single grant-recording step and the status projection".
+// ---------------------------------------------------------------------------
+
+test("handleAcquire: a sessionLabel in deps is recorded verbatim on the single grant this acquire creates", async () => {
+  const { handleAcquire } = await loadBrokerModule();
+  const state = createState();
+  state.instances.set(6600, makeReadyInstance({ port: 6600 }));
+
+  const outcome = await handleAcquire("req-label-1", "/tmp/vice-broker-acquire-test", state, {
+    probe: alwaysReadyProbe(),
+    sessionLabel: "my-agent-session",
+  });
+
+  assert.equal(outcome.ok, true, `expected a successful grant, got ${JSON.stringify(outcome)}`);
+  assert.equal(state.grants.get("req-label-1")?.sessionLabel, "my-agent-session");
+});
+
+test("handleAcquire: an acquire with no sessionLabel in deps records an absent label -- never fabricated", async () => {
+  const { handleAcquire } = await loadBrokerModule();
+  const state = createState();
+  state.instances.set(6600, makeReadyInstance({ port: 6600 }));
+
+  const outcome = await handleAcquire("req-label-2", "/tmp/vice-broker-acquire-test", state, {
+    probe: alwaysReadyProbe(),
+  });
+
+  assert.equal(outcome.ok, true, `expected a successful grant, got ${JSON.stringify(outcome)}`);
+  assert.equal(state.grants.get("req-label-2")?.sessionLabel, null);
+});
+
+test("handleStatus: an instance whose owning grant declared a label reports that label, the grant id and the in-flight operation", async () => {
+  const { handleStatus } = await loadBrokerModule();
+  const state = createState();
+  state.instances.set(6600, makeReadyInstance({ port: 6600, pid: 4242, state: "granted" }));
+  state.grants.set("grant-a", {
+    id: "grant-a",
+    port: 6600,
+    grantedAt: Date.now(),
+    pid: 4242,
+    operation: { name: "vice_run_until", declaredAt: 111 },
+    sessionLabel: "agent-session-a",
+  });
+
+  const entries = handleStatus(state);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0]!.sessionLabel, "agent-session-a");
+  assert.equal(entries[0]!.grantId, "grant-a");
+  assert.deepEqual(entries[0]!.operation, { name: "vice_run_until", declaredAt: 111 });
+});
+
+test("handleStatus: an instance with no matching grant at all reports every identity field absent", async () => {
+  const { handleStatus } = await loadBrokerModule();
+  const state = createState();
+  state.instances.set(6600, makeReadyInstance({ port: 6600, pid: 4242, state: "ready" }));
+  // No grant recorded for this port at all.
+
+  const entries = handleStatus(state);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0]!.sessionLabel, null);
+  assert.equal(entries[0]!.grantId, null);
+  assert.equal(entries[0]!.operation, null);
+});
+
+test("handleStatus: an instance whose CURRENT pid differs from the grant's recorded pid (a replaced occupant) reports every identity field absent, never the stale grant's", async () => {
+  const { handleStatus } = await loadBrokerModule();
+  const state = createState();
+  // A crash-respawn (or an unrelated cold launch onto the same port) has
+  // replaced the occupant with a DIFFERENT pid than the one this grant was
+  // issued for -- the exact gap handleRelease()'s own header comment
+  // describes for the kill discipline, now checked for what status DISPLAYS.
+  state.instances.set(6600, makeReadyInstance({ port: 6600, pid: 9999, state: "granted" }));
+  state.grants.set("grant-stale", {
+    id: "grant-stale",
+    port: 6600,
+    grantedAt: Date.now(),
+    pid: 4242,
+    operation: null,
+    sessionLabel: "stale-session",
+  });
+
+  const entries = handleStatus(state);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0]!.sessionLabel, null, "the stale grant's label must never be reported for a replaced occupant");
+  assert.equal(entries[0]!.grantId, null);
+  assert.equal(entries[0]!.operation, null);
+});
+
+test("handleStatus: a grant with nothing declared reports the label and grant id but an absent operation, never a fabricated one", async () => {
+  const { handleStatus } = await loadBrokerModule();
+  const state = createState();
+  state.instances.set(6601, makeReadyInstance({ port: 6601, pid: 5001, state: "granted" }));
+  state.grants.set("grant-b", { id: "grant-b", port: 6601, grantedAt: Date.now(), pid: 5001, operation: null, sessionLabel: "agent-session-b" });
+
+  const entries = handleStatus(state);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0]!.sessionLabel, "agent-session-b");
+  assert.equal(entries[0]!.grantId, "grant-b");
+  assert.equal(entries[0]!.operation, null);
+});
+
+test("handleStatus: two unrelated grants on two unrelated instances are each named separately, never cross-matched", async () => {
+  const { handleStatus } = await loadBrokerModule();
+  const state = createState();
+  state.instances.set(6600, makeReadyInstance({ port: 6600, pid: 111, state: "granted" }));
+  state.instances.set(6601, makeReadyInstance({ port: 6601, pid: 222, state: "granted", url: "http://127.0.0.1:6601/mcp" }));
+  state.grants.set("grant-x", { id: "grant-x", port: 6600, grantedAt: Date.now(), pid: 111, operation: null, sessionLabel: "session-x" });
+  state.grants.set("grant-y", { id: "grant-y", port: 6601, grantedAt: Date.now(), pid: 222, operation: null, sessionLabel: "session-y" });
+
+  const entries = handleStatus(state);
+  const byPort = new Map(entries.map((e) => [e.port, e]));
+  assert.equal(byPort.get(6600)?.sessionLabel, "session-x");
+  assert.equal(byPort.get(6600)?.grantId, "grant-x");
+  assert.equal(byPort.get(6601)?.sessionLabel, "session-y");
+  assert.equal(byPort.get(6601)?.grantId, "grant-y");
 });

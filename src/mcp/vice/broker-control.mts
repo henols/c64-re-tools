@@ -119,6 +119,12 @@ export interface ControlRequest {
    * closed union (see HELLO_PROTOCOL_MAGIC's own comment for why). Absent
    * or empty defaults to `"control"` at the dispatch site. */
   tag?: string;
+  /** `acquire`'s own caller-declared session label (Phase 63, SESS-06) --
+   * `unknown` on the wire like every other request field; run through
+   * sanitiseSessionLabel() at the `acquire` dispatch arm before it is ever
+   * passed to onAcquire() or recorded on a grant. Optional: a bare test
+   * client or a future non-agent caller that omits this is not refused. */
+  label?: unknown;
   [key: string]: unknown;
 }
 
@@ -188,6 +194,28 @@ export interface StatusInstanceEntry {
    * is now stated explicitly rather than left inferable: "at least one
    * channel is claimed", never "the binary channel is claimed" alone. */
   hasMonitorClient: boolean;
+  /** The owning grant's client-declared session label (Phase 63, SESS-06),
+   * verbatim from GrantRecord.sessionLabel -- already sanitised before it
+   * was ever recorded, so this field never needs a second pass. `null` both
+   * when no grant currently owns this instance and when the owning grant
+   * declared none. "Owning" is resolved by vice-broker.mts's status
+   * projection using the SAME identity comparison handleRelease() already
+   * uses (grant.port matches this instance's port AND grant.pid matches
+   * this instance's CURRENT pid) -- an instance whose port occupant has
+   * been replaced by a different process than the grant was issued for
+   * reports no identity at all, never the stale grant's. THIS IS A DISPLAY
+   * VALUE ONLY (see GrantRecord.sessionLabel's own header comment) -- never
+   * an authorisation input. */
+  sessionLabel: string | null;
+  /** The owning grant's own id, resolved and absent under the exact same
+   * rule as sessionLabel above -- lets a reader pair a status entry with a
+   * specific grant rather than merely a label string (which may collide,
+   * be blank, or be omitted). */
+  grantId: string | null;
+  /** The owning grant's own in-flight operation (GrantRecord.operation,
+   * broker-state.mts), verbatim -- `null` both when no grant owns this
+   * instance and when the owning grant has nothing currently declared. */
+  operation: { name: string; declaredAt: number } | null;
 }
 
 /** The claim conflict's refusal payload -- names the holding grant, its
@@ -288,8 +316,18 @@ export interface StartControlListenerOptions {
    * JS/TS function-type compatibility lets a one-argument implementation
    * satisfy a type that offers two, so every pre-existing implementation
    * and every pre-existing test stub keeps compiling AND keeps behaving
-   * identically. `undefined` means profile-less. */
-  onAcquire: (requestId: string, profile?: LaunchProfile) => Promise<AcquireOutcome>;
+   * identically. `undefined` means profile-less.
+   *
+   * Widened AGAIN (Phase 63, SESS-06) with an OPTIONAL THIRD PARAMETER
+   * carrying the already-sanitised session label -- this listener runs
+   * whatever the wire's `label` field held through sanitiseSessionLabel()
+   * BEFORE this callback is ever invoked, exactly the same discipline the
+   * second parameter's own comment above already documents for the launch
+   * profile. `null` (or omitted) means no label was declared; this callback
+   * never sees an unsanitised value. Same JS/TS function-type-compatibility
+   * reasoning keeps every pre-63-05 one- and two-argument implementation
+   * compiling AND behaving identically. */
+  onAcquire: (requestId: string, profile?: LaunchProfile, label?: string | null) => Promise<AcquireOutcome>;
   /** Called on an explicit `release` request AND on connection close
    * (whichever happens first) -- the kernel enforces the release including
    * on the client's own SIGKILL, since close always fires either way. */
@@ -1022,19 +1060,19 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
      * callback with the same request id instead of silently dropping the
      * grant it produced.
      */
-    function attemptAcquire(requestId: string, profile?: LaunchProfile): Promise<boolean> {
+    function attemptAcquire(requestId: string, profile?: LaunchProfile, label?: string | null): Promise<boolean> {
       // Half one: a queued entry whose owning socket is already gone is
       // settled immediately, WITHOUT ever calling onAcquire() -- this is
       // what keeps a retried drain pass from performing a real, ownerless
       // launch.
       if (socket.destroyed) return Promise.resolve(true);
       return opts
-        // The profile is threaded through THIS shared helper, which both
-        // the immediate first attempt and every later
-        // drainPendingAcquires() retry go through -- so a request that
-        // queued behind an in-flight launch is retried later with the
-        // profile it was MADE with, never with a profile-less one.
-        .onAcquire(requestId, profile)
+        // The profile AND the already-sanitised label (Phase 63, SESS-06)
+        // are threaded through THIS shared helper, which both the immediate
+        // first attempt and every later drainPendingAcquires() retry go
+        // through -- so a request that queued behind an in-flight launch is
+        // retried later with the SAME profile and label it was MADE with.
+        .onAcquire(requestId, profile, label)
         .then((outcome) => {
           if (outcome.ok) {
             // Half two: the pre-check above ran before this call; a
@@ -1176,9 +1214,15 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
         // gone, there is one backend and it always has that route, so the
         // condition this refused can no longer occur -- deleted rather than
         // left as a check against a value that can never disagree.
-        void attemptAcquire(requestId, profile).then((settled) => {
+        // Phase 63 (SESS-06): the label is sanitised HERE, once, before
+        // either the immediate attempt or a later queued retry ever sees
+        // it -- the SAME sanitiseSessionLabel() the `operation` op's own
+        // declared name already goes through. An absent or hostile value
+        // collapses to `null`, never fabricated.
+        const label = sanitiseSessionLabel(req.label);
+        void attemptAcquire(requestId, profile, label).then((settled) => {
           if (!settled) {
-            enqueueAcquire(pendingAcquires, { requestId, attempt: () => attemptAcquire(requestId, profile) });
+            enqueueAcquire(pendingAcquires, { requestId, attempt: () => attemptAcquire(requestId, profile, label) });
           }
         });
       } else if (req.op === "release") {

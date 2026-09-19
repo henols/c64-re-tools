@@ -306,6 +306,24 @@ export interface GrantRecord {
    * one that predates this field entirely, leaves this null while genuinely
    * mid-operation. Do not read `null` as proof of idleness. */
   operation: { name: string; declaredAt: number } | null;
+  /** The client-declared session label (Phase 63, SESS-06) -- a display-only
+   * identifier the acquiring connection chose for itself (vice-broker-
+   * client.ts's resolveSessionLabel()), already run through broker-
+   * control.mts's own sanitiseSessionLabel() before this field is ever
+   * written -- this field never holds an unsanitised value. REQUIRED, not
+   * optional, matching this record's own `pid`/`operation` convention:
+   * every grant is created with this field explicitly set (`null` when the
+   * acquire declared none) at vice-broker.mts's single `state.grants.set()`
+   * call site, so a reader can never mistake "this field was never wired
+   * up" for "nothing was declared".
+   *
+   * THIS IS A DISPLAY VALUE ONLY AND CARRIES NO AUTHORITY (T-63-17). Nothing
+   * anywhere may ever compare it for equality, use it to resolve a target,
+   * or treat it as identifying which grant a request is allowed to act on
+   * -- the grant id a connection itself holds (this record's own `id`) is
+   * the ONE authority this protocol has. A caller-declared label that could
+   * select a target would be a credential nobody minted. */
+  sessionLabel: string | null;
 }
 
 export interface BrokerState {

@@ -195,7 +195,7 @@ function makeGrantedInstance(port: number, overrides: Partial<InstanceRecord> = 
 function setupBrokerState(emulatorPort: number, targetId: string): BrokerState {
   const state = createBrokerState();
   state.instances.set(emulatorPort, makeGrantedInstance(emulatorPort));
-  state.grants.set(targetId, { id: targetId, port: emulatorPort, grantedAt: Date.now(), pid: 4242, operation: null });
+  state.grants.set(targetId, { id: targetId, port: emulatorPort, grantedAt: Date.now(), pid: 4242, operation: null, sessionLabel: null });
   return state;
 }
 
@@ -205,7 +205,7 @@ function setupMultiGrantBrokerState(grants: Array<{ port: number; targetId: stri
   const state = createBrokerState();
   for (const { port, targetId } of grants) {
     state.instances.set(port, makeGrantedInstance(port));
-    state.grants.set(targetId, { id: targetId, port, grantedAt: Date.now(), pid: 4242, operation: null });
+    state.grants.set(targetId, { id: targetId, port, grantedAt: Date.now(), pid: 4242, operation: null, sessionLabel: null });
   }
   return state;
 }
@@ -1682,6 +1682,7 @@ test("handleRelease: the mismatched-occupant branch writes no record, signals no
     grantedAt: Date.now(),
     pid: 4242, // deliberately DIFFERENT from the instance's own recorded pid
     operation: { name: "vice_capture_run", declaredAt: Date.now() },
+    sessionLabel: null,
   });
   const deps: TestHandleReleaseDeps = {
     writeIncident: () => {
@@ -1781,7 +1782,7 @@ test("handleRelayDeath: two channels of one grant dropping together produce one 
         async (textPort) => {
           const state = createBrokerState();
           state.instances.set(binaryPort, makeGrantedInstance(binaryPort, { remoteMonitorPort: textPort }));
-          state.grants.set("grant-race-concurrency", { id: "grant-race-concurrency", port: binaryPort, grantedAt: Date.now(), pid: 4242, operation: null });
+          state.grants.set("grant-race-concurrency", { id: "grant-race-concurrency", port: binaryPort, grantedAt: Date.now(), pid: 4242, operation: null, sessionLabel: null });
           const { listener, token, incidentsDir } = await startRelayListenerForState(state, deps);
           try {
             const dialBinary = await claimAndDialRelay(state, listener.port, token, "grant-race-concurrency", "binary");

@@ -116,8 +116,10 @@ function makeClient(port: number, host = "127.0.0.1") {
 interface StubDeps {
   /** Phase 33, plan 33-06: widened with the same OPTIONAL second parameter
    * StartControlListenerOptions.onAcquire took -- every pre-33-06 stub in
-   * this file is a one-argument function and keeps satisfying this. */
-  onAcquire?: (id: string, profile?: LaunchProfile) => Promise<AcquireOutcome>;
+   * this file is a one-argument function and keeps satisfying this. Widened
+   * AGAIN, Phase 63, plan 63-05 (SESS-06), with the same OPTIONAL THIRD
+   * parameter carrying the already-sanitised session label. */
+  onAcquire?: (id: string, profile?: LaunchProfile, label?: string | null) => Promise<AcquireOutcome>;
   onRelease?: (id: string) => void;
   onRecycle?: (targetId: string) => Promise<RecycleOutcome>;
   onStatus?: () => StatusInstanceEntry[];
@@ -347,8 +349,8 @@ test("recycle: a connection holding NO grant at all answers denied for any targe
 
 test("status: one entry per instance, carrying port, url, state, reason, epoch and hasMonitorClient", async () => {
   const entries: StatusInstanceEntry[] = [
-    { port: 6600, url: "http://127.0.0.1:6600/mcp", state: "ready", reason: "spare", epoch: 1, hasMonitorClient: false },
-    { port: 6601, url: "http://127.0.0.1:6601/mcp", state: "granted", reason: "acquire", epoch: 2, hasMonitorClient: true },
+    { port: 6600, url: "http://127.0.0.1:6600/mcp", state: "ready", reason: "spare", epoch: 1, hasMonitorClient: false, sessionLabel: null, grantId: null, operation: null },
+    { port: 6601, url: "http://127.0.0.1:6601/mcp", state: "granted", reason: "acquire", epoch: 2, hasMonitorClient: true, sessionLabel: "my-session-1234", grantId: "req-1", operation: null },
   ];
   const { listener, token } = await startTestListener({ onStatus: () => entries });
   const client = makeClient(listener.port);
@@ -416,7 +418,7 @@ test("WR-04 host_state: carries the broker's OWN backend verdict on the wire", a
 
 test("neither the status nor the host_state response ever carries the token value", async () => {
   const { listener, token } = await startTestListener({
-    onStatus: () => [{ port: 6600, url: "http://127.0.0.1:6600/mcp", state: "ready", reason: "spare", epoch: 1, hasMonitorClient: false }],
+    onStatus: () => [{ port: 6600, url: "http://127.0.0.1:6600/mcp", state: "ready", reason: "spare", epoch: 1, hasMonitorClient: false, sessionLabel: null, grantId: null, operation: null }],
   });
   const client = makeClient(listener.port);
   try {
@@ -636,7 +638,7 @@ test("monitor_release (D-14): an unrecognised non-empty channel value is bad_req
 });
 
 test("status (D-14): hasMonitorClient is true when only the text channel is claimed", async () => {
-  const entries: StatusInstanceEntry[] = [{ port: 6600, url: "http://127.0.0.1:6600/mcp", state: "granted", reason: "acquire", epoch: 1, hasMonitorClient: true }];
+  const entries: StatusInstanceEntry[] = [{ port: 6600, url: "http://127.0.0.1:6600/mcp", state: "granted", reason: "acquire", epoch: 1, hasMonitorClient: true, sessionLabel: null, grantId: null, operation: null }];
   const { listener, token } = await startTestListener({ onStatus: () => entries });
   const client = makeClient(listener.port);
   try {
@@ -1352,7 +1354,7 @@ test("attemptAcquire: a queued entry whose socket is still connected behaves exa
 
 test("structural: the destroyed-socket pre-check appears before the launch callback call, and a second destroyed-socket check appears on the success path, inside attemptAcquire()", () => {
   const source = readFileSync(join(HERE, "broker-control.mts"), "utf8");
-  const startIdx = source.indexOf("function attemptAcquire(requestId: string, profile?: LaunchProfile): Promise<boolean> {");
+  const startIdx = source.indexOf("function attemptAcquire(requestId: string, profile?: LaunchProfile, label?: string | null): Promise<boolean> {");
   assert.ok(startIdx !== -1, "attemptAcquire()'s own definition must be found in the source");
   const endIdx = source.indexOf("\n    }\n", startIdx);
   assert.ok(endIdx > startIdx, "could not isolate attemptAcquire()'s own closing brace");
@@ -1378,7 +1380,7 @@ test("structural: the destroyed-socket pre-check appears before the launch callb
 test("structural: attemptAcquire()'s own comment names which half bounds which failure, and does not claim the race is eliminated", () => {
   const source = readFileSync(join(HERE, "broker-control.mts"), "utf8");
   const startIdx = source.indexOf("Two destroyed-socket checks guard a grant against outliving the");
-  const endIdx = source.indexOf("function attemptAcquire(requestId: string, profile?: LaunchProfile): Promise<boolean> {");
+  const endIdx = source.indexOf("function attemptAcquire(requestId: string, profile?: LaunchProfile, label?: string | null): Promise<boolean> {");
   assert.ok(startIdx !== -1 && endIdx !== -1 && startIdx < endIdx, "the gap-closure comment must precede attemptAcquire()'s own definition");
   const comment = source.slice(startIdx, endIdx);
   assert.match(comment, /always-reachable/i);
@@ -1951,6 +1953,88 @@ test("acquire profile (33-06, edge: empty): an acquire with NO profile key reach
     assert.equal((await client.next()).kind, "grant");
     assert.equal(received.length, 1);
     assert.equal(received[0], undefined, "an absent profile must arrive as undefined -- never as {} and never as a default");
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Phase 63, plan 63-05 (SESS-06): the acquire dispatch arm reads `label` off
+// the wire, runs it through sanitiseSessionLabel() (the SAME sanitiser
+// Plan 63-03's `operation` op already reuses), and passes the sanitised
+// result as onAcquire's third parameter -- mirroring the profile's own
+// second-parameter widening exactly.
+// ---------------------------------------------------------------------------
+
+async function startLabelRecordingListener(): Promise<{
+  listener: StartControlListenerResult;
+  token: string;
+  received: Array<string | null | undefined>;
+}> {
+  const received: Array<string | null | undefined> = [];
+  const { listener, token } = await startTestListener({
+    onAcquire: async (_id: string, _profile?: LaunchProfile, label?: string | null) => {
+      received.push(label);
+      return { ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp", epochFile: "/tmp/epoch.json", supervisorDir: "/tmp/6600" } } as AcquireOutcome;
+    },
+  });
+  return { listener, token, received };
+}
+
+test("acquire session label (63-05, SESS-06): {op:'acquire', label:'my-session'} arrives at onAcquire's third argument as 'my-session'", async () => {
+  const { listener, token, received } = await startLabelRecordingListener();
+  const client = makeClient(listener.port);
+  try {
+    client.send({ op: "acquire", id: "req-label-1", token, label: "my-session" });
+    assert.equal((await client.next()).kind, "grant");
+    assert.equal(received.length, 1);
+    assert.equal(received[0], "my-session");
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("acquire session label (63-05, edge: empty): an acquire with NO label key reaches onAcquire's third argument as null, never fabricated", async () => {
+  const { listener, token, received } = await startLabelRecordingListener();
+  const client = makeClient(listener.port);
+  try {
+    client.send({ op: "acquire", id: "req-label-none", token });
+    assert.equal((await client.next()).kind, "grant");
+    assert.equal(received.length, 1);
+    assert.equal(received[0], null, "an absent label must arrive as null, never as an empty string or undefined-turned-truthy value");
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("acquire session label (63-05, SESS-06): a label carrying a line terminator and 200 characters arrives stripped and truncated to at most 64 characters", async () => {
+  const { listener, token, received } = await startLabelRecordingListener();
+  const client = makeClient(listener.port);
+  const hostile = `evil\nlabel${"x".repeat(195)}`;
+  try {
+    client.send({ op: "acquire", id: "req-label-hostile", token, label: hostile });
+    assert.equal((await client.next()).kind, "grant");
+    assert.equal(received.length, 1);
+    const got = received[0];
+    assert.equal(typeof got, "string");
+    assert.ok(got!.length <= 64, `expected at most 64 characters, got ${got!.length}`);
+    assert.ok(!got!.includes("\n"), "the line terminator must be stripped");
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("acquire session label (63-05): a non-string label (a number) is refused the same way a hostile string is -- collapsed to null, never coerced to a string", async () => {
+  const { listener, token, received } = await startLabelRecordingListener();
+  const client = makeClient(listener.port);
+  try {
+    client.send({ op: "acquire", id: "req-label-number", token, label: 12345 });
+    assert.equal((await client.next()).kind, "grant");
+    assert.equal(received[0], null);
   } finally {
     client.close();
     listener.server.close();

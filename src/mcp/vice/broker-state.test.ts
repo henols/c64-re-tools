@@ -244,7 +244,7 @@ test("counts: read only the in-memory map -- an injected filesystem reader that 
 test("_snapshotState: returns a plain-object deep copy -- mutating a nested value in the result leaves the broker's own state and a later snapshot unchanged", () => {
   const state = createBrokerState();
   state.instances.set(6600, makeInstance({ port: 6600, viceArgs: ["-mcpserver"] }));
-  state.grants.set("req-1-2-3abc1234", { id: "req-1-2-3abc1234", port: 6600, grantedAt: 111, pid: 4242, operation: null });
+  state.grants.set("req-1-2-3abc1234", { id: "req-1-2-3abc1234", port: 6600, grantedAt: 111, pid: 4242, operation: null, sessionLabel: null });
   blockPort(state, 6601);
 
   const snapshot = _snapshotState(state);

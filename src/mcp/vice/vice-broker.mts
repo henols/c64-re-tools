@@ -44,6 +44,7 @@ import {
   type InstanceRecord,
   type PortAllocationResult,
   type MonitorChannel,
+  type GrantRecord,
 } from "./broker-state.mjs";
 import {
   acquirePortAndLaunch,
@@ -562,6 +563,15 @@ export interface HandleAcquireDeps {
    * the cold arm's acquirePortAndLaunch(), which turns it into argv and
    * mirrors it onto the new InstanceRecord. */
   profile?: LaunchProfile;
+  /** The client-declared session label THIS acquire request carried
+   * (Phase 63, SESS-06), ALREADY sanitised by broker-control.mts's own
+   * sanitiseSessionLabel() before this callback was ever invoked -- nothing
+   * here re-validates it or reads a raw wire value. `null` (or omitted)
+   * means no label was declared, recorded on the grant verbatim rather than
+   * fabricated. Carried on this options bag for the SAME reason `profile`
+   * is above: the real broker wiring (run()'s onAcquire callback below)
+   * already constructs a fresh bag PER ACQUIRE. */
+  sessionLabel?: string | null;
   log?: (line: string) => void;
 }
 
@@ -901,7 +911,7 @@ export async function handleAcquire(requestId: string, stateDir: string, state: 
   // synchronous pair, so two concurrent acquires can never both grant the
   // SAME record (see selectWarmInstance()'s own re-check for
   // the other half of that guarantee).
-  state.grants.set(requestId, { id: requestId, port: record.port, grantedAt: Date.now(), pid: record.pid, operation: null });
+  state.grants.set(requestId, { id: requestId, port: record.port, grantedAt: Date.now(), pid: record.pid, operation: null, sessionLabel: deps.sessionLabel ?? null });
   record.state = "granted";
 
   return {
@@ -921,22 +931,50 @@ export async function handleAcquire(requestId: string, stateDir: string, state: 
   };
 }
 
+/** Resolves the grant that currently OWNS a given instance (Phase 63,
+ * SESS-06) -- the SAME identity comparison handleRelease() already uses
+ * before it kills anything: a grant's own recorded `port` matches this
+ * instance's port AND the grant's own recorded `pid` matches this
+ * instance's CURRENT pid. Scanning by (port, pid) rather than merely by
+ * port is what keeps a stale grant from reporting IDENTITY for an instance
+ * whose port occupant has since been replaced by an unrelated launch (a
+ * crash-respawn, a recycle onto a fresh pid, a give-up) -- exactly the same
+ * gap handleRelease()'s own header comment describes for the kill
+ * discipline, now applied to what status DISPLAYS rather than what a
+ * release KILLS. Returns `null` when no grant currently matches, which the
+ * caller (handleStatus() below) reports as every identity field absent. */
+function findOwningGrant(state: BrokerState, instance: InstanceRecord): GrantRecord | null {
+  for (const grant of state.grants.values()) {
+    if (grant.port === instance.port && grant.pid === instance.pid) return grant;
+  }
+  return null;
+}
+
 /** Answers the `status` control-plane request: one entry per instance,
  * computed on demand from the SAME in-memory map every other count reads --
  * strictly better than the dropped broker-instances.json projection, which
  * could go stale between passes. */
-function handleStatus(state: BrokerState): StatusInstanceEntry[] {
-  return Array.from(state.instances.values()).map((r) => ({
-    port: r.port,
-    url: r.url,
-    state: r.state,
-    reason: r.reason,
-    epoch: typeof r.epoch === "number" ? r.epoch : null,
-    // "at least one channel is claimed" -- promoted from
-    // a single-field check, byte-identical wire shape, meaning stated
-    // explicitly.
-    hasMonitorClient: Object.keys(r.monitorClients).length > 0,
-  }));
+export function handleStatus(state: BrokerState): StatusInstanceEntry[] {
+  return Array.from(state.instances.values()).map((r) => {
+    const grant = findOwningGrant(state, r);
+    return {
+      port: r.port,
+      url: r.url,
+      state: r.state,
+      reason: r.reason,
+      epoch: typeof r.epoch === "number" ? r.epoch : null,
+      // "at least one channel is claimed" -- promoted from
+      // a single-field check, byte-identical wire shape, meaning stated
+      // explicitly.
+      hasMonitorClient: Object.keys(r.monitorClients).length > 0,
+      // Phase 63 (SESS-06): all three resolved from the SAME owning grant
+      // (or all absent together when findOwningGrant() found none) -- never
+      // a fabricated value standing in for "nothing owns this instance".
+      sessionLabel: grant ? grant.sessionLabel : null,
+      grantId: grant ? grant.id : null,
+      operation: grant ? grant.operation : null,
+    };
+  });
 }
 
 /** Resolves a monitor_claim/monitor_release target the SAME way
@@ -1684,7 +1722,7 @@ async function run(args: ParsedArgs): Promise<void> {
     const bindResult = await startControlListenerOnHosts(bindHosts, {
       port: controlPort,
       token,
-      onAcquire: (requestId, profile) =>
+      onAcquire: (requestId, profile, label) =>
         handleAcquire(requestId, args.stateDir, state, {
           backend,
           // The ONCE-resolved `resolvedViceBin` local from this function's
@@ -1711,6 +1749,12 @@ async function run(args: ParsedArgs): Promise<void> {
           // normaliseLaunchProfile() is the single narrowing site, and it ran
           // before this callback was ever invoked.
           profile,
+          // The ALREADY-SANITISED label
+          // broker-control.mts handed this callback (Phase 63, SESS-06).
+          // Nothing here re-validates it -- sanitiseSessionLabel() is the
+          // single sanitising site, and it ran before this callback was
+          // ever invoked.
+          sessionLabel: label,
         }),
       onRelease: (requestId) => handleRelease(requestId, state),
       onRecycle: (targetId) => handleRecycleForRealBroker(targetId, state),

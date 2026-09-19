@@ -142,7 +142,7 @@ const UNUSED_BINARY_PORT = 1;
 function setupTextBrokerState(remoteMonitorPort: number | undefined, targetId: string): BrokerState {
   const state = createBrokerState();
   state.instances.set(UNUSED_BINARY_PORT, makeGrantedTextInstance(UNUSED_BINARY_PORT, remoteMonitorPort));
-  state.grants.set(targetId, { id: targetId, port: UNUSED_BINARY_PORT, grantedAt: Date.now(), pid: 4242, operation: null });
+  state.grants.set(targetId, { id: targetId, port: UNUSED_BINARY_PORT, grantedAt: Date.now(), pid: 4242, operation: null, sessionLabel: null });
   return state;
 }
 

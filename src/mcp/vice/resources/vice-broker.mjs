@@ -715,7 +715,7 @@ export async function handleAcquire(requestId, stateDir, state, deps = {}) {
     // synchronous pair, so two concurrent acquires can never both grant the
     // SAME record (see selectWarmInstance()'s own re-check for
     // the other half of that guarantee).
-    state.grants.set(requestId, { id: requestId, port: record.port, grantedAt: Date.now(), pid: record.pid, operation: null });
+    state.grants.set(requestId, { id: requestId, port: record.port, grantedAt: Date.now(), pid: record.pid, operation: null, sessionLabel: deps.sessionLabel ?? null });
     record.state = "granted";
     return {
         ok: true,
@@ -733,22 +733,50 @@ export async function handleAcquire(requestId, stateDir, state, deps = {}) {
         },
     };
 }
+/** Resolves the grant that currently OWNS a given instance (Phase 63,
+ * SESS-06) -- the SAME identity comparison handleRelease() already uses
+ * before it kills anything: a grant's own recorded `port` matches this
+ * instance's port AND the grant's own recorded `pid` matches this
+ * instance's CURRENT pid. Scanning by (port, pid) rather than merely by
+ * port is what keeps a stale grant from reporting IDENTITY for an instance
+ * whose port occupant has since been replaced by an unrelated launch (a
+ * crash-respawn, a recycle onto a fresh pid, a give-up) -- exactly the same
+ * gap handleRelease()'s own header comment describes for the kill
+ * discipline, now applied to what status DISPLAYS rather than what a
+ * release KILLS. Returns `null` when no grant currently matches, which the
+ * caller (handleStatus() below) reports as every identity field absent. */
+function findOwningGrant(state, instance) {
+    for (const grant of state.grants.values()) {
+        if (grant.port === instance.port && grant.pid === instance.pid)
+            return grant;
+    }
+    return null;
+}
 /** Answers the `status` control-plane request: one entry per instance,
  * computed on demand from the SAME in-memory map every other count reads --
  * strictly better than the dropped broker-instances.json projection, which
  * could go stale between passes. */
-function handleStatus(state) {
-    return Array.from(state.instances.values()).map((r) => ({
-        port: r.port,
-        url: r.url,
-        state: r.state,
-        reason: r.reason,
-        epoch: typeof r.epoch === "number" ? r.epoch : null,
-        // "at least one channel is claimed" -- promoted from
-        // a single-field check, byte-identical wire shape, meaning stated
-        // explicitly.
-        hasMonitorClient: Object.keys(r.monitorClients).length > 0,
-    }));
+export function handleStatus(state) {
+    return Array.from(state.instances.values()).map((r) => {
+        const grant = findOwningGrant(state, r);
+        return {
+            port: r.port,
+            url: r.url,
+            state: r.state,
+            reason: r.reason,
+            epoch: typeof r.epoch === "number" ? r.epoch : null,
+            // "at least one channel is claimed" -- promoted from
+            // a single-field check, byte-identical wire shape, meaning stated
+            // explicitly.
+            hasMonitorClient: Object.keys(r.monitorClients).length > 0,
+            // Phase 63 (SESS-06): all three resolved from the SAME owning grant
+            // (or all absent together when findOwningGrant() found none) -- never
+            // a fabricated value standing in for "nothing owns this instance".
+            sessionLabel: grant ? grant.sessionLabel : null,
+            grantId: grant ? grant.id : null,
+            operation: grant ? grant.operation : null,
+        };
+    });
 }
 /** Resolves a monitor_claim/monitor_release target the SAME way
  * handleRelease() and handleRecycleForRealBroker() already resolve theirs:
@@ -1356,7 +1384,7 @@ async function run(args) {
         const bindResult = await startControlListenerOnHosts(bindHosts, {
             port: controlPort,
             token,
-            onAcquire: (requestId, profile) => handleAcquire(requestId, args.stateDir, state, {
+            onAcquire: (requestId, profile, label) => handleAcquire(requestId, args.stateDir, state, {
                 backend,
                 // The ONCE-resolved `resolvedViceBin` local from this function's
                 // own top (LOC-01/LOC-02) -- found missing here by Plan 60-05's
@@ -1382,6 +1410,12 @@ async function run(args) {
                 // normaliseLaunchProfile() is the single narrowing site, and it ran
                 // before this callback was ever invoked.
                 profile,
+                // The ALREADY-SANITISED label
+                // broker-control.mts handed this callback (Phase 63, SESS-06).
+                // Nothing here re-validates it -- sanitiseSessionLabel() is the
+                // single sanitising site, and it ran before this callback was
+                // ever invoked.
+                sessionLabel: label,
             }),
             onRelease: (requestId) => handleRelease(requestId, state),
             onRecycle: (targetId) => handleRecycleForRealBroker(targetId, state),

@@ -27,7 +27,7 @@
 // list.
 import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { connect, type Socket } from "node:net";
 
 import { supervisorDir } from "./repo-root.ts";
@@ -405,6 +405,70 @@ function acquireProfileFragment(profile?: LaunchProfile): { profile?: LaunchProf
   return profile === undefined ? {} : { profile };
 }
 
+/** The agent-session identity environment variable this resolver treats as
+ * authoritative when set -- the SAME variable stock-recycle.ts's own
+ * incident-record `session_id` field already reads (`process.env.
+ * CLAUDE_CODE_SESSION_ID`, stock-recycle.ts:496) -- the one existing
+ * precedent in this tree for "which agent session is this". Named as its
+ * own constant so a reader does not have to hunt resolveSessionLabel()'s
+ * body for the literal string. */
+const SESSION_LABEL_ENV_VAR = "CLAUDE_CODE_SESSION_ID";
+
+/** Injectable overrides for resolveSessionLabel(), in this project's
+ * standard env/time/spawning/I-O injection register -- a test never depends
+ * on the real process's environment, working directory or pid. Production
+ * callers (both acquire write sites below) omit every field and let each
+ * default to the real process. */
+export interface ResolveSessionLabelOptions {
+  env?: NodeJS.ProcessEnv;
+  cwd?: () => string;
+  pid?: number;
+}
+
+/** Resolves the display label a session declares once, at acquire time
+ * (Phase 63, SESS-06) -- WHICH AGENT SESSION THIS IS, so a human reading
+ * broker status can tell one live session on a machine-wide broker apart
+ * from another unrelated one.
+ *
+ * THIS IS A DISPLAY VALUE WITH NO AUTHORITY. Nothing anywhere may ever
+ * branch on its content, compare it for equality against anything, or treat
+ * it as identifying which grant a request is allowed to act on -- the grant
+ * a connection itself holds is the ONE authority this protocol has (see
+ * broker-control.mts's own ownsTarget() and its standing warning against
+ * ever trusting a caller-supplied `target_id`). This value's only job is to
+ * be read by a human.
+ *
+ * Prefers CLAUDE_CODE_SESSION_ID (SESSION_LABEL_ENV_VAR above) when it is a
+ * non-empty string. Falls back to the current working directory's base name
+ * joined to the process id with a hyphen when that variable is absent or
+ * empty -- universally available, and it still distinguishes two processes
+ * running in the same repository. Both branches always produce a non-empty
+ * string against the real process, which is why a label is "optional on the
+ * wire but always present in practice" (this plan's own decision): a
+ * production acquire always has one to attach. */
+export function resolveSessionLabel(opts: ResolveSessionLabelOptions = {}): string {
+  const env = opts.env ?? process.env;
+  const sessionId = env[SESSION_LABEL_ENV_VAR];
+  if (typeof sessionId === "string" && sessionId !== "") return sessionId;
+  const cwd = opts.cwd ?? (() => process.cwd());
+  const pid = opts.pid ?? process.pid;
+  return `${basename(cwd())}-${pid}`;
+}
+
+/** Builds the `label` fragment of an acquire request line -- the SAME
+ * key-omitted-when-absent idiom acquireProfileFragment() above already
+ * establishes, so the two write sites' decision of whether the key appears
+ * at all never has to be made twice. resolveSessionLabel() never returns an
+ * empty string against the real process, so this branch exists for
+ * structural completeness (an injected override CAN produce one) rather
+ * than for a case production ever reaches -- broker-control.mts's own
+ * sanitiseSessionLabel() would collapse an empty string to `null` anyway,
+ * but omitting the key here keeps this client's own byte-identity
+ * discipline in one place. */
+function acquireLabelFragment(label: string): { label?: string } {
+  return label === "" ? {} : { label };
+}
+
 /** Reads broker.json ONCE for control_host/control_port/control_token,
  * opens ONE TCP connection, sends a single `acquire` request framed as one
  * JSON line, and awaits the grant line against
@@ -455,7 +519,14 @@ export function acquireOverControlPlane(dir: string = brokerRootDir(), opts: Acq
       // acquireProfileFragment()'s own comment) -- the key is absent entirely
       // when no profile was requested, so this line stays byte-identical to
       // what it always was for a profile-less acquire.
-      socket.write(`${JSON.stringify({ op: "acquire", id: requestId, token, ...acquireProfileFragment(opts.profile) })}\n`);
+      //
+      // The session label (Phase 63, SESS-06) is resolved with NO overrides
+      // here -- production always attaches the real process's own label;
+      // only a direct call to resolveSessionLabel() itself (unit-tested
+      // separately) ever supplies injected overrides.
+      socket.write(
+        `${JSON.stringify({ op: "acquire", id: requestId, token, ...acquireProfileFragment(opts.profile), ...acquireLabelFragment(resolveSessionLabel()) })}\n`,
+      );
     });
 
     socket.on("data", (chunk: Buffer) => {
@@ -1045,9 +1116,10 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
     // Write site TWO of two (see
     // acquireProfileFragment()'s own comment for why both matter) -- same
     // key-omitted-when-absent discipline as acquireOverControlPlane()'s raw
-    // socket.write above.
+    // socket.write above. Same no-overrides resolveSessionLabel() call as
+    // write site one.
     const raw = await sendAndAwaitLine(
-      { op: "acquire", id: requestId, token, ...acquireProfileFragment(opts.profile) },
+      { op: "acquire", id: requestId, token, ...acquireProfileFragment(opts.profile), ...acquireLabelFragment(resolveSessionLabel()) },
       opts.timeoutMs ?? ACQUIRE_TIMEOUT_MS,
     );
     if (!raw.ok) return raw;
