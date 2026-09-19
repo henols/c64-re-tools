@@ -2553,3 +2553,175 @@ test("structural: the DEFAULT_RELAY_KEEPALIVE_MS literal mirrored in broker-cont
   assert.ok(controlMatch, "broker-control.mts must declare DEFAULT_RELAY_KEEPALIVE_MS_LOCAL as a numeric literal");
   assert.equal(controlMatch![1], relayMatch![1], "the two mirrored default literals must never drift apart");
 });
+
+// ============================================================================
+// Plan 63-05, Task 2 (SESS-06): the concurrency edge SESS-02 raises, at the
+// level a user actually observes it -- two unrelated sessions on one broker,
+// each separately named and separately reclaimed -- plus the invariant test
+// the phase's own assumption-delta decision promised (63-01-PLAN.md): the
+// session became the primary user-facing IDENTITY, but authorisation was
+// deliberately NOT generalised.
+// ============================================================================
+
+test("two sessions, one broker: two connections declaring two labels each acquire their own grant against distinct ports, status names both separately, and closing one releases only that one", async () => {
+  // The identity RESOLUTION itself (matching an instance to its owning
+  // grant by port+pid) is vice-broker.mts's own job, proven directly against
+  // handleAcquire()/handleStatus() in vice-broker-acquire.test.ts (Task 1).
+  // This test proves broker-control.mts's OWN dispatch plumbing: a declared
+  // label reaches onAcquire's third argument, and whatever onStatus reports
+  // for the resulting grants is delivered to the wire unchanged.
+  const grants = new Map<string, { port: number; label: string | null }>();
+  let nextPort = 16700;
+  const { listener, token, releases } = await startTestListener({
+    onAcquire: async (id: string, _profile?: LaunchProfile, label?: string | null) => {
+      const port = nextPort++;
+      grants.set(id, { port, label: label ?? null });
+      return { ok: true, grant: { port, url: `http://127.0.0.1:${port}/mcp`, epochFile: `/tmp/${port}/epoch.json`, supervisorDir: `/tmp/${port}` } };
+    },
+    onStatus: (): StatusInstanceEntry[] =>
+      Array.from(grants.entries()).map(([grantId, g]) => ({
+        port: g.port,
+        url: `http://127.0.0.1:${g.port}/mcp`,
+        state: "granted",
+        reason: "acquire",
+        epoch: null,
+        hasMonitorClient: false,
+        sessionLabel: g.label,
+        grantId,
+        operation: null,
+      })),
+  });
+  const clientA = makeClient(listener.port);
+  const clientB = makeClient(listener.port);
+  try {
+    clientA.send({ op: "acquire", id: "grant-a", token, label: "session-a" });
+    const grantA = await clientA.next();
+    assert.equal(grantA.kind, "grant", `expected a grant for A, got ${JSON.stringify(grantA)}`);
+
+    clientB.send({ op: "acquire", id: "grant-b", token, label: "session-b" });
+    const grantB = await clientB.next();
+    assert.equal(grantB.kind, "grant", `expected a grant for B, got ${JSON.stringify(grantB)}`);
+
+    clientA.send({ op: "status", token });
+    const status1 = await clientA.next();
+    const entries1 = status1.instances as StatusInstanceEntry[];
+    assert.equal(entries1.length, 2, "both live grants must be named");
+    assert.equal(entries1.filter((e) => e.sessionLabel === "session-a").length, 1, "session-a's label must appear exactly once");
+    assert.equal(entries1.filter((e) => e.sessionLabel === "session-b").length, 1, "session-b's label must appear exactly once");
+    const byLabel1 = new Map(entries1.map((e) => [e.sessionLabel, e]));
+    assert.equal(byLabel1.get("session-a")?.port, grantA.port, "session-a's entry must be against ITS OWN port");
+    assert.equal(byLabel1.get("session-b")?.port, grantB.port, "session-b's entry must be against ITS OWN port");
+
+    // Close connection A -- its own release must fire, for its own grant id
+    // only. This simulates what the REAL onRelease callback would do to
+    // broker state (deleting the grant) so the subsequent status reply
+    // reflects a real release's effect.
+    clientA.close();
+    await waitFor(() => releases.includes("grant-a"), 2000);
+    assert.deepEqual(releases, ["grant-a"], "closing A must release only A's own grant id -- B's is untouched");
+    grants.delete("grant-a");
+
+    clientB.send({ op: "status", token });
+    const status2 = await clientB.next();
+    const entries2 = status2.instances as StatusInstanceEntry[];
+    assert.equal(entries2.length, 1, "only B's grant remains");
+    assert.equal(entries2[0]?.sessionLabel, "session-b", "a fresh status must still name B with B's own label");
+    assert.equal(entries2[0]?.grantId, "grant-b");
+  } finally {
+    clientA.close();
+    clientB.close();
+    listener.server.close();
+  }
+});
+
+// The set of ControlRequestKind members this invariant test classifies as
+// NOT taking a caller-supplied target id at all -- `acquire`/`release` name
+// no target (the connection's own held grant IS the target for `release`);
+// `status`/`host_state`/`host_tool`/`hello` never resolve against a grant.
+const KNOWN_NON_TARGET_NAMING_OPS = new Set(["acquire", "release", "status", "host_state", "host_tool", "hello"]);
+// The set this invariant test actually EXERCISES below -- every op whose
+// dispatch arm reads `req.target_id` and resolves it against a grant.
+const TARGET_NAMING_OPS_UNDER_TEST = ["monitor_claim", "monitor_release", "recycle", "attach", "operation"];
+
+test("invariant (63-05, T-63-17): every target-naming op refuses ANOTHER session's declared label used as a target id, byte-identically to a bare unrelated garbage target id, and the refusal never quotes the label back; the covered op set is asserted against ControlRequestKind so a future target-naming op reds this test until it is listed", async () => {
+  // Structural half FIRST: read ControlRequestKind's own live declaration
+  // (the same idiom the eleven-members test above already uses) and require
+  // EVERY member to be classified into exactly one of the two lists above --
+  // a future op that is neither breaks this assertion before any behaviour
+  // is even exercised, so it cannot be added silently.
+  const source = readFileSync(join(HERE, "broker-control.mts"), "utf8");
+  const match = /export type ControlRequestKind =([^;]*);/.exec(source);
+  assert.ok(match, "ControlRequestKind's declaration must be findable in broker-control.mts");
+  const members = match![1]
+    .split("|")
+    .map((s) => s.trim().replace(/^"|"$/g, ""))
+    .filter((s) => s !== "");
+  for (const member of members) {
+    assert.ok(
+      KNOWN_NON_TARGET_NAMING_OPS.has(member) || TARGET_NAMING_OPS_UNDER_TEST.includes(member),
+      `ControlRequestKind member "${member}" is neither a known non-target-naming op nor covered by this invariant test -- classify it (add it to one of the two lists above this test) before this test can pass`,
+    );
+  }
+  assert.equal(
+    members.length,
+    KNOWN_NON_TARGET_NAMING_OPS.size + TARGET_NAMING_OPS_UNDER_TEST.length,
+    "every ControlRequestKind member must be classified exactly once, into exactly one of the two lists",
+  );
+
+  // Behavioural half: from connection B (which never held A's grant and
+  // never saw A's label as anything but an opaque string), send every
+  // target-naming op with `target_id` set to A's OWN DECLARED label, and
+  // compare the refusal against the SAME op sent with an unrelated garbage
+  // target id. The two responses must be byte-identical -- proving the
+  // label is never resolved to anything, treated exactly like any other
+  // unrecognised string.
+  const { listener, token } = await startTestListener({
+    onAcquire: grantingAcquire(),
+    onRelayAttach: (): RelayAttachOutcome => ({ ok: false, code: "denied" }),
+  });
+  const clientA = makeClient(listener.port);
+  const clientB = makeClient(listener.port);
+  const aLabel = "agent-session-a-declared-label";
+  try {
+    clientA.send({ op: "acquire", id: "grant-a", token, label: aLabel });
+    const grantA = await clientA.next();
+    assert.equal(grantA.kind, "grant", `precondition: A must hold a grant; got ${JSON.stringify(grantA)}`);
+
+    await acquireGrant(clientB, token, "grant-b");
+
+    const garbageId = "totally-unrelated-garbage-id-12345";
+
+    for (const op of TARGET_NAMING_OPS_UNDER_TEST) {
+      const baseRequest: Record<string, unknown> = { op, token, channel: "binary" };
+      if (op === "attach") baseRequest.handle = "bogus-handle-b-does-not-hold";
+      if (op === "operation") baseRequest.name = "vice_ping";
+
+      clientB.send({ ...baseRequest, id: `${op}-garbage`, target_id: garbageId });
+      const garbageResp = await clientB.next();
+
+      clientB.send({ ...baseRequest, id: `${op}-label`, target_id: aLabel });
+      const labelResp = await clientB.next();
+
+      assert.deepEqual(
+        labelResp,
+        garbageResp,
+        `op "${op}": sending A's declared label as target_id must produce a BYTE-IDENTICAL refusal to an unrelated garbage target id -- garbage=${JSON.stringify(garbageResp)} label=${JSON.stringify(labelResp)}`,
+      );
+      assert.ok(
+        !JSON.stringify(labelResp).includes(aLabel),
+        `op "${op}": the refusal must never quote the label back: ${JSON.stringify(labelResp)}`,
+      );
+      assert.notEqual(labelResp.kind, "grant", `op "${op}" must never SUCCEED against another session's label`);
+    }
+
+    // A's own grant must be entirely untouched by every attempt above --
+    // prove it can still recycle itself through its own connection.
+    clientA.send({ op: "recycle", id: "recycle-a-still-alive", target_id: "grant-a", token });
+    const recycleResp = await clientA.next();
+    assert.equal(recycleResp.kind, "recycle_ack", "A's own grant must be unaffected by every refused attempt against its label");
+  } finally {
+    clientA.close();
+    clientB.close();
+    listener.server.close();
+  }
+});

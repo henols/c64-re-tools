@@ -54,6 +54,37 @@ VICE MCP server.
 | `VICE_BROKER_RELAY_IDLE_MS` | The broker-owned idle deadline (default `300000`, 5 minutes) a monitor-relay connection may sit carrying no traffic in either direction before the broker reclaims that one channel. This is the mechanism the broker actually controls end-to-end (`Socket.setTimeout()`, userspace, needs no cooperation from the OS or the peer); it is suspended for as long as the connection's own grant has a declared operation in flight, so a legitimately long-running capture is never torn down by the clock. An absent, non-numeric, zero or negative value falls back to the default and is logged by name — it is never possible to disable this bound. |
 | `VICE_BROKER_RELAY_KEEPALIVE_MS` | The TCP keepalive delay (default `30000`) set on the client-facing relay socket and on every accepted control connection. This is a **secondary, best-effort signal only** — `Socket.setKeepAlive(true, ms)` sets *only* the delay before the first probe; the interval between probes and the number of probes past that delay remain the host's own kernel settings (`tcp_keepalive_intvl`/`tcp_keepalive_probes` on Linux), which this broker cannot change. It does **not** bound anything by itself — `VICE_BROKER_RELAY_IDLE_MS` above is the owned bound. Same absent/non-numeric/zero/negative fallback discipline as the idle deadline. |
 
+## The session label
+
+A single broker can serve several unrelated projects at once. `status` names each
+live session with a **session label** — a short, human-readable string a client
+declares once, at `acquire` time — alongside that session's grant id and whatever
+operation it currently has in flight, so a reader can tell "that one is mine" apart
+from an unrelated session on the same machine-wide broker.
+
+The value comes from the calling process, not from anything the broker derives on
+its own: it is the `CLAUDE_CODE_SESSION_ID` environment variable when that is set to
+a non-empty string, and otherwise the current working directory's base name joined
+to the process id (e.g. `c64-re-tools-48213`). It is declared once, at `acquire`,
+and is optional on the wire — a bare test client or a future non-agent caller that
+never declares one is never refused for it, and `status` reports an absent label as
+absent, never fabricated.
+
+The broker sanitises whatever it receives before it is ever recorded or displayed:
+control characters and line terminators are stripped, the result is trimmed, and it
+is capped at 64 characters. Nothing server-side is ever derived from it — in
+particular, the client-side default never sends more than the working directory's
+**base name**, never a full absolute path, so no other project's filesystem layout,
+username or hostname reaches another session's `status` reply.
+
+**The session label carries no authority.** It is a display and diagnosis value
+only. No control operation — `monitor_claim`, `monitor_release`, `recycle`,
+`attach`, or `operation` — ever accepts a session label as a target selector; the
+only credential this protocol recognises is the grant a connection itself holds (and,
+for a relay attach, the per-claim handle minted from that grant). A request that
+puts another session's label where a target id belongs is refused with the exact
+same authorisation wording a bare, unrecognised target id gets.
+
 ## Development
 
 `npm test` assumes it is running inside the devcontainer. On a bare host, set
