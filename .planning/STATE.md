@@ -2,9 +2,14 @@
 gsd_state_version: "1.0"
 milestone: v2.0.0
 milestone_name: One Broker, One Socket
+current_phase: 62
+current_phase_name: The Fixed Endpoint and the Broker That Owns the Machine
 status: planning
-last_updated: "2026-09-19T12:40:00.000Z"
+stopped_at: Phase 62 context gathered
+last_updated: "2026-09-19T12:34:56.516Z"
 last_activity: 2026-09-19
+last_activity_desc: v2.0.0 roadmap created, 36/36 requirements mapped
+state_head: 6dd9fd89258a62a1ab3a0786044257050a9cd4d9
 progress:
   total_phases: 6
   completed_phases: 0
@@ -74,7 +79,7 @@ closure still needs to be recorded as one.
 Phase: 62 — The Fixed Endpoint and the Broker That Owns the Machine (not started)
 Plan: — (no plans written yet)
 Status: Roadmap created — ready to discuss or plan Phase 62
-Progress: [....................] 0% (0 of 6 v2.0.0 phases complete; Phases 62-67)
+Progress: [░░░░░░░░░░] 0% (0 of 6 v2.0.0 phases complete; Phases 62-67)
 Last activity: 2026-09-19 — v2.0.0 roadmap created, 36/36 requirements mapped
 
 **The milestone's exit criterion lives in Phase 66 and nowhere else.** The
@@ -2670,9 +2675,9 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-19 — v2.0.0 roadmap created
-Stopped at: v2.0.0 roadmap written — Phases 62-67, 36/36 requirements mapped, each to exactly one phase; `REQUIREMENTS.md` Traceability filled
-Resume file: None
+Last session: 2026-09-19 — Phase 62 context gathered (discuss-phase)
+Stopped at: Phase 62 context gathered
+Resume file: .planning/phases/62-the-fixed-endpoint-and-the-broker-that-owns-the-machine/62-CONTEXT.md
 
 Earlier: **v2.0.0 roadmap created.** 36/36 requirements (`ENDPOINT-01..05`,
   `BROKER-01..06`, `SESS-01..06`, `XFER-01..08`, `SEAM-01..03`, `RM-01..08`)
