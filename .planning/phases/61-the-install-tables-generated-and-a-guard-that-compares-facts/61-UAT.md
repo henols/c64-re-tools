@@ -1,23 +1,14 @@
 ---
-status: testing
+status: complete
 phase: 61-the-install-tables-generated-and-a-guard-that-compares-facts
 source: [61-VERIFICATION.md]
 started: 2026-09-19T08:40:00Z
-updated: 2026-09-19T08:40:00Z
+updated: 2026-09-19T08:45:00Z
 ---
 
 ## Current Test
 
-number: 1
-name: Decide whether D-08's plan-level must-have is satisfied when the ledger test FILE exits 1 but no README.md citation fails
-expected: |
-  A decision on record, one of:
-  (a) The substantive D-08 concern — every README.md-pointing ledger entry resolves
-      correctly — is met, and the file-level red is an out-of-scope pre-existing issue
-      to be closed by a separate gap-closure plan. Phase 61 closes.
-  (b) The literal wording binds: a gap-closure plan must land before GEN-01/GEN-02/GEN-03
-      are treated as fully closed. Phase 61 stays open.
-awaiting: user response
+none — all human verification items resolved.
 
 ## Tests
 
@@ -49,14 +40,23 @@ substantive concern it encodes — don't let a README line move break a citation
 README — was fully met. Both executors flagged this ambiguity as `human_judgment: true` rather
 than claiming a pass, and the verifier preserved it rather than resolving it.
 
-result: [pending]
+result: PASSED — option (a), decided by the project owner 2026-09-19.
+
+**Decision:** the substantive D-08 concern is met. Every README.md-pointing ledger entry
+resolves correctly after every commit that moved a README line, which is what the must-have
+exists to protect. The test file exit code 1 is caused entirely by five `.planning/` anchors
+that no plan in this phase was scoped to touch, and the failing set is byte-identical to the
+pre-phase baseline. Phase 61 closes.
+
+The five drifted anchors are carried forward as a separate gap-closure plan, tracked in the
+Gaps section below and NOT treated as resolved. The suite stays at 2 failures until it lands.
 
 ## Summary
 
 total: 1
-passed: 0
+passed: 1
 issues: 0
-pending: 1
+pending: 0
 skipped: 0
 blocked: 0
 

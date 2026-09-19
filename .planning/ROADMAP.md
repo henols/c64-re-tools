@@ -738,7 +738,7 @@ needs its own evidence rather than a corner of a larger phase.
 - [x] **Phase 58: One Declaration, Four Places That Can No Longer Disagree** - Every prerequisite described once — what it unblocks and the remedy per platform — in plain JSON a Node too old to run the server can still parse, and present in the published package (completed 2026-09-17)
 - [x] **Phase 59: The Tool-Location Seam and Its Precedence Order** - One module owns *where is this tool*, in one order — environment variable, then `tools.json`, then `$PATH` or sibling probe — naming the source that answered and refusing a bad entry by name instead of falling through (completed 2026-09-18)
 - [x] **Phase 60: The Seam Wired Into the Code That Ships** - Every live resolution goes through the seam and every live remedy comes from the declaration, with a developer who already has `VICE_BIN` set noticing nothing at all (completed 2026-09-18)
-- [ ] **Phase 61: The Install Tables Generated, and a Guard That Compares Facts** - `README.md`'s per-platform install tables come from the declaration, and divergence fails the build by comparing parsed records rather than bytes
+- [x] **Phase 61: The Install Tables Generated, and a Guard That Compares Facts** - `README.md`'s per-platform install tables come from the declaration, and divergence fails the build by comparing parsed records rather than bytes (completed 2026-09-19)
 
 **Phase details, the dependency edges and the sequencing rationale** are in the
 two v1.1.0 sections further below, placed after v1.0.0's for the window-slicing
@@ -2211,7 +2211,7 @@ check. No test reads this table now.
 | 58. One Declaration, Four Places That Can No Longer Disagree | v1.1.0 | 3/3 | Complete | 2026-09-17 |
 | 59. The Tool-Location Seam and Its Precedence Order | v1.1.0 | 5/5 | Complete | 2026-09-18 |
 | 60. The Seam Wired Into the Code That Ships | v1.1.0 | 8/8 | Complete | 2026-09-18 |
-| 61. The Install Tables Generated, and a Guard That Compares Facts | v1.1.0 | 3/3 | In Progress | - |
+| 61. The Install Tables Generated, and a Guard That Compares Facts | v1.1.0 | 3/3 | Complete | 2026-09-19 |
 
 **Milestone roll-up:** v0.2.0 — 9 phases, 87 plans, 51/51 in-scope requirements,
 shipped 2026-08-19 (audit round 4 `tech_debt`; 13 deferred items at close).

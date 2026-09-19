@@ -321,13 +321,13 @@
     {
       "number": "61",
       "name": "The Install Tables Generated, and a Guard That Compares Facts",
-      "status": "in_progress"
+      "status": "complete"
     }
   ],
   "next": {
-    "command": "/gsd:progress --next",
-    "label": "Advance to the next step (verify)",
-    "reason": "Phase 61 of 4 · 75% · ready to verify"
+    "command": "/gsd-complete-milestone",
+    "label": "Close milestone v1.1.0",
+    "reason": "Phase 61 of 4 · 100% · all phases complete"
   },
-  "updated_at": "2026-09-19T08:10:08.262Z"
+  "updated_at": "2026-09-19T08:32:50.980Z"
 }

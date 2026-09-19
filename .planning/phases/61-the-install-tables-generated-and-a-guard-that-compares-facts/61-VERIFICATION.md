@@ -1,8 +1,8 @@
 ---
 phase: 61-the-install-tables-generated-and-a-guard-that-compares-facts
 verified: 2026-09-19T00:00:00Z
-status: human_needed
-score: 4/4 roadmap success criteria verified; 1 plan-level must-have needs human confirmation
+status: passed
+score: 4/4 roadmap success criteria verified; the 1 plan-level must-have was resolved by human decision 2026-09-19
 behavior_unverified: 0
 overrides_applied: 0
 covered_files:
@@ -23,6 +23,7 @@ covered_digest: "v1:sha256:824b59b35f72db8e195a766997dd332e29bca664778bf68c85b8f
 human_verification:
   - test: "Decide whether the plan-level must-have 'phase58-citation-ledger.test.ts is green after every commit that moves a README.md line (D-08)' is satisfied given the test FILE's overall exit code is 1."
     expected: "A decision on record: either (a) accept that the substantive D-08 concern (every README.md-pointing ledger entry resolves correctly) is fully met and the file-level red is an out-of-scope pre-existing issue, or (b) require a gap-closure plan before treating GEN-01/GEN-02/GEN-03 as fully closed."
+    resolved: "PASSED 2026-09-19 by project owner — option (a). The substantive D-08 concern is met: every README.md-pointing ledger entry resolves. The file-level red is five .planning/ anchors no plan here was scoped to touch, identical to the pre-phase baseline. Phase 61 closes; the anchors are carried forward as a separate gap-closure plan and are NOT resolved."
     why_human: "This is a wording/scope judgment, not a fact grep can resolve. The literal must-have text says the FILE is green; it is not (2 of 11 tests fail, exit code 1). But every failure is independently confirmed to be a `.planning/REQUIREMENTS.md` or `.planning/ROADMAP.md` line-drift or dropped-anchor issue caused by Phase 61's own planning commits growing those files (plus one anchor whose supporting sentence was deleted when the doctor phase was dropped) -- none of the 5 failures touch README.md, and no plan in this phase declared `.planning/ROADMAP.md` or `.planning/REQUIREMENTS.md` in `files_modified`. The executor itself flagged this exact ambiguity as `human_judgment: true` in both 61-01-SUMMARY.md and 61-03-SUMMARY.md rather than silently claiming pass."
 ---
 

@@ -4,18 +4,18 @@ milestone: v1.1.0
 milestone_name: The Prerequisite Doctor
 current_phase: 61
 current_phase_name: The Install Tables Generated, and a Guard That Compares Facts
-status: verifying
-stopped_at: Phase 61 planned — 3 plans in 2 waves; ready to execute
-last_updated: "2026-09-19T08:10:51.842Z"
+status: completed
+stopped_at: Phase 61 complete — all phases complete
+last_updated: "2026-09-19T08:32:50.854Z"
 last_activity: 2026-09-19
-last_activity_desc: Phase 61 execution started
-state_head: 86b4b9d981a9c87a907c1f9b91cc0d18a8a358f0
+last_activity_desc: Phase 61 complete
+state_head: 039f21f14cc28c05370d325a76dec349eaefceec
 progress:
   total_phases: 4
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 19
   completed_plans: 19
-  percent: 75
+  percent: 100
 carried_forward_phases:
 
   - 51
@@ -343,10 +343,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 61 (The Install Tables Generated, and a Guard That Compares Facts) — EXECUTING
-Plan: 3 of 3
-Status: Phase complete — ready for verification
-Stopped at: Completed 61-03-PLAN.md; Phase 61 complete (3/3 plans); ready for /gsd-verify-work 61
+Phase: 61 (The Install Tables Generated, and a Guard That Compares Facts) — COMPLETE
+Plan: 3 of 3 executed
+Status: Phase complete — verification passed, milestone v1.1.0 ready to close
+Stopped at: Phase 61 complete and verified (4/4 roadmap criteria); D-08 resolved by owner decision; gap-closure plan owed for the five drifted .planning/ citation anchors
 
 Gate override (plan-phase §13a, 2026-09-19): the decision-coverage gate returned
 `passed: false` with reason `could-not-parse` and an EMPTY `uncovered` array — it could
@@ -396,7 +396,7 @@ x64sc in tools.json with the broker as its systemd unit — confirm the spawned
 binary matches, for the recorded path and for a bare $PATH-resolved VICE_BIN
 (unchanged from plan 60-05).
 Next: /gsd-verify-work 60.
-Last activity: 2026-09-19 — Phase 61 execution complete (3/3 plans); ready for verification
+Last activity: 2026-09-19 — Phase 61 complete
 
 **Milestone shape, so no reader has to rebuild it from the ROADMAP:** Phase 58
 declares the prerequisites; Phase 59 builds the tool-location seam and its
@@ -414,7 +414,7 @@ than a matter of discipline.
 
 **Velocity:**
 
-- Total plans completed: 454
+- Total plans completed: 457
 - Average duration: —
 - Total execution time: —
 
@@ -472,6 +472,7 @@ than a matter of discipline.
 | 58 | 3 | - | - |
 | 59 | 5 | - | - |
 | 60 | 8 | - | - |
+| 61 | 3 | - | - |
 
 **Recent Trend:**
 
@@ -2915,7 +2916,7 @@ and are v1.0.0's inheritance.
 ## Session Continuity
 
 Last session: 2026-09-19T08:10:51.693Z
-Stopped at: Completed 61-03-PLAN.md; Phase 61 complete (3/3 plans); ready for /gsd-verify-work 61
+Stopped at: Phase 61 complete — all phases complete
 Resume file: None
 
 Earlier: Milestone v1.0.0 "The Rebuild Half" closed and archived on its delivered scope (9 phases, 73 plans, 33/33 in-scope requirements, `override_closeout`). Phases 51, 53, 54 and 57 carried forward with their ROADMAP sections live.
