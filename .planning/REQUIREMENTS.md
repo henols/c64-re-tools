@@ -56,7 +56,7 @@ for re-derivation during planning:
 
 ### Session — the connection is the session
 
-- [ ] **SESS-01**: A skill script's call is a stateless one-shot — open, send, receive, close — that binds no emulator and holds no lease
+- [x] **SESS-01**: A skill script's call is a stateless one-shot — open, send, receive, close — that binds no emulator and holds no lease
 - [ ] **SESS-02**: An MCP server's connection stays open for the life of that process, and the broker holds that connection's emulator instance for exactly as long as the socket lives
 - [x] **SESS-03**: The broker reclaims a session from socket events alone, so a client killed with `SIGKILL` — which sends no goodbye — is still cleaned up
 - [x] **SESS-04**: A client death that produces no `FIN` at all is detected by the broker within a bounded time, rather than waiting on the operating system's keepalive
@@ -154,7 +154,7 @@ requirement owned by two phases or by none.
 | BROKER-04 | Phase 62 | Complete |
 | BROKER-05 | Phase 62 | Complete |
 | BROKER-06 | Phase 62 | Complete |
-| SESS-01 | Phase 63 | Pending |
+| SESS-01 | Phase 63 | Complete |
 | SESS-02 | Phase 63 | Pending |
 | SESS-03 | Phase 63 | Complete |
 | SESS-04 | Phase 63 | Complete |
