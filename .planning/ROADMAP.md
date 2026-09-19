@@ -2113,7 +2113,29 @@ tool.
      a stuck emulator in a shared broker is diagnosable rather than ambiguous
      (SESS-06).
 
-**Plans**: TBD
+**Plans**: 6 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 63-01-PLAN.md — Tracer: one binary-monitor command travels client to broker to emulator and back, byte-identically, over a relayed connection gated by a per-claim handle
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 63-02-PLAN.md — The text channel over the same relay, with the two channels' relay-death policies implemented and proven apart
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 63-03-PLAN.md — The broker learns what each grant has in flight, and gets a host-bound writer that can put an atomic record in the machine-level incidents directory
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 63-04-PLAN.md — Reclaim from socket events alone, a bounded idle deadline the broker owns and suspends while work is declared, and evidence written before anything is released
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 63-05-PLAN.md — A client-declared session label on every grant, surfaced in status beside the grant id and the in-flight operation, provably never a credential, and a stateless call proven stateless
+- [ ] 63-06-PLAN.md — The live, opt-in byte-transparency proof against a genuine stock build, and the convergence census measured rather than assumed
 
 **Cross-cutting constraints:**
 
@@ -2631,7 +2653,7 @@ check. No test reads this table now.
 | 60. The Seam Wired Into the Code That Ships | v1.1.0 | 8/8 | Complete | 2026-09-18 |
 | 61. The Install Tables Generated, and a Guard That Compares Facts | v1.1.0 | 3/3 | Complete | 2026-09-19 |
 | 62. The Fixed Endpoint and the Broker That Owns the Machine | v2.0.0 | 5/5 | Complete | 2026-09-19 |
-| 63. The Monitor Channel Relayed, and the Connection as the Session | v2.0.0 | — | Not started | - |
+| 63. The Monitor Channel Relayed, and the Connection as the Session | v2.0.0 | 0/6 | Planned | - |
 | 64. Files as Bytes, Both Directions | v2.0.0 | — | Not started | - |
 | 65. Every Skill Script Through the One Endpoint, and CI With It | v2.0.0 | — | Not started | - |
 | 66. The Deletion Cutover — Gone, Not Bypassed | v2.0.0 | — | Not started | - |
