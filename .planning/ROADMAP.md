@@ -1989,10 +1989,21 @@ Nothing is deleted here.
 **Plans**: 5 plans
 
 Plans:
+**Wave 1**
+
 - [ ] 62-01-PLAN.md — The fixed endpoint: a credential-free handshake answered ahead of the token gate, and a two-candidate dial that completes it end to end
 - [ ] 62-02-PLAN.md — A machine-level broker home one level above every project, and three client-side comments that stop teaching the reversed bind rule
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 62-03-PLAN.md — The bind set enumerated once from the live interface list, served from one shared acquire queue, refusing loudly when it cannot bind
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 62-04-PLAN.md — One path-free start command behind a plain-JavaScript entry that refuses a below-floor interpreter, and one broker serving two projects
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 62-05-PLAN.md — Two committed, never-applied service definitions, a structural gate that provably bites, and the README that names the one start command
 
 **Cross-cutting constraints:**

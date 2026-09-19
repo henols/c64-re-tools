@@ -1,7 +1,7 @@
 {
   "contract": "1.0.0",
   "flavor": "core",
-  "milestone": "v2.0.0",
+  "milestone": "v2.0.0 — One Broker, One Socket",
   "phases": [
     {
       "number": "1",
@@ -355,9 +355,9 @@
     }
   ],
   "next": {
-    "command": "/gsd:discuss-phase 62",
-    "label": "Discuss Phase 62",
-    "reason": "v2.0.0 roadmap created — Phases 62-67, 36/36 requirements mapped"
+    "command": "/gsd:progress --next",
+    "label": "Advance to the next step (plan phase 62)",
+    "reason": "Phase 62 of 6 — needs a plan"
   },
-  "updated_at": "2026-09-19T12:40:00.000Z"
+  "updated_at": "2026-09-19T14:16:35.700Z"
 }
