@@ -848,11 +848,12 @@ test("structural (D-14): no halting-path module reads monitorClients -- the only
     .split("\n")
     .map((f) => f.trim())
     .filter((f) => f !== "");
-  // The four broker-side modules THIS plan promotes monitorClients in, plus
-  // their compiled/committed resources/*.mjs siblings (expected to carry the
-  // identifier verbatim) and every test file that constructs a raw
-  // InstanceRecord literal and must therefore satisfy its non-optional
-  // field -- none of these is a halting-path consumer.
+  // The broker-side modules THIS plan (and Phase 63, SESS-02) promote/read
+  // monitorClients in, plus their compiled/committed resources/*.mjs
+  // siblings (expected to carry the identifier verbatim) and every test
+  // file that constructs a raw InstanceRecord literal and must therefore
+  // satisfy its non-optional field -- none of these is a halting-path
+  // consumer.
   const ALLOWED = new Set([
     "broker-state.mts",
     "broker-control.mts",
@@ -872,6 +873,14 @@ test("structural (D-14): no halting-path module reads monitorClients -- the only
     // structural test (the identifier it searches for is necessarily present
     // in its own source) -- not a halting-path reference to the field.
     "text-connect.test.ts",
+    // Phase 63, plan 63-01 (SESS-02): broker-relay.mts's own module header
+    // comment NAMES the field (documenting where the per-claim handle it
+    // checks is minted) without ever reading it -- handleRelayAttach()'s
+    // own read lives in vice-broker.mts, already allowed above. Its test
+    // file constructs the same raw InstanceRecord literals every other
+    // allowed *.test.ts file above does.
+    "broker-relay.mts",
+    "broker-relay.test.ts",
   ]);
   const offenders: string[] = [];
   for (const rel of files) {
