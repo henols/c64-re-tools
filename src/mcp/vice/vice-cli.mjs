@@ -157,7 +157,10 @@ async function main() {
     pkg = null;
   }
   const packageName = pkg && typeof pkg.name === "string" ? pkg.name : DEFAULT_PACKAGE_NAME;
-  const floorMajor = pkg ? floorMajorFromEngineRange(pkg.engines ? pkg.engines.node : undefined) : null;
+  // Reuses resolveFloorMajor() -- the SAME derivation a test can point at a
+  // fixture manifest and verify independently -- rather than re-deriving the
+  // floor inline here from the `pkg` object already read above for the name.
+  const floorMajor = resolveFloorMajor(PACKAGE_JSON_PATH);
 
   if (floorMajor === null) {
     process.stderr.write(
