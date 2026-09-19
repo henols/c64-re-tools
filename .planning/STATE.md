@@ -5,16 +5,16 @@ milestone_name: One Broker, One Socket
 current_phase: 63
 current_phase_name: The Monitor Channel Relayed, and the Connection as the Session
 status: executing
-stopped_at: Completed 63-01-PLAN.md
-last_updated: "2026-09-19T20:38:44.033Z"
+stopped_at: Completed 63-02-PLAN.md
+last_updated: "2026-09-19T21:15:45.838Z"
 last_activity: 2026-09-19
 last_activity_desc: Phase 63 execution started
-state_head: fac62acb7ca7cd4ebd44c7b82084ab30e404bec3
+state_head: bba7a44e40de93b453a7e49595579c7db52af709
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 11
-  completed_plans: 6
+  completed_plans: 7
   percent: 17
 carried_forward_phases:
 
@@ -80,7 +80,7 @@ closure still needs to be recorded as one.
 ## Current Position
 
 Phase: 63 (The Monitor Channel Relayed, and the Connection as the Session) — EXECUTING
-Plan: 2 of 6
+Plan: 3 of 6
 Status: Ready to execute
 Progress: [██░░░░░░░░] 17% (1 of 6 v2.0.0 phases complete; Phases 62-67)
 Last activity: 2026-09-19 — Phase 63 execution started
@@ -475,6 +475,7 @@ Phase 66 completes.
 | Phase 62 P04 | 31min | 2 tasks | 10 files |
 | Phase 62 P05 | 24min | 2 tasks | 4 files |
 | Phase 63 P01 | 75min | 3 tasks | 26 files |
+| Phase 63 P02 | 60min | 2 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -1365,6 +1366,8 @@ Recent decisions affecting current work:
 - [Phase 62]: Plan 62-04: the two-project case's "two clients configured against two project directories" is proven as two independent control-plane sessions opened against the broker's own machine-level state directory, rather than by varying each session's own dial target -- there is deliberately no per-project discovery path any more under this phase's design.
 - [Phase 62]: Plan 62-05: BROKER_START_COMMAND's literal text lives in the launchd plist's leading XML comment (its functional ProgramArguments is necessarily a split array) and in the systemd unit's actual ExecStart line -- both asserted byte-identical to the exported constant by the same test.
 - [Phase 63]: Unified the Buffer-mode pre-splice reader across every control-plane connection at Task 1 time, not deferred to Task 2 — The eight pre-existing ASCII ops decode byte-identically either way, and one reader is what proves the boundary-one case
+- [Phase 63]: Fixed a real bug: InstanceRecord.monitorClients[channel].attached was never reset on a relay connection's own death, which would have permanently blocked the binary channel's own reconnect. Scoped the fix to one close listener rather than building the fuller incident/idle-timeout machinery a later plan owns.
+- [Phase 63]: Added StockDispatchDeps.dialMonitorSocket/.controlToken as a test-only relay-socket-source override reaching both channels, fixing text-tools.test.ts's and stock-dispatch.test.ts's own conformance tests after textConnect()'s default socket source became the relay.
 
 ### Pending Todos
 
@@ -2698,8 +2701,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-19T20:38:43.852Z
-Stopped at: Completed 63-01-PLAN.md
+Last session: 2026-09-19T21:15:45.686Z
+Stopped at: Completed 63-02-PLAN.md
 Resume file: None
 
 Earlier: **v2.0.0 roadmap created.** 36/36 requirements (`ENDPOINT-01..05`,
