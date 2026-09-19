@@ -431,3 +431,56 @@ test("two host_tool requests issued over the real control plane without awaiting
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 63, plan 63-05, Task 3 (SESS-01): the structural half of "a stateless
+// call binds no lease". The behavioural half (the broker's own observable
+// state is unchanged across such a call) lives in broker-control.test.ts;
+// this half asserts, from source and tied to identifiers rather than to
+// prose, that the container-side stateless client module (host-tool-
+// client.ts) can never reach lease-shaped behaviour in the first place --
+// one connection, one request line, no acquire line, no module-level
+// session handle to leak across calls.
+// ---------------------------------------------------------------------------
+
+test("structural (63-05, SESS-01): host-tool-client.ts's container route opens exactly one connection and writes exactly one request line, never an acquire line, and holds no module-level session handle", () => {
+  const source = readFileSync(new URL("./host-tool-client.ts", import.meta.url), "utf8");
+
+  // Exactly one connect() call in the whole module -- the ONE TCP connection
+  // hostToolOverControlPlane() opens per request. The host route
+  // (hostToolOverHostRoute()) spawns a child process instead and opens no
+  // socket of its own, so this count must not creep to two.
+  const connectCalls = [...source.matchAll(/\bconnect\(/g)];
+  assert.equal(connectCalls.length, 1, `expected exactly one connect() call in host-tool-client.ts; found ${connectCalls.length}`);
+
+  // Exactly one socket.write() call -- one request line per connection,
+  // never a second write reusing the same socket for a follow-up request.
+  const writeCalls = [...source.matchAll(/\bsocket\.write\(/g)];
+  assert.equal(writeCalls.length, 1, `expected exactly one socket.write() call in host-tool-client.ts; found ${writeCalls.length}`);
+
+  // The one request line this module ever writes carries `op: "host_tool"`
+  // -- never `op: "acquire"`. SESS-01's whole point is that this call shape
+  // binds no lease; writing an acquire line would be exactly that.
+  assert.match(source, /op: "host_tool"/, "host-tool-client.ts must write the host_tool op");
+  assert.doesNotMatch(
+    source,
+    /op: "acquire"/,
+    "host-tool-client.ts must never write an acquire line -- a stateless call acquires no grant",
+  );
+
+  // No module-level (column-zero) declaration holds a socket or a session
+  // across calls -- every connect()-produced socket is a LOCAL variable
+  // scoped to hostToolOverControlPlane()'s own Promise executor, destroyed
+  // before that function's promise ever settles. Tied to identifiers (any
+  // top-level declaration whose name reads as a socket or session) rather
+  // than to prose, so a rewrite that renames the function but preserves the
+  // property keeps passing, and one that introduces a persistent handle
+  // fails regardless of what it is called internally.
+  const topLevelDecls = [...source.matchAll(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z0-9_]+)/gm)].map((m) => m[1]!);
+  const sessionLikeNames = topLevelDecls.filter((name) => /ocket|ession/i.test(name));
+  assert.deepEqual(
+    sessionLikeNames,
+    [],
+    `no module-level declaration may hold a socket or session handle across calls; found: ${JSON.stringify(sessionLikeNames)}`,
+  );
+});

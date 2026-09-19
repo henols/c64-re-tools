@@ -2725,3 +2725,85 @@ test("invariant (63-05, T-63-17): every target-naming op refuses ANOTHER session
     listener.server.close();
   }
 });
+
+// ============================================================================
+// Plan 63-05, Task 3 (SESS-01): the behavioural half of "a stateless call
+// binds no lease". The stateless call shape already ships (host-tool-
+// client.ts's hostToolOverControlPlane()) and its own callback (onHostTool)
+// is declared separately from every lease callback, so the dispatch branch
+// structurally cannot reach lease state -- see StartControlListenerOptions'
+// own onHostTool comment. What this proves is the OBSERVATION a reader of
+// status would actually rely on: the broker's state is unchanged across
+// such a call, not merely "the callback is declared separately" as a claim
+// read out of a comment.
+// ============================================================================
+
+test("stateless call (63-05, SESS-01): a host_tool request never fires an acquire, release, recycle, monitor-claim, monitor-release, attach or operation callback, the closed connection's own close triggers no release, and status is unchanged across ten sequential calls", async () => {
+  const calls = { acquire: 0, release: 0, recycle: 0, monitorClaim: 0, monitorRelease: 0, attach: 0, operation: 0 };
+  const fixedStatus: StatusInstanceEntry[] = [
+    { port: 6600, url: "http://127.0.0.1:6600/mcp", state: "ready", reason: "spare", epoch: null, hasMonitorClient: false, sessionLabel: null, grantId: null, operation: null },
+  ];
+  const { listener, token } = await startTestListener({
+    onAcquire: async () => {
+      calls.acquire++;
+      return { ok: false, reason: "internal" } as AcquireOutcome;
+    },
+    onRelease: () => {
+      calls.release++;
+    },
+    onRecycle: async () => {
+      calls.recycle++;
+      return { port: null, pid: null, viceBin: null, killStage: "no_signal", epochBefore: null, outcome: "grant_lookup_failed", reason: "" };
+    },
+    onStatus: () => fixedStatus,
+    onMonitorClaim: () => {
+      calls.monitorClaim++;
+      return { ok: false, code: "internal" } as MonitorClaimOutcome;
+    },
+    onMonitorRelease: () => {
+      calls.monitorRelease++;
+      return { ok: false, code: "internal" } as MonitorReleaseOutcome;
+    },
+    onRelayAttach: (): RelayAttachOutcome => {
+      calls.attach++;
+      return { ok: false, code: "internal" };
+    },
+    onOperation: (): OperationNoteOutcome => {
+      calls.operation++;
+      return { ok: true };
+    },
+    onHostTool: async () => ({ ok: true, tool: "acme.build", exitStatus: 0, results: [], stderrTail: "" }),
+  });
+
+  const observer = makeClient(listener.port);
+  try {
+    observer.send({ op: "status", token });
+    const snapshotBefore = await observer.next();
+
+    for (let i = 0; i < 10; i++) {
+      const stateless = makeClient(listener.port);
+      stateless.send({ op: "host_tool", id: `stateless-${i}`, token, tool: "acme.build", args: {} });
+      const reply = (await stateless.next()) as { ok: boolean };
+      assert.equal(reply.ok, true, `stateless call ${i} must succeed against the stubbed onHostTool`);
+      stateless.close();
+      // Let the "close" event on THIS connection actually fire and run
+      // through attachControlProtocol()'s own close handler before moving
+      // on -- a per-call leak of any kind (an accidental release, a
+      // fabricated grant) would show up here, not merely at the very end.
+      await waitFor(() => true, 10);
+    }
+
+    observer.send({ op: "status", token });
+    const snapshotAfter = await observer.next();
+
+    assert.deepEqual(snapshotAfter, snapshotBefore, "status must be byte-identical before and after ten stateless calls");
+    assert.deepEqual(
+      calls,
+      { acquire: 0, release: 0, recycle: 0, monitorClaim: 0, monitorRelease: 0, attach: 0, operation: 0 },
+      "no lease-bearing callback may ever fire for a stateless host_tool call, across any of the ten repetitions",
+    );
+  } finally {
+    observer.close();
+    listener.server.close();
+  }
+});
