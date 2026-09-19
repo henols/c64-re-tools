@@ -21,13 +21,25 @@
 //
 // Wire format confirmed at a blocking checkpoint decision (2026-08-03,
 // `as-specified`, no amendments), which accepted some residual risk and
-// considered and rejected a unix-domain-socket alternative. Auth: per-boot
-// capability token compared constant-time, checked BEFORE any state read
-// or write. Bind: 0.0.0.0 explicitly, never 127.0.0.1 --
-// host.docker.internal is the bridge address, not loopback, so a
-// loopback-only listener is structurally unreachable from the container.
-// Port: 19510 default via VICE_BROKER_CONTROL_PORT.
+// considered and rejected a unix-domain-socket alternative. Auth: the
+// eight pre-hello ops still gate on a per-boot capability token compared
+// constant-time, checked BEFORE any state read or write -- but `hello`
+// (plan 62-01) answers UNCONDITIONALLY, to any caller that can reach a
+// bound address, with no credential of any kind. That is what makes the
+// bind set below the FIRST line of defence now (v2.0.0), not a convenience
+// narrowing sitting on top of a credential every caller already needs: a
+// wildcard bind would let any network peer complete a handshake and learn
+// this broker's protocol and version for free. Bind: loopback plus every
+// enumerated bridge gateway address from an interface-name allowlist
+// (BRIDGE_INTERFACE_ALLOWLIST below), enumerated exactly once at startup,
+// never the wildcard address and never a hardcoded gateway literal --
+// host.docker.internal resolves to one of those enumerated bridge
+// addresses, so binding loopback alone would leave a container
+// structurally unable to reach this listener, which is why the bridge set
+// is enumerated rather than dropped outright. Port: 19510 default via
+// VICE_BROKER_CONTROL_PORT.
 import { createServer } from "node:net";
+import { networkInterfaces as osNetworkInterfaces } from "node:os";
 import { timingSafeEqual, randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -260,6 +272,86 @@ export async function drainPendingAcquires(queue) {
             queue.push(entry);
         }
     }
+}
+// ---------------------------------------------------------------------------
+// Interface enumeration and the bridge allowlist (BROKER-03/D-09/D-10).
+// ---------------------------------------------------------------------------
+/** The bridge-interface allowlist BROKER-03/D-09 requires: the broker binds
+ * loopback plus every address on an interface whose NAME matches one of
+ * these four patterns, matched among non-internal interfaces only (see
+ * enumerateBindHosts() below). The owner considered, and explicitly
+ * declined, an environment-override knob here -- a bridge under an
+ * unlisted name is simply never bound, and that cost was accepted rather
+ * than adding a knob that could widen the bind set unaudited. Binding
+ * every RFC1918/private-range address was ALSO rejected: that would also
+ * bind the machine's own LAN address, which on untrusted wifi is close to
+ * the wildcard bind the settled decision above forbids. Frozen so the set
+ * cannot be mutated by a caller at runtime; four entries, one per D-09
+ * name, mutually exclusive by construction (no interface name can match
+ * two of them at once). */
+export const BRIDGE_INTERFACE_ALLOWLIST = Object.freeze([
+    /^docker0$/, // Docker's own default bridge -- exact name, never a prefix
+    /^br-/, // a Docker user-defined bridge network
+    /^podman/, // Podman's own bridge naming
+    /^cni-/, // a CNI-managed bridge (Kubernetes-style container networking)
+]);
+function matchesBridgeAllowlist(name) {
+    return BRIDGE_INTERFACE_ALLOWLIST.some((pattern) => pattern.test(name));
+}
+function isIPv4Record(record) {
+    return record.family === "IPv4";
+}
+/** BROKER-03/D-09/D-10: enumerates the bind set from the live interface
+ * list -- loopback (identified by the record's own INTERNAL flag, never by
+ * the interface name, since the loopback interface is named differently on
+ * macOS/BSD -- `lo0`, not `lo`) plus every IPv4 address on a NON-internal
+ * interface whose name matches BRIDGE_INTERFACE_ALLOWLIST. IPv6 addresses
+ * are never returned (a Docker/Podman/CNI bridge gateway address is always
+ * IPv4, and binding the IPv6 link-local entry an allowlisted interface
+ * commonly also carries would serve no routing purpose here while
+ * complicating the empty-set logic below for no benefit). Loopback always
+ * sorts first; the remaining order is the platform's own enumeration
+ * order, de-duplicated. Never throws and never signals an error itself --
+ * an empty bridge subset is a correct steady state (macOS Docker Desktop
+ * has no host-side bridge interface at all, D-09), and even a totally
+ * empty result (no loopback found either) is returned as a plain empty
+ * array for the CALLER to treat as fatal -- this function never refuses on
+ * its own. Never hardcodes a gateway literal: every address comes from the
+ * live list handed to it, because a custom container network has its own
+ * gateway. Intended to be called exactly ONCE per listener start (D-10) --
+ * this module contains no timer or interval that calls it again. */
+export function enumerateBindHosts(opts = {}) {
+    const listInterfaces = opts.networkInterfaces ?? osNetworkInterfaces;
+    const interfaces = listInterfaces();
+    const seen = new Set();
+    const ordered = [];
+    const addUnique = (address) => {
+        if (seen.has(address))
+            return;
+        seen.add(address);
+        ordered.push(address);
+    };
+    // Loopback pass first -- always precedes bridge addresses in the
+    // returned order, regardless of the platform's own key ordering.
+    for (const records of Object.values(interfaces)) {
+        if (!records)
+            continue;
+        for (const record of records) {
+            if (record.internal && isIPv4Record(record))
+                addUnique(record.address);
+        }
+    }
+    // Bridge pass -- interface NAME matched against the allowlist, among
+    // non-internal interfaces only, filtered to IPv4.
+    for (const [name, records] of Object.entries(interfaces)) {
+        if (!records || !matchesBridgeAllowlist(name))
+            continue;
+        for (const record of records) {
+            if (!record.internal && isIPv4Record(record))
+                addUnique(record.address);
+        }
+    }
+    return ordered;
 }
 /** Binds a bare TCP listener with NO protocol wired up -- no token check, no
  * request handling, nothing. `startControlListener()` below calls this
@@ -683,11 +775,60 @@ function attachControlProtocol(server, opts, pendingAcquires) {
  * connection exceeding MAX_LINE_BYTES without a newline is destroyed rather
  * than buffered further (T-01.6.2-04). */
 export function startControlListener(opts) {
-    const host = opts.host ?? process.env.VICE_BROKER_CONTROL_HOST ?? "0.0.0.0";
+    // No wildcard fallback (D-09/D-11): an explicitly-set control-host
+    // environment variable is honoured as an operator's own choice; when
+    // neither opts.host nor the environment variable names one, the caller
+    // must supply a host -- this never silently substitutes "0.0.0.0". A
+    // production caller wanting the enumerated multi-address bind should use
+    // enumerateBindHosts()/startControlListenerOnHosts() below instead of
+    // this single-host primitive.
+    const host = opts.host ?? process.env.VICE_BROKER_CONTROL_HOST;
+    if (!host) {
+        return Promise.reject(new Error("startControlListener: no host resolved -- opts.host is unset and VICE_BROKER_CONTROL_HOST is unset; " +
+            "the caller must supply a host explicitly (no wildcard fallback, D-09)"));
+    }
     const port = resolveControlPort(opts.port);
     return bindControlListener(host, port).then((bound) => {
         const pendingAcquires = [];
         attachControlProtocol(bound.server, opts, pendingAcquires);
         return { server: bound.server, port: bound.port, host: bound.host, pendingAcquires };
+    });
+}
+/** BROKER-03: binds the control protocol on EVERY host in `hosts`, sharing
+ * exactly ONE pending-acquire queue across all of them -- never one call to
+ * startControlListener() per host, which would allocate N independent
+ * queues and silently fork acquire fairness into per-listener silos (a
+ * request queued via one bound address would never drain when a slot freed
+ * on another; see Pitfall 2 in 62-RESEARCH.md). Resolves the port ONCE
+ * (shared by every host, exactly like startControlListener() resolves it
+ * once for its single host), allocates the one shared queue, then calls
+ * the lower-level bindControlListener()/attachControlProtocol() pair once
+ * per host -- never startControlListener() itself, which stays untouched
+ * and unlooped. A per-host bind failure is captured in `failures` rather
+ * than rejecting the whole call or being silently dropped -- this function
+ * makes no fatality judgement of its own; that decision belongs to the
+ * caller, which alone knows whether the failing host was loopback (always
+ * fatal, D-09) or a bridge address (never fatal on its own). */
+export function startControlListenerOnHosts(hosts, opts) {
+    const port = resolveControlPort(opts.port);
+    const pendingAcquires = [];
+    return Promise.all(hosts.map((host) => bindControlListener(host, port)
+        .then((bound) => {
+        attachControlProtocol(bound.server, opts, pendingAcquires);
+        return { ok: true, listener: { server: bound.server, port: bound.port, host: bound.host, pendingAcquires } };
+    })
+        .catch((error) => ({
+        ok: false,
+        failure: { host, error: error instanceof Error ? error : new Error(String(error)) },
+    })))).then((outcomes) => {
+        const listeners = [];
+        const failures = [];
+        for (const outcome of outcomes) {
+            if (outcome.ok)
+                listeners.push(outcome.listener);
+            else
+                failures.push(outcome.failure);
+        }
+        return { listeners, failures, pendingAcquires };
     });
 }

@@ -19,15 +19,19 @@ import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from "no
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { NetworkInterfaceInfo } from "node:os";
 
 import {
   startControlListener,
+  startControlListenerOnHosts,
   bindControlListener,
   enqueueAcquire,
   drainPendingAcquires,
   newControlToken,
   HELLO_PROTOCOL_MAGIC,
   resolveBrokerVersion,
+  BRIDGE_INTERFACE_ALLOWLIST,
+  enumerateBindHosts,
   type StartControlListenerResult,
   type AcquireOutcome,
   type RecycleOutcome,
@@ -1924,4 +1928,207 @@ test("hello's version uses the injected helloVersion override when supplied, and
 test("resolveBrokerVersion() degrades to the dev placeholder when no package.json is found at either candidate", () => {
   const version = resolveBrokerVersion("/tmp/gsd-62-01-nonexistent-dir-for-resolveBrokerVersion-test");
   assert.equal(version, "0.0.0-dev");
+});
+
+// ============================================================================
+// 62-03-PLAN.md, Task 1: interface enumeration (BROKER-03/D-09/D-10) and a
+// multi-address listener sharing exactly one pending-acquire queue
+// (BROKER-01/BROKER-03). Every synthetic interface map below is shaped
+// exactly like the live os.networkInterfaces() output captured in
+// 62-RESEARCH.md: a top-level key per interface name, an ARRAY of address
+// records per interface, `internal: true` marking loopback (never the name
+// "lo", which is "lo0" on macOS/BSD).
+// ============================================================================
+
+function ipv4Record(address: string, overrides: Partial<NetworkInterfaceInfo> = {}): NetworkInterfaceInfo {
+  return {
+    address,
+    netmask: "255.255.255.0",
+    family: "IPv4",
+    mac: "00:00:00:00:00:00",
+    internal: false,
+    cidr: `${address}/24`,
+    ...overrides,
+  } as NetworkInterfaceInfo;
+}
+
+function ipv6Record(address: string, overrides: Partial<NetworkInterfaceInfo> = {}): NetworkInterfaceInfo {
+  return {
+    address,
+    netmask: "ffff:ffff:ffff:ffff::",
+    family: "IPv6",
+    mac: "00:00:00:00:00:00",
+    internal: false,
+    cidr: `${address}/64`,
+    scopeid: 0,
+    ...overrides,
+  } as NetworkInterfaceInfo;
+}
+
+test("BRIDGE_INTERFACE_ALLOWLIST has exactly four entries, each of the four D-09 names matches exactly one", () => {
+  assert.equal(BRIDGE_INTERFACE_ALLOWLIST.length, 4);
+  for (const name of ["docker0", "br-1234567890ab", "podman0", "cni-abcdef01"]) {
+    const matches = BRIDGE_INTERFACE_ALLOWLIST.filter((pattern) => pattern.test(name));
+    assert.equal(matches.length, 1, `expected exactly one allowlist pattern to match "${name}", got ${matches.length}`);
+  }
+});
+
+test("enumerateBindHosts: loopback plus one allowlisted bridge -- both addresses, loopback first", () => {
+  const hosts = enumerateBindHosts({
+    networkInterfaces: () => ({
+      lo: [ipv4Record("127.0.0.1", { internal: true }), ipv6Record("::1", { internal: true })],
+      docker0: [ipv4Record("172.17.0.1"), ipv6Record("fe80::1")],
+    }),
+  });
+  assert.deepEqual(hosts, ["127.0.0.1", "172.17.0.1"]);
+});
+
+test("enumerateBindHosts: loopback with no allowlisted bridge returns loopback alone and does not signal an error", () => {
+  const hosts = enumerateBindHosts({
+    networkInterfaces: () => ({
+      lo: [ipv4Record("127.0.0.1", { internal: true })],
+      wlp0s20f3: [ipv4Record("192.168.1.50")],
+    }),
+  });
+  assert.deepEqual(hosts, ["127.0.0.1"]);
+});
+
+test("enumerateBindHosts: per-container virtual interfaces and the host's own wireless interface are never returned", () => {
+  const hosts = enumerateBindHosts({
+    networkInterfaces: () => ({
+      lo: [ipv4Record("127.0.0.1", { internal: true })],
+      vethb98b6d9: [ipv6Record("fe80::c440:f4ff:feab:ff65")],
+      wlp0s20f3: [ipv4Record("192.168.1.50")],
+    }),
+  });
+  assert.deepEqual(hosts, ["127.0.0.1"]);
+});
+
+test("enumerateBindHosts: an allowlisted interface carrying both IPv4 and IPv6 -- only the IPv4 address is returned", () => {
+  const hosts = enumerateBindHosts({
+    networkInterfaces: () => ({
+      lo: [ipv4Record("127.0.0.1", { internal: true })],
+      docker0: [ipv4Record("172.17.0.1"), ipv6Record("fe80::c440:f4ff:feab:ff65")],
+    }),
+  });
+  assert.deepEqual(hosts, ["127.0.0.1", "172.17.0.1"]);
+  assert.equal(hosts.length, 2);
+  assert.ok(!hosts.some((h) => h.includes(":")), "no returned address may contain a colon (IPv6 marker)");
+});
+
+test("enumerateBindHosts: each allowlist pattern is recognised by interface name", () => {
+  const hosts = enumerateBindHosts({
+    networkInterfaces: () => ({
+      lo: [ipv4Record("127.0.0.1", { internal: true })],
+      docker0: [ipv4Record("172.17.0.1")],
+      "br-abcdef012345": [ipv4Record("172.18.0.1")],
+      podman0: [ipv4Record("10.88.0.1")],
+      "cni-podman0": [ipv4Record("10.89.0.1")],
+    }),
+  });
+  assert.deepEqual(hosts, ["127.0.0.1", "172.17.0.1", "172.18.0.1", "10.88.0.1", "10.89.0.1"]);
+});
+
+test("enumerateBindHosts: no loopback entry at all returns an empty set, never throws and never signals an error", () => {
+  const hosts = enumerateBindHosts({
+    networkInterfaces: () => ({
+      wlp0s20f3: [ipv4Record("192.168.1.50")],
+    }),
+  });
+  assert.deepEqual(hosts, []);
+});
+
+test("enumerateBindHosts: calls the injected networkInterfaces() exactly once per invocation -- no internal re-enumeration", () => {
+  let calls = 0;
+  const hosts = enumerateBindHosts({
+    networkInterfaces: () => {
+      calls++;
+      return { lo: [ipv4Record("127.0.0.1", { internal: true })] };
+    },
+  });
+  assert.deepEqual(hosts, ["127.0.0.1"]);
+  assert.equal(calls, 1, "enumerateBindHosts must read the interface list exactly once per call -- a second call is never made from a timer or an interval");
+});
+
+test("startControlListenerOnHosts: two listeners on two different bound addresses share exactly one pending-acquire queue, serving two acquires in arrival order", async () => {
+  let inFlight = true;
+  const token = newControlToken();
+  const listenerOpts = {
+    port: 0,
+    token,
+    onAcquire: async (): Promise<AcquireOutcome> => {
+      if (inFlight) return { ok: false, reason: "launch_in_flight" };
+      return { ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp", epochFile: "/tmp/e.json", supervisorDir: "/tmp/6600" } };
+    },
+    onRelease: () => {},
+    onRecycle: async (): Promise<RecycleOutcome> => ({
+      port: null,
+      pid: null,
+      viceBin: null,
+      killStage: "no_signal",
+      epochBefore: null,
+      outcome: "grant_lookup_failed",
+      reason: "not exercised by this test",
+    }),
+    onStatus: (): StatusInstanceEntry[] => [],
+    onHostState: (): HostStateFields => ({
+      pid: process.pid,
+      startedAt: "2026-01-01T00:00:00Z",
+      nodeVersion: process.version,
+      viceBin: "x64sc",
+      maxInstances: 16,
+      basePort: 6600,
+      backend: "stock" as const,
+    }),
+    onMonitorClaim: (): MonitorClaimOutcome => ({ ok: true }),
+    onMonitorRelease: (): MonitorReleaseOutcome => ({ ok: true }),
+    onHostTool: async () => ({ ok: false, message: "not exercised by this test" }),
+  };
+
+  // Two distinct loopback addresses -- both bindable without extra
+  // configuration on this project's CI platform (ubuntu-latest); the whole
+  // 127.0.0.0/8 range routes to loopback on Linux.
+  const { listeners, failures, pendingAcquires } = await startControlListenerOnHosts(["127.0.0.1", "127.0.0.2"], listenerOpts);
+  try {
+    assert.deepEqual(failures, []);
+    assert.equal(listeners.length, 2);
+    assert.ok(listeners[0].pendingAcquires === listeners[1].pendingAcquires, "both listeners must share the exact same queue reference, not per-listener copies");
+    assert.ok(pendingAcquires === listeners[0].pendingAcquires);
+
+    const clientA = makeClient(listeners[0].port, listeners[0].host);
+    const clientB = makeClient(listeners[1].port, listeners[1].host);
+    try {
+      clientA.send({ op: "acquire", id: "req-A", token });
+      await waitFor(() => pendingAcquires.length === 1, 2000);
+      clientB.send({ op: "acquire", id: "req-B", token });
+      await waitFor(() => pendingAcquires.length === 2, 2000);
+
+      assert.deepEqual(
+        pendingAcquires.map((e) => e.requestId),
+        ["req-A", "req-B"],
+        "arrival order must be preserved regardless of which bound address each request arrived on",
+      );
+
+      inFlight = false;
+      await drainPendingAcquires(pendingAcquires);
+      const [a, b] = await Promise.all([clientA.next(), clientB.next()]);
+      assert.equal(a.kind, "grant");
+      assert.equal(b.kind, "grant");
+      assert.equal(pendingAcquires.length, 0);
+    } finally {
+      clientA.close();
+      clientB.close();
+    }
+  } finally {
+    for (const l of listeners) l.server.close();
+  }
+});
+
+test("structural: no `sort()` call appears anywhere in the enumeration/multi-host bind region -- order falls out of append order alone", () => {
+  const source = readFileSync(join(HERE, "broker-control.mts"), "utf8");
+  const start = source.indexOf("Interface enumeration and the bridge allowlist");
+  assert.ok(start !== -1, "could not locate the enumeration region marker");
+  const region = source.slice(start);
+  const count = (region.match(/\.sort\(/g) ?? []).length;
+  assert.equal(count, 0, "no sort() call may appear from the enumeration region to the end of the file");
 });
