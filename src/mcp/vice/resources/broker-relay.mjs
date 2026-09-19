@@ -73,6 +73,44 @@ export function readAttachLine(chunk, carry = Buffer.alloc(0)) {
     };
 }
 /**
+ * The default, real implementation: sets the socket's own inactivity
+ * timeout (`Socket.prototype.setTimeout()`) and routes its `"timeout"`
+ * event to `onExpire`. THE COMPARISON THIS RELIES ON IS AT-OR-PAST THE
+ * BOUND, NEVER STRICTLY PAST -- Node's own idle timer fires once at least
+ * `ms` milliseconds have elapsed with no read or write activity, which is
+ * the semantics this whole mechanism depends on; do not replace this with
+ * a hand-rolled counter that uses strictly-past instead. The reset on
+ * activity is ALSO the socket's own built-in behaviour for the underlying
+ * Node timer -- `onActivity()` below additionally re-arms explicitly
+ * (`socket.setTimeout(ms)` again), which is redundant for THIS real
+ * implementation but keeps the `ArmedIdleTimer` contract uniform with an
+ * injected fake, which has no such built-in reset to rely on.
+ * `suspend()`/`resume()` track their own `suspended` flag locally so a
+ * byte arriving while suspended (`onActivity()`) can never accidentally
+ * un-suspend the deadline -- suspension and activity are two different
+ * questions, and only `resume()` itself answers the first one.
+ */
+export const defaultArmIdleTimer = ({ socket, ms, onExpire }) => {
+    let suspended = false;
+    socket.on("timeout", onExpire);
+    socket.setTimeout(ms);
+    return {
+        suspend: () => {
+            suspended = true;
+            socket.setTimeout(0);
+        },
+        resume: () => {
+            suspended = false;
+            socket.setTimeout(ms);
+        },
+        onActivity: () => {
+            if (suspended)
+                return;
+            socket.setTimeout(ms);
+        },
+    };
+};
+/**
  * Dials the emulator (via an injectable `connect`, defaulting to
  * node:net's own) and splices it to `opts.clientSocket` with
  * `Socket.prototype.pipe()` in BOTH directions -- never a hand-rolled copy
@@ -130,10 +168,21 @@ export function spliceRelay(opts) {
         deathReported = true;
         opts.onDeath?.(trigger);
     }
+    // Plan 63-04 Task 2 (SESS-04): the broker-owned idle deadline, armed ONLY
+    // when a caller asked for one -- absent `idleMs` means this session
+    // behaves exactly as it did before Task 2 existed. Applied to the
+    // CLIENT-facing leg only (see SpliceRelayOptions.idleMs's own comment).
+    const idleTimer = opts.idleMs === undefined ? null : (opts.armIdleTimer ?? defaultArmIdleTimer)({ socket: opts.clientSocket, ms: opts.idleMs, onExpire: () => reportDeath("relay_idle_expiry") });
+    // The keepalive setting -- a labelled SECONDARY signal (see
+    // DEFAULT_RELAY_KEEPALIVE_MS's own comment), applied only when asked for.
+    if (opts.keepAliveMs !== undefined) {
+        opts.clientSocket.setKeepAlive(true, opts.keepAliveMs);
+    }
     function close(_trigger) {
         if (closed)
             return;
         closed = true;
+        idleTimer?.suspend();
         if (!emulatorSocket.destroyed)
             emulatorSocket.destroy();
         if (!opts.clientSocket.destroyed)
@@ -147,12 +196,17 @@ export function spliceRelay(opts) {
     // it. `pipe()` consumes the same `"data"` events these listeners observe;
     // Node supports multiple listeners on the same event, and a `Readable`
     // fans the SAME chunk out to every one of them, so this in no way steals
-    // bytes from the splice.
+    // bytes from the splice. Also resets the idle deadline on EITHER
+    // direction's traffic (T-63-02's own "any byte resets it" requirement) --
+    // a no-op when no idle timer was armed (idleTimer is null) or while
+    // suspended (ArmedIdleTimer.onActivity()'s own contract).
     opts.clientSocket.on("data", (chunk) => {
         bytesClientToEmulator += chunk.length;
+        idleTimer?.onActivity();
     });
     emulatorSocket.on("data", (chunk) => {
         bytesEmulatorToClient += chunk.length;
+        idleTimer?.onActivity();
     });
     // The splice itself -- byte-transparent by construction, never a decode.
     opts.clientSocket.pipe(emulatorSocket);
@@ -185,6 +239,8 @@ export function spliceRelay(opts) {
     return {
         emulatorSocket,
         close,
+        suspendIdle: () => idleTimer?.suspend(),
+        resumeIdle: () => idleTimer?.resume(),
         bytesClientToEmulator: () => bytesClientToEmulator,
         bytesEmulatorToClient: () => bytesEmulatorToClient,
     };
@@ -217,18 +273,59 @@ export function resolveRelayChannelTarget(channel, targetId, instance) {
     }
     return { ok: true, port: instance.port };
 }
-/** Default idle timeout (ms) a future plan (63-04) will apply to a relay
- * connection carrying no traffic in either direction. Not consulted by
- * anything in this file yet. */
+/** Default idle timeout (ms) applied to a relay connection carrying no
+ * traffic in either direction (Plan 63-04, SESS-04) -- the broker's OWN
+ * bounded deadline, never disabled silently. See resolveRelayIdleMs()'s own
+ * comment for why this bound, specifically, is the one this broker actually
+ * controls, unlike the keepalive setting below. */
 export const DEFAULT_RELAY_IDLE_MS = 300000;
-/** Default TCP keepalive interval (ms) a future plan (63-04) will arm on
- * each relay socket. Not consulted by anything in this file yet. */
+/** Default TCP keepalive delay (ms) arms on the client-facing relay socket
+ * and on every accepted control connection (Plan 63-04, SESS-04) -- a
+ * SECONDARY, labelled signal, never the bounded mechanism. `Socket.
+ * prototype.setKeepAlive(true, ms)` sets ONLY the delay before the FIRST
+ * probe; the interval BETWEEN probes and the number of probes past that
+ * delay remain the host's own kernel settings (`tcp_keepalive_intvl`/
+ * `tcp_keepalive_probes` on Linux), which this broker cannot change. State
+ * this plainly wherever this constant is consumed, so nobody later mistakes
+ * it for the owned bound -- that is resolveRelayIdleMs()'s own job. */
 export const DEFAULT_RELAY_KEEPALIVE_MS = 30000;
-/** Resolves the idle timeout an eventual caller should apply: the explicit
- * argument, or DEFAULT_RELAY_IDLE_MS. No environment-variable precedence
- * yet -- `VICE_BROKER_RELAY_IDLE_MS` is Plan 63-04's own addition, listed
- * in 63-01-PLAN.md's "Symbols created by later plans" so drift verification
- * excludes it from this plan's own diff. */
-export function resolveRelayIdleMs(idleMs) {
-    return idleMs ?? DEFAULT_RELAY_IDLE_MS;
+/** Never-throw, never-silently-disabling env-var resolver shared by
+ * resolveRelayIdleMs()/resolveRelayKeepAliveMs() below: an absent,
+ * non-numeric, zero or negative raw value resolves to `fallback` and logs
+ * the REJECTED raw value BY NAME -- neither resolver may ever return zero
+ * (a zero bound would disable its own mechanism silently, which is exactly
+ * the failure mode T-63-02's own mitigation forbids) and neither may
+ * disable itself on a bad override. `envVarName` is named in the log line
+ * so an operator sees exactly which variable was rejected, not merely "a
+ * bad relay setting". */
+function resolvePositiveMsFromEnv(envVarName, fallback) {
+    const raw = process.env[envVarName];
+    if (raw === undefined || raw === "")
+        return fallback;
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n <= 0) {
+        console.error(`broker-relay: rejected ${envVarName}=${JSON.stringify(raw)} (must be a positive number) -- falling back to the default of ${fallback}ms`);
+        return fallback;
+    }
+    return n;
+}
+/** Resolves the broker-OWNED idle deadline (Plan 63-04, SESS-04): reads
+ * `VICE_BROKER_RELAY_IDLE_MS`, falling back to DEFAULT_RELAY_IDLE_MS on an
+ * absent, non-numeric, zero or negative value (logged by name -- see
+ * resolvePositiveMsFromEnv()'s own comment). This is the mechanism the
+ * broker actually controls end-to-end: `Socket.prototype.setTimeout(ms)`
+ * fires purely in userspace, on read+write inactivity, needing no
+ * cooperation from the OS or the peer -- unlike the keepalive setting
+ * below, which is a secondary, best-effort signal only. */
+export function resolveRelayIdleMs() {
+    return resolvePositiveMsFromEnv("VICE_BROKER_RELAY_IDLE_MS", DEFAULT_RELAY_IDLE_MS);
+}
+/** Resolves the keepalive delay (Plan 63-04, SESS-04): reads
+ * `VICE_BROKER_RELAY_KEEPALIVE_MS`, same absent/non-numeric/zero/negative
+ * fallback discipline as resolveRelayIdleMs() above. See
+ * DEFAULT_RELAY_KEEPALIVE_MS's own comment for what this setting does NOT
+ * bound -- the idle deadline above is the owned mechanism; this is a
+ * labelled secondary one. */
+export function resolveRelayKeepAliveMs() {
+    return resolvePositiveMsFromEnv("VICE_BROKER_RELAY_KEEPALIVE_MS", DEFAULT_RELAY_KEEPALIVE_MS);
 }

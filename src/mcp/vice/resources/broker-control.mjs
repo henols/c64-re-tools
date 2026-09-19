@@ -52,6 +52,29 @@ export function newControlToken() {
     return randomBytes(32).toString("hex");
 }
 const MAX_LINE_BYTES = 65536;
+/** Plan 63-04 Task 2 (SESS-04) DEFAULT, mirrored -- NOT imported -- from
+ * broker-relay.mts's own DEFAULT_RELAY_KEEPALIVE_MS. Keeping the two
+ * literal values in agreement is this module's own job, same as the
+ * `HELLO_PROTOCOL_MAGIC` string mirrored a few lines below from
+ * broker-endpoint.ts: a byte-identical sync test is what actually holds
+ * the agreement together, not a shared import. */
+const DEFAULT_RELAY_KEEPALIVE_MS_LOCAL = 30000;
+/** DUPLICATES broker-relay.mts's own resolveRelayKeepAliveMs() rather than
+ * value-importing it -- see this function's own call site (inside
+ * attachControlProtocol() below) for the full boundary reason. Same
+ * absent/non-numeric/zero/negative-falls-back-to-default discipline,
+ * logged by name, never silently disabling the setting. */
+function resolveRelayKeepAliveMsLocal() {
+    const raw = process.env.VICE_BROKER_RELAY_KEEPALIVE_MS;
+    if (raw === undefined || raw === "")
+        return DEFAULT_RELAY_KEEPALIVE_MS_LOCAL;
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n <= 0) {
+        console.error(`broker-control: rejected VICE_BROKER_RELAY_KEEPALIVE_MS=${JSON.stringify(raw)} (must be a positive number) -- falling back to the default of ${DEFAULT_RELAY_KEEPALIVE_MS_LOCAL}ms`);
+        return DEFAULT_RELAY_KEEPALIVE_MS_LOCAL;
+    }
+    return n;
+}
 /** The magic string identifying THIS project's own handshake protocol on
  * the wire -- specific enough that a bare TCP accept by an unrelated
  * service can never be mistaken for it. This is the one authoritative
@@ -403,6 +426,28 @@ export function bindControlListener(host, port) {
  * public surface); this module's own tests exercise the two independently. */
 function attachControlProtocol(server, opts, pendingAcquires) {
     server.on("connection", (socket) => {
+        // Plan 63-04 Task 2 (SESS-04): the keepalive delay is set on EVERY
+        // accepted connection -- a plain control connection just as much as one
+        // that will go on to become a relay via `attach` -- since any of them
+        // could be the client-facing leg an operator wants a best-effort dead-
+        // peer signal for. This sets ONLY the delay before the FIRST probe; the
+        // interval between probes and the number of probes past that delay
+        // remain the host's own kernel settings, which this broker cannot
+        // change (see broker-relay.mts's DEFAULT_RELAY_KEEPALIVE_MS's own
+        // comment). The OWNED bound is the relay's own idle deadline
+        // (broker-relay.mts's resolveRelayIdleMs()), never this setting.
+        //
+        // resolveRelayKeepAliveMsLocal() below DUPLICATES broker-relay.mts's own
+        // resolveRelayKeepAliveMs() rather than value-importing it -- the SAME
+        // boundary reason vice-broker.mts's own classifyBrokerLivenessLocal()/
+        // isWildcardBindHostLocal() duplicate rather than import a sibling: this
+        // module is routinely loaded UNBUILT (`.mts` source directly, never
+        // resources/broker-control.mjs) by nine of its own test files, and a
+        // VALUE import of a sibling host-bound module would require a real
+        // "./broker-relay.mjs" file to sit beside this SOURCE file on disk --
+        // which only exists once built. A TYPE-ONLY import stays safe (erased);
+        // a value import does not.
+        socket.setKeepAlive(true, resolveRelayKeepAliveMsLocal());
         // Buffer-mode carry (Phase 63, SESS-02) -- REPLACES the earlier
         // string accumulator (`let buffer = ""`) for every connection, not
         // only a relay one, because the corruption this guards against

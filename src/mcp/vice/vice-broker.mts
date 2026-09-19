@@ -39,6 +39,7 @@ import {
   atCapacity,
   resolveBasePort,
   clearMonitorClient,
+  MONITOR_CHANNELS,
   type BrokerState,
   type InstanceRecord,
   type PortAllocationResult,
@@ -73,7 +74,7 @@ import {
 // build.ts pass (both source and target are listed in
 // HOST_BOUND_ARTIFACTS/tsconfig.build.json's include[] in this same
 // change).
-import { spliceRelay, resolveRelayChannelTarget, relaySessionKey, type RelayDeathTrigger } from "./broker-relay.mjs";
+import { spliceRelay, resolveRelayChannelTarget, relaySessionKey, resolveRelayIdleMs, resolveRelayKeepAliveMs, type RelayDeathTrigger, type ArmIdleTimerFn } from "./broker-relay.mjs";
 // A VALUE import of the broker's own incident writer (Phase 63, SESS-05) --
 // safe here for the SAME reason every other sibling value import in this
 // file is: this file is ALWAYS run from its own compiled resources/ form,
@@ -1006,6 +1007,20 @@ export interface HandleRelayDeathDeps {
    * recorder to prove this runs strictly AFTER the incident write, never
    * before. */
   clearClaim?: (instance: InstanceRecord, channel: MonitorChannel) => void;
+  /** Plan 63-04 Task 2 (SESS-04): overrides the resolved idle deadline
+   * handleRelayAttach() below passes to spliceRelay() -- defaults to
+   * resolveRelayIdleMs()'s own real, env-var-backed resolution. A test
+   * drives the deadline deterministically with a short value, or omits
+   * this and gets the real 5-minute production default. */
+  idleMs?: number;
+  /** Overrides the injectable arm-idle-timer function -- defaults to
+   * broker-relay.mjs's own defaultArmIdleTimer (real `Socket.setTimeout()`).
+   * A test supplies its own fake clock here to prove exactly-at-the-bound
+   * firing with no wall-clock wait at all. */
+  armIdleTimer?: ArmIdleTimerFn;
+  /** Overrides the resolved keepalive delay -- defaults to
+   * resolveRelayKeepAliveMs()'s own real resolution. */
+  keepAliveMs?: number;
 }
 
 /**
@@ -1169,6 +1184,14 @@ export function handleRelayAttach(
     port: target.port,
     pending,
     onDeath: (trigger) => handleRelayDeath(targetId, channel, trigger, state, deps),
+    // Plan 63-04 Task 2 (SESS-04): the broker-owned idle deadline and the
+    // labelled-secondary keepalive delay, both resolved fresh per attach
+    // (an operator's env-var override is honoured for every new relay, not
+    // just ones spliced before the broker started) unless a test overrides
+    // either through `deps`.
+    idleMs: deps.idleMs ?? resolveRelayIdleMs(),
+    armIdleTimer: deps.armIdleTimer,
+    keepAliveMs: deps.keepAliveMs ?? resolveRelayKeepAliveMs(),
   });
   state.relaySessions.set(relaySessionKey(targetId, channel), session);
   return { ok: true };
@@ -1222,7 +1245,18 @@ export function handleMonitorRelease(requestId: string, targetId: string, channe
  * releasing an already-cleared record. The declaration moment is stamped
  * from `opts.now` (this project's standard `now?: () => number` injection
  * register, stock-checkpoints.ts's own convention) so a test can assert the
- * EXACT stamped value without racing Date.now(). */
+ * EXACT stamped value without racing Date.now().
+ *
+ * Plan 63-04 Task 2 (SESS-04): a declaration ALSO suspends the idle
+ * deadline on every LIVE relay session this grant currently holds -- BOTH
+ * channels, if both happen to be attached, since a grant has exactly one
+ * in-flight operation regardless of which channel runs it (see this
+ * function's own header comment above). Clearing (`name === null`) resumes
+ * every one of them with a FRESH interval. This is why one declaration
+ * serves both SESS-05's evidence requirement and SESS-04's deadline: a
+ * channel with something declared is legitimately silent and must never be
+ * torn down by the clock. A grant with no live relay session on a given
+ * channel simply has nothing to suspend/resume there -- never an error. */
 export function handleOperationNote(
   targetId: string,
   channel: MonitorChannel,
@@ -1235,6 +1269,12 @@ export function handleOperationNote(
   if (!grant) return { ok: false, code: "bad_request" };
   const nowFn = opts.now ?? Date.now;
   grant.operation = name === null ? null : { name, declaredAt: nowFn() };
+  for (const ch of MONITOR_CHANNELS) {
+    const session = state.relaySessions.get(relaySessionKey(targetId, ch));
+    if (!session) continue;
+    if (name === null) session.resumeIdle();
+    else session.suspendIdle();
+  }
   return { ok: true };
 }
 

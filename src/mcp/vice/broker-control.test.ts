@@ -2421,3 +2421,47 @@ test("structural: no `sort()` call appears anywhere in the enumeration/multi-hos
   const count = (region.match(/\.sort\(/g) ?? []).length;
   assert.equal(count, 0, "no sort() call may appear from the enumeration region to the end of the file");
 });
+
+// ============================================================================
+// Plan 63-04, Task 2 (SESS-04): the keepalive delay is set on every accepted
+// connection.
+// ============================================================================
+
+test("attachControlProtocol: every accepted connection gets a keepalive delay -- a plain control connection included, not only a relay one", async () => {
+  const calls: Array<{ enable: boolean | undefined; ms: number | undefined }> = [];
+  const NetSocketModule = await import("node:net");
+  const original = NetSocketModule.Socket.prototype.setKeepAlive;
+  NetSocketModule.Socket.prototype.setKeepAlive = function (this: import("node:net").Socket, enable?: boolean, ms?: number) {
+    calls.push({ enable, ms });
+    return original.call(this, enable, ms);
+  } as typeof original;
+  try {
+    const { listener, token } = await startTestListener();
+    try {
+      const client = makeClient(listener.port);
+      client.send({ op: "status", token });
+      await client.next();
+      client.close();
+      await waitFor(() => calls.length > 0, 2000);
+      assert.ok(calls.length > 0, "setKeepAlive() must be called on the accepted connection");
+      const call = calls[calls.length - 1]!;
+      assert.equal(call.enable, true);
+      assert.equal(typeof call.ms, "number");
+      assert.ok((call.ms as number) > 0, "the keepalive delay must be a positive number of milliseconds, never zero");
+    } finally {
+      listener.server.close();
+    }
+  } finally {
+    NetSocketModule.Socket.prototype.setKeepAlive = original;
+  }
+});
+
+test("structural: the DEFAULT_RELAY_KEEPALIVE_MS literal mirrored in broker-control.mts agrees with broker-relay.mts's own value", () => {
+  const relaySource = readFileSync(join(HERE, "broker-relay.mts"), "utf8");
+  const controlSource = readFileSync(join(HERE, "broker-control.mts"), "utf8");
+  const relayMatch = relaySource.match(/export const DEFAULT_RELAY_KEEPALIVE_MS = (\d+);/);
+  const controlMatch = controlSource.match(/const DEFAULT_RELAY_KEEPALIVE_MS_LOCAL = (\d+);/);
+  assert.ok(relayMatch, "broker-relay.mts must export DEFAULT_RELAY_KEEPALIVE_MS as a numeric literal");
+  assert.ok(controlMatch, "broker-control.mts must declare DEFAULT_RELAY_KEEPALIVE_MS_LOCAL as a numeric literal");
+  assert.equal(controlMatch![1], relayMatch![1], "the two mirrored default literals must never drift apart");
+});

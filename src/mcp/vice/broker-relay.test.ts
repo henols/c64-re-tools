@@ -19,7 +19,18 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 
-import { readAttachLine, MAX_ATTACH_LINE_BYTES, relaySessionKey, type RelayDeathTrigger } from "./broker-relay.mts";
+import {
+  readAttachLine,
+  MAX_ATTACH_LINE_BYTES,
+  relaySessionKey,
+  resolveRelayIdleMs,
+  resolveRelayKeepAliveMs,
+  DEFAULT_RELAY_IDLE_MS,
+  DEFAULT_RELAY_KEEPALIVE_MS,
+  type RelayDeathTrigger,
+  type ArmIdleTimerFn,
+  type ArmedIdleTimer,
+} from "./broker-relay.mts";
 import {
   startControlListener,
   newControlToken,
@@ -59,10 +70,16 @@ build();
 interface TestHandleRelayDeathDeps {
   writeIncident?: (record: BrokerIncidentInput) => string;
   clearClaim?: (instance: InstanceRecord, channel: MonitorChannel) => void;
+  /** Plan 63-04 Task 2 (SESS-04) additions -- see vice-broker.mts's own
+   * HandleRelayDeathDeps for the full doc comment. */
+  idleMs?: number;
+  armIdleTimer?: ArmIdleTimerFn;
+  keepAliveMs?: number;
 }
 const viceBrokerModule = (await import(new URL("./resources/vice-broker.mjs", import.meta.url).href)) as unknown as {
   handleMonitorClaim: (requestId: string, targetId: string, channel: MonitorChannel, state: BrokerState) => MonitorClaimOutcome;
   handleMonitorRelease: (requestId: string, targetId: string, channel: MonitorChannel, state: BrokerState) => MonitorReleaseOutcome;
+  handleOperationNote: (targetId: string, channel: MonitorChannel, name: string | null, state: BrokerState, opts?: { now?: () => number }) => { ok: boolean };
   handleRelayAttach: (
     targetId: string,
     channel: MonitorChannel,
@@ -74,7 +91,7 @@ const viceBrokerModule = (await import(new URL("./resources/vice-broker.mjs", im
   ) => RelayAttachOutcome;
   handleRelayDeath: (targetId: string, channel: MonitorChannel, trigger: RelayDeathTrigger, state: BrokerState, deps?: TestHandleRelayDeathDeps) => void;
 };
-const { handleMonitorClaim, handleMonitorRelease, handleRelayAttach, handleRelayDeath } = viceBrokerModule;
+const { handleMonitorClaim, handleMonitorRelease, handleRelayAttach, handleRelayDeath, handleOperationNote } = viceBrokerModule;
 
 // broker-incident.mts is ALSO host-bound (it value-imports broker-home.mjs),
 // so it is loaded the SAME way -- built first, then the compiled artifact,
@@ -1303,6 +1320,218 @@ test("handleRelayDeath: a death with a declared operation marks the run void; a 
       rmSync(incidentsDir, { recursive: true, force: true });
     }
   }
+});
+
+// ===========================================================================
+// Plan 63-04, Task 2 (SESS-04): a bound the broker owns, and a probe it
+// honestly does not.
+// ===========================================================================
+
+/** A fully injected, no-wall-clock idle timer: `advance(deltaMs)` moves a
+ * FAKE elapsed-idle clock forward and fires `onExpire()` the instant it
+ * reaches (never merely exceeds) the armed bound -- proving the "at-or-past,
+ * never strictly past" comparison this whole mechanism depends on with no
+ * real timer at all. `activity()`/`onActivity()` both reset elapsed to zero,
+ * mirroring ArmedIdleTimer's own contract; both are no-ops while suspended. */
+interface FakeIdleTimer {
+  armIdleTimer: ArmIdleTimerFn;
+  advance(deltaMs: number): void;
+  activity(): void;
+  readonly suspendCount: number;
+  readonly resumeCount: number;
+}
+
+function makeFakeIdleTimer(): FakeIdleTimer {
+  let onExpire: (() => void) | null = null;
+  let ms = 0;
+  let elapsed = 0;
+  let suspended = false;
+  let suspendCount = 0;
+  let resumeCount = 0;
+  const armIdleTimer: ArmIdleTimerFn = (opts) => {
+    onExpire = opts.onExpire;
+    ms = opts.ms;
+    elapsed = 0;
+    suspended = false;
+    const handle: ArmedIdleTimer = {
+      suspend: () => {
+        suspended = true;
+        suspendCount += 1;
+      },
+      resume: () => {
+        suspended = false;
+        elapsed = 0;
+        resumeCount += 1;
+      },
+      onActivity: () => {
+        if (!suspended) elapsed = 0;
+      },
+    };
+    return handle;
+  };
+  return {
+    armIdleTimer,
+    advance(deltaMs: number) {
+      if (suspended) return;
+      elapsed += deltaMs;
+      if (elapsed >= ms) onExpire?.();
+    },
+    activity() {
+      if (!suspended) elapsed = 0;
+    },
+    get suspendCount() {
+      return suspendCount;
+    },
+    get resumeCount() {
+      return resumeCount;
+    },
+  };
+}
+
+test("spliceRelay/handleRelayDeath: with an injected timer, an interval exactly equal to the bound fires and one tick short does not", async () => {
+  let writeCount = 0;
+  let lastTrigger: unknown = null;
+  const fake = makeFakeIdleTimer();
+  const deps: TestHandleRelayDeathDeps = {
+    idleMs: 100,
+    armIdleTimer: fake.armIdleTimer,
+    writeIncident: (record) => {
+      writeCount += 1;
+      lastTrigger = record.trigger;
+      return "/fake/incident/path.md";
+    },
+  };
+  await withStubEmulatorServer(
+    () => {},
+    async (emulatorPort) => {
+      await withRelayTestBroker(
+        emulatorPort,
+        "grant-idle-boundary",
+        async ({ listenerPort, token, state }) => {
+          await claimAndDialRelay(state, listenerPort, token, "grant-idle-boundary");
+
+          fake.advance(99);
+          assert.equal(writeCount, 0, "one tick short of the bound must NOT fire");
+
+          fake.advance(1); // now exactly at the bound
+          assert.equal(writeCount, 1, "reaching the bound EXACTLY must fire -- at-or-past, never strictly past");
+          assert.equal(lastTrigger, "relay_idle_expiry");
+          assert.ok(!state.relaySessions.has(relaySessionKey("grant-idle-boundary", "binary")), "the fired deadline must run the same single teardown as any other death");
+        },
+        deps,
+      );
+    },
+  );
+});
+
+test("resolveRelayIdleMs/resolveRelayKeepAliveMs: a raw bound of zero, of a negative number and of a non-numeric string each resolve to the default and each log the rejected raw value", () => {
+  const prevIdle = process.env.VICE_BROKER_RELAY_IDLE_MS;
+  const prevKeepalive = process.env.VICE_BROKER_RELAY_KEEPALIVE_MS;
+  const originalError = console.error;
+  const logged: string[] = [];
+  console.error = (...args: unknown[]) => {
+    logged.push(args.map(String).join(" "));
+  };
+  try {
+    for (const bad of ["0", "-5", "not-a-number"]) {
+      logged.length = 0;
+      process.env.VICE_BROKER_RELAY_IDLE_MS = bad;
+      assert.equal(resolveRelayIdleMs(), DEFAULT_RELAY_IDLE_MS, `a raw idle bound of ${JSON.stringify(bad)} must resolve to the default`);
+      assert.ok(
+        logged.some((line) => line.includes("VICE_BROKER_RELAY_IDLE_MS") && line.includes(bad)),
+        `the rejected raw value ${JSON.stringify(bad)} must be logged by name -- got: ${JSON.stringify(logged)}`,
+      );
+
+      logged.length = 0;
+      process.env.VICE_BROKER_RELAY_KEEPALIVE_MS = bad;
+      assert.equal(resolveRelayKeepAliveMs(), DEFAULT_RELAY_KEEPALIVE_MS, `a raw keepalive bound of ${JSON.stringify(bad)} must resolve to the default`);
+      assert.ok(
+        logged.some((line) => line.includes("VICE_BROKER_RELAY_KEEPALIVE_MS") && line.includes(bad)),
+        `the rejected raw value ${JSON.stringify(bad)} must be logged by name -- got: ${JSON.stringify(logged)}`,
+      );
+    }
+    // Absent entirely must ALSO resolve to the default, with no log line.
+    delete process.env.VICE_BROKER_RELAY_IDLE_MS;
+    delete process.env.VICE_BROKER_RELAY_KEEPALIVE_MS;
+    logged.length = 0;
+    assert.equal(resolveRelayIdleMs(), DEFAULT_RELAY_IDLE_MS);
+    assert.equal(resolveRelayKeepAliveMs(), DEFAULT_RELAY_KEEPALIVE_MS);
+    assert.deepEqual(logged, [], "an ABSENT override is not a rejection and must not be logged");
+  } finally {
+    console.error = originalError;
+    if (prevIdle === undefined) delete process.env.VICE_BROKER_RELAY_IDLE_MS;
+    else process.env.VICE_BROKER_RELAY_IDLE_MS = prevIdle;
+    if (prevKeepalive === undefined) delete process.env.VICE_BROKER_RELAY_KEEPALIVE_MS;
+    else process.env.VICE_BROKER_RELAY_KEEPALIVE_MS = prevKeepalive;
+  }
+});
+
+test("handleOperationNote: declaring an operation suspends the idle deadline on that grant's live sessions and clearing it resumes them", async () => {
+  const fake = makeFakeIdleTimer();
+  const deps: TestHandleRelayDeathDeps = { idleMs: 100, armIdleTimer: fake.armIdleTimer };
+  await withStubEmulatorServer(
+    () => {},
+    async (emulatorPort) => {
+      await withRelayTestBroker(
+        emulatorPort,
+        "grant-suspend-resume",
+        async ({ listenerPort, token, state }) => {
+          await claimAndDialRelay(state, listenerPort, token, "grant-suspend-resume");
+
+          const declareOutcome = handleOperationNote("grant-suspend-resume", "binary", "vice_memory_read", state);
+          assert.ok(declareOutcome.ok);
+          assert.equal(fake.suspendCount, 1, "a declaration must suspend the deadline on the grant's live relay session");
+
+          // While suspended, even a long idle interval must never fire.
+          fake.advance(1000);
+
+          const clearOutcome = handleOperationNote("grant-suspend-resume", "binary", null, state);
+          assert.ok(clearOutcome.ok);
+          assert.equal(fake.resumeCount, 1, "clearing the declaration must resume the deadline");
+        },
+        deps,
+      );
+    },
+  );
+});
+
+test("handleOperationNote: a grant with no live relay session on a channel has nothing to suspend or resume there -- never an error", () => {
+  const state = setupBrokerState(6600, "grant-no-session");
+  const outcome = handleOperationNote("grant-no-session", "binary", "vice_memory_read", state);
+  assert.ok(outcome.ok, "declaring an operation for a grant with no attached relay must still succeed");
+});
+
+test("handleRelayDeath: a fired deadline produces one incident record with the idle trigger, clears the claim, and leaves the instance record present", async () => {
+  const fake = makeFakeIdleTimer();
+  let capturedRecord: BrokerIncidentInput | null = null;
+  const deps: TestHandleRelayDeathDeps = {
+    idleMs: 50,
+    armIdleTimer: fake.armIdleTimer,
+    writeIncident: (record) => {
+      capturedRecord = record;
+      return "/fake/incident/path.md";
+    },
+  };
+  await withStubEmulatorServer(
+    () => {},
+    async (emulatorPort) => {
+      await withRelayTestBroker(
+        emulatorPort,
+        "grant-idle-fired",
+        async ({ listenerPort, token, state }) => {
+          await claimAndDialRelay(state, listenerPort, token, "grant-idle-fired");
+          fake.advance(50);
+
+          assert.ok(capturedRecord, "exactly one incident record must have been written");
+          assert.equal(capturedRecord!.trigger, "relay_idle_expiry");
+          assert.equal(state.instances.get(emulatorPort)?.monitorClients.binary, undefined, "the channel's own claim must be cleared");
+          assert.ok(state.instances.has(emulatorPort), "the instance record must still be present -- an idle expiry tears down exactly one channel, never the instance");
+          assert.ok(state.grants.has("grant-idle-fired"), "the grant must still be present");
+        },
+        deps,
+      );
+    },
+  );
 });
 
 test("handleRelayDeath: a writer that throws stops the teardown before any claim is cleared", async () => {

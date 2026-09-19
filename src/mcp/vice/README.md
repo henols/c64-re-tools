@@ -51,6 +51,8 @@ VICE MCP server.
 | `VICE_SKIP_RESOURCE_INSTALL=1` | Disable deploying host launcher scripts into `<project>/tools/`. |
 | `MASTRA_TELEMETRY_DISABLED=1` | Disable Mastra telemetry. |
 | `VICE_LIVE_STOCK_BIN` | Absolute path to a genuinely unpatched stock VICE binary; opts `stock-live.test.ts` in (default-skipped). |
+| `VICE_BROKER_RELAY_IDLE_MS` | The broker-owned idle deadline (default `300000`, 5 minutes) a monitor-relay connection may sit carrying no traffic in either direction before the broker reclaims that one channel. This is the mechanism the broker actually controls end-to-end (`Socket.setTimeout()`, userspace, needs no cooperation from the OS or the peer); it is suspended for as long as the connection's own grant has a declared operation in flight, so a legitimately long-running capture is never torn down by the clock. An absent, non-numeric, zero or negative value falls back to the default and is logged by name — it is never possible to disable this bound. |
+| `VICE_BROKER_RELAY_KEEPALIVE_MS` | The TCP keepalive delay (default `30000`) set on the client-facing relay socket and on every accepted control connection. This is a **secondary, best-effort signal only** — `Socket.setKeepAlive(true, ms)` sets *only* the delay before the first probe; the interval between probes and the number of probes past that delay remain the host's own kernel settings (`tcp_keepalive_intvl`/`tcp_keepalive_probes` on Linux), which this broker cannot change. It does **not** bound anything by itself — `VICE_BROKER_RELAY_IDLE_MS` above is the owned bound. Same absent/non-numeric/zero/negative fallback discipline as the idle deadline. |
 
 ## Development
 

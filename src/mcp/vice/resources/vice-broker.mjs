@@ -37,7 +37,7 @@ import { containerGuardReport, containerGuardEnforce } from "./container-guard.m
 // maintain), passed through by shorthand property (`countReady,` etc.),
 // never called directly in this file. atCapacity() is the one survivor
 // actually called here (its own cold-launch-arm gate, below).
-import { createBrokerState, nextFreePort, atCapacity, resolveBasePort, clearMonitorClient, } from "./broker-state.mjs";
+import { createBrokerState, nextFreePort, atCapacity, resolveBasePort, clearMonitorClient, MONITOR_CHANNELS, } from "./broker-state.mjs";
 import { acquirePortAndLaunch, deleteInstanceRecord, 
 // Replaces maintainWarmFloor -- the warm floor itself is retired (the
 // connection is the lease now, so there is no separate floor left to
@@ -55,7 +55,7 @@ resolveBinmonHost, } from "./broker-launch.mjs";
 // build.ts pass (both source and target are listed in
 // HOST_BOUND_ARTIFACTS/tsconfig.build.json's include[] in this same
 // change).
-import { spliceRelay, resolveRelayChannelTarget, relaySessionKey } from "./broker-relay.mjs";
+import { spliceRelay, resolveRelayChannelTarget, relaySessionKey, resolveRelayIdleMs, resolveRelayKeepAliveMs } from "./broker-relay.mjs";
 // A VALUE import of the broker's own incident writer (Phase 63, SESS-05) --
 // safe here for the SAME reason every other sibling value import in this
 // file is: this file is ALWAYS run from its own compiled resources/ form,
@@ -945,6 +945,14 @@ export function handleRelayAttach(targetId, channel, presentedHandle, clientSock
         port: target.port,
         pending,
         onDeath: (trigger) => handleRelayDeath(targetId, channel, trigger, state, deps),
+        // Plan 63-04 Task 2 (SESS-04): the broker-owned idle deadline and the
+        // labelled-secondary keepalive delay, both resolved fresh per attach
+        // (an operator's env-var override is honoured for every new relay, not
+        // just ones spliced before the broker started) unless a test overrides
+        // either through `deps`.
+        idleMs: deps.idleMs ?? resolveRelayIdleMs(),
+        armIdleTimer: deps.armIdleTimer,
+        keepAliveMs: deps.keepAliveMs ?? resolveRelayKeepAliveMs(),
     });
     state.relaySessions.set(relaySessionKey(targetId, channel), session);
     return { ok: true };
@@ -997,7 +1005,18 @@ export function handleMonitorRelease(requestId, targetId, channel, state) {
  * releasing an already-cleared record. The declaration moment is stamped
  * from `opts.now` (this project's standard `now?: () => number` injection
  * register, stock-checkpoints.ts's own convention) so a test can assert the
- * EXACT stamped value without racing Date.now(). */
+ * EXACT stamped value without racing Date.now().
+ *
+ * Plan 63-04 Task 2 (SESS-04): a declaration ALSO suspends the idle
+ * deadline on every LIVE relay session this grant currently holds -- BOTH
+ * channels, if both happen to be attached, since a grant has exactly one
+ * in-flight operation regardless of which channel runs it (see this
+ * function's own header comment above). Clearing (`name === null`) resumes
+ * every one of them with a FRESH interval. This is why one declaration
+ * serves both SESS-05's evidence requirement and SESS-04's deadline: a
+ * channel with something declared is legitimately silent and must never be
+ * torn down by the clock. A grant with no live relay session on a given
+ * channel simply has nothing to suspend/resume there -- never an error. */
 export function handleOperationNote(targetId, channel, name, state, opts = {}) {
     void channel; // accepted for wire-shape symmetry with every other target-naming op; not itself stored -- see header comment
     const grant = state.grants.get(targetId);
@@ -1005,6 +1024,15 @@ export function handleOperationNote(targetId, channel, name, state, opts = {}) {
         return { ok: false, code: "bad_request" };
     const nowFn = opts.now ?? Date.now;
     grant.operation = name === null ? null : { name, declaredAt: nowFn() };
+    for (const ch of MONITOR_CHANNELS) {
+        const session = state.relaySessions.get(relaySessionKey(targetId, ch));
+        if (!session)
+            continue;
+        if (name === null)
+            session.resumeIdle();
+        else
+            session.suspendIdle();
+    }
     return { ok: true };
 }
 /** Resolves a recycle target's emulator child pid from THIS broker's own

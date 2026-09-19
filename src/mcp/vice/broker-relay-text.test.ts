@@ -11,6 +11,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, connect as netConnect, type Server, type Socket, type AddressInfo } from "node:net";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   startControlListener,
@@ -30,6 +33,8 @@ import { TextMonitorClient, withTextChannelLock } from "./text-protocol.ts";
 import { resetChannelLockForTests } from "./channel-lock.ts";
 import { build } from "./build.ts";
 import type { Socket as NetSocket } from "node:net";
+import type { BrokerIncidentInput } from "./broker-incident.mts";
+import { relaySessionKey, type ArmIdleTimerFn } from "./broker-relay.mts";
 
 // ---------------------------------------------------------------------------
 // vice-broker.mts is host-bound: it VALUE-imports sibling ".mjs" artifacts,
@@ -38,12 +43,40 @@ import type { Socket as NetSocket } from "node:net";
 // unbuilt ".mts" source directly.
 // ---------------------------------------------------------------------------
 build();
+
+/** Mirrors vice-broker.mts's own HandleRelayDeathDeps -- imported by type
+ * shape only (this test file loads the COMPILED artifact, never the .mts
+ * source, per this file's own header comment above). */
+interface TestHandleRelayDeathDeps {
+  writeIncident?: (record: BrokerIncidentInput) => string;
+  clearClaim?: (instance: InstanceRecord, channel: MonitorChannel) => void;
+  idleMs?: number;
+  armIdleTimer?: ArmIdleTimerFn;
+  keepAliveMs?: number;
+}
 const viceBrokerModule = (await import(new URL("./resources/vice-broker.mjs", import.meta.url).href)) as unknown as {
   handleMonitorClaim: (requestId: string, targetId: string, channel: MonitorChannel, state: BrokerState) => MonitorClaimOutcome;
   handleMonitorRelease: (requestId: string, targetId: string, channel: MonitorChannel, state: BrokerState) => MonitorReleaseOutcome;
-  handleRelayAttach: (targetId: string, channel: MonitorChannel, presentedHandle: string, clientSocket: NetSocket, pending: Buffer, state: BrokerState) => RelayAttachOutcome;
+  handleRelayAttach: (
+    targetId: string,
+    channel: MonitorChannel,
+    presentedHandle: string,
+    clientSocket: NetSocket,
+    pending: Buffer,
+    state: BrokerState,
+    deps?: TestHandleRelayDeathDeps,
+  ) => RelayAttachOutcome;
 };
 const { handleMonitorClaim, handleMonitorRelease, handleRelayAttach } = viceBrokerModule;
+
+// broker-incident.mts is ALSO host-bound (it value-imports broker-home.mjs),
+// so it is loaded the SAME way -- built first, then the compiled artifact,
+// never the unbuilt .mts source directly (broker-relay.test.ts's own
+// established convention, mirrored here).
+const brokerIncidentModule = (await import(new URL("./resources/broker-incident.mjs", import.meta.url).href)) as unknown as {
+  writeBrokerIncident: (record: BrokerIncidentInput, opts?: { dir?: string }) => string;
+};
+const { writeBrokerIncident } = brokerIncidentModule;
 
 // ---------------------------------------------------------------------------
 // Stub text-monitor harness -- copies broker-relay.test.ts's own
@@ -118,15 +151,32 @@ interface RelayTestBrokerContext {
   listenerPort: number;
   token: string;
   state: BrokerState;
+  /** See broker-relay.test.ts's own identical field for why this exists --
+   * absent when the caller supplied its own `deps`. */
+  incidentsDir: string | null;
 }
 
 /** Stands up a REAL startControlListener() on port zero against an
  * ALREADY-BUILT BrokerState, wired to vice-broker.mts's own
  * handleMonitorClaim()/handleMonitorRelease()/handleRelayAttach() -- mirrors
- * broker-relay.test.ts's own startRelayListenerForState() verbatim. Every
- * other callback is a no-op stub -- this suite never exercises
+ * broker-relay.test.ts's own startRelayListenerForState() verbatim,
+ * including its `relayDeathDeps` seam (Plan 63-04): when the caller omits
+ * it, this function writes any relay-death incident into a freshly
+ * mkdtemp'd scratch directory rather than the real, machine-level incidents
+ * directory -- without this, the "relay death (text)" case below (and any
+ * new Task 2 case) would leave a real file on the host running this suite.
+ * Every other callback is a no-op stub -- this suite never exercises
  * acquire/release/recycle/status/host_state/host_tool. */
-async function startRelayListenerForState(state: BrokerState): Promise<{ listener: StartControlListenerResult; token: string }> {
+async function startRelayListenerForState(
+  state: BrokerState,
+  relayDeathDeps?: TestHandleRelayDeathDeps,
+): Promise<{ listener: StartControlListenerResult; token: string; incidentsDir: string | null }> {
+  let incidentsDir: string | null = null;
+  let deps = relayDeathDeps;
+  if (!deps) {
+    incidentsDir = mkdtempSync(join(tmpdir(), "vice-relay-text-incidents-"));
+    deps = { writeIncident: (record) => writeBrokerIncident(record, { dir: incidentsDir as string }) };
+  }
   const token = newControlToken();
   const listener = await startControlListener({
     host: "127.0.0.1",
@@ -155,23 +205,29 @@ async function startRelayListenerForState(state: BrokerState): Promise<{ listene
     }),
     onMonitorClaim: (requestId, tId, channel) => handleMonitorClaim(requestId, tId, channel, state),
     onMonitorRelease: (requestId, tId, channel) => handleMonitorRelease(requestId, tId, channel, state),
-    onRelayAttach: (tId, channel, presentedHandle, socket, pending) => handleRelayAttach(tId, channel, presentedHandle, socket, pending, state),
+    onRelayAttach: (tId, channel, presentedHandle, socket, pending) => handleRelayAttach(tId, channel, presentedHandle, socket, pending, state, deps),
     // Phase 63, plan 63-03: a required field on StartControlListenerOptions
     // as of this plan -- not exercised by this suite (broker-control.test.ts
     // is the home for `operation` coverage).
     onOperation: () => ({ ok: true }),
     onHostTool: async () => ({ ok: false, message: "not exercised by broker-relay-text.test.ts" }),
   });
-  return { listener, token };
+  return { listener, token, incidentsDir };
 }
 
-async function withRelayTestBroker<T>(remoteMonitorPort: number | undefined, targetId: string, fn: (ctx: RelayTestBrokerContext) => Promise<T>): Promise<T> {
+async function withRelayTestBroker<T>(
+  remoteMonitorPort: number | undefined,
+  targetId: string,
+  fn: (ctx: RelayTestBrokerContext) => Promise<T>,
+  relayDeathDeps?: TestHandleRelayDeathDeps,
+): Promise<T> {
   const state = setupTextBrokerState(remoteMonitorPort, targetId);
-  const { listener, token } = await startRelayListenerForState(state);
+  const { listener, token, incidentsDir } = await startRelayListenerForState(state, relayDeathDeps);
   try {
-    return await fn({ listener, listenerPort: listener.port, token, state });
+    return await fn({ listener, listenerPort: listener.port, token, state, incidentsDir });
   } finally {
     listener.server.close();
+    if (incidentsDir) rmSync(incidentsDir, { recursive: true, force: true });
   }
 }
 
@@ -405,6 +461,96 @@ test("relay death (text): after the text relay is destroyed, the next text comma
         const releaseOutcome = handleMonitorRelease("release-relay-death-text", "grant-relay-death-text", "text", state);
         assert.ok(releaseOutcome.ok, `expected the text claim to still be releasable after a fatal relay death: ${JSON.stringify(releaseOutcome)}`);
       });
+    },
+  );
+});
+
+// ===========================================================================
+// Plan 63-04, Task 2 (SESS-04): the broker-owned idle deadline applies to
+// the text channel exactly as it does to the binary channel -- mirrors
+// broker-relay.test.ts's own makeFakeIdleTimer() verbatim (a test-file-local
+// no-wall-clock harness, duplicated rather than shared across the two
+// files, matching this whole file's own established "mirrors ... verbatim"
+// precedent throughout).
+// ===========================================================================
+
+interface FakeIdleTimer {
+  armIdleTimer: ArmIdleTimerFn;
+  advance(deltaMs: number): void;
+}
+
+function makeFakeIdleTimer(): FakeIdleTimer {
+  let onExpire: (() => void) | null = null;
+  let ms = 0;
+  let elapsed = 0;
+  const armIdleTimer: ArmIdleTimerFn = (opts) => {
+    onExpire = opts.onExpire;
+    ms = opts.ms;
+    elapsed = 0;
+    return {
+      suspend: () => {},
+      resume: () => {
+        elapsed = 0;
+      },
+      onActivity: () => {
+        elapsed = 0;
+      },
+    };
+  };
+  return {
+    armIdleTimer,
+    advance(deltaMs: number) {
+      elapsed += deltaMs;
+      if (elapsed >= ms) onExpire?.();
+    },
+  };
+}
+
+test("handleRelayDeath (text): with an injected timer, an interval exactly equal to the bound fires and one tick short does not", async () => {
+  resetChannelLockForTests();
+  let writeCount = 0;
+  let lastTrigger: unknown = null;
+  const fake = makeFakeIdleTimer();
+  const deps: TestHandleRelayDeathDeps = {
+    idleMs: 100,
+    armIdleTimer: fake.armIdleTimer,
+    writeIncident: (record) => {
+      writeCount += 1;
+      lastTrigger = record.trigger;
+      return "/fake/incident/path.md";
+    },
+  };
+  await withStubTextMonitorServer(
+    () => {},
+    async (textPort) => {
+      await withRelayTestBroker(
+        textPort,
+        "grant-idle-boundary-text",
+        async ({ listenerPort, token, state }) => {
+          const claimOutcome = handleMonitorClaim("claim-idle-boundary-text", "grant-idle-boundary-text", "text", state);
+          assert.ok(claimOutcome.ok);
+          if (!claimOutcome.ok) return;
+          const dial = await dialMonitorRelay({
+            targetId: "grant-idle-boundary-text",
+            channel: "text",
+            handle: claimOutcome.handle,
+            token,
+            port: listenerPort,
+            candidates: ["127.0.0.1"],
+          });
+          assert.ok(dial.ok);
+          if (!dial.ok) return;
+
+          fake.advance(99);
+          assert.equal(writeCount, 0, "one tick short of the bound must NOT fire");
+
+          fake.advance(1);
+          assert.equal(writeCount, 1, "reaching the bound EXACTLY must fire -- at-or-past, never strictly past");
+          assert.equal(lastTrigger, "relay_idle_expiry");
+          assert.ok(!state.relaySessions.has(relaySessionKey("grant-idle-boundary-text", "text")), "the fired deadline must run the same single teardown as any other death");
+        },
+        deps,
+      );
     },
   );
 });
