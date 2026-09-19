@@ -5,14 +5,14 @@ date: 2026-09-17
 decision_ids: [D-02, D-03, D-04, D-05, D-06, D-07, D-09, D-10, D-11]
 statements_reversed:
   - document: README.md
-    location: "\"What a sub-3.10 VICE costs\" (README.md:145-151)"
+    location: "\"What a sub-3.10 VICE costs\" (README.md:146-152)"
     original: >-
       Nothing breaks. `CPUHISTORY_GET` (the exact per-instruction cycle
       counter) is absent below VICE 3.10, so the cycle stopwatch degrades to
       an honest within-one-frame approximation instead of an exact count.
       This is already-shipped graceful degradation -- every other tool works
       the same either way.
-    amended_at: "phase 58 plan 02, Task 2 -- README.md:145-151 is rewritten in the same phase this doc records the reversal"
+    amended_at: "phase 58 plan 02, Task 2 -- README.md:146-152 is rewritten in the same phase this doc records the reversal"
 related_decisions: [DECL-01, DECL-04]
 ---
 
@@ -51,7 +51,7 @@ That is what lets `DECL-04`'s "exactly one record, `node`, carries a
 `versionFloor` field" rule hold literally rather than by argument -- there is
 no second version fact anywhere in `prerequisites.json` for a reader to
 mistake for a floor. It is also why plan 58-02's second task exists at all:
-`README.md:145-151` ("What a sub-3.10 VICE costs") sits outside the table
+`README.md:146-152` ("What a sub-3.10 VICE costs") sits outside the table
 Phase 62 generates, nothing else will ever correct it, and it was still
 asserting the losing side until this phase.
 
@@ -382,7 +382,7 @@ its entry here, or letting an entry drift off its anchor, fails the build.
   { "citation": ".planning/phases/19-absorbed-procedures-and-the-coverage-instrument/19-DECISIONS.md:151", "anchor": "**Decided:** 2026-08-24" },
   { "citation": ".planning/ROADMAP.md:2002-2005", "anchor": "a user missing ACME learns that" },
   { "citation": "README.md:119-120", "anchor": "Checked live against each ecosystem on 2026-08-18." },
-  { "citation": "README.md:145-151", "anchor": "No shipped tool in this project refuses on a VICE version." },
+  { "citation": "README.md:146-152", "anchor": "No shipped tool in this project refuses on a VICE version." },
   { "citation": "src/mcp/vice/host-tool.mts:1737", "anchor": "host_tool \"${request.tool}\" refuses: \"c1541\" does not exist" },
   { "citation": "src/mcp/vice/host-tool.mts:1824", "anchor": "host_tool \"petcat.decode\" refuses: \"petcat\" does not exist" },
   { "citation": "src/mcp/vice/host-tool.mts:2504-2560", "anchor": "function findSiblingBinary(" },
