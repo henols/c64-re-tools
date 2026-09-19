@@ -100,6 +100,17 @@ import {
   type MonitorReleaseOutcome,
   type PendingAcquireQueue,
 } from "./broker-control.mjs";
+// A VALUE import of the machine-level state resolver (plan 62-02) -- safe
+// here for the SAME reason every other sibling value import above is: this
+// file is ALWAYS run from its own compiled resources/ form, and
+// "./broker-home.mjs" is compiled into that same directory by the same
+// build.ts pass (both source and target are already listed in
+// HOST_BOUND_ARTIFACTS/tsconfig.build.json's include[]). This is the
+// FOURTH, LOWEST-precedence step in parseArgs()'s state-directory chain
+// below -- it answers only when no explicit --state-dir, no VICE_POOL_DIR,
+// and no --repo-root apply, which is exactly BROKER-01/BROKER-06's "no
+// project argument at all" case (D-13).
+import { brokerStateDir } from "./broker-home.mjs";
 
 export interface ParsedArgs {
   repoRoot: string;
@@ -108,18 +119,29 @@ export interface ParsedArgs {
   dryRun: boolean;
 }
 
-const USAGE = "usage: vice-broker.mjs --repo-root <path> [--state-dir <path>] [--check-container] [--dry-run]";
+const USAGE = "usage: vice-broker.mjs [--repo-root <path>] [--state-dir <path>] [--check-container] [--dry-run]";
 
-/** `--repo-root` is required UNLESS `--check-container` is given -- the
- * container guard needs no paths at all, matching the bash launcher's own
- * `--check-container` handling (answered before any path resolution).
- * `--state-dir` defaults to VICE_POOL_DIR from the environment when set,
- * otherwise `.c64-re-tools/supervisor` under the repo root (moved 2026-09-08
- * from `.vice-supervisor`; the three-tier chain itself -- explicit
- * `--state-dir`, then `VICE_POOL_DIR`, then this default -- is unchanged,
- * only the default's location moved). This module is host-bound and compiled
- * by `build.ts`, so it must not import the container-side `repo-root.ts`;
- * the two segments are joined directly, matching that file's `toolsDir()`. */
+/** `--repo-root` is now OPTIONAL (BROKER-01/BROKER-06, D-13): the per-project
+ * binding it used to enforce is exactly what a machine-level broker removes,
+ * and `--check-container` never needed it either. A genuinely malformed
+ * invocation -- an unrecognised token, or a flag that takes a value with
+ * none following it -- still throws USAGE; only the "no project was named"
+ * case no longer does.
+ *
+ * `--state-dir` resolves through a FOUR-step precedence chain, extended by
+ * this plan with a new, LOWEST step rather than by reordering the three that
+ * already existed: (1) an explicit `--state-dir` argument; (2)
+ * `VICE_POOL_DIR` from the environment; (3) `.c64-re-tools/supervisor` under
+ * `--repo-root`, when one was supplied (moved 2026-09-08 from
+ * `.vice-supervisor`); (4) -- new -- `broker-home.mts`'s `brokerStateDir()`,
+ * which resolves the machine-level root (`~/.c64-re-tools/supervisor` by
+ * default, or `VICE_BROKER_HOME`/`VICE_SUPERVISOR_DIR` when set) whenever
+ * neither an explicit state directory nor a project was given. Steps 1-3
+ * resolve to the EXACT SAME directory they always did; step 4 is reached
+ * only when none of them apply. This module is host-bound and compiled by
+ * `build.ts`, so it must not import the container-side `repo-root.ts`; the
+ * two segments in step 3 are joined directly, matching that file's
+ * `toolsDir()`. */
 export function parseArgs(argv: string[]): ParsedArgs {
   let repoRoot: string | null = null;
   let stateDir: string | null = null;
@@ -128,26 +150,29 @@ export function parseArgs(argv: string[]): ParsedArgs {
 
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--repo-root") {
-      repoRoot = argv[i + 1] ?? null;
+      if (argv[i + 1] === undefined) throw new Error(USAGE);
+      repoRoot = argv[i + 1];
       i++;
     } else if (argv[i] === "--state-dir") {
-      stateDir = argv[i + 1] ?? null;
+      if (argv[i + 1] === undefined) throw new Error(USAGE);
+      stateDir = argv[i + 1];
       i++;
     } else if (argv[i] === "--check-container") {
       checkContainer = true;
     } else if (argv[i] === "--dry-run") {
       dryRun = true;
+    } else {
+      // An unrecognised token -- the ONLY remaining reason to refuse. Missing
+      // --repo-root is no longer one (D-13): a genuinely malformed
+      // invocation still refuses, "no project was named" no longer does.
+      throw new Error(USAGE);
     }
-  }
-
-  if (!checkContainer && !repoRoot) {
-    throw new Error(USAGE);
   }
 
   const resolvedStateDir =
     stateDir ??
     process.env.VICE_POOL_DIR ??
-    (repoRoot ? join(repoRoot, ".c64-re-tools", "supervisor") : join(".c64-re-tools", "supervisor"));
+    (repoRoot ? join(repoRoot, ".c64-re-tools", "supervisor") : brokerStateDir());
 
   return { repoRoot: repoRoot ?? "", stateDir: resolvedStateDir, checkContainer, dryRun };
 }
@@ -1486,6 +1511,12 @@ async function run(args: ParsedArgs): Promise<void> {
     // `hello` answers with no credential at all (see this module's own
     // header comment).
     process.stderr.write(`vice-broker: bound control listener on: ${bindResult.listeners.map((l) => l.host).join(", ")} (port ${loopbackListener.port})\n`);
+
+    // Auditability for D-13's machine-level fallback (BROKER-01/BROKER-06):
+    // an operator can see where THIS broker is writing without reading the
+    // discovery record, which carries no field naming the machine root (the
+    // record's field set stays frozen -- see the interface above).
+    process.stderr.write(`vice-broker: state directory: ${args.stateDir}\n`);
 
     listener = { host: loopbackListener.host, port: loopbackListener.port, pendingAcquires: bindResult.pendingAcquires };
   }

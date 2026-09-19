@@ -87,7 +87,15 @@ interface BrokerHandle {
  * function's own base env always sets it. A plain omitted key keeps the
  * default; `SOME_VAR: undefined` removes it from the spawned child's
  * environment entirely. */
-function startBroker(stateDir: string, extraEnv: Record<string, string | undefined> = {}): BrokerHandle {
+/** Shared env-merging/filtering discipline for every spawn helper in this
+ * file: `extraEnv` accepts `undefined` for a key (not merely omitting the
+ * key) to UNSET it rather than merely leave the default -- needed by the
+ * probe-answering-stub tests below, which must leave VICE_ARGS unset (see
+ * writeProbeAnsweringStub()'s own header comment for why) even though the
+ * base env always sets it. A plain omitted key keeps the default;
+ * `SOME_VAR: undefined` removes it from the spawned child's environment
+ * entirely. */
+function buildBrokerEnv(extraEnv: Record<string, string | undefined>): Record<string, string> {
   const merged: Record<string, string | undefined> = {
     ...process.env,
     VICE_SUPERVISOR_ALLOW_CONTAINER: "1",
@@ -106,11 +114,39 @@ function startBroker(stateDir: string, extraEnv: Record<string, string | undefin
   for (const [key, value] of Object.entries(merged)) {
     if (value !== undefined) env[key] = value;
   }
+  return env;
+}
+
+/** Spawns the EMITTED broker artifact under bare node -- never the
+ * TypeScript source -- with VICE_BIN/VICE_ARGS stubbed to a real,
+ * harmless, long-lived process (/bin/sleep) so a spawned "instance" is a
+ * real pid without ever touching x64sc. VICE_BROKER_CONTROL_PORT=0 lets
+ * the kernel pick a free port so parallel test runs never collide. */
+function startBroker(stateDir: string, extraEnv: Record<string, string | undefined> = {}): BrokerHandle {
   const child = spawn(process.execPath, [BROKER_ARTIFACT, "--repo-root", "/tmp/fake-repo-root-e2e", "--state-dir", stateDir], {
-    env,
+    env: buildBrokerEnv(extraEnv),
   }) as ChildProcessWithoutNullStreams;
 
   const handle: BrokerHandle = { child, stateDir, stderr: "" };
+  child.stderr.on("data", (chunk: Buffer) => {
+    handle.stderr += chunk.toString("utf8");
+  });
+  return handle;
+}
+
+/** Spawns the emitted broker artifact with an EXPLICIT argv, for cases that
+ * must omit --repo-root and/or --state-dir entirely (D-13: the no-project
+ * fallback and the two-projects-one-broker case below). Shares the SAME
+ * env-merging discipline as startBroker() via buildBrokerEnv() -- never a
+ * second, drifting copy of it. `handle.stateDir` is left empty here
+ * (unlike startBroker()'s own, which is never read either) since the whole
+ * point of this helper is that the caller does not name one in argv. */
+function startBrokerWithArgv(argv: string[], extraEnv: Record<string, string | undefined> = {}): BrokerHandle {
+  const child = spawn(process.execPath, [BROKER_ARTIFACT, ...argv], {
+    env: buildBrokerEnv(extraEnv),
+  }) as ChildProcessWithoutNullStreams;
+
+  const handle: BrokerHandle = { child, stateDir: "", stderr: "" };
   child.stderr.on("data", (chunk: Buffer) => {
     handle.stderr += chunk.toString("utf8");
   });
@@ -1073,6 +1109,99 @@ test("a control request with no token, and one with a wrong token, both return t
     // Neither request allocated an instance directory.
     const portDirs = readdirSync(stateDir, { withFileTypes: true }).filter((d) => d.isDirectory() && /^\d+$/.test(d.name));
     assert.equal(portDirs.length, 0, `unauthorized requests must not spawn anything, found ${JSON.stringify(portDirs.map((d) => d.name))}`);
+  } finally {
+    await stopBroker(handle);
+    rmSync(stateDir, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Plan 62-04, Task 2 (D-13/BROKER-01/BROKER-06): a broker started with NO
+// project argument resolves its state under the machine-level root
+// (broker-home.mts's brokerStateDir(), fed from VICE_BROKER_HOME here so
+// this test never touches a real developer's home directory), and one such
+// broker serves independent sessions from unrelated project directories
+// with its own state inside neither. "Two clients configured against two
+// project directories" is proven as two INDEPENDENT control-plane sessions
+// opened against the broker's own (machine-level) state directory -- the
+// only directory a real broker.json ever lives in under this phase's design
+// (there is deliberately no per-project discovery path any more, which is
+// D-13's whole point) -- rather than by varying each session's own dial
+// target, which nothing in this phase's shape supports.
+// ---------------------------------------------------------------------------
+
+test(
+  "D-13: one broker started with no project argument serves independent handshakes from two unrelated project directories, with its own state inside neither",
+  { timeout: 20000 },
+  async () => {
+    build();
+    const machineHome = mkdtempSync(join(tmpdir(), "broker-e2e-machine-home-"));
+    const projectA = mkdtempSync(join(tmpdir(), "broker-e2e-project-a-"));
+    const projectB = mkdtempSync(join(tmpdir(), "broker-e2e-project-b-"));
+    const expectedStateDir = join(machineHome, "supervisor");
+    // Exactly ONE broker process, spawned with no --repo-root and no
+    // --state-dir at all -- the D-13 fallback is what resolves its state
+    // directory, not an argument this test supplies.
+    const handle = startBrokerWithArgv([], { VICE_BROKER_HOME: machineHome });
+    try {
+      const brokerJson = await waitForBrokerJson(expectedStateDir);
+      assert.equal(brokerJson.control_host, "127.0.0.1", `broker.json contents: ${JSON.stringify(brokerJson)}`);
+
+      // Two independent control-plane sessions, standing in for two clients
+      // launched from two unrelated project checkouts -- both complete a
+      // real handshake against the SAME single broker process.
+      const sessionA = await openBrokerControl(expectedStateDir);
+      assert.ok(sessionA.ok, `client A's handshake failed: ${JSON.stringify(sessionA)}`);
+      const sessionB = await openBrokerControl(expectedStateDir);
+      assert.ok(sessionB.ok, `client B's handshake failed: ${JSON.stringify(sessionB)}`);
+
+      try {
+        if (sessionA.ok) {
+          const statusA = await sessionA.session.status();
+          assert.ok(statusA.ok, `client A's post-handshake status call failed: ${JSON.stringify(statusA)}`);
+        }
+        if (sessionB.ok) {
+          const statusB = await sessionB.session.status();
+          assert.ok(statusB.ok, `client B's post-handshake status call failed: ${JSON.stringify(statusB)}`);
+        }
+      } finally {
+        if (sessionA.ok) await sessionA.session.release();
+        if (sessionB.ok) await sessionB.session.release();
+      }
+
+      // The load-bearing containment assertion (BROKER-01/BROKER-06):
+      // nothing the broker resolved for itself falls inside EITHER project
+      // directory.
+      assert.ok(!expectedStateDir.startsWith(projectA), `state directory ${expectedStateDir} must not be inside project A (${projectA})`);
+      assert.ok(!expectedStateDir.startsWith(projectB), `state directory ${expectedStateDir} must not be inside project B (${projectB})`);
+    } finally {
+      await stopBroker(handle);
+      rmSync(machineHome, { recursive: true, force: true });
+      rmSync(projectA, { recursive: true, force: true });
+      rmSync(projectB, { recursive: true, force: true });
+    }
+  },
+);
+
+test("with zero live sessions, the handshake still answers and the broker reports itself healthy (BROKER-01)", { timeout: 20000 }, async () => {
+  build();
+  const stateDir = mkdtempSync(join(tmpdir(), "broker-e2e-zero-session-"));
+  const handle = startBroker(stateDir);
+  try {
+    await waitForBrokerJson(stateDir);
+    const outcome = await openBrokerControl(stateDir);
+    assert.ok(outcome.ok, `handshake with zero live sessions failed: ${JSON.stringify(outcome)}`);
+    try {
+      if (outcome.ok) {
+        const status = await outcome.session.status();
+        assert.ok(status.ok, `status call failed: ${JSON.stringify(status)}`);
+        if (status.ok) {
+          assert.equal(status.instances.length, 0, "no acquire was ever performed against this broker -- its instance list must be empty");
+        }
+      }
+    } finally {
+      if (outcome.ok) await outcome.session.release();
+    }
   } finally {
     await stopBroker(handle);
     rmSync(stateDir, { recursive: true, force: true });

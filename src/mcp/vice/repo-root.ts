@@ -222,7 +222,7 @@ export function repoRoot({ from = HERE, env = process.env, exists = existsSync }
  * files that call this function directly -- it is host-bound
  * (ghidra-project.mts) and cannot import this file at all.
  *
- * The literal string ".c64-re-tools" therefore has exactly 11 non-comment
+ * The literal string ".c64-re-tools" therefore has exactly 10 non-comment
  * occurrences in this codebase, across 7 files. repo-root.test.ts's census
  * gate reads BOTH the count and this file list straight out of this
  * sentence and the bullet list below -- never duplicated by hand a second
@@ -232,9 +232,11 @@ export function repoRoot({ from = HERE, env = process.env, exists = existsSync }
  * again (threat `T-40-10-02`):
  *   - repo-root.ts -- this definition, the line below (1)
  *   - install-resources.ts -- `installTargetDir()`'s `bin` join (1)
- *   - vice-broker.mts -- `parseArgs()`'s state-dir fallback, BOTH branches
- *     of one ternary on the same line (2), plus `run()`'s `toolsDir` for the
- *     once-per-process emulator-binary resolution (1) = 3
+ *   - vice-broker.mts -- `parseArgs()`'s state-dir fallback, the explicit
+ *     `--repo-root` branch of one ternary (1) -- the OTHER branch now calls
+ *     broker-home.mts's `brokerStateDir()` instead of joining the literal a
+ *     second time, D-13/plan 62-04's machine-level fallback -- plus `run()`'s
+ *     `toolsDir` for the once-per-process emulator-binary resolution (1) = 2
  *   - ghidra-project.mts -- `GHIDRA_RUNS_HANDLE_TARGET`, the alias handle's
  *     relative symlink target (1)
  *   - host-tool.mts -- `oracle.run`'s scratch-directory join (1), plus

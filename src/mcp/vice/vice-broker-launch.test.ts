@@ -396,14 +396,125 @@ test("a record file truncated mid-JSON is treated as absent and overwritten rath
   }
 });
 
-test("missing --repo-root exits non-zero with a usage line, writing nothing, never starting a listener", () => {
+// D-13/BROKER-01/BROKER-06: "missing --repo-root" used to be a malformed
+// invocation on its own -- the per-project binding had no fallback, so
+// parseArgs() refused with a usage line whenever no project was named. It
+// has one now. The genuinely malformed cases (an unrecognised token, or a
+// flag missing its value) still refuse; "no project was named" no longer
+// does, and this is the ONE test file that used to prove the retired
+// behaviour, so it is replaced with both halves of what actually changed
+// rather than deleted outright.
+
+test("an unrecognised flag still exits non-zero with a usage line -- the refusal was narrowed, not removed", () => {
   const deployDir = freshDeployDir();
   try {
-    const result = runBrokerSync(deployDir, [], { VICE_SUPERVISOR_ALLOW_CONTAINER: "1" });
+    const result = runBrokerSync(deployDir, ["--not-a-real-flag"], { VICE_SUPERVISOR_ALLOW_CONTAINER: "1" });
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /usage:/);
   } finally {
     rmSync(deployDir, { recursive: true, force: true });
+  }
+});
+
+test("a flag that takes a value but has none following it still exits non-zero with a usage line", () => {
+  const deployDir = freshDeployDir();
+  try {
+    const result = runBrokerSync(deployDir, ["--state-dir"], { VICE_SUPERVISOR_ALLOW_CONTAINER: "1" });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /usage:/);
+  } finally {
+    rmSync(deployDir, { recursive: true, force: true });
+  }
+});
+
+// The four state-directory precedence steps (D-13's extension adds the
+// fourth; the first three must resolve to the EXACT SAME directory they did
+// before this plan). parseArgs() itself cannot be unit-tested by importing
+// vice-broker.mts directly from a .test.ts -- its sibling ".mjs" imports
+// (./container-guard.mjs etc.) only exist beside the COMPILED artifact under
+// resources/, not beside the .mts source -- so each step is proven the same
+// way every other real-behaviour test in this file is: spawn the emitted
+// artifact and observe where broker.json actually lands.
+
+test("precedence 1: an explicit --state-dir wins even when VICE_POOL_DIR is ALSO set, exactly as today", async () => {
+  const deployDir = freshDeployDir();
+  const explicitStateDir = join(deployDir, "explicit-state-dir");
+  const decoyPoolDir = join(deployDir, "decoy-pool-dir-must-not-be-used");
+  const { child } = runBrokerAsync(
+    deployDir,
+    ["--repo-root", "/tmp/fake-repo-root", "--state-dir", explicitStateDir],
+    { VICE_SUPERVISOR_ALLOW_CONTAINER: "1", VICE_BROKER_CONTROL_PORT: "0", VICE_POOL_DIR: decoyPoolDir },
+  );
+  try {
+    const appeared = await waitFor(() => existsSync(join(explicitStateDir, "broker.json")), 5000);
+    assert.ok(appeared, "broker.json must appear under the EXPLICIT --state-dir");
+    assert.ok(!existsSync(join(decoyPoolDir, "broker.json")), "VICE_POOL_DIR must be ignored when --state-dir is explicit");
+  } finally {
+    await stopBroker(child);
+    rmSync(deployDir, { recursive: true, force: true });
+  }
+});
+
+test("precedence 2: VICE_POOL_DIR wins when no --state-dir is given, exactly as today", async () => {
+  const deployDir = freshDeployDir();
+  const poolDir = join(deployDir, "pool-dir");
+  const { child } = runBrokerAsync(deployDir, ["--repo-root", "/tmp/fake-repo-root"], {
+    VICE_SUPERVISOR_ALLOW_CONTAINER: "1",
+    VICE_BROKER_CONTROL_PORT: "0",
+    VICE_POOL_DIR: poolDir,
+  });
+  try {
+    const appeared = await waitFor(() => existsSync(join(poolDir, "broker.json")), 5000);
+    assert.ok(appeared, "broker.json must appear directly under VICE_POOL_DIR (no --state-dir given)");
+  } finally {
+    await stopBroker(child);
+    rmSync(deployDir, { recursive: true, force: true });
+  }
+});
+
+test("precedence 3: --repo-root alone (no --state-dir, no VICE_POOL_DIR) resolves the project-relative directory, exactly as today", async () => {
+  const deployDir = freshDeployDir();
+  const projectRoot = mkdtempSync(join(tmpdir(), "vice-broker-launch-project-root-"));
+  const { child } = runBrokerAsync(deployDir, ["--repo-root", projectRoot], {
+    VICE_SUPERVISOR_ALLOW_CONTAINER: "1",
+    VICE_BROKER_CONTROL_PORT: "0",
+  });
+  try {
+    const expected = join(projectRoot, ".c64-re-tools", "supervisor", "broker.json");
+    const appeared = await waitFor(() => existsSync(expected), 5000);
+    assert.ok(appeared, `broker.json must appear at the project-relative default (${expected})`);
+  } finally {
+    await stopBroker(child);
+    rmSync(deployDir, { recursive: true, force: true });
+    rmSync(projectRoot, { recursive: true, force: true });
+  }
+});
+
+test("no project argument and no state-directory argument starts the broker under the machine-level root, rather than printing the usage refusal (D-13)", async () => {
+  const deployDir = freshDeployDir();
+  // VICE_BROKER_HOME points brokerStateDir()'s machine-level fallback at a
+  // throwaway temp directory for this test run -- never at this
+  // developer's REAL home directory, which the default (no override) would
+  // otherwise resolve to.
+  const machineHome = mkdtempSync(join(tmpdir(), "vice-broker-launch-machine-home-"));
+  const { child, getStderr } = runBrokerAsync(deployDir, [], {
+    VICE_SUPERVISOR_ALLOW_CONTAINER: "1",
+    VICE_BROKER_CONTROL_PORT: "0",
+    VICE_BROKER_HOME: machineHome,
+  });
+  try {
+    const recordPath = join(machineHome, "supervisor", "broker.json");
+    const appeared = await waitFor(() => existsSync(recordPath), 5000);
+    assert.ok(appeared, `broker.json did not appear under the machine-level root within deadline; stderr so far: ${getStderr()}`);
+    assert.doesNotMatch(getStderr(), /usage:/, "starting with no project argument must never print the usage refusal");
+
+    const record: Record<string, unknown> = JSON.parse(readFileSync(recordPath, "utf8"));
+    assert.deepEqual(Object.keys(record).sort(), [...BROKER_JSON_FOURTEEN_KEYS].sort());
+    assert.match(getStderr(), /vice-broker: state directory: /, "the resolved state directory must be reported on stderr (D-13 auditability)");
+  } finally {
+    await stopBroker(child);
+    rmSync(deployDir, { recursive: true, force: true });
+    rmSync(machineHome, { recursive: true, force: true });
   }
 });
 
