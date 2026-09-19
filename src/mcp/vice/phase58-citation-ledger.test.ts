@@ -1,7 +1,7 @@
 // phase58-citation-ledger.test.ts -- the citation-ledger audit, originally
-// written for docs/phase58-declaration-provenance.md and now auditing every
+// written for phase 58's declaration-provenance record and now auditing every
 // phase provenance document that carries a "## Citation ledger" section
-// (plan 59-05 adds docs/phase59-tool-location-placement.md as the second).
+// (plan 59-05 adds phase 59's tool-location-placement record as the second).
 //
 // WHY THIS FILE EXISTS: two file:line citations in that provenance document
 // pointed at the wrong lines -- one landed on an unrelated row of
@@ -43,8 +43,20 @@ function findRepoRoot(from: string): string {
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = findRepoRoot(HERE);
-const DOC_PATH = join(REPO_ROOT, "docs", "phase58-declaration-provenance.md");
-const PHASE59_DOC_PATH = join(REPO_ROOT, "docs", "phase59-tool-location-placement.md");
+// Both documents are phase artifacts and live in their phase's evidence/ dir, not in
+// docs/ -- docs/ holds only what the project owner put there. They sat in docs/ until
+// 2026-09-19 because no file a planning agent reads carried that rule, so each phase
+// inferred the destination from the previous phase's mistake.
+const DOC_PATH = join(
+  REPO_ROOT,
+  ".planning/phases/58-one-declaration-four-places-that-can-no-longer-disagree/evidence",
+  "phase58-declaration-provenance.md",
+);
+const PHASE59_DOC_PATH = join(
+  REPO_ROOT,
+  ".planning/phases/59-the-tool-location-seam-and-its-precedence-order/evidence",
+  "phase59-tool-location-placement.md",
+);
 
 /** One ledger entry: the citation string as it appears in the document body,
  * and the literal substring the cited line range must contain. */

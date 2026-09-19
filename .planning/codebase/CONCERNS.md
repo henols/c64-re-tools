@@ -455,7 +455,8 @@ Confirmed against the current tree. Do not re-raise these.
   resource (deliberately, `vsync.c:220-241`), so warp must be launch-time. There is no monotonic
   cycle register.
 - Blocks: any skill step needing those reads on stock. Recorded as Capability constraints in
-  `CLAUDE.md` and surfaced in `docs/tool-support.md`; the honesty of that surfacing is guarded by
+  `CLAUDE.md`; the tool-support table that used to surface them was retired in Phase 52 (`af987e37`).
+  Skill honesty is guarded by
   `src/mcp/vice/skill-honesty-checks.test.ts` and `check-skill-fork-honesty.mjs`.
 
 **`default_memspace` contamination has no remedy over the binary monitor:**

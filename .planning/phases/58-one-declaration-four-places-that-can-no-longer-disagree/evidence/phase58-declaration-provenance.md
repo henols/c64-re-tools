@@ -347,7 +347,7 @@ feels the consequence of its absence is Phase 61: its own Success Criterion
 1 stated the doctor's answer must be capability-shaped rather than
 binary-shaped: "a user missing ACME should learn that `acme-build` is blocked
 and the other six skills are not, rather than reading a bare red row"
-(`.planning/PROJECT.md:2083`). That criterion was **deleted from the roadmap on
+(`.planning/PROJECT.md:2108`). That criterion was **deleted from the roadmap on
 2026-09-18** when the doctor was dropped at owner decision, so this citation now
 points at the surviving statement of the same decision in PROJECT.md's v1.1.0
 scoping record rather than at the removed phase section. A user missing `unp64` gets no
@@ -455,7 +455,7 @@ its entry here, or letting an entry drift off its anchor, fails the build.
   { "citation": "src/mcp/vice/host-tool.mts:3121", "anchor": "ORACLE_ENV_VARS: readonly string[] = Object.freeze([\"UNP64\", \"UNP64_PATH\"])" },
   { "citation": "src/skills/c64-program-recon/SKILL.md:117-125", "anchor": "install an external identifier on the **host** and point `UNP64` or `UNP64_PATH` at it" },
   { "citation": ".planning/phases/19-absorbed-procedures-and-the-coverage-instrument/19-DECISIONS.md:151", "anchor": "**Decided:** 2026-08-24" },
-  { "citation": ".planning/PROJECT.md:2083", "anchor": "a user missing ACME should learn that" },
+  { "citation": ".planning/PROJECT.md:2108", "anchor": "a user missing ACME should learn that" },
   { "citation": "README.md:119-120", "anchor": "Checked live against each ecosystem on 2026-08-18." },
   { "citation": "README.md:146-152", "anchor": "No shipped tool in this project refuses on a VICE version." },
   { "citation": "src/mcp/vice/host-tool.mts:1737", "anchor": "host_tool \"${request.tool}\" refuses: \"c1541\" does not exist" },
