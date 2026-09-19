@@ -13,7 +13,16 @@ import { fileURLToPath } from "node:url";
 import { connect, createServer, Socket, type Server } from "node:net";
 
 import { startControlListener, bindControlListener, HELLO_PROTOCOL_MAGIC as SERVER_HELLO_PROTOCOL_MAGIC, newControlToken } from "./broker-control.mts";
-import { dialBrokerEndpoint, classifyHelloReply, DIAL_CANDIDATES, HELLO_PROTOCOL_MAGIC, type BrokerEndpointConnectFn } from "./broker-endpoint.ts";
+import {
+  dialBrokerEndpoint,
+  classifyHelloReply,
+  describeDialFailure,
+  BROKER_START_COMMAND,
+  DIAL_CANDIDATES,
+  HELLO_PROTOCOL_MAGIC,
+  type BrokerEndpointConnectFn,
+  type DialFailure,
+} from "./broker-endpoint.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BROKER_ENDPOINT_TS = join(HERE, "broker-endpoint.ts");
@@ -290,9 +299,9 @@ test("classifyHelloReply: connected, bad_request error -> rank 3", () => {
   assert.deepEqual(classifyHelloReply({ connected: true, raw }, "5.0.0"), { completed: false, rank: 3 });
 });
 
-test("classifyHelloReply: connected, valid magic, incompatible major -> rank 4 (version skew)", () => {
+test("classifyHelloReply: connected, valid magic, incompatible major -> rank 4 (version skew), carrying the observed version", () => {
   const raw = { kind: "hello", protocol: HELLO_PROTOCOL_MAGIC, version: "6.0.0", tag: "x" };
-  assert.deepEqual(classifyHelloReply({ connected: true, raw }, "5.0.0"), { completed: false, rank: 4 });
+  assert.deepEqual(classifyHelloReply({ connected: true, raw }, "5.0.0"), { completed: false, rank: 4, version: "6.0.0" });
 });
 
 test("classifyHelloReply: connected, valid magic, compatible major -> a completed handshake", () => {
@@ -507,4 +516,117 @@ test("behavior 9: both candidates produce rank 1 (a tie) -- the reported observa
   assert.equal(result.observations.length, 2);
   assert.equal(result.observations[0].host, DIAL_CANDIDATES[0], "the loopback candidate must be reported first regardless of settle order");
   assert.equal(result.observations[1].host, DIAL_CANDIDATES[1]);
+});
+
+// ============================================================================
+// Plan 62-01, task 3: four refusals a person can act on, and the start
+// command they all quote.
+// ============================================================================
+
+function makeFailure(overrides: Partial<DialFailure> & { rank: DialFailure["rank"] }): DialFailure {
+  return {
+    ok: false,
+    port: 19510,
+    clientVersion: "5.0.0",
+    observations: [
+      { host: "127.0.0.1", rank: overrides.rank, resolved: false },
+      { host: "host.docker.internal", rank: 1, resolved: false },
+    ],
+    ...overrides,
+  };
+}
+
+test("BROKER_START_COMMAND is the D-01 npx invocation, one literal with no interpolation", () => {
+  assert.equal(BROKER_START_COMMAND, "npx -y @henols/vice-mcp broker");
+});
+
+test("the start-command literal appears in broker-endpoint.ts between 1 and 3 times -- one definition, never a hand-copied second string", () => {
+  const source = readFileSync(BROKER_ENDPOINT_TS, "utf8");
+  const count = (source.match(/npx -y @henols\/vice-mcp broker/g) ?? []).length;
+  assert.ok(count >= 1 && count <= 3, `expected the literal to appear 1-3 times, found ${count}`);
+});
+
+test("rank 1: names the start command verbatim and states nothing answered on either candidate", () => {
+  const failure = makeFailure({ rank: 1, observations: [{ host: "127.0.0.1", rank: 1, resolved: false }, { host: "host.docker.internal", rank: 1, resolved: false }] });
+  const message = describeDialFailure(failure);
+  assert.ok(message.includes(BROKER_START_COMMAND), "rank 1 must quote the start command verbatim");
+  assert.match(message, /no broker answered/i);
+  assert.ok(message.includes("127.0.0.1"));
+  assert.ok(message.includes("host.docker.internal"));
+  assert.ok(message.includes("19510"));
+});
+
+test("rank 2: states something else holds the port, naming the port and the candidate host it was observed on", () => {
+  const failure = makeFailure({ rank: 2, observations: [{ host: "127.0.0.1", rank: 2, resolved: true }, { host: "host.docker.internal", rank: 1, resolved: false }] });
+  const message = describeDialFailure(failure);
+  assert.ok(message.includes("127.0.0.1"));
+  assert.ok(message.includes("19510"));
+  assert.match(message, /already listening|something else/i);
+});
+
+test("rank 3: states the listener is an older broker that must be restarted from the new package, naming the start command", () => {
+  const failure = makeFailure({ rank: 3, observations: [{ host: "127.0.0.1", rank: 3, resolved: true }, { host: "host.docker.internal", rank: 1, resolved: false }] });
+  const message = describeDialFailure(failure);
+  assert.ok(message.includes(BROKER_START_COMMAND), "rank 3 must quote the start command verbatim");
+  assert.match(message, /older than v2\.0\.0|older broker|stale/i);
+});
+
+test("rank 4: names both package names, both observed versions, and which side is behind", () => {
+  const failure = makeFailure({
+    rank: 4,
+    clientVersion: "5.0.0",
+    observations: [
+      { host: "127.0.0.1", rank: 4, resolved: true, version: "6.0.0" },
+      { host: "host.docker.internal", rank: 1, resolved: false },
+    ],
+  });
+  const message = describeDialFailure(failure);
+  assert.ok(message.includes("@henols/vice-mcp"), "must name the server package");
+  assert.ok(message.includes("@henols/c64-re-tools"), "must name the skills/installer package");
+  assert.ok(message.includes("5.0.0"), "must name the client's own observed version");
+  assert.ok(message.includes("6.0.0"), "must name the broker's observed version");
+});
+
+test("rank 4: a missing/empty/numeric/non-numeric-leading version classifies as rank 2 (not skew) upstream, so describeDialFailure never has to render an unparseable version as a skew", () => {
+  for (const badVersion of [undefined, "", 42, "vNext"]) {
+    const raw = { kind: "hello", protocol: HELLO_PROTOCOL_MAGIC, version: badVersion, tag: "x" };
+    const classification = classifyHelloReply({ connected: true, raw }, "5.0.0");
+    assert.equal(classification.completed, false);
+    if (!classification.completed) assert.equal(classification.rank, 2, `version ${JSON.stringify(badVersion)} must classify as rank 2, not rank 4`);
+  }
+});
+
+test("rootless disclosure: absent when every candidate's resolved flag is false", () => {
+  const failure = makeFailure({ rank: 1, observations: [{ host: "127.0.0.1", rank: 1, resolved: false }, { host: "host.docker.internal", rank: 1, resolved: false }] });
+  const message = describeDialFailure(failure);
+  assert.ok(!/rootless/i.test(message));
+});
+
+test("rootless disclosure: present when any candidate's resolved flag is true with a failed connection, and carries a provenance disclaimer without naming the alternative container runtime", () => {
+  const failure = makeFailure({ rank: 1, observations: [{ host: "127.0.0.1", rank: 1, resolved: true }, { host: "host.docker.internal", rank: 1, resolved: false }] });
+  const message = describeDialFailure(failure);
+  assert.match(message, /rootless/i);
+  assert.match(message, /unconfirmed|community-sourced/i, "must disclose the claim's provenance");
+  assert.ok(!/podman/i.test(message), "must not mention the alternative container runtime whose default is deferred (DEFER-01)");
+});
+
+test("describeDialFailure is pure: called twice on the same observations, it returns byte-identical text", () => {
+  const failure = makeFailure({ rank: 4, observations: [{ host: "127.0.0.1", rank: 4, resolved: true, version: "6.0.0" }, { host: "host.docker.internal", rank: 1, resolved: false }] });
+  const first = describeDialFailure(failure);
+  const second = describeDialFailure(failure);
+  assert.equal(first, second);
+});
+
+test("all four ranks produce distinct message text", () => {
+  const base = { host: "127.0.0.1", resolved: true };
+  const messages = ([1, 2, 3, 4] as const).map((rank) =>
+    describeDialFailure(
+      makeFailure({
+        rank,
+        observations: [{ ...base, rank, version: rank === 4 ? "6.0.0" : undefined }, { host: "host.docker.internal", rank: 1, resolved: false }],
+      }),
+    ),
+  );
+  const uniqueMessages = new Set(messages);
+  assert.equal(uniqueMessages.size, 4, "each of the four ranks must produce its own distinct message");
 });

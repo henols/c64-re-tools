@@ -110,8 +110,13 @@ export interface DialBrokerEndpointOptions {
 export type DialRank = 1 | 2 | 3 | 4;
 
 /** classifyHelloReply()'s own discriminated result: either a genuinely
- * completed handshake, or one of the four ranks above. */
-export type HelloClassification = { completed: true; version: string; tag: string } | { completed: false; rank: DialRank };
+ * completed handshake, or one of the four ranks above. Rank 4 alone also
+ * carries the observed `version` string -- task 3's version-skew refusal
+ * needs to NAME it, and nowhere else re-derives it from the raw reply. */
+export type HelloClassification =
+  | { completed: true; version: string; tag: string }
+  | { completed: false; rank: 1 | 2 | 3 }
+  | { completed: false; rank: 4; version: string };
 
 export interface ClassifyHelloReplyInput {
   /** Whether the TCP connection itself succeeded. `false` collapses
@@ -168,7 +173,7 @@ export function classifyHelloReply(input: ClassifyHelloReplyInput, clientVersion
   const replyMajor = parseLeadingMajor(obj.version);
   const clientMajor = parseLeadingMajor(clientVersion);
   if (replyMajor === null || clientMajor === null) return { completed: false, rank: 2 };
-  if (replyMajor !== clientMajor) return { completed: false, rank: 4 };
+  if (replyMajor !== clientMajor) return { completed: false, rank: 4, version: obj.version };
 
   return { completed: true, version: obj.version, tag: obj.tag };
 }
@@ -286,6 +291,10 @@ export interface DialCandidateObservation {
   host: string;
   rank: DialRank;
   resolved: boolean;
+  /** The reply's own version string -- present ONLY for a rank-4
+   * (version-skew) observation, since that is the one rank whose refusal
+   * text needs to name an observed version at all. */
+  version?: string;
 }
 
 export interface DialSuccess {
@@ -298,6 +307,15 @@ export interface DialSuccess {
 
 export interface DialFailure {
   ok: false;
+  /** The port every candidate was dialled on -- describeDialFailure() (task
+   * 3) needs this to name in its refusal text; it is not itself part of any
+   * per-candidate observation because it is the SAME for every candidate. */
+  port: number;
+  /** "The client's own version" D-05's compatibility rule compared every
+   * candidate's reply against -- carried here (rather than re-resolved by
+   * describeDialFailure()) so that function stays pure: no env read, no
+   * package.json read, just this already-resolved string. */
+  clientVersion: string;
   /** The HIGHEST rank observed across every candidate -- D-07's own
    * "report the most informative failure seen across both" rule. */
   rank: DialRank;
@@ -360,13 +378,167 @@ export async function dialBrokerEndpoint(options: DialBrokerEndpointOptions = {}
           finishOuter({ ok: true, host: outcome.host, port, version: classification.version, tag: classification.tag });
           return;
         }
-        observations[idx] = { host: outcome.host, resolved: outcome.resolved, rank: classification.rank };
+        observations[idx] = {
+          host: outcome.host,
+          resolved: outcome.resolved,
+          rank: classification.rank,
+          version: classification.rank === 4 ? classification.version : undefined,
+        };
         if (settledCount === candidates.length && !outerSettled) {
           const finalObservations = observations as DialCandidateObservation[];
           const highestRank = finalObservations.reduce<DialRank>((max, o) => (o.rank > max ? o.rank : max), 1);
-          finishOuter({ ok: false, rank: highestRank, observations: finalObservations });
+          finishOuter({ ok: false, port, clientVersion, rank: highestRank, observations: finalObservations });
         }
       });
     });
   });
+}
+
+// ---------------------------------------------------------------------------
+// The four ranked refusals (task 3, ENDPOINT-04) and the one shared start
+// command they all quote.
+// ---------------------------------------------------------------------------
+
+/** D-01's fixed invocation -- the ONE command that starts a broker, correct
+ * and identical whether the caller is on the host or inside a container.
+ * Under this milestone a containerized client has no bind mount and
+ * therefore no way to compute a HOST PATH at all, so this is deliberately a
+ * fixed string with no path in it -- the two path-bearing alternatives
+ * (running the host launcher script in place, or deploying one to a
+ * machine-level bin) both produce a path the refusing client has no way to
+ * compute.
+ *
+ * This is an INVOCATION, not an install -- the same carve-out CLAUDE.md
+ * already grants this project's documented `npx -y @henols/vice-mcp anno
+ * <verb>` route out of the never-auto-install rule.
+ *
+ * FOUR other sites quote this exact string; change it here and update all
+ * four in the SAME change: README.md's install section, the systemd unit,
+ * the launchd plist, and the documented universal fallback.
+ *
+ * Deliberately does NOT join `prerequisites.json`: that file's `kind` field
+ * is a closed two-member union (`"executable"` | `"directory"`) enforced by
+ * a named test, and a live TCP listener is neither -- widening that schema
+ * for a refusal that already fires correctly at its own point of use (a
+ * real failed dial) would add pre-flight-flavoured indirection for no
+ * benefit (RESEARCH.md's own Deferred Question, answered "no, inline the
+ * constant instead"). */
+export const BROKER_START_COMMAND = "npx -y @henols/vice-mcp broker";
+
+/** D-05's supporting fact: CI derives both packages' versions from the same
+ * `v*` tag and publishes them together, so a major-version skew is only
+ * possible when a user updates one side (the broker, or this client's own
+ * installed copy) and not the other. Both names are surfaced in the rank-4
+ * message so the reader knows both packages move in lockstep. */
+const SERVER_PACKAGE_NAME = "@henols/vice-mcp";
+const INSTALLER_PACKAGE_NAME = "@henols/c64-re-tools";
+
+/** D-08: appended to a refusal ONLY when some candidate's hostname RESOLVED
+ * -- since every observation in a DialFailure already represents a FAILED
+ * connection by construction, "resolved but failed" collapses to simply
+ * "any observation has resolved:true". Gated on this dial-observed
+ * condition alone, NEVER on a container-detection call -- that would
+ * reintroduce in this client exactly the isInsideContainer() call RM-03
+ * deletes, and would contradict this phase's own premise that the dial
+ * order IS the detection.
+ *
+ * Community-sourced, MEDIUM confidence: worded as a possibility to check,
+ * with that provenance disclosed in the sentence itself, and never stated
+ * as the diagnosis (this plan's transparency prohibition). Does not
+ * mention Podman's `pasta` default at all -- that is DEFER-01, a deferred
+ * verification item, not something to state here. */
+function rootlessDisclosure(failure: DialFailure): string {
+  const anyResolvedButFailed = failure.observations.some((o) => o.resolved);
+  if (!anyResolvedButFailed) return "";
+  return (
+    "\nIf this is a rootless container runtime, this MAY (unconfirmed by any vendor -- community-sourced " +
+    'only) be a host-loopback restriction on the bridge gateway, the signature some rootless Docker/' +
+    'RootlessKit configurations report under "slirp4netns --disable-host-loopback" -- worth checking if ' +
+    "the above does not resolve it."
+  );
+}
+
+/** Rank 1: nothing answered on either candidate. States plainly that no
+ * client starts one automatically -- the user does (BROKER-02) -- and
+ * gives the start command as the remedy. */
+function rank1Message(failure: DialFailure): string {
+  const hosts = failure.observations.map((o) => o.host).join(" and ");
+  return (
+    `vice: no broker answered on either candidate (${hosts}, port ${failure.port}). No client starts one ` +
+    `automatically -- start it yourself, on the machine you want the broker running on:\n` +
+    `  ${BROKER_START_COMMAND}` +
+    rootlessDisclosure(failure)
+  );
+}
+
+/** Rank 2: something else is squatting the port. Names the candidate host
+ * and the port, and suggests checking what holds it before restarting
+ * anything -- restarting is NOT the remedy here, since nothing broker-owned
+ * is even listening yet. */
+function rank2Message(failure: DialFailure): string {
+  const squatters = failure.observations.filter((o) => o.rank === 2);
+  const hosts = (squatters.length > 0 ? squatters : failure.observations).map((o) => o.host).join(" and ");
+  return (
+    `vice: something else is already listening on ${hosts} (port ${failure.port}) -- it accepted the ` +
+    `connection but did not answer as this broker. Check what holds that port before restarting anything.` +
+    rootlessDisclosure(failure)
+  );
+}
+
+/** Rank 3: a stale pre-v2.0.0 broker. D-06's own stale-broker signature --
+ * a broker whose credential check runs ahead of dispatch refuses a
+ * credential-free `hello` with exactly this error shape. The remedy is to
+ * stop it and start one from the current package. */
+function rank3Message(failure: DialFailure): string {
+  return (
+    `vice: the listener on port ${failure.port} speaks this protocol but refused the handshake -- that is ` +
+    `what a broker older than v2.0.0 does, because its credential check runs ahead of dispatch. Stop it and ` +
+    `start one from the current package:\n` +
+    `  ${BROKER_START_COMMAND}` +
+    rootlessDisclosure(failure)
+  );
+}
+
+/** Rank 4: a genuine broker at an incompatible major version. Names BOTH
+ * package names and BOTH observed versions, and says which side is behind,
+ * because the reader's next action differs depending on which one it is
+ * (D-05, ENDPOINT-05). */
+function rank4Message(failure: DialFailure): string {
+  const skewed = failure.observations.find((o) => o.rank === 4 && o.version !== undefined);
+  const brokerVersion = skewed?.version ?? "unknown";
+  const clientMajor = parseLeadingMajor(failure.clientVersion);
+  const brokerMajor = skewed?.version !== undefined ? parseLeadingMajor(skewed.version) : null;
+  let whichSide: string;
+  if (clientMajor !== null && brokerMajor !== null && clientMajor < brokerMajor) {
+    whichSide = `this client is behind -- update ${SERVER_PACKAGE_NAME} (and ${INSTALLER_PACKAGE_NAME}, published together)`;
+  } else if (clientMajor !== null && brokerMajor !== null && clientMajor > brokerMajor) {
+    whichSide = `the broker is behind -- stop it and start one from the current package`;
+  } else {
+    whichSide = "one side is behind the other";
+  }
+  return (
+    `vice: this client (${SERVER_PACKAGE_NAME} v${failure.clientVersion}) and the broker (v${brokerVersion}) ` +
+    `are on incompatible major versions -- ${whichSide}. ${SERVER_PACKAGE_NAME} and ${INSTALLER_PACKAGE_NAME} ` +
+    `are always published together at the same version, so bringing one up to date means bringing both:\n` +
+    `  ${BROKER_START_COMMAND}` +
+    rootlessDisclosure(failure)
+  );
+}
+
+/** Builds the act-on-able refusal text for a failed dial, reading Task 2's
+ * already-ranked failure result -- it does not re-derive the rank or
+ * re-classify anything. Pure: no clock read, no environment read beyond
+ * the already-resolved `failure.clientVersion`, no caching. Two calls on
+ * the same input return the same bytes. */
+export function describeDialFailure(failure: DialFailure): string {
+  switch (failure.rank) {
+    case 1:
+      return rank1Message(failure);
+    case 2:
+      return rank2Message(failure);
+    case 3:
+      return rank3Message(failure);
+    case 4:
+      return rank4Message(failure);
+  }
 }
