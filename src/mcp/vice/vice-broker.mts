@@ -73,7 +73,15 @@ import {
 // build.ts pass (both source and target are listed in
 // HOST_BOUND_ARTIFACTS/tsconfig.build.json's include[] in this same
 // change).
-import { spliceRelay, resolveRelayChannelTarget } from "./broker-relay.mjs";
+import { spliceRelay, resolveRelayChannelTarget, relaySessionKey, type RelayDeathTrigger } from "./broker-relay.mjs";
+// A VALUE import of the broker's own incident writer (Phase 63, SESS-05) --
+// safe here for the SAME reason every other sibling value import in this
+// file is: this file is ALWAYS run from its own compiled resources/ form,
+// and "./broker-incident.mjs" is compiled into that same directory by the
+// same build.ts pass (both source and target are already listed in
+// HOST_BOUND_ARTIFACTS). handleRelayDeath() below is this module's one and
+// only production call site -- see that function's own header comment.
+import { writeBrokerIncident, type BrokerIncidentInput } from "./broker-incident.mjs";
 // resolvedBackend() resolves the emulator binary's identity -- ViceBackend's
 // own definition lives in backend-detect.mts too (narrowed to a single
 // literal now that the fork backend has been removed entirely), so
@@ -979,6 +987,112 @@ export function handleMonitorClaim(requestId: string, targetId: string, channel:
   return { ok: false, code: "monitor_owned", holder: { grantId: existing.grantId, claimedAt: existing.claimedAt, pid: existing.pid, channel } };
 }
 
+/**
+ * Injectable dependency seam for handleRelayDeath() (Phase 63, SESS-05) --
+ * this project's standard destructured-options-object register, mirroring
+ * HandleAcquireDeps' own posture: every default here IS production
+ * behaviour, and a test injects its own recorders to prove ordering without
+ * ever touching the real, machine-level incidents directory.
+ */
+export interface HandleRelayDeathDeps {
+  /** Overrides the incident writer -- defaults to broker-incident.mjs's
+   * real writeBrokerIncident(), reused unchanged, never re-derived. A test
+   * that wants to prove evidence-before-reclaim ordering, or a writer that
+   * throws, injects its own function here instead of touching the real
+   * filesystem. */
+  writeIncident?: (record: BrokerIncidentInput) => string;
+  /** Overrides the claim-clearing step -- defaults to broker-state.mjs's
+   * real clearMonitorClient(), reused unchanged. A test injects its own
+   * recorder to prove this runs strictly AFTER the incident write, never
+   * before. */
+  clearClaim?: (instance: InstanceRecord, channel: MonitorChannel) => void;
+}
+
+/**
+ * Answers a relay connection's own death (Phase 63, SESS-03/05) -- the ONE
+ * place this broker ever writes an incident record for a dropped monitor
+ * channel, and the ONE place a relay session's live handle is ever removed
+ * from `state.relaySessions`. Called from exactly one production site: the
+ * `onDeath` callback handleRelayAttach() below hands to spliceRelay() at
+ * the moment a channel is spliced.
+ *
+ * THE ORDER BELOW IS STRUCTURALLY THE POINT OF THIS FUNCTION, not
+ * incidental -- CLAUDE.md's own architecture constraint ("Do not kill or
+ * relaunch the emulator to serve a newer request. Write the incident record
+ * first.") and this plan's own prohibition both bind it:
+ *
+ *   1. Look up the grant and the live relay session for this exact
+ *      (targetId, channel) pair. An ABSENT session means a teardown already
+ *      ran (this is the per-grant-and-channel idempotency guard, one layer
+ *      above spliceRelay()'s own per-session `deathReported` latch) --
+ *      return immediately, writing NOTHING and touching NOTHING else.
+ *   2. Read the grant's own declared operation (GrantRecord.operation,
+ *      Plan 63-03) -- a declared operation means a live run is voided.
+ *   3. Write the incident record with the injectable writer, SYNCHRONOUSLY
+ *      (writeBrokerIncident()'s own atomic tmp-then-rename write is a
+ *      synchronous fs call chain, never a Promise), keeping the returned
+ *      path. A throw here propagates AFTER a distinctly-worded log line --
+ *      this function does NOT swallow it, because a caller that cannot
+ *      write evidence must learn that before anything is released.
+ *   4. ONLY NOW: remove the session from `state.relaySessions`, clear the
+ *      monitor claim for this channel through the injectable claim-clearing
+ *      step (the SAME clearMonitorClient() every other release path uses --
+ *      this also resets the channel's `attached` marker, since clearing the
+ *      WHOLE per-channel entry is what makes a later re-claim mint a FRESH
+ *      handle rather than resurrecting a dead one), and call the session
+ *      handle's own close(trigger) -- which is what actually destroys
+ *      whichever leg is not already destroyed.
+ *   5. Leave the instance record and the grant entirely untouched -- a
+ *      relay death tears down exactly one channel, never the instance or
+ *      the grant that owns it (SESS-03's own "leaves the instance running
+ *      and the grant standing"). Log one line naming the grant, the
+ *      channel, the trigger, the declared operation (or its explicit
+ *      absence), and the record's own path.
+ */
+export function handleRelayDeath(targetId: string, channel: MonitorChannel, trigger: RelayDeathTrigger, state: BrokerState, deps: HandleRelayDeathDeps = {}): void {
+  const key = relaySessionKey(targetId, channel);
+  const session = state.relaySessions.get(key);
+  if (!session) return; // a teardown already ran for this exact grant+channel -- write nothing, touch nothing
+
+  const writeIncident = deps.writeIncident ?? writeBrokerIncident;
+  const clearClaim = deps.clearClaim ?? clearMonitorClient;
+
+  const grant = state.grants.get(targetId);
+  const instance = resolveInstanceForMonitorTarget(targetId, state);
+  const operation = grant?.operation ?? null;
+
+  let recordPath: string;
+  try {
+    recordPath = writeIncident({
+      trigger,
+      grant_id: targetId,
+      channel,
+      port: instance ? instance.port : null,
+      epoch_before: instance && typeof instance.epoch === "number" ? instance.epoch : null,
+      operation,
+      reason: `relay death on target ${targetId}, channel ${channel}: ${trigger}`,
+    });
+  } catch (err) {
+    process.stderr.write(
+      `vice-broker: FAILED to write the incident record for a relay death on target ${targetId} channel ${channel} (trigger ${trigger}) -- ` +
+        `refusing to release the claim, destroy either socket, or signal anything until this is fixed: ${String(err)}\n`,
+    );
+    throw err;
+  }
+
+  // Only now: the record is durably on disk (writeIncident()'s own atomic
+  // tmp-then-rename write already completed synchronously above) --
+  // release exactly one channel, never the instance or the grant.
+  state.relaySessions.delete(key);
+  if (instance) clearClaim(instance, channel);
+  session.close(trigger);
+
+  process.stderr.write(
+    `vice-broker: relay death on target ${targetId} channel ${channel} (trigger ${trigger}, operation ${operation ? operation.name : "none declared"}) -- ` +
+      `incident recorded at ${recordPath}\n`,
+  );
+}
+
 /** Answers `attach` (Phase 63, SESS-02): the ONE place a relay connection's
  * presented handle is checked, and the ONE place spliceRelay() is ever
  * called from production wiring. Resolves the instance the SAME way every
@@ -1002,10 +1116,13 @@ export function handleMonitorClaim(requestId: string, targetId: string, channel:
  * broker-relay.mts's own resolveRelayChannelTarget() (plan 63-02) -- the
  * instance record's primary `port` field for the binary channel, its own
  * `remoteMonitorPort` for the text channel, with NO fallback from one to
- * the other on a missing value (T-63-08) -- calls spliceRelay(), and keeps
- * the returned session on nothing this function itself owns -- the
- * splice's own "close" handling is spliceRelay()'s own concern, not this
- * callback's. */
+ * the other on a missing value (T-63-08) -- calls spliceRelay(), and
+ * records the returned session in `state.relaySessions` (Phase 63, plan
+ * 63-04) keyed by relaySessionKey(targetId, channel), so handleRelayDeath()
+ * above can find it again. `deps` (optional, defaulting to real production
+ * functions) is threaded straight into every death this session can ever
+ * report -- a test overrides it here to prove ordering without touching the
+ * real filesystem; the real broker (this file's own `run()`) omits it. */
 export function handleRelayAttach(
   targetId: string,
   channel: MonitorChannel,
@@ -1013,6 +1130,7 @@ export function handleRelayAttach(
   clientSocket: Socket,
   pending: Buffer,
   state: BrokerState,
+  deps: HandleRelayDeathDeps = {},
 ): RelayAttachOutcome {
   const instance = resolveInstanceForMonitorTarget(targetId, state);
   if (!instance) return { ok: false, code: "bad_request" };
@@ -1037,22 +1155,22 @@ export function handleRelayAttach(
 
   holder.attached = true;
   const host = resolveBinmonHost();
-  spliceRelay({ clientSocket, host, port: target.port, pending });
-  // Plan 63-02 (deviation, Rule 1): clears the attached marker the instant
-  // THIS relay connection closes, for either side's reason (client death,
-  // emulator death, or an explicit teardown) -- without this, a dead relay
-  // leaves the channel permanently unattachable, which silently breaks the
-  // very reconnect this plan's own must_haves require (a re-attach on the
-  // SAME channel would otherwise be refused `denied` forever, since
-  // nothing else in this tree ever flips `attached` back to false short of
-  // a full monitor_release/recycle/exit clearing the WHOLE entry). This is
-  // deliberately the narrow fix -- one boolean, no incident record, no
-  // idle timeout -- leaving broker-incident.mts's own handleRelayDeath()
-  // (a later plan in this phase) to build the richer machinery on top of
-  // this same "close" event.
-  clientSocket.once("close", () => {
-    holder.attached = false;
+  // Plan 63-04 (SESS-03/04/05): this splice's own death notifier routes
+  // STRAIGHT into handleRelayDeath() above -- evidence first, then release
+  // of exactly this channel. The narrow Plan 63-02 fix this supersedes (a
+  // bare `clientSocket.once("close", () => { holder.attached = false; })`)
+  // is GONE, not merely extended: handleRelayDeath()'s own clearClaim()
+  // step already clears the WHOLE per-channel entry (grantId, handle AND
+  // attached together), which is what forces a re-attach to mint a FRESH
+  // handle via a fresh monitor_claim rather than resurrecting a dead one.
+  const session = spliceRelay({
+    clientSocket,
+    host,
+    port: target.port,
+    pending,
+    onDeath: (trigger) => handleRelayDeath(targetId, channel, trigger, state, deps),
   });
+  state.relaySessions.set(relaySessionKey(targetId, channel), session);
   return { ok: true };
 }
 

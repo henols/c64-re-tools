@@ -112,6 +112,26 @@ export function readAttachLine(chunk: Buffer, carry: Buffer = Buffer.alloc(0)): 
  * omit it and get node:net's own `connect`. */
 export type RelayConnectFn = (opts: { host: string; port: number }) => Socket;
 
+/**
+ * The three ways a relay's own death can be observed from socket events
+ * alone (Phase 63, SESS-03/04). Deliberately a NARROWER union than
+ * broker-incident.mts's own `BrokerIncidentTrigger` -- that type also
+ * carries `"control_close"`, which never originates here: this module only
+ * ever observes a RELAY connection's own lifecycle, never the separate
+ * control connection's close (vice-broker.mts's own release path, Task 3,
+ * is what produces that fourth value). `"relay_close"` names a death whose
+ * own `"close"` event reported `hadError: false` (a graceful end -- either
+ * side's `.end()`, or an ordinary `.destroy()` with nothing left unread,
+ * which measures identically on real loopback sockets -- see
+ * spliceRelay()'s own header comment for the measurement); `"relay_error"`
+ * names a death whose `"close"` reported `hadError: true` (a genuine
+ * transmission error, e.g. a TCP RST from `resetAndDestroy()`), or an
+ * explicit `"error"` event on either leg. `"relay_idle_expiry"` is Plan
+ * 63-04 Task 2's own addition, reported by the idle deadline rather than by
+ * either socket's own lifecycle events.
+ */
+export type RelayDeathTrigger = "relay_close" | "relay_error" | "relay_idle_expiry";
+
 export interface SpliceRelayOptions {
   /** The already-accepted relay connection -- broker-control.mts's own
    * attach dispatch arm hands this in, already past its one JSON line. */
@@ -124,18 +144,47 @@ export interface SpliceRelayOptions {
    * behind a later chunk. Absent or empty means nothing was pending. */
   pending?: Buffer;
   connect?: RelayConnectFn;
+  /**
+   * Called AT MOST ONCE per session, with the FIRST death trigger this
+   * module itself observed on either leg's own `"close"`/`"error"` event --
+   * see the per-channel teardown guard's own comment on RelaySession.close()
+   * below for the "at most once" discipline. This module NOTIFIES; it never
+   * reclaims anything of its own accord (RESEARCH.md's own "this module owns
+   * bytes and sockets, not policy" instruction) -- a caller (vice-broker.mts's
+   * handleRelayDeath()) decides what to do, which ends in a call to the
+   * returned handle's own close(). Absent means nobody is watching: the
+   * guard still latches (a second event is still a no-op) but nothing is
+   * ever notified, and neither leg is ever destroyed until close() is
+   * called explicitly -- this splice does NOT auto-teardown on its own
+   * anymore (Phase 63, SESS-03/05 -- evidence-before-reclaim requires the
+   * broker to get a chance to write a record before either socket dies for
+   * good, which an auto-destroying splice could never guarantee).
+   */
+  onDeath?: (trigger: RelayDeathTrigger) => void;
 }
 
 /**
- * A live relay splice: the emulator socket this call dialled, a destroy()
+ * A live relay splice: the emulator socket this call dialled, a close()
  * that tears down BOTH sockets (idempotent -- either side closing first is
- * expected and safe to destroy again), and the two byte counters read back
- * as plain function calls rather than mutable public fields, so nothing
- * outside this module can perturb them.
+ * expected and safe to close again, and the trigger argument on a SECOND
+ * call is ignored -- see this method's own comment), and the two byte
+ * counters read back as plain function calls rather than mutable public
+ * fields, so nothing outside this module can perturb them.
  */
 export interface RelaySession {
   readonly emulatorSocket: Socket;
-  destroy(): void;
+  /**
+   * Idempotent per-channel teardown: the FIRST call (from ANY source --
+   * this module's own internal death detection calling it indirectly via
+   * `onDeath`'s caller, or an external caller invoking it directly once
+   * evidence has been written) destroys whichever leg is not already
+   * destroyed; every subsequent call, regardless of `trigger`, is a no-op.
+   * `trigger` is accepted for symmetry with `onDeath`'s own signature and
+   * for a caller's own logging, but this method itself never inspects it --
+   * the FIRST trigger `onDeath` already reported is the one a caller should
+   * have already recorded before ever reaching this call.
+   */
+  close(trigger: RelayDeathTrigger): void;
   bytesClientToEmulator(): number;
   bytesEmulatorToClient(): number;
 }
@@ -155,8 +204,28 @@ export interface RelaySession {
  * Never throws: `connect()` (real or injected) is handed a host/port pair
  * this broker already resolved, and any dial failure surfaces as the
  * emulator socket's own `"error"`/`"close"` events, which this function
- * treats as "the splice is over" (destroy the client side too) rather than
- * as something to propagate synchronously.
+ * treats exactly like any other death -- reported via `onDeath()`, never
+ * acted on here.
+ *
+ * DEATH DETECTION (Phase 63, SESS-03/04): each leg's own `"close"` event
+ * carries Node's own `hadError` boolean -- MEASURED this session against a
+ * real loopback pair (never assumed from the Node docs' prose alone): a
+ * peer calling plain `.destroy()` OR `.end()` with no pending unread data
+ * both deliver a graceful FIN to the OTHER side, so `"close"` fires with
+ * `hadError: false` for BOTH -- there is no reliable way to tell a "no FIN"
+ * abrupt death from a graceful one merely by watching for the ABSENCE of an
+ * `"end"` event, because ordinary loopback TCP behaviour does not send an
+ * RST just because the local side called `destroy()` rather than `end()`.
+ * The one thing that DOES reliably produce `hadError: true` on the peer is
+ * an actual transmission error -- a TCP RST, which `Socket.prototype.
+ * resetAndDestroy()` sends explicitly, or any other genuine socket error --
+ * and Node's own `"close"` event already classifies that for us. So:
+ * `hadError` true -> `"relay_error"`; `hadError` false -> `"relay_close"`.
+ * An explicit `"error"` event (which Node always fires BEFORE its own
+ * following `"close"`) also reports `"relay_error"` directly, so a genuine
+ * transmission error wins the race against its own later close regardless
+ * of timing -- the per-channel guard below is what makes calling into the
+ * notifier twice for the SAME death harmless.
  */
 export function spliceRelay(opts: SpliceRelayOptions): RelaySession {
   const connectFn = opts.connect ?? netConnect;
@@ -164,11 +233,25 @@ export function spliceRelay(opts: SpliceRelayOptions): RelaySession {
 
   let bytesClientToEmulator = 0;
   let bytesEmulatorToClient = 0;
-  let destroyed = false;
+  let deathReported = false;
+  let closed = false;
 
-  function destroy(): void {
-    if (destroyed) return;
-    destroyed = true;
+  // Per-channel teardown guard (T-63-14): the FIRST death observed, from
+  // EITHER leg, wins -- every later observation, on either leg, is a no-op.
+  // This is the SAME guard `close()` below defers to implicitly via its own
+  // `closed` flag; the two flags are deliberately separate booleans because
+  // `onDeath()` (report) and the actual socket teardown (close()) are two
+  // DIFFERENT moments in time now -- a caller is expected to write evidence
+  // in between them, which is the entire point of splitting the two.
+  function reportDeath(trigger: RelayDeathTrigger): void {
+    if (deathReported) return;
+    deathReported = true;
+    opts.onDeath?.(trigger);
+  }
+
+  function close(_trigger: RelayDeathTrigger): void {
+    if (closed) return;
+    closed = true;
     if (!emulatorSocket.destroyed) emulatorSocket.destroy();
     if (!opts.clientSocket.destroyed) opts.clientSocket.destroy();
   }
@@ -194,26 +277,48 @@ export function spliceRelay(opts: SpliceRelayOptions): RelaySession {
   opts.clientSocket.pipe(emulatorSocket);
   emulatorSocket.pipe(opts.clientSocket);
 
-  // Either side closing ends the whole session -- a half-open relay (one
-  // socket alive, the other gone) serves nothing.
-  opts.clientSocket.once("close", destroy);
-  emulatorSocket.once("close", destroy);
+  // Death detection -- NEVER a destroy here anymore (Phase 63, SESS-03/05):
+  // a caller must get the chance to write an incident record before either
+  // socket is torn down, so this wiring only ever REPORTS, through
+  // reportDeath() above, never acts. `hadError` is Node's OWN classification
+  // (see this function's own header comment for why that -- not an "end"
+  // presence check -- is the measured-reliable signal).
+  opts.clientSocket.once("close", (hadError: boolean) => {
+    reportDeath(hadError ? "relay_error" : "relay_close");
+  });
+  emulatorSocket.once("close", (hadError: boolean) => {
+    reportDeath(hadError ? "relay_error" : "relay_close");
+  });
   // Per-connection error isolation, matching broker-control.mts's own
   // per-connection `socket.on("error", () => {})` posture -- an unhandled
   // 'error' on either socket would otherwise crash this broker process.
+  // Also reports the death: an "error" always precedes its own "close"
+  // (Node's own event ordering), so this is what makes a genuine
+  // transmission error win the race against the plain close handlers above,
+  // via reportDeath()'s own once-only guard.
   opts.clientSocket.on("error", () => {
-    /* isolated -- the "close" handler above tears down the session */
+    reportDeath("relay_error");
   });
   emulatorSocket.on("error", () => {
-    /* isolated -- the "close" handler above tears down the session */
+    reportDeath("relay_error");
   });
 
   return {
     emulatorSocket,
-    destroy,
+    close,
     bytesClientToEmulator: () => bytesClientToEmulator,
     bytesEmulatorToClient: () => bytesEmulatorToClient,
   };
+}
+
+/** Builds the ONE key `state.relaySessions` (broker-state.mts) is ever
+ * indexed by -- `${grantId}:${channel}` -- so a grant id containing a colon
+ * of its own cannot collide with a different grant/channel pair (a grant id
+ * is a broker-minted request id, never caller-controlled free text, but this
+ * keeps the key construction in exactly one place regardless). The ONE
+ * function that builds this key; never hand-format it a second time. */
+export function relaySessionKey(grantId: string, channel: MonitorChannel): string {
+  return `${grantId}:${channel}`;
 }
 
 // ---------------------------------------------------------------------------

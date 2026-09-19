@@ -91,7 +91,7 @@ async function loadBrokerModule(): Promise<BrokerModule> {
 }
 
 function createState(): BrokerState {
-  return { instances: new Map(), grants: new Map(), blockedPorts: new Set() };
+  return { instances: new Map(), grants: new Map(), blockedPorts: new Set(), relaySessions: new Map() };
 }
 
 function makeReadyInstance(overrides: Partial<InstanceRecord> = {}): InstanceRecord {

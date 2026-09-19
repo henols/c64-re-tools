@@ -19,7 +19,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 
-import { readAttachLine, MAX_ATTACH_LINE_BYTES } from "./broker-relay.mts";
+import { readAttachLine, MAX_ATTACH_LINE_BYTES, relaySessionKey, type RelayDeathTrigger } from "./broker-relay.mts";
 import {
   startControlListener,
   newControlToken,
@@ -33,7 +33,8 @@ import {
   type RelayAttachOutcome,
 } from "./broker-control.mts";
 import { createBrokerState, type BrokerState, type InstanceRecord, type MonitorChannel } from "./broker-state.mts";
-import { dialMonitorRelay, HELLO_PROTOCOL_MAGIC, RELAY_TAG_BINARY, type DialMonitorRelayResult } from "./broker-endpoint.ts";
+import type { BrokerIncidentInput } from "./broker-incident.mts";
+import { dialMonitorRelay, HELLO_PROTOCOL_MAGIC, RELAY_TAG_BINARY, type DialMonitorRelayResult, type DialMonitorRelaySuccess } from "./broker-endpoint.ts";
 import { ViceMonitorClient, CommandType, ResponseType, ErrorCode, REQUEST_HEADER_LEN, VICE_BROADCAST_REQUEST_ID, encodeRequestHeader } from "./stock-protocol.ts";
 import { encodeResponseFrame } from "./binmon-fixtures.ts";
 import { build } from "./build.ts";
@@ -52,12 +53,37 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // ERR_MODULE_NOT_FOUND on the very first sibling it tries to resolve).
 // ---------------------------------------------------------------------------
 build();
+/** Mirrors vice-broker.mts's own HandleRelayDeathDeps -- imported by type
+ * shape only (this test file loads the COMPILED artifact, never the .mts
+ * source, per this file's own header comment above). */
+interface TestHandleRelayDeathDeps {
+  writeIncident?: (record: BrokerIncidentInput) => string;
+  clearClaim?: (instance: InstanceRecord, channel: MonitorChannel) => void;
+}
 const viceBrokerModule = (await import(new URL("./resources/vice-broker.mjs", import.meta.url).href)) as unknown as {
   handleMonitorClaim: (requestId: string, targetId: string, channel: MonitorChannel, state: BrokerState) => MonitorClaimOutcome;
   handleMonitorRelease: (requestId: string, targetId: string, channel: MonitorChannel, state: BrokerState) => MonitorReleaseOutcome;
-  handleRelayAttach: (targetId: string, channel: MonitorChannel, presentedHandle: string, clientSocket: NetSocket, pending: Buffer, state: BrokerState) => RelayAttachOutcome;
+  handleRelayAttach: (
+    targetId: string,
+    channel: MonitorChannel,
+    presentedHandle: string,
+    clientSocket: NetSocket,
+    pending: Buffer,
+    state: BrokerState,
+    deps?: TestHandleRelayDeathDeps,
+  ) => RelayAttachOutcome;
+  handleRelayDeath: (targetId: string, channel: MonitorChannel, trigger: RelayDeathTrigger, state: BrokerState, deps?: TestHandleRelayDeathDeps) => void;
 };
-const { handleMonitorClaim, handleMonitorRelease, handleRelayAttach } = viceBrokerModule;
+const { handleMonitorClaim, handleMonitorRelease, handleRelayAttach, handleRelayDeath } = viceBrokerModule;
+
+// broker-incident.mts is ALSO host-bound (it value-imports broker-home.mjs),
+// so it is loaded the SAME way -- built first, then the compiled artifact,
+// never the unbuilt .mts source directly (broker-incident.test.ts's own
+// established convention, mirrored here).
+const brokerIncidentModule = (await import(new URL("./resources/broker-incident.mjs", import.meta.url).href)) as unknown as {
+  writeBrokerIncident: (record: BrokerIncidentInput, opts?: { dir?: string }) => string;
+};
+const { writeBrokerIncident } = brokerIncidentModule;
 
 // ---------------------------------------------------------------------------
 // Stub emulator harness -- copies stock-protocol.test.ts's own
@@ -165,6 +191,13 @@ interface RelayTestBrokerContext {
   listenerPort: number;
   token: string;
   state: BrokerState;
+  /** The scratch directory THIS broker's own handleRelayDeath() writes
+   * incidents into -- absent when the caller supplied its own `deps`
+   * (Task 1's ordering/injected-writer cases build their own recorders and
+   * never touch the filesystem at all). Mkdtemp'd under the OS temp dir
+   * (Phase 63-04's own scratch discipline), never the repo tree, and reaped
+   * in this helper's own `finally` block. */
+  incidentsDir: string | null;
 }
 
 /** Stands up a REAL startControlListener() on port zero against an
@@ -173,8 +206,27 @@ interface RelayTestBrokerContext {
  * shared listener-standup both withRelayTestBroker() (one grant) and
  * withMultiRelayTestBroker() (N grants, Task 3's concurrency case) build
  * on. Every other callback is a no-op stub -- this suite never exercises
- * acquire/release/recycle/status/host_state/host_tool. */
-async function startRelayListenerForState(state: BrokerState): Promise<{ listener: StartControlListenerResult; token: string }> {
+ * acquire/release/recycle/status/host_state/host_tool.
+ *
+ * `relayDeathDeps` (Plan 63-04): threaded straight into every
+ * handleRelayAttach() call as its own `deps` argument. When the caller
+ * omits it (the common case -- every PRE-EXISTING test in this file that
+ * predates this plan and every new test that does not itself care about
+ * incident content), this function builds a SAFE default that writes into
+ * a freshly mkdtemp'd scratch directory rather than the real, machine-level
+ * incidents directory brokerIncidentsDir() would otherwise resolve --
+ * without this, every relay-death case in this whole file (old and new
+ * alike) would leave a real file on the host running this suite. */
+async function startRelayListenerForState(
+  state: BrokerState,
+  relayDeathDeps?: TestHandleRelayDeathDeps,
+): Promise<{ listener: StartControlListenerResult; token: string; incidentsDir: string | null }> {
+  let incidentsDir: string | null = null;
+  let deps = relayDeathDeps;
+  if (!deps) {
+    incidentsDir = mkdtempSync(join(tmpdir(), "vice-relay-incidents-"));
+    deps = { writeIncident: (record) => writeBrokerIncident(record, { dir: incidentsDir as string }) };
+  }
   const token = newControlToken();
   const listener = await startControlListener({
     host: "127.0.0.1",
@@ -203,36 +255,47 @@ async function startRelayListenerForState(state: BrokerState): Promise<{ listene
     }),
     onMonitorClaim: (requestId, tId, channel) => handleMonitorClaim(requestId, tId, channel, state),
     onMonitorRelease: (requestId, tId, channel) => handleMonitorRelease(requestId, tId, channel, state),
-    onRelayAttach: (tId, channel, presentedHandle, socket, pending) => handleRelayAttach(tId, channel, presentedHandle, socket, pending, state),
+    onRelayAttach: (tId, channel, presentedHandle, socket, pending) => handleRelayAttach(tId, channel, presentedHandle, socket, pending, state, deps),
     // Phase 63, plan 63-03: a required field on StartControlListenerOptions
     // as of this plan -- not exercised by this suite (broker-control.test.ts
     // is the home for `operation` coverage).
     onOperation: () => ({ ok: true }),
     onHostTool: async () => ({ ok: false, message: "not exercised by broker-relay.test.ts" }),
   });
-  return { listener, token };
+  return { listener, token, incidentsDir };
 }
 
-async function withRelayTestBroker<T>(emulatorPort: number, targetId: string, fn: (ctx: RelayTestBrokerContext) => Promise<T>): Promise<T> {
+async function withRelayTestBroker<T>(
+  emulatorPort: number,
+  targetId: string,
+  fn: (ctx: RelayTestBrokerContext) => Promise<T>,
+  relayDeathDeps?: TestHandleRelayDeathDeps,
+): Promise<T> {
   const state = setupBrokerState(emulatorPort, targetId);
-  const { listener, token } = await startRelayListenerForState(state);
+  const { listener, token, incidentsDir } = await startRelayListenerForState(state, relayDeathDeps);
   try {
-    return await fn({ listener, listenerPort: listener.port, token, state });
+    return await fn({ listener, listenerPort: listener.port, token, state, incidentsDir });
   } finally {
     listener.server.close();
+    if (incidentsDir) rmSync(incidentsDir, { recursive: true, force: true });
   }
 }
 
 /** Task 3 (SESS-02, concurrency edge): ONE control listener shared across
  * N grants -- the assertion that proves one broker serving two unrelated
  * sessions does not cross-wire them. */
-async function withMultiRelayTestBroker<T>(grants: Array<{ port: number; targetId: string }>, fn: (ctx: RelayTestBrokerContext) => Promise<T>): Promise<T> {
+async function withMultiRelayTestBroker<T>(
+  grants: Array<{ port: number; targetId: string }>,
+  fn: (ctx: RelayTestBrokerContext) => Promise<T>,
+  relayDeathDeps?: TestHandleRelayDeathDeps,
+): Promise<T> {
   const state = setupMultiGrantBrokerState(grants);
-  const { listener, token } = await startRelayListenerForState(state);
+  const { listener, token, incidentsDir } = await startRelayListenerForState(state, relayDeathDeps);
   try {
-    return await fn({ listener, listenerPort: listener.port, token, state });
+    return await fn({ listener, listenerPort: listener.port, token, state, incidentsDir });
   } finally {
     listener.server.close();
+    if (incidentsDir) rmSync(incidentsDir, { recursive: true, force: true });
   }
 }
 
@@ -936,4 +999,340 @@ test("structural: broker-relay-text.test.ts is present and is not on git's own u
   const files = output.split("\n").map((f) => f.trim());
   assert.ok(files.includes("broker-relay-text.test.ts"), "broker-relay-text.test.ts must be a tracked file");
   assert.ok(existsSync(join(HERE, "broker-relay-text.test.ts")), "broker-relay-text.test.ts must exist on disk");
+});
+
+// ===========================================================================
+// Plan 63-04, Task 1 (SESS-03, SESS-05): a relay death leaves evidence, then
+// lets go of exactly one channel.
+//
+// MEASURED this session, against real loopback sockets (see broker-relay.mts's
+// own spliceRelay() header comment): a plain `.destroy()` with nothing left
+// unread delivers a graceful FIN to the peer exactly like `.end()` does --
+// `"close"` fires with `hadError: false` for BOTH. The only reliable way to
+// produce a genuine "no FIN" abrupt death on real loopback sockets is
+// `Socket.prototype.resetAndDestroy()` (a real TCP RST), which is what these
+// tests use for every "abrupt" case below; `.end()` is used for every
+// "graceful" case.
+// ===========================================================================
+
+/** Claims `channel` for `targetId` and dials the relay for it in one step --
+ * the shared setup every death test below needs before it can kill anything. */
+async function claimAndDialRelay(
+  state: BrokerState,
+  listenerPort: number,
+  token: string,
+  targetId: string,
+  channel: MonitorChannel = "binary",
+): Promise<DialMonitorRelaySuccess> {
+  const claim = handleMonitorClaim(`claim-${targetId}`, targetId, channel, state);
+  assert.ok(claim.ok, `expected the claim to succeed: ${JSON.stringify(claim)}`);
+  if (!claim.ok) throw new Error("unreachable");
+  const dial = await dialMonitorRelay({ targetId, channel, handle: claim.handle, token, port: listenerPort, candidates: ["127.0.0.1"] });
+  assert.ok(dial.ok, `expected a successful relay dial: ${JSON.stringify(dial)}`);
+  if (!dial.ok) throw new Error("unreachable");
+  return dial;
+}
+
+test("handleRelayDeath: an abruptly destroyed relay (a real TCP RST) produces exactly one incident record and exactly one claim clear, in that order", async () => {
+  const order: string[] = [];
+  const deps: TestHandleRelayDeathDeps = {
+    writeIncident: (record) => {
+      order.push(`write:${String(record.trigger)}`);
+      return "/fake/incident/path.md";
+    },
+    clearClaim: (_instance, channel) => {
+      order.push(`clear:${channel}`);
+    },
+  };
+  let resolveEmulatorClosed: () => void = () => {};
+  const emulatorClosed = new Promise<void>((resolve) => {
+    resolveEmulatorClosed = resolve;
+  });
+  await withStubEmulatorServer(
+    (socket) => socket.once("close", () => resolveEmulatorClosed()),
+    async (emulatorPort) => {
+      await withRelayTestBroker(
+        emulatorPort,
+        "grant-death-abrupt",
+        async ({ listenerPort, token, state }) => {
+          const dial = await claimAndDialRelay(state, listenerPort, token, "grant-death-abrupt");
+          assert.ok(state.relaySessions.has(relaySessionKey("grant-death-abrupt", "binary")), "the relay session must be recorded the instant the attach succeeds");
+
+          dial.socket.resetAndDestroy();
+          await emulatorClosed;
+
+          assert.deepEqual(order, ["write:relay_error", "clear:binary"], "evidence must be written strictly before the claim is cleared, and the trigger must name the abrupt (RST) case");
+          assert.ok(!state.relaySessions.has(relaySessionKey("grant-death-abrupt", "binary")), "the session must be removed from the map once its teardown has run");
+        },
+        deps,
+      );
+    },
+  );
+});
+
+test("handleRelayDeath: a gracefully ended relay reports a trigger that distinguishes it from the abrupt case", async () => {
+  const order: string[] = [];
+  const deps: TestHandleRelayDeathDeps = {
+    writeIncident: (record) => {
+      order.push(`write:${String(record.trigger)}`);
+      return "/fake/incident/path.md";
+    },
+  };
+  let resolveEmulatorClosed: () => void = () => {};
+  const emulatorClosed = new Promise<void>((resolve) => {
+    resolveEmulatorClosed = resolve;
+  });
+  await withStubEmulatorServer(
+    (socket) => socket.once("close", () => resolveEmulatorClosed()),
+    async (emulatorPort) => {
+      await withRelayTestBroker(
+        emulatorPort,
+        "grant-death-graceful",
+        async ({ listenerPort, token, state }) => {
+          const dial = await claimAndDialRelay(state, listenerPort, token, "grant-death-graceful");
+          dial.socket.end();
+          await emulatorClosed;
+          assert.deepEqual(order, ["write:relay_close"], "a graceful end must report a DIFFERENT trigger than the abrupt (RST) case");
+        },
+        deps,
+      );
+    },
+  );
+});
+
+test("handleRelayDeath: a second close for the same grant and channel after a teardown has started does nothing and writes no second record", async () => {
+  let writeCount = 0;
+  let clearCount = 0;
+  const deps: TestHandleRelayDeathDeps = {
+    writeIncident: (record) => {
+      writeCount += 1;
+      return `/fake/incident/${writeCount}.md`;
+    },
+    clearClaim: () => {
+      clearCount += 1;
+    },
+  };
+  let resolveEmulatorClosed: () => void = () => {};
+  const emulatorClosed = new Promise<void>((resolve) => {
+    resolveEmulatorClosed = resolve;
+  });
+  await withStubEmulatorServer(
+    (socket) => socket.once("close", () => resolveEmulatorClosed()),
+    async (emulatorPort) => {
+      await withRelayTestBroker(
+        emulatorPort,
+        "grant-death-double",
+        async ({ listenerPort, token, state }) => {
+          const dial = await claimAndDialRelay(state, listenerPort, token, "grant-death-double");
+          dial.socket.resetAndDestroy();
+          await emulatorClosed;
+          assert.equal(writeCount, 1);
+          assert.equal(clearCount, 1);
+
+          // Second observation for the SAME (already-torn-down) session:
+          // call handleRelayDeath() directly (the session is already gone
+          // from the map by this point) -- this is exactly what a second,
+          // late-arriving "error"/"close" event on an already-destroyed
+          // socket would drive in production. (The FIRST layer of this same
+          // guard -- spliceRelay()'s own per-session `deathReported` latch,
+          // which absorbs the emulator leg's own "close" once close() has
+          // already destroyed it -- is already proven by every OTHER test
+          // in this section: each asserts EXACTLY one write, even though
+          // close() always destroys both legs and therefore always fires a
+          // second "close" event internally.)
+          handleRelayDeath("grant-death-double", "binary", "relay_error", state, deps);
+          assert.equal(writeCount, 1, "a second death observation for an already-torn-down channel must write no second record");
+          assert.equal(clearCount, 1, "a second death observation for an already-torn-down channel must clear no second claim");
+        },
+        deps,
+      );
+    },
+  );
+});
+
+test("handleRelayDeath: a relay death on one grant leaves the other grant's relay open and still able to carry bytes", async () => {
+  let emulatorASocket: Socket | null = null;
+  let emulatorBSocket: Socket | null = null;
+  let resolveAAccepted: () => void = () => {};
+  let resolveBAccepted: () => void = () => {};
+  const aAccepted = new Promise<void>((resolve) => {
+    resolveAAccepted = resolve;
+  });
+  const bAccepted = new Promise<void>((resolve) => {
+    resolveBAccepted = resolve;
+  });
+  await withStubEmulatorServer(
+    (socket) => {
+      emulatorASocket = socket;
+      resolveAAccepted();
+    },
+    async (emulatorPortA) => {
+      await withStubEmulatorServer(
+        (socket) => {
+          emulatorBSocket = socket;
+          resolveBAccepted();
+        },
+        async (emulatorPortB) => {
+          await withMultiRelayTestBroker(
+            [
+              { port: emulatorPortA, targetId: "grant-death-multi-a" },
+              { port: emulatorPortB, targetId: "grant-death-multi-b" },
+            ],
+            async ({ listenerPort, token, state }) => {
+              const dialA = await claimAndDialRelay(state, listenerPort, token, "grant-death-multi-a");
+              const dialB = await claimAndDialRelay(state, listenerPort, token, "grant-death-multi-b");
+
+              // The "attached" reply the client just received is written
+              // BEFORE the broker's own dial to the (stub) emulator has
+              // necessarily finished its TCP handshake -- awaiting
+              // acceptance here, rather than asserting synchronously, is
+              // what makes this deterministic instead of racy.
+              await Promise.all([aAccepted, bAccepted]);
+
+              let resolveBGot: () => void = () => {};
+              const bGot = new Promise<void>((resolve) => {
+                resolveBGot = resolve;
+              });
+              const receivedB: Buffer[] = [];
+              emulatorBSocket!.on("data", (chunk: Buffer) => {
+                receivedB.push(Buffer.from(chunk));
+                resolveBGot();
+              });
+
+              // The test's own dial.socket closing merely confirms the LOCAL
+              // (test-side) leg has torn down -- it says nothing about
+              // whether the BROKER has finished its own teardown (evidence
+              // write, claim clear, session.close()) yet. The broker's own
+              // emulator-A leg closing is the reliable completion signal:
+              // session.close() is what destroys it, and nothing else in
+              // this test ever touches it.
+              assert.ok(emulatorASocket, "the stub emulator A must have accepted a connection by now");
+              const emulatorAClosed = new Promise<void>((resolve) => emulatorASocket!.once("close", () => resolve()));
+              dialA.socket.resetAndDestroy();
+              await emulatorAClosed;
+
+              assert.ok(!state.relaySessions.has(relaySessionKey("grant-death-multi-a", "binary")), "grant A's session must be torn down");
+              assert.ok(state.relaySessions.has(relaySessionKey("grant-death-multi-b", "binary")), "grant B's session must be UNTOUCHED by grant A's death");
+              assert.ok(!dialB.socket.destroyed, "grant B's own relay socket must still be open");
+
+              // Sent client -> emulator (the direction the relay actually
+              // carries) -- asserted at the EMULATOR B side, mirroring
+              // Plan 63-01's own concurrency test shape.
+              const payload = Buffer.from("still-alive-B", "utf8");
+              dialB.socket.write(payload);
+              await bGot;
+              assert.ok(Buffer.concat(receivedB).equals(payload), "grant B's relay must still carry bytes after grant A's own death");
+
+              dialB.socket.end();
+            },
+          );
+        },
+      );
+    },
+  );
+});
+
+test("handleRelayDeath: the instance record is still present at its port and the grant is still in the grant map after a relay death", async () => {
+  let resolveEmulatorClosed: () => void = () => {};
+  const emulatorClosed = new Promise<void>((resolve) => {
+    resolveEmulatorClosed = resolve;
+  });
+  await withStubEmulatorServer(
+    (socket) => socket.once("close", () => resolveEmulatorClosed()),
+    async (emulatorPort) => {
+      await withRelayTestBroker(emulatorPort, "grant-death-survives", async ({ listenerPort, token, state }) => {
+        const dial = await claimAndDialRelay(state, listenerPort, token, "grant-death-survives");
+        dial.socket.resetAndDestroy();
+        await emulatorClosed;
+
+        assert.ok(state.instances.has(emulatorPort), "the instance record must survive a relay death (SESS-03: channel-scoped, never an instance kill)");
+        assert.ok(state.grants.has("grant-death-survives"), "the grant must survive a relay death");
+      });
+    },
+  );
+});
+
+test("handleRelayDeath: a death with a declared operation marks the run void; a death with none records the absence and does not mark it void", async () => {
+  for (const [targetId, declareOp] of [
+    ["grant-death-void", true],
+    ["grant-death-not-void", false],
+  ] as const) {
+    const incidentsDir = mkdtempSync(join(tmpdir(), "vice-relay-death-void-"));
+    let capturedPath = "";
+    const deps: TestHandleRelayDeathDeps = {
+      writeIncident: (record) => {
+        capturedPath = writeBrokerIncident(record, { dir: incidentsDir });
+        return capturedPath;
+      },
+    };
+    let resolveEmulatorClosed: () => void = () => {};
+    const emulatorClosed = new Promise<void>((resolve) => {
+      resolveEmulatorClosed = resolve;
+    });
+    try {
+      await withStubEmulatorServer(
+        (socket) => socket.once("close", () => resolveEmulatorClosed()),
+        async (emulatorPort) => {
+          await withRelayTestBroker(
+            emulatorPort,
+            targetId,
+            async ({ listenerPort, token, state }) => {
+              if (declareOp) {
+                const grant = state.grants.get(targetId);
+                assert.ok(grant, "the fixture must have created a grant for this target id");
+                if (grant) grant.operation = { name: "vice_memory_read", declaredAt: Date.now() };
+              }
+              const dial = await claimAndDialRelay(state, listenerPort, token, targetId);
+              dial.socket.resetAndDestroy();
+              await emulatorClosed;
+            },
+            deps,
+          );
+        },
+      );
+      assert.ok(capturedPath, "expected an incident record to have been written");
+      const content = readFileSync(capturedPath, "utf8");
+      if (declareOp) {
+        assert.match(content, /^operation: 'vice_memory_read'$/m, "a declared operation must be named in the record");
+        assert.match(content, /^void: true$/m, "a death with a declared operation must mark the run void");
+      } else {
+        assert.match(content, /^operation: null$/m, "an absent operation must be recorded explicitly, never fabricated");
+        assert.match(content, /^void: false$/m, "a death with nothing declared must NOT be marked void");
+      }
+    } finally {
+      rmSync(incidentsDir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("handleRelayDeath: a writer that throws stops the teardown before any claim is cleared", async () => {
+  let clearCalled = false;
+  const deps: TestHandleRelayDeathDeps = {
+    writeIncident: () => {
+      throw new Error("simulated disk failure");
+    },
+    clearClaim: () => {
+      clearCalled = true;
+    },
+  };
+  await withStubEmulatorServer(
+    () => {},
+    async (emulatorPort) => {
+      await withRelayTestBroker(emulatorPort, "grant-death-throws", async ({ listenerPort, token, state }) => {
+        await claimAndDialRelay(state, listenerPort, token, "grant-death-throws");
+        assert.ok(state.relaySessions.has(relaySessionKey("grant-death-throws", "binary")));
+
+        assert.throws(
+          () => handleRelayDeath("grant-death-throws", "binary", "relay_error", state, deps),
+          /simulated disk failure/,
+          "a throwing writer must propagate, not be swallowed",
+        );
+        assert.equal(clearCalled, false, "the claim must NEVER be cleared when the incident write itself failed");
+        assert.ok(
+          state.relaySessions.has(relaySessionKey("grant-death-throws", "binary")),
+          "the session must remain in the map -- nothing was released because evidence could not be written",
+        );
+      });
+    },
+  );
 });

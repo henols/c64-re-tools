@@ -87,19 +87,53 @@ export function readAttachLine(chunk, carry = Buffer.alloc(0)) {
  * Never throws: `connect()` (real or injected) is handed a host/port pair
  * this broker already resolved, and any dial failure surfaces as the
  * emulator socket's own `"error"`/`"close"` events, which this function
- * treats as "the splice is over" (destroy the client side too) rather than
- * as something to propagate synchronously.
+ * treats exactly like any other death -- reported via `onDeath()`, never
+ * acted on here.
+ *
+ * DEATH DETECTION (Phase 63, SESS-03/04): each leg's own `"close"` event
+ * carries Node's own `hadError` boolean -- MEASURED this session against a
+ * real loopback pair (never assumed from the Node docs' prose alone): a
+ * peer calling plain `.destroy()` OR `.end()` with no pending unread data
+ * both deliver a graceful FIN to the OTHER side, so `"close"` fires with
+ * `hadError: false` for BOTH -- there is no reliable way to tell a "no FIN"
+ * abrupt death from a graceful one merely by watching for the ABSENCE of an
+ * `"end"` event, because ordinary loopback TCP behaviour does not send an
+ * RST just because the local side called `destroy()` rather than `end()`.
+ * The one thing that DOES reliably produce `hadError: true` on the peer is
+ * an actual transmission error -- a TCP RST, which `Socket.prototype.
+ * resetAndDestroy()` sends explicitly, or any other genuine socket error --
+ * and Node's own `"close"` event already classifies that for us. So:
+ * `hadError` true -> `"relay_error"`; `hadError` false -> `"relay_close"`.
+ * An explicit `"error"` event (which Node always fires BEFORE its own
+ * following `"close"`) also reports `"relay_error"` directly, so a genuine
+ * transmission error wins the race against its own later close regardless
+ * of timing -- the per-channel guard below is what makes calling into the
+ * notifier twice for the SAME death harmless.
  */
 export function spliceRelay(opts) {
     const connectFn = opts.connect ?? netConnect;
     const emulatorSocket = connectFn({ host: opts.host, port: opts.port });
     let bytesClientToEmulator = 0;
     let bytesEmulatorToClient = 0;
-    let destroyed = false;
-    function destroy() {
-        if (destroyed)
+    let deathReported = false;
+    let closed = false;
+    // Per-channel teardown guard (T-63-14): the FIRST death observed, from
+    // EITHER leg, wins -- every later observation, on either leg, is a no-op.
+    // This is the SAME guard `close()` below defers to implicitly via its own
+    // `closed` flag; the two flags are deliberately separate booleans because
+    // `onDeath()` (report) and the actual socket teardown (close()) are two
+    // DIFFERENT moments in time now -- a caller is expected to write evidence
+    // in between them, which is the entire point of splitting the two.
+    function reportDeath(trigger) {
+        if (deathReported)
             return;
-        destroyed = true;
+        deathReported = true;
+        opts.onDeath?.(trigger);
+    }
+    function close(_trigger) {
+        if (closed)
+            return;
+        closed = true;
         if (!emulatorSocket.destroyed)
             emulatorSocket.destroy();
         if (!opts.clientSocket.destroyed)
@@ -123,25 +157,46 @@ export function spliceRelay(opts) {
     // The splice itself -- byte-transparent by construction, never a decode.
     opts.clientSocket.pipe(emulatorSocket);
     emulatorSocket.pipe(opts.clientSocket);
-    // Either side closing ends the whole session -- a half-open relay (one
-    // socket alive, the other gone) serves nothing.
-    opts.clientSocket.once("close", destroy);
-    emulatorSocket.once("close", destroy);
+    // Death detection -- NEVER a destroy here anymore (Phase 63, SESS-03/05):
+    // a caller must get the chance to write an incident record before either
+    // socket is torn down, so this wiring only ever REPORTS, through
+    // reportDeath() above, never acts. `hadError` is Node's OWN classification
+    // (see this function's own header comment for why that -- not an "end"
+    // presence check -- is the measured-reliable signal).
+    opts.clientSocket.once("close", (hadError) => {
+        reportDeath(hadError ? "relay_error" : "relay_close");
+    });
+    emulatorSocket.once("close", (hadError) => {
+        reportDeath(hadError ? "relay_error" : "relay_close");
+    });
     // Per-connection error isolation, matching broker-control.mts's own
     // per-connection `socket.on("error", () => {})` posture -- an unhandled
     // 'error' on either socket would otherwise crash this broker process.
+    // Also reports the death: an "error" always precedes its own "close"
+    // (Node's own event ordering), so this is what makes a genuine
+    // transmission error win the race against the plain close handlers above,
+    // via reportDeath()'s own once-only guard.
     opts.clientSocket.on("error", () => {
-        /* isolated -- the "close" handler above tears down the session */
+        reportDeath("relay_error");
     });
     emulatorSocket.on("error", () => {
-        /* isolated -- the "close" handler above tears down the session */
+        reportDeath("relay_error");
     });
     return {
         emulatorSocket,
-        destroy,
+        close,
         bytesClientToEmulator: () => bytesClientToEmulator,
         bytesEmulatorToClient: () => bytesEmulatorToClient,
     };
+}
+/** Builds the ONE key `state.relaySessions` (broker-state.mts) is ever
+ * indexed by -- `${grantId}:${channel}` -- so a grant id containing a colon
+ * of its own cannot collide with a different grant/channel pair (a grant id
+ * is a broker-minted request id, never caller-controlled free text, but this
+ * keeps the key construction in exactly one place regardless). The ONE
+ * function that builds this key; never hand-format it a second time. */
+export function relaySessionKey(grantId, channel) {
+    return `${grantId}:${channel}`;
 }
 /**
  * Resolves which emulator port an `attach` on `channel` should dial: the

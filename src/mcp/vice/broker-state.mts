@@ -20,6 +20,14 @@ import { createServer } from "node:net";
 // ".mjs" specifier never becomes a real runtime resolution and the pair of
 // modules cannot form a load-time cycle. A VALUE import here would.
 import type { LaunchProfile } from "./broker-launch.mjs";
+// TYPE-ONLY import, the SAME discipline as the LaunchProfile import directly
+// above -- fully erased under verbatimModuleSyntax/isolatedModules, so this
+// module stays importable unbuilt and cannot form a load-time cycle with
+// broker-relay.mts (which itself only ever type-imports FROM this module,
+// never the reverse, at runtime). RelaySession is a live, socket-backed
+// handle -- see BrokerState.relaySessions' own header comment below for why
+// it can never be serialised.
+import type { RelaySession } from "./broker-relay.mjs";
 
 // ---------------------------------------------------------------------------
 // MonitorChannel: exactly two channels exist -- stock VICE
@@ -320,10 +328,30 @@ export interface BrokerState {
    * population-1 entry is never a candidate for that removal because it was
    * never handed to an instance in the first place. */
   blockedPorts: Set<number>;
+  /**
+   * Phase 63 (SESS-03/04/05): the live relay-session map, keyed by
+   * `relaySessionKey(grantId, channel)` (broker-relay.mts's own function --
+   * the ONE place that builds this key; never hand-format it a second
+   * time). Holds LIVE, socket-backed handles and is therefore NEVER
+   * serialised anywhere -- `_snapshotState()` below deliberately does not
+   * carry this field forward, since a deep copy of a live `net.Socket`
+   * makes no sense and no test needs one.
+   *
+   * The SINGLE WRITER of an entry is vice-broker.mts's own
+   * handleRelayAttach() -- set once, on a successful splice.
+   * vice-broker.mts's own handleRelayDeath() is the ONE place an entry is
+   * ever removed, and it removes it BEFORE calling the handle's own
+   * close() -- see that function's own header comment for the full
+   * evidence-before-reclaim ordering this map's own lifecycle depends on.
+   * An absent entry for a given key means either "never attached" or "a
+   * teardown already ran" -- handleRelayDeath() treats the two identically
+   * (nothing left to do, write nothing).
+   */
+  relaySessions: Map<string, RelaySession>;
 }
 
 export function createBrokerState(): BrokerState {
-  return { instances: new Map(), grants: new Map(), blockedPorts: new Set() };
+  return { instances: new Map(), grants: new Map(), blockedPorts: new Set(), relaySessions: new Map() };
 }
 
 // ---------------------------------------------------------------------------

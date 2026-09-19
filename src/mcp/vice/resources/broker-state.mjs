@@ -39,7 +39,7 @@ export function clearMonitorClient(record, channel) {
         delete record.monitorClients[ch];
 }
 export function createBrokerState() {
-    return { instances: new Map(), grants: new Map(), blockedPorts: new Set() };
+    return { instances: new Map(), grants: new Map(), blockedPorts: new Set(), relaySessions: new Map() };
 }
 /** Deep, plain-object copy of `state` for tests -- a real, typed, named
  * export imported directly by test files, modelled on build.ts's own
