@@ -7,7 +7,7 @@ files:
 
   - src/mcp/vice/vice-proxy.test.ts:6382
 
-resolves_phase:
+resolves_phase: 66
 audit_acknowledged:
   milestone: v0.7.0
   at: 2026-09-01
