@@ -1431,6 +1431,58 @@ test("spliceRelay/handleRelayDeath: with an injected timer, an interval exactly 
   );
 });
 
+test("spliceRelay: a byte in either direction resets the measured idle interval to zero", async () => {
+  let writeCount = 0;
+  let resolveReceived: () => void = () => {};
+  const received = new Promise<void>((resolve) => {
+    resolveReceived = resolve;
+  });
+  const fake = makeFakeIdleTimer();
+  const deps: TestHandleRelayDeathDeps = {
+    idleMs: 100,
+    armIdleTimer: fake.armIdleTimer,
+    writeIncident: () => {
+      writeCount += 1;
+      return "/fake/incident/path.md";
+    },
+  };
+  await withStubEmulatorServer(
+    (socket) => socket.once("data", () => resolveReceived()),
+    async (emulatorPort) => {
+      await withRelayTestBroker(
+        emulatorPort,
+        "grant-idle-reset",
+        async ({ listenerPort, token, state }) => {
+          const dial = await claimAndDialRelay(state, listenerPort, token, "grant-idle-reset");
+
+          fake.advance(60);
+          assert.equal(writeCount, 0, "60ms of a 100ms bound must not fire yet");
+
+          // A byte flowing client -> emulator resets the countdown --
+          // production wires this through the SAME "data" listener that
+          // already counts bytes: spliceRelay()'s own idleTimer?.onActivity()
+          // call runs on the broker's OWN accepted clientSocket the instant
+          // this write arrives there, calling straight into the fake's own
+          // shared closure state (never a second, test-only reset call) --
+          // awaiting the stub emulator's own receipt is what proves the
+          // broker-side "data" listener already ran by the time this
+          // assertion continues.
+          dial.socket.write(Buffer.from("reset-me", "utf8"));
+          await received;
+
+          fake.advance(60);
+          assert.equal(writeCount, 0, "after a reset, 60ms more (120ms total, but only 60ms since the reset) must still not fire");
+
+          fake.advance(40);
+          assert.equal(writeCount, 1, "100ms measured FROM THE RESET must fire");
+          assert.ok(!state.relaySessions.has(relaySessionKey("grant-idle-reset", "binary")));
+        },
+        deps,
+      );
+    },
+  );
+});
+
 test("resolveRelayIdleMs/resolveRelayKeepAliveMs: a raw bound of zero, of a negative number and of a non-numeric string each resolve to the default and each log the rejected raw value", () => {
   const prevIdle = process.env.VICE_BROKER_RELAY_IDLE_MS;
   const prevKeepalive = process.env.VICE_BROKER_RELAY_KEEPALIVE_MS;
