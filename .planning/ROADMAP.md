@@ -2029,11 +2029,11 @@ phase of the milestone.
   that reads differently after generation is a `DECL-01` authoring defect
   surfaced late, not a formatting decision to be taken here.
 
-**Plans**: 3 plans, 2 waves
+**Plans**: 1/3 plans executed, 2 waves
 
 Plans:
 
-- [ ] 61-01-PLAN.md — the generator and its guard, wired end-to-end: the VICE ecosystem table and the eight-record prerequisite overview generated from the declaration into two marker-delimited README regions, with the citation ledger re-anchored in the same commits that move the lines (wave 1)
+- [x] 61-01-PLAN.md — the generator and its guard, wired end-to-end: the VICE ecosystem table and the eight-record prerequisite overview generated from the declaration into two marker-delimited README regions, with the citation ledger re-anchored in the same commits that move the lines (wave 1)
 - [ ] 61-02-PLAN.md — the guard watched failing: five planted divergences against the real declaration and README in a temp tree, plus the tolerance and round-trip cases that prove it compares facts rather than bytes (wave 2)
 - [ ] 61-03-PLAN.md — the three prose passages the dropped version columns leave false, rewritten once; the circular `source` citations, the one known rendering defect and the regeneration procedure recorded in the provenance document (wave 2)
 
@@ -2211,7 +2211,7 @@ check. No test reads this table now.
 | 58. One Declaration, Four Places That Can No Longer Disagree | v1.1.0 | 3/3 | Complete | 2026-09-17 |
 | 59. The Tool-Location Seam and Its Precedence Order | v1.1.0 | 5/5 | Complete | 2026-09-18 |
 | 60. The Seam Wired Into the Code That Ships | v1.1.0 | 8/8 | Complete | 2026-09-18 |
-| 61. The Install Tables Generated, and a Guard That Compares Facts | v1.1.0 | 0/? | Not started | - |
+| 61. The Install Tables Generated, and a Guard That Compares Facts | v1.1.0 | 1/3 | In Progress | - |
 
 **Milestone roll-up:** v0.2.0 — 9 phases, 87 plans, 51/51 in-scope requirements,
 shipped 2026-08-19 (audit round 4 `tech_debt`; 13 deferred items at close).

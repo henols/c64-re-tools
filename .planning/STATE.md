@@ -6,15 +6,15 @@ current_phase: 61
 current_phase_name: The Install Tables Generated, and a Guard That Compares Facts
 status: executing
 stopped_at: Phase 61 planned — 3 plans in 2 waves; ready to execute
-last_updated: "2026-09-19T07:00:48.627Z"
+last_updated: "2026-09-19T07:32:05.801Z"
 last_activity: 2026-09-19
-last_activity_desc: Phase 61 planned — 3 plans, 2 waves, plan-checker passed on iteration 1
-state_head: 491900acdf410123b78a6017b957ee0233563eed
+last_activity_desc: Phase 61 execution started
+state_head: b192e37d8c526e3094bad93a22a355ae1d9fff90
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 19
-  completed_plans: 16
+  completed_plans: 17
   percent: 75
 carried_forward_phases:
 
@@ -44,16 +44,16 @@ sits entirely upstream of it — it is about the user's first hour, before a
 session drives anything — and produces no evidence bearing on the ONE thing, so
 restating it here would be a sixth repetition with nothing behind it.*
 
-**Current focus:** Phase 60 — The Seam Wired Into the Code That Ships,
-executing — plan 60-01 (the seam wired into `backend-detect.mts`,
-`vice-broker.mts` and `vice-proxy.ts`, three host-bound artifacts regenerated),
-plan 60-02 (`remedyTextsFor()`, DECL-03's first runtime reader of the
-declaration's `remedies` arrays) and plan 60-03 (`acme`/`acme-lib`/`ghidra`/
-`dxa` wired through the seam inside `host-tool.mts`'s own executor, a missing
-ACME refused by name before any spawn) all complete, plan 60-04 next. **Phase
-59 (The Tool-Location Seam and Its Precedence Order) closed 2026-09-18** at
-5/5 roadmap success criteria. Phase 60
-is the third phase of
+**Current focus:** Phase 61 — The Install Tables Generated, and a Guard That
+Compares Facts, executing — plan 61-01 (README.md's two install tables generated
+from `src/mcp/vice/prerequisites.json`, plus `auditGeneratedReadme()`, the guard
+that parses the committed region back into records and compares them against the
+same derivation), then wave 2's plan 61-02 (the guard watched failing on a
+planted divergence, and proven to stay green through a reflow that changes no
+fact) and plan 61-03 (the prose citing the two dropped version columns, and the
+provenance record generation made circular). **Phase 60 (The Seam Wired Into the
+Code That Ships) closed 2026-09-18** at 8/8 roadmap success criteria. Phase 61
+is the fourth phase of
 **Milestone v1.1.0 "The Prerequisite Doctor"**, opened 2026-09-16. Requirements defined and **roadmap
 created the same day — five phases, 58-62, with 24/24 requirements mapped, each
 to exactly one phase.** One hypothesis: *a person who has just installed this
@@ -343,10 +343,10 @@ suppressed/acknowledged rows are recorded in their own sections.
 
 ## Current Position
 
-Phase: 61 (The Install Tables Generated, and a Guard That Compares Facts) — READY TO EXECUTE
-Plan: Not started
+Phase: 61 (The Install Tables Generated, and a Guard That Compares Facts) — EXECUTING
+Plan: 2 of 3
 Status: Ready to execute
-Stopped at: Phase 61 planned — 61-01/61-02/61-03 written, 2 waves, plan-checker PASSED on iteration 1.
+Stopped at: Completed 61-01-PLAN.md (README install tables generated, drift guard proven non-vacuous); 61-02 and 61-03 remain
 
 Gate override (plan-phase §13a, 2026-09-19): the decision-coverage gate returned
 `passed: false` with reason `could-not-parse` and an EMPTY `uncovered` array — it could
@@ -396,7 +396,7 @@ x64sc in tools.json with the broker as its systemd unit — confirm the spawned
 binary matches, for the recorded path and for a bare $PATH-resolved VICE_BIN
 (unchanged from plan 60-05).
 Next: /gsd-verify-work 60.
-Last activity: 2026-09-18 — Phase 60 complete, transitioned to Phase 61
+Last activity: 2026-09-19 — Phase 61 execution started
 
 **Milestone shape, so no reader has to rebuild it from the ROADMAP:** Phase 58
 declares the prerequisites; Phase 59 builds the tool-location seam and its
@@ -780,6 +780,7 @@ than a matter of discipline.
 | Phase 60 P04 | 38min | 3 tasks | 7 files |
 | Phase 60 P05 | 245min | 2 tasks | 9 files |
 | Phase 60 P08 | 65min | 3 tasks | 8 files |
+| Phase 61 P01 | 55min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -1654,6 +1655,7 @@ Recent decisions affecting current work:
 - [Phase 60]: Plan 60-05 found and fixed two genuine production regressions (absent from the pre-rewiring baseline) via its own required real-process full-suite diff: vice-broker.mts's real onAcquire wiring never threaded resolvedViceBin into handleAcquire(), and a deployed broker could not find prerequisites.json at all -- both invisible to Phase 60's own unit tests. — Both fixed within 60-05 rather than deferred, since Task 2's own acceptance criteria state the task is NOT done while a regression exists, and 60-05 is Phase 60's last plan -- no later plan exists to hand the fix to.
 - [Phase 60]: The environment layer's terminal refusal (envUnresolved) now fires for any non-empty declared value that resolves through neither Layer 1 step, not only a separator-free one, correcting plan 60-06's own scoping decision per 60-VERIFICATION.md's direct read of the pre-phase source.
 - [Phase 60]: WR-03 fixed by branching the refusal message on record.kind (PD-21), not by deleting the $PATH-shadowing clause for every kind -- the clause stays for executable-kind ids and is dropped only where it is structurally false.
+- [Phase 61]: README's ecosystem/overview generated regions parse back into records via a shared-derivation guard (D-10); the guard never re-implements what a row should contain.
 
 ### Pending Todos
 
@@ -2908,9 +2910,9 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-18T22:39:53.207Z
+Last session: 2026-09-19T07:32:05.604Z
 Stopped at: Phase 61 context gathered
-Resume file: .planning/phases/61-the-install-tables-generated-and-a-guard-that-compares-facts/61-CONTEXT.md
+Resume file: None
 
 Earlier: Milestone v1.0.0 "The Rebuild Half" closed and archived on its delivered scope (9 phases, 73 plans, 33/33 in-scope requirements, `override_closeout`). Phases 51, 53, 54 and 57 carried forward with their ROADMAP sections live.
 
