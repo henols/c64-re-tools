@@ -5,17 +5,17 @@ milestone_name: One Broker, One Socket
 current_phase: 63
 current_phase_name: The Monitor Channel Relayed, and the Connection as the Session
 status: executing
-stopped_at: Completed 63-03-PLAN.md
-last_updated: "2026-09-19T21:56:37.249Z"
+stopped_at: Completed 63-04-PLAN.md
+last_updated: "2026-09-19T22:52:54.622Z"
 last_activity: 2026-09-19
 last_activity_desc: Phase 63 execution started
-state_head: 022e3b0af0202ed1ab55269e5a3f57711df5ef1c
+state_head: 609ddba28b663c5bc43b6eaf2bd8b0c42e63e301
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 11
-  completed_plans: 8
-  percent: 17
+  completed_plans: 9
+  percent: 82
 carried_forward_phases:
 
   - 51
@@ -80,7 +80,7 @@ closure still needs to be recorded as one.
 ## Current Position
 
 Phase: 63 (The Monitor Channel Relayed, and the Connection as the Session) — EXECUTING
-Plan: 4 of 6
+Plan: 5 of 6
 Status: Ready to execute
 Progress: [██░░░░░░░░] 17% (1 of 6 v2.0.0 phases complete; Phases 62-67)
 Last activity: 2026-09-19 — Phase 63 execution started
@@ -477,6 +477,7 @@ Phase 66 completes.
 | Phase 63 P01 | 75min | 3 tasks | 26 files |
 | Phase 63 P02 | 60min | 2 tasks | 16 files |
 | Phase 63 P03 | 45min | 3 tasks | 33 files |
+| Phase 63 P04 | 55min | 3 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -1371,6 +1372,8 @@ Recent decisions affecting current work:
 - [Phase 63]: Added StockDispatchDeps.dialMonitorSocket/.controlToken as a test-only relay-socket-source override reaching both channels, fixing text-tools.test.ts's and stock-dispatch.test.ts's own conformance tests after textConnect()'s default socket source became the relay.
 - [Phase 63]: GrantRecord.operation is REQUIRED (not optional), matching pid's own convention -- every grant is created with it explicitly null, never absent.
 - [Phase 63]: broker-incident.mts is a small, purpose-built host-bound writer, never a parameterised incident-record.ts -- OQ3's own plan-level decision.
+- [Phase 63]: Relay death classification uses Node's own close-event hadError boolean, not an end-event-presence heuristic (measured false on real loopback sockets).
+- [Phase 63]: handleRelayDeath() clears the whole per-channel monitor claim on a relay death, superseding Plan 63-02's narrower attached-only fix.
 
 ### Pending Todos
 
@@ -2704,8 +2707,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-19T21:56:37.087Z
-Stopped at: Completed 63-03-PLAN.md
+Last session: 2026-09-19T22:52:54.467Z
+Stopped at: Completed 63-04-PLAN.md
 Resume file: None
 
 Earlier: **v2.0.0 roadmap created.** 36/36 requirements (`ENDPOINT-01..05`,

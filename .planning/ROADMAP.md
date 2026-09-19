@@ -2113,7 +2113,7 @@ tool.
      a stuck emulator in a shared broker is diagnosable rather than ambiguous
      (SESS-06).
 
-**Plans**: 3/6 plans executed
+**Plans**: 4/6 plans executed
 
 Plans:
 **Wave 1**
@@ -2130,7 +2130,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 63-04-PLAN.md — Reclaim from socket events alone, a bounded idle deadline the broker owns and suspends while work is declared, and evidence written before anything is released
+- [x] 63-04-PLAN.md — Reclaim from socket events alone, a bounded idle deadline the broker owns and suspends while work is declared, and evidence written before anything is released
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
@@ -2653,7 +2653,7 @@ check. No test reads this table now.
 | 60. The Seam Wired Into the Code That Ships | v1.1.0 | 8/8 | Complete | 2026-09-18 |
 | 61. The Install Tables Generated, and a Guard That Compares Facts | v1.1.0 | 3/3 | Complete | 2026-09-19 |
 | 62. The Fixed Endpoint and the Broker That Owns the Machine | v2.0.0 | 5/5 | Complete | 2026-09-19 |
-| 63. The Monitor Channel Relayed, and the Connection as the Session | v2.0.0 | 3/6 | In Progress | - |
+| 63. The Monitor Channel Relayed, and the Connection as the Session | v2.0.0 | 4/6 | In Progress | - |
 | 64. Files as Bytes, Both Directions | v2.0.0 | — | Not started | - |
 | 65. Every Skill Script Through the One Endpoint, and CI With It | v2.0.0 | — | Not started | - |
 | 66. The Deletion Cutover — Gone, Not Bypassed | v2.0.0 | — | Not started | - |
