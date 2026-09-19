@@ -46,9 +46,10 @@ v2.0.0 close is where it can be weighed — and it will have evidence to weigh,
 because "keep working when the emulator misbehaves" is exactly what a
 connection-is-the-session broker changes the mechanics of.*
 
-**Current focus:** Phase 62 — The Fixed Endpoint and the Broker That Owns the
-Machine, all 5 of 5 plans complete (2026-09-19); phase closure/verification
-still pending. **Milestone v2.0.0 "One Broker, One
+**Current focus:** Phase 63 — The Monitor Channel Relayed, and the Connection
+as the Session, ready to plan. Phase 62 closed 2026-09-19: all 5 of 5 plans
+executed, verification passed 11/11, `ENDPOINT-01..05` and `BROKER-01..06`
+complete. **Milestone v2.0.0 "One Broker, One
 Socket" opened 2026-09-19**, with requirements defined and the roadmap created — **Phases
 62-67**, 36/36 requirements mapped, each to exactly one phase. One
 manually-started broker per
@@ -688,6 +689,7 @@ Phase 66 completes.
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
+- Phase 62 (62-02/62-03, D-11/D-13): the broker stops being a per-project process. Its state, incidents, epoch, staging and run scratch move to one machine-level root a level above every repo (`broker-home.mts`, overridden by the single `VICE_BROKER_HOME`), and the wildcard bind rule is reversed — `0.0.0.0` is gone, replaced by loopback plus the bridge gateways `enumerateBindHosts()` finds against an allowlist. Three client-side comment headers that still taught the old bind rule were rewritten, because a reader who faithfully preserved them would reimplement the reversed decision. Full rationale in `62-CONTEXT.md`.
 - Phase 50 (50-04, Task 1, 2026-09-15): the load-route `checkpoint:decision` is answered. The developer chose route-d, a route the plan did not offer: the text monitor's own `load` command over `-remotemonitor`. The developer then chose to widen `text-protocol.ts`'s allowlist for it. The reasoning: `load` reads a host file and writes nothing back, unlike the write-direction `save` refusal the allowlist keeps. Full rationale and the three rejected routes (a/b/c) are in `.planning/phases/50-equivalence-and-modifiability/evidence/LOAD-ROUTE.md`. The widening itself is narrow: one `TEXT_COMMAND_PARAM_SPECS` entry, the fixture filename baked into the verb's own frozen identity, only the device number caller-bounded. See `50-04-SUMMARY.md` (`status: halted`) — Tasks 2/3 (the live capture this decision unblocks) are not yet executed.
 - Phase 40 (40-07): the `d64-parse.mjs` → `c1541` supersession decision and the
   `cartconv`/`PREP-03` removal are both recorded, with measured evidence and
@@ -2694,7 +2696,7 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-19T16:49:46.944Z
+Last session: 2026-09-19T17:20:00.000Z
 Stopped at: Phase 62 complete, ready to plan Phase 63
 Resume file: None
 
