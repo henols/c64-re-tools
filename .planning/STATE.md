@@ -1,19 +1,16 @@
 ---
 gsd_state_version: "1.0"
-milestone: v1.1.0
-milestone_name: The Prerequisite Doctor
-status: Awaiting next milestone
-stopped_at: Phase 61 complete — all phases complete
-last_updated: "2026-09-19T08:54:53.334Z"
+milestone: v2.0.0
+milestone_name: One Broker, One Socket
+status: planning
+last_updated: "2026-09-19T09:52:55.871Z"
 last_activity: 2026-09-19
-last_activity_desc: Milestone v1.1.0 completed and archived
-state_head: 373f60daf3a560ba931dcc711e6c126426b0a7fb
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 19
-  completed_plans: 19
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 carried_forward_phases:
 
   - 51
@@ -21,50 +18,61 @@ carried_forward_phases:
   - 54
   - 57
 
-current_phase: 61
-current_phase_name: The Install Tables Generated, and a Guard That Compares Facts
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (last substantive update **2026-09-19 at the v1.1.0
-milestone close** — a full evolution review, the first since the v1.0.0 close.
-"What This Is" gained a v1.1.0 paragraph; four ✓ entries and one ✗ entry moved
-into Validated; Out of Scope was re-audited with nothing added or removed; Key
-Decisions gained five rows; Context was re-measured for the first time since the
-v0.9.0 close; Current State and Next Milestone Goals were rewritten; and
-`## Current Milestone: v1.1.0` became `## Shipped: v1.1.0`.)
+See: .planning/PROJECT.md (last update **2026-09-19 at the v2.0.0 milestone
+open** — a scoping write, not an evolution review: `## Current Milestone: v2.0.0
+One Broker, One Socket` was added and `### Active` gained v2.0.0's hypothesis.
+Nothing else changed, and `## Next Milestone Goals` was deliberately left as the
+v1.1.0 close wrote it — see below. The last full evolution review remains the
+v1.1.0 close on 2026-09-19.)
 
 **Core value:** A Claude session can reliably drive a real C64 emulator to
 reverse-engineer a program — read and write memory, set checkpoints, capture
 RAM, inspect chip state — and keep working when the emulator misbehaves.
-*Deliberately NOT re-weighed at the v1.1.0 close, for the second time running
-and for the same stated reason: this milestone sat entirely upstream of the ONE
-thing — it is about the user's first hour, before a session drives anything — and
-produced no evidence bearing on whether it is still the right priority.*
+*Not re-weighed at the v2.0.0 open, for the third milestone running: this one is
+a transport and deployment redesign sitting underneath the ONE thing rather than
+extending it, and an open produces no evidence about priority in any case. The
+v2.0.0 close is where it can be weighed — and it will have evidence to weigh,
+because "keep working when the emulator misbehaves" is exactly what a
+connection-is-the-session broker changes the mechanics of.*
 
-**Current focus:** None — **milestone v1.1.0 "The Prerequisite Doctor" closed
-2026-09-19**, 4 phases (58-61), 19 plans, 44 tasks, 15/15 in-scope requirements,
-`override_closeout`. The next action is `/gsd-new-milestone`.
+**Current focus:** **Milestone v2.0.0 "One Broker, One Socket" opened
+2026-09-19**, at the defining-requirements stage. One manually-started broker per
+machine serves every session from every project over a single fixed TCP endpoint;
+every file moves as bytes over that socket; the host/container distinction stops
+existing in the code. Major version chosen deliberately — an existing install
+does not keep working unchanged.
 
-**What the next milestone inherits, in one line each** (the full statement is
-PROJECT.md's `## Next Milestone Goals`): the 2026-09-14 planning-vocabulary
-retirement is still unreconciled and is repeated verbatim as item 1 from the
-v1.0.0 close; Phases **51, 53, 54 and 57** stay carried with 15 requirements live
-after a second close, two of the three families needing re-scoping rather than
-resumption; Phase 55 still carries no verification artifact of any kind;
-`50-REVIEW.md`'s `CR-01` is an unresolved Critical, re-verified live at this
-close in `src/mcp/vice/text-protocol.ts:850`; and `DOCTOR-01`..`09` sit in
-Future Requirements unbuilt, with the question they leave open — *what is
-missing, in one command, before a session exists* — genuinely unanswered.
+**What this milestone deliberately does NOT take, decided at the open.** Every
+item in PROJECT.md's `## Next Milestone Goals` was put to the owner at this open
+and **declined for this milestone**. That section is therefore left exactly as
+the v1.1.0 close wrote it, including its item 1, rather than edited — editing it
+would erase the record that these were offered and are still owed. They carry
+unchanged: the 2026-09-14 planning-vocabulary reconciliation (named first at two
+consecutive closes and now passed over at a third open); Phases **51, 53, 54 and
+57** with 15 requirements live; Phase 55 with no verification artifact of any
+kind; `50-REVIEW.md`'s `CR-01`, an unresolved Critical at
+`src/mcp/vice/text-protocol.ts:850`; and `DOCTOR-01`..`09`, parked rather than
+pending. They will be named again at the v2.0.0 close.
+
+**One coupling to watch, recorded now rather than discovered later.** `CR-01` is
+an inert timeout inside the *text channel* transport, and this milestone
+rewrites the transport layer around it. A phase that touches
+`text-protocol.ts:850` while redesigning the socket path should say so rather
+than fix it silently — the item is carried by decision, and an accidental
+closure still needs to be recorded as one.
+
 ## Current Position
 
-Phase: Milestone v1.1.0 complete
+Phase: Not started (defining requirements)
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-09-19 — Milestone v1.1.0 completed and archived
+Status: Defining requirements
+Last activity: 2026-09-19 — Milestone v2.0.0 started
 
 ## Performance Metrics
 

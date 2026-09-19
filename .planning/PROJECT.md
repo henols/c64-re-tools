@@ -510,6 +510,18 @@ reversed it:
   does not extend to the symbol round trip; no phase currently owns its return.
 
 
+**v2.0.0's stated hypothesis, open and unproven as of 2026-09-19.** It reads:
+*one manually-started broker per machine, reached by every client through a
+single fixed TCP endpoint with all files carried as bytes over that socket, lets
+the MCP server and every skill script work identically on a bare host and inside
+a devcontainer — with no discovery file, no bind mount and no path translation
+anywhere in the tree.* The falsifiable part is the **"anywhere"**: this is only
+Validated if `hostpath.ts`, `containerpath.ts` and `host-tool-client.ts`'s
+two-route branch are gone from production code, not merely bypassed, and the
+same tool call is measured returning the same result from both sides. A redesign
+that leaves the old seam in place as a fallback has not proven this.
+
+
 ### Out of Scope
 
 <!-- Explicit boundaries, with reasoning to prevent re-adding. -->
@@ -2187,6 +2199,89 @@ re-proposed as an oversight:
   dxa are already detect-then-refuse-by-name. This milestone adds a *reporting*
   and *location* surface over those probes; it does not change what they decide.
 
+## Current Milestone: v2.0.0 One Broker, One Socket
+
+*Opened 2026-09-19. Version chosen as **major**, not minor, deliberately: this
+changes the deployment model (the broker becomes a manually-started service that
+no client may spawn), retires on-disk discovery, and changes how every skill
+script and every MCP tool reaches the host. An existing install does not keep
+working unchanged, which is what a major version is for.*
+
+**Goal:** One manually-started broker per machine serves every session from every
+project, reached by every client — the `vice` MCP server and every skill script
+alike — through a single fixed TCP endpoint, with all file movement carried as
+bytes over that socket, so nothing anywhere needs to know whether it is running
+on the host or inside a devcontainer.
+
+**Target features:**
+
+- **One endpoint, found without a file.** A fixed well-known TCP port, dialled in
+  a fixed candidate order (`127.0.0.1`, then `host.docker.internal`); the first
+  handshake that completes wins. `broker.json` and every other discovery record
+  is deleted. The dial order *is* the host/container detection, so no code reads
+  `isInsideContainer()` to decide how to reach the broker.
+- **One broker for every project on the machine.** Not one per project. The
+  broker is started manually by the user and is never spawned by a client; a
+  client that finds no broker refuses **by name** with the remedy, in the
+  detect-then-refuse-by-name shape this project already holds for every external
+  tool.
+- **Two call shapes over one socket, and the connection is the session.** A skill
+  script's call is **stateless** — open, send, receive, close — and binds no
+  emulator and holds no lease. An MCP server's connection is **stateful** and
+  stays open for the life of that server process; the broker holds that
+  connection's VICE instance and reclaims it when the socket drops. Holding the
+  session for a connection is the broker's own job, not the client's.
+- **Files travel as bytes, never as shared paths.** A request that produces a
+  file gets the bytes streamed back over the same socket; the client writes them
+  under its own `.c64-re-tools/` and the response carries the **local** path. A
+  request that consumes a file is given a local path by its caller, reads it, and
+  streams the bytes to the broker, which stages them on its own side. Neither
+  side ever names a path the other must be able to open.
+- **The boundary machinery goes away with it.** Path translation
+  (`hostpath.ts` / `containerpath.ts`), the bind-mount requirement, and
+  `host-tool-client.ts`'s two-route host/container branch exist only because a
+  path had to mean the same thing on both sides. Once bytes cross the socket,
+  they do not.
+
+**Measured blast radius at the open** (so the scope is not guessed at later):
+~38 non-test production modules touch path translation; 14 touch
+`host-tool-client.ts`; 76 advertised tools, of which six carry files by name —
+`vice_autostart`, `vice_disk_attach`, `vice_symbols_load`, `vice_program_load`
+(inbound), `vice_snapshot_save` (outbound) and `vice_snapshot_load` (inbound) —
+plus the Ghidra, dxa and host-tool artifact paths.
+
+**Decided at the open, recorded so they are not re-litigated:**
+
+- **File destination.** Transferred files land in the **existing per-kind
+  subdirectories** under `.c64-re-tools/` (`snapshots/`, `runs/ghidra/`, and so
+  on), not in one new inbox folder. That layout is already the single
+  tool-written root (D-33) and this milestone does not reopen it.
+- **The Ghidra symlink alias is expected to become unnecessary**, not preserved.
+  The `<repoRoot>/c64-re-tools` → `.c64-re-tools` alias exists only so a Ghidra
+  run's project data is physically reachable from both sides of a bind mount.
+  With run data staged broker-side and results returned as bytes, the reason is
+  gone. It is called out here as an expected *removal* so no phase quietly
+  rebuilds it — but its removal must be **measured**, not assumed, because
+  Ghidra's own dot-path refusal still applies wherever the run physically lands.
+
+**Explicitly NOT in this milestone:**
+
+- **The carried debt stays carried.** The 2026-09-14 planning-vocabulary
+  reconciliation (named first at both the v1.0.0 and the v1.1.0 close), the
+  unresolved Critical `CR-01` in `src/mcp/vice/text-protocol.ts:850`, the three
+  stale-doc string edits, `INSTALL-01`..`05`'s re-scoping, Phase 55's missing
+  verification artifact, `PROOF-03` on real cracked code and `ANNO-14`/`ANNO-15`
+  were each put to the owner at this open and declined for this milestone. They
+  are owed and will be named again at this close. This is a record of a decision,
+  not an oversight.
+- **No change to what the tools decide.** This milestone changes *how* a request
+  and its files reach the broker. It does not change any tool's semantics, its
+  arguments' meaning, or what the emulator is asked to do.
+- **The three permanent stock losses stay lost.** `docs/stock-hard-losses.md` is
+  unaffected; a transport redesign cannot recover a capability the hardware
+  channel never had.
+
+
 ## Next Milestone Goals
 
 *Rewritten 2026-09-19 at the v1.1.0 close. The section this replaces was written
@@ -2735,6 +2830,29 @@ two-projects halves; `ANNO-03`'s licence, which the Phase 9 probe falsified as
 written).
 
 </details>
+
+---
+
+*Last updated: 2026-09-19 at the **open of milestone v2.0.0 "One Broker, One
+Socket"** — a scoping write, not an evolution review. Two sections changed and
+no others. `## Current Milestone: v2.0.0 One Broker, One Socket` was added,
+carrying the goal, the five target features, the blast radius measured at the
+open, the two decisions taken there (files land in the existing per-kind
+`.c64-re-tools/` subdirectories; the Ghidra symlink alias is expected to be
+removed rather than preserved, subject to measurement) and the explicit
+not-in-scope list. `### Active` gained v2.0.0's stated hypothesis, whose
+falsifiable clause is that the old boundary seam is **gone from production code
+rather than bypassed**.*
+
+*Deliberately unchanged at this open: **Core Value**, for the third milestone
+running — this is a transport and deployment redesign underneath the ONE thing,
+and it produced no evidence at the open about whether that thing is still the
+right priority; the close is where it can be weighed. **`## Next Milestone
+Goals`** is left exactly as the v1.1.0 close wrote it, including its item 1,
+because every item in it was put to the owner at this open and declined for this
+milestone — editing it here would erase the record that they were offered and
+are still owed. **Validated** and **Out of Scope** are untouched; this milestone
+has shipped nothing yet and excluded nothing new.*
 
 ---
 
