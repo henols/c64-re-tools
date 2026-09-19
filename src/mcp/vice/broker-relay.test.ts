@@ -76,6 +76,12 @@ interface TestHandleRelayDeathDeps {
   armIdleTimer?: ArmIdleTimerFn;
   keepAliveMs?: number;
 }
+
+/** Mirrors vice-broker.mts's own HandleReleaseDeps (Plan 63-04 Task 3). */
+interface TestHandleReleaseDeps {
+  writeIncident?: (record: BrokerIncidentInput) => string;
+  kill?: (opts: { pid: number | null; expectedIdentity: string }) => Promise<string>;
+}
 const viceBrokerModule = (await import(new URL("./resources/vice-broker.mjs", import.meta.url).href)) as unknown as {
   handleMonitorClaim: (requestId: string, targetId: string, channel: MonitorChannel, state: BrokerState) => MonitorClaimOutcome;
   handleMonitorRelease: (requestId: string, targetId: string, channel: MonitorChannel, state: BrokerState) => MonitorReleaseOutcome;
@@ -90,8 +96,9 @@ const viceBrokerModule = (await import(new URL("./resources/vice-broker.mjs", im
     deps?: TestHandleRelayDeathDeps,
   ) => RelayAttachOutcome;
   handleRelayDeath: (targetId: string, channel: MonitorChannel, trigger: RelayDeathTrigger, state: BrokerState, deps?: TestHandleRelayDeathDeps) => void;
+  handleRelease: (requestId: string, state: BrokerState, deps?: TestHandleReleaseDeps) => void;
 };
-const { handleMonitorClaim, handleMonitorRelease, handleRelayAttach, handleRelayDeath, handleOperationNote } = viceBrokerModule;
+const { handleMonitorClaim, handleMonitorRelease, handleRelayAttach, handleRelayDeath, handleOperationNote, handleRelease } = viceBrokerModule;
 
 // broker-incident.mts is ALSO host-bound (it value-imports broker-home.mjs),
 // so it is loaded the SAME way -- built first, then the compiled artifact,
@@ -1562,6 +1569,197 @@ test("handleRelayDeath: a writer that throws stops the teardown before any claim
           "the session must remain in the map -- nothing was released because evidence could not be written",
         );
       });
+    },
+  );
+});
+
+// ===========================================================================
+// Plan 63-04, Task 3 (SESS-05): evidence before the instance kill, and one
+// teardown when two triggers race.
+// ===========================================================================
+
+test("handleRelease: a control-connection close with a declared operation writes exactly one record with the control-close trigger before the kill recorder is called", () => {
+  const order: string[] = [];
+  const state = setupBrokerState(16601, "grant-release-void");
+  const grant = state.grants.get("grant-release-void")!;
+  grant.operation = { name: "vice_capture_run", declaredAt: Date.now() };
+  const deps: TestHandleReleaseDeps = {
+    writeIncident: (record) => {
+      order.push(`write:${String(record.trigger)}`);
+      return "/fake/incident/path.md";
+    },
+    kill: async () => {
+      order.push("kill");
+      return "sigterm";
+    },
+  };
+  handleRelease("grant-release-void", state, deps);
+  assert.deepEqual(order, ["write:control_close", "kill"], "the record must be written strictly BEFORE the kill is even invoked");
+  assert.ok(!state.grants.has("grant-release-void"), "the grant must be removed");
+  assert.ok(!state.instances.has(16601), "the instance record must be removed");
+});
+
+test("handleRelease: a control-connection close with nothing declared writes no record and still kills exactly as it did before", () => {
+  let writeCount = 0;
+  let killCalled = false;
+  const state = setupBrokerState(16602, "grant-release-quiet");
+  const deps: TestHandleReleaseDeps = {
+    writeIncident: () => {
+      writeCount += 1;
+      return "/fake.md";
+    },
+    kill: async () => {
+      killCalled = true;
+      return "sigterm";
+    },
+  };
+  handleRelease("grant-release-quiet", state, deps);
+  assert.equal(writeCount, 0, "a release with nothing declared must write no incident record");
+  assert.ok(killCalled, "the release must still kill exactly as before");
+  assert.ok(!state.grants.has("grant-release-quiet"));
+});
+
+test("handleRelease: the mismatched-occupant branch writes no record, signals nothing and still logs distinctly", () => {
+  let writeCount = 0;
+  let killCalled = false;
+  const state = createBrokerState();
+  state.instances.set(16603, makeGrantedInstance(16603, { pid: 9999 }));
+  state.grants.set("grant-release-mismatch", {
+    id: "grant-release-mismatch",
+    port: 16603,
+    grantedAt: Date.now(),
+    pid: 4242, // deliberately DIFFERENT from the instance's own recorded pid
+    operation: { name: "vice_capture_run", declaredAt: Date.now() },
+  });
+  const deps: TestHandleReleaseDeps = {
+    writeIncident: () => {
+      writeCount += 1;
+      return "/fake.md";
+    },
+    kill: async () => {
+      killCalled = true;
+      return "sigterm";
+    },
+  };
+  const originalWrite = process.stderr.write.bind(process.stderr);
+  let loggedDistinctly = false;
+  process.stderr.write = ((chunk: string | Uint8Array, ...rest: unknown[]) => {
+    if (typeof chunk === "string" && chunk.includes("found a different instance at port")) loggedDistinctly = true;
+    return (originalWrite as (...a: unknown[]) => boolean)(chunk, ...rest);
+  }) as typeof process.stderr.write;
+  try {
+    handleRelease("grant-release-mismatch", state, deps);
+  } finally {
+    process.stderr.write = originalWrite;
+  }
+  assert.equal(writeCount, 0, "the mismatched-occupant branch must write no record even though this grant HAS a declared operation");
+  assert.equal(killCalled, false, "the mismatched-occupant branch must signal nothing");
+  assert.ok(loggedDistinctly, "the mismatched-occupant branch must still log distinctly");
+  assert.ok(!state.grants.has("grant-release-mismatch"), "the grant's own bookkeeping must still be retired");
+  assert.ok(state.instances.has(16603), "the mismatched occupant must be left running, untouched");
+});
+
+test("handleRelayDeath: an idle deadline and a socket close in the same turn produce exactly one record and one claim clear, with a deterministic trigger across repeated runs", async () => {
+  for (let iteration = 0; iteration < 5; iteration++) {
+    const order: string[] = [];
+    const fake = makeFakeIdleTimer();
+    const targetId = `grant-race-ordering-${iteration}`;
+    const deps: TestHandleRelayDeathDeps = {
+      idleMs: 100,
+      armIdleTimer: fake.armIdleTimer,
+      writeIncident: (record) => {
+        order.push(`write:${String(record.trigger)}`);
+        return "/fake/incident/path.md";
+      },
+      clearClaim: () => {
+        order.push("clear");
+      },
+    };
+    await withStubEmulatorServer(
+      () => {},
+      async (emulatorPort) => {
+        await withRelayTestBroker(
+          emulatorPort,
+          targetId,
+          async ({ listenerPort, token, state }) => {
+            const dial = await claimAndDialRelay(state, listenerPort, token, targetId);
+
+            // Both triggers land in the SAME synchronous turn: the idle
+            // deadline fires FIRST (advance() runs the whole teardown
+            // synchronously, including idleTimer.suspend() inside
+            // session.close()), and the socket-close attempt that follows
+            // immediately finds a socket ALREADY destroyed by that
+            // teardown -- a safe no-op, never a second report. Node's own
+            // single-threaded event loop is what makes this deterministic:
+            // there is no interleaving possible between two synchronous
+            // statements.
+            fake.advance(100);
+            dial.socket.resetAndDestroy();
+
+            assert.deepEqual(order, ["write:relay_idle_expiry", "clear"], `iteration ${iteration}: exactly one record and one claim clear, deterministically the idle trigger`);
+          },
+          deps,
+        );
+      },
+    );
+  }
+});
+
+test("handleRelayDeath: two channels of one grant dropping together produce one record each; the same channel dropping twice produces one record total", async () => {
+  const written: Array<{ channel: unknown; trigger: unknown }> = [];
+  const deps: TestHandleRelayDeathDeps = {
+    writeIncident: (record) => {
+      written.push({ channel: record.channel, trigger: record.trigger });
+      return `/fake/incident/${written.length}.md`;
+    },
+  };
+  let resolveBinaryClosed: () => void = () => {};
+  let resolveTextClosed: () => void = () => {};
+  const binaryClosed = new Promise<void>((resolve) => {
+    resolveBinaryClosed = resolve;
+  });
+  const textClosed = new Promise<void>((resolve) => {
+    resolveTextClosed = resolve;
+  });
+  await withStubEmulatorServer(
+    (socket) => socket.once("close", () => resolveBinaryClosed()),
+    async (binaryPort) => {
+      await withStubEmulatorServer(
+        (socket) => socket.once("close", () => resolveTextClosed()),
+        async (textPort) => {
+          const state = createBrokerState();
+          state.instances.set(binaryPort, makeGrantedInstance(binaryPort, { remoteMonitorPort: textPort }));
+          state.grants.set("grant-race-concurrency", { id: "grant-race-concurrency", port: binaryPort, grantedAt: Date.now(), pid: 4242, operation: null });
+          const { listener, token, incidentsDir } = await startRelayListenerForState(state, deps);
+          try {
+            const dialBinary = await claimAndDialRelay(state, listener.port, token, "grant-race-concurrency", "binary");
+            const dialText = await claimAndDialRelay(state, listener.port, token, "grant-race-concurrency", "text");
+
+            // Dropped together, in the same synchronous turn.
+            dialBinary.socket.resetAndDestroy();
+            dialText.socket.resetAndDestroy();
+            await Promise.all([binaryClosed, textClosed]);
+
+            assert.equal(written.length, 2, "one record per channel, never interleaved into a single record or lost entirely");
+            const channels = written.map((w) => w.channel).sort();
+            assert.deepEqual(channels, ["binary", "text"], "each record must name its OWN channel, never the other one's");
+            assert.ok(!state.relaySessions.has(relaySessionKey("grant-race-concurrency", "binary")));
+            assert.ok(!state.relaySessions.has(relaySessionKey("grant-race-concurrency", "text")));
+
+            // The SAME channel, dropped twice: a genuinely second observation
+            // (e.g. a late-arriving event on an already-torn-down channel) is
+            // a no-op at the session-map layer (handleRelayDeath()'s own
+            // absent-session guard) -- exactly the double-close discipline
+            // Task 1 already proved, re-asserted here under Task 3's own
+            // concurrency framing for the SAME channel used above.
+            handleRelayDeath("grant-race-concurrency", "binary", "relay_error", state, deps);
+            assert.equal(written.length, 2, "the same channel dropping a second time must add no third record");
+          } finally {
+            listener.server.close();
+            if (incidentsDir) rmSync(incidentsDir, { recursive: true, force: true });
+          }
+        },
+      );
     },
   );
 });

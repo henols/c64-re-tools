@@ -1414,13 +1414,62 @@ function promoteLaunchingForRealBroker(state: BrokerState, backend: ViceBackend)
  * A legitimate recycle (broker-launch.mts's handleExit() recycle branch)
  * keeps this grant's `pid` in sync with the respawned record's own pid, so
  * this check never misfires against a recycled instance the grant still
- * legitimately owns. */
-export function handleRelease(requestId: string, state: BrokerState): void {
+ * legitimately owns.
+ *
+ * Plan 63-04 Task 3 (SESS-05): widened with an OPTIONAL `deps` object
+ * (defaulting to real production functions) carrying an injectable
+ * incident writer and kill function, mirroring HandleRelayDeathDeps'
+ * own posture one function up. When the pid MATCHES and the grant has a
+ * DECLARED operation, this now writes the SAME evidence step
+ * handleRelayDeath() writes for a relay death -- a `control_close`-
+ * triggered record, `void: true` -- strictly BEFORE the claim clear, the
+ * grant delete, the instance-record delete and the kill below. A grant
+ * with NOTHING declared writes nothing: a routine, quiet release is not an
+ * incident. The pid-match-before-kill comparison itself, and the
+ * mismatched-occupant branch below it, are UNCHANGED -- this task adds a
+ * step strictly ahead of the existing discipline, never inside it. */
+export interface HandleReleaseDeps {
+  /** Overrides the incident writer -- defaults to broker-incident.mjs's
+   * real writeBrokerIncident(), reused unchanged. See
+   * HandleRelayDeathDeps.writeIncident's own comment. */
+  writeIncident?: (record: BrokerIncidentInput) => string;
+  /** Overrides the fire-and-forget kill -- defaults to broker-kill.mjs's
+   * real verifiedKill(), reused unchanged, never a bare process.kill(). */
+  kill?: (opts: { pid: number | null; expectedIdentity: string }) => Promise<KillStage>;
+}
+
+export function handleRelease(requestId: string, state: BrokerState, deps: HandleReleaseDeps = {}): void {
   const grant = state.grants.get(requestId);
   if (!grant) return;
   const instance = state.instances.get(grant.port);
 
   if (instance && instance.pid === grant.pid) {
+    if (grant.operation) {
+      const writeIncident = deps.writeIncident ?? writeBrokerIncident;
+      let recordPath: string;
+      try {
+        recordPath = writeIncident({
+          trigger: "control_close",
+          grant_id: requestId,
+          // No single channel to name -- a control-connection close reclaims
+          // the WHOLE instance, not one channel (unlike handleRelayDeath()'s
+          // own per-channel record).
+          channel: null,
+          port: instance.port,
+          epoch_before: typeof instance.epoch === "number" ? instance.epoch : null,
+          operation: grant.operation,
+          reason: `control connection closed on target ${requestId} with a declared operation in flight`,
+        });
+      } catch (err) {
+        process.stderr.write(
+          `vice-broker: FAILED to write the incident record for a control-connection release on target ${requestId} -- ` +
+            `refusing to release the claim, delete the instance record, or kill anything until this is fixed: ${String(err)}\n`,
+        );
+        throw err;
+      }
+      process.stderr.write(`vice-broker: control-connection release on target ${requestId} with a declared operation (${grant.operation.name}) -- incident recorded at ${recordPath}\n`);
+    }
+
     markDeliberateDeath(instance, false);
     // Plan 05: releasing clears monitor-client ownership (every channel) as
     // a side effect -- redundant with the instance-map deletion two lines
@@ -1434,7 +1483,8 @@ export function handleRelease(requestId: string, state: BrokerState): void {
     // Kill-never-recycle means this instance is gone for good, so its
     // second (`-remotemonitor`) port must go back to the allocator with it.
     deleteInstanceRecord(state, grant.port);
-    verifiedKill({ pid: instance.pid, expectedIdentity: instance.expectedIdentity }).catch(() => {
+    const kill = deps.kill ?? ((opts: { pid: number | null; expectedIdentity: string }) => verifiedKill(opts));
+    kill({ pid: instance.pid, expectedIdentity: instance.expectedIdentity }).catch(() => {
       // best-effort; nothing further to report on this path this task
     });
     return;
@@ -1443,6 +1493,7 @@ export function handleRelease(requestId: string, state: BrokerState): void {
   // Stale/orphaned grant: the port's current occupant (if any) is NOT the
   // same process this grant was issued for. Retire the grant's own
   // bookkeeping only -- the mismatched occupant, if any, is left running.
+  // UNCHANGED by Task 3: this branch writes no record and signals nothing.
   state.grants.delete(requestId);
   process.stderr.write(
     `vice-broker: release for request ${requestId} found a different instance at port ${grant.port} than the one this grant was issued for ` +

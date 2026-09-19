@@ -1773,7 +1773,11 @@ test("structural: the release and recycle handlers both set the deliberate-death
   );
   const releaseRegion = extractSourceRegion(
     source,
-    "function handleRelease(requestId: string, state: BrokerState): void {",
+    // Plan 63-04 Task 3: the marker is UPDATED, not deleted -- the handler
+    // gained an optional `deps: HandleReleaseDeps = {}` parameter, and this
+    // region-scoping marker must track its real signature or this whole
+    // gate would silently stop finding the function at all.
+    "export function handleRelease(requestId: string, state: BrokerState, deps: HandleReleaseDeps = {}): void {",
     "async function run(args: ParsedArgs): Promise<void> {",
   );
 

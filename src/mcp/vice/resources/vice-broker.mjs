@@ -1131,49 +1131,36 @@ function promoteLaunchingForRealBroker(state, backend) {
         log: (line) => process.stderr.write(`${line}\n`),
     });
 }
-/** Releases a grant and identity-verified-kills its instance -- but ONLY
- * when the port's CURRENT occupant is proven to be the SAME process this
- * grant was actually issued for (its own recorded `pid`, set at grant time
- * by handleAcquire()'s single state.grants.set() call site), not merely
- * "whatever now holds this port number." This closes a cross-session-kill
- * blast radius: even after the specific concurrent-acquire race above is
- * closed, this lookup was ALREADY
- * unsafe against any OTHER event that swaps a port's occupant without also
- * clearing the grant -- the clearest independent example being an ordinary
- * (non-deliberate) crash of a GRANTED instance that hits the give-up
- * threshold: broker-launch.mts's handleExit() deletes the record from
- * state.instances regardless of record.state, freeing the port for
- * nextFreePort() to hand to a brand-new, unrelated cold launch, while the
- * original grant sits untouched in state.grants.
- *
- * On a pid MATCH: unchanged from before this task -- marks the death as
- * broker-ordered with a FALSE respawn-after-kill answer BEFORE the kill
- * (the opposite answer from the recycle handler above, since a release
- * wants no replacement), deletes the instance entry (harmless double-delete
- * if the exit handler's own final-death branch also runs), and
- * fire-and-forget identity-verified-kills it.
- *
- * On a pid MISMATCH -- including when there is no instance at all at that
- * port: the grant's own bookkeeping is still removed (a release always
- * retires its OWN request's bookkeeping), but the mismatched CURRENT
- * occupant is left running, untouched -- neither deleted nor signalled in
- * any way -- and a distinct log line names the request id, the port, the
- * grant's own recorded pid, and the current occupant's pid (or "none" when
- * the port is empty), worded distinctly from both the shutdown-complete
- * line (broker-kill.mts) and the grant-time-probe-failure line this same
- * file already emits (the standing constraint that a lifecycle decision
- * must be reconstructable from the log after an incident).
- *
- * A legitimate recycle (broker-launch.mts's handleExit() recycle branch)
- * keeps this grant's `pid` in sync with the respawned record's own pid, so
- * this check never misfires against a recycled instance the grant still
- * legitimately owns. */
-export function handleRelease(requestId, state) {
+export function handleRelease(requestId, state, deps = {}) {
     const grant = state.grants.get(requestId);
     if (!grant)
         return;
     const instance = state.instances.get(grant.port);
     if (instance && instance.pid === grant.pid) {
+        if (grant.operation) {
+            const writeIncident = deps.writeIncident ?? writeBrokerIncident;
+            let recordPath;
+            try {
+                recordPath = writeIncident({
+                    trigger: "control_close",
+                    grant_id: requestId,
+                    // No single channel to name -- a control-connection close reclaims
+                    // the WHOLE instance, not one channel (unlike handleRelayDeath()'s
+                    // own per-channel record).
+                    channel: null,
+                    port: instance.port,
+                    epoch_before: typeof instance.epoch === "number" ? instance.epoch : null,
+                    operation: grant.operation,
+                    reason: `control connection closed on target ${requestId} with a declared operation in flight`,
+                });
+            }
+            catch (err) {
+                process.stderr.write(`vice-broker: FAILED to write the incident record for a control-connection release on target ${requestId} -- ` +
+                    `refusing to release the claim, delete the instance record, or kill anything until this is fixed: ${String(err)}\n`);
+                throw err;
+            }
+            process.stderr.write(`vice-broker: control-connection release on target ${requestId} with a declared operation (${grant.operation.name}) -- incident recorded at ${recordPath}\n`);
+        }
         markDeliberateDeath(instance, false);
         // Plan 05: releasing clears monitor-client ownership (every channel) as
         // a side effect -- redundant with the instance-map deletion two lines
@@ -1187,7 +1174,8 @@ export function handleRelease(requestId, state) {
         // Kill-never-recycle means this instance is gone for good, so its
         // second (`-remotemonitor`) port must go back to the allocator with it.
         deleteInstanceRecord(state, grant.port);
-        verifiedKill({ pid: instance.pid, expectedIdentity: instance.expectedIdentity }).catch(() => {
+        const kill = deps.kill ?? ((opts) => verifiedKill(opts));
+        kill({ pid: instance.pid, expectedIdentity: instance.expectedIdentity }).catch(() => {
             // best-effort; nothing further to report on this path this task
         });
         return;
@@ -1195,6 +1183,7 @@ export function handleRelease(requestId, state) {
     // Stale/orphaned grant: the port's current occupant (if any) is NOT the
     // same process this grant was issued for. Retire the grant's own
     // bookkeeping only -- the mismatched occupant, if any, is left running.
+    // UNCHANGED by Task 3: this branch writes no record and signals nothing.
     state.grants.delete(requestId);
     process.stderr.write(`vice-broker: release for request ${requestId} found a different instance at port ${grant.port} than the one this grant was issued for ` +
         `(grant pid ${grant.pid ?? "null"}, current occupant pid ${instance ? instance.pid ?? "null" : "none"}) -- the grant's own bookkeeping was retired, ` +
