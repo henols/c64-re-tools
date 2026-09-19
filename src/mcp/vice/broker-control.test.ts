@@ -26,6 +26,8 @@ import {
   enqueueAcquire,
   drainPendingAcquires,
   newControlToken,
+  HELLO_PROTOCOL_MAGIC,
+  resolveBrokerVersion,
   type StartControlListenerResult,
   type AcquireOutcome,
   type RecycleOutcome,
@@ -115,6 +117,10 @@ interface StubDeps {
   onMonitorClaim?: (requestId: string, targetId: string, channel: MonitorChannel) => MonitorClaimOutcome;
   onMonitorRelease?: (requestId: string, targetId: string, channel: MonitorChannel) => MonitorReleaseOutcome;
   onHostTool?: (raw: unknown) => Promise<unknown>;
+  /** Plan 62-01: the `hello` reply's injectable version override, passed
+   * straight through to StartControlListenerOptions.helloVersion. Absent by
+   * default -- pre-existing tests never exercise `hello` and are unaffected. */
+  helloVersion?: string;
 }
 
 async function startTestListener(deps: StubDeps = {}): Promise<{
@@ -171,6 +177,7 @@ async function startTestListener(deps: StubDeps = {}): Promise<{
     // yet (task 2 adds that coverage), so this default is a no-op refusal,
     // never called by any pre-existing case here.
     onHostTool: deps.onHostTool ?? (async () => ({ ok: false, message: "no onHostTool stub configured" })),
+    helloVersion: deps.helloVersion,
   });
   return { listener, token, releases, recycleCalls, monitorClaimCalls, monitorReleaseCalls, monitorClaimChannels, monitorReleaseChannels };
 }
@@ -1098,20 +1105,21 @@ test("structural: attemptAcquire()'s own comment names which half bounds which f
   assert.match(comment, /does NOT eliminate that race/i);
 });
 
-test("ControlRequestKind (34-01, A-01): now exactly eight members -- host_tool is the whole host-tool subsystem, reviewed and recorded, never widened again per-tool", () => {
+test("ControlRequestKind (34-01/62-01, A-01/D-06): now exactly nine members -- host_tool is the whole host-tool subsystem (never widened again per-tool), hello is plan 62-01's pre-token-gate handshake op", () => {
   const source = readFileSync(join(HERE, "broker-control.mts"), "utf8");
   const match = source.match(/export type ControlRequestKind = ([^;]+);/);
   assert.ok(match, "ControlRequestKind's own type declaration must be found");
-  // Plan 34-01 (A-01) is the ONE deliberate widening since -- a host-bound
-  // executor genuinely needed a new, typed, namespaced control op (see that
-  // plan's own reasoning). The eighth member, "host_tool", is the WHOLE
-  // host-tool subsystem: a second tool (dxa, Ghidra, c1541, petcat,
-  // cartconv, ...) is a new entry in host-tool.mts's own HOST_TOOL_IDS
-  // allowlist, never a ninth ControlRequestKind member -- this union is not
-  // widened again per-tool.
+  // Plan 34-01 (A-01) is the ONE deliberate per-tool-adjacent widening --
+  // the eighth member, "host_tool", is the WHOLE host-tool subsystem: a
+  // second tool (dxa, Ghidra, c1541, petcat, cartconv, ...) is a new entry
+  // in host-tool.mts's own HOST_TOOL_IDS allowlist, never a further
+  // ControlRequestKind member -- this union is not widened again per-tool.
+  // Plan 62-01 (D-06/ENDPOINT-03) adds the ninth and, so far, last member:
+  // "hello", the pre-token-gate handshake op -- see handleLine()'s own
+  // dispatch-order comment for why it is answered BEFORE tokensMatch().
   assert.equal(match![1].trim(),
-    '"acquire" | "release" | "recycle" | "status" | "host_state" | "monitor_claim" | "monitor_release" | "host_tool"',
-    "the union must be exactly the prior seven members plus plan 34-01's host_tool (A-01)",
+    '"acquire" | "release" | "recycle" | "status" | "host_state" | "monitor_claim" | "monitor_release" | "host_tool" | "hello"',
+    "the union must be exactly the prior eight members plus plan 62-01's hello (D-06)",
   );
 });
 
@@ -1570,7 +1578,7 @@ async function startProfileRecordingListener(): Promise<{
   return { listener, token, received };
 }
 
-test("ControlRequestKind (34-01, A-01): now exactly eight members -- host_tool is a NEW eighth op, reviewed and recorded, and this union is never widened again per-tool", () => {
+test("ControlRequestKind (34-01/62-01, A-01/D-06): now exactly nine members -- host_tool is a reviewed eighth op, hello is plan 62-01's reviewed ninth op, and this union is never widened again per-tool", () => {
   // Read off the type's own declaration in the source rather than a
   // hand-maintained list here: a second list would be the very drift this
   // asserts against. The union is a single line by convention in this file.
@@ -1582,10 +1590,10 @@ test("ControlRequestKind (34-01, A-01): now exactly eight members -- host_tool i
     .map((s) => s.trim().replace(/^"|"$/g, ""))
     .filter((s) => s !== "");
   assert.deepEqual(members,
-    ["acquire", "release", "recycle", "status", "host_state", "monitor_claim", "monitor_release", "host_tool"],
-    "the message set must be exactly the prior seven plus plan 34-01's host_tool (A-01) -- a genuinely reviewed " +
+    ["acquire", "release", "recycle", "status", "host_state", "monitor_claim", "monitor_release", "host_tool", "hello"],
+    "the message set must be exactly the prior eight plus plan 62-01's hello (D-06) -- a genuinely reviewed " +
       "widening, not a per-tool one: a second host tool is a new HOST_TOOL_IDS entry in host-tool.mts, never a " +
-      "ninth ControlRequestKind member",
+      "tenth ControlRequestKind member",
   );
 });
 
@@ -1797,4 +1805,123 @@ test("acquire profile (33-06): the profile survives being QUEUED behind an in-fl
     client.close();
     listener.server.close();
   }
+});
+
+// ============================================================================
+// Plan 62-01, task 1: the `hello` handshake op and its pre-token-gate
+// dispatch. See this module's own handleLine() comment for why the arm's
+// PLACEMENT (before tokensMatch(), not one more arm of the existing chain)
+// is load-bearing, not incidental.
+// ============================================================================
+
+const BROKER_CONTROL_MTS = join(HERE, "broker-control.mts");
+
+test("the ControlRequestKind union has exactly nine members including hello, and the hello arm's dispatch sits before the tokensMatch() call", () => {
+  const source = readFileSync(BROKER_CONTROL_MTS, "utf8");
+
+  const unionMatch = source.match(/export type ControlRequestKind = ([^;]+);/);
+  assert.ok(unionMatch, "ControlRequestKind union declaration not found");
+  const members = unionMatch![1]
+    .split("|")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  assert.equal(members.length, 9, `expected 9 ControlRequestKind members, got ${members.length}: ${JSON.stringify(members)}`);
+  assert.ok(members.includes('"hello"'), `hello must be a member of ControlRequestKind, got ${JSON.stringify(members)}`);
+
+  const helloArmOffset = source.indexOf('req.op === "hello"');
+  const tokensMatchCallOffset = source.indexOf("tokensMatch(token, opts.token)");
+  assert.ok(helloArmOffset >= 0, "hello dispatch (req.op === \"hello\") not found in source");
+  assert.ok(tokensMatchCallOffset >= 0, "tokensMatch(token, opts.token) call not found in source");
+  assert.ok(
+    helloArmOffset < tokensMatchCallOffset,
+    `hello arm (offset ${helloArmOffset}) must be dispatched BEFORE tokensMatch() (offset ${tokensMatchCallOffset}) -- a future refactor moved the arm below the gate`,
+  );
+});
+
+test("a raw hello line with NO token field returns a handshake reply, never unauthorized", async () => {
+  const { listener } = await startTestListener();
+  const client = makeClient(listener.port);
+  try {
+    client.send({ op: "hello" });
+    const reply = await client.next();
+    assert.equal(reply.kind, "hello");
+    assert.equal(reply.protocol, HELLO_PROTOCOL_MAGIC);
+    assert.notEqual(reply.kind, "error");
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("a raw status line with NO token field still returns the unauthorized error code, proving the eight existing ops' gate is unchanged", async () => {
+  const { listener } = await startTestListener();
+  const client = makeClient(listener.port);
+  try {
+    client.send({ op: "status" });
+    const reply = await client.next();
+    assert.equal(reply.kind, "error");
+    assert.equal(reply.code, "unauthorized");
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("the hello reply's key set is exactly kind/protocol/version/tag -- no token, path, hostname or instance detail may be added without this test going red", async () => {
+  const { listener } = await startTestListener();
+  const client = makeClient(listener.port);
+  try {
+    client.send({ op: "hello" });
+    const reply = await client.next();
+    assert.deepEqual(Object.keys(reply).sort(), ["kind", "protocol", "tag", "version"]);
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("hello's tag defaults to \"control\" when the request supplies none, and echoes an arbitrary caller-supplied string unchanged", async () => {
+  const { listener } = await startTestListener();
+  const client = makeClient(listener.port);
+  try {
+    client.send({ op: "hello" });
+    const defaulted = await client.next();
+    assert.equal(defaulted.tag, "control");
+
+    client.send({ op: "hello", tag: "monitor-relay-42" });
+    const tagged = await client.next();
+    assert.equal(tagged.tag, "monitor-relay-42");
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("hello's version uses the injected helloVersion override when supplied, and resolveBrokerVersion() otherwise", async () => {
+  const overridden = await startTestListener({ helloVersion: "9.9.9-test-override" });
+  const overrideClient = makeClient(overridden.listener.port);
+  try {
+    overrideClient.send({ op: "hello" });
+    const reply = await overrideClient.next();
+    assert.equal(reply.version, "9.9.9-test-override");
+  } finally {
+    overrideClient.close();
+    overridden.listener.server.close();
+  }
+
+  const defaulted = await startTestListener();
+  const defaultClient = makeClient(defaulted.listener.port);
+  try {
+    defaultClient.send({ op: "hello" });
+    const reply = await defaultClient.next();
+    assert.equal(reply.version, resolveBrokerVersion());
+  } finally {
+    defaultClient.close();
+    defaulted.listener.server.close();
+  }
+});
+
+test("resolveBrokerVersion() degrades to the dev placeholder when no package.json is found at either candidate", () => {
+  const version = resolveBrokerVersion("/tmp/gsd-62-01-nonexistent-dir-for-resolveBrokerVersion-test");
+  assert.equal(version, "0.0.0-dev");
 });

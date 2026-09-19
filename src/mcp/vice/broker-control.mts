@@ -23,6 +23,9 @@
 // Port: 19510 default via VICE_BROKER_CONTROL_PORT.
 import { createServer, type Server, type Socket } from "node:net";
 import { timingSafeEqual, randomBytes } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 // TYPE-ONLY import -- the SAME discipline broker-launch.mts and
 // broker-state.mts already use for each other: fully erased under this
 // project's verbatimModuleSyntax/isolatedModules settings,
@@ -54,7 +57,13 @@ import type { ViceBackend } from "./backend-detect.mjs";
 // not a ninth ControlRequestKind member. This mirrors the same reasoning
 // one op-family over: adding a ninth kind per tool would mean a new
 // dispatch path to keep in sync with every other tool's, forever.
-export type ControlRequestKind = "acquire" | "release" | "recycle" | "status" | "host_state" | "monitor_claim" | "monitor_release" | "host_tool";
+// `hello` joins as the NINTH member, plan 62-01 (ENDPOINT-03/D-06). It is
+// NOT one more arm of the post-token-gate chain `host_tool`'s own comment
+// above describes -- it is the one op this listener answers BEFORE
+// `tokensMatch()` runs at all, because the handshake by design carries no
+// credential. See attachControlProtocol()'s handleLine() for the dispatch
+// site and its own comment on why that placement is load-bearing.
+export type ControlRequestKind = "acquire" | "release" | "recycle" | "status" | "host_state" | "monitor_claim" | "monitor_release" | "host_tool" | "hello";
 // `no_free_text_port` joins the vocabulary as its OWN code -- a stock
 // acquire that fails only on the SECOND (`-remotemonitor`) allocation is
 // reported distinctly from `no_free_port` (which still means the
@@ -76,6 +85,10 @@ export interface ControlRequest {
   id?: string;
   token?: string;
   target_id?: string;
+  /** `hello`'s own caller-supplied connection label -- open-ended, not a
+   * closed union (see HELLO_PROTOCOL_MAGIC's own comment for why). Absent
+   * or empty defaults to `"control"` at the dispatch site. */
+  tag?: string;
   [key: string]: unknown;
 }
 
@@ -197,6 +210,12 @@ export interface StartControlListenerOptions {
   host?: string;
   port?: number;
   token: string;
+  /** Injectable override for the `hello` reply's `version` field, in this
+   * project's standard env/time/spawning/I-O injection register -- when
+   * supplied, the dispatch site uses this value verbatim instead of calling
+   * resolveBrokerVersion(). Optional; production callers omit it and let
+   * the real package.json resolve. */
+  helloVersion?: string;
   /** Called on `acquire`, AFTER the token check has already passed. See
    * AcquireOutcome's own header comment for the discriminated shape.
    *
@@ -304,6 +323,13 @@ export type ControlResponse =
     }
   | { kind: "monitor_claimed" }
   | { kind: "monitor_released" }
+  // Answered BEFORE the token gate (see handleLine()'s own dispatch-order
+  // comment) -- carries no token, username, hostname, home directory,
+  // absolute path or per-instance detail, since anything reachable at a
+  // bound address can trigger this reply. `tag` is a plain string, never a
+  // closed union: Phase 63 adds the monitor-relay tag, Phase 64 the file
+  // tag, and this field must not need a rewrite for either.
+  | { kind: "hello"; protocol: string; version: string; tag: string }
   // `holder` is optional and populated ONLY for code "monitor_owned" --
   // every other op's error reuses this exact same variant with `holder`
   // omitted (plan 05 extends the existing seam rather than inventing a
@@ -319,6 +345,63 @@ export function newControlToken(): string {
 }
 
 const MAX_LINE_BYTES = 65536;
+
+/** The magic string identifying THIS project's own handshake protocol on
+ * the wire -- specific enough that a bare TCP accept by an unrelated
+ * service can never be mistaken for it. This is the one authoritative
+ * definition (plan 62-01, D-06); `broker-endpoint.ts`, the container-side
+ * dialling client, MIRRORS this literal rather than importing it (this
+ * module is host-bound and compiled into `resources/`, so a container-side
+ * source file cannot value-import it) -- broker-endpoint.test.ts asserts
+ * the two copies are byte-identical by reading both files' source, so the
+ * two cannot silently drift. Keep this comment's claim true if you ever
+ * change the string: update both places in the SAME change. */
+export const HELLO_PROTOCOL_MAGIC = "vice-mcp-broker-hello-v1";
+
+/** This module's own directory, computed once at module load -- mirrors
+ * tool-location.mts's own `HERE` constant and its two-candidate locate
+ * idiom (beside `here`, then one directory up), because this module ships
+ * two ways: as unbuilt source (`src/mcp/vice/broker-control.mts`, where
+ * `here` is `src/mcp/vice/`) and as the compiled artifact this project
+ * actually runs (`src/mcp/vice/resources/broker-control.mjs`, where `here`
+ * is `src/mcp/vice/resources/`). The two-candidate join below is what lets
+ * both forms find the same `package.json`. */
+const HERE = dirname(fileURLToPath(import.meta.url));
+
+/** The placeholder a git checkout (or a resolve/parse failure) reports as
+ * this broker's own handshake version. Mirrored, not imported, from
+ * version.ts's own `DEV_PLACEHOLDER` -- that module is container-side and
+ * this one is host-bound, compiled away from it (see version.ts's own
+ * header for why importing it here is forbidden). Kept byte-identical to
+ * that constant so a published client reads the same placeholder string on
+ * either side of the boundary. */
+const HELLO_DEV_PLACEHOLDER = "0.0.0-dev";
+
+/** Resolves the broker's own package version for the `hello` handshake
+ * reply, reading `package.json` from two candidates relative to `here` --
+ * beside it, then one directory up -- the same locate idiom
+ * tool-location.mts's readDeclaration() already uses for a different data
+ * file crossing this same source/compiled boundary. Never throws: any
+ * missing file, unreadable file, unparsable JSON, or a missing/non-string
+ * `.version` field degrades to HELLO_DEV_PLACEHOLDER rather than crashing
+ * the listener over a version string. Exported so a test can call it
+ * directly with an injected `here`; production dispatch calls it with no
+ * argument and lets it default to this module's own real location. */
+export function resolveBrokerVersion(here: string = HERE): string {
+  const candidates = [join(here, "package.json"), join(here, "..", "package.json")];
+  for (const candidate of candidates) {
+    try {
+      if (!existsSync(candidate)) continue;
+      const raw = readFileSync(candidate, "utf8");
+      const pkg = JSON.parse(raw) as { version?: unknown };
+      if (typeof pkg.version === "string" && pkg.version.length > 0) return pkg.version;
+    } catch {
+      // Unreadable or unparsable at this candidate -- try the next one, or
+      // fall through to the placeholder below.
+    }
+  }
+  return HELLO_DEV_PLACEHOLDER;
+}
 
 /** The one refusal wording for a target-naming op whose `target_id` is
  * not the grant the asking connection itself holds. Deliberately worded as an
@@ -713,6 +796,30 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
         return;
       }
       const req = parsed as ControlRequest;
+
+      // Answered UNCONDITIONALLY, ahead of the token gate below -- BY
+      // DESIGN, per D-06/ENDPOINT-03. The handshake carries no credential,
+      // so an arm placed after tokensMatch() would always answer
+      // `unauthorized`, indistinguishable from this module's own
+      // stale-broker signature (a pre-v2.0.0 broker's token check runs
+      // ahead of dispatch too). This is the ONLY op this listener answers
+      // before the gate; every one of the eight existing ops -- including
+      // `host_tool`, dispatched first in the POST-gate chain below -- keeps
+      // requiring the token, untouched. The reply's key set is fixed to
+      // exactly four fields and carries no token, username, hostname, home
+      // directory, absolute path or per-instance detail, because it is
+      // answered to any caller that can reach a bound address (see this
+      // plan's own privacy prohibition and STRIDE entry T-62-02).
+      if (req.op === "hello") {
+        const tag = typeof req.tag === "string" && req.tag !== "" ? req.tag : "control";
+        writeLine(socket, {
+          kind: "hello",
+          protocol: HELLO_PROTOCOL_MAGIC,
+          version: opts.helloVersion ?? resolveBrokerVersion(),
+          tag,
+        });
+        return;
+      }
 
       // Token check BEFORE any state is read or written -- absence or
       // mismatch is refused, the connection is destroyed, and nothing is
