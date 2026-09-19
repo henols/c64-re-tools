@@ -134,6 +134,7 @@
     "test:manual": "node test-gate.mjs --manual",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "build": "node build.ts",
+    "generate:readme": "node prereq-readme-gen.ts --write",
     "smoke": "node smoke.mjs"
   },
   "dependencies": {

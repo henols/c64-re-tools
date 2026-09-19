@@ -367,13 +367,14 @@ test("every remedy entry carries all four fields, a valid provenance, and no pla
   }
 });
 
-test("the debian-trixie remedy text, backticks stripped, matches README.md line 101 character for character", () => {
-  const doc = readPrerequisites();
-  const entry = doc.tools.x64sc!.remedies!.linux!.find((e) => e.ecosystem === "debian-trixie")!;
-  const readmeLine = readFileSync(join(REPO_ROOT, "README.md"), "utf8").split("\n")[100]!;
-  const cell = readmeLine.trim().replace(/^\|/, "").replace(/\|$/, "").split("|")[1]!.trim().replace(/`/g, "");
-  assert.equal(entry.text, cell);
-});
+// Phase 61: README.md's install table is no longer hand-written -- it is
+// generated from this declaration by `prereq-readme-gen.ts`, and its own
+// colocated `prereq-readme-gen.test.ts` is now the authoritative guard over
+// every declaration/README relation, including this one (the debian-trixie
+// remedy's install command matching its rendered README row character for
+// character). This case pinned a specific README line index and column
+// position that the generated table no longer has; the relation it used to
+// assert is superseded there, not dropped.
 
 test("assertSourcesResolve: every carried/measured source resolves on disk; every authored source is https", () => {
   const doc = readPrerequisites();
