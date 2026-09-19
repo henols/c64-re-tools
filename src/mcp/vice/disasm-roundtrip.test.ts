@@ -114,6 +114,7 @@ after(() => {
 const ROUNDTRIP_BROKER_CONTROL = {
   claimMonitor: async () => ({ ok: true as const }),
   releaseMonitor: async () => ({ ok: true as const }),
+  noteOperation: async () => ({ ok: true as const }),
 } as unknown as BrokerControlSession;
 
 function buildRoundtripSession(targetId: string, sendImpl: (commandType: number, body: Buffer) => unknown): StockConnectSession {

@@ -495,6 +495,7 @@ beforeEach(() => {
 const STUB_BROKER_CONTROL = {
   claimMonitor: async () => ({ ok: true as const }),
   releaseMonitor: async () => ({ ok: true as const }),
+  noteOperation: async () => ({ ok: true as const }),
 } as unknown as BrokerControlSession;
 
 // stockConnect()'s own StockConnectOptions.brokerControl (and
@@ -1503,6 +1504,13 @@ test("anno_* curation (plan 29-01): every curated anno_* name is absent from too
 const CONFORMANCE_BROKER_CONTROL = {
   claimMonitor: async () => ({ ok: true as const }),
   releaseMonitor: async () => ({ ok: true as const }),
+  // Phase 63, plan 63-03 (SESS-05): every conformance case runs through the
+  // REAL withStockSession()/withChannelLockHeld() path, which now declares
+  // and clears an in-flight operation for every call -- a stub without this
+  // method would throw "noteOperation is not a function" on the very first
+  // conformance case, not merely fail a type check the `as unknown as` cast
+  // below already bypasses.
+  noteOperation: async () => ({ ok: true as const }),
   // Phase 7, plan 07-09: vice_recycle's conformance case needs a `recycle`
   // stub too -- every other conformance case never calls it, so a single
   // shared "always succeeds" ack is safe to add here rather than a

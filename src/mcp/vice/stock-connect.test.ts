@@ -232,6 +232,9 @@ function makeStubBrokerControl(opts: StubBrokerControlOptions = {}): {
       state.releasedWith.push(releaseOpts);
       return opts.releaseOutcome ?? { ok: true };
     },
+    async noteOperation() {
+      throw new Error("noteOperation must not be called by this suite -- stockConnect()/stockReconnect() never call it");
+    },
   };
   return { brokerControl, state };
 }
@@ -452,6 +455,9 @@ test("WR-07: a releaseMonitor that THROWS during failure cleanup does not replac
         async releaseMonitor() {
           throw new Error("test: the broker connection dropped during cleanup");
         },
+        async noteOperation() {
+          throw new Error("noteOperation must not be called by stockConnect()");
+        },
       };
       await assert.rejects(stockConnect({ host: "127.0.0.1", port, targetId: "grant-wr07-1", brokerControl }), (err: unknown) => {
         assert.ok(err instanceof StockFramingError, `the caller must still see the REAL cause, got ${String(err)}`);
@@ -480,6 +486,9 @@ test("WR-07: a releaseMonitor that answers { ok: false } during failure cleanup 
         async releaseMonitor() {
           releaseCalls += 1;
           return { ok: false, reason: "denied" };
+        },
+        async noteOperation() {
+          throw new Error("noteOperation must not be called by stockConnect()");
         },
       };
       await assert.rejects(

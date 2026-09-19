@@ -58,6 +58,8 @@ import {
   type ReleaseMonitorOptions,
   type ReleaseMonitorOutcome,
   type MonitorClaimChannel,
+  type NoteOperationOptions,
+  type NoteOperationOutcome,
 } from "./vice-broker-client.ts";
 import { dialMonitorRelay } from "./broker-endpoint.ts";
 import type { Socket } from "node:net";
@@ -69,11 +71,19 @@ import type { Socket } from "node:net";
 // closes the acquire-level lease itself. Any real BrokerControlSession
 // satisfies this structurally; tests inject a minimal stub instead of the
 // whole session.
+//
+// `noteOperation` joined this narrow surface in Phase 63 (SESS-05) -- NOT
+// because stockConnect()/stockReconnect() themselves ever call it, but
+// because stock-dispatch.ts's own channel-lock wrapper reaches it through
+// `session.brokerControl` (this interface), the SAME connection the session
+// was claimed on, rather than through a second, locally-derived one. See
+// stock-dispatch.ts's withChannelLockHeld() for the one caller.
 // ---------------------------------------------------------------------------
 
 export interface StockConnectBrokerControl {
   claimMonitor(opts: ClaimMonitorOptions): Promise<ClaimMonitorOutcome>;
   releaseMonitor(opts: ReleaseMonitorOptions): Promise<ReleaseMonitorOutcome>;
+  noteOperation(opts: NoteOperationOptions): Promise<NoteOperationOutcome>;
 }
 
 // ---------------------------------------------------------------------------

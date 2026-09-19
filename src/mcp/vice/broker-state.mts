@@ -278,6 +278,26 @@ export interface GrantRecord {
    * respawned record's own pid, so the check never misfires against this
    * project's own kill-never-recycle design. */
   pid: number | null;
+  /** The client-declared name of whatever operation this grant's own
+   * connection currently has in flight, and the moment (Date.now()) it was
+   * declared -- or `null` when nothing is currently declared. REQUIRED, not
+   * optional, matching this record's own `pid` convention: every grant is
+   * created with this field explicitly `null` (vice-broker.mts's single
+   * `state.grants.set()` call site) rather than left absent, so a reader can
+   * never mistake "this field was never wired up" for "nothing is in
+   * flight".
+   *
+   * The broker CANNOT derive this value itself (Phase 63, SESS-05): the
+   * thing that actually knows what a connection is doing right now is
+   * channel-lock.ts's in-process ChannelLockHolder, on the CONTAINER side --
+   * invisible from here, on the host. This field exists only because a
+   * client declares it explicitly, over the control connection, via the
+   * `operation` op (broker-control.mts) / handleOperationNote()
+   * (vice-broker.mts). A `null` here therefore means "nothing declared",
+   * NEVER "nothing happening" -- a client that races its own declaration, or
+   * one that predates this field entirely, leaves this null while genuinely
+   * mid-operation. Do not read `null` as proof of idleness. */
+  operation: { name: string; declaredAt: number } | null;
 }
 
 export interface BrokerState {

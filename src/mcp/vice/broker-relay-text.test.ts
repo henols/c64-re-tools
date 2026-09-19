@@ -109,7 +109,7 @@ const UNUSED_BINARY_PORT = 1;
 function setupTextBrokerState(remoteMonitorPort: number | undefined, targetId: string): BrokerState {
   const state = createBrokerState();
   state.instances.set(UNUSED_BINARY_PORT, makeGrantedTextInstance(UNUSED_BINARY_PORT, remoteMonitorPort));
-  state.grants.set(targetId, { id: targetId, port: UNUSED_BINARY_PORT, grantedAt: Date.now(), pid: 4242 });
+  state.grants.set(targetId, { id: targetId, port: UNUSED_BINARY_PORT, grantedAt: Date.now(), pid: 4242, operation: null });
   return state;
 }
 
@@ -156,6 +156,10 @@ async function startRelayListenerForState(state: BrokerState): Promise<{ listene
     onMonitorClaim: (requestId, tId, channel) => handleMonitorClaim(requestId, tId, channel, state),
     onMonitorRelease: (requestId, tId, channel) => handleMonitorRelease(requestId, tId, channel, state),
     onRelayAttach: (tId, channel, presentedHandle, socket, pending) => handleRelayAttach(tId, channel, presentedHandle, socket, pending, state),
+    // Phase 63, plan 63-03: a required field on StartControlListenerOptions
+    // as of this plan -- not exercised by this suite (broker-control.test.ts
+    // is the home for `operation` coverage).
+    onOperation: () => ({ ok: true }),
     onHostTool: async () => ({ ok: false, message: "not exercised by broker-relay-text.test.ts" }),
   });
   return { listener, token };

@@ -83,7 +83,17 @@ import type { ViceBackend } from "./backend-detect.mjs";
 // attachControlProtocol()) and every further byte belongs to
 // broker-relay.mts's spliceRelay(), never to this JSON-line dispatcher
 // again.
-export type ControlRequestKind = "acquire" | "release" | "recycle" | "status" | "host_state" | "monitor_claim" | "monitor_release" | "host_tool" | "hello" | "attach";
+// `operation` joins as the ELEVENTH member, Phase 63 (SESS-05) -- gated on
+// the SAME ownsTarget() predicate `monitor_claim`/`monitor_release`/`recycle`
+// already share (never a bare target_id), and dispatched on the connection's
+// ordinary line reader like every op except `attach` -- it never touches
+// relayMode. Declares (or, with a `null` name, clears) the operation the
+// declaring connection's own grant currently has in flight, so a broker-side
+// incident record (broker-incident.mts, a later plan) can name what was
+// running when a relay died. Written WITHOUT being awaited by its caller
+// (stock-dispatch.ts/text-tools.ts) -- see StartControlListenerOptions'
+// onOperation comment for why that is safe.
+export type ControlRequestKind = "acquire" | "release" | "recycle" | "status" | "host_state" | "monitor_claim" | "monitor_release" | "host_tool" | "hello" | "attach" | "operation";
 // `no_free_text_port` joins the vocabulary as its OWN code -- a stock
 // acquire that fails only on the SECOND (`-remotemonitor`) allocation is
 // reported distinctly from `no_free_port` (which still means the
@@ -221,6 +231,18 @@ export type MonitorClaimOutcome =
  * carries). */
 export type RelayAttachOutcome = { ok: true } | { ok: false; code: "denied" | "bad_request" | "internal" };
 
+/** Discriminated outcome for `operation` (Phase 63, SESS-05): resolved by
+ * vice-broker.mts's own handleOperationNote(). `bad_request` covers the ONE
+ * failure that function itself can produce -- `target_id` naming a grant
+ * this listener's own ownsTarget() has already proven the CONNECTION holds,
+ * but which is no longer present in the broker's own grant map (a
+ * should-be-unreachable race, checked defensively rather than assumed). Every
+ * OTHER refusal (empty target_id, ownership, an unrecognised channel) is
+ * answered by THIS listener, before handleOperationNote() is ever called --
+ * see the `operation` dispatch arm below, which mirrors monitor_claim's own
+ * dispatch skeleton exactly. */
+export type OperationNoteOutcome = { ok: true } | { ok: false; code: "bad_request" };
+
 /** Discriminated outcome for `monitor_release` (plan 05, T-02-01): `denied`
  * is refused WITHOUT clearing the record -- a non-holder cannot release
  * someone else's claim. An already-cleared record (no current holder at
@@ -315,6 +337,20 @@ export interface StartControlListenerOptions {
    * the attach line's own terminator -- a raw Buffer, never decoded, to
    * hand straight to spliceRelay() as its own `pending` option. */
   onRelayAttach: (targetId: string, channel: MonitorChannel, presentedHandle: string, socket: Socket, pending: Buffer) => RelayAttachOutcome;
+  /** Called on `operation` (Phase 63, SESS-05), AFTER the token check AND
+   * this listener's own target_id/ownership/channel gates have already
+   * passed -- the SAME dispatch shape `onMonitorClaim`/`onMonitorRelease`
+   * already establish. `name` is whatever the wire line named, ALREADY run
+   * through sanitiseSessionLabel() by this listener (or `null`, verbatim,
+   * for an explicit clear) -- this callback never sees an unsanitised value.
+   * Synchronous, matching `onMonitorClaim`'s own posture: setting or
+   * clearing a field on an in-memory grant record needs no await. Callers
+   * are expected to send this WITHOUT awaiting the reply -- a slow or
+   * refusing broker must never add latency to, or fail, the tool call that
+   * triggered the declaration (T-63-13); the pending-response bookkeeping
+   * that makes an un-awaited send safe lives one layer down, in
+   * vice-broker-client.ts's own sendAndAwaitLine(). */
+  onOperation: (targetId: string, channel: MonitorChannel, name: string | null) => OperationNoteOutcome;
   /** Called on `host_tool`, AFTER the token check has already passed --
    * the SAME gate every other op runs. Handed its OWN function, declared
    * alongside these seven and NEVER composed from any of them -- that is
@@ -383,6 +419,12 @@ export type ControlResponse =
   // deterministic signal that the handshake completed before any binmon
   // byte can arrive on this same connection.
   | { kind: "attached" }
+  // Phase 63 (SESS-05): the successful reply to `operation` -- both a
+  // declaration (a sanitised name) and a clear (`null`) answer this SAME
+  // variant; the wire carries no echo of what was recorded, matching
+  // `monitor_released`'s own posture (the caller already knows what it
+  // sent).
+  | { kind: "operation_noted" }
   // Answered BEFORE the token gate (see handleLine()'s own dispatch-order
   // comment) -- carries no token, username, hostname, home directory,
   // absolute path or per-instance detail, since anything reachable at a
@@ -483,6 +525,30 @@ function resolveMonitorChannel(raw: unknown): MonitorChannel | "bad_request" {
   if (raw === undefined) return "binary";
   if (raw === "binary" || raw === "text") return raw;
   return "bad_request";
+}
+
+/** The ONE sanitiser every caller-supplied display string travelling over
+ * this control plane goes through before a broker-side record or log line
+ * ever renders it (T-63-10). Strips every C0 control character
+ * (`\u0000`-`\u001f`, which already covers both line terminators -- no
+ * separate terminator pass is needed), trims the result, and caps it at 64
+ * characters. Never rejects outright: a hostile or malformed value degrades
+ * to a shorter, stripped string, or to `null` when nothing legible survives
+ * -- never an exception, and never a partially-escaped value that could
+ * still inject structure into a rendered record. `null` in, or a
+ * non-string, answers `null`; an empty-after-stripping string ALSO answers
+ * `null`, matching this file's own discipline of never fabricating a
+ * plausible-looking value for "nothing was actually said". Exported so a
+ * caller can run a value through this exact function rather than
+ * re-deriving the C0-strip/trim/cap sequence -- Plan 63-05 reuses it
+ * verbatim for the session label (SESS-06), which is why it lives here
+ * rather than beside its one caller in the `operation` dispatch arm below. */
+export function sanitiseSessionLabel(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const stripped = raw.replace(/[\u0000-\u001f]/g, "");
+  const trimmed = stripped.trim();
+  if (trimmed === "") return null;
+  return trimmed.slice(0, 64);
 }
 
 // ---------------------------------------------------------------------------
@@ -1234,6 +1300,55 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
           // connection the caller may still retry `attach` over.
           relayMode = false;
           writeLine(socket, { kind: "error", code: outcome.code, message: `attach refused: ${outcome.code}` });
+        }
+      } else if (req.op === "operation") {
+        // Phase 63 (SESS-05). Dispatched on this connection's ORDINARY line
+        // reader -- never touches relayMode, unlike `attach` above. Mirrors
+        // monitor_claim's own dispatch skeleton: reject an empty target_id
+        // by name, gate on the SAME per-connection ownsTarget() predicate
+        // every other target-naming op uses (T-63-11), resolve the channel
+        // through the existing resolver and refuse an unrecognised one by
+        // name, then call the callback and branch on the discriminated
+        // outcome.
+        const targetId = typeof req.target_id === "string" ? req.target_id : "";
+        if (targetId === "") {
+          writeLine(socket, { kind: "error", code: "bad_request" as ControlErrorCode, message: "operation requires target_id" });
+          return;
+        }
+        if (!ownsTarget(targetId)) {
+          writeLine(socket, { kind: "error", code: "denied" as ControlErrorCode, message: MONITOR_OWNERSHIP_DENIAL });
+          return;
+        }
+        const channel = resolveMonitorChannel(req.channel);
+        if (channel === "bad_request") {
+          writeLine(socket, {
+            kind: "error",
+            code: "bad_request" as ControlErrorCode,
+            message: `operation: unrecognised channel ${JSON.stringify(req.channel)} -- accepted values are "binary" and "text"`,
+          });
+          return;
+        }
+        // `name` must be exactly `null` (a clear) or a string (sanitised
+        // below) -- anything else (absent, a number, an object) is refused
+        // BY NAME rather than silently treated as either case.
+        if (req.name !== null && typeof req.name !== "string") {
+          writeLine(socket, {
+            kind: "error",
+            code: "bad_request" as ControlErrorCode,
+            message: `operation: "name" must be a string or null (got ${JSON.stringify(req.name)})`,
+          });
+          return;
+        }
+        // T-63-10: a string name is run through the ONE sanitiser BEFORE
+        // handleOperationNote() ever sees it -- this callback never
+        // observes an unsanitised value. `null` passes through verbatim
+        // (a clear, not a value to sanitise).
+        const sanitisedName = req.name === null ? null : sanitiseSessionLabel(req.name);
+        const outcome = opts.onOperation(targetId, channel, sanitisedName);
+        if (outcome.ok) {
+          writeLine(socket, { kind: "operation_noted" });
+        } else {
+          writeLine(socket, { kind: "error", code: outcome.code, message: `operation failed: ${outcome.code}` });
         }
       } else {
         writeLine(socket, { kind: "error", code: "bad_request" as ControlErrorCode, message: `unknown op: ${String(req.op)}` });

@@ -1470,7 +1470,7 @@ test("superviseChild: a recycle updates the matching grant's own recorded pid to
 
     // Seed a grant naming the PRE-recycle pid, exactly like
     // vice-broker.mts's handleAcquire() would have recorded at grant time.
-    deps.state.grants.set("req-recycle-sync", { id: "req-recycle-sync", port: 6600, grantedAt: Date.now(), pid: preRecyclePid });
+    deps.state.grants.set("req-recycle-sync", { id: "req-recycle-sync", port: 6600, grantedAt: Date.now(), pid: preRecyclePid, operation: null });
 
     const before = deps.state.instances.get(6600)!;
     before.state = "granted";

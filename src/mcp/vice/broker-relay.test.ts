@@ -145,7 +145,7 @@ function makeGrantedInstance(port: number, overrides: Partial<InstanceRecord> = 
 function setupBrokerState(emulatorPort: number, targetId: string): BrokerState {
   const state = createBrokerState();
   state.instances.set(emulatorPort, makeGrantedInstance(emulatorPort));
-  state.grants.set(targetId, { id: targetId, port: emulatorPort, grantedAt: Date.now(), pid: 4242 });
+  state.grants.set(targetId, { id: targetId, port: emulatorPort, grantedAt: Date.now(), pid: 4242, operation: null });
   return state;
 }
 
@@ -155,7 +155,7 @@ function setupMultiGrantBrokerState(grants: Array<{ port: number; targetId: stri
   const state = createBrokerState();
   for (const { port, targetId } of grants) {
     state.instances.set(port, makeGrantedInstance(port));
-    state.grants.set(targetId, { id: targetId, port, grantedAt: Date.now(), pid: 4242 });
+    state.grants.set(targetId, { id: targetId, port, grantedAt: Date.now(), pid: 4242, operation: null });
   }
   return state;
 }
@@ -204,6 +204,10 @@ async function startRelayListenerForState(state: BrokerState): Promise<{ listene
     onMonitorClaim: (requestId, tId, channel) => handleMonitorClaim(requestId, tId, channel, state),
     onMonitorRelease: (requestId, tId, channel) => handleMonitorRelease(requestId, tId, channel, state),
     onRelayAttach: (tId, channel, presentedHandle, socket, pending) => handleRelayAttach(tId, channel, presentedHandle, socket, pending, state),
+    // Phase 63, plan 63-03: a required field on StartControlListenerOptions
+    // as of this plan -- not exercised by this suite (broker-control.test.ts
+    // is the home for `operation` coverage).
+    onOperation: () => ({ ok: true }),
     onHostTool: async () => ({ ok: false, message: "not exercised by broker-relay.test.ts" }),
   });
   return { listener, token };
@@ -779,6 +783,9 @@ function makeRealBrokerControl(state: BrokerState, targetId: string): StockConne
       const outcome = handleMonitorRelease(`release-${targetId}-${releaseSeq}`, targetId, channel ?? "binary", state);
       if (outcome.ok) return outcome;
       return { ok: false, reason: outcome.code };
+    },
+    async noteOperation() {
+      throw new Error("noteOperation must not be called by this suite -- stockConnect()/stockReconnect() never call it");
     },
   };
 }

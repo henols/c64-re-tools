@@ -713,6 +713,28 @@ export type ClaimMonitorOutcome =
 
 export type ReleaseMonitorOutcome = { ok: true } | { ok: false; reason: "timeout" | "unauthorized" | "bad_request" | "denied" | "internal" };
 
+/** Phase 63 (SESS-05). `name: null` clears; anything else is the raw name to
+ * declare -- sent to the broker VERBATIM, never sanitised on this side. The
+ * broker is the ONE place a caller-supplied display string is rendered into
+ * a record or a log line (broker-control.mts's sanitiseSessionLabel()), so
+ * it is also the one place that has to run it through that sanitiser;
+ * sanitising twice would risk the two copies drifting on what "sanitised"
+ * means. */
+export interface NoteOperationOptions {
+  targetId: string;
+  timeoutMs?: number;
+  /** Same default-to-binary posture as ClaimMonitorOptions.channel. */
+  channel?: MonitorClaimChannel;
+  name: string | null;
+}
+
+/** Discriminated outcome for `noteOperation()`. Never carries a `holder` --
+ * unlike `monitor_claim`, an `operation` refusal is never an ownership
+ * CONFLICT between two legitimate holders (T-63-11's gate is "is this
+ * connection's own grant", not "who else holds this"), so there is nothing
+ * to name beyond the refusal `reason` itself. */
+export type NoteOperationOutcome = { ok: true } | { ok: false; reason: "timeout" | "unauthorized" | "bad_request" | "denied" | "internal" };
+
 export interface MonitorOwnershipErrorOptions {
   holderGrantId?: string;
   holderClaimedAt?: number;
@@ -786,6 +808,19 @@ export interface BrokerControlSession {
    * has already cleared the record (release/recycle/process-exit all clear
    * it broker-side) -- a second release is `ok: true`, not an error. */
   releaseMonitor(opts: ReleaseMonitorOptions): Promise<ReleaseMonitorOutcome>;
+  /** Declares (or, with `opts.name: null`, clears) the operation THIS
+   * grant's own connection currently has in flight (Phase 63, SESS-05),
+   * sent as `{ op: "operation", ... }` over this SAME session -- never a
+   * second connection. Built on the same `sendAndAwaitLine()` every other
+   * method uses, so it registers its own pending-response entry and never
+   * throws; callers are expected to call this WITHOUT awaiting the returned
+   * promise (stock-dispatch.ts's and text-tools.ts's own channel-lock
+   * wrappers do exactly that) -- a declaration must never add latency to,
+   * or fail, the tool call that triggered it (T-63-13). The un-awaited
+   * pending entry this method registers is exactly what makes that safe:
+   * the response, whenever it arrives (or never, if the broker is gone),
+   * settles a promise nothing is blocking on. */
+  noteOperation(opts: NoteOperationOptions): Promise<NoteOperationOutcome>;
 }
 
 export interface OpenBrokerControlOptions {
@@ -1190,7 +1225,29 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
     return { ok: true };
   }
 
-  return { acquire, release, recycle, status, hostState, claimMonitor, releaseMonitor };
+  /** Declares/clears the in-flight operation, sending
+   * `{ op: "operation", id, target_id, channel, name, token }` over the SAME
+   * session. See NoteOperationOptions'/BrokerControlSession.noteOperation's
+   * own header comments for why callers are expected NOT to await this. */
+  async function noteOperation(opts: NoteOperationOptions): Promise<NoteOperationOutcome> {
+    const requestId = newRequestId();
+    const channel: MonitorClaimChannel = opts.channel ?? "binary";
+    const raw = await sendAndAwaitLine(
+      { op: "operation", id: requestId, target_id: opts.targetId, channel, name: opts.name, token },
+      opts.timeoutMs ?? ACQUIRE_TIMEOUT_MS,
+    );
+    if (!raw.ok) {
+      if (raw.kind === "deadline") return { ok: false, reason: "timeout" };
+      if (raw.kind === "unauthorized" || raw.kind === "bad_request" || raw.kind === "denied") return { ok: false, reason: raw.kind };
+      return { ok: false, reason: "internal" };
+    }
+    if (raw.line.kind !== "operation_noted") {
+      return { ok: false, reason: "internal" };
+    }
+    return { ok: true };
+  }
+
+  return { acquire, release, recycle, status, hostState, claimMonitor, releaseMonitor, noteOperation };
 }
 
 /** Opens ONE session against the control plane: reads broker.json ONCE for

@@ -65,6 +65,16 @@ const BROKER_ARTIFACT_URL = new URL("./resources/vice-broker.mjs", import.meta.u
 interface BrokerModule {
   handleAcquire: (requestId: string, stateDir: string, state: BrokerState, deps?: HandleAcquireDeps) => Promise<AcquireOutcome>;
   handleRelease: (requestId: string, state: BrokerState) => void;
+  /** Phase 63, plan 63-03 (SESS-05). `channel` is accepted for wire-shape
+   * symmetry but not itself stored -- see the function's own header comment
+   * in vice-broker.mts. */
+  handleOperationNote: (
+    targetId: string,
+    channel: "binary" | "text",
+    name: string | null,
+    state: BrokerState,
+    opts?: { now?: () => number },
+  ) => { ok: true } | { ok: false; code: "bad_request" };
 }
 
 /** Rebuilds resources/ from the current TypeScript source, then imports the
@@ -786,7 +796,7 @@ test("handleAcquire: an instance released through handleRelease() is never promo
   const { handleAcquire, handleRelease } = await loadBrokerModule();
   const state = createState();
   state.instances.set(6600, makeReadyInstance({ port: 6600, state: "granted", pid: 5001, expectedIdentity: "x64sc" }));
-  state.grants.set("req-4", { id: "req-4", port: 6600, grantedAt: Date.now(), pid: 5001 });
+  state.grants.set("req-4", { id: "req-4", port: 6600, grantedAt: Date.now(), pid: 5001, operation: null });
 
   // The real release path -- deletes the grant and the instance record
   // synchronously; the identity-verified kill it fires is a fire-and-forget
@@ -828,7 +838,7 @@ test("handleRelease: a grant whose recorded pid does not match the port's curren
   state.instances.set(6600, makeReadyInstance({ port: 6600, state: "granted", pid: 7777, expectedIdentity: "x64sc" }));
   // The stale grant still names port 6600 but recorded a DIFFERENT
   // (now-dead) pid at grant time.
-  state.grants.set("req-stale", { id: "req-stale", port: 6600, grantedAt: Date.now(), pid: 5001 });
+  state.grants.set("req-stale", { id: "req-stale", port: 6600, grantedAt: Date.now(), pid: 5001, operation: null });
 
   handleRelease("req-stale", state);
 
@@ -844,7 +854,7 @@ test("handleRelease: a grant naming a port with NO current occupant at all (an a
   const state = createState();
   // No instance at port 6600 at all -- e.g. the instance already exited and
   // its exit handler already deleted the record via a separate path.
-  state.grants.set("req-gone", { id: "req-gone", port: 6600, grantedAt: Date.now(), pid: 5001 });
+  state.grants.set("req-gone", { id: "req-gone", port: 6600, grantedAt: Date.now(), pid: 5001, operation: null });
 
   handleRelease("req-gone", state);
 
@@ -1582,5 +1592,68 @@ test("structural (33-06, T-33-24): the eligibility miss opens no second grant --
     matches.length,
     1,
     `both arms must converge on exactly ONE state.grants.set() call; found ${matches.length}. An eligibility miss must fall through to the cold arm, not open a parallel grant path.`,
+  );
+});
+
+// ============================================================================
+// Phase 63, plan 63-03 (SESS-05): handleOperationNote() -- the ONE place a
+// grant's own in-flight-operation field is written. Direct unit-level proof
+// against a hand-built BrokerState, mirroring this file's own
+// handleAcquire()/handleRelease() convention: no TCP control plane, no real
+// spawn (broker-control.test.ts's `operation` op cases cover the wire-level
+// dispatch -- token gate, ownsTarget(), the channel resolver, the sanitiser
+// -- this section covers only what happens ONCE handleOperationNote() is
+// actually called).
+// ============================================================================
+
+test("handleOperationNote: an unknown grant answers bad_request", async () => {
+  const { handleOperationNote } = await loadBrokerModule();
+  const state = createState();
+  const outcome = handleOperationNote("no-such-grant", "binary", "vice_ping", state);
+  assert.deepEqual(outcome, { ok: false, code: "bad_request" });
+});
+
+test("handleOperationNote: a declaration on a known grant sets the name and stamps declaredAt from the injected clock", async () => {
+  const { handleOperationNote } = await loadBrokerModule();
+  const state = createState();
+  state.grants.set("grant-1", { id: "grant-1", port: 6600, grantedAt: 0, pid: 4242, operation: null });
+
+  const outcome = handleOperationNote("grant-1", "binary", "vice_run_until", state, { now: () => 999 });
+  assert.deepEqual(outcome, { ok: true });
+  assert.deepEqual(state.grants.get("grant-1")?.operation, { name: "vice_run_until", declaredAt: 999 });
+});
+
+test("handleOperationNote: name null clears an already-declared operation", async () => {
+  const { handleOperationNote } = await loadBrokerModule();
+  const state = createState();
+  state.grants.set("grant-1", { id: "grant-1", port: 6600, grantedAt: 0, pid: 4242, operation: { name: "vice_run_until", declaredAt: 111 } });
+
+  const outcome = handleOperationNote("grant-1", "binary", null, state);
+  assert.deepEqual(outcome, { ok: true });
+  assert.equal(state.grants.get("grant-1")?.operation, null);
+});
+
+test("handleOperationNote: clearing an ALREADY-clear operation answers ok, not an error -- matching monitor_release's own tolerance", async () => {
+  const { handleOperationNote } = await loadBrokerModule();
+  const state = createState();
+  state.grants.set("grant-1", { id: "grant-1", port: 6600, grantedAt: 0, pid: 4242, operation: null });
+
+  const outcome = handleOperationNote("grant-1", "binary", null, state);
+  assert.deepEqual(outcome, { ok: true });
+  assert.equal(state.grants.get("grant-1")?.operation, null);
+});
+
+test("handleOperationNote: the SAME grant's operation is shared across channel -- declaring on 'text' after clearing on 'binary' is a plain overwrite, never a second field", async () => {
+  const { handleOperationNote } = await loadBrokerModule();
+  const state = createState();
+  state.grants.set("grant-1", { id: "grant-1", port: 6600, grantedAt: 0, pid: 4242, operation: null });
+
+  handleOperationNote("grant-1", "binary", "vice_run_until", state, { now: () => 1 });
+  const outcome = handleOperationNote("grant-1", "text", "vice_device_console", state, { now: () => 2 });
+  assert.deepEqual(outcome, { ok: true });
+  assert.deepEqual(
+    state.grants.get("grant-1")?.operation,
+    { name: "vice_device_console", declaredAt: 2 },
+    "one grant has exactly one in-flight operation at a time, regardless of which channel declared it -- channel-lock.ts's own cross-channel mutex is what already guarantees only one is ever running",
   );
 });

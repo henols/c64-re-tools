@@ -79,6 +79,9 @@ function makeStubBrokerControl(opts: StubBrokerControlOptions = {}): {
       state.releasedWith.push(releaseOpts);
       return opts.releaseOutcome ?? { ok: true };
     },
+    async noteOperation() {
+      throw new Error("noteOperation must not be called by this suite -- textConnect() never calls it");
+    },
   };
   return { brokerControl, state };
 }

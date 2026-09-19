@@ -2562,6 +2562,7 @@ const EVID_LIVE_SKIP_REASON: string | false = !VICE_LIVE_STOCK_BIN_ENV
 const EVID_LIVE_BROKER_CONTROL = {
   claimMonitor: async () => ({ ok: true as const }),
   releaseMonitor: async () => ({ ok: true as const }),
+  noteOperation: async () => ({ ok: true as const }),
 } as unknown as BrokerControlSession;
 
 async function evidFreeEphemeralPort(): Promise<number> {

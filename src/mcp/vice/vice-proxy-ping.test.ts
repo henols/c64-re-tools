@@ -30,6 +30,7 @@ import type { HeldLease, BrokerControlSession } from "./vice-broker-client.ts";
 const STUB_BROKER_CONTROL = {
   claimMonitor: async () => ({ ok: true as const }),
   releaseMonitor: async () => ({ ok: true as const }),
+  noteOperation: async () => ({ ok: true as const }),
 } as unknown as BrokerControlSession;
 
 function makeLease(opts: { host: string; port: number; targetId: string }): HeldLease {

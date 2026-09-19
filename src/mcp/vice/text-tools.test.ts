@@ -101,6 +101,9 @@ function makeStubBrokerControl(): StockConnectBrokerControl {
     async releaseMonitor() {
       return { ok: true };
     },
+    async noteOperation() {
+      return { ok: true };
+    },
   };
 }
 
@@ -117,6 +120,9 @@ function makeStubBrokerControlWithHostState(hostState: {
       return { ok: true };
     },
     async releaseMonitor() {
+      return { ok: true };
+    },
+    async noteOperation() {
       return { ok: true };
     },
     async hostState() {
@@ -1613,6 +1619,7 @@ test(
       const brokerControl = {
         claimMonitor: async () => ({ ok: true as const }),
         releaseMonitor: async () => ({ ok: true as const }),
+        noteOperation: async () => ({ ok: true as const }),
       } as unknown as StockConnectBrokerControl;
 
       const deps: StockDispatchDeps = {

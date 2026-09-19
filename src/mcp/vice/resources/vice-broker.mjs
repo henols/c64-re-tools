@@ -707,7 +707,7 @@ export async function handleAcquire(requestId, stateDir, state, deps = {}) {
     // synchronous pair, so two concurrent acquires can never both grant the
     // SAME record (see selectWarmInstance()'s own re-check for
     // the other half of that guarantee).
-    state.grants.set(requestId, { id: requestId, port: record.port, grantedAt: Date.now(), pid: record.pid });
+    state.grants.set(requestId, { id: requestId, port: record.port, grantedAt: Date.now(), pid: record.pid, operation: null });
     record.state = "granted";
     return {
         ok: true,
@@ -879,6 +879,43 @@ export function handleMonitorRelease(requestId, targetId, channel, state) {
         return { ok: false, code: "denied" };
     }
     clearMonitorClient(instance, channel);
+    return { ok: true };
+}
+/** Answers `operation` (Phase 63, SESS-05): the ONE place a grant's own
+ * in-flight-operation field is ever written. Resolves the grant DIRECTLY
+ * from `state.grants` -- never through `resolveInstanceForMonitorTarget()`
+ * (the instance/monitor-client path every other handler above uses) --
+ * because a declaration names the CONNECTION'S OWN grant, not a monitor
+ * channel's holder; broker-control.mts's own ownsTarget() gate has already
+ * proven the calling connection holds this exact grant id before this
+ * function is ever reached, so the only remaining failure is the grant
+ * having disappeared between that check and this call (a
+ * should-be-unreachable race in this single-threaded event loop, checked
+ * defensively rather than assumed -- `bad_request` names it the same way
+ * every other target-naming handler names an unknown target).
+ *
+ * `channel` is accepted (matching every other target-naming op's own wire
+ * shape) but not itself part of the stored state: a grant has exactly ONE
+ * connection and therefore exactly one in-flight operation at a time,
+ * regardless of which channel it runs on -- channel-lock.ts's own single,
+ * cross-channel mutex is what already guarantees that only one logical
+ * operation is ever running for this grant at once. Storing a SECOND,
+ * per-channel field here would let a stale text-channel declaration outlive
+ * a binary-channel operation that has already cleared, or vice versa.
+ *
+ * `name === null` clears the field; clearing an already-clear field is
+ * accepted, not refused, matching monitor_release's own tolerance for
+ * releasing an already-cleared record. The declaration moment is stamped
+ * from `opts.now` (this project's standard `now?: () => number` injection
+ * register, stock-checkpoints.ts's own convention) so a test can assert the
+ * EXACT stamped value without racing Date.now(). */
+export function handleOperationNote(targetId, channel, name, state, opts = {}) {
+    void channel; // accepted for wire-shape symmetry with every other target-naming op; not itself stored -- see header comment
+    const grant = state.grants.get(targetId);
+    if (!grant)
+        return { ok: false, code: "bad_request" };
+    const nowFn = opts.now ?? Date.now;
+    grant.operation = name === null ? null : { name, declaredAt: nowFn() };
     return { ok: true };
 }
 /** Resolves a recycle target's emulator child pid from THIS broker's own
@@ -1263,6 +1300,7 @@ async function run(args) {
             onMonitorClaim: (requestId, targetId, channel) => handleMonitorClaim(requestId, targetId, channel, state),
             onMonitorRelease: (requestId, targetId, channel) => handleMonitorRelease(requestId, targetId, channel, state),
             onRelayAttach: (targetId, channel, presentedHandle, socket, pending) => handleRelayAttach(targetId, channel, presentedHandle, socket, pending, state),
+            onOperation: (targetId, channel, name) => handleOperationNote(targetId, channel, name, state),
             onHostState: () => ({
                 pid: process.pid,
                 startedAt,

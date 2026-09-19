@@ -129,6 +129,31 @@ function resolveMonitorChannel(raw) {
         return raw;
     return "bad_request";
 }
+/** The ONE sanitiser every caller-supplied display string travelling over
+ * this control plane goes through before a broker-side record or log line
+ * ever renders it (T-63-10). Strips every C0 control character
+ * (`\u0000`-`\u001f`, which already covers both line terminators -- no
+ * separate terminator pass is needed), trims the result, and caps it at 64
+ * characters. Never rejects outright: a hostile or malformed value degrades
+ * to a shorter, stripped string, or to `null` when nothing legible survives
+ * -- never an exception, and never a partially-escaped value that could
+ * still inject structure into a rendered record. `null` in, or a
+ * non-string, answers `null`; an empty-after-stripping string ALSO answers
+ * `null`, matching this file's own discipline of never fabricating a
+ * plausible-looking value for "nothing was actually said". Exported so a
+ * caller can run a value through this exact function rather than
+ * re-deriving the C0-strip/trim/cap sequence -- Plan 63-05 reuses it
+ * verbatim for the session label (SESS-06), which is why it lives here
+ * rather than beside its one caller in the `operation` dispatch arm below. */
+export function sanitiseSessionLabel(raw) {
+    if (typeof raw !== "string")
+        return null;
+    const stripped = raw.replace(/[\u0000-\u001f]/g, "");
+    const trimmed = stripped.trim();
+    if (trimmed === "")
+        return null;
+    return trimmed.slice(0, 64);
+}
 // ---------------------------------------------------------------------------
 // The launch-profile narrowing site.
 //
@@ -836,6 +861,57 @@ function attachControlProtocol(server, opts, pendingAcquires) {
                     // connection the caller may still retry `attach` over.
                     relayMode = false;
                     writeLine(socket, { kind: "error", code: outcome.code, message: `attach refused: ${outcome.code}` });
+                }
+            }
+            else if (req.op === "operation") {
+                // Phase 63 (SESS-05). Dispatched on this connection's ORDINARY line
+                // reader -- never touches relayMode, unlike `attach` above. Mirrors
+                // monitor_claim's own dispatch skeleton: reject an empty target_id
+                // by name, gate on the SAME per-connection ownsTarget() predicate
+                // every other target-naming op uses (T-63-11), resolve the channel
+                // through the existing resolver and refuse an unrecognised one by
+                // name, then call the callback and branch on the discriminated
+                // outcome.
+                const targetId = typeof req.target_id === "string" ? req.target_id : "";
+                if (targetId === "") {
+                    writeLine(socket, { kind: "error", code: "bad_request", message: "operation requires target_id" });
+                    return;
+                }
+                if (!ownsTarget(targetId)) {
+                    writeLine(socket, { kind: "error", code: "denied", message: MONITOR_OWNERSHIP_DENIAL });
+                    return;
+                }
+                const channel = resolveMonitorChannel(req.channel);
+                if (channel === "bad_request") {
+                    writeLine(socket, {
+                        kind: "error",
+                        code: "bad_request",
+                        message: `operation: unrecognised channel ${JSON.stringify(req.channel)} -- accepted values are "binary" and "text"`,
+                    });
+                    return;
+                }
+                // `name` must be exactly `null` (a clear) or a string (sanitised
+                // below) -- anything else (absent, a number, an object) is refused
+                // BY NAME rather than silently treated as either case.
+                if (req.name !== null && typeof req.name !== "string") {
+                    writeLine(socket, {
+                        kind: "error",
+                        code: "bad_request",
+                        message: `operation: "name" must be a string or null (got ${JSON.stringify(req.name)})`,
+                    });
+                    return;
+                }
+                // T-63-10: a string name is run through the ONE sanitiser BEFORE
+                // handleOperationNote() ever sees it -- this callback never
+                // observes an unsanitised value. `null` passes through verbatim
+                // (a clear, not a value to sanitise).
+                const sanitisedName = req.name === null ? null : sanitiseSessionLabel(req.name);
+                const outcome = opts.onOperation(targetId, channel, sanitisedName);
+                if (outcome.ok) {
+                    writeLine(socket, { kind: "operation_noted" });
+                }
+                else {
+                    writeLine(socket, { kind: "error", code: outcome.code, message: `operation failed: ${outcome.code}` });
                 }
             }
             else {

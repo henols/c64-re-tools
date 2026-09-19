@@ -274,6 +274,9 @@ function makeLeaseDeps(opts: {
       },
       claimMonitor: async () => ({ ok: true, handle: "test-handle" }),
       releaseMonitor: async () => ({ ok: true }),
+      noteOperation: async () => {
+        throw new Error("noteOperation must not be called by handleRecycleStock");
+      },
     },
   };
   const deps: StockDispatchDeps = { ensureLease: async () => ({ ok: true, lease }) };

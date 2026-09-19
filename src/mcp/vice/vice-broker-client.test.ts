@@ -41,9 +41,12 @@ import {
   type HostStateFields,
   type MonitorClaimOutcome,
   type MonitorReleaseOutcome,
+  type OperationNoteOutcome,
 } from "./broker-control.mts";
 // Phase 33, plan 33-06 (D-15): the profile shape from its one definition.
 import type { LaunchProfile } from "./broker-launch.mts";
+// Plan 41-03 (D-14): the channel contract's one host-bound declaration.
+import type { MonitorChannel } from "./broker-state.mts";
 // Namespace import, read-only, for the export-list closure test below --
 // the whole point is comparing the module's OWN live key set against an
 // expected list, so this must be the real module object, not a destructured
@@ -313,6 +316,9 @@ interface FullBrokerDeps {
   onHostState?: () => HostStateFields;
   onMonitorClaim?: (requestId: string, targetId: string) => MonitorClaimOutcome;
   onMonitorRelease?: (requestId: string, targetId: string) => MonitorReleaseOutcome;
+  /** Phase 63, plan 63-03 (SESS-05): observes the target id/channel/name a
+   * noteOperation() call actually sent. */
+  onOperation?: (targetId: string, channel: MonitorChannel, name: string | null) => OperationNoteOutcome;
 }
 
 /** A REAL, fully-protocol'd control listener (broker-control.mts's own
@@ -351,6 +357,7 @@ async function startFullBrokerListener(deps: FullBrokerDeps = {}): Promise<{
     // `attach` itself (broker-relay.test.ts is the home for that coverage),
     // so this stub exists only to satisfy the type.
     onRelayAttach: () => ({ ok: false, code: "internal" as const }),
+    onOperation: deps.onOperation ?? (() => ({ ok: true as const })),
     // Phase 34, plan 34-01: a required field on StartControlListenerOptions
     // as of this plan -- this client-focused fixture never exercises
     // host_tool itself, so this stub exists only to satisfy the type.
@@ -1245,6 +1252,159 @@ test("monitor_claim: claimMonitor() a control-plane timeout during claim is repo
     assert.equal(opened.ok, true);
     if (!opened.ok) return;
     const result = await opened.session.claimMonitor({ targetId: "req-a", timeoutMs: 150 });
+    assert.deepEqual(result, { ok: false, reason: "timeout" });
+  } finally {
+    for (const s of sockets) s.destroy();
+    server.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ============================================================================
+// Plan 63-03 (SESS-05): noteOperation() -- the client half of the in-flight
+// operation declaration. Built on the SAME sendAndAwaitLine() every other
+// method above uses, over the SAME session/socket a grant was acquired
+// through -- these tests assert the outcome mapping (the caller-visible
+// contract), never that a caller must await it; that "never await" contract
+// is stock-dispatch.ts's/text-tools.ts's own, proven in Task 3's own
+// broker-control.test.ts case.
+// ============================================================================
+
+test("operation: noteOperation() against a stub answering ok resolves { ok: true }, naming target_id/channel/name on the wire", async () => {
+  const observed: Array<{ targetId: string; channel: MonitorChannel; name: string | null }> = [];
+  const { server, dir, rawLines } = await startFullBrokerListener({
+    onAcquire: GRANTING_ACQUIRE,
+    onOperation: (targetId, channel, name) => {
+      observed.push({ targetId, channel, name });
+      return { ok: true };
+    },
+  });
+  try {
+    const opened = await openBrokerControl(dir);
+    assert.equal(opened.ok, true);
+    if (!opened.ok) return;
+    const targetId = await heldGrantId(opened.session);
+    const result = await opened.session.noteOperation({ targetId, name: "vice_run_until" });
+    assert.deepEqual(result, { ok: true });
+    assert.deepEqual(observed, [{ targetId, channel: "binary", name: "vice_run_until" }]);
+    const line = rawLines.find((l) => l.op === "operation" && l.target_id === targetId);
+    assert.ok(line, `expected an operation line naming target_id ${targetId}: ${JSON.stringify(rawLines)}`);
+    assert.equal(line?.channel, "binary", "channel omitted must default to binary on the wire, matching claimMonitor()'s own convention");
+    assert.equal(line?.name, "vice_run_until");
+    await opened.session.release();
+  } finally {
+    server.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("operation: noteOperation({ channel: 'text' }) puts 'text' on the wire", async () => {
+  const { server, dir, rawLines } = await startFullBrokerListener({ onAcquire: GRANTING_ACQUIRE, onOperation: () => ({ ok: true }) });
+  try {
+    const opened = await openBrokerControl(dir);
+    assert.equal(opened.ok, true);
+    if (!opened.ok) return;
+    const targetId = await heldGrantId(opened.session);
+    const result = await opened.session.noteOperation({ targetId, channel: "text", name: "vice_device_console" });
+    assert.deepEqual(result, { ok: true });
+    const line = rawLines.find((l) => l.op === "operation" && l.target_id === targetId);
+    assert.equal(line?.channel, "text");
+    await opened.session.release();
+  } finally {
+    server.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("operation: noteOperation({ name: null }) sends a literal null on the wire -- a clear, not an empty string", async () => {
+  const { server, dir, rawLines } = await startFullBrokerListener({ onAcquire: GRANTING_ACQUIRE, onOperation: () => ({ ok: true }) });
+  try {
+    const opened = await openBrokerControl(dir);
+    assert.equal(opened.ok, true);
+    if (!opened.ok) return;
+    const targetId = await heldGrantId(opened.session);
+    const result = await opened.session.noteOperation({ targetId, name: null });
+    assert.deepEqual(result, { ok: true });
+    const line = rawLines.find((l) => l.op === "operation" && l.target_id === targetId);
+    assert.equal(line?.name, null, `expected a literal null, not a missing field or empty string: ${JSON.stringify(line)}`);
+    await opened.session.release();
+  } finally {
+    server.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("operation: noteOperation() against a denied/bad_request/unauthorized refusal resolves that SAME reason verbatim, never collapsed to internal", async () => {
+  const { server, dir } = await startFullBrokerListener({
+    onAcquire: GRANTING_ACQUIRE,
+    onOperation: () => ({ ok: false, code: "bad_request" }),
+  });
+  try {
+    const opened = await openBrokerControl(dir);
+    assert.equal(opened.ok, true);
+    if (!opened.ok) return;
+    const targetId = await heldGrantId(opened.session);
+    const result = await opened.session.noteOperation({ targetId, name: "vice_ping" });
+    assert.deepEqual(result, { ok: false, reason: "bad_request" });
+    await opened.session.release();
+  } finally {
+    server.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("operation: noteOperation() resolves a typed { ok: false, reason: 'internal' } outcome for a broker that closes mid-request, and never rejects", async () => {
+  const { server, port, sockets } = await startRawSocketServer();
+  const dir = tmpPoolDir();
+  writeBrokerJson(dir, {
+    version: 1,
+    pid: process.pid,
+    heartbeat_at: new Date().toISOString(),
+    control_host: "127.0.0.1",
+    control_port: port,
+    control_token: "tok-operation-gone",
+  });
+  try {
+    const opened = await openBrokerControl(dir);
+    assert.equal(opened.ok, true);
+    if (!opened.ok) return;
+    const notePromise = opened.session.noteOperation({ targetId: "req-a", name: "vice_ping", timeoutMs: 5000 });
+    const sawConnection = await (async () => {
+      const deadline = Date.now() + 3000;
+      while (Date.now() < deadline) {
+        if (sockets.length > 0) return true;
+        await sleepMs(10);
+      }
+      return false;
+    })();
+    assert.ok(sawConnection, "raw server must observe the incoming connection");
+    sockets[0].destroy();
+    // never throws, never rejects -- resolves a typed failure outcome
+    const result = await notePromise;
+    assert.deepEqual(result, { ok: false, reason: "internal" });
+  } finally {
+    for (const s of sockets) s.destroy();
+    server.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("operation: noteOperation() a control-plane timeout is reported as reason timeout", async () => {
+  const { server, port, sockets } = await startRawSocketServer();
+  const dir = tmpPoolDir();
+  writeBrokerJson(dir, {
+    version: 1,
+    pid: process.pid,
+    heartbeat_at: new Date().toISOString(),
+    control_host: "127.0.0.1",
+    control_port: port,
+    control_token: "tok-operation-deadline",
+  });
+  try {
+    const opened = await openBrokerControl(dir);
+    assert.equal(opened.ok, true);
+    if (!opened.ok) return;
+    const result = await opened.session.noteOperation({ targetId: "req-a", name: "vice_ping", timeoutMs: 150 });
     assert.deepEqual(result, { ok: false, reason: "timeout" });
   } finally {
     for (const s of sockets) s.destroy();

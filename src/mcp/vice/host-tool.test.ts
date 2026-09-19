@@ -2100,6 +2100,7 @@ async function startListenerWithSpies(repoRootForHostTool: string): Promise<{ li
     // never spied on here; broker-relay.test.ts is the home for `attach`
     // coverage).
     onRelayAttach: () => ({ ok: false, code: "internal" as const }),
+    onOperation: () => ({ ok: true as const }),
     onHostTool: (raw: unknown) => runHostTool(raw, { repoRoot: repoRootForHostTool }),
   });
   return { listener, token, spies };

@@ -42,6 +42,8 @@ import {
   type MonitorClaimOutcome,
   type MonitorReleaseOutcome,
   type RelayAttachOutcome,
+  type OperationNoteOutcome,
+  sanitiseSessionLabel,
 } from "./broker-control.mts";
 import type { Socket } from "node:net";
 // Plan 41-03 (D-14): the channel contract's one host-bound declaration.
@@ -127,6 +129,11 @@ interface StubDeps {
    * (broker-relay.test.ts is the home for that coverage), so the default
    * below is a no-op refusal, never called by any pre-existing case here. */
   onRelayAttach?: (targetId: string, channel: MonitorChannel, presentedHandle: string, socket: Socket, pending: Buffer) => RelayAttachOutcome;
+  /** Phase 63, plan 63-03 (SESS-05): a required field on
+   * StartControlListenerOptions as of this plan. Default answers `ok`
+   * unconditionally -- every pre-63-03 test in this file that never sends
+   * `operation` is unaffected. */
+  onOperation?: (targetId: string, channel: MonitorChannel, name: string | null) => OperationNoteOutcome;
   onHostTool?: (raw: unknown) => Promise<unknown>;
   /** Plan 62-01: the `hello` reply's injectable version override, passed
    * straight through to StartControlListenerOptions.helloVersion. Absent by
@@ -146,6 +153,10 @@ async function startTestListener(deps: StubDeps = {}): Promise<{
   // targetId-only arrays above (kept for every pre-41-03 assertion).
   monitorClaimChannels: MonitorChannel[];
   monitorReleaseChannels: MonitorChannel[];
+  // Phase 63, plan 63-03: every `operation` call this listener answered, in
+  // arrival order -- `name` recorded AFTER this listener's own sanitiser has
+  // already run, matching what onOperation itself is handed in production.
+  operationCalls: Array<{ targetId: string; channel: MonitorChannel; name: string | null }>;
 }> {
   const token = newControlToken();
   const releases: string[] = [];
@@ -154,6 +165,7 @@ async function startTestListener(deps: StubDeps = {}): Promise<{
   const monitorReleaseCalls: string[] = [];
   const monitorClaimChannels: MonitorChannel[] = [];
   const monitorReleaseChannels: MonitorChannel[] = [];
+  const operationCalls: Array<{ targetId: string; channel: MonitorChannel; name: string | null }> = [];
   const listener = await startControlListener({
     host: "127.0.0.1",
     port: 0,
@@ -185,6 +197,10 @@ async function startTestListener(deps: StubDeps = {}): Promise<{
     },
     onRelayAttach:
       deps.onRelayAttach ?? ((): RelayAttachOutcome => ({ ok: false, code: "internal" })),
+    onOperation: (targetId, channel, name) => {
+      operationCalls.push({ targetId, channel, name });
+      return deps.onOperation?.(targetId, channel, name) ?? ({ ok: true } as OperationNoteOutcome);
+    },
     // Phase 34, plan 34-01: a required field on StartControlListenerOptions
     // as of this plan -- no existing test in this file exercises host_tool
     // yet (task 2 adds that coverage), so this default is a no-op refusal,
@@ -192,7 +208,7 @@ async function startTestListener(deps: StubDeps = {}): Promise<{
     onHostTool: deps.onHostTool ?? (async () => ({ ok: false, message: "no onHostTool stub configured" })),
     helloVersion: deps.helloVersion,
   });
-  return { listener, token, releases, recycleCalls, monitorClaimCalls, monitorReleaseCalls, monitorClaimChannels, monitorReleaseChannels };
+  return { listener, token, releases, recycleCalls, monitorClaimCalls, monitorReleaseCalls, monitorClaimChannels, monitorReleaseChannels, operationCalls };
 }
 
 // ============================================================================
@@ -842,6 +858,201 @@ test("monitor_release: a broker-side non-holder outcome answers a refusal, not s
   }
 });
 
+// ============================================================================
+// Phase 63, plan 63-03 (SESS-05): the `operation` op -- wire-level dispatch
+// (token gate, the SAME ownsTarget() predicate as monitor_claim/
+// monitor_release/recycle, the channel resolver, the sanitiser) against the
+// injected onOperation stub. The actual grant-storage behaviour (what
+// handleOperationNote() does once called) is unit-tested directly in
+// vice-broker-acquire.test.ts, mirroring this file's own header comment
+// about handleMonitorClaim()/handleMonitorRelease().
+// ============================================================================
+
+test("operation: a declaration from a connection that owns the named grant is accepted, and the callback observes the ALREADY-SANITISED name", async () => {
+  const { listener, token, operationCalls } = await startTestListener({
+    onAcquire: grantingAcquire(),
+  });
+  const client = makeClient(listener.port);
+  try {
+    await acquireGrant(client, token, "req-a");
+    client.send({ op: "operation", id: "op-1", target_id: "req-a", name: "vice_run_until", token });
+    const resp = await client.next();
+    assert.equal(resp.kind, "operation_noted");
+    assert.deepEqual(operationCalls, [{ targetId: "req-a", channel: "binary", name: "vice_run_until" }]);
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("operation: a declaration naming a grant this connection does NOT hold is refused denied, with the SAME ownership wording monitor_claim/monitor_release/recycle share, and the callback never runs", async () => {
+  const { listener, token, operationCalls } = await startTestListener({ onAcquire: grantingAcquire() });
+  const client = makeClient(listener.port);
+  try {
+    await acquireGrant(client, token, "req-b");
+    client.send({ op: "operation", id: "op-1", target_id: "someone-elses-grant", name: "vice_ping", token });
+    const resp = await client.next();
+    assert.equal(resp.kind, "error");
+    assert.equal(resp.code, "denied");
+    assert.match(String(resp.message), /may only target the grant this connection itself holds/);
+    assert.deepEqual(operationCalls, [], "a denied declaration must never reach the broker's own callback");
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("operation: a missing target_id is refused bad_request before the callback is ever invoked", async () => {
+  const { listener, token, operationCalls } = await startTestListener();
+  const client = makeClient(listener.port);
+  try {
+    client.send({ op: "operation", id: "op-1", name: "vice_ping", token });
+    const resp = await client.next();
+    assert.equal(resp.kind, "error");
+    assert.equal(resp.code, "bad_request");
+    assert.deepEqual(operationCalls, []);
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("operation: an unrecognised non-empty channel value is bad_request, naming both accepted values, and the callback never runs", async () => {
+  const { listener, token, operationCalls } = await startTestListener({ onAcquire: grantingAcquire() });
+  const client = makeClient(listener.port);
+  try {
+    await acquireGrant(client, token, "req-a");
+    client.send({ op: "operation", id: "op-1", target_id: "req-a", channel: "video", name: "vice_ping", token });
+    const resp = await client.next();
+    assert.equal(resp.kind, "error");
+    assert.equal(resp.code, "bad_request");
+    assert.match(String(resp.message), /"binary"/);
+    assert.match(String(resp.message), /"text"/);
+    assert.deepEqual(operationCalls, []);
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("operation: no channel field at all behaves exactly as channel: 'binary'", async () => {
+  const { listener, token, operationCalls } = await startTestListener({ onAcquire: grantingAcquire() });
+  const client = makeClient(listener.port);
+  try {
+    await acquireGrant(client, token, "req-a");
+    client.send({ op: "operation", id: "op-1", target_id: "req-a", name: "vice_ping", token });
+    await client.next();
+    assert.deepEqual(operationCalls, [{ targetId: "req-a", channel: "binary", name: "vice_ping" }]);
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("operation: name null clears -- the callback observes null verbatim, never an empty string", async () => {
+  const { listener, token, operationCalls } = await startTestListener({ onAcquire: grantingAcquire() });
+  const client = makeClient(listener.port);
+  try {
+    await acquireGrant(client, token, "req-a");
+    client.send({ op: "operation", id: "op-1", target_id: "req-a", name: null, token });
+    const resp = await client.next();
+    assert.equal(resp.kind, "operation_noted");
+    assert.deepEqual(operationCalls, [{ targetId: "req-a", channel: "binary", name: null }]);
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("operation: a name that is neither a string nor null is refused bad_request, naming the offending value, before the callback runs", async () => {
+  const { listener, token, operationCalls } = await startTestListener({ onAcquire: grantingAcquire() });
+  const client = makeClient(listener.port);
+  try {
+    await acquireGrant(client, token, "req-a");
+    client.send({ op: "operation", id: "op-1", target_id: "req-a", name: 42, token });
+    const resp = await client.next();
+    assert.equal(resp.kind, "error");
+    assert.equal(resp.code, "bad_request");
+    assert.match(String(resp.message), /42/);
+    assert.deepEqual(operationCalls, []);
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("operation: a broker-side bad_request outcome (the should-be-unreachable missing-grant race) is forwarded verbatim, not internal", async () => {
+  const { listener, token } = await startTestListener({
+    onAcquire: grantingAcquire(),
+    onOperation: () => ({ ok: false, code: "bad_request" }),
+  });
+  const client = makeClient(listener.port);
+  try {
+    await acquireGrant(client, token, "req-a");
+    client.send({ op: "operation", id: "op-1", target_id: "req-a", name: "vice_ping", token });
+    const resp = await client.next();
+    assert.equal(resp.kind, "error");
+    assert.equal(resp.code, "bad_request");
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("operation: unauthorized when the token is wrong, before the callback is ever invoked", async () => {
+  const { listener, operationCalls } = await startTestListener({ onAcquire: grantingAcquire() });
+  const client = makeClient(listener.port);
+  try {
+    client.send({ op: "operation", id: "op-1", target_id: "req-a", name: "vice_ping", token: "wrong" });
+    const resp = await client.next();
+    assert.equal(resp.kind, "error");
+    assert.equal(resp.code, "unauthorized");
+    assert.deepEqual(operationCalls, []);
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// sanitiseSessionLabel() -- the T-63-10 mitigation, exported so Plan 63-05
+// can reuse it verbatim for the session label. Tested here directly
+// (a pure function), and again indirectly above (the `operation` dispatch
+// arm runs every string `name` through it before the callback ever sees it).
+// ---------------------------------------------------------------------------
+
+test("sanitiseSessionLabel: strips every C0 control character (including both line terminators), trims, and caps at 64 characters", () => {
+  assert.equal(sanitiseSessionLabel("  hello\tworld  "), "helloworld");
+  assert.equal(sanitiseSessionLabel("line1\nline2\r\n"), "line1line2");
+  assert.equal(sanitiseSessionLabel("a".repeat(200)), "a".repeat(64));
+  assert.equal(sanitiseSessionLabel("\u0000\u0001\u001f"), null, "an empty-after-stripping string must answer null, never an empty string");
+  assert.equal(sanitiseSessionLabel(""), null);
+  assert.equal(sanitiseSessionLabel(null), null);
+  assert.equal(sanitiseSessionLabel(undefined), null);
+  assert.equal(sanitiseSessionLabel(42), null, "a non-string input must never be coerced");
+});
+
+test("operation: a name carrying a line terminator and 200 characters is recorded stripped and truncated to at most 64 characters, never rejected outright", async () => {
+  const { listener, token, operationCalls } = await startTestListener({ onAcquire: grantingAcquire() });
+  const client = makeClient(listener.port);
+  try {
+    await acquireGrant(client, token, "req-a");
+    const hostile = `${"x".repeat(199)}\n`; // 200 chars total, trailing line terminator
+    client.send({ op: "operation", id: "op-1", target_id: "req-a", name: hostile, token });
+    const resp = await client.next();
+    assert.equal(resp.kind, "operation_noted");
+    assert.equal(operationCalls.length, 1);
+    const recorded = operationCalls[0]!.name;
+    assert.ok(recorded !== null);
+    assert.equal(recorded!.length, 64);
+    assert.doesNotMatch(recorded!, /[\r\n]/);
+    assert.equal(recorded, "x".repeat(64));
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
 test("structural (D-14): no halting-path module reads monitorClients -- the only files containing that identifier are the four broker-side modules, their compiled resources/*.mjs artifacts, and the InstanceRecord test fixtures that must satisfy its non-optional field", () => {
   const output = execFileSync("git", ["ls-files"], { cwd: HERE, encoding: "utf8" });
   const files = output
@@ -1132,7 +1343,7 @@ test("structural: attemptAcquire()'s own comment names which half bounds which f
   assert.match(comment, /does NOT eliminate that race/i);
 });
 
-test("ControlRequestKind (34-01/62-01/63-01, A-01/D-06): now exactly ten members -- host_tool is the whole host-tool subsystem (never widened again per-tool), hello is plan 62-01's pre-token-gate handshake op, attach is plan 63-01's post-token-gate relay handshake op", () => {
+test("ControlRequestKind (34-01/62-01/63-01/63-03, A-01/D-06): now exactly eleven members -- host_tool is the whole host-tool subsystem (never widened again per-tool), hello is plan 62-01's pre-token-gate handshake op, attach is plan 63-01's post-token-gate relay handshake op, operation is plan 63-03's post-token-gate declaration op", () => {
   const source = readFileSync(join(HERE, "broker-control.mts"), "utf8");
   const match = source.match(/export type ControlRequestKind = ([^;]+);/);
   assert.ok(match, "ControlRequestKind's own type declaration must be found");
@@ -1144,12 +1355,14 @@ test("ControlRequestKind (34-01/62-01/63-01, A-01/D-06): now exactly ten members
   // Plan 62-01 (D-06/ENDPOINT-03) adds the ninth member: "hello", the
   // pre-token-gate handshake op -- see handleLine()'s own dispatch-order
   // comment for why it is answered BEFORE tokensMatch(). Plan 63-01
-  // (SESS-02) adds the tenth and, so far, last member: "attach", UNLIKE
-  // hello dispatched AFTER the token gate, in the same post-gate chain as
-  // every other target-naming op.
+  // (SESS-02) adds the tenth member: "attach", UNLIKE hello dispatched
+  // AFTER the token gate, in the same post-gate chain as every other
+  // target-naming op. Plan 63-03 (SESS-05) adds the eleventh and, so far,
+  // last member: "operation", gated on the SAME ownsTarget() predicate as
+  // monitor_claim/monitor_release/recycle.
   assert.equal(match![1].trim(),
-    '"acquire" | "release" | "recycle" | "status" | "host_state" | "monitor_claim" | "monitor_release" | "host_tool" | "hello" | "attach"',
-    "the union must be exactly the prior nine members plus plan 63-01's attach (SESS-02)",
+    '"acquire" | "release" | "recycle" | "status" | "host_state" | "monitor_claim" | "monitor_release" | "host_tool" | "hello" | "attach" | "operation"',
+    "the union must be exactly the prior ten members plus plan 63-03's operation (SESS-05)",
   );
 });
 
@@ -1611,7 +1824,7 @@ async function startProfileRecordingListener(): Promise<{
   return { listener, token, received };
 }
 
-test("ControlRequestKind (34-01/62-01/63-01, A-01/D-06): now exactly ten members -- host_tool is a reviewed eighth op, hello is plan 62-01's reviewed ninth op, attach is plan 63-01's reviewed tenth op, and this union is never widened again PER-TOOL", () => {
+test("ControlRequestKind (34-01/62-01/63-01/63-03, A-01/D-06): now exactly eleven members -- host_tool is a reviewed eighth op, hello is plan 62-01's reviewed ninth op, attach is plan 63-01's reviewed tenth op, operation is plan 63-03's reviewed eleventh op, and this union is never widened again PER-TOOL", () => {
   // Read off the type's own declaration in the source rather than a
   // hand-maintained list here: a second list would be the very drift this
   // asserts against. The union is a single line by convention in this file.
@@ -1623,10 +1836,10 @@ test("ControlRequestKind (34-01/62-01/63-01, A-01/D-06): now exactly ten members
     .map((s) => s.trim().replace(/^"|"$/g, ""))
     .filter((s) => s !== "");
   assert.deepEqual(members,
-    ["acquire", "release", "recycle", "status", "host_state", "monitor_claim", "monitor_release", "host_tool", "hello", "attach"],
-    "the message set must be exactly the prior nine plus plan 63-01's attach (SESS-02) -- a genuinely reviewed " +
+    ["acquire", "release", "recycle", "status", "host_state", "monitor_claim", "monitor_release", "host_tool", "hello", "attach", "operation"],
+    "the message set must be exactly the prior ten plus plan 63-03's operation (SESS-05) -- a genuinely reviewed " +
       "widening, not a per-tool one: a second host tool is still a new HOST_TOOL_IDS entry in host-tool.mts, " +
-      "never an eleventh ControlRequestKind member",
+      "never a twelfth ControlRequestKind member",
   );
 });
 
@@ -1849,7 +2062,7 @@ test("acquire profile (33-06): the profile survives being QUEUED behind an in-fl
 
 const BROKER_CONTROL_MTS = join(HERE, "broker-control.mts");
 
-test("the ControlRequestKind union has exactly ten members including hello and attach, and the hello arm's dispatch sits before the tokensMatch() call", () => {
+test("the ControlRequestKind union has exactly eleven members including hello, attach and operation, and the hello arm's dispatch sits before the tokensMatch() call", () => {
   const source = readFileSync(BROKER_CONTROL_MTS, "utf8");
 
   const unionMatch = source.match(/export type ControlRequestKind = ([^;]+);/);
@@ -1858,9 +2071,10 @@ test("the ControlRequestKind union has exactly ten members including hello and a
     .split("|")
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
-  assert.equal(members.length, 10, `expected 10 ControlRequestKind members, got ${members.length}: ${JSON.stringify(members)}`);
+  assert.equal(members.length, 11, `expected 11 ControlRequestKind members, got ${members.length}: ${JSON.stringify(members)}`);
   assert.ok(members.includes('"hello"'), `hello must be a member of ControlRequestKind, got ${JSON.stringify(members)}`);
   assert.ok(members.includes('"attach"'), `attach must be a member of ControlRequestKind, got ${JSON.stringify(members)}`);
+  assert.ok(members.includes('"operation"'), `operation must be a member of ControlRequestKind, got ${JSON.stringify(members)}`);
 
   const helloArmOffset = source.indexOf('req.op === "hello"');
   const tokensMatchCallOffset = source.indexOf("tokensMatch(token, opts.token)");
@@ -2113,6 +2327,7 @@ test("startControlListenerOnHosts: two listeners on two different bound addresse
     onMonitorClaim: (): MonitorClaimOutcome => ({ ok: true, handle: "test-handle" }),
     onMonitorRelease: (): MonitorReleaseOutcome => ({ ok: true }),
     onRelayAttach: (): RelayAttachOutcome => ({ ok: false, code: "internal" }),
+    onOperation: (): OperationNoteOutcome => ({ ok: true }),
     onHostTool: async () => ({ ok: false, message: "not exercised by this test" }),
   };
 

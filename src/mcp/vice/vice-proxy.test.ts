@@ -1952,6 +1952,7 @@ async function startControlBroker(dir: string, deps: StubBrokerDeps = {}) {
     // as of this plan -- this proxy-focused fixture never exercises
     // `attach` itself, so this stub exists only to satisfy the type.
     onRelayAttach: () => ({ ok: false, code: "internal" as const }),
+    onOperation: () => ({ ok: true as const }),
     // Phase 34, plan 34-01: a required field on StartControlListenerOptions
     // as of this plan -- this proxy-focused fixture never exercises
     // host_tool itself, so this stub exists only to satisfy the type.
