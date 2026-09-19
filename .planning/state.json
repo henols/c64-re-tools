@@ -321,7 +321,7 @@
     {
       "number": "61",
       "name": "The Install Tables Generated, and a Guard That Compares Facts",
-      "status": "pending"
+      "status": "in_progress"
     }
   ],
   "next": {
@@ -329,5 +329,5 @@
     "label": "Advance to the next step",
     "reason": "Phase 61 of 4 · 75% · executing"
   },
-  "updated_at": "2026-09-19T07:31:21.846Z"
+  "updated_at": "2026-09-19T07:52:19.720Z"
 }
