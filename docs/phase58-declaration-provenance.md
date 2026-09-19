@@ -163,7 +163,7 @@ changed by this note; it only makes the grade's own meaning explicit.
 
 ## Case four: the two Node floors
 
-Both `src/mcp/vice/package.json:102-103` (`"engines": { "node": ">=24.0.0"
+Both `src/mcp/vice/package.json:103-104` (`"engines": { "node": ">=24.0.0"
 }`) and `installer/package.json:15-16` (`"engines": { "node": ">=18" }`)
 declare a Node floor for this project, and they differ. Both are correct
 about different things, and only one of them is a fact the declaration
@@ -467,7 +467,7 @@ its entry here, or letting an entry drift off its anchor, fails the build.
   { "citation": ".github/workflows/ci.yml:80-81", "anchor": "grep -qi acme /tmp/acme-banner.txt" },
   { "citation": ".github/workflows/ci.yml:48", "anchor": "verified package name against" },
   { "citation": ".github/workflows/ci.yml:45-50", "anchor": "verified package name against" },
-  { "citation": "src/mcp/vice/package.json:102-103", "anchor": "\"node\": \">=24.0.0\"" },
+  { "citation": "src/mcp/vice/package.json:103-104", "anchor": "\"node\": \">=24.0.0\"" },
   { "citation": "installer/package.json:15-16", "anchor": "\"node\": \">=18\"" },
   { "citation": "src/mcp/vice/resources/vice-launcher.sh:156", "anchor": "NODE_FLOOR_MAJOR=24" },
   { "citation": "README.md:133", "anchor": "brew install vice" },

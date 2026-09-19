@@ -4,10 +4,11 @@
   "description": "VICE emulator MCP server for C64 reverse-engineering: a stdio MCP server that proxies vice tools to a host VICE MCP server.",
   "type": "module",
   "bin": {
-    "vice-mcp": "vice-proxy.ts"
+    "vice-mcp": "vice-cli.mjs"
   },
-  "main": "vice-proxy.ts",
+  "main": "vice-cli.mjs",
   "files": [
+    "vice-cli.mjs",
     "vice-proxy.ts",
     "vice-errors.ts",
     "vice-broker-client.ts",
