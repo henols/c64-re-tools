@@ -39,11 +39,11 @@ for re-derivation during planning:
 
 ### Endpoint — finding the broker with nothing on disk
 
-- [ ] **ENDPOINT-01**: A client reaches the broker with no file on disk, by dialling one fixed port in a fixed candidate order (`127.0.0.1`, then `host.docker.internal`), taking the first candidate that completes a handshake
-- [ ] **ENDPOINT-02**: Each dial candidate is bounded by its own timeout, so a wedged or foreign listener on the first candidate cannot prevent the second from being tried
-- [ ] **ENDPOINT-03**: The handshake proves the listener is genuinely this broker and at a compatible version, so "something else answered" is distinguishable from "nothing is listening"
-- [ ] **ENDPOINT-04**: A client that finds no broker refuses by name and tells the user the exact command to start one on their platform
-- [ ] **ENDPOINT-05**: A client and broker at incompatible versions refuse by name and say which to update — the two npm packages update independently, so skew is expected, not exceptional
+- [x] **ENDPOINT-01**: A client reaches the broker with no file on disk, by dialling one fixed port in a fixed candidate order (`127.0.0.1`, then `host.docker.internal`), taking the first candidate that completes a handshake
+- [x] **ENDPOINT-02**: Each dial candidate is bounded by its own timeout, so a wedged or foreign listener on the first candidate cannot prevent the second from being tried
+- [x] **ENDPOINT-03**: The handshake proves the listener is genuinely this broker and at a compatible version, so "something else answered" is distinguishable from "nothing is listening"
+- [x] **ENDPOINT-04**: A client that finds no broker refuses by name and tells the user the exact command to start one on their platform
+- [x] **ENDPOINT-05**: A client and broker at incompatible versions refuse by name and say which to update — the two npm packages update independently, so skew is expected, not exceptional
 
 ### Broker — one per machine, started by the user
 
@@ -143,11 +143,11 @@ requirement owned by two phases or by none.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ENDPOINT-01 | Phase 62 | Pending |
-| ENDPOINT-02 | Phase 62 | Pending |
-| ENDPOINT-03 | Phase 62 | Pending |
-| ENDPOINT-04 | Phase 62 | Pending |
-| ENDPOINT-05 | Phase 62 | Pending |
+| ENDPOINT-01 | Phase 62 | Complete |
+| ENDPOINT-02 | Phase 62 | Complete |
+| ENDPOINT-03 | Phase 62 | Complete |
+| ENDPOINT-04 | Phase 62 | Complete |
+| ENDPOINT-05 | Phase 62 | Complete |
 | BROKER-01 | Phase 62 | Pending |
 | BROKER-02 | Phase 62 | Pending |
 | BROKER-03 | Phase 62 | Pending |
@@ -181,6 +181,7 @@ requirement owned by two phases or by none.
 | RM-08 | Phase 65 | Pending |
 
 **Coverage:**
+
 - v2.0.0 requirements: 36 total
 - Mapped to phases: 36
 - Unmapped: 0 ✅

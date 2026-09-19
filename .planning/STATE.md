@@ -4,17 +4,17 @@ milestone: v2.0.0
 milestone_name: One Broker, One Socket
 current_phase: 62
 current_phase_name: The Fixed Endpoint and the Broker That Owns the Machine
-status: planning
-stopped_at: Phase 62 planned - 5 plans in 4 waves, ready to execute
-last_updated: "2026-09-19T14:16:35.637Z"
+status: executing
+stopped_at: Completed 62-01-PLAN.md
+last_updated: "2026-09-19T14:54:17.105Z"
 last_activity: 2026-09-19
-last_activity_desc: Phase 62 planned - 5 plans, 4 waves, 11/11 requirements covered
-state_head: e0877efd5d44baf5e3a0d05e328f95d30ac54ed0
+last_activity_desc: Phase 62 execution started
+state_head: 55ed4064f78cf8cf42cc3b3971b99895b0a5eb84
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 5
-  completed_plans: 0
+  completed_plans: 1
   percent: 0
 carried_forward_phases:
 
@@ -46,8 +46,9 @@ v2.0.0 close is where it can be weighed — and it will have evidence to weigh,
 because "keep working when the emulator misbehaves" is exactly what a
 connection-is-the-session broker changes the mechanics of.*
 
-**Current focus:** **Milestone v2.0.0 "One Broker, One Socket" opened
-2026-09-19**, with requirements defined and the roadmap created — **Phases
+**Current focus:** Phase 62 — The Fixed Endpoint and the Broker That Owns the
+Machine, plan 1 of 5 complete (2026-09-19). **Milestone v2.0.0 "One Broker, One
+Socket" opened 2026-09-19**, with requirements defined and the roadmap created — **Phases
 62-67**, 36/36 requirements mapped, each to exactly one phase. One
 manually-started broker per
 machine serves every session from every project over a single fixed TCP endpoint;
@@ -76,11 +77,11 @@ closure still needs to be recorded as one.
 
 ## Current Position
 
-Phase: 62 (The Fixed Endpoint and the Broker That Owns the Machine) — READY TO EXECUTE
-Plan: 0 of 5 executed (62-01 .. 62-05, 4 waves)
-Status: Phase 62 planned and verified — ready to execute
+Phase: 62 (The Fixed Endpoint and the Broker That Owns the Machine) — EXECUTING
+Plan: 1 of 5 complete (62-01 done; 62-02 next)
+Status: Plan 62-01 complete — hello handshake, concurrent dial, and four ranked refusals proven end to end
 Progress: [░░░░░░░░░░] 0% (0 of 6 v2.0.0 phases complete; Phases 62-67)
-Last activity: 2026-09-19 — Phase 62 planned: 5 plans, 4 waves, 11/11 requirements covered
+Last activity: 2026-09-19 — Phase 62 plan 1 of 5 executed
 
 **The milestone's exit criterion lives in Phase 66 and nowhere else.** The
 hypothesis is falsifiable: the old boundary seam must be *gone from production
@@ -465,6 +466,7 @@ Phase 66 completes.
 | Phase 61 P01 | 55min | 2 tasks | 6 files |
 | Phase 61 P02 | 45min | 2 tasks | 1 files |
 | Phase 61 P03 | 20min | 2 tasks | 2 files |
+| Phase 62 P01 | 55min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -1342,6 +1344,9 @@ Recent decisions affecting current work:
 - [Phase 61]: README's ecosystem/overview generated regions parse back into records via a shared-derivation guard (D-10); the guard never re-implements what a row should contain.
 - [Phase 61]: Plan 61-02: GEN-03 delivered in full via five planted-divergence scratch-copy cases (changed ecosystem remedy, changed universal remedy, removed record, emptied region, removed marker), plus tolerance/round-trip cases proving the guard compares facts not bytes. No production code changed.
 - [Phase 61]: Kept README.md:119-120 and README.md:133 citation-ledger anchors unmoved by keeping their anchor sentences byte-identical; only README.md:145-151 (now 146-152) needed re-anchoring after the Windows-guidance rewrite gained a line (61-03).
+- [Phase 62]: hello dispatches before tokensMatch(), proven with a source-offset assertion
+- [Phase 62]: dialBrokerEndpoint uses a genuine race (onSocket callback) rather than Promise.all so the first COMPLETED handshake wins by settle order
+- [Phase 62]: Rank-4 refusal names both @henols/vice-mcp and @henols/c64-re-tools per D-05's lockstep-publish fact
 
 ### Pending Todos
 
@@ -2675,9 +2680,9 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-19 — Phase 62 context gathered (discuss-phase)
-Stopped at: Phase 62 context gathered
-Resume file: .planning/phases/62-the-fixed-endpoint-and-the-broker-that-owns-the-machine/62-CONTEXT.md
+Last session: 2026-09-19T14:54:16.980Z
+Stopped at: Completed 62-01-PLAN.md
+Resume file: None
 
 Earlier: **v2.0.0 roadmap created.** 36/36 requirements (`ENDPOINT-01..05`,
   `BROKER-01..06`, `SESS-01..06`, `XFER-01..08`, `SEAM-01..03`, `RM-01..08`)

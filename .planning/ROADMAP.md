@@ -1930,7 +1930,6 @@ seam** — a departure from the researched shape, reasoned in the archived
 sequencing rationale rather than left to be noticed. Both requirements are about
 what the *shipped code* does, which cannot be true when only the module exists.
 
-
 ## v2.0.0 One Broker, One Socket — IN PROGRESS (Phase Details)
 
 *Created 2026-09-19 at the v2.0.0 roadmap. Phases 62-67, continuing numbering
@@ -1986,12 +1985,12 @@ Nothing is deleted here.
      are committed and never auto-applied, with a documented foreground command
      as the universal fallback (BROKER-01, BROKER-05, BROKER-06).
 
-**Plans**: 5 plans
+**Plans**: 1/5 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 62-01-PLAN.md — The fixed endpoint: a credential-free handshake answered ahead of the token gate, and a two-candidate dial that completes it end to end
+- [x] 62-01-PLAN.md — The fixed endpoint: a credential-free handshake answered ahead of the token gate, and a two-candidate dial that completes it end to end
 - [ ] 62-02-PLAN.md — A machine-level broker home one level above every project, and three client-side comments that stop teaching the reversed bind rule
 
 **Wave 2** *(blocked on Wave 1 completion)*
@@ -2166,7 +2165,6 @@ tool.
   injected `now()`/timer overrides so the idle and keepalive cases do not wait out
   real wall-clock minutes.
 
-
 ### Phase 64: Files as Bytes, Both Directions
 
 **Goal**: The four file-carrying tools work with no shared filesystem between
@@ -2333,7 +2331,6 @@ must be taken here rather than discovered by a red CI run after Phase 66.
   (including two generated `resources/` mirrors) and 6 under `src/skills/`.
   Regenerating the `resources/*.mjs` artifacts is part of the work, and
   `resources-sync.test.ts` fails CI on drift.
-
 
 ### Phase 66: The Deletion Cutover — Gone, Not Bypassed
 
@@ -2633,7 +2630,7 @@ check. No test reads this table now.
 | 59. The Tool-Location Seam and Its Precedence Order | v1.1.0 | 5/5 | Complete | 2026-09-18 |
 | 60. The Seam Wired Into the Code That Ships | v1.1.0 | 8/8 | Complete | 2026-09-18 |
 | 61. The Install Tables Generated, and a Guard That Compares Facts | v1.1.0 | 3/3 | Complete | 2026-09-19 |
-| 62. The Fixed Endpoint and the Broker That Owns the Machine | v2.0.0 | 0/5 | Planned | - |
+| 62. The Fixed Endpoint and the Broker That Owns the Machine | v2.0.0 | 1/5 | In Progress | - |
 | 63. The Monitor Channel Relayed, and the Connection as the Session | v2.0.0 | — | Not started | - |
 | 64. Files as Bytes, Both Directions | v2.0.0 | — | Not started | - |
 | 65. Every Skill Script Through the One Endpoint, and CI With It | v2.0.0 | — | Not started | - |
