@@ -12,7 +12,7 @@
 // stand-in.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createServer, type Server, type Socket, type AddressInfo } from "node:net";
+import { createServer, connect as netConnect, type Server, type Socket, type AddressInfo } from "node:net";
 
 import { readAttachLine, MAX_ATTACH_LINE_BYTES } from "./broker-relay.mts";
 import {
@@ -28,8 +28,8 @@ import {
   type RelayAttachOutcome,
 } from "./broker-control.mts";
 import { createBrokerState, type BrokerState, type InstanceRecord, type MonitorChannel } from "./broker-state.mts";
-import { dialMonitorRelay, type DialMonitorRelayResult } from "./broker-endpoint.ts";
-import { ViceMonitorClient, CommandType, ResponseType, ErrorCode, REQUEST_HEADER_LEN, encodeRequestHeader } from "./stock-protocol.ts";
+import { dialMonitorRelay, HELLO_PROTOCOL_MAGIC, RELAY_TAG_BINARY, type DialMonitorRelayResult } from "./broker-endpoint.ts";
+import { ViceMonitorClient, CommandType, ResponseType, ErrorCode, REQUEST_HEADER_LEN, VICE_BROADCAST_REQUEST_ID, encodeRequestHeader } from "./stock-protocol.ts";
 import { encodeResponseFrame } from "./binmon-fixtures.ts";
 import { build } from "./build.ts";
 import type { Socket as NetSocket } from "node:net";
@@ -302,6 +302,193 @@ test("tracer: an attach presenting a handle that does not match the stored one i
         if (dialResult.ok) return;
         assert.match(dialResult.reason, /denied/i, "the refusal must name the authorisation failure, never an emulator-fault wording");
         assert.equal(connectionCount(), 0, "the stub emulator must never accept a connection for a mismatched handle -- the socket is never spliced");
+      });
+    },
+  );
+});
+
+// ===========================================================================
+// Task 2: the two mode boundaries, both directions, in one TCP segment.
+// Every case below is driven by a SINGLE socket write concatenating the
+// JSON line, its terminator and non-JSON bytes -- never two writes, because
+// TCP makes no such boundary guarantee and a two-write test would pass
+// while the bytes were corrupted.
+// ===========================================================================
+
+test("boundary one (broker side): a single write carrying the attach line, its terminator and binmon bytes delivers the binmon bytes to the stub emulator unchanged", async () => {
+  const receivedByEmulator: Buffer[] = [];
+  let resolveGotData: () => void = () => {};
+  const gotData = new Promise<void>((resolve) => {
+    resolveGotData = resolve;
+  });
+  await withStubEmulatorServer(
+    (socket) => {
+      socket.on("data", (chunk: Buffer) => {
+        receivedByEmulator.push(Buffer.from(chunk));
+        resolveGotData();
+      });
+    },
+    async (emulatorPort) => {
+      await withRelayTestBroker(emulatorPort, "grant-boundary-1", async ({ listenerPort, token, state }) => {
+        const claimOutcome = handleMonitorClaim("claim-boundary-1", "grant-boundary-1", "binary", state);
+        assert.ok(claimOutcome.ok);
+        if (!claimOutcome.ok) return;
+
+        const binmonBytes = encodeRequestHeader({ commandType: CommandType.Ping, requestId: 1, body: Buffer.alloc(0) });
+        const attachLine = Buffer.from(
+          `${JSON.stringify({ op: "attach", target_id: "grant-boundary-1", channel: "binary", handle: claimOutcome.handle, token })}\n`,
+          "utf8",
+        );
+        const combined = Buffer.concat([attachLine, binmonBytes]);
+
+        const rawSocket = netConnect({ host: "127.0.0.1", port: listenerPort });
+        await new Promise<void>((resolve, reject) => {
+          rawSocket.once("connect", () => resolve());
+          rawSocket.once("error", reject);
+        });
+        // ONE write -- the attach line, its terminator and the first bytes
+        // of a binmon frame together. Never two writes.
+        rawSocket.write(combined);
+
+        await gotData;
+        const receivedTotal = Buffer.concat(receivedByEmulator);
+        assert.ok(receivedTotal.equals(binmonBytes), "the binmon bytes must arrive at the stub emulator byte-identical, asserted with Buffer.equals");
+        rawSocket.destroy();
+      });
+    },
+  );
+});
+
+test("boundary two (client side): a single write carrying the attach reply, its terminator and a REGISTER_INFO frame results in the client parsing that frame, with no bytes discarded", async () => {
+  // A minimal fake broker: answers `hello` then, on the SAME connection,
+  // answers `attach` with ONE write concatenating the attach reply, its
+  // terminator, and a REGISTER_INFO frame -- stock VICE's own REGISTER_INFO
+  // frame lands in exactly this position on a real broker, emitted on every
+  // monitor open (CLAUDE.md).
+  const registerInfoFrame = encodeResponseFrame({
+    responseType: ResponseType.RegisterInfo,
+    errorCode: ErrorCode.Ok,
+    requestId: VICE_BROADCAST_REQUEST_ID,
+    body: Buffer.from([0x00, 0x00]), // count = 0 registers -- a minimal, always-valid body
+  });
+
+  const server = createServer((socket) => {
+    let carry = Buffer.alloc(0);
+    let stage: "hello" | "attach" = "hello";
+    socket.on("data", (chunk: Buffer) => {
+      carry = Buffer.concat([carry, chunk]);
+      const idx = carry.indexOf(0x0a);
+      if (idx === -1) return;
+      carry = carry.subarray(idx + 1);
+      if (stage === "hello") {
+        stage = "attach";
+        socket.write(`${JSON.stringify({ kind: "hello", protocol: HELLO_PROTOCOL_MAGIC, version: "1.0.0", tag: RELAY_TAG_BINARY })}\n`);
+      } else {
+        // ONE write -- the attach reply, its terminator and the
+        // REGISTER_INFO frame together. Never two writes.
+        socket.write(Buffer.concat([Buffer.from('{"kind":"attached"}\n', "utf8"), registerInfoFrame]));
+      }
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+  const fakeBrokerPort = (server.address() as AddressInfo).port;
+
+  try {
+    const dialResult: DialMonitorRelayResult = await dialMonitorRelay({
+      targetId: "grant-boundary-2",
+      channel: "binary",
+      handle: "irrelevant-to-this-fake-broker",
+      token: "irrelevant-to-this-fake-broker",
+      port: fakeBrokerPort,
+      candidates: ["127.0.0.1"],
+      clientVersion: "1.0.0",
+    });
+    assert.ok(dialResult.ok, `expected a successful dial against the fake broker: ${JSON.stringify(dialResult)}`);
+    if (!dialResult.ok) return;
+
+    assert.ok(
+      dialResult.pending.equals(registerInfoFrame),
+      "the REGISTER_INFO frame bytes must be returned as `pending`, byte-identical, with no bytes discarded",
+    );
+
+    const client = new ViceMonitorClient();
+    const events: unknown[] = [];
+    client.on("event", (e) => events.push(e));
+    client.attach(dialResult.socket, { pending: dialResult.pending });
+    assert.equal(events.length, 1, "attach() must parse the seeded pending bytes through the SAME path a live 'data' event would use");
+    await client.disconnect();
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
+test("byte-transparency: a payload with a lone 0x80-0xFF byte run and an embedded zero byte arrives byte-identical in both directions", async () => {
+  const weirdPayload = Buffer.concat([Buffer.from([0x80, 0x81, 0x82, 0xfe, 0xff, 0x00, 0x41, 0x42])]);
+  const receivedByEmulator: Buffer[] = [];
+  let resolveGotEmulatorData: () => void = () => {};
+  const gotEmulatorData = new Promise<void>((resolve) => {
+    resolveGotEmulatorData = resolve;
+  });
+
+  await withStubEmulatorServer(
+    (socket) => {
+      socket.on("data", (chunk: Buffer) => {
+        receivedByEmulator.push(Buffer.from(chunk));
+        resolveGotEmulatorData();
+        socket.write(chunk); // echo back unchanged
+      });
+    },
+    async (emulatorPort) => {
+      await withRelayTestBroker(emulatorPort, "grant-weird", async ({ listenerPort, token, state }) => {
+        const claimOutcome = handleMonitorClaim("claim-weird", "grant-weird", "binary", state);
+        assert.ok(claimOutcome.ok);
+        if (!claimOutcome.ok) return;
+
+        const dialResult = await dialMonitorRelay({
+          targetId: "grant-weird",
+          channel: "binary",
+          handle: claimOutcome.handle,
+          token,
+          port: listenerPort,
+          candidates: ["127.0.0.1"],
+        });
+        assert.ok(dialResult.ok, `expected a successful relay dial: ${JSON.stringify(dialResult)}`);
+        if (!dialResult.ok) return;
+
+        const clientSocket = dialResult.socket;
+        const echoedPromise = new Promise<Buffer>((resolve) => {
+          clientSocket.once("data", (chunk: Buffer) => resolve(Buffer.from(chunk)));
+        });
+        clientSocket.write(weirdPayload);
+
+        await gotEmulatorData;
+        assert.ok(Buffer.concat(receivedByEmulator).equals(weirdPayload), "client -> emulator bytes must be byte-identical, asserted with Buffer.equals");
+
+        const echoed = await echoedPromise;
+        assert.ok(echoed.equals(weirdPayload), "emulator -> client bytes must be byte-identical, asserted with Buffer.equals");
+        clientSocket.destroy();
+      });
+    },
+  );
+});
+
+test("boundary one overflow: a relay connection buffering past MAX_ATTACH_LINE_BYTES pre-splice bytes with no terminator has its socket destroyed and never reaches the splice", async () => {
+  await withStubEmulatorServer(
+    () => {
+      assert.fail("the stub emulator must never accept a connection when the pre-splice cap is exceeded with no terminator");
+    },
+    async (emulatorPort, connectionCount) => {
+      await withRelayTestBroker(emulatorPort, "grant-overflow", async ({ listenerPort }) => {
+        const rawSocket = netConnect({ host: "127.0.0.1", port: listenerPort });
+        await new Promise<void>((resolve, reject) => {
+          rawSocket.once("connect", () => resolve());
+          rawSocket.once("error", reject);
+        });
+        const closed = new Promise<void>((resolve) => rawSocket.once("close", () => resolve()));
+        // 65537 bytes, no terminator anywhere -- one write past the cap.
+        rawSocket.write(Buffer.alloc(MAX_ATTACH_LINE_BYTES + 1, 0x41));
+        await closed;
+        assert.equal(connectionCount(), 0, "the stub emulator must never be dialled for an overflowed pre-splice buffer");
       });
     },
   );
