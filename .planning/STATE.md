@@ -6,15 +6,15 @@ current_phase: 61
 current_phase_name: The Install Tables Generated, and a Guard That Compares Facts
 status: executing
 stopped_at: Phase 61 planned — 3 plans in 2 waves; ready to execute
-last_updated: "2026-09-19T07:32:05.801Z"
+last_updated: "2026-09-19T07:52:44.689Z"
 last_activity: 2026-09-19
 last_activity_desc: Phase 61 execution started
-state_head: b192e37d8c526e3094bad93a22a355ae1d9fff90
+state_head: a8a3251d16099ebdd977196c09e815a272b7759a
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 19
-  completed_plans: 17
+  completed_plans: 18
   percent: 75
 carried_forward_phases:
 
@@ -344,9 +344,9 @@ suppressed/acknowledged rows are recorded in their own sections.
 ## Current Position
 
 Phase: 61 (The Install Tables Generated, and a Guard That Compares Facts) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
-Stopped at: Completed 61-01-PLAN.md (README install tables generated, drift guard proven non-vacuous); 61-02 and 61-03 remain
+Stopped at: Completed 61-02-PLAN.md (GEN-03 planted-divergence proof + tolerance/round-trip fidelity); 61-03 remains
 
 Gate override (plan-phase §13a, 2026-09-19): the decision-coverage gate returned
 `passed: false` with reason `could-not-parse` and an EMPTY `uncovered` array — it could
@@ -781,6 +781,7 @@ than a matter of discipline.
 | Phase 60 P05 | 245min | 2 tasks | 9 files |
 | Phase 60 P08 | 65min | 3 tasks | 8 files |
 | Phase 61 P01 | 55min | 2 tasks | 6 files |
+| Phase 61 P02 | 45min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -1656,6 +1657,7 @@ Recent decisions affecting current work:
 - [Phase 60]: The environment layer's terminal refusal (envUnresolved) now fires for any non-empty declared value that resolves through neither Layer 1 step, not only a separator-free one, correcting plan 60-06's own scoping decision per 60-VERIFICATION.md's direct read of the pre-phase source.
 - [Phase 60]: WR-03 fixed by branching the refusal message on record.kind (PD-21), not by deleting the $PATH-shadowing clause for every kind -- the clause stays for executable-kind ids and is dropped only where it is structurally false.
 - [Phase 61]: README's ecosystem/overview generated regions parse back into records via a shared-derivation guard (D-10); the guard never re-implements what a row should contain.
+- [Phase 61]: Plan 61-02: GEN-03 delivered in full via five planted-divergence scratch-copy cases (changed ecosystem remedy, changed universal remedy, removed record, emptied region, removed marker), plus tolerance/round-trip cases proving the guard compares facts not bytes. No production code changed.
 
 ### Pending Todos
 
@@ -2910,7 +2912,7 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-19T07:32:05.604Z
+Last session: 2026-09-19T07:52:44.562Z
 Stopped at: Phase 61 context gathered
 Resume file: None
 

@@ -69,8 +69,8 @@ scoped to any phase.
 ### Generated Documentation
 
 - [ ] **GEN-01**: `README.md`'s per-platform install tables are generated from the declaration rather than maintained by hand.
-- [ ] **GEN-02**: A build-failing guard catches divergence between the declaration and the generated section by comparing parsed records, never bytes.
-- [ ] **GEN-03**: The guard is proven non-vacuous by a planted divergence that makes it fail.
+- [x] **GEN-02**: A build-failing guard catches divergence between the declaration and the generated section by comparing parsed records, never bytes.
+- [x] **GEN-03**: The guard is proven non-vacuous by a planted divergence that makes it fail.
 
 ## Future Requirements
 
@@ -154,8 +154,8 @@ be read as sloppiness:
 | LOC-04 | Phase 60 | Complete |
 | DECL-03 | Phase 60 | Complete |
 | GEN-01 | Phase 61 | Pending |
-| GEN-02 | Phase 61 | Pending |
-| GEN-03 | Phase 61 | Pending |
+| GEN-02 | Phase 61 | Complete |
+| GEN-03 | Phase 61 | Complete |
 
 **Coverage:**
 
