@@ -5,14 +5,14 @@ date: 2026-09-17
 decision_ids: [D-02, D-03, D-04, D-05, D-06, D-07, D-09, D-10, D-11]
 statements_reversed:
   - document: README.md
-    location: "\"What a sub-3.10 VICE costs\" (README.md:122-128)"
+    location: "\"What a sub-3.10 VICE costs\" (README.md:145-151)"
     original: >-
       Nothing breaks. `CPUHISTORY_GET` (the exact per-instruction cycle
       counter) is absent below VICE 3.10, so the cycle stopwatch degrades to
       an honest within-one-frame approximation instead of an exact count.
       This is already-shipped graceful degradation -- every other tool works
       the same either way.
-    amended_at: "phase 58 plan 02, Task 2 -- README.md:122-128 is rewritten in the same phase this doc records the reversal"
+    amended_at: "phase 58 plan 02, Task 2 -- README.md:145-151 is rewritten in the same phase this doc records the reversal"
 related_decisions: [DECL-01, DECL-04]
 ---
 
@@ -27,7 +27,7 @@ by name rather than filling in a plausible number.
 
 ## Case one: the VICE version gate
 
-`README.md:96-97` frames the VICE 3.10 floor as load-bearing:
+`README.md:119-120` frames the VICE 3.10 floor as load-bearing:
 
 > Checked live against each ecosystem on 2026-08-18. `CPUHISTORY_GET`, the
 > opcode behind this project's exact cycle stopwatch, requires **VICE >= 3.10**
@@ -51,7 +51,7 @@ That is what lets `DECL-04`'s "exactly one record, `node`, carries a
 `versionFloor` field" rule hold literally rather than by argument -- there is
 no second version fact anywhere in `prerequisites.json` for a reader to
 mistake for a floor. It is also why plan 58-02's second task exists at all:
-`README.md:122-128` ("What a sub-3.10 VICE costs") sits outside the table
+`README.md:145-151` ("What a sub-3.10 VICE costs") sits outside the table
 Phase 62 generates, nothing else will ever correct it, and it was still
 asserting the losing side until this phase.
 
@@ -197,11 +197,11 @@ where it has always lived.
 
 ## Case five: one ecosystem under two platforms
 
-The Homebrew row in `README.md:110` covers `macOS + Linux` in a single row,
+The Homebrew row in `README.md:133` covers `macOS + Linux` in a single row,
 so the `homebrew` ecosystem entry appears under both the `linux` and the
 `darwin` platform keys in `x64sc`, `c1541`, and `petcat`'s `remedies` trees,
 with byte-identical `text` (`"brew install vice"`) and `source`
-(`README.md:110`) in both places. This is a deliberate duplication that
+(`README.md:133`) in both places. This is a deliberate duplication that
 mirrors the source table's own scope, not two independent authoring
 decisions that happen to agree, and not an error a future consumer should
 try to collapse into a single cross-platform key -- the record shape (D-06)
@@ -381,8 +381,8 @@ its entry here, or letting an entry drift off its anchor, fails the build.
   { "citation": "src/skills/c64-program-recon/SKILL.md:117-125", "anchor": "install an external identifier on the **host** and point `UNP64` or `UNP64_PATH` at it" },
   { "citation": ".planning/phases/19-absorbed-procedures-and-the-coverage-instrument/19-DECISIONS.md:151", "anchor": "**Decided:** 2026-08-24" },
   { "citation": ".planning/ROADMAP.md:2002-2005", "anchor": "a user missing ACME learns that" },
-  { "citation": "README.md:96-97", "anchor": "Checked live against each ecosystem on 2026-08-18." },
-  { "citation": "README.md:122-128", "anchor": "No shipped tool in this project refuses on a VICE version." },
+  { "citation": "README.md:119-120", "anchor": "Checked live against each ecosystem on 2026-08-18." },
+  { "citation": "README.md:145-151", "anchor": "No shipped tool in this project refuses on a VICE version." },
   { "citation": "src/mcp/vice/host-tool.mts:1737", "anchor": "host_tool \"${request.tool}\" refuses: \"c1541\" does not exist" },
   { "citation": "src/mcp/vice/host-tool.mts:1824", "anchor": "host_tool \"petcat.decode\" refuses: \"petcat\" does not exist" },
   { "citation": "src/mcp/vice/host-tool.mts:2504-2560", "anchor": "function findSiblingBinary(" },
@@ -395,7 +395,7 @@ its entry here, or letting an entry drift off its anchor, fails the build.
   { "citation": "src/mcp/vice/package.json:102-103", "anchor": "\"node\": \">=24.0.0\"" },
   { "citation": "installer/package.json:15-16", "anchor": "\"node\": \">=18\"" },
   { "citation": "src/mcp/vice/resources/vice-launcher.sh:156", "anchor": "NODE_FLOOR_MAJOR=24" },
-  { "citation": "README.md:110", "anchor": "brew install vice" },
+  { "citation": "README.md:133", "anchor": "brew install vice" },
   { "citation": "src/mcp/vice/host-tool.mts:2422-2448", "anchor": "function findAcmeLib(locate?: HostToolLocator): { path: string | null; tried: string[] } {" },
   { "citation": "src/mcp/vice/host-tool.mts:2414", "anchor": "ACME_LIB_MARKER = join(\"cbm\", \"c64\", \"vic.a\")" },
   { "citation": "src/skills/acme-build/SKILL.md:211-212", "anchor": "documented a second time here" },
