@@ -365,6 +365,78 @@ No `prerequisites.json` edit is made here, because correcting it properly
 needs the ninth record `DECL-F3` defers -- this paragraph is the correction
 until then.
 
+## The 27 circular citations
+
+Twenty-seven `source` values in `src/mcp/vice/prerequisites.json` name a
+README line -- every `x64sc`, `c1541`, and `petcat` remedy under `linux`,
+`darwin`, and `win32` carries one, each naming a README line number in the
+low hundreds, from the old hand-written install table this phase replaces.
+After this phase those README lines are generated FROM the
+declaration (`src/mcp/vice/prereq-readme-gen.ts`), so a record whose
+`provenance` is `carried` -- meaning it was moved here from an existing
+hand-written source -- now cites its own output. Nothing breaks today: the
+citation-ledger guard (`src/mcp/vice/phase58-citation-ledger.test.ts`) reads
+documents, never the declaration's own `source` field, so these 27 values
+are checked by no automated guard at all. The claim they carry has simply
+become historical -- each records where its string came from BEFORE
+generation existed, and a reader who follows one of these citations today
+lands on the generator's own rendered output, not on the original
+authorship the field was written to record.
+
+Two alternatives were rejected. A commit-pinned citation syntax
+(`README.md@<sha>:101`) would resolve the ambiguity but is a format nothing
+else in this repository uses, adopted for a problem exactly 27 fields wide.
+Re-pointing `source` at the generator would erase the very fact these
+fields exist to preserve -- a `carried` record gets a `source` field
+precisely so a reader can trace a string back to where it was originally
+authored, and pointing that field at the generator instead would destroy
+that history rather than correct it. The declaration itself is unchanged,
+per D-02 -- an owner decision this document is not the place to revisit.
+
+## The `acme-lib` remedy's placeholder does not render
+
+The `acme-lib` record's `remedies.universal[0].text` field reads `export
+ACME=<dir holding cbm/c64/vic.a>.`. D-05 makes a generated table cell the
+declaration's `text` value character for character, so this string reaches
+`README.md`'s generated "Prerequisites at a glance" overview region exactly
+as written -- and a markdown renderer reads the angle-bracketed
+`<dir holding cbm/c64/vic.a>` as an unrecognized HTML tag and drops it on
+render, so the cell a reader actually sees omits the placeholder even
+though the committed bytes are correct.
+
+This is an authoring defect in the declaration, surfaced late by
+generation -- exactly the failure shape this project's own compatibility
+constraint warns against, a generated cell displaying something other than
+what a user should type -- and not a formatting decision for the generator
+to absorb. Both available repairs are foreclosed in this phase: escaping
+the cell is foreclosed by D-05 (a generated cell is the declaration's text
+verbatim, with no formatting rule applied on the way out), and rewording
+the declaration's `text` field is foreclosed by D-02 (the declaration is
+frozen for this phase). Closing it belongs to a future phase that is
+allowed to edit `src/mcp/vice/prerequisites.json` -- the record is
+`acme-lib`, the field is `remedies.universal[0].text`, named here so that
+phase does not have to rediscover them.
+
+## Regenerating README.md's install tables
+
+`.planning/ENGINEERING_RULES.md` §11 requires four steps when changing a
+generator: update the source of truth, regenerate the artifact, run the
+drift guard, and verify the delta is expected. Mapped onto this generator:
+the source of truth is `src/mcp/vice/prerequisites.json`; the regeneration
+command is the `generate:readme` npm script
+(`npm --prefix src/mcp/vice run generate:readme`); the drift guard is
+`src/mcp/vice/prereq-readme-gen.test.ts`; and the expected delta is
+confined to the two marker-delimited regions of `README.md` --
+`prereq-gen:vice-ecosystems` and `prereq-gen:prerequisite-overview`.
+
+One consequence a maintainer will hit: regenerating can shift `README.md`'s
+line numbers, and a shift reds `src/mcp/vice/phase58-citation-ledger.test.ts`
+for any entry whose citation falls below the moved region. That is the
+ledger doing its job, not a regression to route around -- the entries get
+re-anchored to their new line ranges in the same commit that runs the
+regeneration, exactly as this phase's own README rewrite did (see the
+Citation ledger below).
+
 ## Citation ledger
 
 This ledger is machine-read by `src/mcp/vice/phase58-citation-ledger.test.ts`.
