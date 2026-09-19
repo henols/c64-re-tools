@@ -199,6 +199,50 @@ of a file on disk, and there is no emulator connection anywhere on that path
 to contend for the port. If an emulator has gone silent, see the
 `vice-wedge-triage` skill before assuming it is wedged.
 
+## Starting the broker
+
+The `vice` MCP server does not start the broker for you, and does not install
+anything to make that happen — it **detects, then refuses by name with the
+remedy**. The remedy is the same everywhere: this project's own published
+package, invoked (never installed) as a foreground command. This works on
+any platform with no setup at all:
+
+```
+npx -y @henols/vice-mcp broker
+```
+
+Two optional service paths let it survive a logout instead of only running in
+a terminal you keep open. Both are things **you** run — this repository never
+runs either command itself, and `src/mcp/vice/service-no-invoke.test.ts`
+asserts that structurally, with its own planted-violation proof.
+
+**Linux (systemd, per-user, no root needed):**
+
+1. Copy [`src/mcp/vice/service/vice-broker.service`](src/mcp/vice/service/vice-broker.service)
+   to `~/.config/systemd/user/vice-broker.service`.
+2. `systemctl --user daemon-reload`
+3. `systemctl --user enable --now vice-broker.service`
+
+**macOS (launchd, per-user agent):**
+
+1. Copy [`src/mcp/vice/service/com.henols.vice-broker.plist`](src/mcp/vice/service/com.henols.vice-broker.plist)
+   to `~/Library/LaunchAgents/com.henols.vice-broker.plist`.
+2. `launchctl load ~/Library/LaunchAgents/com.henols.vice-broker.plist`
+
+**One broker per machine** means every project and every Claude Code session
+on that machine shares it — restarting it (from either service path, or by
+killing a foreground run) affects all of them at once, not just the one you
+meant to restart.
+
+**A bridge appearing later needs a broker restart.** The broker enumerates
+its bind set once at startup and holds it for the life of the process. If you
+start a container runtime (Docker, Podman, a devcontainer) *after* the broker
+is already running, the broker has no way to notice the new bridge — restart
+it and it will pick the new bind set up on its next startup. This is a
+documented remedy, not a code feature: a broker that is unexpectedly
+unreachable from inside a container you started later is not a bug, it is
+this behavior.
+
 ## The retired static analyser (attribution, and what replaced it)
 
 **There is no longer any external analyser to install.** Until 2026-08-29 this
