@@ -146,6 +146,16 @@ async function withTextTool(
     return convertWireError(toolName, err);
   }
 
+  // Phase 63 (SESS-05): declare the operation on the LEASE'S OWN control
+  // session, immediately before the lock/command begin -- never a
+  // locally-derived control session, mirroring stock-dispatch.ts's own
+  // withChannelLockHeld()/declareOperation() discipline for the binary
+  // side. Written WITHOUT being awaited: a declaration must never add
+  // latency to a tool call and must never fail one (T-63-13).
+  // noteOperation() never throws by its own contract; the `.catch(() => {})`
+  // below guards anyway so an unexpected throw can never escape into the
+  // tool path.
+  void lease.brokerControl.noteOperation({ targetId: lease.targetId, channel: "text", name: toolName }).catch(() => {});
   try {
     return await withTextChannelLock(toolName, () => fn(session.client), { timeoutMs: deps.channelLockTimeoutMs });
   } catch (err) {
@@ -159,6 +169,9 @@ async function withTextTool(
     }
     return convertWireError(toolName, err);
   } finally {
+    // Cleared in the SAME finally block that tears the session down, the
+    // same "clear where you release" pairing withChannelLockHeld() uses.
+    void lease.brokerControl.noteOperation({ targetId: lease.targetId, channel: "text", name: null }).catch(() => {});
     try {
       await textDisconnect(session);
     } catch (releaseErr) {

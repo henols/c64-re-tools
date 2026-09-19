@@ -515,7 +515,36 @@ export type StockHandler = (args: Record<string, unknown>, deps: StockDispatchDe
  * output -- and NEVER routed through `convertWireError()`, which would
  * re-frame a legitimate ownership statement as a wire fault.
  */
-async function withChannelLockHeld(toolName: string, timeoutMs: number | undefined, fn: () => Promise<StockToolResult>): Promise<StockToolResult> {
+/**
+ * Phase 63 (SESS-05): declares (before `fn` runs) and clears (in the same
+ * `finally` that releases the lock) the operation this session's OWN grant
+ * has in flight, over `session.brokerControl` -- the LEASE'S OWN control
+ * session (the same one `ensureStockSession()`'s `stockConnect()` call
+ * claimed the monitor socket through), never a locally-derived one. A
+ * second, independently-opened control session would claim on one
+ * connection while another held the grant -- exactly the "re-deriving a
+ * cross-cutting seam locally" anti-pattern `ensureStockSession()`'s own
+ * header comment already forbids for the session itself, extended here to
+ * the declaration that names what that session is doing.
+ *
+ * Both calls are written WITHOUT being awaited: a declaration must never
+ * add latency to a tool call and must never fail one (T-63-13).
+ * `noteOperation()` never throws by its own contract
+ * (BrokerControlSession.noteOperation's own header comment) -- the
+ * `.catch(() => {})` below is a defensive guard against an unexpected throw
+ * escaping into the tool path anyway, not a documented failure mode this
+ * function relies on.
+ */
+function declareOperation(session: StockConnectSession, name: string | null): void {
+  void session.brokerControl.noteOperation({ targetId: session.targetId, channel: "binary", name }).catch(() => {});
+}
+
+async function withChannelLockHeld(
+  toolName: string,
+  timeoutMs: number | undefined,
+  session: StockConnectSession,
+  fn: () => Promise<StockToolResult>,
+): Promise<StockToolResult> {
   let handle;
   try {
     handle = await acquireChannelLock({ channel: "binary", operation: toolName, timeoutMs });
@@ -525,9 +554,11 @@ async function withChannelLockHeld(toolName: string, timeoutMs: number | undefin
     }
     throw err;
   }
+  declareOperation(session, toolName);
   try {
     return await fn();
   } finally {
+    declareOperation(session, null);
     handle.release();
   }
 }
@@ -584,7 +615,7 @@ export function withStockSession(toolName: string, handler: StockSessionHandler)
       return isErrorText(outcome.message);
     }
 
-    return withChannelLockHeld(toolName, deps.channelLockTimeoutMs, async () => {
+    return withChannelLockHeld(toolName, deps.channelLockTimeoutMs, outcome.session, async () => {
       try {
         return await handler(args, outcome.session, deps);
       } catch (err) {
@@ -666,7 +697,7 @@ export function withDerivedTool(
       return isErrorText(outcome.message);
     }
 
-    return withChannelLockHeld(toolName, deps.channelLockTimeoutMs, async () => {
+    return withChannelLockHeld(toolName, deps.channelLockTimeoutMs, outcome.session, async () => {
       try {
         return await (handler as StockSessionHandler)(args, outcome.session, deps);
       } catch (err) {

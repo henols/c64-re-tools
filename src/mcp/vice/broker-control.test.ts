@@ -1021,6 +1021,49 @@ test("operation: unauthorized when the token is wrong, before the callback is ev
 // arm runs every string `name` through it before the callback ever sees it).
 // ---------------------------------------------------------------------------
 
+test("operation: Task 3 ordering proof -- a declare, the wrapped work, then a clear are all issued without ever awaiting either reply, and the broker still observes them in order", async () => {
+  const { listener, token, operationCalls } = await startTestListener({ onAcquire: grantingAcquire() });
+  const client = makeClient(listener.port);
+  try {
+    await acquireGrant(client, token, "req-a");
+
+    let wrappedWorkDone = false;
+    // Fire the declare WITHOUT awaiting its reply -- mirrors
+    // stock-dispatch.ts's declareOperation()/text-tools.ts's own
+    // fire-and-forget discipline exactly: neither reads a response before
+    // moving on.
+    client.send({ op: "operation", id: "op-declare", target_id: "req-a", name: "vice_run_until", token });
+    // The "wrapped work" a real tool call performs happens HERE,
+    // synchronously, before this test ever reads a response line --
+    // proving the calling code is never blocked on the declaration's own
+    // reply (T-63-13).
+    wrappedWorkDone = true;
+    // Clear, also without awaiting.
+    client.send({ op: "operation", id: "op-clear", target_id: "req-a", name: null, token });
+
+    assert.equal(wrappedWorkDone, true, "the wrapped work must complete without ever waiting for the declaration's reply");
+
+    // NOW read both replies (arrival order) and separately the broker's own
+    // recorded call order, proving both requests actually reached the
+    // broker and were answered/observed in the order they were sent.
+    const declareResp = await client.next();
+    const clearResp = await client.next();
+    assert.equal(declareResp.kind, "operation_noted");
+    assert.equal(clearResp.kind, "operation_noted");
+    assert.deepEqual(
+      operationCalls,
+      [
+        { targetId: "req-a", channel: "binary", name: "vice_run_until" },
+        { targetId: "req-a", channel: "binary", name: null },
+      ],
+      "the broker must observe the declare THEN the clear, in that order, for one logical operation",
+    );
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
 test("sanitiseSessionLabel: strips every C0 control character (including both line terminators), trims, and caps at 64 characters", () => {
   assert.equal(sanitiseSessionLabel("  hello\tworld  "), "helloworld");
   assert.equal(sanitiseSessionLabel("line1\nline2\r\n"), "line1line2");
