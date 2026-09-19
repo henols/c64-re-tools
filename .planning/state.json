@@ -326,7 +326,7 @@
     {
       "number": "62",
       "name": "The Fixed Endpoint and the Broker That Owns the Machine",
-      "status": "in_progress"
+      "status": "complete"
     },
     {
       "number": "63",
@@ -356,8 +356,8 @@
   ],
   "next": {
     "command": "/gsd:progress --next",
-    "label": "Advance to the next step (plan phase 63)",
-    "reason": "Phase 63 of 6 — needs a plan"
+    "label": "Advance to the next step",
+    "reason": "Phase 63 of 6 · 17% · executing"
   },
-  "updated_at": "2026-09-19T17:16:18.540Z"
+  "updated_at": "2026-09-19T18:39:22.599Z"
 }
