@@ -12,9 +12,24 @@
 // row's expected shape needs to change, that is a change to
 // `prereq-readme-gen.ts`'s derive functions, never a parallel calculation in
 // this file.
+//
+// A permanently-green test is not evidence (ENGINEERING_RULES.md §6). The
+// GEN-03 cases below plant a real divergence in a scratch copy of the real
+// pair and watch the guard fail and name what moved; the tolerance cases
+// prove the opposite direction -- a change that alters no fact leaves the
+// guard green (roadmap criterion 4).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync as writeFileSyncNode } from "node:fs";
+import { execFileSync } from "node:child_process";
+import {
+  copyFileSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync as writeFileSyncNode,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -31,7 +46,7 @@ import {
   readDeclarationFile,
   regionMarkers,
 } from "./prereq-readme-gen.ts";
-import type { ToolDeclaration } from "./prereq-readme-gen.ts";
+import type { ToolDeclaration, ToolDeclarationRecord } from "./prereq-readme-gen.ts";
 
 /** The plain `.git`-marker walk, copied from `phase58-citation-ledger.test.ts`
  * (itself mirrored from `phase50-findings-contract.test.ts`) -- this is
@@ -283,6 +298,75 @@ function auditOverviewRegion(readmeText: string, declaration: ToolDeclaration): 
   return failures;
 }
 
+// ---------------------------------------------------------------------------
+// Fixture and mutation helpers shared by the GEN-03 (planted-divergence),
+// tolerance and round-trip cases below. Every case that touches a filesystem
+// path builds its own scratch pair and tears it down in a `finally` block --
+// never a shared fixture -- per the fixture-per-case discipline
+// `phase58-citation-ledger.test.ts` already follows (D-12).
+// ---------------------------------------------------------------------------
+
+/** Builds a fresh `mkdtempSync(tmpdir())` scratch pair seeded from the real,
+ * committed `prerequisites.json` and `README.md` -- never a hand-written toy
+ * fixture (D-12). `realpathSync` wraps the mkdtemp result because `/tmp` can
+ * itself be a symlink on some hosts (see `host-tool.test.ts`'s identical
+ * wrapper and its comment explaining why the bare call is not enough). The
+ * caller MUST invoke `cleanup()` in a `finally` block. */
+function withScratchPair(): { declPath: string; readmePath: string; cleanup: () => void } {
+  const scratch = realpathSync(mkdtempSync(join(tmpdir(), "prereq-readme-gen-")));
+  const declPath = join(scratch, "prerequisites.json");
+  const readmePath = join(scratch, "README.md");
+  copyFileSync(DECL_PATH, declPath);
+  copyFileSync(README_PATH, readmePath);
+  return { declPath, readmePath, cleanup: () => rmSync(scratch, { recursive: true, force: true }) };
+}
+
+/** Reads a scratch declaration, applies `mutate` to the parsed object in
+ * place, and writes the result back with the same
+ * `JSON.stringify(decl, null, 2)` shape the generator itself would produce. */
+function mutateScratchDeclaration(declPath: string, mutate: (decl: ToolDeclaration) => void): void {
+  const decl = readDeclarationFile({ declPath });
+  mutate(decl);
+  writeFileSyncNode(declPath, JSON.stringify(decl, null, 2), "utf8");
+}
+
+/** Strips every data row out of `regionName` in `readmeText`, leaving the
+ * banner comment, the header row and the separator row untouched -- an
+ * emptied region must still be reported as a failure, never pass silently. */
+function stripDataRows(readmeText: string, regionName: string): string {
+  const { start, end } = regionMarkers(regionName);
+  const startIdx = readmeText.indexOf(start);
+  const endIdx = readmeText.indexOf(end);
+  const before = readmeText.slice(0, startIdx + start.length);
+  const region = readmeText.slice(startIdx + start.length, endIdx);
+  const after = readmeText.slice(endIdx);
+
+  let sepSeen = false;
+  const kept = region.split("\n").filter((line) => {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("|")) return true;
+    const cells = splitTableRow(trimmed);
+    if (isSeparatorRow(cells)) {
+      sepSeen = true;
+      return true;
+    }
+    return !sepSeen;
+  });
+  return before + kept.join("\n") + after;
+}
+
+/** Deletes one occurrence of a named region's marker (`"start"` or `"end"`)
+ * from `readmeText` -- the "removed marker" GEN-03 case. */
+function deleteRegionMarker(readmeText: string, regionName: string, which: "start" | "end"): string {
+  const marker = regionMarkers(regionName)[which];
+  const idx = readmeText.indexOf(marker);
+  return readmeText.slice(0, idx) + readmeText.slice(idx + marker.length);
+}
+
+// ---------------------------------------------------------------------------
+// Existing coverage from plan 61-01.
+// ---------------------------------------------------------------------------
+
 test("the committed declaration/README pair audits clean", () => {
   assert.deepEqual(auditGeneratedReadme({ declPath: DECL_PATH, readmePath: README_PATH }), []);
 });
@@ -326,35 +410,131 @@ test("prereq-readme-gen.ts is absent from package.json's files[] array (repo too
   );
 });
 
-test("GEN-03: a planted divergence in a scratch copy is caught and the diverged ecosystem is named", () => {
-  const scratch = mkdtempSync(join(tmpdir(), "prereq-readme-gen-"));
+// ---------------------------------------------------------------------------
+// GEN-03: planted-divergence cases. Each builds its own scratch pair from
+// the real committed files (D-12), mutates one side only, and asserts the
+// returned failure array names the record/ecosystem that diverged and the
+// exact command that fixes it -- never merely that the array is non-empty.
+// ---------------------------------------------------------------------------
+
+test("GEN-03: a planted divergence in a scratch copy is caught, the diverged ecosystem is named, and the fix command is named", () => {
+  const { declPath, readmePath, cleanup } = withScratchPair();
   try {
-    const declaration = readDeclarationFile({ declPath: DECL_PATH }) as ToolDeclaration & {
-      tools: Record<string, { remedies: { linux?: { ecosystem: string; text: string }[] } }>;
-    };
-    // Mutate one remedy's text for a real declared ecosystem, then write the
-    // mutated declaration and an untouched copy of README.md into the
-    // scratch directory -- this exercises the guard's actual configuration
-    // against all real records rather than a toy fixture (D-12), and never
-    // touches the repository tree.
-    const mutated = JSON.parse(JSON.stringify(declaration)) as typeof declaration;
-    const linuxEntries = mutated.tools.x64sc!.remedies.linux!;
-    const target = linuxEntries.find((e) => e.ecosystem === "debian-trixie")!;
-    target.text = "MUTATED FOR TEST";
-
-    writeFileSyncNode(join(scratch, "prerequisites.json"), JSON.stringify(mutated, null, 2), "utf8");
-    copyFileSync(README_PATH, join(scratch, "README.md"));
-
-    const failures = auditGeneratedReadme({
-      declPath: join(scratch, "prerequisites.json"),
-      readmePath: join(scratch, "README.md"),
+    mutateScratchDeclaration(declPath, (decl) => {
+      const linuxEntries = decl.tools.x64sc!.remedies.linux!;
+      const target = linuxEntries.find((e) => e.ecosystem === "debian-trixie")!;
+      target.text = "MUTATED FOR TEST";
     });
+    // The scratch README is left unregenerated -- it still names the
+    // original text, which is what the guard must catch.
+
+    const failures = auditGeneratedReadme({ declPath, readmePath });
     assert.ok(failures.length > 0, "a planted divergence must be caught, never pass silently");
     assert.ok(
       failures.some((f) => f.includes("debian-trixie")),
       `the guard must NAME the diverged ecosystem; got ${JSON.stringify(failures)}`,
     );
+    assert.ok(
+      failures.some((f) => f.includes(REGENERATE_COMMAND)),
+      `a red run must tell a developer what to run; got ${JSON.stringify(failures)}`,
+    );
   } finally {
-    rmSync(scratch, { recursive: true, force: true });
+    cleanup();
   }
+});
+
+test("GEN-03: a changed universal remedy is caught and names the diverged record, proving the failure direction reaches the overview region too", () => {
+  const { declPath, readmePath, cleanup } = withScratchPair();
+  try {
+    mutateScratchDeclaration(declPath, (decl) => {
+      const universal = decl.tools.ghidra!.remedies.universal!;
+      universal[0]!.text = "MUTATED UNIVERSAL REMEDY FOR TEST";
+    });
+
+    const failures = auditGeneratedReadme({ declPath, readmePath });
+    assert.ok(failures.length > 0, "a planted divergence in a universal remedy must be caught");
+    assert.ok(
+      failures.some((f) => f.includes("ghidra")),
+      `the guard must NAME the diverged record; got ${JSON.stringify(failures)}`,
+    );
+    assert.ok(
+      failures.some((f) => f.includes(REGENERATE_COMMAND)),
+      `a red run must tell a developer what to run; got ${JSON.stringify(failures)}`,
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+test("GEN-03: a removed record leaves an orphaned row the declaration no longer carries", () => {
+  const { declPath, readmePath, cleanup } = withScratchPair();
+  try {
+    mutateScratchDeclaration(declPath, (decl) => {
+      const tools = decl.tools as Record<string, ToolDeclarationRecord | undefined>;
+      delete tools.dxa;
+    });
+    // The scratch README is left unregenerated -- it still carries dxa's row.
+
+    const failures = auditGeneratedReadme({ declPath, readmePath });
+    assert.ok(failures.length > 0, "a removed record must produce a failure, never pass silently");
+    assert.ok(
+      failures.some((f) => f.includes("dxa") && f.includes(REGENERATE_COMMAND)),
+      `the guard must name the orphaned record and the fix command; got ${JSON.stringify(failures)}`,
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+test("GEN-03: an emptied ecosystem region -- markers and header intact, zero data rows -- is reported rather than passing silently", () => {
+  const { declPath, readmePath, cleanup } = withScratchPair();
+  try {
+    const text = readFileSync(readmePath, "utf8");
+    writeFileSyncNode(readmePath, stripDataRows(text, ECOSYSTEM_REGION), "utf8");
+    // The scratch declaration is left untouched -- D-12's planted divergence
+    // this time is on the README side only.
+
+    const failures = auditGeneratedReadme({ declPath, readmePath });
+    assert.ok(failures.length > 0, "an emptied generated region must never audit as clean");
+    assert.ok(
+      failures.some((f) => f.includes(REGENERATE_COMMAND)),
+      `an emptied region's failure must still name the fix command; got ${JSON.stringify(failures)}`,
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+test("GEN-03: a removed end marker is reported as a malformed region and never throws", () => {
+  const { declPath, readmePath, cleanup } = withScratchPair();
+  try {
+    const text = readFileSync(readmePath, "utf8");
+    writeFileSyncNode(readmePath, deleteRegionMarker(text, OVERVIEW_REGION, "end"), "utf8");
+
+    const failures = auditGeneratedReadme({ declPath, readmePath });
+    assert.ok(failures.length > 0, "a malformed marker pair must be reported, never pass silently");
+    assert.ok(
+      failures.some((f) => f.includes(OVERVIEW_REGION)),
+      `the malformed region must be named; got ${JSON.stringify(failures)}`,
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Scratch hygiene: runs last, after every fixture case above has built and
+// torn down its own scratch tree, and asserts none of them leaked a path
+// into the repository tree itself (T-61-05/T-61-06).
+// ---------------------------------------------------------------------------
+
+test("no untracked scratch path leaks under the repository tree after every fixture case above has run", () => {
+  const output = execFileSync("git", ["-C", REPO_ROOT, "status", "--porcelain"], { encoding: "utf8" });
+  const untracked = output.split("\n").filter((line) => line.startsWith("??"));
+  const leaked = untracked.filter((line) => line.includes("prereq-readme-gen-"));
+  assert.deepEqual(
+    leaked,
+    [],
+    `no untracked path from this file's scratch prefix may remain after the run; got ${JSON.stringify(untracked)}`,
+  );
 });
