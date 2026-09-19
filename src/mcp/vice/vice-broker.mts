@@ -87,7 +87,8 @@ import { runHostTool } from "./host-tool.mjs";
 // and target are already listed in HOST_BOUND_ARTIFACTS).
 import { ensureGhidraRunsHandle } from "./ghidra-project.mjs";
 import {
-  startControlListener,
+  startControlListenerOnHosts,
+  enumerateBindHosts,
   newControlToken,
   drainPendingAcquires,
   resolveControlPort,
@@ -97,6 +98,7 @@ import {
   type HostStateFields,
   type MonitorClaimOutcome,
   type MonitorReleaseOutcome,
+  type PendingAcquireQueue,
 } from "./broker-control.mjs";
 
 export interface ParsedArgs {
@@ -243,6 +245,21 @@ function classifyBrokerLivenessLocal(path: string): "never_started" | "stale" | 
   const heartbeatMs = heartbeatAt ? Date.parse(heartbeatAt) : NaN;
   if (!Number.isFinite(heartbeatMs)) return "never_started";
   return Date.now() - heartbeatMs > BROKER_STALE_MS ? "stale" : "alive";
+}
+
+/** Classifies a bare hostname as a wildcard bind address, in the IPv4 and
+ * IPv6 "listen on everything" spellings this project cares about --
+ * DELIBERATELY RE-STATED here rather than imported from
+ * vice-broker-client.ts's own `isWildcardBindHost()`: that module is
+ * container-side and this one is host-bound, compiled away from it, the
+ * SAME boundary classifyBrokerLivenessLocal()'s own comment above explains
+ * for readBrokerLiveness(). Used ONLY to refuse an explicitly-set
+ * VICE_BROKER_CONTROL_HOST value before ever attempting to bind it (D-09) --
+ * never applied to an enumerated host, which can never be a wildcard by
+ * construction. */
+function isWildcardBindHostLocal(host: string): boolean {
+  const bare = host.replace(/^\[/, "").replace(/\]$/, "");
+  return bare === "0.0.0.0" || bare === "::" || /^(0{1,4}:){7}0{1,4}$/.test(bare);
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -1131,10 +1148,55 @@ async function run(args: ParsedArgs): Promise<void> {
 
   const state = createBrokerState();
   const token = newControlToken();
-  const controlHost = process.env.VICE_BROKER_CONTROL_HOST ?? "0.0.0.0";
   const startedAt = new Date().toISOString(); // FIXED across every heartbeat refresh -- see writeBrokerRecordFile()'s callers below
   const pollMs = Number(process.env.VICE_BROKER_POLL_MS) || 500;
   const controlPort = resolveControlPort();
+
+  // Resolve the bind set (BROKER-03/D-09/D-10). An explicitly-set
+  // VICE_BROKER_CONTROL_HOST is an operator's OWN choice -- honoured
+  // verbatim as the ONLY bind host, refused by name (before any bind
+  // attempt is ever made) if it classifies as a wildcard, and never
+  // silently narrowed or merged with the enumerated set below (this plan's
+  // own transparency prohibition). When the variable is unset, the
+  // enumerator is called EXACTLY ONCE, here, and the result is held for
+  // this process's entire life (D-10) -- there is no re-enumeration timer
+  // and no watch-and-warn anywhere in this file; a bridge that appears
+  // later needs a broker restart, and that is documented rather than
+  // worked around. `bindHosts[0]` is always the address this startup
+  // treats as loopback for fatality purposes below: the explicit-host case
+  // has exactly one entry (fatal like every prior version of this
+  // function), and enumerateBindHosts() is contracted to always return
+  // loopback first.
+  const explicitControlHost = process.env.VICE_BROKER_CONTROL_HOST;
+  let bindHosts: string[];
+  if (explicitControlHost !== undefined && explicitControlHost !== "") {
+    if (isWildcardBindHostLocal(explicitControlHost)) {
+      process.stderr.write(
+        `vice-broker: FATAL -- VICE_BROKER_CONTROL_HOST is set to "${explicitControlHost}", a wildcard bind address. ` +
+          `The settled bind rule (D-09) never binds the wildcard address, even when an operator asks for it explicitly. ` +
+          `Set VICE_BROKER_CONTROL_HOST to a specific address, or unset it entirely to let the broker enumerate loopback ` +
+          `plus its bridge gateways.\n`,
+      );
+      process.exitCode = 1;
+      return;
+    }
+    bindHosts = [explicitControlHost];
+  } else {
+    bindHosts = enumerateBindHosts();
+    if (bindHosts.length === 0) {
+      // Per D-09, this can only happen if loopback itself was not found in
+      // the live interface list at all -- an empty BRIDGE subset alone
+      // (macOS Docker Desktop's own steady state) never reaches this
+      // branch, since enumerateBindHosts() still returns loopback in that
+      // case.
+      process.stderr.write(
+        "vice-broker: FATAL -- no bindable address was found in the live interface list, not even loopback; nothing was bound.\n",
+      );
+      process.exitCode = 1;
+      return;
+    }
+  }
+  const loopbackBindHost = bindHosts[0];
 
   // The unconditional startup reap runs BEFORE the
   // control listener accepts and before anything is launched. A SIGKILLed
@@ -1240,10 +1302,9 @@ async function run(args: ParsedArgs): Promise<void> {
   }
 
   // The singleton guarantee holds only while the control port keeps its default -- two brokers deliberately configured onto different ports are two brokers, and no code prevents that.
-  let listener: Awaited<ReturnType<typeof startControlListener>>;
-  try {
-    listener = await startControlListener({
-      host: controlHost,
+  let listener: { host: string; port: number; pendingAcquires: PendingAcquireQueue };
+  {
+    const bindResult = await startControlListenerOnHosts(bindHosts, {
       port: controlPort,
       token,
       onAcquire: (requestId, profile) =>
@@ -1317,45 +1378,116 @@ async function run(args: ParsedArgs): Promise<void> {
         backend,
       }),
     });
-  } catch (e) {
-    // The singleton race closes here. A well-known TCP port
-    // cannot be bound twice, so EADDRINUSE is the kernel enforcing the
-    // singleton -- but the guarantee holds only while the control port
-    // keeps its default (two brokers deliberately configured onto
-    // DIFFERENT ports are two brokers, and no code here or anywhere else
-    // prevents that). On EADDRINUSE, broker.json arbitrates via the SAME
-    // never_started/stale/alive classification vice-broker-client.ts's
-    // readBrokerLiveness() uses (duplicated locally above -- see
-    // classifyBrokerLivenessLocal()'s own header comment for why this
-    // cannot be a value import), and takes exactly one of two DISTINCT
-    // paths: a record classified alive means this process lost a genuine
-    // race against a live broker -- exit quietly, status 0, as designed.
-    // A record classified stale or never_started means the port is held by
-    // something that does not answer as a broker at all -- fail loudly,
-    // naming the port and what to check. Conflating these two would let a
-    // squatted port masquerade as a healthy singleton, permanently and
-    // silently (T-01.6.2-34). Neither path writes the discovery record,
-    // launches an instance, or reaps again -- both simply exit.
-    const err = e as NodeJS.ErrnoException;
-    if (err.code === "EADDRINUSE") {
-      const liveness = classifyBrokerLivenessLocal(finalPath);
-      if (liveness === "alive") {
+
+    // A SPECIFIC bridge address failing to bind -- for any reason, port
+    // conflict included -- is logged naming that address verbatim and the
+    // broker continues on the reduced set; it is NEVER fatal on its own
+    // (D-09). An empty bridge subset is a legitimate steady state (macOS
+    // Docker Desktop has no host-side bridge interface at all), and this
+    // startup cannot tell "every bridge happened to fail" apart from that
+    // steady state -- treating either as fatal would refuse a perfectly
+    // healthy macOS broker.
+    const loopbackFailure = bindResult.failures.find((f) => f.host === loopbackBindHost);
+    for (const failure of bindResult.failures) {
+      if (failure === loopbackFailure) continue;
+      const err = failure.error as NodeJS.ErrnoException;
+      process.stderr.write(
+        `vice-broker: bridge address ${failure.host} failed to bind (${err.code ?? err.message}) -- continuing on the reduced set; ` +
+          `this address will not be reachable until the broker is restarted (D-10)\n`,
+      );
+    }
+
+    // Loopback failing to bind is ALWAYS fatal (D-09) -- routed through the
+    // SAME EADDRINUSE/liveness classification this startup has always used.
+    // The singleton race closes here. A well-known TCP port cannot be bound
+    // twice, so EADDRINUSE is the kernel enforcing the singleton -- but the
+    // guarantee holds only while the control port keeps its default (two
+    // brokers deliberately configured onto DIFFERENT ports are two brokers,
+    // and no code here or anywhere else prevents that). On EADDRINUSE,
+    // broker.json arbitrates via the SAME never_started/stale/alive
+    // classification vice-broker-client.ts's readBrokerLiveness() uses
+    // (duplicated locally above -- see classifyBrokerLivenessLocal()'s own
+    // header comment for why this cannot be a value import), and takes
+    // exactly one of two DISTINCT paths: a record classified alive means
+    // this process lost a genuine race against a live broker -- exit
+    // quietly, status 0, as designed. A record classified stale or
+    // never_started means the port is held by something that does not
+    // answer as a broker at all -- fail loudly, naming the port and what to
+    // check. Conflating these two would let a squatted port masquerade as a
+    // healthy singleton, permanently and silently (T-01.6.2-34). Neither
+    // path writes the discovery record, launches an instance, or reaps
+    // again -- both simply exit.
+    //
+    // NOTE for a future reader: this classification reads broker.json (the
+    // discovery file) to decide "alive" vs "stale" -- fine to keep for now
+    // since broker.json is untouched this phase, but it is exactly the file
+    // the milestone's end state (Phase 66) removes. A future phase's
+    // EADDRINUSE refusal will need to reclassify by dialling the port that
+    // just failed to bind and checking whether a valid, version-compatible
+    // `hello` answers instead. Not this phase's problem to solve.
+    if (loopbackFailure) {
+      // A bridge address can bind successfully even when loopback itself
+      // fails (they are independent sockets) -- every such listener MUST be
+      // closed before any of the fatal returns below, or its still-open
+      // net.Server keeps this process's event loop alive forever despite
+      // `process.exitCode` being set: exitCode alone only takes effect once
+      // Node has nothing left to wait for. Never rely on process.exit()
+      // here instead -- an abrupt exit would skip flushing the stderr
+      // writes above/below it on some platforms.
+      for (const bound of bindResult.listeners) bound.server.close();
+      const err = loopbackFailure.error as NodeJS.ErrnoException;
+      if (err.code === "EADDRINUSE") {
+        const liveness = classifyBrokerLivenessLocal(finalPath);
+        if (liveness === "alive") {
+          process.stderr.write(
+            `vice-broker: another broker is already running and holds control port ${controlPort} -- exiting quietly as a second instance (record: ${finalPath})\n`,
+          );
+          process.exitCode = 0;
+          return;
+        }
         process.stderr.write(
-          `vice-broker: another broker is already running and holds control port ${controlPort} -- exiting quietly as a second instance (record: ${finalPath})\n`,
+          `vice-broker: FATAL -- control port ${controlPort} is held by something that does not answer as a broker (discovery record classified "${liveness}"). ` +
+            `Check what is bound to port ${controlPort} on the host (e.g. \`lsof -i :${controlPort}\` or \`ss -ltnp\`) before restarting. Record: ${finalPath}\n`,
         );
-        process.exitCode = 0;
+        process.exitCode = 1;
         return;
       }
-      process.stderr.write(
-        `vice-broker: FATAL -- control port ${controlPort} is held by something that does not answer as a broker (discovery record classified "${liveness}"). ` +
-          `Check what is bound to port ${controlPort} on the host (e.g. \`lsof -i :${controlPort}\` or \`ss -ltnp\`) before restarting. Record: ${finalPath}\n`,
-      );
+      process.stderr.write(`vice-broker: failed to start control listener on ${loopbackBindHost}: ${err.message}\n`);
       process.exitCode = 1;
       return;
     }
-    process.stderr.write(`vice-broker: failed to start control listener: ${err.message}\n`);
-    process.exitCode = 1;
-    return;
+
+    if (bindResult.listeners.length === 0) {
+      // Unreachable in practice -- a loopback failure above always returns
+      // first whenever bindHosts[0] fails to bind -- kept as a defensive
+      // guard against a future change silently breaking that invariant.
+      // Nothing is open here to close.
+      process.stderr.write("vice-broker: FATAL -- no address could be bound at all.\n");
+      process.exitCode = 1;
+      return;
+    }
+
+    const loopbackListener = bindResult.listeners.find((l) => l.host === loopbackBindHost);
+    if (!loopbackListener) {
+      // Unreachable in practice (loopbackFailure above already covers every
+      // way bindHosts[0] can fail) -- still closes every open listener
+      // before returning, for the same reason the loopbackFailure branch
+      // above does.
+      for (const bound of bindResult.listeners) bound.server.close();
+      process.stderr.write("vice-broker: FATAL -- internal error: loopback bind reported neither success nor failure.\n");
+      process.exitCode = 1;
+      return;
+    }
+
+    // Auditability: an operator can see exactly what is listening without
+    // reading the discovery record, which only ever carries the loopback
+    // address in its own control_host field (see the record write below)
+    // -- this is the property the whole security posture rests on now that
+    // `hello` answers with no credential at all (see this module's own
+    // header comment).
+    process.stderr.write(`vice-broker: bound control listener on: ${bindResult.listeners.map((l) => l.host).join(", ")} (port ${loopbackListener.port})\n`);
+
+    listener = { host: loopbackListener.host, port: loopbackListener.port, pendingAcquires: bindResult.pendingAcquires };
   }
 
   // Every catchable shutdown path (SIGTERM/SIGINT/SIGHUP, an uncaught

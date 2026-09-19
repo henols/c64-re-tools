@@ -443,7 +443,9 @@ test("startupBanner: names the retired VICE_BROKER_SPARES variable as set-and-ig
 test("structural: the real broker prints the banner before the control listener starts, and registers shutdown handling after the listener is up", () => {
   const source = readFileSync(join(HERE, "vice-broker.mts"), "utf8");
   const bannerIdx = source.indexOf("startupBanner()");
-  const listenerIdx = source.indexOf("await startControlListener(");
+  // 62-03: the single-host startControlListener() call was replaced by the
+  // multi-address startControlListenerOnHosts() (BROKER-03).
+  const listenerIdx = source.indexOf("await startControlListenerOnHosts(");
   const registerIdx = source.indexOf("registerShutdownHandlers(");
   assert.ok(bannerIdx !== -1 && listenerIdx !== -1 && registerIdx !== -1);
   assert.ok(bannerIdx < listenerIdx, "the banner must print before the control listener starts");
@@ -987,7 +989,9 @@ test("reapOrphanedInstances: a listProcesses-shaped decoy is never invoked -- th
 test("structural: the real broker's startup reap runs before its control listener accepts (source-order check, complementing the live end-to-end shutdown tests above)", () => {
   const source = readFileSync(join(HERE, "vice-broker.mts"), "utf8");
   const reapIdx = source.indexOf("await reapOrphanedInstances(");
-  const listenerIdx = source.indexOf("listener = await startControlListener(");
+  // 62-03: the single-host startControlListener() call was replaced by the
+  // multi-address startControlListenerOnHosts() (BROKER-03).
+  const listenerIdx = source.indexOf("await startControlListenerOnHosts(");
   assert.ok(reapIdx !== -1 && listenerIdx !== -1);
   assert.ok(reapIdx < listenerIdx);
 });

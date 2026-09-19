@@ -196,7 +196,7 @@ const BROKER_JSON_FOURTEEN_KEYS = [
   "dry_run",
 ];
 
-test("emitted artifact starts a LONG-LIVED broker: writes the fourteen-field discovery record (mode 0600), binds a control listener on 0.0.0.0", async () => {
+test("emitted artifact starts a LONG-LIVED broker: writes the fourteen-field discovery record (mode 0600), binds a control listener on loopback (D-09)", async () => {
   const deployDir = freshDeployDir();
   const { child } = runBrokerAsync(
     deployDir,
@@ -228,7 +228,7 @@ test("emitted artifact starts a LONG-LIVED broker: writes the fourteen-field dis
       process.execPath,
       "the record must carry the HOST's own process.execPath, so a triage session can tell which of several installed interpreters this broker ran under",
     );
-    assert.equal(record.control_host, "0.0.0.0");
+    assert.equal(record.control_host, "127.0.0.1", "the discovery record's control_host must be the loopback address the broker enumerated (D-09/D-12), never the wildcard address");
     assert.ok(Number.isInteger(record.control_port) && (record.control_port as number) > 0);
     assert.equal(typeof record.control_token, "string");
     assert.ok((record.control_token as string).length > 0);

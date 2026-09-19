@@ -1427,7 +1427,10 @@ test("the two singleton messages are textually distinct, and neither is a substr
 
 test("structural: the bind call precedes the record write in vice-broker.mts's own startup sequence", () => {
   const source = readFileSync(join(HERE, "vice-broker.mts"), "utf8");
-  const bindIdx = source.indexOf("listener = await startControlListener(");
+  // 62-03: the single-host startControlListener() call was replaced by the
+  // multi-address startControlListenerOnHosts() (BROKER-03) -- this
+  // structural check follows that rename rather than the old literal.
+  const bindIdx = source.indexOf("await startControlListenerOnHosts(bindHosts, {");
   const writeIdx = source.indexOf("writeBrokerRecordFile(args.stateDir, record);");
   assert.ok(bindIdx !== -1 && writeIdx !== -1);
   assert.ok(bindIdx < writeIdx, "the control listener must bind BEFORE the discovery record is written");

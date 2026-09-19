@@ -39,9 +39,10 @@ const SIMULATED_CONTAINER_ENV = { CONTAINER_WORKSPACE_PATH: HERE };
 // quick-260805-9ha: the broker this file spawns (startBroker() below) binds
 // its control listener INSIDE this container -- nothing here may ever dial
 // the real host. openBrokerControl()/acquireOverControlPlane() no longer
-// dial broker.json's own control_host field (that field is the broker's
-// BIND address, "0.0.0.0", never a dial target); this override is the
-// CLIENT's (this test process's) own dial knob, set once at module scope so
+// dial broker.json's own control_host field (that field is the broker's own
+// BIND address -- the loopback address it enumerated, D-09 -- never a dial
+// target); this override is the CLIENT's (this test process's) own dial
+// knob, set once at module scope so
 // every acquireOverControlPlane()/openBrokerControl() call below resolves
 // to the real in-container listener instead of the bridge alias. It is
 // deliberately NOT passed into the spawned broker's own env (startBroker()
@@ -361,11 +362,12 @@ test(
     const handle = startBroker(stateDir);
     try {
       const brokerJson = await waitForBrokerJson(stateDir);
-      assert.equal(brokerJson.control_host, "0.0.0.0", `container.json contents: ${JSON.stringify(brokerJson)}`);
+      assert.equal(brokerJson.control_host, "127.0.0.1", `container.json contents: ${JSON.stringify(brokerJson)}`);
       // This assertion now documents the whole point of the fix (quick-260805-9ha):
-      // the record says "0.0.0.0" -- the broker's own BIND address -- and the
-      // client below dials elsewhere (this file's own VICE_BROKER_CONTROL_DIAL_HOST
-      // override), never that recorded value.
+      // the record says "127.0.0.1" -- the broker's own enumerated loopback
+      // BIND address (D-09/D-12) -- and the client below dials elsewhere
+      // (this file's own VICE_BROKER_CONTROL_DIAL_HOST override), never that
+      // recorded value.
 
       const acquired = await acquireOverControlPlane(stateDir);
       const grant = acquired.grant;

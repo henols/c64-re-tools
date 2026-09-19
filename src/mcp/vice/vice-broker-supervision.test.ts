@@ -292,7 +292,10 @@ function findGhidraHandleOrdering(source: string): {
   const handleOffset = callCount > 0 ? (callOffsets[0] as number) : null;
   const reapMatch = stripped.match(/reapOrphanedInstances\(/);
   const reapOffset = reapMatch ? (reapMatch.index ?? null) : null;
-  const listenerMatch = stripped.match(/startControlListener\(/);
+  // 62-03: the single-host startControlListener() call was replaced by the
+  // multi-address startControlListenerOnHosts() (BROKER-03) -- this ordering
+  // predicate follows that rename rather than the old literal.
+  const listenerMatch = stripped.match(/startControlListenerOnHosts\(/);
   const listenerOffset = listenerMatch ? (listenerMatch.index ?? null) : null;
 
   const mintedAfterReap = handleOffset !== null && reapOffset !== null ? handleOffset > reapOffset : null;
@@ -324,7 +327,7 @@ test("structural (R2, gap G-40-1): vice-broker.mts mints the Ghidra runs handle 
 
   assert.equal(result.callCount, 1, `expected exactly one ensureGhidraRunsHandle( call site in vice-broker.mts, found ${result.callCount}`);
   assert.ok(result.reapOffset !== null, "expected to find reapOrphanedInstances( in vice-broker.mts -- has the startup reap moved or been renamed?");
-  assert.ok(result.listenerOffset !== null, "expected to find startControlListener( in vice-broker.mts -- has the control listener bind moved or been renamed?");
+  assert.ok(result.listenerOffset !== null, "expected to find startControlListenerOnHosts( in vice-broker.mts -- has the control listener bind moved or been renamed?");
   assert.equal(
     result.mintedAfterReap,
     true,
@@ -364,7 +367,7 @@ test("planted-violation (R2): the SAME ordering predicate reports a removed call
   // Control B: the call site relocated to AFTER the control listener bind
   // -- proving the offset COMPARISON itself drives the real assertion,
   // not merely whether the call site is present somewhere in the file.
-  const listenerAnchor = "listener = await startControlListener({";
+  const listenerAnchor = "const bindResult = await startControlListenerOnHosts(bindHosts, {";
   assert.ok(brokerSource.includes(listenerAnchor), "expected to find the control listener assignment anchor in vice-broker.mts");
   const moved = withoutBlock.replace(listenerAnchor, `${listenerAnchor}\n${block}`);
   const movedResult = findGhidraHandleOrdering(moved);
