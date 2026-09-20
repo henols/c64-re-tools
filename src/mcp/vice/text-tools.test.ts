@@ -410,17 +410,42 @@ test("withTextTool declares the operation only AFTER the shared cross-channel mu
       // that only calls the text handler alone can never observe the
       // pre-lock-declare defect at all.
       const handle = await acquireChannelLock({ channel: "binary", operation: "vice_memory_read" });
-      const pending = handleDeviceConsole({}, deps);
-      // Yield the event loop repeatedly so the queued acquisition has every
-      // opportunity to run before asserting nothing has declared yet.
-      for (let i = 0; i < 10; i++) {
-        await new Promise((resolve) => setImmediate(resolve));
+      // The mid-test release below is deliberate -- it is what lets the queued
+      // acquisition proceed -- so releasing is idempotent here rather than a
+      // bare finally: the happy path releases once on purpose, and the finally
+      // only covers the paths that did not get that far.
+      let released = false;
+      const release = (): void => {
+        if (released) return;
+        released = true;
+        handle.release();
+      };
+      let pending: ReturnType<typeof handleDeviceConsole> | undefined;
+      try {
+        pending = handleDeviceConsole({}, deps);
+        // Yield the event loop repeatedly so the queued acquisition has every
+        // opportunity to run before asserting nothing has declared yet.
+        for (let i = 0; i < 10; i++) {
+          await new Promise((resolve) => setImmediate(resolve));
+        }
+        assert.deepEqual(recorder, [], "queued behind the binary channel's lock: must declare nothing yet");
+        release();
+        const result = await pending;
+        assert.equal(result.isError, false, `expected success once the lock was released, got ${JSON.stringify(result)}`);
+        assert.deepEqual(recorder, ["vice_device_console", null], "declares only once the lock is granted, then clears");
+      } finally {
+        // WHAT NOT TO DO: never leave this release as a bare statement after
+        // the assertions. channel-lock.ts's mutex is a process-wide singleton,
+        // so a throw from the first assert -- exactly the regression this case
+        // exists to catch -- would leak the lock for the remainder of this
+        // file and bury that one clear failure under a cascade of unrelated
+        // ChannelLockTimeoutErrors in later tests.
+        release();
+        // Settle the in-flight call too. Once the lock is free it completes;
+        // swallowing its result here keeps an abandoned rejection on a failing
+        // path from surfacing as an unhandled rejection that outlives the test.
+        await pending?.catch(() => undefined);
       }
-      assert.deepEqual(recorder, [], "queued behind the binary channel's lock: must declare nothing yet");
-      handle.release();
-      const result = await pending;
-      assert.equal(result.isError, false, `expected success once the lock was released, got ${JSON.stringify(result)}`);
-      assert.deepEqual(recorder, ["vice_device_console", null], "declares only once the lock is granted, then clears");
     },
   );
 });
