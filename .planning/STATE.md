@@ -5,16 +5,16 @@ milestone_name: One Broker, One Socket
 current_phase: 63
 current_phase_name: The Monitor Channel Relayed, and the Connection as the Session
 status: executing
-stopped_at: Completed 63-08-PLAN.md
-last_updated: "2026-09-20T09:04:21.860Z"
+stopped_at: Completed 63-09-PLAN.md
+last_updated: "2026-09-20T09:23:30.997Z"
 last_activity: 2026-09-20
 last_activity_desc: Phase 63 execution started
-state_head: 04a16f2d21eada2be8a198d7a79f79641bcea561
+state_head: 2c8411bb8900a0215fdf145857088bc9b0de15a2
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 15
-  completed_plans: 13
+  completed_plans: 14
   percent: 17
 carried_forward_phases:
 
@@ -80,7 +80,7 @@ closure still needs to be recorded as one.
 ## Current Position
 
 Phase: 63 (The Monitor Channel Relayed, and the Connection as the Session) — EXECUTING
-Plan: 8 of 10 executed; gap-closure plans 63-08..63-10 remain
+Plan: 9 of 10 executed; gap-closure plan 63-10 remains
 Status: Ready to execute
 Progress: [██░░░░░░░░] 17% (1 of 6 v2.0.0 phases complete; Phases 62-67)
 Last activity: 2026-09-20 — Phase 63 gap-closure execution started (63-07..63-10)
@@ -482,6 +482,7 @@ Phase 66 completes.
 | Phase 63 P06 | 120 min | 2 tasks | 2 files |
 | Phase 63 P07 | 25 min | 3 tasks | 5 files |
 | Phase 63 P08 | 25 min | 2 tasks | 2 files |
+| Phase 63 P09 | 20 min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -1384,6 +1385,7 @@ Recent decisions affecting current work:
 - [Phase 63]: Reordered the register-dump-on-open and machine-JAM assertions to run last in stock-live-relay.test.ts, unweakened, so a genuine measured non-reproduction of either sub-claim on real stock VICE 3.9 never prevents the other three wire-transparency shapes (register read, memory write, checkpoint hit) plus the session-identity assertion from being driven and recorded first. — Both findings routed to .planning/WINDOWS.md as unmet-truth entries (69, 70) rather than resolved in-plan, since resolving either requires a launch-time -jamaction override or a readiness-gate bypass -- production-code changes outside this plan's declared two-file scope.
 - [Phase 63]: tearDownRelaySessionsForGrant() removed a grant's state.relaySessions entries via the same delete-before-close order handleRelayDeath() uses, closing 63-VERIFICATION.md's CR-01 Blocker for both handleRelease() and handleRecycleForRealBroker(); RelayDeathTrigger was deliberately not widened.
 - [Phase 63]: Text-tool operation declaration moved inside withTextChannelLock()'s locked callback via a new declareTextOperation() helper, symmetric with stock-dispatch.ts's declareOperation()/withChannelLockHeld() ordering. — A text call queued behind a running binary operation was overwriting GrantRecord.operation before it actually held the shared cross-channel mutex, misattributing incidents; the fix and its cross-channel-contention test close SESS-05's ordering gap (63-VERIFICATION GAP 1 / WR-01).
+- [Phase 63]: Plan 63-09: proved the relay byte-transparent and demux-correct for the JAM (0x61) wire shape entirely synthetically; the emulator-side question of whether stock VICE ever emits a bare JAM stays open at WINDOWS id 70, routed to plan 63-10. — Success Criterion 1's JAM claim is about the relay, not the emulator; closing it synthetically needed no launch-argv change and none was added (T-33-04 prohibits a passthrough -jamaction key).
 
 ### Pending Todos
 
@@ -2717,8 +2719,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-20T09:04:21.746Z
-Stopped at: Completed 63-08-PLAN.md
+Last session: 2026-09-20T09:22:59.334Z
+Stopped at: Completed 63-09-PLAN.md
 Resume file: None
 
 Earlier: **v2.0.0 roadmap created.** 36/36 requirements (`ENDPOINT-01..05`,
