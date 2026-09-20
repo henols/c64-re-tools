@@ -4,11 +4,11 @@ milestone: v2.0.0
 milestone_name: One Broker, One Socket
 current_phase: 63
 current_phase_name: The Monitor Channel Relayed, and the Connection as the Session
-status: executing
-stopped_at: Completed 63-10-PLAN.md
+status: gaps_found
+stopped_at: Phase 63 re-verification (5/6) - new blocker on handleMonitorRelease relay teardown
 last_updated: "2026-09-20T09:43:41.961Z"
 last_activity: 2026-09-20
-last_activity_desc: Phase 63 execution started
+last_activity_desc: Phase 63 gap closure executed; re-verification found a new blocker on monitor_release
 state_head: 6ad2e98672dd2d64ae4ecc88e291c4b99a2089d3
 progress:
   total_phases: 6
@@ -79,11 +79,17 @@ closure still needs to be recorded as one.
 
 ## Current Position
 
-Phase: 63 (The Monitor Channel Relayed, and the Connection as the Session) — EXECUTING
-Plan: 10 of 10 executed; all plans in phase 63 have summaries, awaiting orchestrator verification/phase-complete
-Status: All plans executed
+Phase: 63 (The Monitor Channel Relayed, and the Connection as the Session) — GAPS FOUND
+Plan: 10 of 10 executed (6 original + 4 gap-closure); re-verification scored 5/6 must-haves
+Status: Re-verification found ONE new Blocker. The four gap-closure plans closed every prior
+gap — the prior sole Blocker CR-01 (63-07), declare-after-lock WR-01 (63-08), JAM relay
+byte-transparency (63-09) and the live WINDOWS 69/70 measurement (63-10) — and SESS-02 is now
+fully closed. But handleMonitorRelease() never removes the grant's state.relaySessions entry,
+and both textDisconnect() and stockDisconnect() close their socket BEFORE calling
+releaseMonitor(), so every ordinary text-channel tool call writes a junk incident record. Not
+covered by any test. SESS-05 reverted to Gaps Found; SESS-01/02/03/04/06 verified Complete.
 Progress: [██░░░░░░░░] 17% (1 of 6 v2.0.0 phases complete; Phases 62-67)
-Last activity: 2026-09-20 — Phase 63 gap-closure plan 63-10 executed: both WINDOWS ids 69/70 waived by live measurement
+Last activity: 2026-09-20 — Phase 63 gap closure executed (4/4 plans, 15 commits); code review 0 critical/1 warning (fixed); re-verification returned gaps_found on SESS-05 with a new blocker
 
 **The milestone's exit criterion lives in Phase 66 and nowhere else.** The
 hypothesis is falsifiable: the old boundary seam must be *gone from production
