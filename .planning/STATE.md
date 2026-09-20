@@ -4,17 +4,17 @@ milestone: v2.0.0
 milestone_name: One Broker, One Socket
 current_phase: 63
 current_phase_name: The Monitor Channel Relayed, and the Connection as the Session
-status: verifying
-stopped_at: Completed 63-06-PLAN.md
-last_updated: "2026-09-20T07:50:17.266Z"
+status: executing
+stopped_at: Completed 63-07-PLAN.md
+last_updated: "2026-09-20T08:51:10.983Z"
 last_activity: 2026-09-20
 last_activity_desc: Phase 63 execution started
-state_head: 6f82eee212c8e8cea78c702f7dc8f519c34d5cea
+state_head: 7f9492ff24bdd4f42694dce61e1b85811d6a919f
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 15
-  completed_plans: 11
+  completed_plans: 12
   percent: 17
 carried_forward_phases:
 
@@ -79,11 +79,11 @@ closure still needs to be recorded as one.
 
 ## Current Position
 
-Phase: 63 (The Monitor Channel Relayed, and the Connection as the Session) — READY TO EXECUTE
-Plan: 6 of 6 executed
-Status: Verified 4/6 must-haves — SESS-05 failed, 1 item needs human verification. Not complete.
+Phase: 63 (The Monitor Channel Relayed, and the Connection as the Session) — EXECUTING
+Plan: 7 of 10 executed; gap-closure plans 63-08..63-10 remain
+Status: Executing Phase 63 gap closure (--gaps-only)
 Progress: [██░░░░░░░░] 17% (1 of 6 v2.0.0 phases complete; Phases 62-67)
-Last activity: 2026-09-20 — Phase 63 executed (6/6 plans, 24 commits); code review found 1 critical; verification returned gaps_found on SESS-05
+Last activity: 2026-09-20 — Phase 63 gap-closure execution started (63-07..63-10)
 
 **The milestone's exit criterion lives in Phase 66 and nowhere else.** The
 hypothesis is falsifiable: the old boundary seam must be *gone from production
@@ -480,6 +480,7 @@ Phase 66 completes.
 | Phase 63 P04 | 55min | 3 tasks | 14 files |
 | Phase 63 P05 | 30 min | 3 tasks | 15 files |
 | Phase 63 P06 | 120 min | 2 tasks | 2 files |
+| Phase 63 P07 | 25 min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -1380,6 +1381,7 @@ Recent decisions affecting current work:
 - [Phase 63]: handleStatus() was widened from a private function to an exported one, mirroring handleAcquire()/handleRelease(), so the identity-resolution logic (findOwningGrant()) could be tested directly against a hand-built BrokerState.
 - [Phase 63]: The T-63-17 invariant test compares a label-as-target-id refusal against a garbage-as-target-id refusal for the SAME op, rather than asserting all target-naming ops share one denial string.
 - [Phase 63]: Reordered the register-dump-on-open and machine-JAM assertions to run last in stock-live-relay.test.ts, unweakened, so a genuine measured non-reproduction of either sub-claim on real stock VICE 3.9 never prevents the other three wire-transparency shapes (register read, memory write, checkpoint hit) plus the session-identity assertion from being driven and recorded first. — Both findings routed to .planning/WINDOWS.md as unmet-truth entries (69, 70) rather than resolved in-plan, since resolving either requires a launch-time -jamaction override or a readiness-gate bypass -- production-code changes outside this plan's declared two-file scope.
+- [Phase 63]: tearDownRelaySessionsForGrant() removed a grant's state.relaySessions entries via the same delete-before-close order handleRelayDeath() uses, closing 63-VERIFICATION.md's CR-01 Blocker for both handleRelease() and handleRecycleForRealBroker(); RelayDeathTrigger was deliberately not widened.
 
 ### Pending Todos
 
@@ -2713,8 +2715,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-20T00:25:31.121Z
-Stopped at: Completed 63-06-PLAN.md
+Last session: 2026-09-20T08:51:10.869Z
+Stopped at: Completed 63-07-PLAN.md
 Resume file: None
 
 Earlier: **v2.0.0 roadmap created.** 36/36 requirements (`ENDPOINT-01..05`,
