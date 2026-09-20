@@ -839,7 +839,7 @@ re-planning this milestone must keep all three.**
    stays green — and only then is the expected set flipped to empty.
 
 - [x] **Phase 62: The Fixed Endpoint and the Broker That Owns the Machine** - One manually-started broker per machine, found by every client with nothing on disk: one fixed port dialled in a fixed order under per-candidate timeouts, a handshake that proves who answered and at what version, and a bind narrowed to loopback plus the bridge gateways it enumerates (completed 2026-09-19)
-- [ ] **Phase 63: The Monitor Channel Relayed, and the Connection as the Session** - Every tool call reaches the emulator over a relayed connection instead of a direct dial, and the connection IS the session — reclaimed from socket events alone even when the client is `SIGKILL`ed, with the incident record written before the instance is taken and a live session a user can positively identify as theirs
+- [x] **Phase 63: The Monitor Channel Relayed, and the Connection as the Session** - Every tool call reaches the emulator over a relayed connection instead of a direct dial, and the connection IS the session — reclaimed from socket events alone even when the client is `SIGKILL`ed, with the incident record written before the instance is taken and a live session a user can positively identify as theirs (completed 2026-09-20)
 - [ ] **Phase 64: Files as Bytes, Both Directions** - The four file-carrying tools work with no shared filesystem at all: bytes over the socket, integrity-checked and size-capped, traversal refused rather than sanitised in both directions, staged files swept when their session dies
 - [ ] **Phase 65: Every Skill Script Through the One Endpoint, and CI With It** - Exactly one module dials the endpoint and every skill script reaches it through the existing resolution ladder with no second copy, leaving no route that works only on the host — and CI's ACME tests standing on their own feet before the hatch they lean on is deleted
 - [ ] **Phase 66: The Deletion Cutover — Gone, Not Bypassed** - The three path-translation modules deleted, `broker.json` and every reader gone, the two-route branch gone, the importer census at 0 from 6, and every structural guard rewritten to assert absence instead of passing vacuously — the phase where the milestone's hypothesis becomes true or false
@@ -2113,7 +2113,7 @@ tool.
      a stuck emulator in a shared broker is diagnosable rather than ambiguous
      (SESS-06).
 
-**Plans**: 5/6 plans executed
+**Plans**: 6/6 plans executed
 
 Plans:
 **Wave 1**
@@ -2135,7 +2135,7 @@ Plans:
 **Wave 5** *(blocked on Wave 4 completion)*
 
 - [x] 63-05-PLAN.md — A client-declared session label on every grant, surfaced in status beside the grant id and the in-flight operation, provably never a credential, and a stateless call proven stateless
-- [ ] 63-06-PLAN.md — The live, opt-in byte-transparency proof against a genuine stock build, and the convergence census measured rather than assumed
+- [x] 63-06-PLAN.md — The live, opt-in byte-transparency proof against a genuine stock build, and the convergence census measured rather than assumed
 
 **Cross-cutting constraints:**
 
@@ -2653,7 +2653,7 @@ check. No test reads this table now.
 | 60. The Seam Wired Into the Code That Ships | v1.1.0 | 8/8 | Complete | 2026-09-18 |
 | 61. The Install Tables Generated, and a Guard That Compares Facts | v1.1.0 | 3/3 | Complete | 2026-09-19 |
 | 62. The Fixed Endpoint and the Broker That Owns the Machine | v2.0.0 | 5/5 | Complete | 2026-09-19 |
-| 63. The Monitor Channel Relayed, and the Connection as the Session | v2.0.0 | 5/6 | In Progress | - |
+| 63. The Monitor Channel Relayed, and the Connection as the Session | v2.0.0 | 6/6 | Complete | 2026-09-20 |
 | 64. Files as Bytes, Both Directions | v2.0.0 | — | Not started | - |
 | 65. Every Skill Script Through the One Endpoint, and CI With It | v2.0.0 | — | Not started | - |
 | 66. The Deletion Cutover — Gone, Not Bypassed | v2.0.0 | — | Not started | - |

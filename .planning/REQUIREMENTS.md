@@ -57,11 +57,11 @@ for re-derivation during planning:
 ### Session — the connection is the session
 
 - [x] **SESS-01**: A skill script's call is a stateless one-shot — open, send, receive, close — that binds no emulator and holds no lease
-- [ ] **SESS-02**: An MCP server's connection stays open for the life of that process, and the broker holds that connection's emulator instance for exactly as long as the socket lives
+- [x] **SESS-02**: An MCP server's connection stays open for the life of that process, and the broker holds that connection's emulator instance for exactly as long as the socket lives
 - [x] **SESS-03**: The broker reclaims a session from socket events alone, so a client killed with `SIGKILL` — which sends no goodbye — is still cleaned up
 - [x] **SESS-04**: A client death that produces no `FIN` at all is detected by the broker within a bounded time, rather than waiting on the operating system's keepalive
 - [x] **SESS-05**: When a connection drops mid-operation, an incident record is written **before** the instance is reclaimed, carrying a broker-supplied reason naming the operation that was in flight
-- [ ] **SESS-06**: A user can tell which live session is their own, so a stuck emulator in a shared broker is diagnosable rather than ambiguous
+- [x] **SESS-06**: A user can tell which live session is their own, so a stuck emulator in a shared broker is diagnosable rather than ambiguous
 
 ### Transfer — files as bytes, never as shared paths
 
@@ -155,11 +155,11 @@ requirement owned by two phases or by none.
 | BROKER-05 | Phase 62 | Complete |
 | BROKER-06 | Phase 62 | Complete |
 | SESS-01 | Phase 63 | Complete |
-| SESS-02 | Phase 63 | Pending |
+| SESS-02 | Phase 63 | Complete |
 | SESS-03 | Phase 63 | Complete |
 | SESS-04 | Phase 63 | Complete |
 | SESS-05 | Phase 63 | Complete |
-| SESS-06 | Phase 63 | Pending |
+| SESS-06 | Phase 63 | Complete |
 | XFER-01 | Phase 64 | Pending |
 | XFER-02 | Phase 64 | Pending |
 | XFER-03 | Phase 64 | Pending |

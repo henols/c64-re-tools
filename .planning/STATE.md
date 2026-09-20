@@ -4,18 +4,18 @@ milestone: v2.0.0
 milestone_name: One Broker, One Socket
 current_phase: 63
 current_phase_name: The Monitor Channel Relayed, and the Connection as the Session
-status: executing
-stopped_at: Completed 63-05-PLAN.md
-last_updated: "2026-09-19T23:29:06.553Z"
+status: verifying
+stopped_at: Completed 63-06-PLAN.md
+last_updated: "2026-09-20T00:25:31.282Z"
 last_activity: 2026-09-19
 last_activity_desc: Phase 63 execution started
-state_head: 7fb2690233822dd3e06a12cf7dfc619ac2fca3ad
+state_head: ffd5a7ff15e5ba6774e754a02fc74caaf799aa25
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 11
-  completed_plans: 10
-  percent: 91
+  completed_plans: 11
+  percent: 17
 carried_forward_phases:
 
   - 51
@@ -81,7 +81,7 @@ closure still needs to be recorded as one.
 
 Phase: 63 (The Monitor Channel Relayed, and the Connection as the Session) — EXECUTING
 Plan: 6 of 6
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Progress: [██░░░░░░░░] 17% (1 of 6 v2.0.0 phases complete; Phases 62-67)
 Last activity: 2026-09-19 — Phase 63 execution started
 
@@ -479,6 +479,7 @@ Phase 66 completes.
 | Phase 63 P03 | 45min | 3 tasks | 33 files |
 | Phase 63 P04 | 55min | 3 tasks | 14 files |
 | Phase 63 P05 | 30 min | 3 tasks | 15 files |
+| Phase 63 P06 | 120 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -1378,6 +1379,7 @@ Recent decisions affecting current work:
 - [Phase 63]: resolveSessionLabel() is called with no overrides at both acquire write sites -- a production acquire always attaches the real process's own label, with no per-call opt-out on the public acquire() API surface.
 - [Phase 63]: handleStatus() was widened from a private function to an exported one, mirroring handleAcquire()/handleRelease(), so the identity-resolution logic (findOwningGrant()) could be tested directly against a hand-built BrokerState.
 - [Phase 63]: The T-63-17 invariant test compares a label-as-target-id refusal against a garbage-as-target-id refusal for the SAME op, rather than asserting all target-naming ops share one denial string.
+- [Phase 63]: Reordered the register-dump-on-open and machine-JAM assertions to run last in stock-live-relay.test.ts, unweakened, so a genuine measured non-reproduction of either sub-claim on real stock VICE 3.9 never prevents the other three wire-transparency shapes (register read, memory write, checkpoint hit) plus the session-identity assertion from being driven and recorded first. — Both findings routed to .planning/WINDOWS.md as unmet-truth entries (69, 70) rather than resolved in-plan, since resolving either requires a launch-time -jamaction override or a readiness-gate bypass -- production-code changes outside this plan's declared two-file scope.
 
 ### Pending Todos
 
@@ -2711,8 +2713,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-19T23:29:06.437Z
-Stopped at: Completed 63-05-PLAN.md
+Last session: 2026-09-20T00:25:31.121Z
+Stopped at: Completed 63-06-PLAN.md
 Resume file: None
 
 Earlier: **v2.0.0 roadmap created.** 36/36 requirements (`ENDPOINT-01..05`,

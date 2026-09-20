@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 45
-waived_count: 14
+open_count: 47
+waived_count: 15
 fixed_count: 9
-total_count: 68
-last_updated: 2026-09-18T09:48:57.189Z
+total_count: 71
+last_updated: 2026-09-20T00:22:26.896Z
 ---
 
 # Broken Windows Ledger
@@ -83,6 +83,9 @@ last_updated: 2026-09-18T09:48:57.189Z
 | 66 | 51 | deviation | src/mcp/vice/anno-register.ts |  | 63 requirement-id citations left unresolved: the file's requirements[] traceability data is mechanically validated against real, declared REQUIREMENTS.md ids by anno-register.test.ts, and removing the ids would gut the only thing the file exists to check; unshipping it breaks anno-seam.test.ts's completeness guard. Genuine architectural decision (Rule 4), deferred rather than resolved unilaterally. | open |  | 2026-09-14T16:02:40.848Z |  |
 | 67 | 50 | unmet-truth | docs/phase50-ci-boundary.md |  | ROADMAP criterion 5's 'a broken step is observed reddening CI' was observed against CI's exact command and environment LOCALLY, never on a GitHub runner; EQUIV-04 withheld pending a real CI run or a dated developer decline | open |  | 2026-09-16T05:31:50.462Z |  |
 | 68 | 59 | deviation | .planning/ROADMAP.md | 1980 | phase58-citation-ledger.test.ts: anchor "a user missing ACME learns that" cited at ROADMAP.md:1980-1983 but actually at :1989 (line-shift); pre-existing, found during 59-01 Task 3, not caused by 59-01's changes | open |  | 2026-09-18T09:48:57.189Z |  |
+| 69 | 63 | unmet-truth | src/mcp/vice/stock-live-relay.test.ts |  | Live proof (opt-in VICE_LIVE_RELAY_BIN): the unsolicited REGISTER_INFO dump on monitor open was not observed over the relay connection against genuine stock VICE 3.9 -- the production readiness probe's own connection appears to consume the one-time greeting before the real attach happens. Register read/memory write/checkpoint hit/status identity all pass; only this sub-claim is unproven. | open |  | 2026-09-20T00:21:47.406Z |  |
+| 70 | 63 | unmet-truth | src/mcp/vice/stock-live-relay.test.ts |  | Live proof (opt-in VICE_LIVE_RELAY_BIN): the machine-JAM shape did not produce a JAM (0x61) event against genuine stock VICE 3.9 under the project's default JamAction (1=continue, no -jamaction override in scope for this plan) -- the KIL opcode write and PC write were independently verified correct by read-back, but no jam/desync ever followed within 5s of resume. | open |  | 2026-09-20T00:21:47.652Z |  |
+| 71 | 63 | unmet-truth | x |  | probe | waived | Accidental test append during 63-06 executor verification of the windows-append command itself; carries no real content (file=x, description=probe). Not a genuine defect. | 2026-09-20T00:21:54.929Z | 2026-09-20T00:22:26.896Z |
 
 ````json
 [
@@ -903,6 +906,45 @@ last_updated: 2026-09-18T09:48:57.189Z
     "recorded_at": "2026-09-18T09:48:57.189Z",
     "resolved_at": null,
     "milestone": "v1.1.0"
+  },
+  {
+    "id": 69,
+    "kind": "unmet-truth",
+    "phase": "63",
+    "file": "src/mcp/vice/stock-live-relay.test.ts",
+    "line": null,
+    "description": "Live proof (opt-in VICE_LIVE_RELAY_BIN): the unsolicited REGISTER_INFO dump on monitor open was not observed over the relay connection against genuine stock VICE 3.9 -- the production readiness probe's own connection appears to consume the one-time greeting before the real attach happens. Register read/memory write/checkpoint hit/status identity all pass; only this sub-claim is unproven.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-20T00:21:47.406Z",
+    "resolved_at": null,
+    "milestone": "v2.0.0"
+  },
+  {
+    "id": 70,
+    "kind": "unmet-truth",
+    "phase": "63",
+    "file": "src/mcp/vice/stock-live-relay.test.ts",
+    "line": null,
+    "description": "Live proof (opt-in VICE_LIVE_RELAY_BIN): the machine-JAM shape did not produce a JAM (0x61) event against genuine stock VICE 3.9 under the project's default JamAction (1=continue, no -jamaction override in scope for this plan) -- the KIL opcode write and PC write were independently verified correct by read-back, but no jam/desync ever followed within 5s of resume.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-20T00:21:47.652Z",
+    "resolved_at": null,
+    "milestone": "v2.0.0"
+  },
+  {
+    "id": 71,
+    "kind": "unmet-truth",
+    "phase": "63",
+    "file": "x",
+    "line": null,
+    "description": "probe",
+    "status": "waived",
+    "reason": "Accidental test append during 63-06 executor verification of the windows-append command itself; carries no real content (file=x, description=probe). Not a genuine defect.",
+    "recorded_at": "2026-09-20T00:21:54.929Z",
+    "resolved_at": "2026-09-20T00:22:26.896Z",
+    "milestone": "v2.0.0"
   }
 ]
 ````
