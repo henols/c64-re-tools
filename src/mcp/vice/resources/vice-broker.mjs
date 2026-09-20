@@ -1118,32 +1118,7 @@ export function handleOperationNote(targetId, channel, name, state, opts = {}) {
     }
     return { ok: true };
 }
-/** Resolves a recycle target's emulator child pid from THIS broker's own
- * in-memory instance record -- record.pid is, by construction, exactly the
- * same value broker-epoch.mts's writer puts in epoch.json's own `pid` field
- * (both are set from the same spawned child's own pid at launch time, and
- * both are updated together on every respawn) -- so reading it here is
- * reading "the epoch record's pid", never the supervising broker's own
- * process.pid (T-01.6.2-17; there is no intermediate supervisor process in
- * this topology at all, per broker-kill.mts's own header comment). A
- * recycle's OWNERSHIP check (does this connection hold this grant) already
- * happened in broker-control.mts before this function is ever called -- this
- * function only resolves, marks and kills.
- *
- * Marks the death as broker-ordered AND to be replaced, with a TRUE
- * respawn-after-kill answer, BEFORE the kill -- the actual replacement is
- * then carried out by the per-child supervision exit handler
- * (broker-launch.mts's handleExit(), wired in by plan 12) on the SAME port,
- * asynchronously, after this function has already returned its own
- * acknowledgement. This is exactly what the tool description's own "via the
- * host supervisor's existing respawn loop" wording describes: this function
- * marks and kills; the respawn loop is the exit handler, not this function.
- * Neither the grant nor the instance entry is deleted here -- the grant is
- * what keeps the recycled port belonging to this same session, and the
- * instance entry is what the exit handler reads to decide the relaunch;
- * both must still exist once this function returns for the exit handler to
- * have anything to act on. */
-async function handleRecycleForRealBroker(targetId, state) {
+export async function handleRecycleForRealBroker(targetId, state, deps = {}) {
     const grant = state.grants.get(targetId);
     if (!grant) {
         return {
@@ -1188,7 +1163,14 @@ async function handleRecycleForRealBroker(targetId, state) {
     // too keeps the CURRENT (pre-kill) record's own state honest for the
     // window between this call and that respawn.
     clearMonitorClient(instance);
-    const killStage = await verifiedKill({ pid: instance.pid, expectedIdentity: instance.expectedIdentity });
+    // Plan 63-07 Task 2 (SESS-05 gap closure): torn down BEFORE the kill --
+    // see this function's own header comment for why the order matters.
+    const tornDown = tearDownRelaySessionsForGrant(targetId, state);
+    if (tornDown.length > 0) {
+        process.stderr.write(`vice-broker: recycle on target ${targetId} tore down live relay session(s) on channel(s) ${tornDown.join(", ")} ahead of the kill\n`);
+    }
+    const kill = deps.kill ?? ((opts) => verifiedKill(opts));
+    const killStage = await kill({ pid: instance.pid, expectedIdentity: instance.expectedIdentity });
     const outcome = killStage === "identity_refused" ? "identity_refused" : "ok";
     const reason = killStage === "identity_refused" ? "process identity did not match the recorded emulator binary -- the target was NOT signalled and is still running" : "";
     return { port: instance.port, pid: instance.pid, viceBin: instance.viceBin, killStage, epochBefore, outcome, reason };

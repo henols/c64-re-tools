@@ -1395,8 +1395,35 @@ export function handleOperationNote(
  * what keeps the recycled port belonging to this same session, and the
  * instance entry is what the exit handler reads to decide the relaunch;
  * both must still exist once this function returns for the exit handler to
- * have anything to act on. */
-async function handleRecycleForRealBroker(targetId: string, state: BrokerState): Promise<RecycleOutcome> {
+ * have anything to act on.
+ *
+ * Plan 63-07 Task 2 (SESS-05 gap closure): this grant's live relay
+ * session(s) -- if any -- ARE torn down here, via
+ * tearDownRelaySessionsForGrant(), strictly BEFORE the kill below. They
+ * belong to the process about to be killed, not to its replacement. Left
+ * in the map, the kill's own asynchronous socket close would re-enter
+ * handleRelayDeath(), which resolves the instance through this SAME
+ * still-present grant's port and, after the fast respawn the exit handler
+ * carries out, would write a record whose `port` and `epoch_before`
+ * describe the NEW instance rather than the one whose relay actually
+ * died -- misattributing the very evidence this mechanism exists to
+ * produce. Tearing down here, before the kill, means the kill's own later
+ * socket close finds nothing left and writes nothing.
+ *
+ * Explicitly out of scope: a recycle with a declared `grant.operation`
+ * still writes NO incident record of its own here -- that asymmetry with
+ * handleRelease() (which does write one) is pre-existing, is not listed in
+ * 63-VERIFICATION.md's `gaps:` block, and ROADMAP Success Criterion 4
+ * speaks about a connection dropping, not about a deliberate recycle. Not
+ * added by this task. */
+export interface HandleRecycleDeps {
+  /** Overrides the fire-and-forget kill -- defaults to broker-kill.mjs's
+   * real verifiedKill(), reused unchanged, mirroring HandleReleaseDeps'
+   * own `kill` field one function up. */
+  kill?: (opts: { pid: number | null; expectedIdentity: string }) => Promise<KillStage>;
+}
+
+export async function handleRecycleForRealBroker(targetId: string, state: BrokerState, deps: HandleRecycleDeps = {}): Promise<RecycleOutcome> {
   const grant = state.grants.get(targetId);
   if (!grant) {
     return {
@@ -1442,7 +1469,14 @@ async function handleRecycleForRealBroker(targetId: string, state: BrokerState):
   // too keeps the CURRENT (pre-kill) record's own state honest for the
   // window between this call and that respawn.
   clearMonitorClient(instance);
-  const killStage = await verifiedKill({ pid: instance.pid, expectedIdentity: instance.expectedIdentity });
+  // Plan 63-07 Task 2 (SESS-05 gap closure): torn down BEFORE the kill --
+  // see this function's own header comment for why the order matters.
+  const tornDown = tearDownRelaySessionsForGrant(targetId, state);
+  if (tornDown.length > 0) {
+    process.stderr.write(`vice-broker: recycle on target ${targetId} tore down live relay session(s) on channel(s) ${tornDown.join(", ")} ahead of the kill\n`);
+  }
+  const kill = deps.kill ?? ((opts: { pid: number | null; expectedIdentity: string }) => verifiedKill(opts));
+  const killStage = await kill({ pid: instance.pid, expectedIdentity: instance.expectedIdentity });
   const outcome = killStage === "identity_refused" ? "identity_refused" : "ok";
   const reason = killStage === "identity_refused" ? "process identity did not match the recorded emulator binary -- the target was NOT signalled and is still running" : "";
 
