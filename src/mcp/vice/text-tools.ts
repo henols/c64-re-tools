@@ -68,6 +68,11 @@
 //     (its own `.message` IS channelLockRefusalMessage()'s output), matching
 //     withChannelLockHeld()'s own discipline in stock-dispatch.ts.
 //   - Never embed a phase number in any string or template literal here.
+//   - Never declare an operation on the grant before the shared cross-channel
+//     mutex is actually held, and never clear one outside that same locked
+//     section -- GrantRecord.operation is a single field per grant, and a
+//     declaration made while merely queued overwrites whichever operation is
+//     genuinely running, misattributing any incident recorded at that instant.
 import { textConnect, textDisconnect } from "./text-connect.ts";
 import {
   withTextChannelLock,
@@ -96,6 +101,20 @@ import {
   type TextCapabilityBrokerIdentity,
 } from "./text-capability-probe.ts";
 import type { StockDispatchDeps } from "./stock-dispatch.ts";
+import type { HeldLease } from "./vice-broker-client.ts";
+
+/**
+ * Phase 63 (SESS-05): the text-channel counterpart of `stock-dispatch.ts`'s
+ * own `declareOperation()` -- same shape, same discipline, over the LEASE'S
+ * OWN control session rather than a locally-derived one. Both calls below
+ * are written WITHOUT being awaited: a declaration must never add latency to
+ * a tool call and must never fail one (T-63-13). `noteOperation()` never
+ * throws by its own contract; the `.catch(() => {})` below guards anyway so
+ * an unexpected throw can never escape into the tool path.
+ */
+function declareTextOperation(lease: HeldLease, name: string | null): void {
+  void lease.brokerControl.noteOperation({ targetId: lease.targetId, channel: "text", name }).catch(() => {});
+}
 
 /**
  * Shared preamble every handler below runs: resolve the lease
@@ -146,32 +165,47 @@ async function withTextTool(
     return convertWireError(toolName, err);
   }
 
-  // Phase 63 (SESS-05): declare the operation on the LEASE'S OWN control
-  // session, immediately before the lock/command begin -- never a
-  // locally-derived control session, mirroring stock-dispatch.ts's own
-  // withChannelLockHeld()/declareOperation() discipline for the binary
-  // side. Written WITHOUT being awaited: a declaration must never add
-  // latency to a tool call and must never fail one (T-63-13).
-  // noteOperation() never throws by its own contract; the `.catch(() => {})`
-  // below guards anyway so an unexpected throw can never escape into the
-  // tool path.
-  void lease.brokerControl.noteOperation({ targetId: lease.targetId, channel: "text", name: toolName }).catch(() => {});
+  // Phase 63 (SESS-05), corrected: the declaration is made ONLY once the
+  // shared cross-channel mutex is actually held, never before -- symmetric
+  // with stock-dispatch.ts's withChannelLockHeld()/declareOperation()
+  // ordering (acquire, THEN declare) on the binary side. GrantRecord.operation
+  // (vice-broker.mts's handleOperationNote()) is a SINGLE field per grant,
+  // valid only if every caller declares after it holds channel-lock.ts's
+  // mutex; a declaration made here while this call was still QUEUED behind a
+  // running binary operation used to overwrite that field with a name that
+  // had not started -- so an incident record written at that instant named
+  // an operation that never ran, and this call's own outer `finally` could
+  // then erase the binary side's genuine declaration on its way out. Moving
+  // the declaration back outside withTextChannelLock() reintroduces exactly
+  // that misattribution; see declareTextOperation()'s header for the
+  // counterpart this mirrors.
   try {
-    return await withTextChannelLock(toolName, () => fn(session.client), { timeoutMs: deps.channelLockTimeoutMs });
+    return await withTextChannelLock(
+      toolName,
+      async () => {
+        declareTextOperation(lease, toolName);
+        try {
+          return await fn(session.client);
+        } finally {
+          declareTextOperation(lease, null);
+        }
+      },
+      { timeoutMs: deps.channelLockTimeoutMs },
+    );
   } catch (err) {
     // ChannelLockTimeoutError's own `.message` IS
     // channelLockRefusalMessage()'s output -- passed through verbatim below,
     // never routed through convertWireError(), matching
     // withChannelLockHeld()'s (stock-dispatch.ts) own discipline for the
-    // binary side.
+    // binary side. A timeout here means the lock was never granted, so
+    // declareTextOperation() above never ran -- this call declares nothing
+    // and clears nothing, leaving whichever operation genuinely holds the
+    // mutex untouched.
     if (err instanceof ChannelLockTimeoutError) {
       return isErrorText(err.message);
     }
     return convertWireError(toolName, err);
   } finally {
-    // Cleared in the SAME finally block that tears the session down, the
-    // same "clear where you release" pairing withChannelLockHeld() uses.
-    void lease.brokerControl.noteOperation({ targetId: lease.targetId, channel: "text", name: null }).catch(() => {});
     try {
       await textDisconnect(session);
     } catch (releaseErr) {
