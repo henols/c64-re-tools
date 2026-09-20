@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 import { createServer, connect as netConnect, type Server, type Socket } from "node:net";
 import type { AddressInfo } from "node:net";
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -92,8 +92,14 @@ async function withStubTextServer<T>(onLine: (line: string, socket: Socket) => v
  * makeStubBrokerControl() shape. Carries NO `hostState()` method, so
  * capabilityIdentityFor() (text-tools.ts) always falls into its
  * no-broker-identity branch through this stub -- exactly the "current stub
- * carries no hostState() today" gap plan 42-13's own read_first names. */
-function makeStubBrokerControl(): StockConnectBrokerControl {
+ * carries no hostState() today" gap plan 42-13's own read_first names.
+ *
+ * Phase 63 (SESS-05, plan 63-08): an optional `recorder` array, when
+ * supplied, receives each `noteOperation()` call's `name` in arrival order --
+ * `string` for a declare, `null` for a clear. Every existing zero-argument
+ * call site keeps working unchanged; the stub's return shape (`{ ok: true }`)
+ * is unaffected either way. */
+function makeStubBrokerControl(recorder?: Array<string | null>): StockConnectBrokerControl {
   return {
     async claimMonitor() {
       return { ok: true, handle: "test-handle" };
@@ -101,7 +107,8 @@ function makeStubBrokerControl(): StockConnectBrokerControl {
     async releaseMonitor() {
       return { ok: true };
     },
-    async noteOperation() {
+    async noteOperation(opts) {
+      if (recorder !== undefined) recorder.push(opts.name);
       return { ok: true };
     },
   };
@@ -146,13 +153,18 @@ function makeStubBrokerControlWithHostState(hostState: {
 /** Builds StockDispatchDeps.ensureLease() so it resolves a HeldLease pointed
  * at the stub server's port -- mirrors stock-dispatch.test.ts's own
  * makeLease() helper, with remoteMonitorPort (D-15) filled in since that is
- * the field these two tools actually read. */
-function makeDeps(port: number, overrides: Partial<StockDispatchDeps> = {}): StockDispatchDeps {
+ * the field these two tools actually read.
+ *
+ * Phase 63 (SESS-05, plan 63-08): an optional `recorder` array threads
+ * straight through to makeStubBrokerControl(), so a test can observe every
+ * `noteOperation()` call this lease's `brokerControl` receives without
+ * touching any other call site. */
+function makeDeps(port: number, overrides: Partial<StockDispatchDeps> = {}, recorder?: Array<string | null>): StockDispatchDeps {
   const lease: HeldLease = {
     host: "127.0.0.1",
     port: 6502,
     targetId: "grant-1",
-    brokerControl: makeStubBrokerControl() as unknown as HeldLease["brokerControl"],
+    brokerControl: makeStubBrokerControl(recorder) as unknown as HeldLease["brokerControl"],
     epochFile: "",
     supervisorDir: "",
     remoteMonitorPort: port,
@@ -375,6 +387,92 @@ test("handleWarpSet: a ChannelLockTimeoutError surfaces as refusal text byte-ide
       }
     },
   );
+});
+
+// ---------------------------------------------------------------------------
+// Phase 63 (SESS-05, plan 63-08): withTextTool() must declare its operation
+// on the grant only AFTER the shared cross-channel mutex is actually held,
+// never while merely queued behind it -- GrantRecord.operation is a single
+// field per grant, and a pre-lock declaration overwrites whichever operation
+// is genuinely running.
+// ---------------------------------------------------------------------------
+
+test("withTextTool declares the operation only AFTER the shared cross-channel mutex is granted", async () => {
+  const recorder: Array<string | null> = [];
+  await withStubTextServer(
+    (_line, socket) => {
+      socket.write(`OK${PROMPT}`);
+    },
+    async (port) => {
+      const deps = makeDeps(port, {}, recorder);
+      // Hold the SAME single mutex from the OTHER channel first -- this
+      // contention is the whole point of the case: a version of this test
+      // that only calls the text handler alone can never observe the
+      // pre-lock-declare defect at all.
+      const handle = await acquireChannelLock({ channel: "binary", operation: "vice_memory_read" });
+      const pending = handleDeviceConsole({}, deps);
+      // Yield the event loop repeatedly so the queued acquisition has every
+      // opportunity to run before asserting nothing has declared yet.
+      for (let i = 0; i < 10; i++) {
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+      assert.deepEqual(recorder, [], "queued behind the binary channel's lock: must declare nothing yet");
+      handle.release();
+      const result = await pending;
+      assert.equal(result.isError, false, `expected success once the lock was released, got ${JSON.stringify(result)}`);
+      assert.deepEqual(recorder, ["vice_device_console", null], "declares only once the lock is granted, then clears");
+    },
+  );
+});
+
+test("withTextTool that times out acquiring the lock declares nothing and clears nothing", async () => {
+  const recorder: Array<string | null> = [];
+  await withStubTextServer(
+    (_line, socket) => {
+      socket.write(`OK${PROMPT}`);
+    },
+    async (port) => {
+      // Hold the shared mutex from the binary channel for the whole call --
+      // deps.channelLockTimeoutMs forces the text acquisition to time out
+      // almost immediately rather than waiting out
+      // CHANNEL_LOCK_ACQUIRE_TIMEOUT_MS.
+      const handle = await acquireChannelLock({ channel: "binary", operation: "vice_run_until" });
+      try {
+        const deps = makeDeps(port, { channelLockTimeoutMs: 1 }, recorder);
+        const result = await handleDeviceConsole({}, deps);
+        assert.equal(result.isError, true, "acquisition must time out and refuse");
+        assert.deepEqual(recorder, [], "a timed-out acquisition must never declare and never clear -- there is nothing to clear");
+      } finally {
+        handle.release();
+      }
+    },
+  );
+});
+
+test("both channel wrappers declare only after acquiring the shared lock", () => {
+  // A live binary-side drive of dispatchStock() would need a full
+  // binary-monitor stub session harness this file does not have -- the only
+  // existing binary-tool coverage in this file spawns a REAL emulator (the
+  // LIVE case near the end of this file), which is far too heavy to stand up
+  // just to prove a static ordering fact. This is therefore a
+  // source-symmetry assertion instead: in each wrapper's own source, the
+  // line that DECLARES the operation must appear strictly after the line
+  // that ACQUIRES the shared lock.
+  const textSource = readFileSync(join(import.meta.dirname, "text-tools.ts"), "utf8");
+  const textLines = textSource.split("\n");
+  const textAcquireLine = textLines.findIndex((l) => l.includes("withTextChannelLock("));
+  const textDeclareLine = textLines.findIndex((l) => l.includes("declareTextOperation(lease, toolName)"));
+  assert.ok(textAcquireLine >= 0, "expected to find withTextChannelLock( in text-tools.ts");
+  assert.ok(textDeclareLine >= 0, "expected to find declareTextOperation(lease, toolName) in text-tools.ts");
+  assert.ok(textDeclareLine > textAcquireLine, "text-tools.ts must declare strictly AFTER acquiring the shared lock");
+
+  const dispatchSource = readFileSync(join(import.meta.dirname, "stock-dispatch.ts"), "utf8");
+  const dispatchLines = dispatchSource.split("\n");
+  const dispatchAcquireLine = dispatchLines.findIndex((l) => l.includes('acquireChannelLock({ channel: "binary"'));
+  const dispatchDeclareLine = dispatchLines.findIndex((l, i) => i > dispatchAcquireLine && l.includes("declareOperation(session, toolName)"));
+  assert.ok(dispatchAcquireLine >= 0, 'expected to find acquireChannelLock({ channel: "binary" in stock-dispatch.ts');
+  assert.ok(dispatchDeclareLine >= 0, "expected to find declareOperation(session, toolName) in stock-dispatch.ts");
+  assert.ok(dispatchDeclareLine > dispatchAcquireLine, "stock-dispatch.ts must declare strictly AFTER acquiring the shared lock");
 });
 
 // ---------------------------------------------------------------------------
