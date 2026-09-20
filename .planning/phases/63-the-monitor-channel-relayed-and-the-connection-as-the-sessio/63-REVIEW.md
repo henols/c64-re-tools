@@ -162,3 +162,13 @@ non-finding per the review brief's explicit request, not as an issue.
 _Reviewed: 2026-09-20T00:00:00Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
+
+---
+
+## Disposition (recorded by the execute-phase orchestrator, 2026-09-20)
+
+| ID | Severity | Disposition |
+|----|----------|-------------|
+| WR-01 | Warning | **Fixed** in `1d96eed2` — release moved into a `finally` (idempotent, because the mid-test release is deliberate), and the in-flight call settled there too. Verified by injecting a failure at the very assertion the case exists to trip: 1 failed / 64 passed / no cascade, versus the leak's cascade of unrelated `ChannelLockTimeoutError`s. |
+| IN-01 | Info | **Accepted as-is.** The source-symmetry form of the binary-side assertion is the fallback `63-08-PLAN.md` explicitly authorises, and the plan requires the SUMMARY to state which form was used — it does. Converting it to a behavioural drive through `buildConformanceSession()` is a genuine improvement but is new scope, not a gap-closure defect. |
+| IN-02 | Info | **Not an issue — verified.** `broker-state.mts`'s change is comment-only (correcting the now-false "ONE place an entry is ever removed" invariant), so `build.ts`/`tsc` comment-stripping emits no delta for `resources/broker-state.mjs`. `resources-sync.test.ts` passes, which is this project's own authority on `.mts` -> `.mjs` drift. Plan 63-07's artifact list over-predicted a regenerated file; the artifact is correct as committed. |
