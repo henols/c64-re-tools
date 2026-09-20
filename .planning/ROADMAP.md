@@ -2113,7 +2113,7 @@ tool.
      a stuck emulator in a shared broker is diagnosable rather than ambiguous
      (SESS-06).
 
-**Plans**: 6/6 plans executed
+**Plans**: 10 plans — 6/6 original plans executed; 4 gap-closure plans added (63-07…63-10), 0/4 executed
 
 Plans:
 **Wave 1**
@@ -2136,6 +2136,21 @@ Plans:
 
 - [x] 63-05-PLAN.md — A client-declared session label on every grant, surfaced in status beside the grant id and the in-flight operation, provably never a credential, and a stateless call proven stateless
 - [x] 63-06-PLAN.md — The live, opt-in byte-transparency proof against a genuine stock build, and the convergence census measured rather than assumed
+
+**Gap closure** *(added after 63-VERIFICATION.md scored 4/6 must-haves; `gap_closure: true`, run with `/gsd-execute-phase 63 --gaps-only`)*
+
+**Wave 1** *(the two gap-closure plans are independent of each other and of one another's files)*
+
+- [ ] 63-07-PLAN.md — The Blocker: a deliberate release or recycle tears down its own relay sessions, so an ordinary teardown stops writing a spurious incident record (CR-01, SESS-05, Success Criterion 4)
+- [ ] 63-08-PLAN.md — Declare the text-channel operation only once the shared cross-channel lock is granted, so an incident names the operation that was actually running (WR-01, SESS-05)
+
+**Wave 2** *(blocked on 63-07; shares `broker-relay.test.ts`)*
+
+- [ ] 63-09-PLAN.md — The JAM wire shape proven byte-transparent and request-id-demuxed over the relay, automatically and in CI (Success Criterion 1's relay half, SESS-02)
+
+**Wave 3** *(blocked on 63-09)*
+
+- [ ] 63-10-PLAN.md — The live, direct-dial-versus-relay measurement that disposes of WINDOWS id 69 and id 70 by evidence rather than by assertion (SESS-02)
 
 **Cross-cutting constraints:**
 
