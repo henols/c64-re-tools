@@ -60,7 +60,7 @@ for re-derivation during planning:
 - [x] **SESS-02**: An MCP server's connection stays open for the life of that process, and the broker holds that connection's emulator instance for exactly as long as the socket lives
 - [x] **SESS-03**: The broker reclaims a session from socket events alone, so a client killed with `SIGKILL` — which sends no goodbye — is still cleaned up
 - [x] **SESS-04**: A client death that produces no `FIN` at all is detected by the broker within a bounded time, rather than waiting on the operating system's keepalive
-- [x] **SESS-05**: When a connection drops mid-operation, an incident record is written **before** the instance is reclaimed, carrying a broker-supplied reason naming the operation that was in flight
+- [ ] **SESS-05**: When a connection drops mid-operation, an incident record is written **before** the instance is reclaimed, carrying a broker-supplied reason naming the operation that was in flight
 - [x] **SESS-06**: A user can tell which live session is their own, so a stuck emulator in a shared broker is diagnosable rather than ambiguous
 
 ### Transfer — files as bytes, never as shared paths
@@ -158,7 +158,7 @@ requirement owned by two phases or by none.
 | SESS-02 | Phase 63 | Complete |
 | SESS-03 | Phase 63 | Complete |
 | SESS-04 | Phase 63 | Complete |
-| SESS-05 | Phase 63 | Complete |
+| SESS-05 | Phase 63 | Gaps Found |
 | SESS-06 | Phase 63 | Complete |
 | XFER-01 | Phase 64 | Pending |
 | XFER-02 | Phase 64 | Pending |
