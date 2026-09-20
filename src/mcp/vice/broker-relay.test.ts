@@ -10,6 +10,15 @@
 // wired into the listener's own callbacks, so this suite exercises the
 // SAME production functions the real broker calls, not a re-implemented
 // stand-in.
+//
+// The JAM (0x61) wire shape is covered synthetically here -- a genuinely
+// zero-length body, byte-transparent across a header split, and demuxed by
+// request id under an adversarial interleave with a legitimate reply, all
+// driven through the real spliceRelay()/dialMonitorRelay()/stock-protocol.ts
+// parser over real loopback sockets. Whether genuine stock VICE ever emits a
+// bare JAM at all under a given JamAction is a separate, live-emulator
+// question this file cannot answer -- it is measured and ledgered
+// elsewhere, not asserted here.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, connect as netConnect, Socket as NodeNetSocket, type Server, type Socket, type AddressInfo } from "node:net";
@@ -2135,4 +2144,89 @@ test("a JAM frame split across two TCP segments inside its response header reass
       });
     },
   );
+});
+
+// ===========================================================================
+// Plan 63-09, Task 2 (SESS-02, concurrency edge): a JAM interleaved with a
+// legitimate command reply. Five unsolicited message types arrive at
+// request id 0xffffffff, and two of them share a response type with a
+// legitimate command reply -- CLAUDE.md's own cross-cutting constraint. A
+// FIFO shift ANYWHERE in the relayed path (a queue, an accidental
+// arrival-order assumption) would reintroduce exactly the defect
+// stock-protocol.ts's keyed demux already solves. Both the same-segment and
+// the split-segment interleave are exercised, driven through the same
+// withRelayTestBroker()/claimAndDialRelay() shape as every other case in
+// this section.
+// ===========================================================================
+
+/** Shared body for both interleave shapes below: claims and dials a relay,
+ * sends exactly one real command, and asserts that a JAM the stub emulator
+ * wrote AHEAD OF the reply never resolves the pending request and never
+ * goes missing from the event surface -- whichever `writeMode` delivered
+ * it. */
+async function runJamInterleaveCase(writeMode: "single-write" | "split-write", targetId: string): Promise<void> {
+  const jamFrame = syntheticJamFrame();
+  let capturedRequestId: number | null = null;
+
+  await withStubEmulatorServer(
+    (socket) => {
+      let buf = Buffer.alloc(0);
+      socket.on("data", (chunk: Buffer) => {
+        buf = Buffer.concat([buf, chunk]);
+        const decoded = decodeOneRequest(buf);
+        if (!decoded) return;
+        buf = buf.subarray(decoded.total);
+        capturedRequestId = decoded.requestId;
+        const reply = encodeResponseFrame({ responseType: ResponseType.Ping, errorCode: ErrorCode.Ok, requestId: decoded.requestId });
+        if (writeMode === "single-write") {
+          // ONE write -- the JAM and the legitimate reply concatenated in
+          // the SAME TCP segment. A relay or client that ever resolved a
+          // pending request from an arrival-ordered queue rather than its
+          // own id would be exercised by exactly this shape.
+          socket.write(Buffer.concat([jamFrame, reply]));
+        } else {
+          // Two separate writes, with a real event-loop turn between them
+          // -- the split-segment interleave.
+          socket.write(jamFrame);
+          setImmediate(() => socket.write(reply));
+        }
+      });
+    },
+    async (emulatorPort) => {
+      await withRelayTestBroker(emulatorPort, targetId, async ({ listenerPort, token, state }) => {
+        const dial = await claimAndDialRelay(state, listenerPort, token, targetId);
+
+        const client = new ViceMonitorClient();
+        const events: unknown[] = [];
+        client.on("event", (e) => events.push(e));
+        client.attach(dial.socket, { pending: dial.pending });
+
+        const reply = await client.send(CommandType.Ping);
+
+        assert.equal(reply.errorCode, ErrorCode.Ok);
+        assert.equal(capturedRequestId, reply.requestId, "the stub emulator must have decoded the SAME request id the client's send() promise resolved with");
+        assert.notEqual(
+          reply.requestId,
+          VICE_BROADCAST_REQUEST_ID,
+          "DEMUX CHECK: the awaited command promise must resolve with the reply carrying the client's OWN sent request id, never the broadcast id -- a FIFO shift anywhere in the relayed path would let the JAM impersonate the reply",
+        );
+
+        assert.equal(events.length, 1, `exactly one jam event must reach the event surface for the ${writeMode} interleave, never zero and never two`);
+        const jamEvent = events[0] as { type: string; requestId: number };
+        assert.equal(jamEvent.type, "jam", `expected a jam event, got ${JSON.stringify(jamEvent)}`);
+        assert.equal(
+          jamEvent.requestId,
+          VICE_BROADCAST_REQUEST_ID,
+          "the JAM must never resolve the pending request -- it must stay on the broadcast id, proving the keyed demux (not arrival order) decided which item resolved send()",
+        );
+
+        await client.disconnect();
+      });
+    },
+  );
+}
+
+test("a JAM interleaved with a legitimate command reply leaves the reply resolving its OWN request -- the relayed path demuxes by request id, never by arrival order", async () => {
+  await runJamInterleaveCase("single-write", "grant-jam-interleave-single");
+  await runJamInterleaveCase("split-write", "grant-jam-interleave-split");
 });
