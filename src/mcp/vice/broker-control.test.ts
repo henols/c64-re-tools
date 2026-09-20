@@ -1765,7 +1765,7 @@ test("structural: the release and recycle handlers both set the deliberate-death
 
   const recycleRegion = extractSourceRegion(
     source,
-    "async function handleRecycleForRealBroker(targetId: string, state: BrokerState): Promise<RecycleOutcome> {",
+    "export async function handleRecycleForRealBroker(targetId: string, state: BrokerState, deps: HandleRecycleDeps = {}): Promise<RecycleOutcome> {",
     // Plan 41-05 (folded todo): the end marker is RENAMED, not deleted --
     // the retired maintainWarmFloorForRealBroker() this used to bound the
     // region against is replaced by promoteLaunchingForRealBroker(), the

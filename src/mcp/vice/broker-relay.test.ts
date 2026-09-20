@@ -44,7 +44,7 @@ import {
   type MonitorReleaseOutcome,
   type RelayAttachOutcome,
 } from "./broker-control.mts";
-import { createBrokerState, type BrokerState, type InstanceRecord, type MonitorChannel } from "./broker-state.mts";
+import { createBrokerState, MONITOR_CHANNELS, type BrokerState, type InstanceRecord, type MonitorChannel } from "./broker-state.mts";
 import type { BrokerIncidentInput } from "./broker-incident.mts";
 import { dialMonitorRelay, HELLO_PROTOCOL_MAGIC, RELAY_TAG_BINARY, type DialMonitorRelayResult, type DialMonitorRelaySuccess } from "./broker-endpoint.ts";
 import { ViceMonitorClient, CommandType, ResponseType, ErrorCode, REQUEST_HEADER_LEN, VICE_BROADCAST_REQUEST_ID, encodeRequestHeader } from "./stock-protocol.ts";
@@ -1878,6 +1878,25 @@ test("handleRecycleForRealBroker: a recycle with no live relay session behaves b
   assert.equal(outcome.port, 16613);
   assert.ok(state.grants.has("grant-recycle-no-relay"));
   assert.ok(state.instances.has(16613));
+});
+
+test("tearDownRelaySessionsForGrant enumerates every MONITOR_CHANNELS value, so a third channel could never be silently skipped", () => {
+  const state = setupBrokerState(16614, "grant-enumerate-channels");
+  const closeCallsByChannel = new Map<MonitorChannel, RelayDeathTrigger[]>();
+  for (const ch of MONITOR_CHANNELS) {
+    const { session, closeCalls } = makeStandInRelaySession();
+    state.relaySessions.set(relaySessionKey("grant-enumerate-channels", ch), session);
+    closeCallsByChannel.set(ch, closeCalls);
+  }
+
+  const torn = tearDownRelaySessionsForGrant("grant-enumerate-channels", state);
+
+  assert.equal(torn.length, MONITOR_CHANNELS.length, "must tear down exactly one entry per MONITOR_CHANNELS value");
+  assert.deepEqual(torn, [...MONITOR_CHANNELS], "the returned array must equal MONITOR_CHANNELS itself, in order");
+  assert.equal(state.relaySessions.size, 0, "every channel's entry must be removed");
+  for (const ch of MONITOR_CHANNELS) {
+    assert.deepEqual(closeCallsByChannel.get(ch), ["relay_close"], `channel ${ch}'s stand-in close() must have been called exactly once`);
+  }
 });
 
 test("handleRelayDeath: an idle deadline and a socket close in the same turn produce exactly one record and one claim clear, with a deterministic trigger across repeated runs", async () => {
