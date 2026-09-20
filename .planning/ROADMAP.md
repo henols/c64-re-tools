@@ -2113,7 +2113,7 @@ tool.
      a stuck emulator in a shared broker is diagnosable rather than ambiguous
      (SESS-06).
 
-**Plans**: 10/10 plans executed — 6/6 original plans executed; 4 gap-closure plans added (63-07…63-10), 4/4 executed
+**Plans**: 12 plans — 6/6 original plans executed; 4 gap-closure plans added in round one (63-07…63-10), 4/4 executed; 2 gap-closure plans added in round two (63-11, 63-12), 0/2 executed
 
 Plans:
 **Wave 1**
@@ -2151,6 +2151,16 @@ Plans:
 **Wave 3** *(blocked on 63-09)*
 
 - [x] 63-10-PLAN.md — The live, direct-dial-versus-relay measurement that disposes of WINDOWS id 69 and id 70 by evidence rather than by assertion (SESS-02)
+
+**Gap closure, round two** *(added after the 63-VERIFICATION.md re-verification scored 5/6 must-haves and found a NEW instance of the same defect class on the per-channel `monitor_release` path; `gap_closure: true`, `requirements: [SESS-05]`)*
+
+**Wave 1**
+
+- [ ] 63-11-PLAN.md — The broker half: a per-channel `monitor_release` removes and closes its own live relay session in delete-before-close order, and the relay suites read their scratch incidents directory instead of merely deleting it (SESS-05, Success Criterion 4)
+
+**Wave 2** *(blocked on 63-11 — neither half removes the spurious record alone)*
+
+- [ ] 63-12-PLAN.md — The caller half: `textDisconnect()` and `stockDisconnect()` send their per-channel release while the relay socket is still up and disconnect afterwards whatever it returned (SESS-05, Success Criterion 4)
 
 **Cross-cutting constraints:**
 
