@@ -357,13 +357,17 @@ export interface BrokerState {
    *
    * The SINGLE WRITER of an entry is vice-broker.mts's own
    * handleRelayAttach() -- set once, on a successful splice.
-   * vice-broker.mts's own handleRelayDeath() is the ONE place an entry is
-   * ever removed, and it removes it BEFORE calling the handle's own
-   * close() -- see that function's own header comment for the full
-   * evidence-before-reclaim ordering this map's own lifecycle depends on.
-   * An absent entry for a given key means either "never attached" or "a
-   * teardown already ran" -- handleRelayDeath() treats the two identically
-   * (nothing left to do, write nothing).
+   * vice-broker.mts's own handleRelayDeath() and
+   * tearDownRelaySessionsForGrant() (Phase 63, gap closure plan 63-07) are
+   * the TWO places an entry is ever removed, and BOTH remove it BEFORE
+   * calling the handle's own close() -- see either function's own header
+   * comment for the full evidence-before-reclaim ordering this map's own
+   * lifecycle depends on; a caller that closed a session before deleting
+   * its map entry would re-enter handleRelayDeath() with the entry still
+   * present, which is exactly the bug tearDownRelaySessionsForGrant() was
+   * added to stop. An absent entry for a given key means "never attached"
+   * or "a teardown already ran" -- handleRelayDeath() treats every one of
+   * those identically (nothing left to do, write nothing).
    */
   relaySessions: Map<string, RelaySession>;
 }

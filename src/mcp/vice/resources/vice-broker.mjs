@@ -829,8 +829,13 @@ export function handleMonitorClaim(requestId, targetId, channel, state) {
 /**
  * Answers a relay connection's own death (Phase 63, SESS-03/05) -- the ONE
  * place this broker ever writes an incident record for a dropped monitor
- * channel, and the ONE place a relay session's live handle is ever removed
- * from `state.relaySessions`. Called from exactly one production site: the
+ * channel. It is one of TWO places a relay session's live handle is ever
+ * removed from `state.relaySessions` -- the other being
+ * tearDownRelaySessionsForGrant() below, called from the deliberate
+ * release/recycle paths BEFORE the process they own is signalled, using
+ * the same delete-before-close order this function itself uses (see that
+ * function's own header comment for why the order is load-bearing). Called
+ * from exactly one production site here: the
  * `onDeath` callback handleRelayAttach() below hands to spliceRelay() at
  * the moment a channel is spliced.
  *
@@ -903,6 +908,56 @@ export function handleRelayDeath(targetId, channel, trigger, state, deps = {}) {
     session.close(trigger);
     process.stderr.write(`vice-broker: relay death on target ${targetId} channel ${channel} (trigger ${trigger}, operation ${operation ? operation.name : "none declared"}) -- ` +
         `incident recorded at ${recordPath}\n`);
+}
+/**
+ * Tears down every live relay session a grant holds, across both monitor
+ * channels (Phase 63, gap closure plan 63-07) -- the SECOND place an entry
+ * ever leaves `state.relaySessions`, the first being handleRelayDeath()
+ * above. Called from BOTH of handleRelease()'s branches below, and from
+ * handleRecycleForRealBroker(), strictly BEFORE the process this grant
+ * owns is signalled.
+ *
+ * The delete-then-close order is load-bearing, not incidental: close()
+ * destroys both of the session's sockets, each socket's own "close" event
+ * calls spliceRelay()'s reportDeath(), and onDeath lands right back in
+ * handleRelayDeath() above. An entry still present in state.relaySessions
+ * at that moment is EXACTLY what made an ordinary, successful release
+ * write a junk incident record before this fix existed: handleRelayDeath()'s
+ * own early-return guard ("an absent session means a teardown already ran")
+ * never fired, because nothing had removed the entry yet, so it proceeded
+ * to write a full incident record with every content field null --
+ * contradicting this same file's own stated invariant that a quiet
+ * release is not an incident. Deleting the map entry BEFORE calling
+ * close() is what makes that re-entry a no-op instead -- the exact order
+ * handleRelayDeath() itself already uses.
+ *
+ * Passes "relay_close" to close() deliberately: RelayDeathTrigger
+ * (broker-relay.mts) declares exactly three members and must not grow a
+ * fourth "control_close" -- that string names a DIFFERENT type,
+ * BrokerIncidentTrigger (broker-incident.mts), used only for the incident
+ * record's own trigger field at handleRelease()'s evidence-write call site
+ * above. close() ignores its argument past the first call in any case
+ * (RelaySession.close()'s own documented contract), so the choice of
+ * trigger here is a matter of naming honesty, not behavior.
+ *
+ * Returns the array of channels that actually held a live session -- an
+ * empty array is the ordinary case (most grants never attach a relay at
+ * all, or already had it torn down) and is never logged as anything
+ * unusual by this function itself; callers decide whether and how to log
+ * a non-empty result.
+ */
+export function tearDownRelaySessionsForGrant(targetId, state) {
+    const torn = [];
+    for (const ch of MONITOR_CHANNELS) {
+        const key = relaySessionKey(targetId, ch);
+        const session = state.relaySessions.get(key);
+        if (!session)
+            continue;
+        state.relaySessions.delete(key); // BEFORE close() -- see header comment above
+        session.close("relay_close");
+        torn.push(ch);
+    }
+    return torn;
 }
 /** Answers `attach` (Phase 63, SESS-02): the ONE place a relay connection's
  * presented handle is checked, and the ONE place spliceRelay() is ever
@@ -1189,6 +1244,15 @@ export function handleRelease(requestId, state, deps = {}) {
             }
             process.stderr.write(`vice-broker: control-connection release on target ${requestId} with a declared operation (${grant.operation.name}) -- incident recorded at ${recordPath}\n`);
         }
+        // Plan 63-07 (SESS-05): tears down this grant's own live relay
+        // session(s) -- if any -- BEFORE the reclaim below and BEFORE the kill,
+        // so the kill's own later asynchronous socket close finds
+        // state.relaySessions already empty and handleRelayDeath()'s early
+        // return fires as designed, writing no second (content-empty) record.
+        const tornDown = tearDownRelaySessionsForGrant(requestId, state);
+        if (tornDown.length > 0) {
+            process.stderr.write(`vice-broker: release on target ${requestId} tore down live relay session(s) on channel(s) ${tornDown.join(", ")} ahead of the kill\n`);
+        }
         markDeliberateDeath(instance, false);
         // Plan 05: releasing clears monitor-client ownership (every channel) as
         // a side effect -- redundant with the instance-map deletion two lines
@@ -1211,11 +1275,21 @@ export function handleRelease(requestId, state, deps = {}) {
     // Stale/orphaned grant: the port's current occupant (if any) is NOT the
     // same process this grant was issued for. Retire the grant's own
     // bookkeeping only -- the mismatched occupant, if any, is left running.
-    // UNCHANGED by Task 3: this branch writes no record and signals nothing.
+    // UNCHANGED by Task 3: this branch writes no record and signals nothing
+    // at the mismatched occupant's own process.
+    //
+    // Plan 63-07 (SESS-05): tears down only THIS grant's own relay channels
+    // -- two sockets this broker itself owns -- before the grant's
+    // bookkeeping is deleted. This signals nothing at the mismatched
+    // occupant process, so this branch's documented "the current occupant
+    // was left running, untouched" property is about the PROCESS and is
+    // unchanged.
+    const tornDownMismatch = tearDownRelaySessionsForGrant(requestId, state);
     state.grants.delete(requestId);
+    const mismatchSuffix = tornDownMismatch.length > 0 ? `; tore down this grant's own relay session(s) on channel(s) ${tornDownMismatch.join(", ")}` : "";
     process.stderr.write(`vice-broker: release for request ${requestId} found a different instance at port ${grant.port} than the one this grant was issued for ` +
         `(grant pid ${grant.pid ?? "null"}, current occupant pid ${instance ? instance.pid ?? "null" : "none"}) -- the grant's own bookkeeping was retired, ` +
-        `and the current occupant was left untouched\n`);
+        `and the current occupant was left untouched${mismatchSuffix}\n`);
 }
 async function run(args) {
     const finalPath = join(args.stateDir, "broker.json");

@@ -12,7 +12,7 @@
 // stand-in.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createServer, connect as netConnect, type Server, type Socket, type AddressInfo } from "node:net";
+import { createServer, connect as netConnect, Socket as NodeNetSocket, type Server, type Socket, type AddressInfo } from "node:net";
 import { mkdtempSync, writeFileSync, rmSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -30,6 +30,7 @@ import {
   type RelayDeathTrigger,
   type ArmIdleTimerFn,
   type ArmedIdleTimer,
+  type RelaySession,
 } from "./broker-relay.mts";
 import {
   startControlListener,
@@ -97,8 +98,11 @@ const viceBrokerModule = (await import(new URL("./resources/vice-broker.mjs", im
   ) => RelayAttachOutcome;
   handleRelayDeath: (targetId: string, channel: MonitorChannel, trigger: RelayDeathTrigger, state: BrokerState, deps?: TestHandleRelayDeathDeps) => void;
   handleRelease: (requestId: string, state: BrokerState, deps?: TestHandleReleaseDeps) => void;
+  /** Plan 63-07 (SESS-05 gap closure) -- see vice-broker.mts's own header
+   * comment for the full contract. */
+  tearDownRelaySessionsForGrant: (targetId: string, state: BrokerState) => MonitorChannel[];
 };
-const { handleMonitorClaim, handleMonitorRelease, handleRelayAttach, handleRelayDeath, handleOperationNote, handleRelease } = viceBrokerModule;
+const { handleMonitorClaim, handleMonitorRelease, handleRelayAttach, handleRelayDeath, handleOperationNote, handleRelease, tearDownRelaySessionsForGrant } = viceBrokerModule;
 
 // broker-incident.mts is ALSO host-bound (it value-imports broker-home.mjs),
 // so it is loaded the SAME way -- built first, then the compiled artifact,
@@ -197,6 +201,27 @@ function setupBrokerState(emulatorPort: number, targetId: string): BrokerState {
   state.instances.set(emulatorPort, makeGrantedInstance(emulatorPort));
   state.grants.set(targetId, { id: targetId, port: emulatorPort, grantedAt: Date.now(), pid: 4242, operation: null, sessionLabel: null });
   return state;
+}
+
+/** A minimal stand-in satisfying broker-relay.mts's own RelaySession shape
+ * (Plan 63-07, SESS-05 gap closure) -- these cases test ordering and map
+ * bookkeeping, not the real socket splice (already proven byte-transparent
+ * elsewhere in this file), so a real but never-connected node:net Socket
+ * stands in for `emulatorSocket`, and close()/suspendIdle()/resumeIdle()
+ * are simple recorders rather than the real production implementation. */
+function makeStandInRelaySession(): { session: RelaySession; closeCalls: RelayDeathTrigger[] } {
+  const closeCalls: RelayDeathTrigger[] = [];
+  const session: RelaySession = {
+    emulatorSocket: new NodeNetSocket(),
+    close: (trigger: RelayDeathTrigger) => {
+      closeCalls.push(trigger);
+    },
+    suspendIdle: () => {},
+    resumeIdle: () => {},
+    bytesClientToEmulator: () => 0,
+    bytesEmulatorToClient: () => 0,
+  };
+  return { session, closeCalls };
 }
 
 /** Task 3 (SESS-02, concurrency edge): the same builder, generalised to N
@@ -1710,6 +1735,83 @@ test("handleRelease: the mismatched-occupant branch writes no record, signals no
   assert.ok(loggedDistinctly, "the mismatched-occupant branch must still log distinctly");
   assert.ok(!state.grants.has("grant-release-mismatch"), "the grant's own bookkeeping must still be retired");
   assert.ok(state.instances.has(16603), "the mismatched occupant must be left running, untouched");
+});
+
+// ===========================================================================
+// Plan 63-07 (gap closure, SESS-05): the two deliberate-teardown paths must
+// clear state.relaySessions BEFORE the process is signalled, so the kill's
+// own later asynchronous socket close finds nothing left to report.
+// ===========================================================================
+
+test("handleRelease: a release with a LIVE relay session attached tears it down, writes no record, and the async socket close that follows writes no second record", () => {
+  const state = setupBrokerState(16610, "grant-release-live-relay");
+  const { session, closeCalls } = makeStandInRelaySession();
+  state.relaySessions.set(relaySessionKey("grant-release-live-relay", "binary"), session);
+
+  let writeCount = 0;
+  const writeIncident = () => {
+    writeCount += 1;
+    return "/fake.md";
+  };
+  let killCalled = false;
+  handleRelease("grant-release-live-relay", state, {
+    writeIncident,
+    kill: async () => {
+      killCalled = true;
+      return "sigterm";
+    },
+  });
+
+  assert.equal(writeCount, 0, "a release of a grant with a live relay session but no declared operation must write no record");
+  assert.ok(killCalled, "the release must still kill exactly as before");
+  assert.ok(
+    !state.relaySessions.has(relaySessionKey("grant-release-live-relay", "binary")),
+    "the relay session entry must be gone from state.relaySessions",
+  );
+  assert.deepEqual(closeCalls, ["relay_close"], "the stand-in's close() must be called exactly once");
+
+  // Stands in for the emulator kill's own later, asynchronous socket close
+  // re-entering handleRelayDeath() for the same grant and channel.
+  handleRelayDeath("grant-release-live-relay", "binary", "relay_close", state, { writeIncident });
+  assert.equal(writeCount, 0, "the async socket close that follows must find the map entry already gone and write no second record");
+});
+
+test("handleRelease: the mismatched-occupant branch also tears the grant's relay sessions down and still leaves the occupant's instance record in place", () => {
+  const state = createBrokerState();
+  state.instances.set(16611, makeGrantedInstance(16611, { pid: 9999 }));
+  state.grants.set("grant-release-mismatch-relay", {
+    id: "grant-release-mismatch-relay",
+    port: 16611,
+    grantedAt: Date.now(),
+    pid: 4242, // deliberately DIFFERENT from the instance's own recorded pid
+    operation: null,
+    sessionLabel: null,
+  });
+  const { session, closeCalls } = makeStandInRelaySession();
+  state.relaySessions.set(relaySessionKey("grant-release-mismatch-relay", "text"), session);
+
+  let writeCount = 0;
+  let killCalled = false;
+  handleRelease("grant-release-mismatch-relay", state, {
+    writeIncident: () => {
+      writeCount += 1;
+      return "/fake.md";
+    },
+    kill: async () => {
+      killCalled = true;
+      return "sigterm";
+    },
+  });
+
+  assert.equal(writeCount, 0, "the mismatched-occupant branch must still write no record");
+  assert.equal(killCalled, false, "the mismatched-occupant branch must still signal nothing");
+  assert.ok(
+    !state.relaySessions.has(relaySessionKey("grant-release-mismatch-relay", "text")),
+    "the grant's own relay session must be torn down even on the mismatch branch",
+  );
+  assert.deepEqual(closeCalls, ["relay_close"], "the stand-in's close() must be called exactly once");
+  assert.ok(!state.grants.has("grant-release-mismatch-relay"), "the grant's own bookkeeping must still be retired");
+  assert.ok(state.instances.has(16611), "the mismatched occupant's instance record must be left running, untouched");
 });
 
 test("handleRelayDeath: an idle deadline and a socket close in the same turn produce exactly one record and one claim clear, with a deterministic trigger across repeated runs", async () => {
