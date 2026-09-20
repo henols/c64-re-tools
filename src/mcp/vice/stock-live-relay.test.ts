@@ -61,12 +61,12 @@
 //     relying on VICE's factory default (1 = continue) under -default.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { connect } from "node:net";
+import { connect, createServer } from "node:net";
 
 import { build } from "./build.ts";
 import { openBrokerControl, resolveSessionLabel, type BrokerControlSession, type AcquireGrant } from "./vice-broker-client.ts";
@@ -713,5 +713,368 @@ test(
 
     assert.ok(report, "withRelayHarness must have returned a report");
     assert.deepEqual(report.pidsAliveAfterTeardown, [], `pids still alive after teardown: ${JSON.stringify(report.pidsAliveAfterTeardown)} (recorded: ${JSON.stringify(report.recordedPids)})`);
+  },
+);
+
+// ---------------------------------------------------------------------------
+// GAP PROBE (plan 63-10) -- both cases below are additions to a file already
+// registered manual-only (test-gate.mjs's MANUAL_ONLY_TESTS); they inherit
+// SKIP_REASON exactly like the combined proof above and stay opt-in via the
+// SAME VICE_LIVE_RELAY_BIN gate.
+//
+// This section answers, by measurement rather than disposition, the two
+// live non-reproductions the combined proof above recorded honestly and
+// left open (WINDOWS ids 69 and 70): whether genuine stock VICE ever emits
+// a bare JAM (0x61) at all under ANY probeable JamAction, and whether a
+// prior production-shaped monitor connection consumes the one-time
+// REGISTER_INFO greeting. Neither case touches or relaxes the combined
+// proof's own two unrelaxed assertions above -- this round measures the
+// open question, it does not weaken a recorded finding to make a suite
+// green. See
+// .planning/phases/63-the-monitor-channel-relayed-and-the-connection-as-the-sessio/evidence/phase63-gap-closure-live-measurements.md
+// for the disposition these two cases feed.
+//
+// Both cases print exactly one greppable observation line each (see each
+// case's own `finally` block for the exact literal), so a thrown assertion
+// never hides the observations already captured -- the same discipline
+// withRelayHarness()'s own `finally` above uses.
+// ---------------------------------------------------------------------------
+
+/** Binds a throwaway server to 127.0.0.1:0, reads the OS-assigned port, and
+ * closes it -- the standard "free ephemeral port" idiom, copied from
+ * stock-live-triage.test.ts's own freeEphemeralPort() rather than imported
+ * (test files in this repo do not import one another). */
+async function freeEphemeralPort(): Promise<number> {
+  return new Promise((resolvePromise, reject) => {
+    const srv = createServer();
+    srv.once("error", reject);
+    srv.listen(0, "127.0.0.1", () => {
+      const address = srv.address();
+      const port = typeof address === "object" && address ? address.port : null;
+      srv.close(() => {
+        if (port === null) reject(new Error("freeEphemeralPort: could not read an ephemeral port from address()"));
+        else resolvePromise(port);
+      });
+    });
+  });
+}
+
+/**
+ * Spawns `viceBinPath` DIRECTLY -- bypassing the broker entirely, on
+ * purpose: the questions this GAP PROBE section answers are about the
+ * EMULATOR itself, not about the relay (plan 63-09's own broker-relay.test.ts
+ * already proves the relay's own byte-transparency for the JAM shape
+ * synthetically). Deliberately mirrors stock-live-triage.test.ts's own
+ * spawnOnPort() in SHAPE rather than importing it -- test files in this repo
+ * do not import one another.
+ *
+ * Argv-array form only (`spawn(bin, argsArray)`), never a shell string and
+ * never a string-interpolated binary path (T-63-10-01). Binds
+ * `-binarymonitoraddress` to `ip4://127.0.0.1:<ephemeral>` only, never
+ * `0.0.0.0` (T-63-10-02) -- the monitor is unauthenticated full machine
+ * control. `-default` precedes `-binarymonitor` so a persisted vicerc value
+ * from a previous run of this file can never leak into the next one, and
+ * `XDG_CONFIG_HOME` points at a per-run `mkdtempSync()` scratch directory so
+ * the shared vicerc (and its own possible jamaction) is never touched.
+ *
+ * Every acquired child is bound inside a `try`/`finally` that SIGKILLs and
+ * reaps it before its scratch directory is removed (T-63-10-05) -- mirroring
+ * `withTriageInstance()`'s own discipline exactly.
+ */
+async function withDirectEmulator(viceBinPath: string, opts: { extraArgs?: string[] }, fn: (port: number) => Promise<void>): Promise<void> {
+  const scratchDir = mkdtempSync(join(tmpdir(), "vice-gap-probe-"));
+  const extraArgs = opts.extraArgs ?? [];
+  const port = await freeEphemeralPort();
+  const child = spawn(
+    viceBinPath,
+    ["-default", "-binarymonitor", "-binarymonitoraddress", `ip4://127.0.0.1:${port}`, ...extraArgs],
+    { stdio: "ignore", env: { ...process.env, XDG_CONFIG_HOME: scratchDir } },
+  ) as ChildProcess;
+  child.once("error", (err) => {
+    console.error(`stock-live-relay: gap-probe withDirectEmulator spawn error (extraArgs=${JSON.stringify(extraArgs)}): ${String(err)}`);
+  });
+  try {
+    const ready = await waitForPortOpen(port, 15000);
+    assert.ok(ready, `withDirectEmulator: emulator on port ${port} (extraArgs=${JSON.stringify(extraArgs)}) never became ready within 15s`);
+    await fn(port);
+  } finally {
+    try {
+      child.kill("SIGKILL");
+    } catch {
+      // already dead -- best effort
+    }
+    await new Promise<void>((resolvePromise) => {
+      const timer = setTimeout(resolvePromise, 3000);
+      child.once("exit", () => {
+        clearTimeout(timer);
+        resolvePromise();
+      });
+    });
+    rmSync(scratchDir, { recursive: true, force: true });
+  }
+}
+
+test(
+  "gap-probe: does genuine stock VICE emit a bare JAM at all, and does the relay differ from a direct dial",
+  { skip: SKIP_REASON, timeout: 120000 },
+  async () => {
+    const viceBinPath = VICE_LIVE_RELAY_BIN_ENV as string;
+
+    const variants: Array<{ label: string; extraArgs: string[] }> = [
+      { label: "default", extraArgs: [] },
+      { label: "jamaction2", extraArgs: ["-jamaction", "2"] },
+      { label: "jamaction3", extraArgs: ["-jamaction", "3"] },
+    ];
+
+    const observed: Record<string, unknown> = {};
+    const variantEntries: Record<string, unknown> = {};
+    let variantThatJammed: string | undefined;
+
+    try {
+      for (const variant of variants) {
+        await withDirectEmulator(viceBinPath, { extraArgs: variant.extraArgs }, async (port) => {
+          const client = new ViceMonitorClient();
+          const events: ParsedResponse[] = [];
+          client.on("event", (item: ParsedResponse) => events.push(item));
+          await client.connect("127.0.0.1", port, { timeoutMs: 10000 });
+
+          async function resumeMachine(): Promise<void> {
+            try {
+              await client.send(CommandType.Exit);
+            } catch (err) {
+              console.error(`stock-live-relay: gap-probe (${variant.label}) resume (EXIT) did not complete: ${String(err)}`);
+            }
+          }
+
+          // Resolve PC's register id via REGISTERS_AVAILABLE -- never
+          // hardcoded (this file's own header "WHAT NOT TO DO").
+          const availReply = await client.send(CommandType.RegistersAvailable, memspaceBody({ memspace: 0x00 }));
+          assert.equal(availReply.type, "registers_available", `gap-probe (${variant.label}): expected a "registers_available" reply, got ${JSON.stringify(availReply)}`);
+          let pcId = -1;
+          if (availReply.type === "registers_available") {
+            const pcEntry = availReply.registers.find((r) => r.name.toUpperCase() === "PC");
+            assert.ok(pcEntry, `gap-probe (${variant.label}): REGISTERS_AVAILABLE must enumerate a PC register, got: ${JSON.stringify(availReply.registers)}`);
+            pcId = pcEntry!.id;
+          }
+          await resumeMachine();
+
+          // Write the KIL opcode and confirm the write by read-back BEFORE
+          // ever touching PC -- so a null jam result downstream is an
+          // emulator answer, not a harness bug (acceptance criterion (b)).
+          const setReply = await client.send(CommandType.MemorySet, memSetBody({ start: JAM_TARGET_ADDRESS, end: JAM_TARGET_ADDRESS, data: Buffer.from([KIL_OPCODE]) }));
+          assert.equal(setReply.errorCode, 0, `gap-probe (${variant.label}): writing the KIL opcode must succeed, got: ${JSON.stringify(setReply)}`);
+          const opcodeReadBack = await client.send(CommandType.MemoryGet, memGetBody({ start: JAM_TARGET_ADDRESS, end: JAM_TARGET_ADDRESS }));
+          assert.equal(opcodeReadBack.type, "memory_get", `gap-probe (${variant.label}): expected a "memory_get" reply verifying the KIL write, got ${JSON.stringify(opcodeReadBack)}`);
+          const opcodeConfirmed = opcodeReadBack.type === "memory_get" && Buffer.from(opcodeReadBack.bytes).equals(Buffer.from([KIL_OPCODE]));
+
+          const pcSetReply = await client.send(CommandType.RegistersSet, registersSetBody({ memspace: 0x00, items: [{ id: pcId, value: JAM_TARGET_ADDRESS }] }));
+          assert.equal(pcSetReply.errorCode, 0, `gap-probe (${variant.label}): setting PC to the JAM address must succeed, got: ${JSON.stringify(pcSetReply)}`);
+          const pcCheckReply = await client.send(CommandType.RegistersGet, memspaceBody({ memspace: 0x00 }));
+          let pcConfirmed = false;
+          if (pcCheckReply.type === "registers") {
+            const pcReg = pcCheckReply.registers.find((r) => r.id === pcId);
+            pcConfirmed = pcReg?.value === JAM_TARGET_ADDRESS;
+          }
+
+          const eventsBefore = events.length;
+          await resumeMachine(); // lets the CPU execute the KIL
+
+          await waitForAsync(async () => events.length > eventsBefore, 5000, 100);
+          const eventsSinceResume = events.slice(eventsBefore);
+          const jamEvt = eventsSinceResume.find((e): e is ParsedJamEvent => isJamEvent(e));
+
+          variantEntries[variant.label] = {
+            jamObserved: Boolean(jamEvt),
+            programCounter: jamEvt ? jamEvt.programCounter : undefined,
+            eventTypesSinceResume: eventsSinceResume.map((e) => e.type),
+            opcodeReadBackConfirmed: opcodeConfirmed,
+            pcReadBackConfirmed: pcConfirmed,
+          };
+
+          if (jamEvt && variantThatJammed === undefined) {
+            variantThatJammed = variant.label;
+          }
+
+          await client.disconnect();
+        });
+      }
+      observed.variants = variantEntries;
+
+      // The direct-versus-relay discriminator -- ONLY meaningful for the
+      // "default" variant: the broker's own production launch argv carries
+      // no -jamaction override (T-33-04, this plan's own <carried_debt>), so
+      // a relay-managed instance's shape is byte-identical to the "default"
+      // direct-dial variant and ONLY that variant's shape. If a NON-default
+      // variant is the one that jammed, there is no production route to
+      // reproduce that exact shape over the relay without a launch-argv
+      // change this plan deliberately does not add -- recorded explicitly
+      // rather than silently skipped or forced through an unsupported route.
+      if (variantThatJammed === "default") {
+        let relayResult: Record<string, unknown> | undefined;
+        const relayReport = await withRelayHarness(viceBinPath, async ({ session, grant, controlHost, controlPort, controlToken }) => {
+          const claim = await session.claimMonitor({ targetId: grant.id, channel: "binary" });
+          assert.ok(claim.ok, `gap-probe relay repeat: claimMonitor failed: ${JSON.stringify(claim)}`);
+          if (!claim.ok) return;
+          const dial = await dialMonitorRelay({
+            targetId: grant.id,
+            channel: "binary",
+            handle: claim.handle,
+            token: controlToken,
+            port: controlPort,
+            candidates: [controlHost],
+          });
+          assert.ok(dial.ok, `gap-probe relay repeat: dialMonitorRelay failed: ${JSON.stringify(dial)}`);
+          if (!dial.ok) return;
+
+          const client = new ViceMonitorClient();
+          const events: ParsedResponse[] = [];
+          client.on("event", (item: ParsedResponse) => events.push(item));
+          client.attach(dial.socket, { pending: dial.pending });
+
+          async function resumeMachine(): Promise<void> {
+            try {
+              await client.send(CommandType.Exit);
+            } catch (err) {
+              console.error(`stock-live-relay: gap-probe relay repeat resume (EXIT) did not complete: ${String(err)}`);
+            }
+          }
+
+          const availReply = await client.send(CommandType.RegistersAvailable, memspaceBody({ memspace: 0x00 }));
+          assert.equal(availReply.type, "registers_available", `gap-probe relay repeat: expected a "registers_available" reply, got ${JSON.stringify(availReply)}`);
+          let pcId = -1;
+          if (availReply.type === "registers_available") {
+            const pcEntry = availReply.registers.find((r) => r.name.toUpperCase() === "PC");
+            assert.ok(pcEntry, `gap-probe relay repeat: REGISTERS_AVAILABLE must enumerate a PC register, got: ${JSON.stringify(availReply.registers)}`);
+            pcId = pcEntry!.id;
+          }
+          await resumeMachine();
+
+          const setReply = await client.send(CommandType.MemorySet, memSetBody({ start: JAM_TARGET_ADDRESS, end: JAM_TARGET_ADDRESS, data: Buffer.from([KIL_OPCODE]) }));
+          assert.equal(setReply.errorCode, 0, `gap-probe relay repeat: writing the KIL opcode must succeed, got: ${JSON.stringify(setReply)}`);
+          const pcSetReply = await client.send(CommandType.RegistersSet, registersSetBody({ memspace: 0x00, items: [{ id: pcId, value: JAM_TARGET_ADDRESS }] }));
+          assert.equal(pcSetReply.errorCode, 0, `gap-probe relay repeat: setting PC to the JAM address must succeed, got: ${JSON.stringify(pcSetReply)}`);
+
+          const eventsBefore = events.length;
+          await resumeMachine();
+          await waitForAsync(async () => events.length > eventsBefore, 5000, 100);
+          const eventsSinceResume = events.slice(eventsBefore);
+          const jamEvt = eventsSinceResume.find((e): e is ParsedJamEvent => isJamEvent(e));
+
+          relayResult = {
+            jamObserved: Boolean(jamEvt),
+            programCounter: jamEvt ? jamEvt.programCounter : undefined,
+            eventTypesSinceResume: eventsSinceResume.map((e) => e.type),
+          };
+
+          await client.disconnect();
+          const releaseOutcome = await session.releaseMonitor({ targetId: grant.id, channel: "binary" });
+          if (!releaseOutcome.ok) {
+            console.error(`stock-live-relay: gap-probe relay repeat releaseMonitor did not succeed cleanly: ${JSON.stringify(releaseOutcome)}`);
+          }
+        });
+        assert.deepEqual(relayReport.pidsAliveAfterTeardown, [], `gap-probe relay repeat: pids still alive after teardown: ${JSON.stringify(relayReport.pidsAliveAfterTeardown)}`);
+        observed.relayRepeat = { ranFor: "default", ...relayResult };
+      } else if (variantThatJammed !== undefined) {
+        observed.relayRepeat = {
+          ranFor: null,
+          skippedReason: `variant "${variantThatJammed}" produced a jam over a direct dial, but the broker's production launch argv carries no -jamaction override (T-33-04) -- there is no route to reproduce that exact shape over the relay without a launch-argv change this plan deliberately does not add.`,
+        };
+      } else {
+        observed.relayRepeat = { ranFor: null, skippedReason: "no variant produced a jam event over a direct dial -- nothing to compare." };
+      }
+    } finally {
+      console.log(`stock-live-relay: GAP-PROBE OBSERVED -> ${JSON.stringify(observed, null, 2)}`);
+    }
+
+    // Assertions -- and only these, so the case is honest (see this plan's
+    // own must_haves.prohibitions).
+    for (const variant of variants) {
+      const entry = variantEntries[variant.label] as Record<string, unknown> | undefined;
+      assert.ok(entry, `gap-probe: variant "${variant.label}" must have a recorded entry`);
+      assert.equal(entry!.opcodeReadBackConfirmed, true, `gap-probe: variant "${variant.label}"'s KIL opcode read-back must have been confirmed correct, got: ${JSON.stringify(entry)}`);
+      assert.equal(entry!.pcReadBackConfirmed, true, `gap-probe: variant "${variant.label}"'s PC read-back must have been confirmed correct, got: ${JSON.stringify(entry)}`);
+      if (entry!.jamObserved) {
+        assert.equal(entry!.programCounter, null, `gap-probe: variant "${variant.label}" observed a jam event -- its programCounter must be strictly null (zero-length body), got ${JSON.stringify(entry)}`);
+      }
+    }
+    if (variantThatJammed === "default") {
+      const relay = observed.relayRepeat as Record<string, unknown>;
+      assert.equal(
+        relay.jamObserved,
+        true,
+        `gap-probe: variant "default" produced a jam over a direct dial, but the relay repeat did not observe one -- this is the genuine relay-defect signal this assertion exists to catch: ${JSON.stringify(relay)}`,
+      );
+    }
+  },
+);
+
+test(
+  "gap-probe: does a prior production-shaped monitor connection consume the one-time REGISTER_INFO greeting",
+  { skip: SKIP_REASON, timeout: 60000 },
+  async () => {
+    const viceBinPath = VICE_LIVE_RELAY_BIN_ENV as string;
+    const observed: Record<string, unknown> = {};
+
+    try {
+      await withDirectEmulator(viceBinPath, {}, async (port) => {
+        const connections: Array<Record<string, unknown>> = [];
+
+        // Connection 1: probeReady()'s own real PING/EXIT round trip, closed
+        // gracefully (socket.end()) -- the production readiness probe's
+        // EXACT shape, per this plan's own discriminator (planner_findings
+        // fact 5). Never a bare TCP connect-and-destroy (fact 6).
+        const ready = await probeReady(port, { backend: "stock" });
+        assert.ok(ready, "gap-probe (register-info): connection 1 (the production-shaped readiness probe) must succeed");
+        connections.push({ index: 1, shape: "probeReady() (real PING/EXIT, graceful close)", registerDumpObserved: null, ordinaryCommandSucceeded: null });
+
+        // Connection 2: dial DIRECTLY, 'event' listener wired first -- so an
+        // unsolicited REGISTER_INFO frame arriving in the same segment as
+        // this connection's own accept could not be missed.
+        const client2 = new ViceMonitorClient();
+        const events2: ParsedResponse[] = [];
+        client2.on("event", (item: ParsedResponse) => events2.push(item));
+        await client2.connect("127.0.0.1", port, { timeoutMs: 10000 });
+        const dump2 = await waitForAsync(async () => events2.some((e) => e.type === "registers" && e.requestId === VICE_BROADCAST_REQUEST_ID), 5000, 100);
+        const cmdReply2 = await client2.send(CommandType.RegistersGet, memspaceBody({ memspace: 0x00 }));
+        const ordinaryOk2 = cmdReply2.type === "registers";
+        try {
+          await client2.send(CommandType.Exit);
+        } catch (err) {
+          console.error(`stock-live-relay: gap-probe (register-info) connection 2 resume (EXIT) did not complete: ${String(err)}`);
+        }
+        connections.push({ index: 2, shape: "direct dial, event listener wired first", registerDumpObserved: dump2, ordinaryCommandSucceeded: ordinaryOk2 });
+        await client2.disconnect();
+
+        // Connection 3: dial a third time, after connection 2's graceful
+        // close.
+        const client3 = new ViceMonitorClient();
+        const events3: ParsedResponse[] = [];
+        client3.on("event", (item: ParsedResponse) => events3.push(item));
+        await client3.connect("127.0.0.1", port, { timeoutMs: 10000 });
+        const dump3 = await waitForAsync(async () => events3.some((e) => e.type === "registers" && e.requestId === VICE_BROADCAST_REQUEST_ID), 5000, 100);
+        const cmdReply3 = await client3.send(CommandType.RegistersGet, memspaceBody({ memspace: 0x00 }));
+        const ordinaryOk3 = cmdReply3.type === "registers";
+        try {
+          await client3.send(CommandType.Exit);
+        } catch (err) {
+          console.error(`stock-live-relay: gap-probe (register-info) connection 3 resume (EXIT) did not complete: ${String(err)}`);
+        }
+        connections.push({ index: 3, shape: "direct dial, after connection 2's graceful close", registerDumpObserved: dump3, ordinaryCommandSucceeded: ordinaryOk3 });
+        await client3.disconnect();
+
+        observed.connections = connections;
+
+        assert.equal(connections[1]!.ordinaryCommandSucceeded, true, `gap-probe (register-info): connection 2's ordinary command must succeed, got: ${JSON.stringify(connections[1])}`);
+        assert.equal(connections[2]!.ordinaryCommandSucceeded, true, `gap-probe (register-info): connection 3's ordinary command must succeed, got: ${JSON.stringify(connections[2])}`);
+      });
+    } finally {
+      console.log(`stock-live-relay: GAP-PROBE OBSERVED -> ${JSON.stringify(observed, null, 2)}`);
+    }
+
+    assert.equal(
+      Array.isArray(observed.connections) && (observed.connections as unknown[]).length,
+      3,
+      `gap-probe (register-info): all three connections must be recorded, got: ${JSON.stringify(observed.connections)}`,
+    );
   },
 );
