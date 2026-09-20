@@ -1,11 +1,13 @@
 ---
 phase: 63-the-monitor-channel-relayed-and-the-connection-as-the-sessio
-verified: 2026-09-20T12:00:00Z
+verified: 2026-09-20T13:00:00Z
 status: gaps_found
-score: 4/6 must-haves verified
-behavior_unverified: 1
+score: 5/6 must-haves verified
+behavior_unverified: 0
+overrides_applied: 0
 covered_files:
   - ".planning/REQUIREMENTS.md"
+  - ".planning/WINDOWS.md"
   - ".planning/phases/63-the-monitor-channel-relayed-and-the-connection-as-the-sessio/63-01-PLAN.md"
   - ".planning/phases/63-the-monitor-channel-relayed-and-the-connection-as-the-sessio/63-01-SUMMARY.md"
   - ".planning/phases/63-the-monitor-channel-relayed-and-the-connection-as-the-sessio/63-02-PLAN.md"
@@ -18,83 +20,110 @@ covered_files:
   - ".planning/phases/63-the-monitor-channel-relayed-and-the-connection-as-the-sessio/63-05-SUMMARY.md"
   - ".planning/phases/63-the-monitor-channel-relayed-and-the-connection-as-the-sessio/63-06-PLAN.md"
   - ".planning/phases/63-the-monitor-channel-relayed-and-the-connection-as-the-sessio/63-06-SUMMARY.md"
+  - ".planning/phases/63-the-monitor-channel-relayed-and-the-connection-as-the-sessio/63-07-PLAN.md"
+  - ".planning/phases/63-the-monitor-channel-relayed-and-the-connection-as-the-sessio/63-07-SUMMARY.md"
+  - ".planning/phases/63-the-monitor-channel-relayed-and-the-connection-as-the-sessio/63-08-PLAN.md"
+  - ".planning/phases/63-the-monitor-channel-relayed-and-the-connection-as-the-sessio/63-08-SUMMARY.md"
+  - ".planning/phases/63-the-monitor-channel-relayed-and-the-connection-as-the-sessio/63-09-PLAN.md"
+  - ".planning/phases/63-the-monitor-channel-relayed-and-the-connection-as-the-sessio/63-09-SUMMARY.md"
+  - ".planning/phases/63-the-monitor-channel-relayed-and-the-connection-as-the-sessio/63-10-PLAN.md"
+  - ".planning/phases/63-the-monitor-channel-relayed-and-the-connection-as-the-sessio/63-10-SUMMARY.md"
   - ".planning/phases/63-the-monitor-channel-relayed-and-the-connection-as-the-sessio/63-REVIEW.md"
-  - "src/mcp/vice/README.md"
+  - ".planning/phases/63-the-monitor-channel-relayed-and-the-connection-as-the-sessio/evidence/phase63-gap-closure-live-measurements.md"
   - "src/mcp/vice/broker-control.mts"
-  - "src/mcp/vice/broker-endpoint.ts"
-  - "src/mcp/vice/broker-incident.mts"
-  - "src/mcp/vice/broker-launch.mts"
+  - "src/mcp/vice/broker-control.test.ts"
+  - "src/mcp/vice/broker-relay-text.test.ts"
   - "src/mcp/vice/broker-relay.mts"
+  - "src/mcp/vice/broker-relay.test.ts"
   - "src/mcp/vice/broker-state.mts"
-  - "src/mcp/vice/build.ts"
-  - "src/mcp/vice/resources/broker-control.mjs"
-  - "src/mcp/vice/resources/broker-incident.mjs"
-  - "src/mcp/vice/resources/broker-launch.mjs"
-  - "src/mcp/vice/resources/broker-relay.mjs"
   - "src/mcp/vice/resources/broker-state.mjs"
   - "src/mcp/vice/resources/vice-broker.mjs"
   - "src/mcp/vice/stock-connect.ts"
   - "src/mcp/vice/stock-dispatch.ts"
-  - "src/mcp/vice/stock-protocol.ts"
-  - "src/mcp/vice/test-gate.mjs"
+  - "src/mcp/vice/stock-live-relay.test.ts"
   - "src/mcp/vice/text-connect.ts"
-  - "src/mcp/vice/text-protocol.ts"
+  - "src/mcp/vice/text-tools.test.ts"
   - "src/mcp/vice/text-tools.ts"
-  - "src/mcp/vice/tsconfig.build.json"
-  - "src/mcp/vice/vice-broker-client.ts"
   - "src/mcp/vice/vice-broker.mts"
-covered_digest: "v1:sha256:26caac23b3656df8561c54a9f97a6ccb3b56974b46da214e8179a2cdb8531cf3"
-behavior_unverified_items:
-  - truth: "A JAM behaves exactly the same over the relay as over a direct dial (ROADMAP Success Criterion 1, part of SESS-02)"
-    test: "Launch genuine stock VICE, write the KIL opcode plus the JAM target PC over the relay, resume, and wait for the unsolicited JAM (0x61) event within a bounded window."
-    expected: "A JAM (0x61) event arrives, matching the documented zero-length-body shape, the same as a direct dial would produce."
-    why_human: "Plan 63-06's own live run against genuine stock VICE 3.9 (/usr/bin/x64sc) performed exactly this and no JAM event arrived within 5s under the project's default JamAction, even though the KIL-opcode write and the PC write were independently verified correct by read-back. This narrows Success Criterion 1's stated claim and is already recorded open in .planning/WINDOWS.md (id 70) pending human disposition — accept as a documented stock-VICE protocol nuance unrelated to the relay, or schedule a follow-up plan threading a -jamaction launch override. A related, separate live non-reproduction (the REGISTER_INFO dump-on-open not observed over the relay's second connection) is WINDOWS id 69 and is a lower-severity, plausibly harness-shape-specific finding (a diagnostic REGISTERS_GET succeeded over the same relay connection immediately afterward, proving the pipe itself is intact)."
+covered_digest: "v1:sha256:fc14112c5949d2a0943a370e20c326c6862b49446614ba29884d74e3bbc36012"
+re_verification:
+  previous_status: gaps_found
+  previous_score: 4/6
+  gaps_closed:
+    - "CR-01 (63-REVIEW.md / prior truth #5 'incident record before reclaim'): handleRelease() and handleRecycleForRealBroker() now both call tearDownRelaySessionsForGrant() before the kill, in delete-then-close order, so the emulator kill's later async socket close finds state.relaySessions already empty and handleRelayDeath()'s early return fires -- no spurious/duplicate record on a grant-level release or recycle. Confirmed by direct code read of vice-broker.mts and by running broker-relay.test.ts's four new regression cases live (all pass, including the re-entrant handleRelayDeath() call proving the async race is closed)."
+    - "WR-01 (declare-before-lock-granted ordering asymmetry): text-tools.ts's withTextTool() now declares/clears the grant's operation strictly inside the withTextChannelLock() callback, symmetric with stock-dispatch.ts's acquire-then-declare ordering. Confirmed by direct code read and by running the cross-channel-contention regression case live."
+    - "63-REVIEW.md's own WR-01 code-review finding (a leaked process-wide channel-lock mutex in the new contention test) was independently confirmed fixed: text-tools.test.ts's case now releases the lock from an idempotent finally, not a bare statement."
+    - "Prior truth #2 (JAM byte-transparency, PRESENT_BEHAVIOR_UNVERIFIED): broker-relay.test.ts now carries three synthetic, deterministic, CI-run cases proving the relay is byte-transparent for a zero-length-body JAM (raw Buffer equality, not just a decoded field), survives a header-split, and correctly demuxes an interleaved JAM by request id rather than arrival order. All three confirmed passing by direct re-run."
+    - "WINDOWS id 70 (JAM never observed live) and id 69 (REGISTER_INFO dump not observed over the relay): both measured directly against genuine stock VICE 3.9 by a discriminating direct-dial-vs-relay probe and waived by the pre-committed rule (no variant emitted a bare JAM on a direct dial either, exonerating the relay; the production-shaped first connection was confirmed to consume the one-time greeting). Confirmed present and consistent in .planning/WINDOWS.md (both rows 'waived', counters 45/17/9/71 arithmetically consistent)."
+  gaps_remaining:
+    - "A NEW instance of the same defect class this whole gap-closure round exists to close: the per-CHANNEL monitor_release path (handleMonitorRelease(), vice-broker.mts:1300) never tears down state.relaySessions, so the client-side socket close that EVERY ordinary text-tool call performs (textConnect()/textDisconnect()'s open-run-close-per-call pattern in text-tools.ts) re-enters handleRelayDeath() and writes a spurious incident record for a completely routine, successful tool call. This was not addressed by any of the four gap-closure plans (63-07..63-10), which only fixed the GRANT-level release/recycle paths (handleRelease()/handleRecycleForRealBroker()). See Gaps below -- this is a newly-discovered failure of the SAME truth (SESS-05 'a routine, quiet release writes no incident'), found by this re-verification's own direct empirical reproduction of the production code path, not carried forward from the prior report."
+  regressions: []
 gaps:
-  - truth: "A relay death's incident record is durably on disk before any claim is released, any socket is destroyed or any kill signal is sent; a second, concurrent drop for the same grant and channel finds the teardown already in progress and writes no second record (63-04-PLAN.md must_have, SESS-05); a grant with nothing declared writes no incident on an ordinary release (vice-broker.mts's own documented invariant, quoted in 63-REVIEW.md CR-01)"
+  - truth: "When a connection drops mid-operation, an incident record exists before the instance is reclaimed, carrying a broker-minted reason naming the operation that was in flight, and a routine, quiet release writes no incident (ROADMAP Success Criterion 4, SESS-05)"
     status: failed
     reason: >-
-      handleRelease() (vice-broker.mts:1479) and handleRecycleForRealBroker()
-      (vice-broker.mts:1344) both clear the per-channel monitor claim and
-      delete the grant/instance records, but neither ever removes the
-      grant's entries from state.relaySessions. state.relaySessions is
-      written only in handleRelayAttach() and deleted only inside
-      handleRelayDeath(). Killing the emulator process eventually closes the
-      relay's emulatorSocket, which asynchronously fires
-      handleRelayDeath(targetId, channel, trigger, state) — by which time
-      handleRelease() has already deleted state.grants[targetId] and
-      state.instances[port] synchronously. handleRelayDeath() therefore does
-      NOT find its early-return "already torn down" condition (session is
-      still present in the map) and proceeds to write a second incident
-      record with grant/instance already gone (operation: null, port: null,
-      epoch_before: null) for every ordinary release or recycle of a
-      session that ever attached a monitor channel — contradicting the
-      module's own documented invariant "a grant with NOTHING declared
-      writes nothing: a routine, quiet release is not an incident," and
-      violating 63-04's own explicit must_have that a second drop for the
-      same grant+channel writes no second record. Independently confirmed
-      by direct code trace (this verification) and by inspection of
-      broker-relay.test.ts's own setupBrokerState() helper, which never
-      populates state.relaySessions before exercising any of the three
-      handleRelease() test cases — so none of Plan 63-04's own tests can
-      observe this path. Also leaves the relay session's live handle
-      (sockets, idle timer) un-torn-down by the deliberate-teardown paths,
-      relying solely on the emulator kill's own socket close to eventually
-      trigger cleanup.
+      The grant-level release/recycle paths (handleRelease(), handleRecycleForRealBroker())
+      are now correctly fixed by plan 63-07 -- confirmed by direct code read and by running
+      the new regression suite live. But `handleMonitorRelease()` (vice-broker.mts:1300),
+      the handler for the PER-CHANNEL `monitor_release` control op, was never touched by any
+      of the four gap-closure plans and still only calls `clearMonitorClient(instance,
+      channel)` -- it never removes or closes the grant's live `state.relaySessions` entry
+      for that channel. This op is what `releaseMonitor()` sends, and `releaseMonitor()` is
+      exactly what `text-connect.ts`'s `textDisconnect()` (line 216) and `stock-connect.ts`'s
+      `stockDisconnect()` (line 576) call immediately AFTER closing their own end of the
+      relay socket via `safeDisconnect()`. `text-tools.ts`'s `withTextTool()` -- the ONE
+      wrapper every text-channel tool call goes through in production -- performs exactly
+      this open-connect/run-one-command/textDisconnect() sequence on EVERY SINGLE CALL (see
+      its own header comment: "always tear the session down again (textDisconnect())").
+      So the client-side socket close from step one of `textDisconnect()` fires
+      `spliceRelay()`'s `"close"` event -> `reportDeath()` -> `onDeath` -> `handleRelayDeath()`,
+      which finds the `state.relaySessions` entry STILL PRESENT (nothing removed it) and
+      writes a full, real incident record -- for a completely ordinary, successful text tool
+      call with nothing dropped and no operation declared. I confirmed this directly and
+      empirically, not merely by code trace: I drove the exact real production sequence
+      (`handleMonitorClaim()` -> `handleRelayAttach()` -> one `TextMonitorClient.command()`
+      round trip -> `client.disconnect()` -> `handleMonitorRelease()`, the identical steps
+      `textDisconnect()` performs) against the REAL, unmodified `resources/vice-broker.mjs`
+      and `resources/broker-incident.mjs` in a throwaway scratch test (written, run, and
+      deleted during this verification), and observed exactly one incident file written:
+      `vice-broker: relay death on target grant-scratch-text channel text (trigger
+      relay_close, operation none declared) -- incident recorded at
+      <dir>/20260920101220925-port1-epochunknown.md`, with `state.relaySessions.size === 0`
+      afterward (confirming the map entry really was consumed by `handleRelayDeath()`, not
+      left over from a leaked fixture). This means every production use of ANY text-channel
+      tool (`vice_device_console` and its siblings) currently writes one incident record,
+      per call, into the machine-wide, cross-project `.c64-re-tools/incidents/` directory --
+      directly contradicting `vice-broker.mts`'s own documented invariant ("a grant with
+      NOTHING declared writes nothing: a routine, quiet release is not an incident"), the
+      same invariant 63-07-PLAN.md quotes and the same truth this whole four-plan round set
+      out to close. `stock-connect.ts`'s `stockDisconnect()` carries the identical defect for
+      the binary channel, triggered less often in practice because `stock-dispatch.ts`'s
+      `ensureStockSession()` holds a module-level `heldSession` for the life of the process
+      rather than reconnecting per call -- but the same code path fires whenever a lease
+      target switches or a stale session is torn down and replaced. Neither
+      `broker-relay-text.test.ts` nor `broker-relay.test.ts` has any test that reads the
+      `incidentsDir` contents after an ordinary connect/command/disconnect round trip --
+      both files mint a scratch `incidentsDir` and remove it in a `finally` without ever
+      asserting it is empty, so this defect has zero regression coverage anywhere in the
+      current suite (4268/4184/0/84 green does not exercise this assertion at all).
     artifacts:
       - path: "src/mcp/vice/vice-broker.mts"
-        issue: "handleRelease() (line ~1479) and handleRecycleForRealBroker() (line ~1344) never touch state.relaySessions; only handleRelayDeath() (line ~1139) ever deletes from it."
+        issue: "handleMonitorRelease() (line 1300) clears only instance.monitorClients[channel] via clearMonitorClient(); it never touches state.relaySessions for that (targetId, channel) pair before returning."
+      - path: "src/mcp/vice/text-connect.ts"
+        issue: "textDisconnect() (line 216) runs safeDisconnect(session.client) then releaseMonitor() -- exactly the pairing text-tools.ts's withTextTool() performs after EVERY text tool call in production, making this a per-call, not per-session, defect."
+      - path: "src/mcp/vice/stock-connect.ts"
+        issue: "stockDisconnect() (line 576) has the identical pairing for the binary channel, triggered on a lease-target switch or a forced reconnect."
+      - path: "src/mcp/vice/broker-relay-text.test.ts"
+        issue: "startRelayListenerForState()'s incidentsDir is created and removed in every test that uses it, but no test ever reads its contents to assert it stayed empty after an ordinary round trip -- this exact scenario (the file's own 'tracer' test) already exercises the vulnerable sequence and could have caught this."
       - path: "src/mcp/vice/broker-relay.test.ts"
-        issue: "setupBrokerState() (used by all three handleRelease() tests) never populates state.relaySessions, so the async-relay-death-after-release scenario is untested."
+        issue: "Same gap in its own incidentsDir-consuming tests -- the four new 63-07 regression cases prove the grant-level paths but none exercise handleMonitorRelease()."
     missing:
-      - "Before (or instead of relying solely on) killing the process, handleRelease() and handleRecycleForRealBroker() should proactively remove and close any live state.relaySessions entries for the grant's channels (e.g. iterate MONITOR_CHANNELS, delete relaySessionKey(targetId, ch), call that session's own close()) before deleting the grant/instance records, so the later async socket close finds state.relaySessions already empty and handleRelayDeath()'s own early-return fires as designed."
-      - "A test that attaches a relay, then releases (or recycles) the grant, and asserts no incident record is written and state.relaySessions is empty afterward."
-      - "Separately (WR-01, lower severity, same evidence-attribution concern): text-tools.ts's withTextTool() calls noteOperation() BEFORE withTextChannelLock() grants the shared cross-channel mutex, while stock-dispatch.ts's withChannelLockHeld() declares only AFTER the lock is held — confirmed present in both files by direct read. Under a genuinely concurrent binary+text call on one grant, the queued-but-not-yet-running text operation can overwrite (or be overwritten by) the actually-running binary operation's declaration, so a relay death at that moment can attribute the incident to the wrong operation. Fix: declare the text-channel operation only once the lock is actually granted, mirroring stock-dispatch.ts's ordering."
+      - "handleMonitorRelease() (or broker-control.mts's monitor_release dispatch arm that calls it) must proactively remove and close the grant's own live state.relaySessions entry for the released channel -- deleting relaySessionKey(targetId, channel) and calling that session's own close() -- BEFORE (or as part of) clearMonitorClient(), in the same delete-before-close order tearDownRelaySessionsForGrant() already uses, so the client-side socket close that follows finds the map entry already gone and handleRelayDeath()'s early return fires. tearDownRelaySessionsForGrant() itself iterates the WHOLE grant across every MONITOR_CHANNELS value and cannot be reused unchanged here without also considering the OTHER channel's still-live session -- a per-channel variant, or a parameterised single-channel path through the same helper, is what's needed."
+      - "A regression test driving the REAL production sequence -- claim, attach, one command, then exactly the two steps textDisconnect()/stockDisconnect() perform (client-side socket close, then releaseMonitor()) -- asserting an injected writeIncident recorder's call count is 0 afterward. This is the missing counterpart to plan 63-07's own four regression cases, which covered only the grant-level release/recycle paths and never exercised handleMonitorRelease()."
+      - "A decision, recorded in the fix's own header comment, on whether a monitor_release that is NOT immediately followed by a socket close (a client meaning to keep the relay connection open across channel claims) should also tear the session down -- the fix must not assume every monitor_release is followed by a close, only that IF one is (as both existing production callers do), no spurious record results."
 deferred: []
 advisory: []
-human_verification:
-  - test: "Trigger a genuine machine JAM against real stock VICE over the relay under the project's default launch argv (no -jamaction override) and observe whether a JAM (0x61) event ever arrives."
-    expected: "Either a JAM event arrives (Success Criterion 1 fully holds) or a developer accepts WINDOWS.md id 70 as a documented stock-VICE behavior nuance not caused by the relay."
-    why_human: "Plan 63-06's own live run against genuine stock VICE 3.9 measured no JAM event within 5 seconds despite correct opcode/PC writes; this needs a human disposition (accept vs. schedule a -jamaction follow-up), not an automated verdict."
+human_verification: []
 ---
 
 # Phase 63: The Monitor Channel Relayed, and the Connection as the Session Verification Report
@@ -104,9 +133,9 @@ broker relays rather than a socket the client dialled itself, and the broker —
 the client — owns holding and reclaiming that session. The connection IS the
 session: when the socket dies the instance is reclaimed, whatever killed the client.
 
-**Verified:** 2026-09-20T12:00:00Z
+**Verified:** 2026-09-20T13:00:00Z
 **Status:** gaps_found
-**Re-verification:** No — initial verification
+**Re-verification:** Yes — after gap closure (plans 63-07..63-10)
 
 ## Goal Achievement
 
@@ -114,87 +143,82 @@ session: when the socket dies the instance is reclaimed, whatever killed the cli
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | The relay is byte-transparent for a register read, a memory write and a checkpoint hit (SC1, SESS-02) | ✓ VERIFIED | `broker-relay.mts`'s `spliceRelay()` pipes both legs with `Socket.prototype.pipe()`, never a decode (code read, `broker-relay.mts:392-394`); 11+ synthetic tests in `broker-relay.test.ts` (tracer, two mode boundaries, non-UTF-8 byte runs, concurrency); live proof against genuine stock VICE 3.9 (`/usr/bin/x64sc`) in `stock-live-relay.test.ts` recorded real observed values for register read (10 registers decoded), memory write/read-back (exact Buffer equality) and a checkpoint hit (`hitCount: 1`) — 63-06-SUMMARY.md "Live-run evidence" section |
-| 2 | The relay is byte-transparent for a JAM the same way it is for the other three frame kinds (SC1) | ⚠️ PRESENT_BEHAVIOR_UNVERIFIED | Live run performed exactly this against genuine stock VICE 3.9 and no JAM (0x61) event arrived within 5s despite a verified-correct KIL-opcode write and PC write (read back before resuming). Recorded honestly, not asserted away — `.planning/WINDOWS.md` id 70 (`open`), 63-06-SUMMARY.md "Known Findings" §2. Routed to Human Verification below. |
-| 3 | Two call shapes each hold exactly what they should: an MCP server's connection holds its instance for the socket's life; a skill script's stateless call binds no lease (SESS-01, SESS-02) | ✓ VERIFIED | `broker-control.test.ts`'s "stateless call (63-05, SESS-01)" case: a `host_tool` request fires none of the seven lease-bearing callbacks across 10 repetitions and leaves broker status byte-identical; `host-tool-transport.test.ts`'s structural proof that `host-tool-client.ts` opens exactly one connection, writes exactly one request line, holds no module-level session handle. "Two sessions, one broker" test proves two unrelated grants are held and reclaimed independently. |
-| 4 | A client killed with SIGKILL (no goodbye at all) is reclaimed from socket events alone, and a client producing no FIN is detected within a bounded time rather than the OS's ~2-hour keepalive default (SESS-03, SESS-04) | ✓ VERIFIED | `broker-relay.mts`'s death classification uses Node's own `"close"` event `hadError` boolean (measured against a real loopback probe — `.destroy()`/`.end()` are otherwise indistinguishable); `ArmIdleTimerFn`/`defaultArmIdleTimer` fires at-or-past a configured bound, resets on any byte, suspends/resumes on a declared operation; `resolveRelayIdleMs()`/`resolveRelayKeepAliveMs()` never disable the bound and log a rejected override. 17+ tests in `broker-relay.test.ts`/`broker-relay-text.test.ts` cover the abrupt/graceful/idle-expiry/racing-triggers/two-channel cases (63-04-SUMMARY.md D1-D4, D7). |
-| 5 | When a connection drops mid-operation, an incident record exists **before** the instance is reclaimed, carrying a broker-minted reason naming the operation that was in flight, and a routine, quiet release writes no incident (SC4, SESS-05) | ✗ FAILED | `handleRelayDeath()` itself (vice-broker.mts:1105-1147) correctly orders evidence-then-release for a *direct* relay death. But `handleRelease()`/`handleRecycleForRealBroker()` never clear `state.relaySessions`, so the emulator-kill's later, asynchronous socket close re-enters `handleRelayDeath()` against an already-deleted grant/instance, writing a second, content-empty incident record for essentially every ordinary release/recycle that ever attached a channel — confirmed by direct code trace and by `broker-relay.test.ts`'s own `setupBrokerState()` never populating `state.relaySessions` for any of the three `handleRelease()` tests. This is 63-REVIEW.md's CR-01, independently reproduced here. See Gaps below. |
-| 6 | A user can tell which live session is their own from broker status, without guessing from port numbers, and the label carries no authority (SESS-06) | ✓ VERIFIED | `resolveSessionLabel()` (CLAUDE_CODE_SESSION_ID, else cwd-basename+pid); `sanitiseSessionLabel()` strips control characters and caps length; `StatusInstanceEntry.sessionLabel/grantId/operation` resolved via `findOwningGrant()`'s `(port, pid)` identity match; T-63-17 invariant test proves every target-naming op refuses another session's label used as a target id, byte-identical to a bare garbage target id; live run confirmed `status`'s reported label matched the live process's own `resolveSessionLabel()` output against a real spawned broker (63-05-SUMMARY.md D1-D6, 63-06-SUMMARY.md "Status identity"). |
+| 1 | The relay is byte-transparent for a register read, a memory write and a checkpoint hit (SC1, SESS-02) | ✓ VERIFIED | Unchanged from prior verification: `spliceRelay()`'s pipe-based splice, synthetic and live tests in `broker-relay.test.ts`/`stock-live-relay.test.ts` |
+| 2 | The relay is byte-transparent for a JAM the same way it is for the other three frame kinds (SC1, SESS-02) | ✓ VERIFIED | Plan 63-09 added three deterministic, CI-run cases in `broker-relay.test.ts` proving zero-length-body byte-transparency (raw `Buffer.equals`, not just a decoded field, with `programCounter === null`), header-split reassembly into exactly one event, and demux-by-request-id under both same-segment and split-segment interleave with a real command reply — re-run live during this verification, all pass. Plan 63-10's live measurement against genuine stock VICE 3.9 found no `JamAction` variant (default/1, 2, 3) ever emits a bare JAM on a DIRECT dial either (opcode/PC writes independently confirmed correct by read-back), so the earlier live non-reproduction is an emulator-side behavior, not a relay defect — WINDOWS id 70 waived on that measurement, confirmed present in `.planning/WINDOWS.md`. |
+| 3 | Two call shapes each hold exactly what they should: an MCP server's connection holds its instance for the socket's life; a skill script's stateless call binds no lease (SESS-01, SESS-02) | ✓ VERIFIED | Unchanged from prior verification |
+| 4 | A client killed with SIGKILL is reclaimed from socket events alone, and a client producing no FIN is detected within a bounded time (SESS-03, SESS-04) | ✓ VERIFIED | Unchanged from prior verification |
+| 5 | When a connection drops mid-operation, an incident record exists before the instance is reclaimed, and a routine, quiet release writes no incident (SC4, SESS-05) | ✗ FAILED | The prior Blocker (CR-01, grant-level release/recycle) is now correctly fixed and confirmed live. But a NEW, unaddressed instance of the SAME truth failing was found by this verification's own direct empirical test: `handleMonitorRelease()` never tears down `state.relaySessions`, so every ordinary, successful text-channel tool call (which opens and closes a fresh relay connection per call via `textConnect()`/`textDisconnect()`) writes a spurious incident record on completion. See Gaps below. |
+| 6 | A user can tell which live session is their own from broker status, without guessing from port numbers, and the label carries no authority (SESS-06) | ✓ VERIFIED | Unchanged from prior verification |
 
-**Score:** 4/6 truths verified (1 present, behavior-unverified; 1 failed)
+**Score:** 5/6 truths verified (1 failed)
 
 ### Required Artifacts
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| `src/mcp/vice/broker-relay.mts` | Byte-transparent splice, idle deadline, death classification | ✓ VERIFIED | `spliceRelay()`, `RelaySession.close()`, `ArmIdleTimerFn`, `resolveRelayIdleMs()`/`resolveRelayKeepAliveMs()` all present, exported, and exercised by tests; confirmed by direct read |
-| `src/mcp/vice/broker-control.mts` | `attach` and `operation` control ops, `sanitiseSessionLabel()` | ✓ VERIFIED | Both ops present and dispatched after the token gate; `sanitiseSessionLabel()` exported and unit-tested |
-| `src/mcp/vice/broker-incident.mts` | Host-bound atomic incident writer rooted at the machine-level incidents directory | ✓ VERIFIED | `writeBrokerIncident()`/`renderBrokerIncident()`/`brokerIncidentPath()` present; atomic tmp-then-rename write; 15 tests in `broker-incident.test.ts` including a vocabulary-sync case against `incident-record.ts` |
-| `src/mcp/vice/vice-broker.mts` | `handleRelayDeath()` (evidence-before-reclaim), `handleRelease()`/`handleRecycleForRealBroker()` extended with the same evidence step | ⚠️ ORPHANED WIRING | `handleRelayDeath()` itself is correctly ordered and wired as the sole production caller of `writeBrokerIncident()` for a direct relay death. `handleRelease()`/`handleRecycleForRealBroker()` were extended with their own evidence step for the *synchronous* control-connection-close case, but the sibling cleanup (clearing `state.relaySessions` before the process is killed) was never added — see Gaps |
-| `src/mcp/vice/text-protocol.ts`, `src/mcp/vice/stock-protocol.ts` | Socket-injection `attach(socket, opts)` beside `connect(host, port)` | ✓ VERIFIED | Both present, mirrored shape, exercised by dedicated unit tests |
-| `src/mcp/vice/stock-live-relay.test.ts` | Opt-in, default-skipped live byte-transparency proof against genuine stock VICE | ✓ VERIFIED (with disclosed findings) | Present, three-way skip guard confirmed (unset / bad path / armed), registered in `test-gate.mjs`'s `MANUAL_ONLY_TESTS`; live run performed and recorded per-shape observed values; two sub-claims (JAM, register dump-on-open) genuinely did not reproduce and are disclosed, not hidden |
+| `src/mcp/vice/vice-broker.mts` — `tearDownRelaySessionsForGrant()` | Enumerates `MONITOR_CHANNELS`, delete-before-close, wired into `handleRelease()` (both branches) and `handleRecycleForRealBroker()` | ✓ VERIFIED | Confirmed present at `vice-broker.mts:1191` by direct read; wired at three call sites (`handleRelease()` pid-match branch, mismatched-occupant branch, `handleRecycleForRealBroker()`); regression tests re-run live, all pass |
+| `src/mcp/vice/vice-broker.mts` — `handleMonitorRelease()` | Should tear down a released channel's own live relay session the same way, so a per-channel release cannot leave a stale map entry for a client-initiated socket close to trip over | ✗ MISSING | Confirmed absent by direct read at `vice-broker.mts:1300` — the function touches only `instance.monitorClients[channel]`, never `state.relaySessions`. This is the artifact gap underlying the Gaps section below. |
+| `src/mcp/vice/text-tools.ts` — `declareTextOperation()` | Declares/clears the grant's operation only while the shared cross-channel mutex is held | ✓ VERIFIED | Confirmed present and correctly ordered inside `withTextChannelLock()`'s callback; regression tests re-run live, all pass |
+| `src/mcp/vice/broker-relay.test.ts` — JAM wire-shape cases | Byte-transparency, header-split, interleave-demux, all through the real `spliceRelay()`/`dialMonitorRelay()`/parser | ✓ VERIFIED | Confirmed present (`syntheticJamFrame` at 4 lines, `VICE_BROADCAST_REQUEST_ID` at 7 lines); re-run live, all 3 new cases pass |
+| `src/mcp/vice/stock-live-relay.test.ts` — gap-probe cases | Opt-in, default-skipped, RECORD-only live measurement of the JAM and REGISTER_INFO questions | ✓ VERIFIED | Confirmed present, both default-skip (unset env) and armed-run (per SUMMARY's own re-run) behave as specified |
+| `.planning/phases/.../evidence/phase63-gap-closure-live-measurements.md` | Verbatim measurement, per-variant/per-connection tables, T-33-04 note | ✓ VERIFIED | Present at the phase `evidence/` path (never `docs/`), quotes both `GAP-PROBE OBSERVED` JSON blocks verbatim |
 
 ### Key Link Verification
 
 | From | To | Via | Status | Details |
 |------|-----|-----|--------|---------|
-| `stock-connect.ts` | `broker-endpoint.ts` | `StockConnectDeps.dialMonitorSocket` → `dialMonitorRelay()` | ✓ WIRED | Confirmed: production default dials the relay, never a direct socket to the emulator's own port |
-| `text-connect.ts` | `broker-endpoint.ts` | `TextConnectOptions.dialMonitorSocket` → `dialMonitorRelay(RELAY_TAG_TEXT, ...)` | ✓ WIRED | Confirmed; `resolveRelayChannelTarget()` reads `remoteMonitorPort` for text, refuses rather than falls back to the binary port |
-| `stock-dispatch.ts` / `text-tools.ts` | `vice-broker-client.ts` | `noteOperation()` fire-and-forget over the lease's own control session | ⚠️ PARTIAL (ordering) | Wired and functioning for the common case, but declare-order is asymmetric between the two channels (WR-01) — see Gaps' second item |
-| `vice-broker.mts` (`handleRelayDeath`) | `broker-incident.mts` | `writeBrokerIncident()` called before `state.relaySessions.delete()`/`clearClaim()`/`session.close()` | ✓ WIRED | Confirmed by direct code read: the ordering inside `handleRelayDeath()` itself is exactly as documented |
-| `vice-broker.mts` (`handleRelease`, `handleRecycleForRealBroker`) | `broker-relay.mts` (`state.relaySessions`) | Expected: proactive close/removal of any live relay session before the grant/instance is deleted | ✗ NOT WIRED | Confirmed absent — see Gaps |
+| `handleRelease()`/`handleRecycleForRealBroker()` | `tearDownRelaySessionsForGrant()` | Called strictly before the kill, delete-then-close order | ✓ WIRED | Confirmed by direct read and by the async-re-entry regression case (calls `handleRelayDeath()` again after `handleRelease()` and asserts the write count stays at 0) |
+| `text-tools.ts` (`withTextTool`) | `stock-dispatch.ts` (`withChannelLockHeld`) | Symmetric declare-after-lock-granted ordering | ✓ WIRED | Confirmed by direct read of both files; text side proven behaviorally under real cross-channel contention, binary side proven by source-symmetry assertion (plan's own authorized fallback) |
+| `broker-relay.test.ts`'s JAM cases | `spliceRelay()`/`dialMonitorRelay()`/`stock-protocol.ts` | Real loopback sockets, real parser, real relay | ✓ WIRED | Confirmed: every JAM case runs through `withRelayTestBroker()`/`claimAndDialRelay()`, never a bare parser-only assertion |
+| **`handleMonitorRelease()`** | **`state.relaySessions`** | **Expected: proactive close/removal of the released channel's live relay session before returning** | **✗ NOT WIRED** | **Confirmed absent — see Gaps. This is the link CR-01's own fix pattern (`tearDownRelaySessionsForGrant()`) was never extended to cover.** |
+| `text-connect.ts` (`textDisconnect`) / `stock-connect.ts` (`stockDisconnect`) | `handleMonitorRelease()` via `releaseMonitor()` | Client-side socket close followed by a control-plane per-channel release | ⚠️ PARTIAL (produces a spurious incident) | Both functions correctly release the claim; neither is aware that the subsequent (or preceding) socket close re-enters `handleRelayDeath()` against a still-populated map entry |
 
 ### Behavioral Spot-Checks
 
 | Behavior | Command | Result | Status |
 |----------|---------|--------|--------|
-| Full automated suite is green | `npm test` (full glob), redirected, `$?` read same line | 4255 tests, 4173 pass, 0 fail, 82 skipped, exit 0 (orchestrator-measured, consistent with 63-06-SUMMARY's own re-run) | ✓ PASS |
-| `handleRelease()` never clears `state.relaySessions` | `grep -n "relaySessions" src/mcp/vice/vice-broker.mts` | Only two call sites: `.set()` in `handleRelayAttach()`, `.delete()` in `handleRelayDeath()`; zero references inside `handleRelease()`/`handleRecycleForRealBroker()` | ✓ PASS (confirms the gap) |
-| `handleRelease()`'s own tests never populate `state.relaySessions` | Direct read of `broker-relay.test.ts`'s `setupBrokerState()` and all three `handleRelease` tests | `setupBrokerState()` builds only `instances`/`grants`; none of the three tests touch `relaySessions` | ✓ PASS (confirms the gap is untested) |
-| `text-tools.ts` declares the operation before the shared lock is granted | Direct read of `text-tools.ts:158-160` vs. `stock-dispatch.ts:550-557` | `noteOperation()` call precedes `withTextChannelLock()` in `text-tools.ts`; `declareOperation()` follows `acquireChannelLock()` in `stock-dispatch.ts` | ✓ PASS (confirms WR-01) |
-| No unresolved debt markers in phase-touched implementation files | `grep -nE "TBD|FIXME|XXX"` across all 14 non-test implementation files this phase modified | No matches | ✓ PASS |
+| Full automated suite is green | `npm --prefix src/mcp/vice test`, redirected, `$?` read same line | 4268 tests, 4184 pass, 0 fail, 84 skipped, exit 0 (independently re-run during this verification; matches 63-10-SUMMARY.md's own recorded counts exactly) | ✓ PASS |
+| `npm --prefix src/mcp/vice run typecheck` | — | exit 0, no errors | ✓ PASS |
+| Targeted regression files (`text-tools.test.ts`, `broker-relay.test.ts`, `broker-control.test.ts`, `broker-state.test.ts`) | `node --test --test-reporter=tap <files>` | 239 tests, 238 pass, 0 fail, 1 opt-in skip | ✓ PASS |
+| `handleRelease()`'s new regression cases (63-07) actually re-enter `handleRelayDeath()` and assert zero writes | `node --test --test-reporter=tap broker-relay.test.ts` | All 4 new cases (release-with-live-relay, mismatched-occupant, recycle-with-live-relay, MONITOR_CHANNELS-enumeration) pass | ✓ PASS |
+| `text-tools.ts`'s cross-channel-contention regression case (63-08) | `node --test --test-reporter=tap text-tools.test.ts` | Passes; the mutex-leak fix (a `finally`-guarded, idempotent release) confirmed present in source | ✓ PASS |
+| JAM wire-shape cases (63-09) | `node --test --test-reporter=tap broker-relay.test.ts` | All 3 new cases pass; `programCounter === null` asserted with the fabricated-PC failure mode named in the message | ✓ PASS |
+| **A real production-shaped connect/command/disconnect sequence writes no incident** | **Direct-drive scratch reproduction of `handleMonitorClaim()` → `handleRelayAttach()` → one command → `client.disconnect()` → `handleMonitorRelease()` against the real compiled `resources/vice-broker.mjs`, `resources/broker-incident.mjs`** | **One incident file WAS written for an entirely ordinary, successful round trip; `state.relaySessions.size === 0` afterward confirms the entry was consumed by `handleRelayDeath()`** | **✗ FAIL — this is the gap** |
+| No unresolved debt markers in phase-touched files | `grep -nE "TBD\|FIXME\|XXX"` across the gap-closure round's touched files | No matches | ✓ PASS |
 
 ### Requirements Coverage
 
 | Requirement | Description | Status | Evidence |
 |-------------|-------------|--------|----------|
-| SESS-01 | Stateless skill-script call binds no lease | ✓ SATISFIED | 63-05-SUMMARY.md D6; `broker-control.test.ts`'s stateless-call case |
-| SESS-02 | MCP server connection holds its instance for the socket's life; relay is byte-transparent | ✓ SATISFIED (register/memory/checkpoint) / ⚠️ NEEDS HUMAN (JAM sub-claim) | 63-01/63-02/63-06 SUMMARYs; WINDOWS.md id 69/70 |
-| SESS-03 | Broker reclaims from socket events alone (SIGKILL with no goodbye) | ✓ SATISFIED | 63-04-SUMMARY.md D1, D2, D7 |
-| SESS-04 | A client producing no FIN is detected within a bounded time | ✓ SATISFIED | 63-04-SUMMARY.md D3, D4 |
-| SESS-05 | Incident record written before reclaim, naming the in-flight operation | ✗ BLOCKED | CR-01 (this verification's Gaps section) — the mechanism is correct for a direct relay death but produces spurious/duplicate records on ordinary release/recycle, and the accompanying WR-01 declare-order race can misattribute the named operation under concurrent binary+text calls |
-| SESS-06 | User can identify their own session in shared-broker status | ✓ SATISFIED | 63-05-SUMMARY.md D1-D5; 63-06-SUMMARY.md live status-identity observation |
+| SESS-01 | Stateless skill-script call binds no lease | ✓ SATISFIED | Unchanged; 63-05-SUMMARY.md D6 |
+| SESS-02 | MCP server connection holds its instance for the socket's life; relay is byte-transparent (including JAM) | ✓ SATISFIED | Now fully closed: relay-side JAM proof (63-09) plus the WINDOWS-ledgered emulator-side measurement (63-10) |
+| SESS-03 | Broker reclaims from socket events alone | ✓ SATISFIED | Unchanged |
+| SESS-04 | A client producing no FIN is detected within a bounded time | ✓ SATISFIED | Unchanged |
+| SESS-05 | Incident record written before reclaim, naming the in-flight operation; a routine release writes no incident | ✗ BLOCKED | The grant-level release/recycle mechanism (CR-01) and the declare-ordering race (WR-01) are both now correctly fixed. But `handleMonitorRelease()` — the per-channel release every ordinary text-tool call exercises — still writes a spurious incident on every completed call. SESS-05 is not end-to-end satisfied. |
+| SESS-06 | User can identify their own session in shared-broker status | ✓ SATISFIED | Unchanged |
 
-REQUIREMENTS.md marks all six as `Complete`; this verification finds SESS-05 not actually satisfied end-to-end and recommends REQUIREMENTS.md be reverted for SESS-05 pending the gap closure (SESS-01/02/03/04/06 stand).
+**REQUIREMENTS.md marks all six as `Complete`. This verification finds SESS-05 still not actually satisfied end-to-end (for a different reason than the prior report) and recommends REQUIREMENTS.md be reverted for SESS-05 pending this gap's closure. SESS-01/02/03/04/06 stand — SESS-02 is now fully closed, unlike the prior report which left its JAM sub-claim as human-verification.**
 
-No orphaned requirements found: all six requirement IDs declared across the phase's six plans map onto REQUIREMENTS.md's Phase 63 row, and no other REQUIREMENTS.md row cites Phase 63.
+No orphaned requirements found: all six requirement IDs declared across the phase's ten plans map onto REQUIREMENTS.md's Phase 63 row, and no other REQUIREMENTS.md row cites Phase 63.
 
 ### Anti-Patterns Found
 
 | File | Line | Pattern | Severity | Impact |
 |------|------|---------|----------|--------|
-| `src/mcp/vice/vice-broker.mts` | 1479, 1344 | Missing cleanup: `handleRelease()`/`handleRecycleForRealBroker()` never remove the grant's `state.relaySessions` entries before killing the process | 🛑 Blocker | Produces a spurious or duplicate incident record on essentially every ordinary release/recycle of a session that ever attached a monitor channel (CR-01) |
-| `src/mcp/vice/text-tools.ts` | 158 (vs. `stock-dispatch.ts:550-557`) | Declare-before-lock-granted ordering asymmetry between the two channel wrappers | ⚠️ Warning | Can misattribute an incident's named operation under a genuinely concurrent binary+text call on one grant (WR-01, code-review-confirmed, still present) |
-| `src/mcp/vice/broker-relay.mts` | 46-107 | `readAttachLine()`/`MAX_ATTACH_LINE_BYTES` are dead code whose own header comments assert a call relationship to `broker-control.mts` that does not exist; two independently-declared 65536-byte caps with no sync test | ⚠️ Warning | Not load-bearing today (values coincidentally match), but a future editor changing one believing it governs the real parser will silently fail to change actual behavior (WR-02, code-review-confirmed) |
-| `src/mcp/vice/broker-endpoint.ts` | 614-654 | `performAttach()`'s client-side reply-accumulation buffer has no byte cap, unlike its server-side counterpart, relying solely on the 2s reply timeout | ℹ️ Info / low-severity Warning | Asymmetric application of an otherwise-enforced discipline on a same-host, trusted connection (WR-03, code-review-confirmed) |
+| `src/mcp/vice/vice-broker.mts` | 1300 | Missing cleanup: `handleMonitorRelease()` never removes or closes the released channel's own `state.relaySessions` entry | 🛑 Blocker | Every ordinary text-tool call (and any binary-channel lease-target switch) writes a spurious incident record on an entirely successful, routine disconnect — the same class of bug CR-01 fixed for the grant-level paths, now confirmed live for the per-channel path |
+| `src/mcp/vice/broker-relay-text.test.ts`, `src/mcp/vice/broker-relay.test.ts` | various | Test-hygiene gap: `incidentsDir` is minted and cleaned up in every relay test but its contents are never asserted empty after an ordinary round trip | ⚠️ Warning | Exactly how this defect escaped both the original six plans (63-01..63-06) and all four gap-closure plans (63-07..63-10) — the tracer test that exercises the vulnerable sequence already exists and could have caught this with one added assertion |
 
 ### Human Verification Required
 
-### 1. Machine JAM over the relay against genuine stock VICE
-
-**Test:** Launch genuine stock VICE through the broker, attach the relay, write the KIL opcode and the JAM target PC, resume, and wait for the unsolicited JAM (0x61) event.
-**Expected:** A JAM event arrives with the documented zero-length body, the same as a direct dial produces — or a developer accepts this as a stock-VICE default-JamAction behavior unrelated to the relay itself.
-**Why human:** Plan 63-06's own live run against `/usr/bin/x64sc` (genuine, unpatched stock VICE 3.9) measured no JAM event within 5 seconds despite independently-verified-correct opcode and PC writes. This is already disclosed and WINDOWS-ledgered (id 70, `open`) rather than hidden, but it directly narrows Success Criterion 1's stated claim ("...and a JAM all behave exactly as they did over the direct dial") and needs a human disposition, not an automated verdict.
+None. The one item the prior report routed to a human (the live JAM non-reproduction) was resolved by direct, pre-committed-disposition measurement in plan 63-10 and is now recorded in `.planning/WINDOWS.md` (id 70, waived) rather than left open. This verification's own new finding (the per-channel `monitor_release` incident spam) is a code-level defect confirmed by direct, reproducible empirical drive of the real production functions — not something requiring human judgment to resolve.
 
 ## Gaps Summary
 
-One Blocker (CR-01, independently reproduced by this verification through direct code trace, not merely restated from the code review) prevents this phase's SESS-05 requirement — and by extension ROADMAP Success Criterion 4 — from being considered fully achieved: `handleRelease()` and `handleRecycleForRealBroker()` never clear `state.relaySessions`, so the asynchronous socket-close that follows a routine, deliberate release or recycle re-enters `handleRelayDeath()` against already-deleted state and writes a spurious or duplicate incident record. This contradicts the module's own documented design invariant ("a routine, quiet release is not an incident") and 63-04-PLAN.md's own explicit must_have that a second drop for the same grant and channel writes no second record. A related, lower-severity ordering asymmetry (WR-01, also independently confirmed) means the named operation in an incident record can be misattributed under a genuinely concurrent binary+text tool call.
+Four of the five items the prior verification round set out to fix are genuinely closed, confirmed by direct code read and live re-run, not by trusting the SUMMARYs:
 
-Separately, one Success-Criterion-1 sub-claim (JAM byte-transparency specifically) was attempted live against genuine stock VICE and genuinely did not reproduce; this is honestly disclosed by the executing plan (not asserted away) and is routed here as a human-verification item rather than a code defect, since the KIL-opcode/PC writes were independently verified correct and the relay's own byte-transparent pipe was separately proven intact for real command/reply traffic immediately afterward.
+- **CR-01** (the sole prior Blocker): `handleRelease()` and `handleRecycleForRealBroker()` now both tear down a grant's live relay sessions before the kill, in delete-then-close order, closing the async-socket-close race that used to write a spurious or duplicate incident record on every ordinary release/recycle.
+- **WR-01** (declare-before-lock-granted ordering): `text-tools.ts` now declares/clears the grant's operation strictly inside the granted lock, symmetric with the binary side, proven under real cross-channel contention. The code review's own WR-01 finding on the new test's mutex-leak risk is independently confirmed fixed.
+- **The JAM sub-claim of Success Criterion 1**: now proven synthetically, deterministically and in CI for the relay's own guarantee, and the emulator-side non-reproduction is honestly measured and ledgered (WINDOWS id 70, waived) rather than left as an open human-verification item.
+- **WINDOWS id 69** (REGISTER_INFO): measured and waived on the same principled basis.
 
-Everything else — the byte-transparent splice for the other three wire shapes, the two call-shape distinction (SESS-01/02), socket-event-only reclaim with a bounded idle deadline (SESS-03/04), and the session-label identity/non-authority mechanism (SESS-06) — is verified against the actual codebase with both synthetic and, where applicable, live evidence, and is not merely asserted by the SUMMARYs.
-
----
-
-*Verified: 2026-09-20T12:00:00Z*
-*Verifier: Claude (gsd-verifier)*
+But this re-verification's own independent, adversarial check — driving the real production functions directly rather than trusting that "the gap-closure plans' own tests pass" — found a new, unaddressed instance of the exact SAME class of defect this whole round exists to close: `handleMonitorRelease()`, the per-channel `monitor_release` handler that every ordinary text-tool call's `textDisconnect()` (and the binary channel's `stockDisconnect()`) invokes immediately around a client-side socket close, never tears down `state.relaySessions`. The result, confirmed by direct, reproducible drive of the real compiled broker code (not a mock, not an inference): a completely ordinary, successful text-channel tool call writes one incident record on completion. This means SESS-05 / ROADMAP Success Criterion 4 ("a routine, quiet release writes no incident") remains unmet in production, on the single most common code path in the whole tool surface — every text tool call — even though the grant-level release/recycle paths this round explicitly targeted are now correct. This is not new scope: it is the identical must-have (SESS-05's "routine release" clause) still failing, discovered via a code path none of the four gap-closure plans' own tests exercised.
