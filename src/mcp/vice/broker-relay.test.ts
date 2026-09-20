@@ -48,7 +48,7 @@ import { createBrokerState, MONITOR_CHANNELS, type BrokerState, type InstanceRec
 import type { BrokerIncidentInput } from "./broker-incident.mts";
 import { dialMonitorRelay, HELLO_PROTOCOL_MAGIC, RELAY_TAG_BINARY, type DialMonitorRelayResult, type DialMonitorRelaySuccess } from "./broker-endpoint.ts";
 import { ViceMonitorClient, CommandType, ResponseType, ErrorCode, REQUEST_HEADER_LEN, VICE_BROADCAST_REQUEST_ID, encodeRequestHeader } from "./stock-protocol.ts";
-import { encodeResponseFrame } from "./binmon-fixtures.ts";
+import { encodeResponseFrame, syntheticJamFrame } from "./binmon-fixtures.ts";
 import { build } from "./build.ts";
 import type { Socket as NetSocket } from "node:net";
 import { stockConnect, stockReconnect, stockDisconnect, type StockConnectBrokerControl, type DialMonitorSocketFn } from "./stock-connect.ts";
@@ -2000,6 +2000,139 @@ test("handleRelayDeath: two channels of one grant dropping together produce one 
           }
         },
       );
+    },
+  );
+});
+
+// ===========================================================================
+// Plan 63-09 (SESS-02, concurrency edge -- gap closure): the JAM (0x61) wire
+// shape. Per CLAUDE.md, `monitor_binary.c:384-394` computes the PC then
+// sends a ZERO-length body -- "every client surveyed assumes 2 bytes and
+// breaks on it." These cases prove the relay never fabricates one: a client
+// that assumes a two-byte JAM body breaks on the real, zero-length frame,
+// and the relay must never be the thing that hides or reshapes that.
+//
+// Every case below is driven through withRelayTestBroker()/
+// claimAndDialRelay() -- never a ViceMonitorClient attached to a socket that
+// did not itself traverse the real, production spliceRelay().
+// ===========================================================================
+
+test("spliceRelay is byte-transparent for a JAM (0x61) with a zero-length body, which decodes to a jam event with a null program counter", async () => {
+  const jamFrame = syntheticJamFrame();
+
+  await withStubEmulatorServer(
+    (socket) => {
+      // Written exactly once, immediately after the relay's own emulator
+      // leg completes its TCP accept -- which itself only ever happens
+      // AFTER handleRelayAttach() has synchronously spliced this connection
+      // and the broker has queued its "attached" reply on the client's
+      // socket (both synchronous, one JS tick earlier). This frame can
+      // therefore never race ahead of the attach reply on the wire.
+      socket.write(jamFrame);
+    },
+    async (emulatorPort) => {
+      await withRelayTestBroker(emulatorPort, "grant-jam-zero-length", async ({ listenerPort, token, state }) => {
+        const dial = await claimAndDialRelay(state, listenerPort, token, "grant-jam-zero-length");
+
+        // Raw byte capture, alongside (never instead of) the client's own
+        // parser -- both are wired to the SAME socket, and Node fans the
+        // same "data" chunk out to every listener without consuming it.
+        const rawChunks: Buffer[] = [];
+        dial.socket.on("data", (chunk: Buffer) => rawChunks.push(Buffer.from(chunk)));
+
+        const client = new ViceMonitorClient();
+        const events: unknown[] = [];
+        const protocolErrors: unknown[] = [];
+        let resolveEvent: () => void = () => {};
+        const gotEvent = new Promise<void>((resolve) => {
+          resolveEvent = resolve;
+        });
+        // The "event" listener is wired BEFORE attach() hands the socket
+        // over, so it can never miss a synchronously-replayed `pending`
+        // frame.
+        client.on("event", (e) => {
+          events.push(e);
+          resolveEvent();
+        });
+        client.on("protocol-error", (e) => protocolErrors.push(e));
+        client.attach(dial.socket, { pending: dial.pending });
+
+        await gotEvent;
+
+        assert.equal(events.length, 1, "exactly one parsed item must reach the client's event surface for this connection");
+        assert.deepEqual(protocolErrors, [], "a genuine zero-length-body JAM must never be reported as a protocol/framing error");
+        const jamEvent = events[0] as { type: string; requestId: number; programCounter: number | null };
+        assert.equal(jamEvent.type, "jam", `expected a jam event, got ${JSON.stringify(jamEvent)}`);
+        assert.equal(jamEvent.requestId, VICE_BROADCAST_REQUEST_ID, "a JAM is unsolicited and must carry the broadcast request id");
+        assert.strictEqual(
+          jamEvent.programCounter,
+          null,
+          "FABRICATED-PC CHECK: a real stock JAM carries NO program counter at all (monitor_binary.c:384-394 sends a zero-length body) -- a non-null value here means the parser (or the relay) fabricated a two-byte PC that was never on the wire",
+        );
+
+        const receivedRaw = Buffer.concat([dial.pending, ...rawChunks]);
+        assert.deepEqual(
+          receivedRaw,
+          jamFrame,
+          "the bytes the client socket received must be byte-identical, buffer-for-buffer, to what the stub emulator wrote -- proves spliceRelay() never reshapes them in transit",
+        );
+
+        await client.disconnect();
+      });
+    },
+  );
+});
+
+test("a JAM frame split across two TCP segments inside its response header reassembles into exactly one jam event", async () => {
+  const jamFrame = syntheticJamFrame();
+  // Strictly inside the 12-byte response header (offsets: 0 STX, 1
+  // apiVersion, 2-5 bodyLength LE, 6 responseType, 7 errorCode, 8-11
+  // requestId LE) -- splitting after byte 5 cuts the little-endian
+  // body-length field itself in half.
+  const splitAt = 5;
+  const part1 = jamFrame.subarray(0, splitAt);
+  const part2 = jamFrame.subarray(splitAt);
+
+  await withStubEmulatorServer(
+    (socket) => {
+      socket.write(part1);
+      // A real event-loop turn between the two writes -- never combined
+      // back into one, or this would test the same-segment shape instead.
+      setImmediate(() => socket.write(part2));
+    },
+    async (emulatorPort) => {
+      await withRelayTestBroker(emulatorPort, "grant-jam-header-split", async ({ listenerPort, token, state }) => {
+        const dial = await claimAndDialRelay(state, listenerPort, token, "grant-jam-header-split");
+
+        const client = new ViceMonitorClient();
+        const events: unknown[] = [];
+        const protocolErrors: unknown[] = [];
+        let resolveEvent: () => void = () => {};
+        const gotEvent = new Promise<void>((resolve) => {
+          resolveEvent = resolve;
+        });
+        client.on("event", (e) => {
+          events.push(e);
+          resolveEvent();
+        });
+        client.on("protocol-error", (e) => protocolErrors.push(e));
+        client.attach(dial.socket, { pending: dial.pending });
+
+        await gotEvent;
+
+        assert.equal(events.length, 1, "a header-split JAM must reassemble into exactly one event, never two and never zero");
+        assert.deepEqual(protocolErrors, [], "no parse error may be emitted while reassembling a header split inside a genuine frame");
+        const jamEvent = events[0] as { type: string; requestId: number; programCounter: number | null };
+        assert.equal(jamEvent.type, "jam", `expected a jam event, got ${JSON.stringify(jamEvent)}`);
+        assert.equal(jamEvent.requestId, VICE_BROADCAST_REQUEST_ID);
+        assert.strictEqual(
+          jamEvent.programCounter,
+          null,
+          "FABRICATED-PC CHECK: a real stock JAM carries NO program counter at all -- a non-null value here means the parser fabricated a two-byte PC out of a reassembled but still zero-length body",
+        );
+
+        await client.disconnect();
+      });
     },
   );
 });
