@@ -5,16 +5,16 @@ milestone_name: One Broker, One Socket
 current_phase: 63
 current_phase_name: The Monitor Channel Relayed, and the Connection as the Session
 status: executing
-stopped_at: Completed 63-07-PLAN.md
-last_updated: "2026-09-20T08:51:10.983Z"
+stopped_at: Completed 63-08-PLAN.md
+last_updated: "2026-09-20T09:04:21.860Z"
 last_activity: 2026-09-20
 last_activity_desc: Phase 63 execution started
-state_head: 7f9492ff24bdd4f42694dce61e1b85811d6a919f
+state_head: 04a16f2d21eada2be8a198d7a79f79641bcea561
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 15
-  completed_plans: 12
+  completed_plans: 13
   percent: 17
 carried_forward_phases:
 
@@ -80,8 +80,8 @@ closure still needs to be recorded as one.
 ## Current Position
 
 Phase: 63 (The Monitor Channel Relayed, and the Connection as the Session) — EXECUTING
-Plan: 7 of 10 executed; gap-closure plans 63-08..63-10 remain
-Status: Executing Phase 63 gap closure (--gaps-only)
+Plan: 8 of 10 executed; gap-closure plans 63-08..63-10 remain
+Status: Ready to execute
 Progress: [██░░░░░░░░] 17% (1 of 6 v2.0.0 phases complete; Phases 62-67)
 Last activity: 2026-09-20 — Phase 63 gap-closure execution started (63-07..63-10)
 
@@ -481,6 +481,7 @@ Phase 66 completes.
 | Phase 63 P05 | 30 min | 3 tasks | 15 files |
 | Phase 63 P06 | 120 min | 2 tasks | 2 files |
 | Phase 63 P07 | 25 min | 3 tasks | 5 files |
+| Phase 63 P08 | 25 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -1382,6 +1383,7 @@ Recent decisions affecting current work:
 - [Phase 63]: The T-63-17 invariant test compares a label-as-target-id refusal against a garbage-as-target-id refusal for the SAME op, rather than asserting all target-naming ops share one denial string.
 - [Phase 63]: Reordered the register-dump-on-open and machine-JAM assertions to run last in stock-live-relay.test.ts, unweakened, so a genuine measured non-reproduction of either sub-claim on real stock VICE 3.9 never prevents the other three wire-transparency shapes (register read, memory write, checkpoint hit) plus the session-identity assertion from being driven and recorded first. — Both findings routed to .planning/WINDOWS.md as unmet-truth entries (69, 70) rather than resolved in-plan, since resolving either requires a launch-time -jamaction override or a readiness-gate bypass -- production-code changes outside this plan's declared two-file scope.
 - [Phase 63]: tearDownRelaySessionsForGrant() removed a grant's state.relaySessions entries via the same delete-before-close order handleRelayDeath() uses, closing 63-VERIFICATION.md's CR-01 Blocker for both handleRelease() and handleRecycleForRealBroker(); RelayDeathTrigger was deliberately not widened.
+- [Phase 63]: Text-tool operation declaration moved inside withTextChannelLock()'s locked callback via a new declareTextOperation() helper, symmetric with stock-dispatch.ts's declareOperation()/withChannelLockHeld() ordering. — A text call queued behind a running binary operation was overwriting GrantRecord.operation before it actually held the shared cross-channel mutex, misattributing incidents; the fix and its cross-channel-contention test close SESS-05's ordering gap (63-VERIFICATION GAP 1 / WR-01).
 
 ### Pending Todos
 
@@ -2715,8 +2717,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-20T08:51:10.869Z
-Stopped at: Completed 63-07-PLAN.md
+Last session: 2026-09-20T09:04:21.746Z
+Stopped at: Completed 63-08-PLAN.md
 Resume file: None
 
 Earlier: **v2.0.0 roadmap created.** 36/36 requirements (`ENDPOINT-01..05`,
