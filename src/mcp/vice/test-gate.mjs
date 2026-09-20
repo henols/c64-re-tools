@@ -3,12 +3,13 @@
 // versus safe for the automated regression gate (`npm run test:automated`).
 //
 // WHY THIS FILE EXISTS: a bare `node --test '*.test.*'` (the `npm test`
-// script) globs all test files in this directory. RE-MEASURED 2026-09-14:
-// this list now holds twelve entries. Eleven depend on genuine manual host
-// setup -- a real broker topology, a real emulator/display environment, or
-// an installed external binary such as dxa or Ghidra -- so they hang or need
-// an opt-in env var rather than report outside a devcontainer. The twelfth,
-// vice-proxy.test.ts, is the one exception: it terminates cleanly (does not
+// script) globs all test files in this directory. RE-MEASURED 2026-09-20
+// (plan 63-06): this list now holds thirteen entries. Twelve depend on
+// genuine manual host setup -- a real broker topology, a real
+// emulator/display environment, or an installed external binary such as dxa
+// or Ghidra -- so they hang or need an opt-in env var rather than report
+// outside a devcontainer. The thirteenth, vice-proxy.test.ts, is the one
+// exception: it terminates cleanly (does not
 // hang) and needs no host dependency at all, spawning a real child process
 // per test case in about 26-27 seconds per run -- see its own header and
 // this list's second-entry note below for the measured reason it stays here
@@ -35,9 +36,9 @@
 // into the narrowed automated set was considered and declined for that
 // reason; it is not an oversight.
 //
-// WHAT NOT TO DO: do not re-list these twelve file names in a CI workflow, an
-// npm script, or a second test runner anywhere else in this repo. If a
-// thirteenth file needs the same treatment, add it to MANUAL_ONLY_TESTS below
+// WHAT NOT TO DO: do not re-list these thirteen file names in a CI workflow,
+// an npm script, or a second test runner anywhere else in this repo. If a
+// fourteenth file needs the same treatment, add it to MANUAL_ONLY_TESTS below
 // and nowhere else -- test-gate.test.ts's drift guard fails the build if a
 // test file ever escapes both this list and the automated set, so a silent
 // second list would desync from that guard the moment it existed.
@@ -118,6 +119,16 @@
 // this phase's plan requires. Like every sibling above it is default-SKIP
 // everywhere (opt in via VICE_LIVE_STOCK_BIN) and never hangs CI.
 //
+// This section's FOURTEENTH entry (phase 63, plan 63-06, SESS-02) covers
+// stock-live-relay.test.ts: it spawns a real broker daemon AND a real
+// genuine-stock emulator process, launched through the broker's own
+// production acquire path, and proves the broker relay is byte transparent
+// for a register read, a memory write, a checkpoint hit and a machine JAM
+// against a genuine stock build -- the live proof this phase's own Success
+// Criterion 1 requires, and the one thing no synthetic pair elsewhere in
+// this phase can prove. Like every sibling above it is default-SKIP
+// everywhere (opt in via VICE_LIVE_RELAY_BIN) and never hangs CI.
+//
 // STANDING RULE (added 2026-08-18, quick task 260818-nh5): every payload
 // shape a manual-only live suite depends on MUST have a mirror assertion in
 // the automated set. A manual-only file is invisible to this gate by
@@ -135,9 +146,9 @@
 import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 
-/** The exact twelve test files dispositioned as manual-only. Frozen: extend
- * this array (never add a parallel list) if a thirteenth file needs the
- * same treatment. */
+/** The exact thirteen test files dispositioned as manual-only. Frozen:
+ * extend this array (never add a parallel list) if a fourteenth file needs
+ * the same treatment. */
 export const MANUAL_ONLY_TESTS = Object.freeze([
   "vice-broker-launch.test.ts",
   "vice-proxy.test.ts",
@@ -151,6 +162,7 @@ export const MANUAL_ONLY_TESTS = Object.freeze([
   "ghidra-live.test.ts",
   "ghidra-opcode-live.test.ts",
   "text-monitor-live.test.ts",
+  "stock-live-relay.test.ts",
 ]);
 
 /** Every `*.test.*` entry in `dir`, sorted, with every MANUAL_ONLY_TESTS
