@@ -355,9 +355,9 @@
     }
   ],
   "next": {
-    "command": "/gsd:progress --next",
-    "label": "Advance to the next step (verify)",
-    "reason": "Phase 63 of 6 · 17% · ready to verify"
+    "command": "/gsd-plan-phase 63 --gaps",
+    "label": "Plan the gap closure for phase 63",
+    "reason": "Phase 63 · re-verification 5/6 · gaps_found (new blocker on monitor_release relay teardown, SESS-05)"
   },
-  "updated_at": "2026-09-20T07:50:17.326Z"
+  "updated_at": "2026-09-20T10:20:47.729Z"
 }
