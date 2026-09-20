@@ -5,16 +5,16 @@ milestone_name: One Broker, One Socket
 current_phase: 63
 current_phase_name: The Monitor Channel Relayed, and the Connection as the Session
 status: executing
-stopped_at: Completed 63-09-PLAN.md
-last_updated: "2026-09-20T09:23:30.997Z"
+stopped_at: Completed 63-10-PLAN.md
+last_updated: "2026-09-20T09:43:41.961Z"
 last_activity: 2026-09-20
 last_activity_desc: Phase 63 execution started
-state_head: 2c8411bb8900a0215fdf145857088bc9b0de15a2
+state_head: 6ad2e98672dd2d64ae4ecc88e291c4b99a2089d3
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 15
-  completed_plans: 14
+  completed_plans: 15
   percent: 17
 carried_forward_phases:
 
@@ -80,10 +80,10 @@ closure still needs to be recorded as one.
 ## Current Position
 
 Phase: 63 (The Monitor Channel Relayed, and the Connection as the Session) — EXECUTING
-Plan: 9 of 10 executed; gap-closure plan 63-10 remains
-Status: Ready to execute
+Plan: 10 of 10 executed; all plans in phase 63 have summaries, awaiting orchestrator verification/phase-complete
+Status: All plans executed
 Progress: [██░░░░░░░░] 17% (1 of 6 v2.0.0 phases complete; Phases 62-67)
-Last activity: 2026-09-20 — Phase 63 gap-closure execution started (63-07..63-10)
+Last activity: 2026-09-20 — Phase 63 gap-closure plan 63-10 executed: both WINDOWS ids 69/70 waived by live measurement
 
 **The milestone's exit criterion lives in Phase 66 and nowhere else.** The
 hypothesis is falsifiable: the old boundary seam must be *gone from production
@@ -483,6 +483,7 @@ Phase 66 completes.
 | Phase 63 P07 | 25 min | 3 tasks | 5 files |
 | Phase 63 P08 | 25 min | 2 tasks | 2 files |
 | Phase 63 P09 | 20 min | 2 tasks | 1 files |
+| Phase 63 P10 | ~20 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -1386,6 +1387,7 @@ Recent decisions affecting current work:
 - [Phase 63]: tearDownRelaySessionsForGrant() removed a grant's state.relaySessions entries via the same delete-before-close order handleRelayDeath() uses, closing 63-VERIFICATION.md's CR-01 Blocker for both handleRelease() and handleRecycleForRealBroker(); RelayDeathTrigger was deliberately not widened.
 - [Phase 63]: Text-tool operation declaration moved inside withTextChannelLock()'s locked callback via a new declareTextOperation() helper, symmetric with stock-dispatch.ts's declareOperation()/withChannelLockHeld() ordering. — A text call queued behind a running binary operation was overwriting GrantRecord.operation before it actually held the shared cross-channel mutex, misattributing incidents; the fix and its cross-channel-contention test close SESS-05's ordering gap (63-VERIFICATION GAP 1 / WR-01).
 - [Phase 63]: Plan 63-09: proved the relay byte-transparent and demux-correct for the JAM (0x61) wire shape entirely synthetically; the emulator-side question of whether stock VICE ever emits a bare JAM stays open at WINDOWS id 70, routed to plan 63-10. — Success Criterion 1's JAM claim is about the relay, not the emulator; closing it synthetically needed no launch-argv change and none was added (T-33-04 prohibits a passthrough -jamaction key).
+- [Phase 63]: Waived WINDOWS ids 69 and 70 by live gap-probe measurement (plan 63-10): no probeable JamAction (default, 2, 3) produces a bare JAM on genuine stock VICE 3.9, and a production-shaped readiness-probe connection consumes the one-time REGISTER_INFO greeting for every later connection. — Both dispositions were pre-committed in 63-10-PLAN.md before the live run, per the plan's own rule that a WINDOWS row must never be closed on an assertion or an absent run -- only a measurement recorded in the evidence file, quoted in the row.
 
 ### Pending Todos
 
@@ -2719,8 +2721,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-20T09:22:59.334Z
-Stopped at: Completed 63-09-PLAN.md
+Last session: 2026-09-20T09:43:07.812Z
+Stopped at: Completed 63-10-PLAN.md
 Resume file: None
 
 Earlier: **v2.0.0 roadmap created.** 36/36 requirements (`ENDPOINT-01..05`,

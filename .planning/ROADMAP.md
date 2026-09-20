@@ -2113,7 +2113,7 @@ tool.
      a stuck emulator in a shared broker is diagnosable rather than ambiguous
      (SESS-06).
 
-**Plans**: 9/10 plans executed — 6/6 original plans executed; 4 gap-closure plans added (63-07…63-10), 3/4 executed
+**Plans**: 10/10 plans executed — 6/6 original plans executed; 4 gap-closure plans added (63-07…63-10), 4/4 executed
 
 Plans:
 **Wave 1**
@@ -2150,7 +2150,7 @@ Plans:
 
 **Wave 3** *(blocked on 63-09)*
 
-- [ ] 63-10-PLAN.md — The live, direct-dial-versus-relay measurement that disposes of WINDOWS id 69 and id 70 by evidence rather than by assertion (SESS-02)
+- [x] 63-10-PLAN.md — The live, direct-dial-versus-relay measurement that disposes of WINDOWS id 69 and id 70 by evidence rather than by assertion (SESS-02)
 
 **Cross-cutting constraints:**
 
@@ -2668,7 +2668,7 @@ check. No test reads this table now.
 | 60. The Seam Wired Into the Code That Ships | v1.1.0 | 8/8 | Complete | 2026-09-18 |
 | 61. The Install Tables Generated, and a Guard That Compares Facts | v1.1.0 | 3/3 | Complete | 2026-09-19 |
 | 62. The Fixed Endpoint and the Broker That Owns the Machine | v2.0.0 | 5/5 | Complete | 2026-09-19 |
-| 63. The Monitor Channel Relayed, and the Connection as the Session | v2.0.0 | 9/10 | In Progress | - |
+| 63. The Monitor Channel Relayed, and the Connection as the Session | v2.0.0 | 10/10 | In Progress | - |
 | 64. Files as Bytes, Both Directions | v2.0.0 | — | Not started | - |
 | 65. Every Skill Script Through the One Endpoint, and CI With It | v2.0.0 | — | Not started | - |
 | 66. The Deletion Cutover — Gone, Not Bypassed | v2.0.0 | — | Not started | - |
