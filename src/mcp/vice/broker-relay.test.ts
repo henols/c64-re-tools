@@ -22,7 +22,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, connect as netConnect, Socket as NodeNetSocket, type Server, type Socket, type AddressInfo } from "node:net";
-import { mkdtempSync, writeFileSync, rmSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, readFileSync, existsSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -114,6 +114,11 @@ const viceBrokerModule = (await import(new URL("./resources/vice-broker.mjs", im
   /** Plan 63-07 (SESS-05 gap closure) -- see vice-broker.mts's own header
    * comment for the full contract. */
   tearDownRelaySessionsForGrant: (targetId: string, state: BrokerState) => MonitorChannel[];
+  /** Plan 63-11 (SESS-05 gap closure) -- the single delete-before-close
+   * primitive tearDownRelaySessionsForGrant() above and
+   * handleMonitorRelease() below now both delegate to. See
+   * vice-broker.mts's own header comment for the full contract. */
+  tearDownRelaySessionForChannel: (targetId: string, channel: MonitorChannel, state: BrokerState) => boolean;
   /** Plan 63-07 Task 2 (SESS-05 gap closure) -- newly EXPORTED, previously
    * module-private. See vice-broker.mts's own header comment. */
   handleRecycleForRealBroker: (targetId: string, state: BrokerState, deps?: TestHandleRecycleDeps) => Promise<RecycleOutcome>;
@@ -126,6 +131,7 @@ const {
   handleOperationNote,
   handleRelease,
   tearDownRelaySessionsForGrant,
+  tearDownRelaySessionForChannel,
   handleRecycleForRealBroker,
 } = viceBrokerModule;
 
@@ -420,10 +426,28 @@ test("handleMonitorClaim: an idempotent second claim from the SAME grant on the 
 // Task 1 tracer: one binary-monitor command round-trips through the relay.
 // ===========================================================================
 
+// ===========================================================================
+// Gap closure plan 63-11 (SESS-05): test-hygiene helper closing
+// 63-VERIFICATION.md's Warning-severity anti-pattern for this file --
+// incidentsDir is minted and cleaned up everywhere, but its CONTENTS were
+// never read after an ordinary round trip. Guarded on a non-null
+// directory: several deliberate relay-death cases in this file inject
+// their own capturing writeIncident recorder and never mint a real
+// incidentsDir at all (it stays `null`), and applying this assertion to
+// them unguarded would either throw on a missing directory or -- worse --
+// silently destroy the discrimination this whole assertion exists to
+// provide, by making a real "the record legitimately exists" case
+// indistinguishable from a spurious one.
+// ===========================================================================
+function assertIncidentsDirEmpty(incidentsDir: string | null, context: string): void {
+  if (incidentsDir === null) return; // this case injects its own writer; nothing on disk to check
+  assert.equal(readdirSync(incidentsDir).length, 0, `${context} -- a routine, successful round trip must not deposit an incident record`);
+}
+
 test("tracer: a command sent through a relayed ViceMonitorClient arrives at the stub emulator byte-identical and its reply resolves the same send()", async () => {
   const receivedFrames: Buffer[] = [];
   await withStubEmulatorServer(pingEchoHandler(receivedFrames), async (emulatorPort) => {
-    await withRelayTestBroker(emulatorPort, "grant-tracer", async ({ listenerPort, token, state }) => {
+    await withRelayTestBroker(emulatorPort, "grant-tracer", async ({ listenerPort, token, state, incidentsDir }) => {
       const claimOutcome = handleMonitorClaim("claim-tracer", "grant-tracer", "binary", state);
       assert.ok(claimOutcome.ok, `expected the claim to succeed: ${JSON.stringify(claimOutcome)}`);
       if (!claimOutcome.ok) return;
@@ -453,9 +477,29 @@ test("tracer: a command sent through a relayed ViceMonitorClient arrives at the 
           frame.equals(expected),
           `the frame the stub emulator received must be byte-identical to an independently encoded Ping request -- got ${frame.toString("hex")}, expected ${expected.toString("hex")}`,
         );
+
+        // Gap closure plan 63-11: release the per-channel claim BEFORE
+        // disconnecting -- the real, ordinary shape every production
+        // caller uses (textDisconnect()/stockDisconnect() always release
+        // the claim alongside the socket close). Without this call the
+        // disconnect below is an UNANNOUNCED death, not a routine release,
+        // and would legitimately write its own incident record -- that is
+        // not this hygiene gap, it is the separate, correctly-preserved
+        // behaviour the "genuine drop" relay-death cases elsewhere in this
+        // file already prove.
+        const releaseOutcome = handleMonitorRelease("release-tracer", "grant-tracer", "binary", state);
+        assert.ok(releaseOutcome.ok, `expected the release to succeed: ${JSON.stringify(releaseOutcome)}`);
       } finally {
         await client.disconnect();
       }
+
+      // client.disconnect() awaits only the CLIENT's own local socket
+      // "close" event, which can resolve before the broker's paired socket
+      // has processed its side of the same TCP teardown -- settle one more
+      // event-loop turn before reading the directory, or this assertion
+      // could pass vacuously against a read that ran too early.
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      assertIncidentsDirEmpty(incidentsDir, "the tracer's own ordinary claim/attach/command/release/disconnect round trip");
     });
   });
 });
@@ -1906,6 +1950,169 @@ test("tearDownRelaySessionsForGrant enumerates every MONITOR_CHANNELS value, so 
   for (const ch of MONITOR_CHANNELS) {
     assert.deepEqual(closeCallsByChannel.get(ch), ["relay_close"], `channel ${ch}'s stand-in close() must have been called exactly once`);
   }
+});
+
+// ===========================================================================
+// Plan 63-11 (gap closure, SESS-05): handleMonitorRelease()'s per-channel
+// teardown -- isolation, recorded order, the no-session and idempotent-
+// repeat cases, and the two refused-release paths that must tear down
+// nothing at all.
+// ===========================================================================
+
+test("handleMonitorRelease: releasing one channel leaves the grant's OTHER channel's live relay session untouched", () => {
+  const targetId = "grant-63-11-isolation";
+  const state = setupBrokerState(16620, targetId);
+  const sessionsByChannel = new Map<MonitorChannel, { session: RelaySession; closeCalls: RelayDeathTrigger[] }>();
+  for (const ch of MONITOR_CHANNELS) {
+    const claimOutcome = handleMonitorClaim(`claim-63-11-isolation-${ch}`, targetId, ch, state);
+    assert.ok(claimOutcome.ok, `expected the claim to succeed for channel ${ch}: ${JSON.stringify(claimOutcome)}`);
+    const stand = makeStandInRelaySession();
+    state.relaySessions.set(relaySessionKey(targetId, ch), stand.session);
+    sessionsByChannel.set(ch, stand);
+  }
+
+  // Selected by iterating MONITOR_CHANNELS rather than naming either
+  // channel as a bare literal, so a third channel value could never be
+  // silently skipped by this assertion.
+  const [releasedChannel, retainedChannel] = [...MONITOR_CHANNELS];
+  assert.ok(releasedChannel && retainedChannel, "MONITOR_CHANNELS must carry at least two entries for this isolation case to mean anything");
+
+  const releaseOutcome = handleMonitorRelease("release-63-11-isolation", targetId, releasedChannel, state);
+  assert.ok(releaseOutcome.ok, `expected the release to succeed: ${JSON.stringify(releaseOutcome)}`);
+
+  assert.ok(!state.relaySessions.has(relaySessionKey(targetId, releasedChannel)), `the released channel (${releasedChannel})'s own relay session must be gone`);
+  assert.ok(
+    state.relaySessions.has(relaySessionKey(targetId, retainedChannel)),
+    `the grant's OTHER channel (${retainedChannel}) must keep its live relay session -- a per-channel release is never a grant-level teardown`,
+  );
+  assert.deepEqual(sessionsByChannel.get(releasedChannel)!.closeCalls, ["relay_close"], "the released channel's stand-in close() must be called exactly once");
+  assert.deepEqual(sessionsByChannel.get(retainedChannel)!.closeCalls, [], "the retained channel's stand-in close() must never be called");
+});
+
+test("handleMonitorRelease: deletes the relay-session map entry BEFORE calling the session's own close() -- proven from inside close() itself", () => {
+  const targetId = "grant-63-11-order";
+  const state = setupBrokerState(16621, targetId);
+  const channel: MonitorChannel = "text";
+  const claimOutcome = handleMonitorClaim("claim-63-11-order", targetId, channel, state);
+  assert.ok(claimOutcome.ok);
+
+  const observedFromInsideClose: boolean[] = [];
+  const session: RelaySession = {
+    emulatorSocket: new NodeNetSocket(),
+    close: () => {
+      observedFromInsideClose.push(state.relaySessions.has(relaySessionKey(targetId, channel)));
+    },
+    suspendIdle: () => {},
+    resumeIdle: () => {},
+    bytesClientToEmulator: () => 0,
+    bytesEmulatorToClient: () => 0,
+  };
+  state.relaySessions.set(relaySessionKey(targetId, channel), session);
+
+  const releaseOutcome = handleMonitorRelease("release-63-11-order", targetId, channel, state);
+  assert.ok(releaseOutcome.ok, `expected the release to succeed: ${JSON.stringify(releaseOutcome)}`);
+  assert.deepEqual(
+    observedFromInsideClose,
+    [false],
+    "the map entry must already be absent from INSIDE close() itself -- the delete precedes the close, proven by observation, not inferred from reading the source",
+  );
+
+  let writeCount = 0;
+  handleRelayDeath(targetId, channel, "relay_close", state, {
+    writeIncident: () => {
+      writeCount += 1;
+      return "/fake.md";
+    },
+  });
+  assert.equal(writeCount, 0, "a re-entrant handleRelayDeath() call for the released channel immediately after the release must write nothing -- the entry is already gone");
+});
+
+test("handleMonitorRelease: a channel with no live relay session returns ok, closes nothing, and writes nothing", () => {
+  const targetId = "grant-63-11-no-session";
+  const state = setupBrokerState(16622, targetId);
+  const channel: MonitorChannel = "binary";
+  const claimOutcome = handleMonitorClaim("claim-63-11-no-session", targetId, channel, state);
+  assert.ok(claimOutcome.ok);
+  // Never attached -- state.relaySessions carries no entry for this pair.
+  assert.equal(tearDownRelaySessionForChannel(targetId, channel, state), false, "the primitive itself must report no live session to tear down");
+
+  const releaseOutcome = handleMonitorRelease("release-63-11-no-session", targetId, channel, state);
+  assert.ok(releaseOutcome.ok, `expected ok: ${JSON.stringify(releaseOutcome)}`);
+  assert.equal(state.relaySessions.size, 0, "there was nothing to remove, and there is still nothing");
+
+  let writeCount = 0;
+  handleRelayDeath(targetId, channel, "relay_close", state, {
+    writeIncident: () => {
+      writeCount += 1;
+      return "/fake.md";
+    },
+  });
+  assert.equal(writeCount, 0, "no live session ever existed, so a later relay death for the same pair has nothing to find and writes nothing");
+});
+
+test("handleMonitorRelease: a repeated release of an already-released channel returns ok and tears nothing down a second time", () => {
+  const targetId = "grant-63-11-idempotent";
+  const state = setupBrokerState(16623, targetId);
+  const channel: MonitorChannel = "text";
+  const claimOutcome = handleMonitorClaim("claim-63-11-idempotent", targetId, channel, state);
+  assert.ok(claimOutcome.ok);
+  const { session, closeCalls } = makeStandInRelaySession();
+  state.relaySessions.set(relaySessionKey(targetId, channel), session);
+
+  const first = handleMonitorRelease("release-63-11-idempotent-1", targetId, channel, state);
+  assert.ok(first.ok, `expected the first release to succeed: ${JSON.stringify(first)}`);
+  assert.deepEqual(closeCalls, ["relay_close"]);
+
+  const second = handleMonitorRelease("release-63-11-idempotent-2", targetId, channel, state);
+  assert.ok(second.ok, `expected the repeated release to still succeed: ${JSON.stringify(second)}`);
+  assert.deepEqual(closeCalls, ["relay_close"], "a repeated release must not call close() a second time");
+  assert.equal(state.relaySessions.size, 0);
+});
+
+test("handleMonitorRelease: a release from a grant that is NOT the channel's current holder is denied and leaves the holder's live session open", () => {
+  const port = 16624;
+  const state = createBrokerState();
+  state.instances.set(port, makeGrantedInstance(port));
+  const holderId = "grant-63-11-holder";
+  const spooferId = "grant-63-11-spoofer";
+  state.grants.set(holderId, { id: holderId, port, grantedAt: Date.now(), pid: 4242, operation: null, sessionLabel: null });
+  // A different grant that nonetheless resolves to the SAME instance --
+  // resolveInstanceForMonitorTarget() looks the port up via state.grants,
+  // so two grants can legitimately share one instance in this fixture.
+  state.grants.set(spooferId, { id: spooferId, port, grantedAt: Date.now(), pid: 4242, operation: null, sessionLabel: null });
+
+  const channel: MonitorChannel = "text";
+  const claimOutcome = handleMonitorClaim("claim-63-11-holder", holderId, channel, state);
+  assert.ok(claimOutcome.ok, `expected the holder's claim to succeed: ${JSON.stringify(claimOutcome)}`);
+  const { session, closeCalls } = makeStandInRelaySession();
+  state.relaySessions.set(relaySessionKey(holderId, channel), session);
+
+  const releaseOutcome = handleMonitorRelease("release-63-11-spoofed", spooferId, channel, state);
+  assert.equal(releaseOutcome.ok, false, `a non-holder release must be denied: ${JSON.stringify(releaseOutcome)}`);
+  if (!releaseOutcome.ok) assert.equal(releaseOutcome.code, "denied");
+
+  assert.ok(
+    state.relaySessions.has(relaySessionKey(holderId, channel)),
+    "a spoofed release must not be able to destroy the holder's live connection -- the map entry must survive a denied release",
+  );
+  assert.deepEqual(closeCalls, [], "the holder's stand-in close() must never run on a refused release");
+});
+
+test("handleMonitorRelease: a release naming an unresolvable target is bad_request and leaves every live session open", () => {
+  const targetId = "grant-63-11-real";
+  const state = setupBrokerState(16625, targetId);
+  const channel: MonitorChannel = "binary";
+  const claimOutcome = handleMonitorClaim("claim-63-11-real", targetId, channel, state);
+  assert.ok(claimOutcome.ok);
+  const { session, closeCalls } = makeStandInRelaySession();
+  state.relaySessions.set(relaySessionKey(targetId, channel), session);
+
+  const releaseOutcome = handleMonitorRelease("release-63-11-unknown", "grant-63-11-does-not-exist", channel, state);
+  assert.equal(releaseOutcome.ok, false, `an unresolvable target must be refused: ${JSON.stringify(releaseOutcome)}`);
+  if (!releaseOutcome.ok) assert.equal(releaseOutcome.code, "bad_request");
+
+  assert.equal(state.relaySessions.size, 1, "every live session must be left untouched by a bad_request release");
+  assert.deepEqual(closeCalls, [], "no stand-in's close() may run on a bad_request release");
 });
 
 test("handleRelayDeath: an idle deadline and a socket close in the same turn produce exactly one record and one claim clear, with a deterministic trigger across repeated runs", async () => {
