@@ -5,16 +5,16 @@ milestone_name: One Broker, One Socket
 current_phase: 63
 current_phase_name: The Monitor Channel Relayed, and the Connection as the Session
 status: executing
-stopped_at: Completed 63-11-PLAN.md (per-channel monitor_release teardown); next 63-12
-last_updated: "2026-09-21T08:31:36.846Z"
+stopped_at: Completed 63-12-PLAN.md (caller-side release-before-close reorder); phase 63 gap-closure round two complete, ready for re-verification
+last_updated: "2026-09-21T08:45:53.389Z"
 last_activity: 2026-09-21
 last_activity_desc: Phase 63 execution started
-state_head: 88b7b8929a9f31a5be90417dbd8197764d4701c3
+state_head: 61bb57e257da4531ad8ea408958973ee13c87d47
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 17
-  completed_plans: 16
+  completed_plans: 17
   percent: 17
 carried_forward_phases:
 
@@ -80,15 +80,17 @@ closure still needs to be recorded as one.
 ## Current Position
 
 Phase: 63 (The Monitor Channel Relayed, and the Connection as the Session) — EXECUTING
-Plan: 11 of 12 executed (6 original + 4 gap-closure); gap-closure round two (63-11, 63-12) executing
-Status: Executing gap-closure round two. Re-verification scored 5/6 must-haves and found ONE new
-Blocker. The four gap-closure plans closed every prior
-gap — the prior sole Blocker CR-01 (63-07), declare-after-lock WR-01 (63-08), JAM relay
-byte-transparency (63-09) and the live WINDOWS 69/70 measurement (63-10) — and SESS-02 is now
-fully closed. But handleMonitorRelease() never removes the grant's state.relaySessions entry,
-and both textDisconnect() and stockDisconnect() close their socket BEFORE calling
-releaseMonitor(), so every ordinary text-channel tool call writes a junk incident record. Not
-covered by any test. SESS-05 reverted to Gaps Found; SESS-01/02/03/04/06 verified Complete.
+Plan: 12 of 12 executed (6 original + 4 gap-closure round one + 2 gap-closure round two); gap-closure round two (63-11, 63-12) complete
+Status: Gap-closure round two complete, ready for re-verification. The prior re-verification
+scored 5/6 must-haves and found ONE new Blocker: handleMonitorRelease() never removed the
+grant's state.relaySessions entry, and both textDisconnect() and stockDisconnect() closed
+their socket BEFORE calling releaseMonitor(), so every ordinary text-channel tool call wrote a
+junk incident record. Plan 63-11 closed the broker half (handleMonitorRelease() now tears down
+the released channel's live relay session via the new tearDownRelaySessionForChannel()) and
+plan 63-12 closed the caller half (textDisconnect()/stockDisconnect() now release before they
+close, guaranteed by a finally). Both halves are required together; neither alone closes the
+gap. SESS-05 is now marked Complete in REQUIREMENTS.md pending phase re-verification;
+SESS-01/02/03/04/06 remain verified Complete.
 Progress: [██░░░░░░░░] 17% (1 of 6 v2.0.0 phases complete; Phases 62-67)
 Last activity: 2026-09-21 — Phase 63 execution started
 
@@ -492,6 +494,7 @@ Phase 66 completes.
 | Phase 63 P09 | 20 min | 2 tasks | 1 files |
 | Phase 63 P10 | ~20 min | 2 tasks | 3 files |
 | Phase 63 P11 | 35 min | 2 tasks | 5 files |
+| Phase 63 P12 | 12min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -1397,6 +1400,8 @@ Recent decisions affecting current work:
 - [Phase 63]: Plan 63-09: proved the relay byte-transparent and demux-correct for the JAM (0x61) wire shape entirely synthetically; the emulator-side question of whether stock VICE ever emits a bare JAM stays open at WINDOWS id 70, routed to plan 63-10. — Success Criterion 1's JAM claim is about the relay, not the emulator; closing it synthetically needed no launch-argv change and none was added (T-33-04 prohibits a passthrough -jamaction key).
 - [Phase 63]: Waived WINDOWS ids 69 and 70 by live gap-probe measurement (plan 63-10): no probeable JamAction (default, 2, 3) produces a bare JAM on genuine stock VICE 3.9, and a production-shaped readiness-probe connection consumes the one-time REGISTER_INFO greeting for every later connection. — Both dispositions were pre-committed in 63-10-PLAN.md before the live run, per the plan's own rule that a WINDOWS row must never be closed on an assertion or an absent run -- only a measurement recorded in the evidence file, quoted in the row.
 - [Phase 63]: 63-11: extracted tearDownRelaySessionForChannel() as the single delete-before-close primitive; tearDownRelaySessionsForGrant() now delegates to it per channel, and handleMonitorRelease() calls it on both ok:true paths (never on a refusal). — Closes 63-VERIFICATION.md's newest Blocker on the broker side; production still runs close-then-release until plan 63-12 reorders the two real callers.
+- [Phase 63]: Handshake-failure catch paths in textConnect()/stockConnect() deliberately kept close-then-release order, unchanged apart from one comment sentence each recording why — A handshake failure after the relay attached is a genuine abnormal event, and the incident record it produces is real evidence, not the noise the success-path reorder exists to prevent
+- [Phase 63]: probeAtRelease and releaseThrows added as new optional fields on the existing makeStubBrokerControl() stub shape in both test files, rather than a second parallel builder — Keeps every pre-existing call site in both test files unaffected, matching the plan's own instruction to extend the stub rather than change every existing caller's recorder shape
 
 ### Pending Todos
 
@@ -2730,8 +2735,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-21T08:31:36.607Z
-Stopped at: Completed 63-11-PLAN.md (per-channel monitor_release teardown); next 63-12
+Last session: 2026-09-21T08:45:53.241Z
+Stopped at: Completed 63-12-PLAN.md (caller-side release-before-close reorder); phase 63 gap-closure round two complete, ready for re-verification
 Resume file: None
 
 Earlier: **v2.0.0 roadmap created.** 36/36 requirements (`ENDPOINT-01..05`,
