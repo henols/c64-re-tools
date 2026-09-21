@@ -539,6 +539,12 @@ export async function stockConnect({ host, port, targetId, brokerControl, deps =
 
     return { client, versionQuad, capabilities, host, port, targetId, brokerControl, deps, baselineEpoch };
   } catch (err) {
+    // Deliberately NOT reordered like stockDisconnect() below (Phase 63,
+    // SESS-05): a handshake that fails after the relay has attached is a
+    // genuine abnormal event, and the incident record produced by this
+    // close-then-release order is real evidence, not the noise the
+    // success-path reorder exists to prevent.
+    //
     // Every failure path releases the claim before propagating -- a
     // handshake that fails at any step must not leave the instance locked --
     // and, CR-02, tries to leave the machine RUNNING on the way out too.
@@ -569,13 +575,38 @@ export async function stockConnect({ host, port, targetId, brokerControl, deps =
   }
 }
 
-/** Normal counterpart to stockConnect()'s claim: disconnects the socket and
- * releases the monitor claim together, so a caller never ends up holding
+/** Normal counterpart to stockConnect()'s claim: releases the monitor claim
+ * and disconnects the socket together, so a caller never ends up holding
  * one without the other. This is the "success path" release alongside
- * stockConnect()'s own failure-path release above. */
+ * stockConnect()'s own failure-path release above. Mirrors textDisconnect()
+ * exactly.
+ *
+ * The ORDER below is load-bearing, not a style choice: the release is what
+ * tells the broker this teardown is deliberate, and it must arrive while
+ * the relay socket is still up, because the broker's own per-channel
+ * release is what removes the live relay session from its map. With the
+ * OLD order -- close first, release second -- a teardown looked to the
+ * broker exactly like an unannounced relay death: the socket died with a
+ * live session still registered against it. This channel reaches that path
+ * less often than the text channel only because stock-dispatch.ts holds a
+ * module-level session for the life of the process, so it fires on a
+ * lease-target switch or a forced reconnect rather than once per call --
+ * which makes it rarer, not benign. The `finally` below exists so a
+ * refused or throwing release can never leave the caller holding an open
+ * relay socket with no claim behind it -- the disconnect always runs,
+ * whatever the release returned. */
 export async function stockDisconnect(session: StockConnectSession): Promise<void> {
-  await safeDisconnect(session.client);
-  await session.brokerControl.releaseMonitor({ targetId: session.targetId, channel: "binary" });
+  try {
+    const released = await session.brokerControl.releaseMonitor({ targetId: session.targetId, channel: "binary" });
+    if (!released.ok) {
+      console.error(
+        `stockDisconnect: monitor release for target ${session.targetId} (channel: binary) was refused (${released.reason}) -- ` +
+          `the broker may not have torn this channel's relay session down, so the socket close that follows can still be recorded as a relay death`,
+      );
+    }
+  } finally {
+    await safeDisconnect(session.client);
+  }
 }
 
 // ---------------------------------------------------------------------------
