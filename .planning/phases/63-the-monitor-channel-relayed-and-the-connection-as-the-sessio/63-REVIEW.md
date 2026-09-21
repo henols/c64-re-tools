@@ -1,174 +1,224 @@
 ---
 phase: 63-the-monitor-channel-relayed-and-the-connection-as-the-sessio
-reviewed: 2026-09-20T00:00:00Z
+reviewed: 2026-09-21T09:02:12Z
 depth: standard
-files_reviewed: 8
+files_reviewed: 9
 files_reviewed_list:
-  - src/mcp/vice/broker-control.test.ts
+  - src/mcp/vice/broker-relay-text.test.ts
   - src/mcp/vice/broker-relay.test.ts
   - src/mcp/vice/broker-state.mts
   - src/mcp/vice/resources/vice-broker.mjs
-  - src/mcp/vice/stock-live-relay.test.ts
-  - src/mcp/vice/text-tools.test.ts
-  - src/mcp/vice/text-tools.ts
+  - src/mcp/vice/stock-connect.test.ts
+  - src/mcp/vice/stock-connect.ts
+  - src/mcp/vice/text-connect.test.ts
+  - src/mcp/vice/text-connect.ts
   - src/mcp/vice/vice-broker.mts
 findings:
   critical: 0
-  warning: 1
-  info: 2
-  total: 3
+  warning: 3
+  info: 1
+  total: 4
 status: issues_found
 ---
 
-# Phase 63: Code Review Report (gap-closure plans 63-07..63-10)
+# Phase 63: Code Review Report
 
-**Reviewed:** 2026-09-20T00:00:00Z
+**Reviewed:** 2026-09-21T09:02:12Z
 **Depth:** standard
-**Files Reviewed:** 8
+**Files Reviewed:** 9
 **Status:** issues_found
 
 ## Summary
 
-This is an incremental review of the four gap-closure plans (63-07, 63-08, 63-09, 63-10) against
-diff base `0f35fdb7`. All four intents are met and I could not disprove any of them:
+This is a two-plan gap-closure round: 63-11 (broker-side) adds
+`tearDownRelaySessionForChannel()` and wires it into both branches of
+`handleMonitorRelease()`; 63-12 (caller-side) reorders `textDisconnect()` and
+`stockDisconnect()` from close-then-release to release-then-close. Both
+halves are implemented correctly and match their own header comments and the
+project's stated evidence-before-reclaim invariant. `resources/vice-broker.mjs`
+was confirmed byte-identical to a fresh build of `vice-broker.mts`
+(`node --test resources-sync.test.ts` passes), so it carries no drift to
+review independently. `npx tsc --noEmit` is clean, and all 111 tests across
+the nine required-reading files (plus the sibling suites they belong to) pass.
 
-- **63-07**: `tearDownRelaySessionsForGrant()` deletes the `state.relaySessions` map entry before
-  calling `close()`, in both `handleRelease()` branches and in `handleRecycleForRealBroker()`,
-  strictly before the kill. It enumerates `MONITOR_CHANNELS` rather than a hardcoded pair. The
-  stale "the ONE place an entry is ever removed" header in `broker-state.mts` was corrected to
-  name both removal sites, and I found no remaining stale copy of that invariant anywhere in the
-  tree. The `.mts`→`.mjs` compiled pair (`vice-broker.mts`/`resources/vice-broker.mjs`) is
-  byte-identical per a fresh `resources-sync.test.ts` run.
-- **63-08**: `text-tools.ts`'s `withTextTool()` now declares the operation only inside the
-  callback handed to `withTextChannelLock()`, after the lock is granted, and clears it in a
-  `finally` before the callback returns — matching `stock-dispatch.ts`'s `acquire → declare → run
-  → clear → release` ordering on the binary side. A lock-acquisition timeout short-circuits before
-  the callback ever runs, so nothing is declared or cleared on that path.
-- **63-09**: `broker-relay.test.ts`'s new JAM cases drive a genuine zero-length-body JAM frame
-  through the real `spliceRelay()`/`ViceMonitorClient` path (same-segment, header-split
-  reassembly, and both single-write and split-write interleaves with a legitimate `Ping` reply),
-  asserting `programCounter === null` and that the reply resolves the client's own request id, not
-  the broadcast id.
-- **63-10**: the two new `stock-live-relay.test.ts` cases are additions to an already
-  `MANUAL_ONLY_TESTS`-registered file, correctly gated behind the same `VICE_LIVE_RELAY_BIN`/
-  `SKIP_REASON` mechanism, and print a single `GAP-PROBE OBSERVED` line before any assertion runs.
-
-`npx tsc --noEmit` is clean and the full non-live suite for these files (`broker-relay.test.ts`,
-`broker-control.test.ts`, `text-tools.test.ts`, `broker-state.test.ts`) passes (238 pass / 1
-opt-in skip / 0 fail).
-
-One test-hygiene issue (WARNING) and two informational notes are below; nothing here rises to a
-correctness or security defect that should block this gap closure.
+The one substantive finding (WR-01) is a narrow but real race the 63-11
+broker-side fix introduces: `handleMonitorRelease()` now unconditionally
+tears down a live relay session even on its "already cleared" branch, which
+did not touch `state.relaySessions` at all before this plan. That branch is
+reached whenever `instance.monitorClients[channel]` is already empty for
+*any* reason -- including a crash that ran `handleExit()`'s direct
+`monitorClients = {}` assignment (`broker-launch.mts`, confirmed not to touch
+`relaySessions`) moments before the crash's own asynchronous socket
+close/error events would otherwise have reported it through
+`handleRelayDeath()`. A client's own in-flight `monitor_release` for that
+exact channel, landing in this window, now silently absorbs what should have
+been a recorded incident. The remaining findings are test-hygiene issues: a
+stale test comment describing plan 63-12 as not yet landed, and a genuine
+end-to-end coverage gap for the exact defect this round exists to fix.
 
 ## Warnings
 
-### WR-01: A new contention test can leak the process-wide channel lock across the rest of the file on failure
+### WR-01: `handleMonitorRelease()`'s new no-claim teardown can swallow a genuine crash incident
 
-**File:** `src/mcp/vice/text-tools.test.ts:400-426`
-**Issue:** `"withTextTool declares the operation only AFTER the shared cross-channel mutex is
-granted"` acquires `channel-lock.ts`'s single, module-level mutex (`acquireChannelLock({ channel:
-"binary", ... })`, line 412) and only releases it via `handle.release()` on line 420 — a plain
-statement, not inside a `try`/`finally`. Two `assert.*` calls (line 419, and later 422-423) run
-*before* that release. If the assertion this test exists to catch (a regression that declares the
-operation before the lock is granted) ever fires, `assert.deepEqual` throws, the test function
-exits without ever calling `handle.release()`, and the process-wide lock (`currentHolder` in
-`channel-lock.ts`) is left held for the remaining lifetime of the test process. Because
-`node --test` runs every test in a file in one process/worker, every later test in
-`text-tools.test.ts` that touches the channel lock (most of the file's binary/text-tool tests do,
-transitively) would then queue behind a lock nobody will ever release, each one failing only after
-its own `ChannelLockTimeoutError` wait elapses — turning one genuine regression into a long,
-misleading cascade of unrelated timeouts rather than a single, clearly-attributed failure. The
-sibling test two cases below (`"withTextTool that times out acquiring the lock..."`, lines
-428-450) already gets this right with a `try { ... } finally { handle.release(); }` wrapper; this
-test should use the same shape.
-**Fix:**
+**File:** `src/mcp/vice/vice-broker.mts:1354-1363` (mirrored in
+`src/mcp/vice/resources/vice-broker.mjs`)
+**Issue:**
+Before this plan, `handleMonitorRelease()` never touched
+`state.relaySessions` at all -- only the whole-grant paths
+(`handleRelease()`/`handleRecycleForRealBroker()`, via
+`tearDownRelaySessionsForGrant()`) ever tore a live relay session down
+outside of `handleRelayDeath()`'s own announced-death path. Plan 63-11 adds a
+call to `tearDownRelaySessionForChannel()` on **both** branches of
+`handleMonitorRelease()`, including the "already cleared" (`!existing`)
+branch:
+
 ```ts
-test("withTextTool declares the operation only AFTER the shared cross-channel mutex is granted", async () => {
-  const recorder: Array<string | null> = [];
-  await withStubTextServer(
-    (_line, socket) => {
-      socket.write(`OK${PROMPT}`);
-    },
-    async (port) => {
-      const deps = makeDeps(port, {}, recorder);
-      const handle = await acquireChannelLock({ channel: "binary", operation: "vice_memory_read" });
-      try {
-        const pending = handleDeviceConsole({}, deps);
-        for (let i = 0; i < 10; i++) {
-          await new Promise((resolve) => setImmediate(resolve));
-        }
-        assert.deepEqual(recorder, [], "queued behind the binary channel's lock: must declare nothing yet");
-        handle.release();
-        const result = await pending;
-        assert.equal(result.isError, false, `expected success once the lock was released, got ${JSON.stringify(result)}`);
-        assert.deepEqual(recorder, ["vice_device_console", null], "declares only once the lock is granted, then clears");
-      } finally {
-        handle.release(); // no-op if already released above; guarantees release on any assertion throw
-      }
-    },
-  );
-});
+const existing = instance.monitorClients[channel];
+if (!existing) {
+  tearDownRelaySessionForChannel(targetId, channel, state);
+  return { ok: true };
+}
 ```
-(Confirm `ChannelLockHandle.release()` tolerates a repeated call — every other release-discipline
-comment in this tree describes release as idempotent, so this should be safe; if it is not, guard
-with a local `released` boolean instead.)
+
+This branch has no way to distinguish "a prior *release* already ran but the
+socket close never followed it" (the scenario the comment above it
+describes, and the one this fix is meant to cover) from "this channel's
+ownership record was just cleared by `handleExit()` because the emulator
+*crashed*." `broker-launch.mts`'s `handleExit()` (confirmed by reading it)
+assigns `record.monitorClients = {}` directly and synchronously on **every**
+exit path -- crash, recycle, and deliberate teardown -- before doing
+anything else, and never touches `state.relaySessions`. A crashed instance's
+live relay session is otherwise reported through the ordinary asynchronous
+socket `"close"`/`"error"` events (`broker-relay.mts`), which route to
+`handleRelayDeath()` and write an incident record.
+
+If a client that legitimately held channel `channel` sends its own
+`monitor_release` for that exact (grant, channel) pair in the window between
+`handleExit()`'s synchronous clear and the relay socket's own asynchronous
+close event being processed (e.g. the client is reacting to the very
+operation that the crash just interrupted, and is racing to tear its own
+session down), `handleMonitorRelease()` now takes the `!existing` branch and
+calls `tearDownRelaySessionForChannel()` itself -- deleting the
+`state.relaySessions` entry and destroying both sockets *before*
+`handleRelayDeath()` ever gets a chance to run. When the crash's own close
+event later fires, `handleRelayDeath()` finds the entry already gone and
+"writes nothing" (per its own documented early-return contract). The crash
+is still handled correctly by `handleExit()`'s respawn/backoff logic, but
+the incident record -- the ONE piece of evidence this whole subsystem exists
+to guarantee gets written before any reclaim -- is silently lost for that
+relay death.
+
+This is a genuinely new interaction: no version of `handleMonitorRelease()`
+before this plan ever called into `state.relaySessions` on the "no current
+holder" path, so this exact race could not previously arise from an ordinary
+`monitor_release` call. Nothing in `broker-relay.test.ts` or
+`broker-relay-text.test.ts` exercises a crash racing a release.
+**Fix:**
+Either (a) have `handleExit()` also run `tearDownRelaySessionsForGrant()`
+(or the per-channel primitive) for the instance's own live sessions,
+*through the evidence-writing path* (`handleRelayDeath()`, e.g. by
+triggering its own reportDeath rather than a bare `close()`), before or
+instead of the bare `monitorClients = {}` assignment, so a crash's relay
+death is always recorded regardless of what a racing client does; or (b)
+make the `!existing` branch of `handleMonitorRelease()` conditional on
+positive evidence that a prior release (not a crash) is what cleared the
+holder record -- e.g. a short-lived "recently released" marker distinct from
+"never claimed" -- so it never proactively destroys a session it cannot
+prove is stale. Add a regression test that drives exactly this ordering
+(clear `monitorClients` the way `handleExit()` does, leave a live
+`relaySessions` entry behind, then call `handleMonitorRelease()` for that
+channel) and asserts an incident is still written once the socket's death is
+subsequently observed.
+
+### WR-02: Stale test comment claims plan 63-12 has not landed
+
+**File:** `src/mcp/vice/broker-relay-text.test.ts:291-293`
+**Issue:** The header comment on the "gap closure 63-11" hygiene test reads:
+
+```
+// release-then-close (the target order plan 63-12 gives the real callers;
+// see this plan's own <planner_findings> for why production still runs
+// close-then-release until that plan lands).
+```
+
+Plan 63-12 (the `text-connect.ts`/`stock-connect.ts` release-then-close
+reorder) has already landed in this same commit set, per `text-connect.ts`'s
+and `stock-connect.ts`'s own diffs. "Production still runs
+close-then-release until that plan lands" is now false: production
+(`textDisconnect()`) runs release-then-close today. CLAUDE.md's own
+convention for this codebase is that a comment states why a file/test is the
+way it is, and a comment that asserts something no longer true about the
+current state of the production code will actively mislead a future reader
+trying to understand why this test drives the sequence by hand instead of
+calling `textDisconnect()`.
+**Fix:** Update the comment to state the actual reason this test still
+drives claim/release/close by hand (e.g. "this test exercises the
+broker-side primitive in isolation from the caller; see WR-02 in
+`text-connect.test.ts`/`stock-connect.ts` for the caller-side coverage of
+the same order"), and drop the "until that plan lands" framing now that 63-12
+is merged.
+
+### WR-03: No automated test exercises the combined fix end-to-end with real production functions on both ends
+
+**File:** `src/mcp/vice/broker-relay.test.ts`,
+`src/mcp/vice/broker-relay-text.test.ts`, `src/mcp/vice/text-connect.test.ts`,
+`src/mcp/vice/stock-connect.test.ts`
+**Issue:** The defect this round of plans closes is specifically: "every
+ordinary, successful text-channel tool call wrote a spurious incident
+record" -- i.e. the *real* `textDisconnect()`/`stockDisconnect()` (63-12's
+release-then-close order) talking to the *real* broker handlers
+(63-11's `handleMonitorRelease()`/`tearDownRelaySessionForChannel()`), with
+the *real* `writeBrokerIncident()` writer, producing zero incident files.
+No test in the reviewed set combines all three of those:
+- `text-connect.test.ts`/`stock-connect.test.ts` use a **mocked**
+  `brokerControl` and merely assert ordering via `probeAtRelease` (that the
+  socket is still connected when `releaseMonitor()` is invoked) -- they never
+  touch a real broker or a real incident writer.
+- `broker-relay-text.test.ts`'s "gap closure 63-11" test uses a **real**
+  broker and a **real** `writeBrokerIncident()`, and does assert zero
+  incident files -- but it drives the release-then-close sequence *by hand*
+  (`handleMonitorRelease(...)` then `client.disconnect()`), never calling the
+  actual `textDisconnect()` production function.
+- `broker-relay.test.ts` does call the real `stockDisconnect()` against a
+  real broker (in the `stockReconnect` tests), but those tests never assert
+  anything about `state.relaySessions` size or incident-file contents
+  afterward.
+
+There is consequently no single automated test that would fail today if
+either half of this fix were reverted while the other stayed in place, nor
+one that reproduces the originally-reported bug end-to-end using the actual
+shipped call path.
+**Fix:** Add at least one test per channel that calls the real
+`textConnect()`/`textDisconnect()` (or `stockConnect()`/`stockDisconnect()`)
+against a real `withRelayTestBroker()`-style broker with a real, scratch
+`writeBrokerIncident()`, and asserts `state.relaySessions.size === 0` and
+zero files in the incidents directory afterward -- the same assertion
+`broker-relay-text.test.ts`'s existing hygiene test makes, but reached
+through the production disconnect function rather than a hand-rolled
+release/close sequence.
 
 ## Info
 
-### IN-01: The binary-side ordering claim is proven only by a source-text scan, though a behavioural harness for it exists in a sibling file
+### IN-01: Inconsistent teardown-vs-clear ordering between `handleRelease()` and `handleRecycleForRealBroker()`
 
-**File:** `src/mcp/vice/text-tools.test.ts:452-471`
-**Issue:** `"both channel wrappers declare only after acquiring the shared lock"` proves the
-text-channel half behaviourally (the two tests immediately above it), but proves the
-binary-channel half (`stock-dispatch.ts`'s `withChannelLockHeld()`/`declareOperation()`) only by
-grepping `stock-dispatch.ts`'s own source text and checking that the string
-`declareOperation(session, toolName)` appears on a later line number than the string
-`acquireChannelLock({ channel: "binary"`. The test's own comment says a behavioural drive of
-`dispatchStock()` "would need a full binary-monitor stub session harness this file does not
-have." That is true of *this* file, but `stock-dispatch.test.ts` already has exactly such a
-harness (`buildConformanceSession()` + the `CONFORMANCE_BROKER_CONTROL` stub, both driving the
-real `dispatchStock()` → `withStockSession()` → `withChannelLockHeld()` path with a stubbed
-`noteOperation()`) — the same shape used here for the text side could, with a small addition, hold
-the shared lock from the text channel first and observe `noteOperation()` call order on the binary
-side under genuine contention, exactly like WR-01's companion tests do for text. This is not a
-functional defect (the source-scan is truthful and would catch an accidental reordering of those
-two lines), but it is weaker than what the codebase already has available, and it lives in a
-different file from the harness that could strengthen it — worth folding into
-`stock-dispatch.test.ts` in a follow-up rather than leaving the binary side's ordering proof at the
-text-match level indefinitely.
-**Fix:** Add a behavioural case to `stock-dispatch.test.ts` using `buildConformanceSession()`/
-`CONFORMANCE_BROKER_CONTROL` (with an instrumented `noteOperation` recorder) that holds the
-text-channel lock first, drives a binary-side tool through `dispatchStock()`, and asserts the
-`noteOperation` recorder stays empty until the lock is granted — mirroring
-`text-tools.test.ts:400-426`. Once that exists, the source-text scan in `text-tools.test.ts` can
-be dropped or kept as a cheap secondary guard.
-
-### IN-02: `broker-state.mts`'s comment-only change produces no `resources/broker-state.mjs` drift — verified, not a defect
-
-**File:** `src/mcp/vice/broker-state.mts:357-372`, `src/mcp/vice/resources/broker-state.mjs`
-**Issue:** Flagged for verification by the review brief: `broker-state.mts` changed in this scope
-(the `relaySessions` field's header comment, correcting the now-false "ONE place an entry is ever
-removed" invariant) but `resources/broker-state.mjs` does not appear in the diff, even though plan
-63-07's own artifact list said it would be "regenerated by build.ts and committed." I ran
-`resources-sync.test.ts` directly (`node --test resources-sync.test.ts`) and it passes: `resources/
-is byte-identical to a fresh build of its TypeScript source`. `build.ts` (via `tsc`) strips
-comments from the emitted `.mjs`, so a comment-only edit to a `.mts` source produces zero emitted
-delta — there is no latent drift, and nothing needs to be regenerated. Recorded here as a verified
-non-finding per the review brief's explicit request, not as an issue.
-**Fix:** None needed.
+**File:** `src/mcp/vice/vice-broker.mts:1522-1535` vs `:1658-1676`
+**Issue:** `handleRecycleForRealBroker()` calls `clearMonitorClient(instance)`
+*before* `tearDownRelaySessionsForGrant(targetId, state)`, while
+`handleRelease()` calls `tearDownRelaySessionsForGrant(requestId, state)`
+*before* `markDeliberateDeath()`/`clearMonitorClient(instance)`. The two
+calls operate on independent data structures (`instance.monitorClients` vs
+`state.relaySessions`), so this ordering difference is not a correctness bug
+-- but the file's own extensive commentary elsewhere is emphatic about
+ordering being "load-bearing, not incidental" for closely related teardown
+steps, which makes this particular asymmetry (pre-existing, not introduced by
+this round) worth a one-line note explaining why the two sequences may
+legitimately differ, the next time either function is touched.
+**Fix:** No functional change needed; consider a short comment noting the two
+statements are order-independent of each other, to preempt a future reader
+assuming the difference is deliberate signalling of something else.
 
 ---
 
-_Reviewed: 2026-09-20T00:00:00Z_
+_Reviewed: 2026-09-21T09:02:12Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
-
----
-
-## Disposition (recorded by the execute-phase orchestrator, 2026-09-20)
-
-| ID | Severity | Disposition |
-|----|----------|-------------|
-| WR-01 | Warning | **Fixed** in `1d96eed2` — release moved into a `finally` (idempotent, because the mid-test release is deliberate), and the in-flight call settled there too. Verified by injecting a failure at the very assertion the case exists to trip: 1 failed / 64 passed / no cascade, versus the leak's cascade of unrelated `ChannelLockTimeoutError`s. |
-| IN-01 | Info | **Accepted as-is.** The source-symmetry form of the binary-side assertion is the fallback `63-08-PLAN.md` explicitly authorises, and the plan requires the SUMMARY to state which form was used — it does. Converting it to a behavioural drive through `buildConformanceSession()` is a genuine improvement but is new scope, not a gap-closure defect. |
-| IN-02 | Info | **Not an issue — verified.** `broker-state.mts`'s change is comment-only (correcting the now-false "ONE place an entry is ever removed" invariant), so `build.ts`/`tsc` comment-stripping emits no delta for `resources/broker-state.mjs`. `resources-sync.test.ts` passes, which is this project's own authority on `.mts` -> `.mjs` drift. Plan 63-07's artifact list over-predicted a regenerated file; the artifact is correct as committed. |
