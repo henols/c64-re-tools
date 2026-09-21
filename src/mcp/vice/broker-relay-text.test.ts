@@ -11,7 +11,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, connect as netConnect, type Server, type Socket, type AddressInfo } from "node:net";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -278,6 +278,99 @@ test("tracer: an allowlisted text command sent through a relayed TextMonitorClie
         } finally {
           await client.disconnect();
         }
+      });
+    },
+  );
+});
+
+// ===========================================================================
+// Gap closure plan 63-11 (SESS-05): a per-channel monitor_release for a
+// channel holding a live relay session must tear that session down too --
+// a completely ordinary, successful text-channel round trip must never
+// deposit an incident record. Mirrors the tracer case above but drives
+// release-then-close (the target order plan 63-12 gives the real callers;
+// see this plan's own <planner_findings> for why production still runs
+// close-then-release until that plan lands).
+// ===========================================================================
+
+test("gap closure 63-11: a real claim/attach/command/release/close round trip through the text relay leaves state.relaySessions empty and writes zero incident files", async () => {
+  resetChannelLockForTests();
+  const receivedBytes: Buffer[] = [];
+  const commandReply = Buffer.from("Setting default device to `Computer'\n(C:$e5d1) ", "utf8");
+  const targetId = "grant-63-11-text-hygiene";
+  await withStubTextMonitorServer(
+    (socket) => {
+      socket.on("data", (chunk: Buffer) => {
+        receivedBytes.push(Buffer.from(chunk));
+        socket.write(commandReply);
+      });
+    },
+    async (textPort) => {
+      // No relayDeathDeps argument -- the harness mints its own scratch
+      // incidentsDir and the REAL writeBrokerIncident() is the writer under
+      // test, exactly as 63-VERIFICATION.md's own missing[1] asked for.
+      await withRelayTestBroker(textPort, targetId, async ({ listenerPort, token, state, incidentsDir }) => {
+        assert.ok(incidentsDir, "the harness must have minted its own scratch incidentsDir -- no relayDeathDeps was supplied");
+
+        const claimOutcome = handleMonitorClaim("claim-63-11-text-hygiene", targetId, "text", state);
+        assert.ok(claimOutcome.ok, `expected the claim to succeed: ${JSON.stringify(claimOutcome)}`);
+        if (!claimOutcome.ok) return;
+
+        const dialResult: DialMonitorRelayResult = await dialMonitorRelay({
+          targetId,
+          channel: "text",
+          handle: claimOutcome.handle,
+          token,
+          port: listenerPort,
+          candidates: ["127.0.0.1"],
+        });
+        assert.ok(dialResult.ok, `expected a successful relay dial: ${JSON.stringify(dialResult)}`);
+        if (!dialResult.ok) return;
+
+        const client = new TextMonitorClient();
+        client.attach(dialResult.socket, { pending: dialResult.pending });
+        try {
+          const payload = await withTextChannelLock("device c:", () => client.command("device c:"));
+          assert.equal(payload, "Setting default device to `Computer'\n");
+          assert.equal(receivedBytes.length, 1, "the stub text monitor must have received exactly one write");
+
+          // The scenario must be proven real BEFORE the teardown is
+          // exercised -- otherwise this case would pass vacuously against
+          // an empty map.
+          assert.ok(
+            state.relaySessions.has(relaySessionKey(targetId, "text")),
+            "the relay session must still be live immediately after the command round trip, before the release",
+          );
+
+          const releaseOutcome = handleMonitorRelease("release-63-11-text-hygiene", targetId, "text", state);
+          assert.ok(releaseOutcome.ok, `expected the per-channel release to succeed: ${JSON.stringify(releaseOutcome)}`);
+        } finally {
+          // Mirrors textDisconnect()'s own real pairing, but release-then-
+          // close (this plan's own target order) rather than production's
+          // current close-then-release -- see the header comment above.
+          await client.disconnect();
+        }
+
+        // client.disconnect() itself already awaits the socket's own
+        // "close" event, but the broker's OWN sockets (destroyed
+        // synchronously inside the release call above, whose "close"
+        // events fire on a later tick) and any onDeath re-entry they could
+        // still trigger need one more event-loop turn to settle before the
+        // incidents directory is read -- a premature read here would make
+        // this case pass vacuously even if the teardown were broken.
+        await new Promise<void>((resolve) => setImmediate(resolve));
+
+        assert.equal(state.relaySessions.size, 0, "the released channel's relay session must be gone from the map");
+        assert.equal(
+          state.instances.get(UNUSED_BINARY_PORT)?.monitorClients.text,
+          undefined,
+          "the per-channel holder record must be cleared by clearMonitorClient()",
+        );
+        assert.equal(
+          readdirSync(incidentsDir as string).length,
+          0,
+          "a routine, successful text-channel round trip must not deposit an incident record",
+        );
       });
     },
   );

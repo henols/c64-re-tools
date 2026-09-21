@@ -1066,9 +1066,11 @@ export interface HandleRelayDeathDeps {
  * place this broker ever writes an incident record for a dropped monitor
  * channel. It is one of TWO places a relay session's live handle is ever
  * removed from `state.relaySessions` -- the other being
- * tearDownRelaySessionsForGrant() below, called from the deliberate
- * release/recycle paths BEFORE the process they own is signalled, using
- * the same delete-before-close order this function itself uses (see that
+ * tearDownRelaySessionForChannel() below (whose whole-grant caller,
+ * tearDownRelaySessionsForGrant(), and handleMonitorRelease() -- Phase 63,
+ * gap closure plan 63-11 -- are wired into every deliberate release/recycle
+ * path BEFORE the process or channel they own is signalled), using the
+ * same delete-before-close order this function itself uses (see that
  * function's own header comment for why the order is load-bearing). Called
  * from exactly one production site here: the
  * `onDeath` callback handleRelayAttach() below hands to spliceRelay() at
@@ -1152,26 +1154,46 @@ export function handleRelayDeath(targetId: string, channel: MonitorChannel, trig
 }
 
 /**
- * Tears down every live relay session a grant holds, across both monitor
- * channels (Phase 63, gap closure plan 63-07) -- the SECOND place an entry
- * ever leaves `state.relaySessions`, the first being handleRelayDeath()
- * above. Called from BOTH of handleRelease()'s branches below, and from
- * handleRecycleForRealBroker(), strictly BEFORE the process this grant
- * owns is signalled.
+ * The ONE primitive by which a live relay session is deliberately removed
+ * and closed for exactly one (grant, channel) pair (Phase 63, gap closure
+ * plan 63-11). tearDownRelaySessionsForGrant() below is its whole-grant
+ * caller, looping this function over every MONITOR_CHANNELS value rather
+ * than carrying a second copy of the delete-before-close body;
+ * handleMonitorRelease() below is this function's other caller, on its
+ * per-channel path. handleRelayDeath() above is the separate,
+ * UNANNOUNCED-death path: it writes evidence FIRST and only then removes
+ * the same map entry this function removes directly, with no evidence
+ * write, because a deliberate teardown is not itself an incident.
  *
  * The delete-then-close order is load-bearing, not incidental: close()
  * destroys both of the session's sockets, each socket's own "close" event
  * calls spliceRelay()'s reportDeath(), and onDeath lands right back in
  * handleRelayDeath() above. An entry still present in state.relaySessions
- * at that moment is EXACTLY what made an ordinary, successful release
- * write a junk incident record before this fix existed: handleRelayDeath()'s
- * own early-return guard ("an absent session means a teardown already ran")
- * never fired, because nothing had removed the entry yet, so it proceeded
- * to write a full incident record with every content field null --
- * contradicting this same file's own stated invariant that a quiet
- * release is not an incident. Deleting the map entry BEFORE calling
+ * at that moment is EXACTLY what made an ordinary, successful call write a
+ * junk incident record before this fix existed: every successful
+ * text-channel tool call opened a fresh relay connection, ran one command
+ * and closed it again, and each one deposited a full incident record --
+ * with no operation declared and nothing dropped -- into the machine-wide,
+ * cross-project incidents directory. Deleting the map entry BEFORE calling
  * close() is what makes that re-entry a no-op instead -- the exact order
  * handleRelayDeath() itself already uses.
+ *
+ * This is also the recorded decision 63-VERIFICATION.md's `missing[2]`
+ * asked for: a per-channel release ALWAYS tears that channel's relay
+ * session down, whether or not a socket close follows it -- a client that
+ * wants to keep using its relay socket must simply not release the claim.
+ * Releasing clears the channel's whole holder record, including its
+ * handle; handleRelayAttach() above refuses a second attach on an
+ * already-attached channel; and a re-claim mints a FRESH handle. A socket
+ * left spliced after a release is therefore a live connection no claim
+ * accounts for and no future attach can adopt -- that state is
+ * unrepresentable in this broker's model, so tearing down is the only
+ * consistent outcome, not a convenience.
+ *
+ * A REFUSED release tears down nothing: handleMonitorRelease() never
+ * calls this function on its `denied` or `bad_request` paths, because a
+ * grant that is not the channel's holder must not be able to destroy the
+ * holder's live connection.
  *
  * Passes "relay_close" to close() deliberately: RelayDeathTrigger
  * (broker-relay.mts) declares exactly three members and must not grow a
@@ -1182,6 +1204,29 @@ export function handleRelayDeath(targetId: string, channel: MonitorChannel, trig
  * (RelaySession.close()'s own documented contract), so the choice of
  * trigger here is a matter of naming honesty, not behavior.
  *
+ * Returns false when the (grant, channel) pair has no live session at all
+ * -- "never attached" and "a teardown already ran" are the same case, and
+ * this function does nothing observable in either.
+ */
+export function tearDownRelaySessionForChannel(targetId: string, channel: MonitorChannel, state: BrokerState): boolean {
+  const key = relaySessionKey(targetId, channel);
+  const session = state.relaySessions.get(key);
+  if (!session) return false;
+  state.relaySessions.delete(key); // BEFORE close() -- see header comment above
+  session.close("relay_close");
+  return true;
+}
+
+/**
+ * Tears down every live relay session a grant holds, across both monitor
+ * channels (Phase 63, gap closure plan 63-07) -- the whole-grant caller of
+ * tearDownRelaySessionForChannel() above, which is the single
+ * delete-before-close implementation both this function and
+ * handleMonitorRelease() share (see that function's own header comment for
+ * the full delete-before-close rationale). Called from BOTH of
+ * handleRelease()'s branches below, and from handleRecycleForRealBroker(),
+ * strictly BEFORE the process this grant owns is signalled.
+ *
  * Returns the array of channels that actually held a live session -- an
  * empty array is the ordinary case (most grants never attach a relay at
  * all, or already had it torn down) and is never logged as anything
@@ -1191,12 +1236,7 @@ export function handleRelayDeath(targetId: string, channel: MonitorChannel, trig
 export function tearDownRelaySessionsForGrant(targetId: string, state: BrokerState): MonitorChannel[] {
   const torn: MonitorChannel[] = [];
   for (const ch of MONITOR_CHANNELS) {
-    const key = relaySessionKey(targetId, ch);
-    const session = state.relaySessions.get(key);
-    if (!session) continue;
-    state.relaySessions.delete(key); // BEFORE close() -- see header comment above
-    session.close("relay_close");
-    torn.push(ch);
+    if (tearDownRelaySessionForChannel(targetId, ch, state)) torn.push(ch);
   }
   return torn;
 }
@@ -1296,17 +1336,35 @@ export function handleRelayAttach(
  * release is a deliberately refused case). A channel with no current
  * holder at all tolerates the
  * release as a success, matching the container-side client's own documented
- * tolerance for releasing a socket the broker already cleared. */
+ * tolerance for releasing a socket the broker already cleared.
+ *
+ * Phase 63, gap closure plan 63-11: on BOTH `ok: true` paths, also tears
+ * down this exact (grant, channel) pair's own live relay session through
+ * tearDownRelaySessionForChannel() -- see that function's own header
+ * comment for why a released channel must never be left with a live
+ * splice behind it, and why the refused paths below must never reach it.
+ * On the holder-matches path the teardown runs strictly BEFORE
+ * clearMonitorClient(), in the same delete-before-close order every other
+ * deliberate teardown in this file already uses. */
 export function handleMonitorRelease(requestId: string, targetId: string, channel: MonitorChannel, state: BrokerState): MonitorReleaseOutcome {
   void requestId; // correlation only, matching handleMonitorClaim()'s own posture
   const instance = resolveInstanceForMonitorTarget(targetId, state);
   if (!instance) return { ok: false, code: "bad_request" };
 
   const existing = instance.monitorClients[channel];
-  if (!existing) return { ok: true }; // already cleared -- tolerated, not an error
+  if (!existing) {
+    // Already cleared as far as the per-channel holder record goes -- but
+    // a live relay session for this exact (grant, channel) pair may still
+    // be attached (e.g. a prior release already ran but a socket close
+    // never followed it). Tear it down too, tolerated as a success either
+    // way, matching the container-side client's own documented tolerance.
+    tearDownRelaySessionForChannel(targetId, channel, state);
+    return { ok: true };
+  }
   if (existing.grantId !== targetId) {
     return { ok: false, code: "denied" };
   }
+  tearDownRelaySessionForChannel(targetId, channel, state);
   clearMonitorClient(instance, channel);
   return { ok: true };
 }
