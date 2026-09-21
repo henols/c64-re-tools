@@ -355,9 +355,9 @@
     }
   ],
   "next": {
-    "command": "/gsd-plan-phase 63 --gaps",
-    "label": "Plan the gap closure for phase 63",
-    "reason": "Phase 63 · re-verification 5/6 · gaps_found (new blocker on monitor_release relay teardown, SESS-05)"
+    "command": "/gsd-execute-phase 63 --gaps-only",
+    "label": "Execute the gap-closure plans for phase 63",
+    "reason": "Phase 63 · gap-closure round two planned · 2 plans (63-11, 63-12) in 2 waves, verification passed"
   },
-  "updated_at": "2026-09-20T10:20:47.729Z"
+  "updated_at": "2026-09-21T07:03:19.102Z"
 }
