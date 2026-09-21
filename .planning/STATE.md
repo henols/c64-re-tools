@@ -4,11 +4,11 @@ milestone: v2.0.0
 milestone_name: One Broker, One Socket
 current_phase: 63
 current_phase_name: The Monitor Channel Relayed, and the Connection as the Session
-status: executing
-stopped_at: Completed 63-12-PLAN.md (caller-side release-before-close reorder); phase 63 gap-closure round two complete, ready for re-verification
+status: human_needed
+stopped_at: Phase 63 re-verified after gap-closure round two — 6/6 must-haves, status human_needed on one residual-risk decision (WR-01); tests in 63-UAT.md
 last_updated: "2026-09-21T08:45:53.389Z"
 last_activity: 2026-09-21
-last_activity_desc: Phase 63 execution started
+last_activity_desc: Phase 63 gap-closure round two executed (63-11, 63-12); code review 0 critical/3 warning; re-verification 6/6 with one human decision pending
 state_head: 61bb57e257da4531ad8ea408958973ee13c87d47
 progress:
   total_phases: 6
@@ -79,9 +79,15 @@ closure still needs to be recorded as one.
 
 ## Current Position
 
-Phase: 63 (The Monitor Channel Relayed, and the Connection as the Session) — EXECUTING
+Phase: 63 (The Monitor Channel Relayed, and the Connection as the Session) — AWAITING HUMAN VERIFICATION
 Plan: 12 of 12 executed (6 original + 4 gap-closure round one + 2 gap-closure round two); gap-closure round two (63-11, 63-12) complete
-Status: Gap-closure round two complete, ready for re-verification. The prior re-verification
+Status: Gap-closure round two executed and re-verified. Re-verification scored 6/6 must-haves
+and returned human_needed on ONE residual-risk decision (63-REVIEW.md WR-01, independently
+confirmed): handleMonitorRelease()'s no-current-holder branch now tears down a relay session it
+cannot prove is stale, while broker-launch.mts's handleExit() clears monitorClients but never
+relaySessions — a release racing a crash for the same channel could absorb an incident record
+Success Criterion 4 requires. Tests persisted in 63-UAT.md; run /gsd-verify-work 63. The prior
+re-verification
 scored 5/6 must-haves and found ONE new Blocker: handleMonitorRelease() never removed the
 grant's state.relaySessions entry, and both textDisconnect() and stockDisconnect() closed
 their socket BEFORE calling releaseMonitor(), so every ordinary text-channel tool call wrote a
@@ -92,7 +98,7 @@ close, guaranteed by a finally). Both halves are required together; neither alon
 gap. SESS-05 is now marked Complete in REQUIREMENTS.md pending phase re-verification;
 SESS-01/02/03/04/06 remain verified Complete.
 Progress: [██░░░░░░░░] 17% (1 of 6 v2.0.0 phases complete; Phases 62-67)
-Last activity: 2026-09-21 — Phase 63 execution started
+Last activity: 2026-09-21 — Phase 63 gap-closure round two executed (2/2 plans, 7 commits); full suite 4281/4197/0/84 exit 0; code review 0 critical/3 warning; re-verification 6/6, human_needed on WR-01
 
 **The milestone's exit criterion lives in Phase 66 and nowhere else.** The
 hypothesis is falsifiable: the old boundary seam must be *gone from production
