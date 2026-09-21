@@ -2113,7 +2113,7 @@ tool.
      a stuck emulator in a shared broker is diagnosable rather than ambiguous
      (SESS-06).
 
-**Plans**: 12 plans — 6/6 original plans executed; 4 gap-closure plans added in round one (63-07…63-10), 4/4 executed; 2 gap-closure plans added in round two (63-11, 63-12), 0/2 executed
+**Plans**: 11/12 plans executed — 6/6 original plans executed; 4 gap-closure plans added in round one (63-07…63-10), 4/4 executed; 2 gap-closure plans added in round two (63-11, 63-12), 1/2 executed
 
 Plans:
 **Wave 1**
@@ -2156,7 +2156,7 @@ Plans:
 
 **Wave 1**
 
-- [ ] 63-11-PLAN.md — The broker half: a per-channel `monitor_release` removes and closes its own live relay session in delete-before-close order, and the relay suites read their scratch incidents directory instead of merely deleting it (SESS-05, Success Criterion 4)
+- [x] 63-11-PLAN.md — The broker half: a per-channel `monitor_release` removes and closes its own live relay session in delete-before-close order, and the relay suites read their scratch incidents directory instead of merely deleting it (SESS-05, Success Criterion 4)
 
 **Wave 2** *(blocked on 63-11 — neither half removes the spurious record alone)*
 
@@ -2678,7 +2678,7 @@ check. No test reads this table now.
 | 60. The Seam Wired Into the Code That Ships | v1.1.0 | 8/8 | Complete | 2026-09-18 |
 | 61. The Install Tables Generated, and a Guard That Compares Facts | v1.1.0 | 3/3 | Complete | 2026-09-19 |
 | 62. The Fixed Endpoint and the Broker That Owns the Machine | v2.0.0 | 5/5 | Complete | 2026-09-19 |
-| 63. The Monitor Channel Relayed, and the Connection as the Session | v2.0.0 | 10/10 | In Progress | - |
+| 63. The Monitor Channel Relayed, and the Connection as the Session | v2.0.0 | 11/12 | In Progress | - |
 | 64. Files as Bytes, Both Directions | v2.0.0 | — | Not started | - |
 | 65. Every Skill Script Through the One Endpoint, and CI With It | v2.0.0 | — | Not started | - |
 | 66. The Deletion Cutover — Gone, Not Bypassed | v2.0.0 | — | Not started | - |

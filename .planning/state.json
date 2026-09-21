@@ -355,9 +355,9 @@
     }
   ],
   "next": {
-    "command": "/gsd-execute-phase 63 --gaps-only",
-    "label": "Execute the gap-closure plans for phase 63",
-    "reason": "Phase 63 · gap-closure round two planned · 2 plans (63-11, 63-12) in 2 waves, verification passed"
+    "command": "/gsd:progress --next",
+    "label": "Advance to the next step",
+    "reason": "Phase 63 of 6 · 17% · executing"
   },
-  "updated_at": "2026-09-21T07:03:19.102Z"
+  "updated_at": "2026-09-21T08:30:37.739Z"
 }

@@ -4,17 +4,17 @@ milestone: v2.0.0
 milestone_name: One Broker, One Socket
 current_phase: 63
 current_phase_name: The Monitor Channel Relayed, and the Connection as the Session
-status: gaps_found
-stopped_at: Phase 63 re-verification (5/6) - new blocker on handleMonitorRelease relay teardown
-last_updated: "2026-09-21T07:03:19.021Z"
+status: executing
+stopped_at: Completed 63-11-PLAN.md (per-channel monitor_release teardown); next 63-12
+last_updated: "2026-09-21T08:31:36.846Z"
 last_activity: 2026-09-21
-last_activity_desc: Phase 63 gap-closure round two planned; plans 63-11 and 63-12 target the per-channel monitor_release
-state_head: a5f1e0353ab9bedbf3569e7b970dcd2e27789aff
+last_activity_desc: Phase 63 execution started
+state_head: 88b7b8929a9f31a5be90417dbd8197764d4701c3
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 17
-  completed_plans: 15
+  completed_plans: 16
   percent: 17
 carried_forward_phases:
 
@@ -79,9 +79,10 @@ closure still needs to be recorded as one.
 
 ## Current Position
 
-Phase: 63 (The Monitor Channel Relayed, and the Connection as the Session) — READY TO EXECUTE
-Plan: 10 of 10 executed (6 original + 4 gap-closure); re-verification scored 5/6 must-haves
-Status: Re-verification found ONE new Blocker. The four gap-closure plans closed every prior
+Phase: 63 (The Monitor Channel Relayed, and the Connection as the Session) — EXECUTING
+Plan: 11 of 12 executed (6 original + 4 gap-closure); gap-closure round two (63-11, 63-12) executing
+Status: Executing gap-closure round two. Re-verification scored 5/6 must-haves and found ONE new
+Blocker. The four gap-closure plans closed every prior
 gap — the prior sole Blocker CR-01 (63-07), declare-after-lock WR-01 (63-08), JAM relay
 byte-transparency (63-09) and the live WINDOWS 69/70 measurement (63-10) — and SESS-02 is now
 fully closed. But handleMonitorRelease() never removes the grant's state.relaySessions entry,
@@ -89,7 +90,7 @@ and both textDisconnect() and stockDisconnect() close their socket BEFORE callin
 releaseMonitor(), so every ordinary text-channel tool call writes a junk incident record. Not
 covered by any test. SESS-05 reverted to Gaps Found; SESS-01/02/03/04/06 verified Complete.
 Progress: [██░░░░░░░░] 17% (1 of 6 v2.0.0 phases complete; Phases 62-67)
-Last activity: 2026-09-20 — Phase 63 gap closure executed (4/4 plans, 15 commits); code review 0 critical/1 warning (fixed); re-verification returned gaps_found on SESS-05 with a new blocker
+Last activity: 2026-09-21 — Phase 63 execution started
 
 **The milestone's exit criterion lives in Phase 66 and nowhere else.** The
 hypothesis is falsifiable: the old boundary seam must be *gone from production
@@ -490,6 +491,7 @@ Phase 66 completes.
 | Phase 63 P08 | 25 min | 2 tasks | 2 files |
 | Phase 63 P09 | 20 min | 2 tasks | 1 files |
 | Phase 63 P10 | ~20 min | 2 tasks | 3 files |
+| Phase 63 P11 | 35 min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -1394,6 +1396,7 @@ Recent decisions affecting current work:
 - [Phase 63]: Text-tool operation declaration moved inside withTextChannelLock()'s locked callback via a new declareTextOperation() helper, symmetric with stock-dispatch.ts's declareOperation()/withChannelLockHeld() ordering. — A text call queued behind a running binary operation was overwriting GrantRecord.operation before it actually held the shared cross-channel mutex, misattributing incidents; the fix and its cross-channel-contention test close SESS-05's ordering gap (63-VERIFICATION GAP 1 / WR-01).
 - [Phase 63]: Plan 63-09: proved the relay byte-transparent and demux-correct for the JAM (0x61) wire shape entirely synthetically; the emulator-side question of whether stock VICE ever emits a bare JAM stays open at WINDOWS id 70, routed to plan 63-10. — Success Criterion 1's JAM claim is about the relay, not the emulator; closing it synthetically needed no launch-argv change and none was added (T-33-04 prohibits a passthrough -jamaction key).
 - [Phase 63]: Waived WINDOWS ids 69 and 70 by live gap-probe measurement (plan 63-10): no probeable JamAction (default, 2, 3) produces a bare JAM on genuine stock VICE 3.9, and a production-shaped readiness-probe connection consumes the one-time REGISTER_INFO greeting for every later connection. — Both dispositions were pre-committed in 63-10-PLAN.md before the live run, per the plan's own rule that a WINDOWS row must never be closed on an assertion or an absent run -- only a measurement recorded in the evidence file, quoted in the row.
+- [Phase 63]: 63-11: extracted tearDownRelaySessionForChannel() as the single delete-before-close primitive; tearDownRelaySessionsForGrant() now delegates to it per channel, and handleMonitorRelease() calls it on both ok:true paths (never on a refusal). — Closes 63-VERIFICATION.md's newest Blocker on the broker side; production still runs close-then-release until plan 63-12 reorders the two real callers.
 
 ### Pending Todos
 
@@ -2727,8 +2730,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-20T09:43:07.812Z
-Stopped at: Completed 63-10-PLAN.md
+Last session: 2026-09-21T08:31:36.607Z
+Stopped at: Completed 63-11-PLAN.md (per-channel monitor_release teardown); next 63-12
 Resume file: None
 
 Earlier: **v2.0.0 roadmap created.** 36/36 requirements (`ENDPOINT-01..05`,
