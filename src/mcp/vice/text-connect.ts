@@ -190,6 +190,11 @@ export async function textConnect({
     client.attach(socket, { pending });
     return { client, host, port: remoteMonitorPort, targetId, brokerControl };
   } catch (err) {
+    // Deliberately NOT reordered like textDisconnect() below (Phase 63,
+    // SESS-05): a handshake that fails after the relay has attached is a
+    // genuine abnormal event, and the incident record produced by this
+    // close-then-release order is real evidence, not the noise the
+    // success-path reorder exists to prevent.
     await safeDisconnect(client);
     // WR-07 (stock-connect.ts's own precedent): the release must never
     // REPLACE the original failure. Both outcomes are reported on stderr;
@@ -210,10 +215,33 @@ export async function textConnect({
   }
 }
 
-/** Normal counterpart to textConnect()'s claim: disconnects the socket and
- * releases the monitor claim together, so a caller never ends up holding one
- * without the other. Mirrors stockDisconnect() exactly. */
+/** Normal counterpart to textConnect()'s claim: releases the monitor claim
+ * and disconnects the socket together, so a caller never ends up holding one
+ * without the other. Mirrors stockDisconnect() exactly.
+ *
+ * The ORDER below is load-bearing, not a style choice: the release is what
+ * tells the broker this teardown is deliberate, and it must arrive while
+ * the relay socket is still up, because the broker's own per-channel
+ * release is what removes the live relay session from its map. With the
+ * OLD order --
+ * close first, release second -- every ordinary, successful text-tool call
+ * (every call `withTextTool()` makes) deposited one spurious incident record
+ * into the machine-wide incidents directory: the broker saw only a socket
+ * dying with a live session still registered against it, indistinguishable
+ * from an unannounced relay death. The `finally` below exists so a refused
+ * or throwing release can never leave the caller holding an open relay
+ * socket with no claim behind it -- the disconnect always runs, whatever
+ * the release returned. */
 export async function textDisconnect(session: TextConnectSession): Promise<void> {
-  await safeDisconnect(session.client);
-  await session.brokerControl.releaseMonitor({ targetId: session.targetId, channel: "text" });
+  try {
+    const released = await session.brokerControl.releaseMonitor({ targetId: session.targetId, channel: "text" });
+    if (!released.ok) {
+      console.error(
+        `textDisconnect: text-monitor release for target ${session.targetId} (channel: text) was refused (${released.reason}) -- ` +
+          `the broker may not have torn this channel's relay session down, so the socket close that follows can still be recorded as a relay death`,
+      );
+    }
+  } finally {
+    await safeDisconnect(session.client);
+  }
 }

@@ -15,7 +15,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { textConnect as textConnectReal, textDisconnect, type TextConnectOptions } from "./text-connect.ts";
+import { textConnect as textConnectReal, textDisconnect, type TextConnectOptions, type TextConnectSession } from "./text-connect.ts";
 import type { StockConnectBrokerControl, DialMonitorSocketFn } from "./stock-connect.ts";
 import {
   MonitorOwnershipError,
@@ -61,13 +61,37 @@ function textConnect(opts: TextConnectOptions): ReturnType<typeof textConnectRea
 interface StubBrokerControlOptions {
   claimOutcome?: ClaimMonitorOutcome;
   releaseOutcome?: ReleaseMonitorOutcome;
+  /** Phase 63 (SESS-05) gap closure: when set, releaseMonitor() REJECTS with
+   * this value instead of resolving -- lets a test prove textDisconnect()'s
+   * `finally` still runs and the throw still propagates unchanged. */
+  releaseThrows?: unknown;
+  /** Phase 63 (SESS-05) gap closure: invoked synchronously the instant
+   * releaseMonitor() is called (before it resolves or throws), and its
+   * return value recorded into `state.probedAtRelease` -- lets a test
+   * observe, from INSIDE the stub, whatever caller-supplied fact it wants
+   * to prove was still true at that exact moment (e.g. the relay socket
+   * still being connected). Additive and optional: every pre-existing call
+   * site of makeStubBrokerControl() is unaffected. */
+  probeAtRelease?: () => unknown;
 }
 
 function makeStubBrokerControl(opts: StubBrokerControlOptions = {}): {
   brokerControl: StockConnectBrokerControl;
-  state: { claimCalls: number; releaseCalls: number; claimedWith: ClaimMonitorOptions[]; releasedWith: ReleaseMonitorOptions[] };
+  state: {
+    claimCalls: number;
+    releaseCalls: number;
+    claimedWith: ClaimMonitorOptions[];
+    releasedWith: ReleaseMonitorOptions[];
+    probedAtRelease: unknown[];
+  };
 } {
-  const state = { claimCalls: 0, releaseCalls: 0, claimedWith: [] as ClaimMonitorOptions[], releasedWith: [] as ReleaseMonitorOptions[] };
+  const state = {
+    claimCalls: 0,
+    releaseCalls: 0,
+    claimedWith: [] as ClaimMonitorOptions[],
+    releasedWith: [] as ReleaseMonitorOptions[],
+    probedAtRelease: [] as unknown[],
+  };
   const brokerControl: StockConnectBrokerControl = {
     async claimMonitor(claimOpts) {
       state.claimCalls += 1;
@@ -77,6 +101,12 @@ function makeStubBrokerControl(opts: StubBrokerControlOptions = {}): {
     async releaseMonitor(releaseOpts) {
       state.releaseCalls += 1;
       state.releasedWith.push(releaseOpts);
+      if (opts.probeAtRelease) {
+        state.probedAtRelease.push(opts.probeAtRelease());
+      }
+      if (opts.releaseThrows !== undefined) {
+        throw opts.releaseThrows;
+      }
       return opts.releaseOutcome ?? { ok: true };
     },
     async noteOperation() {
@@ -136,6 +166,78 @@ test("textConnect: claims before dialling, connects, and textDisconnect() releas
       assert.equal(state.releaseCalls, 1);
       assert.equal(state.releasedWith[0]?.channel, "text", "textDisconnect() releases 'text' explicitly");
       assert.ok(!session.client.connected);
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Phase 63 (SESS-05) gap closure: textDisconnect() must send the per-channel
+// release WHILE the relay socket is still up, and must disconnect regardless
+// of what the release returns (ok, refused, or throwing).
+// ---------------------------------------------------------------------------
+
+test("textDisconnect: sends the monitor release while the relay socket is still connected, then disconnects", async () => {
+  await withStubTextServer(
+    () => {
+      /* accept only */
+    },
+    async (port) => {
+      let session!: TextConnectSession;
+      const { brokerControl, state } = makeStubBrokerControl({
+        probeAtRelease: () => session.client.connected,
+      });
+      session = await textConnect({ host: "127.0.0.1", remoteMonitorPort: port, targetId: "grant-9", brokerControl });
+      await textDisconnect(session);
+      assert.equal(
+        state.probedAtRelease[0],
+        true,
+        "the release must reach the broker while the socket is still up -- a close that arrives at the broker FIRST is recorded as a relay death and writes an incident record for what was actually a successful, ordinary call",
+      );
+      assert.equal(session.client.connected, false, "the socket must be disconnected once textDisconnect() returns");
+    },
+  );
+});
+
+test("textDisconnect: still disconnects when the monitor release is refused, and reports the refusal", async () => {
+  await withStubTextServer(
+    () => {},
+    async (port) => {
+      const { brokerControl } = makeStubBrokerControl({ releaseOutcome: { ok: false, reason: "denied" } });
+      const session = await textConnect({ host: "127.0.0.1", remoteMonitorPort: port, targetId: "grant-10", brokerControl });
+      const originalConsoleError = console.error;
+      const capturedLines: unknown[][] = [];
+      console.error = (...args: unknown[]) => {
+        capturedLines.push(args);
+      };
+      try {
+        await textDisconnect(session);
+      } finally {
+        console.error = originalConsoleError;
+      }
+      assert.equal(session.client.connected, false, "the socket must still be disconnected after a refused release");
+      assert.equal(capturedLines.length, 1, "exactly one console.error line must be written for a refused release");
+      const message = capturedLines[0]?.map(String).join(" ") ?? "";
+      assert.match(message, /grant-10/, "the refusal line must name the target id");
+      assert.match(message, /text/, "the refusal line must name the channel");
+    },
+  );
+});
+
+test("textDisconnect: still disconnects when the monitor release throws, and still propagates the error", async () => {
+  await withStubTextServer(
+    () => {},
+    async (port) => {
+      const releaseError = new Error("release exploded");
+      const { brokerControl } = makeStubBrokerControl({ releaseThrows: releaseError });
+      const session = await textConnect({ host: "127.0.0.1", remoteMonitorPort: port, targetId: "grant-11", brokerControl });
+      await assert.rejects(
+        () => textDisconnect(session),
+        (err: unknown) => {
+          assert.equal(err, releaseError, "the ORIGINAL release error must propagate unchanged");
+          return true;
+        },
+      );
+      assert.equal(session.client.connected, false, "the finally must have run and disconnected the socket even though the release threw");
     },
   );
 });
