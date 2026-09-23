@@ -51,7 +51,7 @@ covered_files:
   - "src/mcp/vice/text-tools.test.ts"
   - "src/mcp/vice/text-tools.ts"
   - "src/mcp/vice/vice-broker.mts"
-covered_digest: "v1:sha256:4a4ffc99780b3d5e5557d5d53640a63846f911df30d3886ebdb3f4f33821df6e"
+covered_digest: "v1:sha256:732b45bb1bb23ddb16829546d5710937ca2eb787ca5eeade0687bb9eb84b2288"
 re_verification:
   previous_status: gaps_found
   previous_score: 5/6
