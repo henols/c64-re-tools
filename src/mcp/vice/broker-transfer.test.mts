@@ -17,6 +17,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { build } from "./build.ts";
+// transfer-hash.mts has no sibling ".mjs" import of its own, so it is safe
+// to import directly, unbuilt -- see that file's own test for the same
+// convention.
+import { TRANSFER_MAX_BYTES } from "./transfer-hash.mts";
 
 build();
 
@@ -175,4 +179,277 @@ test("broker-transfer: readdirSync is a real directory listing, never a name-gue
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// ---------------------------------------------------------------------------
+// Task 2 (D-11, TDD): the cap at both ends, the mid-stream abort, and the
+// proof that backpressure is real -- not a false green from a sender that
+// already buffered everything (Pitfall 3, 64-RESEARCH.md).
+// ---------------------------------------------------------------------------
+
+test("sendPayloadFromFile: a source of exactly TRANSFER_MAX_BYTES is accepted; TRANSFER_MAX_BYTES+1 is refused before the socket is ever touched, naming both sizes", { timeout: 60000 }, async () => {
+  const fixtureDir = mkdtempSync(join(tmpdir(), "broker-transfer-sendcap-"));
+  try {
+    const bigPath = join(fixtureDir, "big.bin");
+    writeFileSync(bigPath, Buffer.alloc(TRANSFER_MAX_BYTES + 1, 0x41));
+
+    // A socket-shaped double that throws if ever touched -- proves the
+    // stat-based refusal fires BEFORE a single socket call, per D-11's
+    // "fail fast, nothing wasted, one round trip".
+    const throwingSocket = {
+      write() {
+        throw new Error("must not be reached: sendPayloadFromFile touched the socket before the size refusal");
+      },
+    } as unknown as Socket;
+
+    const bigResult = await sendPayloadFromFile({ socket: throwingSocket, sourcePath: bigPath });
+    assert.equal(bigResult.ok, false);
+    if (!bigResult.ok) {
+      assert.match(bigResult.reason, new RegExp(String(TRANSFER_MAX_BYTES)));
+      assert.match(bigResult.reason, new RegExp(String(TRANSFER_MAX_BYTES + 1)));
+    }
+
+    const okPath = join(fixtureDir, "ok.bin");
+    writeFileSync(okPath, Buffer.alloc(TRANSFER_MAX_BYTES, 0x41));
+
+    const server = createServer();
+    const serverDone = new Promise<{ ok: true; byteLength: number; sha256: string } | { ok: false; reason: string }>((resolve, reject) => {
+      server.on("connection", (socket) => {
+        readHeaderFromSocket(socket)
+          .then(({ header, pending }) => receivePayloadToFile({ socket, destPath: join(fixtureDir, "dest", "ok.bin"), header, pending }))
+          .then(resolve, reject);
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as AddressInfo).port;
+    const client = netConnect({ host: "127.0.0.1", port });
+    await new Promise<void>((resolve, reject) => {
+      client.once("connect", resolve);
+      client.once("error", reject);
+    });
+
+    const okResult = await sendPayloadFromFile({ socket: client, sourcePath: okPath });
+    assert.equal(okResult.ok, true, okResult.ok ? "" : (okResult as { reason: string }).reason);
+    const recv = await serverDone;
+    assert.equal(recv.ok, true, recv.ok ? "" : (recv as { reason: string }).reason);
+    server.close();
+  } finally {
+    rmSync(fixtureDir, { recursive: true, force: true });
+  }
+});
+
+const MALFORMED_BYTE_LENGTHS: unknown[] = [-1, 1.5, "12", null, Number.MAX_SAFE_INTEGER + 2];
+
+for (const bad of MALFORMED_BYTE_LENGTHS) {
+  test(`receivePayloadToFile: header.byteLength=${JSON.stringify(bad)} is refused before the pipeline is constructed`, async () => {
+    const fixtureDir = mkdtempSync(join(tmpdir(), "broker-transfer-badlen-"));
+    try {
+      const destPath = join(fixtureDir, "dest", "x.bin");
+      // A socket-shaped double whose every stream-relevant method throws --
+      // proves this validation runs BEFORE any stream is ever constructed
+      // from `socket` (the acceptance criterion's own wording).
+      const fakeSocket = {
+        pipe() {
+          throw new Error("must not be reached: pipeline constructed from an invalid header");
+        },
+        on() {
+          throw new Error("must not be reached: pipeline constructed from an invalid header");
+        },
+        once() {
+          throw new Error("must not be reached: pipeline constructed from an invalid header");
+        },
+        removeListener() {
+          throw new Error("must not be reached: pipeline constructed from an invalid header");
+        },
+        unshift() {
+          throw new Error("must not be reached: pending is empty in this case, unshift must not be called");
+        },
+      } as unknown as Socket;
+      const header = { kind: "file", byteLength: bad, sha256: "abc" } as unknown as { kind: string; byteLength: number; sha256: string };
+
+      const result = await receivePayloadToFile({ socket: fakeSocket, destPath, header });
+      assert.equal(result.ok, false);
+      if (!result.ok) {
+        assert.match(result.reason, /byteLength/);
+      }
+      assert.equal(existsSync(destPath), false);
+    } finally {
+      rmSync(fixtureDir, { recursive: true, force: true });
+    }
+  });
+}
+
+test("receivePayloadToFile: a header declaring 1024 bytes fed 16777217 actual bytes refuses mid-stream, leaves nothing at destPath and no leftover temp file", { timeout: 60000 }, async () => {
+  const fixtureDir = mkdtempSync(join(tmpdir(), "broker-transfer-lying-header-"));
+  try {
+    const destDir = join(fixtureDir, "dest");
+    const destPath = join(destDir, "lied.bin");
+
+    const server = createServer();
+    const serverDone = new Promise<{ ok: true; byteLength: number; sha256: string } | { ok: false; reason: string }>((resolve, reject) => {
+      server.on("connection", (socket) => {
+        readHeaderFromSocket(socket)
+          .then(({ header, pending }) => receivePayloadToFile({ socket, destPath, header, pending }))
+          .then(resolve, reject);
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as AddressInfo).port;
+    const client = netConnect({ host: "127.0.0.1", port });
+    await new Promise<void>((resolve, reject) => {
+      client.once("connect", resolve);
+      client.once("error", reject);
+    });
+
+    // A hand-built header, declaring a small length, followed by MORE bytes
+    // than the real cap -- the receiver must count for itself and refuse,
+    // never trusting the declared 1024.
+    writeTransferHeader(client, { kind: "file", byteLength: 1024, sha256: "0000" });
+    const overCap = TRANSFER_MAX_BYTES + 1;
+    const chunk = Buffer.alloc(1024 * 1024, 0x43);
+    let written = 0;
+    while (written < overCap) {
+      const remaining = overCap - written;
+      const toWrite = remaining < chunk.length ? chunk.subarray(0, remaining) : chunk;
+      const ok = client.write(toWrite);
+      written += toWrite.length;
+      if (!ok) {
+        await new Promise<void>((resolve) => client.once("drain", resolve));
+      }
+    }
+    client.end();
+
+    const result = await serverDone;
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.reason, /cap|byte/i);
+    }
+    assert.equal(existsSync(destPath), false);
+    assert.deepEqual(
+      existsSync(destDir) ? readdirSync(destDir).filter((f) => f.includes(".tmp-")) : [],
+      [],
+    );
+    server.close();
+  } finally {
+    rmSync(fixtureDir, { recursive: true, force: true });
+  }
+});
+
+test("receivePayloadToFile: a socket destroyed mid-payload returns a refusal and leaves no file and no temp file", async () => {
+  const fixtureDir = mkdtempSync(join(tmpdir(), "broker-transfer-midkill-"));
+  try {
+    const destDir = join(fixtureDir, "dest");
+    const destPath = join(destDir, "partial.bin");
+
+    const server = createServer();
+    const serverDone = new Promise<{ ok: true; byteLength: number; sha256: string } | { ok: false; reason: string }>((resolve, reject) => {
+      server.on("connection", (socket) => {
+        readHeaderFromSocket(socket)
+          .then(({ header, pending }) => receivePayloadToFile({ socket, destPath, header, pending }))
+          .then(resolve, reject);
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as AddressInfo).port;
+    const client = netConnect({ host: "127.0.0.1", port });
+    await new Promise<void>((resolve, reject) => {
+      client.once("connect", resolve);
+      client.once("error", reject);
+    });
+
+    writeTransferHeader(client, { kind: "file", byteLength: 1024, sha256: "deadbeef" });
+    client.write(Buffer.alloc(100, 0x41)); // only 100 of the declared 1024 bytes
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    client.destroy(); // abrupt -- no FIN, no completing write
+
+    const result = await serverDone;
+    assert.equal(result.ok, false);
+    assert.equal(existsSync(destPath), false);
+    assert.deepEqual(
+      existsSync(destDir) ? readdirSync(destDir).filter((f) => f.includes(".tmp-")) : [],
+      [],
+    );
+    server.close();
+  } finally {
+    rmSync(fixtureDir, { recursive: true, force: true });
+  }
+});
+
+test("broker-transfer: a receiver that stops reading stalls the sender's promise rather than being outrun by an already-buffered payload", { timeout: 60000 }, async () => {
+  const fixtureDir = mkdtempSync(join(tmpdir(), "broker-transfer-backpressure-"));
+  try {
+    const sourcePath = join(fixtureDir, "source.bin");
+    const destPath = join(fixtureDir, "dest", "received.bin");
+    const payloadSize = 12 * 1024 * 1024; // 12 MiB -- comfortably over this
+    // host's measured tcp_rmem max (6291456 bytes), so the kernel receive
+    // window genuinely closes while the receiver is paused, rather than the
+    // whole payload silently fitting in kernel buffers unread.
+    writeFileSync(sourcePath, Buffer.alloc(payloadSize, 0x44));
+
+    const server = createServer();
+    let serverSocket: Socket | null = null;
+    let headerResult: { header: { kind: string; byteLength: number; sha256: string }; pending: Buffer } | null = null;
+    const headerReady = new Promise<void>((resolve, reject) => {
+      server.on("connection", (socket) => {
+        serverSocket = socket;
+        readHeaderFromSocket(socket).then((info) => {
+          headerResult = info;
+          resolve();
+        }, reject);
+      });
+    });
+
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as AddressInfo).port;
+    const client = netConnect({ host: "127.0.0.1", port });
+    await new Promise<void>((resolve, reject) => {
+      client.once("connect", resolve);
+      client.once("error", reject);
+    });
+
+    const sendPromise = sendPayloadFromFile({ socket: client, sourcePath });
+    let settled = false;
+    sendPromise.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+
+    await headerReady;
+    const socket = serverSocket!;
+    // Explicitly pause -- matching this task's own required test shape
+    // ("the test server accepts the connection, reads the header, then
+    // pauses its socket"). Reading the header already removed this
+    // connection's only "data" listener (readHeaderFromSocket's own), so
+    // the socket is already effectively idle; this call makes that
+    // explicit rather than relying on the implicit state.
+    socket.pause();
+
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    assert.equal(settled, false, "the sender's promise must not have settled while the receiver is paused");
+    assert.ok(
+      socket.bytesRead < payloadSize / 10,
+      `expected far fewer than ${payloadSize} bytes observed while paused, observed ${socket.bytesRead}`,
+    );
+
+    socket.resume();
+    const receivePromise = receivePayloadToFile({ socket, destPath, header: headerResult!.header, pending: headerResult!.pending });
+    const [sendResult, receiveResult] = await Promise.all([sendPromise, receivePromise]);
+    assert.equal(sendResult.ok, true, sendResult.ok ? "" : (sendResult as { reason: string }).reason);
+    assert.equal(receiveResult.ok, true, receiveResult.ok ? "" : (receiveResult as { reason: string }).reason);
+    if (sendResult.ok && receiveResult.ok) {
+      assert.equal(receiveResult.byteLength, sendResult.byteLength);
+      assert.equal(receiveResult.sha256, sendResult.sha256);
+    }
+    server.close();
+  } finally {
+    rmSync(fixtureDir, { recursive: true, force: true });
+  }
+});
+
+test("TRANSFER_MAX_BYTES: imported (not re-typed) by both transfer-hash and this test, and equals 16 * 1024 * 1024", () => {
+  assert.equal(TRANSFER_MAX_BYTES, 16 * 1024 * 1024);
 });
