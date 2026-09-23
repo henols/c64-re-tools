@@ -65,14 +65,14 @@ for re-derivation during planning:
 
 ### Transfer — files as bytes, never as shared paths
 
-- [ ] **XFER-01**: A request that produces a file returns its bytes over the socket; the client writes them under its own `.c64-re-tools/` per-kind directory and the response carries that local path
+- [x] **XFER-01**: A request that produces a file returns its bytes over the socket; the client writes them under its own `.c64-re-tools/` per-kind directory and the response carries that local path
 - [x] **XFER-02**: A request that consumes a file is given a local path by its caller, reads it client-side, and streams the bytes to the broker
 - [x] **XFER-03**: A client refuses a broker-supplied destination name that would escape its `.c64-re-tools/` per-kind directory — traversal segments, absolute paths, separators and NUL bytes are refused, not sanitised
 - [x] **XFER-04**: The broker chooses its own staging paths and a client never supplies one; a client refers to a staged file only by an opaque handle the broker minted
-- [ ] **XFER-05**: File bytes survive the round trip unaltered, including bytes that are not valid UTF-8
+- [x] **XFER-05**: File bytes survive the round trip unaltered, including bytes that are not valid UTF-8
 - [x] **XFER-06**: A transfer is integrity-checked end to end, and one that exceeds the size cap is refused with a message naming the limit
 - [x] **XFER-07**: Staged files are removed when their session closes, and a sweep removes those left behind by a crash
-- [ ] **XFER-08**: `vice_autostart`, `vice_disk_attach`, `vice_snapshot_save` and `vice_snapshot_load` all work over the socket with no shared filesystem between client and broker
+- [x] **XFER-08**: `vice_autostart`, `vice_disk_attach`, `vice_snapshot_save` and `vice_snapshot_load` all work over the socket with no shared filesystem between client and broker
 
 ### Seam — one client module, two packages
 
@@ -160,14 +160,14 @@ requirement owned by two phases or by none.
 | SESS-04 | Phase 63 | Complete |
 | SESS-05 | Phase 63 | Complete |
 | SESS-06 | Phase 63 | Complete |
-| XFER-01 | Phase 64 | Pending |
+| XFER-01 | Phase 64 | Complete |
 | XFER-02 | Phase 64 | Complete |
 | XFER-03 | Phase 64 | Complete |
 | XFER-04 | Phase 64 | Complete |
-| XFER-05 | Phase 64 | Pending |
+| XFER-05 | Phase 64 | Complete |
 | XFER-06 | Phase 64 | Complete |
 | XFER-07 | Phase 64 | Complete |
-| XFER-08 | Phase 64 | Pending |
+| XFER-08 | Phase 64 | Complete |
 | SEAM-01 | Phase 65 | Pending |
 | SEAM-02 | Phase 65 | Pending |
 | SEAM-03 | Phase 65 | Pending |

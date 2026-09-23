@@ -4,17 +4,17 @@ milestone: v2.0.0
 milestone_name: One Broker, One Socket
 current_phase: 64
 current_phase_name: Files as Bytes, Both Directions
-status: executing
-stopped_at: Completed 64-06-PLAN.md
-last_updated: "2026-09-23T13:47:22.254Z"
+status: verifying
+stopped_at: Completed 64-07-PLAN.md -- Phase 64 all plans executed, ready for /gsd-verify-work
+last_updated: "2026-09-23T14:28:59.745Z"
 last_activity: 2026-09-23
 last_activity_desc: Phase 64 execution started
-state_head: 6c1d14ec4fbc8cecbdd53564ba8e04b60fbfd998
+state_head: 1fe7c6e4b071d1044b7dec8f75e364570246bad9
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 24
-  completed_plans: 23
+  completed_plans: 24
   percent: 33
 carried_forward_phases:
 
@@ -82,15 +82,15 @@ closure still needs to be recorded as one.
 
 ## Current Position
 
-Phase: 64 (Files as Bytes, Both Directions) — EXECUTING
+Phase: 64 (Files as Bytes, Both Directions) — ALL PLANS EXECUTED, AWAITING VERIFICATION
 Plan: 7 of 7
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Phase 63 closed on 2026-09-23: all 12 plans executed, UAT 1/1 passed, canonical
 verification passed (6/6 must-haves), nyquist validation PARTIAL and security verified
 with threats_open: 0. The one human decision — 63-REVIEW.md's WR-01 — was ACCEPTED as
 residual risk, recorded as R-63-04 in 63-SECURITY.md.
 Progress: [███░░░░░░░] 33% (2 of 6 v2.0.0 phases complete; Phases 62-67)
-Last activity: 2026-09-23 — Phase 64 execution started
+Last activity: 2026-09-23 — Phase 64 execution complete (all 7 plans), ready for verification
 
 **Planning override recorded at the Phase 64 decision-coverage gate.**
 `check.decision-coverage-plan` returned `passed: false` with
@@ -108,10 +108,14 @@ verify-phase should re-surface this rather than treat it as settled.
 hypothesis is falsifiable: the old boundary seam must be *gone from production
 code rather than merely bypassed*, and a retained fallback route falsifies it.
 The convergence metric that measures it — the count of real importers of
-`hostpath.ts` / `containerpath.ts` / `stock-paths.ts` — stands at **6** at this
-open (`containerpath.ts`, `host-tool-client.ts`, `install-resources.ts`,
-`stock-machine.ts`, `stock-paths.ts`, `vice-proxy.ts`) and must reach **0** before
-Phase 66 completes.
+`hostpath.ts` / `containerpath.ts` / `stock-paths.ts` — stood at **6** at Phase
+64's open and, MEASURED at Phase 64's close (2026-09-23,
+`.planning/phases/64-files-as-bytes-both-directions/evidence/64-convergence-metric.md`),
+now stands at **5** (`containerpath.ts`, `host-tool-client.ts`,
+`install-resources.ts`, `stock-paths.ts`, `vice-proxy.ts` — `stock-machine.ts` is
+the one Phase 64 dropped) and must reach **0** before Phase 66 completes.
+`ROADMAP.md`'s own Phase 64 note predicts 4 at this exit, not 5 — the gap is
+named in the evidence document as Phase 66's to reconcile, not force-closed.
 
 ## Performance Metrics
 
@@ -512,6 +516,7 @@ Phase 66 completes.
 | Phase 64 P04 | 55 min | 3 tasks | 6 files |
 | Phase 64 P05 | 55 min | 3 tasks | 17 files |
 | Phase 64 P06 | 50min | 3 tasks | 4 files |
+| Phase 64 P07 | 105min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -1429,6 +1434,7 @@ Recent decisions affecting current work:
 - [Phase 64]: The pid-liveness record for a config-scratch directory is a sibling JSON file (dirname.json), never a file inside the directory itself, since the directory's contents belong entirely to the spawned emulator's own XDG_CONFIG_HOME use.
 - [Phase 64]: Plan 64-06 migrated vice_autostart/vice_disk_attach off the shared filesystem onto the broker's own file-transfer protocol, staged into two DISTINCT slots so neither tool supersedes the other's staged file mid-session. — Completes D-18's stock-machine.ts import removal: production importers of hostpath.ts/containerpath.ts/stock-paths.ts dropped from 6 to 5.
 - [Phase 64]: vice_disk_attach's result now states, under its own writeLoss key (D-16), that writes the running program makes to the attached disk image are lost once the session closes. — Surfaced during Phase 64 discussion, not named in ROADMAP.md/REQUIREMENTS.md beforehand; pulling the staged image back on session close was offered and declined because SIGKILL/crash/recycle produce no clean close.
+- [Phase 64]: Phase 64's exit proof (disjoint roots, convergence metric, boundary confirmations) is complete; convergence metric measured at 5, not the roadmap's predicted 4 -- named for Phase 66 to reconcile. — D-18 chose measurement over assertion; the gap is real and honestly recorded rather than manufactured closed.
 
 ### Pending Todos
 
@@ -2762,8 +2768,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-23T13:47:22.149Z
-Stopped at: Completed 64-06-PLAN.md
+Last session: 2026-09-23T14:28:59.631Z
+Stopped at: Completed 64-07-PLAN.md -- Phase 64 all plans executed, ready for /gsd-verify-work
 Resume file: None
 
 Earlier: **v2.0.0 roadmap created.** 36/36 requirements (`ENDPOINT-01..05`,
