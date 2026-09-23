@@ -243,7 +243,15 @@ test("handleAcquire cold acquire (real makeLoggingSpawn + withCrashSupervision c
   const stateDir = mkdtempSync(join(tmpdir(), "vice-broker-acquire-i1-state-"));
   const savedRecordFile = process.env.VICE_BROKER_TEST_RECORD_FILE;
   const savedAmbientXdg = process.env.XDG_CONFIG_HOME;
-  const scratchDirs: string[] = [stateDir];
+  // 64-05 (D-08): a real stock launch through this test now creates a
+  // config-scratch directory under VICE_BROKER_HOME -- confined here to this
+  // test's own mkdtempSync fixture, never the real machine-level
+  // ~/.c64-re-tools. Restored in the `finally` below alongside every other
+  // env var this test overrides.
+  const brokerHomeFixture = mkdtempSync(join(tmpdir(), "vice-broker-acquire-i1-home-"));
+  const savedBrokerHome = process.env.VICE_BROKER_HOME;
+  process.env.VICE_BROKER_HOME = brokerHomeFixture;
+  const scratchDirs: string[] = [stateDir, brokerHomeFixture];
 
   try {
     delete process.env.XDG_CONFIG_HOME;
@@ -278,7 +286,10 @@ test("handleAcquire cold acquire (real makeLoggingSpawn + withCrashSupervision c
     assert.notEqual(stockRecorded, "<unset>", "a stock launch must set XDG_CONFIG_HOME, not leave it unset");
     assert.ok(stockRecorded.length > 0, "the recorded XDG_CONFIG_HOME must be a non-empty string");
     assert.notEqual(stockRecorded, savedAmbientXdg, "the scratch dir must not equal the ambient XDG_CONFIG_HOME");
-    assert.ok(stockRecorded.startsWith(tmpdir()), `the scratch dir must live under os.tmpdir(), got ${stockRecorded}`);
+    assert.ok(
+      stockRecorded.startsWith(join(brokerHomeFixture, "config-scratch")),
+      `the scratch dir must live under the fixture broker root's config-scratch subdirectory, got ${stockRecorded}`,
+    );
 
     const stockLogsDir = join(stateDir, String(stockOutcome.grant.port), "logs");
     assert.ok(existsSync(stockLogsDir) && readdirSync(stockLogsDir).length > 0, "the per-instance log file must exist under logs/ -- proves the stdio-wins merge order");
@@ -290,6 +301,8 @@ test("handleAcquire cold acquire (real makeLoggingSpawn + withCrashSupervision c
     else process.env.VICE_BROKER_TEST_RECORD_FILE = savedRecordFile;
     if (savedAmbientXdg === undefined) delete process.env.XDG_CONFIG_HOME;
     else process.env.XDG_CONFIG_HOME = savedAmbientXdg;
+    if (savedBrokerHome === undefined) delete process.env.VICE_BROKER_HOME;
+    else process.env.VICE_BROKER_HOME = savedBrokerHome;
     for (const dir of scratchDirs) {
       rmSync(dir, { recursive: true, force: true });
     }

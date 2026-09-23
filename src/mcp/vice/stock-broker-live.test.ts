@@ -255,6 +255,11 @@ function startBroker(stateDir: string, viceBinPath: string, scratchDir: string):
     // No persisted vicerc exists in this mkdtemp scratch dir, so the
     // 3.9-vs-3.10 "Configuration file version mismatch" modal cannot appear.
     XDG_CONFIG_HOME: scratchDir,
+    // 64-05 (D-08): this spawned broker's own stock launches now create a
+    // config-scratch directory under VICE_BROKER_HOME -- confined here to
+    // this harness's own mkdtempSync scratchDir (reaped by withBrokerHarness's
+    // own teardown), never the real machine-level ~/.c64-re-tools.
+    VICE_BROKER_HOME: scratchDir,
   };
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(merged)) {
@@ -500,7 +505,10 @@ test(
       // real one -- a REQUIRED-PASS assertion, not a recorded observation.
       const childXdgConfigHome = readProcessEnvVar(pid, "XDG_CONFIG_HOME");
       assert.ok(typeof childXdgConfigHome === "string" && childXdgConfigHome.length > 0, `the granted process's XDG_CONFIG_HOME must be a non-empty string, got: ${String(childXdgConfigHome)}`);
-      assert.ok(childXdgConfigHome!.startsWith(tmpdir()), `the granted process's XDG_CONFIG_HOME must live under os.tmpdir(), got: ${childXdgConfigHome}`);
+      assert.ok(
+        childXdgConfigHome!.startsWith(join(scratchDir, "config-scratch")),
+        `the granted process's XDG_CONFIG_HOME must live under this harness's config-scratch subdirectory, got: ${childXdgConfigHome}`,
+      );
       assert.notEqual(childXdgConfigHome, process.env.XDG_CONFIG_HOME, `the granted process's XDG_CONFIG_HOME must differ from this test runner's own ambient value`);
 
       const ready = await waitForStockReady(grant.port);

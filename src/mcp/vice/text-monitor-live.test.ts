@@ -198,6 +198,11 @@ function startBroker(stateDir: string, viceBinPath: string, scratchDir: string):
     VICE_BROKER_POLL_MS: "250",
     VICE_RESTART_BACKOFF_S: "1",
     XDG_CONFIG_HOME: scratchDir,
+    // 64-05 (D-08): this spawned broker's own stock launches now create a
+    // config-scratch directory under VICE_BROKER_HOME -- confined here to
+    // this harness's own mkdtempSync scratchDir, never the real
+    // machine-level ~/.c64-re-tools.
+    VICE_BROKER_HOME: scratchDir,
     VICE_BROKER_CONTROL_DIAL_HOST: undefined,
   };
   const env: Record<string, string> = {};

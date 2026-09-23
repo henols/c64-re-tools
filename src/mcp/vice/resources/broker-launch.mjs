@@ -29,9 +29,9 @@
 // deliberately-killed instance, and writes the per-instance boot/crash log
 // at the exact path shape the retiring bash supervisor used.
 import { spawn as nodeSpawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, openSync, closeSync, existsSync } from "node:fs";
-import { join, basename } from "node:path";
-import { tmpdir } from "node:os";
+import { mkdirSync, mkdtempSync, openSync, closeSync, existsSync, writeFileSync, renameSync } from "node:fs";
+import { join, basename, resolve as resolvePath } from "node:path";
+import { tmpdir, homedir } from "node:os";
 // Module-level: this file, not the caller, owns the single boolean --
 // synchronous check, synchronous set, released in a finally, with no
 // `await` between the check and the set.
@@ -326,6 +326,44 @@ export function buildViceArgs(port, { backend, mcpHost, binmonHost, viceArgsEnv,
     const host = mcpHost ?? process.env.VICE_BROKER_MCP_HOST ?? "0.0.0.0";
     return ["-mcpserver", "-mcpserverhost", host, "-mcpserverport", String(port)];
 }
+/**
+ * Duplicated derivation of broker-home.mts's own brokerConfigScratchDir() --
+ * see that function's own header comment (broker-home.mts) for why this is
+ * a deliberate duplication rather than a shared import: this module must
+ * stay importable UNBUILT by its own test file (broker-launch.test.ts
+ * imports this file's ".mts" source directly), exactly the same discipline
+ * this file's own header explains for BrokerState/EpochRecord/ViceBackend
+ * above -- a VALUE import of another host-bound sibling's compiled ".mjs"
+ * specifier cannot resolve until both are compiled into resources/. The env
+ * var name ("VICE_BROKER_HOME") and the home directory name
+ * (".c64-re-tools") match broker-home.mts's own BROKER_HOME_ENV/
+ * TOOLS_DIR_NAME literals exactly, by the SAME convention that module's own
+ * header names for every other duplicated consumer (vice-broker.mts,
+ * host-tool.mts, ghidra-project.mts, install-resources.ts,
+ * backend-detect.mts). Keep the two in sync if this ever changes.
+ */
+function resolveConfigScratchRoot() {
+    const override = process.env.VICE_BROKER_HOME;
+    const home = override !== undefined && override !== ""
+        ? resolvePath(override)
+        : resolvePath(join(homedir(), ".c64-re-tools"));
+    return join(home, "config-scratch");
+}
+/** Writes `<scratchConfigDir>.json` -- BESIDE the scratch directory it
+ * describes, in that directory's OWN PARENT, never inside it (the
+ * directory's contents belong entirely to the spawned emulator's own
+ * XDG_CONFIG_HOME use; this broker's own bookkeeping does not share that
+ * space). Written with this repo's own atomic-publish idiom (matching
+ * broker-epoch.mts's writeEpochRecord() and broker-transfer.mts's
+ * receivePayloadToFile(), both `<finalPath>.tmp-<pid>-<now>` then rename):
+ * a tmp sibling file, then a rename, so a reap running concurrently with a
+ * fresh launch never observes a half-written record. */
+function writeConfigScratchOwnerRecord(scratchConfigDir, record) {
+    const finalPath = `${scratchConfigDir}.json`;
+    const tmpPath = `${finalPath}.tmp-${process.pid}-${Date.now()}`;
+    writeFileSync(tmpPath, JSON.stringify(record));
+    renameSync(tmpPath, finalPath);
+}
 /** The unguarded spawn+record primitive -- no in_flight check here at all.
  * Called from exactly two places: tryLaunchOne() below (which wraps it in
  * the standalone synchronous guard) and acquirePortAndLaunch() further
@@ -400,23 +438,45 @@ function spawnAndRecordInstance(reason, port, deps) {
     // options too, or production stock launches silently lose their config
     // isolation again.
     //
-    // Scratch-dir lifetime: this function deliberately does NOT clean the
-    // directory up -- the spawned emulator process outlives this function's
-    // return and needs the directory for its whole lifetime. Per-launch
-    // scratch dirs therefore accumulate under the OS temp dir for the life of
-    // the host; this is a recorded trade-off, not an oversight. If reaping
-    // them is ever worth doing, the broker's own kill/recycle path is the
-    // component that would own it (it already knows when an instance's
-    // process has actually exited).
+    // Config-scratch lifetime (Phase 64, XFER-07/D-08): the per-launch scratch
+    // directory now lives under the machine-level broker root
+    // (resolveConfigScratchRoot() above -- a deliberate duplicate of
+    // broker-home.mts's own brokerConfigScratchDir(), see that helper's own
+    // comment for why), not the OS temp directory. Moving it off this host's
+    // unaged tmpfs is what stops it leaking RAM: 4,779 `vice-broker-vicerc-*`
+    // directories were measured after 7 days' uptime before this change. The
+    // spawned emulator process still outlives this function's return and
+    // still needs the directory for its whole lifetime -- that has NOT
+    // changed, only where the directory lives. What HAS changed: this now
+    // lands on real disk, which survives a reboot (an accepted, named cost),
+    // and broker-kill.mts's reapOrphanedConfigScratch() -- called from
+    // vice-broker.mts's startup reap -- now owns reaping these directories,
+    // behind a MANDATORY live-pid guard. Do NOT remove one of these
+    // directories yourself without first confirming, through that same
+    // guard, that the process which owns it is actually gone -- a crashed
+    // broker can leave one still serving a live, running emulator.
     let spawnOptions;
     let logLine = `vice-broker: launching ${viceBin} ${viceArgs.join(" ")}`;
+    let scratchConfigDir;
     if (backend === "stock") {
-        const scratchConfigDir = mkdtempSync(join(tmpdir(), "vice-broker-vicerc-"));
+        const scratchRoot = resolveConfigScratchRoot();
+        // Single recursive, already-exists-tolerant mkdir -- the same race
+        // tolerance broker-home.mts's own ensureBrokerDir() gives every other
+        // broker-owned directory, duplicated here for the same unbuilt-import
+        // reason resolveConfigScratchRoot() itself gives.
+        mkdirSync(scratchRoot, { recursive: true });
+        scratchConfigDir = mkdtempSync(join(scratchRoot, "vice-broker-vicerc-"));
         spawnOptions = { env: { ...process.env, XDG_CONFIG_HOME: scratchConfigDir } };
         logLine += ` (XDG_CONFIG_HOME=${scratchConfigDir})`;
     }
     log(logLine);
     const child = spawnOptions === undefined ? spawnFn(viceBin, viceArgs) : spawnFn(viceBin, viceArgs, spawnOptions);
+    if (scratchConfigDir !== undefined && typeof child.pid === "number") {
+        // Ties the directory to the child's own pid AND this launch's own
+        // resolved binary identity (viceBin) -- see ConfigScratchOwnerRecord's
+        // own comment for why both, not the pid alone.
+        writeConfigScratchOwnerRecord(scratchConfigDir, { pid: child.pid, expectedIdentity: viceBin });
+    }
     const record = {
         port,
         url: `http://127.0.0.1:${port}/mcp`,

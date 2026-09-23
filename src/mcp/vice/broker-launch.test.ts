@@ -1751,35 +1751,143 @@ test("buildViceArgs (I-2): the -default/-drive8type ordering invariant holds in 
 // separable.
 // ===========================================================================
 
-test("spawnAndRecordInstance (I-1 rider, via tryLaunchOne): a stock launch's injected spawn stub receives a third options argument whose env.XDG_CONFIG_HOME is a fresh, existing, tmpdir-scoped scratch directory", () => {
-  const state = createBrokerState();
-  const spawnArgsSeen: unknown[][] = [];
-  const record = tryLaunchOne("acquire", 6700, {
-    state,
-    supervisorDir: "/tmp/i1-stock-seam",
-    epochFile: "/tmp/i1-stock-seam/epoch.json",
-    backend: "stock",
-    // Plan 41-05 (D-16): a stock launch now REQUIRES this field --
-    // spawnAndRecordInstance() throws otherwise. This test's own subject is
-    // the I-1 XDG_CONFIG_HOME rider, not D-16's port requirement, so an
-    // arbitrary port satisfies the invariant without being load-bearing to
-    // what this test actually asserts.
-    remoteMonitorPort: 6799,
-    spawn: (command: string, args: string[], options?: SpawnOptionsWithoutStdio) => {
-      spawnArgsSeen.push([command, args, options]);
-      return stubChild(4243);
-    },
+// ===========================================================================
+// 64-05-PLAN.md, Task 1 (XFER-07, D-08): the per-launch config-scratch
+// directory moves under the machine-level broker root. Every case below
+// sets VICE_BROKER_HOME to a fresh mkdtempSync directory and restores the
+// previous value in a `finally` -- no case here may write into a real
+// machine-level ~/.c64-re-tools.
+// ===========================================================================
+
+/** Runs `fn` with a fresh mkdtempSync VICE_BROKER_HOME -- never the real
+ * machine-level root -- restoring the previous value (or unsetting it) in a
+ * `finally`, matching vice-broker-staging.test.ts's own withStagingFixture()
+ * idiom. The fixture directory itself is unavoidably created under
+ * os.tmpdir() (the standard, portable writable scratch location every
+ * fixture in this codebase uses) -- what these tests actually prove is that
+ * the scratch dir is no longer a DIRECT child of the bare OS temp directory
+ * with the old "vice-broker-vicerc-" prefix (OLD_TMPDIR_SCRATCH_PREFIX
+ * below), which is the literal, testable form of "moved off the OS temp
+ * directory". */
+function withBrokerHomeFixture<T>(fn: (home: string) => T): T {
+  const home = mkdtempSync(join(tmpdir(), "broker-launch-config-scratch-"));
+  const previous = process.env.VICE_BROKER_HOME;
+  process.env.VICE_BROKER_HOME = home;
+  try {
+    return fn(home);
+  } finally {
+    if (previous === undefined) delete process.env.VICE_BROKER_HOME;
+    else process.env.VICE_BROKER_HOME = previous;
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
+/** The OLD direct-child-of-tmpdir prefix this task retires -- a scratch dir
+ * must never again match this shape, whatever VICE_BROKER_HOME resolves to. */
+const OLD_TMPDIR_SCRATCH_PREFIX = join(tmpdir(), "vice-broker-vicerc-");
+
+test("spawnAndRecordInstance (I-1 rider, extended by 64-05/D-08, via tryLaunchOne): a stock launch's injected spawn stub receives XDG_CONFIG_HOME under the fixture broker root's config-scratch subdirectory, never a direct child of the OS temp directory", () => {
+  withBrokerHomeFixture((home) => {
+    const state = createBrokerState();
+    const spawnArgsSeen: unknown[][] = [];
+    const record = tryLaunchOne("acquire", 6700, {
+      state,
+      supervisorDir: "/tmp/i1-stock-seam",
+      epochFile: "/tmp/i1-stock-seam/epoch.json",
+      backend: "stock",
+      // Plan 41-05 (D-16): a stock launch now REQUIRES this field --
+      // spawnAndRecordInstance() throws otherwise. This test's own subject is
+      // the I-1 XDG_CONFIG_HOME rider, not D-16's port requirement, so an
+      // arbitrary port satisfies the invariant without being load-bearing to
+      // what this test actually asserts.
+      remoteMonitorPort: 6799,
+      spawn: (command: string, args: string[], options?: SpawnOptionsWithoutStdio) => {
+        spawnArgsSeen.push([command, args, options]);
+        return stubChild(4243);
+      },
+    });
+    assert.ok(record, "the stock launch must succeed");
+    assert.equal(spawnArgsSeen.length, 1);
+    const [, , options] = spawnArgsSeen[0] as [string, string[], SpawnOptionsWithoutStdio | undefined];
+    assert.ok(options, "a stock launch must receive a third options argument");
+    const scratchDir = options?.env?.XDG_CONFIG_HOME;
+    assert.equal(typeof scratchDir, "string", "XDG_CONFIG_HOME must be a non-empty string");
+    assert.ok(scratchDir && scratchDir.length > 0, "XDG_CONFIG_HOME must be non-empty");
+    assert.ok(scratchDir && existsSync(scratchDir), "the scratch directory must actually exist on disk");
+    assert.notEqual(scratchDir, process.env.XDG_CONFIG_HOME, "the scratch dir must differ from the ambient XDG_CONFIG_HOME");
+    assert.ok(
+      scratchDir && scratchDir.startsWith(join(home, "config-scratch")),
+      `the scratch dir must live under the fixture broker root's config-scratch subdirectory, got: ${scratchDir}`,
+    );
+    assert.ok(
+      scratchDir && !scratchDir.startsWith(OLD_TMPDIR_SCRATCH_PREFIX),
+      "the scratch dir must not be a direct child of the OS temp directory with the old prefix",
+    );
   });
-  assert.ok(record, "the stock launch must succeed");
-  assert.equal(spawnArgsSeen.length, 1);
-  const [, , options] = spawnArgsSeen[0] as [string, string[], SpawnOptionsWithoutStdio | undefined];
-  assert.ok(options, "a stock launch must receive a third options argument");
-  const scratchDir = options?.env?.XDG_CONFIG_HOME;
-  assert.equal(typeof scratchDir, "string", "XDG_CONFIG_HOME must be a non-empty string");
-  assert.ok(scratchDir && scratchDir.length > 0, "XDG_CONFIG_HOME must be non-empty");
-  assert.ok(scratchDir && existsSync(scratchDir), "the scratch directory must actually exist on disk");
-  assert.notEqual(scratchDir, process.env.XDG_CONFIG_HOME, "the scratch dir must differ from the ambient XDG_CONFIG_HOME");
-  assert.ok(scratchDir && scratchDir.startsWith(tmpdir()), "the scratch dir must live under os.tmpdir()");
+});
+
+test("spawnAndRecordInstance (64-05/D-08): the config-scratch parent directory is created when absent, and two stock launches in a row both succeed", () => {
+  withBrokerHomeFixture(() => {
+    const state = createBrokerState();
+    const record1 = tryLaunchOne("acquire", 6701, {
+      state,
+      supervisorDir: "/tmp/i1-stock-seam-1",
+      epochFile: "/tmp/i1-stock-seam-1/epoch.json",
+      backend: "stock",
+      remoteMonitorPort: 6801,
+      spawn: () => stubChild(4244),
+    });
+    assert.ok(record1, "the first stock launch must succeed");
+
+    const state2 = createBrokerState();
+    const record2 = tryLaunchOne("acquire", 6702, {
+      state: state2,
+      supervisorDir: "/tmp/i1-stock-seam-2",
+      epochFile: "/tmp/i1-stock-seam-2/epoch.json",
+      backend: "stock",
+      remoteMonitorPort: 6802,
+      spawn: () => stubChild(4245),
+    });
+    assert.ok(record2, "a second stock launch against the same (now-existing) parent must also succeed");
+  });
+});
+
+test("spawnAndRecordInstance (64-05/D-08): the pid record beside the scratch directory carries both the child's pid and the emulator binary identity", () => {
+  withBrokerHomeFixture(() => {
+    const state = createBrokerState();
+    const spawnArgsSeen: unknown[][] = [];
+    const record = tryLaunchOne(
+      "acquire",
+      6703,
+      {
+        state,
+        supervisorDir: "/tmp/i1-stock-seam-pidrec",
+        epochFile: "/tmp/i1-stock-seam-pidrec/epoch.json",
+        backend: "stock",
+        remoteMonitorPort: 6803,
+        viceBin: "x64sc",
+        spawn: (command: string, args: string[], options?: SpawnOptionsWithoutStdio) => {
+          spawnArgsSeen.push([command, args, options]);
+          return stubChild(4246);
+        },
+      },
+    );
+    assert.ok(record, "the stock launch must succeed");
+    const [, , options] = spawnArgsSeen[0] as [string, string[], SpawnOptionsWithoutStdio | undefined];
+    const scratchDir = options?.env?.XDG_CONFIG_HOME as string;
+    const recordPath = `${scratchDir}.json`;
+    assert.ok(existsSync(recordPath), `the pid record must exist beside the scratch directory at ${recordPath}`);
+    const parsed = JSON.parse(readFileSync(recordPath, "utf8"));
+    assert.equal(parsed.pid, 4246, "the record must carry the spawned child's own pid");
+    assert.equal(parsed.expectedIdentity, "x64sc", "the record must carry the emulator binary's own identity");
+  });
+});
+
+test("structural (64-05/D-08): broker-launch.mts's 'Config-scratch lifetime' comment no longer claims this directory is never cleaned up, no longer claims it accumulates under the OS temp directory, and names broker-kill.mts as the reap's owner", () => {
+  const source = readFileSync(join(HERE, "broker-launch.mts"), "utf8");
+  assert.equal(/deliberately does NOT clean/i.test(source), false, "the comment must no longer claim the directory is never cleaned up");
+  assert.equal(/accumulate under the OS temp dir/i.test(source), false, "the comment must no longer claim these accumulate under the OS temp directory");
+  assert.match(source, /broker-kill\.mts.{0,80}(reap|own)/is, "the comment must name broker-kill.mts as the reap's owner");
 });
 
 // MUST run before any later test in this file passes a non-loopback

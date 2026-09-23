@@ -136,6 +136,32 @@ export function brokerEpochFile(opts = {}) {
 export function brokerStagingDir(opts = {}) {
     return join(brokerHome(opts), "staging");
 }
+/** The broker's per-launch config-scratch root -- no legacy variable
+ * overrides this either; it is new with this module (Phase 64, XFER-07/
+ * D-08). Always a `config-scratch` subdirectory of the machine-level root.
+ * `broker-launch.mts`'s `spawnAndRecordInstance()` mints one fresh leaf
+ * directory under THIS root per stock launch (`mkdtempSync`), for that
+ * launch's isolated `XDG_CONFIG_HOME`; `broker-kill.mts`'s
+ * `reapOrphanedConfigScratch()` reaps leaves left behind here whose
+ * recorded process has exited.
+ *
+ * `broker-launch.mts` cannot import this function directly: it must stay
+ * importable UNBUILT by its own test file (`broker-launch.test.ts` imports
+ * this module's `.mts` source directly, never the compiled `resources/`
+ * form), and a VALUE import of this sibling's compiled `.mjs` specifier
+ * cannot resolve until both are compiled into `resources/` -- the same
+ * constraint this file's own header names for `BrokerState`/`EpochRecord`/
+ * `ViceBackend` in the opposite direction. `broker-launch.mts`'s own
+ * `resolveConfigScratchRoot()` therefore DUPLICATES this exact derivation
+ * (the `VICE_BROKER_HOME` env var name and the `.c64-re-tools` directory
+ * name), matching this module's own header comment's established
+ * convention for every other duplicated consumer of that literal
+ * (`vice-broker.mts`, `host-tool.mts`, `ghidra-project.mts`,
+ * `install-resources.ts`, `backend-detect.mts`). Keep the two in sync if
+ * this ever changes. */
+export function brokerConfigScratchDir(opts = {}) {
+    return join(brokerHome(opts), "config-scratch");
+}
 /** A per-kind run-scratch subdirectory under the machine-level root's `runs`
  * directory -- no legacy variable overrides this either. Mirrors the
  * per-kind run-scratch convention `toolsDir()`'s consumers already use

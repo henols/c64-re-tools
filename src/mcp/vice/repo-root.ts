@@ -222,8 +222,8 @@ export function repoRoot({ from = HERE, env = process.env, exists = existsSync }
  * files that call this function directly -- it is host-bound
  * (ghidra-project.mts) and cannot import this file at all.
  *
- * The literal string ".c64-re-tools" therefore has exactly 10 non-comment
- * occurrences in this codebase, across 7 files. repo-root.test.ts's census
+ * The literal string ".c64-re-tools" therefore has exactly 11 non-comment
+ * occurrences in this codebase, across 8 files. repo-root.test.ts's census
  * gate reads BOTH the count and this file list straight out of this
  * sentence and the bullet list below -- never duplicated by hand a second
  * time in the test -- and compares both against the real tree, with a
@@ -250,6 +250,11 @@ export function repoRoot({ from = HERE, env = process.env, exists = existsSync }
  *     default directory name (BROKER-06, plan 62-02); host-bound and cannot
  *     import this file either, so it joins the literal directly by the same
  *     convention as the five files above (1)
+ *   - broker-launch.mts -- `resolveConfigScratchRoot()`'s own duplicated
+ *     derivation of broker-home.mts's `brokerConfigScratchDir()` (Phase 64,
+ *     XFER-07/D-08); host-bound and cannot import broker-home.mjs either
+ *     (the same unbuilt-import constraint), so it joins the literal
+ *     directly by the same convention as every file above (1)
  *
  * The Ghidra alias handle: a non-dotted sibling of this root
  * (`<repoRoot>/c64-re-tools`, no leading dot), a symlink whose RELATIVE

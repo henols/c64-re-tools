@@ -25,11 +25,12 @@ import {
   brokerEpochFile,
   brokerStagingDir,
   brokerRunsDir,
+  brokerConfigScratchDir,
   ensureBrokerDir,
 } from "./broker-home.mts";
 import * as brokerHomeModule from "./broker-home.mts";
 
-test("broker-home.mts exports exactly the eight documented names", () => {
+test("broker-home.mts exports exactly the nine documented names", () => {
   const expected = [
     "BROKER_HOME_ENV",
     "brokerHome",
@@ -38,6 +39,7 @@ test("broker-home.mts exports exactly the eight documented names", () => {
     "brokerEpochFile",
     "brokerStagingDir",
     "brokerRunsDir",
+    "brokerConfigScratchDir",
     "ensureBrokerDir",
   ].sort();
   assert.deepEqual(Object.keys(brokerHomeModule).sort(), expected);
@@ -153,7 +155,7 @@ test("legacy variable 4/4: VICE_EPOCH_FILE wins for brokerEpochFile(), leaving s
   }
 });
 
-test("two-project isolation: none of the six resolved broker paths falls inside either of two distinct project roots", () => {
+test("two-project isolation: none of the seven resolved broker paths falls inside either of two distinct project roots", () => {
   const projectA = tempDir("broker-home-projA-");
   const projectB = tempDir("broker-home-projB-");
   const home = tempDir("broker-home-shared-home-");
@@ -166,6 +168,7 @@ test("two-project isolation: none of the six resolved broker paths falls inside 
       brokerEpochFile(opts),
       brokerStagingDir(opts),
       brokerRunsDir("oracle", opts),
+      brokerConfigScratchDir(opts),
     ];
     for (const p of resolved) {
       assert.ok(!p.startsWith(projectA), `${p} must not be inside project A (${projectA})`);
@@ -204,4 +207,19 @@ test("brokerRunsDir(): resolves a per-kind subdirectory under the machine-level 
 
 test("build.ts's HOST_BOUND_ARTIFACTS includes broker-home.mjs", () => {
   assert.ok(HOST_BOUND_ARTIFACTS.includes("broker-home.mjs"));
+});
+
+test("brokerConfigScratchDir(): resolves a config-scratch subdirectory under the machine-level root, same precedence as brokerStagingDir()", () => {
+  const home = tempDir("broker-home-config-scratch-");
+  try {
+    assert.equal(brokerConfigScratchDir({ env: {}, homedir: home }), join(home, ".c64-re-tools", "config-scratch"));
+    const override = tempDir("broker-home-config-scratch-override-");
+    try {
+      assert.equal(brokerConfigScratchDir({ env: { [BROKER_HOME_ENV]: override } }), join(resolve(override), "config-scratch"));
+    } finally {
+      rmSync(override, { recursive: true, force: true });
+    }
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
 });

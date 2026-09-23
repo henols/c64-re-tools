@@ -257,6 +257,11 @@ function startBroker(stateDir: string, viceBinPath: string, scratchDir: string):
     // reasoning) -- safe here even though this broker's own stock argv
     // (buildViceArgs()) carries no -default flag itself.
     XDG_CONFIG_HOME: scratchDir,
+    // 64-05 (D-08): this spawned broker's own stock launches now create a
+    // config-scratch directory under VICE_BROKER_HOME -- confined here to
+    // this harness's own mkdtempSync scratchDir, never the real
+    // machine-level ~/.c64-re-tools.
+    VICE_BROKER_HOME: scratchDir,
     // This file's own CLIENT-side dial override (module scope, above) must
     // never leak into the spawned broker's own env -- its bind address is
     // governed by VICE_BROKER_CONTROL_HOST/VICE_BROKER_CONTROL_PORT alone.
