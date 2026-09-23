@@ -4,16 +4,16 @@ milestone: v2.0.0
 milestone_name: One Broker, One Socket
 current_phase: 64
 current_phase_name: Files as Bytes, Both Directions
-status: planning
+status: executing
 stopped_at: Phase 64 context gathered
-last_updated: "2026-09-23T07:50:25.533Z"
+last_updated: "2026-09-23T08:50:07.636Z"
 last_activity: 2026-09-23
 last_activity_desc: Phase 63 complete, transitioned to Phase 64
-state_head: 8c5e8e6e3f1f43414c5b96f13dab2500b3d09089
+state_head: 97139e62c1ad50bc61748702512ecfe2ce001f1f
 progress:
   total_phases: 6
   completed_phases: 2
-  total_plans: 17
+  total_plans: 24
   completed_plans: 17
   percent: 33
 carried_forward_phases:
@@ -82,15 +82,27 @@ closure still needs to be recorded as one.
 
 ## Current Position
 
-Phase: 64 — Files as Bytes, Both Directions
+Phase: 64 (Files as Bytes, Both Directions) — READY TO EXECUTE
 Plan: Not started
-Status: Ready to plan
+Status: Ready to execute
 Phase 63 closed on 2026-09-23: all 12 plans executed, UAT 1/1 passed, canonical
 verification passed (6/6 must-haves), nyquist validation PARTIAL and security verified
 with threats_open: 0. The one human decision — 63-REVIEW.md's WR-01 — was ACCEPTED as
 residual risk, recorded as R-63-04 in 63-SECURITY.md.
 Progress: [███░░░░░░░] 33% (2 of 6 v2.0.0 phases complete; Phases 62-67)
-Last activity: 2026-09-23 — Phase 63 complete, transitioned to Phase 64
+Last activity: 2026-09-23 — Phase 64 planned (7 plans, 6 waves, 21 tasks)
+
+**Planning override recorded at the Phase 64 decision-coverage gate.**
+`check.decision-coverage-plan` returned `passed: false` with
+`reason: "could-not-parse"`, `total: 18, covered: 0, uncovered: []` — a refusal
+naming ZERO gaps. The cause is a parser limitation, not a coverage gap: D-08's
+bullet title wraps onto a second line in `64-CONTEXT.md`, so 18 of 19 decisions
+parse and the covered count collapses to 0. Both the planner and the plan-phase
+orchestrator hand-verified the real question independently: **all 19 decisions
+D-01 through D-19 are cited by ID in at least one `64-*-PLAN.md`, zero uncited.**
+`64-CONTEXT.md` was deliberately NOT edited to make the gate pass — the gate is
+wrong here, and falsifying its input would hide the defect rather than the gap.
+verify-phase should re-surface this rather than treat it as settled.
 
 **The milestone's exit criterion lives in Phase 66 and nowhere else.** The
 hypothesis is falsifiable: the old boundary seam must be *gone from production
