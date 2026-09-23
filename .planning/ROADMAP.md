@@ -2259,7 +2259,7 @@ the first tool rides it.
      fully written, and an age-based sweep removes what a crashed broker or a
      vanished client left behind (XFER-07).
 
-**Plans**: 5/7 plans executed, 6 waves
+**Plans**: 6/7 plans executed, 6 waves
 
 Plans:
 
@@ -2268,7 +2268,7 @@ Plans:
 - [x] 64-03-PLAN.md — broker-side staging lifecycle: minted handle, slot supersession, session-close cleanup, wired into the real broker
 - [x] 64-04-PLAN.md — `vice_snapshot_save` and `vice_snapshot_load` migrated; the pair round-trips a non-UTF-8 payload byte for byte
 - [x] 64-05-PLAN.md — the crash sweep and the folded vicerc-scratch relocation: two reap passes, two opposite lifetime rules, startup-only
-- [ ] 64-06-PLAN.md — `vice_autostart` and `vice_disk_attach` migrated; the disk write-loss stated by name; `stock-paths.ts` import dropped
+- [x] 64-06-PLAN.md — `vice_autostart` and `vice_disk_attach` migrated; the disk write-loss stated by name; `stock-paths.ts` import dropped
 - [ ] 64-07-PLAN.md — the disjoint-roots proof for all four tools, the measured convergence metric, and the boundary confirmations
 
 **Cross-cutting constraints:**
@@ -2689,7 +2689,7 @@ check. No test reads this table now.
 | 61. The Install Tables Generated, and a Guard That Compares Facts | v1.1.0 | 3/3 | Complete | 2026-09-19 |
 | 62. The Fixed Endpoint and the Broker That Owns the Machine | v2.0.0 | 5/5 | Complete | 2026-09-19 |
 | 63. The Monitor Channel Relayed, and the Connection as the Session | v2.0.0 | 12/12 | Complete | 2026-09-23 |
-| 64. Files as Bytes, Both Directions | v2.0.0 | 5/7 | In Progress | - |
+| 64. Files as Bytes, Both Directions | v2.0.0 | 6/7 | In Progress | - |
 | 65. Every Skill Script Through the One Endpoint, and CI With It | v2.0.0 | — | Not started | - |
 | 66. The Deletion Cutover — Gone, Not Bypassed | v2.0.0 | — | Not started | - |
 | 67. Ghidra's Runs Root Without the Alias | v2.0.0 | — | Not started | - |

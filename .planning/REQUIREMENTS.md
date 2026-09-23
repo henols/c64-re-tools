@@ -66,7 +66,7 @@ for re-derivation during planning:
 ### Transfer — files as bytes, never as shared paths
 
 - [ ] **XFER-01**: A request that produces a file returns its bytes over the socket; the client writes them under its own `.c64-re-tools/` per-kind directory and the response carries that local path
-- [ ] **XFER-02**: A request that consumes a file is given a local path by its caller, reads it client-side, and streams the bytes to the broker
+- [x] **XFER-02**: A request that consumes a file is given a local path by its caller, reads it client-side, and streams the bytes to the broker
 - [x] **XFER-03**: A client refuses a broker-supplied destination name that would escape its `.c64-re-tools/` per-kind directory — traversal segments, absolute paths, separators and NUL bytes are refused, not sanitised
 - [x] **XFER-04**: The broker chooses its own staging paths and a client never supplies one; a client refers to a staged file only by an opaque handle the broker minted
 - [ ] **XFER-05**: File bytes survive the round trip unaltered, including bytes that are not valid UTF-8
@@ -161,7 +161,7 @@ requirement owned by two phases or by none.
 | SESS-05 | Phase 63 | Complete |
 | SESS-06 | Phase 63 | Complete |
 | XFER-01 | Phase 64 | Pending |
-| XFER-02 | Phase 64 | Pending |
+| XFER-02 | Phase 64 | Complete |
 | XFER-03 | Phase 64 | Complete |
 | XFER-04 | Phase 64 | Complete |
 | XFER-05 | Phase 64 | Pending |
