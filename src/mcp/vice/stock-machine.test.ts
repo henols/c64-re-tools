@@ -593,3 +593,356 @@ test("handleSnapshotSave/Load: every ok-answer carries runState", async () => {
     assert.ok("runState" in JSON.parse(r2.content[0]!.text));
   });
 });
+
+// ---------------------------------------------------------------------------
+// Task 3 (Phase 64-04): the pair proves each other -- a byte-for-byte round
+// trip over disjoint client/broker roots, driven through a REAL control
+// listener and REAL staged files (mirrors vice-broker-staging.test.ts's own
+// fixture shape rather than re-deriving it), with the emulator itself still
+// the DI stub: the `send` spy stands in for DUMP by writing the fixture
+// bytes to the staged path the request body named, and stands in for UNDUMP
+// by reading them back and asserting equality.
+//
+// D-17's own guarantee, recorded here VERBATIM rather than softened: this
+// proves nothing LEAKED, NOT that nothing was ever OPENED -- a stray read of
+// a broker path that happens to succeed would still pass this test. Two
+// consequences follow, per the phase owner's own decision: the transfer
+// modules (transfer-hash.mts/broker-transfer.mts/stock-connect.ts) do NOT
+// need an injectable filesystem-root seam and one must not be added to them
+// for this test's sake; and a source-scanning guard is not an available
+// fallback here either, since this codebase's own locked no-asserting-on-
+// text rule bans it, and moving such a check into CI does not escape that
+// rule.
+// ---------------------------------------------------------------------------
+
+function makeGrantedRoundTripInstance(port: number, overrides: Partial<InstanceRecord> = {}): InstanceRecord {
+  return {
+    port,
+    url: `http://127.0.0.1:${port}/mcp`,
+    state: "granted",
+    reason: "acquire",
+    epochFile: "/tmp/stock-machine-roundtrip-epoch.json",
+    supervisorDir: "/tmp/stock-machine-roundtrip",
+    pid: 4242,
+    expectedIdentity: "x64sc",
+    launchedAt: 0,
+    readyAt: 0,
+    viceBin: "x64sc",
+    viceArgs: [],
+    dryRun: false,
+    monitorClients: {},
+    ...overrides,
+  };
+}
+
+function setupRoundTripBrokerState(emulatorPort: number, targetId: string): BrokerState {
+  const state = createBrokerState();
+  state.instances.set(emulatorPort, makeGrantedRoundTripInstance(emulatorPort));
+  state.grants.set(targetId, { id: targetId, port: emulatorPort, grantedAt: Date.now(), pid: 4242, operation: null, sessionLabel: null });
+  return state;
+}
+
+/** Starts a REAL control listener wired to the compiled artifacts' own
+ * handleStageFile()/handleFileTransfer()/handleRelease() -- the same
+ * production functions the real broker calls. Mirrors
+ * vice-broker-staging.test.ts's own startStagingListenerForState() exactly. */
+async function startRoundTripListener(state: BrokerState, emulatorPort: number): Promise<{ listener: StartControlListenerResult; token: string }> {
+  const token = newControlToken();
+  const listener = await startControlListener({
+    host: "127.0.0.1",
+    port: 0,
+    token,
+    onAcquire: async (): Promise<AcquireOutcome> => ({
+      ok: true,
+      grant: { port: emulatorPort, url: `http://127.0.0.1:${emulatorPort}/mcp`, epochFile: "/tmp/stock-machine-roundtrip-epoch.json", supervisorDir: "/tmp/stock-machine-roundtrip" },
+    }),
+    onRelease: (requestId: string) => handleRelease(requestId, state),
+    onRecycle: async (): Promise<RecycleOutcome> => ({
+      port: null,
+      pid: null,
+      viceBin: null,
+      killStage: "no_signal",
+      epochBefore: null,
+      outcome: "grant_lookup_failed",
+      reason: "not exercised by stock-machine.test.ts",
+    }),
+    onStatus: (): StatusInstanceEntry[] => [],
+    onHostState: (): HostStateFields => ({
+      pid: process.pid,
+      startedAt: "2026-01-01T00:00:00Z",
+      nodeVersion: process.version,
+      viceBin: "x64sc",
+      maxInstances: 1,
+      basePort: emulatorPort,
+      backend: "stock",
+    }),
+    onMonitorClaim: (): MonitorClaimOutcome => ({ ok: false, code: "bad_request" }),
+    onMonitorRelease: (): MonitorReleaseOutcome => ({ ok: false, code: "bad_request" }),
+    onRelayAttach: (): RelayAttachOutcome => ({ ok: false, code: "internal" }),
+    onOperation: (): OperationNoteOutcome => ({ ok: true }),
+    onHostTool: async () => ({ ok: false, message: "not exercised by stock-machine.test.ts" }),
+    onStageFile: (targetId: string, slot: string) => handleStageFile(targetId, slot, state),
+    onFileTransfer: (request, socket, pending) => handleFileTransfer(request, socket, pending, state),
+  });
+  return { listener, token };
+}
+
+/** Byte-level newline search -- never a whole-buffer string decode, matching
+ * vice-broker-staging.test.ts's own readLineFromSocket(). Control-plane
+ * replies in THIS test never carry trailing payload bytes (stage_file and
+ * acquire are pure JSON-line ops), so `pending` is always discarded here. */
+function readControlLine(socket: Socket): Promise<Record<string, unknown>> {
+  return new Promise((resolvePromise, reject) => {
+    let carry = Buffer.alloc(0);
+    const onData = (chunk: Buffer): void => {
+      carry = Buffer.concat([carry, chunk]);
+      const idx = carry.indexOf(0x0a);
+      if (idx === -1) return;
+      socket.removeListener("data", onData);
+      const lineText = carry.subarray(0, idx).toString("utf8");
+      try {
+        resolvePromise(JSON.parse(lineText) as Record<string, unknown>);
+      } catch (e) {
+        reject(new Error(`could not parse reply line ${JSON.stringify(lineText)}: ${(e as Error).message}`));
+      }
+    };
+    socket.on("data", onData);
+    socket.once("error", reject);
+  });
+}
+
+function makeRoundTripControlClient(port: number): { sendAndRead: (obj: Record<string, unknown>) => Promise<Record<string, unknown>>; close: () => void } {
+  const socket = netConnect({ host: "127.0.0.1", port });
+  return {
+    async sendAndRead(obj: Record<string, unknown>): Promise<Record<string, unknown>> {
+      const p = readControlLine(socket);
+      socket.write(`${JSON.stringify(obj)}\n`);
+      return p;
+    },
+    close(): void {
+      socket.destroy();
+    },
+  };
+}
+
+async function waitForRoundTrip(predicate: () => boolean, deadlineMs: number, pollMs = 15): Promise<boolean> {
+  const deadline = Date.now() + deadlineMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return true;
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+  return predicate();
+}
+
+/** A REAL StockConnectBrokerControl.stageFile(), sending `stage_file` over
+ * the SAME control connection an `acquire` already ran on -- ownership
+ * (`ownsTarget()`) is gated on that connection identity, broker-side. */
+function makeRealStageFile(control: { sendAndRead: (obj: Record<string, unknown>) => Promise<Record<string, unknown>> }, token: string) {
+  return async (opts: { targetId: string; slot: string }): Promise<{ ok: true; handle: string; emulatorFilename: string } | { ok: false; reason: string }> => {
+    const reply = await control.sendAndRead({ op: "stage_file", target_id: opts.targetId, slot: opts.slot, token });
+    if (reply.kind === "file_staged") {
+      return { ok: true, handle: reply.handle as string, emulatorFilename: reply.emulator_filename as string };
+    }
+    return { ok: false, reason: typeof reply.code === "string" ? reply.code : "internal" };
+  };
+}
+
+/** A REAL TransferFileFn dialling the round trip's own control listener via
+ * dialFileTransfer() (broker-endpoint.ts) and streaming through the SAME
+ * cap-and-digest Transform (transfer-hash.mts) the real production
+ * defaultTransferFile() (stock-connect.ts) uses -- composed here from the
+ * same exported public seams a real caller would use, since
+ * defaultTransferFile() itself is not exported (see that function's own
+ * header comment for why it must not become one: no injectable
+ * filesystem-root seam is to be added to it). */
+function makeRealTransferFile(port: number, token: string): TransferFileFn {
+  return async (request: TransferFileRequest): Promise<TransferFileResult> => {
+    if (request.direction === "upload") {
+      let size: number;
+      try {
+        size = statSync(request.sourcePath).size;
+      } catch (e) {
+        return { ok: false, reason: `cannot read source file ${request.sourcePath}: ${(e as Error).message}` };
+      }
+      if (size > TRANSFER_MAX_BYTES) {
+        return { ok: false, reason: `transfer exceeds the ${TRANSFER_MAX_BYTES} byte cap; source file is ${size} bytes` };
+      }
+      const digestPass = createHashAndCountTransform({ capBytes: TRANSFER_MAX_BYTES });
+      await pipeline(
+        createReadStream(request.sourcePath),
+        digestPass,
+        new Writable({
+          write(_chunk, _encoding, callback) {
+            callback();
+          },
+        }),
+      );
+      const { byteLength, sha256 } = digestPass.result();
+
+      const dialResult = await dialFileTransfer({ handle: request.handle, direction: "upload", byteLength, sha256, token, port, candidates: ["127.0.0.1"] });
+      if (!dialResult.ok) return { ok: false, reason: dialResult.reason };
+      const { socket } = dialResult;
+      try {
+        const sendPass = createHashAndCountTransform({ capBytes: TRANSFER_MAX_BYTES });
+        await pipeline(createReadStream(request.sourcePath), sendPass, socket);
+        return { ok: true, byteLength, sha256 };
+      } catch (e) {
+        return { ok: false, reason: `transfer failed while sending: ${(e as Error).message}` };
+      } finally {
+        if (!socket.destroyed) socket.destroy();
+      }
+    }
+
+    const dialResult = await dialFileTransfer({ handle: request.handle, direction: "download", token, port, candidates: ["127.0.0.1"] });
+    if (!dialResult.ok) return { ok: false, reason: dialResult.reason };
+    if (dialResult.direction !== "download") {
+      dialResult.socket.destroy();
+      return { ok: false, reason: "internal error -- expected a download transfer reply" };
+    }
+    const { socket, byteLength, sha256, pending } = dialResult;
+    try {
+      if (byteLength > TRANSFER_MAX_BYTES) {
+        return { ok: false, reason: `broker declared byteLength ${byteLength} exceeds the ${TRANSFER_MAX_BYTES} byte cap` };
+      }
+      if (pending.length > 0) socket.unshift(pending);
+      mkdirSync(dirname(request.destPath), { recursive: true });
+      const tmpPath = `${request.destPath}.tmp-${process.pid}-${Date.now()}`;
+      const transform = createHashAndCountTransform({ capBytes: TRANSFER_MAX_BYTES });
+      try {
+        await pipeline(socket, transform, createWriteStream(tmpPath));
+      } catch (e) {
+        rmSync(tmpPath, { force: true });
+        return { ok: false, reason: `transfer failed while receiving: ${(e as Error).message}` };
+      }
+      const observed = transform.result();
+      const verdict = verifyObserved({ byteLength, sha256 }, observed);
+      if (!verdict.ok) {
+        rmSync(tmpPath, { force: true });
+        return { ok: false, reason: verdict.reason };
+      }
+      renameSync(tmpPath, request.destPath);
+      return { ok: true, byteLength: observed.byteLength, sha256: observed.sha256 };
+    } finally {
+      if (!socket.destroyed) socket.destroy();
+    }
+  };
+}
+
+/** Every byte value 0x00..0xFF, repeated, spanning well over 64 KiB -- so a
+ * UTF-8 replacement anywhere on the journey shows up as a byte difference
+ * rather than passing by luck (per this task's own acceptance criteria). */
+function fullByteRangeRoundTripPayload(): Buffer {
+  const unit = Buffer.alloc(256);
+  for (let i = 0; i < 256; i++) unit[i] = i;
+  return Buffer.concat(Array(300).fill(unit) as Buffer[]); // 76800 bytes > 65536
+}
+
+let nextRoundTripPort = 27600;
+function nextRoundTripEmulatorPort(): number {
+  nextRoundTripPort += 1;
+  return nextRoundTripPort;
+}
+
+test("vice_snapshot_save/vice_snapshot_load round trip: the same bytes make the whole journey across two roots that cannot see each other, and the staging directory is gone when the session is", async () => {
+  const clientDir = mkdtempSync(join(tmpdir(), "vice-snapshot-roundtrip-client-"));
+  const brokerHome = mkdtempSync(join(tmpdir(), "vice-snapshot-roundtrip-broker-"));
+  const prevProjectDir = process.env.CLAUDE_PROJECT_DIR;
+  const prevBrokerHome = process.env.VICE_BROKER_HOME;
+  process.env.CLAUDE_PROJECT_DIR = clientDir;
+  process.env.VICE_BROKER_HOME = brokerHome;
+  resetStagingForTest();
+
+  const emulatorPort = nextRoundTripEmulatorPort();
+  const grantId = "req-64-04-roundtrip";
+  const state = setupRoundTripBrokerState(emulatorPort, grantId);
+  const { listener, token } = await startRoundTripListener(state, emulatorPort);
+  const control = makeRoundTripControlClient(listener.port);
+  try {
+    const acquireReply = await control.sendAndRead({ op: "acquire", id: grantId, token });
+    assert.equal(acquireReply.kind, "grant");
+
+    const payload = fullByteRangeRoundTripPayload();
+
+    // The DI stub emulator: DUMP writes the fixture bytes to the staged
+    // path the request body named; UNDUMP reads them back and asserts
+    // equality itself -- the round trip's own proof, not a second
+    // assertion bolted on afterwards.
+    const { session, sends } = makeSession((commandType, body) => {
+      if (commandType === CommandType.Dump) {
+        const filenameLen = body[2]!;
+        const stagedPath = body.subarray(3, 3 + filenameLen).toString("ascii");
+        mkdirSync(dirname(stagedPath), { recursive: true });
+        writeFileSync(stagedPath, payload);
+        return undefined;
+      }
+      if (commandType === CommandType.Undump) {
+        const filenameLen = body[0]!;
+        const stagedPath = body.subarray(1, 1 + filenameLen).toString("ascii");
+        // The upload-completion race (documented in handleSnapshotLoad's own
+        // doc comment, and disclosed as an accepted risk in this plan's
+        // SUMMARY, R-63-04-shaped): the client's own upload -- a local
+        // pipeline() promise resolving, or the transfer socket observing
+        // "close" -- is NOT a broker-side completion confirmation. There is
+        // no `transfer_complete` frame on the wire (vice-broker.mts's own
+        // handleFileTransfer() never writes one), so receivePayloadToFile()'s
+        // digest-verify-then-rename can still be running its own
+        // continuation the instant this stub is asked to open the file --
+        // exactly the race 64-03-SUMMARY.md measured directly. A REAL
+        // emulator would race this identical window; this stub polls
+        // (bounded) rather than assuming zero latency, so this test proves
+        // the bytes eventually arrive intact rather than masking the race
+        // behind a lucky ordering.
+        return (async () => {
+          const arrived = await waitForRoundTrip(() => existsSync(stagedPath), 2000);
+          assert.ok(arrived, "the uploaded bytes must eventually land at the staged path (the accepted-risk race must still resolve, not hang)");
+          const stagedBytes = readFileSync(stagedPath);
+          assert.ok(stagedBytes.equals(payload), "the bytes UNDUMP is asked to load must equal the fixture bytes byte-for-byte");
+          return { type: "undump", requestId: 1, errorCode: 0, programCounter: 0 };
+        })();
+      }
+      return undefined;
+    });
+    session.targetId = grantId;
+    session.brokerControl = { ...session.brokerControl, stageFile: makeRealStageFile(control, token) } as StockConnectSession["brokerControl"];
+    session.deps = { ...session.deps, transferFile: makeRealTransferFile(listener.port, token) };
+
+    const saveResult = await handleSnapshotSave({ name: "roundtrip_1" }, session, fakeDeps);
+    assert.equal(saveResult.isError, false, `save must succeed: ${JSON.stringify(saveResult)}`);
+    assert.equal(sends.length, 1);
+    const savePayload = JSON.parse(saveResult.content[0]!.text) as Record<string, unknown>;
+    const localPath = savePayload.path as string;
+    assert.ok(localPath.startsWith(clientDir), "the client's own snapshot path must live under the client's own root");
+    assert.ok(!localPath.startsWith(brokerHome), "the client's own snapshot path must never live under the broker's root");
+    assert.ok(existsSync(localPath), "the downloaded snapshot must exist at the client's own local path");
+    assert.ok(readFileSync(localPath).equals(payload), "the client's own downloaded file must equal the fixture bytes byte-for-byte");
+
+    const loadResult = await handleSnapshotLoad({ name: "roundtrip_1" }, session, fakeDeps);
+    assert.equal(loadResult.isError, false, `load must succeed: ${JSON.stringify(loadResult)}`);
+    assert.equal(sends.length, 2);
+    assert.equal(sends[1]!.commandType, CommandType.Undump);
+    // The UNDUMP responder above already asserted the staged bytes equal
+    // the fixture on the broker's own side -- this is the OTHER half:
+    // nothing the client uploaded touched the broker's root by a path the
+    // client itself constructed (it only ever names snapshotPathFor(name),
+    // firmly under clientDir).
+    const uploadedFromPath = savePayload.path as string;
+    assert.ok(uploadedFromPath.startsWith(clientDir));
+
+    // After the session's connection closes, the broker's own staging
+    // directory for this grant must no longer exist (D-06/XFER-07).
+    const sessionDir = join(brokerHome, "staging", grantId);
+    assert.ok(existsSync(sessionDir), "the session directory must exist once a slot has been staged");
+    control.close();
+    const gone = await waitForRoundTrip(() => !existsSync(sessionDir), 2000);
+    assert.ok(gone, "the session's staging directory must be removed once its connection closes");
+  } finally {
+    listener.server.close();
+    resetStagingForTest();
+    if (prevProjectDir === undefined) delete process.env.CLAUDE_PROJECT_DIR;
+    else process.env.CLAUDE_PROJECT_DIR = prevProjectDir;
+    if (prevBrokerHome === undefined) delete process.env.VICE_BROKER_HOME;
+    else process.env.VICE_BROKER_HOME = prevBrokerHome;
+    rmSync(clientDir, { recursive: true, force: true });
+    rmSync(brokerHome, { recursive: true, force: true });
+  }
+});
