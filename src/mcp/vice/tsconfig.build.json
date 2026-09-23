@@ -20,6 +20,8 @@
     "tool-location.mts",
     "broker-home.mts",
     "broker-relay.mts",
-    "broker-incident.mts"
+    "broker-incident.mts",
+    "transfer-hash.mts",
+    "broker-transfer.mts"
   ]
 }
