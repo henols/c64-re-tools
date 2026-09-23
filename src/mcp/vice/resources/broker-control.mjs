@@ -728,23 +728,52 @@ function attachControlProtocol(server, opts, pendingAcquires) {
                     });
                     return;
                 }
-                // Flipped BEFORE onRelayAttach() is ever called -- a synchronous
-                // splice inside that callback (spliceRelay() installs its own
-                // "data" listeners on THIS socket) must never race this
-                // connection's next "data" event. See the relayMode declaration's
-                // own header comment above.
+                // Flipped BEFORE onRelayAttach() is ever called -- this socket's own
+                // line reader (see the relayMode declaration's own header comment
+                // above) must never decode a byte that belongs to the splice, even
+                // though (G-64-4, plan 64-12) onRelayAttach() may now be AWAITING a
+                // bounded emulator-leg dial for some time before it settles. The
+                // client leg itself is paused for that same window by
+                // vice-broker.mts's own handleRelayAttach() -- see this function's
+                // own comment below on the refusal path's explicit `socket.resume()`
+                // for the other half of that story.
                 relayMode = true;
-                const outcome = opts.onRelayAttach(targetId, channel, presentedHandle, socket, remainderAfterLine);
-                if (outcome.ok) {
-                    writeLine(socket, { kind: "attached" });
-                }
-                else {
-                    // The attach FAILED -- this socket never became a relay, so its
-                    // line reader must resume rather than silently going deaf on a
-                    // connection the caller may still retry `attach` over.
+                Promise.resolve(opts.onRelayAttach(targetId, channel, presentedHandle, socket, remainderAfterLine))
+                    .then((outcome) => {
+                    // The client leg closed while this attach was in flight -- there
+                    // is nobody left to write a reply to, and nothing this arm does
+                    // past this point (resuming a destroyed socket, starting a
+                    // splice against it) is meaningful.
+                    if (socket.destroyed)
+                        return;
+                    if (outcome.ok) {
+                        // Written BEFORE start() ever runs (see RelayAttachOutcome's
+                        // own header comment and handleRelayAttach()'s): the emulator
+                        // socket carries no "data" listener and is not piped until
+                        // start() runs, so this write is guaranteed to precede any
+                        // byte the emulator has already sent.
+                        writeLine(socket, { kind: "attached" });
+                        outcome.start();
+                    }
+                    else {
+                        // The attach FAILED -- this socket never became a relay, so
+                        // its line reader must resume rather than silently going deaf
+                        // on a connection the caller may still retry `attach` over.
+                        // `socket.resume()` is a safe no-op if handleRelayAttach()
+                        // never actually paused it (every SYNCHRONOUS refusal, which
+                        // runs before that pause).
+                        relayMode = false;
+                        socket.resume();
+                        writeLine(socket, { kind: "error", code: outcome.code, message: outcome.message ?? `attach refused: ${outcome.code}` });
+                    }
+                })
+                    .catch((err) => {
+                    if (socket.destroyed)
+                        return;
                     relayMode = false;
-                    writeLine(socket, { kind: "error", code: outcome.code, message: `attach refused: ${outcome.code}` });
-                }
+                    socket.resume();
+                    writeLine(socket, { kind: "error", code: "internal", message: `attach: onRelayAttach threw: ${String(err)}` });
+                });
                 return;
             }
             // Phase 64 (XFER-04, D-01/D-02), REVERSED by gap G-64-1 (owner

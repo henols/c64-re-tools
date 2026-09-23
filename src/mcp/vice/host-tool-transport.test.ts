@@ -113,7 +113,15 @@ function baseListenerOptions(onHostTool: (raw: unknown) => Promise<unknown>) {
     }),
     onMonitorClaim: (): MonitorClaimOutcome => ({ ok: false, code: "internal" }) as MonitorClaimOutcome,
     onMonitorRelease: (): MonitorReleaseOutcome => ({ ok: false, code: "internal" }) as MonitorReleaseOutcome,
-    onRelayAttach: () => ({ ok: false, code: "internal" as const }),
+    // `ok: false as const` (not just `code`) is required here (G-64-4, plan
+    // 64-12): RelayAttachOutcome's `ok: true` branch gained a required
+    // `start` field, which stops TypeScript's usual leniency for a
+    // two-branch boolean-discriminated union from accepting an inferred,
+    // WIDENED `{ ok: boolean; code: "internal" }` return type -- without
+    // this, `ok` infers as plain `boolean` here (no contextual type flows
+    // through baseListenerOptions()'s own un-annotated return) and fails to
+    // narrow to the `ok: false` branch.
+    onRelayAttach: () => ({ ok: false as const, code: "internal" as const }),
     onOperation: () => ({ ok: true as const }),
     onHostTool,
   };

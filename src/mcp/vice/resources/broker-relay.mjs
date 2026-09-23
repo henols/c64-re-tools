@@ -111,22 +111,29 @@ export const defaultArmIdleTimer = ({ socket, ms, onExpire }) => {
     };
 };
 /**
- * Dials the emulator (via an injectable `connect`, defaulting to
- * node:net's own) and splices it to `opts.clientSocket` with
- * `Socket.prototype.pipe()` in BOTH directions -- never a hand-rolled copy
- * loop, never a decode of either direction's bytes. `opts.pending`, if
- * non-empty, is written to the emulator socket BEFORE either pipe is
- * wired -- Node queues a `write()` internally even before the underlying
- * TCP connection completes, so this never races the dial itself. Byte
- * counters are updated from each socket's own `"data"` listener, installed
- * alongside (not instead of) the pipe -- `pipe()` does not itself expose a
- * running byte count.
+ * Splices an ALREADY-CONNECTED emulator socket (`opts.emulatorSocket`) to
+ * `opts.clientSocket` with `Socket.prototype.pipe()` in BOTH directions --
+ * never a hand-rolled copy loop, never a decode of either direction's
+ * bytes. `opts.pending`, if non-empty, is written to the emulator socket
+ * BEFORE either pipe is wired, so nothing the client already sent is
+ * reordered behind a later chunk. Byte counters are updated from each
+ * socket's own `"data"` listener, installed alongside (not instead of) the
+ * pipe -- `pipe()` does not itself expose a running byte count.
  *
- * Never throws: `connect()` (real or injected) is handed a host/port pair
- * this broker already resolved, and any dial failure surfaces as the
- * emulator socket's own `"error"`/`"close"` events, which this function
- * treats exactly like any other death -- reported via `onDeath()`, never
- * acted on here.
+ * THIS FUNCTION NO LONGER DIALS (G-64-4, plan 64-12): it used to call an
+ * injectable `connect` itself and splice the result immediately, before the
+ * TCP connect had actually succeeded -- which is exactly what let a cold
+ * session's first `attached` acknowledgement reach the client before the
+ * freshly launched emulator had bound its monitor port at all (see
+ * SpliceRelayOptions.emulatorSocket's own header comment for the full
+ * incident). The dial is now dialEmulatorLeg()'s own job, awaited by the
+ * caller (vice-broker.mts's handleRelayAttach()) BEFORE this function is
+ * ever called; by the time this runs, the emulator leg is already
+ * connected, and any FURTHER failure on it (a post-connect RST, an
+ * idle-timeout close, an ordinary end) is reported through `onDeath()`
+ * exactly as before -- never acted on here, never thrown. WHAT NOT TO DO:
+ * never reintroduce a dial in this function, and never call it before the
+ * emulator socket handed in has actually connected.
  *
  * DEATH DETECTION (Phase 63, SESS-03/04): each leg's own `"close"` event
  * carries Node's own `hadError` boolean -- MEASURED this session against a
@@ -149,8 +156,7 @@ export const defaultArmIdleTimer = ({ socket, ms, onExpire }) => {
  * notifier twice for the SAME death harmless.
  */
 export function spliceRelay(opts) {
-    const connectFn = opts.connect ?? netConnect;
-    const emulatorSocket = connectFn({ host: opts.host, port: opts.port });
+    const emulatorSocket = opts.emulatorSocket;
     let bytesClientToEmulator = 0;
     let bytesEmulatorToClient = 0;
     let deathReported = false;
@@ -272,6 +278,104 @@ export function resolveRelayChannelTarget(channel, targetId, instance) {
         return { ok: true, port: instance.remoteMonitorPort };
     }
     return { ok: true, port: instance.port };
+}
+/** Default deadline (ms) for the bounded emulator-leg dial -- about 35 times
+ * the slowest real x64sc bind latency measured on this host (142ms). */
+export const DEFAULT_RELAY_DIAL_DEADLINE_MS = 5000;
+/** Default retry interval (ms) between ECONNREFUSED attempts -- puts the
+ * first successful attempt within about this long of the emulator's own
+ * bind, on real x64sc's measured 55-142ms bind latency. */
+export const DEFAULT_RELAY_DIAL_RETRY_MS = 50;
+function delay(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+/** One connect attempt, settled exactly once on the FIRST of `"connect"` or
+ * `"error"` -- never both, since each attempt removes the other's listener
+ * the instant it fires. Resolves, never rejects: an `"error"` is data, not
+ * an exception, to this function's own caller. */
+function attemptEmulatorConnect(connectFn, host, port) {
+    return new Promise((resolve) => {
+        const socket = connectFn({ host, port });
+        let settled = false;
+        const onConnect = () => {
+            if (settled)
+                return;
+            settled = true;
+            socket.removeListener("error", onError);
+            resolve({ connected: true, socket });
+        };
+        const onError = (err) => {
+            if (settled)
+                return;
+            settled = true;
+            socket.removeListener("connect", onConnect);
+            resolve({ connected: false, code: err.code ?? null, socket });
+        };
+        socket.once("connect", onConnect);
+        socket.once("error", onError);
+    });
+}
+/**
+ * The bounded emulator-leg dial (G-64-4): calls `opts.connect` (defaulting
+ * to node:net's own), and on an `ECONNREFUSED` error destroys that
+ * attempt's socket and tries again after `retryIntervalMs`, until
+ * `deadlineMs` has elapsed -- any OTHER connect error (a different errno, a
+ * refused host) fails at once, with no retry, since retrying it can never
+ * change the outcome. Checks `opts.isAbandoned()` before every attempt and
+ * again immediately after a successful connect, destroying the socket it
+ * just opened if abandonment fired in that window (see
+ * DialEmulatorLegOptions.isAbandoned's own comment). Never throws.
+ */
+export function dialEmulatorLeg(opts) {
+    const connectFn = opts.connect ?? netConnect;
+    const deadlineMs = opts.deadlineMs ?? DEFAULT_RELAY_DIAL_DEADLINE_MS;
+    const retryIntervalMs = opts.retryIntervalMs ?? DEFAULT_RELAY_DIAL_RETRY_MS;
+    const startedAt = Date.now();
+    let attempts = 0;
+    let lastErrorCode = null;
+    return (async () => {
+        for (;;) {
+            if (opts.isAbandoned())
+                return { ok: false, abandoned: true };
+            attempts += 1;
+            const attempt = await attemptEmulatorConnect(connectFn, opts.host, opts.port);
+            if (attempt.connected) {
+                if (opts.isAbandoned()) {
+                    if (!attempt.socket.destroyed)
+                        attempt.socket.destroy();
+                    return { ok: false, abandoned: true };
+                }
+                return { ok: true, socket: attempt.socket };
+            }
+            if (!attempt.socket.destroyed)
+                attempt.socket.destroy();
+            lastErrorCode = attempt.code;
+            if (attempt.code !== "ECONNREFUSED") {
+                return {
+                    ok: false,
+                    abandoned: false,
+                    reason: `connect failed with ${attempt.code ?? "an unknown error"} -- not retried (only ECONNREFUSED is retried)`,
+                    lastErrorCode,
+                    attempts,
+                    elapsedMs: Date.now() - startedAt,
+                };
+            }
+            const elapsedMs = Date.now() - startedAt;
+            if (elapsedMs >= deadlineMs) {
+                return {
+                    ok: false,
+                    abandoned: false,
+                    reason: `no connection accepted after ${attempts} attempt(s) within ${deadlineMs}ms`,
+                    lastErrorCode,
+                    attempts,
+                    elapsedMs,
+                };
+            }
+            if (opts.isAbandoned())
+                return { ok: false, abandoned: true };
+            await delay(retryIntervalMs);
+        }
+    })();
 }
 /** Default idle timeout (ms) applied to a relay connection carrying no
  * traffic in either direction (Plan 63-04, SESS-04) -- the broker's OWN

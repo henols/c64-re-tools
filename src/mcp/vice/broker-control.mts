@@ -138,6 +138,16 @@ export type ControlRequestKind = "acquire" | "release" | "recycle" | "status" | 
 // FIRST/primary allocation failed, or the fork's single allocation
 // failed), so a port-starved host's exact failure cause is legible at the
 // control plane, not only in the broker log.
+// `emulator_unreachable` joins the vocabulary as its OWN code (G-64-4, plan
+// 64-12): a bounded emulator-leg dial that ran out its deadline, or hit a
+// non-retryable connect error, WITHOUT being abandoned -- reachable only
+// after handleRelayAttach()'s own handle check has already passed, so it
+// tells a probing caller nothing usable about handles (T-63-01 unchanged).
+// Reused rather than collapsed into `internal`, which means a broker fault
+// -- this means the far side (the emulator) is not yet reachable, a
+// distinction the tool-facing text (stock-handler.ts's convertHandshakeError())
+// depends on to stay off the wedge/hung/unresponsive wording this codebase
+// forbids for it.
 export type ControlErrorCode =
   | "unauthorized"
   | "bad_request"
@@ -146,7 +156,8 @@ export type ControlErrorCode =
   | "no_free_text_port"
   | "at_capacity"
   | "internal"
-  | "monitor_owned";
+  | "monitor_owned"
+  | "emulator_unreachable";
 
 export interface ControlRequest {
   op: string;
@@ -285,17 +296,33 @@ export type MonitorClaimOutcome =
   | { ok: false; code: "monitor_owned"; holder: MonitorHolder }
   | { ok: false; code: "bad_request" | "internal" };
 
-/** Discriminated outcome for `attach` (Phase 63, SESS-02): resolved by
- * vice-broker.mts's own handleRelayAttach(). `denied` covers every
- * authorisation failure -- an unrecognised handle, a handle presented for a
- * channel with no current holder, or a channel that is already spliced --
- * deliberately collapsed to ONE code rather than three, so a probing caller
- * cannot distinguish "wrong handle" from "already attached" by the code
- * alone (both are refused with the same ownership wording, never an
- * emulator-fault wording -- see T-63-01). `bad_request` is reserved for an
- * unknown target id (the same meaning `monitor_claim`'s own `bad_request`
- * carries). */
-export type RelayAttachOutcome = { ok: true } | { ok: false; code: "denied" | "bad_request" | "internal" };
+/** Discriminated outcome for `attach` (Phase 63, SESS-02; widened by G-64-4,
+ * plan 64-12): resolved by vice-broker.mts's own handleRelayAttach(). `denied`
+ * covers every authorisation failure -- an unrecognised handle, a handle
+ * presented for a channel with no current holder, a channel that is already
+ * spliced, or a dial this attach's own wait ABANDONED (the client leg
+ * closed, or the claim/instance changed under it while the dial was in
+ * flight) -- deliberately collapsed to ONE code rather than several, so a
+ * probing caller cannot distinguish "wrong handle" from "already attached"
+ * by the code alone (both are refused with the same ownership wording,
+ * never an emulator-fault wording -- see T-63-01). `bad_request` is
+ * reserved for an unknown target id (the same meaning `monitor_claim`'s own
+ * `bad_request` carries). `emulator_unreachable` (G-64-4) is the ONE new
+ * member: a dial that ran out its bounded deadline, or hit a non-retryable
+ * connect error, WITHOUT being abandoned -- reachable only after the
+ * handle check above has already passed, so it tells a probing caller
+ * nothing usable about handles (T-63-01 unchanged). `ok: true` now carries
+ * a `start` continuation rather than nothing: see onRelayAttach's own
+ * comment and vice-broker.mts's handleRelayAttach() header comment for why
+ * the splice itself is deferred to this continuation, called only AFTER
+ * the `attached` line has been written. `message`, present only on a
+ * refusal, is optional wire-facing text (G-64-4's own errno-free refusal
+ * text for `emulator_unreachable`); its absence falls back to the
+ * pre-existing `attach refused: ${code}` wording, unchanged for every other
+ * code. */
+export type RelayAttachOutcome =
+  | { ok: true; start: () => void }
+  | { ok: false; code: "denied" | "bad_request" | "internal" | "emulator_unreachable"; message?: string };
 
 /** Discriminated outcome for `operation` (Phase 63, SESS-05): resolved by
  * vice-broker.mts's own handleOperationNote(). `bad_request` covers the ONE
@@ -453,8 +480,17 @@ export interface StartControlListenerOptions {
    * is this callback's own job. `socket` is the live relay connection
    * itself; `pending` is every byte that arrived, in the SAME chunk, past
    * the attach line's own terminator -- a raw Buffer, never decoded, to
-   * hand straight to spliceRelay() as its own `pending` option. */
-  onRelayAttach: (targetId: string, channel: MonitorChannel, presentedHandle: string, socket: Socket, pending: Buffer) => RelayAttachOutcome;
+   * hand straight to spliceRelay() as its own `pending` option.
+   *
+   * Widened to `RelayAttachOutcome | Promise<RelayAttachOutcome>` (G-64-4,
+   * plan 64-12): vice-broker.mts's own handleRelayAttach() now awaits a
+   * bounded emulator-leg dial before ever answering, so it can no longer
+   * settle synchronously on its success path -- every synchronous refusal
+   * it still makes (an unrecognised handle, an already-attached channel,
+   * an unknown target) is unaffected, since those all happen before its own
+   * first `await`. See this file's own `attach` dispatch arm below for how
+   * the two shapes are both handled through one `Promise.resolve()`. */
+  onRelayAttach: (targetId: string, channel: MonitorChannel, presentedHandle: string, socket: Socket, pending: Buffer) => RelayAttachOutcome | Promise<RelayAttachOutcome>;
   /** Called on `operation` (Phase 63, SESS-05), AFTER the token check AND
    * this listener's own target_id/ownership/channel gates have already
    * passed -- the SAME dispatch shape `onMonitorClaim`/`onMonitorRelease`
@@ -1338,22 +1374,49 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
           });
           return;
         }
-        // Flipped BEFORE onRelayAttach() is ever called -- a synchronous
-        // splice inside that callback (spliceRelay() installs its own
-        // "data" listeners on THIS socket) must never race this
-        // connection's next "data" event. See the relayMode declaration's
-        // own header comment above.
+        // Flipped BEFORE onRelayAttach() is ever called -- this socket's own
+        // line reader (see the relayMode declaration's own header comment
+        // above) must never decode a byte that belongs to the splice, even
+        // though (G-64-4, plan 64-12) onRelayAttach() may now be AWAITING a
+        // bounded emulator-leg dial for some time before it settles. The
+        // client leg itself is paused for that same window by
+        // vice-broker.mts's own handleRelayAttach() -- see this function's
+        // own comment below on the refusal path's explicit `socket.resume()`
+        // for the other half of that story.
         relayMode = true;
-        const outcome = opts.onRelayAttach(targetId, channel, presentedHandle, socket, remainderAfterLine);
-        if (outcome.ok) {
-          writeLine(socket, { kind: "attached" });
-        } else {
-          // The attach FAILED -- this socket never became a relay, so its
-          // line reader must resume rather than silently going deaf on a
-          // connection the caller may still retry `attach` over.
-          relayMode = false;
-          writeLine(socket, { kind: "error", code: outcome.code, message: `attach refused: ${outcome.code}` });
-        }
+        Promise.resolve(opts.onRelayAttach(targetId, channel, presentedHandle, socket, remainderAfterLine))
+          .then((outcome) => {
+            // The client leg closed while this attach was in flight -- there
+            // is nobody left to write a reply to, and nothing this arm does
+            // past this point (resuming a destroyed socket, starting a
+            // splice against it) is meaningful.
+            if (socket.destroyed) return;
+            if (outcome.ok) {
+              // Written BEFORE start() ever runs (see RelayAttachOutcome's
+              // own header comment and handleRelayAttach()'s): the emulator
+              // socket carries no "data" listener and is not piped until
+              // start() runs, so this write is guaranteed to precede any
+              // byte the emulator has already sent.
+              writeLine(socket, { kind: "attached" });
+              outcome.start();
+            } else {
+              // The attach FAILED -- this socket never became a relay, so
+              // its line reader must resume rather than silently going deaf
+              // on a connection the caller may still retry `attach` over.
+              // `socket.resume()` is a safe no-op if handleRelayAttach()
+              // never actually paused it (every SYNCHRONOUS refusal, which
+              // runs before that pause).
+              relayMode = false;
+              socket.resume();
+              writeLine(socket, { kind: "error", code: outcome.code, message: outcome.message ?? `attach refused: ${outcome.code}` });
+            }
+          })
+          .catch((err) => {
+            if (socket.destroyed) return;
+            relayMode = false;
+            socket.resume();
+            writeLine(socket, { kind: "error", code: "internal" as ControlErrorCode, message: `attach: onRelayAttach threw: ${String(err)}` });
+          });
         return;
       }
 

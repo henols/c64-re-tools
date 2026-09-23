@@ -55,7 +55,7 @@ resolveBinmonHost, } from "./broker-launch.mjs";
 // build.ts pass (both source and target are listed in
 // HOST_BOUND_ARTIFACTS/tsconfig.build.json's include[] in this same
 // change).
-import { spliceRelay, resolveRelayChannelTarget, relaySessionKey, resolveRelayIdleMs, resolveRelayKeepAliveMs } from "./broker-relay.mjs";
+import { spliceRelay, resolveRelayChannelTarget, relaySessionKey, resolveRelayIdleMs, resolveRelayKeepAliveMs, dialEmulatorLeg, DEFAULT_RELAY_DIAL_DEADLINE_MS, DEFAULT_RELAY_DIAL_RETRY_MS, } from "./broker-relay.mjs";
 // A VALUE import of the broker's own incident writer (Phase 63, SESS-05) --
 // safe here for the SAME reason every other sibling value import in this
 // file is: this file is ALWAYS run from its own compiled resources/ form,
@@ -1131,37 +1131,73 @@ export function tearDownRelaySessionsForGrant(targetId, state) {
     }
     return torn;
 }
-/** Answers `attach` (Phase 63, SESS-02): the ONE place a relay connection's
- * presented handle is checked, and the ONE place spliceRelay() is ever
- * called from production wiring. Resolves the instance the SAME way every
- * other target-naming op resolves its own (resolveInstanceForMonitorTarget()
- * above); refuses `bad_request` for an unknown target, matching
- * handleMonitorClaim()'s own posture for the identical failure.
+/** Answers `attach` (Phase 63, SESS-02; gated at the seam by G-64-4, plan
+ * 64-12, Task 1): the ONE place a relay connection's presented handle is
+ * checked, and the ONE place spliceRelay() is ever called from production
+ * wiring. Resolves the instance the SAME way every other target-naming op
+ * resolves its own (resolveInstanceForMonitorTarget() above); refuses
+ * `bad_request` for an unknown target, matching handleMonitorClaim()'s own
+ * posture for the identical failure.
  *
- * Every OTHER failure is `denied`, deliberately collapsed into one code
- * (RelayAttachOutcome's own header comment explains why): no current
- * holder on this channel at all, a holder whose stored handle differs in
- * LENGTH from what was presented (checked before ever calling
+ * Every OTHER SYNCHRONOUS failure is `denied`, deliberately collapsed into
+ * one code (RelayAttachOutcome's own header comment explains why): no
+ * current holder on this channel at all, a holder whose stored handle
+ * differs in LENGTH from what was presented (checked before ever calling
  * timingSafeEqual(), which throws on a length mismatch rather than
  * returning false), a byte-for-byte mismatch under timingSafeEqual()
  * itself, or a channel that is already `attached` -- one emulator socket
  * to splice to, so a second attach on the same channel is refused rather
- * than silently spliced twice.
+ * than silently spliced twice. Every one of these checks runs BEFORE any
+ * `await` in this function, exactly as it did when this function was
+ * synchronous.
  *
- * On success: marks the channel `attached`, resolves the emulator's own
- * host through resolveBinmonHost() (the SAME resolver the argv builder
- * uses -- never a second literal) and its port through
- * broker-relay.mts's own resolveRelayChannelTarget() (plan 63-02) -- the
- * instance record's primary `port` field for the binary channel, its own
- * `remoteMonitorPort` for the text channel, with NO fallback from one to
- * the other on a missing value (T-63-08) -- calls spliceRelay(), and
+ * G-64-4: `attached` used to mean "the splice was wired", not "the
+ * emulator leg connected" -- spliceRelay() dialled the emulator itself and
+ * spliced immediately, with no wait for the TCP connect to succeed, which
+ * is what let a cold session's first PING die under an ECONNREFUSED relay
+ * (see .planning/debug/cold-launch-relay-attach-race.md for the measured
+ * mechanism). This function now marks the channel `attached` synchronously
+ * (so a concurrent second attach is still refused immediately) and THEN
+ * awaits the bounded dial (broker-relay.mjs's dialEmulatorLeg()) before
+ * ever reporting success -- the emulator leg is guaranteed connected by
+ * the time this function's promise resolves `ok: true`.
+ *
+ * The client leg is paused for the duration of that wait (see the
+ * `clientSocket.pause()` call below) so no byte it sends is dropped by
+ * broker-control.mts's own line reader, which already treats this socket as
+ * "relayMode" the instant this function is called and would otherwise
+ * silently discard anything arriving before the splice's own listeners take
+ * over.
+ *
+ * On success: resolves the emulator's own host through resolveBinmonHost()
+ * (the SAME resolver the argv builder uses -- never a second literal) and
+ * its port through broker-relay.mts's own resolveRelayChannelTarget() (plan
+ * 63-02) -- the instance record's primary `port` field for the binary
+ * channel, its own `remoteMonitorPort` for the text channel, with NO
+ * fallback from one to the other on a missing value (T-63-08). Returns a
+ * `start` continuation rather than splicing here directly: broker-control.mts's
+ * attach dispatch arm calls it AFTER writing the `attached` line, which is
+ * what keeps that line strictly ahead of any emulator byte in program order
+ * (the emulator socket carries no "data" listener and is not piped until
+ * `start()` runs). `start()` is what actually calls spliceRelay() and
  * records the returned session in `state.relaySessions` (Phase 63, plan
  * 63-04) keyed by relaySessionKey(targetId, channel), so handleRelayDeath()
- * above can find it again. `deps` (optional, defaulting to real production
- * functions) is threaded straight into every death this session can ever
- * report -- a test overrides it here to prove ordering without touching the
- * real filesystem; the real broker (this file's own `run()`) omits it. */
-export function handleRelayAttach(targetId, channel, presentedHandle, clientSocket, pending, state, deps = {}) {
+ * above can find it again.
+ *
+ * On a dial that never connects, or is abandoned (the client leg closed, or
+ * the instance/holder identity this attach validated no longer matches the
+ * broker's live state): the holder's `attached` marker is cleared and this
+ * function answers `denied` -- Task 2 of this plan refines this branch
+ * (an errno-free wire message, a distinct `emulator_unreachable` code, and
+ * clearing the marker only when the holder is still current); this task
+ * proves the SUCCESS path only.
+ *
+ * `deps` (optional, defaulting to real production functions/constants) is
+ * threaded straight into every death this session can ever report, AND into
+ * the dial itself (dialDeadlineMs/dialRetryIntervalMs) -- a test overrides
+ * these to prove ordering without touching the real filesystem or waiting a
+ * real five seconds; the real broker (this file's own `run()`) omits it. */
+export async function handleRelayAttach(targetId, channel, presentedHandle, clientSocket, pending, state, deps = {}) {
     const instance = resolveInstanceForMonitorTarget(targetId, state);
     if (!instance)
         return { ok: false, code: "bad_request" };
@@ -1184,33 +1220,88 @@ export function handleRelayAttach(targetId, channel, presentedHandle, clientSock
         console.error(`vice-broker: ${target.reason}`);
         return { ok: false, code: "bad_request" };
     }
+    // Everything above is synchronous -- a concurrent second attach on this
+    // exact channel is refused immediately by the `holder.attached` check
+    // above, since THIS line runs before any await in this function.
     holder.attached = true;
+    // G-64-4: pause the client leg BEFORE the first await below. Every byte
+    // it sends while this dial is in flight must stay buffered inside the
+    // socket, not be silently discarded by broker-control.mts's own line
+    // reader (already in "relayMode" for this socket the instant `attach` was
+    // dispatched). Resumed either by the success continuation's own
+    // spliceRelay() -> pipe() call (piping a paused Readable puts it back
+    // into flowing mode) or, on refusal, explicitly by broker-control.mts's
+    // own attach dispatch arm.
+    clientSocket.pause();
     const host = resolveBinmonHost();
-    // Plan 63-04 (SESS-03/04/05): this splice's own death notifier routes
-    // STRAIGHT into handleRelayDeath() above -- evidence first, then release
-    // of exactly this channel. The narrow Plan 63-02 fix this supersedes (a
-    // bare `clientSocket.once("close", () => { holder.attached = false; })`)
-    // is GONE, not merely extended: handleRelayDeath()'s own clearClaim()
-    // step already clears the WHOLE per-channel entry (grantId, handle AND
-    // attached together), which is what forces a re-attach to mint a FRESH
-    // handle via a fresh monitor_claim rather than resurrecting a dead one.
-    const session = spliceRelay({
-        clientSocket,
+    const deadlineMs = deps.dialDeadlineMs ?? DEFAULT_RELAY_DIAL_DEADLINE_MS;
+    const retryIntervalMs = deps.dialRetryIntervalMs ?? DEFAULT_RELAY_DIAL_RETRY_MS;
+    // G-64-4's own abandonment predicate: true once THIS attach's own wait is
+    // stale. `instance`/`holder` here are the EXACT objects validated above --
+    // re-resolving the instance for `targetId` and re-reading the channel's
+    // current holder and comparing by IDENTITY (never by value) is what
+    // catches a recycle respawn (a brand new InstanceRecord object at the
+    // same or a different port) and a release (the SAME instance object, but
+    // a cleared or replaced holder) alike.
+    const isAbandoned = () => {
+        if (clientSocket.destroyed)
+            return true;
+        if (resolveInstanceForMonitorTarget(targetId, state) !== instance)
+            return true;
+        if (instance.monitorClients[channel] !== holder)
+            return true;
+        return false;
+    };
+    const dial = await dialEmulatorLeg({
         host,
         port: target.port,
-        pending,
-        onDeath: (trigger) => handleRelayDeath(targetId, channel, trigger, state, deps),
-        // Plan 63-04 Task 2 (SESS-04): the broker-owned idle deadline and the
-        // labelled-secondary keepalive delay, both resolved fresh per attach
-        // (an operator's env-var override is honoured for every new relay, not
-        // just ones spliced before the broker started) unless a test overrides
-        // either through `deps`.
-        idleMs: deps.idleMs ?? resolveRelayIdleMs(),
-        armIdleTimer: deps.armIdleTimer,
-        keepAliveMs: deps.keepAliveMs ?? resolveRelayKeepAliveMs(),
+        deadlineMs,
+        retryIntervalMs,
+        isAbandoned,
     });
-    state.relaySessions.set(relaySessionKey(targetId, channel), session);
-    return { ok: true };
+    if (!dial.ok) {
+        // Task 1 keeps this branch deliberately simple -- Task 2 refines it
+        // (conditional clearing, an errno-free wire message, a distinct
+        // emulator_unreachable code, and a stderr journal line).
+        holder.attached = false;
+        return { ok: false, code: "denied" };
+    }
+    // Connected -- re-check the SAME three conditions once more before ever
+    // splicing (T-64-G4-02): an instance that reused this exact port after a
+    // kill/recycle while this dial was in flight must never be spliced to as
+    // if it were still this attach's own original target.
+    if (isAbandoned()) {
+        if (!dial.socket.destroyed)
+            dial.socket.destroy();
+        holder.attached = false;
+        return { ok: false, code: "denied" };
+    }
+    const emulatorSocket = dial.socket;
+    return {
+        ok: true,
+        // The synchronous start continuation (see this function's own header
+        // comment): broker-control.mts's attach arm calls this AFTER it has
+        // already written the `attached` line, so the emulator socket -- which
+        // carries no "data" listener and is not piped until this runs -- can
+        // never deliver a byte ahead of that line.
+        start: () => {
+            const session = spliceRelay({
+                clientSocket,
+                emulatorSocket,
+                pending,
+                onDeath: (trigger) => handleRelayDeath(targetId, channel, trigger, state, deps),
+                // Plan 63-04 Task 2 (SESS-04): the broker-owned idle deadline and the
+                // labelled-secondary keepalive delay, both resolved fresh per attach
+                // (an operator's env-var override is honoured for every new relay, not
+                // just ones spliced before the broker started) unless a test overrides
+                // either through `deps`.
+                idleMs: deps.idleMs ?? resolveRelayIdleMs(),
+                armIdleTimer: deps.armIdleTimer,
+                keepAliveMs: deps.keepAliveMs ?? resolveRelayKeepAliveMs(),
+            });
+            state.relaySessions.set(relaySessionKey(targetId, channel), session);
+        },
+    };
 }
 /** Answers `monitor_release` (per-channel): clears ONLY the named
  * channel's entry, ONLY when `targetId` names that channel's CURRENT
