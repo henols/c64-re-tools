@@ -111,6 +111,9 @@ function makeStubBrokerControl(recorder?: Array<string | null>): StockConnectBro
       if (recorder !== undefined) recorder.push(opts.name);
       return { ok: true };
     },
+    async stageFile() {
+      throw new Error("stageFile must not be called by this suite");
+    },
   };
 }
 

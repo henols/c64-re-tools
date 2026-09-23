@@ -43,6 +43,7 @@ import {
   type MonitorClaimOutcome,
   type MonitorReleaseOutcome,
   type OperationNoteOutcome,
+  type StageFileOutcome as ServerStageFileOutcome,
 } from "./broker-control.mts";
 // Phase 33, plan 33-06 (D-15): the profile shape from its one definition.
 import type { LaunchProfile } from "./broker-launch.mts";
@@ -322,6 +323,11 @@ interface FullBrokerDeps {
   /** Phase 63, plan 63-03 (SESS-05): observes the target id/channel/name a
    * noteOperation() call actually sent. */
   onOperation?: (targetId: string, channel: MonitorChannel, name: string | null) => OperationNoteOutcome;
+  /** Phase 64, plan 64-02 (XFER-04): OPTIONAL on StartControlListenerOptions
+   * itself (vice-broker.mts does not wire it until plan 64-03) -- omitted
+   * here means the real "not wired" refusal broker-control.test.ts's own
+   * dispatch-arm test already proves, never a fabricated default. */
+  onStageFile?: (targetId: string, slot: string) => ServerStageFileOutcome;
 }
 
 /** A REAL, fully-protocol'd control listener (broker-control.mts's own
@@ -365,6 +371,10 @@ async function startFullBrokerListener(deps: FullBrokerDeps = {}): Promise<{
     // as of this plan -- this client-focused fixture never exercises
     // host_tool itself, so this stub exists only to satisfy the type.
     onHostTool: async () => ({ ok: false, message: "no onHostTool stub configured" }),
+    // Phase 64, plan 64-02 (XFER-04): OPTIONAL on StartControlListenerOptions
+    // -- conditionally wired, so a test that supplies no stub sees the real
+    // "not wired" refusal the dispatch arm itself produces.
+    onStageFile: deps.onStageFile,
   });
 
   const rawLines: Record<string, unknown>[] = [];
@@ -1258,6 +1268,127 @@ test("monitor_claim: claimMonitor() a control-plane timeout during claim is repo
     assert.deepEqual(result, { ok: false, reason: "timeout" });
   } finally {
     for (const s of sockets) s.destroy();
+    server.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ============================================================================
+// Phase 64, plan 64-02 (XFER-04): stageFile() -- sends through the SAME
+// sendAndAwaitLine() path, the same session and the same token every other
+// op uses; no second control connection is ever opened.
+// ============================================================================
+
+test("stage_file: stageFile() against a stub answering ok resolves a success outcome carrying the broker-minted handle and emulator_filename, and never opens a second socket", async () => {
+  const { server, dir } = await startFullBrokerListener({
+    onAcquire: GRANTING_ACQUIRE,
+    onStageFile: (targetId, slot) => ({ ok: true, handle: `handle-${targetId}-${slot}`, emulatorFilename: `/staging/${targetId}/${slot}.bin` }),
+  });
+  let connectionCount = 0;
+  server.on("connection", () => {
+    connectionCount += 1;
+  });
+  try {
+    const opened = await openBrokerControl(dir);
+    assert.equal(opened.ok, true);
+    if (!opened.ok) return;
+    const targetId = await heldGrantId(opened.session);
+    // A prior claimMonitor() call over the SAME session, to prove
+    // stageFile() opens no ADDITIONAL connection beyond whatever acquire()
+    // itself already opened -- exactly the assertion the pre-existing
+    // claimMonitor() test above makes for that op.
+    await opened.session.claimMonitor({ targetId });
+    const connectionsBeforeStage = connectionCount;
+    const result = await opened.session.stageFile({ targetId, slot: "autostart" });
+    assert.deepEqual(result, { ok: true, handle: `handle-${targetId}-autostart`, emulatorFilename: `/staging/${targetId}/autostart.bin` });
+    assert.equal(connectionCount, connectionsBeforeStage, "stageFile() must open no second TCP connection");
+    await opened.session.release();
+  } finally {
+    server.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("stage_file: a success reply missing handle or emulator_filename is reported as a protocol failure, never a fabricated value", async () => {
+  for (const badReply of [
+    { ok: true, handle: "", emulatorFilename: "/staging/x/autostart.bin" },
+    { ok: true, handle: "real-handle", emulatorFilename: "" },
+  ] as const) {
+    const { server, dir } = await startFullBrokerListener({
+      onAcquire: GRANTING_ACQUIRE,
+      onStageFile: () => badReply as unknown as ServerStageFileOutcome,
+    });
+    try {
+      const opened = await openBrokerControl(dir);
+      assert.equal(opened.ok, true);
+      if (!opened.ok) return;
+      const targetId = await heldGrantId(opened.session);
+      const result = await opened.session.stageFile({ targetId, slot: "autostart" });
+      assert.deepEqual(result, { ok: false, reason: "internal" }, `expected a protocol failure for reply ${JSON.stringify(badReply)}, got ${JSON.stringify(result)}`);
+      await opened.session.release();
+    } finally {
+      server.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("stage_file: a deadline is reported as reason timeout, distinctly from a refusal", async () => {
+  const { server, port, sockets } = await startRawSocketServer();
+  const dir = tmpPoolDir();
+  writeBrokerJson(dir, {
+    version: 1,
+    pid: process.pid,
+    heartbeat_at: new Date().toISOString(),
+    control_host: "127.0.0.1",
+    control_port: port,
+    control_token: "tok-stage-deadline",
+  });
+  try {
+    const opened = await openBrokerControl(dir);
+    assert.equal(opened.ok, true);
+    if (!opened.ok) return;
+    const result = await opened.session.stageFile({ targetId: "req-a", slot: "autostart", timeoutMs: 150 });
+    assert.deepEqual(result, { ok: false, reason: "timeout" });
+  } finally {
+    for (const s of sockets) s.destroy();
+    server.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("stage_file: unauthorized, bad_request and denied are each reported under their own reason", async () => {
+  for (const code of ["unauthorized", "bad_request", "denied"] as const) {
+    const { server, dir } = await startFullBrokerListener({
+      onAcquire: GRANTING_ACQUIRE,
+      onStageFile: () => ({ ok: false, code }),
+    });
+    try {
+      const opened = await openBrokerControl(dir);
+      assert.equal(opened.ok, true);
+      if (!opened.ok) return;
+      const targetId = await heldGrantId(opened.session);
+      const result = await opened.session.stageFile({ targetId, slot: "autostart" });
+      assert.deepEqual(result, { ok: false, reason: code }, `expected reason ${code}, got ${JSON.stringify(result)}`);
+      await opened.session.release();
+    } finally {
+      server.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("stage_file: against a REAL broker (no onStageFile stub configured), the not-wired refusal is reported as reason internal", async () => {
+  const { server, dir } = await startFullBrokerListener({ onAcquire: GRANTING_ACQUIRE });
+  try {
+    const opened = await openBrokerControl(dir);
+    assert.equal(opened.ok, true);
+    if (!opened.ok) return;
+    const targetId = await heldGrantId(opened.session);
+    const result = await opened.session.stageFile({ targetId, slot: "autostart" });
+    assert.deepEqual(result, { ok: false, reason: "internal" });
+    await opened.session.release();
+  } finally {
     server.close();
     rmSync(dir, { recursive: true, force: true });
   }

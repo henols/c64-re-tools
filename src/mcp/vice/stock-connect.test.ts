@@ -264,6 +264,9 @@ function makeStubBrokerControl(opts: StubBrokerControlOptions = {}): {
     async noteOperation() {
       throw new Error("noteOperation must not be called by this suite -- stockConnect()/stockReconnect() never call it");
     },
+    async stageFile() {
+      throw new Error("stageFile must not be called by this suite -- stockConnect()/stockReconnect() never call it");
+    },
   };
   return { brokerControl, state };
 }
@@ -487,6 +490,9 @@ test("WR-07: a releaseMonitor that THROWS during failure cleanup does not replac
         async noteOperation() {
           throw new Error("noteOperation must not be called by stockConnect()");
         },
+        async stageFile() {
+          throw new Error("stageFile must not be called by stockConnect()");
+        },
       };
       await assert.rejects(stockConnect({ host: "127.0.0.1", port, targetId: "grant-wr07-1", brokerControl }), (err: unknown) => {
         assert.ok(err instanceof StockFramingError, `the caller must still see the REAL cause, got ${String(err)}`);
@@ -518,6 +524,9 @@ test("WR-07: a releaseMonitor that answers { ok: false } during failure cleanup 
         },
         async noteOperation() {
           throw new Error("noteOperation must not be called by stockConnect()");
+        },
+        async stageFile() {
+          throw new Error("stageFile must not be called by stockConnect()");
         },
       };
       await assert.rejects(

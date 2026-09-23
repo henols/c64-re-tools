@@ -784,6 +784,26 @@ export type ClaimMonitorOutcome =
 
 export type ReleaseMonitorOutcome = { ok: true } | { ok: false; reason: "timeout" | "unauthorized" | "bad_request" | "denied" | "internal" };
 
+/** Phase 64 (XFER-04, D-01). `slot` is an open-ended string, not a closed
+ * union -- `"autostart"`, `"disk8"` and `"snapshot"` are what this phase
+ * sends (see broker-control.mts's own wire_vocabulary comment on the
+ * `stage_file` op). */
+export interface StageFileOptions {
+  targetId: string;
+  timeoutMs?: number;
+  slot: string;
+}
+
+/** Discriminated outcome for `stageFile()`. A missing or non-string
+ * `handle`/`emulator_filename` in a success reply is a protocol failure --
+ * the broker always sends both on success (broker-control.mts's own
+ * `stage_file` arm), so their absence means the two sides disagree about
+ * the wire shape, never a legitimate state to fabricate around. Mirrors
+ * ClaimMonitorOutcome's own posture on a missing `handle`. */
+export type StageFileOutcome =
+  | { ok: true; handle: string; emulatorFilename: string }
+  | { ok: false; reason: "timeout" | "unauthorized" | "bad_request" | "denied" | "internal" };
+
 /** Phase 63 (SESS-05). `name: null` clears; anything else is the raw name to
  * declare -- sent to the broker VERBATIM, never sanitised on this side. The
  * broker is the ONE place a caller-supplied display string is rendered into
@@ -892,6 +912,14 @@ export interface BrokerControlSession {
    * the response, whenever it arrives (or never, if the broker is gone),
    * settles a promise nothing is blocking on. */
   noteOperation(opts: NoteOperationOptions): Promise<NoteOperationOutcome>;
+  /** Stages a file slot on the broker's own disk (Phase 64, XFER-04, D-01),
+   * sent as `{ op: "stage_file", id, target_id, slot, token }` over this
+   * SAME session -- never a second connection. Mints no path or filename
+   * itself: the broker chooses both and returns them (`handle`,
+   * `emulatorFilename`) in the reply. Gated broker-side by the SAME
+   * ownsTarget() predicate `claimMonitor`/`releaseMonitor`/`recycle` are, so
+   * this connection can only stage against the grant it itself holds. */
+  stageFile(opts: StageFileOptions): Promise<StageFileOutcome>;
 }
 
 export interface OpenBrokerControlOptions {
@@ -1319,7 +1347,45 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
     return { ok: true };
   }
 
-  return { acquire, release, recycle, status, hostState, claimMonitor, releaseMonitor, noteOperation };
+  /** Stages a file slot on the broker's own disk, sending
+   * `{ op: "stage_file", id, target_id, slot, token }` through the SAME
+   * `sendAndAwaitLine()` path every other op uses -- the same session, the
+   * same token, no second control connection is ever opened. Mirrors
+   * claimMonitor()'s own shape: a deadline maps to `timeout`, distinctly
+   * from a refusal; `unauthorized`/`bad_request`/`denied` are each reported
+   * under their own reason; a missing or non-string `handle`/
+   * `emulator_filename` on a success reply is a protocol failure, never
+   * fabricated -- the broker always sends both on success, so their
+   * absence means the two sides disagree about the wire shape.
+   *
+   * Does NOT touch this module's two legacy UTF-8 string framers
+   * (see this file's own header comment on that legacy discovery-record
+   * dial path). D-03 declined converting them deliberately: that path is
+   * legacy, broker-endpoint.ts's header forbids importing it, and RM-02
+   * deletes it in Phase 66 -- and the transfer this op sets up rides
+   * broker-endpoint.ts, which accumulates as a Buffer, so no payload byte
+   * can reach a string framer by construction. A later reader must not
+   * "fix" them on this function's account. */
+  async function stageFile(opts: StageFileOptions): Promise<StageFileOutcome> {
+    const requestId = newRequestId();
+    const raw = await sendAndAwaitLine({ op: "stage_file", id: requestId, target_id: opts.targetId, slot: opts.slot, token }, opts.timeoutMs ?? ACQUIRE_TIMEOUT_MS);
+    if (!raw.ok) {
+      if (raw.kind === "deadline") return { ok: false, reason: "timeout" };
+      if (raw.kind === "unauthorized" || raw.kind === "bad_request" || raw.kind === "denied") return { ok: false, reason: raw.kind };
+      return { ok: false, reason: "internal" };
+    }
+    if (raw.line.kind !== "file_staged") {
+      return { ok: false, reason: "internal" };
+    }
+    const handle = raw.line.handle;
+    const emulatorFilename = raw.line.emulator_filename;
+    if (typeof handle !== "string" || handle === "" || typeof emulatorFilename !== "string" || emulatorFilename === "") {
+      return { ok: false, reason: "internal" };
+    }
+    return { ok: true, handle, emulatorFilename };
+  }
+
+  return { acquire, release, recycle, status, hostState, claimMonitor, releaseMonitor, noteOperation, stageFile };
 }
 
 /** Opens ONE session against the control plane: reads broker.json ONCE for

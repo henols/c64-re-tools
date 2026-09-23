@@ -38,6 +38,12 @@
 //     direct `net.createConnection`/`client.connect(host, port)` call in
 //     this file is reopening the exact single-client-services-exactly-one
 //     hazard the relay exists to close.
+import { createReadStream, createWriteStream, mkdirSync, renameSync, rmSync, statSync } from "node:fs";
+import type { Socket } from "node:net";
+import { dirname } from "node:path";
+import { Writable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+
 import {
   ViceMonitorClient,
   CommandType,
@@ -60,9 +66,21 @@ import {
   type MonitorClaimChannel,
   type NoteOperationOptions,
   type NoteOperationOutcome,
+  type StageFileOptions,
+  type StageFileOutcome,
 } from "./vice-broker-client.ts";
-import { dialMonitorRelay } from "./broker-endpoint.ts";
-import type { Socket } from "node:net";
+import { dialMonitorRelay, dialFileTransfer } from "./broker-endpoint.ts";
+// Phase 64 (XFER-04): transfer-hash.mts has NO relative import of its own
+// (only node:crypto/node:stream) -- unlike broker-transfer.mts, which is
+// `.mts`/host-bound and whose own `import ... from "./transfer-hash.mjs"`
+// specifier resolves only once `resources/broker-transfer.mjs` is BUILT
+// (MEASURED: `node --input-type=module -e 'import("./broker-transfer.mts")'`
+// throws `ERR_MODULE_NOT_FOUND: transfer-hash.mjs` when run unbuilt from
+// this directory). This never-built, container-side module can therefore
+// safely import transfer-hash.mts directly, but must NOT import
+// broker-transfer.mts -- see defaultTransferFile()'s own header comment for
+// the full reasoning and what that means for this function's shape.
+import { createHashAndCountTransform, verifyObserved, TRANSFER_MAX_BYTES } from "./transfer-hash.mts";
 
 // ---------------------------------------------------------------------------
 // Broker control surface this handshake needs -- deliberately narrower than
@@ -84,6 +102,12 @@ export interface StockConnectBrokerControl {
   claimMonitor(opts: ClaimMonitorOptions): Promise<ClaimMonitorOutcome>;
   releaseMonitor(opts: ReleaseMonitorOptions): Promise<ReleaseMonitorOutcome>;
   noteOperation(opts: NoteOperationOptions): Promise<NoteOperationOutcome>;
+  /** Phase 64 (XFER-04, D-01): stages a file slot on the broker's own disk,
+   * on THIS SAME control-plane session (the grant-holding connection
+   * `ownsTarget()` gates the request on, broker-side) -- never a second
+   * connection. See vice-broker-client.ts's own StageFileOptions/
+   * StageFileOutcome header comments for the full contract. */
+  stageFile(opts: StageFileOptions): Promise<StageFileOutcome>;
 }
 
 // ---------------------------------------------------------------------------
@@ -306,6 +330,30 @@ async function resolveCapabilities(client: ViceMonitorClient, versionQuad: strin
  * does. */
 export type DialMonitorSocketFn = (opts: { host: string; port: number; targetId: string; channel: MonitorClaimChannel; handle: string }) => Promise<{ socket: Socket; pending: Buffer }>;
 
+/** A caller-supplied override for how a payload actually crosses the wire
+ * once `stageFile()` has already minted a `handle` (Phase 64, XFER-04) --
+ * the SAME injectable-override register `dialMonitorSocket` already
+ * occupies on StockConnectDeps below. `direction: "upload"` carries the
+ * handle and the CALLER's own local source path (already `resolve()`d --
+ * D-14, unrestricted, exactly like `handleAutostart`'s/`handleDiskAttach`'s
+ * own `path` argument); `direction: "download"` carries the handle and the
+ * caller's own local destination path. Never throws -- every failure mode
+ * resolves `{ ok: false, reason }`, matching this file's own
+ * dialMonitorSocket-adjacent posture (a REJECTING implementation is still
+ * tolerated by the caller's try/catch, but the default below never does). */
+export type TransferFileRequest =
+  | { direction: "upload"; handle: string; sourcePath: string }
+  | { direction: "download"; handle: string; destPath: string };
+
+/** `byteLength`/`sha256` are the OBSERVED values from this side's own
+ * streaming pass -- never the broker's own DECLARED header value, which is
+ * untrusted input (D-11), independently re-verified here exactly as
+ * broker-transfer.mts's own receivePayloadToFile() re-verifies it on the
+ * broker's side of the same exchange. */
+export type TransferFileResult = { ok: true; byteLength: number; sha256: string } | { ok: false; reason: string };
+
+export type TransferFileFn = (request: TransferFileRequest) => Promise<TransferFileResult>;
+
 export interface StockConnectDeps {
   /** The binary this handshake is connected to -- the SAME key
    * backend-detect.mts's cache is written under. Omitted entirely disables
@@ -331,12 +379,24 @@ export interface StockConnectDeps {
    * against the broker's fixed endpoint, tagged for the binary channel,
    * authenticated with `deps.controlToken`. */
   dialMonitorSocket?: DialMonitorSocketFn;
-  /** The per-boot control token the DEFAULT dialMonitorSocket needs to
-   * authenticate its own `attach` line over the fixed endpoint -- the SAME
-   * credential this handshake's own `brokerControl` already used to open
-   * its control-plane session. A caller supplying its own
-   * `dialMonitorSocket` (every test in this file) never needs this field;
-   * it is read ONLY by the default implementation below. */
+  /** Injectable override for how a payload crosses the wire once a transfer
+   * connection is open (Phase 64, XFER-04) -- the SAME injectable-override
+   * register `dialMonitorSocket` above already occupies. Omitted means the
+   * module's OWN default: dialFileTransfer() (broker-endpoint.ts) against
+   * the broker's fixed endpoint, authenticated with `controlToken` below,
+   * streaming the payload through the SAME cap-and-digest `Transform`
+   * (transfer-hash.mts's createHashAndCountTransform()) broker-transfer.mts
+   * uses on the broker's own side of the same exchange -- see
+   * defaultTransferFile()'s own header comment for why that module itself
+   * is not imported directly. */
+  transferFile?: TransferFileFn;
+  /** The per-boot control token the DEFAULT dialMonitorSocket AND the
+   * DEFAULT transferFile need to authenticate their own request lines over
+   * the fixed endpoint -- the SAME credential this handshake's own
+   * `brokerControl` already used to open its control-plane session. A
+   * caller supplying its own `dialMonitorSocket`/`transferFile` (every test
+   * in this file) never needs this field; it is read ONLY by the two
+   * default implementations below. */
   controlToken?: string;
 }
 
@@ -357,6 +417,176 @@ async function defaultDialMonitorSocket(opts: { host: string; port: number; targ
     throw new ViceError(result.reason);
   }
   return { socket: result.socket, pending: result.pending };
+}
+
+/** A `Writable` that discards every chunk written to it -- the digest-only
+ * pre-pass drain sink an upload's `byteLength`/`sha256` computation needs
+ * BEFORE the `transfer` control op is even sent (the op's own request line
+ * declares them up front, per this phase's wire vocabulary; dialFileTransfer()
+ * cannot be called without them). Mirrors broker-transfer.mts's own
+ * discardSink() line for line -- that module is not imported directly (see
+ * defaultTransferFile()'s own header comment), so this is a second, small
+ * copy of the same shape rather than a shared import. */
+function discardSink(): Writable {
+  return new Writable({
+    write(_chunk, _encoding, callback) {
+      callback();
+    },
+  });
+}
+
+/** The default TransferFileFn (Phase 64, XFER-04, D-01/D-02/D-04/D-11): the
+ * ONE production place a payload connection is actually opened and driven
+ * end to end. Dials via dialFileTransfer() (broker-endpoint.ts),
+ * authenticated with `controlToken` -- the SAME credential this handshake's
+ * own `brokerControl` already used -- then streams the payload through the
+ * SAME cap-and-digest `Transform` (transfer-hash.mts's
+ * createHashAndCountTransform()) broker-transfer.mts's own send/receive
+ * halves use on the broker's own side of this same exchange. Destroys the
+ * socket in a `finally` on every path -- a transfer connection is
+ * short-lived by design.
+ *
+ * DOES NOT import broker-transfer.mts's sendPayloadFromFile()/
+ * receivePayloadToFile() directly, despite their being the shape this
+ * function mirrors: that module is `.mts`, host-bound, and registered in
+ * build.ts's HOST_BOUND_ARTIFACTS specifically because it must run on a
+ * BARE host Node with no TypeScript toolchain available -- its own
+ * `import ... from "./transfer-hash.mjs"` specifier resolves correctly only
+ * once BUILT into `resources/`, sitting beside the compiled sibling it
+ * names. This module (stock-connect.ts) is the OPPOSITE: a plain,
+ * never-built container-side `.ts` file that is part of the shipped
+ * MCP server (CLAUDE.md: "No build step for the shipped server"). Loading
+ * broker-transfer.mts UNBUILT from here throws
+ * `Cannot find module '.../transfer-hash.mjs'` (MEASURED,
+ * `node --input-type=module -e 'import("./broker-transfer.mts")'` run from
+ * this directory) -- so importing it, even just for its two functions,
+ * would break this module at runtime the instant either function's own
+ * module-load path executed. transfer-hash.mts itself carries no such
+ * relative import (only node:crypto/node:stream), so it alone is safely
+ * reusable from both sides of the host/container boundary, and IS imported
+ * directly above.
+ *
+ * A second, deliberate difference from broker-transfer.mts's own
+ * send/receive halves: neither function below writes or reads a SECOND
+ * header line on this connection. The `byteLength`/`sha256` header
+ * broker-transfer.mts's own writeTransferHeader()/readTransferHeader()
+ * exist to frame is, on THIS connection, already carried by the `transfer`
+ * control op's own request (upload) or `transfer_payload` reply (download)
+ * -- dialFileTransfer()'s own job. A second header here would duplicate,
+ * not add, framing. */
+async function defaultTransferFile(request: TransferFileRequest, controlToken: string | undefined): Promise<TransferFileResult> {
+  if (request.direction === "upload") {
+    let size: number;
+    try {
+      size = statSync(request.sourcePath).size;
+    } catch (e) {
+      return { ok: false, reason: `vice: cannot read source file ${request.sourcePath}: ${(e as Error).message}` };
+    }
+    if (size > TRANSFER_MAX_BYTES) {
+      return {
+        ok: false,
+        reason: `vice: transfer exceeds the ${TRANSFER_MAX_BYTES} byte cap (sixteen mebibytes); source file ${request.sourcePath} is ${size} bytes`,
+      };
+    }
+
+    // Digest pre-pass: streamed, never a whole-file read (Pitfall 3) --
+    // needed because dialFileTransfer()'s own `transfer` request must
+    // declare byteLength/sha256 BEFORE the socket even opens.
+    const digestPass = createHashAndCountTransform({ capBytes: TRANSFER_MAX_BYTES });
+    try {
+      await pipeline(createReadStream(request.sourcePath), digestPass, discardSink());
+    } catch (e) {
+      return { ok: false, reason: `vice: failed to digest source file ${request.sourcePath}: ${(e as Error).message}` };
+    }
+    const { byteLength, sha256 } = digestPass.result();
+
+    const dialResult = await dialFileTransfer({
+      handle: request.handle,
+      direction: "upload",
+      byteLength,
+      sha256,
+      token: controlToken ?? "",
+    });
+    if (!dialResult.ok) return { ok: false, reason: dialResult.reason };
+    const { socket } = dialResult;
+    try {
+      // Second, real streamed pass, through a FRESH Transform instance (a
+      // Transform is single-use) -- re-enforces the cap from bytes actually
+      // read this pass, independently of the digest pre-pass's own count.
+      const sendPass = createHashAndCountTransform({ capBytes: TRANSFER_MAX_BYTES });
+      await pipeline(createReadStream(request.sourcePath), sendPass, socket);
+      return { ok: true, byteLength, sha256 };
+    } catch (e) {
+      return { ok: false, reason: `vice: transfer failed while sending ${request.sourcePath}: ${(e as Error).message}` };
+    } finally {
+      if (!socket.destroyed) socket.destroy();
+    }
+  }
+
+  // direction === "download"
+  const dialResult = await dialFileTransfer({
+    handle: request.handle,
+    direction: "download",
+    token: controlToken ?? "",
+  });
+  if (!dialResult.ok) return { ok: false, reason: dialResult.reason };
+  if (dialResult.direction !== "download") {
+    // Structurally unreachable: dialFileTransfer() only ever resolves a
+    // "download" direction result for a "download" request. Guarded anyway,
+    // matching this file's own never-fabricate-a-plausible-value posture.
+    dialResult.socket.destroy();
+    return { ok: false, reason: "vice: internal error -- expected a download transfer reply" };
+  }
+  const { socket, byteLength, sha256, pending } = dialResult;
+  try {
+    // The broker's OWN declared byteLength is untrusted input (D-11),
+    // independently re-checked here exactly as
+    // broker-transfer.mts's own receivePayloadToFile() re-checks it on the
+    // broker's side of the same exchange.
+    if (byteLength > TRANSFER_MAX_BYTES) {
+      return {
+        ok: false,
+        reason: `vice: broker declared byteLength ${byteLength} exceeds the ${TRANSFER_MAX_BYTES} byte cap (sixteen mebibytes)`,
+      };
+    }
+    if (pending.length > 0) socket.unshift(pending);
+
+    mkdirSync(dirname(request.destPath), { recursive: true });
+    const tmpPath = `${request.destPath}.tmp-${process.pid}-${Date.now()}`;
+    const cleanupTmp = (): void => {
+      try {
+        rmSync(tmpPath, { force: true });
+      } catch {
+        // Best-effort cleanup -- a failure removing an already-removed or
+        // never-created temp file must never mask the real refusal reason.
+      }
+    };
+
+    const transform = createHashAndCountTransform({ capBytes: TRANSFER_MAX_BYTES });
+    try {
+      await pipeline(socket, transform, createWriteStream(tmpPath));
+    } catch (e) {
+      cleanupTmp();
+      return { ok: false, reason: `vice: transfer failed while receiving into ${request.destPath}: ${(e as Error).message}` };
+    }
+
+    const observed = transform.result();
+    const verdict = verifyObserved({ byteLength, sha256 }, observed);
+    if (!verdict.ok) {
+      cleanupTmp();
+      return { ok: false, reason: verdict.reason };
+    }
+
+    try {
+      renameSync(tmpPath, request.destPath);
+    } catch (e) {
+      cleanupTmp();
+      return { ok: false, reason: `vice: failed to publish ${request.destPath}: ${(e as Error).message}` };
+    }
+    return { ok: true, byteLength: observed.byteLength, sha256: observed.sha256 };
+  } finally {
+    if (!socket.destroyed) socket.destroy();
+  }
 }
 
 export interface StockConnectOptions {
@@ -469,6 +699,18 @@ async function safeResume(client: ViceMonitorClient): Promise<void> {
  * leave a frozen C64 behind either.
  */
 export async function stockConnect({ host, port, targetId, brokerControl, deps = {} }: StockConnectOptions): Promise<StockConnectSession> {
+  // Phase 64 (XFER-04): normalised ONCE, here, so `session.deps.transferFile`
+  // is ALWAYS a concrete function by the time stock-machine.ts's handlers (a
+  // later plan) read it directly off the session -- never a possibly-
+  // undefined field a caller must itself default. Unlike `dialMonitorSocket`
+  // (resolved fresh, locally, on every call below), `transferFile` is
+  // resolved ONCE here and persisted on the session this function returns,
+  // because a later plan's own handler reads `session.deps.transferFile`
+  // long after this function has returned, with no `dial`-style local to
+  // fall back on.
+  const controlTokenForDefaults = deps.controlToken;
+  deps = { ...deps, transferFile: deps.transferFile ?? ((request) => defaultTransferFile(request, controlTokenForDefaults)) };
+
   // Plan 41-03 (D-14): explicit, not relying on claimMonitor()'s own default
   // -- the binary path names its own channel at the call site.
   const claimOutcome = await brokerControl.claimMonitor({ targetId, channel: "binary" });

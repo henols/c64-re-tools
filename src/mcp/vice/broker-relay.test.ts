@@ -968,6 +968,9 @@ function makeRealBrokerControl(state: BrokerState, targetId: string): StockConne
     async noteOperation() {
       throw new Error("noteOperation must not be called by this suite -- stockConnect()/stockReconnect() never call it");
     },
+    async stageFile() {
+      throw new Error("stageFile must not be called by this suite -- stockConnect()/stockReconnect() never call it");
+    },
   };
 }
 

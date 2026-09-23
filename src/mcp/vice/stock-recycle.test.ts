@@ -277,6 +277,9 @@ function makeLeaseDeps(opts: {
       noteOperation: async () => {
         throw new Error("noteOperation must not be called by handleRecycleStock");
       },
+      stageFile: async () => {
+        throw new Error("stageFile must not be called by handleRecycleStock");
+      },
     },
   };
   const deps: StockDispatchDeps = { ensureLease: async () => ({ ok: true, lease }) };

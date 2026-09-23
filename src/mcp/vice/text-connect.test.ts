@@ -112,6 +112,9 @@ function makeStubBrokerControl(opts: StubBrokerControlOptions = {}): {
     async noteOperation() {
       throw new Error("noteOperation must not be called by this suite -- textConnect() never calls it");
     },
+    async stageFile() {
+      throw new Error("stageFile must not be called by this suite -- textConnect() never calls it");
+    },
   };
   return { brokerControl, state };
 }
