@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 45
+open_count: 46
 waived_count: 17
 fixed_count: 9
-total_count: 71
-last_updated: 2026-09-20T09:37:02.183Z
+total_count: 72
+last_updated: 2026-09-23T12:45:54.961Z
 ---
 
 # Broken Windows Ledger
@@ -86,6 +86,7 @@ last_updated: 2026-09-20T09:37:02.183Z
 | 69 | 63 | unmet-truth | src/mcp/vice/stock-live-relay.test.ts |  | Live proof (opt-in VICE_LIVE_RELAY_BIN): the unsolicited REGISTER_INFO dump on monitor open was not observed over the relay connection against genuine stock VICE 3.9 -- the production readiness probe's own connection appears to consume the one-time greeting before the real attach happens. Register read/memory write/checkpoint hit/status identity all pass; only this sub-claim is unproven. | waived | Connection 2 (a direct dial immediately after the production-shaped probeReady() readiness probe closed) observed no unsolicited REGISTER_INFO dump, and connection 3 (after connection 2's own graceful close) observed none either -- both ordinary REGISTERS_GET commands succeeded. Confirms the stated hypothesis: the readiness probe's own connection consumes the one-time greeting. See .planning/phases/63-the-monitor-channel-relayed-and-the-connection-as-the-sessio/evidence/phase63-gap-closure-live-measurements.md. | 2026-09-20T00:21:47.406Z | 2026-09-20T09:37:02.183Z |
 | 70 | 63 | unmet-truth | src/mcp/vice/stock-live-relay.test.ts |  | Live proof (opt-in VICE_LIVE_RELAY_BIN): the machine-JAM shape did not produce a JAM (0x61) event against genuine stock VICE 3.9 under the project's default JamAction (1=continue, no -jamaction override in scope for this plan) -- the KIL opcode write and PC write were independently verified correct by read-back, but no jam/desync ever followed within 5s of resume. | waived | No variant (default, jamaction2, jamaction3) produced a bare JAM (0x61) over a direct dial against genuine stock VICE 3.9 (opcode/PC writes confirmed correct by read-back in every case) -- the absence is an emulator-side behaviour, exonerating the relay (plan 63-09's broker-relay.test.ts already proves the relay's own byte-transparency for the JAM shape synthetically). See .planning/phases/63-the-monitor-channel-relayed-and-the-connection-as-the-sessio/evidence/phase63-gap-closure-live-measurements.md. | 2026-09-20T00:21:47.652Z | 2026-09-20T09:36:55.331Z |
 | 71 | 63 | unmet-truth | x |  | probe | waived | Accidental test append during 63-06 executor verification of the windows-append command itself; carries no real content (file=x, description=probe). Not a genuine defect. | 2026-09-20T00:21:54.929Z | 2026-09-20T00:22:26.896Z |
+| 72 | 64 | stub | src/mcp/vice/stock-connect.ts | 477 | defaultTransferFile() has no dedicated end-to-end test even after 64-04 puts real production callers (handleSnapshotSave/handleSnapshotLoad) on the session.deps.transferFile seam it defaults -- the round-trip test proves the seam's SHAPE via its own composed helper (dialFileTransfer + transfer-hash.mts) rather than calling defaultTransferFile() itself, since that function is still module-private and importing broker-transfer.mts directly from stock-connect.ts still fails (measured: unbuilt import now fails on broker-home.mjs, not just transfer-hash.mjs, per 64-04-SUMMARY.md). | open |  | 2026-09-23T12:45:54.961Z |  |
 
 ````json
 [
@@ -944,6 +945,19 @@ last_updated: 2026-09-20T09:37:02.183Z
     "reason": "Accidental test append during 63-06 executor verification of the windows-append command itself; carries no real content (file=x, description=probe). Not a genuine defect.",
     "recorded_at": "2026-09-20T00:21:54.929Z",
     "resolved_at": "2026-09-20T00:22:26.896Z",
+    "milestone": "v2.0.0"
+  },
+  {
+    "id": 72,
+    "kind": "stub",
+    "phase": "64",
+    "file": "src/mcp/vice/stock-connect.ts",
+    "line": 477,
+    "description": "defaultTransferFile() has no dedicated end-to-end test even after 64-04 puts real production callers (handleSnapshotSave/handleSnapshotLoad) on the session.deps.transferFile seam it defaults -- the round-trip test proves the seam's SHAPE via its own composed helper (dialFileTransfer + transfer-hash.mts) rather than calling defaultTransferFile() itself, since that function is still module-private and importing broker-transfer.mts directly from stock-connect.ts still fails (measured: unbuilt import now fails on broker-home.mjs, not just transfer-hash.mjs, per 64-04-SUMMARY.md).",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-23T12:45:54.961Z",
+    "resolved_at": null,
     "milestone": "v2.0.0"
   }
 ]
