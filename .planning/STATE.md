@@ -5,16 +5,16 @@ milestone_name: One Broker, One Socket
 current_phase: 64
 current_phase_name: Files as Bytes, Both Directions
 status: executing
-stopped_at: Phase 64 gap-closure round 2 executing -- plan 64-12 (G-64-4) complete, 64-13 (G-64-3) and 64-14 (live measurement of both) outstanding
-last_updated: "2026-09-23T22:13:52.000Z"
-last_activity: 2026-09-23
-last_activity_desc: Phase 64 gap-closure round 2 plan 64-12 complete -- G-64-4 (cold-launch relay-attach race) closed at the attach seam, TDD RED/GREEN per task, 11 new tests, 0 regressions
-state_head: 1f7e94841c908965e3835ef360a24033dfc0e14f
+stopped_at: Phase 64 gap-closure round 2 executing -- plans 64-12 (G-64-4) and 64-13 (G-64-3) complete, 64-14 (live measurement of both) outstanding
+last_updated: "2026-09-23T23:07:14.000Z"
+last_activity: 2026-09-24
+last_activity_desc: Phase 64 gap-closure round 2 plan 64-13 complete -- G-64-3 (upload-publish race behind vice_disk_attach/vice_snapshot_load's 0x8f) closed at the transfer completion reply, TDD RED/GREEN per task, 14 new tests, 0 regressions
+state_head: 1b7f5918c8724bdae007eaf1d2d80112cf06a006
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 31
-  completed_plans: 29
+  completed_plans: 30
   percent: 33
 carried_forward_phases:
 
@@ -83,8 +83,27 @@ closure still needs to be recorded as one.
 ## Current Position
 
 Phase: 64 (Files as Bytes, Both Directions) — EXECUTING GAP CLOSURE ROUND 2 (G-64-3, G-64-4)
-Plan: 12 of 14 executed (64-13, 64-14 outstanding — gap-closure round 2)
-Status: Executing Phase 64 gap-closure round 2 — 64-12 (G-64-4, the cold-launch relay-attach race) is complete; 64-13 (G-64-3, the intermittent 0x8f on the file-carrying tools) and 64-14 (both measured live) are outstanding, one plan per wave, sequentially on the main working tree. They follow UAT 2026-09-23 (0 passed, 2 issues, 64-UAT.md status diagnosed). Previously: Phase 64 gap closure for G-64-1 (UAT test 1) is complete — all 11 plans executed sequentially on the main working tree. Re-verification 2026-09-23: human_needed, 5/5 ROADMAP criteria verified, G-64-1 met with one caveat (the cold-launch race below); code review 0 critical / 2 warning / 1 info; the 2 UAT items it left pending in 64-UAT.md were run the same day and both failed, becoming G-64-3 and G-64-4.
+Plan: 13 of 14 executed (64-14 outstanding — gap-closure round 2)
+Status: Executing Phase 64 gap-closure round 2 — 64-12 (G-64-4, the cold-launch relay-attach race) and 64-13 (G-64-3, the intermittent 0x8f on the file-carrying tools) are complete; 64-14 (both measured live) is outstanding, sequentially on the main working tree. They follow UAT 2026-09-23 (0 passed, 2 issues, 64-UAT.md status diagnosed). Previously: Phase 64 gap closure for G-64-1 (UAT test 1) is complete — all 11 plans executed sequentially on the main working tree. Re-verification 2026-09-23: human_needed, 5/5 ROADMAP criteria verified, G-64-1 met with one caveat (the cold-launch race below); code review 0 critical / 2 warning / 1 info; the 2 UAT items it left pending in 64-UAT.md were run the same day and both failed, becoming G-64-3 and G-64-4.
+Plan 64-13 closed 2026-09-24: G-64-3 closed at the transfer completion reply —
+an upload's TransferFileFn now resolves ok only after the broker writes
+`transfer_complete` on the transfer connection (after `receivePayloadToFile()`
+has verified the digest and renamed the staged file into place), never on the
+client's own local write finishing. The broker's upload branch
+(`handleFileTransfer()`) sets `socket.allowHalfOpen = true` before
+`transfer_ready` so a reply written after the client's FIN is still delivered
+(measured on Node v24.20.0), then writes `transfer_complete` or a path-free
+`error` line. Every consumer and stub that used to poll for the staged file
+(stock-machine.test.ts, transfer-disjoint-roots.test.ts) now reads it
+synchronously against a broker whose publish is deliberately delayed 300ms by
+an injectable timing hook — the condition every earlier stub hid. 0x8f's
+generic gloss (stock-handler.ts) no longer attributes every occurrence to a
+checkpoint-condition parse failure; each file-carrying tool
+(vice_autostart/vice_disk_attach/vice_snapshot_save/vice_snapshot_load) gets
+its own exported, truthful text naming what VICE could not do with the file.
+TDD RED/GREEN per task (3 tasks, 6 commits); 14 new tests, 0 regressions
+(test:automated 4252→4266, 0 fail throughout). See
+.planning/phases/64-files-as-bytes-both-directions/64-13-SUMMARY.md.
 Plan 64-12 closed 2026-09-23: G-64-4 closed at the attach seam — the broker now
 dials the emulator with a bounded, retrying wait (dialEmulatorLeg(), ECONNREFUSED
 retried to a 5000ms deadline) and answers `attached` only once that leg has
@@ -150,7 +169,7 @@ verification passed (6/6 must-haves), nyquist validation PARTIAL and security ve
 with threats_open: 0. The one human decision — 63-REVIEW.md's WR-01 — was ACCEPTED as
 residual risk, recorded as R-63-04 in 63-SECURITY.md.
 Progress: [███░░░░░░░] 33% (2 of 6 v2.0.0 phases complete; Phases 62-67)
-Last activity: 2026-09-23 — Phase 64 gap-closure round 2 plan 64-12 complete (G-64-4 closed); 64-13, 64-14 outstanding
+Last activity: 2026-09-24 — Phase 64 gap-closure round 2 plan 64-13 complete (G-64-3 closed); 64-14 outstanding
 
 **Planning override recorded at the Phase 64 decision-coverage gate.**
 `check.decision-coverage-plan` returned `passed: false` with
@@ -2828,8 +2847,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-23T14:28:59.631Z
-Stopped at: Completed 64-10-PLAN.md -- Phase 64 gap closure (G-64-1), plan 64-11 remains
+Last session: 2026-09-23T23:07:14.000Z
+Stopped at: Completed 64-13-PLAN.md -- Phase 64 gap-closure round 2 (G-64-3 closed), plan 64-14 remains
 Resume file: None
 
 Earlier: **v2.0.0 roadmap created.** 36/36 requirements (`ENDPOINT-01..05`,

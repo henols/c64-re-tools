@@ -2259,7 +2259,7 @@ the first tool rides it.
      fully written, and an age-based sweep removes what a crashed broker or a
      vanished client left behind (XFER-07).
 
-**Plans**: 12/14 plans executed — 7/7 original plans executed, 6 waves; 4 gap-closure plans added for G-64-1 (64-08…64-11), 4/4 executed; 3 gap-closure plans added for G-64-3 and G-64-4 (64-12…64-14), 1/3 executed
+**Plans**: 13/14 plans executed — 7/7 original plans executed, 6 waves; 4 gap-closure plans added for G-64-1 (64-08…64-11), 4/4 executed; 3 gap-closure plans added for G-64-3 and G-64-4 (64-12…64-14), 2/3 executed
 
 Plans:
 
@@ -2294,7 +2294,7 @@ Plans:
 
 **Wave 2** *(blocked on 64-12; the two plans share vice-broker.mts, broker-endpoint.ts, stock-handler.ts and resources/vice-broker.mjs)*
 
-- [ ] 64-13-PLAN.md — G-64-3: the broker writes `transfer_complete` after the rename and the client resolves an upload only on it; regression tests whose broker publishes late and whose stub emulator opens the staged file at once; truthful 0x8f text for the file-carrying tools (XFER-02, XFER-06, XFER-08)
+- [x] 64-13-PLAN.md — G-64-3: the broker writes `transfer_complete` after the rename and the client resolves an upload only on it; regression tests whose broker publishes late and whose stub emulator opens the staged file at once; truthful 0x8f text for the file-carrying tools (XFER-02, XFER-06, XFER-08)
 
 **Wave 3** *(blocked on 64-12 and 64-13)*
 
@@ -2718,7 +2718,7 @@ check. No test reads this table now.
 | 61. The Install Tables Generated, and a Guard That Compares Facts | v1.1.0 | 3/3 | Complete | 2026-09-19 |
 | 62. The Fixed Endpoint and the Broker That Owns the Machine | v2.0.0 | 5/5 | Complete | 2026-09-19 |
 | 63. The Monitor Channel Relayed, and the Connection as the Session | v2.0.0 | 12/12 | Complete | 2026-09-23 |
-| 64. Files as Bytes, Both Directions | v2.0.0 | 12/14 | In Progress | - |
+| 64. Files as Bytes, Both Directions | v2.0.0 | 13/14 | In Progress | - |
 | 65. Every Skill Script Through the One Endpoint, and CI With It | v2.0.0 | — | Not started | - |
 | 66. The Deletion Cutover — Gone, Not Bypassed | v2.0.0 | — | Not started | - |
 | 67. Ghidra's Runs Root Without the Alias | v2.0.0 | — | Not started | - |
