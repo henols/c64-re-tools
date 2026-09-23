@@ -629,12 +629,10 @@ export interface DialMonitorRelayOptions {
   targetId: string;
   channel: "binary" | "text";
   /** The per-claim handle monitor_claim's own reply returned -- the ONLY
-   * authority this dial can present; see broker-control.mts's own
-   * RelayAttachOutcome header comment. */
+   * authority the broker checks for this connection (G-64-1, owner decision
+   * 5): no credential of any kind is presented on this line. See
+   * broker-control.mts's own RelayAttachOutcome header comment. */
   handle: string;
-  /** The per-boot control token -- the SAME credential every other op on
-   * this control plane requires. */
-  token: string;
   port?: number;
   candidates?: readonly string[];
   connectTimeoutMs?: number;
@@ -737,7 +735,7 @@ function performAttach(socket: Socket, host: string, port: number, opts: DialMon
     finish({ ok: false, reason: `vice: relay connection to ${host}:${port} closed before the attach reply arrived` });
   });
 
-  socket.write(`${JSON.stringify({ op: "attach", target_id: opts.targetId, channel: opts.channel, handle: opts.handle, token: opts.token })}\n`);
+  socket.write(`${JSON.stringify({ op: "attach", target_id: opts.targetId, channel: opts.channel, handle: opts.handle })}\n`);
 }
 
 /** Dials the fixed endpoint for a relay connection: the SAME two-candidate
@@ -843,9 +841,10 @@ export function dialMonitorRelay(options: DialMonitorRelayOptions): Promise<Dial
 // ---------------------------------------------------------------------------
 
 export interface DialFileTransferOptions {
-  /** The handle `stage_file`'s own reply minted -- the ONLY authority this
-   * dial can present; see broker-control.mts's own FileTransferOutcome
-   * header comment. */
+  /** The handle `stage_file`'s own reply minted -- the ONLY authority the
+   * broker checks for this connection (G-64-1, owner decision 5): no
+   * credential of any kind is presented on this line. See
+   * broker-control.mts's own FileTransferOutcome header comment. */
   handle: string;
   direction: "upload" | "download";
   /** Present ONLY for `direction: "upload"` -- see this plan's
@@ -853,9 +852,6 @@ export interface DialFileTransferOptions {
    * download. */
   byteLength?: number;
   sha256?: string;
-  /** The per-boot control token -- the SAME credential every other op on
-   * this control plane requires. */
-  token: string;
   port?: number;
   candidates?: readonly string[];
   connectTimeoutMs?: number;
@@ -974,7 +970,7 @@ function performTransfer(
     finish({ ok: false, reason: `vice: transfer connection to ${host}:${port} closed before the transfer reply arrived` });
   });
 
-  const requestLine: Record<string, unknown> = { op: "transfer", direction: opts.direction, handle: opts.handle, token: opts.token };
+  const requestLine: Record<string, unknown> = { op: "transfer", direction: opts.direction, handle: opts.handle };
   if (opts.direction === "upload") {
     requestLine.byteLength = opts.byteLength;
     requestLine.sha256 = opts.sha256;

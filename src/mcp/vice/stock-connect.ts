@@ -377,41 +377,35 @@ export interface StockConnectDeps {
    * lever a hidden mode flag would, without leaving one behind as carried
    * debt. Omitted means the module's OWN default: dialMonitorRelay()
    * against the broker's fixed endpoint, tagged for the binary channel,
-   * authenticated with `deps.controlToken`. */
+   * presenting the per-claim handle as its only authority (G-64-1, owner
+   * decision 5) -- no credential of any kind. */
   dialMonitorSocket?: DialMonitorSocketFn;
   /** Injectable override for how a payload crosses the wire once a transfer
    * connection is open (Phase 64, XFER-04) -- the SAME injectable-override
    * register `dialMonitorSocket` above already occupies. Omitted means the
    * module's OWN default: dialFileTransfer() (broker-endpoint.ts) against
-   * the broker's fixed endpoint, authenticated with `controlToken` below,
-   * streaming the payload through the SAME cap-and-digest `Transform`
-   * (transfer-hash.mts's createHashAndCountTransform()) broker-transfer.mts
-   * uses on the broker's own side of the same exchange -- see
-   * defaultTransferFile()'s own header comment for why that module itself
-   * is not imported directly. */
+   * the broker's fixed endpoint, presenting the per-claim handle as its
+   * only authority (G-64-1, owner decision 5) -- no credential of any
+   * kind -- streaming the payload through the SAME cap-and-digest
+   * `Transform` (transfer-hash.mts's createHashAndCountTransform())
+   * broker-transfer.mts uses on the broker's own side of the same exchange
+   * -- see defaultTransferFile()'s own header comment for why that module
+   * itself is not imported directly. */
   transferFile?: TransferFileFn;
-  /** The per-boot control token the DEFAULT dialMonitorSocket AND the
-   * DEFAULT transferFile need to authenticate their own request lines over
-   * the fixed endpoint -- the SAME credential this handshake's own
-   * `brokerControl` already used to open its control-plane session. A
-   * caller supplying its own `dialMonitorSocket`/`transferFile` (every test
-   * in this file) never needs this field; it is read ONLY by the two
-   * default implementations below. */
-  controlToken?: string;
 }
 
 /** The default DialMonitorSocketFn: dials the broker's fixed endpoint via
- * dialMonitorRelay(), authenticated with `controlToken`, and unwraps its
+ * dialMonitorRelay(), presenting the per-claim handle as its only authority
+ * (G-64-1, owner decision 5) -- no credential of any kind -- and unwraps its
  * discriminated result into either a resolved socket/pending pair or a
  * thrown ViceError naming the broker's own refusal text -- the SAME
  * "reject with a named error, let the caller's try/catch clean up"
  * contract every other step of this handshake already follows. */
-async function defaultDialMonitorSocket(opts: { host: string; port: number; targetId: string; channel: MonitorClaimChannel; handle: string }, controlToken: string | undefined): Promise<{ socket: Socket; pending: Buffer }> {
+async function defaultDialMonitorSocket(opts: { host: string; port: number; targetId: string; channel: MonitorClaimChannel; handle: string }): Promise<{ socket: Socket; pending: Buffer }> {
   const result = await dialMonitorRelay({
     targetId: opts.targetId,
     channel: opts.channel,
     handle: opts.handle,
-    token: controlToken ?? "",
   });
   if (!result.ok) {
     throw new ViceError(result.reason);
@@ -437,9 +431,9 @@ function discardSink(): Writable {
 
 /** The default TransferFileFn (Phase 64, XFER-04, D-01/D-02/D-04/D-11): the
  * ONE production place a payload connection is actually opened and driven
- * end to end. Dials via dialFileTransfer() (broker-endpoint.ts),
- * authenticated with `controlToken` -- the SAME credential this handshake's
- * own `brokerControl` already used -- then streams the payload through the
+ * end to end. Dials via dialFileTransfer() (broker-endpoint.ts), presenting
+ * the per-claim handle as its only authority (G-64-1, owner decision 5) --
+ * no credential of any kind -- then streams the payload through the
  * SAME cap-and-digest `Transform` (transfer-hash.mts's
  * createHashAndCountTransform()) broker-transfer.mts's own send/receive
  * halves use on the broker's own side of this same exchange. Destroys the
@@ -474,7 +468,7 @@ function discardSink(): Writable {
  * control op's own request (upload) or `transfer_payload` reply (download)
  * -- dialFileTransfer()'s own job. A second header here would duplicate,
  * not add, framing. */
-async function defaultTransferFile(request: TransferFileRequest, controlToken: string | undefined): Promise<TransferFileResult> {
+async function defaultTransferFile(request: TransferFileRequest): Promise<TransferFileResult> {
   if (request.direction === "upload") {
     let size: number;
     try {
@@ -505,7 +499,6 @@ async function defaultTransferFile(request: TransferFileRequest, controlToken: s
       direction: "upload",
       byteLength,
       sha256,
-      token: controlToken ?? "",
     });
     if (!dialResult.ok) return { ok: false, reason: dialResult.reason };
     const { socket } = dialResult;
@@ -527,7 +520,6 @@ async function defaultTransferFile(request: TransferFileRequest, controlToken: s
   const dialResult = await dialFileTransfer({
     handle: request.handle,
     direction: "download",
-    token: controlToken ?? "",
   });
   if (!dialResult.ok) return { ok: false, reason: dialResult.reason };
   if (dialResult.direction !== "download") {
@@ -708,8 +700,7 @@ export async function stockConnect({ host, port, targetId, brokerControl, deps =
   // because a later plan's own handler reads `session.deps.transferFile`
   // long after this function has returned, with no `dial`-style local to
   // fall back on.
-  const controlTokenForDefaults = deps.controlToken;
-  deps = { ...deps, transferFile: deps.transferFile ?? ((request) => defaultTransferFile(request, controlTokenForDefaults)) };
+  deps = { ...deps, transferFile: deps.transferFile ?? defaultTransferFile };
 
   // Plan 41-03 (D-14): explicit, not relying on claimMonitor()'s own default
   // -- the binary path names its own channel at the call site.
@@ -743,7 +734,7 @@ export async function stockConnect({ host, port, targetId, brokerControl, deps =
     // terminator (stock VICE's REGISTER_INFO frame, on every monitor
     // open, is the concrete case this exists for) and is seeded straight
     // into the client's own parse buffer rather than being stranded.
-    const dial = deps.dialMonitorSocket ?? ((opts) => defaultDialMonitorSocket(opts, deps.controlToken));
+    const dial = deps.dialMonitorSocket ?? defaultDialMonitorSocket;
     const { socket, pending } = await dial({ host, port, targetId, channel: "binary", handle: claimOutcome.handle });
     client.attach(socket, { pending });
 

@@ -217,12 +217,9 @@ export interface StockDispatchDeps {
    * call for the text channel, so ONE field lets a test dial a stub server
    * directly for EITHER channel without reaching for the heavier
    * `connect`/`reconnect` full-function overrides above. Production passes
-   * neither; both channels' own module-level defaults (dialMonitorRelay()
+   * none of this; both channels' own module-level defaults (dialMonitorRelay()
    * against the broker's fixed endpoint) apply. */
   dialMonitorSocket?: DialMonitorSocketFn;
-  /** Test-only override paired with dialMonitorSocket above -- see that
-   * field's own comment. Production passes neither. */
-  controlToken?: string;
 }
 
 export type EnsureStockSessionOutcome = { ok: true; session: StockConnectSession } | { ok: false; message: string };
@@ -455,7 +452,6 @@ function stockConnectDepsFor(lease: HeldLease, deps: StockDispatchDeps): StockCo
   if (lease.supervisorDir) connectDeps.supervisorDir = lease.supervisorDir;
   if (deps.resolvedBinaryPath) connectDeps.binPath = deps.resolvedBinaryPath;
   if (deps.dialMonitorSocket) connectDeps.dialMonitorSocket = deps.dialMonitorSocket;
-  if (deps.controlToken) connectDeps.controlToken = deps.controlToken;
   return connectDeps;
 }
 

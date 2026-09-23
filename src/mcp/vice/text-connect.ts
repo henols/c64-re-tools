@@ -77,35 +77,33 @@ export interface TextConnectOptions {
    * stock-connect.ts's StockConnectDeps.dialMonitorSocket exposes, reused
    * as-is (the type Plan 63-01 exported, never a second declaration).
    * Omitted means the module's OWN default: dialMonitorRelay() against the
-   * broker's fixed endpoint, tagged for the text channel, authenticated
-   * with `controlToken`. */
+   * broker's fixed endpoint, tagged for the text channel, presenting the
+   * per-claim handle as its only authority (G-64-1, owner decision 5) -- no
+   * credential of any kind. */
   dialMonitorSocket?: DialMonitorSocketFn;
-  /** The per-boot control token the DEFAULT dialMonitorSocket needs to
-   * authenticate its own `attach` line over the fixed endpoint -- the SAME
-   * credential this handshake's own `brokerControl` already used to open
-   * its control-plane session. A caller supplying its own
-   * `dialMonitorSocket` (every test in this file) never needs this field. */
-  controlToken?: string;
 }
 
 /** The default DialMonitorSocketFn for the text channel: dials the
- * broker's fixed endpoint via dialMonitorRelay(), authenticated with
- * `controlToken`, and unwraps its discriminated result into either a
+ * broker's fixed endpoint via dialMonitorRelay(), presenting the per-claim
+ * handle as its only authority (G-64-1, owner decision 5) -- no credential
+ * of any kind -- and unwraps its discriminated result into either a
  * resolved socket/pending pair or a thrown ViceError naming the broker's
  * own refusal text. Mirrors stock-connect.ts's own defaultDialMonitorSocket
  * exactly (that function is not exported, so this is a small, deliberate
  * duplicate rather than a shared import -- the two channels' defaults
  * differ only in which channel they always pass, and stock-connect.ts's
  * own header comment forbids this file from reaching into it). */
-async function defaultDialMonitorSocket(
-  opts: { host: string; port: number; targetId: string; channel: MonitorClaimChannel; handle: string },
-  controlToken: string | undefined,
-): Promise<{ socket: Socket; pending: Buffer }> {
+async function defaultDialMonitorSocket(opts: {
+  host: string;
+  port: number;
+  targetId: string;
+  channel: MonitorClaimChannel;
+  handle: string;
+}): Promise<{ socket: Socket; pending: Buffer }> {
   const result = await dialMonitorRelay({
     targetId: opts.targetId,
     channel: opts.channel,
     handle: opts.handle,
-    token: controlToken ?? "",
   });
   if (!result.ok) {
     throw new ViceError(result.reason);
@@ -151,7 +149,6 @@ export async function textConnect({
   targetId,
   brokerControl,
   dialMonitorSocket,
-  controlToken,
 }: TextConnectOptions): Promise<TextConnectSession> {
   if (!isValidPort(remoteMonitorPort)) {
     throw new ViceError(
@@ -185,7 +182,7 @@ export async function textConnect({
     // whatever arrived, in the same chunk, past that handshake's own
     // terminator, seeded straight into the client's own parse buffer
     // rather than being stranded.
-    const dial = dialMonitorSocket ?? ((opts) => defaultDialMonitorSocket(opts, controlToken));
+    const dial = dialMonitorSocket ?? defaultDialMonitorSocket;
     const { socket, pending } = await dial({ host, port: remoteMonitorPort, targetId, channel: "text", handle: claimOutcome.handle });
     client.attach(socket, { pending });
     return { client, host, port: remoteMonitorPort, targetId, brokerControl };
