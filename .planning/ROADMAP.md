@@ -2259,7 +2259,7 @@ the first tool rides it.
      fully written, and an age-based sweep removes what a crashed broker or a
      vanished client left behind (XFER-07).
 
-**Plans**: 11/11 plans executed — 7/7 original plans executed, 6 waves; 4 gap-closure plans added for G-64-1 (64-08…64-11), 4/4 executed
+**Plans**: 11/14 plans executed — 7/7 original plans executed, 6 waves; 4 gap-closure plans added for G-64-1 (64-08…64-11), 4/4 executed; 3 gap-closure plans added for G-64-3 and G-64-4 (64-12…64-14), 0/3 executed
 
 Plans:
 
@@ -2285,6 +2285,20 @@ Plans:
 **Wave 3** *(blocked on 64-08, 64-09 and 64-10)*
 
 - [ ] 64-11-PLAN.md — The live check: the four migrated tools against a systemd-unit broker and the absolute `/usr/bin/x64sc`, no broker-side path in any result, the write-loss wording read after a real attach-write-close cycle, and a verified teardown (XFER-01, XFER-02, XFER-08)
+
+**Gap closure, round two** *(added after 64-UAT.md's re-run found two live defects, both diagnosed with measurements: G-64-3, an intermittent 0x8f on vice_disk_attach/vice_snapshot_load because the command names a staged file the broker has not yet published; and G-64-4, a cold session's first vice_* call failing because the broker acknowledges a relay attach before the emulator has bound its port. Same fault class — the broker reports completion when its own side is done, not when the far side is ready — on two seams with no shared code, so two fix plans; they share files, so they run in sequence. `gap_closure: true`, run with `/gsd-execute-phase 64 --gaps-only`)*
+
+**Wave 1**
+
+- [ ] 64-12-PLAN.md — G-64-4: the broker dials the emulator first, retries ECONNREFUSED to a bounded deadline, and answers `attached` only once the emulator leg has connected — one seam covering cold acquire, recycle respawn and the text channel; no incident record for a dial that never connected; regression tests whose emulator stand-in binds after the attach; truthful handshake-failure text (XFER-08)
+
+**Wave 2** *(blocked on 64-12; the two plans share vice-broker.mts, broker-endpoint.ts, stock-handler.ts and resources/vice-broker.mjs)*
+
+- [ ] 64-13-PLAN.md — G-64-3: the broker writes `transfer_complete` after the rename and the client resolves an upload only on it; regression tests whose broker publishes late and whose stub emulator opens the staged file at once; truthful 0x8f text for the file-carrying tools (XFER-02, XFER-06, XFER-08)
+
+**Wave 3** *(blocked on 64-12 and 64-13)*
+
+- [ ] 64-14-PLAN.md — The live check against the absolute `/usr/bin/x64sc` with a transient systemd-unit broker: every cold session's first call succeeds on its first attempt, and at least 15 save → load → attach iterations return zero 0x8f; verified teardown (XFER-02, XFER-08)
 
 **Cross-cutting constraints:**
 
@@ -2704,7 +2718,7 @@ check. No test reads this table now.
 | 61. The Install Tables Generated, and a Guard That Compares Facts | v1.1.0 | 3/3 | Complete | 2026-09-19 |
 | 62. The Fixed Endpoint and the Broker That Owns the Machine | v2.0.0 | 5/5 | Complete | 2026-09-19 |
 | 63. The Monitor Channel Relayed, and the Connection as the Session | v2.0.0 | 12/12 | Complete | 2026-09-23 |
-| 64. Files as Bytes, Both Directions | v2.0.0 | 11/11 | In Progress | - |
+| 64. Files as Bytes, Both Directions | v2.0.0 | 11/14 | In Progress | - |
 | 65. Every Skill Script Through the One Endpoint, and CI With It | v2.0.0 | — | Not started | - |
 | 66. The Deletion Cutover — Gone, Not Bypassed | v2.0.0 | — | Not started | - |
 | 67. Ghidra's Runs Root Without the Alias | v2.0.0 | — | Not started | - |
