@@ -206,6 +206,12 @@ export const handleAutostart: StockSessionHandler = async (args, session) => {
   // Step 2: upload this client's own local file's bytes. A refusal --
   // including the transfer cap's own refusal, which names the limit -- sends
   // no AUTOSTART.
+  //
+  // ACCEPTED RISK, same shape as handleSnapshotLoad's own doc comment below
+  // (R-63-04-shaped, see 64-04-SUMMARY.md): transferFile()'s promise
+  // resolving does not guarantee the broker has finished publishing the
+  // bytes before the next line's AUTOSTART names the same staged file --
+  // here it is AUTOSTART, not UNDUMP, that can race the publish.
   const transferFile = session.deps.transferFile;
   if (!transferFile) {
     return isErrorText("vice_autostart: internal error -- no transferFile implementation is available on this session");
@@ -329,6 +335,12 @@ export const handleDiskAttach: StockSessionHandler = async (args, session) => {
   // Step 2: upload this client's own local file's bytes. A refusal --
   // including the transfer cap's own refusal, which names the limit -- sends
   // no AUTOSTART.
+  //
+  // ACCEPTED RISK, same shape as handleSnapshotLoad's own doc comment below
+  // (R-63-04-shaped, see 64-04-SUMMARY.md): transferFile()'s promise
+  // resolving does not guarantee the broker has finished publishing the
+  // bytes before the next line's AUTOSTART names the same staged file --
+  // here it is AUTOSTART, not UNDUMP, that can race the publish.
   const transferFile = session.deps.transferFile;
   if (!transferFile) {
     return isErrorText("vice_disk_attach: internal error -- no transferFile implementation is available on this session");
