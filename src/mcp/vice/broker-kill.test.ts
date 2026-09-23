@@ -24,11 +24,14 @@ import {
   registerShutdownHandlers,
   startupBanner,
   reapOrphanedInstances,
+  reapOrphanedConfigScratch,
+  sweepOrphanedStaging,
   _HANDLED_SIGNALS,
   type KillStage,
   type VerifiedKillDeps,
   type ShutdownDeps,
   type ReapOrphanedInstancesOptions,
+  type ReapOrphanedConfigScratchOptions,
 } from "./broker-kill.mts";
 import { createBrokerState, _snapshotState, type BrokerState, type InstanceRecord } from "./broker-state.mts";
 import { epochPathFor, nextEpochFor, writeEpochRecord, type EpochRecord } from "./broker-epoch.mts";
@@ -564,6 +567,11 @@ function startBroker(stateDir: string): BrokerHandle {
       VICE_BIN: "/bin/sleep",
       VICE_ARGS: "600",
       VICE_BROKER_CONTROL_PORT: "0",
+      // 64-05 (D-08): this spawned broker's own stock launches now create a
+      // config-scratch directory under VICE_BROKER_HOME -- confined to this
+      // test's own mkdtempSync stateDir (reaped in the caller's own
+      // `finally`), never the real machine-level ~/.c64-re-tools.
+      VICE_BROKER_HOME: stateDir,
       // quick-260805-9ha: this file's own module-scope override is a CLIENT
       // (this test process's) dial knob -- unset it here so the SPAWNED
       // broker's env never carries it, even though process.env above would
@@ -984,6 +992,190 @@ test("reapOrphanedInstances: a listProcesses-shaped decoy is never invoked -- th
   } finally {
     rmSync(stateDir, { recursive: true, force: true });
   }
+});
+
+// ===========================================================================
+// 64-05-PLAN.md, Task 2 (XFER-07, D-07/D-08): two MORE startup-only reaps,
+// with OPPOSITE lifetime rules. Every case drives injected enumeration,
+// liveness and removal functions -- no real process and no real signal
+// anywhere in this section.
+// ===========================================================================
+
+function writeConfigScratchFixture(root: string, dirName: string, record: { pid: number; expectedIdentity: string } | null): void {
+  mkdirSync(join(root, dirName), { recursive: true });
+  if (record !== null) {
+    writeFileSync(join(root, `${dirName}.json`), JSON.stringify(record));
+  }
+}
+
+test("reapOrphanedConfigScratch: a directory whose injected liveness reports the pid alive with a matching identity is left completely untouched", () => {
+  const root = mkdtempSync(join(tmpdir(), "broker-kill-config-scratch-alive-"));
+  try {
+    writeConfigScratchFixture(root, "vice-broker-vicerc-aaa", { pid: 4242, expectedIdentity: "x64sc" });
+    const removeCalls: string[] = [];
+    const result = reapOrphanedConfigScratch({
+      root,
+      isAlive: () => true,
+      readProcessArgs: () => "/usr/bin/x64sc -binarymonitor",
+      removeConfigScratchDir: (_root, dirName) => removeCalls.push(dirName),
+    });
+    assert.deepEqual(result, { found: 1, removed: 0 });
+    assert.deepEqual(removeCalls, [], "the removal function must never be called for a directory still owned by a live, matching process");
+    assert.ok(existsSync(join(root, "vice-broker-vicerc-aaa")), "the directory itself must still exist");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("reapOrphanedConfigScratch: a directory whose injected liveness reports the pid gone is removed", () => {
+  const root = mkdtempSync(join(tmpdir(), "broker-kill-config-scratch-gone-"));
+  try {
+    writeConfigScratchFixture(root, "vice-broker-vicerc-bbb", { pid: 4243, expectedIdentity: "x64sc" });
+    const removeCalls: string[] = [];
+    const result = reapOrphanedConfigScratch({
+      root,
+      isAlive: () => false,
+      readProcessArgs: () => "",
+      removeConfigScratchDir: (_root, dirName) => removeCalls.push(dirName),
+    });
+    assert.deepEqual(result, { found: 1, removed: 1 });
+    assert.deepEqual(removeCalls, ["vice-broker-vicerc-bbb"]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("reapOrphanedConfigScratch: a directory whose pid is alive but whose identity disagrees (a reused pid) is removed", () => {
+  const root = mkdtempSync(join(tmpdir(), "broker-kill-config-scratch-reused-"));
+  try {
+    writeConfigScratchFixture(root, "vice-broker-vicerc-ccc", { pid: 4244, expectedIdentity: "x64sc" });
+    const removeCalls: string[] = [];
+    const result = reapOrphanedConfigScratch({
+      root,
+      isAlive: () => true,
+      readProcessArgs: () => "/bin/sleep 600",
+      removeConfigScratchDir: (_root, dirName) => removeCalls.push(dirName),
+    });
+    assert.deepEqual(result, { found: 1, removed: 1 });
+    assert.deepEqual(removeCalls, ["vice-broker-vicerc-ccc"], "an alive pid whose argv no longer names the expected identity is a stale, reused-pid record and must be removed");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("reapOrphanedConfigScratch: a directory with an absent or unparsable pid record is left in place and is named in the log", () => {
+  const root = mkdtempSync(join(tmpdir(), "broker-kill-config-scratch-norecord-"));
+  try {
+    writeConfigScratchFixture(root, "vice-broker-vicerc-ddd", null);
+    const removeCalls: string[] = [];
+    const lines: string[] = [];
+    const result = reapOrphanedConfigScratch({
+      root,
+      isAlive: () => {
+        throw new Error("must not be called for an unreadable record");
+      },
+      removeConfigScratchDir: (_root, dirName) => removeCalls.push(dirName),
+      log: (line) => lines.push(line),
+    });
+    assert.deepEqual(result, { found: 1, removed: 0 });
+    assert.deepEqual(removeCalls, [], "a directory with no readable record must never be removed on a guess");
+    assert.ok(lines.some((l) => l.includes("vice-broker-vicerc-ddd")), "the directory must be named by name in the log");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("reapOrphanedConfigScratch/sweepOrphanedStaging: both log found and removed as zero when the root is empty", () => {
+  const configRoot = mkdtempSync(join(tmpdir(), "broker-kill-config-scratch-empty-"));
+  const stagingRoot = mkdtempSync(join(tmpdir(), "broker-kill-staging-empty-"));
+  try {
+    const configLines: string[] = [];
+    const configResult = reapOrphanedConfigScratch({ root: configRoot, log: (l) => configLines.push(l) });
+    assert.deepEqual(configResult, { found: 0, removed: 0 });
+    assert.equal(configLines.length, 1);
+    assert.match(configLines[0], /found 0/);
+    assert.match(configLines[0], /removed 0/);
+
+    const stagingLines: string[] = [];
+    const stagingResult = sweepOrphanedStaging({ root: stagingRoot, log: (l) => stagingLines.push(l) });
+    assert.deepEqual(stagingResult, { found: 0, removed: 0 });
+    assert.equal(stagingLines.length, 1);
+    assert.match(stagingLines[0], /found 0/);
+    assert.match(stagingLines[0], /removed 0/);
+  } finally {
+    rmSync(configRoot, { recursive: true, force: true });
+    rmSync(stagingRoot, { recursive: true, force: true });
+  }
+});
+
+test("reapOrphanedConfigScratch: a single throwing entry does not abort the pass -- the remaining entries are still processed", () => {
+  const root = mkdtempSync(join(tmpdir(), "broker-kill-config-scratch-throw-"));
+  try {
+    writeConfigScratchFixture(root, "vice-broker-vicerc-bad", { pid: 1, expectedIdentity: "x64sc" });
+    writeConfigScratchFixture(root, "vice-broker-vicerc-good", { pid: 2, expectedIdentity: "x64sc" });
+    const removeCalls: string[] = [];
+    const result = reapOrphanedConfigScratch({
+      root,
+      isAlive: (pid) => {
+        if (pid === 1) throw new Error("synthetic failure for the bad entry");
+        return false;
+      },
+      readProcessArgs: () => "",
+      removeConfigScratchDir: (_root, dirName) => removeCalls.push(dirName),
+    });
+    assert.equal(result.found, 2);
+    assert.ok(removeCalls.includes("vice-broker-vicerc-good"), "the entry after the throwing one must still be processed");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("sweepOrphanedStaging: removes every session directory it finds, and its injected liveness check is never called", () => {
+  const root = mkdtempSync(join(tmpdir(), "broker-kill-staging-sweep-"));
+  try {
+    mkdirSync(join(root, "req-1-1-aaaaaaaa"), { recursive: true });
+    mkdirSync(join(root, "req-1-1-bbbbbbbb"), { recursive: true });
+    const removeCalls: string[] = [];
+    let livenessCalled = false;
+    const result = sweepOrphanedStaging({
+      root,
+      isAlive: () => {
+        livenessCalled = true;
+        return true;
+      },
+      removeStagingSessionDir: (_root, dirName) => removeCalls.push(dirName),
+    });
+    assert.deepEqual(result, { found: 2, removed: 2 });
+    assert.deepEqual(removeCalls.sort(), ["req-1-1-aaaaaaaa", "req-1-1-bbbbbbbb"]);
+    assert.equal(livenessCalled, false, "sweepOrphanedStaging() has no pid check at all -- an injected liveness function must never be invoked");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("sweepOrphanedStaging: a single throwing removal does not abort the sweep -- the remaining entries are still processed", () => {
+  const root = mkdtempSync(join(tmpdir(), "broker-kill-staging-sweep-throw-"));
+  try {
+    mkdirSync(join(root, "req-bad"), { recursive: true });
+    mkdirSync(join(root, "req-good"), { recursive: true });
+    const removeCalls: string[] = [];
+    const result = sweepOrphanedStaging({
+      root,
+      removeStagingSessionDir: (_root, dirName) => {
+        if (dirName === "req-bad") throw new Error("synthetic failure for the bad entry");
+        removeCalls.push(dirName);
+      },
+    });
+    assert.equal(result.found, 2);
+    assert.ok(removeCalls.includes("req-good"), "the entry after the throwing one must still be processed");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("resources-sync structural aid: reapOrphanedConfigScratch()/sweepOrphanedStaging() are real functions imported unbuilt from broker-kill.mts", () => {
+  assert.equal(typeof reapOrphanedConfigScratch, "function");
+  assert.equal(typeof sweepOrphanedStaging, "function");
 });
 
 test("structural: the real broker's startup reap runs before its control listener accepts (source-order check, complementing the live end-to-end shutdown tests above)", () => {

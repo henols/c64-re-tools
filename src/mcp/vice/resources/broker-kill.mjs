@@ -38,7 +38,7 @@
 //     see reapOrphanedInstances()'s own header comment for the incident
 //     this revision closes.
 import { execFileSync } from "node:child_process";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 const defaultIsAlive = (pid) => {
     try {
@@ -504,4 +504,153 @@ export async function reapOrphanedInstances(options) {
     }
     log(`vice-broker: startup reap found ${found} process(es) in the emulator port band, terminated ${killed}`);
     return { found, killed };
+}
+/** The SAME liveness+identity judgement verifiedKill() itself applies
+ * (isAlive, then -- only if alive -- does the process's own argv still name
+ * `expectedIdentity`), reusing THIS module's own defaultIsAlive/
+ * defaultReadProcessArgs rather than writing a second copy of either. This
+ * function never signals the process -- it only answers the question
+ * reapOrphanedConfigScratch() needs answered, and verifiedKill() (a
+ * SEPARATE call, never made here) is what actually terminates one. */
+function configScratchStillOwnedByLiveProcess(pid, expectedIdentity, deps) {
+    if (!deps.isAlive(pid))
+        return false;
+    return deps.readProcessArgs(pid).includes(expectedIdentity);
+}
+function configScratchOwnerRecordPath(root, dirName) {
+    return join(root, `${dirName}.json`);
+}
+function defaultListConfigScratchDirs(root) {
+    let entries;
+    try {
+        entries = readdirSync(root, { withFileTypes: true });
+    }
+    catch {
+        return [];
+    }
+    return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+}
+/** Reads and validates `<root>/<dirName>.json` -- the pid-liveness record
+ * broker-launch.mts's writeConfigScratchOwnerRecord() writes BESIDE (never
+ * inside) the directory it describes. Returns null for absent, unreadable,
+ * malformed, or incomplete records -- ALWAYS the safe direction: "leave it
+ * alone", never "remove on a guess" (D-08's own mandatory rule). */
+function defaultReadConfigScratchOwnerRecord(root, dirName) {
+    let raw;
+    try {
+        raw = readFileSync(configScratchOwnerRecordPath(root, dirName), "utf8");
+    }
+    catch {
+        return null;
+    }
+    let parsed;
+    try {
+        parsed = JSON.parse(raw);
+    }
+    catch {
+        return null;
+    }
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
+        return null;
+    const pid = parsed.pid;
+    const expectedIdentity = parsed.expectedIdentity;
+    if (typeof pid !== "number" || !Number.isFinite(pid) || pid <= 0)
+        return null;
+    if (typeof expectedIdentity !== "string" || expectedIdentity === "")
+        return null;
+    return { pid, expectedIdentity };
+}
+/** Removes both the scratch directory AND its sibling record file -- a
+ * dangling record with no directory (or the reverse) must never survive a
+ * removal this pass performed. Best-effort: a target already gone is a
+ * no-op, not a failure. */
+function defaultRemoveConfigScratchDir(root, dirName) {
+    rmSync(join(root, dirName), { recursive: true, force: true });
+    rmSync(configScratchOwnerRecordPath(root, dirName), { force: true });
+}
+/** The live-pid-GUARDED reap: a config-scratch directory whose recorded
+ * process is still alive AND still identifies as the same binary is left
+ * COMPLETELY untouched -- the guard is mandatory, not optional, because a
+ * crashed broker can leave orphaned but still-running emulator children
+ * whose configuration directory must not be pulled out from under them
+ * (D-08). A directory whose recorded pid is alive but whose identity
+ * disagrees is treated as a STALE record from a reused pid and is removed
+ * (the same pid-reuse judgement verifiedKill() itself makes). A directory
+ * with no readable pid record is logged by name and left alone -- removing
+ * on a guess is the exact failure this reap exists to refuse. Never throws
+ * past a single directory's own failure -- one unreadable or undeletable
+ * entry does not abort the pass. Logs found/removed counts including the
+ * zero case, exactly like reapOrphanedInstances() above. */
+export function reapOrphanedConfigScratch(options) {
+    const log = options.log ?? defaultLog;
+    const listConfigScratchDirs = options.listConfigScratchDirs ?? defaultListConfigScratchDirs;
+    const readOwnerRecord = options.readOwnerRecord ?? defaultReadConfigScratchOwnerRecord;
+    const removeConfigScratchDir = options.removeConfigScratchDir ?? defaultRemoveConfigScratchDir;
+    const isAlive = options.isAlive ?? defaultIsAlive;
+    const readProcessArgs = options.readProcessArgs ?? defaultReadProcessArgs;
+    const dirNames = listConfigScratchDirs(options.root);
+    let found = 0;
+    let removed = 0;
+    for (const dirName of dirNames) {
+        found++;
+        try {
+            const record = readOwnerRecord(options.root, dirName);
+            if (record === null) {
+                log(`vice-broker: config-scratch reap -- ${dirName} has no readable pid record; leaving it in place`);
+                continue;
+            }
+            if (configScratchStillOwnedByLiveProcess(record.pid, record.expectedIdentity, { isAlive, readProcessArgs })) {
+                continue; // still in use by its own emulator -- left completely untouched
+            }
+            removeConfigScratchDir(options.root, dirName);
+            removed++;
+        }
+        catch (e) {
+            log(`vice-broker: config-scratch reap -- ${dirName} threw during reap: ${e.message}`);
+        }
+    }
+    log(`vice-broker: config-scratch reap found ${found} director(y/ies), removed ${removed}`);
+    return { found, removed };
+}
+function defaultListStagingSessionDirs(root) {
+    let entries;
+    try {
+        entries = readdirSync(root, { withFileTypes: true });
+    }
+    catch {
+        return [];
+    }
+    return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+}
+function defaultRemoveStagingSessionDir(root, dirName) {
+    rmSync(join(root, dirName), { recursive: true, force: true });
+}
+/** The pass with NO pid check, deliberately (D-07): a staging directory is
+ * not itself a process, and its real teardown trigger is its own session's
+ * connection closing (SESS-03/SESS-04's handleRelease(), already wired).
+ * At broker STARTUP, therefore, every session directory still present under
+ * the staging root is BY DEFINITION residue a crashed broker left -- no
+ * broker that shut down cleanly leaves one behind -- and every one found is
+ * removed unconditionally and recursively. Never throws past a single
+ * directory's own failure. Logs found/removed counts including the zero
+ * case. */
+export function sweepOrphanedStaging(options) {
+    const log = options.log ?? defaultLog;
+    const listStagingSessionDirs = options.listStagingSessionDirs ?? defaultListStagingSessionDirs;
+    const removeStagingSessionDir = options.removeStagingSessionDir ?? defaultRemoveStagingSessionDir;
+    const dirNames = listStagingSessionDirs(options.root);
+    let found = 0;
+    let removed = 0;
+    for (const dirName of dirNames) {
+        found++;
+        try {
+            removeStagingSessionDir(options.root, dirName);
+            removed++;
+        }
+        catch (e) {
+            log(`vice-broker: staging sweep -- ${dirName} threw during removal: ${e.message}`);
+        }
+    }
+    log(`vice-broker: staging sweep found ${found} session director(y/ies), removed ${removed}`);
+    return { found, removed };
 }

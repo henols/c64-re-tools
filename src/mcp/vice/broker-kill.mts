@@ -32,7 +32,7 @@
 //     see reapOrphanedInstances()'s own header comment for the incident
 //     this revision closes.
 import { execFileSync } from "node:child_process";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 // TYPE-ONLY imports, deliberately -- this module is imported directly
 // (unbuilt, native Node type-stripping) by its own test file and by
@@ -51,6 +51,12 @@ import { join } from "node:path";
 // wiring site; tests inject their own.
 import type { BrokerState } from "./broker-state.mjs";
 import type { EpochRecord } from "./broker-epoch.mjs";
+// SAME type-only reasoning, for the SAME reason -- ConfigScratchOwnerRecord
+// is the pid-liveness record broker-launch.mts's own
+// writeConfigScratchOwnerRecord() writes beside each config-scratch
+// directory; reapOrphanedConfigScratch() below reads it back but never
+// value-imports the module that defines it.
+import type { ConfigScratchOwnerRecord } from "./broker-launch.mjs";
 
 /** The same four-value vocabulary resources/vice-broker.sh's
  * signal_vice_child_pid() already returns -- the recycle ack contract
@@ -631,4 +637,246 @@ export async function reapOrphanedInstances(options: ReapOrphanedInstancesOption
 
   log(`vice-broker: startup reap found ${found} process(es) in the emulator port band, terminated ${killed}`);
   return { found, killed };
+}
+
+// ============================================================================
+// Phase 64 (XFER-07, D-07/D-08): two MORE startup-only reaps, both called
+// from vice-broker.mts's SAME unconditional startup-reap block as
+// reapOrphanedInstances() above -- a second and third pass in this existing
+// seam, never a new one.
+//
+// The two kinds of broker-owned scratch these reap have OPPOSITE lifetime
+// rules, and that is deliberate, not an oversight to "simplify" later:
+//
+//   - A per-launch CONFIG-SCRATCH directory (broker-launch.mts's
+//     spawnAndRecordInstance()) MUST outlive the function that created it,
+//     for the WHOLE LIFETIME of the emulator process using it. Applying the
+//     staging rule here -- remove unconditionally, no pid check -- deletes a
+//     LIVE emulator's configuration out from under it mid-session.
+//   - A per-session STAGING directory (broker-transfer.mts's
+//     stageFileSlot()) must NOT outlive its session; its real teardown
+//     trigger is the session's own connection closing (SESS-03/SESS-04,
+//     handleRelease()), which already runs for every broker that shuts down
+//     cleanly. Applying the config rule here -- keep whatever has a live pid
+//     -- is a category error: a staging directory is not itself a process,
+//     so there is no pid to check, and "still present at the NEXT broker's
+//     startup" is BY DEFINITION residue the previous, crashed broker left
+//     (D-07's whole argument for a startup-only sweep: this is the one
+//     moment the residue is unambiguous).
+//
+// A sweeper that collapses these two rules into one is exactly the failure
+// D-08 names: the config rule applied to staging leaks a payload onto real
+// disk indefinitely; the staging rule applied to config directories breaks a
+// running session. They share this module and share the broker root, but
+// never share a rule.
+// ============================================================================
+
+export interface ConfigScratchReapResult {
+  found: number;
+  removed: number;
+}
+
+/** The SAME liveness+identity judgement verifiedKill() itself applies
+ * (isAlive, then -- only if alive -- does the process's own argv still name
+ * `expectedIdentity`), reusing THIS module's own defaultIsAlive/
+ * defaultReadProcessArgs rather than writing a second copy of either. This
+ * function never signals the process -- it only answers the question
+ * reapOrphanedConfigScratch() needs answered, and verifiedKill() (a
+ * SEPARATE call, never made here) is what actually terminates one. */
+function configScratchStillOwnedByLiveProcess(
+  pid: number,
+  expectedIdentity: string,
+  deps: { isAlive: (pid: number) => boolean; readProcessArgs: (pid: number) => string },
+): boolean {
+  if (!deps.isAlive(pid)) return false;
+  return deps.readProcessArgs(pid).includes(expectedIdentity);
+}
+
+function configScratchOwnerRecordPath(root: string, dirName: string): string {
+  return join(root, `${dirName}.json`);
+}
+
+function defaultListConfigScratchDirs(root: string): string[] {
+  let entries;
+  try {
+    entries = readdirSync(root, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+}
+
+/** Reads and validates `<root>/<dirName>.json` -- the pid-liveness record
+ * broker-launch.mts's writeConfigScratchOwnerRecord() writes BESIDE (never
+ * inside) the directory it describes. Returns null for absent, unreadable,
+ * malformed, or incomplete records -- ALWAYS the safe direction: "leave it
+ * alone", never "remove on a guess" (D-08's own mandatory rule). */
+function defaultReadConfigScratchOwnerRecord(root: string, dirName: string): ConfigScratchOwnerRecord | null {
+  let raw: string;
+  try {
+    raw = readFileSync(configScratchOwnerRecordPath(root, dirName), "utf8");
+  } catch {
+    return null;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
+  const pid = (parsed as Record<string, unknown>).pid;
+  const expectedIdentity = (parsed as Record<string, unknown>).expectedIdentity;
+  if (typeof pid !== "number" || !Number.isFinite(pid) || pid <= 0) return null;
+  if (typeof expectedIdentity !== "string" || expectedIdentity === "") return null;
+  return { pid, expectedIdentity };
+}
+
+/** Removes both the scratch directory AND its sibling record file -- a
+ * dangling record with no directory (or the reverse) must never survive a
+ * removal this pass performed. Best-effort: a target already gone is a
+ * no-op, not a failure. */
+function defaultRemoveConfigScratchDir(root: string, dirName: string): void {
+  rmSync(join(root, dirName), { recursive: true, force: true });
+  rmSync(configScratchOwnerRecordPath(root, dirName), { force: true });
+}
+
+export interface ReapOrphanedConfigScratchOptions {
+  /** The config-scratch root -- broker-home.mts's own
+   * brokerConfigScratchDir() in production, resolved by the caller
+   * (vice-broker.mts, which CAN value-import broker-home.mjs -- it is only
+   * ever executed from its BUILT form) and passed in as a plain string.
+   * This module cannot value-import broker-home.mjs itself, for the SAME
+   * reason it cannot value-import broker-launch.mjs (see this module's own
+   * header). */
+  root: string;
+  /** Enumerates the per-launch scratch directory NAMES currently on disk
+   * directly under `root` -- defaults to a real, directories-only listing.
+   * Overridable so tests never touch a real directory. */
+  listConfigScratchDirs?: (root: string) => string[];
+  /** Reads a directory's own sibling pid-record file -- defaults to a real
+   * read+parse. Overridable so tests drive every row of the behavior
+   * contract without writing a real record file. */
+  readOwnerRecord?: (root: string, dirName: string) => ConfigScratchOwnerRecord | null;
+  /** Same liveness-check seam verifiedKill()'s own VerifiedKillDeps
+   * exposes -- defaults to the real process.kill(pid, 0) / `ps` check.
+   * Overridable so tests never signal a real process. */
+  isAlive?: (pid: number) => boolean;
+  readProcessArgs?: (pid: number) => string;
+  /** Removes one scratch directory and its sibling record file -- defaults
+   * to a real recursive removal of both. Overridable so tests observe
+   * exactly which directories were removed without touching real disk. */
+  removeConfigScratchDir?: (root: string, dirName: string) => void;
+  log?: (line: string) => void;
+}
+
+/** The live-pid-GUARDED reap: a config-scratch directory whose recorded
+ * process is still alive AND still identifies as the same binary is left
+ * COMPLETELY untouched -- the guard is mandatory, not optional, because a
+ * crashed broker can leave orphaned but still-running emulator children
+ * whose configuration directory must not be pulled out from under them
+ * (D-08). A directory whose recorded pid is alive but whose identity
+ * disagrees is treated as a STALE record from a reused pid and is removed
+ * (the same pid-reuse judgement verifiedKill() itself makes). A directory
+ * with no readable pid record is logged by name and left alone -- removing
+ * on a guess is the exact failure this reap exists to refuse. Never throws
+ * past a single directory's own failure -- one unreadable or undeletable
+ * entry does not abort the pass. Logs found/removed counts including the
+ * zero case, exactly like reapOrphanedInstances() above. */
+export function reapOrphanedConfigScratch(options: ReapOrphanedConfigScratchOptions): ConfigScratchReapResult {
+  const log = options.log ?? defaultLog;
+  const listConfigScratchDirs = options.listConfigScratchDirs ?? defaultListConfigScratchDirs;
+  const readOwnerRecord = options.readOwnerRecord ?? defaultReadConfigScratchOwnerRecord;
+  const removeConfigScratchDir = options.removeConfigScratchDir ?? defaultRemoveConfigScratchDir;
+  const isAlive = options.isAlive ?? defaultIsAlive;
+  const readProcessArgs = options.readProcessArgs ?? defaultReadProcessArgs;
+
+  const dirNames = listConfigScratchDirs(options.root);
+  let found = 0;
+  let removed = 0;
+  for (const dirName of dirNames) {
+    found++;
+    try {
+      const record = readOwnerRecord(options.root, dirName);
+      if (record === null) {
+        log(`vice-broker: config-scratch reap -- ${dirName} has no readable pid record; leaving it in place`);
+        continue;
+      }
+      if (configScratchStillOwnedByLiveProcess(record.pid, record.expectedIdentity, { isAlive, readProcessArgs })) {
+        continue; // still in use by its own emulator -- left completely untouched
+      }
+      removeConfigScratchDir(options.root, dirName);
+      removed++;
+    } catch (e) {
+      log(`vice-broker: config-scratch reap -- ${dirName} threw during reap: ${(e as Error).message}`);
+    }
+  }
+  log(`vice-broker: config-scratch reap found ${found} director(y/ies), removed ${removed}`);
+  return { found, removed };
+}
+
+export interface StagingSweepResult {
+  found: number;
+  removed: number;
+}
+
+function defaultListStagingSessionDirs(root: string): string[] {
+  let entries;
+  try {
+    entries = readdirSync(root, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+}
+
+function defaultRemoveStagingSessionDir(root: string, dirName: string): void {
+  rmSync(join(root, dirName), { recursive: true, force: true });
+}
+
+export interface SweepOrphanedStagingOptions {
+  /** The staging root -- broker-home.mts's own brokerStagingDir() in
+   * production, passed in as a plain string for the SAME reason as
+   * ReapOrphanedConfigScratchOptions.root above. */
+  root: string;
+  listStagingSessionDirs?: (root: string) => string[];
+  removeStagingSessionDir?: (root: string, dirName: string) => void;
+  /** Accepted for SYMMETRY with reapOrphanedConfigScratch()'s own liveness
+   * seam only -- deliberately NEVER called anywhere in this function's own
+   * body. A test injects a spy here specifically to prove that "no pid
+   * check" is genuinely true: if this function is ever changed to call it,
+   * that test starts failing loudly, rather than the omission silently
+   * rotting into a call nobody notices. */
+  isAlive?: (pid: number) => boolean;
+  log?: (line: string) => void;
+}
+
+/** The pass with NO pid check, deliberately (D-07): a staging directory is
+ * not itself a process, and its real teardown trigger is its own session's
+ * connection closing (SESS-03/SESS-04's handleRelease(), already wired).
+ * At broker STARTUP, therefore, every session directory still present under
+ * the staging root is BY DEFINITION residue a crashed broker left -- no
+ * broker that shut down cleanly leaves one behind -- and every one found is
+ * removed unconditionally and recursively. Never throws past a single
+ * directory's own failure. Logs found/removed counts including the zero
+ * case. */
+export function sweepOrphanedStaging(options: SweepOrphanedStagingOptions): StagingSweepResult {
+  const log = options.log ?? defaultLog;
+  const listStagingSessionDirs = options.listStagingSessionDirs ?? defaultListStagingSessionDirs;
+  const removeStagingSessionDir = options.removeStagingSessionDir ?? defaultRemoveStagingSessionDir;
+
+  const dirNames = listStagingSessionDirs(options.root);
+  let found = 0;
+  let removed = 0;
+  for (const dirName of dirNames) {
+    found++;
+    try {
+      removeStagingSessionDir(options.root, dirName);
+      removed++;
+    } catch (e) {
+      log(`vice-broker: staging sweep -- ${dirName} threw during removal: ${(e as Error).message}`);
+    }
+  }
+  log(`vice-broker: staging sweep found ${found} session director(y/ies), removed ${removed}`);
+  return { found, removed };
 }
