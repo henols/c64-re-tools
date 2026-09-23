@@ -179,7 +179,24 @@ export function readTransferHeader(chunk: Buffer, carry: Buffer = Buffer.alloc(0
   return { header: { kind: obj.kind, byteLength: obj.byteLength, sha256: obj.sha256 }, remainder, overflow: false };
 }
 
-export type TransferResult = { ok: true; byteLength: number; sha256: string } | { ok: false; reason: string };
+/** `code`/`wireReason` (Phase 64 gap closure G-64-3, plan 64-13) exist ONLY
+ * for `receivePayloadToFile()`'s own failure branch -- `sendPayloadFromFile()`
+ * never sets them, and every existing caller that reads only `.reason`
+ * (this file's own tests among them) is unaffected, since both fields are
+ * optional. `code` classifies the refusal for the wire: `bad_request` for a
+ * malformed/over-cap declared length or a digest/count mismatch (the
+ * SENDER's own declared values disagreeing with what was observed --
+ * D-11), `internal` for a receive or publish fault (a local I/O failure on
+ * the broker's own side). `wireReason` is the PATH-FREE text a caller
+ * writes to the client on the transfer connection (D-15/D-17); `reason`
+ * stays the full text -- including `destPath` where one of the two fs
+ * failure branches below embeds it -- for the broker's own stderr line
+ * only. When `wireReason` is absent, `reason` is already path-free (every
+ * validation-before-the-pipeline branch, and `verifyObserved()`'s own
+ * reasons) and a caller may use it verbatim on the wire too. */
+export type TransferResult =
+  | { ok: true; byteLength: number; sha256: string }
+  | { ok: false; reason: string; code?: "bad_request" | "internal"; wireReason?: string };
 
 export interface SendPayloadFromFileOptions {
   socket: Socket;
@@ -270,6 +287,19 @@ export interface ReceivePayloadToFileOptions {
   pending?: Buffer;
   /** Defaults to `TRANSFER_MAX_BYTES`. */
   capBytes?: number;
+  /** Optional pre-publish timing hook (Phase 64 gap closure G-64-3, plan
+   * 64-13, Task 1): if present, awaited AFTER `verifyObserved()` has
+   * already confirmed the observed byte count and digest match the
+   * header's declared values, and STRICTLY BEFORE `renameSync()` ever
+   * runs. Takes no path and returns nothing -- a timing seam only, never
+   * the injectable filesystem-root seam D-17 forbids on any transfer
+   * module. A rejected hook is treated exactly like a publish failure: the
+   * temp file is removed and this function resolves `{ ok: false, ... }`
+   * with no rename attempted. The real broker's production wiring
+   * (`vice-broker.mts`'s `run()`) never supplies this -- only a test does,
+   * to make the publish-race this plan closes deterministic instead of a
+   * 37-67% coin flip. */
+  beforePublish?: () => Promise<void>;
 }
 
 /**
@@ -288,22 +318,18 @@ export interface ReceivePayloadToFileOptions {
  * `rmSync(..., { force: true })` and this function resolves
  * `{ ok: false, reason }`. Never throws.
  */
-export async function receivePayloadToFile({ socket, destPath, header, pending, capBytes = TRANSFER_MAX_BYTES }: ReceivePayloadToFileOptions): Promise<TransferResult> {
+export async function receivePayloadToFile({ socket, destPath, header, pending, capBytes = TRANSFER_MAX_BYTES, beforePublish }: ReceivePayloadToFileOptions): Promise<TransferResult> {
   // The declared byteLength is untrusted input (D-11) -- validated here,
   // independently of whatever check `readTransferHeader()` may already have
   // run, because this function is directly callable with a hand-built
   // header too. Refused BEFORE the pipeline is ever constructed.
   if (typeof header.byteLength !== "number" || !Number.isSafeInteger(header.byteLength) || header.byteLength < 0) {
-    return {
-      ok: false,
-      reason: `vice: transfer header field 'byteLength' must be a non-negative safe integer, got ${JSON.stringify(header.byteLength)}`,
-    };
+    const reason = `vice: transfer header field 'byteLength' must be a non-negative safe integer, got ${JSON.stringify(header.byteLength)}`;
+    return { ok: false, reason, code: "bad_request", wireReason: reason };
   }
   if (header.byteLength > capBytes) {
-    return {
-      ok: false,
-      reason: `vice: transfer declared byteLength ${header.byteLength} exceeds the ${capBytes} byte cap (sixteen mebibytes)`,
-    };
+    const reason = `vice: transfer declared byteLength ${header.byteLength} exceeds the ${capBytes} byte cap (sixteen mebibytes)`;
+    return { ok: false, reason, code: "bad_request", wireReason: reason };
   }
 
   if (pending && pending.length > 0) {
@@ -328,21 +354,52 @@ export async function receivePayloadToFile({ socket, destPath, header, pending, 
     await pipeline(socket, transform, createWriteStream(tmpPath));
   } catch (e) {
     cleanupTmp();
-    return { ok: false, reason: `vice: transfer failed while receiving into ${destPath}: ${(e as Error).message}` };
+    const message = (e as Error).message;
+    return {
+      ok: false,
+      code: "internal",
+      reason: `vice: transfer failed while receiving into ${destPath}: ${message}`,
+      wireReason: `vice: transfer failed while receiving the payload: ${message}`,
+    };
   }
 
   const observed = transform.result();
   const verdict = verifyObserved(expected, observed);
   if (!verdict.ok) {
     cleanupTmp();
-    return { ok: false, reason: verdict.reason };
+    return { ok: false, reason: verdict.reason, code: "bad_request", wireReason: verdict.reason };
+  }
+
+  // Pre-publish timing hook (G-64-3, plan 64-13): awaited strictly AFTER
+  // the digest/count verdict above and STRICTLY BEFORE renameSync() below
+  // -- a rejected hook is a publish failure, exactly like a renameSync()
+  // throw. Absent in every production call (only a test supplies it).
+  if (beforePublish) {
+    try {
+      await beforePublish();
+    } catch (e) {
+      cleanupTmp();
+      const message = (e as Error).message;
+      return {
+        ok: false,
+        code: "internal",
+        reason: `vice: transfer publish hook rejected before ${destPath} was published: ${message}`,
+        wireReason: `vice: transfer failed before the upload could be published: ${message}`,
+      };
+    }
   }
 
   try {
     renameSync(tmpPath, destPath);
   } catch (e) {
     cleanupTmp();
-    return { ok: false, reason: `vice: failed to publish ${destPath}: ${(e as Error).message}` };
+    const message = (e as Error).message;
+    return {
+      ok: false,
+      code: "internal",
+      reason: `vice: failed to publish ${destPath}: ${message}`,
+      wireReason: `vice: failed to publish the received file: ${message}`,
+    };
   }
 
   return { ok: true, byteLength: observed.byteLength, sha256: observed.sha256 };

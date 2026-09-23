@@ -1125,7 +1125,23 @@ export function handleStageFile(grantId: string, slot: string, state: BrokerStat
  * path today. The in-flight guard is released in a `finally` on every path,
  * and the socket is destroyed once the transfer settles -- a transfer
  * connection is short-lived by design. */
-export function handleFileTransfer(request: FileTransferRequest, socket: Socket, pending: Buffer, state: BrokerState): FileTransferOutcome {
+/**
+ * Injectable dependency seam for handleFileTransfer() (Phase 64 gap closure
+ * G-64-3, plan 64-13, Task 1) -- this project's standard destructured-
+ * options-object register, mirroring HandleRelayDeathDeps' own posture:
+ * every default here IS production behaviour, and a test injects its own
+ * hook to prove the publish-completion ordering without needing a real,
+ * unpredictable race window.
+ */
+export interface HandleFileTransferDeps {
+  /** Threaded straight through to `receivePayloadToFile()`'s own
+   * `beforePublish` option -- see that option's header comment for the
+   * full contract (a timing seam, not a filesystem-root seam D-17
+   * forbids). The real broker's `run()` wiring below never supplies this. */
+  beforePublish?: () => Promise<void>;
+}
+
+export function handleFileTransfer(request: FileTransferRequest, socket: Socket, pending: Buffer, state: BrokerState, deps: HandleFileTransferDeps = {}): FileTransferOutcome {
   void state;
 
   const resolved = resolveStagedFile(request.handle);
@@ -1161,12 +1177,20 @@ export function handleFileTransfer(request: FileTransferRequest, socket: Socket,
     // arrived already, on the `transfer` request itself), so this is a
     // plain JSON line, never writeTransferHeader() (whose type requires all
     // three TransferHeader fields).
+    //
+    // RED PHASE NOTE (G-64-3, plan 64-13, Task 1): `deps.beforePublish` is
+    // threaded through to `receivePayloadToFile()` below so a test can hold
+    // the publish back deterministically, but this branch does not yet
+    // report completion back to the client on this connection -- that is
+    // this task's own GREEN change, added once the RED run below has been
+    // recorded.
     socket.write(`${JSON.stringify({ kind: "transfer_ready" })}\n`);
     receivePayloadToFile({
       socket,
       destPath: entry.path,
       header: { kind: "file", byteLength: request.byteLength, sha256: request.sha256 },
       pending,
+      beforePublish: deps.beforePublish,
     })
       .then((result) => {
         if (!result.ok) {

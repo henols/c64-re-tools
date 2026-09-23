@@ -9,7 +9,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, connect as netConnect, type Server, type Socket } from "node:net";
 import type { AddressInfo } from "node:net";
-import { mkdtempSync, writeFileSync, rmSync, readFileSync, readdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, readFileSync, readdirSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -23,6 +23,24 @@ import {
   type StockConnectOptions,
   type DialMonitorSocketFn,
 } from "./stock-connect.ts";
+import { build } from "./build.ts";
+import {
+  startControlListener,
+  newControlToken,
+  type StartControlListenerResult,
+  type AcquireOutcome,
+  type RecycleOutcome,
+  type StatusInstanceEntry,
+  type HostStateFields,
+  type MonitorClaimOutcome,
+  type MonitorReleaseOutcome,
+  type RelayAttachOutcome,
+  type OperationNoteOutcome,
+  type FileTransferRequest,
+  type FileTransferOutcome,
+  type StageFileOutcome as ControlStageFileOutcome,
+} from "./broker-control.mts";
+import { createBrokerState, type BrokerState, type InstanceRecord } from "./broker-state.mts";
 import {
   ViceMonitorClient,
   CommandType,
@@ -1146,6 +1164,240 @@ test("stockConnect: a restarted machine's replaced binary re-validates the capab
       await stockDisconnect(second);
     },
   );
+});
+
+// ---------------------------------------------------------------------------
+// G-64-3 (plan 64-13, Task 1): defaultTransferFile() is NOT exported (see
+// its own header comment for why) -- the only way to reach it is through
+// stockConnect()'s own deps normalisation (`deps.transferFile ?? defaultTransferFile`),
+// so this section spins up a REAL control listener wired to the COMPILED
+// artifacts' own handleStageFile()/handleFileTransfer()/handleRelease()
+// (mirrors vice-broker-staging.test.ts's/stock-machine.test.ts's own
+// startRoundTripListener() precedent -- vice-broker.mts is host-bound and
+// value-imports "./broker-transfer.mjs", which only resolves once BUILT),
+// separate from the stub emulator `withStockStubServer()` runs elsewhere in
+// this file for the HANDSHAKE. broker-control.mts itself is imported
+// directly (never built) -- only vice-broker.mts's own transitive import of
+// broker-transfer.mjs requires the compiled resources/ form.
+// ---------------------------------------------------------------------------
+
+function makeTransferGrantedInstance(port: number, overrides: Partial<InstanceRecord> = {}): InstanceRecord {
+  return {
+    port,
+    url: `http://127.0.0.1:${port}/mcp`,
+    state: "granted",
+    reason: "acquire",
+    epochFile: "/tmp/stock-connect-transfer-epoch.json",
+    supervisorDir: "/tmp/stock-connect-transfer",
+    pid: 4242,
+    expectedIdentity: "x64sc",
+    launchedAt: 0,
+    readyAt: 0,
+    viceBin: "x64sc",
+    viceArgs: [],
+    dryRun: false,
+    monitorClients: {},
+    ...overrides,
+  };
+}
+
+function setupTransferBrokerState(emulatorPort: number, targetId: string): BrokerState {
+  const state = createBrokerState();
+  state.instances.set(emulatorPort, makeTransferGrantedInstance(emulatorPort));
+  state.grants.set(targetId, { id: targetId, port: emulatorPort, grantedAt: Date.now(), pid: 4242, operation: null, sessionLabel: null });
+  return state;
+}
+
+/** Starts a REAL control listener wired to the compiled artifacts' own
+ * handleStageFile()/handleFileTransfer()/handleRelease() -- the same
+ * production functions the real broker calls. `getDeps` is read AT CALL
+ * TIME (not captured once), so a test can arm/rearm the `beforePublish`
+ * hook per case, right before it starts its own upload, without needing a
+ * fresh listener each time. */
+async function startTransferControlListener(
+  state: BrokerState,
+  emulatorPort: number,
+  getDeps: () => { beforePublish?: () => Promise<void> },
+): Promise<{ listener: StartControlListenerResult; token: string }> {
+  const token = newControlToken();
+  const viceBrokerModule = (await import(new URL("./resources/vice-broker.mjs", import.meta.url).href)) as unknown as {
+    handleRelease: (requestId: string, state: BrokerState) => void;
+    handleStageFile: (grantId: string, slot: string, state: BrokerState) => ControlStageFileOutcome;
+    handleFileTransfer: (
+      request: FileTransferRequest,
+      socket: Socket,
+      pending: Buffer,
+      state: BrokerState,
+      deps?: { beforePublish?: () => Promise<void> },
+    ) => FileTransferOutcome;
+  };
+  const { handleRelease, handleStageFile, handleFileTransfer } = viceBrokerModule;
+  const listener = await startControlListener({
+    host: "127.0.0.1",
+    port: 0,
+    token,
+    onAcquire: async (): Promise<AcquireOutcome> => ({
+      ok: true,
+      grant: { port: emulatorPort, url: `http://127.0.0.1:${emulatorPort}/mcp`, epochFile: "/tmp/stock-connect-transfer-epoch.json", supervisorDir: "/tmp/stock-connect-transfer" },
+    }),
+    onRelease: (requestId: string) => handleRelease(requestId, state),
+    onRecycle: async (): Promise<RecycleOutcome> => ({
+      port: null,
+      pid: null,
+      viceBin: null,
+      killStage: "no_signal",
+      epochBefore: null,
+      outcome: "grant_lookup_failed",
+      reason: "not exercised by stock-connect.test.ts",
+    }),
+    onStatus: (): StatusInstanceEntry[] => [],
+    onHostState: (): HostStateFields => ({
+      pid: process.pid,
+      startedAt: "2026-01-01T00:00:00Z",
+      nodeVersion: process.version,
+      viceBin: "x64sc",
+      maxInstances: 1,
+      basePort: emulatorPort,
+      backend: "stock",
+    }),
+    onMonitorClaim: (): MonitorClaimOutcome => ({ ok: false, code: "bad_request" }),
+    onMonitorRelease: (): MonitorReleaseOutcome => ({ ok: false, code: "bad_request" }),
+    onRelayAttach: (): RelayAttachOutcome => ({ ok: false, code: "internal" }),
+    onOperation: (): OperationNoteOutcome => ({ ok: true }),
+    onHostTool: async () => ({ ok: false, message: "not exercised by stock-connect.test.ts" }),
+    onStageFile: (targetId: string, slot: string) => handleStageFile(targetId, slot, state),
+    onFileTransfer: (request, socket, pending) => handleFileTransfer(request, socket, pending, state, getDeps()),
+  });
+  return { listener, token };
+}
+
+/** A minimal line-oriented control client -- send() writes one JSON line,
+ * sendAndRead() awaits the next reply line, by the SAME byte-level
+ * `indexOf(0x0a)` search every other loopback harness in this package uses
+ * (never a whole-buffer string decode). */
+function makeTransferControlClient(port: number): { sendAndRead: (obj: Record<string, unknown>) => Promise<Record<string, unknown>>; close: () => void } {
+  const socket = netConnect({ host: "127.0.0.1", port });
+  return {
+    async sendAndRead(obj: Record<string, unknown>): Promise<Record<string, unknown>> {
+      const p = new Promise<Record<string, unknown>>((resolvePromise, reject) => {
+        let carry = Buffer.alloc(0);
+        const onData = (chunk: Buffer): void => {
+          carry = Buffer.concat([carry, chunk]);
+          const idx = carry.indexOf(0x0a);
+          if (idx === -1) return;
+          socket.removeListener("data", onData);
+          const lineText = carry.subarray(0, idx).toString("utf8");
+          try {
+            resolvePromise(JSON.parse(lineText) as Record<string, unknown>);
+          } catch (e) {
+            reject(new Error(`could not parse reply line ${JSON.stringify(lineText)}: ${(e as Error).message}`));
+          }
+        };
+        socket.on("data", onData);
+        socket.once("error", reject);
+      });
+      socket.write(`${JSON.stringify(obj)}\n`);
+      return p;
+    },
+    close(): void {
+      socket.destroy();
+    },
+  };
+}
+
+let nextTransferEmulatorPort = 28700;
+function nextTransferEmulatorPortValue(): number {
+  nextTransferEmulatorPort += 1;
+  return nextTransferEmulatorPort;
+}
+
+test("stockConnect: publish lands late -- the production upload resolves only once the staged file is published (G-64-3, plan 64-13)", async () => {
+  build();
+
+  const home = mkdtempSync(join(tmpdir(), "stock-connect-transfer-home-"));
+  const clientDir = mkdtempSync(join(tmpdir(), "stock-connect-transfer-client-"));
+  const prevBrokerHome = process.env.VICE_BROKER_HOME;
+  const prevControlPort = process.env.VICE_BROKER_CONTROL_PORT;
+  process.env.VICE_BROKER_HOME = home;
+
+  const transferModule = (await import(new URL("./resources/broker-transfer.mjs", import.meta.url).href)) as unknown as {
+    resetStagingForTest: () => void;
+  };
+  transferModule.resetStagingForTest();
+
+  const emulatorPort = nextTransferEmulatorPortValue();
+  const grantId = "req-64-13-t1-publish-late";
+  const state = setupTransferBrokerState(emulatorPort, grantId);
+
+  // Set/read AT CALL TIME by startTransferControlListener()'s own
+  // onFileTransfer wiring -- armed to a 300ms delay right before the
+  // upload starts, below, so the RED run recorded in the SUMMARY (with
+  // this hook already present but no reply/reader on either side) fails
+  // deterministically rather than racing a same-process loopback.
+  let beforePublishHook: (() => Promise<void>) | undefined;
+  const { listener, token } = await startTransferControlListener(state, emulatorPort, () => ({ beforePublish: beforePublishHook }));
+
+  // The control connection MUST stay open through the whole transfer, not
+  // just through staging: `onRelease` (broker-control.mts) fires
+  // `handleRelease()` -- which clears EVERY staged entry for this grant,
+  // `clearStagingForSession()` -- on this connection's own close, exactly
+  // as it would for a real client's SIGKILL (D-06/XFER-07). Closing it
+  // right after `stage_file` would invalidate the handle before the
+  // transfer connection ever presented it.
+  const control = makeTransferControlClient(listener.port);
+  try {
+    let handle: string;
+    let emulatorFilename: string;
+    const acquireReply = await control.sendAndRead({ op: "acquire", id: grantId, token });
+    assert.equal(acquireReply.kind, "grant");
+    const stageReply = await control.sendAndRead({ op: "stage_file", target_id: grantId, slot: "disk8", token });
+    assert.equal(stageReply.kind, "file_staged");
+    handle = stageReply.handle as string;
+    emulatorFilename = stageReply.emulator_filename as string;
+
+    process.env.VICE_BROKER_CONTROL_PORT = String(listener.port);
+
+    const payload = Buffer.alloc(4096);
+    for (let i = 0; i < payload.length; i++) payload[i] = i % 256;
+    const sourcePath = join(clientDir, "upload-source.bin");
+    writeFileSync(sourcePath, payload);
+
+    beforePublishHook = () => new Promise((resolve) => setTimeout(resolve, 300));
+
+    await withStockStubServer(happyPathResponder(), async (port) => {
+      const { brokerControl } = makeStubBrokerControl();
+      const session = await stockConnect({ host: "127.0.0.1", port, targetId: grantId, brokerControl });
+      try {
+        assert.ok(session.deps.transferFile, "stockConnect() must install a transferFile default when none is injected");
+
+        const startedAt = Date.now();
+        const result = await session.deps.transferFile!({ direction: "upload", handle, sourcePath });
+        const elapsedMs = Date.now() - startedAt;
+
+        assert.equal(result.ok, true, `the production upload must resolve ok once the broker has published the file: ${JSON.stringify(result)}`);
+        assert.ok(elapsedMs >= 290, `the upload must not resolve before the pre-publish hook's own 300ms delay has elapsed (observed ${elapsedMs}ms)`);
+
+        // No polling, no existsSync retry loop -- the staged file must
+        // already be complete, synchronously, the instant the upload
+        // resolves ok (G-64-3's own prohibition on a client-side poll as
+        // the fix).
+        assert.equal(existsSync(emulatorFilename), true, "the staged file must already exist the instant the upload resolves ok");
+        assert.ok(readFileSync(emulatorFilename).equals(payload), "the staged file's bytes must equal the uploaded bytes exactly");
+      } finally {
+        await stockDisconnect(session);
+      }
+    });
+  } finally {
+    control.close();
+    listener.server.close();
+    transferModule.resetStagingForTest();
+    if (prevBrokerHome === undefined) delete process.env.VICE_BROKER_HOME;
+    else process.env.VICE_BROKER_HOME = prevBrokerHome;
+    if (prevControlPort === undefined) delete process.env.VICE_BROKER_CONTROL_PORT;
+    else process.env.VICE_BROKER_CONTROL_PORT = prevControlPort;
+    rmSync(home, { recursive: true, force: true });
+    rmSync(clientDir, { recursive: true, force: true });
+  }
 });
 
 // ---------------------------------------------------------------------------

@@ -870,38 +870,7 @@ export function handleStageFile(grantId, slot, state) {
     // D-17 violation).
     return { ok: true, handle: staged.handle, emulatorFilename: staged.stagedPath };
 }
-/** Answers `transfer` (Phase 64, plan 64-03, XFER-04/XFER-07), mirroring
- * handleRelayAttach()'s own SHAPE: a synchronous function returning a
- * discriminated outcome immediately, with the actual byte movement carried
- * out asynchronously, unawaited, after this function has already returned
- * -- `FileTransferOutcome` is not a Promise, and `broker-control.mts`'s own
- * dispatch arm calls this function synchronously (see that file's own
- * `transfer` arm). This function ORCHESTRATES; it does not stream --
- * `broker-transfer.mts`'s own `sendPayloadFromFile()`/`receivePayloadToFile()`
- * do every byte of that work.
- *
- * Refuses `denied`, BEFORE touching a single payload byte and BEFORE
- * writing anything to `socket`, for: an unknown/superseded handle
- * (`resolveStagedFile()`), a download whose staged file does not exist on
- * disk yet (checked here, since `resolveStagedFile()` is a pure registry
- * lookup and never touches the filesystem itself), or a handle whose
- * transfer is already in flight (`markTransferInFlight()`, T-64-16). Every
- * one of these is answered by broker-control.mts's own dispatch arm as an
- * `error` reply line, and that connection's line reader resumes -- this
- * function has not taken ownership of it.
- *
- * On success (`ok: true`): this function owns EVERY further reply line and
- * every payload byte on `socket` from this point on (FileTransferOutcome's
- * own header comment) -- an upload writes `transfer_ready` then calls
- * `receivePayloadToFile()`; a download calls `sendPayloadFromFile()` with
- * `kind: "transfer_payload"` so the reply frame's own name matches what
- * `dialFileTransfer()` (broker-endpoint.ts) checks for. Neither branch
- * awaits its own promise before returning -- `state` is accepted only for
- * parity with handleRelayAttach()'s own signature and is not read on this
- * path today. The in-flight guard is released in a `finally` on every path,
- * and the socket is destroyed once the transfer settles -- a transfer
- * connection is short-lived by design. */
-export function handleFileTransfer(request, socket, pending, state) {
+export function handleFileTransfer(request, socket, pending, state, deps = {}) {
     void state;
     const resolved = resolveStagedFile(request.handle);
     if (!resolved.ok) {
@@ -933,12 +902,20 @@ export function handleFileTransfer(request, socket, pending, state) {
         // arrived already, on the `transfer` request itself), so this is a
         // plain JSON line, never writeTransferHeader() (whose type requires all
         // three TransferHeader fields).
+        //
+        // RED PHASE NOTE (G-64-3, plan 64-13, Task 1): `deps.beforePublish` is
+        // threaded through to `receivePayloadToFile()` below so a test can hold
+        // the publish back deterministically, but this branch does not yet
+        // report completion back to the client on this connection -- that is
+        // this task's own GREEN change, added once the RED run below has been
+        // recorded.
         socket.write(`${JSON.stringify({ kind: "transfer_ready" })}\n`);
         receivePayloadToFile({
             socket,
             destPath: entry.path,
             header: { kind: "file", byteLength: request.byteLength, sha256: request.sha256 },
             pending,
+            beforePublish: deps.beforePublish,
         })
             .then((result) => {
             if (!result.ok) {
