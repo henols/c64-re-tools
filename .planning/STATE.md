@@ -5,10 +5,10 @@ milestone_name: One Broker, One Socket
 current_phase: 64
 current_phase_name: Files as Bytes, Both Directions
 status: executing
-stopped_at: Executing Phase 64 gap closure -- plans 64-08..64-11 (G-64-1), 7 of 11 plans complete
-last_updated: "2026-09-23T16:53:17.487Z"
+stopped_at: Executing Phase 64 gap closure -- plans 64-08..64-11 (G-64-1), 8 of 11 plans complete
+last_updated: "2026-09-23T17:38:00.000Z"
 last_activity: 2026-09-23
-last_activity_desc: Phase 64 gap-closure execution started (64-08..64-11, G-64-1)
+last_activity_desc: Phase 64 gap-closure plan 64-08 complete (G-64-1 handle-only authority) -- 64-09..64-11 remain
 state_head: 4952647dc40455af87a8b27fbc1158ef9508fde7
 progress:
   total_phases: 6
@@ -83,14 +83,21 @@ closure still needs to be recorded as one.
 ## Current Position
 
 Phase: 64 (Files as Bytes, Both Directions) — EXECUTING GAP CLOSURE (G-64-1)
-Plan: 8 of 11
-Status: Executing Phase 64 gap closure — plans 64-08..64-11 close G-64-1 (UAT test 1), run sequentially on the main working tree
+Plan: 8 of 11 complete (64-08 done; 64-09..64-11 remain)
+Status: Executing Phase 64 gap closure — plans 64-08..64-11 close G-64-1 (UAT test 1), run sequentially on the main working tree.
+Plan 64-08 closed 2026-09-23: attach and transfer now dispatched ahead of the
+per-boot control-token gate, authenticated by their broker-minted handle alone
+(route (b), owner decision 5) — proven by a real vice-proxy.ts over stdio
+against a real control listener, on the binary relay, both transfer directions
+and the text relay. See
+.planning/phases/64-files-as-bytes-both-directions/64-08-SUMMARY.md and
+.planning/phases/64-files-as-bytes-both-directions/evidence/64-g641-handle-only-authority.md.
 Phase 63 closed on 2026-09-23: all 12 plans executed, UAT 1/1 passed, canonical
 verification passed (6/6 must-haves), nyquist validation PARTIAL and security verified
 with threats_open: 0. The one human decision — 63-REVIEW.md's WR-01 — was ACCEPTED as
 residual risk, recorded as R-63-04 in 63-SECURITY.md.
 Progress: [███░░░░░░░] 33% (2 of 6 v2.0.0 phases complete; Phases 62-67)
-Last activity: 2026-09-23 — Phase 64 gap-closure execution started (64-08..64-11, G-64-1)
+Last activity: 2026-09-23 — Phase 64 gap-closure plan 64-08 complete (G-64-1); plans 64-09..64-11 remain
 
 **Planning override recorded at the Phase 64 decision-coverage gate.**
 `check.decision-coverage-plan` returned `passed: false` with

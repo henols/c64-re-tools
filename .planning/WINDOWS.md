@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 47
+open_count: 48
 waived_count: 17
 fixed_count: 9
-total_count: 73
-last_updated: 2026-09-23T14:24:07.460Z
+total_count: 74
+last_updated: 2026-09-23T17:37:54.064Z
 ---
 
 # Broken Windows Ledger
@@ -88,6 +88,7 @@ last_updated: 2026-09-23T14:24:07.460Z
 | 71 | 63 | unmet-truth | x |  | probe | waived | Accidental test append during 63-06 executor verification of the windows-append command itself; carries no real content (file=x, description=probe). Not a genuine defect. | 2026-09-20T00:21:54.929Z | 2026-09-20T00:22:26.896Z |
 | 72 | 64 | stub | src/mcp/vice/stock-connect.ts | 477 | defaultTransferFile() has no dedicated end-to-end test even after 64-04 puts real production callers (handleSnapshotSave/handleSnapshotLoad) on the session.deps.transferFile seam it defaults -- the round-trip test proves the seam's SHAPE via its own composed helper (dialFileTransfer + transfer-hash.mts) rather than calling defaultTransferFile() itself, since that function is still module-private and importing broker-transfer.mts directly from stock-connect.ts still fails (measured: unbuilt import now fails on broker-home.mjs, not just transfer-hash.mjs, per 64-04-SUMMARY.md). | open |  | 2026-09-23T12:45:54.961Z |  |
 | 73 | 64 | unrun-verify | .planning/phases/64-files-as-bytes-both-directions/64-07-PLAN.md |  | Human-check item 1 (real broker + real x64sc, all four tools) could not reach a successful tool call: vice-proxy.ts's dispatchStockFor() never wires the broker's control_token into StockDispatchDeps, so the real relay handshake fails before any tool-specific logic runs. Recorded in todos/pending/2026-09-23-vice-proxy-never-wires-the-control-token-into-stockdispatchdeps.md. | open |  | 2026-09-23T14:24:07.460Z |  |
+| 74 | 64 | deviation | src/mcp/vice/broker-relay.test.ts |  | Pre-existing incident-record leak into real ~/.c64-re-tools/incidents/ from broker-relay.test.ts/broker-relay-text.test.ts, confirmed independent of plan 64-08's diff; not fixed (out of scope, files not in files_modified) | open |  | 2026-09-23T17:37:54.064Z |  |
 
 ````json
 [
@@ -971,6 +972,19 @@ last_updated: 2026-09-23T14:24:07.460Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-23T14:24:07.460Z",
+    "resolved_at": null,
+    "milestone": "v2.0.0"
+  },
+  {
+    "id": 74,
+    "kind": "deviation",
+    "phase": "64",
+    "file": "src/mcp/vice/broker-relay.test.ts",
+    "line": null,
+    "description": "Pre-existing incident-record leak into real ~/.c64-re-tools/incidents/ from broker-relay.test.ts/broker-relay-text.test.ts, confirmed independent of plan 64-08's diff; not fixed (out of scope, files not in files_modified)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-23T17:37:54.064Z",
     "resolved_at": null,
     "milestone": "v2.0.0"
   }
