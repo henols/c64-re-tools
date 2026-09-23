@@ -2,20 +2,20 @@
 gsd_state_version: "1.0"
 milestone: v2.0.0
 milestone_name: One Broker, One Socket
-current_phase: 63
-current_phase_name: The Monitor Channel Relayed, and the Connection as the Session
-status: human_needed
-stopped_at: Phase 63 re-verified after gap-closure round two — 6/6 must-haves, status human_needed on one residual-risk decision (WR-01); tests in 63-UAT.md
-last_updated: "2026-09-21T08:45:53.389Z"
-last_activity: 2026-09-21
-last_activity_desc: Phase 63 gap-closure round two executed (63-11, 63-12); code review 0 critical/3 warning; re-verification 6/6 with one human decision pending
-state_head: 61bb57e257da4531ad8ea408958973ee13c87d47
+current_phase: 64
+current_phase_name: Files as Bytes, Both Directions
+status: planning
+stopped_at: Phase 63 complete, ready to plan Phase 64
+last_updated: "2026-09-23T07:05:42.081Z"
+last_activity: 2026-09-23
+last_activity_desc: Phase 63 complete, transitioned to Phase 64
+state_head: 9166e3f928897d2acee73eab23e62ef7f49504ef
 progress:
   total_phases: 6
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 17
   completed_plans: 17
-  percent: 17
+  percent: 33
 carried_forward_phases:
 
   - 51
@@ -29,11 +29,11 @@ carried_forward_phases:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (last update **2026-09-19 at the v2.0.0 milestone
-open** — a scoping write, not an evolution review: `## Current Milestone: v2.0.0
-One Broker, One Socket` was added and `### Active` gained v2.0.0's hypothesis.
-Nothing else changed, and `## Next Milestone Goals` was deliberately left as the
-v1.1.0 close wrote it — see below. The last full evolution review remains the
+See: .planning/PROJECT.md (last update **2026-09-23 after Phase 63** — one section
+changed: `## Key Decisions` gained the row recording the owner's acceptance of the
+crash-races-a-release incident-loss window (`R-63-04`). Core Value, Validated, Out of
+Scope and `## Next Milestone Goals` deliberately untouched — the phase shipped inside
+an open milestone and excluded nothing new. The last full evolution review remains the
 v1.1.0 close on 2026-09-19.)
 
 **Core value:** A Claude session can reliably drive a real C64 emulator to
@@ -46,9 +46,12 @@ v2.0.0 close is where it can be weighed — and it will have evidence to weigh,
 because "keep working when the emulator misbehaves" is exactly what a
 connection-is-the-session broker changes the mechanics of.*
 
-**Current focus:** Phase 63 — The Monitor Channel Relayed, and the Connection as the Session
-as the Session, ready to plan. Phase 62 closed 2026-09-19: all 5 of 5 plans
-executed, verification passed 11/11, `ENDPOINT-01..05` and `BROKER-01..06`
+**Current focus:** Phase 64 — Files as Bytes, Both Directions, ready to plan.
+Phase 63 closed 2026-09-23: all 12 of 12 plans executed (6 original, 4 gap-closure
+round one, 2 gap-closure round two), verification passed 6/6 must-haves, UAT 1/1,
+security verified with `threats_open: 0`, nyquist validation PARTIAL. `SESS-01..06`
+complete. Phase 62 closed 2026-09-19: all 5 of 5 plans executed, verification passed
+11/11, `ENDPOINT-01..05` and `BROKER-01..06`
 complete. **Milestone v2.0.0 "One Broker, One
 Socket" opened 2026-09-19**, with requirements defined and the roadmap created — **Phases
 62-67**, 36/36 requirements mapped, each to exactly one phase. One
@@ -79,26 +82,15 @@ closure still needs to be recorded as one.
 
 ## Current Position
 
-Phase: 63 (The Monitor Channel Relayed, and the Connection as the Session) — AWAITING HUMAN VERIFICATION
-Plan: 12 of 12 executed (6 original + 4 gap-closure round one + 2 gap-closure round two); gap-closure round two (63-11, 63-12) complete
-Status: Gap-closure round two executed and re-verified. Re-verification scored 6/6 must-haves
-and returned human_needed on ONE residual-risk decision (63-REVIEW.md WR-01, independently
-confirmed): handleMonitorRelease()'s no-current-holder branch now tears down a relay session it
-cannot prove is stale, while broker-launch.mts's handleExit() clears monitorClients but never
-relaySessions — a release racing a crash for the same channel could absorb an incident record
-Success Criterion 4 requires. Tests persisted in 63-UAT.md; run /gsd-verify-work 63. The prior
-re-verification
-scored 5/6 must-haves and found ONE new Blocker: handleMonitorRelease() never removed the
-grant's state.relaySessions entry, and both textDisconnect() and stockDisconnect() closed
-their socket BEFORE calling releaseMonitor(), so every ordinary text-channel tool call wrote a
-junk incident record. Plan 63-11 closed the broker half (handleMonitorRelease() now tears down
-the released channel's live relay session via the new tearDownRelaySessionForChannel()) and
-plan 63-12 closed the caller half (textDisconnect()/stockDisconnect() now release before they
-close, guaranteed by a finally). Both halves are required together; neither alone closes the
-gap. SESS-05 is now marked Complete in REQUIREMENTS.md pending phase re-verification;
-SESS-01/02/03/04/06 remain verified Complete.
-Progress: [██░░░░░░░░] 17% (1 of 6 v2.0.0 phases complete; Phases 62-67)
-Last activity: 2026-09-21 — Phase 63 gap-closure round two executed (2/2 plans, 7 commits); full suite 4281/4197/0/84 exit 0; code review 0 critical/3 warning; re-verification 6/6, human_needed on WR-01
+Phase: 64 — Files as Bytes, Both Directions
+Plan: Not started
+Status: Ready to plan
+Phase 63 closed on 2026-09-23: all 12 plans executed, UAT 1/1 passed, canonical
+verification passed (6/6 must-haves), nyquist validation PARTIAL and security verified
+with threats_open: 0. The one human decision — 63-REVIEW.md's WR-01 — was ACCEPTED as
+residual risk, recorded as R-63-04 in 63-SECURITY.md.
+Progress: [███░░░░░░░] 33% (2 of 6 v2.0.0 phases complete; Phases 62-67)
+Last activity: 2026-09-23 — Phase 63 complete, transitioned to Phase 64
 
 **The milestone's exit criterion lives in Phase 66 and nowhere else.** The
 hypothesis is falsifiable: the old boundary seam must be *gone from production
@@ -113,7 +105,7 @@ Phase 66 completes.
 
 **Velocity:**
 
-- Total plans completed: 462
+- Total plans completed: 474
 - Average duration: —
 - Total execution time: —
 
@@ -173,6 +165,7 @@ Phase 66 completes.
 | 60 | 8 | - | - |
 | 61 | 3 | - | - |
 | 62 | 5 | - | - |
+| 63 | 12 | - | - |
 
 **Recent Trend:**
 
@@ -2741,8 +2734,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-21T08:45:53.241Z
-Stopped at: Completed 63-12-PLAN.md (caller-side release-before-close reorder); phase 63 gap-closure round two complete, ready for re-verification
+Last session: 2026-09-23T07:07:52Z
+Stopped at: Phase 63 complete, ready to plan Phase 64
 Resume file: None
 
 Earlier: **v2.0.0 roadmap created.** 36/36 requirements (`ENDPOINT-01..05`,
