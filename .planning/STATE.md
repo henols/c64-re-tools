@@ -4,11 +4,11 @@ milestone: v2.0.0
 milestone_name: One Broker, One Socket
 current_phase: 64
 current_phase_name: Files as Bytes, Both Directions
-status: executing
-stopped_at: Phase 64 gap closure complete -- plans 64-08..64-11 (G-64-1), 11 of 11 plans executed, ready for verification
-last_updated: "2026-09-23T19:32:00.000Z"
+status: verifying
+stopped_at: Phase 64 re-verified human_needed (5/5 criteria, G-64-1 met with caveat) -- 2 UAT items pending, run /gsd-verify-work 64
+last_updated: "2026-09-23T20:50:00.000Z"
 last_activity: 2026-09-23
-last_activity_desc: Phase 64 gap-closure plan 64-11 complete (G-64-1's own truth measured live against a real broker and real /usr/bin/x64sc) -- phase ready for verification
+last_activity_desc: Phase 64 re-verified after gap closure -- human_needed, 2 UAT items pending (owner re-run of UAT test 1; cold-launch race disposition)
 state_head: 4952647dc40455af87a8b27fbc1158ef9508fde7
 progress:
   total_phases: 6
@@ -82,9 +82,9 @@ closure still needs to be recorded as one.
 
 ## Current Position
 
-Phase: 64 (Files as Bytes, Both Directions) — GAP CLOSURE COMPLETE (G-64-1), READY FOR VERIFICATION
+Phase: 64 (Files as Bytes, Both Directions) — GAP CLOSURE COMPLETE (G-64-1), AWAITING HUMAN VERIFICATION
 Plan: 11 of 11 executed (64-08, 64-09, 64-10, 64-11 all done)
-Status: Phase 64 gap closure for G-64-1 (UAT test 1) is complete — all 11 plans executed sequentially on the main working tree. Verification has not yet run.
+Status: Phase 64 gap closure for G-64-1 (UAT test 1) is complete — all 11 plans executed sequentially on the main working tree. Re-verification 2026-09-23: human_needed, 5/5 ROADMAP criteria verified, G-64-1 met with one caveat (the cold-launch race below); code review 0 critical / 2 warning / 1 info; 2 UAT items pending in 64-UAT.md (/gsd-verify-work 64).
 Plan 64-11 closed 2026-09-23: G-64-1's own truth measured LIVE — a real systemd-run
 broker spawning the absolute /usr/bin/x64sc granted an unconfigured vice-proxy.ts
 session all four migrated tools (vice_autostart, vice_disk_attach,
