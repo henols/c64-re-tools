@@ -5,10 +5,10 @@ milestone_name: One Broker, One Socket
 current_phase: 64
 current_phase_name: Files as Bytes, Both Directions
 status: executing
-stopped_at: Executing Phase 64 gap closure -- plans 64-08..64-11 (G-64-1), 8 of 11 plans complete
-last_updated: "2026-09-23T17:38:00.000Z"
+stopped_at: Executing Phase 64 gap closure -- plans 64-08..64-11 (G-64-1), 9 of 11 plans complete
+last_updated: "2026-09-23T18:02:31.000Z"
 last_activity: 2026-09-23
-last_activity_desc: Phase 64 gap-closure plan 64-08 complete (G-64-1 handle-only authority) -- 64-09..64-11 remain
+last_activity_desc: Phase 64 gap-closure plan 64-09 complete (client-side credential removal, G-64-1) -- 64-10..64-11 remain
 state_head: 4952647dc40455af87a8b27fbc1158ef9508fde7
 progress:
   total_phases: 6
@@ -83,8 +83,16 @@ closure still needs to be recorded as one.
 ## Current Position
 
 Phase: 64 (Files as Bytes, Both Directions) — EXECUTING GAP CLOSURE (G-64-1)
-Plan: 8 of 11 complete (64-08 done; 64-09..64-11 remain)
+Plan: 9 of 11 complete (64-08, 64-09 done; 64-10..64-11 remain)
 Status: Executing Phase 64 gap closure — plans 64-08..64-11 close G-64-1 (UAT test 1), run sequentially on the main working tree.
+Plan 64-09 closed 2026-09-23: the client-side empty-token parameter every relay
+and transfer dial has written since Phase 63 is deleted from every dial option
+and dependency type (DialMonitorRelayOptions, DialFileTransferOptions,
+StockConnectDeps, TextConnectOptions, StockDispatchDeps) — the slot itself is
+now unwritable, not merely unused — and three wire-level tests in
+broker-endpoint.test.ts pin the attach/transfer request lines' exact key sets
+from a real dial. See
+.planning/phases/64-files-as-bytes-both-directions/64-09-SUMMARY.md.
 Plan 64-08 closed 2026-09-23: attach and transfer now dispatched ahead of the
 per-boot control-token gate, authenticated by their broker-minted handle alone
 (route (b), owner decision 5) — proven by a real vice-proxy.ts over stdio
@@ -97,7 +105,7 @@ verification passed (6/6 must-haves), nyquist validation PARTIAL and security ve
 with threats_open: 0. The one human decision — 63-REVIEW.md's WR-01 — was ACCEPTED as
 residual risk, recorded as R-63-04 in 63-SECURITY.md.
 Progress: [███░░░░░░░] 33% (2 of 6 v2.0.0 phases complete; Phases 62-67)
-Last activity: 2026-09-23 — Phase 64 gap-closure plan 64-08 complete (G-64-1); plans 64-09..64-11 remain
+Last activity: 2026-09-23 — Phase 64 gap-closure plan 64-09 complete (client-side credential removal, G-64-1); plans 64-10..64-11 remain
 
 **Planning override recorded at the Phase 64 decision-coverage gate.**
 `check.decision-coverage-plan` returned `passed: false` with
