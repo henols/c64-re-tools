@@ -1,232 +1,186 @@
 ---
 phase: 64-files-as-bytes-both-directions
-reviewed: 2026-09-23T14:41:31Z
+reviewed: 2026-09-23T00:00:00Z
 depth: standard
-files_reviewed: 39
+files_reviewed: 25
 files_reviewed_list:
+  - CLAUDE.md
   - src/mcp/vice/broker-control.mts
   - src/mcp/vice/broker-control.test.ts
   - src/mcp/vice/broker-endpoint.test.ts
   - src/mcp/vice/broker-endpoint.ts
   - src/mcp/vice/broker-home.mts
-  - src/mcp/vice/broker-home.test.ts
-  - src/mcp/vice/broker-kill.mts
-  - src/mcp/vice/broker-kill.test.ts
-  - src/mcp/vice/broker-launch.mts
-  - src/mcp/vice/broker-launch.test.ts
   - src/mcp/vice/broker-relay.test.ts
-  - src/mcp/vice/broker-transfer.mts
-  - src/mcp/vice/broker-transfer.test.mts
-  - src/mcp/vice/build.ts
+  - src/mcp/vice/broker-relay-text.test.ts
+  - src/mcp/vice/package.json
   - src/mcp/vice/repo-root.ts
-  - src/mcp/vice/stock-broker-live.test.ts
-  - src/mcp/vice/stock-connect.test.ts
+  - src/mcp/vice/resources/broker-control.mjs
+  - src/mcp/vice/resources/broker-home.mjs
+  - src/mcp/vice/resources/vice-broker.mjs
   - src/mcp/vice/stock-connect.ts
-  - src/mcp/vice/stock-dispatch.test.ts
-  - src/mcp/vice/stock-live-broker-monitor.test.ts
+  - src/mcp/vice/stock-dispatch.ts
+  - src/mcp/vice/stock-live-relay.test.ts
   - src/mcp/vice/stock-machine.test.ts
-  - src/mcp/vice/stock-machine.ts
-  - src/mcp/vice/stock-paths.ts
-  - src/mcp/vice/stock-recycle.test.ts
   - src/mcp/vice/text-connect.test.ts
-  - src/mcp/vice/text-monitor-live.test.ts
-  - src/mcp/vice/text-tools.test.ts
-  - src/mcp/vice/tools-manifest.stock.json
+  - src/mcp/vice/text-connect.ts
+  - src/mcp/vice/text-tools.ts
   - src/mcp/vice/transfer-disjoint-roots.test.ts
-  - src/mcp/vice/transfer-hash.mts
-  - src/mcp/vice/transfer-hash.test.mts
-  - src/mcp/vice/transfer-paths.test.ts
-  - src/mcp/vice/transfer-paths.ts
-  - src/mcp/vice/tsconfig.build.json
-  - src/mcp/vice/vice-broker-acquire.test.ts
-  - src/mcp/vice/vice-broker-client.test.ts
   - src/mcp/vice/vice-broker-client.ts
   - src/mcp/vice/vice-broker-launch.test.ts
   - src/mcp/vice/vice-broker.mts
-  - src/mcp/vice/vice-broker-staging.test.ts
+  - src/mcp/vice/vice-proxy.test.ts
 findings:
   critical: 0
-  warning: 4
-  info: 0
-  total: 4
+  warning: 2
+  info: 1
+  total: 3
 status: issues_found
 ---
 
 # Phase 64: Code Review Report
 
-**Reviewed:** 2026-09-23T14:41:31Z
+**Reviewed:** 2026-09-23T00:00:00Z
 **Depth:** standard
-**Files Reviewed:** 39
+**Files Reviewed:** 25
 **Status:** issues_found
 
 ## Summary
 
-This phase moves four file-carrying MCP tools off a shared filesystem onto a broker
-file-transfer protocol (bytes over TCP, sha256-verified, 16 MiB-capped at both ends). The
-containment validators (`transfer-paths.ts`'s `validateContainedDestination()` and
-`broker-transfer.mts`'s deliberately-duplicated `refuseUnsafeSegment()`) refuse the same
-inputs and neither touches the filesystem before refusing; the staged-file path is always
-built from a broker-minted random handle plus a validated, separator-free grant id, so no
-client-controlled string ever reaches a path component and no traversal or symlink-escape
-vector was found. The `transfer` control op's deliberate non-gating (T-63-01 precedent)
-is sound: the handle is 128 bits of `randomBytes`, unrelated to the (grantId, slot) pair
-it was minted from, so an ungated caller cannot derive one it was not handed. The
-per-session channel lock (`withChannelLockHeld()`, held across the whole
-stage→transfer→wire sequence in `withStockSession()`) closes off same-session concurrent
-staging races for all four migrated tools. No BLOCKER-level defect was found.
+Phase 64 lands the file-transfer control ops (`stage_file`/`transfer`) and reverses G-64-1's
+two causes: (1) `attach`/`transfer` now authenticate by broker-minted handle alone, dispatched
+*before* the per-boot token gate in `broker-control.mts`, and (2) the broker's own state root
+(`broker.json`, `supervisor/`) moves from a project-relative `--repo-root` join to
+`broker-home.mts`'s machine-level resolver, with the container-side client
+(`vice-broker-client.ts`'s `brokerRootDir()`) now sharing that exact resolver instead of
+recomputing a second, drifting answer.
 
-Four WARNING-level gaps remain, all in the identified security-sensitive seams: the
-client-side download path in `stock-connect.ts` implements a strictly weaker declared-
-length check than its broker-side sibling in `broker-transfer.mts` (D-11 calls for the
-full check at every consumption site); the staging-supersession primitive
-(`stageFileSlot()`) does not consult the in-flight-transfer guard before deleting a
-handle's registry entry and unlinking its file, a real gap in the primitive even though
-today's four call sites cannot reach it thanks to the channel lock; `clearStagingForSession()`
-recursively deletes a grant's whole staging directory with no check for an in-flight
-transfer racing it on a separate physical connection, a case this codebase's usual
-name-every-race discipline does not mention anywhere; and transfer handles are logged to
-broker stderr on failure, inconsistent with the "never echo the value" posture the sibling
-`refuseUnsafeSegment()` states for the same class of secret.
+Both reversals are implemented consistently across every file in scope: the removed
+`controlToken`/`token` parameter is gone from every call site (`stock-connect.ts`,
+`text-connect.ts`, `broker-endpoint.ts`, `stock-dispatch.ts`, and every touched test fixture),
+the compiled `resources/*.mjs` artifacts are rebuilt and match their `.mts` sources (checked by
+grep for the new `attach`/`transfer` pre-gate arms and the `brokerStateDir()` wiring), and the
+new `transfer-disjoint-roots.test.ts` / `vice-broker-launch.test.ts` route-agreement tests
+substantiate the two headline claims (no broker-side path ever reaches a client-visible result;
+client and broker agree on `broker.json`'s location under every documented start route). I did
+not find a defect in the core security reversal itself — the per-claim/per-stage handle is
+128-bit random, compared via `timingSafeEqual` after a length gate, and the listener's own bind
+set (loopback + enumerated bridge addresses, never wildcard) remains the first line of defence
+for the newly pre-gate ops, matching the documented threat model.
+
+Three lower-severity issues remain, detailed below: a newly-introduced validation asymmetry
+between the bind-side and dial-side readers of `VICE_BROKER_CONTROL_PORT` that undercuts this
+phase's own diagnosability goal for a misconfigured port; a pre-existing (but in-scope) gap
+where several of `broker-control.mts`'s synchronous dispatch callbacks have no `try/catch`,
+unlike their asynchronous siblings; and a stale doc comment in `broker-home.mts` referencing an
+import that does not exist.
 
 ## Warnings
 
-### WR-01: Client-side download path skips half of D-11's declared-length validation
+### WR-01: `VICE_BROKER_CONTROL_PORT` is validated inconsistently between bind and dial sides
 
-**File:** `src/mcp/vice/stock-connect.ts:540-551`
-**Issue:** `broker-transfer.mts`'s `receivePayloadToFile()` validates a transfer header's
-declared `byteLength` in full before consuming any payload byte:
+**File:** `src/mcp/vice/broker-control.mts:833-839` (bind side, pre-existing, unmodified by
+this phase) vs. `src/mcp/vice/broker-endpoint.ts:97-104` (dial side, new in this phase)
 
+**Issue:** Before this phase, every dial function in `broker-endpoint.ts` hardcoded
+`DEFAULT_CONTROL_PORT` and never read `VICE_BROKER_CONTROL_PORT` at all — this was the exact
+"relay always dials 19510" defect the G-64-1 diagnosis recorded and this phase fixes by adding
+`resolveEndpointPort()` and routing `dialBrokerEndpoint()`/`dialMonitorRelay()`/
+`dialFileTransfer()` through it. `resolveEndpointPort()` validates strictly: the raw string
+must parse to an integer in `1..65535`, or the default is used. The pre-existing bind-side
+`resolveControlPort()` (which `startControlListenerOnHosts()`/`vice-broker.mts`'s startup path
+uses to choose the port to bind) validates far more loosely: any `Number.isFinite()` value is
+accepted verbatim, including `0`, negative numbers, and any value above `65535` (a non-integer
+like `"12.5"` is also accepted verbatim by the bind side, whereas the dial side rejects it).
+
+Because this phase is the *first* time the dial side actually reads this variable, the two
+readers' disagreement on "valid" is now reachable in practice: an operator setting
+`VICE_BROKER_CONTROL_PORT` to an out-of-integer-range value (e.g. `"70000"`, `"-1"`, `"12.5"`)
+makes the broker attempt to bind that raw value (which Node will refuse, most likely a
+synchronous `RangeError`/`ERR_SOCKET_BAD_PORT` surfaced as a rejected `bindControlListener()`
+promise) while every client-side dial silently falls back to port `19510` instead of naming the
+mismatch. The result is the least informative of the four ranked dial failures this same phase
+otherwise goes to great lengths to make maximally informative (`describeDialFailure()`'s rank
+1-4 messages) — a misconfigured port produces a bare "no broker answered on either candidate"
+rather than a message that could name the env var as the cause. `broker-endpoint.test.ts`'s new
+tests exercise `resolveEndpointPort()` in isolation but nothing cross-checks it against
+`resolveControlPort()`'s semantics.
+
+**Fix:** Give `resolveControlPort()` the same integer/range validation `resolveEndpointPort()`
+now has (or have one delegate to the other, since both ultimately answer the same question for
+the same env var), so a malformed `VICE_BROKER_CONTROL_PORT` is refused/defaulted identically on
+both sides of the wire:
 ```ts
-if (typeof header.byteLength !== "number" || !Number.isSafeInteger(header.byteLength) || header.byteLength < 0) {
-  return { ok: false, reason: `... must be a non-negative safe integer ...` };
-}
-if (header.byteLength > capBytes) { ... }
-```
-
-`stock-connect.ts`'s `defaultTransferFile()` — the client-side mirror of the same
-exchange, re-implemented separately because `broker-transfer.mts` is host-bound and cannot
-be value-imported from a container-side, never-built `.ts` file — only re-implements the
-second half:
-
-```ts
-if (byteLength > TRANSFER_MAX_BYTES) {
-  return { ok: false, reason: `vice: broker declared byteLength ${byteLength} exceeds ...` };
-}
-```
-
-`byteLength` here comes from `dialFileTransfer()`'s reply parse
-(`broker-endpoint.ts`'s `performTransfer()`), which only checks `typeof obj.byteLength !==
-"number"` — `NaN`, a negative number, or a non-integer float all pass both checks
-(`NaN > TRANSFER_MAX_BYTES` is `false`). The per-chunk cap inside
-`createHashAndCountTransform()` still bounds the actual bytes streamed, and
-`verifyObserved()`'s final digest/length compare will refuse any resulting mismatch (a
-non-integer or negative declared value can never equal a real observed count), so this is
-not currently exploitable for memory exhaustion or a corrupted publish — but it is the
-exact "declared length is untrusted input, checked wherever it is consumed" mandate
-(D-11, stated in this same module's own header) implemented on only one side of the wire,
-and is precisely the kind of divergence the phase's own review guidance flagged this
-duplicated pair as a risk for.
-**Fix:** Mirror the same three-part check `receivePayloadToFile()` runs:
-```ts
-if (typeof byteLength !== "number" || !Number.isSafeInteger(byteLength) || byteLength < 0) {
-  return { ok: false, reason: `vice: broker declared byteLength ${byteLength} is not a non-negative safe integer` };
-}
-if (byteLength > TRANSFER_MAX_BYTES) { ... }
-```
-
-### WR-02: `stageFileSlot()`'s supersession does not consult the in-flight guard
-
-**File:** `src/mcp/vice/broker-transfer.mts:467-481`
-**Issue:** A repeat `stageFileSlot()` call for the same `(grantId, slot)` unconditionally
-deletes the previous handle's registry entry and unlinks its file:
-
-```ts
-const previousHandle = slotIndex.get(key);
-if (previousHandle) {
-  const previousEntry = handleIndex.get(previousHandle);
-  handleIndex.delete(previousHandle);
-  inFlightHandles.delete(previousHandle);
-  if (previousEntry) {
-    try { rmSync(previousEntry.path, { force: true }); } catch { /* best-effort */ }
-  }
+export function resolveControlPort(override?: number): number {
+  if (typeof override === "number") return override;
+  const raw = process.env.VICE_BROKER_CONTROL_PORT;
+  if (raw === undefined || raw === "") return 19510;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1 || n > 65535) return 19510;
+  return n;
 }
 ```
 
-Nothing here checks `inFlightHandles.has(previousHandle)` first. If a transfer for
-`previousHandle` is actively streaming (`markTransferInFlight()` already set), this
-silently removes it from every index — including `inFlightHandles`, so
-`clearTransferInFlight()` called later by the in-flight transfer's own `finally` becomes a
-no-op on an already-absent entry — and deletes the backing file out from under an
-in-progress `receivePayloadToFile()`/`sendPayloadFromFile()` pipeline. Today this is
-unreachable through the four shipped call sites (`handleAutostart`/`handleDiskAttach`/
-`handleSnapshotSave`/`handleSnapshotLoad`) because `withStockSession()` holds
-`channel-lock.ts`'s per-session mutex across the *entire* stage→transfer→wire sequence, so
-two calls against the same session and slot can never overlap — but `stageFileSlot()` is a
-general primitive with no such caller-side guarantee built in, and its own header comment
-("the previous handle is dropped from every index" / "D-05") states a completeness this
-implementation does not actually provide for the in-flight case. `broker-transfer.test.mts`
-has no test exercising supersession of an in-flight handle.
-**Fix:** Either refuse to supersede a slot whose current handle is in-flight (returning
-`{ ok: false, reason: "a transfer for this slot is already in flight" }`), or explicitly
-document, beside `markTransferInFlight()`'s own header, that supersession is safe only
-because every current caller serialises through the channel lock — so a future caller
-reached through a different path is warned rather than silently exposed.
+### WR-02: Several `broker-control.mts` dispatch callbacks run with no `try/catch`, unlike their async siblings
 
-### WR-03: `clearStagingForSession()` has no guard against a transfer in flight on a separate connection
+**File:** `src/mcp/vice/broker-control.mts` — the `attach` arm (~line 1325), `transfer` arm
+(~line 1370), `monitor_claim` arm (~line 1545), `monitor_release` arm (~line 1592),
+`operation` arm (~line 1618), and `stage_file` arm (~line 1667), all inside `handleLine()`
+within `attachControlProtocol()`'s `socket.on("data", ...)` handler.
 
-**File:** `src/mcp/vice/broker-transfer.mts:544-563`, `src/mcp/vice/vice-broker.mts:1767-1853`
-**Issue:** `handleRelease()` calls `clearStagingForSession(requestId)` unconditionally —
-both on an explicit `release` request and on the grant-holding control connection's own
-close (`vice-broker.mts:1825,1853`) — which recursively `rmSync`s the *entire* staging
-directory for that grant:
+**Issue:** `handleLine()`'s `host_tool`, `acquire`, and `recycle` arms each wrap their callback
+invocation in a `.then()/.catch()` pair, explicitly converting a thrown/rejected promise into a
+well-formed `{ kind: "error", code: "internal", ... }` reply (see `host_tool`'s own comment:
+"the dispatch branch below treats a rejection as a genuine possibility anyway and answers
+`internal` rather than letting it escape uncaught"). The six ops listed above call their own
+*synchronous* callback (`opts.onRelayAttach`, `opts.onFileTransfer`, `opts.onMonitorClaim`,
+`opts.onMonitorRelease`, `opts.onOperation`, `opts.onStageFile`) directly, with no `try/catch`
+at all. Neither this file nor `vice-broker.mts` registers a process-level `uncaughtException`
+handler. Since these calls happen synchronously inside a `net.Socket`'s `"data"` event listener,
+a throw from any of them (today, or from a future change to `vice-broker.mts`'s
+`handleRelayAttach()`/`handleMonitorClaim()`/`handleFileTransfer()`/etc.) propagates as an
+uncaught exception out of the event emitter and crashes the entire broker process — not merely
+the offending connection — taking down every other live grant/instance the broker was managing
+for every project on the machine. This directly contradicts the architecture's own stated
+posture elsewhere in this codebase ("Never-throw boundary") and this same file's own
+"never fabricate/never let an uninterpreted error reach the caller" discipline it applies
+everywhere else on the async paths.
 
+I did not find a concrete input that makes today's `vice-broker.mts` implementations of these
+six callbacks throw (the handle comparisons are length-gated before `timingSafeEqual`, the map
+lookups cannot throw), so this is a latent robustness gap rather than a demonstrated crash —
+but it is a real asymmetry in a file whose own header repeatedly asserts a "never throw"
+design intent for untrusted wire input, and `broker-relay.mts` (not in this review's scope) is
+exactly the kind of sibling module a future change could touch without anyone re-auditing this
+call site's own protection.
+
+**Fix:** Wrap each of the six synchronous callback invocations in a `try/catch` that answers
+`{ kind: "error", code: "internal", message: "<op> threw" }` on a thrown error, mirroring the
+existing `.catch()` arms for `host_tool`/`acquire`/`recycle`. For the `attach`/`transfer` arms
+specifically, remember to reset `relayMode = false` in the catch block (matching the existing
+`outcome.ok === false` branches) so a thrown callback does not leave the socket's line reader
+permanently disabled.
+
+## Info
+
+### IN-01: Stale doc comment in `broker-home.mts` claims `existsSync` is imported, but it is not
+
+**File:** `src/mcp/vice/broker-home.mts:207-215`
+**Issue:** `ensureBrokerDir()`'s doc comment reads: "`existsSync` is imported only so a future
+caller can probe without creating; this function itself never uses it as a guard." The file's
+actual import list is:
 ```ts
-export function clearStagingForSession(grantId: string): void {
-  const sessionDir = join(brokerStagingDir(), grantId);
-  try { rmSync(sessionDir, { recursive: true, force: true }); } catch { /* ... */ }
-  ...
-}
+import { mkdirSync } from "node:fs";
+import { homedir as osHomedir } from "node:os";
+import { join, resolve } from "node:path";
 ```
-
-A `transfer` (upload or download) runs on a *separate*, independently-dialled TCP
-connection from the grant-holding control connection (`dialFileTransfer()`), so nothing
-prevents the control connection closing (a crash, a forced release, the client process
-dying) while a transfer for that same grant is still streaming. On POSIX this does not
-corrupt data (an already-open read fd keeps its inode alive after unlink; an in-flight
-upload's `renameSync(tmpPath, destPath)` simply fails once `tmpPath`'s directory entry has
-already been removed, landing on the existing "failed to publish" refusal path rather than
-silently succeeding) — but the resulting error is a confusing "failed to publish" message
-rather than a clean "session closed" one, and — unlike every other race this module's
-comments name explicitly (the upload-completion race, the D-05/D-06/D-07/D-08 lifetime
-rules, `markTransferInFlight()`'s own T-64-16 rationale) — this specific interaction is not
-discussed anywhere in this file, `vice-broker.mts`, or their test suites.
-**Fix:** At minimum, add a header comment beside `clearStagingForSession()` (and
-`handleRelease()`) naming this as an accepted, bounded risk the way every other race in
-this phase is named. If tighter behaviour is wanted, check `inFlightHandles` for the
-grant's own handles before the recursive delete and skip (or defer) removal of any
-in-flight entry's file.
-
-### WR-04: Transfer handles are logged verbatim on failure, inconsistent with the phase's own no-echo posture
-
-**File:** `src/mcp/vice/vice-broker.mts:1153,1161`
-**Issue:**
-```ts
-process.stderr.write(`vice-broker: upload transfer failed for handle ${request.handle}: ${result.reason}\n`);
-...
-process.stderr.write(`vice-broker: download transfer failed for handle ${request.handle}: ${result.reason}\n`);
-```
-`broker-transfer.mts`'s own `refuseUnsafeSegment()` deliberately never echoes the offending
-`grantId`/`slot` value in its refusal message, citing "T-64-13's own posture for a handle
-refusal, applied here too". A transfer handle is the sole bearer capability
-`handleFileTransfer()` checks (by design, per T-63-01) for reaching a staged file, so
-logging it verbatim to the broker's own stderr on every failed transfer is a minor
-inconsistency with that stated posture, even though the log is host-local and the
-practical exposure is low.
-**Fix:** Either drop the handle from these two log lines, or note explicitly why logging it
-here (unlike in `refuseUnsafeSegment()`) is considered safe.
+`existsSync` does not appear anywhere in this file. The comment describes an import that was
+either removed at some point without updating the comment, or never actually added — either
+way it is misleading to a future reader who might assume `existsSync` is available to reach for.
+**Fix:** Either add `existsSync` to the `node:fs` import (if a future caller genuinely needs a
+probe-without-create primitive here) or delete the sentence claiming it is imported.
 
 ---
 
-_Reviewed: 2026-09-23T14:41:31Z_
+_Reviewed: 2026-09-23T00:00:00Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
