@@ -5,16 +5,16 @@ milestone_name: One Broker, One Socket
 current_phase: 64
 current_phase_name: Files as Bytes, Both Directions
 status: executing
-stopped_at: Completed 64-04-PLAN.md
-last_updated: "2026-09-23T12:48:30.616Z"
+stopped_at: Completed 64-05-PLAN.md
+last_updated: "2026-09-23T13:21:47.615Z"
 last_activity: 2026-09-23
 last_activity_desc: Phase 64 execution started
-state_head: 4a79f173056f739d77f7f7eb6ba54781911fd166
+state_head: e87522e671c564ac6f7056610dbdfefb81f0a6b1
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 24
-  completed_plans: 21
+  completed_plans: 22
   percent: 33
 carried_forward_phases:
 
@@ -83,7 +83,7 @@ closure still needs to be recorded as one.
 ## Current Position
 
 Phase: 64 (Files as Bytes, Both Directions) — EXECUTING
-Plan: 5 of 7
+Plan: 6 of 7
 Status: Ready to execute
 Phase 63 closed on 2026-09-23: all 12 plans executed, UAT 1/1 passed, canonical
 verification passed (6/6 must-haves), nyquist validation PARTIAL and security verified
@@ -510,6 +510,7 @@ Phase 66 completes.
 | Phase 64 P02 | 46min | 3 tasks | 13 files |
 | Phase 64 P03 | 50min | 3 tasks | 7 files |
 | Phase 64 P04 | 55 min | 3 tasks | 6 files |
+| Phase 64 P05 | 55 min | 3 tasks | 17 files |
 
 ## Accumulated Context
 
@@ -1424,6 +1425,7 @@ Recent decisions affecting current work:
 - [Phase 64]: 64-03: clearStagingForSession() is wired into handleRelease() only, not into recycle -- a recycle keeps the same grant/session alive (the control connection never closes), so clearing staging there would falsify XFER-07's "session's connection closes" wording. — handleRelease() is the one function broker-control.mts's onRelease callback invokes both on an explicit release request and on the control connection's own close event (including a client SIGKILL); a recycle never closes that connection.
 - [Phase 64]: 64-03: discovered a latent race -- an upload's client-observed completion (socket close) does not guarantee the broker has finished verifying and publishing the staged file, since there is no transfer_complete confirmation frame on the wire. — Reproduced reliably in a same-process loopback test; flagged for plan 64-04's own client-side sequencing awareness rather than fixed here (architectural, out of this plan's scope).
 - [Phase 64]: Upload-completion race in handleSnapshotLoad accepted as a named risk (R-63-04-shaped) rather than a protocol change — Fixing it touches broker-control.mts's wire vocabulary, vice-broker.mts, broker-endpoint.ts and stock-connect.ts -- out of this plan's declared scope; the round-trip test reproduces the race and proves the bytes still arrive intact
+- [Phase 64]: The pid-liveness record for a config-scratch directory is a sibling JSON file (dirname.json), never a file inside the directory itself, since the directory's contents belong entirely to the spawned emulator's own XDG_CONFIG_HOME use.
 
 ### Pending Todos
 
@@ -2757,8 +2759,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-23T12:48:30.435Z
-Stopped at: Completed 64-04-PLAN.md
+Last session: 2026-09-23T13:19:30.973Z
+Stopped at: Completed 64-05-PLAN.md
 Resume file: None
 
 Earlier: **v2.0.0 roadmap created.** 36/36 requirements (`ENDPOINT-01..05`,
