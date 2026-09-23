@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 46
+open_count: 47
 waived_count: 17
 fixed_count: 9
-total_count: 72
-last_updated: 2026-09-23T12:45:54.961Z
+total_count: 73
+last_updated: 2026-09-23T14:24:07.460Z
 ---
 
 # Broken Windows Ledger
@@ -87,6 +87,7 @@ last_updated: 2026-09-23T12:45:54.961Z
 | 70 | 63 | unmet-truth | src/mcp/vice/stock-live-relay.test.ts |  | Live proof (opt-in VICE_LIVE_RELAY_BIN): the machine-JAM shape did not produce a JAM (0x61) event against genuine stock VICE 3.9 under the project's default JamAction (1=continue, no -jamaction override in scope for this plan) -- the KIL opcode write and PC write were independently verified correct by read-back, but no jam/desync ever followed within 5s of resume. | waived | No variant (default, jamaction2, jamaction3) produced a bare JAM (0x61) over a direct dial against genuine stock VICE 3.9 (opcode/PC writes confirmed correct by read-back in every case) -- the absence is an emulator-side behaviour, exonerating the relay (plan 63-09's broker-relay.test.ts already proves the relay's own byte-transparency for the JAM shape synthetically). See .planning/phases/63-the-monitor-channel-relayed-and-the-connection-as-the-sessio/evidence/phase63-gap-closure-live-measurements.md. | 2026-09-20T00:21:47.652Z | 2026-09-20T09:36:55.331Z |
 | 71 | 63 | unmet-truth | x |  | probe | waived | Accidental test append during 63-06 executor verification of the windows-append command itself; carries no real content (file=x, description=probe). Not a genuine defect. | 2026-09-20T00:21:54.929Z | 2026-09-20T00:22:26.896Z |
 | 72 | 64 | stub | src/mcp/vice/stock-connect.ts | 477 | defaultTransferFile() has no dedicated end-to-end test even after 64-04 puts real production callers (handleSnapshotSave/handleSnapshotLoad) on the session.deps.transferFile seam it defaults -- the round-trip test proves the seam's SHAPE via its own composed helper (dialFileTransfer + transfer-hash.mts) rather than calling defaultTransferFile() itself, since that function is still module-private and importing broker-transfer.mts directly from stock-connect.ts still fails (measured: unbuilt import now fails on broker-home.mjs, not just transfer-hash.mjs, per 64-04-SUMMARY.md). | open |  | 2026-09-23T12:45:54.961Z |  |
+| 73 | 64 | unrun-verify | .planning/phases/64-files-as-bytes-both-directions/64-07-PLAN.md |  | Human-check item 1 (real broker + real x64sc, all four tools) could not reach a successful tool call: vice-proxy.ts's dispatchStockFor() never wires the broker's control_token into StockDispatchDeps, so the real relay handshake fails before any tool-specific logic runs. Recorded in todos/pending/2026-09-23-vice-proxy-never-wires-the-control-token-into-stockdispatchdeps.md. | open |  | 2026-09-23T14:24:07.460Z |  |
 
 ````json
 [
@@ -957,6 +958,19 @@ last_updated: 2026-09-23T12:45:54.961Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-23T12:45:54.961Z",
+    "resolved_at": null,
+    "milestone": "v2.0.0"
+  },
+  {
+    "id": 73,
+    "kind": "unrun-verify",
+    "phase": "64",
+    "file": ".planning/phases/64-files-as-bytes-both-directions/64-07-PLAN.md",
+    "line": null,
+    "description": "Human-check item 1 (real broker + real x64sc, all four tools) could not reach a successful tool call: vice-proxy.ts's dispatchStockFor() never wires the broker's control_token into StockDispatchDeps, so the real relay handshake fails before any tool-specific logic runs. Recorded in todos/pending/2026-09-23-vice-proxy-never-wires-the-control-token-into-stockdispatchdeps.md.",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-23T14:24:07.460Z",
     "resolved_at": null,
     "milestone": "v2.0.0"
   }
