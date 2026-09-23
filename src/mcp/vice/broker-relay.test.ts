@@ -85,6 +85,10 @@ interface TestHandleRelayDeathDeps {
   idleMs?: number;
   armIdleTimer?: ArmIdleTimerFn;
   keepAliveMs?: number;
+  /** G-64-4 (plan 64-12) additions -- see vice-broker.mts's own
+   * HandleRelayDeathDeps for the full doc comment. */
+  dialDeadlineMs?: number;
+  dialRetryIntervalMs?: number;
 }
 
 /** Mirrors vice-broker.mts's own HandleReleaseDeps (Plan 63-04 Task 3). */
@@ -108,7 +112,7 @@ const viceBrokerModule = (await import(new URL("./resources/vice-broker.mjs", im
     pending: Buffer,
     state: BrokerState,
     deps?: TestHandleRelayDeathDeps,
-  ) => RelayAttachOutcome;
+  ) => Promise<RelayAttachOutcome>;
   handleRelayDeath: (targetId: string, channel: MonitorChannel, trigger: RelayDeathTrigger, state: BrokerState, deps?: TestHandleRelayDeathDeps) => void;
   handleRelease: (requestId: string, state: BrokerState, deps?: TestHandleReleaseDeps) => void;
   /** Plan 63-07 (SESS-05 gap closure) -- see vice-broker.mts's own header
@@ -168,6 +172,54 @@ async function withStubEmulatorServer<T>(handler: (socket: Socket) => void, fn: 
   } finally {
     for (const socket of sockets) socket.destroy();
     await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}
+
+/** Reserves a free loopback port synchronously -- listens on port 0, reads
+ * back the OS-assigned port, then closes immediately, so the caller gets an
+ * ephemeral port number with NOTHING bound on it yet. */
+async function reserveFreePort(): Promise<number> {
+  return await new Promise<number>((resolve, reject) => {
+    const probe: Server = createServer();
+    probe.listen(0, "127.0.0.1", () => {
+      const port = (probe.address() as AddressInfo).port;
+      probe.close((err) => (err ? reject(err) : resolve(port)));
+    });
+  });
+}
+
+/** G-64-4 (plan 64-12): a stub emulator that binds `bindDelayMs` AFTER this
+ * function returns control to its caller -- deliberately NOT widening
+ * withStubEmulatorServer() above, which every pre-existing test in this file
+ * relies on binding SYNCHRONOUSLY before the attach is ever sent (the exact
+ * condition that hid G-64-4's own race from every earlier test). The caller
+ * gets the reserved port back immediately and can send its attach against it
+ * right away; the server behind that port only starts accepting connections
+ * once the timer fires. */
+async function withLateBindingStubEmulatorServer<T>(
+  bindDelayMs: number,
+  handler: (socket: Socket) => void,
+  fn: (port: number, connectionCount: () => number) => Promise<T>,
+): Promise<T> {
+  const port = await reserveFreePort();
+  const sockets = new Set<Socket>();
+  let connections = 0;
+  let server: Server | null = null;
+  const bindTimer = setTimeout(() => {
+    server = createServer((socket) => {
+      connections += 1;
+      sockets.add(socket);
+      socket.on("close", () => sockets.delete(socket));
+      handler(socket);
+    });
+    server.listen(port, "127.0.0.1", () => {});
+  }, bindDelayMs);
+  try {
+    return await fn(port, () => connections);
+  } finally {
+    clearTimeout(bindTimer);
+    for (const socket of sockets) socket.destroy();
+    if (server) await new Promise<void>((resolve) => (server as Server).close(() => resolve()));
   }
 }
 
@@ -969,6 +1021,84 @@ function makeRealBrokerControl(state: BrokerState, targetId: string): StockConne
     },
   };
 }
+
+// ===========================================================================
+// G-64-4 (plan 64-12), Task 1: the cold-launch relay-attach race. Real
+// x64sc's binary-monitor port binds 55-142ms after spawn while the client's
+// own attach+first-PING lands 17-31ms after spawn (measured,
+// .planning/debug/cold-launch-relay-attach-race.md) -- every PRE-EXISTING
+// stub emulator in this file binds its port SYNCHRONOUSLY, before the attach
+// is ever sent, which is exactly what hid this race from every earlier test.
+// withLateBindingStubEmulatorServer() reverses that: the attach is sent
+// while nothing is bound, and the stub only starts accepting connections
+// `bindDelayMs` later.
+// ===========================================================================
+
+test("emulator binds late: a binary attach sent before the emulator's port is bound is answered only after the bind, and the stock handshake's first PING is answered", async () => {
+  await withTempEpochFile(async (epochPath, writeEpoch) => {
+    writeEpoch(7);
+    let incidentWrites = 0;
+    const relayDeathDeps: TestHandleRelayDeathDeps = {
+      writeIncident: (record) => {
+        incidentWrites += 1;
+        return `/fake/incident/path-${incidentWrites}.md`;
+      },
+    };
+    let emulatorSocket: Socket | null = null;
+    let resolveEmulatorAccepted: () => void = () => {};
+    const emulatorAccepted = new Promise<void>((resolve) => {
+      resolveEmulatorAccepted = resolve;
+    });
+    await withLateBindingStubEmulatorServer(
+      250,
+      (socket) => {
+        emulatorSocket = socket;
+        resolveEmulatorAccepted();
+        happyPathResponder()(socket);
+      },
+      async (emulatorPort) => {
+        const targetId = "grant-g64-4-late-bind";
+        await withRelayTestBroker(
+          emulatorPort,
+          targetId,
+          async ({ listenerPort, state }) => {
+            const brokerControl = makeRealBrokerControl(state, targetId);
+            const dialMonitorSocket: DialMonitorSocketFn = async (opts) => {
+              const result = await dialMonitorRelay({
+                targetId: opts.targetId,
+                channel: opts.channel,
+                handle: opts.handle,
+                port: listenerPort,
+                candidates: ["127.0.0.1"],
+              });
+              if (!result.ok) throw new Error(result.reason);
+              return { socket: result.socket, pending: result.pending };
+            };
+
+            // The attach is sent (via stockConnect()'s own dial) IMMEDIATELY
+            // -- the stub emulator's own port has nothing listening on it
+            // yet at this instant; it binds 250ms from now.
+            const session = await stockConnect({
+              host: "127.0.0.1",
+              port: emulatorPort,
+              targetId,
+              brokerControl,
+              deps: { dialMonitorSocket, epochPath },
+            });
+            assert.ok(
+              session.client.connected,
+              "the handshake must complete once the emulator binds -- the attach must have waited for the bind rather than answering `attached` before it",
+            );
+            await emulatorAccepted;
+            assert.equal(incidentWrites, 0, "a late-binding emulator that eventually accepts the connection must never write an incident record");
+            await stockDisconnect(session);
+          },
+          relayDeathDeps,
+        );
+      },
+    );
+  });
+});
 
 test("stockReconnect: after the binary relay is destroyed, a fresh session establishment dials the relay again and succeeds on a matching epoch", async () => {
   await withTempEpochFile(async (epochPath, writeEpoch) => {
