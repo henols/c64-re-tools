@@ -1207,7 +1207,7 @@
           "path": {
             "type": "string"
           },
-          "sentPath": {
+          "handle": {
             "type": "string"
           },
           "includeRoms": {
@@ -1237,7 +1237,7 @@
         "required": [
           "name",
           "path",
-          "sentPath",
+          "handle",
           "includeRoms",
           "includeDisks",
           "metadataWritten",
@@ -1270,7 +1270,7 @@
           "path": {
             "type": "string"
           },
-          "sentPath": {
+          "handle": {
             "type": "string"
           },
           "programCounter": {},
@@ -1287,7 +1287,7 @@
         "required": [
           "name",
           "path",
-          "sentPath",
+          "handle",
           "programCounter",
           "metadata",
           "runState"

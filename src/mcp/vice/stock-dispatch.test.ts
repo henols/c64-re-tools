@@ -1516,6 +1516,12 @@ const CONFORMANCE_BROKER_CONTROL = {
   // shared "always succeeds" ack is safe to add here rather than a
   // per-case override.
   recycle: async () => ({ ok: true as const, ack: { outcome: "killed", kill_stage: "sigterm", reason: "" } }),
+  // Phase 64, plan 64-04 (XFER-01/XFER-02): vice_snapshot_save/
+  // vice_snapshot_load's conformance cases now stage a slot before every
+  // DUMP/UNDUMP -- a stub without this method would throw "stageFile is not
+  // a function" on the first snapshot conformance case, not merely fail a
+  // type check the `as unknown as` cast below already bypasses.
+  stageFile: async () => ({ ok: true as const, handle: "conformance-handle", emulatorFilename: "/conformance-staged/snapshot.bin" }),
 } as unknown as BrokerControlSession;
 
 type ConformanceSendImpl = (commandType: number, body: Buffer) => unknown;
@@ -1548,7 +1554,14 @@ function buildConformanceSession(targetId: string, sendImpl: ConformanceSendImpl
     port: 6502,
     targetId,
     brokerControl: CONFORMANCE_BROKER_CONTROL,
-    deps: {},
+    // Phase 64, plan 64-04 (XFER-01/XFER-02): vice_snapshot_save/
+    // vice_snapshot_load's conformance cases now call
+    // session.deps.transferFile after staging -- a stub without this
+    // returns undefined, and the handler reports "no transferFile
+    // implementation is available" rather than throwing, but conformance
+    // still needs the download/upload to report success so DUMP/UNDUMP is
+    // reached and the answer conforms to its schema.
+    deps: { transferFile: async () => ({ ok: true as const, byteLength: 0, sha256: "" }) },
     baselineEpoch: null,
   } as unknown as StockConnectSession;
 
