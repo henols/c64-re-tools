@@ -106,6 +106,18 @@ export function resolveEndpointPort(options: ResolveEndpointPortOptions = {}): n
 const DEFAULT_CONNECT_TIMEOUT_MS = 2000;
 const DEFAULT_REPLY_TIMEOUT_MS = 2000;
 
+/** G-64-4 (plan 64-12, Task 3): the attach reply's OWN wait, separate from
+ * the `hello` reply's DEFAULT_REPLY_TIMEOUT_MS above (which keeps its own
+ * 2000ms default, used ONLY for the hello race in dialOneCandidate()).
+ * MUST exceed the broker's own bounded emulator-leg dial deadline
+ * (broker-relay.mts's DEFAULT_RELAY_DIAL_DEADLINE_MS, 5000ms) by at least
+ * one retry interval (DEFAULT_RELAY_DIAL_RETRY_MS, 50ms) -- pinned by a
+ * relation test in broker-relay.test.ts that imports both constants, never
+ * a copy-pasted number. Otherwise the client gives up on an attach the
+ * broker is still correctly waiting on, and the broker's own eventual
+ * refusal (or success) is never read at all. */
+export const DEFAULT_ATTACH_REPLY_TIMEOUT_MS = 8000;
+
 /** This module's own directory, computed once at module load -- the same
  * `dirname(fileURLToPath(import.meta.url))` idiom vice-proxy.ts's own
  * HERE_DIR already uses right before it calls runtimeVersion(). */
@@ -636,7 +648,15 @@ export interface DialMonitorRelayOptions {
   port?: number;
   candidates?: readonly string[];
   connectTimeoutMs?: number;
+  /** The `hello` reply's own wait, used ONLY by the hello race
+   * (dialOneCandidate()) -- keeps its own DEFAULT_REPLY_TIMEOUT_MS (2000ms)
+   * default, unaffected by attachReplyTimeoutMs below. */
   replyTimeoutMs?: number;
+  /** G-64-4 (plan 64-12, Task 3): the attach reply's OWN wait, used ONLY by
+   * performAttach() -- defaults to DEFAULT_ATTACH_REPLY_TIMEOUT_MS (8000ms),
+   * never replyTimeoutMs above. See that constant's own comment for why it
+   * must exceed the broker's own emulator-dial deadline. */
+  attachReplyTimeoutMs?: number;
   connect?: BrokerEndpointConnectFn;
   clientVersion?: string;
 }
@@ -682,16 +702,28 @@ export type DialMonitorRelayResult = DialMonitorRelaySuccess | DialMonitorRelayF
  * terminator), on a parsed `{"kind":"error",...}` line (failure, naming the
  * broker's own refusal), on a reply timeout, or on the socket closing/
  * erroring before either -- every path is `ok: false`, never a throw. */
-function performAttach(socket: Socket, host: string, port: number, opts: DialMonitorRelayOptions, replyTimeoutMs: number, resolveOuter: (result: DialMonitorRelayResult) => void): void {
+function performAttach(
+  socket: Socket,
+  host: string,
+  port: number,
+  opts: DialMonitorRelayOptions,
+  attachReplyTimeoutMs: number,
+  resolveOuter: (result: DialMonitorRelayResult) => void,
+): void {
   let carry: Buffer = Buffer.alloc(0);
   let settled = false;
 
   const timer = setTimeout(() => {
     finish({
       ok: false,
-      reason: `vice: broker at ${host}:${port} accepted the relay connection but never answered the attach request within ${replyTimeoutMs}ms`,
+      // G-64-4 (plan 64-12, Task 3): says the BROKER did not answer -- this
+      // wait is now attachReplyTimeoutMs, deliberately longer than the
+      // broker's own emulator-dial deadline (DEFAULT_ATTACH_REPLY_TIMEOUT_MS's
+      // own comment), so reaching this timeout means the broker itself is
+      // unresponsive, not merely still waiting on its own emulator dial.
+      reason: `vice: broker at ${host}:${port} accepted the relay connection but never answered the attach request within ${attachReplyTimeoutMs}ms`,
     });
-  }, replyTimeoutMs);
+  }, attachReplyTimeoutMs);
   if (typeof timer.unref === "function") timer.unref();
 
   function finish(result: DialMonitorRelayResult): void {
@@ -754,6 +786,11 @@ export function dialMonitorRelay(options: DialMonitorRelayOptions): Promise<Dial
   const candidates = options.candidates ?? DIAL_CANDIDATES;
   const connectTimeoutMs = options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
   const replyTimeoutMs = options.replyTimeoutMs ?? DEFAULT_REPLY_TIMEOUT_MS;
+  // G-64-4 (plan 64-12, Task 3): the attach reply's OWN wait -- deliberately
+  // NOT replyTimeoutMs above, which stays the hello race's own wait. See
+  // DEFAULT_ATTACH_REPLY_TIMEOUT_MS's own comment for why this one must
+  // exceed the broker's own emulator-dial deadline.
+  const attachReplyTimeoutMs = options.attachReplyTimeoutMs ?? DEFAULT_ATTACH_REPLY_TIMEOUT_MS;
   const connectFn = options.connect ?? connect;
   const clientVersion = options.clientVersion ?? CLIENT_VERSION;
   const tag = options.channel === "text" ? RELAY_TAG_TEXT : RELAY_TAG_BINARY;
@@ -803,7 +840,7 @@ export function dialMonitorRelay(options: DialMonitorRelayOptions): Promise<Dial
             resolveOuter({ ok: false, reason: "vice: internal error -- relay dial completed with no live socket" });
             return;
           }
-          performAttach(winnerSocket, outcome.host, port, options, replyTimeoutMs, resolveOuter);
+          performAttach(winnerSocket, outcome.host, port, options, attachReplyTimeoutMs, resolveOuter);
           return;
         }
         observations[idx] = {

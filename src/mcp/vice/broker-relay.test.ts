@@ -36,6 +36,8 @@ import {
   resolveRelayKeepAliveMs,
   DEFAULT_RELAY_IDLE_MS,
   DEFAULT_RELAY_KEEPALIVE_MS,
+  DEFAULT_RELAY_DIAL_DEADLINE_MS,
+  DEFAULT_RELAY_DIAL_RETRY_MS,
   type RelayDeathTrigger,
   type ArmIdleTimerFn,
   type ArmedIdleTimer,
@@ -56,13 +58,21 @@ import {
 } from "./broker-control.mts";
 import { createBrokerState, MONITOR_CHANNELS, type BrokerState, type InstanceRecord, type MonitorChannel } from "./broker-state.mts";
 import type { BrokerIncidentInput } from "./broker-incident.mts";
-import { dialMonitorRelay, HELLO_PROTOCOL_MAGIC, RELAY_TAG_BINARY, type DialMonitorRelayResult, type DialMonitorRelaySuccess } from "./broker-endpoint.ts";
+import {
+  dialMonitorRelay,
+  HELLO_PROTOCOL_MAGIC,
+  RELAY_TAG_BINARY,
+  DEFAULT_ATTACH_REPLY_TIMEOUT_MS,
+  type DialMonitorRelayResult,
+  type DialMonitorRelaySuccess,
+} from "./broker-endpoint.ts";
 import { ViceMonitorClient, CommandType, ResponseType, ErrorCode, REQUEST_HEADER_LEN, VICE_BROADCAST_REQUEST_ID, encodeRequestHeader } from "./stock-protocol.ts";
 import { encodeResponseFrame, syntheticJamFrame } from "./binmon-fixtures.ts";
 import { build } from "./build.ts";
 import type { Socket as NetSocket } from "node:net";
 import { stockConnect, stockReconnect, stockDisconnect, type StockConnectBrokerControl, type DialMonitorSocketFn } from "./stock-connect.ts";
 import { MachineRestartedError } from "./vice-errors.ts";
+import { convertHandshakeError } from "./stock-handler.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -1407,6 +1417,69 @@ test("emulator binds late, non-refusal error: a non-ECONNREFUSED connect error f
     listener.server.close();
     if (incidentsDir) rmSync(incidentsDir, { recursive: true, force: true });
   }
+});
+
+// ===========================================================================
+// G-64-4 (plan 64-12), Task 3: the client must wait longer than the broker's
+// own emulator-dial deadline, or it times out on an attach the broker is
+// still correctly waiting on -- and the refusal it would have sent is never
+// read.
+// ===========================================================================
+
+test("the client's attach-reply wait for a relay dial exceeds the broker's emulator-dial deadline by at least one retry interval", () => {
+  assert.ok(
+    DEFAULT_ATTACH_REPLY_TIMEOUT_MS >= DEFAULT_RELAY_DIAL_DEADLINE_MS + DEFAULT_RELAY_DIAL_RETRY_MS,
+    `the client's attach-reply wait (${DEFAULT_ATTACH_REPLY_TIMEOUT_MS}ms) must exceed the broker's own emulator-dial ` +
+      `deadline (${DEFAULT_RELAY_DIAL_DEADLINE_MS}ms) by at least one retry interval (${DEFAULT_RELAY_DIAL_RETRY_MS}ms), ` +
+      "or the client gives up before the broker's own correctly-still-waiting refusal is ever read",
+  );
+});
+
+test("stockConnect: a real never-binding attach's refusal, converted by convertHandshakeError(), names the cause and the retry, and never mentions VICE_BROKER_BINMON_HOST", async () => {
+  await withTempEpochFile(async (epochPath, writeEpoch) => {
+    writeEpoch(1);
+    const port = await reserveFreePort(); // reserved, then released -- NOTHING is ever bound on it in this test
+    const targetId = "grant-g64-4-e2e-never-binds";
+    const deps: TestHandleRelayDeathDeps = { dialDeadlineMs: 300, dialRetryIntervalMs: 25 };
+    await withRelayTestBroker(
+      port,
+      targetId,
+      async ({ listenerPort, state }) => {
+        const brokerControl = makeRealBrokerControl(state, targetId);
+        const dialMonitorSocket: DialMonitorSocketFn = async (opts) => {
+          const result = await dialMonitorRelay({
+            targetId: opts.targetId,
+            channel: opts.channel,
+            handle: opts.handle,
+            port: listenerPort,
+            candidates: ["127.0.0.1"],
+          });
+          if (!result.ok) throw new Error(result.reason);
+          return { socket: result.socket, pending: result.pending };
+        };
+
+        await assert.rejects(
+          () =>
+            stockConnect({
+              host: "127.0.0.1",
+              port,
+              targetId,
+              brokerControl,
+              deps: { dialMonitorSocket, epochPath },
+            }),
+          (err: unknown) => {
+            const result = convertHandshakeError("vice_ping", err);
+            const text = result.content[0]!.text;
+            assert.match(text, /did not accept a connection/i, "the tool-facing text must name the cause");
+            assert.match(text, /retry/i, "the tool-facing text must say that retrying is safe");
+            assert.doesNotMatch(text, /VICE_BROKER_BINMON_HOST/, "an emulator that is merely still starting must never be told to reconfigure the bind host");
+            return true;
+          },
+        );
+      },
+      deps,
+    );
+  });
 });
 
 test("stockReconnect: after the binary relay is destroyed, a fresh session establishment dials the relay again and succeeds on a matching epoch", async () => {

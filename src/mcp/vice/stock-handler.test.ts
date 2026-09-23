@@ -8,7 +8,7 @@ import { EventEmitter } from "node:events";
 
 import { isErrorText, convertHandshakeError, convertWireError, stockAnswer, derivedAnswer } from "./stock-handler.ts";
 import { attachRunStateTracker, resetRunStateTrackersForTest } from "./stock-runstate.ts";
-import { ErrorCode, StockFramingError, StockProtocolError, StockResponseMismatchError, type ViceMonitorClient } from "./stock-protocol.ts";
+import { ErrorCode, StockFramingError, StockProtocolError, StockResponseMismatchError, StockConnectionClosedError, type ViceMonitorClient } from "./stock-protocol.ts";
 import { MonitorOwnershipError } from "./vice-broker-client.ts";
 import { MachineRestartedError } from "./vice-errors.ts";
 
@@ -113,6 +113,36 @@ test("convertHandshakeError: a MachineRestartedError names both epochs", () => {
 test("convertHandshakeError: still produces the Phase 2 refusal wording for a plain Error", () => {
   const result = convertHandshakeError("vice_x", new Error("something else failed"));
   assert.match(result.content[0]!.text, /vice_x: stock handshake failed \(something else failed\)\./);
+});
+
+test("convertHandshakeError: a StockConnectionClosedError names the unanswered request count, says only the channel was released, and that retrying is safe (G-64-4, plan 64-12)", () => {
+  const err = new StockConnectionClosedError("binary monitor connection closed with 1 request(s) abandoned", {
+    port: 6502,
+    abandoned: 1,
+    trigger: "close",
+  });
+  const text = convertHandshakeError("vice_ping", err).content[0]!.text;
+  assert.match(text, /1 request/, "the text must name the unanswered request count");
+  assert.match(text, /channel/i, "the text must say only the channel was released");
+  assert.doesNotMatch(text, /instance was released|grant was released/i, "the text must never say the instance or the grant were released");
+  assert.match(text, /retry/i, "the text must say retrying the same call is safe");
+});
+
+test("convertHandshakeError: an attach refusal (a plain Error carrying the broker's own errno-free retry wording) passes through with the generic wording, unchanged", () => {
+  // G-64-4, plan 64-12, Task 2's own broker-relay.mjs buildEmulatorUnreachableMessage()
+  // text, exactly as it would arrive wrapped in a ViceError by stock-connect.ts's
+  // dialMonitorSocket() default -- proves the pre-existing generic branch's
+  // "stock handshake failed (message)." shape is what an attach refusal rides
+  // through on, not a new bespoke branch.
+  const message =
+    "vice: attach: the emulator's binary monitor at port 6502 did not accept a connection within 5000ms -- " +
+    "it may still be starting, or may have exited; retrying the same call is safe.";
+  const result = convertHandshakeError("vice_ping", new Error(message));
+  const text = result.content[0]!.text;
+  assert.match(text, /stock handshake failed/);
+  assert.match(text, /did not accept a connection/i);
+  assert.match(text, /retry/i);
+  assert.doesNotMatch(text, /VICE_BROKER_BINMON_HOST/);
 });
 
 // --------------------------------------------------------- convertWireError()

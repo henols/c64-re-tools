@@ -53,6 +53,10 @@ interface TestHandleRelayDeathDeps {
   idleMs?: number;
   armIdleTimer?: ArmIdleTimerFn;
   keepAliveMs?: number;
+  /** G-64-4 (plan 64-12) additions -- see vice-broker.mts's own
+   * HandleRelayDeathDeps for the full doc comment. */
+  dialDeadlineMs?: number;
+  dialRetryIntervalMs?: number;
 }
 const viceBrokerModule = (await import(new URL("./resources/vice-broker.mjs", import.meta.url).href)) as unknown as {
   handleMonitorClaim: (requestId: string, targetId: string, channel: MonitorChannel, state: BrokerState) => MonitorClaimOutcome;
@@ -102,6 +106,54 @@ async function withStubTextMonitorServer<T>(handler: (socket: Socket) => void, f
   } finally {
     for (const socket of sockets) socket.destroy();
     await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}
+
+/** Reserves a free loopback port synchronously -- listens on port 0, reads
+ * back the OS-assigned port, then closes immediately -- mirrors
+ * broker-relay.test.ts's own reserveFreePort() verbatim (private to its own
+ * file, so duplicated here rather than shared, matching this whole file's
+ * own established "mirrors ... verbatim" precedent). */
+async function reserveFreePort(): Promise<number> {
+  return await new Promise<number>((resolve, reject) => {
+    const probe: Server = createServer();
+    probe.listen(0, "127.0.0.1", () => {
+      const port = (probe.address() as AddressInfo).port;
+      probe.close((err) => (err ? reject(err) : resolve(port)));
+    });
+  });
+}
+
+/** G-64-4 (plan 64-12), Task 3: a stub text monitor that binds `bindDelayMs`
+ * AFTER this function returns control to its caller -- mirrors
+ * broker-relay.test.ts's own withLateBindingStubEmulatorServer() verbatim,
+ * for the text channel. Every pre-existing stub in THIS file binds
+ * synchronously before the attach is ever sent, which is exactly the
+ * condition that hid G-64-4 from every earlier test on this channel too. */
+async function withLateBindingStubTextMonitorServer<T>(
+  bindDelayMs: number,
+  handler: (socket: Socket) => void,
+  fn: (port: number, connectionCount: () => number) => Promise<T>,
+): Promise<T> {
+  const port = await reserveFreePort();
+  const sockets = new Set<Socket>();
+  let connections = 0;
+  let server: Server | null = null;
+  const bindTimer = setTimeout(() => {
+    server = createServer((socket) => {
+      connections += 1;
+      sockets.add(socket);
+      socket.on("close", () => sockets.delete(socket));
+      handler(socket);
+    });
+    server.listen(port, "127.0.0.1", () => {});
+  }, bindDelayMs);
+  try {
+    return await fn(port, () => connections);
+  } finally {
+    clearTimeout(bindTimer);
+    for (const socket of sockets) socket.destroy();
+    if (server) await new Promise<void>((resolve) => (server as Server).close(() => resolve()));
   }
 }
 
@@ -291,6 +343,67 @@ test("tracer: an allowlisted text command sent through a relayed TextMonitorClie
 // see this plan's own <planner_findings> for why production still runs
 // close-then-release until that plan lands).
 // ===========================================================================
+
+// ===========================================================================
+// G-64-4 (plan 64-12), Task 3: the text channel is covered by the SAME
+// attach seam as the binary channel -- no path-specific readiness code.
+// ===========================================================================
+
+test("emulator binds late (text channel): a text attach sent before the text monitor's port is bound is answered after the bind and one allowlisted command round-trips", async () => {
+  resetChannelLockForTests();
+  const receivedBytes: Buffer[] = [];
+  const commandReply = Buffer.from("Setting default device to `Computer'\n(C:$e5d1) ", "utf8");
+  let incidentWrites = 0;
+  const deps: TestHandleRelayDeathDeps = {
+    writeIncident: (record) => {
+      incidentWrites += 1;
+      return `/fake/incident/${incidentWrites}.md`;
+    },
+  };
+  await withLateBindingStubTextMonitorServer(
+    250,
+    (socket) => {
+      socket.on("data", (chunk: Buffer) => {
+        receivedBytes.push(Buffer.from(chunk));
+        socket.write(commandReply);
+      });
+    },
+    async (textPort) => {
+      const targetId = "grant-g64-4-text-late-bind";
+      await withRelayTestBroker(
+        textPort,
+        targetId,
+        async ({ listenerPort, state }) => {
+          const claimOutcome = handleMonitorClaim("claim-text-late-bind", targetId, "text", state);
+          assert.ok(claimOutcome.ok, `expected the claim to succeed: ${JSON.stringify(claimOutcome)}`);
+          if (!claimOutcome.ok) return;
+
+          const dialResult: DialMonitorRelayResult = await dialMonitorRelay({
+            targetId,
+            channel: "text",
+            handle: claimOutcome.handle,
+            port: listenerPort,
+            candidates: ["127.0.0.1"],
+          });
+          assert.ok(dialResult.ok, `expected a successful relay dial once the text monitor binds: ${JSON.stringify(dialResult)}`);
+          if (!dialResult.ok) return;
+
+          const client = new TextMonitorClient();
+          client.attach(dialResult.socket, { pending: dialResult.pending });
+          try {
+            const payload = await withTextChannelLock("device c:", () => client.command("device c:"));
+            assert.equal(payload, "Setting default device to `Computer'\n");
+            assert.equal(receivedBytes.length, 1, "the stub text monitor must have received exactly one write");
+            assert.equal(incidentWrites, 0, "a late-binding text monitor that eventually accepts the connection must never write an incident record");
+          } finally {
+            await client.disconnect();
+          }
+        },
+        deps,
+      );
+    },
+  );
+});
 
 test("gap closure 63-11: a real claim/attach/command/release/close round trip through the text relay leaves state.relaySessions empty and writes zero incident files", async () => {
   resetChannelLockForTests();
