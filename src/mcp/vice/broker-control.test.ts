@@ -1672,6 +1672,12 @@ test("structural (D-14): no halting-path module reads monitorClients -- the only
     // literal every other allowed *.test.ts file above does. Kept in sync
     // with text-connect.test.ts's own copy of this same guard.
     "vice-proxy.test.ts",
+    // Phase 64 gap closure G-64-3 (plan 64-13, Task 1): stock-connect.ts's
+    // own handshake test file, whose "publish lands late" case drives a
+    // REAL control listener and constructs the SAME raw InstanceRecord
+    // literal every other allowed *.test.ts file above does. Kept in sync
+    // with text-connect.test.ts's own copy of this same guard.
+    "stock-connect.test.ts",
   ]);
   const offenders: string[] = [];
   for (const rel of files) {

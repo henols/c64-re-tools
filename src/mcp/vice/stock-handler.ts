@@ -156,7 +156,16 @@ export function convertHandshakeError(toolName: string, err: unknown): StockErro
 // ---------------------------------------------------------------------------
 
 /** Maps each wire ErrorCode to distinct, explanatory text -- a single table,
- * not a scattered set of ad-hoc strings. */
+ * not a scattered set of ad-hoc strings.
+ *
+ * G-64-3 (plan 64-13, Task 3): the CmdFailure entry no longer attributes
+ * every 0x8f to a checkpoint-condition parse failure -- that parenthetical
+ * is what steered plan 64-11's diagnosis toward checkpoints when the real
+ * cause was a missing/unpublished file
+ * (`.planning/debug/vice-0x8f-disk-attach-snapshot-load.md`). VICE sends no
+ * further diagnostic with this code at all; the emulator's own log may
+ * carry the reason. "no further diagnostic" itself is kept verbatim --
+ * `stock-handler.test.ts` pins it. */
 const WIRE_ERROR_TEXT: Partial<Record<number, string>> = {
   [ErrorCode.ObjectMissing]: "the object named does not exist (e.g. no checkpoint with that number)",
   [ErrorCode.InvalidMemspace]: "invalid memspace -- 0x00 is main, 0x01-0x04 are units 8-11",
@@ -164,12 +173,28 @@ const WIRE_ERROR_TEXT: Partial<Record<number, string>> = {
   [ErrorCode.InvalidParameter]: "an argument in the request was invalid for this command",
   [ErrorCode.InvalidApiVersion]: "the binary monitor rejected this request's api_version",
   [ErrorCode.InvalidType]: "this command is not implemented by the connected VICE build",
-  [ErrorCode.CmdFailure]: "the command failed inside the monitor with no further diagnostic (a condition syntax error reports exactly this and nothing more)",
+  [ErrorCode.CmdFailure]: "the command failed inside the monitor with no further diagnostic -- the emulator's own log may carry the reason",
 };
 
-export function convertWireError(toolName: string, err: unknown): StockErrorResult {
+/** G-64-3 (plan 64-13, Task 3): a per-call override for `convertWireError()`,
+ * applied ONLY when the error code is `CmdFailure` -- every other wire error
+ * code's text is untouched, whether or not this options object is supplied.
+ * Lets a file-carrying command (AUTOSTART/UNDUMP/DUMP) say what VICE could
+ * not do with the file it was handed, instead of the generic gloss above.
+ * The condition-setting path in `stock-checkpoints.ts` does not use
+ * `convertWireError()` and is unaffected either way. */
+export interface ConvertWireErrorOptions {
+  cmdFailureText?: string;
+}
+
+export function convertWireError(toolName: string, err: unknown, options: ConvertWireErrorOptions = {}): StockErrorResult {
   if (err instanceof StockProtocolError) {
-    const text = err.errorCode !== undefined ? WIRE_ERROR_TEXT[err.errorCode] : undefined;
+    const text =
+      err.errorCode === ErrorCode.CmdFailure && options.cmdFailureText !== undefined
+        ? options.cmdFailureText
+        : err.errorCode !== undefined
+          ? WIRE_ERROR_TEXT[err.errorCode]
+          : undefined;
     const codeText = `0x${(err.errorCode ?? 0).toString(16).padStart(2, "0")}`;
     return isErrorText(`${toolName}: ${text ?? `the binary monitor returned error code ${codeText}`} (${err.message}).`);
   }

@@ -445,6 +445,12 @@ test("structural (D-14): git ls-files agrees -- the identifier appears only in t
     // literal every other allowed *.test.ts file above does. Kept in sync
     // with broker-control.test.ts's own copy of this same guard.
     "vice-proxy.test.ts",
+    // Phase 64 gap closure G-64-3 (plan 64-13, Task 1): stock-connect.ts's
+    // own handshake test file, whose "publish lands late" case drives a
+    // REAL control listener and constructs the SAME raw InstanceRecord
+    // literal every other allowed *.test.ts file above does. Kept in sync
+    // with broker-control.test.ts's own copy of this same guard.
+    "stock-connect.test.ts",
   ]);
   const offenders: string[] = [];
   for (const rel of files) {

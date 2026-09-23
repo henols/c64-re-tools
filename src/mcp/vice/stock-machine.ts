@@ -232,7 +232,7 @@ export const handleAutostart: StockSessionHandler = async (args, session) => {
       autostartBody({ runAfter: run, fileIndex: index, filename: stageOutcome.emulatorFilename }),
     );
   } catch (err) {
-    return convertWireError("vice_autostart", err);
+    return convertWireError("vice_autostart", err, { cmdFailureText: AUTOSTART_CMD_FAILURE_TEXT });
   }
 
   return stockAnswer(session.client, { path: containerPath, handle: stageOutcome.handle, run, index });
@@ -394,7 +394,7 @@ export const handleDiskAttach: StockSessionHandler = async (args, session) => {
       autostartBody({ runAfter: false, fileIndex: 0, filename: stageOutcome.emulatorFilename }),
     );
   } catch (err) {
-    return convertWireError("vice_disk_attach", err);
+    return convertWireError("vice_disk_attach", err, { cmdFailureText: AUTOSTART_CMD_FAILURE_TEXT });
   }
 
   return stockAnswer(session.client, {
@@ -496,7 +496,7 @@ export const handleSnapshotSave: StockSessionHandler = async (args, session) => 
       dumpBody({ saveRoms: includeRoms, saveDisks: includeDisks, filename: stageOutcome.emulatorFilename }),
     );
   } catch (err) {
-    return convertWireError("vice_snapshot_save", err);
+    return convertWireError("vice_snapshot_save", err, { cmdFailureText: DUMP_CMD_FAILURE_TEXT });
   }
 
   // Step 3: only after DUMP succeeds, download the staged bytes into this
@@ -638,7 +638,7 @@ export const handleSnapshotLoad: StockSessionHandler = async (args, session) => 
       programCounter = (reply as { programCounter: number }).programCounter;
     }
   } catch (err) {
-    return convertWireError("vice_snapshot_load", err);
+    return convertWireError("vice_snapshot_load", err, { cmdFailureText: UNDUMP_CMD_FAILURE_TEXT });
   }
 
   const metadataPath = snapshotMetaPathFor(name);
