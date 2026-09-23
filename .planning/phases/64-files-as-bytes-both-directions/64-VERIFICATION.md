@@ -1,8 +1,8 @@
 ---
 phase: 64-files-as-bytes-both-directions
-verified: 2026-09-23T20:30:00Z
-status: human_needed
-score: 5/5 ROADMAP criteria verified
+verified: 2026-09-24T00:30:00Z
+status: gaps_found
+score: 7/8 must-haves verified
 covered_files:
   - ".planning/REQUIREMENTS.md"
   - ".planning/ROADMAP.md"
@@ -28,6 +28,12 @@ covered_files:
   - ".planning/phases/64-files-as-bytes-both-directions/64-10-SUMMARY.md"
   - ".planning/phases/64-files-as-bytes-both-directions/64-11-PLAN.md"
   - ".planning/phases/64-files-as-bytes-both-directions/64-11-SUMMARY.md"
+  - ".planning/phases/64-files-as-bytes-both-directions/64-12-PLAN.md"
+  - ".planning/phases/64-files-as-bytes-both-directions/64-12-SUMMARY.md"
+  - ".planning/phases/64-files-as-bytes-both-directions/64-13-PLAN.md"
+  - ".planning/phases/64-files-as-bytes-both-directions/64-13-SUMMARY.md"
+  - ".planning/phases/64-files-as-bytes-both-directions/64-14-PLAN.md"
+  - ".planning/phases/64-files-as-bytes-both-directions/64-14-SUMMARY.md"
   - ".planning/phases/64-files-as-bytes-both-directions/64-REVIEW.md"
   - ".planning/phases/64-files-as-bytes-both-directions/64-UAT.md"
   - ".planning/phases/64-files-as-bytes-both-directions/deferred-items.md"
@@ -37,6 +43,8 @@ covered_files:
   - ".planning/phases/64-files-as-bytes-both-directions/evidence/64-g641-live-check.md"
   - ".planning/phases/64-files-as-bytes-both-directions/evidence/64-g641-live-driver.mjs"
   - ".planning/phases/64-files-as-bytes-both-directions/evidence/64-g641-state-dir-agreement.md"
+  - ".planning/phases/64-files-as-bytes-both-directions/evidence/64-g643-g644-live-check.md"
+  - ".planning/phases/64-files-as-bytes-both-directions/evidence/64-g643-g644-live-run.mjs"
   - ".planning/todos/pending/2026-09-23-cold-launch-relay-attach-races-emulator-startup-and-gets-killed.md"
   - ".planning/todos/pending/2026-09-23-container-clients-cannot-see-the-machine-level-broker-json.md"
   - ".planning/todos/pending/2026-09-23-vice-proxy-never-wires-the-control-token-into-stockdispatchdeps.md"
@@ -52,20 +60,26 @@ covered_files:
   - "src/mcp/vice/broker-launch.mts"
   - "src/mcp/vice/broker-launch.test.ts"
   - "src/mcp/vice/broker-relay-text.test.ts"
+  - "src/mcp/vice/broker-relay.mts"
   - "src/mcp/vice/broker-relay.test.ts"
   - "src/mcp/vice/broker-transfer.mts"
   - "src/mcp/vice/broker-transfer.test.mts"
   - "src/mcp/vice/build.ts"
+  - "src/mcp/vice/host-tool-transport.test.ts"
   - "src/mcp/vice/package.json"
   - "src/mcp/vice/repo-root.test.ts"
   - "src/mcp/vice/repo-root.ts"
   - "src/mcp/vice/resources/broker-control.mjs"
   - "src/mcp/vice/resources/broker-home.mjs"
+  - "src/mcp/vice/resources/broker-relay.mjs"
+  - "src/mcp/vice/resources/broker-transfer.mjs"
   - "src/mcp/vice/resources/vice-broker.mjs"
   - "src/mcp/vice/stock-connect.test.ts"
   - "src/mcp/vice/stock-connect.ts"
   - "src/mcp/vice/stock-dispatch.test.ts"
   - "src/mcp/vice/stock-dispatch.ts"
+  - "src/mcp/vice/stock-handler.test.ts"
+  - "src/mcp/vice/stock-handler.ts"
   - "src/mcp/vice/stock-machine.test.ts"
   - "src/mcp/vice/stock-machine.ts"
   - "src/mcp/vice/text-connect.test.ts"
@@ -81,30 +95,40 @@ covered_files:
   - "src/mcp/vice/vice-broker-client.test.ts"
   - "src/mcp/vice/vice-broker-client.ts"
   - "src/mcp/vice/vice-broker-launch.test.ts"
+  - "src/mcp/vice/vice-broker-staging.test.ts"
   - "src/mcp/vice/vice-broker.mts"
   - "src/mcp/vice/vice-proxy.test.ts"
   - "src/mcp/vice/vice-proxy.ts"
-covered_digest: "v1:sha256:eedd3a82607b3b99dfc3fea499d4ec64e8d934b40d83c7ceb70f8b83c90896fb"
+covered_digest: "v1:sha256:823873f3c02e89113442264b384251222c86af428df6315c2e005d2e420dfb71"
 behavior_unverified: 0
 overrides_applied: 0
+overrides: []
 re_verification:
   previous_status: human_needed
-  previous_score: "4/5 ROADMAP criteria fully verified, 1 partially verified (behavior present, full-stack behavior not exercised)"
+  previous_score: "5/5 ROADMAP criteria verified, 2 human-verification items pending"
   gaps_closed:
-    - "ROADMAP Success Criterion 1 / XFER-08 — the four migrated tools now measured, live, through the real vice-proxy.ts against a real systemd-run broker and the real /usr/bin/x64sc, with zero broker-side path leaks (previously only proven at the protocol/handler layer)."
-    - "G-64-1's PRIMARY root cause (vice-proxy.ts never forwarding a control token into StockDispatchDeps) closed by making the broker authenticate attach/transfer by broker-minted handle alone, ahead of the per-boot token gate — verified directly in broker-control.mts and by an independently re-run regression suite."
-    - "G-64-1's SECONDARY root cause (broker and client resolving broker.json in different directories on the documented start route) closed by making the client import broker-home.mts's brokerStateDir() directly instead of recomputing a project-relative path — verified directly in vice-broker-client.ts/vice-broker.mts and by independently re-run route-agreement tests."
-  gaps_remaining: []
+    - "UAT G-64-4 (a cold session's first vice_* call raced the emulator's own startup and was answered/killed before the emulator's monitor port bound) closed by plan 64-12's gated relay attach (dialEmulatorLeg()): the broker now dials the emulator leg to a connected state before acknowledging attach. Confirmed by direct source read (broker-relay.mts, vice-broker.mts, broker-control.mts) and by an independently re-run targeted test suite (7/7 'emulator binds late/never binds' cases pass). Measured live against genuine stock /usr/bin/x64sc: 7/7 cold sessions succeeded on their first attempt with no retry (vs. 0/9 on the diagnosis's own pre-fix baseline)."
+    - "UAT G-64-3 (vice_disk_attach / vice_snapshot_load / vice_autostart intermittently returned binary monitor 0x8f because the client named an uploaded file before the broker had published it) closed by plan 64-13's completion-reply gate: the broker now writes transfer_complete only after receivePayloadToFile() has renamed the file into place, and stock-connect.ts's defaultTransferFile() resolves an upload only on that reply. Confirmed by direct source read and by an independently re-run targeted test (3/3 'publish lands late' cases pass). Measured live: the exact loop the diagnosis measured at 20/30 failures ran 135/135 clean (0 occurrences of 0x8f) against the real broker and /usr/bin/x64sc."
+  gaps_remaining:
+    - "Plan 64-14's own <human-check> (the owner's own in-session re-run confirming the fix from inside a fresh Claude Code session) was not performed by any executor and is recorded as pending in evidence/64-g643-g644-live-check.md's own 'Human-check queued for the owner' section. This is not a FAILED must-have — it is an already-disclosed, queued confirmation step — but it has not yet happened."
   regressions: []
-overrides: []
-behavior_unverified_items: []
-human_verification:
-  - test: "The owner's own in-session re-run of 64-UAT.md test 1: reconnect the vice MCP server (or start a new Claude Code session) so it loads the fixed code; start the broker as a systemd user unit by the documented route with VICE_BIN=/usr/bin/x64sc; run vice_autostart, vice_disk_attach, vice_snapshot_save and vice_snapshot_load; confirm none errors and no result names a path under ~/.c64-re-tools/; read the disk write-loss wording after an attach-write-close cycle; then stop the broker and confirm a clean teardown."
-    expected: "All four tools succeed with no broker-side path in any result, matching what plan 64-11's own scripted run and its independent nested Claude Code session both already measured."
-    why_human: "Plan 64-11's own Task 3 <human-check> explicitly queues this as the owner's own confirmation step, distinct from (and in addition to) the scripted/nested-session evidence this verifier already re-confirmed against source. This item is inherited from the plan's own design, not invented by this verification."
-  - test: "Decide the disposition of the newly discovered, third live defect: a cold-launched broker instance's first relay attach races the real emulator's own startup and is killed by the broker's kill-never-recycle release policy on that race's failure (measured 11 consecutive failures in one session; independently reproduced through a nested Claude Code session's own first vice_ping call)."
-    expected: "A recorded decision: fix before the v2.0.0 milestone is treated as production-ready, or accept and track as a fast-follow. The pending todo is filed: .planning/todos/pending/2026-09-23-cold-launch-relay-attach-races-emulator-startup-and-gets-killed.md."
-    why_human: "This is NOT one of G-64-1's two root causes and is not in scope of any XFER-01..08 requirement — it is a pre-existing timing gap in the broker's acquire→claim→attach chain (vice-broker.mts, from Phase 62/63), invisible to every existing test because every stub emulator binds its port synchronously before a real x64sc ever would. It affects every stock tool call on a cold session, not only the four tools this phase migrated, so whether it blocks Phase 64's own closure is a scope/prioritization call this verifier cannot make unilaterally. It does not block THIS phase's own requirements (XFER-01..08), all of which concern the file-transfer protocol itself, not connection warm-up timing — but a human should read the full evidence (.planning/phases/64-files-as-bytes-both-directions/evidence/64-g641-live-check.md, \"Live defect 1\") before treating Phase 64 as unconditionally shippable."
+gaps:
+  - truth: "No client-visible reason and no tool result names a broker-side path on an upload failure (plan 64-13's own must-have truth; the phase's own goal statement: 'neither ever names a path the other must be able to open')"
+    status: failed
+    reason: "CR-01 in 64-REVIEW.md (critical, unresolved): independently confirmed by direct source read against the live tree, not taken on the reviewer's framing. Three of receivePayloadToFile()'s failure branches in src/mcp/vice/broker-transfer.mts (the receive-pipeline catch at ~354-364, the beforePublish-hook catch at ~377-389, and the publish-rename catch at ~392-403) build the client-facing wireReason by interpolating the raw `(e as Error).message` of a real filesystem failure. Node's own fs errors embed both the source and destination absolute paths verbatim in `.message` (independently re-measured: `renameSync`/`createWriteStream` ENOENT messages both carry the full paths). vice-broker.mts's writeUploadCompletionReply() (added by plan 64-13, ~1179-1192, wired ~1247-1253) sends `result.wireReason ?? result.reason` verbatim as the error line's message on the transfer connection -- a listener that, per broker-control.mts's own header comment, binds every enumerated bridge gateway address, i.e. crosses the container/host boundary. stock-connect.ts's defaultTransferFile() forwards that same completion.reason directly into the upload's ok:false result, which stock-machine.ts's handlers then surface in the tool's isError text reaching the calling model. The only regression test covering this path (stock-machine.test.ts:1338, confirmed by direct read) injects a synthetic, already path-free rejection message ('forced publish failure (G-64-3, plan 64-13 test)'), so its own passing assertion never exercises a real fs error's message shape and cannot detect the leak."
+    severity: critical
+    artifacts:
+      - path: "src/mcp/vice/broker-transfer.mts"
+        issue: "receivePayloadToFile()'s three catch branches put the raw Error.message -- which can contain the broker's absolute tmpPath and/or destPath -- into wireReason, the field this same file's own doc comment documents as 'the PATH-FREE text a caller writes to the client on the transfer connection (D-15/D-17)'"
+      - path: "src/mcp/vice/vice-broker.mts"
+        issue: "writeUploadCompletionReply() sends result.wireReason verbatim on the transfer connection with no re-sanitisation"
+      - path: "src/mcp/vice/stock-connect.ts"
+        issue: "defaultTransferFile() forwards the broker's completion.reason (sourced from the same tainted wireReason) directly into the upload's ok:false reason, which reaches the tool's isError text"
+      - path: "src/mcp/vice/stock-machine.test.ts"
+        issue: "the sole regression test near line 1338 for this path injects a synthetic, already path-free rejection message, so it proves the plumbing forwards wireReason correctly but not that wireReason is actually path-free under a real I/O failure"
+    missing:
+      - "Report at most an errno code in wireReason for all three affected branches (receive-pipeline, beforePublish, publish-rename), never the raw Error.message -- matching the discipline broker-relay.mts's buildEmulatorUnreachableMessage() already uses for the sibling G-64-4 fix ('Deliberately carries NO errno token and NO path')"
+      - "A test that triggers a REAL renameSync/createWriteStream failure (e.g. a destination directory that does not exist, or a read-only staging root) and asserts the wire reply and the tool result text contain neither the tmp path nor the destination path -- the current synthetic-error test cannot detect this defect by construction"
 ---
 
 # Phase 64: Files as Bytes, Both Directions Verification Report
@@ -114,281 +138,283 @@ between client and broker at all. Bytes cross the socket; the client writes
 only under its own `.c64-re-tools/`; the broker chooses and owns every path
 on its own side; neither ever names a path the other must be able to open.
 
-**Verified:** 2026-09-23
-**Status:** human_needed
-**Re-verification:** Yes — after gap closure (plans 64-08..64-11, UAT gap G-64-1)
+**Verified:** 2026-09-24
+**Status:** gaps_found
+**Re-verification:** Yes — round 2, after UAT gap-closure plans 64-12
+(G-64-4), 64-13 (G-64-3) and 64-14 (live measurement of both).
 
-## What changed since the initial verification
+## What changed since the previous verification round
 
-The initial verification (2026-09-23, prior round) found 4/5 ROADMAP Success
-Criteria fully verified and 1 (Criterion 1 / XFER-08) verified only at the
-protocol/handler layer this phase owns — a live attempt through the real
-`vice-proxy.ts` entry point failed identically on all four tools with
-`"stock handshake failed (vice: missing or invalid control token)"`. UAT then
-ran that same test live, confirmed the failure (gap `G-64-1`, blocker
-severity), and the owner decided "fix now" rather than defer.
+The previous round (2026-09-23) found all 5 ROADMAP Success Criteria
+verified but left the phase `human_needed` on two items: the owner's own
+in-session re-run, and disposition of a newly discovered cold-launch relay
+race. UAT then ran the owner's in-session re-run live and found it did
+**not** hold cleanly: G-64-1 itself held, but two new gaps surfaced —
+`G-64-4` (the cold-launch race, now root-caused precisely: `attached` was
+sent as soon as the emulator dial was *issued*, not when it *connected*)
+and `G-64-3` (an intermittent `0x8f` on `vice_disk_attach` /
+`vice_snapshot_load` / `vice_autostart`, root-caused to the client naming
+an uploaded file before the broker had published it). Both were scored
+`severity: major`, and the owner decided fix-now on both.
 
-Four gap-closure plans (64-08 through 64-11) closed this:
+Three plans closed and then measured this round:
 
-- **64-08** moved `broker-control.mts`'s `attach` and `transfer` dispatch arms
-  ahead of the per-boot control-token gate, authenticating each by its
-  broker-minted handle alone (route (b), owner decision 5 — the token is
-  never threaded through, per REQUIREMENTS.md's standing rule against a new
-  credential).
-- **64-09** deleted the now-dead client-side credential parameters from every
-  relay/transfer dial option and dependency type, so no future caller can
-  re-thread a token back in.
-- **64-10** closed G-64-1's secondary cause: the broker and the client now
-  resolve `broker.json` through the SAME resolver (`broker-home.mts`'s
-  `brokerStateDir()`) for every documented start route; `--repo-root` no
-  longer selects a state directory.
-- **64-11** measured G-64-1's own truth live: a real, systemd-run broker
-  spawning the absolute `/usr/bin/x64sc`, driven by the real `vice-proxy.ts`
-  over stdio, with all four tools succeeding — reproduced twice, once by a
-  scripted driver and independently again through a real, separate, nested
-  `claude -p` session. It also discovered, precisely traced, and (per its own
-  explicit prohibition) did NOT fix a third, unrelated live defect — see
-  "New finding" below.
+- **64-12** closed G-64-4: `broker-relay.mts`'s `dialEmulatorLeg()` now
+  dials the emulator leg to a **connected** state, retrying `ECONNREFUSED`
+  to a bounded deadline, before `broker-control.mts` acknowledges `attached`.
+  A dial that never connects or is abandoned writes no incident record and
+  leaves the grant/instance in place for a same-session retry.
+- **64-13** closed G-64-3: the broker now writes one
+  `{ kind: "transfer_complete", byteLength, sha256 }` reply after
+  `receivePayloadToFile()` has renamed the staged file into place, and
+  `stock-connect.ts`'s `defaultTransferFile()` resolves an upload only on
+  that reply — never on the client's own write finishing.
+- **64-14** measured both live against genuine stock `/usr/bin/x64sc`
+  (VICE 3.9) and a systemd-unit broker: 7/7 cold sessions succeeded on
+  their first attempt (vs. 0/9 pre-fix), and the exact loop that failed
+  20/30 upload-then-command calls pre-fix ran 135/135 clean, zero `0x8f`.
+
+This verifier independently re-confirmed both closures against source and
+by re-running the targeted regression suites (below) — not from SUMMARY
+claims alone.
+
+**However**, this round's own code review (`64-REVIEW.md`, scoped to the
+64-12/64-13 diff) found a critical, unresolved regression introduced while
+closing G-64-3: three of `receivePayloadToFile()`'s failure branches leak
+the broker's own absolute filesystem paths to the client on a real I/O
+failure (`CR-01`). This verifier independently re-read the cited source and
+confirms the defect is real, unfixed, and not caught by any existing test —
+see "New finding: CR-01" below. This is what keeps the phase at
+`gaps_found` rather than `passed`.
 
 ## Goal Achievement
 
-### Observable Truths (ROADMAP's five Success Criteria — the contract)
+### Observable Truths
 
-| # | Truth (ROADMAP Success Criterion) | Status | Evidence |
+| # | Truth | Status | Evidence |
 |---|---|---|---|
-| 1 | All four tools complete end to end against disjoint client/broker filesystem roots, through the real production entry point (XFER-08) | ✓ VERIFIED | Previously blocked at the `vice-proxy.ts` layer by G-64-1. Now closed: `broker-control.mts`'s `handleLine()` dispatches `attach`/`transfer` ahead of `tokensMatch()` (confirmed by direct source read, lines ~1305-1420); `vice-broker-client.ts`'s `brokerRootDir()` delegates to `broker-home.mts`'s `brokerStateDir()` (confirmed by direct source read); the client-side credential fields are gone from `DialMonitorRelayOptions`/`DialFileTransferOptions`/`StockConnectDeps`/`TextConnectOptions`/`StockDispatchDeps` (confirmed: zero `controlToken` hits in `stock-connect.ts`/`stock-dispatch.ts`). The `G-64-1` regression suite in `vice-proxy.test.ts` (tracer/transfer/text, driving the real proxy against a real listener) — independently re-run by this verifier: 4/4 pass. Beyond the offline proof, plan 64-11 measured the literal truth live: a real systemd-run broker spawning `/usr/bin/x64sc`, all four tools `isError: false`, zero broker-side path leaks — reproduced twice (scripted driver + an independent, separate nested Claude Code session reading the stream's own `tool_result` blocks). See "New finding" below for a disclosed, out-of-scope caveat on session warm-up. |
-| 2 | A produced file returns as bytes, client writes it under its own `.c64-re-tools/snapshots/`, result names the local path, not a broker path (XFER-01, XFER-02) | ✓ VERIFIED (unchanged) | Unaffected by the gap-closure plans (none touch `stock-machine.ts`'s result-shape logic). Re-confirmed live in 64-11: the saved snapshot path lay under the scratch client project's own `.c64-re-tools/snapshots/`, confirmed 193261 bytes on host. |
-| 3 | Bytes survive (including non-UTF-8); a bad transfer is refused, never half-written (XFER-05, XFER-06) | ✓ VERIFIED (unchanged) | Unaffected by the gap-closure plans (none touch `broker-transfer.mts`'s framing/hashing/cap logic). |
-| 4 | Traversal refused in both directions, refuse-not-sanitise (XFER-03, XFER-04) | ✓ VERIFIED, with the same disclosed scope note as the initial round | Unaffected by the gap-closure plans (none touch `transfer-paths.ts`). `validateContainedDestination()` still has zero production callers within Phase 64 by design (D-13); its first real caller is Phase 65. Not a regression — the same disclosed scope note as the initial verification. |
-| 5 | Staged files do not accumulate: session-close cleanup, stateless-request scratch cleanup, and a startup sweep for crash/vanished-client residue (XFER-07) | ✓ VERIFIED (unchanged) | Unaffected by the gap-closure plans (none touch `broker-kill.mts`'s sweep wiring). |
+| 1 | All four tools complete end-to-end against disjoint client/broker filesystem roots, through the real production entry point (XFER-08) | ✓ VERIFIED (unchanged, reinforced) | Unaffected by this round's plans in its own mechanism; further reinforced by G-64-4's fix removing the cold-launch failure that previously blocked the very first call on this path. `vice-proxy.test.ts`'s G-64-1 regression suite still passes (not re-run this round; no plan in this round touches it). |
+| 2 | A produced file returns as bytes, client writes it under its own `.c64-re-tools/snapshots/`, result names the local path, not a broker path (XFER-01, XFER-02) | ✓ VERIFIED (unchanged) | Unaffected by 64-12/64-13/64-14 — none touch the download/result-shape logic in `stock-machine.ts`. |
+| 3 | Bytes survive (including non-UTF-8); a bad transfer is refused, never half-written (XFER-05, XFER-06) | ✓ VERIFIED for the literal criterion (integrity and atomicity), **with a related but distinct new gap** | The atomicity/integrity mechanism (verify-then-`renameSync`, cap-and-digest transform) is unchanged and unaffected by this round. The new gap (CR-01, below) is about what the *refusal message* discloses, not about half-written files — bytes are never half-written, and a refusal is always issued — but it is close enough to this criterion's own concerns (a "bad transfer is refused") that a reader should not treat this row as unconditionally clean. See Gaps. |
+| 4 | Traversal refused in both directions, refuse-not-sanitise (XFER-03, XFER-04) | ✓ VERIFIED (unchanged) | Unaffected by this round's plans; `transfer-paths.ts` untouched. |
+| 5 | Staged files do not accumulate: session-close cleanup, stateless-request scratch cleanup, and a startup sweep for crash/vanished-client residue (XFER-07) | ✓ VERIFIED (unchanged) | Unaffected by this round's plans; `broker-kill.mts` untouched. |
+| 6 | G-64-4's truth: a cold session's first `vice_*` call succeeds — the broker does not acknowledge attach until the emulator's monitor port is actually accepting connections, and a failed/abandoned dial never kills or incident-records a still-viable instance | ✓ VERIFIED | Direct source read: `broker-relay.mts`'s `dialEmulatorLeg()`/`attemptEmulatorConnect()`, `vice-broker.mts`'s asynchronous `handleRelayAttach()`, `broker-control.mts`'s awaited `onRelayAttach()`. Independently re-run: 7/7 "emulator binds late / never binds" tests pass across `broker-relay.test.ts` + `broker-relay-text.test.ts`. Measured live (plan 64-14, independently re-read): 7/7 cold sessions (5 `vice_ping`, 2 `vice_warp_set`) succeeded on their first attempt with zero retries and zero `relay_error` relay deaths, against genuine stock `/usr/bin/x64sc`; the recycle path's post-respawn call returned a by-design epoch-mismatch refusal, not G-64-4's signature. |
+| 7 | G-64-3's truth: `vice_disk_attach`, `vice_snapshot_load` and `vice_autostart` never name a staged file the broker has not yet published; VICE never answers `0x8f` for that reason | ✓ VERIFIED | Direct source read: `broker-transfer.mts`'s `receivePayloadToFile()` writes a completion reply only after `renameSync()` succeeds; `broker-endpoint.ts`'s `awaitTransferComplete()`; `stock-connect.ts`'s `defaultTransferFile()` resolving only on that reply. Independently re-run: 3/3 "publish lands late" tests pass across `stock-connect.test.ts`, `stock-machine.test.ts`, `transfer-disjoint-roots.test.ts`. Measured live (plan 64-14, independently re-read): the exact loop the diagnosis measured at 20/30 failures ran 135/135 clean (0 occurrences of `0x8f`), 4x the diagnosis's own call volume. |
+| 8 | No client-visible reason and no tool result names a broker-side path on an upload failure (plan 64-13's own must-have truth; the phase's own "neither ever names a path the other must be able to open") | ✗ FAILED | **New finding, CR-01** — see Gaps. Confirmed by direct source read, independent of the reviewer's framing: three failure branches in `receivePayloadToFile()` put a raw filesystem error's `.message` (which contains the broker's absolute paths) into the field documented as path-free, and the sole test covering this uses a synthetic already-path-free message that cannot detect the leak. |
 
-**Score:** 5/5 ROADMAP criteria verified. Criterion 1 moved from
-"protocol/handler layer only, full-stack unverified" to fully VERIFIED —
-directly measured live, twice, through independent means, with the wiring
-that makes it work confirmed by direct source read and by an independently
-re-run regression suite.
+**Score:** 7/8 truths verified, 1 failed (new finding, not a regression of a
+previously-passed truth — this failure mode did not exist before plan
+64-13 introduced the completion-reply mechanism this round).
 
-### G-64-1's own truth — explicit judgement
+### Supporting Plan-Level Must-Haves (64-12, 64-13, 64-14)
 
-The task's own instruction is to judge, from the evidence, whether "G-64-1's
-truth (succeed through a real Claude Code session (vice-proxy.ts) against the
-real broker and /usr/bin/x64sc, with no broker-side path in any result)" is
-met, met with a caveat, or not met.
+Cross-checked against all three plans' `must_haves` blocks and independently
+re-verified against the live tree, not trusted from SUMMARY claims:
 
-**Verdict: MET, with one disclosed caveat that is explicitly outside G-64-1's
-own scope.**
-
-- **Met:** All four migrated tools (`vice_autostart`, `vice_disk_attach`,
-  `vice_snapshot_save`, `vice_snapshot_load`) returned `isError: false`
-  through the real `vice-proxy.ts`, against a real systemd-run broker
-  spawning the absolute `/usr/bin/x64sc`, with a leak scan finding zero
-  occurrences of the broker's machine root in any of the four results. This
-  was reproduced independently through a real, separate, nested Claude Code
-  session (`claude -p`), reading results from the stream's own `tool_result`
-  blocks rather than the model's retelling. The write-loss wording was judged
-  against a real attach-write-close cycle (screen-RAM directory proof the
-  write reached the attached image, an unchanged host-side sha256 proving it
-  never came back). Both of G-64-1's own root causes are independently
-  confirmed fixed by direct source read (see Criterion 1 above), not merely
-  inferred from the live run succeeding.
-- **The caveat:** reaching a successful FIRST tool call in that live run
-  required riding out a newly discovered, third, unrelated live defect (a
-  cold-launched instance's first relay attach races the real emulator's own
-  startup and is killed by the broker's kill-never-recycle release policy —
-  measured 11 consecutive failures before one attempt won the race, in the
-  scripted run, and independently reproduced through the nested session's own
-  first `vice_ping` attempt). The workaround used was a bounded retry at the
-  test/driver level, never a production-code change (explicitly prohibited
-  by plan 64-11's own frontmatter). No code path in the current
-  acquire→claim→attach chain (`vice-broker.mts`, `broker-relay.mts`) actually
-  implements the wait `vice-proxy.ts`'s own `brokerWarmingMessage()` comment
-  describes as the intended remedy.
-- **Why this does not reopen G-64-1 or fail Criterion 1:** the new defect is
-  not one of G-64-1's two diagnosed root causes (the control-token gate and
-  the state-directory mismatch), is not in scope of any `XFER-01..08`
-  requirement (all eight concern the file-transfer protocol itself — framing,
-  hashing, staging, cleanup, traversal — never connection warm-up timing), and
-  predates Phase 64 architecturally (the acquire/claim/attach code it traces
-  to is Phase 62/63 work, untouched by any Phase 64 plan). It is precisely
-  traced with line citations, disclosed in full in
-  `evidence/64-g641-live-check.md`, and filed as its own pending todo
-  (`2026-09-23-cold-launch-relay-attach-races-emulator-startup-and-gets-killed.md`)
-  rather than silently worked around. It is routed to human verification
-  below because whether it blocks the v2.0.0 milestone's own
-  production-readiness is a scope/prioritization call this verifier cannot
-  make unilaterally — the same posture the initial verification took toward
-  G-64-1 itself before the owner's "fix now" decision.
-
-### Supporting Plan-Level Must-Haves (gap-closure plans 64-08..64-11)
-
-Cross-checked against all four plans' `must_haves` blocks. Independently
-re-verified by this verifier, not trusted from SUMMARY claims:
-
-- `broker-control.mts`'s `handleLine()`: `attach` and `transfer` dispatched
-  immediately after `hello`, before `tokensMatch()` — confirmed by direct
-  source read (lines ~1268-1420); every existing handle check (length-gated
-  `timingSafeEqual`, second-attach refusal, unknown-handle refusal, in-flight
-  guard) is untouched, confirmed unchanged in `vice-broker.mts`.
-- `broker-endpoint.ts`'s `DialMonitorRelayOptions`/`DialFileTransferOptions`:
-  no credential field — confirmed by direct source read (lines ~626-647,
-  843-861).
-- `stock-connect.ts`/`stock-dispatch.ts`: zero `controlToken` occurrences —
-  confirmed by grep against the live tree.
-- `vice-broker-client.ts`'s `brokerRootDir()`: `return brokerStateDir();` —
-  a direct delegation, confirmed by source read (line 113-114), with the
-  import from `./broker-home.mts` present (line 40).
-- `package.json`'s `files[]`: `broker-home.mts`, `broker-endpoint.ts`,
-  `transfer-hash.mts`, `transfer-paths.ts`, `tool-location.mts` all present —
-  confirmed by grep. (64-10's own pack-and-import check additionally caught
-  and fixed a second, independent closure gap — `tool-location.mts` — beyond
-  the plan's own originally-scoped four modules; disclosed in the SUMMARY,
-  not hidden.)
-- `CLAUDE.md`'s `.c64-re-tools/` bullet: corrected to state broker state
-  lives under the machine-level root, not any project's tree — confirmed by
-  direct read.
-- `node --test --test-reporter=tap --test-name-pattern="G-64-1" vice-proxy.test.ts`
-  → **4/4 pass** (independently re-run by this verifier).
-- `node --test --test-reporter=tap broker-control.test.ts broker-endpoint.test.ts
-  vice-broker-launch.test.ts repo-root.test.ts resources-sync.test.ts
-  broker-home.test.ts vice-broker-client.test.ts` → **282/282 pass**
-  (independently re-run by this verifier).
-- `npm run typecheck` → **exit 0** (independently re-run by this verifier).
-- `grep -nE "TBD|FIXME|XXX"` across all 11 gap-closure-touched non-test
-  modules → zero matches (debt-marker gate clear, independently re-checked).
+- `broker-relay.mts`'s `dialEmulatorLeg()`/`attemptEmulatorConnect()`: bounded
+  ECONNREFUSED-retry dial, abandonment-checked before every attempt and again
+  on connect — confirmed by direct source read (~586-675).
+- `vice-broker.mts`'s `handleRelayAttach()`: asynchronous, every refusal still
+  synchronous and pre-await, `attached` written only after a connected outcome
+  — confirmed by direct source read (~1422 area, matches plan's stated shape).
+- `broker-control.mts`'s `attach` arm: awaits the outcome, writes `attached`
+  before the splice, resumes the socket on refusal — confirmed.
+- `broker-transfer.mts`'s `receivePayloadToFile()`: optional `beforePublish`
+  hook, verify-then-rename order unchanged, one completion result per call —
+  confirmed. (The same function is also where CR-01 lives — see Gaps.)
+- `vice-broker.mts`'s `writeUploadCompletionReply()`: writes `transfer_complete`
+  only after the rename, `error` otherwise — confirmed present and wired, but
+  its `error` path is exactly CR-01's leak vector.
+- `stock-connect.ts`'s `defaultTransferFile()`: arms `awaitTransferComplete()`
+  before the payload pipeline, awaits it after, resolves ok only on the
+  broker's reply — confirmed by direct source read.
+- `stock-handler.ts`'s `convertWireError()`/`convertHandshakeError()`: truthful
+  0x8f gloss per file-carrying command, `StockConnectionClosedError` branch for
+  a relay closed mid-handshake — confirmed present.
+- Independently re-run this verification: `node --test --test-reporter=tap
+  --test-name-pattern="emulator (binds late|never binds)" broker-relay.test.ts
+  broker-relay-text.test.ts` → **7/7 pass**.
+- Independently re-run: `node --test --test-reporter=tap
+  --test-name-pattern="publish lands late" stock-connect.test.ts
+  stock-machine.test.ts transfer-disjoint-roots.test.ts` → **3/3 pass**.
+- Independently spot-checked: `grep -n "wireReason:" broker-transfer.mts`
+  confirms all six `wireReason` sites, three of which still interpolate
+  `${message}` from a caught `Error` with no sanitisation (CR-01, unfixed).
 - No broker/emulator process or listener on 19510/66xx was running before or
   after this verification's own commands (confirmed).
 
-### Required Artifacts (gap-closure additions)
+### Required Artifacts
 
 | Artifact | Expected | Status | Details |
 |---|---|---|---|
-| `src/mcp/vice/broker-control.mts` (modified) | `attach`/`transfer` dispatched ahead of the token gate, handle-only authority | ✓ VERIFIED | Confirmed by direct source read; every comment describing the old ordering rewritten. |
-| `src/mcp/vice/broker-endpoint.ts` (modified) | `resolveEndpointPort()`, no credential field on either dial option type | ✓ VERIFIED | Confirmed by direct source read (lines 66-104, 626-647, 843-861). |
-| `src/mcp/vice/vice-broker-client.ts` / `vice-broker.mts` (modified) | One shared resolver (`brokerStateDir()`) for the state directory on both sides | ✓ VERIFIED | Confirmed by direct source read; `--repo-root` no longer joins a state-directory path in `parseArgs()`. |
-| `.planning/phases/64-files-as-bytes-both-directions/evidence/64-g641-handle-only-authority.md` | The T-63-01/T-63-05 reversal record | ✓ VERIFIED | Present, all 8 required sections (What changed, Why route b, What it reverses, Replacement mitigation, Residual risk, What did NOT change, Latent port note, Proof). |
-| `.planning/phases/64-files-as-bytes-both-directions/evidence/64-g641-state-dir-agreement.md` | The state-dir decision record | ✓ VERIFIED | Present, all 6 required sections. |
-| `.planning/phases/64-files-as-bytes-both-directions/evidence/64-g641-live-driver.mjs` + `64-g641-live-check.md` | The live proof of G-64-1's own truth | ✓ VERIFIED | Present; the evidence file's tool-call table, leak scan, write-loss cycle, teardown checks and nested-session section all read as measured observations, not narration. |
-| Three new pending todos (control-token resolution, container-client interim limit, cold-launch race) | Filed, not silently absorbed | ✓ VERIFIED | All three present under `.planning/todos/pending/`, each naming an owning phase or a disposition ask. |
+| `src/mcp/vice/broker-relay.mts` (modified) | bounded, abandonable emulator-leg dial | ✓ VERIFIED | Confirmed by direct source read. |
+| `src/mcp/vice/vice-broker.mts` (modified) | async gated `handleRelayAttach()`; `writeUploadCompletionReply()` | ✓ VERIFIED, wiring correct — **payload of one reply path is tainted (CR-01)** | The gate/splice ordering is correct; the upload-error reply's message content is not path-free as documented. |
+| `src/mcp/vice/broker-control.mts` (modified) | attach arm awaits outcome, writes `attached` pre-splice | ✓ VERIFIED | Confirmed. |
+| `src/mcp/vice/broker-transfer.mts` (modified) | `beforePublish` hook; `transfer_complete`/`error` reply | ✓ VERIFIED structurally, ✗ FAILED on the path-free guarantee | See Gaps (CR-01). |
+| `src/mcp/vice/stock-connect.ts` (modified) | `defaultTransferFile()` resolves only on broker completion reply | ✓ VERIFIED | Confirmed; also the conduit that surfaces CR-01's tainted reason into the tool result. |
+| `src/mcp/vice/stock-handler.ts` (modified) | truthful 0x8f text, per-command override | ✓ VERIFIED | Confirmed by direct source read; independently spot-checked "no further diagnostic" phrase retained. |
+| `.planning/phases/64-files-as-bytes-both-directions/evidence/64-g643-g644-live-run.mjs` | reproducible live orchestration | ✓ VERIFIED | Present, `node --check` exits 0 (per plan's own verify; not re-run here to avoid touching a live broker). |
+| `.planning/phases/64-files-as-bytes-both-directions/evidence/64-g643-g644-live-check.md` | measured live record for both gaps | ✓ VERIFIED | Present; read in full — tables, teardown checks, "What this does not prove" and the pending human-check are all present and read as measured observations, not narration. |
 
 ### Key Link Verification
 
 | From | To | Via | Status | Details |
 |---|---|---|---|---|
-| `vice-proxy.ts` → `stock-dispatch.ts` → `stockConnect()` | The four migrated handlers, in a real MCP session | `dispatchStockFor()` | ✓ WIRED (previously ✗ NOT_WIRED) | The link the initial verification found broken (the control token never forwarded) is now moot: `attach`/`transfer` no longer need the token at all (route b), so `dispatchStockFor()` correctly supplies nothing — confirmed by the independently re-run `G-64-1` regression suite (4/4 pass) and by the live run through the real entry point (twice, independently). |
-| `broker-control.mts`'s `attach`/`transfer` arms | `vice-broker.mts`'s `handleRelayAttach()`/`handleFileTransfer()` | direct call, dispatch position moved, handle checks untouched | ✓ WIRED | Confirmed by direct source read: the dispatch arms still call `opts.onRelayAttach()`/`opts.onFileTransfer()` with the same signature; only their position relative to `tokensMatch()` changed. |
-| `vice-broker-client.ts` | `broker-home.mts` | value import of `brokerStateDir()` | ✓ WIRED | Confirmed by direct source read (import at line 40, delegation at line 113-114). |
+| `broker-control.mts`'s `attach` arm | `vice-broker.mts`'s `handleRelayAttach()` | awaited outcome, `attached` written pre-splice | ✓ WIRED | Confirmed by direct source read and by the independently re-run "emulator binds late" suite. |
+| `stock-connect.ts`'s `defaultTransferFile()` | `broker-endpoint.ts`'s `awaitTransferComplete()` | armed before the payload pipeline, awaited after | ✓ WIRED | Confirmed by direct source read and by the independently re-run "publish lands late" suite. |
+| `vice-broker.mts`'s `handleFileTransfer()` | `broker-transfer.mts`'s `receivePayloadToFile()` | completion reply written only after rename | ✓ WIRED, **but the error-path message is not path-free** | The reply is correctly gated on the rename; its failure-path *content* is the defect (CR-01). |
 
 ### Requirements Coverage
 
 | Requirement | Source Plan(s) | Description | Status | Evidence |
 |---|---|---|---|---|
-| XFER-01 | 64-01, 64-02, 64-04, 64-06, 64-07, 64-11 | Produced-file bytes return over socket, local path in result | ✓ SATISFIED | `stock-machine.test.ts`; live-confirmed in 64-11 (snapshot path under the scratch client project's own `.c64-re-tools/snapshots/`). |
-| XFER-02 | 64-01, 64-02, 64-04, 64-06, 64-11 | Consumed-file read client-side, streamed to broker | ✓ SATISFIED | `stock-machine.test.ts`; live-confirmed in 64-11 (`vice_snapshot_load`). |
-| XFER-03 | 64-01 | Broker-supplied name traversal refused, not sanitised | ✓ SATISFIED (validator correct; scope-limited — unchanged, see criterion 4) | `transfer-paths.test.ts`; no production caller in Phase 64 (disclosed, by design). |
-| XFER-04 | 64-01, 64-02, 64-03, 64-08, 64-09 | Broker chooses staging paths; client uses opaque handle only | ✓ SATISFIED | `broker-control.test.ts`, `broker-transfer.test.mts`, `vice-broker-staging.test.ts`; the gap-closure plans reinforce this by making `attach`/`transfer` themselves handle-authenticated. |
-| XFER-05 | 64-01, 64-02, 64-04, 64-07 | Bytes survive round trip, including non-UTF-8 | ✓ SATISFIED | Unchanged from initial verification. |
-| XFER-06 | 64-01 | Integrity-checked end to end, cap refused by name | ✓ SATISFIED (one non-blocking client-side gap, WR-01, unchanged) | `broker-transfer.test.mts`; `64-REVIEW.md` WR-01. |
-| XFER-07 | 64-03, 64-05 | Staged files removed on session close; crash sweep | ✓ SATISFIED | Unchanged from initial verification. |
-| XFER-08 | 64-02, 64-04, 64-06, 64-07, 64-08, 64-09, 64-10, 64-11 | All four tools work over the socket, no shared filesystem | ✓ SATISFIED (upgraded from partial) | `transfer-disjoint-roots.test.ts`; the `G-64-1` regression suite (4/4, independently re-run); 64-11's live run through the real proxy, twice, independently. |
+| XFER-01 | 64-01, 64-02, 64-04, 64-06, 64-07, 64-11 | Produced-file bytes return over socket, local path in result | ✓ SATISFIED | Unaffected by this round. |
+| XFER-02 | 64-01, 64-02, 64-04, 64-06, 64-11, 64-13, 64-14 | Consumed-file read client-side, streamed to broker | ✓ SATISFIED | This round's completion-reply gate (64-13) strengthens this; measured live in 64-14 (135/135 clean). |
+| XFER-03 | 64-01 | Broker-supplied name traversal refused, not sanitised | ✓ SATISFIED (unchanged, scope-limited by design) | Unaffected by this round. |
+| XFER-04 | 64-01, 64-02, 64-03, 64-08, 64-09 | Broker chooses staging paths; client uses opaque handle only | ✓ SATISFIED | Unaffected by this round. |
+| XFER-05 | 64-01, 64-02, 64-04, 64-07 | Bytes survive round trip, including non-UTF-8 | ✓ SATISFIED | Unaffected by this round. |
+| XFER-06 | 64-01, 64-13 | Integrity-checked end to end, cap refused by name | ✓ SATISFIED for integrity/cap behaviour; **the related no-path-disclosure guarantee this round's own plan attached to the transfer protocol is not met** | `broker-transfer.test.mts` (integrity/cap, unaffected); CR-01 is the open gap — see Gaps. Not itself a literal XFER-06 text violation (that requirement's own wording is about the cap message, which is unaffected), but the closest requirement to the mechanism where the defect lives. |
+| XFER-07 | 64-03, 64-05 | Staged files removed on session close; crash sweep | ✓ SATISFIED | Unaffected by this round. |
+| XFER-08 | 64-02, 64-04, 64-06, 64-07, 64-08, 64-09, 64-10, 64-11, 64-12, 64-14 | All four tools work over the socket, no shared filesystem | ✓ SATISFIED (both this round's gaps closed and measured live) | `transfer-disjoint-roots.test.ts`; the independently re-run "emulator binds late/never binds" and "publish lands late" suites; plan 64-14's live measurement. |
 
-No orphaned requirements: `grep -n "Phase 64" .planning/REQUIREMENTS.md` still
-names exactly XFER-01..08, and all eight remain declared across the eleven
-plans' frontmatter (`grep -A5 "^requirements:"` across all 64-*-PLAN.md files).
+No orphaned requirements: `grep -E "Phase 64" .planning/REQUIREMENTS.md`
+still names exactly XFER-01..08, all marked Complete, and all eight remain
+declared across the fourteen plans' frontmatter.
 
 ### Anti-Patterns Found
 
-Sourced from `64-REVIEW.md` (code review run against the full gap-closure
-diff, 25 files, 0 critical / 2 warning / 1 info — re-read, and its file/count
-totals independently confirmed against the report's own frontmatter):
+Sourced from `64-REVIEW.md` (this round's code review, scoped to the diff
+since `b06c74ac` — plans 64-12/64-13 — 23 files, 1 critical / 1 warning / 1
+info). This verifier independently re-read the critical finding's cited
+source rather than trusting the reviewer's framing (see "New finding: CR-01"
+below); the warning and info items were read but not independently
+re-derived line-by-line.
 
 | File | Line | Pattern | Severity | Impact |
 |---|---|---|---|---|
-| `broker-endpoint.ts:97-104` vs. `broker-control.mts:833-839` | — | `VICE_BROKER_CONTROL_PORT` validated inconsistently between the new dial-side `resolveEndpointPort()` (strict) and the pre-existing bind-side `resolveControlPort()` (loose) | ⚠️ Warning | A malformed port value produces the least-informative of the four ranked dial failures rather than naming the env var as the cause; not a correctness defect, a diagnosability gap. |
-| `broker-control.mts` (attach/transfer/monitor_claim/monitor_release/operation/stage_file arms) | ~1325-1667 | Six synchronous dispatch callbacks have no `try/catch`, unlike their async siblings (`host_tool`, `acquire`, `recycle`) | ⚠️ Warning | No concrete throwing input found in today's implementations; a future change to any of the six callbacks could crash the whole broker process rather than just the offending connection. Latent, not demonstrated. |
-| `broker-home.mts` | (info-level, not itemised further here) | Stale doc-comment referencing an import that does not exist | ℹ️ Info | Cosmetic; does not affect behaviour. |
+| `src/mcp/vice/broker-transfer.mts` | 354-364, 377-389, 392-403 | `wireReason` built from a caught `Error`'s raw `.message`, which can carry the broker's absolute `tmpPath`/`destPath` | 🛑 **Blocker (CR-01)** | Independently confirmed real: on a genuine fs failure (ENOSPC, EACCES, a vanished staging directory, etc.) during upload publish, the broker's own filesystem layout is sent to the client and can surface in a tool's `isError` text — the exact disclosure the phase's own goal statement and D-15/D-17 forbid. Not caught by any existing test (the one test on this path uses a synthetic, already path-free message). |
+| `src/mcp/vice/broker-relay.mts:586-609` (`attemptEmulatorConnect`), `:622-675` (`dialEmulatorLeg`) | — | No per-attempt `connect()` timeout; a single hung dial (e.g. a black-holing `VICE_BROKER_BINMON_HOST`) can leave `holder.attached` permanently `true` and the promise chain alive after the client gives up | ⚠️ Warning (WR-01, from 64-REVIEW.md) | Narrow-scope (needs a non-default binmon host and a black-holing network path); not demonstrated, but a real regression class introduced by this round's "bounded" dial. |
+| `src/mcp/vice/broker-control.mts:1374-1409` | — | A same-tick microtask window where a client-socket-destroyed race could leak a connected emulator socket and never reset `holder.attached` | ℹ️ Info (IN-01, from 64-REVIEW.md) | Very unlikely to be reachable (no I/O in the window); not demonstrated. |
 
-No debt markers (`TBD`/`FIXME`/`XXX`) found in any of the gap-closure-touched
-source modules (re-checked directly against the live tree, not from SUMMARY
-claims). No blocker-level anti-pattern found, consistent with `64-REVIEW.md`'s
-own `status: issues_found` / 0 critical verdict.
+**Carried forward from the prior verification round, not re-reviewed this
+round** (scoped out of this round's review diff, so status unchanged, still
+non-blocking): a `VICE_BROKER_CONTROL_PORT` validation inconsistency between
+`resolveEndpointPort()` and `resolveControlPort()` (⚠️ Warning); six
+synchronous dispatch callbacks in `broker-control.mts` with no `try/catch`
+(⚠️ Warning); a stale doc-comment in `broker-home.mts` (ℹ️ Info).
+
+No debt markers (`TBD`/`FIXME`/`XXX`) found via independent grep across the
+gap-closure-touched modules.
+
+### New finding: CR-01 (independently verified)
+
+The task instructed this verifier to judge CR-01 independently rather than
+take the reviewer's or orchestrator's framing as settled. Independent
+verification performed:
+
+1. **Read the cited source directly.** `broker-transfer.mts:354-364,
+   377-389, 392-403` — all three catch blocks confirmed to build
+   `wireReason` as `` `vice: ...: ${message}` `` where `message = (e as
+   Error).message`, with no sanitisation. `grep -n "wireReason:"
+   broker-transfer.mts` (run by this verifier) confirms six sites total;
+   three still interpolate `${message}`.
+2. **Confirmed the wire path.** `vice-broker.mts`'s
+   `writeUploadCompletionReply()` sends `result.wireReason ?? result.reason`
+   verbatim as the `error` line's `message` field — confirmed by direct
+   read, not merely the review's line citation.
+3. **Confirmed the client-side forwarding.** `stock-connect.ts`'s
+   `defaultTransferFile()` (read directly, ~529-544) awaits
+   `awaitTransferComplete()` and returns `{ ok: false, reason:
+   completion.reason }` when it fails — this `reason` is exactly the
+   broker's `wireReason`/`reason`, so a real fs failure's path text reaches
+   the tool caller's result unmodified.
+4. **Confirmed the test gap.** `stock-machine.test.ts:1332-1338` (read
+   directly) injects `new Error("forced publish failure (G-64-3, plan
+   64-13 test)")` — a synthetic message authored to contain no path — and
+   then asserts the result text contains no path. This assertion is true
+   by construction of the test's own fixture, not because the production
+   code sanitises anything. No test in the diff exercises a *real*
+   `renameSync`/`createWriteStream` failure.
+5. **Judgement against the phase goal and D-15/D-17.** The phase's own
+   goal statement is "neither ever names a path the other must be able to
+   open." `64-CONTEXT.md`'s D-15 states the tool result's broker-side
+   `sentPath` field was replaced by an opaque handle specifically so no
+   broker-side path is named; D-17 is about proving no-shared-filesystem
+   by disjoint roots. CR-01 is a live counter-example to the goal
+   statement's own wording on a reachable (if not everyday) error path —
+   a real fs failure during upload publish — introduced by this same
+   round's own fix for G-64-3. This verifier finds it a genuine,
+   unresolved BLOCKER, not a false positive or an acceptable trade-off.
+
+**Conclusion: CR-01 is confirmed independently, is unresolved in the
+current tree, and blocks a `passed` verdict for this phase.**
 
 ### Behavioral Spot-Checks
 
 | Behavior | Command | Result | Status |
 |---|---|---|---|
-| G-64-1 regression suite (real proxy, real listener, real broker-side handlers) | `node --test --test-reporter=tap --test-name-pattern="G-64-1" vice-proxy.test.ts` | `# tests 4 / # pass 4 / # fail 0` | ✓ PASS |
-| Broker-control/endpoint/launch/client/home/repo-root/resources-sync suites | `node --test --test-reporter=tap broker-control.test.ts broker-endpoint.test.ts vice-broker-launch.test.ts repo-root.test.ts resources-sync.test.ts broker-home.test.ts vice-broker-client.test.ts` | `# tests 282 / # pass 282 / # fail 0` | ✓ PASS |
-| Typecheck clean | `npm run typecheck` | exit 0, no `error TS` lines | ✓ PASS |
-| No credential field survives in production dial types | `grep -n controlToken stock-connect.ts stock-dispatch.ts` | zero hits | ✓ PASS |
-| Broker/client share one state-dir resolver | `grep -n "brokerRootDir\|brokerStateDir" vice-broker-client.ts` | delegation confirmed at line 113-114 | ✓ PASS |
-| `attach`/`transfer` dispatched ahead of the token gate | `grep -n "case \|tokensMatch" broker-control.mts` (direct read of `handleLine()`) | both arms precede the `tokensMatch()` call | ✓ PASS |
-| No debt markers in gap-closure-touched modules | `grep -nE "TBD\|FIXME\|XXX"` across 11 modules | zero matches | ✓ PASS |
-| No leftover process/listener at verification time | `ss -ltn`, `pgrep -af 'x64sc\|vice-broker'` | none running | ✓ PASS |
-| Full automated gate (orchestrator-measured, cited not re-run in full per this project's full-suite convention) | `npm run test:automated` | 4241 tests, 4232 pass, 0 fail, 9 skipped, exit 0 | ✓ PASS (cited) |
-| `vice-proxy.test.ts` full file (orchestrator-measured) | `node --test vice-proxy.test.ts` | 60/57 pass, 0 fail, 3 skipped | ✓ PASS (cited) |
-| `vice-broker-launch.test.ts` full file (orchestrator-measured) | `node --test vice-broker-launch.test.ts` | 24/24 pass | ✓ PASS (cited) |
+| G-64-4 gated-attach suite (independently re-run by this verifier) | `node --test --test-reporter=tap --test-name-pattern="emulator (binds late\|never binds)" broker-relay.test.ts broker-relay-text.test.ts` | `# tests 7 / # pass 7 / # fail 0` | ✓ PASS |
+| G-64-3 completion-gate suite (independently re-run by this verifier) | `node --test --test-reporter=tap --test-name-pattern="publish lands late" stock-connect.test.ts stock-machine.test.ts transfer-disjoint-roots.test.ts` | `# tests 3 / # pass 3 / # fail 0` | ✓ PASS |
+| CR-01 unfixed (independently re-run by this verifier) | `grep -n "wireReason:" broker-transfer.mts` | 3 of 6 sites still interpolate `${message}` from a caught `Error` | ✗ CONFIRMS GAP |
+| No broker/emulator running before or after this verification | `pgrep -af 'x64sc\|vice-broker'`, `ss -ltn \| grep -E ':19510\|:66[0-9][0-9]'` | none found | ✓ PASS |
+| Full automated gate (orchestrator-measured this run, per project convention not re-run in full by this verifier) | `npm run test:automated` | 4266 tests, 4257 pass, 0 fail, 9 skipped, exit 0 (pre-round baseline 4241/4232/0/9) | ✓ PASS (cited) |
+| `npm run typecheck` (orchestrator-measured this run) | `npm run typecheck` | exit 0 | ✓ PASS (cited) |
+| Full-glob suite (plan 64-14's own measurement, cited) | `npm test` (with broker stopped) | 4441 tests, 4357 pass, 0 fail, 84 skipped, exit 0 | ✓ PASS (cited) |
 
 ### Probe Execution
 
-Not applicable — this phase's own verification criteria are proven by the
-`G-64-1` regression suite and the live-check evidence file, not by a
-`scripts/*/tests/probe-*.sh` convention. No such probes are declared by any
-Phase 64 plan or referenced by success criteria.
+Not applicable — no `scripts/*/tests/probe-*.sh` convention is used by this
+phase's own verification criteria; the live measurement in plan 64-14's
+evidence file and the targeted regression suites serve that role instead.
 
 ### Human Verification Required
 
-1. **The owner's own in-session re-run of UAT test 1.**
-   **Test:** Reconnect the vice MCP server (or start a new Claude Code
-   session) so it loads the fixed code; start the broker as a systemd user
-   unit by the documented route with `VICE_BIN=/usr/bin/x64sc`; run
-   `vice_autostart`, `vice_disk_attach`, `vice_snapshot_save` and
-   `vice_snapshot_load`; confirm none errors and no result names a path
-   under `~/.c64-re-tools/`; read the disk write-loss wording after an
-   attach-write-close cycle; then stop the broker and confirm a clean
-   teardown (no `vice-broker`/`x64sc` process, no listener on 19510 or any
-   66xx port).
-   **Expected:** All four succeed, matching plan 64-11's own scripted and
-   nested-session measurements.
-   **Why human:** Plan 64-11's own Task 3 queues this explicitly as a
-   `<human-check>` — the owner's own confirmation, distinct from (and in
-   addition to) the scripted/nested-session evidence this verifier already
-   re-confirmed against source and by independently re-running the targeted
-   test suites.
+None required to determine this verification's `gaps_found` status — CR-01
+is a directly-confirmed code defect, not something requiring a human
+judgement call.
 
-2. **Disposition of the newly discovered cold-launch relay-attach race.**
-   **Test:** N/A — a scope/prioritization decision, not a test.
-   **Expected:** A recorded decision: fix before the v2.0.0 milestone is
-   treated as production-ready, or accept and track as a fast-follow (the
-   pending todo already names it:
-   `.planning/todos/pending/2026-09-23-cold-launch-relay-attach-races-emulator-startup-and-gets-killed.md`).
-   **Why human:** Not one of G-64-1's own two root causes and not in scope
-   of any `XFER-01..08` requirement (see "G-64-1's own truth" above for the
-   full reasoning) — but it is a real, precisely-traced, severe defect
-   (blocks the first stock tool call of almost every fresh session on this
-   host) that a maintainer should weigh before treating the milestone as
-   shippable, even though it does not block THIS phase's own goal.
+**Not a formal human-verification blocker, but disclosed for completeness:**
+plan 64-14's own `<human-check>` — the owner's own in-session re-run,
+confirming a fresh Claude Code session's first `vice_ping` succeeds and a
+`vice_snapshot_save`/`vice_snapshot_load`/`vice_disk_attach` cycle returns
+no `0x8f` — was not performed by any executor and remains queued
+(`evidence/64-g643-g644-live-check.md`'s own "Human-check queued for the
+owner" section). This does not block this verification's own status; it is
+inherited from the plan's own design as a confirmation step distinct from
+the scripted/live evidence already gathered.
 
 ### Gaps Summary
 
-No artifact the gap-closure plans own is missing, stub, or unwired. No key
-link the gap-closure plans own is broken — the one link the initial
-verification found broken (`vice-proxy.ts` never forwarding a control token)
-is resolved not by fixing the forwarding but by removing the need for it
-entirely (route b), independently re-verified against source and by
-re-running the targeted regression suites rather than trusted from SUMMARY
-claims. All eight `XFER-01..08` requirements are satisfied, with no orphaned
-requirements.
+Two UAT gaps (`G-64-3`, `G-64-4`) are genuinely closed: independently
+re-verified against source, independently re-run through targeted
+regression suites, and independently confirmed live in plan 64-14's own
+evidence file at multiples of the diagnosis's own call volume (7/7 cold
+sessions vs. 0/9 baseline; 135/135 clean vs. 20/30 failures). Neither
+truth is a gap any longer.
 
-The phase is not marked `passed` because two items require a human decision:
-plan 64-11's own already-queued in-session re-run (inherited from the plan's
-own design, not new scope this verifier invented), and the disposition of a
-newly discovered, precisely-traced, out-of-G-64-1-scope live defect that this
-same live-check run surfaced. Neither is a FAILED must-have of this phase's
-own goal or requirements — both are disclosed, filed, and routed for a
-human's own judgement, matching the posture this project's verification
-process took toward G-64-1 itself before the owner's "fix now" decision.
+One new gap blocks a `passed` verdict: **CR-01**, a critical, unresolved
+regression introduced while closing G-64-3. Three of
+`receivePayloadToFile()`'s failure branches in `broker-transfer.mts` put a
+real filesystem error's raw message — which can and does carry the
+broker's own absolute paths — into the field this same codebase documents
+as path-free, and that message reaches the calling tool's result text
+through `vice-broker.mts`'s completion reply and `stock-connect.ts`'s
+forwarding. This is confirmed independently of the code reviewer's or the
+orchestrator's framing: the cited source was read directly, the wire path
+was traced directly, and the one existing test on this path was confirmed
+to use a synthetic message that cannot detect the defect. It directly
+contradicts the phase's own stated goal ("neither ever names a path the
+other must be able to open") and this codebase's own D-15/D-17 convention,
+on a reachable (real fs failure) error path. It is not caught by any
+existing test, so a fix must also add one that triggers a genuine
+`renameSync`/`createWriteStream` failure.
+
+**This looks like a genuine regression, not an intentional deviation** — no
+override is suggested. The fix is narrowly scoped (report an errno code
+instead of the raw message in three `catch` blocks) and the plan's own
+sibling fix (`broker-relay.mts`'s `buildEmulatorUnreachableMessage()`)
+already demonstrates the intended discipline in this same codebase.
 
 ---
 
-_Verified: 2026-09-23_
-_Verifier: Claude (gsd-verifier)_
+_Verified: 2026-09-24_
