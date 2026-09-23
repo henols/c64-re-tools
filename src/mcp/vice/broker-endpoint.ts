@@ -575,6 +575,14 @@ export function describeDialFailure(failure: DialFailure): string {
 export const RELAY_TAG_BINARY = "monitor-binary";
 export const RELAY_TAG_TEXT = "monitor-text";
 
+/** Phase 64 (XFER-04, D-01/D-02): the file-transfer connection's own hello
+ * tag, joining RELAY_TAG_BINARY/RELAY_TAG_TEXT above. Deliberately an
+ * open-ended string value rather than a member of a closed union -- per
+ * 62-CONTEXT's own specifics note, the tag vocabulary stays open-ended so a
+ * later phase's stateless call (the `anno` seam) can join it without a
+ * rewrite here. */
+export const TRANSFER_TAG = "file-transfer";
+
 export interface DialMonitorRelayOptions {
   /** The grant this relay is attaching on behalf of -- the SAME `targetId`
    * the caller's own monitor_claim already succeeded with. */
@@ -758,6 +766,249 @@ export function dialMonitorRelay(options: DialMonitorRelayOptions): Promise<Dial
             return;
           }
           performAttach(winnerSocket, outcome.host, port, options, replyTimeoutMs, resolveOuter);
+          return;
+        }
+        observations[idx] = {
+          host: outcome.host,
+          resolved: outcome.resolved,
+          rank: classification.rank,
+          version: classification.rank === 4 ? classification.version : undefined,
+        };
+        if (settledCount === candidates.length && !outerSettled) {
+          outerSettled = true;
+          destroyAllSockets();
+          const finalObservations = observations as DialCandidateObservation[];
+          const highestRank = finalObservations.reduce<DialRank>((max, o) => (o.rank > max ? o.rank : max), 1);
+          resolveOuter({ ok: false, reason: describeDialFailure({ ok: false, port, clientVersion, rank: highestRank, observations: finalObservations }) });
+        }
+      });
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// dialFileTransfer() -- Phase 64 (XFER-04, D-01/D-02). The one authoritative
+// place a payload connection is dialled: the SAME fixed-endpoint,
+// two-candidate hello race dialMonitorRelay() runs above -- same ranks, same
+// never-throw posture -- tagged TRANSFER_TAG instead of
+// RELAY_TAG_BINARY/RELAY_TAG_TEXT. On the FIRST completed handshake this
+// function keeps that winning socket alive (destroying only the losing
+// candidate's) and writes ONE `transfer` line over it, reading the reply
+// with the SAME byte-level terminator search performAttach() uses above --
+// payload bytes CAN arrive in the SAME TCP segment as the reply line's own
+// terminator (a download's `transfer_payload` reply is followed immediately
+// by raw payload bytes, per this plan's wire_vocabulary), so a whole-buffer
+// string decode here would corrupt them exactly the way it would for a
+// REGISTER_INFO frame on the relay side.
+// ---------------------------------------------------------------------------
+
+export interface DialFileTransferOptions {
+  /** The handle `stage_file`'s own reply minted -- the ONLY authority this
+   * dial can present; see broker-control.mts's own FileTransferOutcome
+   * header comment. */
+  handle: string;
+  direction: "upload" | "download";
+  /** Present ONLY for `direction: "upload"` -- see this plan's
+   * wire_vocabulary block. Ignored (and need not be supplied) for a
+   * download. */
+  byteLength?: number;
+  sha256?: string;
+  /** The per-boot control token -- the SAME credential every other op on
+   * this control plane requires. */
+  token: string;
+  port?: number;
+  candidates?: readonly string[];
+  connectTimeoutMs?: number;
+  replyTimeoutMs?: number;
+  connect?: BrokerEndpointConnectFn;
+  clientVersion?: string;
+}
+
+/** A successful `transfer` dial's result -- discriminated on `direction`,
+ * mirroring DialFileTransferOptions' own `direction` field. An upload
+ * success means the broker answered `transfer_ready`: the caller writes
+ * exactly `byteLength` raw bytes over `socket` next; `pending` is whatever
+ * followed the reply line's own terminator in the SAME chunk (ordinarily
+ * empty for an upload, since the client itself writes the payload next --
+ * but the field is present on both branches, matching this plan's own
+ * <behavior> list literally, rather than assuming the ordinarily-empty case
+ * can never carry a byte). A download success means the broker answered
+ * `transfer_payload`, DECLARING its own `byteLength`/`sha256` -- untrusted
+ * input on this side exactly as it is on the broker's own receiving side
+ * (D-11) -- and `pending` is every payload byte that arrived, in the SAME
+ * chunk, past the reply line's own terminator, a raw Buffer, never decoded. */
+export type DialFileTransferSuccess =
+  | { ok: true; direction: "upload"; socket: Socket; host: string; port: number; pending: Buffer }
+  | { ok: true; direction: "download"; socket: Socket; host: string; port: number; byteLength: number; sha256: string; pending: Buffer };
+
+export interface DialFileTransferFailure {
+  /** Human-readable, act-on-able refusal text -- either
+   * describeDialFailure()'s own text (no candidate completed a hello at
+   * all, reusing the SAME four-rank classification dialBrokerEndpoint()
+   * uses) or a message naming the broker's own `transfer` refusal by name.
+   * Never a bare error object -- this function, like dialMonitorRelay(),
+   * never throws. */
+  ok: false;
+  reason: string;
+}
+
+export type DialFileTransferResult = DialFileTransferSuccess | DialFileTransferFailure;
+
+/** Writes the `transfer` line over an already-hello'd, already-kept-alive
+ * socket and reads its reply with a BYTE-level terminator search -- see
+ * this section's own header comment for why. Settles exactly once: on a
+ * parsed `{"kind":"transfer_ready"}` line for an upload, a parsed
+ * `{"kind":"transfer_payload",byteLength,sha256}` line for a download
+ * (`pending` is whatever followed the terminator), on a parsed
+ * `{"kind":"error",...}` line (failure, naming the broker's own refusal),
+ * on a reply timeout, or on the socket closing/erroring before either --
+ * every path is `ok: false`, never a throw. */
+function performTransfer(
+  socket: Socket,
+  host: string,
+  port: number,
+  opts: DialFileTransferOptions,
+  replyTimeoutMs: number,
+  resolveOuter: (result: DialFileTransferResult) => void,
+): void {
+  let carry: Buffer = Buffer.alloc(0);
+  let settled = false;
+
+  const timer = setTimeout(() => {
+    finish({
+      ok: false,
+      reason: `vice: broker at ${host}:${port} accepted the transfer connection but never answered the transfer request within ${replyTimeoutMs}ms`,
+    });
+  }, replyTimeoutMs);
+  if (typeof timer.unref === "function") timer.unref();
+
+  function finish(result: DialFileTransferResult): void {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    socket.removeAllListeners("data");
+    socket.removeAllListeners("error");
+    socket.removeAllListeners("close");
+    if (!result.ok && !socket.destroyed) socket.destroy();
+    resolveOuter(result);
+  }
+
+  socket.on("data", (chunk: Buffer) => {
+    carry = Buffer.concat([carry, chunk]);
+    const idx = carry.indexOf(0x0a);
+    if (idx === -1) return; // keep accumulating -- bounded by the reply timer above, not a byte cap
+    const lineText = carry.subarray(0, idx).toString("utf8");
+    const pending = carry.subarray(idx + 1);
+    let parsed: unknown = null;
+    try {
+      parsed = JSON.parse(lineText);
+    } catch {
+      parsed = null;
+    }
+    if (typeof parsed === "object" && parsed !== null) {
+      const obj = parsed as Record<string, unknown>;
+      if (obj.kind === "transfer_ready" && opts.direction === "upload") {
+        finish({ ok: true, direction: "upload", socket, host, port, pending });
+        return;
+      }
+      if (obj.kind === "transfer_payload" && opts.direction === "download") {
+        if (typeof obj.byteLength !== "number" || typeof obj.sha256 !== "string") {
+          finish({ ok: false, reason: "vice: transfer_payload reply is missing or malformed byteLength/sha256" });
+          return;
+        }
+        finish({ ok: true, direction: "download", socket, host, port, byteLength: obj.byteLength, sha256: obj.sha256, pending });
+        return;
+      }
+    }
+    const message =
+      typeof parsed === "object" && parsed !== null && typeof (parsed as Record<string, unknown>).message === "string"
+        ? ((parsed as Record<string, unknown>).message as string)
+        : "the broker refused the transfer request with an unrecognisable reply";
+    finish({ ok: false, reason: `vice: ${message}` });
+  });
+
+  socket.once("error", () => {
+    finish({ ok: false, reason: `vice: transfer connection to ${host}:${port} failed before the transfer reply arrived` });
+  });
+  socket.once("close", () => {
+    finish({ ok: false, reason: `vice: transfer connection to ${host}:${port} closed before the transfer reply arrived` });
+  });
+
+  const requestLine: Record<string, unknown> = { op: "transfer", direction: opts.direction, handle: opts.handle, token: opts.token };
+  if (opts.direction === "upload") {
+    requestLine.byteLength = opts.byteLength;
+    requestLine.sha256 = opts.sha256;
+  }
+  socket.write(`${JSON.stringify(requestLine)}\n`);
+}
+
+/** Dials the fixed endpoint for a file-transfer connection: the SAME
+ * two-candidate hello race dialMonitorRelay() runs, tagged TRANSFER_TAG, but
+ * on the FIRST completed handshake this function keeps that winning socket
+ * alive (destroying only the losing candidate's) and writes ONE `transfer`
+ * line over it -- see performTransfer() above for the reply's own
+ * byte-level read. Never throws. `ok: false` covers BOTH "no candidate could
+ * even complete a hello" (reusing describeDialFailure()'s own ranked text)
+ * and "a candidate completed hello but the broker refused the transfer by
+ * name" -- the caller does not need to tell the two apart; both mean this
+ * dial produced no usable socket. Reuses every primitive already defined
+ * above in this same file (DIAL_CANDIDATES, DEFAULT_CONTROL_PORT,
+ * dialOneCandidate(), classifyHelloReply(), describeDialFailure()) -- no new
+ * import was added for this function. */
+export function dialFileTransfer(options: DialFileTransferOptions): Promise<DialFileTransferResult> {
+  const port = options.port ?? DEFAULT_CONTROL_PORT;
+  const candidates = options.candidates ?? DIAL_CANDIDATES;
+  const connectTimeoutMs = options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
+  const replyTimeoutMs = options.replyTimeoutMs ?? DEFAULT_REPLY_TIMEOUT_MS;
+  const connectFn = options.connect ?? connect;
+  const clientVersion = options.clientVersion ?? CLIENT_VERSION;
+
+  return new Promise<DialFileTransferResult>((resolveOuter) => {
+    const sockets: (Socket | null)[] = candidates.map(() => null);
+    const observations: (DialCandidateObservation | undefined)[] = candidates.map(() => undefined);
+    let settledCount = 0;
+    let outerSettled = false;
+
+    function destroyAllSockets(): void {
+      for (const s of sockets) {
+        if (s && !s.destroyed) s.destroy();
+      }
+    }
+
+    function destroyLosers(winnerIdx: number): void {
+      sockets.forEach((s, idx) => {
+        if (idx !== winnerIdx && s && !s.destroyed) s.destroy();
+      });
+    }
+
+    candidates.forEach((host, idx) => {
+      dialOneCandidate(
+        host,
+        port,
+        connectTimeoutMs,
+        replyTimeoutMs,
+        connectFn,
+        clientVersion,
+        (socket) => {
+          sockets[idx] = socket;
+        },
+        TRANSFER_TAG,
+      ).then((outcome) => {
+        settledCount++;
+        if (outerSettled) return;
+        const classification = outcome.classification;
+        if (classification.completed) {
+          outerSettled = true;
+          destroyLosers(idx);
+          const winnerSocket = sockets[idx];
+          if (!winnerSocket) {
+            // Structurally unreachable: dialOneCandidate's own onSocket
+            // callback fires synchronously before this .then() can ever
+            // run. Guarded anyway -- never a throw out of this function.
+            resolveOuter({ ok: false, reason: "vice: internal error -- transfer dial completed with no live socket" });
+            return;
+          }
+          performTransfer(winnerSocket, outcome.host, port, options, replyTimeoutMs, resolveOuter);
           return;
         }
         observations[idx] = {

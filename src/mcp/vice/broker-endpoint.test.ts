@@ -20,9 +20,13 @@ import {
   BROKER_START_COMMAND,
   DIAL_CANDIDATES,
   HELLO_PROTOCOL_MAGIC,
+  dialFileTransfer,
+  TRANSFER_TAG,
   type BrokerEndpointConnectFn,
   type DialFailure,
+  type DialFileTransferResult,
 } from "./broker-endpoint.ts";
+import type { FileTransferOutcome, FileTransferRequest, StartControlListenerOptions } from "./broker-control.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BROKER_ENDPOINT_TS = join(HERE, "broker-endpoint.ts");
@@ -633,4 +637,294 @@ test("all four ranks produce distinct message text", () => {
   );
   const uniqueMessages = new Set(messages);
   assert.equal(uniqueMessages.size, 4, "each of the four ranks must produce its own distinct message");
+});
+
+// ============================================================================
+// Plan 64-02 (XFER-04): dialFileTransfer() -- the one authoritative way to
+// open a payload connection. Reuses the SAME two-candidate hello race, fixed
+// port and injected-connect seam every test above already exercises for
+// dialBrokerEndpoint(); this section covers only what is NEW: the
+// `file-transfer` hello tag, the `transfer` request/reply exchange, and the
+// byte-level terminator search over a payload that can share a TCP segment
+// with its own reply line.
+// ============================================================================
+
+/** A stub StartControlListenerOptions set IDENTICAL to startHealthyListener()
+ * above, plus an injected `onFileTransfer` -- this listener's own dispatch
+ * arm services `transfer` requests through the real broker-control.mts
+ * wire, so these tests drive the genuine control-plane protocol rather than
+ * a hand-rolled fixture, for every case except the two load-bearing
+ * byte-level ones below (which need to control the exact bytes of a single
+ * socket write, something no callback signature can express). */
+async function startTransferCapableListener(onFileTransfer: NonNullable<StartControlListenerOptions["onFileTransfer"]>, sharedToken?: string) {
+  const token = sharedToken ?? newControlToken();
+  const listener = await startControlListener({
+    host: "127.0.0.1",
+    port: 0,
+    token,
+    onAcquire: async () => ({ ok: false, reason: "internal" }) as const,
+    onRelease: () => {},
+    onRecycle: async () => ({ port: null, pid: null, viceBin: null, killStage: "no_signal", epochBefore: null, outcome: "n/a", reason: "n/a" }),
+    onStatus: () => [],
+    onHostState: () => ({
+      pid: process.pid,
+      startedAt: "2026-01-01T00:00:00Z",
+      nodeVersion: process.version,
+      viceBin: "x64sc",
+      maxInstances: 16,
+      basePort: 6600,
+      backend: "stock" as const,
+    }),
+    onMonitorClaim: () => ({ ok: false, code: "internal" as const }),
+    onMonitorRelease: () => ({ ok: false, code: "internal" as const }),
+    onRelayAttach: () => ({ ok: false, code: "internal" as const }),
+    onOperation: () => ({ ok: false, code: "bad_request" as const }),
+    onHostTool: async () => ({ ok: false, message: "no onHostTool stub configured" }),
+    onFileTransfer,
+  });
+  return { listener, token };
+}
+
+/** A raw, hand-written fixture (no broker-control.mts involved at all) that
+ * answers the client's `hello` with a compatible reply, THEN answers the
+ * client's own `transfer` request line with exactly the bytes `respond`
+ * returns -- letting a test control precisely how many socket writes carry
+ * the reply, and whether payload bytes share the SAME write as the reply
+ * line's own terminator. `respond` receives the parsed transfer request. */
+function startRawTransferFixture(respond: (transferReq: Record<string, unknown>) => Buffer): Promise<{ server: Server; port: number }> {
+  return new Promise((resolvePromise) => {
+    const server = createServer((socket) => {
+      // Answers WHATEVER arrives first as the hello reply -- dialOneCandidate()
+      // does not itself read the client's own hello line, it only waits for
+      // the first data event, exactly per this file's own dialBrokerEndpoint
+      // fixtures above.
+      socket.write(`${JSON.stringify({ kind: "hello", protocol: HELLO_PROTOCOL_MAGIC, version: "5.0.0", tag: TRANSFER_TAG })}\n`);
+      let carry = Buffer.alloc(0);
+      let answered = false;
+      // The client itself writes ITS OWN `{"op":"hello",...}` request line
+      // (dialOneCandidate()'s own handshake) BEFORE `performTransfer()` ever
+      // writes the `transfer` request line -- this fixture already answered
+      // the hello proactively above, so the FIRST line this handler reads is
+      // the client's own hello request, not the transfer request. Skip
+      // exactly one line before treating the next as the transfer request.
+      let skippedHelloLine = false;
+      socket.on("data", (chunk: Buffer) => {
+        if (answered) return;
+        carry = Buffer.concat([carry, chunk]);
+        let idx: number;
+        while ((idx = carry.indexOf(0x0a)) !== -1) {
+          const line = carry.subarray(0, idx).toString("utf8");
+          carry = carry.subarray(idx + 1);
+          if (!skippedHelloLine) {
+            skippedHelloLine = true;
+            continue;
+          }
+          answered = true;
+          let parsed: Record<string, unknown> = {};
+          try {
+            parsed = JSON.parse(line);
+          } catch {
+            parsed = {};
+          }
+          socket.write(respond(parsed));
+          return;
+        }
+      });
+    });
+    server.listen(0, "127.0.0.1", () => {
+      const addr = server.address();
+      const port = typeof addr === "object" && addr !== null ? addr.port : 0;
+      resolvePromise({ server, port });
+    });
+  });
+}
+
+test("dialFileTransfer: races the same two candidates on the fixed control port, keeps the first to complete a hello, and destroys the loser", async () => {
+  // The callback owns writing every reply line on success (see
+  // FileTransferOutcome's own header comment) -- a bare `{ok:true}` with no
+  // socket write would leave dialFileTransfer() waiting out its own reply
+  // timer, so this stub answers a trivial empty-payload download itself.
+  const answerEmptyDownload: NonNullable<StartControlListenerOptions["onFileTransfer"]> = (_request, socket): FileTransferOutcome => {
+    socket.write(`${JSON.stringify({ kind: "transfer_payload", byteLength: 0, sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" })}\n`);
+    return { ok: true };
+  };
+  // A SHARED token: both candidate listeners must accept the SAME dial, and
+  // the race can legitimately settle on either one.
+  const sharedToken = newControlToken();
+  const { listener: a } = await startTransferCapableListener(answerEmptyDownload, sharedToken);
+  const { listener: b } = await startTransferCapableListener(answerEmptyDownload, sharedToken);
+  const token = sharedToken;
+  try {
+    const connectFn = makeCandidateConnect({ "cand-a": a.port, "cand-b": b.port });
+    const result: DialFileTransferResult = await dialFileTransfer({
+      handle: "a-valid-handle",
+      direction: "download",
+      token,
+      candidates: ["cand-a", "cand-b"],
+      connect: connectFn,
+      connectTimeoutMs: 500,
+      replyTimeoutMs: 500,
+    });
+    assert.equal(result.ok, true, `expected a completed transfer dial, got ${JSON.stringify(result)}`);
+    if (result.ok) assert.ok(result.host === "cand-a" || result.host === "cand-b", "the winning host must be one of the two candidates");
+
+    // Give the loser's "close" event a tick to propagate server-side, then
+    // confirm exactly one of the two servers still holds a live connection
+    // -- the winner's socket is handed back to the caller and stays open.
+    await new Promise((r) => setTimeout(r, 100));
+    const aConns = await new Promise<number>((resolvePromise) => a.server.getConnections((_err, count) => resolvePromise(count)));
+    const bConns = await new Promise<number>((resolvePromise) => b.server.getConnections((_err, count) => resolvePromise(count)));
+    assert.equal(aConns + bConns, 1, "exactly one server must show a live connection -- the loser's socket must be destroyed");
+    if (result.ok) result.socket.destroy();
+  } finally {
+    a.server.close();
+    b.server.close();
+  }
+});
+
+test("dialFileTransfer: the hello line this dial writes carries the value of TRANSFER_TAG", async () => {
+  let capturedHelloLine: Record<string, unknown> | null = null;
+  const rawServer = createServer((socket) => {
+    let carry = "";
+    socket.on("data", (chunk: Buffer) => {
+      carry += chunk.toString("utf8");
+      const idx = carry.indexOf("\n");
+      if (idx === -1) return;
+      capturedHelloLine = JSON.parse(carry.slice(0, idx));
+      socket.destroy();
+    });
+  });
+  await new Promise<void>((r) => rawServer.listen(0, "127.0.0.1", () => r()));
+  const addr = rawServer.address();
+  const rawPort = typeof addr === "object" && addr !== null ? addr.port : 0;
+  try {
+    await dialFileTransfer({
+      handle: "a-valid-handle",
+      direction: "download",
+      token: "irrelevant",
+      candidates: ["cand-raw"],
+      connect: makeCandidateConnect({ "cand-raw": rawPort }),
+      connectTimeoutMs: 500,
+      replyTimeoutMs: 300,
+    });
+    assert.ok(capturedHelloLine, "the server must have captured a hello line");
+    assert.equal((capturedHelloLine as unknown as Record<string, unknown>).op, "hello");
+    assert.equal((capturedHelloLine as unknown as Record<string, unknown>).tag, TRANSFER_TAG);
+  } finally {
+    rawServer.close();
+  }
+});
+
+test("dialFileTransfer: a download's transfer_payload reply and its first payload bytes arriving in a SINGLE socket write resolve `pending` byte-identical to the payload sent, including bytes in 0x80..0xFF", async () => {
+  // A payload spanning the full byte range, including the 0x80-0xFF run a
+  // whole-buffer string decode would corrupt -- the same load-bearing shape
+  // broker-transfer.test.ts's own end-to-end case (plan 64-01) already uses.
+  const payload = Buffer.from(Array.from({ length: 256 }, (_, i) => i));
+  const fixture = await startRawTransferFixture((req) => {
+    assert.equal(req.op, "transfer");
+    assert.equal(req.direction, "download");
+    const header = Buffer.from(`${JSON.stringify({ kind: "transfer_payload", byteLength: payload.length, sha256: "irrelevant-for-this-test" })}\n`);
+    return Buffer.concat([header, payload]);
+  });
+  try {
+    const result = await dialFileTransfer({
+      handle: "a-valid-handle",
+      direction: "download",
+      token: "irrelevant",
+      candidates: ["cand-fixture"],
+      connect: makeCandidateConnect({ "cand-fixture": fixture.port }),
+      connectTimeoutMs: 500,
+      replyTimeoutMs: 500,
+      // Matches startRawTransferFixture()'s own hardcoded hello reply
+      // version ("5.0.0") -- classifyHelloReply() compares MAJOR versions
+      // (D-05), so this must agree with the fixture rather than with
+      // whatever this checkout's real package.json happens to resolve to.
+      clientVersion: "5.0.0",
+    });
+    assert.equal(result.ok, true, `expected a completed download dial, got ${JSON.stringify(result)}`);
+    if (!result.ok || result.direction !== "download") return;
+    assert.equal(result.byteLength, payload.length);
+    assert.equal(result.sha256, "irrelevant-for-this-test");
+    assert.ok(result.pending.equals(payload), `pending must be byte-identical to the payload sent -- got ${result.pending.length} bytes`);
+    result.socket.destroy();
+  } finally {
+    fixture.server.close();
+  }
+});
+
+test("dialFileTransfer: an error reply resolves ok:false naming the broker's own refusal, and destroys the socket", async () => {
+  const { listener, token } = await startTransferCapableListener((): FileTransferOutcome => ({ ok: false, code: "denied", message: "vice: no staged file for this handle" }));
+  try {
+    const result = await dialFileTransfer({
+      handle: "an-unknown-handle",
+      direction: "download",
+      token,
+      candidates: ["127.0.0.1"],
+      port: listener.port,
+      connectTimeoutMs: 500,
+      replyTimeoutMs: 500,
+    });
+    assert.equal(result.ok, false, `expected ok:false, got ${JSON.stringify(result)}`);
+    if (result.ok) return;
+    assert.match(result.reason, /no staged file/);
+  } finally {
+    listener.server.close();
+  }
+});
+
+test("dialFileTransfer: every failure mode resolves rather than rejecting, and the returned reason is a non-empty string", async () => {
+  // Reply timeout: a bare accepting listener that answers hello but never
+  // answers the transfer line at all.
+  const bare = await bindControlListener("127.0.0.1", 0);
+  try {
+    const timeoutResult = await dialFileTransfer({
+      handle: "some-handle",
+      direction: "download",
+      token: "irrelevant",
+      candidates: ["127.0.0.1"],
+      port: bare.port,
+      connectTimeoutMs: 500,
+      replyTimeoutMs: 200,
+    });
+    assert.equal(timeoutResult.ok, false);
+    if (!timeoutResult.ok) assert.ok(timeoutResult.reason.length > 0, "reason must be a non-empty string");
+  } finally {
+    bare.server.close();
+  }
+
+  // Socket error / early close: a server that accepts and destroys
+  // immediately, before any reply is ever written.
+  const closer = createServer((socket) => socket.destroy());
+  await new Promise<void>((r) => closer.listen(0, "127.0.0.1", () => r()));
+  const closerAddr = closer.address();
+  const closerPort = typeof closerAddr === "object" && closerAddr !== null ? closerAddr.port : 0;
+  try {
+    const closeResult = await dialFileTransfer({
+      handle: "some-handle",
+      direction: "download",
+      token: "irrelevant",
+      candidates: ["127.0.0.1"],
+      port: closerPort,
+      connectTimeoutMs: 500,
+      replyTimeoutMs: 500,
+    });
+    assert.equal(closeResult.ok, false);
+    if (!closeResult.ok) assert.ok(closeResult.reason.length > 0, "reason must be a non-empty string");
+  } finally {
+    closer.close();
+  }
+
+  // No candidate reachable at all.
+  const deadPort = await allocateDeadPort();
+  const noCandidateResult = await dialFileTransfer({
+    handle: "some-handle",
+    direction: "download",
+    token: "irrelevant",
+    candidates: ["127.0.0.1"],
+    port: deadPort,
+    connectTimeoutMs: 500,
+    replyTimeoutMs: 500,
+  });
+  assert.equal(noCandidateResult.ok, false);
+  if (!noCandidateResult.ok) assert.ok(noCandidateResult.reason.length > 0, "reason must be a non-empty string");
 });
