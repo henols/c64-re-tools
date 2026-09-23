@@ -4,17 +4,17 @@ milestone: v2.0.0
 milestone_name: One Broker, One Socket
 current_phase: 64
 current_phase_name: Files as Bytes, Both Directions
-status: executing
-stopped_at: Phase 64 gap-closure round 2 executing -- plans 64-12 (G-64-4) and 64-13 (G-64-3) complete, 64-14 (live measurement of both) outstanding
-last_updated: "2026-09-23T23:07:14.000Z"
+status: verifying
+stopped_at: Phase 64 gap-closure round 2 complete -- all 3 plans (64-12 G-64-4, 64-13 G-64-3, 64-14 live measurement of both) executed; phase verification outstanding
+last_updated: "2026-09-23T23:26:31.000Z"
 last_activity: 2026-09-24
-last_activity_desc: Phase 64 gap-closure round 2 plan 64-13 complete -- G-64-3 (upload-publish race behind vice_disk_attach/vice_snapshot_load's 0x8f) closed at the transfer completion reply, TDD RED/GREEN per task, 14 new tests, 0 regressions
-state_head: 1b7f5918c8724bdae007eaf1d2d80112cf06a006
+last_activity_desc: Phase 64 gap-closure round 2 plan 64-14 complete -- G-64-3 and G-64-4 measured live against genuine stock /usr/bin/x64sc and a systemd-unit broker (7/7 cold sessions succeeded first attempt, 135/135 loop calls clean of 0x8f), host and full suite confirmed clean
+state_head: 43e7ad12fd8e6dc21c754ae1ecf335e7b2df0ad4
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 31
-  completed_plans: 30
+  completed_plans: 31
   percent: 33
 carried_forward_phases:
 
@@ -82,9 +82,26 @@ closure still needs to be recorded as one.
 
 ## Current Position
 
-Phase: 64 (Files as Bytes, Both Directions) — EXECUTING GAP CLOSURE ROUND 2 (G-64-3, G-64-4)
-Plan: 13 of 14 executed (64-14 outstanding — gap-closure round 2)
-Status: Executing Phase 64 gap-closure round 2 — 64-12 (G-64-4, the cold-launch relay-attach race) and 64-13 (G-64-3, the intermittent 0x8f on the file-carrying tools) are complete; 64-14 (both measured live) is outstanding, sequentially on the main working tree. They follow UAT 2026-09-23 (0 passed, 2 issues, 64-UAT.md status diagnosed). Previously: Phase 64 gap closure for G-64-1 (UAT test 1) is complete — all 11 plans executed sequentially on the main working tree. Re-verification 2026-09-23: human_needed, 5/5 ROADMAP criteria verified, G-64-1 met with one caveat (the cold-launch race below); code review 0 critical / 2 warning / 1 info; the 2 UAT items it left pending in 64-UAT.md were run the same day and both failed, becoming G-64-3 and G-64-4.
+Phase: 64 (Files as Bytes, Both Directions) — GAP CLOSURE ROUND 2 EXECUTED, PHASE VERIFICATION OUTSTANDING (G-64-3, G-64-4)
+Plan: 14 of 14 executed (gap-closure round 2 complete)
+Status: Phase 64 gap-closure round 2 executed — 64-12 (G-64-4, the cold-launch relay-attach race), 64-13 (G-64-3, the intermittent 0x8f on the file-carrying tools) and 64-14 (both measured live against genuine stock /usr/bin/x64sc and a systemd-unit broker) are all complete, sequentially on the main working tree. Phase verification (`/gsd-verify-work`) is the next step. They follow UAT 2026-09-23 (0 passed, 2 issues, 64-UAT.md status diagnosed). Previously: Phase 64 gap closure for G-64-1 (UAT test 1) is complete — all 11 plans executed sequentially on the main working tree. Re-verification 2026-09-23: human_needed, 5/5 ROADMAP criteria verified, G-64-1 met with one caveat (the cold-launch race below); code review 0 critical / 2 warning / 1 info; the 2 UAT items it left pending in 64-UAT.md were run the same day and both failed, becoming G-64-3 and G-64-4.
+Plan 64-14 closed 2026-09-24: G-64-3 and G-64-4 measured live against genuine
+stock `/usr/bin/x64sc` (VICE 3.9) and a broker started as a transient systemd
+user unit. All 7 cold sessions (5 `vice_ping`, 2 `vice_warp_set`) succeeded on
+their FIRST attempt with no retry, journal-confirmed at exactly 7 `launching`
+lines and 0 `relay_error` relay deaths — the exact reversal of the diagnosis's
+own 0/9 baseline. The recycle's first post-respawn `vice_ping` surfaced a
+by-design epoch-mismatch identity refusal, not G-64-4's signature. The exact
+save→load→attach loop the diagnosis measured (3x memory_read+execution_run,
+snapshot_save, snapshot_load, disk_attach, 15 iterations = 135 calls) ran with
+zero `isError:true` and zero `0x8f`, against a diagnosis baseline of 20/30
+failures. A 5-call `vice_autostart` burst was clean on isError/0x8f (the
+sentinel-load poll itself timed out, disclosed as an open, unchased
+observation). The broker was stopped, all four teardown checks read clean,
+and the full-glob suite held at 4441/4357/0/84, exit 0 — unchanged from
+64-13's own baseline. See
+.planning/phases/64-files-as-bytes-both-directions/64-14-SUMMARY.md and
+.planning/phases/64-files-as-bytes-both-directions/evidence/64-g643-g644-live-check.md.
 Plan 64-13 closed 2026-09-24: G-64-3 closed at the transfer completion reply —
 an upload's TransferFileFn now resolves ok only after the broker writes
 `transfer_complete` on the transfer connection (after `receivePayloadToFile()`
