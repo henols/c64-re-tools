@@ -36,23 +36,25 @@
 //     would be the exact mirror-image bug this file's header exists to name.
 //     A future Phase 5 implementer who is tempted to route a screenshot path
 //     through withEmulatorSidePath() should stop and re-read this paragraph.
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 
-import { ViceError, type ViceErrorOptions } from "./vice-errors.ts";
-import { repoRoot, toolsDir } from "./repo-root.ts";
+import { repoRoot } from "./repo-root.ts";
 import { isInsideContainer } from "./container-guard.mts";
 import { tryHostPaths } from "./hostpath.ts";
 import { ErrorCode, StockProtocolError } from "./stock-protocol.ts";
+// Phase 64 (D-13/D-18): the snapshot-name rule and the client-side
+// snapshot path builders moved to transfer-paths.ts, so stock-machine.ts's
+// four migrating handlers (Plan 64-06) can import them without reaching
+// this module's host/container translation seam at all. StockPathError's
+// own class DEFINITION moved there too -- see transfer-paths.ts's own
+// header comment for why (avoiding an import cycle back to this file).
+// Every re-export below keeps this module's PUBLIC SURFACE unchanged for
+// its current consumers (stock-paths.test.ts, stock-broker-live.test.ts):
+// nothing is deleted from stock-paths.ts, per D-13 and the phase boundary
+// (RM-01, Phase 66, is what eventually deletes this file).
+import { StockPathError, validateSnapshotName, snapshotPathFor, snapshotMetaPathFor } from "./transfer-paths.ts";
 
-/** The one error type this module ever throws -- never a bare Error,
- * matching vice.ts's established ViceError hierarchy (stock-address.ts's
- * StockAddressError is the sibling precedent). */
-export class StockPathError extends ViceError {
-  constructor(message: string, options: ViceErrorOptions = {}) {
-    super(message, options);
-    this.name = "StockPathError";
-  }
-}
+export { StockPathError, snapshotPathFor, snapshotMetaPathFor };
 
 // ---------------------------------------------------------------------------
 // D-17's declared table -- the complete Phase 3 set. Exactly four entries;
@@ -145,47 +147,28 @@ export function setIsInsideContainerForTest(fn: (() => boolean) | null): void {
 }
 
 // ---------------------------------------------------------------------------
-// Snapshot name sanitisation and path construction -- T-3-05's mitigation.
+// Snapshot name sanitisation -- T-3-05's mitigation. The RULE itself now
+// lives in transfer-paths.ts's validateSnapshotName() (D-13/D-18); this
+// function keeps its EXISTING throwing calling convention and message text
+// unchanged for its current callers, obtaining its verdict from that one
+// shared definition rather than re-testing the pattern here. snapshotPathFor()
+// and snapshotMetaPathFor() are no longer defined in this file at all --
+// see the re-export at this module's top, from transfer-paths.ts directly.
 // ---------------------------------------------------------------------------
 
-const SNAPSHOT_NAME_RE = /^[A-Za-z0-9_-]{1,64}$/;
-
 /**
- * Refuses anything not matching /^[A-Za-z0-9_-]{1,64}$/ -- the name is used
- * to build a filename, so path separators, `..` and absolute paths are
- * rejected outright rather than sanitised. Matches the fork's own documented
- * constraint ("alphanumeric, underscore, hyphen only"). This is the T-3-05
- * control: a snapshot `name` is never treated as a path fragment.
+ * Refuses anything not matching the shared snapshot-name allow-list -- the
+ * name is used to build a filename, so path separators, `..` and absolute
+ * paths are rejected outright rather than sanitised. Matches the fork's own
+ * documented constraint ("alphanumeric, underscore, hyphen only"). This is
+ * the T-3-05 control: a snapshot `name` is never treated as a path fragment.
  */
 export function sanitizeSnapshotName(name: unknown): string {
-  if (typeof name !== "string" || !SNAPSHOT_NAME_RE.test(name)) {
-    throw new StockPathError(
-      `sanitizeSnapshotName: name must be 1-64 characters of alphanumeric, underscore or hyphen only ` +
-        `(matching ${SNAPSHOT_NAME_RE}) -- it is used to build a filename, so path separators, ".." and absolute ` +
-        `paths are rejected outright. Got ${JSON.stringify(name)}.`,
-    );
+  const verdict = validateSnapshotName(name);
+  if (!verdict.ok) {
+    throw new StockPathError(`sanitizeSnapshotName: ${verdict.reason}`);
   }
-  return name;
-}
-
-/**
- * The container path a snapshot named `name` lives at:
- * `<toolsDir>/snapshots/<name>.vsf` -- a subdirectory of the single
- * tool-written root `repo-root.ts`'s `toolsDir()` owns (D-33). The directory
- * is inside the workspace rather than under `~/.config/vice/` (the fork's own
- * location) because only a workspace path is inside hostpath.ts's bind-mount
- * mapping -- anything outside it cannot be translated for the host at all --
- * and keeping it inside the workspace makes workspace escape structurally
- * impossible rather than merely checked (T-3-05).
- */
-export function snapshotPathFor(name: string): string {
-  return join(toolsDir(), "snapshots", `${sanitizeSnapshotName(name)}.vsf`);
-}
-
-/** The sidecar metadata path for the same snapshot: same directory, `.json`
- * extension, same sanitisation. */
-export function snapshotMetaPathFor(name: string): string {
-  return join(toolsDir(), "snapshots", `${sanitizeSnapshotName(name)}.json`);
+  return verdict.name;
 }
 
 // Re-exported so a caller building a directory before translating (Task 3's
