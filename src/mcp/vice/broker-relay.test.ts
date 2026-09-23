@@ -1154,7 +1154,12 @@ test("emulator never binds: the attach is refused by name once the deadline pass
       // A later claim and attach on the SAME instance, once a stub emulator
       // is finally bound on that exact port, must succeed -- an in-session
       // retry converges rather than being permanently refused.
-      const server: Server = createServer(pingEchoHandler([]));
+      const acceptedSockets = new Set<Socket>();
+      const server: Server = createServer((socket) => {
+        acceptedSockets.add(socket);
+        socket.on("close", () => acceptedSockets.delete(socket));
+        pingEchoHandler([])(socket);
+      });
       await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", () => resolve()));
       try {
         const claimOutcome2 = handleMonitorClaim("claim-never-binds-retry", targetId, "binary", state);
@@ -1168,7 +1173,17 @@ test("emulator never binds: the attach is refused by name once the deadline pass
           candidates: ["127.0.0.1"],
         });
         assert.ok(dialResult2.ok, `expected the retried attach to succeed once the emulator is bound: ${JSON.stringify(dialResult2)}`);
+        if (dialResult2.ok) dialResult2.socket.destroy();
       } finally {
+        // server.close()'s own callback fires only once every CURRENTLY OPEN
+        // connection has closed -- it does not forcibly close them itself
+        // (unlike this file's own withStubEmulatorServer()/
+        // withLateBindingStubEmulatorServer() helpers, which track and
+        // destroy accepted sockets explicitly for exactly this reason).
+        // Destroying the client-side relay socket above starts that
+        // teardown; destroying whatever the stub itself still holds open
+        // here is the belt-and-braces half of the same discipline.
+        for (const socket of acceptedSockets) socket.destroy();
         await new Promise<void>((resolve) => server.close(() => resolve()));
       }
     },
@@ -1321,7 +1336,7 @@ test("emulator binds late and speaks first", async () => {
           // The frame may arrive entirely within `pending`, or split across
           // `pending` and a FOLLOWING "data" event -- accumulate both rather
           // than assuming either shape.
-          let collected = Buffer.from(dialResult.pending);
+          let collected: Buffer = Buffer.from(dialResult.pending);
           if (collected.length < registerInfoFrame.length) {
             collected = await new Promise<Buffer>((resolve) => {
               const onData = (chunk: Buffer) => {

@@ -674,6 +674,22 @@ export function dialEmulatorLeg(opts: DialEmulatorLegOptions): Promise<DialEmula
   })();
 }
 
+/** Builds the ONE wire message a relay client sees for a dial that never
+ * connected (G-64-4, plan 64-12, Task 2) -- from the channel, the port and
+ * the deadline ONLY. Deliberately carries NO errno token and NO path:
+ * stock-handler.ts's convertHandshakeError() has a container-bind branch
+ * that matches a raw ECONNREFUSED/EHOSTUNREACH/ENETUNREACH token and tells
+ * the caller to reconfigure VICE_BROKER_BINMON_HOST -- exactly the wrong
+ * advice for an emulator that is merely still starting. The errno, the
+ * attempt count and the elapsed time belong in the broker's OWN stderr
+ * journal line (vice-broker.mts's own handleRelayAttach()), never here. */
+export function buildEmulatorUnreachableMessage(channel: MonitorChannel, port: number, deadlineMs: number): string {
+  return (
+    `attach: the emulator's ${channel} monitor at port ${port} did not accept a connection within ${deadlineMs}ms -- ` +
+    `it may still be starting, or may have exited; retrying the same call is safe.`
+  );
+}
+
 /** Default idle timeout (ms) applied to a relay connection carrying no
  * traffic in either direction (Plan 63-04, SESS-04) -- the broker's OWN
  * bounded deadline, never disabled silently. See resolveRelayIdleMs()'s own

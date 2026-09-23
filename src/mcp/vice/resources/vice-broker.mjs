@@ -55,7 +55,7 @@ resolveBinmonHost, } from "./broker-launch.mjs";
 // build.ts pass (both source and target are listed in
 // HOST_BOUND_ARTIFACTS/tsconfig.build.json's include[] in this same
 // change).
-import { spliceRelay, resolveRelayChannelTarget, relaySessionKey, resolveRelayIdleMs, resolveRelayKeepAliveMs, dialEmulatorLeg, DEFAULT_RELAY_DIAL_DEADLINE_MS, DEFAULT_RELAY_DIAL_RETRY_MS, } from "./broker-relay.mjs";
+import { spliceRelay, resolveRelayChannelTarget, relaySessionKey, resolveRelayIdleMs, resolveRelayKeepAliveMs, dialEmulatorLeg, buildEmulatorUnreachableMessage, DEFAULT_RELAY_DIAL_DEADLINE_MS, DEFAULT_RELAY_DIAL_RETRY_MS, } from "./broker-relay.mjs";
 // A VALUE import of the broker's own incident writer (Phase 63, SESS-05) --
 // safe here for the SAME reason every other sibling value import in this
 // file is: this file is ALWAYS run from its own compiled resources/ form,
@@ -1184,19 +1184,27 @@ export function tearDownRelaySessionsForGrant(targetId, state) {
  * 63-04) keyed by relaySessionKey(targetId, channel), so handleRelayDeath()
  * above can find it again.
  *
- * On a dial that never connects, or is abandoned (the client leg closed, or
- * the instance/holder identity this attach validated no longer matches the
- * broker's live state): the holder's `attached` marker is cleared and this
- * function answers `denied` -- Task 2 of this plan refines this branch
- * (an errno-free wire message, a distinct `emulator_unreachable` code, and
- * clearing the marker only when the holder is still current); this task
- * proves the SUCCESS path only.
+ * On a dial that is ABANDONED (the client leg closed, or the instance/holder
+ * identity this attach validated no longer matches the broker's live state):
+ * the holder's `attached` marker is cleared -- but ONLY if that holder is
+ * still the current one (a release or a recycle that already ran has its
+ * own holder, or none, and must never be perturbed by a stale dial's own
+ * cleanup) -- and this function answers a generic `denied`, writing no
+ * incident and never splicing. On a dial that GENUINELY FAILS (its own
+ * deadline elapsed, or a non-ECONNREFUSED connect error) without being
+ * abandoned: the SAME conditional clearing applies, the code is the
+ * distinct `emulator_unreachable`, the wire message is broker-relay.mjs's
+ * own errno-free buildEmulatorUnreachableMessage() (channel, port and
+ * deadline only -- see that function's own comment for why no errno or
+ * path ever reaches the wire), and the full detail (errno, attempt count,
+ * elapsed time) goes to this broker's own stderr journal line instead.
  *
  * `deps` (optional, defaulting to real production functions/constants) is
  * threaded straight into every death this session can ever report, AND into
- * the dial itself (dialDeadlineMs/dialRetryIntervalMs) -- a test overrides
- * these to prove ordering without touching the real filesystem or waiting a
- * real five seconds; the real broker (this file's own `run()`) omits it. */
+ * the dial itself (dialDeadlineMs/dialRetryIntervalMs/connect) -- a test
+ * overrides these to prove every failure mode without touching the real
+ * filesystem and without a real five-second wait; the real broker (this
+ * file's own `run()`) omits it. */
 export async function handleRelayAttach(targetId, channel, presentedHandle, clientSocket, pending, state, deps = {}) {
     const instance = resolveInstanceForMonitorTarget(targetId, state);
     if (!instance)
@@ -1255,16 +1263,38 @@ export async function handleRelayAttach(targetId, channel, presentedHandle, clie
     const dial = await dialEmulatorLeg({
         host,
         port: target.port,
+        connect: deps.connect,
         deadlineMs,
         retryIntervalMs,
         isAbandoned,
     });
     if (!dial.ok) {
-        // Task 1 keeps this branch deliberately simple -- Task 2 refines it
-        // (conditional clearing, an errno-free wire message, a distinct
-        // emulator_unreachable code, and a stderr journal line).
-        holder.attached = false;
-        return { ok: false, code: "denied" };
+        // G-64-4 Task 2: cleared ONLY if this holder is still the CURRENT one --
+        // a release or a recycle that already ran has its own holder (or none
+        // at all) and must never be perturbed by a stale dial's own cleanup.
+        if (instance.monitorClients[channel] === holder)
+            holder.attached = false;
+        if (dial.abandoned) {
+            // Never write an incident, never splice, never register a session --
+            // the client leg is gone or the claim/instance moved on while this
+            // dial waited. A generic `denied` costs nothing on a destroyed socket
+            // (broker-control.mts's own attach arm writes nothing to one) and is
+            // a safe, honest refusal on a still-live one whose claim changed
+            // under it.
+            return { ok: false, code: "denied" };
+        }
+        // A genuine failure (deadline exceeded, or a non-retryable connect
+        // error) -- the full detail (errno, attempt count, elapsed time) goes
+        // to this broker's OWN stderr journal line, never to the wire; the
+        // wire message is built once, errno-free, by broker-relay.mjs's own
+        // buildEmulatorUnreachableMessage().
+        process.stderr.write(`vice-broker: attach: emulator dial for target ${targetId} channel ${channel} port ${target.port} failed after ` +
+            `${dial.attempts} attempt(s) in ${dial.elapsedMs}ms (last error ${dial.lastErrorCode ?? "n/a"}) -- ${dial.reason}\n`);
+        return {
+            ok: false,
+            code: "emulator_unreachable",
+            message: buildEmulatorUnreachableMessage(channel, target.port, deadlineMs),
+        };
     }
     // Connected -- re-check the SAME three conditions once more before ever
     // splicing (T-64-G4-02): an instance that reused this exact port after a
@@ -1273,7 +1303,8 @@ export async function handleRelayAttach(targetId, channel, presentedHandle, clie
     if (isAbandoned()) {
         if (!dial.socket.destroyed)
             dial.socket.destroy();
-        holder.attached = false;
+        if (instance.monitorClients[channel] === holder)
+            holder.attached = false;
         return { ok: false, code: "denied" };
     }
     const emulatorSocket = dial.socket;
