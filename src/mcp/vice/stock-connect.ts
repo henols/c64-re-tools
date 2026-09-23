@@ -69,7 +69,7 @@ import {
   type StageFileOptions,
   type StageFileOutcome,
 } from "./vice-broker-client.ts";
-import { dialMonitorRelay, dialFileTransfer } from "./broker-endpoint.ts";
+import { dialMonitorRelay, dialFileTransfer, awaitTransferComplete } from "./broker-endpoint.ts";
 // Phase 64 (XFER-04): transfer-hash.mts has NO relative import of its own
 // (only node:crypto/node:stream) -- unlike broker-transfer.mts, which is
 // `.mts`/host-bound and whose own `import ... from "./transfer-hash.mjs"`
@@ -462,12 +462,29 @@ function discardSink(): Writable {
  *
  * A second, deliberate difference from broker-transfer.mts's own
  * send/receive halves: neither function below writes or reads a SECOND
- * header line on this connection. The `byteLength`/`sha256` header
+ * HEADER line on this connection. The `byteLength`/`sha256` header
  * broker-transfer.mts's own writeTransferHeader()/readTransferHeader()
  * exist to frame is, on THIS connection, already carried by the `transfer`
  * control op's own request (upload) or `transfer_payload` reply (download)
- * -- dialFileTransfer()'s own job. A second header here would duplicate,
- * not add, framing. */
+ * -- dialFileTransfer()'s own job. A second HEADER here would duplicate,
+ * not add, framing.
+ *
+ * G-64-3 (plan 64-13) rewrote this comment's own former claim that an
+ * upload's own local write finishing meant the upload was DONE: it did
+ * not. vice_disk_attach and vice_snapshot_load intermittently named a
+ * staged file the broker had not yet renamed into place, because the
+ * upload used to resolve as soon as THIS side's own pipeline into the
+ * transfer socket finished -- the broker still had to drain the socket,
+ * verify the digest, and rename its temp file, and never reported when it
+ * had (`.planning/debug/vice-0x8f-disk-attach-snapshot-load.md`; on a
+ * same-host broker this raced VICE's own file probes 37-67% of the time).
+ * The fix is the ONE further reply line the wire vocabulary already named
+ * and never sent: the broker's `transfer_complete` (or a path-free `error`
+ * on a broker-side refusal), read here by `awaitTransferComplete()`
+ * (broker-endpoint.ts) -- an upload is reported done ONLY once that reader
+ * resolves ok. WHAT NOT TO DO: never report an upload as done on the
+ * client's own write finishing again -- that is the exact defect this
+ * rewrite closes. */
 async function defaultTransferFile(request: TransferFileRequest): Promise<TransferFileResult> {
   if (request.direction === "upload") {
     let size: number;
@@ -503,14 +520,35 @@ async function defaultTransferFile(request: TransferFileRequest): Promise<Transf
     if (!dialResult.ok) return { ok: false, reason: dialResult.reason };
     const { socket } = dialResult;
     try {
+      // Armed BEFORE the payload pipeline starts, and awaited AFTER it --
+      // never the reverse. dialFileTransfer()'s own performTransfer() tears
+      // down its `transfer_ready` listeners once it settles and leaves this
+      // socket flowing with NO data listener at all; a completion line that
+      // arrived before this reader attached would be lost with no listener
+      // to catch it (G-64-3, plan 64-13).
+      const completionPromise = awaitTransferComplete({ socket, byteLength, sha256, pending: dialResult.pending });
+
       // Second, real streamed pass, through a FRESH Transform instance (a
       // Transform is single-use) -- re-enforces the cap from bytes actually
       // read this pass, independently of the digest pre-pass's own count.
       const sendPass = createHashAndCountTransform({ capBytes: TRANSFER_MAX_BYTES });
-      await pipeline(createReadStream(request.sourcePath), sendPass, socket);
+      try {
+        await pipeline(createReadStream(request.sourcePath), sendPass, socket);
+      } catch (e) {
+        // The local write itself failed -- but if the broker has ALREADY
+        // told us why (an `error` line, or its own connection closing), that
+        // is the more useful, broker-side reason: report it instead of this
+        // side's own write error.
+        const completion = await completionPromise;
+        if (!completion.ok) return { ok: false, reason: completion.reason };
+        return { ok: false, reason: `vice: transfer failed while sending ${request.sourcePath}: ${(e as Error).message}` };
+      }
+
+      // The upload is DONE only once the broker says so -- never on this
+      // side's own write finishing (G-64-3's whole point).
+      const completion = await completionPromise;
+      if (!completion.ok) return { ok: false, reason: completion.reason };
       return { ok: true, byteLength, sha256 };
-    } catch (e) {
-      return { ok: false, reason: `vice: transfer failed while sending ${request.sourcePath}: ${(e as Error).message}` };
     } finally {
       if (!socket.destroyed) socket.destroy();
     }

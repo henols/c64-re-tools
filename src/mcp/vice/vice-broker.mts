@@ -170,7 +170,7 @@ import { brokerStateDir, brokerConfigScratchDir, brokerStagingDir } from "./brok
 // handleFileTransfer() below are this module's own callers; neither
 // re-implements the directory layout, the handle minting or the byte
 // movement broker-transfer.mts already owns.
-import { stageFileSlot, resolveStagedFile, markTransferInFlight, clearTransferInFlight, clearStagingForSession, sendPayloadFromFile, receivePayloadToFile } from "./broker-transfer.mjs";
+import { stageFileSlot, resolveStagedFile, markTransferInFlight, clearTransferInFlight, clearStagingForSession, sendPayloadFromFile, receivePayloadToFile, type TransferResult } from "./broker-transfer.mjs";
 
 export interface ParsedArgs {
   repoRoot: string;
@@ -1122,9 +1122,24 @@ export function handleStageFile(grantId: string, slot: string, state: BrokerStat
  * `dialFileTransfer()` (broker-endpoint.ts) checks for. Neither branch
  * awaits its own promise before returning -- `state` is accepted only for
  * parity with handleRelayAttach()'s own signature and is not read on this
- * path today. The in-flight guard is released in a `finally` on every path,
- * and the socket is destroyed once the transfer settles -- a transfer
- * connection is short-lived by design. */
+ * path today. The in-flight guard is released once the transfer settles on
+ * every path (immediately, in a `finally`, for a download; inside the
+ * upload's own completion handling, below, for an upload), and the socket
+ * is destroyed once the transfer settles -- a transfer connection is
+ * short-lived by design.
+ *
+ * G-64-3 (plan 64-13): an upload writes a SECOND line too, after
+ * `receivePayloadToFile()` settles -- `transfer_complete` (the OBSERVED
+ * byteLength/sha256) on success, or a path-free `error` line on failure
+ * (`writeUploadCompletionReply()` below) -- because vice_disk_attach and
+ * vice_snapshot_load used to name a staged file before the broker had
+ * actually renamed it into place: the client's own upload resolved when
+ * ITS pipeline into this socket finished, not when the broker had
+ * published the bytes, and VICE answered 0x8f probing a path that did not
+ * exist yet (`.planning/debug/vice-0x8f-disk-attach-snapshot-load.md`).
+ * The upload branch therefore also sets `socket.allowHalfOpen = true`
+ * before writing `transfer_ready`, so the broker can still answer after
+ * the client ends its own write side to mark the end of the payload. */
 /**
  * Injectable dependency seam for handleFileTransfer() (Phase 64 gap closure
  * G-64-3, plan 64-13, Task 1) -- this project's standard destructured-
@@ -1139,6 +1154,41 @@ export interface HandleFileTransferDeps {
    * full contract (a timing seam, not a filesystem-root seam D-17
    * forbids). The real broker's `run()` wiring below never supplies this. */
   beforePublish?: () => Promise<void>;
+}
+
+/** Grace period (ms), after the broker has written and ended an upload's
+ * completion reply, before the socket is force-destroyed if the client
+ * never closes its own end (T-64-G3-03) -- bounds a half-open transfer
+ * socket's lifetime without depending on client cooperation. */
+const UPLOAD_REPLY_DESTROY_GRACE_MS = 2000;
+
+/**
+ * Writes an upload's ONE completion reply line -- `transfer_complete` on
+ * success (the OBSERVED byteLength/sha256, an end-to-end publish
+ * confirmation, D-11/D-09/XFER-06) or a path-free `error` line on failure
+ * (`result.wireReason` when set, else `result.reason`, which is already
+ * path-free for every branch that omits `wireReason` -- see
+ * `TransferResult`'s own header comment in broker-transfer.mts) -- then ends
+ * the socket so the line is flushed, and destroys it once the socket has
+ * actually finished closing, or after a short grace period if the client
+ * never closes its own end (T-64-G3-03/T-64-G3-04). Writes nothing if the
+ * client socket is already gone (T-64-G3-02's own "never put a broker-side
+ * path on the wire" is a property of `result.wireReason`/`result.reason`
+ * themselves, not of this function).
+ */
+function writeUploadCompletionReply(socket: Socket, result: TransferResult): void {
+  if (socket.destroyed) return;
+  const reply: Record<string, unknown> = result.ok
+    ? { kind: "transfer_complete", byteLength: result.byteLength, sha256: result.sha256 }
+    : { kind: "error", code: result.code ?? "internal", message: result.wireReason ?? result.reason };
+  socket.write(`${JSON.stringify(reply)}\n`, () => {
+    if (!socket.destroyed) socket.end();
+  });
+  const destroyTimer = setTimeout(() => {
+    if (!socket.destroyed) socket.destroy();
+  }, UPLOAD_REPLY_DESTROY_GRACE_MS);
+  if (typeof destroyTimer.unref === "function") destroyTimer.unref();
+  socket.once("close", () => clearTimeout(destroyTimer));
 }
 
 export function handleFileTransfer(request: FileTransferRequest, socket: Socket, pending: Buffer, state: BrokerState, deps: HandleFileTransferDeps = {}): FileTransferOutcome {
@@ -1173,17 +1223,20 @@ export function handleFileTransfer(request: FileTransferRequest, socket: Socket,
   };
 
   if (request.direction === "upload") {
+    // G-64-3 (plan 64-13): the client ends ITS OWN write side to mark the
+    // end of the payload -- on a socket accepted by a server created
+    // without allowHalfOpen (broker-control.mts's own listener), the
+    // client's FIN would otherwise auto-end this socket's writable side
+    // too, so a reply written after that FIN is never delivered (MEASURED
+    // by the planner on Node v24.20.0). Set BEFORE writing `transfer_ready`
+    // -- and therefore strictly before the client can possibly have sent
+    // its own FIN -- so the broker can still answer once its own publish
+    // finishes.
+    socket.allowHalfOpen = true;
     // The upload reply -- no byteLength/sha256 to declare here (those
     // arrived already, on the `transfer` request itself), so this is a
     // plain JSON line, never writeTransferHeader() (whose type requires all
     // three TransferHeader fields).
-    //
-    // RED PHASE NOTE (G-64-3, plan 64-13, Task 1): `deps.beforePublish` is
-    // threaded through to `receivePayloadToFile()` below so a test can hold
-    // the publish back deterministically, but this branch does not yet
-    // report completion back to the client on this connection -- that is
-    // this task's own GREEN change, added once the RED run below has been
-    // recorded.
     socket.write(`${JSON.stringify({ kind: "transfer_ready" })}\n`);
     receivePayloadToFile({
       socket,
@@ -1191,13 +1244,13 @@ export function handleFileTransfer(request: FileTransferRequest, socket: Socket,
       header: { kind: "file", byteLength: request.byteLength, sha256: request.sha256 },
       pending,
       beforePublish: deps.beforePublish,
-    })
-      .then((result) => {
-        if (!result.ok) {
-          process.stderr.write(`vice-broker: upload transfer failed for handle ${request.handle}: ${result.reason}\n`);
-        }
-      })
-      .finally(settle);
+    }).then((result) => {
+      if (!result.ok) {
+        process.stderr.write(`vice-broker: upload transfer failed for handle ${request.handle}: ${result.reason}\n`);
+      }
+      clearTransferInFlight(request.handle);
+      writeUploadCompletionReply(socket, result);
+    });
   } else {
     sendPayloadFromFile({ socket, sourcePath: entry.path, kind: "transfer_payload" })
       .then((result) => {

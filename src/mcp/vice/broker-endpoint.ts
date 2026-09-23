@@ -118,6 +118,19 @@ const DEFAULT_REPLY_TIMEOUT_MS = 2000;
  * refusal (or success) is never read at all. */
 export const DEFAULT_ATTACH_REPLY_TIMEOUT_MS = 8000;
 
+/** G-64-3 (plan 64-13): `awaitTransferComplete()`'s own default wait for the
+ * broker's `transfer_complete`/`error` reply line, below. An upload's
+ * completion is reported by the side that published the file (the broker),
+ * not inferred from the client's own write finishing -- this bound exists
+ * only to keep a client from waiting forever against a broker that never
+ * answers (a crash mid-publish, or a broker built before this reply
+ * existed). Ten seconds -- generous relative to the sub-2ms publish
+ * latencies this same gap-closure plan measured on a same-host broker
+ * (`.planning/debug/vice-0x8f-disk-attach-snapshot-load.md`), never tuned
+ * down to save wall-clock time in a test; a test that needs a SHORT bound
+ * passes its own `timeoutMs` explicitly instead. */
+export const DEFAULT_TRANSFER_COMPLETE_TIMEOUT_MS = 10000;
+
 /** This module's own directory, computed once at module load -- the same
  * `dirname(fileURLToPath(import.meta.url))` idiom vice-proxy.ts's own
  * HERE_DIR already uses right before it calls runtimeVersion(). */
@@ -1099,5 +1112,172 @@ export function dialFileTransfer(options: DialFileTransferOptions): Promise<Dial
         }
       });
     });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// awaitTransferComplete() -- Phase 64 gap closure G-64-3 (plan 64-13). Closes
+// the exact race .planning/debug/vice-0x8f-disk-attach-snapshot-load.md
+// diagnosed: an upload used to resolve when the CLIENT's own pipeline into
+// the transfer socket finished, before the broker had drained the socket,
+// verified the digest, and renamed the temp file into place -- so
+// vice_disk_attach/vice_snapshot_load could name a staged file the broker
+// had not published yet, and VICE answered 0x8f. This reader is the
+// authoritative "the broker says it published the file" signal: it reads
+// the ONE completion line the broker now writes after the rename (or an
+// `error` line on a broker-side refusal), and an upload is DONE only once
+// this reader resolves ok.
+//
+// WHAT NOT TO DO:
+//   - Never resolve an upload as done before this reader resolves. The
+//     bytes being in the kernel send buffer (the pre-64-13 signal) is not
+//     the broker having published them.
+//   - Never add a client-side existsSync poll, sleep, or retry here or at
+//     any call site as an alternative to this reader (G-64-3's own
+//     prohibition) -- the broker's own reply on this SAME connection is the
+//     only valid signal this milestone recognises.
+// ---------------------------------------------------------------------------
+
+export interface AwaitTransferCompleteOptions {
+  /** The already-dialled, still-open transfer connection -- the SAME
+   * socket `performTransfer()` above resolved for this upload. This
+   * function's own `"data"` listener must be installed BEFORE the caller
+   * starts writing the payload onto this same socket (this function's own
+   * header note, and defaultTransferFile()'s own call site) -- a
+   * completion line that arrived before a reader was attached would
+   * otherwise be lost, since nothing else on this connection keeps a byte
+   * buffer once `performTransfer()`'s own listeners are torn down. */
+  socket: Socket;
+  /** This side's OWN declared byte count -- compared against the broker's
+   * ECHOED value on a `transfer_complete` line (an end-to-end publish
+   * confirmation, D-11/D-09/XFER-06); a disagreement is `ok: false`, never
+   * silently trusted. */
+  byteLength: number;
+  /** This side's OWN declared digest -- same comparison as `byteLength`
+   * above. */
+  sha256: string;
+  /** Bytes that arrived in the SAME TCP segment as `transfer_ready`'s own
+   * terminator, past it (`DialFileTransferSuccess`'s own `pending` field)
+   * -- consumed as the FIRST bytes this reader's own line search sees, in
+   * case the broker's completion reply somehow arrived before the caller's
+   * payload pipeline even started (never observed in practice, since the
+   * broker cannot have anything to report before receiving any payload
+   * bytes, but the field is threaded through rather than assumed empty). */
+  pending?: Buffer;
+  /** Defaults to `DEFAULT_TRANSFER_COMPLETE_TIMEOUT_MS` (10000ms). A test
+   * that wants a deterministic, short-lived timeout case passes this
+   * explicitly rather than waiting out the real production default. */
+  timeoutMs?: number;
+}
+
+export type AwaitTransferCompleteResult = { ok: true } | { ok: false; reason: string };
+
+/**
+ * Reads ONE newline-terminated JSON reply line off `options.socket`'s byte
+ * stream, by the SAME byte-level `indexOf(0x0a)` search `performTransfer()`
+ * above uses -- never a whole-buffer string decode (a line that arrives in
+ * the same chunk as trailing garbage must not corrupt anything past its own
+ * terminator, though a completion line, unlike a download's `transfer_payload`
+ * reply, carries no payload bytes after it in practice). Installs its
+ * `"data"`/`"error"`/`"end"`/`"close"` listeners SYNCHRONOUSLY, before
+ * returning -- see this function's own header note on why call-order
+ * matters. Resolves exactly once, never throws:
+ *   - `{ ok: true }` on a `transfer_complete` line whose `byteLength` and
+ *     `sha256` both equal the declared values this call was given.
+ *   - `{ ok: false, reason }` naming both pairs on a `transfer_complete`
+ *     line whose echoed values disagree with what was declared (a
+ *     Tampering concern, T-64-G3-01).
+ *   - `{ ok: false, reason }` carrying the broker's own `error` line
+ *     message verbatim (already path-free -- see `broker-transfer.mts`'s
+ *     `TransferResult.wireReason`).
+ *   - `{ ok: false, reason }` on the socket ending, closing, or erroring
+ *     before a line ever completed.
+ *   - `{ ok: false, reason }` on `timeoutMs` elapsing with no line at all --
+ *     naming that a broker built before this reply existed never sends one,
+ *     so the caller should restart the broker.
+ */
+export function awaitTransferComplete(options: AwaitTransferCompleteOptions): Promise<AwaitTransferCompleteResult> {
+  const { socket, byteLength, sha256 } = options;
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TRANSFER_COMPLETE_TIMEOUT_MS;
+  let carry: Buffer = options.pending ?? Buffer.alloc(0);
+  let settled = false;
+
+  return new Promise<AwaitTransferCompleteResult>((resolve) => {
+    const timer = setTimeout(() => {
+      finish({
+        ok: false,
+        reason: `vice: the broker never confirmed the upload was published within ${timeoutMs}ms -- a broker older than this reply never sends it, so restart the broker`,
+      });
+    }, timeoutMs);
+    if (typeof timer.unref === "function") timer.unref();
+
+    function finish(result: AwaitTransferCompleteResult): void {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      socket.removeListener("data", onData);
+      socket.removeListener("error", onError);
+      socket.removeListener("end", onEnd);
+      socket.removeListener("close", onClose);
+      resolve(result);
+    }
+
+    function processLine(): void {
+      const idx = carry.indexOf(0x0a);
+      if (idx === -1) return; // keep accumulating -- bounded by the timer above, not a byte cap
+      const lineText = carry.subarray(0, idx).toString("utf8");
+      let parsed: unknown = null;
+      try {
+        parsed = JSON.parse(lineText);
+      } catch {
+        parsed = null;
+      }
+      if (typeof parsed === "object" && parsed !== null) {
+        const obj = parsed as Record<string, unknown>;
+        if (obj.kind === "transfer_complete") {
+          if (obj.byteLength === byteLength && obj.sha256 === sha256) {
+            finish({ ok: true });
+          } else {
+            finish({
+              ok: false,
+              reason: `vice: the broker's completion reply declared byteLength ${JSON.stringify(obj.byteLength)}/sha256 ${JSON.stringify(obj.sha256)}, which does not match what this side sent (byteLength ${byteLength}/sha256 ${sha256})`,
+            });
+          }
+          return;
+        }
+        if (obj.kind === "error") {
+          const message = typeof obj.message === "string" ? obj.message : "the broker refused the upload with an unrecognisable error reply";
+          finish({ ok: false, reason: `vice: ${message}` });
+          return;
+        }
+      }
+      finish({ ok: false, reason: "vice: the broker's completion reply was not a recognised transfer_complete or error line" });
+    }
+
+    function onData(chunk: Buffer): void {
+      carry = Buffer.concat([carry, chunk]);
+      processLine();
+    }
+    function onError(): void {
+      finish({ ok: false, reason: "vice: the broker closed the transfer connection before confirming the upload was published" });
+    }
+    function onEnd(): void {
+      finish({ ok: false, reason: "vice: the broker closed the transfer connection before confirming the upload was published" });
+    }
+    function onClose(): void {
+      finish({ ok: false, reason: "vice: the broker closed the transfer connection before confirming the upload was published" });
+    }
+
+    socket.on("data", onData);
+    socket.once("error", onError);
+    socket.once("end", onEnd);
+    socket.once("close", onClose);
+
+    // A line may already be sitting in `carry` (whatever arrived as
+    // `options.pending`, past `transfer_ready`'s own terminator) --
+    // vanishingly unlikely (the broker has nothing to report yet at this
+    // point in the exchange), but processed the same way rather than
+    // assumed empty.
+    if (carry.length > 0) processLine();
   });
 }
