@@ -336,7 +336,7 @@
     {
       "number": "64",
       "name": "Files as Bytes, Both Directions",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "number": "65",
@@ -359,5 +359,5 @@
     "label": "Advance to the next step",
     "reason": "Phase 64 of 6 · 33% · executing"
   },
-  "updated_at": "2026-09-23T10:13:44.784Z"
+  "updated_at": "2026-09-23T11:05:41.905Z"
 }
