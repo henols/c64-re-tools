@@ -49,8 +49,11 @@ import {
   handleSnapshotLoad,
   DISK_ATTACH_APPROXIMATION,
   DISK_ATTACH_WRITE_LOSS,
+  AUTOSTART_CMD_FAILURE_TEXT,
+  UNDUMP_CMD_FAILURE_TEXT,
+  DUMP_CMD_FAILURE_TEXT,
 } from "./stock-machine.ts";
-import { CommandType } from "./stock-protocol.ts";
+import { CommandType, ErrorCode, StockProtocolError } from "./stock-protocol.ts";
 import { resetRunStateTrackersForTest } from "./stock-runstate.ts";
 import type { StockConnectSession, TransferFileFn, TransferFileRequest, TransferFileResult } from "./stock-connect.ts";
 import type { ViceMonitorClient } from "./stock-protocol.ts";
@@ -451,6 +454,29 @@ test("handleAutostart: a source file over the transfer cap is refused with the l
   });
 });
 
+test("handleAutostart: AUTOSTART answering 0x8f says the emulator could not open or load the file it was handed, from the exported constant (G-64-3, plan 64-13, Task 3)", async () => {
+  await withTempFixtureFile("game.prg", async (fixturePath) => {
+    const { session } = makeMachineSession({
+      responder: (commandType) => {
+        if (commandType === CommandType.AutoStart) {
+          throw new StockProtocolError("binary monitor returned error code 0x8f for response type 0x00", {
+            errorCode: ErrorCode.CmdFailure,
+            responseType: 0x00,
+            requestId: 1,
+          });
+        }
+        return undefined;
+      },
+    });
+    const result = await handleAutostart({ path: fixturePath }, session, fakeDeps);
+    assert.equal(result.isError, true);
+    assert.ok(
+      result.content[0]!.text.includes(AUTOSTART_CMD_FAILURE_TEXT),
+      `expected the exported AUTOSTART_CMD_FAILURE_TEXT in: ${result.content[0]!.text}`,
+    );
+  });
+});
+
 // --------------------------------------------------------- handleDiskAttach
 //
 // Same migration shape as handleAutostart above, staged under the DIFFERENT
@@ -533,6 +559,29 @@ test("handleDiskAttach: an unreadable (nonexistent) path refuses naming the path
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("handleDiskAttach: AUTOSTART answering 0x8f says the emulator could not open or load the file it was handed, from the SAME exported constant handleAutostart uses (G-64-3, plan 64-13, Task 3)", async () => {
+  await withTempFixtureFile("disk.d64", async (fixturePath) => {
+    const { session } = makeMachineSession({
+      responder: (commandType) => {
+        if (commandType === CommandType.AutoStart) {
+          throw new StockProtocolError("binary monitor returned error code 0x8f for response type 0x00", {
+            errorCode: ErrorCode.CmdFailure,
+            responseType: 0x00,
+            requestId: 1,
+          });
+        }
+        return undefined;
+      },
+    });
+    const result = await handleDiskAttach({ unit: 8, path: fixturePath }, session, fakeDeps);
+    assert.equal(result.isError, true);
+    assert.ok(
+      result.content[0]!.text.includes(AUTOSTART_CMD_FAILURE_TEXT),
+      `expected the exported AUTOSTART_CMD_FAILURE_TEXT in: ${result.content[0]!.text}`,
+    );
+  });
 });
 
 test("handleAutostart then handleDiskAttach in one session: two distinct slots, two distinct handles, two distinct staged files (T-64-29)", async () => {
@@ -689,6 +738,26 @@ test("handleSnapshotSave: a failing DUMP writes no sidecar and dials no transfer
   });
 });
 
+test("handleSnapshotSave: DUMP answering 0x8f says the emulator could not write the snapshot, from the exported constant (G-64-3, plan 64-13, Task 3)", async () => {
+  await withTempRepoRoot(async () => {
+    const { session } = makeSnapshotSession({
+      responder: () => {
+        throw new StockProtocolError("binary monitor returned error code 0x8f for response type 0x00", {
+          errorCode: ErrorCode.CmdFailure,
+          responseType: 0x00,
+          requestId: 1,
+        });
+      },
+    });
+    const result = await handleSnapshotSave({ name: "cmdfailure_1" }, session, fakeDeps);
+    assert.equal(result.isError, true);
+    assert.ok(
+      result.content[0]!.text.includes(DUMP_CMD_FAILURE_TEXT),
+      `expected the exported DUMP_CMD_FAILURE_TEXT in: ${result.content[0]!.text}`,
+    );
+  });
+});
+
 test("handleSnapshotSave: a sidecar write failure still answers ok with metadataWritten: false and a reason", async () => {
   await withTempRepoRoot(async (dir) => {
     // Pre-create the exact sidecar path AS A DIRECTORY -- writeFileSync then
@@ -811,6 +880,31 @@ test("handleSnapshotLoad: a refused upload produces an error result and sends no
     const result = await handleSnapshotLoad({ name: "ok_12" }, session, fakeDeps);
     assert.equal(result.isError, true);
     assert.equal(sends.length, 0);
+  });
+});
+
+test("handleSnapshotLoad: UNDUMP answering 0x8f says the emulator could not read the snapshot, from the exported constant (G-64-3, plan 64-13, Task 3)", async () => {
+  await withTempRepoRoot(async (dir) => {
+    mkdirSync(join(dir, ".c64-re-tools", "snapshots"), { recursive: true });
+    writeFileSync(join(dir, ".c64-re-tools", "snapshots", "cmdfailure_2.vsf"), "");
+    const { session } = makeSnapshotSession({
+      responder: (commandType) => {
+        if (commandType === CommandType.Undump) {
+          throw new StockProtocolError("binary monitor returned error code 0x8f for response type 0x00", {
+            errorCode: ErrorCode.CmdFailure,
+            responseType: 0x00,
+            requestId: 1,
+          });
+        }
+        return undefined;
+      },
+    });
+    const result = await handleSnapshotLoad({ name: "cmdfailure_2" }, session, fakeDeps);
+    assert.equal(result.isError, true);
+    assert.ok(
+      result.content[0]!.text.includes(UNDUMP_CMD_FAILURE_TEXT),
+      `expected the exported UNDUMP_CMD_FAILURE_TEXT in: ${result.content[0]!.text}`,
+    );
   });
 });
 

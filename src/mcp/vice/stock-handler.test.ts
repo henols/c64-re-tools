@@ -165,6 +165,45 @@ test("convertWireError: ObjectMissing and CmdFailure produce distinct, non-gener
   assert.match(textCmdFailure, /no further diagnostic/);
 });
 
+test("convertWireError: CmdFailure's generic text keeps 'no further diagnostic' and no longer names a condition syntax error (G-64-3, plan 64-13, Task 3)", () => {
+  const cmdFailure = new StockProtocolError("binary monitor returned error code 0x8f for response type 0x22", {
+    errorCode: ErrorCode.CmdFailure,
+    responseType: 0x22,
+    requestId: 2,
+  });
+  const text = convertWireError("vice_checkpoint_set_condition", cmdFailure).content[0]!.text;
+  assert.match(text, /no further diagnostic/);
+  assert.doesNotMatch(text, /condition syntax error/);
+});
+
+test("convertWireError: an override for CmdFailure applies only to CmdFailure -- every other wire error code's text is unchanged (G-64-3, plan 64-13, Task 3)", () => {
+  const cmdFailure = new StockProtocolError("binary monitor returned error code 0x8f for response type 0x22", {
+    errorCode: ErrorCode.CmdFailure,
+    responseType: 0x22,
+    requestId: 2,
+  });
+  const objectMissing = new StockProtocolError("binary monitor returned error code 0x01 for response type 0x11", {
+    errorCode: ErrorCode.ObjectMissing,
+    responseType: 0x11,
+    requestId: 1,
+  });
+  const options = { cmdFailureText: "the emulator could not open or load the file it was handed" };
+
+  const overriddenText = convertWireError("vice_disk_attach", cmdFailure, options).content[0]!.text;
+  assert.match(overriddenText, /could not open or load the file it was handed/);
+
+  const withoutOverrideText = convertWireError("vice_disk_attach", cmdFailure).content[0]!.text;
+  assert.doesNotMatch(withoutOverrideText, /could not open or load the file it was handed/);
+  assert.match(withoutOverrideText, /no further diagnostic/);
+
+  // The SAME options object, supplied for a DIFFERENT error code, must not
+  // change that code's own text at all.
+  const objectMissingTextWithOptions = convertWireError("vice_x", objectMissing, options).content[0]!.text;
+  const objectMissingTextWithoutOptions = convertWireError("vice_x", objectMissing).content[0]!.text;
+  assert.equal(objectMissingTextWithOptions, objectMissingTextWithoutOptions);
+  assert.doesNotMatch(objectMissingTextWithOptions, /could not open or load the file it was handed/);
+});
+
 test("convertWireError: InvalidLength produces its own distinct text", () => {
   const err = new StockProtocolError("binary monitor returned error code 0x80 for response type 0x01", {
     errorCode: ErrorCode.InvalidLength,

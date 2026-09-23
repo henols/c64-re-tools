@@ -298,6 +298,37 @@ export const DISK_ATTACH_WRITE_LOSS =
   "staged on the broker for this session only, and that copy is deleted once the session closes. Any save made to " +
   "this disk during the session is gone the next time it is attached.";
 
+/**
+ * G-64-3 (plan 64-13, Task 3): the CmdFailure (0x8f) text for AUTOSTART,
+ * used by BOTH `vice_autostart` and `vice_disk_attach` (D-14's own
+ * approximation -- both send the SAME wire command). VICE's own
+ * autostart_autodetect() (`autostart.c`) probes the file it was handed as a
+ * disk, tape, cartridge, snapshot and program image, in that order, and
+ * 0x8f here means it accepted none of them -- never a checkpoint-condition
+ * parse failure (that generic gloss, in `stock-handler.ts`'s own
+ * `WIRE_ERROR_TEXT`, is what pointed plan 64-11's diagnosis at checkpoints
+ * when the real cause was a missing/unpublished file --
+ * `.planning/debug/vice-0x8f-disk-attach-snapshot-load.md`). Exported, like
+ * `DISK_ATTACH_APPROXIMATION`/`DISK_ATTACH_WRITE_LOSS` above, so a test
+ * derives its own expectation from this constant rather than re-typing the
+ * sentence -- the two cannot drift.
+ */
+export const AUTOSTART_CMD_FAILURE_TEXT =
+  "the emulator could not open or load the file it was handed -- AUTOSTART tries the file as a disk, tape, " +
+  "cartridge, snapshot and program image, in that order, and accepted none of them";
+
+/** G-64-3 (plan 64-13, Task 3): the CmdFailure (0x8f) text for UNDUMP
+ * (`vice_snapshot_load`) -- VICE's own `machine_read_snapshot()` returning
+ * < 0 means it could not read the snapshot file it was handed. See
+ * `AUTOSTART_CMD_FAILURE_TEXT`'s own header comment for the full reasoning
+ * this constant shares. */
+export const UNDUMP_CMD_FAILURE_TEXT = "the emulator could not read the snapshot it was handed";
+
+/** G-64-3 (plan 64-13, Task 3): the CmdFailure (0x8f) text for DUMP
+ * (`vice_snapshot_save`) -- the write-side counterpart of
+ * `UNDUMP_CMD_FAILURE_TEXT` above. */
+export const DUMP_CMD_FAILURE_TEXT = "the emulator could not write the snapshot";
+
 export const handleDiskAttach: StockSessionHandler = async (args, session) => {
   const a = isPlainObject(args) ? args : {};
 
