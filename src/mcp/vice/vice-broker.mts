@@ -18,7 +18,7 @@
 // Imports node: builtins ONLY plus this phase's own sibling modules --
 // mcp__vice__* stays the only route to the emulator; nothing here opens a
 // connection to it.
-import { readFileSync, mkdirSync, openSync, writeFileSync, chmodSync, renameSync } from "node:fs";
+import { readFileSync, mkdirSync, openSync, writeFileSync, chmodSync, renameSync, existsSync } from "node:fs";
 import { join, basename, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn as nodeSpawn, type ChildProcess, type SpawnOptionsWithoutStdio } from "node:child_process";
@@ -125,6 +125,9 @@ import {
   type PendingAcquireQueue,
   type RelayAttachOutcome,
   type OperationNoteOutcome,
+  type StageFileOutcome,
+  type FileTransferRequest,
+  type FileTransferOutcome,
 } from "./broker-control.mjs";
 // A VALUE import of the machine-level state resolver (plan 62-02) -- safe
 // here for the SAME reason every other sibling value import above is: this
@@ -137,6 +140,16 @@ import {
 // and no --repo-root apply, which is exactly BROKER-01/BROKER-06's "no
 // project argument at all" case (D-13).
 import { brokerStateDir } from "./broker-home.mjs";
+// A VALUE import of the staging/transfer primitives (Phase 64, plan 64-03,
+// XFER-04/XFER-07) -- safe here for the SAME reason every other sibling
+// value import above is: this file is ALWAYS run from its own compiled
+// resources/ form, and "./broker-transfer.mjs" is compiled into that same
+// directory by the same build.ts pass (both source and target are already
+// listed in HOST_BOUND_ARTIFACTS, since plan 64-01). handleStageFile() and
+// handleFileTransfer() below are this module's own callers; neither
+// re-implements the directory layout, the handle minting or the byte
+// movement broker-transfer.mts already owns.
+import { stageFileSlot, resolveStagedFile, markTransferInFlight, clearTransferInFlight, clearStagingForSession, sendPayloadFromFile, receivePayloadToFile } from "./broker-transfer.mjs";
 
 export interface ParsedArgs {
   repoRoot: string;
@@ -1026,6 +1039,126 @@ export function handleMonitorClaim(requestId: string, targetId: string, channel:
   return { ok: false, code: "monitor_owned", holder: { grantId: existing.grantId, claimedAt: existing.claimedAt, pid: existing.pid, channel } };
 }
 
+/** Answers `stage_file` (Phase 64, plan 64-03, XFER-04, D-01): resolves the
+ * grant's instance the SAME way every other target-naming op resolves its
+ * own (resolveInstanceForMonitorTarget()), refusing `bad_request` when it
+ * resolves to nothing -- mirroring handleMonitorClaim()'s own posture for
+ * the identical failure. `broker-control.mts`'s own `stage_file` dispatch
+ * arm has already checked ownership (`ownsTarget()`) and the `target_id`/
+ * `slot`-non-empty shape before this function is ever called, so a failure
+ * reaching here is something the STAGING LAYER itself refused. Delegates
+ * every path-and-handle decision to `broker-transfer.mts`'s own
+ * `stageFileSlot()` -- this function does not choose a path or mint a
+ * handle itself. */
+export function handleStageFile(grantId: string, slot: string, state: BrokerState): StageFileOutcome {
+  const instance = resolveInstanceForMonitorTarget(grantId, state);
+  if (!instance) return { ok: false, code: "bad_request" };
+
+  const staged = stageFileSlot({ grantId, slot });
+  if (!staged.ok) {
+    process.stderr.write(`vice-broker: stage_file failed for target ${grantId}: ${staged.reason}\n`);
+    return { ok: false, code: "internal" };
+  }
+  // `emulatorFilename` is the path the EMULATOR itself must open -- the
+  // client relays it into the binary-monitor request body and never opens
+  // it itself (this plan's own wire_vocabulary note on why this is not a
+  // D-17 violation).
+  return { ok: true, handle: staged.handle, emulatorFilename: staged.stagedPath };
+}
+
+/** Answers `transfer` (Phase 64, plan 64-03, XFER-04/XFER-07), mirroring
+ * handleRelayAttach()'s own SHAPE: a synchronous function returning a
+ * discriminated outcome immediately, with the actual byte movement carried
+ * out asynchronously, unawaited, after this function has already returned
+ * -- `FileTransferOutcome` is not a Promise, and `broker-control.mts`'s own
+ * dispatch arm calls this function synchronously (see that file's own
+ * `transfer` arm). This function ORCHESTRATES; it does not stream --
+ * `broker-transfer.mts`'s own `sendPayloadFromFile()`/`receivePayloadToFile()`
+ * do every byte of that work.
+ *
+ * Refuses `denied`, BEFORE touching a single payload byte and BEFORE
+ * writing anything to `socket`, for: an unknown/superseded handle
+ * (`resolveStagedFile()`), a download whose staged file does not exist on
+ * disk yet (checked here, since `resolveStagedFile()` is a pure registry
+ * lookup and never touches the filesystem itself), or a handle whose
+ * transfer is already in flight (`markTransferInFlight()`, T-64-16). Every
+ * one of these is answered by broker-control.mts's own dispatch arm as an
+ * `error` reply line, and that connection's line reader resumes -- this
+ * function has not taken ownership of it.
+ *
+ * On success (`ok: true`): this function owns EVERY further reply line and
+ * every payload byte on `socket` from this point on (FileTransferOutcome's
+ * own header comment) -- an upload writes `transfer_ready` then calls
+ * `receivePayloadToFile()`; a download calls `sendPayloadFromFile()` with
+ * `kind: "transfer_payload"` so the reply frame's own name matches what
+ * `dialFileTransfer()` (broker-endpoint.ts) checks for. Neither branch
+ * awaits its own promise before returning -- `state` is accepted only for
+ * parity with handleRelayAttach()'s own signature and is not read on this
+ * path today. The in-flight guard is released in a `finally` on every path,
+ * and the socket is destroyed once the transfer settles -- a transfer
+ * connection is short-lived by design. */
+export function handleFileTransfer(request: FileTransferRequest, socket: Socket, pending: Buffer, state: BrokerState): FileTransferOutcome {
+  void state;
+
+  const resolved = resolveStagedFile(request.handle);
+  if (!resolved.ok) {
+    return { ok: false, code: "denied", message: `transfer failed: ${resolved.reason}` };
+  }
+  const entry = resolved.entry;
+
+  // The in-flight guard is checked BEFORE the download-existence check
+  // below: an in-flight upload's staged file legitimately does not exist
+  // yet either (receivePayloadToFile() only renames its temp file into
+  // place once the transfer completes), so a competing download would
+  // otherwise see "does not exist" instead of the real, more specific
+  // conflict -- "already in flight" is the answer that actually explains
+  // why this second transfer is refused.
+  const guard = markTransferInFlight(request.handle);
+  if (!guard.ok) {
+    return { ok: false, code: "denied", message: `transfer failed: ${guard.reason}` };
+  }
+
+  if (request.direction === "download" && !existsSync(entry.path)) {
+    clearTransferInFlight(request.handle);
+    return { ok: false, code: "denied", message: "vice: transfer failed: the staged file does not exist yet" };
+  }
+
+  const settle = (): void => {
+    clearTransferInFlight(request.handle);
+    if (!socket.destroyed) socket.destroy();
+  };
+
+  if (request.direction === "upload") {
+    // The upload reply -- no byteLength/sha256 to declare here (those
+    // arrived already, on the `transfer` request itself), so this is a
+    // plain JSON line, never writeTransferHeader() (whose type requires all
+    // three TransferHeader fields).
+    socket.write(`${JSON.stringify({ kind: "transfer_ready" })}\n`);
+    receivePayloadToFile({
+      socket,
+      destPath: entry.path,
+      header: { kind: "file", byteLength: request.byteLength, sha256: request.sha256 },
+      pending,
+    })
+      .then((result) => {
+        if (!result.ok) {
+          process.stderr.write(`vice-broker: upload transfer failed for handle ${request.handle}: ${result.reason}\n`);
+        }
+      })
+      .finally(settle);
+  } else {
+    sendPayloadFromFile({ socket, sourcePath: entry.path, kind: "transfer_payload" })
+      .then((result) => {
+        if (!result.ok) {
+          process.stderr.write(`vice-broker: download transfer failed for handle ${request.handle}: ${result.reason}\n`);
+        }
+      })
+      .finally(settle);
+  }
+
+  return { ok: true };
+}
+
 /**
  * Injectable dependency seam for handleRelayDeath() (Phase 63, SESS-05) --
  * this project's standard destructured-options-object register, mirroring
@@ -1674,6 +1807,14 @@ export function handleRelease(requestId: string, state: BrokerState, deps: Handl
     // instance-map deletion is a Task-2-era invariant this task must not
     // depend on silently continuing to hold.
     clearMonitorClient(instance);
+    // Phase 64, plan 64-03 (XFER-07, D-06): handleRelease() is the SAME
+    // function broker-control.mts's own onRelease callback invokes BOTH on
+    // an explicit `release` request AND on the control connection's own
+    // close event -- so this is the "session's connection closes" trigger
+    // XFER-07 names, and a client killed with SIGKILL (which sends no
+    // goodbye, only a socket close) still loses its staging. One recursive
+    // delete of one directory; never per-file bookkeeping.
+    clearStagingForSession(requestId);
     state.grants.delete(requestId);
     // Kill-never-recycle means this instance is gone for good, so its
     // second (`-remotemonitor`) port must go back to the allocator with it.
@@ -1698,6 +1839,10 @@ export function handleRelease(requestId: string, state: BrokerState, deps: Handl
   // was left running, untouched" property is about the PROCESS and is
   // unchanged.
   const tornDownMismatch = tearDownRelaySessionsForGrant(requestId, state);
+  // Phase 64, plan 64-03 (XFER-07, D-06): this grant's own bookkeeping is
+  // being retired on this branch too (see this function's own header
+  // comment for why) -- its staging, if any, goes with it.
+  clearStagingForSession(requestId);
   state.grants.delete(requestId);
   const mismatchSuffix =
     tornDownMismatch.length > 0 ? `; tore down this grant's own relay session(s) on channel(s) ${tornDownMismatch.join(", ")}` : "";
@@ -1949,6 +2094,11 @@ async function run(args: ParsedArgs): Promise<void> {
       onMonitorRelease: (requestId, targetId, channel) => handleMonitorRelease(requestId, targetId, channel, state),
       onRelayAttach: (targetId, channel, presentedHandle, socket, pending) => handleRelayAttach(targetId, channel, presentedHandle, socket, pending, state),
       onOperation: (targetId, channel, name) => handleOperationNote(targetId, channel, name, state),
+      // Phase 64, plan 64-03 (XFER-04): wired in the SAME options object as
+      // the two relay/note callbacks immediately above, never as a second
+      // listener.
+      onStageFile: (targetId, slot) => handleStageFile(targetId, slot, state),
+      onFileTransfer: (request, socket, pendingBytes) => handleFileTransfer(request, socket, pendingBytes, state),
       onHostState: (): HostStateFields => ({
         pid: process.pid,
         startedAt,

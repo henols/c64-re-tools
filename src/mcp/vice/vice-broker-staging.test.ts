@@ -1,0 +1,532 @@
+// vice-broker-staging.test.ts
+//
+// Phase 64, plan 64-03 (XFER-04/XFER-07, D-05/D-06): the real broker
+// wiring for `stage_file`/`transfer` -- handleStageFile()/handleFileTransfer()
+// against a REAL startControlListener() bound to port zero, a real client
+// socket dialling it, and real files under a fresh mkdtempSync
+// VICE_BROKER_HOME. vice-broker.mts is host-bound: it VALUE-imports sibling
+// host-bound modules ("./broker-transfer.mjs" among them), so -- like
+// broker-relay.test.ts's own load -- this file builds FIRST and imports the
+// COMPILED resources/vice-broker.mjs, never the unbuilt ".mts" source
+// directly (an unbuilt import would throw ERR_MODULE_NOT_FOUND on the first
+// sibling it tries to resolve).
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { connect as netConnect, type Socket } from "node:net";
+import { createHash } from "node:crypto";
+import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { build } from "./build.ts";
+import {
+  startControlListener,
+  newControlToken,
+  type StartControlListenerResult,
+  type AcquireOutcome,
+  type RecycleOutcome,
+  type StatusInstanceEntry,
+  type HostStateFields,
+  type MonitorClaimOutcome,
+  type MonitorReleaseOutcome,
+  type RelayAttachOutcome,
+  type OperationNoteOutcome,
+} from "./broker-control.mts";
+import { createBrokerState, type BrokerState, type InstanceRecord } from "./broker-state.mts";
+import type { StageFileOutcome, FileTransferRequest, FileTransferOutcome } from "./broker-control.mts";
+
+const HERE_MODULE_URL = import.meta.url;
+
+build();
+
+interface StagedFileEntry {
+  handle: string;
+  path: string;
+  grantId: string;
+  slot: string;
+  claimedAt: number;
+}
+
+const brokerTransferModule = (await import(new URL("./resources/broker-transfer.mjs", HERE_MODULE_URL).href)) as unknown as {
+  resetStagingForTest: () => void;
+  resolveStagedFile: (handle: string) => { ok: true; entry: StagedFileEntry } | { ok: false; reason: string };
+};
+const { resetStagingForTest, resolveStagedFile } = brokerTransferModule;
+
+const viceBrokerModule = (await import(new URL("./resources/vice-broker.mjs", HERE_MODULE_URL).href)) as unknown as {
+  handleRelease: (requestId: string, state: BrokerState) => void;
+  handleStageFile: (grantId: string, slot: string, state: BrokerState) => StageFileOutcome;
+  handleFileTransfer: (request: FileTransferRequest, socket: Socket, pending: Buffer, state: BrokerState) => FileTransferOutcome;
+};
+const { handleRelease, handleStageFile, handleFileTransfer } = viceBrokerModule;
+
+// ---------------------------------------------------------------------------
+// Fixtures -- mirrors broker-relay.test.ts's own makeGrantedInstance()/
+// setupBrokerState() shape (this file needs no relay session, so the
+// InstanceRecord fields relevant to that are left at their defaults).
+// ---------------------------------------------------------------------------
+
+function makeGrantedInstance(port: number, overrides: Partial<InstanceRecord> = {}): InstanceRecord {
+  return {
+    port,
+    url: `http://127.0.0.1:${port}/mcp`,
+    state: "granted",
+    reason: "acquire",
+    epochFile: "/tmp/staging-test-epoch.json",
+    supervisorDir: "/tmp/staging-test",
+    pid: 4242,
+    expectedIdentity: "x64sc",
+    launchedAt: 0,
+    readyAt: 0,
+    viceBin: "x64sc",
+    viceArgs: [],
+    dryRun: false,
+    monitorClients: {},
+    ...overrides,
+  };
+}
+
+function setupBrokerState(emulatorPort: number, targetId: string): BrokerState {
+  const state = createBrokerState();
+  state.instances.set(emulatorPort, makeGrantedInstance(emulatorPort));
+  state.grants.set(targetId, { id: targetId, port: emulatorPort, grantedAt: Date.now(), pid: 4242, operation: null, sessionLabel: null });
+  return state;
+}
+
+/** Starts a REAL control listener wired to the compiled artifacts'
+ * handleStageFile()/handleFileTransfer()/handleRelease() -- the same
+ * production functions the real broker calls, not a re-implemented
+ * stand-in. `onAcquire` is a stub that always succeeds -- this suite never
+ * exercises a real spawn; it only needs `requestIdForThisConnection` set on
+ * the acquiring connection so `stage_file`'s own ownsTarget() gate passes
+ * for a grant this test already pre-populated directly in `state`. */
+async function startStagingListenerForState(state: BrokerState, emulatorPort: number): Promise<{ listener: StartControlListenerResult; token: string }> {
+  const token = newControlToken();
+  const listener = await startControlListener({
+    host: "127.0.0.1",
+    port: 0,
+    token,
+    onAcquire: async (): Promise<AcquireOutcome> => ({
+      ok: true,
+      grant: { port: emulatorPort, url: `http://127.0.0.1:${emulatorPort}/mcp`, epochFile: "/tmp/staging-test-epoch.json", supervisorDir: "/tmp/staging-test" },
+    }),
+    onRelease: (requestId: string) => handleRelease(requestId, state),
+    onRecycle: async (): Promise<RecycleOutcome> => ({
+      port: null,
+      pid: null,
+      viceBin: null,
+      killStage: "no_signal",
+      epochBefore: null,
+      outcome: "grant_lookup_failed",
+      reason: "not exercised by vice-broker-staging.test.ts",
+    }),
+    onStatus: (): StatusInstanceEntry[] => [],
+    onHostState: (): HostStateFields => ({
+      pid: process.pid,
+      startedAt: "2026-01-01T00:00:00Z",
+      nodeVersion: process.version,
+      viceBin: "x64sc",
+      maxInstances: 1,
+      basePort: emulatorPort,
+      backend: "stock",
+    }),
+    onMonitorClaim: (): MonitorClaimOutcome => ({ ok: false, code: "bad_request" }),
+    onMonitorRelease: (): MonitorReleaseOutcome => ({ ok: false, code: "bad_request" }),
+    onRelayAttach: (): RelayAttachOutcome => ({ ok: false, code: "internal" }),
+    onOperation: (): OperationNoteOutcome => ({ ok: true }),
+    onHostTool: async () => ({ ok: false, message: "not exercised by vice-broker-staging.test.ts" }),
+    // vice-broker.mts's own real handleStageFile()/handleFileTransfer() are
+    // wired via the real broker's own startup -- this suite calls them the
+    // SAME way, through their real production entry points, imported above
+    // from the compiled artifact.
+    onStageFile: (targetId: string, slot: string) => handleStageFile(targetId, slot, state),
+    onFileTransfer: (request, socket, pending) => handleFileTransfer(request, socket, pending, state),
+  });
+  return { listener, token };
+}
+
+/** Runs `fn` with a fresh mkdtempSync VICE_BROKER_HOME -- never the real
+ * machine-level root -- restoring the previous value (or unsetting it) in a
+ * `finally`, and resetting broker-transfer.mts's own module-level staging
+ * registry before and after so no test leaks state into the next one. */
+async function withStagingFixture<T>(fn: (home: string) => Promise<T>): Promise<T> {
+  const home = mkdtempSync(join(tmpdir(), "vice-broker-staging-"));
+  const previous = process.env.VICE_BROKER_HOME;
+  process.env.VICE_BROKER_HOME = home;
+  resetStagingForTest();
+  try {
+    return await fn(home);
+  } finally {
+    resetStagingForTest();
+    if (previous === undefined) delete process.env.VICE_BROKER_HOME;
+    else process.env.VICE_BROKER_HOME = previous;
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
+async function waitFor(predicate: () => boolean, deadlineMs: number, pollMs = 15): Promise<boolean> {
+  const deadline = Date.now() + deadlineMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return true;
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+  return predicate();
+}
+
+function onceConnected(socket: Socket): Promise<void> {
+  return new Promise((resolve, reject) => {
+    socket.once("connect", () => resolve());
+    socket.once("error", reject);
+  });
+}
+
+function onceClosed(socket: Socket): Promise<void> {
+  return new Promise((resolve) => {
+    if (socket.destroyed) {
+      resolve();
+      return;
+    }
+    socket.once("close", () => resolve());
+  });
+}
+
+/** Reads ONE newline-terminated JSON line off `socket`'s front, by a
+ * byte-level `indexOf(0x0a)` search -- never a whole-buffer string decode,
+ * since bytes past the terminator (a download's own payload) may arrive in
+ * the SAME chunk. Returns the parsed object and whatever followed the
+ * terminator, untouched, as a raw Buffer. */
+function readLineFromSocket(socket: Socket): Promise<{ obj: Record<string, unknown>; pending: Buffer }> {
+  return new Promise((resolve, reject) => {
+    let carry = Buffer.alloc(0);
+    const onData = (chunk: Buffer): void => {
+      carry = Buffer.concat([carry, chunk]);
+      const idx = carry.indexOf(0x0a);
+      if (idx === -1) return;
+      socket.removeListener("data", onData);
+      const lineText = carry.subarray(0, idx).toString("utf8");
+      const pending = carry.subarray(idx + 1);
+      try {
+        resolve({ obj: JSON.parse(lineText) as Record<string, unknown>, pending });
+      } catch (e) {
+        reject(new Error(`could not parse reply line ${JSON.stringify(lineText)}: ${(e as Error).message}`));
+      }
+    };
+    socket.on("data", onData);
+    socket.once("error", reject);
+  });
+}
+
+/** Accumulates bytes off `socket` until at least `total` bytes have been
+ * seen (counting `already` first), then resolves exactly `total` bytes --
+ * the download payload's own read, matching the client's real
+ * `pipeline(socket, ...)` consumption shape without importing it. */
+function readExactBytes(socket: Socket, already: Buffer, total: number): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    let acc = already;
+    if (acc.length >= total) {
+      resolve(acc.subarray(0, total));
+      return;
+    }
+    const onData = (chunk: Buffer): void => {
+      acc = Buffer.concat([acc, chunk]);
+      if (acc.length >= total) {
+        socket.removeListener("data", onData);
+        socket.removeListener("error", onError);
+        resolve(acc.subarray(0, total));
+      }
+    };
+    const onError = (e: Error): void => reject(e);
+    socket.on("data", onData);
+    socket.once("error", onError);
+  });
+}
+
+/** A minimal line-oriented control client, mirroring broker-control.test.ts's
+ * own makeClient() -- send() writes one JSON line, sendAndRead() awaits the
+ * next reply line. Only ever used for JSON-only control ops on this
+ * connection (acquire/stage_file/release); a transfer connection is always
+ * a SEPARATE, brand-new socket (per-test, dialled directly), never this
+ * helper. */
+function makeControlClient(port: number): { socket: Socket; sendAndRead: (obj: Record<string, unknown>) => Promise<Record<string, unknown>>; close: () => void } {
+  const socket = netConnect({ host: "127.0.0.1", port });
+  return {
+    socket,
+    async sendAndRead(obj: Record<string, unknown>): Promise<Record<string, unknown>> {
+      const p = readLineFromSocket(socket);
+      socket.write(`${JSON.stringify(obj)}\n`);
+      const { obj: reply } = await p;
+      return reply;
+    },
+    close(): void {
+      socket.destroy();
+    },
+  };
+}
+
+function digestOf(buf: Buffer): { byteLength: number; sha256: string } {
+  return { byteLength: buf.length, sha256: createHash("sha256").update(buf).digest("hex") };
+}
+
+/** Every byte value 0x00..0xFF, once -- definitively not valid UTF-8. */
+function fullByteRangeBuffer(): Buffer {
+  const buf = Buffer.alloc(256);
+  for (let i = 0; i < 256; i++) buf[i] = i;
+  return buf;
+}
+
+let nextPort = 17600;
+function nextEmulatorPort(): number {
+  nextPort += 1;
+  return nextPort;
+}
+
+// ---------------------------------------------------------------------------
+// Task 2 (Phase 64-03, XFER-04/XFER-07): the wired-in real broker, exercised
+// through a real control listener and real transfer connections.
+// ---------------------------------------------------------------------------
+
+test("vice-broker-staging: a full upload-then-download round trip is byte-for-byte identical for a buffer spanning every value 0x00..0xFF", async () => {
+  await withStagingFixture(async () => {
+    const emulatorPort = nextEmulatorPort();
+    const grantId = "req-1-1-aaaaaaaa";
+    const state = setupBrokerState(emulatorPort, grantId);
+    const { listener, token } = await startStagingListenerForState(state, emulatorPort);
+    try {
+      const control = makeControlClient(listener.port);
+      try {
+        const acquireReply = await control.sendAndRead({ op: "acquire", id: grantId, token });
+        assert.equal(acquireReply.kind, "grant");
+
+        const stageReply = await control.sendAndRead({ op: "stage_file", target_id: grantId, slot: "disk8", token });
+        assert.equal(stageReply.kind, "file_staged");
+        const handle = stageReply.handle as string;
+        const emulatorFilename = stageReply.emulator_filename as string;
+        assert.equal(typeof handle, "string");
+        assert.equal(typeof emulatorFilename, "string");
+
+        const payload = fullByteRangeBuffer();
+        const { byteLength, sha256 } = digestOf(payload);
+
+        // Upload
+        const uploadSocket = netConnect({ host: "127.0.0.1", port: listener.port });
+        await onceConnected(uploadSocket);
+        const uploadReplyPromise = readLineFromSocket(uploadSocket);
+        uploadSocket.write(`${JSON.stringify({ op: "transfer", direction: "upload", handle, byteLength, sha256, token })}\n`);
+        const { obj: uploadReply } = await uploadReplyPromise;
+        assert.equal(uploadReply.kind, "transfer_ready");
+        uploadSocket.end(payload);
+        await onceClosed(uploadSocket);
+
+        // The upload's own socket closing is NOT a completion confirmation
+        // (D-05's own theme: a reply confirms acceptance, not completion) --
+        // receivePayloadToFile()'s own verify-then-rename runs as a
+        // continuation AFTER the streaming pipeline settles, and the
+        // client-observed socket close is not ordered against it. Poll
+        // (bounded) for the file to actually appear, exactly as a real
+        // consumer would have to.
+        const published = await waitFor(() => existsSync(emulatorFilename), 2000);
+        assert.ok(published, "the staged file must eventually appear on disk after the upload settles");
+        const uploadedBytes = readFileSync(emulatorFilename);
+        assert.ok(uploadedBytes.equals(payload), "the staged file's bytes must equal the uploaded bytes exactly");
+
+        // Download
+        const downloadSocket = netConnect({ host: "127.0.0.1", port: listener.port });
+        await onceConnected(downloadSocket);
+        const downloadReplyPromise = readLineFromSocket(downloadSocket);
+        downloadSocket.write(`${JSON.stringify({ op: "transfer", direction: "download", handle, token })}\n`);
+        const { obj: downloadReply, pending } = await downloadReplyPromise;
+        assert.equal(downloadReply.kind, "transfer_payload");
+        assert.equal(downloadReply.byteLength, byteLength);
+        assert.equal(downloadReply.sha256, sha256);
+        const received = await readExactBytes(downloadSocket, pending, byteLength);
+        assert.ok(received.equals(payload), "the downloaded bytes must equal the staged bytes exactly");
+        await onceClosed(downloadSocket);
+      } finally {
+        control.close();
+      }
+    } finally {
+      listener.server.close();
+    }
+  });
+});
+
+test("vice-broker-staging: a transfer presenting an unknown handle receives an error frame and no file appears anywhere under VICE_BROKER_HOME", async () => {
+  await withStagingFixture(async (home) => {
+    const emulatorPort = nextEmulatorPort();
+    const grantId = "req-1-1-bbbbbbbb";
+    const state = setupBrokerState(emulatorPort, grantId);
+    const { listener, token } = await startStagingListenerForState(state, emulatorPort);
+    try {
+      const socket = netConnect({ host: "127.0.0.1", port: listener.port });
+      await onceConnected(socket);
+      const replyPromise = readLineFromSocket(socket);
+      socket.write(`${JSON.stringify({ op: "transfer", direction: "download", handle: "0000000000000000000000000000000000", token })}\n`);
+      const { obj: reply } = await replyPromise;
+      assert.equal(reply.kind, "error");
+      assert.equal(reply.code, "denied");
+      socket.destroy();
+
+      assert.equal(existsSync(join(home, "staging")), false, "no staging directory may exist -- nothing was ever staged");
+    } finally {
+      listener.server.close();
+    }
+  });
+});
+
+test("vice-broker-staging: an upload whose declared digest disagrees with its bytes leaves no file at the staged path", async () => {
+  await withStagingFixture(async () => {
+    const emulatorPort = nextEmulatorPort();
+    const grantId = "req-1-1-cccccccc";
+    const state = setupBrokerState(emulatorPort, grantId);
+    const { listener, token } = await startStagingListenerForState(state, emulatorPort);
+    try {
+      const control = makeControlClient(listener.port);
+      try {
+        await control.sendAndRead({ op: "acquire", id: grantId, token });
+        const stageReply = await control.sendAndRead({ op: "stage_file", target_id: grantId, slot: "disk8", token });
+        const handle = stageReply.handle as string;
+        const emulatorFilename = stageReply.emulator_filename as string;
+
+        const payload = fullByteRangeBuffer();
+        const wrongSha256 = createHash("sha256").update(Buffer.from("not the real payload")).digest("hex");
+
+        const uploadSocket = netConnect({ host: "127.0.0.1", port: listener.port });
+        await onceConnected(uploadSocket);
+        const uploadReplyPromise = readLineFromSocket(uploadSocket);
+        uploadSocket.write(`${JSON.stringify({ op: "transfer", direction: "upload", handle, byteLength: payload.length, sha256: wrongSha256, token })}\n`);
+        const { obj: uploadReply } = await uploadReplyPromise;
+        assert.equal(uploadReply.kind, "transfer_ready");
+        uploadSocket.end(payload);
+        await onceClosed(uploadSocket);
+
+        assert.equal(existsSync(emulatorFilename), false, "a digest mismatch must leave no file at the staged path");
+        assert.equal(resolveStagedFile(handle).ok, true, "the handle itself is still a known registry entry -- only the FILE is missing");
+      } finally {
+        control.close();
+      }
+    } finally {
+      listener.server.close();
+    }
+  });
+});
+
+test("vice-broker-staging: a download for a handle whose staged file does not exist yet is refused by name, never a zero-byte payload", async () => {
+  await withStagingFixture(async () => {
+    const emulatorPort = nextEmulatorPort();
+    const grantId = "req-1-1-dddddddd";
+    const state = setupBrokerState(emulatorPort, grantId);
+    const { listener, token } = await startStagingListenerForState(state, emulatorPort);
+    try {
+      const control = makeControlClient(listener.port);
+      try {
+        await control.sendAndRead({ op: "acquire", id: grantId, token });
+        const stageReply = await control.sendAndRead({ op: "stage_file", target_id: grantId, slot: "disk8", token });
+        const handle = stageReply.handle as string;
+        const emulatorFilename = stageReply.emulator_filename as string;
+        assert.equal(existsSync(emulatorFilename), false, "nothing has been uploaded yet");
+
+        const socket = netConnect({ host: "127.0.0.1", port: listener.port });
+        await onceConnected(socket);
+        const replyPromise = readLineFromSocket(socket);
+        socket.write(`${JSON.stringify({ op: "transfer", direction: "download", handle, token })}\n`);
+        const { obj: reply } = await replyPromise;
+        assert.equal(reply.kind, "error");
+        assert.equal(reply.code, "denied");
+        assert.doesNotMatch(String(reply.message ?? ""), /^$/);
+        socket.destroy();
+      } finally {
+        control.close();
+      }
+    } finally {
+      listener.server.close();
+    }
+  });
+});
+
+test("vice-broker-staging: a second transfer on an in-flight handle is refused while the first completes successfully", async () => {
+  await withStagingFixture(async () => {
+    const emulatorPort = nextEmulatorPort();
+    const grantId = "req-1-1-eeeeeeee";
+    const state = setupBrokerState(emulatorPort, grantId);
+    const { listener, token } = await startStagingListenerForState(state, emulatorPort);
+    try {
+      const control = makeControlClient(listener.port);
+      try {
+        await control.sendAndRead({ op: "acquire", id: grantId, token });
+        const stageReply = await control.sendAndRead({ op: "stage_file", target_id: grantId, slot: "disk8", token });
+        const handle = stageReply.handle as string;
+        const emulatorFilename = stageReply.emulator_filename as string;
+
+        const payload = fullByteRangeBuffer();
+        const { byteLength, sha256 } = digestOf(payload);
+
+        const firstSocket = netConnect({ host: "127.0.0.1", port: listener.port });
+        await onceConnected(firstSocket);
+        const firstReplyPromise = readLineFromSocket(firstSocket);
+        firstSocket.write(`${JSON.stringify({ op: "transfer", direction: "upload", handle, byteLength, sha256, token })}\n`);
+        const { obj: firstReply } = await firstReplyPromise;
+        assert.equal(firstReply.kind, "transfer_ready");
+        // Write all but the last byte -- the transfer is now "in flight"
+        // (markTransferInFlight() already ran, strictly before the
+        // transfer_ready reply above was written) but not yet complete.
+        firstSocket.write(payload.subarray(0, payload.length - 1));
+
+        const secondSocket = netConnect({ host: "127.0.0.1", port: listener.port });
+        await onceConnected(secondSocket);
+        const secondReplyPromise = readLineFromSocket(secondSocket);
+        secondSocket.write(`${JSON.stringify({ op: "transfer", direction: "download", handle, token })}\n`);
+        const { obj: secondReply } = await secondReplyPromise;
+        assert.equal(secondReply.kind, "error");
+        assert.equal(secondReply.code, "denied");
+        assert.match(String(secondReply.message ?? ""), /in flight/);
+        secondSocket.destroy();
+
+        // Now complete the first transfer.
+        firstSocket.end(payload.subarray(payload.length - 1));
+        await onceClosed(firstSocket);
+
+        // See the round-trip test's own comment: the socket closing is not
+        // a completion confirmation -- poll (bounded) for the publish.
+        const published = await waitFor(() => existsSync(emulatorFilename), 2000);
+        assert.ok(published, "the first transfer must eventually publish its file");
+        const uploadedBytes = readFileSync(emulatorFilename);
+        assert.ok(uploadedBytes.equals(payload), "the first transfer must complete successfully, unaffected by the refused second one");
+      } finally {
+        control.close();
+      }
+    } finally {
+      listener.server.close();
+    }
+  });
+});
+
+test("vice-broker-staging: after the session-close path runs for a grant, the session's staging directory no longer exists", async () => {
+  await withStagingFixture(async (home) => {
+    const emulatorPort = nextEmulatorPort();
+    const grantId = "req-1-1-ffffffff";
+    const state = setupBrokerState(emulatorPort, grantId);
+    const { listener, token } = await startStagingListenerForState(state, emulatorPort);
+    try {
+      const control = makeControlClient(listener.port);
+      const acquireReply = await control.sendAndRead({ op: "acquire", id: grantId, token });
+      assert.equal(acquireReply.kind, "grant");
+      const stageReply = await control.sendAndRead({ op: "stage_file", target_id: grantId, slot: "disk8", token });
+      assert.equal(stageReply.kind, "file_staged");
+      const emulatorFilename = stageReply.emulator_filename as string;
+      const sessionDir = join(home, "staging", grantId);
+      assert.ok(existsSync(sessionDir), "the session directory must exist once a slot has been staged");
+
+      // Simulate a client killed with SIGKILL: no explicit `release`, just
+      // the connection closing -- broker-control.mts's own onRelease
+      // callback fires on connection close exactly as it would on an
+      // explicit release request (see that file's own onRelease comment).
+      control.close();
+
+      const gone = await waitFor(() => !existsSync(sessionDir), 2000);
+      assert.ok(gone, "the session's staging directory must be removed once its connection closes");
+      assert.equal(existsSync(emulatorFilename), false);
+    } finally {
+      listener.server.close();
+    }
+  });
+});
