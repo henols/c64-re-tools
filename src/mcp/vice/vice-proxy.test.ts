@@ -45,6 +45,11 @@ import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { createServer } from "node:http";
 import type { Server } from "node:http";
 import type { AddressInfo, Socket, Server as NetServer } from "node:net";
+// Plan 64-08 (G-64-1 gap closure): a REAL TCP stub binary-monitor emulator
+// and a REAL TCP control listener are both node:net servers -- aliased
+// createNetServer to avoid colliding with node:http's own createServer,
+// already imported above for startStandInServer().
+import { createServer as createNetServer } from "node:net";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, readdirSync, existsSync, statSync } from "node:fs";
@@ -77,10 +82,73 @@ import { ACQUIRE_TIMEOUT_MS } from "./vice-broker-client.ts";
 // request/grant/denial/lease/ack files -- matching the idiom
 // vice-broker-client.test.ts's own startFullBrokerListener() already
 // established for the client side.
-import { startControlListener, newControlToken, type AcquireOutcome, type RecycleOutcome } from "./broker-control.mts";
+import {
+  startControlListener,
+  newControlToken,
+  type AcquireOutcome,
+  type RecycleOutcome,
+  type RelayAttachOutcome,
+  type StageFileOutcome as BrokerStageFileOutcome,
+  type FileTransferRequest,
+  type FileTransferOutcome,
+  type MonitorClaimOutcome,
+  type MonitorReleaseOutcome,
+} from "./broker-control.mts";
+// Plan 64-08 (G-64-1 gap closure): the G-64-1 tracer/transfer/text tests
+// below wire a REAL BrokerState and the REAL handleMonitorClaim()/
+// handleRelayAttach()/handleStageFile()/handleFileTransfer() from the
+// compiled artifact -- the SAME "build first, import resources/vice-broker.mjs"
+// idiom broker-relay.test.ts/transfer-disjoint-roots.test.ts already
+// established, because vice-broker.mts is host-bound and cannot be imported
+// unbuilt.
+import { createBrokerState, type BrokerState, type InstanceRecord, type MonitorChannel } from "./broker-state.mts";
+import { build } from "./build.ts";
+import { CommandType, ResponseType, ErrorCode, REQUEST_HEADER_LEN } from "./stock-protocol.ts";
+import { encodeResponseFrame } from "./binmon-fixtures.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PROXY_PATH = join(HERE, "vice-proxy.ts");
+
+// vice-broker.mts is host-bound: it VALUE-imports sibling ".mjs" artifacts
+// that exist only once built, so this file -- like broker-relay.test.ts's
+// own precedent -- builds FIRST and then imports the COMPILED
+// resources/vice-broker.mjs, never the unbuilt ".mts" source directly.
+build();
+const g6408ViceBrokerModule = (await import(new URL("./resources/vice-broker.mjs", import.meta.url).href)) as unknown as {
+  handleMonitorClaim: (requestId: string, targetId: string, channel: MonitorChannel, state: BrokerState) => MonitorClaimOutcome;
+  handleMonitorRelease: (requestId: string, targetId: string, channel: MonitorChannel, state: BrokerState) => MonitorReleaseOutcome;
+  handleRelayAttach: (
+    targetId: string,
+    channel: MonitorChannel,
+    presentedHandle: string,
+    clientSocket: Socket,
+    pending: Buffer,
+    state: BrokerState,
+    deps?: { writeIncident?: (record: unknown) => string },
+  ) => RelayAttachOutcome;
+  handleStageFile: (grantId: string, slot: string, state: BrokerState) => BrokerStageFileOutcome;
+  handleFileTransfer: (request: FileTransferRequest, socket: Socket, pending: Buffer, state: BrokerState) => FileTransferOutcome;
+};
+const {
+  handleMonitorClaim: g6408HandleMonitorClaim,
+  handleMonitorRelease: g6408HandleMonitorRelease,
+  handleRelayAttach: g6408HandleRelayAttach,
+  handleStageFile: g6408HandleStageFile,
+  handleFileTransfer: g6408HandleFileTransfer,
+} = g6408ViceBrokerModule;
+
+// broker-incident.mts is ALSO host-bound (it value-imports broker-home.mjs),
+// so it is loaded the SAME way -- built first, then the compiled artifact,
+// never the unbuilt .mts source directly (broker-relay.test.ts's own
+// established convention, mirrored here). Without this, handleRelayAttach()'s
+// own relay-death teardown (fired when this suite's own SIGKILL of the proxy
+// child tears the relay socket down) would fall back to the REAL,
+// machine-level brokerIncidentsDir() (~/.c64-re-tools/incidents/) -- exactly
+// the prohibition this plan's own frontmatter names by name.
+const g6408BrokerIncidentModule = (await import(new URL("./resources/broker-incident.mjs", import.meta.url).href)) as unknown as {
+  writeBrokerIncident: (record: unknown, opts?: { dir?: string }) => string;
+};
+const { writeBrokerIncident: g6408WriteBrokerIncident } = g6408BrokerIncidentModule;
 
 // Env-gated skip. The three tests below only exercise real
 // container-path-translation behaviour when CONTAINER_WORKSPACE_PATH and
@@ -3725,4 +3793,560 @@ test("IN-01: the anno CLI dispatch still ends the process promptly with no serve
   assert.ok(elapsedMs < 5000, `expected a prompt exit, took ${elapsedMs}ms`);
   assert.doesNotMatch(result.stdout, /listening on|MCPServer started/i);
   assert.doesNotMatch(result.stderr, /listening on|MCPServer started/i);
+});
+
+// ===========================================================================
+// G-64-1 gap closure (plan 64-08). The regression test that would have
+// caught G-64-1: a REAL vice-proxy.ts over stdio, against a REAL control
+// listener, reaching the relay attach and reading the result -- see
+// .planning/debug/vice-proxy-control-token-handshake.md (Evidence 16:35 for
+// the offline reproduction this turns into a permanent regression test,
+// Evidence 16:42 for why the pre-existing proxy tests could not catch it)
+// and .planning/phases/64-files-as-bytes-both-directions/evidence/
+// 64-g641-handle-only-authority.md for the security trade that made the fix
+// possible (attach/transfer authenticated by their broker-minted handle
+// alone, ahead of the per-boot token gate).
+// ===========================================================================
+
+interface G6408DecodedRequest {
+  apiVersion: number;
+  requestId: number;
+  commandType: number;
+  body: Buffer;
+  total: number;
+}
+
+/** Mirrors stock-connect.test.ts's own decodeOneRequest() -- copied, not
+ * imported: every *.test.ts file in this package owns its own fixtures, per
+ * this repo's own convention (no shared test-helper module exists). */
+function g6408DecodeOneRequest(buf: Buffer): G6408DecodedRequest | null {
+  if (buf.length < REQUEST_HEADER_LEN) return null;
+  const bodyLength = buf.readUInt32LE(2);
+  const total = REQUEST_HEADER_LEN + bodyLength;
+  if (buf.length < total) return null;
+  return {
+    apiVersion: buf[1]!,
+    requestId: buf.readUInt32LE(6),
+    commandType: buf[10]!,
+    body: buf.subarray(REQUEST_HEADER_LEN, total),
+    total,
+  };
+}
+
+function g6408EncodeViceInfoBody(version: number[]): Buffer {
+  return Buffer.concat([Buffer.from([version.length]), Buffer.from(version), Buffer.from([0])]);
+}
+
+/** DUMP (0x41)/UNDUMP (0x42) request body layouts -- mirrors
+ * transfer-disjoint-roots.test.ts's own decodeDumpFilename()/
+ * decodeUndumpFilename(), copied for the same "no shared test-helper
+ * module" reason as g6408DecodeOneRequest() above. */
+function g6408DecodeDumpFilename(body: Buffer): string {
+  const len = body[2]!;
+  return body.subarray(3, 3 + len).toString("ascii");
+}
+function g6408DecodeUndumpFilename(body: Buffer): string {
+  const len = body[0]!;
+  return body.subarray(1, 1 + len).toString("ascii");
+}
+
+interface G6408StubEmulator {
+  server: NetServer;
+  port: number;
+  receivedCommandTypes: Set<number>;
+  unansweredCommandTypes: Set<number>;
+}
+
+/** A stub binary-monitor emulator, mirroring stock-connect.test.ts's own
+ * withStockStubServer()/happyPathResponder(): decodes one request frame at a
+ * time and answers PING, VICE_INFO, CPUHISTORY_GET, EXIT (plus the
+ * unsolicited RESUMED event, CR-02) exactly the way a well-behaved stock
+ * build would -- enough for stockConnect()'s own handshake (claim, PING to
+ * halt, VICE_INFO, the CPUHISTORY_GET capability probe, EXIT to resume).
+ * DUMP/UNDUMP are additionally answered (Task 2/3's own snapshot save/load
+ * flow), delegating to the optional `onDump`/`onUndump` hooks so a test can
+ * act on the broker-chosen staged path each request names, mirroring
+ * transfer-disjoint-roots.test.ts's own DI-stub session responder -- but
+ * over a REAL socket this time, since this suite drives the real proxy.
+ * Records every command type received and every one this responder did NOT
+ * answer, so a silently-ignored command fails the test loudly instead of
+ * hanging it. */
+async function g6408StartStubEmulator(
+  opts: { onDump?: (filename: string) => void; onUndump?: (filename: string) => Promise<void> | void } = {},
+): Promise<G6408StubEmulator> {
+  const receivedCommandTypes = new Set<number>();
+  const unansweredCommandTypes = new Set<number>();
+
+  async function respond(socket: Socket, req: G6408DecodedRequest): Promise<boolean> {
+    switch (req.commandType) {
+      case CommandType.Ping:
+        socket.write(encodeResponseFrame({ responseType: ResponseType.Ping, errorCode: ErrorCode.Ok, requestId: req.requestId }));
+        return true;
+      case CommandType.ViceInfo:
+        socket.write(
+          encodeResponseFrame({
+            responseType: ResponseType.ViceInfo,
+            errorCode: ErrorCode.Ok,
+            requestId: req.requestId,
+            body: g6408EncodeViceInfoBody([3, 9, 0, 0]),
+          }),
+        );
+        return true;
+      case CommandType.CpuHistoryGet:
+        socket.write(
+          encodeResponseFrame({ responseType: ResponseType.CpuHistoryGet, errorCode: ErrorCode.Ok, requestId: req.requestId, body: Buffer.alloc(4) }),
+        );
+        return true;
+      case CommandType.Exit:
+        socket.write(
+          Buffer.concat([
+            encodeResponseFrame({ responseType: ResponseType.Exit, errorCode: ErrorCode.Ok, requestId: req.requestId }),
+            encodeResponseFrame({
+              responseType: ResponseType.Resumed,
+              errorCode: ErrorCode.Ok,
+              requestId: 0xffffffff,
+              body: Buffer.from([0x31, 0xea]),
+            }),
+          ]),
+        );
+        return true;
+      case CommandType.Dump: {
+        const filename = g6408DecodeDumpFilename(req.body);
+        opts.onDump?.(filename);
+        socket.write(encodeResponseFrame({ responseType: ResponseType.Dump, errorCode: ErrorCode.Ok, requestId: req.requestId }));
+        return true;
+      }
+      case CommandType.Undump: {
+        const filename = g6408DecodeUndumpFilename(req.body);
+        await opts.onUndump?.(filename);
+        socket.write(
+          encodeResponseFrame({ responseType: ResponseType.Undump, errorCode: ErrorCode.Ok, requestId: req.requestId, body: Buffer.alloc(2) }),
+        );
+        return true;
+      }
+      default:
+        return false;
+    }
+  }
+
+  return new Promise((resolvePromise) => {
+    const server = createNetServer((socket: Socket) => {
+      let buf = Buffer.alloc(0);
+      socket.on("data", (chunk: Buffer) => {
+        buf = Buffer.concat([buf, chunk]);
+        for (;;) {
+          const decoded = g6408DecodeOneRequest(buf);
+          if (!decoded) break;
+          buf = buf.subarray(decoded.total);
+          receivedCommandTypes.add(decoded.commandType);
+          void respond(socket, decoded).then((answered) => {
+            if (!answered) unansweredCommandTypes.add(decoded.commandType);
+          });
+        }
+      });
+    });
+    server.listen(0, "127.0.0.1", () => {
+      const port = (server.address() as AddressInfo).port;
+      resolvePromise({ server, port, receivedCommandTypes, unansweredCommandTypes });
+    });
+  });
+}
+
+/** A stub text monitor -- answers any write with a canned, prompt-framed
+ * reply (PROMPT_RE = /\(C:\$[0-9A-Fa-f]{4}\)\s*$/, text-protocol.ts), the
+ * SAME minimal shape broker-relay-text.test.ts's own withStubTextMonitorServer()
+ * fixtures use. Good enough for `vice_warp_set`, which reads the response
+ * text but asserts nothing about its content beyond a successful round
+ * trip. */
+function g6408StartStubTextMonitor(): Promise<{ server: NetServer; port: number }> {
+  return new Promise((resolvePromise) => {
+    const server = createNetServer((socket: Socket) => {
+      socket.on("data", () => {
+        socket.write(Buffer.from("warp: 1\n(C:$e5d1) ", "utf8"));
+      });
+    });
+    server.listen(0, "127.0.0.1", () => {
+      const port = (server.address() as AddressInfo).port;
+      resolvePromise({ server, port });
+    });
+  });
+}
+
+interface G6408AttachCall {
+  targetId: string;
+  channel: MonitorChannel;
+  handle: string;
+}
+
+interface G6408Fixture {
+  dir: string;
+  brokerHomeDir: string;
+  incidentsDir: string;
+  listenerPort: number;
+  listenerServer: NetServer;
+  stubEmulator: G6408StubEmulator;
+  stubTextMonitor: { server: NetServer; port: number } | null;
+  state: BrokerState;
+  attachCalls: G6408AttachCall[];
+  acquiredTargetIds: string[];
+  stageFileCalls: Array<{ targetId: string; slot: string }>;
+  fileTransferCalls: FileTransferRequest[];
+}
+
+/** Stands up the REAL control listener this whole G-64-1 suite drives: a
+ * REAL BrokerState (createBrokerState(), broker-state.mts), wired to the
+ * REAL handleMonitorClaim()/handleMonitorRelease()/handleRelayAttach() (and,
+ * when `opts.withTransfer`, handleStageFile()/handleFileTransfer()) from the
+ * compiled resources/vice-broker.mjs artifact -- never a re-implemented
+ * stand-in, mirroring broker-relay.test.ts's/transfer-disjoint-roots.test.ts's
+ * own established idiom. `onAcquire` registers the granted instance/grant
+ * dynamically, under the request id the REAL vice-proxy.ts client itself
+ * generates (vice-broker-client.ts's own newRequestId()) -- that request id
+ * IS the grant id the proxy names as its own target for every subsequent
+ * monitor_claim/attach/stage_file/transfer, so this fixture never needs to
+ * predict it. `onRelayAttach` is wrapped with a recorder that captures every
+ * attach's target, channel and presented handle BEFORE delegating -- the
+ * G-64-1 tracer's own central assertion. broker.json is written into `dir`
+ * naming the listener's own port and token with a fresh heartbeat, matching
+ * vice-proxy.test.ts's own pre-existing startControlBroker() fixture. */
+async function g6408StartFixture(
+  opts: {
+    withTransfer?: boolean;
+    withText?: boolean;
+    onDump?: (filename: string) => void;
+    onUndump?: (filename: string) => Promise<void> | void;
+  } = {},
+): Promise<G6408Fixture> {
+  const dir = mkdtempSync(join(tmpdir(), "vice-proxy-g6408-pool-"));
+  const brokerHomeDir = mkdtempSync(join(tmpdir(), "vice-proxy-g6408-brokerhome-"));
+  // Relay-death incident records must land here, never the real, machine-level
+  // brokerIncidentsDir() (~/.c64-re-tools/incidents/) -- this suite's own
+  // SIGKILL of the proxy child, in every test below, tears the relay socket
+  // down as an UNANNOUNCED death, and handleRelayAttach()'s own teardown
+  // writes an incident record for exactly that. Mirrors
+  // broker-relay.test.ts's own startRelayListenerForState() default.
+  const incidentsDir = mkdtempSync(join(tmpdir(), "vice-proxy-g6408-incidents-"));
+  const stubEmulator = await g6408StartStubEmulator({ onDump: opts.onDump, onUndump: opts.onUndump });
+  const stubTextMonitor = opts.withText ? await g6408StartStubTextMonitor() : null;
+
+  const state = createBrokerState();
+  const attachCalls: G6408AttachCall[] = [];
+  const acquiredTargetIds: string[] = [];
+  const stageFileCalls: Array<{ targetId: string; slot: string }> = [];
+  const fileTransferCalls: FileTransferRequest[] = [];
+  const token = newControlToken();
+
+  const listener = await startControlListener({
+    host: "127.0.0.1",
+    port: 0,
+    token,
+    onAcquire: async (requestId) => {
+      acquiredTargetIds.push(requestId);
+      const instance: InstanceRecord = {
+        port: stubEmulator.port,
+        url: `http://127.0.0.1:${stubEmulator.port}/mcp`,
+        state: "granted",
+        reason: "acquire",
+        epochFile: join(dir, "epoch.json"),
+        supervisorDir: dir,
+        pid: 4242,
+        expectedIdentity: "x64sc",
+        launchedAt: 0,
+        readyAt: 0,
+        viceBin: "x64sc",
+        viceArgs: [],
+        dryRun: false,
+        monitorClients: {},
+        ...(stubTextMonitor ? { remoteMonitorPort: stubTextMonitor.port } : {}),
+      };
+      state.instances.set(stubEmulator.port, instance);
+      state.grants.set(requestId, { id: requestId, port: stubEmulator.port, grantedAt: Date.now(), pid: 4242, operation: null, sessionLabel: null });
+      return {
+        ok: true,
+        grant: {
+          port: stubEmulator.port,
+          url: `http://127.0.0.1:${stubEmulator.port}/mcp`,
+          epochFile: join(dir, "epoch.json"),
+          supervisorDir: dir,
+          ...(stubTextMonitor ? { remoteMonitorPort: stubTextMonitor.port } : {}),
+        },
+      };
+    },
+    onRelease: () => {},
+    onRecycle: async () => ({
+      port: null,
+      pid: null,
+      viceBin: null,
+      killStage: "no_signal",
+      epochBefore: null,
+      outcome: "grant_lookup_failed",
+      reason: "not exercised by this fixture",
+    }),
+    onStatus: () => [],
+    onHostState: () => ({
+      pid: process.pid,
+      startedAt: "2026-01-01T00:00:00Z",
+      nodeVersion: process.version,
+      viceBin: "x64sc",
+      maxInstances: 1,
+      basePort: stubEmulator.port,
+      backend: "stock" as const,
+    }),
+    onMonitorClaim: (requestId, targetId, channel) => g6408HandleMonitorClaim(requestId, targetId, channel, state),
+    onMonitorRelease: (requestId, targetId, channel) => g6408HandleMonitorRelease(requestId, targetId, channel, state),
+    onRelayAttach: (targetId, channel, presentedHandle, socket, pending) => {
+      attachCalls.push({ targetId, channel, handle: presentedHandle });
+      return g6408HandleRelayAttach(targetId, channel, presentedHandle, socket, pending, state, {
+        writeIncident: (record) => g6408WriteBrokerIncident(record, { dir: incidentsDir }),
+      });
+    },
+    onOperation: () => ({ ok: true as const }),
+    onHostTool: async () => ({ ok: false, message: "not exercised by this fixture" }),
+    onStageFile: opts.withTransfer
+      ? (targetId, slot) => {
+          stageFileCalls.push({ targetId, slot });
+          return g6408HandleStageFile(targetId, slot, state);
+        }
+      : undefined,
+    onFileTransfer: opts.withTransfer
+      ? (request, socket, pending) => {
+          fileTransferCalls.push(request);
+          return g6408HandleFileTransfer(request, socket, pending, state);
+        }
+      : undefined,
+  });
+
+  writeFileSync(
+    join(dir, "broker.json"),
+    JSON.stringify({
+      version: 1,
+      pid: process.pid,
+      heartbeat_at: new Date().toISOString(),
+      control_host: "127.0.0.1",
+      control_port: listener.port,
+      control_token: token,
+    }),
+    "utf8",
+  );
+
+  return {
+    dir,
+    brokerHomeDir,
+    incidentsDir,
+    listenerPort: listener.port,
+    listenerServer: listener.server,
+    stubEmulator,
+    stubTextMonitor,
+    state,
+    attachCalls,
+    acquiredTargetIds,
+    stageFileCalls,
+    fileTransferCalls,
+  };
+}
+
+async function g6408TeardownFixture(fixture: G6408Fixture): Promise<void> {
+  await new Promise<void>((resolvePromise) => fixture.listenerServer.close(() => resolvePromise()));
+  await new Promise<void>((resolvePromise) => fixture.stubEmulator.server.close(() => resolvePromise()));
+  if (fixture.stubTextMonitor) {
+    await new Promise<void>((resolvePromise) => fixture.stubTextMonitor!.server.close(() => resolvePromise()));
+  }
+  rmSync(fixture.dir, { recursive: true, force: true });
+  rmSync(fixture.brokerHomeDir, { recursive: true, force: true });
+  rmSync(fixture.incidentsDir, { recursive: true, force: true });
+}
+
+/** Every byte value 0x00..0xFF, repeated well past 65536 bytes -- so a
+ * truncation or an encoding mishap on the journey shows up as a byte
+ * difference rather than passing by luck. Mirrors
+ * transfer-disjoint-roots.test.ts's own fullByteRangeBuffer(). */
+function g6408FullByteRangeBuffer(): Buffer {
+  const unit = Buffer.alloc(256);
+  for (let i = 0; i < 256; i++) unit[i] = i;
+  return Buffer.concat(Array(300).fill(unit) as Buffer[]); // 76800 bytes > 65536
+}
+
+/** Recursively scans every string leaf of `value` for `forbiddenPrefix` --
+ * mirrors transfer-disjoint-roots.test.ts's own collectStringLeaves()/
+ * assertNoPrefixLeak() (D-15/D-17: a tool result must never carry a
+ * broker-side path). */
+function g6408CollectStringLeaves(value: unknown, path: string, out: Array<{ path: string; value: string }>): void {
+  if (typeof value === "string") {
+    out.push({ path, value });
+    return;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((v, i) => g6408CollectStringLeaves(v, `${path}[${i}]`, out));
+    return;
+  }
+  if (value !== null && typeof value === "object") {
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      g6408CollectStringLeaves(v, path === "" ? k : `${path}.${k}`, out);
+    }
+  }
+}
+
+function g6408AssertNoLeak(result: unknown, forbiddenPrefix: string, label: string): void {
+  const leaves: Array<{ path: string; value: string }> = [];
+  g6408CollectStringLeaves(result, "", leaves);
+  const offenders = leaves.filter((leaf) => leaf.value.includes(forbiddenPrefix));
+  assert.deepEqual(offenders, [], `${label}: no string value of any key may contain the broker-side prefix ${JSON.stringify(forbiddenPrefix)} -- found: ${JSON.stringify(offenders)}`);
+}
+
+test("G-64-1 tracer: vice_ping through the real proxy reaches a handle-authenticated relay attach, end to end", async () => {
+  const fixture = await g6408StartFixture();
+  const proxyWorkspace = mkdtempSync(join(tmpdir(), "vice-proxy-g6408-tracer-ws-"));
+  const proxy = startProxy({
+    VICE_POOL_DIR: fixture.dir,
+    VICE_EPOCH_FILE: join(fixture.dir, "epoch.json"),
+    VICE_MCP_HOST: "127.0.0.1",
+    VICE_BROKER_CONTROL_PORT: String(fixture.listenerPort),
+    CLAUDE_PROJECT_DIR: proxyWorkspace,
+    VICE_SKIP_RESOURCE_INSTALL: "1",
+  });
+  try {
+    proxy.send({ jsonrpc: "2.0", id: 1, method: "initialize", params: initThenListParams() });
+    await proxy.nextMessage();
+
+    proxy.send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "vice_ping", arguments: {} } });
+    const resp = await proxy.nextMessage();
+    assert.equal(resp.id, 2);
+    assert.equal(resp.result.isError, false, `expected vice_ping to succeed, reading the result rather than discarding it: ${JSON.stringify(resp)}`);
+    const payload = JSON.parse(resp.result.content[0].text);
+    assert.equal(payload.status, "ok");
+    assert.equal(typeof payload.viceVersion, "string");
+    assert.match(payload.viceVersion, /3\.9\.0\.0/, "the answer must name the stub emulator's own version quad");
+
+    assert.equal(fixture.attachCalls.length, 1, "the broker-side attach callback must be invoked exactly once");
+    assert.equal(fixture.attachCalls[0]!.channel, "binary");
+    assert.ok(fixture.attachCalls[0]!.handle.length > 0, "the presented handle must be non-empty");
+
+    assert.equal(fixture.acquiredTargetIds.length, 1, "exactly one acquire must have reached this fixture's onAcquire");
+    const targetId = fixture.acquiredTargetIds[0]!;
+    assert.equal(fixture.attachCalls[0]!.targetId, targetId);
+    // A repeat claim on the SAME grant/channel is idempotent (handleMonitorClaim's
+    // own contract) -- echoing the SAME handle proves the attach recorder's
+    // handle really is the one the real claim handler minted for this
+    // request, not merely A non-empty string.
+    const repeatClaim = g6408HandleMonitorClaim("g6408-verify-claim", targetId, "binary", fixture.state);
+    assert.ok(repeatClaim.ok, `expected the verification re-claim to succeed: ${JSON.stringify(repeatClaim)}`);
+    if (repeatClaim.ok) {
+      assert.equal(fixture.attachCalls[0]!.handle, repeatClaim.handle, "the attach's presented handle must equal the one handleMonitorClaim() minted for this grant");
+    }
+
+    assert.deepEqual(
+      [...fixture.stubEmulator.unansweredCommandTypes],
+      [],
+      "every command type the stub emulator received must have been answered -- a silently-ignored command hangs rather than fails",
+    );
+  } finally {
+    proxy.child.kill("SIGKILL");
+    await g6408TeardownFixture(fixture);
+    rmSync(proxyWorkspace, { recursive: true, force: true });
+  }
+});
+
+test("G-64-1 transfer: vice_snapshot_save then vice_snapshot_load complete through the real proxy in both directions, with no broker-side path in either result", async () => {
+  const snapshotPayload = g6408FullByteRangeBuffer();
+  const stagedPaths: { dump?: string; undump?: string } = {};
+  let undumpBytes: Buffer | null = null;
+
+  const fixture = await g6408StartFixture({
+    withTransfer: true,
+    onDump: (filename) => {
+      stagedPaths.dump = filename;
+      mkdirSync(dirname(filename), { recursive: true });
+      writeFileSync(filename, snapshotPayload);
+    },
+    onUndump: async (filename) => {
+      const arrived = await waitForCondition(() => existsSync(filename), { timeoutMs: 2000 });
+      assert.ok(arrived, "the uploaded snapshot bytes must eventually land at the staged path (the accepted-risk race must still resolve, not hang)");
+      stagedPaths.undump = filename;
+      undumpBytes = readFileSync(filename);
+    },
+  });
+
+  const proxyWorkspace = mkdtempSync(join(tmpdir(), "vice-proxy-g6408-transfer-ws-"));
+  const prevBrokerHome = process.env.VICE_BROKER_HOME;
+  // brokerStagingDir() (broker-home.mts) resolves process.env.VICE_BROKER_HOME
+  // in THIS process -- handleStageFile()/handleFileTransfer() run as
+  // synchronous callbacks of this fixture's own control listener, in this
+  // same test process, never inside the spawned proxy child.
+  process.env.VICE_BROKER_HOME = fixture.brokerHomeDir;
+
+  const proxy = startProxy({
+    VICE_POOL_DIR: fixture.dir,
+    VICE_EPOCH_FILE: join(fixture.dir, "epoch.json"),
+    VICE_MCP_HOST: "127.0.0.1",
+    VICE_BROKER_CONTROL_PORT: String(fixture.listenerPort),
+    CLAUDE_PROJECT_DIR: proxyWorkspace,
+    VICE_SKIP_RESOURCE_INSTALL: "1",
+  });
+  try {
+    proxy.send({ jsonrpc: "2.0", id: 1, method: "initialize", params: initThenListParams() });
+    await proxy.nextMessage();
+
+    proxy.send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "vice_snapshot_save", arguments: { name: "g6408_disjoint" } } });
+    const saveResp = await proxy.nextMessage();
+    assert.equal(saveResp.result.isError, false, `vice_snapshot_save must succeed: ${JSON.stringify(saveResp)}`);
+    const savePayload = JSON.parse(saveResp.result.content[0].text);
+    assert.ok(
+      String(savePayload.path).startsWith(proxyWorkspace),
+      `the saved snapshot path (${savePayload.path}) must live under the proxy's own workspace (${proxyWorkspace})`,
+    );
+    assert.ok(existsSync(savePayload.path));
+    assert.ok(readFileSync(savePayload.path).equals(snapshotPayload), "the downloaded snapshot's bytes must equal the fixture bytes byte-for-byte");
+    g6408AssertNoLeak(savePayload, fixture.brokerHomeDir, "vice_snapshot_save result");
+    assert.ok(stagedPaths.dump, "DUMP must have been sent");
+
+    proxy.send({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "vice_snapshot_load", arguments: { name: "g6408_disjoint" } } });
+    const loadResp = await proxy.nextMessage();
+    assert.equal(loadResp.result.isError, false, `vice_snapshot_load must succeed: ${JSON.stringify(loadResp)}`);
+    const loadPayload = JSON.parse(loadResp.result.content[0].text);
+    g6408AssertNoLeak(loadPayload, fixture.brokerHomeDir, "vice_snapshot_load result");
+
+    assert.ok(undumpBytes, "UNDUMP must have been sent and its bytes captured");
+    assert.ok((undumpBytes as unknown as Buffer).equals(snapshotPayload), "the bytes UNDUMP read back must equal the fixture bytes byte-for-byte");
+
+    assert.equal(fixture.stageFileCalls.length, 2, "one stage_file call for the save, one for the load");
+    assert.equal(fixture.fileTransferCalls.length, 2, "one transfer call (download) for the save, one (upload) for the load");
+  } finally {
+    proxy.child.kill("SIGKILL");
+    await g6408TeardownFixture(fixture);
+    rmSync(proxyWorkspace, { recursive: true, force: true });
+    if (prevBrokerHome === undefined) delete process.env.VICE_BROKER_HOME;
+    else process.env.VICE_BROKER_HOME = prevBrokerHome;
+  }
+});
+
+test("G-64-1 text: vice_warp_set completes through the real proxy over the text relay, authenticated by its own handle", async () => {
+  const fixture = await g6408StartFixture({ withText: true });
+  const proxyWorkspace = mkdtempSync(join(tmpdir(), "vice-proxy-g6408-text-ws-"));
+  const proxy = startProxy({
+    VICE_POOL_DIR: fixture.dir,
+    VICE_EPOCH_FILE: join(fixture.dir, "epoch.json"),
+    VICE_MCP_HOST: "127.0.0.1",
+    VICE_BROKER_CONTROL_PORT: String(fixture.listenerPort),
+    CLAUDE_PROJECT_DIR: proxyWorkspace,
+    VICE_SKIP_RESOURCE_INSTALL: "1",
+  });
+  try {
+    proxy.send({ jsonrpc: "2.0", id: 1, method: "initialize", params: initThenListParams() });
+    await proxy.nextMessage();
+
+    proxy.send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "vice_warp_set", arguments: { enabled: true } } });
+    const resp = await proxy.nextMessage();
+    assert.equal(resp.result.isError, false, `vice_warp_set must succeed: ${JSON.stringify(resp)}`);
+
+    const textAttaches = fixture.attachCalls.filter((c) => c.channel === "text");
+    assert.equal(textAttaches.length, 1, "exactly one attach on channel \"text\" must have been observed");
+    assert.ok(textAttaches[0]!.handle.length > 0);
+
+    const binaryAttaches = fixture.attachCalls.filter((c) => c.channel === "binary");
+    assert.equal(binaryAttaches.length, 0, "vice_warp_set must never dial the binary channel");
+  } finally {
+    proxy.child.kill("SIGKILL");
+    await g6408TeardownFixture(fixture);
+    rmSync(proxyWorkspace, { recursive: true, force: true });
+  }
 });

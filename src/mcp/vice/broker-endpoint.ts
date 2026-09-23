@@ -63,6 +63,46 @@ export const DIAL_CANDIDATES: readonly string[] = Object.freeze(["127.0.0.1", "h
  * assigned port back, per this phase's own ephemeral-port test convention. */
 const DEFAULT_CONTROL_PORT = 19510;
 
+/** Injectable env for resolveEndpointPort() -- this project's standard
+ * env/time/spawning/I-O injection register (a destructured options object,
+ * never a positional boolean). Defaults to `process.env`. */
+export interface ResolveEndpointPortOptions {
+  env?: NodeJS.ProcessEnv;
+}
+
+/** Resolves the port every fixed-endpoint dial in this module defaults to
+ * when its caller supplies no explicit `port` option. Reads
+ * VICE_BROKER_CONTROL_PORT -- the SAME variable broker-control.mts's own
+ * resolveControlPort() binds the LISTENER on -- because a bind port and a
+ * dial port are the same number, unlike a bind host and a dial host (this
+ * is deliberately NOT the VICE_BROKER_CONTROL_DIAL_HOST split). Before this
+ * function existed, every dial in this module hardcoded
+ * DEFAULT_CONTROL_PORT regardless of what the broker was actually told to
+ * bind on -- the latent "relay always dials 19510" defect the G-64-1
+ * diagnosis recorded (.planning/debug/vice-proxy-control-token-handshake.md,
+ * Evidence 16:42): a client and a broker moved together off the default
+ * port would never meet.
+ *
+ * An unusable value (absent, empty, non-integer, or outside 1..65535) is
+ * silently ignored and this function returns DEFAULT_CONTROL_PORT instead
+ * of throwing -- no function in this module ever throws (see this file's
+ * own header), and a caller who mistyped the variable already gets a
+ * ranked, act-on-able refusal from describeDialFailure() naming the port
+ * this function actually resolved and dialled; a thrown error here would be
+ * a second, worse way to report the exact same mistake.
+ *
+ * Reads only `options.env` (or `process.env`) -- never the filesystem. This
+ * module must never touch disk (see this file's own header "WHAT NOT TO
+ * DO" list); an environment-variable read is not a disk read. */
+export function resolveEndpointPort(options: ResolveEndpointPortOptions = {}): number {
+  const env = options.env ?? process.env;
+  const raw = env.VICE_BROKER_CONTROL_PORT;
+  if (raw === undefined || raw === "") return DEFAULT_CONTROL_PORT;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1 || n > 65535) return DEFAULT_CONTROL_PORT;
+  return n;
+}
+
 const DEFAULT_CONNECT_TIMEOUT_MS = 2000;
 const DEFAULT_REPLY_TIMEOUT_MS = 2000;
 
@@ -351,7 +391,7 @@ export type DialResult = DialSuccess | DialFailure;
  * socket the instant a winner is found, so a dial never leaks a handle and
  * never waits out a timer it no longer needs to. */
 export async function dialBrokerEndpoint(options: DialBrokerEndpointOptions = {}): Promise<DialResult> {
-  const port = options.port ?? DEFAULT_CONTROL_PORT;
+  const port = options.port ?? resolveEndpointPort();
   const candidates = options.candidates ?? DIAL_CANDIDATES;
   const connectTimeoutMs = options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
   const replyTimeoutMs = options.replyTimeoutMs ?? DEFAULT_REPLY_TIMEOUT_MS;
@@ -712,7 +752,7 @@ function performAttach(socket: Socket, host: string, port: number, opts: DialMon
  * dialMonitorSocket default) does not need to tell the two apart; both mean
  * this dial produced no usable socket. */
 export function dialMonitorRelay(options: DialMonitorRelayOptions): Promise<DialMonitorRelayResult> {
-  const port = options.port ?? DEFAULT_CONTROL_PORT;
+  const port = options.port ?? resolveEndpointPort();
   const candidates = options.candidates ?? DIAL_CANDIDATES;
   const connectTimeoutMs = options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
   const replyTimeoutMs = options.replyTimeoutMs ?? DEFAULT_REPLY_TIMEOUT_MS;
@@ -956,7 +996,7 @@ function performTransfer(
  * dialOneCandidate(), classifyHelloReply(), describeDialFailure()) -- no new
  * import was added for this function. */
 export function dialFileTransfer(options: DialFileTransferOptions): Promise<DialFileTransferResult> {
-  const port = options.port ?? DEFAULT_CONTROL_PORT;
+  const port = options.port ?? resolveEndpointPort();
   const candidates = options.candidates ?? DIAL_CANDIDATES;
   const connectTimeoutMs = options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
   const replyTimeoutMs = options.replyTimeoutMs ?? DEFAULT_REPLY_TIMEOUT_MS;

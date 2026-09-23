@@ -15,23 +15,35 @@
 //
 // Wire format confirmed at a blocking checkpoint decision (2026-08-03,
 // `as-specified`, no amendments), which accepted some residual risk and
-// considered and rejected a unix-domain-socket alternative. Auth: the
-// eight pre-hello ops still gate on a per-boot capability token compared
-// constant-time, checked BEFORE any state read or write -- but `hello`
+// considered and rejected a unix-domain-socket alternative. Auth: `hello`
 // (plan 62-01) answers UNCONDITIONALLY, to any caller that can reach a
-// bound address, with no credential of any kind. That is what makes the
-// bind set below the FIRST line of defence now (v2.0.0), not a convenience
-// narrowing sitting on top of a credential every caller already needs: a
-// wildcard bind would let any network peer complete a handshake and learn
-// this broker's protocol and version for free. Bind: loopback plus every
-// enumerated bridge gateway address from an interface-name allowlist
-// (BRIDGE_INTERFACE_ALLOWLIST below), enumerated exactly once at startup,
-// never the wildcard address and never a hardcoded gateway literal --
-// host.docker.internal resolves to one of those enumerated bridge
-// addresses, so binding loopback alone would leave a container
-// structurally unable to reach this listener, which is why the bridge set
-// is enumerated rather than dropped outright. Port: 19510 default via
-// VICE_BROKER_CONTROL_PORT.
+// bound address, with no credential of any kind -- `attach` and `transfer`
+// (Phase 64 gap G-64-1, owner decision 5, REQUIREMENTS.md) now answer
+// BEFORE the token gate too, by their broker-minted per-claim/per-stage
+// handle alone; see .planning/phases/64-files-as-bytes-both-directions/
+// evidence/64-g641-handle-only-authority.md for the full reversal record.
+// This drops the "every op requires the token" absolute the very first
+// version of this comment stated, but does not drop the credential
+// itself: monitor_claim (which mints an attach handle) and stage_file
+// (which mints a transfer handle) are BOTH still token-gated, and every
+// other op -- acquire, release, recycle, status, host_state,
+// monitor_claim, monitor_release, host_tool, operation -- still gates on
+// the SAME per-boot capability token compared constant-time, checked
+// BEFORE any state read or write, until Phase 66 (RM-02) deletes
+// broker.json, the token's only distribution channel. That is what makes
+// the bind set below the FIRST line of defence now (v2.0.0) for attach and
+// transfer as well, not merely a convenience narrowing sitting on top of a
+// credential every caller already needs: a wildcard bind would let any
+// network peer complete a handshake and learn this broker's protocol and
+// version for free, and now attach/transfer a session for free too. Bind:
+// loopback plus every enumerated bridge gateway address from an
+// interface-name allowlist (BRIDGE_INTERFACE_ALLOWLIST below), enumerated
+// exactly once at startup, never the wildcard address and never a
+// hardcoded gateway literal -- host.docker.internal resolves to one of
+// those enumerated bridge addresses, so binding loopback alone would leave
+// a container structurally unable to reach this listener, which is why
+// the bridge set is enumerated rather than dropped outright. Port: 19510
+// default via VICE_BROKER_CONTROL_PORT.
 import { createServer, type Server, type Socket } from "node:net";
 import { networkInterfaces as osNetworkInterfaces, type NetworkInterfaceInfo } from "node:os";
 import { timingSafeEqual, randomBytes } from "node:crypto";
@@ -71,28 +83,32 @@ import type { ViceBackend } from "./backend-detect.mjs";
 // dispatch path to keep in sync with every other tool's, forever.
 // `hello` joins as the NINTH member, plan 62-01 (ENDPOINT-03/D-06). It is
 // NOT one more arm of the post-token-gate chain `host_tool`'s own comment
-// above describes -- it is the one op this listener answers BEFORE
+// above describes -- it is one of the ops this listener answers BEFORE
 // `tokensMatch()` runs at all, because the handshake by design carries no
 // credential. See attachControlProtocol()'s handleLine() for the dispatch
 // site and its own comment on why that placement is load-bearing.
-// `attach` joins as the TENTH member, Phase 63 (SESS-02) -- UNLIKE `hello`,
-// it sits AFTER the token gate, in the same post-gate chain as every other
-// target-naming op. Sent on a connection dedicated solely to becoming a
-// relay splice: this listener answers it once, then that socket's own line
-// reader stops running (see the relayMode flag inside
-// attachControlProtocol()) and every further byte belongs to
-// broker-relay.mts's spliceRelay(), never to this JSON-line dispatcher
-// again.
+// `attach` joins as the TENTH member, Phase 63 (SESS-02) -- ORIGINALLY it
+// sat AFTER the token gate, in the same post-gate chain as every other
+// target-naming op; Phase 64 gap G-64-1 (owner decision 5, REQUIREMENTS.md)
+// REVERSED that placement, moving it BEFORE the gate, dispatched by its
+// broker-minted per-claim handle alone -- see this file's own header
+// "Auth:" paragraph and .planning/phases/64-files-as-bytes-both-directions/
+// evidence/64-g641-handle-only-authority.md for the full record. Sent on a
+// connection dedicated solely to becoming a relay splice: this listener
+// answers it once, then that socket's own line reader stops running (see
+// the relayMode flag inside attachControlProtocol()) and every further
+// byte belongs to broker-relay.mts's spliceRelay(), never to this
+// JSON-line dispatcher again.
 // `operation` joins as the ELEVENTH member, Phase 63 (SESS-05) -- gated on
 // the SAME ownsTarget() predicate `monitor_claim`/`monitor_release`/`recycle`
 // already share (never a bare target_id), and dispatched on the connection's
-// ordinary line reader like every op except `attach` -- it never touches
-// relayMode. Declares (or, with a `null` name, clears) the operation the
-// declaring connection's own grant currently has in flight, so a broker-side
-// incident record (broker-incident.mts, a later plan) can name what was
-// running when a relay died. Written WITHOUT being awaited by its caller
-// (stock-dispatch.ts/text-tools.ts) -- see StartControlListenerOptions'
-// onOperation comment for why that is safe.
+// ordinary line reader like every op except `attach`/`transfer` -- it never
+// touches relayMode. Declares (or, with a `null` name, clears) the operation
+// the declaring connection's own grant currently has in flight, so a
+// broker-side incident record (broker-incident.mts, a later plan) can name
+// what was running when a relay died. Written WITHOUT being awaited by its
+// caller (stock-dispatch.ts/text-tools.ts) -- see
+// StartControlListenerOptions' onOperation comment for why that is safe.
 // `stage_file` joins as the TWELFTH member, Phase 64 (XFER-04, D-01) --
 // gated on the SAME ownsTarget() predicate `monitor_claim`/`monitor_release`/
 // `recycle`/`operation` already share (never a bare target_id), and
@@ -102,16 +118,18 @@ import type { ViceBackend } from "./backend-detect.mjs";
 // supplies either. Its callback (onStageFile) is OPTIONAL on
 // StartControlListenerOptions -- see that field's own comment for why.
 // `transfer` joins as the THIRTEENTH member, Phase 64 (XFER-04, D-01/D-02,
-// T-63-01 precedent) -- sits AFTER the token gate, like every op except
-// `hello`, but is deliberately NOT gated by ownsTarget(): sent on a
-// connection dedicated solely to becoming a payload connection, so the
-// per-stage `handle` presented on the wire is the ONLY authority this op can
-// check, exactly the reasoning `attach`'s own comment above already states.
-// This listener answers it once, flips this socket out of line-reading mode
-// (the SAME relayMode flag `attach` flips) BEFORE its callback runs, and
-// hands the connection to onFileTransfer -- which, on success, owns every
-// further reply line and every payload byte; this listener writes nothing
-// more on that path. Its callback is ALSO optional -- see onFileTransfer's
+// T-63-01 precedent) -- ORIGINALLY sat AFTER the token gate, like every op
+// except `hello`; REVERSED by gap G-64-1 the SAME way `attach` above was,
+// now dispatched BEFORE the gate, beside `attach`. Deliberately NOT gated
+// by ownsTarget(): sent on a connection dedicated solely to becoming a
+// payload connection, so the per-stage `handle` presented on the wire is
+// the ONLY authority this op can check, exactly the reasoning `attach`'s
+// own comment above already states. This listener answers it once, flips
+// this socket out of line-reading mode (the SAME relayMode flag `attach`
+// flips) BEFORE its callback runs, and hands the connection to
+// onFileTransfer -- which, on success, owns every further reply line and
+// every payload byte; this listener writes nothing more on that path. Its
+// callback is ALSO optional -- see onFileTransfer's
 // own comment.
 export type ControlRequestKind = "acquire" | "release" | "recycle" | "status" | "host_state" | "monitor_claim" | "monitor_release" | "host_tool" | "hello" | "attach" | "operation" | "stage_file" | "transfer";
 // `no_free_text_port` joins the vocabulary as its OWN code -- a stock
@@ -419,11 +437,17 @@ export interface StartControlListenerOptions {
    * NOT the current holder of `channel` -- see MonitorReleaseOutcome's own
    * header comment for the already-cleared tolerance. */
   onMonitorRelease: (requestId: string, targetId: string, channel: MonitorChannel) => MonitorReleaseOutcome;
-  /** Called on `attach` (Phase 63, SESS-02), AFTER the token check has
-   * already passed AND after this listener has already stopped its own
-   * line reader on this socket (see the relayMode flag inside
-   * attachControlProtocol()) -- a synchronous splice inside this callback
-   * can never race this connection's next `"data"` event. `presentedHandle`
+  /** Called on `attach` (Phase 63, SESS-02). ORIGINALLY called AFTER the
+   * token check had already passed; Phase 64 gap G-64-1 (owner decision 5)
+   * REVERSED that -- this callback now runs BEFORE the token check, by
+   * design, with the presented handle as the sole authority (see this
+   * file's own header "Auth:" paragraph and
+   * .planning/phases/64-files-as-bytes-both-directions/evidence/
+   * 64-g641-handle-only-authority.md). Called AFTER this listener has
+   * already stopped its own line reader on this socket (see the relayMode
+   * flag inside attachControlProtocol()) -- a synchronous splice inside
+   * this callback can never race this connection's next `"data"` event.
+   * `presentedHandle`
    * is whatever the wire line named, narrowed to a string but NOT yet
    * checked against anything -- that check (constant-time, length-gated)
    * is this callback's own job. `socket` is the live relay connection
@@ -463,9 +487,12 @@ export interface StartControlListenerOptions {
    * runtime guarantee at a wire boundary" reasoning the `monitor_owned`
    * dispatch arm's own comment already states for a required field. */
   onStageFile?: (targetId: string, slot: string) => StageFileOutcome;
-  /** Called on `transfer` (Phase 64, XFER-04, D-01/D-02), AFTER the token
-   * check has already passed -- deliberately NOT gated by this listener's
-   * own `ownsTarget()`, the SAME T-63-01 reasoning `onRelayAttach`'s own
+  /** Called on `transfer` (Phase 64, XFER-04, D-01/D-02). ORIGINALLY called
+   * AFTER the token check had already passed; REVERSED by gap G-64-1 the
+   * SAME way `onRelayAttach` above was -- this callback now runs BEFORE
+   * the token check, by design (see `onRelayAttach`'s own comment above
+   * for the full record). Deliberately NOT gated by this listener's own
+   * `ownsTarget()`, the SAME T-63-01 reasoning `onRelayAttach`'s own
    * comment already states for `attach`: this connection is a brand-new
    * transfer socket, never the one that ran `stage_file`, so the presented
    * `handle` is the ONLY authority this callback can check. Called AFTER
@@ -1259,8 +1286,10 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
       // so an arm placed after tokensMatch() would always answer
       // `unauthorized`, indistinguishable from this module's own
       // stale-broker signature (a pre-v2.0.0 broker's token check runs
-      // ahead of dispatch too). This is the ONLY op this listener answers
-      // before the gate; every one of the eight existing ops -- including
+      // ahead of dispatch too). `hello` is no longer the ONLY op this
+      // listener answers before the gate -- `attach` and `transfer`, below,
+      // now join it (Phase 64 gap G-64-1, owner decision 5; see this file's
+      // own header "Auth:" paragraph). Every other op -- including
       // `host_tool`, dispatched first in the POST-gate chain below -- keeps
       // requiring the token, untouched. The reply's key set is fixed to
       // exactly four fields and carries no token, username, hostname, home
@@ -1278,9 +1307,125 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
         return;
       }
 
-      // Token check BEFORE any state is read or written -- absence or
-      // mismatch is refused, the connection is destroyed, and nothing is
-      // allocated, spawned or signalled (T-01.6.2-01, T-01.6.2-03).
+      // Phase 63 (SESS-02), REVERSED by Phase 64 gap G-64-1 (owner decision
+      // 5, REQUIREMENTS.md; see .planning/phases/64-files-as-bytes-both-
+      // directions/evidence/64-g641-handle-only-authority.md for the full
+      // record). Dispatched HERE, ahead of the token gate below, by the
+      // broker-minted per-claim handle ALONE -- see this file's own header
+      // "Auth:" paragraph and ControlRequestKind's own comment on `attach`.
+      // `hello` above is no longer the ONLY op this listener answers before
+      // the gate; `attach` and `transfer` (below) now join it. Deliberately
+      // NOT gated by ownsTarget(): this connection is a brand-new relay
+      // socket, never the one that ran monitor_claim, so
+      // requestIdForThisConnection is null on it -- the per-claim `handle`
+      // presented below is the ONLY authority this arm can check. The
+      // handle comparison itself is untouched, still owned by
+      // vice-broker.mts's handleRelayAttach() (length-checked,
+      // constant-time, refuses a second attach).
+      if (req.op === "attach") {
+        const targetId = typeof req.target_id === "string" ? req.target_id : "";
+        const presentedHandle = typeof req.handle === "string" ? req.handle : "";
+        if (targetId === "" || presentedHandle === "") {
+          writeLine(socket, { kind: "error", code: "bad_request" as ControlErrorCode, message: "attach requires target_id and handle" });
+          return;
+        }
+        const channel = resolveMonitorChannel(req.channel);
+        if (channel === "bad_request") {
+          writeLine(socket, {
+            kind: "error",
+            code: "bad_request" as ControlErrorCode,
+            message: `attach: unrecognised channel ${JSON.stringify(req.channel)} -- accepted values are "binary" and "text"`,
+          });
+          return;
+        }
+        // Flipped BEFORE onRelayAttach() is ever called -- a synchronous
+        // splice inside that callback (spliceRelay() installs its own
+        // "data" listeners on THIS socket) must never race this
+        // connection's next "data" event. See the relayMode declaration's
+        // own header comment above.
+        relayMode = true;
+        const outcome = opts.onRelayAttach(targetId, channel, presentedHandle, socket, remainderAfterLine);
+        if (outcome.ok) {
+          writeLine(socket, { kind: "attached" });
+        } else {
+          // The attach FAILED -- this socket never became a relay, so its
+          // line reader must resume rather than silently going deaf on a
+          // connection the caller may still retry `attach` over.
+          relayMode = false;
+          writeLine(socket, { kind: "error", code: outcome.code, message: `attach refused: ${outcome.code}` });
+        }
+        return;
+      }
+
+      // Phase 64 (XFER-04, D-01/D-02), REVERSED by gap G-64-1 (owner
+      // decision 5) the SAME way `attach` above was -- dispatched HERE,
+      // ahead of the token gate, beside `attach`, by the broker-minted
+      // per-stage handle ALONE (D-01: the payload is authorised by the
+      // handle the broker minted, not by the connection presenting it).
+      // Deliberately NOT gated by ownsTarget(): this connection is a
+      // brand-new transfer socket, never the one that ran stage_file, so
+      // the presented `handle` is the ONLY authority this arm can check.
+      // The unknown-handle refusal and the in-flight guard are untouched,
+      // still owned by vice-broker.mts's handleFileTransfer().
+      if (req.op === "transfer") {
+        const handle = typeof req.handle === "string" ? req.handle : "";
+        const direction = resolveTransferDirection(req.direction);
+        if (handle === "" || direction === "bad_request") {
+          writeLine(socket, {
+            kind: "error",
+            code: "bad_request" as ControlErrorCode,
+            message: 'transfer requires handle and direction ("upload" or "download")',
+          });
+          return;
+        }
+        let fileTransferRequest: FileTransferRequest;
+        if (direction === "upload") {
+          if (typeof req.byteLength !== "number" || typeof req.sha256 !== "string") {
+            writeLine(socket, {
+              kind: "error",
+              code: "bad_request" as ControlErrorCode,
+              message: "transfer (upload) requires byteLength (number) and sha256 (string)",
+            });
+            return;
+          }
+          fileTransferRequest = { direction: "upload", handle, byteLength: req.byteLength, sha256: req.sha256 };
+        } else {
+          fileTransferRequest = { direction: "download", handle };
+        }
+        // onFileTransfer is OPTIONAL for the same reason onStageFile is --
+        // see that field's own header comment. Refused by name, never
+        // called with `undefined`, and this socket's line reader is left
+        // running (relayMode is never flipped on this path).
+        if (!opts.onFileTransfer) {
+          writeLine(socket, { kind: "error", code: "internal" as ControlErrorCode, message: "transfer is not wired on this broker" });
+          return;
+        }
+        // Flipped BEFORE onFileTransfer() is ever called -- mirrors the
+        // `attach` arm's own relayMode flip above: a payload byte must
+        // never be re-examined by this socket's own JSON-line reader.
+        relayMode = true;
+        const transferOutcome = opts.onFileTransfer(fileTransferRequest, socket, remainderAfterLine);
+        if (!transferOutcome.ok) {
+          // The transfer was refused before any payload byte was consumed
+          // by the callback -- this socket never became a payload
+          // connection, so its line reader must resume, exactly as a
+          // failed `attach` resumes its own.
+          relayMode = false;
+          writeLine(socket, { kind: "error", code: transferOutcome.code, message: transferOutcome.message });
+        }
+        // On success this arm writes NOTHING further -- onFileTransfer()
+        // itself owns every reply line and every payload byte from here on
+        // (see FileTransferOutcome's own header comment).
+        return;
+      }
+
+      // Token check BEFORE any state is read or written, for every op
+      // below -- absence or mismatch is refused, the connection is
+      // destroyed, and nothing is allocated, spawned or signalled
+      // (T-01.6.2-01, T-01.6.2-03). `attach` and `transfer` above no longer
+      // reach this check (G-64-1, owner decision 5); every other op still
+      // does, unchanged, until Phase 66 (RM-02) deletes broker.json, the
+      // token's only distribution channel.
       const token = typeof req.token === "string" ? req.token : "";
       if (!tokensMatch(token, opts.token)) {
         writeLine(socket, { kind: "error", code: "unauthorized" as ControlErrorCode, message: "missing or invalid control token" });
@@ -1470,44 +1615,6 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
         } else {
           writeLine(socket, { kind: "error", code: outcome.code, message: `monitor_release refused: ${outcome.code}` });
         }
-      } else if (req.op === "attach") {
-        // Phase 63 (SESS-02). Deliberately NOT gated by ownsTarget(): this
-        // connection is a brand-new relay socket, never the one that ran
-        // monitor_claim, so requestIdForThisConnection is null on it -- the
-        // per-claim `handle` presented below is the ONLY authority this
-        // arm can check (T-63-01). Sits AFTER the token gate, unlike
-        // `hello` -- see ControlRequestKind's own comment on this op.
-        const targetId = typeof req.target_id === "string" ? req.target_id : "";
-        const presentedHandle = typeof req.handle === "string" ? req.handle : "";
-        if (targetId === "" || presentedHandle === "") {
-          writeLine(socket, { kind: "error", code: "bad_request" as ControlErrorCode, message: "attach requires target_id and handle" });
-          return;
-        }
-        const channel = resolveMonitorChannel(req.channel);
-        if (channel === "bad_request") {
-          writeLine(socket, {
-            kind: "error",
-            code: "bad_request" as ControlErrorCode,
-            message: `attach: unrecognised channel ${JSON.stringify(req.channel)} -- accepted values are "binary" and "text"`,
-          });
-          return;
-        }
-        // Flipped BEFORE onRelayAttach() is ever called -- a synchronous
-        // splice inside that callback (spliceRelay() installs its own
-        // "data" listeners on THIS socket) must never race this
-        // connection's own reader over the next "data" event. See the
-        // relayMode declaration's own header comment above.
-        relayMode = true;
-        const outcome = opts.onRelayAttach(targetId, channel, presentedHandle, socket, remainderAfterLine);
-        if (outcome.ok) {
-          writeLine(socket, { kind: "attached" });
-        } else {
-          // The attach FAILED -- this socket never became a relay, so its
-          // line reader must resume rather than silently going deaf on a
-          // connection the caller may still retry `attach` over.
-          relayMode = false;
-          writeLine(socket, { kind: "error", code: outcome.code, message: `attach refused: ${outcome.code}` });
-        }
       } else if (req.op === "operation") {
         // Phase 63 (SESS-05). Dispatched on this connection's ORDINARY line
         // reader -- never touches relayMode, unlike `attach` above. Mirrors
@@ -1591,61 +1698,6 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
         } else {
           writeLine(socket, { kind: "error", code: stageOutcome.code, message: `stage_file failed: ${stageOutcome.code}` });
         }
-      } else if (req.op === "transfer") {
-        // Phase 64 (XFER-04, D-01, T-63-01 precedent). Deliberately NOT
-        // gated by ownsTarget(): this connection is a brand-new transfer
-        // socket, never the one that ran stage_file, so
-        // requestIdForThisConnection is null on it -- the per-stage
-        // `handle` presented below is the ONLY authority this arm can
-        // check. Sits AFTER the token gate, like every op except `hello`.
-        const handle = typeof req.handle === "string" ? req.handle : "";
-        const direction = resolveTransferDirection(req.direction);
-        if (handle === "" || direction === "bad_request") {
-          writeLine(socket, {
-            kind: "error",
-            code: "bad_request" as ControlErrorCode,
-            message: 'transfer requires handle and direction ("upload" or "download")',
-          });
-          return;
-        }
-        let fileTransferRequest: FileTransferRequest;
-        if (direction === "upload") {
-          if (typeof req.byteLength !== "number" || typeof req.sha256 !== "string") {
-            writeLine(socket, {
-              kind: "error",
-              code: "bad_request" as ControlErrorCode,
-              message: "transfer (upload) requires byteLength (number) and sha256 (string)",
-            });
-            return;
-          }
-          fileTransferRequest = { direction: "upload", handle, byteLength: req.byteLength, sha256: req.sha256 };
-        } else {
-          fileTransferRequest = { direction: "download", handle };
-        }
-        // onFileTransfer is OPTIONAL for the same reason onStageFile is --
-        // see that field's own header comment. Refused by name, never
-        // called with `undefined`, and this socket's line reader is left
-        // running (relayMode is never flipped on this path).
-        if (!opts.onFileTransfer) {
-          writeLine(socket, { kind: "error", code: "internal" as ControlErrorCode, message: "transfer is not wired on this broker" });
-          return;
-        }
-        // Flipped BEFORE onFileTransfer() is ever called -- mirrors the
-        // `attach` arm's own relayMode flip above: a payload byte must
-        // never be re-examined by this socket's own JSON-line reader.
-        relayMode = true;
-        const transferOutcome = opts.onFileTransfer(fileTransferRequest, socket, remainderAfterLine);
-        if (!transferOutcome.ok) {
-          // The transfer was refused before any payload byte was consumed
-          // by the callback -- this socket never became a payload
-          // connection, so its line reader must resume, exactly as a
-          // failed `attach` resumes its own.
-          relayMode = false;
-          writeLine(socket, { kind: "error", code: transferOutcome.code, message: transferOutcome.message });
-        }
-        // On success this arm writes NOTHING further -- onFileTransfer()
-        // itself owns every reply line and every payload byte from here on
-        // (see FileTransferOutcome's own header comment).
       } else {
         writeLine(socket, { kind: "error", code: "bad_request" as ControlErrorCode, message: `unknown op: ${String(req.op)}` });
       }

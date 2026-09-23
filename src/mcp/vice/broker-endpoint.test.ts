@@ -22,6 +22,7 @@ import {
   HELLO_PROTOCOL_MAGIC,
   dialFileTransfer,
   TRANSFER_TAG,
+  resolveEndpointPort,
   type BrokerEndpointConnectFn,
   type DialFailure,
   type DialFileTransferResult,
@@ -120,6 +121,80 @@ test("dialBrokerEndpoint completes a real handshake end to end against a real li
 
 test("DIAL_CANDIDATES is exactly the two fixed hosts, loopback first", () => {
   assert.deepEqual(DIAL_CANDIDATES, ["127.0.0.1", "host.docker.internal"]);
+});
+
+// ---------------------------------------------------------------------------
+// Plan 64-08 (G-64-1 gap closure, Task 1): resolveEndpointPort() -- the one
+// default-port resolver every fixed-endpoint dial in this module now uses,
+// closing the latent "relay always dials 19510" defect the G-64-1 diagnosis
+// recorded (.planning/debug/vice-proxy-control-token-handshake.md, Evidence
+// 16:42).
+// ---------------------------------------------------------------------------
+
+test("resolveEndpointPort: absent, empty, non-integer, out-of-range and zero all fall back to 19510", () => {
+  assert.equal(resolveEndpointPort({ env: {} }), 19510, "absent");
+  assert.equal(resolveEndpointPort({ env: { VICE_BROKER_CONTROL_PORT: "" } }), 19510, "empty string");
+  assert.equal(resolveEndpointPort({ env: { VICE_BROKER_CONTROL_PORT: "0" } }), 19510, "zero");
+  assert.equal(resolveEndpointPort({ env: { VICE_BROKER_CONTROL_PORT: "65536" } }), 19510, "above 65535");
+  assert.equal(resolveEndpointPort({ env: { VICE_BROKER_CONTROL_PORT: "abc" } }), 19510, "non-numeric");
+  assert.equal(resolveEndpointPort({ env: { VICE_BROKER_CONTROL_PORT: "12.5" } }), 19510, "non-integer");
+});
+
+test("resolveEndpointPort: an integer 1..65535 is honoured verbatim", () => {
+  assert.equal(resolveEndpointPort({ env: { VICE_BROKER_CONTROL_PORT: "1" } }), 1);
+  assert.equal(resolveEndpointPort({ env: { VICE_BROKER_CONTROL_PORT: "65535" } }), 65535);
+  assert.equal(resolveEndpointPort({ env: { VICE_BROKER_CONTROL_PORT: "40123" } }), 40123);
+});
+
+test("resolveEndpointPort: defaults to process.env when no env option is supplied", () => {
+  const prev = process.env.VICE_BROKER_CONTROL_PORT;
+  try {
+    process.env.VICE_BROKER_CONTROL_PORT = "42123";
+    assert.equal(resolveEndpointPort(), 42123);
+  } finally {
+    if (prev === undefined) delete process.env.VICE_BROKER_CONTROL_PORT;
+    else process.env.VICE_BROKER_CONTROL_PORT = prev;
+  }
+});
+
+test("dialBrokerEndpoint with no port option reaches a hello-answering listener on the port named by VICE_BROKER_CONTROL_PORT", async () => {
+  const token = newControlToken();
+  const listener = await startControlListener({
+    host: "127.0.0.1",
+    port: 0,
+    token,
+    onAcquire: async () => ({ ok: false, reason: "internal" }) as const,
+    onRelease: () => {},
+    onRecycle: async () => ({ port: null, pid: null, viceBin: null, killStage: "no_signal", epochBefore: null, outcome: "n/a", reason: "n/a" }),
+    onStatus: () => [],
+    onHostState: () => ({
+      pid: process.pid,
+      startedAt: "2026-01-01T00:00:00Z",
+      nodeVersion: process.version,
+      viceBin: "x64sc",
+      maxInstances: 16,
+      basePort: 6600,
+      backend: "stock" as const,
+    }),
+    onMonitorClaim: () => ({ ok: false, code: "internal" as const }),
+    onMonitorRelease: () => ({ ok: false, code: "internal" as const }),
+    onRelayAttach: () => ({ ok: false, code: "internal" as const }),
+    onOperation: () => ({ ok: false, code: "bad_request" as const }),
+    onHostTool: async () => ({ ok: false, message: "no onHostTool stub configured" }),
+  });
+  const prev = process.env.VICE_BROKER_CONTROL_PORT;
+  try {
+    process.env.VICE_BROKER_CONTROL_PORT = String(listener.port);
+    const result = await dialBrokerEndpoint({ candidates: ["127.0.0.1"] });
+    assert.equal(result.ok, true, `expected a completed handshake with no port option, got ${JSON.stringify(result)}`);
+    if (result.ok) {
+      assert.equal(result.port, listener.port, "the dial must have reached the port named by VICE_BROKER_CONTROL_PORT, not the fixed 19510 default");
+    }
+  } finally {
+    if (prev === undefined) delete process.env.VICE_BROKER_CONTROL_PORT;
+    else process.env.VICE_BROKER_CONTROL_PORT = prev;
+    listener.server.close();
+  }
 });
 
 // ---------------------------------------------------------------------------
