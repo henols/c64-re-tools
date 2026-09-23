@@ -1091,7 +1091,7 @@
           "path": {
             "type": "string"
           },
-          "sentPath": {
+          "handle": {
             "type": "string"
           },
           "run": {
@@ -1111,7 +1111,7 @@
         },
         "required": [
           "path",
-          "sentPath",
+          "handle",
           "run",
           "index",
           "runState"
@@ -1147,10 +1147,13 @@
           "path": {
             "type": "string"
           },
-          "sentPath": {
+          "handle": {
             "type": "string"
           },
           "approximation": {
+            "type": "string"
+          },
+          "writeLoss": {
             "type": "string"
           },
           "runState": {
@@ -1165,8 +1168,9 @@
         "required": [
           "unit",
           "path",
-          "sentPath",
+          "handle",
           "approximation",
+          "writeLoss",
           "runState"
         ]
       }

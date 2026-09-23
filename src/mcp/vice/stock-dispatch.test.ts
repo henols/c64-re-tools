@@ -4,7 +4,7 @@
 // seam (ensureStockSession()). Every test in this file is pure/offline --
 // no broker process, no emulator, matching this plan's own environment
 // constraint.
-import { test, beforeEach, after } from "node:test";
+import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, mkdtempSync, writeFileSync, rmSync, mkdirSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -36,7 +36,6 @@ import { resetRunStateTrackersForTest, attachRunStateTracker } from "./stock-run
 import type { StockSessionHandler, StockToolResult } from "./stock-handler.ts";
 import { checkAgainstSchema } from "./stock-schema-check.ts";
 import { CommandType } from "./stock-protocol.ts";
-import { setIsInsideContainerForTest } from "./stock-paths.ts";
 import { resetBankCatalogsForTest } from "./stock-memory.ts";
 import { resetRegisterCatalogsForTest } from "./stock-registers.ts";
 import { resetSymbolStoreForTest } from "./stock-symbols.ts";
@@ -1669,15 +1668,15 @@ async function withTempRepoRootForConformance<T>(fn: (repoRootDir: string) => Pr
   }
 }
 
-// vice_autostart/vice_disk_attach/vice_snapshot_save/vice_snapshot_load all
-// route their filename through withEmulatorSidePath() (stock-paths.ts),
-// which branches on isInsideContainer() -- forced false here (matching
-// stock-machine.test.ts's own precedent) so every one of these four cases
-// takes the deterministic bare-host "send(containerPath) directly" branch,
-// never the mountinfo-guessing container branch a real container would
-// need. Restored after this whole file's tests finish.
-setIsInsideContainerForTest(() => false);
-after(() => setIsInsideContainerForTest(null));
+// Phase 64 (XFER-01/XFER-02/XFER-08, plan 64-06): vice_autostart/
+// vice_disk_attach/vice_snapshot_save/vice_snapshot_load all migrated off
+// withEmulatorSidePath() (stock-paths.ts) onto the broker's own file-transfer
+// protocol -- none of the four reaches isInsideContainer() any more, so this
+// file's own former setIsInsideContainerForTest() stub is gone too (D-18:
+// stock-machine.ts no longer imports stock-paths.ts at all). Every
+// conformance case for these four tools now runs through
+// CONFORMANCE_BROKER_CONTROL's stageFile stub and buildConformanceSession()'s
+// deps.transferFile stub instead (both added in plan 64-04, above).
 
 /** Shared post-dispatch assertions every conformance case makes: the real
  * dispatchStock() answer must be a success, must validate against the
@@ -1984,28 +1983,51 @@ conformanceTest("vice_machine_reset", async () => {
   assertAnswerConforms("vice_machine_reset", result);
 });
 
+// Phase 64 (XFER-02/XFER-08, plan 64-06): handleAutostart/handleDiskAttach
+// genuinely check the local path's readability before staging (real
+// accessSync, never delegated to a stub) -- so, unlike before this
+// migration, these two conformance cases need a REAL fixture file on disk,
+// not a synthetic "/workspace/..." path. Neither handler depends on
+// CLAUDE_PROJECT_DIR/repoRoot() at all any more (D-14: the path argument is
+// unrestricted and never confined to a workspace), so a plain mkdtempSync()
+// fixture is enough -- withTempRepoRootForConformance() is not needed here.
+async function withConformanceFixtureFile<T>(basename: string, fn: (fixturePath: string) => Promise<T>): Promise<T> {
+  const dir = mkdtempSync(join(tmpdir(), "vice-conformance-fixture-"));
+  const fixturePath = join(dir, basename);
+  writeFileSync(fixturePath, "conformance fixture bytes");
+  try {
+    return await fn(fixturePath);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 conformanceTest("vice_autostart", async () => {
-  const session = buildConformanceSession("conformance-vice_autostart", (commandType) => {
-    if (commandType === CommandType.AutoStart) {
-      return conformanceAckReply(CommandType.AutoStart);
-    }
-    throw new Error(`vice_autostart: unexpected commandType ${commandType}`);
+  await withConformanceFixtureFile("game.prg", async (fixturePath) => {
+    const session = buildConformanceSession("conformance-vice_autostart", (commandType) => {
+      if (commandType === CommandType.AutoStart) {
+        return conformanceAckReply(CommandType.AutoStart);
+      }
+      throw new Error(`vice_autostart: unexpected commandType ${commandType}`);
+    });
+    const deps = buildConformanceDeps(session);
+    const result = await dispatchStock("vice_autostart", { path: fixturePath }, deps);
+    assertAnswerConforms("vice_autostart", result);
   });
-  const deps = buildConformanceDeps(session);
-  const result = await dispatchStock("vice_autostart", { path: "/workspace/game.prg" }, deps);
-  assertAnswerConforms("vice_autostart", result);
 });
 
 conformanceTest("vice_disk_attach", async () => {
-  const session = buildConformanceSession("conformance-vice_disk_attach", (commandType) => {
-    if (commandType === CommandType.AutoStart) {
-      return conformanceAckReply(CommandType.AutoStart);
-    }
-    throw new Error(`vice_disk_attach: unexpected commandType ${commandType}`);
+  await withConformanceFixtureFile("disk.d64", async (fixturePath) => {
+    const session = buildConformanceSession("conformance-vice_disk_attach", (commandType) => {
+      if (commandType === CommandType.AutoStart) {
+        return conformanceAckReply(CommandType.AutoStart);
+      }
+      throw new Error(`vice_disk_attach: unexpected commandType ${commandType}`);
+    });
+    const deps = buildConformanceDeps(session);
+    const result = await dispatchStock("vice_disk_attach", { unit: 8, path: fixturePath }, deps);
+    assertAnswerConforms("vice_disk_attach", result);
   });
-  const deps = buildConformanceDeps(session);
-  const result = await dispatchStock("vice_disk_attach", { unit: 8, path: "/workspace/disk.d64" }, deps);
-  assertAnswerConforms("vice_disk_attach", result);
 });
 
 conformanceTest("vice_snapshot_save", async () => {
