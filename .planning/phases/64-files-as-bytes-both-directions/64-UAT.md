@@ -1,9 +1,9 @@
 ---
-status: complete
+status: diagnosed
 phase: 64-files-as-bytes-both-directions
 source: [64-VERIFICATION.md]
 started: 2026-09-23T14:50:48Z
-updated: 2026-09-23T15:40:00Z
+updated: 2026-09-23T16:00:00Z
 ---
 
 ## Current Test
@@ -40,5 +40,27 @@ blocked: 0
   reason: "User reported (measured live in-session): every vice_* call, including vice_ping, fails with 'stock handshake failed (vice: missing or invalid control token).'"
   severity: blocker
   test: 1
-  artifacts: []
-  missing: []
+  root_cause: "PRIMARY (the cause of G-64-1): no production code supplies a credential to the relay/transfer dial. Since Phase 63 (cfd02597) stockConnect()'s default socket source dials the fixed endpoint and sends `token: controlToken ?? \"\"` (stock-connect.ts:409-420; Phase 64 copied it into defaultTransferFile() :508/:530; text-connect.ts:100-110 has the same default). broker-control.mts:1284-1286 checks the token before handling attach/transfer. vice-proxy.ts dispatchStockFor() (:650-656) never sets StockDispatchDeps.controlToken, which stock-dispatch.ts:221-225 documents as test-only; openBrokerControl() keeps the real token inside createSession()'s closure (vice-broker-client.ts:1035). So every relay attach sends an empty token and is refused, for every vice_* tool on both channels. Acquire/monitor_claim succeed because they ride the already-authenticated control session. Offline reproduction confirmed that adding controlToken is the only thing that moves the refusal. SECONDARY (real, did not cause this UAT failure): broker and client resolve broker.json in different directories: the broker without --repo-root writes brokerStateDir() = ~/.c64-re-tools/supervisor (vice-broker.mts:219-222), while the client reads VICE_POOL_DIR ?? <project>/.c64-re-tools/supervisor (vice-broker-client.ts:96-101) and ignores broker-home.mts. The documented start route (`npx -y @henols/vice-mcp broker`, README.md:211, service/vice-broker.service:31, the launchd plist, BROKER_START_COMMAND broker-endpoint.ts:435) is the mismatched one; only vice-launcher.sh:287 (--repo-root) aligns them, and that pin contradicts BROKER-06."
+  artifacts:
+    - path: "src/mcp/vice/vice-proxy.ts"
+      issue: "dispatchStockFor() (:650-656) and buildHeldLease() (:1198-1234) never carry a credential to the relay dial"
+    - path: "src/mcp/vice/stock-dispatch.ts"
+      issue: "controlToken (:221-225, :452-460) documented as test-only, so production never fills it"
+    - path: "src/mcp/vice/stock-connect.ts"
+      issue: "default monitor dial (:409-420) and defaultTransferFile() (:477-531) send `controlToken ?? \"\"`"
+    - path: "src/mcp/vice/text-connect.ts"
+      issue: "same empty-token default on the text channel (:100-110, :188; text-tools.ts:159)"
+    - path: "src/mcp/vice/broker-control.mts"
+      issue: "attach and transfer are dispatched after the per-boot token gate (:1284-1286)"
+    - path: "src/mcp/vice/vice-broker-client.ts"
+      issue: "client broker.json discovery (:96-101) ignores broker-home.mts; session hides its token (:1035)"
+    - path: "src/mcp/vice/vice-broker.mts"
+      issue: "without --repo-root the broker state dir is ~/.c64-re-tools/supervisor (:219-222), which the client never reads"
+    - path: "src/mcp/vice/vice-proxy.test.ts"
+      issue: "spawns the real proxy and sends vice_ping but discards the tool result (:2016-2017, :2106-2108), and its listener is on port 0 while the relay dials 19510"
+  missing:
+    - "Relay attach and file transfer succeed from a real vice-proxy.ts session against a real broker, on both the binary and text channels"
+    - "Broker and client resolve the same broker.json for every documented start route (npx broker, service unit, launchd plist, vice-launcher.sh)"
+    - "A regression test that drives the real vice-proxy.ts against a real control listener and asserts a stock tool call reaches onRelayAttach and returns a non-error result"
+    - "A test asserting the broker's default state dir and the client's discovery path agree"
+  debug_session: ".planning/debug/vice-proxy-control-token-handshake.md"
