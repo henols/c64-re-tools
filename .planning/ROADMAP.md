@@ -2259,7 +2259,16 @@ the first tool rides it.
      fully written, and an age-based sweep removes what a crashed broker or a
      vanished client left behind (XFER-07).
 
-**Plans**: TBD
+**Plans**: 7 plans, 6 waves
+
+Plans:
+- [ ] 64-01-PLAN.md — the transfer protocol core: streaming hash+count+cap `Transform`, header framing, atomic publish, and the pure path-containment validator (tracer-first)
+- [ ] 64-02-PLAN.md — the `stage_file` and `transfer` control-plane ops, `dialFileTransfer()`, and the client-side staging/transfer seams
+- [ ] 64-03-PLAN.md — broker-side staging lifecycle: minted handle, slot supersession, session-close cleanup, wired into the real broker
+- [ ] 64-04-PLAN.md — `vice_snapshot_save` and `vice_snapshot_load` migrated; the pair round-trips a non-UTF-8 payload byte for byte
+- [ ] 64-05-PLAN.md — the crash sweep and the folded vicerc-scratch relocation: two reap passes, two opposite lifetime rules, startup-only
+- [ ] 64-06-PLAN.md — `vice_autostart` and `vice_disk_attach` migrated; the disk write-loss stated by name; `stock-paths.ts` import dropped
+- [ ] 64-07-PLAN.md — the disjoint-roots proof for all four tools, the measured convergence metric, and the boundary confirmations
 
 **Cross-cutting constraints:**
 

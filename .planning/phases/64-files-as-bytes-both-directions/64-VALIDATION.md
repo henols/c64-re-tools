@@ -5,7 +5,7 @@ slug: "files-as-bytes-both-directions"
 # audit-milestone §5.5 distinguishes NOT-VALIDATED (draft) from PARTIAL (validated + nyquist_compliant: false) (#2117)
 status: draft
 nyquist_compliant: false
-wave_0_complete: false
+wave_0_complete: true
 created: "2026-09-23"
 ---
 
@@ -52,15 +52,27 @@ sibling. Threat refs are the phase's own, from `64-RESEARCH.md` § Security Doma
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| TBD | TBD | TBD | XFER-01 | — | Produced bytes arrive over the socket; client writes under its own `.c64-re-tools/<kind>/`; result names only the local path | integration | `node --test <transfer-download>.test.ts` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | XFER-02 | Information Disclosure (D-14, accepted) | Consumed file read client-side from the caller's path and streamed to the broker | integration | `node --test <transfer-upload>.test.ts` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | XFER-03 | Tampering / EoP — path traversal | A broker-supplied destination name escaping the per-kind directory is **refused, not sanitised**: `../../etc/passwd`, `/etc/passwd`, `C:\`, NUL-embedded | unit (pure function, **no I/O**) | `node --test <transfer-paths>.test.ts` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | XFER-04 | EoP — handle guessing | Broker chooses its own staging path; client refers to it only by a `randomBytes`-derived opaque handle | unit + integration | `node --test broker-control.test.ts` (extend) + new staging test | ⚠️ partial — extend, don't replace | ⬜ pending |
-| TBD | TBD | TBD | XFER-05 | — | Bytes survive byte-for-byte, including non-UTF-8, over a real loopback socket with a real multi-megabyte buffer | integration | `node --test <transfer-integrity>.test.ts` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | XFER-06 | DoS — declared-length lie | Cap enforced **independently at the receiver** from bytes actually observed; refusal message names the limit; backpressure proven with a receiver that deliberately stops reading | unit (cap) + integration (flow control) | `node --test <transfer-cap>.test.ts` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | XFER-06 | Tampering — partial file at final name | Temp-write then `renameSync`, only after length **and** digest verify | integration | `node --test <transfer-atomic>.test.ts` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | XFER-07 | — | Session-scoped staging removed on connection close; age-based sweep removes crash/vanish residue | integration | new test over the close path + a broker-restart sweep test | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | XFER-08 | — | All four tools complete against disjoint client/broker roots; no broker-side path in any tool result or wire field | integration (disjoint temp dirs) | `node --test stock-machine.test.ts` (extend) or new phase-level integration test | ⚠️ unconfirmed — see Wave 0 | ⬜ pending |
+| 64-01-T1 | 64-01 | 1 | XFER-02, XFER-05 | T-64-04, T-64-06 | One JSON header line then exactly N raw bytes cross a real socket; nothing past the header is string-decoded; `pipeline()` owns backpressure | integration (tracer, real loopback socket) | `node --test --test-reporter=tap transfer-hash.test.mts broker-transfer.test.mts resources-sync.test.ts` | ❌ W0 — created by this task | ⬜ pending |
+| 64-01-T2 | 64-01 | 1 | XFER-06 | T-64-01, T-64-02 | Cap enforced at BOTH ends, independently at the receiver from observed bytes; mid-stream abort unwinds the temp file; refusal names 16777216 | unit (cap) + integration (flow control) | `node --test --test-reporter=tap transfer-hash.test.mts broker-transfer.test.mts` | ✅ from T1 | ⬜ pending |
+| 64-01-T3 | 64-01 | 1 | XFER-03 | T-64-03 | `../../etc/passwd`, `/etc/passwd`, `C:\`, NUL-embedded, empty, `.` and `..` all REFUSED, not sanitised | unit (pure function, **no I/O**) | `node --test --test-reporter=tap transfer-paths.test.ts stock-paths.test.ts stock-machine.test.ts stock-dispatch.test.ts` | ❌ W0 — created by this task | ⬜ pending |
+| 64-02-T1 | 64-02 | 2 | XFER-04 | T-64-07, T-64-08, T-64-09 | `stage_file` gated by `ownsTarget()`; `transfer` authorised by the minted handle alone | unit (real listener, ephemeral port) | `node --test --test-reporter=tap broker-control.test.ts resources-sync.test.ts` | ⚠️ extend, don't replace | ⬜ pending |
+| 64-02-T2 | 64-02 | 2 | XFER-01, XFER-02 | T-64-10 | Two-candidate hello race, byte-level reply read, payload bytes in the same TCP segment carried out as a raw Buffer | unit (real listener) | `node --test --test-reporter=tap broker-endpoint.test.ts` | ⚠️ extend | ⬜ pending |
+| 64-02-T3 | 64-02 | 2 | XFER-04 | T-64-07 | `stageFile()` rides the existing control session; a missing handle is a protocol failure, never fabricated | unit | `node --test --test-reporter=tap vice-broker-client.test.ts broker-endpoint.test.ts broker-control.test.ts` | ⚠️ extend | ⬜ pending |
+| 64-03-T1 | 64-03 | 3 | XFER-04, XFER-07 | T-64-12, T-64-13, T-64-14 | Broker chooses the staging path; `randomBytes` handle; slot supersession deletes the previous file; session dir removed in one recursive delete | unit (fresh `mkdtempSync` broker root) | `node --test --test-reporter=tap broker-transfer.test.mts broker-home.test.ts` | ✅ from 64-01 | ⬜ pending |
+| 64-03-T2 | 64-03 | 3 | XFER-04, XFER-07 | T-64-16, T-64-17 | Upload published only after length+digest verify; second transfer on an in-flight handle refused; staging gone at session close | integration (real listener + real files) | `node --test --test-reporter=tap vice-broker-staging.test.ts resources-sync.test.ts` | ❌ W0 — created by this task | ⬜ pending |
+| 64-03-T3 | 64-03 | 3 | (wave gate) | — | Full-glob suite failing SET unchanged from baseline; typecheck clean; no leaked scratch | suite gate | `npm --prefix src/mcp/vice test` | ✅ | ⬜ pending |
+| 64-04-T1 | 64-04 | 4 | XFER-01 | T-64-18, T-64-19, T-64-20 | Produced bytes arrive over the socket; client writes under its own `.c64-re-tools/snapshots/`; result names only the local path and the handle | unit (DI stub session) | `node --test --test-reporter=tap stock-machine.test.ts stock-paths.test.ts transfer-paths.test.ts` | ⚠️ extend | ⬜ pending |
+| 64-04-T2 | 64-04 | 4 | XFER-02 | T-64-18 | Consumed file read client-side from the caller's name and streamed to the broker; missing `.vsf` refuses before any dial | unit | `node --test --test-reporter=tap stock-machine.test.ts` | ⚠️ extend | ⬜ pending |
+| 64-04-T3 | 64-04 | 4 | XFER-05 | — | Bytes survive byte-for-byte through the full handler path, over a real listener and disjoint roots | integration | `node --test --test-reporter=tap stock-machine.test.ts vice-broker-staging.test.ts` | ✅ | ⬜ pending |
+| 64-05-T1 | 64-05 | 4 | XFER-07 | T-64-24 | Per-launch emulator config scratch lands under the machine-level broker root, with a pid record beside it | unit (fresh broker root) | `node --test --test-reporter=tap broker-launch.test.ts broker-home.test.ts resources-sync.test.ts` | ⚠️ extend | ⬜ pending |
+| 64-05-T2 | 64-05 | 4 | XFER-07 | T-64-22, T-64-23 | Live-pid-guarded config reap; unconditional staging sweep; zero-case logging; one bad entry never aborts a pass | unit (injected liveness/removal) | `node --test --test-reporter=tap broker-kill.test.ts resources-sync.test.ts` | ⚠️ extend | ⬜ pending |
+| 64-05-T3 | 64-05 | 4 | XFER-07 | T-64-25 | Both sweeps run at startup, before the bind; no repeating timer anywhere | integration | `node --test --test-reporter=tap vice-broker-staging.test.ts broker-kill.test.ts resources-sync.test.ts` | ✅ | ⬜ pending |
+| 64-06-T1 | 64-06 | 5 | XFER-02, XFER-08 | T-64-26 | `path` stays unrestricted (D-14, accepted); an absolute path outside the project root is uploaded | unit | `node --test --test-reporter=tap stock-machine.test.ts` | ⚠️ extend | ⬜ pending |
+| 64-06-T2 | 64-06 | 5 | XFER-08 | T-64-27, T-64-29 | Disk write-loss stated in its own exported constant; distinct staging slots per tool | unit (pinning test off the constant) | `node --test --test-reporter=tap stock-machine.test.ts` | ⚠️ extend | ⬜ pending |
+| 64-06-T3 | 64-06 | 5 | XFER-08 | — | Zero `stock-paths.ts` imports and zero translation calls in `stock-machine.ts`; out-of-scope surfaces untouched | source assertion + suite gate | `npm --prefix src/mcp/vice test` | ✅ | ⬜ pending |
+| 64-07-T1 | 64-07 | 6 | XFER-08, XFER-05 | T-64-31, T-64-32 | All four tools complete against disjoint roots; every result key walked recursively for a broker path; staging empty after close | integration (disjoint temp dirs) | `node --test --test-reporter=tap transfer-disjoint-roots.test.ts vice-broker-staging.test.ts stock-machine.test.ts` | ❌ W0 — created by this task | ⬜ pending |
+| 64-07-T2 | 64-07 | 6 | XFER-01 | T-64-33, T-64-34 | Convergence metric measured and recorded with its command and named importers; `docs/` untouched | evidence + source measurement | `git ls-files` presence check plus the recorded importer grep | ❌ W0 — created by this task | ⬜ pending |
+| 64-07-T3 | 64-07 | 6 | XFER-08 | — | Declared boundaries confirmed by a check, not assumed; the four known-failing result-chunking tests not retired | evidence + suite gate | `npm --prefix src/mcp/vice test` | ✅ | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -68,12 +80,12 @@ sibling. Threat refs are the phase's own, from `64-RESEARCH.md` § Security Doma
 
 ## Wave 0 Requirements
 
-- [ ] Streaming hash+count `Transform` module + unit tests (cap enforcement, digest correctness) — **no existing file to extend**; a repo-wide grep for `Transform`/`createReadStream` outside tests returned zero hits
-- [ ] Pure-function path-containment validator + fixture-string tests (D-13 / XFER-03) — **no existing file to extend**
-- [ ] Transfer-dial function and its tests, mirroring `broker-endpoint.test.ts`'s existing structure for `dialMonitorRelay()`
-- [ ] New `ControlRequestKind` arm + dispatch tests in `broker-control.mts` / `broker-control.test.ts`, mirroring the existing `attach` arm's coverage
-- [ ] **Confirm whether `stock-machine.test.ts` exists and what it covers** before planning XFER-08's disjoint-roots proof — the research pass did not open that file
-- [ ] **Read `broker-kill.mts`** before planning D-08's sweep-trigger task — the research pass did not open it
+- [x] Streaming hash+count `Transform` module + unit tests — **owned by 64-01 task 1** (`transfer-hash.mts` / `transfer-hash.test.mts`), cap enforcement and digest correctness in 64-01 task 2
+- [x] Pure-function path-containment validator + fixture-string tests (D-13 / XFER-03) — **owned by 64-01 task 3** (`transfer-paths.ts` / `transfer-paths.test.ts`)
+- [x] Transfer-dial function and its tests — **owned by 64-02 task 2** (`dialFileTransfer()` in `broker-endpoint.ts`, extending `broker-endpoint.test.ts`'s existing `dialMonitorRelay()` structure)
+- [x] New `ControlRequestKind` arms + dispatch tests — **owned by 64-02 task 1** (`stage_file` and `transfer`, extending `broker-control.test.ts`'s existing `attach` coverage)
+- [x] **`stock-machine.test.ts` confirmed to exist** (about 16.7 KB, covers all four migrating handlers with a DI stub session) — resolved during pattern mapping; 64-04 and 64-06 EXTEND it rather than replacing it, and 64-06 task 3 drops its now-dangling container stub
+- [x] **`broker-kill.mts` read** — `reapOrphanedInstances()` and `verifiedKill()` are the concrete analogs for both D-08's live-pid-guarded reap and XFER-07's startup staging sweep; 64-05 tasks 2 and 3 own them
 
 **Scratch-fixture rule (binding):** every fixture directory is a fresh `mkdtempSync` per test,
 never a fixed path inside the repository tree. The suite already has three sites that race on
