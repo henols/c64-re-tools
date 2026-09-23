@@ -175,20 +175,30 @@ const USAGE = "usage: vice-broker.mjs [--repo-root <path>] [--state-dir <path>] 
  * none following it -- still throws USAGE; only the "no project was named"
  * case no longer does.
  *
- * `--state-dir` resolves through a FOUR-step precedence chain, extended by
- * this plan with a new, LOWEST step rather than by reordering the three that
- * already existed: (1) an explicit `--state-dir` argument; (2)
- * `VICE_POOL_DIR` from the environment; (3) `.c64-re-tools/supervisor` under
- * `--repo-root`, when one was supplied (moved 2026-09-08 from
- * `.vice-supervisor`); (4) -- new -- `broker-home.mts`'s `brokerStateDir()`,
- * which resolves the machine-level root (`~/.c64-re-tools/supervisor` by
- * default, or `VICE_BROKER_HOME`/`VICE_SUPERVISOR_DIR` when set) whenever
- * neither an explicit state directory nor a project was given. Steps 1-3
- * resolve to the EXACT SAME directory they always did; step 4 is reached
- * only when none of them apply. This module is host-bound and compiled by
- * `build.ts`, so it must not import the container-side `repo-root.ts`; the
- * two segments in step 3 are joined directly, matching that file's
- * `toolsDir()`. */
+ * `--repo-root` NO LONGER SELECTS A STATE DIRECTORY (Phase 64, plan 64-10,
+ * G-64-1's secondary cause): it used to join `.c64-re-tools/supervisor`
+ * onto whatever project was named, and `vice-launcher.sh` always passes
+ * `--repo-root`, so that pin was silently pulling broker state into one
+ * project's tree on the ONE route that used it -- exactly what BROKER-06
+ * forbids -- while every other documented start route (`npx -y
+ * @henols/vice-mcp broker`, the systemd unit, the launchd agent, none of
+ * which pass `--repo-root` at all) wrote to the machine-level root instead.
+ * The client read the machine-level root unconditionally, so only the
+ * launcher route ever agreed with it. `--repo-root` is still parsed and
+ * still returned on `ParsedArgs.repoRoot` -- it keeps anchoring the Ghidra
+ * runs handle and `run()`'s once-per-process emulator-binary lookup below;
+ * only its state-directory meaning is gone.
+ *
+ * `--state-dir` now resolves through a TWO-step chain: (1) an explicit
+ * `--state-dir` argument; (2) `broker-home.mts`'s `brokerStateDir()`, which
+ * itself honours `VICE_POOL_DIR` first, then `VICE_SUPERVISOR_DIR`, then
+ * `VICE_BROKER_HOME`, then the machine-level default
+ * (`~/.c64-re-tools/supervisor`). Because step 2 now does the env-var
+ * reading this function used to do directly, one behavioural edge follows:
+ * an empty-string `VICE_POOL_DIR` is now treated as unset (`brokerStateDir()`
+ * uses `||`, not `??`), where the old three-step chain here used `??` and
+ * would have kept an empty string. This module is host-bound and compiled by
+ * `build.ts`, so it must not import the container-side `repo-root.ts`. */
 export function parseArgs(argv: string[]): ParsedArgs {
   let repoRoot: string | null = null;
   let stateDir: string | null = null;
@@ -216,10 +226,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     }
   }
 
-  const resolvedStateDir =
-    stateDir ??
-    process.env.VICE_POOL_DIR ??
-    (repoRoot ? join(repoRoot, ".c64-re-tools", "supervisor") : brokerStateDir());
+  const resolvedStateDir = stateDir ?? brokerStateDir();
 
   return { repoRoot: repoRoot ?? "", stateDir: resolvedStateDir, checkContainer, dryRun };
 }
@@ -1977,9 +1984,11 @@ async function run(args: ParsedArgs): Promise<void> {
   // launch, and never called from inside broker-launch.mts's `inFlight`
   // single-owner guard (this call sits entirely outside it; no launch is
   // even possible yet at this point in run()). `supervisorDir: args.stateDir`
-  // is passed explicitly -- args.stateDir IS `.c64-re-tools/supervisor` under this
-  // broker's own repo root (see parseArgs() above), so this is the SAME
-  // directory repo-root.ts's supervisorDir() would resolve to, without this
+  // is passed explicitly -- args.stateDir is now the machine-level state
+  // directory broker-home.mts's brokerStateDir() resolves (Phase 64, plan
+  // 64-10, G-64-1), NOT a directory under this broker's own `--repo-root`
+  // (that binding is gone; see parseArgs() above). This is the SAME
+  // directory a client resolves through the same function, without this
   // host-bound module ever importing that container-side resolver directly
   // (backend-detect.mts's own header comment explains why it cannot).
   // There is nothing left to detect -- the resolved

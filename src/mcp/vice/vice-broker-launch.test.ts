@@ -16,17 +16,24 @@
 // establishes, per 01.6-01-PLAN.md's planning_notes).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, execFile, type ChildProcess } from "node:child_process";
 import { mkdtempSync, copyFileSync, mkdirSync, readFileSync, writeFileSync, statSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 
 import { HOST_BOUND_ARTIFACTS } from "./build.ts";
+
+const execFileP = promisify(execFile);
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BROKER_ARTIFACT = join(HERE, "resources", "vice-broker.mjs");
 const LAUNCHER = join(HERE, "resources", "vice-launcher.sh");
+// Imported by a FRESH child process below, never by this test file itself
+// (this file's own header says it never imports a .mjs module -- a child
+// process importing the .ts source directly keeps that true).
+const BROKER_CLIENT_MODULE_URL = new URL("./vice-broker-client.ts", import.meta.url).href;
 
 // The four container-guard tests below hand their spawned process ONE
 // simulated container signal instead of inheriting one ambiently. The only
@@ -164,6 +171,32 @@ async function stopBroker(child: ChildProcess): Promise<void> {
   child.kill("SIGTERM");
   const exited = await waitFor(() => child.exitCode !== null || child.signalCode !== null, 3000);
   if (!exited) child.kill("SIGKILL");
+}
+
+/** Computes brokerJsonPath() in a FRESH child `node` process that imports
+ * vice-broker-client.ts directly -- the SAME thing a real client process
+ * does, never this test file's own already-imported modules (Phase 64, plan
+ * 64-10, G-64-1's route-agreement proof). `env` should be the SAME env the
+ * sibling broker under test was spawned with, so the two sides answer under
+ * identical configuration. `VICE_SKIP_RESOURCE_INSTALL=1` and
+ * `CLAUDE_PROJECT_DIR` are added on top: vice-broker-client.ts imports
+ * vice-errors.ts, which imports repo-root.ts, whose own bottom-of-module
+ * side effect (`ensureResourcesInstalled()`) would otherwise attempt to
+ * install launcher scripts into a real repo root computed from this
+ * process's own `.git` ancestor walk -- `CLAUDE_PROJECT_DIR` makes
+ * `repoRoot()` return immediately without any filesystem walk, and
+ * `VICE_SKIP_RESOURCE_INSTALL=1` makes the install call itself a no-op
+ * regardless. */
+async function clientBrokerJsonPath(env: Record<string, string | undefined>, projectDirHint: string): Promise<string> {
+  const nodeSrc = `
+    import { brokerJsonPath } from ${JSON.stringify(BROKER_CLIENT_MODULE_URL)};
+    console.log(brokerJsonPath());
+  `;
+  const { stdout } = await execFileP(process.execPath, ["--input-type=module", "-e", nodeSrc], {
+    env: { ...process.env, ...env, VICE_SKIP_RESOURCE_INSTALL: "1", CLAUDE_PROJECT_DIR: projectDirHint },
+  });
+  const lines = stdout.trim().split("\n").filter(Boolean);
+  return lines[lines.length - 1];
 }
 
 // The fourteen-field discovery-record set (plan 05, D-27, criterion G/K --
@@ -472,21 +505,31 @@ test("precedence 2: VICE_POOL_DIR wins when no --state-dir is given, exactly as 
   }
 });
 
-test("precedence 3: --repo-root alone (no --state-dir, no VICE_POOL_DIR) resolves the project-relative directory, exactly as today", async () => {
+test("precedence 3 INVERTED (Phase 64, plan 64-10, G-64-1): --repo-root alone (no --state-dir, no VICE_POOL_DIR) no longer selects a project-relative directory -- broker.json lands under the machine-level root instead, and nothing is created under the project", async () => {
   const deployDir = freshDeployDir();
   const projectRoot = mkdtempSync(join(tmpdir(), "vice-broker-launch-project-root-"));
+  // A scratch HOME -- never this developer's real one, which the default
+  // (no VICE_BROKER_HOME) would otherwise resolve to now that --repo-root no
+  // longer pins the state directory into the project.
+  const machineHome = mkdtempSync(join(tmpdir(), "vice-broker-launch-machine-home-"));
   const { child } = runBrokerAsync(deployDir, ["--repo-root", projectRoot], {
     VICE_SUPERVISOR_ALLOW_CONTAINER: "1",
     VICE_BROKER_CONTROL_PORT: "0",
+    HOME: machineHome,
   });
   try {
-    const expected = join(projectRoot, ".c64-re-tools", "supervisor", "broker.json");
+    const expected = join(machineHome, ".c64-re-tools", "supervisor", "broker.json");
     const appeared = await waitFor(() => existsSync(expected), 5000);
-    assert.ok(appeared, `broker.json must appear at the project-relative default (${expected})`);
+    assert.ok(appeared, `broker.json must appear under the machine-level root (${expected}), not under --repo-root's project`);
+    assert.ok(
+      !existsSync(join(projectRoot, ".c64-re-tools", "supervisor")),
+      "no project's .c64-re-tools/supervisor/ may receive broker state from any start route (BROKER-06)",
+    );
   } finally {
     await stopBroker(child);
     rmSync(deployDir, { recursive: true, force: true });
     rmSync(projectRoot, { recursive: true, force: true });
+    rmSync(machineHome, { recursive: true, force: true });
   }
 });
 
@@ -515,6 +558,96 @@ test("no project argument and no state-directory argument starts the broker unde
     await stopBroker(child);
     rmSync(deployDir, { recursive: true, force: true });
     rmSync(machineHome, { recursive: true, force: true });
+  }
+});
+
+// ------------------------------------------------ route agreement (G-64-1)
+//
+// Task 1 (Phase 64, plan 64-10): the whole reason this plan exists. Proves
+// that for each documented start route, a REAL broker process and the
+// client's OWN resolver (a fresh child process importing
+// vice-broker-client.ts) land on the exact same broker.json path, with
+// nothing configured on either side beyond the route's own argv. Every
+// spawned broker here runs under a scratch HOME -- never this developer's
+// real one, which the default (no VICE_BROKER_HOME) would otherwise resolve
+// to.
+
+/** Spawns a real broker for one documented route (`argv`/`testEnv`), waits
+ * for the CLIENT's own computed path to appear, and optionally asserts a
+ * project-local path was never created. `testEnv` is passed identically to
+ * both the broker (via runBrokerAsync) and the client child process (via
+ * clientBrokerJsonPath) so the two sides answer under the SAME
+ * configuration -- the whole point of a route-agreement proof. */
+async function assertRouteAgreement(
+  label: string,
+  argv: string[],
+  extraEnv: Record<string, string>,
+  assertProjectUntouched?: string,
+): Promise<void> {
+  const deployDir = freshDeployDir();
+  const homeDir = mkdtempSync(join(tmpdir(), "vice-broker-launch-route-home-"));
+  const testEnv: Record<string, string> = {
+    VICE_SUPERVISOR_ALLOW_CONTAINER: "1",
+    VICE_BROKER_CONTROL_PORT: "0",
+    HOME: homeDir,
+    ...extraEnv,
+  };
+  const { child, getStderr } = runBrokerAsync(deployDir, argv, testEnv);
+  try {
+    const clientPath = await clientBrokerJsonPath(testEnv, homeDir);
+    const appeared = await waitFor(() => existsSync(clientPath), 5000);
+    assert.ok(
+      appeared,
+      `${label}: broker.json did not appear at the client's own resolved path (${clientPath}); stderr so far: ${getStderr()}`,
+    );
+    if (assertProjectUntouched) {
+      assert.ok(
+        !existsSync(assertProjectUntouched),
+        `${label}: nothing may be created under the project's own tree (${assertProjectUntouched})`,
+      );
+    }
+  } finally {
+    await stopBroker(child);
+    rmSync(deployDir, { recursive: true, force: true });
+    rmSync(homeDir, { recursive: true, force: true });
+  }
+}
+
+test("route agreement: no project argument (npx broker / systemd unit / launchd agent) -- broker and client resolve the SAME broker.json under a scratch HOME, no override (G-64-1)", async () => {
+  await assertRouteAgreement("no-argument route", [], {});
+});
+
+test("route agreement: --repo-root <project> (vice-launcher.sh) -- broker and client STILL resolve the SAME machine-level broker.json, and nothing is created under the project (G-64-1)", async () => {
+  const projectRoot = mkdtempSync(join(tmpdir(), "vice-broker-launch-project-root-"));
+  try {
+    await assertRouteAgreement("--repo-root route", ["--repo-root", projectRoot], {}, join(projectRoot, ".c64-re-tools", "supervisor"));
+  } finally {
+    rmSync(projectRoot, { recursive: true, force: true });
+  }
+});
+
+test("route agreement, VICE_BROKER_HOME variant: the no-argument route and the client agree on <VICE_BROKER_HOME>/supervisor/broker.json (G-64-1)", async () => {
+  const brokerHome = mkdtempSync(join(tmpdir(), "vice-broker-launch-broker-home-"));
+  try {
+    await assertRouteAgreement("no-argument route, VICE_BROKER_HOME set", [], { VICE_BROKER_HOME: brokerHome });
+  } finally {
+    rmSync(brokerHome, { recursive: true, force: true });
+  }
+});
+
+test("route agreement, VICE_BROKER_HOME variant: the --repo-root route and the client STILL agree on <VICE_BROKER_HOME>/supervisor/broker.json, and nothing is created under the project (G-64-1)", async () => {
+  const brokerHome = mkdtempSync(join(tmpdir(), "vice-broker-launch-broker-home-"));
+  const projectRoot = mkdtempSync(join(tmpdir(), "vice-broker-launch-project-root-"));
+  try {
+    await assertRouteAgreement(
+      "--repo-root route, VICE_BROKER_HOME set",
+      ["--repo-root", projectRoot],
+      { VICE_BROKER_HOME: brokerHome },
+      join(projectRoot, ".c64-re-tools", "supervisor"),
+    );
+  } finally {
+    rmSync(brokerHome, { recursive: true, force: true });
+    rmSync(projectRoot, { recursive: true, force: true });
   }
 });
 

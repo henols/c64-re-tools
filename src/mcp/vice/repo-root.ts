@@ -194,20 +194,30 @@ export function repoRoot({ from = HERE, env = process.env, exists = existsSync }
  * and neither was ever measured before being written down. The corrected
  * picture:
  *
- *   - FIVE files call `toolsDir()`/`supervisorDir()` directly, across FOUR
+ *   - FOUR files call `toolsDir()`/`supervisorDir()` directly, across FOUR
  *     distinct subdirectories: incident-record.ts (`incidents`),
  *     stock-paths.ts (`snapshots`), vice-proxy.ts (`bin`, reading back the
- *     deployed launcher path), and vice.ts + vice-broker-client.ts, both via
- *     `supervisorDir()` (`supervisor`, the broker state directory -- one
- *     writer, two readers).
+ *     deployed launcher path), and vice.ts, via `supervisorDir()`
+ *     (`supervisor`, the broker state directory). CORRECTED (Phase 64, plan
+ *     64-10, G-64-1): vice-broker-client.ts's brokerRootDir() used to be a
+ *     second `supervisorDir()` caller here, alongside vice.ts -- that was
+ *     G-64-1's secondary cause, because the documented machine-level start
+ *     route never writes to a directory THIS function resolves (a directory
+ *     inside whichever project checkout happens to be current). It now
+ *     imports broker-home.mts's `brokerStateDir()` instead, sharing the
+ *     broker's own machine-level resolver, and calls this function not at
+ *     all.
  *   - FIVE files cannot import this container-side module at all, so each
  *     joins `".c64-re-tools"` with its own trailing segment(s) directly,
  *     matching this function's shape by CONVENTION, never by shared code:
  *     install-resources.ts's `installTargetDir()` (`bin` -- module-cycle
  *     avoidance, since THIS file's own bottom-of-module call invokes it),
- *     vice-broker.mts's `parseArgs()` state-dir fallback (`supervisor` --
- *     host-bound, compiled separately by build.ts) and its `run()` tool-
- *     location deps (the bare root -- same host-bound reason), host-tool.mts's
+ *     vice-broker.mts's `run()` tool-location deps (the bare root --
+ *     host-bound, compiled separately by build.ts; `parseArgs()`'s own
+ *     state-dir resolution CORRECTED (Phase 64, plan 64-10, G-64-1): it no
+ *     longer joins the literal itself, and calls broker-home.mts's
+ *     `brokerStateDir()` unconditionally when no explicit `--state-dir` is
+ *     given, whatever `--repo-root` says), host-tool.mts's
  *     `oracle.run` scratch directory (`runs/oracle` -- host-bound),
  *     ghidra-project.mts's `ghidraRunsRoot()`/`ghidraRunsRealRoot()`
  *     (`runs/ghidra` -- host-bound, reached through a symlinked alias
@@ -222,7 +232,7 @@ export function repoRoot({ from = HERE, env = process.env, exists = existsSync }
  * files that call this function directly -- it is host-bound
  * (ghidra-project.mts) and cannot import this file at all.
  *
- * The literal string ".c64-re-tools" therefore has exactly 11 non-comment
+ * The literal string ".c64-re-tools" therefore has exactly 10 non-comment
  * occurrences in this codebase, across 8 files. repo-root.test.ts's census
  * gate reads BOTH the count and this file list straight out of this
  * sentence and the bullet list below -- never duplicated by hand a second
@@ -232,11 +242,13 @@ export function repoRoot({ from = HERE, env = process.env, exists = existsSync }
  * again (threat `T-40-10-02`):
  *   - repo-root.ts -- this definition, the line below (1)
  *   - install-resources.ts -- `installTargetDir()`'s `bin` join (1)
- *   - vice-broker.mts -- `parseArgs()`'s state-dir fallback, the explicit
- *     `--repo-root` branch of one ternary (1) -- the OTHER branch now calls
- *     broker-home.mts's `brokerStateDir()` instead of joining the literal a
- *     second time, D-13/plan 62-04's machine-level fallback -- plus `run()`'s
- *     `toolsDir` for the once-per-process emulator-binary resolution (1) = 2
+ *   - vice-broker.mts -- `run()`'s `toolsDir` for the once-per-process
+ *     emulator-binary resolution (1). `parseArgs()`'s own state-dir
+ *     resolution used to join the literal a second time, on the explicit
+ *     `--repo-root` branch of a ternary -- CORRECTED (Phase 64, plan 64-10,
+ *     G-64-1): that branch is gone, and `parseArgs()` now calls
+ *     broker-home.mts's `brokerStateDir()` unconditionally whenever no
+ *     explicit `--state-dir` was given, joining no literal of its own.
  *   - ghidra-project.mts -- `GHIDRA_RUNS_HANDLE_TARGET`, the alias handle's
  *     relative symlink target (1)
  *   - host-tool.mts -- `oracle.run`'s scratch-directory join (1), plus

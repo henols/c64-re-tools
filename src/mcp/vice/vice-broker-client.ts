@@ -11,9 +11,11 @@
 // (openBrokerControl()/BrokerControlSession below) instead. What survives:
 // the request-id primitives (the new client's own acquire()/recycle() still
 // mint ids with newRequestId()), brokerRootDir()/brokerJsonPath() (the
-// discovery record's own location), and readBrokerLiveness() (unchanged
-// classification, still reading the SAME broker.json openBrokerControl()
-// reads for its control_host/control_port/control_token).
+// discovery record's own location -- the machine-level root broker-home.mts
+// resolves, not any project's tree; see brokerRootDir()'s own comment below,
+// G-64-1), and readBrokerLiveness() (unchanged classification, still reading
+// the SAME broker.json openBrokerControl() reads for its control_host/
+// control_port/control_token).
 //
 // Every read of broker.json is still untrusted input: parse in try/catch, a
 // malformed or half-written file is "not there yet" or "absent", never a
@@ -27,10 +29,15 @@
 // list.
 import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { basename, join, resolve } from "node:path";
+import { basename, join } from "node:path";
 import { connect, type Socket } from "node:net";
 
-import { supervisorDir } from "./repo-root.ts";
+// A VALUE import of the machine-level state resolver (Phase 64, plan 64-10,
+// G-64-1's secondary cause) -- broker-home.mts carries only `node:` imports,
+// so it loads unbuilt from this container-side module exactly as
+// stock-connect.ts's own value import of backend-detect.mts does. See
+// brokerRootDir() below for why this replaced repo-root.ts's supervisorDir().
+import { brokerStateDir } from "./broker-home.mts";
 // TYPE-ONLY, and IMPORTED rather than
 // redeclared. broker-launch.mts is the one definition of the profile shape and
 // the module that turns a profile into argv; a second local shape here is how
@@ -83,18 +90,28 @@ export function isValidRequestId(id: unknown): id is string {
 
 // -------------------------------------------------------------- directories
 //
-// Resolved from VICE_POOL_DIR when set, otherwise from repo-root.ts's
-// supervisorDir() -- the SAME default `.vice-supervisor` directory every
-// other host/container pairing in this module tree already agrees on, so
-// container and host never derive two different roots for this protocol.
-// The five sibling directory helpers this function used to anchor
-// (requestsDir/grantsDir/denialsDir/brokerLeasesDir/recycleAcksDir) and the
-// lease path helper (leasePathFor) are GONE, not merely unused -- their
-// directories cease to exist now that the file protocol is retired; only
-// brokerJsonPath() below survives, since broker.json itself is not part of
-// the retiring protocol.
+// G-64-1's secondary cause: this function used to resolve repo-root.ts's
+// supervisorDir() -- a directory INSIDE whichever project checkout happens
+// to be current. That is wrong for a machine-level broker: none of the
+// documented start routes (`npx -y @henols/vice-mcp broker`, the committed
+// systemd unit, the committed launchd agent) run with a project argument at
+// all, so the broker itself never wrote anything there -- only
+// vice-launcher.sh's `--repo-root` pin (the one route that DOES have a
+// project) ever made the two agree, and that agreement came at the cost of
+// putting broker state inside one project's tree, which BROKER-06 forbids.
+// This function now delegates to broker-home.mts's brokerStateDir(), the
+// SAME resolver the broker itself calls (vice-broker.mts's parseArgs()),
+// so client and broker can no longer drift apart on where broker.json
+// lives -- one resolver, imported on both sides, never recomputed here.
+// brokerStateDir() already honours VICE_POOL_DIR first, so that override's
+// meaning is unchanged. The five sibling directory helpers this function
+// used to anchor (requestsDir/grantsDir/denialsDir/brokerLeasesDir/
+// recycleAcksDir) and the lease path helper (leasePathFor) are GONE, not
+// merely unused -- their directories cease to exist now that the file
+// protocol is retired; only brokerJsonPath() below survives, since
+// broker.json itself is not part of the retiring protocol.
 export function brokerRootDir(): string {
-  return process.env.VICE_POOL_DIR ? resolve(process.env.VICE_POOL_DIR) : supervisorDir();
+  return brokerStateDir();
 }
 
 export function brokerJsonPath(dir: string = brokerRootDir()): string {
