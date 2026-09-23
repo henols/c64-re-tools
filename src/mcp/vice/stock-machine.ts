@@ -5,15 +5,15 @@
 // `vice_machine_reset`, `vice_autostart`, `vice_disk_attach`,
 // `vice_snapshot_save` and `vice_snapshot_load`. Five tools that either
 // restart the machine (RESET, AUTOSTART) or hand VICE a filename THE HOST
-// opens (AUTOSTART, DUMP, UNDUMP). AUTOSTART/DISK_ATTACH still route their
-// filename through stock-paths.ts's host/container translation wrapper --
-// Phase 64 has not migrated them yet (plan 64-06's job). DUMP/UNDUMP no
-// longer do: Phase 64 (XFER-01/XFER-02) moved the snapshot pair onto the
-// broker's own file-transfer protocol instead -- the filename each send
-// carries is a broker-MINTED name from `session.brokerControl.stageFile()`,
-// never a path this client translated or constructed, and the bytes
-// themselves cross the socket through `session.deps.transferFile` rather
-// than a shared bind mount.
+// opens (AUTOSTART, DUMP, UNDUMP). Phase 64 (XFER-01/XFER-02/XFER-08) moved
+// all four file-carrying tools onto the broker's own file-transfer protocol:
+// the filename each send carries is a broker-MINTED name from
+// `session.brokerControl.stageFile()`, never a path this client translated
+// or constructed, and the bytes themselves cross the socket through
+// `session.deps.transferFile` rather than a shared bind mount. Plan 64-06
+// migrated the last two (`vice_autostart`/`vice_disk_attach`) and, with them,
+// removed this file's import of `stock-paths.ts` entirely (D-18) -- this is
+// the mechanism that moves the milestone's convergence metric.
 //
 // WHAT NOT TO DO:
 //   - Never gate or deny vice_machine_reset's hard mode. CLAUDE.md's
@@ -29,27 +29,29 @@
 //   - Never add a disk-detach handler here. D-13's vice_disk_detach was
 //     CUT from scope 2026-08-17 (docs/stock-vice-parity.md) -- grep-gated
 //     to zero occurrences of its name in this file's own acceptance criteria.
-//   - Never build a broker-side path inside handleSnapshotSave/
-//     handleSnapshotLoad. The broker mints the handle and the emulator
-//     filename via `stageFile()`; this file only relays what the reply
-//     names, verbatim, into the DUMP/UNDUMP request body, and never opens
-//     it. And never fall back to `withEmulatorSidePath()` or any other
-//     shared-mount translation route when a stage or transfer call fails --
-//     a retained fallback would falsify this milestone's own exit
-//     hypothesis; refuse by name instead. (handleAutostart/handleDiskAttach
-//     still route their own filename through stock-paths.ts's translation
-//     wrapper -- grep-gated to zero direct hostPath()/hostPathCandidates()
-//     calls here -- until plan 64-06 migrates them too.)
+//   - Never build a broker-side path inside ANY handler in this file
+//     (handleAutostart/handleDiskAttach/handleSnapshotSave/
+//     handleSnapshotLoad). The broker mints the handle and the emulator
+//     filename via `stageFile()`; every handler here only relays what the
+//     reply names, verbatim, into the AUTOSTART/DUMP/UNDUMP request body,
+//     and never opens it. Never fall back to a shared-filesystem route (the
+//     deleted `withEmulatorSidePath()`) when a stage or transfer call
+//     fails -- a retained fallback would falsify this milestone's own exit
+//     hypothesis; refuse by name instead.
+//   - Never confine vice_autostart's or vice_disk_attach's `path` to the
+//     workspace. D-14 is a deliberate, accepted owner decision: this tree's
+//     whole purpose is analysing artifacts that live wherever the user put
+//     them, and confining the argument was offered and declined as a
+//     regression dressed as hardening.
 //   - Never construct an ok-answer outside stockAnswer(). D-06 requires
 //     every stock tool answer to carry runState, and stockAnswer() is the
 //     one place that is stamped.
 import { resolve, dirname } from "node:path";
-import { mkdirSync, existsSync, readdirSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdirSync, existsSync, readdirSync, writeFileSync, readFileSync, accessSync, constants as fsConstants } from "node:fs";
 
 import { CommandType, ResetMode, resetBody, autostartBody, dumpBody, undumpBody } from "./stock-protocol.ts";
 import { stockAnswer, convertWireError, isErrorText, type StockSessionHandler } from "./stock-handler.ts";
-import { withEmulatorSidePath, sanitizeSnapshotName } from "./stock-paths.ts";
-import { snapshotPathFor, snapshotMetaPathFor } from "./transfer-paths.ts";
+import { snapshotPathFor, snapshotMetaPathFor, validateSnapshotName } from "./transfer-paths.ts";
 
 /** True iff `value` is a well-formed, generic JSON object -- not null, not
  * an array. Matches this module tree's own isPlainObject() convention
@@ -57,6 +59,25 @@ import { snapshotPathFor, snapshotMetaPathFor } from "./transfer-paths.ts";
  * imported, per the established per-module convention. */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Returns an error message naming `path` when it cannot be read from THIS
+ * client's own filesystem, or `null` when it can. A genuine, real filesystem
+ * check -- never delegated to the (possibly stubbed) transfer layer -- so an
+ * unreadable path is refused with zero staging calls and zero sends,
+ * matching handleSnapshotLoad's own existsSync-before-anything-else
+ * ordering read in the other direction. Used by handleAutostart and
+ * handleDiskAttach; handleSnapshotSave/handleSnapshotLoad have their own
+ * existing existsSync check for the SAME reason and are unchanged here.
+ */
+function checkLocalFileReadable(toolName: string, path: string): string | null {
+  try {
+    accessSync(path, fsConstants.R_OK);
+    return null;
+  } catch (err) {
+    return `${toolName}: cannot read path ${path} (${err instanceof Error ? err.message : String(err)})`;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -108,13 +129,38 @@ export const handleMachineReset: StockSessionHandler = async (args, session) => 
 };
 
 // ---------------------------------------------------------------------------
-// handleAutostart -- AUTOSTART (0xdd), run flag honoured, path translated.
+// handleAutostart -- AUTOSTART (0xdd), run flag honoured, file streamed.
 // ---------------------------------------------------------------------------
+
+/** The `stage_file` slot name `handleAutostart` stages under -- one of the
+ * three slot names vice-broker-client.ts's own StageFileOptions header
+ * comment already names as "what this phase sends" (`"autostart"`,
+ * `"disk8"`, `"snapshot"`). Deliberately DIFFERENT from
+ * `DISK_ATTACH_STAGE_SLOT` below: both tools send the same wire command
+ * (AUTOSTART), and `slot` is scoped per-grant on the broker's own side
+ * (broker-transfer.mts's stageFileSlot()), so calling both tools in one
+ * session leaves two staged files, not one tool's upload superseding the
+ * other's mid-session (T-64-29). */
+const AUTOSTART_STAGE_SLOT = "autostart";
 
 /**
  * `program` is refused when supplied (D-03): AUTOSTART supports only a
  * numeric `fileIndex` and has no load-by-name field, so an argument stock
  * cannot honour is refused rather than silently dropped.
+ *
+ * Phase 64 (XFER-02/XFER-08): the file AUTOSTART loads is one THIS CLIENT
+ * read and streamed to the broker's own staging area, never a path the
+ * emulator opens off a shared filesystem. `path` stays resolved to an
+ * absolute path and UNRESTRICTED -- not confined to the workspace, by
+ * deliberate owner decision (D-14). Confining it was offered and declined:
+ * it is a regression dressed as hardening, and this tree's whole purpose is
+ * analysing artifacts that live wherever the user put them (`~/Downloads`, a
+ * shared ROM library). Named, accepted cost: the broker is now
+ * machine-level and shared across every project, so this is a route for
+ * reading any client-readable file into broker-owned staging -- bounded by
+ * the transfer cap (D-09) and by session-scoped staging (D-06), not
+ * eliminated. Recorded here so a later reader does not rediscover it as a
+ * defect.
  */
 export const handleAutostart: StockSessionHandler = async (args, session) => {
   const a = isPlainObject(args) ? args : {};
@@ -143,15 +189,45 @@ export const handleAutostart: StockSessionHandler = async (args, session) => {
   }
   const index = indexArg === undefined ? 0 : indexArg;
 
+  // D-14: resolved to an absolute path, and NOT confined to the workspace --
+  // any absolute path the client can read is accepted and uploaded.
   const containerPath = resolve(path);
+
+  const readError = checkLocalFileReadable("vice_autostart", containerPath);
+  if (readError !== null) return isErrorText(readError);
+
+  // Step 1: stage a slot on the broker's own disk for this grant. A refusal
+  // sends no AUTOSTART at all.
+  const stageOutcome = await session.brokerControl.stageFile({ targetId: session.targetId, slot: AUTOSTART_STAGE_SLOT });
+  if (!stageOutcome.ok) {
+    return isErrorText(`vice_autostart: staging the autostart slot was refused (${stageOutcome.reason})`);
+  }
+
+  // Step 2: upload this client's own local file's bytes. A refusal --
+  // including the transfer cap's own refusal, which names the limit -- sends
+  // no AUTOSTART.
+  const transferFile = session.deps.transferFile;
+  if (!transferFile) {
+    return isErrorText("vice_autostart: internal error -- no transferFile implementation is available on this session");
+  }
+  const uploadResult = await transferFile({ direction: "upload", handle: stageOutcome.handle, sourcePath: containerPath });
+  if (!uploadResult.ok) {
+    return isErrorText(`vice_autostart: uploading the program failed (${uploadResult.reason})`);
+  }
+
+  // Step 3: only after the upload completes, send AUTOSTART with the
+  // broker-CHOSEN emulator filename, relayed verbatim -- this client never
+  // constructs it and never opens it.
   try {
-    const { sentPath } = await withEmulatorSidePath("vice_autostart", containerPath, (hostPath) =>
-      session.client.send(CommandType.AutoStart, autostartBody({ runAfter: run, fileIndex: index, filename: hostPath })),
+    await session.client.send(
+      CommandType.AutoStart,
+      autostartBody({ runAfter: run, fileIndex: index, filename: stageOutcome.emulatorFilename }),
     );
-    return stockAnswer(session.client, { path: containerPath, sentPath, run, index });
   } catch (err) {
     return convertWireError("vice_autostart", err);
   }
+
+  return stockAnswer(session.client, { path: containerPath, handle: stageOutcome.handle, run, index });
 };
 
 // ---------------------------------------------------------------------------
@@ -177,6 +253,43 @@ export const DISK_ATTACH_APPROXIMATION =
   "AUTOSTART (D-14): performs a full machine reset and loads a program from the image; " +
   "unlike vice_autostart it does not issue a final run step, as far as observed.";
 
+/** The `stage_file` slot name `handleDiskAttach` stages under -- DIFFERENT
+ * from `AUTOSTART_STAGE_SLOT` above. See that constant's own doc comment for
+ * why: both tools send the same wire command, and sharing a slot would let
+ * attaching a disk after autostarting a program supersede and delete the
+ * program's staged file mid-session (T-64-29). */
+const DISK_ATTACH_STAGE_SLOT = "disk8";
+
+/**
+ * D-16: a game's writes to an attached disk image are an ACCEPTED, NAMED
+ * LOSS. A disk image attached to unit 8 is writable -- a C64 game can save
+ * to it. Under the old shared-filesystem model those writes landed in the
+ * user's own file. Under Phase 64's design (D-01 staged transfer + D-06
+ * session-scoped staging) the emulator writes to the BROKER's own staged
+ * copy, which is deleted once the session closes -- the staged image is
+ * write-through-to-nowhere.
+ *
+ * Why not pull the image back on session close: offered and declined.
+ * SIGKILL, a crash and a recycle all produce no clean close, so the
+ * guarantee would only be "usually" -- worse to document than a flat loss --
+ * and it would make every disk attach a two-way transfer for a tool whose
+ * whole point (per DISK_ATTACH_APPROXIMATION above) is a one-way load. A
+ * read-only attach that would make this loss visible rather than silent is
+ * not reachable on the advertised surface today: no resource-set tool
+ * exists (`tools-manifest.stock.json` sets no VICE resource) and AUTOSTART
+ * (0xdd) has no read-only flag.
+ *
+ * Exported, like DISK_ATTACH_APPROXIMATION above, so a pinning test derives
+ * its expectation from this constant rather than re-typing the sentence --
+ * the two cannot drift. Reported under its OWN result key (`writeLoss`),
+ * never appended to DISK_ATTACH_APPROXIMATION's own sentence: that sentence
+ * is about reset-and-load behaviour and says nothing about this.
+ */
+export const DISK_ATTACH_WRITE_LOSS =
+  "Writes the running program makes to this attached disk image are not preserved: the emulator writes to a copy " +
+  "staged on the broker for this session only, and that copy is deleted once the session closes. Any save made to " +
+  "this disk during the session is gone the next time it is attached.";
+
 export const handleDiskAttach: StockSessionHandler = async (args, session) => {
   const a = isPlainObject(args) ? args : {};
 
@@ -199,20 +312,51 @@ export const handleDiskAttach: StockSessionHandler = async (args, session) => {
     );
   }
 
+  // D-14: resolved to an absolute path, and NOT confined to the workspace --
+  // any absolute path the client can read is accepted and uploaded.
   const containerPath = resolve(path);
+
+  const readError = checkLocalFileReadable("vice_disk_attach", containerPath);
+  if (readError !== null) return isErrorText(readError);
+
+  // Step 1: stage a slot on the broker's own disk for this grant. A refusal
+  // sends no AUTOSTART at all.
+  const stageOutcome = await session.brokerControl.stageFile({ targetId: session.targetId, slot: DISK_ATTACH_STAGE_SLOT });
+  if (!stageOutcome.ok) {
+    return isErrorText(`vice_disk_attach: staging the disk-attach slot was refused (${stageOutcome.reason})`);
+  }
+
+  // Step 2: upload this client's own local file's bytes. A refusal --
+  // including the transfer cap's own refusal, which names the limit -- sends
+  // no AUTOSTART.
+  const transferFile = session.deps.transferFile;
+  if (!transferFile) {
+    return isErrorText("vice_disk_attach: internal error -- no transferFile implementation is available on this session");
+  }
+  const uploadResult = await transferFile({ direction: "upload", handle: stageOutcome.handle, sourcePath: containerPath });
+  if (!uploadResult.ok) {
+    return isErrorText(`vice_disk_attach: uploading the disk image failed (${uploadResult.reason})`);
+  }
+
+  // Step 3: only after the upload completes, send AUTOSTART with the
+  // broker-CHOSEN emulator filename, relayed verbatim -- this client never
+  // constructs it and never opens it.
   try {
-    const { sentPath } = await withEmulatorSidePath("vice_disk_attach", containerPath, (hostPath) =>
-      session.client.send(CommandType.AutoStart, autostartBody({ runAfter: false, fileIndex: 0, filename: hostPath })),
+    await session.client.send(
+      CommandType.AutoStart,
+      autostartBody({ runAfter: false, fileIndex: 0, filename: stageOutcome.emulatorFilename }),
     );
-    return stockAnswer(session.client, {
-      unit: 8,
-      path: containerPath,
-      sentPath,
-      approximation: DISK_ATTACH_APPROXIMATION,
-    });
   } catch (err) {
     return convertWireError("vice_disk_attach", err);
   }
+
+  return stockAnswer(session.client, {
+    unit: 8,
+    path: containerPath,
+    handle: stageOutcome.handle,
+    approximation: DISK_ATTACH_APPROXIMATION,
+    writeLoss: DISK_ATTACH_WRITE_LOSS,
+  });
 };
 
 // ---------------------------------------------------------------------------
@@ -230,7 +374,8 @@ const MAX_DESCRIPTION_LENGTH = 512;
 const SNAPSHOT_STAGE_SLOT = "snapshot";
 
 /**
- * `name` is sanitised through stock-paths.ts's sanitizeSnapshotName() into a
+ * `name` is sanitised through transfer-paths.ts's validateSnapshotName()
+ * directly (D-18: this file no longer imports stock-paths.ts at all) into a
  * workspace-internal path -- never treated as a path fragment; this rule is
  * UNCHANGED by Phase 64 (D-13). The client-side metadata sidecar
  * (docs/stock-vice-parity.md item 6: "DUMP writes state; JSON metadata is
@@ -261,12 +406,11 @@ const SNAPSHOT_STAGE_SLOT = "snapshot";
 export const handleSnapshotSave: StockSessionHandler = async (args, session) => {
   const a = isPlainObject(args) ? args : {};
 
-  let name: string;
-  try {
-    name = sanitizeSnapshotName(a.name);
-  } catch (err) {
-    return isErrorText(`vice_snapshot_save: ${err instanceof Error ? err.message : String(err)}`);
+  const nameVerdict = validateSnapshotName(a.name);
+  if (!nameVerdict.ok) {
+    return isErrorText(`vice_snapshot_save: ${nameVerdict.reason}`);
   }
+  const name = nameVerdict.name;
 
   const descriptionArg = a.description;
   if (descriptionArg !== undefined && typeof descriptionArg !== "string") {
@@ -389,12 +533,11 @@ export const handleSnapshotSave: StockSessionHandler = async (args, session) => 
 export const handleSnapshotLoad: StockSessionHandler = async (args, session) => {
   const a = isPlainObject(args) ? args : {};
 
-  let name: string;
-  try {
-    name = sanitizeSnapshotName(a.name);
-  } catch (err) {
-    return isErrorText(`vice_snapshot_load: ${err instanceof Error ? err.message : String(err)}`);
+  const nameVerdict = validateSnapshotName(a.name);
+  if (!nameVerdict.ok) {
+    return isErrorText(`vice_snapshot_load: ${nameVerdict.reason}`);
   }
+  const name = nameVerdict.name;
 
   // Step 1: resolve the local path and perform the existing existence
   // check. A missing file refuses HERE, before any staging request or

@@ -3,20 +3,23 @@
 // (so runStateFor()'s tracker attach point works, though no events are
 // fired -- runState stays "unknown", which every test just asserts is
 // present) with a `send` spy recording [commandType, body] and a
-// caller-supplied canned response per call. isInsideContainer() is stubbed
-// false via stock-paths.ts's setIsInsideContainerForTest() so no real mount
-// lookup happens -- these tests never touch a real filesystem bind mount.
+// caller-supplied canned response per call.
 //
-// Phase 64 (XFER-01/XFER-02): the snapshot-pair tests below inject a
-// recording `stageFile` and a recording `transferFile` through
+// Phase 64 (XFER-01/XFER-02/XFER-08): every handler in this file (the
+// snapshot pair, then `vice_autostart`/`vice_disk_attach` in plan 64-06)
+// injects a recording `stageFile` and a recording `transferFile` through
 // `StockConnectBrokerControl`/`StockConnectDeps` -- the two seams plan 64-02
-// added -- so every handler test still runs without a socket. The single
-// exception is the round-trip test at the bottom of this file, which
-// deliberately drives a REAL control listener and REAL staged files (mirrors
-// vice-broker-staging.test.ts's own fixture) to prove the pair round-trips a
-// definitively-non-UTF-8 payload byte for byte across two roots that cannot
-// see each other.
-import { test, beforeEach, afterEach } from "node:test";
+// added -- so every handler test still runs without a socket. No handler
+// under test reaches the host/container translation seam any more (D-18:
+// this file no longer imports stock-paths.ts at all), so this file's own
+// former `setIsInsideContainerForTest()` stub is gone too -- stubbing a
+// function the module under test no longer calls would itself be a defect.
+// The single exception to "no socket" is the round-trip test at the bottom
+// of this file, which deliberately drives a REAL control listener and REAL
+// staged files (mirrors vice-broker-staging.test.ts's own fixture) to prove
+// the snapshot pair round-trips a definitively-non-UTF-8 payload byte for
+// byte across two roots that cannot see each other.
+import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { connect as netConnect, type Socket } from "node:net";
@@ -45,10 +48,10 @@ import {
   handleSnapshotSave,
   handleSnapshotLoad,
   DISK_ATTACH_APPROXIMATION,
+  DISK_ATTACH_WRITE_LOSS,
 } from "./stock-machine.ts";
 import { CommandType } from "./stock-protocol.ts";
 import { resetRunStateTrackersForTest } from "./stock-runstate.ts";
-import { setIsInsideContainerForTest } from "./stock-paths.ts";
 import type { StockConnectSession, TransferFileFn, TransferFileRequest, TransferFileResult } from "./stock-connect.ts";
 import type { ViceMonitorClient } from "./stock-protocol.ts";
 import type { StockDispatchDeps } from "./stock-dispatch.ts";
@@ -193,15 +196,104 @@ function makeSnapshotSession(opts?: {
   return { session, sends, stageCalls, transferCalls };
 }
 
+// Phase 64 (XFER-02/XFER-08, plan 64-06): handleAutostart/handleDiskAttach's
+// own recording session, mirroring makeSnapshotSession()'s shape above but
+// keyed per-slot -- `handleAutostart` stages under `"autostart"` and
+// `handleDiskAttach` stages under `"disk8"` (D-02's two-distinct-slots
+// requirement), so a shared fixed-handle stub (like STAGE_HANDLE above)
+// cannot tell the two apart. `stageOutcomeForSlot` defaults to a per-slot
+// map covering both; a test whose own assertions need a different outcome
+// (a refusal, a shared slot map) supplies its own.
+const AUTOSTART_STAGE_HANDLE = "autostarthandle00112233";
+const AUTOSTART_EMULATOR_FILENAME = `${STAGE_DIR}/${AUTOSTART_STAGE_HANDLE}.bin`;
+const DISK_ATTACH_STAGE_HANDLE = "diskattachhandle44556677";
+const DISK_ATTACH_EMULATOR_FILENAME = `${STAGE_DIR}/${DISK_ATTACH_STAGE_HANDLE}.bin`;
+
+type StageOutcome = { ok: true; handle: string; emulatorFilename: string } | { ok: false; reason: string };
+
+function defaultStageOutcomeForSlot(slot: string): StageOutcome {
+  if (slot === "autostart") return { ok: true, handle: AUTOSTART_STAGE_HANDLE, emulatorFilename: AUTOSTART_EMULATOR_FILENAME };
+  if (slot === "disk8") return { ok: true, handle: DISK_ATTACH_STAGE_HANDLE, emulatorFilename: DISK_ATTACH_EMULATOR_FILENAME };
+  return { ok: false, reason: `makeMachineSession(): no default stage outcome registered for slot "${slot}"` };
+}
+
+function makeMachineSession(opts?: {
+  responder?: (commandType: number, body: Buffer) => unknown;
+  stageOutcomeForSlot?: (slot: string) => StageOutcome;
+  transferImpl?: (request: TransferFileRequest) => Promise<TransferFileResult>;
+}): {
+  session: StockConnectSession;
+  sends: RecordedSend[];
+  stageCalls: RecordedStageCall[];
+  transferCalls: RecordedTransferCall[];
+} {
+  const { session, sends } = makeSession(opts?.responder);
+  const stageCalls: RecordedStageCall[] = [];
+  const transferCalls: RecordedTransferCall[] = [];
+
+  const stageOutcomeForSlot = opts?.stageOutcomeForSlot ?? defaultStageOutcomeForSlot;
+  const transferImpl = opts?.transferImpl ?? (async (): Promise<TransferFileResult> => ({ ok: true, byteLength: 0, sha256: "" }));
+
+  session.brokerControl = {
+    ...session.brokerControl,
+    stageFile: async (stageOpts) => {
+      stageCalls.push({ targetId: stageOpts.targetId, slot: stageOpts.slot });
+      return stageOutcomeForSlot(stageOpts.slot);
+    },
+  } as StockConnectSession["brokerControl"];
+
+  session.deps = {
+    ...session.deps,
+    transferFile: async (request: TransferFileRequest): Promise<TransferFileResult> => {
+      transferCalls.push(
+        request.direction === "upload"
+          ? { direction: "upload", handle: request.handle, sourcePath: request.sourcePath }
+          : { direction: "download", handle: request.handle, destPath: request.destPath },
+      );
+      return transferImpl(request);
+    },
+  };
+
+  return { session, sends, stageCalls, transferCalls };
+}
+
+/** Creates a fresh temp directory outside the project root (`os.tmpdir()`,
+ * never a path under `process.cwd()`) containing one fixture file, runs
+ * `fn` against its absolute path, and always cleans up. The load-bearing
+ * case this exists for (D-14): a caller-supplied absolute path is accepted
+ * and uploaded from ANYWHERE the client can read, never confined to the
+ * workspace. */
+async function withTempFixtureFile<T>(basename: string, fn: (fixturePath: string) => Promise<T>): Promise<T> {
+  const dir = mkdtempSync(join(tmpdir(), "vice-machine-fixture-"));
+  assert.ok(!dir.startsWith(process.cwd()), "the fixture directory must live outside the project root (D-14's own load-bearing case)");
+  const fixturePath = join(dir, basename);
+  writeFileSync(fixturePath, "fixture bytes for stock-machine.test.ts -- unrestricted-path case (D-14)");
+  try {
+    return await fn(fixturePath);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** Generalises assertNoStagedPathLeak() above (which is fixed to the
+ * snapshot pair's own STAGE_DIR/STAGE_EMULATOR_FILENAME constants) to any
+ * forbidden directory substring plus a list of forbidden exact values --
+ * handleAutostart/handleDiskAttach mint DIFFERENT emulator filenames than
+ * the snapshot pair, so a single shared assertion needs to accept either. */
+function assertNoLeak(payload: Record<string, unknown>, forbiddenDir: string, forbiddenExact: readonly string[]): void {
+  for (const [key, value] of Object.entries(payload)) {
+    if (typeof value !== "string") continue;
+    assert.ok(!value.includes(forbiddenDir), `result key "${key}" must not contain the staging directory (${forbiddenDir}), got ${JSON.stringify(value)}`);
+    for (const forbidden of forbiddenExact) {
+      assert.notEqual(value, forbidden, `result key "${key}" must not equal the staged path (${forbidden})`);
+    }
+  }
+}
+
 const fakeDeps = {} as StockDispatchDeps;
 
 beforeEach(() => {
   resetRunStateTrackersForTest();
-  setIsInsideContainerForTest(() => false);
-});
-
-afterEach(() => {
-  setIsInsideContainerForTest(null);
 });
 
 // --------------------------------------------------------- handleMachineReset
@@ -255,6 +347,14 @@ test("handleMachineReset: run_after: true -> two sends, second is CommandType.Ex
 });
 
 // --------------------------------------------------------- handleAutostart
+//
+// Phase 64 (XFER-02/XFER-08, plan 64-06): handleAutostart now stages a slot,
+// uploads the caller's local file, and only then sends AUTOSTART with the
+// broker-CHOSEN emulator filename -- never a path this client constructed.
+// Every case below that reaches the upload step uses a REAL fixture file
+// (withTempFixtureFile()) because handleAutostart genuinely checks local
+// readability before staging (checkLocalFileReadable()) -- unlike the
+// snapshot pair's DUMP direction, there is no wire reply to fake instead.
 
 test('handleAutostart: program: "GAME" refuses with a message containing "index", zero sends', async () => {
   const { session, sends } = makeSession();
@@ -264,22 +364,50 @@ test('handleAutostart: program: "GAME" refuses with a message containing "index"
   assert.equal(sends.length, 0);
 });
 
-test("handleAutostart: records an AutoStart body with default run/index, and the sent path in the ASCII tail", async () => {
-  const { session, sends } = makeSession();
-  const result = await handleAutostart({ path: "/workspace/game.prg" }, session, fakeDeps);
-  assert.equal(result.isError, false);
-  assert.equal(sends.length, 1);
-  assert.equal(sends[0]!.commandType, CommandType.AutoStart);
-  const body = sends[0]!.body;
-  assert.equal(body[0], 0x01); // default run = true
-  assert.equal(body.readUInt16LE(1), 0); // default index = 0
-  const filenameLen = body[3]!;
-  const filename = body.subarray(4, 4 + filenameLen).toString("ascii");
-  assert.equal(filename, "/workspace/game.prg");
-  const payload = JSON.parse(result.content[0]!.text);
-  assert.equal(payload.sentPath, "/workspace/game.prg");
-  assert.equal(payload.run, true);
-  assert.equal(payload.index, 0);
+test("handleAutostart: records an AutoStart body whose filename equals the staging reply's emulator filename, stages under the 'autostart' slot, uploads the resolved local path, and the result carries the handle -- never sentPath", async () => {
+  await withTempFixtureFile("game.prg", async (fixturePath) => {
+    const { session, sends, stageCalls, transferCalls } = makeMachineSession();
+    const result = await handleAutostart({ path: fixturePath }, session, fakeDeps);
+    assert.equal(result.isError, false, `autostart must succeed: ${JSON.stringify(result)}`);
+
+    assert.equal(stageCalls.length, 1);
+    assert.equal(stageCalls[0]!.slot, "autostart");
+
+    assert.equal(transferCalls.length, 1);
+    assert.equal(transferCalls[0]!.direction, "upload");
+    assert.equal((transferCalls[0] as { sourcePath: string }).sourcePath, fixturePath);
+
+    assert.equal(sends.length, 1);
+    assert.equal(sends[0]!.commandType, CommandType.AutoStart);
+    const body = sends[0]!.body;
+    assert.equal(body[0], 0x01); // default run = true
+    assert.equal(body.readUInt16LE(1), 0); // default index = 0
+    const filenameLen = body[3]!;
+    const filename = body.subarray(4, 4 + filenameLen).toString("ascii");
+    assert.equal(filename, AUTOSTART_EMULATOR_FILENAME);
+
+    const payload = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+    assert.equal(payload.handle, AUTOSTART_STAGE_HANDLE);
+    assert.ok(!("sentPath" in payload), "sentPath must be replaced by handle, not merely joined by it (D-15)");
+    assert.equal(payload.run, true);
+    assert.equal(payload.index, 0);
+    assert.equal(payload.path, fixturePath);
+    assertNoLeak(payload, STAGE_DIR, [AUTOSTART_EMULATOR_FILENAME]);
+  });
+});
+
+test("handleAutostart: an absolute path outside the project root is accepted and uploaded, unrestricted (D-14)", async () => {
+  await withTempFixtureFile("outside-workspace.prg", async (fixturePath) => {
+    const { session, transferCalls } = makeMachineSession();
+    const result = await handleAutostart({ path: fixturePath }, session, fakeDeps);
+    assert.equal(result.isError, false, `autostart must succeed: ${JSON.stringify(result)}`);
+    assert.equal(transferCalls.length, 1);
+    assert.equal(
+      (transferCalls[0] as { sourcePath: string }).sourcePath,
+      fixturePath,
+      "the upload's recorded source path must equal the caller's absolute path exactly -- confining it would be D-14's own regression",
+    );
+  });
 });
 
 test("handleAutostart: refuses a missing path with zero sends", async () => {
@@ -289,7 +417,39 @@ test("handleAutostart: refuses a missing path with zero sends", async () => {
   assert.equal(sends.length, 0);
 });
 
+test("handleAutostart: an unreadable (nonexistent) path refuses naming the path, with zero staging calls and zero sends", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "vice-autostart-missing-"));
+  try {
+    const missingPath = join(dir, "does-not-exist.prg");
+    const { session, sends, stageCalls } = makeMachineSession();
+    const result = await handleAutostart({ path: missingPath }, session, fakeDeps);
+    assert.equal(result.isError, true);
+    assert.ok(result.content[0]!.text.includes(missingPath), `error must name the path ${missingPath}: ${result.content[0]!.text}`);
+    assert.equal(stageCalls.length, 0);
+    assert.equal(sends.length, 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("handleAutostart: a source file over the transfer cap is refused with the limit in decimal digits, zero sends", async () => {
+  await withTempFixtureFile("big.prg", async (fixturePath) => {
+    const { session, sends, stageCalls } = makeMachineSession({
+      transferImpl: async () => ({ ok: false, reason: "transfer exceeds the 16777216 byte cap (sixteen mebibytes); source file is 20000000 bytes" }),
+    });
+    const result = await handleAutostart({ path: fixturePath }, session, fakeDeps);
+    assert.equal(result.isError, true);
+    assert.match(result.content[0]!.text, /16777216/);
+    assert.equal(stageCalls.length, 1); // staging DID happen -- only the send is prevented
+    assert.equal(sends.length, 0);
+  });
+});
+
 // --------------------------------------------------------- handleDiskAttach
+//
+// Same migration shape as handleAutostart above, staged under the DIFFERENT
+// "disk8" slot (D-02/T-64-29), and carrying the new D-16 write-loss constant
+// alongside the existing approximation.
 
 test("handleDiskAttach: unit: 9 refuses with a message containing 'no drive-unit field', zero sends", async () => {
   const { session, sends } = makeSession();
@@ -307,16 +467,44 @@ test("handleDiskAttach: unit: 12 refuses naming the 8..11 range", async () => {
   assert.equal(sends.length, 0);
 });
 
-test("handleDiskAttach: unit: 8 records an AutoStart body whose byte 0 is 0x00 (run flag clear)", async () => {
-  const { session, sends } = makeSession();
-  const result = await handleDiskAttach({ unit: 8, path: "/workspace/disk.d64" }, session, fakeDeps);
-  assert.equal(result.isError, false);
-  assert.equal(sends.length, 1);
-  assert.equal(sends[0]!.commandType, CommandType.AutoStart);
-  assert.equal(sends[0]!.body[0], 0x00);
-  const payload = JSON.parse(result.content[0]!.text);
-  assert.equal(payload.unit, 8);
-  assert.equal(payload.approximation, DISK_ATTACH_APPROXIMATION);
+test("handleDiskAttach: units 9, 10 and 11 are refused with zero staging calls recorded", async () => {
+  for (const unit of [9, 10, 11]) {
+    const { session, sends, stageCalls } = makeMachineSession();
+    const result = await handleDiskAttach({ unit, path: "/workspace/disk.d64" }, session, fakeDeps);
+    assert.equal(result.isError, true);
+    assert.equal(stageCalls.length, 0, `unit ${unit} must record zero staging calls`);
+    assert.equal(sends.length, 0);
+  }
+});
+
+test("handleDiskAttach: unit: 8 records an AutoStart body whose byte 0 is 0x00 (run flag clear), stages under the 'disk8' slot, uploads the resolved local path, and carries the handle plus both the approximation and write-loss constants", async () => {
+  await withTempFixtureFile("disk.d64", async (fixturePath) => {
+    const { session, sends, stageCalls, transferCalls } = makeMachineSession();
+    const result = await handleDiskAttach({ unit: 8, path: fixturePath }, session, fakeDeps);
+    assert.equal(result.isError, false, `disk attach must succeed: ${JSON.stringify(result)}`);
+
+    assert.equal(stageCalls.length, 1);
+    assert.equal(stageCalls[0]!.slot, "disk8");
+
+    assert.equal(transferCalls.length, 1);
+    assert.equal(transferCalls[0]!.direction, "upload");
+    assert.equal((transferCalls[0] as { sourcePath: string }).sourcePath, fixturePath);
+
+    assert.equal(sends.length, 1);
+    assert.equal(sends[0]!.commandType, CommandType.AutoStart);
+    assert.equal(sends[0]!.body[0], 0x00);
+    const filenameLen = sends[0]!.body[3]!;
+    const filename = sends[0]!.body.subarray(4, 4 + filenameLen).toString("ascii");
+    assert.equal(filename, DISK_ATTACH_EMULATOR_FILENAME);
+
+    const payload = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+    assert.equal(payload.unit, 8);
+    assert.equal(payload.handle, DISK_ATTACH_STAGE_HANDLE);
+    assert.ok(!("sentPath" in payload), "sentPath must be replaced by handle (D-15)");
+    assert.equal(payload.approximation, DISK_ATTACH_APPROXIMATION);
+    assert.equal(payload.writeLoss, DISK_ATTACH_WRITE_LOSS);
+    assertNoLeak(payload, STAGE_DIR, [DISK_ATTACH_EMULATOR_FILENAME]);
+  });
 });
 
 test("handleDiskAttach: refuses a missing path with zero sends", async () => {
@@ -326,6 +514,44 @@ test("handleDiskAttach: refuses a missing path with zero sends", async () => {
   assert.equal(sends.length, 0);
 });
 
+test("handleDiskAttach: an unreadable (nonexistent) path refuses naming the path, with zero staging calls and zero sends", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "vice-diskattach-missing-"));
+  try {
+    const missingPath = join(dir, "does-not-exist.d64");
+    const { session, sends, stageCalls } = makeMachineSession();
+    const result = await handleDiskAttach({ unit: 8, path: missingPath }, session, fakeDeps);
+    assert.equal(result.isError, true);
+    assert.ok(result.content[0]!.text.includes(missingPath), `error must name the path ${missingPath}: ${result.content[0]!.text}`);
+    assert.equal(stageCalls.length, 0);
+    assert.equal(sends.length, 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("handleAutostart then handleDiskAttach in one session: two distinct slots, two distinct handles, two distinct staged files (T-64-29)", async () => {
+  await withTempFixtureFile("game.prg", async (autostartFixture) => {
+    await withTempFixtureFile("disk.d64", async (diskFixture) => {
+      const { session, stageCalls } = makeMachineSession();
+
+      const autostartResult = await handleAutostart({ path: autostartFixture }, session, fakeDeps);
+      assert.equal(autostartResult.isError, false, `autostart must succeed: ${JSON.stringify(autostartResult)}`);
+      const diskResult = await handleDiskAttach({ unit: 8, path: diskFixture }, session, fakeDeps);
+      assert.equal(diskResult.isError, false, `disk attach must succeed: ${JSON.stringify(diskResult)}`);
+
+      assert.equal(stageCalls.length, 2);
+      assert.equal(stageCalls[0]!.slot, "autostart");
+      assert.equal(stageCalls[1]!.slot, "disk8");
+
+      const autostartPayload = JSON.parse(autostartResult.content[0]!.text) as Record<string, unknown>;
+      const diskPayload = JSON.parse(diskResult.content[0]!.text) as Record<string, unknown>;
+      assert.notEqual(autostartPayload.handle, diskPayload.handle, "the two tools must mint two distinct handles, not share one");
+      assert.equal(autostartPayload.handle, AUTOSTART_STAGE_HANDLE);
+      assert.equal(diskPayload.handle, DISK_ATTACH_STAGE_HANDLE);
+    });
+  });
+});
+
 // --------------------------------------------------------- runState on every ok answer
 
 test("every ok-answer from this module carries runState", async () => {
@@ -333,13 +559,17 @@ test("every ok-answer from this module carries runState", async () => {
   const r1 = await handleMachineReset({}, s1, fakeDeps);
   assert.ok("runState" in JSON.parse(r1.content[0]!.text));
 
-  const { session: s2 } = makeSession();
-  const r2 = await handleAutostart({ path: "/workspace/x.prg" }, s2, fakeDeps);
-  assert.ok("runState" in JSON.parse(r2.content[0]!.text));
+  await withTempFixtureFile("x.prg", async (fixturePath) => {
+    const { session: s2 } = makeMachineSession();
+    const r2 = await handleAutostart({ path: fixturePath }, s2, fakeDeps);
+    assert.ok("runState" in JSON.parse(r2.content[0]!.text));
+  });
 
-  const { session: s3 } = makeSession();
-  const r3 = await handleDiskAttach({ unit: 8, path: "/workspace/x.d64" }, s3, fakeDeps);
-  assert.ok("runState" in JSON.parse(r3.content[0]!.text));
+  await withTempFixtureFile("x.d64", async (fixturePath) => {
+    const { session: s3 } = makeMachineSession();
+    const r3 = await handleDiskAttach({ unit: 8, path: fixturePath }, s3, fakeDeps);
+    assert.ok("runState" in JSON.parse(r3.content[0]!.text));
+  });
 });
 
 // --------------------------------------------------------- handleSnapshotSave / handleSnapshotLoad
