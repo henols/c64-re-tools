@@ -40,6 +40,7 @@ import {
   type ArmIdleTimerFn,
   type ArmedIdleTimer,
   type RelaySession,
+  type RelayConnectFn,
 } from "./broker-relay.mts";
 import {
   startControlListener,
@@ -89,6 +90,7 @@ interface TestHandleRelayDeathDeps {
    * HandleRelayDeathDeps for the full doc comment. */
   dialDeadlineMs?: number;
   dialRetryIntervalMs?: number;
+  connect?: RelayConnectFn;
 }
 
 /** Mirrors vice-broker.mts's own HandleReleaseDeps (Plan 63-04 Task 3). */
@@ -199,7 +201,7 @@ async function reserveFreePort(): Promise<number> {
 async function withLateBindingStubEmulatorServer<T>(
   bindDelayMs: number,
   handler: (socket: Socket) => void,
-  fn: (port: number, connectionCount: () => number) => Promise<T>,
+  fn: (port: number, connectionCount: () => number, liveConnectionCount: () => number) => Promise<T>,
 ): Promise<T> {
   const port = await reserveFreePort();
   const sockets = new Set<Socket>();
@@ -215,7 +217,7 @@ async function withLateBindingStubEmulatorServer<T>(
     server.listen(port, "127.0.0.1", () => {});
   }, bindDelayMs);
   try {
-    return await fn(port, () => connections);
+    return await fn(port, () => connections, () => sockets.size);
   } finally {
     clearTimeout(bindTimer);
     for (const socket of sockets) socket.destroy();
@@ -1098,6 +1100,298 @@ test("emulator binds late: a binary attach sent before the emulator's port is bo
       },
     );
   });
+});
+
+// ===========================================================================
+// G-64-4 (plan 64-12), Task 2: the dial that never connects, the dial that
+// is abandoned (client gone, or the claim released mid-dial), the emulator
+// that speaks first, and a non-retryable connect error. Every case below
+// drives the real control listener and the compiled handleMonitorClaim()/
+// handleRelayAttach(), with the injected incident writer as a recorder.
+// ===========================================================================
+
+test("emulator never binds: the attach is refused by name once the deadline passes", async () => {
+  const port = await reserveFreePort(); // reserved, then released -- NOTHING is ever bound on it in this test
+  const targetId = "grant-g64-4-never-binds";
+  let incidentWrites = 0;
+  const deps: TestHandleRelayDeathDeps = {
+    dialDeadlineMs: 300,
+    dialRetryIntervalMs: 25,
+    writeIncident: (record) => {
+      incidentWrites += 1;
+      return `/fake/incident/${incidentWrites}.md`;
+    },
+  };
+  await withRelayTestBroker(
+    port,
+    targetId,
+    async ({ listenerPort, state }) => {
+      const claimOutcome = handleMonitorClaim("claim-never-binds", targetId, "binary", state);
+      assert.ok(claimOutcome.ok, `expected the claim to succeed: ${JSON.stringify(claimOutcome)}`);
+      if (!claimOutcome.ok) return;
+
+      const startedAt = Date.now();
+      const dialResult = await dialMonitorRelay({
+        targetId,
+        channel: "binary",
+        handle: claimOutcome.handle,
+        port: listenerPort,
+        candidates: ["127.0.0.1"],
+      });
+      const elapsedMs = Date.now() - startedAt;
+      assert.equal(dialResult.ok, false, "an attach against an emulator that never binds must never succeed");
+      if (dialResult.ok) return;
+      assert.ok(elapsedMs >= 300, `the refusal must arrive no sooner than the injected 300ms deadline (took ${elapsedMs}ms)`);
+      assert.match(dialResult.reason, /did not accept a connection/i, "the refusal must name the cause");
+      assert.match(dialResult.reason, /retry/i, "the refusal must say that retrying the same call is safe");
+      assert.equal(incidentWrites, 0, "a dial that never connects must never write an incident record");
+      assert.equal(state.relaySessions.size, 0, "no relay session may exist for a dial that never connected");
+      const instance = state.instances.get(port);
+      assert.ok(instance, "the instance record must still be present after the refusal");
+      assert.equal(instance!.monitorClients.binary?.attached, false, "the attached marker must be cleared after the refusal");
+      assert.ok(state.grants.has(targetId), "the grant must still be present after the refusal");
+
+      // A later claim and attach on the SAME instance, once a stub emulator
+      // is finally bound on that exact port, must succeed -- an in-session
+      // retry converges rather than being permanently refused.
+      const server: Server = createServer(pingEchoHandler([]));
+      await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", () => resolve()));
+      try {
+        const claimOutcome2 = handleMonitorClaim("claim-never-binds-retry", targetId, "binary", state);
+        assert.ok(claimOutcome2.ok, `expected the retried claim to succeed: ${JSON.stringify(claimOutcome2)}`);
+        if (!claimOutcome2.ok) return;
+        const dialResult2 = await dialMonitorRelay({
+          targetId,
+          channel: "binary",
+          handle: claimOutcome2.handle,
+          port: listenerPort,
+          candidates: ["127.0.0.1"],
+        });
+        assert.ok(dialResult2.ok, `expected the retried attach to succeed once the emulator is bound: ${JSON.stringify(dialResult2)}`);
+      } finally {
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    },
+    deps,
+  );
+});
+
+test("emulator binds late, client gives up first", async () => {
+  let incidentWrites = 0;
+  const deps: TestHandleRelayDeathDeps = {
+    writeIncident: (record) => {
+      incidentWrites += 1;
+      return `/fake/incident/${incidentWrites}.md`;
+    },
+  };
+  const targetId = "grant-g64-4-client-gives-up";
+  await withLateBindingStubEmulatorServer(
+    300,
+    () => {
+      assert.fail("the stub emulator must never accept a connection once the client gave up first");
+    },
+    async (emulatorPort, connectionCount) => {
+      await withRelayTestBroker(
+        emulatorPort,
+        targetId,
+        async ({ listenerPort, state }) => {
+          const claimOutcome = handleMonitorClaim("claim-give-up", targetId, "binary", state);
+          assert.ok(claimOutcome.ok, `expected the claim to succeed: ${JSON.stringify(claimOutcome)}`);
+          if (!claimOutcome.ok) return;
+
+          const clientSocket = netConnect({ host: "127.0.0.1", port: listenerPort });
+          await new Promise<void>((resolve) => clientSocket.once("connect", () => resolve()));
+          clientSocket.write(`${JSON.stringify({ op: "attach", target_id: targetId, channel: "binary", handle: claimOutcome.handle })}\n`);
+
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          clientSocket.destroy();
+
+          // Past the 300ms bind, with margin for the dial's own retry cadence
+          // to notice the abandonment and settle.
+          await new Promise((resolve) => setTimeout(resolve, 400));
+
+          assert.equal(connectionCount(), 0, "the stub emulator must never accept a connection once the client gave up");
+          assert.equal(state.relaySessions.size, 0, "no relay session may be registered for an abandoned attach");
+          const instance = state.instances.get(emulatorPort);
+          assert.equal(instance?.monitorClients.binary?.attached, false, "the attached marker must be cleared after abandonment");
+          assert.equal(incidentWrites, 0, "an abandoned dial must never write an incident record");
+        },
+        deps,
+      );
+    },
+  );
+});
+
+test("emulator binds late, claim released meanwhile", async () => {
+  let incidentWrites = 0;
+  const deps: TestHandleRelayDeathDeps = {
+    writeIncident: (record) => {
+      incidentWrites += 1;
+      return `/fake/incident/${incidentWrites}.md`;
+    },
+  };
+  const targetId = "grant-g64-4-released-meanwhile";
+  await withLateBindingStubEmulatorServer(
+    300,
+    () => {},
+    async (emulatorPort, _connectionCount, liveConnectionCount) => {
+      await withRelayTestBroker(
+        emulatorPort,
+        targetId,
+        async ({ listenerPort, state }) => {
+          const claimOutcome = handleMonitorClaim("claim-released", targetId, "binary", state);
+          assert.ok(claimOutcome.ok, `expected the claim to succeed: ${JSON.stringify(claimOutcome)}`);
+          if (!claimOutcome.ok) return;
+
+          const clientSocket = netConnect({ host: "127.0.0.1", port: listenerPort });
+          await new Promise<void>((resolve) => clientSocket.once("connect", () => resolve()));
+          let gotResponse = false;
+          let gotClose = false;
+          clientSocket.on("data", () => {
+            gotResponse = true;
+          });
+          clientSocket.on("close", () => {
+            gotClose = true;
+          });
+          clientSocket.write(`${JSON.stringify({ op: "attach", target_id: targetId, channel: "binary", handle: claimOutcome.handle })}\n`);
+
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          const releaseOutcome = handleMonitorRelease("release-meanwhile", targetId, "binary", state);
+          assert.ok(releaseOutcome.ok, `expected the release to succeed: ${JSON.stringify(releaseOutcome)}`);
+
+          // Past the 300ms bind, with margin for the dial's own retry cadence
+          // to notice the release and settle.
+          await new Promise((resolve) => setTimeout(resolve, 400));
+
+          assert.equal(state.relaySessions.size, 0, "no relay session may be registered for a claim released mid-dial");
+          assert.equal(liveConnectionCount(), 0, "any connection the stub emulator accepted must have been closed by the broker");
+          assert.ok(gotResponse || gotClose, "the client must have gotten a refusal or a close, not silence");
+          assert.equal(incidentWrites, 0, "a release mid-dial must never write an incident record");
+
+          clientSocket.destroy();
+        },
+        deps,
+      );
+    },
+  );
+});
+
+test("emulator binds late and speaks first", async () => {
+  let incidentWrites = 0;
+  const deps: TestHandleRelayDeathDeps = {
+    writeIncident: (record) => {
+      incidentWrites += 1;
+      return `/fake/incident/${incidentWrites}.md`;
+    },
+  };
+  const targetId = "grant-g64-4-speaks-first";
+  const registerInfoFrame = encodeResponseFrame({
+    responseType: ResponseType.RegisterInfo,
+    errorCode: ErrorCode.Ok,
+    requestId: VICE_BROADCAST_REQUEST_ID,
+    body: Buffer.from([0x00, 0x00]), // count = 0 registers -- a minimal, always-valid body
+  });
+  await withLateBindingStubEmulatorServer(
+    250,
+    (socket) => {
+      // Written the INSTANT this stub accepts -- before the broker's own
+      // splice has wired any "data" listener on this socket, so these bytes
+      // must sit buffered until spliceRelay() pipes them through.
+      socket.write(registerInfoFrame);
+    },
+    async (emulatorPort) => {
+      await withRelayTestBroker(
+        emulatorPort,
+        targetId,
+        async ({ listenerPort, state }) => {
+          const claimOutcome = handleMonitorClaim("claim-speaks-first", targetId, "binary", state);
+          assert.ok(claimOutcome.ok, `expected the claim to succeed: ${JSON.stringify(claimOutcome)}`);
+          if (!claimOutcome.ok) return;
+
+          const dialResult = await dialMonitorRelay({
+            targetId,
+            channel: "binary",
+            handle: claimOutcome.handle,
+            port: listenerPort,
+            candidates: ["127.0.0.1"],
+          });
+          assert.ok(dialResult.ok, `expected the attach to succeed once the emulator binds and speaks first: ${JSON.stringify(dialResult)}`);
+          if (!dialResult.ok) return;
+
+          // The frame may arrive entirely within `pending`, or split across
+          // `pending` and a FOLLOWING "data" event -- accumulate both rather
+          // than assuming either shape.
+          let collected = Buffer.from(dialResult.pending);
+          if (collected.length < registerInfoFrame.length) {
+            collected = await new Promise<Buffer>((resolve) => {
+              const onData = (chunk: Buffer) => {
+                collected = Buffer.concat([collected, chunk]);
+                if (collected.length >= registerInfoFrame.length) {
+                  dialResult.socket.removeListener("data", onData);
+                  resolve(collected);
+                }
+              };
+              dialResult.socket.on("data", onData);
+            });
+          }
+          assert.ok(
+            collected.subarray(0, registerInfoFrame.length).equals(registerInfoFrame),
+            "the REGISTER_INFO frame bytes must arrive intact, byte-identical -- `attached` was the first line read, and the frame followed it whole",
+          );
+          assert.equal(incidentWrites, 0);
+          dialResult.socket.destroy();
+        },
+        deps,
+      );
+    },
+  );
+});
+
+test("emulator binds late, non-refusal error: a non-ECONNREFUSED connect error fails the attach at once, with no retry", async () => {
+  let incidentWrites = 0;
+  let connectAttempts = 0;
+  const fakeConnect: RelayConnectFn = () => {
+    connectAttempts += 1;
+    const socket = new NodeNetSocket();
+    // Deferred to the next tick so the dial's own "error" listener (added
+    // immediately after this function returns) is already attached --
+    // emitting synchronously here would be missed.
+    process.nextTick(() => {
+      const err = Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" });
+      socket.emit("error", err);
+    });
+    return socket;
+  };
+  const targetId = "grant-g64-4-non-refusal-error";
+  const deps: TestHandleRelayDeathDeps = {
+    connect: fakeConnect,
+    writeIncident: (record) => {
+      incidentWrites += 1;
+      return `/fake/incident/${incidentWrites}.md`;
+    },
+  };
+  const state = setupBrokerState(19999, targetId); // the port is never really dialled -- connect is faked
+  const { listener, incidentsDir } = await startRelayListenerForState(state, deps);
+  try {
+    const claimOutcome = handleMonitorClaim("claim-non-refusal-error", targetId, "binary", state);
+    assert.ok(claimOutcome.ok, `expected the claim to succeed: ${JSON.stringify(claimOutcome)}`);
+    if (!claimOutcome.ok) return;
+
+    const dialResult = await dialMonitorRelay({
+      targetId,
+      channel: "binary",
+      handle: claimOutcome.handle,
+      port: listener.port,
+      candidates: ["127.0.0.1"],
+    });
+    assert.equal(dialResult.ok, false, "a non-ECONNREFUSED connect error must never succeed");
+    if (dialResult.ok) return;
+    assert.equal(connectAttempts, 1, "a non-ECONNREFUSED connect error must never be retried");
+    assert.equal(incidentWrites, 0, "a non-retryable connect error must never write an incident record");
+  } finally {
+    listener.server.close();
+    if (incidentsDir) rmSync(incidentsDir, { recursive: true, force: true });
+  }
 });
 
 test("stockReconnect: after the binary relay is destroyed, a fresh session establishment dials the relay again and succeeds on a matching epoch", async () => {
