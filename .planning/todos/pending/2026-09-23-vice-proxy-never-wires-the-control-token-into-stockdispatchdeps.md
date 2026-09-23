@@ -106,3 +106,29 @@ whether the fix is as narrow as threading `controlToken` through
 `buildHeldLease()`/`dispatchStockFor()`, or whether it surfaces a broader
 question about how a raw string token should be exposed alongside an
 already-authenticated `BrokerControlSession` object.
+
+# Resolution
+
+Fixed by route (b), NOT by the thread-through this todo's own "Do NOT"
+section left as the open question. Plan 64-08 (gap G-64-1) moved
+`broker-control.mts`'s `attach` and `transfer` dispatch arms ahead of the
+per-boot control-token gate, so each is now authenticated by its
+broker-minted per-claim/per-stage handle alone -- the handle
+`monitor_claim`/`stage_file` already mint, over the still-token-gated
+control session, before either relay/transfer connection is ever opened.
+This is possible only because the owner's decision 5 (REQUIREMENTS.md)
+already forbids threading the per-boot token through client deps as a
+standing rule ("no phase may plan an auth mechanism, a credential file"),
+which ruled out this todo's own first candidate fix outright. Plan 64-09
+removes the now-dead client-side empty-token parameters this todo's own
+diagnosis traced (`StockDispatchDeps.controlToken`,
+`defaultDialMonitorSocket()`/`defaultTransferFile()`'s `controlToken`
+plumbing) -- `vice-proxy.ts`'s `dispatchStockFor()` still supplies neither,
+and now correctly so: there is nothing left for it to supply.
+
+Full record, including the replacement mitigation and the residual risk
+accepted in its place: `.planning/phases/64-files-as-bytes-both-directions/
+evidence/64-g641-handle-only-authority.md`. This resolution is recorded
+here, at this todo's original path -- moving or renaming it would be a
+deletion, which `cleanup-wave` refuses; the orchestrator relocates it at
+the phase close.

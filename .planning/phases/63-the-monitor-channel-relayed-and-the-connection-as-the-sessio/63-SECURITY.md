@@ -78,6 +78,33 @@ plan (`T-63-*-SC`).
 
 ---
 
+## Superseded (2026-09-23, Phase 64 gap G-64-1)
+
+**T-63-01**'s mitigation ("attach requires the per-boot control token AND a
+length check before `timingSafeEqual`") and **T-63-05**'s framing ("every
+authority decision is the control token plus the per-claim handle") no
+longer hold. G-64-1 (Phase 64) found that no production code ever supplied
+that token — every `vice_*` tool call through the real `vice-proxy.ts` over
+stdio failed the handshake outright — and the owner's decision 5
+(REQUIREMENTS.md: "no phase may plan an auth mechanism, a credential file")
+forbids fixing that by threading the token through. Plan 64-08 moved
+`attach` and `transfer` (`broker-control.mts`'s `handleLine()`) ahead of the
+per-boot token gate: both ops are now dispatched by their broker-minted
+per-claim/per-stage handle ALONE. The handle comparison itself
+(`handleRelayAttach()`'s length-checked, constant-time `timingSafeEqual`,
+its second-attach refusal, its handle-cleared-on-relay-death discipline) is
+untouched — only WHERE that check sits moved, not what it checks. Every
+other control op still requires the per-boot token, unchanged, until Phase
+66 (RM-02) deletes `broker.json`, the token's only distribution channel.
+See `.planning/phases/64-files-as-bytes-both-directions/evidence/
+64-g641-handle-only-authority.md` for the full reversal record, the
+replacement mitigation, and the residual risk accepted in its place. The
+historical rows above (T-63-01, T-63-05) are left unedited — this note
+supersedes them, it does not correct them; both were an accurate account of
+what shipped in Phase 63.
+
+---
+
 ## Accepted Risks Log
 
 | Risk ID | Threat Ref | Rationale | Accepted By | Date |
