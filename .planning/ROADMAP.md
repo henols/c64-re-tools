@@ -2259,7 +2259,7 @@ the first tool rides it.
      fully written, and an age-based sweep removes what a crashed broker or a
      vanished client left behind (XFER-07).
 
-**Plans**: 7/11 plans executed — 7/7 original plans executed, 6 waves; 4 gap-closure plans added for G-64-1 (64-08…64-11), 0/4 executed
+**Plans**: 11/11 plans executed — 7/7 original plans executed, 6 waves; 4 gap-closure plans added for G-64-1 (64-08…64-11), 4/4 executed
 
 Plans:
 
@@ -2704,7 +2704,7 @@ check. No test reads this table now.
 | 61. The Install Tables Generated, and a Guard That Compares Facts | v1.1.0 | 3/3 | Complete | 2026-09-19 |
 | 62. The Fixed Endpoint and the Broker That Owns the Machine | v2.0.0 | 5/5 | Complete | 2026-09-19 |
 | 63. The Monitor Channel Relayed, and the Connection as the Session | v2.0.0 | 12/12 | Complete | 2026-09-23 |
-| 64. Files as Bytes, Both Directions | v2.0.0 | 10/11 | In Progress | - |
+| 64. Files as Bytes, Both Directions | v2.0.0 | 11/11 | In Progress | - |
 | 65. Every Skill Script Through the One Endpoint, and CI With It | v2.0.0 | — | Not started | - |
 | 66. The Deletion Cutover — Gone, Not Bypassed | v2.0.0 | — | Not started | - |
 | 67. Ghidra's Runs Root Without the Alias | v2.0.0 | — | Not started | - |

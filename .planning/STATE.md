@@ -5,10 +5,10 @@ milestone_name: One Broker, One Socket
 current_phase: 64
 current_phase_name: Files as Bytes, Both Directions
 status: executing
-stopped_at: Executing Phase 64 gap closure -- plans 64-08..64-11 (G-64-1), 9 of 11 plans complete
-last_updated: "2026-09-23T18:02:31.000Z"
+stopped_at: Phase 64 gap closure complete -- plans 64-08..64-11 (G-64-1), 11 of 11 plans executed, ready for verification
+last_updated: "2026-09-23T19:32:00.000Z"
 last_activity: 2026-09-23
-last_activity_desc: Phase 64 gap-closure plan 64-09 complete (client-side credential removal, G-64-1) -- 64-10..64-11 remain
+last_activity_desc: Phase 64 gap-closure plan 64-11 complete (G-64-1's own truth measured live against a real broker and real /usr/bin/x64sc) -- phase ready for verification
 state_head: 4952647dc40455af87a8b27fbc1158ef9508fde7
 progress:
   total_phases: 6
@@ -82,9 +82,26 @@ closure still needs to be recorded as one.
 
 ## Current Position
 
-Phase: 64 (Files as Bytes, Both Directions) — EXECUTING GAP CLOSURE (G-64-1)
-Plan: 10 of 11 complete (64-08, 64-09, 64-10 done; 64-11 remains)
-Status: Executing Phase 64 gap closure — plans 64-08..64-11 close G-64-1 (UAT test 1), run sequentially on the main working tree.
+Phase: 64 (Files as Bytes, Both Directions) — GAP CLOSURE COMPLETE (G-64-1), READY FOR VERIFICATION
+Plan: 11 of 11 executed (64-08, 64-09, 64-10, 64-11 all done)
+Status: Phase 64 gap closure for G-64-1 (UAT test 1) is complete — all 11 plans executed sequentially on the main working tree. Verification has not yet run.
+Plan 64-11 closed 2026-09-23: G-64-1's own truth measured LIVE — a real systemd-run
+broker spawning the absolute /usr/bin/x64sc granted an unconfigured vice-proxy.ts
+session all four migrated tools (vice_autostart, vice_disk_attach,
+vice_snapshot_save, vice_snapshot_load), each isError:false, zero broker-side
+path leaks, write-loss wording confirmed against a real attach-write-close
+cycle, independently reproduced through a real nested Claude Code session.
+Discovered, precisely traced, and NOT fixed (production edits prohibited in
+this plan): a THIRD live defect — a cold-launched instance's first relay
+attach races the real emulator's own startup and is killed by the broker's
+kill-never-recycle release policy, blocking almost every fresh session's
+first stock tool call on this host. Filed as a new pending todo
+(2026-09-23-cold-launch-relay-attach-races-emulator-startup-and-gets-killed.md).
+Two smaller findings (an intermittent vice_disk_attach 0x8f error, a
+vice_keyboard_type petscii_upper default that garbles injected BASIC
+commands) recorded in WINDOWS.md. See
+.planning/phases/64-files-as-bytes-both-directions/64-11-SUMMARY.md and
+.planning/phases/64-files-as-bytes-both-directions/evidence/64-g641-live-check.md.
 Plan 64-10 closed 2026-09-23: G-64-1's SECONDARY root cause closed — the broker
 and the client now resolve broker.json through the SAME shared resolver
 (broker-home.mts's brokerStateDir()) for every documented start route.
@@ -117,7 +134,7 @@ verification passed (6/6 must-haves), nyquist validation PARTIAL and security ve
 with threats_open: 0. The one human decision — 63-REVIEW.md's WR-01 — was ACCEPTED as
 residual risk, recorded as R-63-04 in 63-SECURITY.md.
 Progress: [███░░░░░░░] 33% (2 of 6 v2.0.0 phases complete; Phases 62-67)
-Last activity: 2026-09-23 — Phase 64 gap-closure plan 64-10 complete (broker/client state-dir agreement, G-64-1 secondary cause); plan 64-11 remains
+Last activity: 2026-09-23 — Phase 64 gap-closure plan 64-11 complete (G-64-1's own truth measured live); phase ready for verification
 
 **Planning override recorded at the Phase 64 decision-coverage gate.**
 `check.decision-coverage-plan` returned `passed: false` with
