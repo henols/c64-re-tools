@@ -75,7 +75,7 @@ import { writeBrokerIncident } from "./broker-incident.mjs";
 // same build.ts pass, so "./backend-detect.mjs" always exists as a real
 // sibling file by the time this import resolves.
 import { resolvedBackend } from "./backend-detect.mjs";
-import { verifiedKill, registerShutdownHandlers, startupBanner, reapOrphanedInstances } from "./broker-kill.mjs";
+import { verifiedKill, registerShutdownHandlers, startupBanner, reapOrphanedInstances, reapOrphanedConfigScratch, sweepOrphanedStaging, } from "./broker-kill.mjs";
 import { writeEpochRecord, epochPathFor, nextEpochFor, instanceLogDirFor } from "./broker-epoch.mjs";
 // A VALUE import of the host-tool executor -- safe here for the SAME reason
 // every other sibling value import above is:
@@ -101,7 +101,7 @@ import { startControlListenerOnHosts, enumerateBindHosts, newControlToken, drain
 // below -- it answers only when no explicit --state-dir, no VICE_POOL_DIR,
 // and no --repo-root apply, which is exactly BROKER-01/BROKER-06's "no
 // project argument at all" case (D-13).
-import { brokerStateDir } from "./broker-home.mjs";
+import { brokerStateDir, brokerConfigScratchDir, brokerStagingDir } from "./broker-home.mjs";
 // A VALUE import of the staging/transfer primitives (Phase 64, plan 64-03,
 // XFER-04/XFER-07) -- safe here for the SAME reason every other sibling
 // value import above is: this file is ALWAYS run from its own compiled
@@ -1553,6 +1553,21 @@ async function run(args) {
         nextEpochFor,
         writeEpochRecord,
     });
+    // Phase 64 (XFER-07, D-07/D-08): two MORE startup-only sweeps, beside the
+    // unconditional reap directly above -- never reordering or gating it (its
+    // own placement, before the bind attempt and unconditional even for a
+    // process that goes on to lose the singleton race, is unchanged, and is
+    // already covered by broker-kill.test.ts's own structural source-order
+    // check). SESS-03/SESS-04 already reclaim a session's own staging on
+    // socket events and on bounded liveness detection, so the only residue
+    // either sweep can ever find here is what a CRASHED broker left -- and
+    // that is unambiguous exactly once, at the moment the NEXT broker starts.
+    // A periodic timer was offered and declined for both (D-07): it adds an
+    // interval to tune and a window where a sweep can race a live transfer,
+    // which the startup-only variant structurally cannot. Do not add one back
+    // as an "improvement".
+    reapOrphanedConfigScratch({ root: brokerConfigScratchDir() });
+    sweepOrphanedStaging({ root: brokerStagingDir() });
     // Resolved ONCE here, after the unconditional
     // startup reap and BEFORE the control listener binds -- never re-read per
     // launch, and never called from inside broker-launch.mts's `inFlight`

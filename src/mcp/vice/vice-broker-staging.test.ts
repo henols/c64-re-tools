@@ -14,7 +14,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { connect as netConnect, type Socket } from "node:net";
 import { createHash } from "node:crypto";
-import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -528,5 +528,52 @@ test("vice-broker-staging: after the session-close path runs for a grant, the se
     } finally {
       listener.server.close();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 64-05-PLAN.md, Task 3 (XFER-07, D-07/D-08): the broker's startup reap now
+// calls reapOrphanedConfigScratch()/sweepOrphanedStaging() beside
+// reapOrphanedInstances() -- exercised here through the SAME production
+// root-resolution wiring vice-broker.mts itself uses (brokerConfigScratchDir()/
+// brokerStagingDir(), no arguments, reading VICE_BROKER_HOME), against the
+// SAME compiled artifacts, so a drift between the roots this test seeds and
+// the roots the real broker resolves would show up here rather than only at
+// startup.
+// ---------------------------------------------------------------------------
+
+const brokerKillModule = (await import(new URL("./resources/broker-kill.mjs", HERE_MODULE_URL).href)) as unknown as {
+  reapOrphanedConfigScratch: (opts: { root: string; isAlive?: (pid: number) => boolean; readProcessArgs?: (pid: number) => string }) => { found: number; removed: number };
+  sweepOrphanedStaging: (opts: { root: string }) => { found: number; removed: number };
+};
+const { reapOrphanedConfigScratch, sweepOrphanedStaging } = brokerKillModule;
+
+const brokerHomeModule = (await import(new URL("./resources/broker-home.mjs", HERE_MODULE_URL).href)) as unknown as {
+  brokerConfigScratchDir: () => string;
+  brokerStagingDir: () => string;
+};
+const { brokerConfigScratchDir, brokerStagingDir } = brokerHomeModule;
+
+test("vice-broker startup reap (64-05, D-07/D-08): a fixture broker root's leftover staging directory is gone, and a config-scratch directory whose recorded process is alive is left in place", async () => {
+  await withStagingFixture(async () => {
+    const staleStagingDir = join(brokerStagingDir(), "req-leftover-session");
+    mkdirSync(staleStagingDir, { recursive: true });
+    writeFileSync(join(staleStagingDir, "some-staged-file"), "payload");
+
+    const aliveConfigScratchDir = join(brokerConfigScratchDir(), "vice-broker-vicerc-startup-alive");
+    mkdirSync(aliveConfigScratchDir, { recursive: true });
+    writeFileSync(`${aliveConfigScratchDir}.json`, JSON.stringify({ pid: 424242, expectedIdentity: "x64sc" }));
+
+    const configResult = reapOrphanedConfigScratch({
+      root: brokerConfigScratchDir(),
+      isAlive: () => true,
+      readProcessArgs: () => "/usr/bin/x64sc -binarymonitor",
+    });
+    const stagingResult = sweepOrphanedStaging({ root: brokerStagingDir() });
+
+    assert.equal(configResult.removed, 0, "a config-scratch directory whose recorded process is alive must not be removed");
+    assert.ok(existsSync(aliveConfigScratchDir), "the alive config-scratch directory must still exist");
+    assert.equal(stagingResult.removed, 1, "the leftover staging session directory must be removed");
+    assert.equal(existsSync(staleStagingDir), false, "the leftover staging session directory must be gone");
   });
 });
