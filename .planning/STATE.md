@@ -5,16 +5,16 @@ milestone_name: One Broker, One Socket
 current_phase: 64
 current_phase_name: Files as Bytes, Both Directions
 status: executing
-stopped_at: Phase 64 context gathered
-last_updated: "2026-09-23T08:50:07.636Z"
+stopped_at: Completed 64-01-PLAN.md
+last_updated: "2026-09-23T10:14:58.008Z"
 last_activity: 2026-09-23
-last_activity_desc: Phase 63 complete, transitioned to Phase 64
-state_head: 97139e62c1ad50bc61748702512ecfe2ce001f1f
+last_activity_desc: Phase 64 execution started
+state_head: a7735f3b8db8d4a1e4cd1f44f7e6e1011a96a517
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 24
-  completed_plans: 17
+  completed_plans: 18
   percent: 33
 carried_forward_phases:
 
@@ -46,7 +46,7 @@ v2.0.0 close is where it can be weighed — and it will have evidence to weigh,
 because "keep working when the emulator misbehaves" is exactly what a
 connection-is-the-session broker changes the mechanics of.*
 
-**Current focus:** Phase 64 — Files as Bytes, Both Directions, ready to plan.
+**Current focus:** Phase 64 — Files as Bytes, Both Directions
 Phase 63 closed 2026-09-23: all 12 of 12 plans executed (6 original, 4 gap-closure
 round one, 2 gap-closure round two), verification passed 6/6 must-haves, UAT 1/1,
 security verified with `threats_open: 0`, nyquist validation PARTIAL. `SESS-01..06`
@@ -82,15 +82,15 @@ closure still needs to be recorded as one.
 
 ## Current Position
 
-Phase: 64 (Files as Bytes, Both Directions) — READY TO EXECUTE
-Plan: Not started
+Phase: 64 (Files as Bytes, Both Directions) — EXECUTING
+Plan: 2 of 7
 Status: Ready to execute
 Phase 63 closed on 2026-09-23: all 12 plans executed, UAT 1/1 passed, canonical
 verification passed (6/6 must-haves), nyquist validation PARTIAL and security verified
 with threats_open: 0. The one human decision — 63-REVIEW.md's WR-01 — was ACCEPTED as
 residual risk, recorded as R-63-04 in 63-SECURITY.md.
 Progress: [███░░░░░░░] 33% (2 of 6 v2.0.0 phases complete; Phases 62-67)
-Last activity: 2026-09-23 — Phase 64 planned (7 plans, 6 waves, 21 tasks)
+Last activity: 2026-09-23 — Phase 64 execution started
 
 **Planning override recorded at the Phase 64 decision-coverage gate.**
 `check.decision-coverage-plan` returned `passed: false` with
@@ -506,6 +506,7 @@ Phase 66 completes.
 | Phase 63 P10 | ~20 min | 2 tasks | 3 files |
 | Phase 63 P11 | 35 min | 2 tasks | 5 files |
 | Phase 63 P12 | 12min | 2 tasks | 4 files |
+| Phase 64 P01 | 42min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -1413,6 +1414,8 @@ Recent decisions affecting current work:
 - [Phase 63]: 63-11: extracted tearDownRelaySessionForChannel() as the single delete-before-close primitive; tearDownRelaySessionsForGrant() now delegates to it per channel, and handleMonitorRelease() calls it on both ok:true paths (never on a refusal). — Closes 63-VERIFICATION.md's newest Blocker on the broker side; production still runs close-then-release until plan 63-12 reorders the two real callers.
 - [Phase 63]: Handshake-failure catch paths in textConnect()/stockConnect() deliberately kept close-then-release order, unchanged apart from one comment sentence each recording why — A handshake failure after the relay attached is a genuine abnormal event, and the incident record it produces is real evidence, not the noise the success-path reorder exists to prevent
 - [Phase 63]: probeAtRelease and releaseThrows added as new optional fields on the existing makeStubBrokerControl() stub shape in both test files, rather than a second parallel builder — Keeps every pre-existing call site in both test files unaffected, matching the plan's own instruction to extend the stub rather than change every existing caller's recorder shape
+- [Phase 64]: Phase 64 Plan 1: StockPathError's class definition moved to transfer-paths.ts (not left in stock-paths.ts) to avoid an import cycle (stock-paths.ts -> transfer-paths.ts -> stock-paths.ts) the plan's literal "re-exported from transfer-paths.ts" instruction would otherwise have required. — transfer-paths.ts stays a leaf with respect to stock-paths.ts; stock-paths.ts imports FROM transfer-paths.ts and re-exports, never the reverse. Every existing instanceof StockPathError assertion keeps passing unchanged.
+- [Phase 64]: Phase 64 Plan 1: sendPayloadFromFile() reads its source file twice -- a streaming digest-only pre-pass drained through a discard sink, then the real streamed send. — D-02 requires the header to precede the payload, and a sha256 digest can only be known after processing every byte; both passes stream so the whole file is never buffered in memory.
 
 ### Pending Todos
 
@@ -2746,9 +2749,9 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-23T07:50:25.425Z
-Stopped at: Phase 64 context gathered
-Resume file: .planning/phases/64-files-as-bytes-both-directions/64-CONTEXT.md
+Last session: 2026-09-23T10:14:57.917Z
+Stopped at: Completed 64-01-PLAN.md
+Resume file: None
 
 Earlier: **v2.0.0 roadmap created.** 36/36 requirements (`ENDPOINT-01..05`,
   `BROKER-01..06`, `SESS-01..06`, `XFER-01..08`, `SEAM-01..03`, `RM-01..08`)
