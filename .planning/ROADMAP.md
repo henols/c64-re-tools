@@ -2259,7 +2259,7 @@ the first tool rides it.
      fully written, and an age-based sweep removes what a crashed broker or a
      vanished client left behind (XFER-07).
 
-**Plans**: 7/7 plans executed, 6 waves
+**Plans**: 7/11 plans executed — 7/7 original plans executed, 6 waves; 4 gap-closure plans added for G-64-1 (64-08…64-11), 0/4 executed
 
 Plans:
 
@@ -2270,6 +2270,21 @@ Plans:
 - [x] 64-05-PLAN.md — the crash sweep and the folded vicerc-scratch relocation: two reap passes, two opposite lifetime rules, startup-only
 - [x] 64-06-PLAN.md — `vice_autostart` and `vice_disk_attach` migrated; the disk write-loss stated by name; `stock-paths.ts` import dropped
 - [x] 64-07-PLAN.md — the disjoint-roots proof for all four tools, the measured convergence metric, and the boundary confirmations
+
+**Gap closure** *(added after 64-UAT.md test 1 failed live — G-64-1, a blocker: every `vice_*` tool through the real `vice-proxy.ts` answered "missing or invalid control token"; the owner decided on 2026-09-23 to fix it inside Phase 64. `gap_closure: true`, run with `/gsd-execute-phase 64 --gaps-only`)*
+
+**Wave 1**
+
+- [ ] 64-08-PLAN.md — The primary cause: the broker answers relay `attach` and file `transfer` by their broker-minted handle alone, ahead of the per-boot token gate (route b, owner decision 5), proven through the real proxy on both channels and both transfer directions; the T-63-01 reversal recorded as evidence (XFER-04, XFER-08)
+
+**Wave 2** *(blocked on 64-08; the two plans share no file)*
+
+- [ ] 64-09-PLAN.md — No client dial carries a credential: the empty-token parameters leave the relay and transfer dial paths, and the wire's request lines are pinned by key-set tests (XFER-04, XFER-08)
+- [ ] 64-10-PLAN.md — The secondary cause: broker and client resolve the same `broker.json` for every documented start route, `--repo-root` stops moving broker state into a project (BROKER-06), the tarball ships what it imports, and the container interim limitation is owned by Phase 66 (XFER-08)
+
+**Wave 3** *(blocked on 64-08, 64-09 and 64-10)*
+
+- [ ] 64-11-PLAN.md — The live check: the four migrated tools against a systemd-unit broker and the absolute `/usr/bin/x64sc`, no broker-side path in any result, the write-loss wording read after a real attach-write-close cycle, and a verified teardown (XFER-01, XFER-02, XFER-08)
 
 **Cross-cutting constraints:**
 
@@ -2689,7 +2704,7 @@ check. No test reads this table now.
 | 61. The Install Tables Generated, and a Guard That Compares Facts | v1.1.0 | 3/3 | Complete | 2026-09-19 |
 | 62. The Fixed Endpoint and the Broker That Owns the Machine | v2.0.0 | 5/5 | Complete | 2026-09-19 |
 | 63. The Monitor Channel Relayed, and the Connection as the Session | v2.0.0 | 12/12 | Complete | 2026-09-23 |
-| 64. Files as Bytes, Both Directions | v2.0.0 | 7/7 | In Progress | - |
+| 64. Files as Bytes, Both Directions | v2.0.0 | 7/11 | In Progress | - |
 | 65. Every Skill Script Through the One Endpoint, and CI With It | v2.0.0 | — | Not started | - |
 | 66. The Deletion Cutover — Gone, Not Bypassed | v2.0.0 | — | Not started | - |
 | 67. Ghidra's Runs Root Without the Alias | v2.0.0 | — | Not started | - |
