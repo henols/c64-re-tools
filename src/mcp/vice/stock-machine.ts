@@ -207,11 +207,13 @@ export const handleAutostart: StockSessionHandler = async (args, session) => {
   // including the transfer cap's own refusal, which names the limit -- sends
   // no AUTOSTART.
   //
-  // ACCEPTED RISK, same shape as handleSnapshotLoad's own doc comment below
-  // (R-63-04-shaped, see 64-04-SUMMARY.md): transferFile()'s promise
-  // resolving does not guarantee the broker has finished publishing the
-  // bytes before the next line's AUTOSTART names the same staged file --
-  // here it is AUTOSTART, not UNDUMP, that can race the publish.
+  // G-64-3 (plan 64-13) closed the race this comment used to document as an
+  // accepted risk: transferFile() (session.deps.transferFile) now resolves
+  // ok ONLY after the broker has confirmed, on the transfer connection's own
+  // completion reply, that it has verified and published the staged file --
+  // never on this client's own local write finishing. The AUTOSTART sent
+  // below is therefore guaranteed to name a file that already exists at the
+  // path the broker chose.
   const transferFile = session.deps.transferFile;
   if (!transferFile) {
     return isErrorText("vice_autostart: internal error -- no transferFile implementation is available on this session");
@@ -336,11 +338,13 @@ export const handleDiskAttach: StockSessionHandler = async (args, session) => {
   // including the transfer cap's own refusal, which names the limit -- sends
   // no AUTOSTART.
   //
-  // ACCEPTED RISK, same shape as handleSnapshotLoad's own doc comment below
-  // (R-63-04-shaped, see 64-04-SUMMARY.md): transferFile()'s promise
-  // resolving does not guarantee the broker has finished publishing the
-  // bytes before the next line's AUTOSTART names the same staged file --
-  // here it is AUTOSTART, not UNDUMP, that can race the publish.
+  // G-64-3 (plan 64-13) closed the race this comment used to document as an
+  // accepted risk: transferFile() (session.deps.transferFile) now resolves
+  // ok ONLY after the broker has confirmed, on the transfer connection's own
+  // completion reply, that it has verified and published the staged file --
+  // never on this client's own local write finishing. The AUTOSTART sent
+  // below is therefore guaranteed to name a file that already exists at the
+  // path the broker chose.
   const transferFile = session.deps.transferFile;
   if (!transferFile) {
     return isErrorText("vice_disk_attach: internal error -- no transferFile implementation is available on this session");
@@ -578,27 +582,13 @@ export const handleSnapshotLoad: StockSessionHandler = async (args, session) => 
   // Step 3: upload this client's own local file's bytes through
   // session.deps.transferFile. A refusal sends no UNDUMP.
   //
-  // ACCEPTED RISK, decided deliberately in this plan rather than left
-  // unexamined (R-63-04-shaped, see 64-04-SUMMARY.md): `transferFile`'s own
-  // promise resolving here means this client's local upload pipeline
-  // finished writing to the transfer socket's send buffer -- it does NOT
-  // mean the broker has finished verifying the digest and atomically
-  // publishing the bytes to `stageOutcome.emulatorFilename`. There is no
-  // `transfer_complete` confirmation frame on the wire for an upload
-  // (vice-broker.mts's own handleFileTransfer() never writes one after
-  // receivePayloadToFile() settles), so the very next line's UNDUMP can, in
-  // principle, race that publish. Fixing this at the protocol level (a real
-  // `transfer_complete` reply the broker writes and this client awaits)
-  // touches broker-control.mts's wire vocabulary, vice-broker.mts's
-  // handleFileTransfer(), broker-endpoint.ts's dialFileTransfer() and this
-  // module's own transferFile seam -- an architectural change outside this
-  // plan's declared scope (stock-machine.ts/stock-machine.test.ts only).
-  // The window is expected to be dwarfed, in production, by the real
-  // network round-trip the SUBSEQUENT UNDUMP request itself requires; it is
-  // not a guarantee, and this plan's own round-trip test reproduced it
-  // reliably on a same-process loopback. Accepted here, explicitly, rather
-  // than adding an unauthorised protocol change or silently relying on
-  // timing.
+  // G-64-3 (plan 64-13) closed the race this comment used to document as an
+  // accepted risk: transferFile() (session.deps.transferFile) now resolves
+  // ok ONLY after the broker has confirmed, on the transfer connection's own
+  // completion reply, that it has verified and published the staged file --
+  // never on this client's own local write finishing. The UNDUMP sent below
+  // is therefore guaranteed to name a file that already exists at the path
+  // the broker chose.
   const transferFile = session.deps.transferFile;
   if (!transferFile) {
     return isErrorText("vice_snapshot_load: internal error -- no transferFile implementation is available on this session");

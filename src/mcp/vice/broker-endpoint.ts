@@ -1246,8 +1246,12 @@ export function awaitTransferComplete(options: AwaitTransferCompleteOptions): Pr
           return;
         }
         if (obj.kind === "error") {
-          const message = typeof obj.message === "string" ? obj.message : "the broker refused the upload with an unrecognisable error reply";
-          finish({ ok: false, reason: `vice: ${message}` });
+          // `obj.message` is already `vice: ...`-prefixed for every real
+          // broker refusal (broker-transfer.mts's own TransferResult.reason/
+          // wireReason convention) -- do not double-prefix it. Only the
+          // unrecognisable-reply fallback below needs one added here.
+          const message = typeof obj.message === "string" ? obj.message : "vice: the broker refused the upload with an unrecognisable error reply";
+          finish({ ok: false, reason: message });
           return;
         }
       }
