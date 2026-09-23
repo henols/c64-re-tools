@@ -55,7 +55,7 @@ import { resetRunStateTrackersForTest } from "./stock-runstate.ts";
 import type { StockConnectSession, TransferFileFn, TransferFileRequest, TransferFileResult } from "./stock-connect.ts";
 import type { ViceMonitorClient } from "./stock-protocol.ts";
 import type { StockDispatchDeps } from "./stock-dispatch.ts";
-import { dialFileTransfer } from "./broker-endpoint.ts";
+import { dialFileTransfer, awaitTransferComplete } from "./broker-endpoint.ts";
 import { createHashAndCountTransform, verifyObserved, TRANSFER_MAX_BYTES } from "./transfer-hash.mts";
 import { build } from "./build.ts";
 import { startControlListener, newControlToken } from "./broker-control.mts";
@@ -90,7 +90,13 @@ const { resetStagingForTest } = brokerTransferModule;
 const viceBrokerModule = (await import(new URL("./resources/vice-broker.mjs", HERE_MODULE_URL).href)) as unknown as {
   handleRelease: (requestId: string, state: BrokerState) => void;
   handleStageFile: (grantId: string, slot: string, state: BrokerState) => BrokerStageFileOutcome;
-  handleFileTransfer: (request: FileTransferRequest, socket: Socket, pending: Buffer, state: BrokerState) => FileTransferOutcome;
+  handleFileTransfer: (
+    request: FileTransferRequest,
+    socket: Socket,
+    pending: Buffer,
+    state: BrokerState,
+    deps?: { beforePublish?: () => Promise<void> },
+  ) => FileTransferOutcome;
 };
 const { handleRelease, handleStageFile, handleFileTransfer } = viceBrokerModule;
 
@@ -875,8 +881,15 @@ function setupRoundTripBrokerState(emulatorPort: number, targetId: string): Brok
 /** Starts a REAL control listener wired to the compiled artifacts' own
  * handleStageFile()/handleFileTransfer()/handleRelease() -- the same
  * production functions the real broker calls. Mirrors
- * vice-broker-staging.test.ts's own startStagingListenerForState() exactly. */
-async function startRoundTripListener(state: BrokerState, emulatorPort: number): Promise<{ listener: StartControlListenerResult; token: string }> {
+ * vice-broker-staging.test.ts's own startStagingListenerForState() exactly.
+ * `getDeps` is read AT CALL TIME (never captured once) so a test can arm or
+ * rearm the `beforePublish` timing hook (G-64-3, plan 64-13) right before
+ * its own upload starts, without needing a fresh listener per case. */
+async function startRoundTripListener(
+  state: BrokerState,
+  emulatorPort: number,
+  getDeps: () => { beforePublish?: () => Promise<void> } = () => ({}),
+): Promise<{ listener: StartControlListenerResult; token: string }> {
   const token = newControlToken();
   const listener = await startControlListener({
     host: "127.0.0.1",
@@ -912,7 +925,7 @@ async function startRoundTripListener(state: BrokerState, emulatorPort: number):
     onOperation: (): OperationNoteOutcome => ({ ok: true }),
     onHostTool: async () => ({ ok: false, message: "not exercised by stock-machine.test.ts" }),
     onStageFile: (targetId: string, slot: string) => handleStageFile(targetId, slot, state),
-    onFileTransfer: (request, socket, pending) => handleFileTransfer(request, socket, pending, state),
+    onFileTransfer: (request, socket, pending) => handleFileTransfer(request, socket, pending, state, getDeps()),
   });
   return { listener, token };
 }
@@ -1013,11 +1026,22 @@ function makeRealTransferFile(port: number): TransferFileFn {
       if (!dialResult.ok) return { ok: false, reason: dialResult.reason };
       const { socket } = dialResult;
       try {
+        // G-64-3 (plan 64-13): armed BEFORE the payload pipeline, awaited
+        // AFTER -- exactly as the PRODUCTION defaultTransferFile() (stock-
+        // connect.ts) now does, so this test-local copy stays faithful to
+        // production rather than absorbing the publish race it closes.
+        const completionPromise = awaitTransferComplete({ socket, byteLength, sha256, pending: dialResult.pending });
         const sendPass = createHashAndCountTransform({ capBytes: TRANSFER_MAX_BYTES });
-        await pipeline(createReadStream(request.sourcePath), sendPass, socket);
+        try {
+          await pipeline(createReadStream(request.sourcePath), sendPass, socket);
+        } catch (e) {
+          const completion = await completionPromise;
+          if (!completion.ok) return { ok: false, reason: completion.reason };
+          return { ok: false, reason: `transfer failed while sending: ${(e as Error).message}` };
+        }
+        const completion = await completionPromise;
+        if (!completion.ok) return { ok: false, reason: completion.reason };
         return { ok: true, byteLength, sha256 };
-      } catch (e) {
-        return { ok: false, reason: `transfer failed while sending: ${(e as Error).message}` };
       } finally {
         if (!socket.destroyed) socket.destroy();
       }
@@ -1073,7 +1097,7 @@ function nextRoundTripEmulatorPort(): number {
   return nextRoundTripPort;
 }
 
-test("vice_snapshot_save/vice_snapshot_load round trip: the same bytes make the whole journey across two roots that cannot see each other, and the staging directory is gone when the session is", async () => {
+test("vice_snapshot_save/vice_snapshot_load round trip (publish lands late, G-64-3 plan 64-13): the same bytes make the whole journey across two roots that cannot see each other, and the staging directory is gone when the session is", async () => {
   const clientDir = mkdtempSync(join(tmpdir(), "vice-snapshot-roundtrip-client-"));
   const brokerHome = mkdtempSync(join(tmpdir(), "vice-snapshot-roundtrip-broker-"));
   const prevProjectDir = process.env.CLAUDE_PROJECT_DIR;
@@ -1085,7 +1109,12 @@ test("vice_snapshot_save/vice_snapshot_load round trip: the same bytes make the 
   const emulatorPort = nextRoundTripEmulatorPort();
   const grantId = "req-64-04-roundtrip";
   const state = setupRoundTripBrokerState(emulatorPort, grantId);
-  const { listener, token } = await startRoundTripListener(state, emulatorPort);
+  // G-64-3 (plan 64-13): a 300ms pre-publish hook holds the broker's own
+  // rename back deterministically -- the UNDUMP stub below reads the staged
+  // file SYNCHRONOUSLY, with no polling, proving transferFile() really does
+  // not resolve until the broker has published the bytes.
+  const beforePublish = () => new Promise<void>((resolve) => setTimeout(resolve, 300));
+  const { listener, token } = await startRoundTripListener(state, emulatorPort, () => ({ beforePublish }));
   const control = makeRoundTripControlClient(listener.port);
   try {
     const acquireReply = await control.sendAndRead({ op: "acquire", id: grantId, token });
@@ -1108,27 +1137,15 @@ test("vice_snapshot_save/vice_snapshot_load round trip: the same bytes make the 
       if (commandType === CommandType.Undump) {
         const filenameLen = body[0]!;
         const stagedPath = body.subarray(1, 1 + filenameLen).toString("ascii");
-        // The upload-completion race (documented in handleSnapshotLoad's own
-        // doc comment, and disclosed as an accepted risk in this plan's
-        // SUMMARY, R-63-04-shaped): the client's own upload -- a local
-        // pipeline() promise resolving, or the transfer socket observing
-        // "close" -- is NOT a broker-side completion confirmation. There is
-        // no `transfer_complete` frame on the wire (vice-broker.mts's own
-        // handleFileTransfer() never writes one), so receivePayloadToFile()'s
-        // digest-verify-then-rename can still be running its own
-        // continuation the instant this stub is asked to open the file --
-        // exactly the race 64-03-SUMMARY.md measured directly. A REAL
-        // emulator would race this identical window; this stub polls
-        // (bounded) rather than assuming zero latency, so this test proves
-        // the bytes eventually arrive intact rather than masking the race
-        // behind a lucky ordering.
-        return (async () => {
-          const arrived = await waitForRoundTrip(() => existsSync(stagedPath), 2000);
-          assert.ok(arrived, "the uploaded bytes must eventually land at the staged path (the accepted-risk race must still resolve, not hang)");
-          const stagedBytes = readFileSync(stagedPath);
-          assert.ok(stagedBytes.equals(payload), "the bytes UNDUMP is asked to load must equal the fixture bytes byte-for-byte");
-          return { type: "undump", requestId: 1, errorCode: 0, programCounter: 0 };
-        })();
+        // G-64-3 (plan 64-13): transferFile() now resolves ok only after the
+        // broker's own completion reply confirms the publish -- UNDUMP is
+        // sent only after that, so the staged file is read SYNCHRONOUSLY the
+        // instant this stub is asked to open it. No polling: a client that
+        // named an unpublished file would fail this assertion every time.
+        assert.ok(existsSync(stagedPath), "the staged file must already exist by the time UNDUMP names it -- no poll, no wait");
+        const stagedBytes = readFileSync(stagedPath);
+        assert.ok(stagedBytes.equals(payload), "the bytes UNDUMP is asked to load must equal the fixture bytes byte-for-byte");
+        return { type: "undump", requestId: 1, errorCode: 0, programCounter: 0 };
       }
       return undefined;
     });
@@ -1166,6 +1183,73 @@ test("vice_snapshot_save/vice_snapshot_load round trip: the same bytes make the 
     const gone = await waitForRoundTrip(() => !existsSync(sessionDir), 2000);
     assert.ok(gone, "the session's staging directory must be removed once its connection closes");
   } finally {
+    listener.server.close();
+    resetStagingForTest();
+    if (prevProjectDir === undefined) delete process.env.CLAUDE_PROJECT_DIR;
+    else process.env.CLAUDE_PROJECT_DIR = prevProjectDir;
+    if (prevBrokerHome === undefined) delete process.env.VICE_BROKER_HOME;
+    else process.env.VICE_BROKER_HOME = prevBrokerHome;
+    rmSync(clientDir, { recursive: true, force: true });
+    rmSync(brokerHome, { recursive: true, force: true });
+  }
+});
+
+test("vice_snapshot_load refusal (G-64-3, plan 64-13): a publish that fails before the rename refuses the load, sends no UNDUMP, and the result text names no path under the broker's own root", async () => {
+  const clientDir = mkdtempSync(join(tmpdir(), "vice-snapshot-refusal-client-"));
+  const brokerHome = mkdtempSync(join(tmpdir(), "vice-snapshot-refusal-broker-"));
+  const prevProjectDir = process.env.CLAUDE_PROJECT_DIR;
+  const prevBrokerHome = process.env.VICE_BROKER_HOME;
+  process.env.CLAUDE_PROJECT_DIR = clientDir;
+  process.env.VICE_BROKER_HOME = brokerHome;
+  resetStagingForTest();
+
+  const emulatorPort = nextRoundTripEmulatorPort();
+  const grantId = "req-64-13-t2-refusal";
+  const state = setupRoundTripBrokerState(emulatorPort, grantId);
+  // Starts undefined -- the save's own DOWNLOAD is unaffected by this hook
+  // (it only applies to an upload's own receivePayloadToFile() call).
+  // Armed to a REJECTING hook only right before the load's own upload,
+  // below, so the save can succeed first and produce a real local snapshot.
+  let beforePublish: (() => Promise<void>) | undefined;
+  const { listener, token } = await startRoundTripListener(state, emulatorPort, () => ({ beforePublish }));
+  const control = makeRoundTripControlClient(listener.port);
+  try {
+    const acquireReply = await control.sendAndRead({ op: "acquire", id: grantId, token });
+    assert.equal(acquireReply.kind, "grant");
+
+    const payload = fullByteRangeRoundTripPayload();
+    const { session, sends } = makeSession((commandType, body) => {
+      if (commandType === CommandType.Dump) {
+        const filenameLen = body[2]!;
+        const stagedPath = body.subarray(3, 3 + filenameLen).toString("ascii");
+        mkdirSync(dirname(stagedPath), { recursive: true });
+        writeFileSync(stagedPath, payload);
+        return undefined;
+      }
+      if (commandType === CommandType.Undump) {
+        // Must never be reached: a publish failure must refuse the load
+        // BEFORE UNDUMP is ever sent (this test's own point).
+        assert.fail("UNDUMP must not be sent when the upload's own publish failed");
+      }
+      return undefined;
+    });
+    session.targetId = grantId;
+    session.brokerControl = { ...session.brokerControl, stageFile: makeRealStageFile(control, token) } as StockConnectSession["brokerControl"];
+    session.deps = { ...session.deps, transferFile: makeRealTransferFile(listener.port) };
+
+    const saveResult = await handleSnapshotSave({ name: "refusal_1" }, session, fakeDeps);
+    assert.equal(saveResult.isError, false, `save must succeed: ${JSON.stringify(saveResult)}`);
+    assert.equal(sends.length, 1);
+
+    beforePublish = () => Promise.reject(new Error("forced publish failure (G-64-3, plan 64-13 test)"));
+
+    const loadResult = await handleSnapshotLoad({ name: "refusal_1" }, session, fakeDeps);
+    assert.equal(loadResult.isError, true, `a publish failure must refuse the load: ${JSON.stringify(loadResult)}`);
+    assert.equal(sends.length, 1, "no UNDUMP may be sent after a publish failure");
+    const resultText = loadResult.content[0]!.text;
+    assert.ok(!resultText.includes(brokerHome), `the result text must name no path under the broker's own temp root: ${resultText}`);
+  } finally {
+    control.close();
     listener.server.close();
     resetStagingForTest();
     if (prevProjectDir === undefined) delete process.env.CLAUDE_PROJECT_DIR;

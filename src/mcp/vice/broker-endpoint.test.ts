@@ -25,6 +25,7 @@ import {
   TRANSFER_TAG,
   RELAY_TAG_BINARY,
   resolveEndpointPort,
+  awaitTransferComplete,
   type BrokerEndpointConnectFn,
   type DialFailure,
   type DialFileTransferResult,
@@ -1134,6 +1135,148 @@ test("dialFileTransfer: an upload's transfer request line carries exactly op, di
     const keys = Object.keys(capturedTransferLine as Record<string, unknown>).sort();
     assert.deepEqual(keys, ["byteLength", "direction", "handle", "op", "sha256"].sort());
   } finally {
+    fixture.server.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// awaitTransferComplete() -- G-64-3 (plan 64-13, Task 2). A RAW loopback
+// socket pair, never dialFileTransfer()'s own hello/transfer handshake --
+// this reader operates strictly AFTER that handshake has already produced an
+// open transfer socket, so these tests drive it directly against a plain
+// net.createServer()/net.connect() pair.
+// ---------------------------------------------------------------------------
+
+function startRawSocketServer(onConnection: (socket: Socket) => void): Promise<{ server: Server; port: number }> {
+  return new Promise((resolvePromise) => {
+    const server = createServer(onConnection);
+    server.listen(0, "127.0.0.1", () => {
+      const addr = server.address();
+      const port = typeof addr === "object" && addr !== null ? addr.port : 0;
+      resolvePromise({ server, port });
+    });
+  });
+}
+
+function connectRawClient(port: number): Promise<Socket> {
+  return new Promise((resolvePromise, reject) => {
+    const socket = connect({ host: "127.0.0.1", port });
+    socket.once("connect", () => resolvePromise(socket));
+    socket.once("error", reject);
+  });
+}
+
+test("awaitTransferComplete: resolves ok on a matching transfer_complete line", async () => {
+  const fixture = await startRawSocketServer((socket) => {
+    socket.write(`${JSON.stringify({ kind: "transfer_complete", byteLength: 4, sha256: "deadbeef" })}\n`);
+  });
+  let client: Socket | undefined;
+  try {
+    client = await connectRawClient(fixture.port);
+    const result = await awaitTransferComplete({ socket: client, byteLength: 4, sha256: "deadbeef" });
+    assert.equal(result.ok, true, `expected ok, got ${JSON.stringify(result)}`);
+  } finally {
+    client?.destroy();
+    fixture.server.close();
+  }
+});
+
+test("awaitTransferComplete: resolves ok:false naming both pairs when the echoed byteLength or sha256 disagrees with what was declared", async () => {
+  const fixture = await startRawSocketServer((socket) => {
+    socket.write(`${JSON.stringify({ kind: "transfer_complete", byteLength: 999, sha256: "wrong-digest" })}\n`);
+  });
+  let client: Socket | undefined;
+  try {
+    client = await connectRawClient(fixture.port);
+    const result = await awaitTransferComplete({ socket: client, byteLength: 4, sha256: "deadbeef" });
+    assert.equal(result.ok, false, `expected ok:false, got ${JSON.stringify(result)}`);
+    if (result.ok) return;
+    assert.match(result.reason, /999/);
+    assert.match(result.reason, /wrong-digest/);
+    assert.match(result.reason, /4/);
+    assert.match(result.reason, /deadbeef/);
+  } finally {
+    client?.destroy();
+    fixture.server.close();
+  }
+});
+
+test("awaitTransferComplete: resolves ok:false carrying the broker's own message, verbatim, on an error line", async () => {
+  const fixture = await startRawSocketServer((socket) => {
+    socket.write(`${JSON.stringify({ kind: "error", code: "internal", message: "vice: transfer failed before the upload could be published: forced failure" })}\n`);
+  });
+  let client: Socket | undefined;
+  try {
+    client = await connectRawClient(fixture.port);
+    const result = await awaitTransferComplete({ socket: client, byteLength: 4, sha256: "deadbeef" });
+    assert.equal(result.ok, false, `expected ok:false, got ${JSON.stringify(result)}`);
+    if (result.ok) return;
+    assert.equal(result.reason, "vice: transfer failed before the upload could be published: forced failure", "the broker's own message must be carried verbatim, never re-wrapped or double-prefixed");
+  } finally {
+    client?.destroy();
+    fixture.server.close();
+  }
+});
+
+test("awaitTransferComplete: resolves ok:false when the server closes the connection without ever writing a line", async () => {
+  const fixture = await startRawSocketServer((socket) => {
+    socket.destroy();
+  });
+  let client: Socket | undefined;
+  try {
+    client = await connectRawClient(fixture.port);
+    const result = await awaitTransferComplete({ socket: client, byteLength: 4, sha256: "deadbeef", timeoutMs: 2000 });
+    assert.equal(result.ok, false, `expected ok:false, got ${JSON.stringify(result)}`);
+    if (result.ok) return;
+    assert.ok(result.reason.length > 0, "reason must be a non-empty string");
+  } finally {
+    client?.destroy();
+    fixture.server.close();
+  }
+});
+
+test("awaitTransferComplete: resolves ok:false on timeout, naming that a broker older than this reply never sends one", async () => {
+  const fixture = await startRawSocketServer(() => {
+    // Accepts the connection and answers nothing at all -- the broker-side
+    // shape of a build that predates this completion reply.
+  });
+  let client: Socket | undefined;
+  try {
+    client = await connectRawClient(fixture.port);
+    const startedAt = Date.now();
+    const result = await awaitTransferComplete({ socket: client, byteLength: 4, sha256: "deadbeef", timeoutMs: 100 });
+    const elapsedMs = Date.now() - startedAt;
+    assert.equal(result.ok, false, `expected ok:false, got ${JSON.stringify(result)}`);
+    if (result.ok) return;
+    assert.match(result.reason, /restart the broker/);
+    assert.ok(elapsedMs >= 90, `must not resolve before the injected 100ms timeout has elapsed (observed ${elapsedMs}ms)`);
+  } finally {
+    client?.destroy();
+    fixture.server.close();
+  }
+});
+
+test("awaitTransferComplete: still reads a line the server writes while the client itself is still writing on the same full-duplex socket", async () => {
+  const fixture = await startRawSocketServer((socket) => {
+    // The broker's own completion reply, delayed slightly so it lands WHILE
+    // the client below is still mid-write on the SAME socket -- proving this
+    // reader (which only ever listens, never inspects the write side) is not
+    // confused by concurrent outbound traffic in the opposite direction.
+    setTimeout(() => {
+      socket.write(`${JSON.stringify({ kind: "transfer_complete", byteLength: 4, sha256: "deadbeef" })}\n`);
+    }, 20);
+  });
+  let client: Socket | undefined;
+  try {
+    client = await connectRawClient(fixture.port);
+    const completionPromise = awaitTransferComplete({ socket: client, byteLength: 4, sha256: "deadbeef" });
+    // The client's OWN outbound payload write -- still in flight when the
+    // server's completion line arrives above.
+    client.write(Buffer.alloc(1024 * 1024, 0x41));
+    const result = await completionPromise;
+    assert.equal(result.ok, true, `expected ok, got ${JSON.stringify(result)}`);
+  } finally {
+    client?.destroy();
     fixture.server.close();
   }
 });

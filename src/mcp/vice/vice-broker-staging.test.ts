@@ -314,20 +314,27 @@ test("vice-broker-staging: a full upload-then-download round trip is byte-for-by
         uploadSocket.write(`${JSON.stringify({ op: "transfer", direction: "upload", handle, byteLength, sha256, token })}\n`);
         const { obj: uploadReply } = await uploadReplyPromise;
         assert.equal(uploadReply.kind, "transfer_ready");
-        uploadSocket.end(payload);
-        await onceClosed(uploadSocket);
 
-        // The upload's own socket closing is NOT a completion confirmation
-        // (D-05's own theme: a reply confirms acceptance, not completion) --
-        // receivePayloadToFile()'s own verify-then-rename runs as a
-        // continuation AFTER the streaming pipeline settles, and the
-        // client-observed socket close is not ordered against it. Poll
-        // (bounded) for the file to actually appear, exactly as a real
-        // consumer would have to.
-        const published = await waitFor(() => existsSync(emulatorFilename), 2000);
-        assert.ok(published, "the staged file must eventually appear on disk after the upload settles");
+        // G-64-3 (plan 64-13): the completion reader is armed BEFORE the
+        // write side is ended -- a line that arrived before a reader was
+        // attached would be lost, since nothing else on this connection
+        // keeps a byte buffer once transfer_ready's own listeners are torn
+        // down (readLineFromSocket()'s own "data" listener, above).
+        const completionReplyPromise = readLineFromSocket(uploadSocket);
+        uploadSocket.end(payload);
+        const { obj: completionReply } = await completionReplyPromise;
+        assert.equal(completionReply.kind, "transfer_complete");
+        assert.deepEqual(Object.keys(completionReply).sort(), ["byteLength", "kind", "sha256"], "the completion reply's key set must be exactly kind, byteLength and sha256");
+        assert.equal(completionReply.byteLength, byteLength);
+        assert.equal(completionReply.sha256, sha256);
+
+        // No polling: the completion reply IS the broker's own confirmation
+        // that the file has already been published -- it must already exist,
+        // synchronously, the instant this reply is read.
+        assert.equal(existsSync(emulatorFilename), true, "the staged file must already exist the instant the completion reply is read");
         const uploadedBytes = readFileSync(emulatorFilename);
         assert.ok(uploadedBytes.equals(payload), "the staged file's bytes must equal the uploaded bytes exactly");
+        await onceClosed(uploadSocket);
 
         // Download
         const downloadSocket = netConnect({ host: "127.0.0.1", port: listener.port });
@@ -374,7 +381,7 @@ test("vice-broker-staging: a transfer presenting an unknown handle receives an e
 });
 
 test("vice-broker-staging: an upload whose declared digest disagrees with its bytes leaves no file at the staged path", async () => {
-  await withStagingFixture(async () => {
+  await withStagingFixture(async (home) => {
     const emulatorPort = nextEmulatorPort();
     const grantId = "req-1-1-cccccccc";
     const state = setupBrokerState(emulatorPort, grantId);
@@ -396,7 +403,15 @@ test("vice-broker-staging: an upload whose declared digest disagrees with its by
         uploadSocket.write(`${JSON.stringify({ op: "transfer", direction: "upload", handle, byteLength: payload.length, sha256: wrongSha256, token })}\n`);
         const { obj: uploadReply } = await uploadReplyPromise;
         assert.equal(uploadReply.kind, "transfer_ready");
+
+        // G-64-3 (plan 64-13): armed BEFORE ending the write side -- see the
+        // round-trip test's own comment above for why call order matters.
+        const errorReplyPromise = readLineFromSocket(uploadSocket);
         uploadSocket.end(payload);
+        const { obj: errorReply } = await errorReplyPromise;
+        assert.equal(errorReply.kind, "error");
+        assert.match(String(errorReply.message ?? ""), /digest mismatch/i, "the error line's message must name the mismatch");
+        assert.ok(!String(errorReply.message ?? "").includes(home), "the error line's message must contain no path under VICE_BROKER_HOME");
         await onceClosed(uploadSocket);
 
         assert.equal(existsSync(emulatorFilename), false, "a digest mismatch must leave no file at the staged path");

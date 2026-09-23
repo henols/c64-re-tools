@@ -47,7 +47,7 @@ import { dirname, join } from "node:path";
 
 import { handleAutostart, handleDiskAttach, handleSnapshotSave, handleSnapshotLoad } from "./stock-machine.ts";
 import { CommandType, type ViceMonitorClient } from "./stock-protocol.ts";
-import { dialFileTransfer } from "./broker-endpoint.ts";
+import { dialFileTransfer, awaitTransferComplete } from "./broker-endpoint.ts";
 import { createHashAndCountTransform, verifyObserved, TRANSFER_MAX_BYTES } from "./transfer-hash.mts";
 import { build } from "./build.ts";
 import { startControlListener, newControlToken } from "./broker-control.mts";
@@ -84,7 +84,13 @@ const { resetStagingForTest } = brokerTransferModule;
 const viceBrokerModule = (await import(new URL("./resources/vice-broker.mjs", HERE_MODULE_URL).href)) as unknown as {
   handleRelease: (requestId: string, state: BrokerState) => void;
   handleStageFile: (grantId: string, slot: string, state: BrokerState) => BrokerStageFileOutcome;
-  handleFileTransfer: (request: FileTransferRequest, socket: Socket, pending: Buffer, state: BrokerState) => FileTransferOutcome;
+  handleFileTransfer: (
+    request: FileTransferRequest,
+    socket: Socket,
+    pending: Buffer,
+    state: BrokerState,
+    deps?: { beforePublish?: () => Promise<void> },
+  ) => FileTransferOutcome;
 };
 const { handleRelease, handleStageFile, handleFileTransfer } = viceBrokerModule;
 
@@ -129,7 +135,14 @@ function setupBrokerState(emulatorPort: number, targetId: string): BrokerState {
   return state;
 }
 
-async function startDisjointListener(state: BrokerState, emulatorPort: number): Promise<{ listener: StartControlListenerResult; token: string }> {
+/** `getDeps` is read AT CALL TIME (never captured once) so a test can arm
+ * the `beforePublish` timing hook (G-64-3, plan 64-13) right before its own
+ * upload starts. Defaults to no hook (the pre-64-13 behaviour). */
+async function startDisjointListener(
+  state: BrokerState,
+  emulatorPort: number,
+  getDeps: () => { beforePublish?: () => Promise<void> } = () => ({}),
+): Promise<{ listener: StartControlListenerResult; token: string }> {
   const token = newControlToken();
   const listener = await startControlListener({
     host: "127.0.0.1",
@@ -170,7 +183,7 @@ async function startDisjointListener(state: BrokerState, emulatorPort: number): 
     onOperation: (): OperationNoteOutcome => ({ ok: true }),
     onHostTool: async () => ({ ok: false, message: "not exercised by transfer-disjoint-roots.test.ts" }),
     onStageFile: (targetId: string, slot: string) => handleStageFile(targetId, slot, state),
-    onFileTransfer: (request, socket, pending) => handleFileTransfer(request, socket, pending, state),
+    onFileTransfer: (request, socket, pending) => handleFileTransfer(request, socket, pending, state, getDeps()),
   });
   return { listener, token };
 }
@@ -272,11 +285,22 @@ function makeRealTransferFile(port: number): TransferFileFn {
       if (!dialResult.ok) return { ok: false, reason: dialResult.reason };
       const { socket } = dialResult;
       try {
+        // G-64-3 (plan 64-13): armed BEFORE the payload pipeline, awaited
+        // AFTER -- exactly as the PRODUCTION defaultTransferFile() (stock-
+        // connect.ts) now does, so this test-local copy stays faithful to
+        // production rather than absorbing the publish race it closes.
+        const completionPromise = awaitTransferComplete({ socket, byteLength, sha256, pending: dialResult.pending });
         const sendPass = createHashAndCountTransform({ capBytes: TRANSFER_MAX_BYTES });
-        await pipeline(createReadStream(request.sourcePath), sendPass, socket);
+        try {
+          await pipeline(createReadStream(request.sourcePath), sendPass, socket);
+        } catch (e) {
+          const completion = await completionPromise;
+          if (!completion.ok) return { ok: false, reason: completion.reason };
+          return { ok: false, reason: `transfer failed while sending: ${(e as Error).message}` };
+        }
+        const completion = await completionPromise;
+        if (!completion.ok) return { ok: false, reason: completion.reason };
         return { ok: true, byteLength, sha256 };
-      } catch (e) {
-        return { ok: false, reason: `transfer failed while sending: ${(e as Error).message}` };
       } finally {
         if (!socket.destroyed) socket.destroy();
       }
@@ -438,7 +462,13 @@ test("transfer-disjoint-roots: all four tools complete against a client and a br
   const emulatorPort = reserveDisjointEmulatorPort();
   const grantId = "req-64-07-disjoint";
   const state = setupBrokerState(emulatorPort, grantId);
-  const { listener, token } = await startDisjointListener(state, emulatorPort);
+  // G-64-3 (plan 64-13): a 300ms pre-publish hook holds the broker's own
+  // rename back deterministically for every upload in this test -- the
+  // AUTOSTART/UNDUMP stubs below all read their staged file SYNCHRONOUSLY,
+  // with no polling, proving transferFile() really does not resolve until
+  // the broker has published the bytes.
+  const beforePublish = () => new Promise<void>((resolve) => setTimeout(resolve, 300));
+  const { listener, token } = await startDisjointListener(state, emulatorPort, () => ({ beforePublish }));
   const control = makeDisjointControlClient(listener.port);
 
   try {
@@ -452,7 +482,8 @@ test("transfer-disjoint-roots: all four tools complete against a client and a br
     // below meaningful rather than vacuous.
     const autostartFixturePath = join(clientRoot, "fixtures", "autostart.prg");
     mkdirSync(dirname(autostartFixturePath), { recursive: true });
-    writeFileSync(autostartFixturePath, Buffer.from([0x01, 0x08, 0x00, 0x00, 0x9e, 0x32, 0x30, 0x36, 0x31, 0x00, 0x00, 0x00]));
+    const autostartFixtureBytes = Buffer.from([0x01, 0x08, 0x00, 0x00, 0x9e, 0x32, 0x30, 0x36, 0x31, 0x00, 0x00, 0x00]);
+    writeFileSync(autostartFixturePath, autostartFixtureBytes);
 
     const diskAttachFixturePath = join(clientRoot, "fixtures", "disk8.d64");
     const diskAttachBytes = Buffer.alloc(1024);
@@ -474,9 +505,24 @@ test("transfer-disjoint-roots: all four tools complete against a client and a br
         // byte 0 distinguishes them here: handleAutostart defaults
         // run:true (byte 0x01, since this test never overrides it);
         // handleDiskAttach always sends runAfter:false (byte 0x00).
+        //
+        // G-64-3 (plan 64-13): transferFile() now resolves ok only after
+        // the broker's own completion reply confirms the publish -- AUTOSTART
+        // is sent only after that, so the staged file is read SYNCHRONOUSLY
+        // the instant this stub is asked to open it, and its bytes are
+        // compared against the fixture that was actually uploaded. No
+        // polling: a client that named an unpublished or wrong file would
+        // fail this assertion every time.
         const filename = decodeAutostartFilename(body);
-        if (body[0] === 0x01) stagedPaths.autostart = filename;
-        else stagedPaths.diskAttach = filename;
+        if (body[0] === 0x01) {
+          stagedPaths.autostart = filename;
+          assert.ok(existsSync(filename), "the staged autostart file must already exist synchronously when AUTOSTART names it");
+          assert.ok(readFileSync(filename).equals(autostartFixtureBytes), "the staged autostart file's bytes must equal the uploaded fixture byte-for-byte");
+        } else {
+          stagedPaths.diskAttach = filename;
+          assert.ok(existsSync(filename), "the staged disk-attach file must already exist synchronously when AUTOSTART names it");
+          assert.ok(readFileSync(filename).equals(diskAttachBytes), "the staged disk-attach file's bytes must equal the uploaded fixture byte-for-byte");
+        }
         return undefined; // neither handler reads a reply value
       }
       if (commandType === CommandType.Dump) {
@@ -492,20 +538,15 @@ test("transfer-disjoint-roots: all four tools complete against a client and a br
       if (commandType === CommandType.Undump) {
         const filename = decodeUndumpFilename(body);
         stagedPaths.undump = filename;
-        // Accepted upload-completion race (64-03/64-04-SUMMARY.md,
-        // R-63-04-shaped): transferFile()'s own promise resolving does not
-        // guarantee the broker has finished verifying and publishing the
-        // bytes before this line's UNDUMP names the same staged file.
-        // Poll (bounded) rather than assume zero latency -- this is the
-        // SAME accepted risk 64-04's own round-trip test reproduced, not a
-        // new one this file introduces.
-        return (async () => {
-          const arrived = await waitForDisjoint(() => existsSync(filename), 2000);
-          assert.ok(arrived, "the uploaded snapshot bytes must eventually land at the staged path (the accepted-risk race must still resolve, not hang)");
-          const stagedBytes = readFileSync(filename);
-          assert.ok(stagedBytes.equals(snapshotPayload), "the bytes UNDUMP is asked to load must equal the fixture bytes byte-for-byte");
-          return { type: "undump", requestId: 1, errorCode: 0, programCounter: 0 };
-        })();
+        // G-64-3 (plan 64-13): transferFile() now resolves ok only after the
+        // broker's own completion reply confirms the publish -- UNDUMP is
+        // sent only after that, so the staged file is read SYNCHRONOUSLY the
+        // instant this stub is asked to open it. No polling: a client that
+        // named an unpublished file would fail this assertion every time.
+        assert.ok(existsSync(filename), "the staged snapshot file must already exist by the time UNDUMP names it -- no poll, no wait");
+        const stagedBytes = readFileSync(filename);
+        assert.ok(stagedBytes.equals(snapshotPayload), "the bytes UNDUMP is asked to load must equal the fixture bytes byte-for-byte");
+        return { type: "undump", requestId: 1, errorCode: 0, programCounter: 0 };
       }
       return undefined;
     });
