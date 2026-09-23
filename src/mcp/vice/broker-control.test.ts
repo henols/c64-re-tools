@@ -1491,6 +1491,12 @@ test("structural (D-14): no halting-path module reads monitorClients -- the only
     // other allowed *.test.ts file above does. Kept in sync with
     // text-connect.test.ts's own copy of this same guard.
     "stock-machine.test.ts",
+    // Phase 64, plan 64-07 (XFER-01/XFER-05/XFER-08): the disjoint-roots
+    // proof, driving all four migrated handlers against a REAL control
+    // listener and constructing the SAME raw InstanceRecord literal every
+    // other allowed *.test.ts file above does. Kept in sync with
+    // text-connect.test.ts's own copy of this same guard.
+    "transfer-disjoint-roots.test.ts",
   ]);
   const offenders: string[] = [];
   for (const rel of files) {
