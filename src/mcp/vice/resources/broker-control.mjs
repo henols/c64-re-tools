@@ -152,6 +152,18 @@ function resolveMonitorChannel(raw) {
         return raw;
     return "bad_request";
 }
+/** Resolves the `transfer` op's own `direction` field: exactly the two
+ * accepted literals, or `bad_request` -- mirrors resolveMonitorChannel()'s
+ * own shape and its no-coercion discipline (an unrecognised value is
+ * refused by name, never guessed at). Unlike resolveMonitorChannel(), there
+ * is no absent-field default: `direction` has no meaningful implicit value
+ * the way an omitted `channel` does, so `undefined` falls into the same
+ * `bad_request` bucket as any other unrecognised value. */
+function resolveTransferDirection(raw) {
+    if (raw === "upload" || raw === "download")
+        return raw;
+    return "bad_request";
+}
 /** The ONE sanitiser every caller-supplied display string travelling over
  * this control plane goes through before a broker-side record or log line
  * ever renders it (T-63-10). Strips every C0 control character
@@ -964,6 +976,99 @@ function attachControlProtocol(server, opts, pendingAcquires) {
                 else {
                     writeLine(socket, { kind: "error", code: outcome.code, message: `operation failed: ${outcome.code}` });
                 }
+            }
+            else if (req.op === "stage_file") {
+                // Phase 64 (XFER-04, D-01). Gated on the SAME ownsTarget() predicate
+                // monitor_claim/monitor_release/recycle/operation already share --
+                // dispatched on this connection's ORDINARY line reader; never
+                // touches relayMode.
+                const targetId = typeof req.target_id === "string" ? req.target_id : "";
+                const slot = typeof req.slot === "string" ? req.slot : "";
+                if (targetId === "" || slot === "") {
+                    writeLine(socket, { kind: "error", code: "bad_request", message: "stage_file requires target_id and slot" });
+                    return;
+                }
+                if (!ownsTarget(targetId)) {
+                    writeLine(socket, {
+                        kind: "error",
+                        code: "denied",
+                        message: "stage_file may only target the grant this connection itself holds",
+                    });
+                    return;
+                }
+                // onStageFile is OPTIONAL on StartControlListenerOptions -- see that
+                // field's own header comment for why (vice-broker.mts does not wire
+                // it until plan 64-03). A type contract is not a runtime guarantee
+                // at a wire boundary: refused BY NAME here rather than calling
+                // `undefined` and crashing this socket's "data" handler.
+                if (!opts.onStageFile) {
+                    writeLine(socket, { kind: "error", code: "internal", message: "stage_file is not wired on this broker" });
+                    return;
+                }
+                const stageOutcome = opts.onStageFile(targetId, slot);
+                if (stageOutcome.ok) {
+                    writeLine(socket, { kind: "file_staged", handle: stageOutcome.handle, emulator_filename: stageOutcome.emulatorFilename });
+                }
+                else {
+                    writeLine(socket, { kind: "error", code: stageOutcome.code, message: `stage_file failed: ${stageOutcome.code}` });
+                }
+            }
+            else if (req.op === "transfer") {
+                // Phase 64 (XFER-04, D-01, T-63-01 precedent). Deliberately NOT
+                // gated by ownsTarget(): this connection is a brand-new transfer
+                // socket, never the one that ran stage_file, so
+                // requestIdForThisConnection is null on it -- the per-stage
+                // `handle` presented below is the ONLY authority this arm can
+                // check. Sits AFTER the token gate, like every op except `hello`.
+                const handle = typeof req.handle === "string" ? req.handle : "";
+                const direction = resolveTransferDirection(req.direction);
+                if (handle === "" || direction === "bad_request") {
+                    writeLine(socket, {
+                        kind: "error",
+                        code: "bad_request",
+                        message: 'transfer requires handle and direction ("upload" or "download")',
+                    });
+                    return;
+                }
+                let fileTransferRequest;
+                if (direction === "upload") {
+                    if (typeof req.byteLength !== "number" || typeof req.sha256 !== "string") {
+                        writeLine(socket, {
+                            kind: "error",
+                            code: "bad_request",
+                            message: "transfer (upload) requires byteLength (number) and sha256 (string)",
+                        });
+                        return;
+                    }
+                    fileTransferRequest = { direction: "upload", handle, byteLength: req.byteLength, sha256: req.sha256 };
+                }
+                else {
+                    fileTransferRequest = { direction: "download", handle };
+                }
+                // onFileTransfer is OPTIONAL for the same reason onStageFile is --
+                // see that field's own header comment. Refused by name, never
+                // called with `undefined`, and this socket's line reader is left
+                // running (relayMode is never flipped on this path).
+                if (!opts.onFileTransfer) {
+                    writeLine(socket, { kind: "error", code: "internal", message: "transfer is not wired on this broker" });
+                    return;
+                }
+                // Flipped BEFORE onFileTransfer() is ever called -- mirrors the
+                // `attach` arm's own relayMode flip above: a payload byte must
+                // never be re-examined by this socket's own JSON-line reader.
+                relayMode = true;
+                const transferOutcome = opts.onFileTransfer(fileTransferRequest, socket, remainderAfterLine);
+                if (!transferOutcome.ok) {
+                    // The transfer was refused before any payload byte was consumed
+                    // by the callback -- this socket never became a payload
+                    // connection, so its line reader must resume, exactly as a
+                    // failed `attach` resumes its own.
+                    relayMode = false;
+                    writeLine(socket, { kind: "error", code: transferOutcome.code, message: transferOutcome.message });
+                }
+                // On success this arm writes NOTHING further -- onFileTransfer()
+                // itself owns every reply line and every payload byte from here on
+                // (see FileTransferOutcome's own header comment).
             }
             else {
                 writeLine(socket, { kind: "error", code: "bad_request", message: `unknown op: ${String(req.op)}` });

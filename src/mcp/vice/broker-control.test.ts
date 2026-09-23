@@ -43,6 +43,9 @@ import {
   type MonitorReleaseOutcome,
   type RelayAttachOutcome,
   type OperationNoteOutcome,
+  type StageFileOutcome,
+  type FileTransferRequest,
+  type FileTransferOutcome,
   sanitiseSessionLabel,
 } from "./broker-control.mts";
 import type { Socket } from "node:net";
@@ -136,6 +139,14 @@ interface StubDeps {
    * unconditionally -- every pre-63-03 test in this file that never sends
    * `operation` is unaffected. */
   onOperation?: (targetId: string, channel: MonitorChannel, name: string | null) => OperationNoteOutcome;
+  /** Phase 64, plan 64-02 (XFER-04): OPTIONAL on StartControlListenerOptions
+   * itself (vice-broker.mts does not wire it until plan 64-03), and absent
+   * by default here too -- a `stage_file` request against a listener started
+   * with no stub is refused `internal` by the dispatch arm's own
+   * not-wired check, never by calling an undefined function. */
+  onStageFile?: (targetId: string, slot: string) => StageFileOutcome;
+  /** Phase 64, plan 64-02 (XFER-04): same optionality as onStageFile above. */
+  onFileTransfer?: (request: FileTransferRequest, socket: Socket, pending: Buffer) => FileTransferOutcome;
   onHostTool?: (raw: unknown) => Promise<unknown>;
   /** Plan 62-01: the `hello` reply's injectable version override, passed
    * straight through to StartControlListenerOptions.helloVersion. Absent by
@@ -159,6 +170,13 @@ async function startTestListener(deps: StubDeps = {}): Promise<{
   // arrival order -- `name` recorded AFTER this listener's own sanitiser has
   // already run, matching what onOperation itself is handed in production.
   operationCalls: Array<{ targetId: string; channel: MonitorChannel; name: string | null }>;
+  // Phase 64, plan 64-02 (XFER-04): every `stage_file`/`transfer` call this
+  // listener actually forwarded to a supplied stub, in arrival order. Empty
+  // when the test supplies no `onStageFile`/`onFileTransfer` stub -- see
+  // this function's own conditional wiring below, which mirrors
+  // StartControlListenerOptions' own optionality for these two callbacks.
+  stageFileCalls: Array<{ targetId: string; slot: string }>;
+  fileTransferCalls: FileTransferRequest[];
 }> {
   const token = newControlToken();
   const releases: string[] = [];
@@ -168,6 +186,8 @@ async function startTestListener(deps: StubDeps = {}): Promise<{
   const monitorClaimChannels: MonitorChannel[] = [];
   const monitorReleaseChannels: MonitorChannel[] = [];
   const operationCalls: Array<{ targetId: string; channel: MonitorChannel; name: string | null }> = [];
+  const stageFileCalls: Array<{ targetId: string; slot: string }> = [];
+  const fileTransferCalls: FileTransferRequest[] = [];
   const listener = await startControlListener({
     host: "127.0.0.1",
     port: 0,
@@ -209,8 +229,38 @@ async function startTestListener(deps: StubDeps = {}): Promise<{
     // never called by any pre-existing case here.
     onHostTool: deps.onHostTool ?? (async () => ({ ok: false, message: "no onHostTool stub configured" })),
     helloVersion: deps.helloVersion,
+    // Phase 64, plan 64-02 (XFER-04): CONDITIONALLY wired, unlike every
+    // callback above -- StartControlListenerOptions' own `onStageFile`/
+    // `onFileTransfer` are OPTIONAL (vice-broker.mts does not wire either
+    // until plan 64-03), so a test that supplies no stub here must see the
+    // real "not wired" refusal the dispatch arm itself produces, not a
+    // fabricated default answer this test fixture invented.
+    onStageFile: deps.onStageFile
+      ? (targetId: string, slot: string) => {
+          stageFileCalls.push({ targetId, slot });
+          return deps.onStageFile!(targetId, slot);
+        }
+      : undefined,
+    onFileTransfer: deps.onFileTransfer
+      ? (request: FileTransferRequest, socket: Socket, pending: Buffer) => {
+          fileTransferCalls.push(request);
+          return deps.onFileTransfer!(request, socket, pending);
+        }
+      : undefined,
   });
-  return { listener, token, releases, recycleCalls, monitorClaimCalls, monitorReleaseCalls, monitorClaimChannels, monitorReleaseChannels, operationCalls };
+  return {
+    listener,
+    token,
+    releases,
+    recycleCalls,
+    monitorClaimCalls,
+    monitorReleaseCalls,
+    monitorClaimChannels,
+    monitorReleaseChannels,
+    operationCalls,
+    stageFileCalls,
+    fileTransferCalls,
+  };
 }
 
 // ============================================================================
@@ -1066,6 +1116,294 @@ test("operation: Task 3 ordering proof -- a declare, the wrapped work, then a cl
   }
 });
 
+// ============================================================================
+// Phase 64, plan 64-02 (XFER-04, D-01): `stage_file` and `transfer` -- the two
+// new file-transfer ops. `stage_file` mints a handle over the GRANT-HOLDING
+// connection, gated by the SAME ownsTarget() predicate every other
+// target-naming op shares. `transfer` presents that handle over a BRAND-NEW
+// connection and is deliberately NOT gated by ownsTarget() -- the T-63-01
+// precedent `attach` already established.
+// ============================================================================
+
+test("stage_file: a request from a non-owning connection is refused denied, and the onStageFile callback is never invoked", async () => {
+  const { listener, token, stageFileCalls } = await startTestListener({
+    onAcquire: grantingAcquire(),
+    onStageFile: () => ({ ok: true, handle: "should-never-be-minted", emulatorFilename: "/never/reached" }),
+  });
+  const client = makeClient(listener.port);
+  try {
+    // This connection holds NO grant at all -- req-a belongs to nobody it owns.
+    client.send({ op: "stage_file", id: "stage-1", target_id: "req-a", slot: "autostart", token });
+    const resp = await client.next();
+    assert.equal(resp.kind, "error");
+    assert.equal(resp.code, "denied");
+    assert.deepEqual(stageFileCalls, [], "onStageFile must never be invoked for a connection that does not own the target");
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("stage_file: a request missing target_id or slot is refused bad_request, and the callback is never invoked", async () => {
+  const { listener, token, stageFileCalls } = await startTestListener({
+    onAcquire: grantingAcquire(),
+    onStageFile: () => ({ ok: true, handle: "unused", emulatorFilename: "/unused" }),
+  });
+  const client = makeClient(listener.port);
+  try {
+    await acquireGrant(client, token, "req-a");
+
+    client.send({ op: "stage_file", id: "stage-missing-slot", target_id: "req-a", token });
+    const missingSlot = await client.next();
+    assert.equal(missingSlot.kind, "error");
+    assert.equal(missingSlot.code, "bad_request");
+
+    client.send({ op: "stage_file", id: "stage-missing-target", slot: "autostart", token });
+    const missingTarget = await client.next();
+    assert.equal(missingTarget.kind, "error");
+    assert.equal(missingTarget.code, "bad_request");
+
+    assert.deepEqual(stageFileCalls, [], "onStageFile must never be invoked for a malformed request");
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("stage_file: a request from the owning connection is answered file_staged, with a handle and emulator_filename the request did not supply", async () => {
+  const { listener, token, stageFileCalls } = await startTestListener({
+    onAcquire: grantingAcquire(),
+    onStageFile: (targetId, slot) => ({ ok: true, handle: `handle-for-${targetId}-${slot}`, emulatorFilename: `/staging/${targetId}/${slot}.bin` }),
+  });
+  const client = makeClient(listener.port);
+  try {
+    await acquireGrant(client, token, "req-a");
+    client.send({ op: "stage_file", id: "stage-1", target_id: "req-a", slot: "autostart", token });
+    const resp = await client.next();
+    assert.equal(resp.kind, "file_staged");
+    assert.equal(resp.handle, "handle-for-req-a-autostart");
+    assert.equal(resp.emulator_filename, "/staging/req-a/autostart.bin");
+    assert.deepEqual(stageFileCalls, [{ targetId: "req-a", slot: "autostart" }]);
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("stage_file: a callback refusal is forwarded verbatim as an error naming the callback's own code", async () => {
+  const { listener, token } = await startTestListener({
+    onAcquire: grantingAcquire(),
+    onStageFile: () => ({ ok: false, code: "internal" }),
+  });
+  const client = makeClient(listener.port);
+  try {
+    await acquireGrant(client, token, "req-a");
+    client.send({ op: "stage_file", id: "stage-1", target_id: "req-a", slot: "autostart", token });
+    const resp = await client.next();
+    assert.equal(resp.kind, "error");
+    assert.equal(resp.code, "internal");
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("stage_file: against a listener with NO onStageFile stub configured, the request is refused internal rather than crashing the connection", async () => {
+  const { listener, token } = await startTestListener({ onAcquire: grantingAcquire() });
+  const client = makeClient(listener.port);
+  try {
+    await acquireGrant(client, token, "req-a");
+    client.send({ op: "stage_file", id: "stage-1", target_id: "req-a", slot: "autostart", token });
+    const resp = await client.next();
+    assert.equal(resp.kind, "error");
+    assert.equal(resp.code, "internal");
+    // Prove the connection is still alive and answering ordinary requests --
+    // a crash would have destroyed the socket rather than merely refusing.
+    client.send({ op: "status", token });
+    const statusResp = await client.next();
+    assert.equal(statusResp.kind, "status");
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("transfer: a request with an empty or missing handle is refused bad_request, and the connection's own line reader is left running", async () => {
+  const { listener, token } = await startTestListener({
+    onFileTransfer: (): FileTransferOutcome => ({ ok: true }),
+  });
+  const client = makeClient(listener.port);
+  try {
+    client.send({ op: "transfer", id: "t-1", direction: "download", handle: "", token });
+    const missingHandle = await client.next();
+    assert.equal(missingHandle.kind, "error");
+    assert.equal(missingHandle.code, "bad_request");
+
+    // The line reader must still be running -- a well-formed request
+    // afterwards is dispatched normally.
+    client.send({ op: "status", token });
+    const statusResp = await client.next();
+    assert.equal(statusResp.kind, "status");
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("transfer: a request naming a direction other than upload or download is refused bad_request by name", async () => {
+  const { listener, token } = await startTestListener({
+    onFileTransfer: (): FileTransferOutcome => ({ ok: true }),
+  });
+  const client = makeClient(listener.port);
+  try {
+    client.send({ op: "transfer", id: "t-1", direction: "sideways", handle: "some-handle", token });
+    const resp = await client.next();
+    assert.equal(resp.kind, "error");
+    assert.equal(resp.code, "bad_request");
+    assert.match(String(resp.message), /direction/i);
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("transfer: an upload missing byteLength or sha256 is refused bad_request before the callback runs", async () => {
+  const { listener, token, fileTransferCalls } = await startTestListener({
+    onFileTransfer: (): FileTransferOutcome => ({ ok: true }),
+  });
+  const client = makeClient(listener.port);
+  try {
+    client.send({ op: "transfer", id: "t-1", direction: "upload", handle: "some-handle", token });
+    const resp = await client.next();
+    assert.equal(resp.kind, "error");
+    assert.equal(resp.code, "bad_request");
+    assert.deepEqual(fileTransferCalls, []);
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("transfer: a valid handle flips this connection out of line-reading mode BEFORE the callback runs -- a well-formed second JSON line afterwards is NOT dispatched", async () => {
+  const { listener, token, fileTransferCalls } = await startTestListener({
+    onFileTransfer: (): FileTransferOutcome => ({ ok: true }),
+  });
+  const client = makeClient(listener.port);
+  try {
+    client.send({ op: "transfer", id: "t-1", direction: "download", handle: "a-valid-handle", token });
+    // No reply is written on success (the callback owns every further reply
+    // line) -- prove the second line is never dispatched by sending an
+    // ordinary op that WOULD answer if the reader were still running, then
+    // racing it against a short timer.
+    client.send({ op: "status", token });
+    let sawStatus = false;
+    const raced = await Promise.race([
+      client.next(1000).then((resp) => {
+        sawStatus = resp.kind === "status";
+        return "responded";
+      }),
+      new Promise((resolve) => setTimeout(() => resolve("timed-out"), 300)),
+    ]);
+    assert.equal(raced, "timed-out", "the second line must never be dispatched -- this connection's line reader stopped");
+    assert.equal(sawStatus, false);
+    assert.equal(fileTransferCalls.length, 1, "the callback must have been invoked exactly once, for the transfer request itself");
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("transfer: a callback refusal restores the connection's line reader -- a well-formed second request line afterwards IS dispatched", async () => {
+  const { listener, token } = await startTestListener({
+    onFileTransfer: (): FileTransferOutcome => ({ ok: false, code: "denied", message: "vice: no staged file for this handle" }),
+  });
+  const client = makeClient(listener.port);
+  try {
+    client.send({ op: "transfer", id: "t-1", direction: "download", handle: "an-unknown-handle", token });
+    const refusal = await client.next();
+    assert.equal(refusal.kind, "error");
+    assert.equal(refusal.code, "denied");
+    assert.match(String(refusal.message), /no staged file/);
+
+    // The line reader must have resumed -- a well-formed request afterwards
+    // is dispatched normally, on the SAME connection.
+    client.send({ op: "status", token });
+    const statusResp = await client.next();
+    assert.equal(statusResp.kind, "status");
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("transfer: ownsTarget() is never consulted -- a valid handle succeeds over a connection that holds no grant at all", async () => {
+  const { listener, token, fileTransferCalls } = await startTestListener({
+    onFileTransfer: (): FileTransferOutcome => ({ ok: true }),
+  });
+  const client = makeClient(listener.port);
+  try {
+    // This connection never sent `acquire` at all -- it holds no grant.
+    client.send({ op: "transfer", id: "t-1", direction: "upload", handle: "a-valid-handle", byteLength: 1024, sha256: "a".repeat(64), token });
+
+    // No reply on success; prove the callback ran with the correctly
+    // narrowed upload request rather than being refused for lack of a grant.
+    await waitFor(() => fileTransferCalls.length === 1, 1000);
+    assert.deepEqual(fileTransferCalls, [{ direction: "upload", handle: "a-valid-handle", byteLength: 1024, sha256: "a".repeat(64) }]);
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("transfer: against a listener with NO onFileTransfer stub configured, the request is refused internal rather than crashing the connection, and the line reader is left running", async () => {
+  const { listener, token } = await startTestListener();
+  const client = makeClient(listener.port);
+  try {
+    client.send({ op: "transfer", id: "t-1", direction: "download", handle: "some-handle", token });
+    const resp = await client.next();
+    assert.equal(resp.kind, "error");
+    assert.equal(resp.code, "internal");
+
+    client.send({ op: "status", token });
+    const statusResp = await client.next();
+    assert.equal(statusResp.kind, "status");
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("stage_file/transfer: unauthorized when the token is wrong, before either callback is ever invoked", async () => {
+  const { listener, stageFileCalls, fileTransferCalls } = await startTestListener({
+    onAcquire: grantingAcquire(),
+    onStageFile: () => ({ ok: true, handle: "x", emulatorFilename: "/x" }),
+    onFileTransfer: (): FileTransferOutcome => ({ ok: true }),
+  });
+  const client = makeClient(listener.port);
+  try {
+    client.send({ op: "stage_file", id: "stage-1", target_id: "req-a", slot: "autostart", token: "wrong-token" });
+    const stageResp = await client.next();
+    assert.equal(stageResp.kind, "error");
+    assert.equal(stageResp.code, "unauthorized");
+
+    // The wrong token also destroys the connection (T-01.6.2-01/03,
+    // pre-existing behaviour) -- reconnect for the transfer half.
+    client.close();
+    const client2 = makeClient(listener.port);
+    client2.send({ op: "transfer", id: "t-1", direction: "download", handle: "some-handle", token: "wrong-token" });
+    const transferResp = await client2.next();
+    assert.equal(transferResp.kind, "error");
+    assert.equal(transferResp.code, "unauthorized");
+    client2.close();
+
+    assert.deepEqual(stageFileCalls, []);
+    assert.deepEqual(fileTransferCalls, []);
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
 test("sanitiseSessionLabel: strips every C0 control character (including both line terminators), trims, and caps at 64 characters", () => {
   assert.equal(sanitiseSessionLabel("  hello\tworld  "), "helloworld");
   assert.equal(sanitiseSessionLabel("line1\nline2\r\n"), "line1line2");
@@ -1388,7 +1726,7 @@ test("structural: attemptAcquire()'s own comment names which half bounds which f
   assert.match(comment, /does NOT eliminate that race/i);
 });
 
-test("ControlRequestKind (34-01/62-01/63-01/63-03, A-01/D-06): now exactly eleven members -- host_tool is the whole host-tool subsystem (never widened again per-tool), hello is plan 62-01's pre-token-gate handshake op, attach is plan 63-01's post-token-gate relay handshake op, operation is plan 63-03's post-token-gate declaration op", () => {
+test("ControlRequestKind (34-01/62-01/63-01/63-03/64-02, A-01/D-06/D-01): now exactly thirteen members -- host_tool is the whole host-tool subsystem (never widened again per-tool), hello is plan 62-01's pre-token-gate handshake op, attach is plan 63-01's post-token-gate relay handshake op, operation is plan 63-03's post-token-gate declaration op, stage_file/transfer are plan 64-02's file-transfer ops (XFER-04)", () => {
   const source = readFileSync(join(HERE, "broker-control.mts"), "utf8");
   const match = source.match(/export type ControlRequestKind = ([^;]+);/);
   assert.ok(match, "ControlRequestKind's own type declaration must be found");
@@ -1402,12 +1740,14 @@ test("ControlRequestKind (34-01/62-01/63-01/63-03, A-01/D-06): now exactly eleve
   // comment for why it is answered BEFORE tokensMatch(). Plan 63-01
   // (SESS-02) adds the tenth member: "attach", UNLIKE hello dispatched
   // AFTER the token gate, in the same post-gate chain as every other
-  // target-naming op. Plan 63-03 (SESS-05) adds the eleventh and, so far,
-  // last member: "operation", gated on the SAME ownsTarget() predicate as
-  // monitor_claim/monitor_release/recycle.
+  // target-naming op. Plan 63-03 (SESS-05) adds the eleventh member:
+  // "operation", gated on the SAME ownsTarget() predicate as
+  // monitor_claim/monitor_release/recycle. Plan 64-02 (XFER-04, D-01) adds
+  // the twelfth and thirteenth members: "stage_file" (gated by ownsTarget(),
+  // like operation) and "transfer" (deliberately NOT gated, like attach).
   assert.equal(match![1].trim(),
-    '"acquire" | "release" | "recycle" | "status" | "host_state" | "monitor_claim" | "monitor_release" | "host_tool" | "hello" | "attach" | "operation"',
-    "the union must be exactly the prior ten members plus plan 63-03's operation (SESS-05)",
+    '"acquire" | "release" | "recycle" | "status" | "host_state" | "monitor_claim" | "monitor_release" | "host_tool" | "hello" | "attach" | "operation" | "stage_file" | "transfer"',
+    "the union must be exactly the prior eleven members plus plan 64-02's stage_file and transfer (XFER-04)",
   );
 });
 
@@ -1873,7 +2213,7 @@ async function startProfileRecordingListener(): Promise<{
   return { listener, token, received };
 }
 
-test("ControlRequestKind (34-01/62-01/63-01/63-03, A-01/D-06): now exactly eleven members -- host_tool is a reviewed eighth op, hello is plan 62-01's reviewed ninth op, attach is plan 63-01's reviewed tenth op, operation is plan 63-03's reviewed eleventh op, and this union is never widened again PER-TOOL", () => {
+test("ControlRequestKind (34-01/62-01/63-01/63-03/64-02, A-01/D-06/D-01): now exactly thirteen members -- host_tool is a reviewed eighth op, hello is plan 62-01's reviewed ninth op, attach is plan 63-01's reviewed tenth op, operation is plan 63-03's reviewed eleventh op, stage_file/transfer are plan 64-02's twelfth/thirteenth ops (XFER-04), and this union is never widened again PER-TOOL", () => {
   // Read off the type's own declaration in the source rather than a
   // hand-maintained list here: a second list would be the very drift this
   // asserts against. The union is a single line by convention in this file.
@@ -1885,10 +2225,10 @@ test("ControlRequestKind (34-01/62-01/63-01/63-03, A-01/D-06): now exactly eleve
     .map((s) => s.trim().replace(/^"|"$/g, ""))
     .filter((s) => s !== "");
   assert.deepEqual(members,
-    ["acquire", "release", "recycle", "status", "host_state", "monitor_claim", "monitor_release", "host_tool", "hello", "attach", "operation"],
-    "the message set must be exactly the prior ten plus plan 63-03's operation (SESS-05) -- a genuinely reviewed " +
-      "widening, not a per-tool one: a second host tool is still a new HOST_TOOL_IDS entry in host-tool.mts, " +
-      "never a twelfth ControlRequestKind member",
+    ["acquire", "release", "recycle", "status", "host_state", "monitor_claim", "monitor_release", "host_tool", "hello", "attach", "operation", "stage_file", "transfer"],
+    "the message set must be exactly the prior eleven plus plan 64-02's stage_file and transfer (XFER-04) -- a " +
+      "genuinely reviewed widening, not a per-tool one: a second host tool is still a new HOST_TOOL_IDS entry in " +
+      "host-tool.mts, never a fourteenth ControlRequestKind member",
   );
 });
 
@@ -2193,7 +2533,7 @@ test("acquire profile (33-06): the profile survives being QUEUED behind an in-fl
 
 const BROKER_CONTROL_MTS = join(HERE, "broker-control.mts");
 
-test("the ControlRequestKind union has exactly eleven members including hello, attach and operation, and the hello arm's dispatch sits before the tokensMatch() call", () => {
+test("the ControlRequestKind union has exactly thirteen members including hello, attach, operation, stage_file and transfer, and the hello arm's dispatch sits before the tokensMatch() call", () => {
   const source = readFileSync(BROKER_CONTROL_MTS, "utf8");
 
   const unionMatch = source.match(/export type ControlRequestKind = ([^;]+);/);
@@ -2202,10 +2542,12 @@ test("the ControlRequestKind union has exactly eleven members including hello, a
     .split("|")
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
-  assert.equal(members.length, 11, `expected 11 ControlRequestKind members, got ${members.length}: ${JSON.stringify(members)}`);
+  assert.equal(members.length, 13, `expected 13 ControlRequestKind members, got ${members.length}: ${JSON.stringify(members)}`);
   assert.ok(members.includes('"hello"'), `hello must be a member of ControlRequestKind, got ${JSON.stringify(members)}`);
   assert.ok(members.includes('"attach"'), `attach must be a member of ControlRequestKind, got ${JSON.stringify(members)}`);
   assert.ok(members.includes('"operation"'), `operation must be a member of ControlRequestKind, got ${JSON.stringify(members)}`);
+  assert.ok(members.includes('"stage_file"'), `stage_file must be a member of ControlRequestKind, got ${JSON.stringify(members)}`);
+  assert.ok(members.includes('"transfer"'), `transfer must be a member of ControlRequestKind, got ${JSON.stringify(members)}`);
 
   const helloArmOffset = source.indexOf('req.op === "hello"');
   const tokensMatchCallOffset = source.indexOf("tokensMatch(token, opts.token)");
@@ -2638,10 +2980,18 @@ test("two sessions, one broker: two connections declaring two labels each acquir
 // NOT taking a caller-supplied target id at all -- `acquire`/`release` name
 // no target (the connection's own held grant IS the target for `release`);
 // `status`/`host_state`/`host_tool`/`hello` never resolve against a grant.
-const KNOWN_NON_TARGET_NAMING_OPS = new Set(["acquire", "release", "status", "host_state", "host_tool", "hello"]);
+// `transfer` (Phase 64, XFER-04) joins this set: its request carries a
+// `handle`, never a `target_id` (see this plan's wire_vocabulary block) --
+// the SAME T-63-01 reasoning that already puts `attach`'s handle authority
+// on a DIFFERENT connection than the one that named a target_id, except
+// `transfer` never reads target_id at all, so it cannot be exercised by
+// this test's target_id-substitution shape.
+const KNOWN_NON_TARGET_NAMING_OPS = new Set(["acquire", "release", "status", "host_state", "host_tool", "hello", "transfer"]);
 // The set this invariant test actually EXERCISES below -- every op whose
 // dispatch arm reads `req.target_id` and resolves it against a grant.
-const TARGET_NAMING_OPS_UNDER_TEST = ["monitor_claim", "monitor_release", "recycle", "attach", "operation"];
+// `stage_file` (Phase 64, XFER-04) joins this set: gated by the SAME
+// ownsTarget() predicate as monitor_claim/monitor_release/recycle/operation.
+const TARGET_NAMING_OPS_UNDER_TEST = ["monitor_claim", "monitor_release", "recycle", "attach", "operation", "stage_file"];
 
 test("invariant (63-05, T-63-17): every target-naming op refuses ANOTHER session's declared label used as a target id, byte-identically to a bare unrelated garbage target id, and the refusal never quotes the label back; the covered op set is asserted against ControlRequestKind so a future target-naming op reds this test until it is listed", async () => {
   // Structural half FIRST: read ControlRequestKind's own live declaration
@@ -2695,6 +3045,7 @@ test("invariant (63-05, T-63-17): every target-naming op refuses ANOTHER session
       const baseRequest: Record<string, unknown> = { op, token, channel: "binary" };
       if (op === "attach") baseRequest.handle = "bogus-handle-b-does-not-hold";
       if (op === "operation") baseRequest.name = "vice_ping";
+      if (op === "stage_file") baseRequest.slot = "autostart";
 
       clientB.send({ ...baseRequest, id: `${op}-garbage`, target_id: garbageId });
       const garbageResp = await clientB.next();

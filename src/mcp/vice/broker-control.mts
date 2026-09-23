@@ -93,7 +93,27 @@ import type { ViceBackend } from "./backend-detect.mjs";
 // running when a relay died. Written WITHOUT being awaited by its caller
 // (stock-dispatch.ts/text-tools.ts) -- see StartControlListenerOptions'
 // onOperation comment for why that is safe.
-export type ControlRequestKind = "acquire" | "release" | "recycle" | "status" | "host_state" | "monitor_claim" | "monitor_release" | "host_tool" | "hello" | "attach" | "operation";
+// `stage_file` joins as the TWELFTH member, Phase 64 (XFER-04, D-01) --
+// gated on the SAME ownsTarget() predicate `monitor_claim`/`monitor_release`/
+// `recycle`/`operation` already share (never a bare target_id), and
+// dispatched on the connection's ordinary line reader -- it never touches
+// relayMode. Mints an opaque, broker-chosen handle and a broker-side path
+// the emulator itself must open (`emulator_filename`); the caller never
+// supplies either. Its callback (onStageFile) is OPTIONAL on
+// StartControlListenerOptions -- see that field's own comment for why.
+// `transfer` joins as the THIRTEENTH member, Phase 64 (XFER-04, D-01/D-02,
+// T-63-01 precedent) -- sits AFTER the token gate, like every op except
+// `hello`, but is deliberately NOT gated by ownsTarget(): sent on a
+// connection dedicated solely to becoming a payload connection, so the
+// per-stage `handle` presented on the wire is the ONLY authority this op can
+// check, exactly the reasoning `attach`'s own comment above already states.
+// This listener answers it once, flips this socket out of line-reading mode
+// (the SAME relayMode flag `attach` flips) BEFORE its callback runs, and
+// hands the connection to onFileTransfer -- which, on success, owns every
+// further reply line and every payload byte; this listener writes nothing
+// more on that path. Its callback is ALSO optional -- see onFileTransfer's
+// own comment.
+export type ControlRequestKind = "acquire" | "release" | "recycle" | "status" | "host_state" | "monitor_claim" | "monitor_release" | "host_tool" | "hello" | "attach" | "operation" | "stage_file" | "transfer";
 // `no_free_text_port` joins the vocabulary as its OWN code -- a stock
 // acquire that fails only on the SECOND (`-remotemonitor`) allocation is
 // reported distinctly from `no_free_port` (which still means the
@@ -278,6 +298,42 @@ export type OperationNoteOutcome = { ok: true } | { ok: false; code: "bad_reques
  * documented tolerance for releasing twice. */
 export type MonitorReleaseOutcome = { ok: true } | { ok: false; code: "denied" | "bad_request" | "internal" };
 
+/** Discriminated outcome for `stage_file` (Phase 64, XFER-04, D-01): resolved
+ * by vice-broker.mts's own handleStageFile() (plan 64-03). `ok: true` mints a
+ * handle the REQUEST did not supply, and names the broker-side path the
+ * EMULATOR itself must open (`emulatorFilename` -- see this plan's
+ * wire_vocabulary block for why that is not a D-17 violation: it never
+ * reaches a tool result, and the client never opens it). Every failure
+ * reuses this file's OWN `ControlErrorCode` vocabulary rather than inventing
+ * a stage_file-specific one -- `denied` and the `target_id`/`slot`
+ * `bad_request` cases are already answered by THIS listener's own dispatch
+ * arm before this callback is ever invoked (see the `stage_file` arm
+ * below), so a callback-produced failure here is something the STAGING
+ * layer itself refused (e.g. `internal` for a disk write failure). */
+export type StageFileOutcome = { ok: true; handle: string; emulatorFilename: string } | { ok: false; code: ControlErrorCode };
+
+/** The `transfer` op's already-narrowed request, handed to `onFileTransfer`
+ * (Phase 64, XFER-04, D-02). `byteLength`/`sha256` are present ONLY for
+ * `direction: "upload"` -- a download names neither, matching this plan's
+ * wire_vocabulary block exactly. THIS listener's own dispatch arm is the
+ * ONE narrowing site for every field here (mirrors normaliseLaunchProfile()'s
+ * and sanitiseSessionLabel()'s own posture) -- the callback never sees an
+ * unnarrowed field. */
+export type FileTransferRequest =
+  | { direction: "upload"; handle: string; byteLength: number; sha256: string }
+  | { direction: "download"; handle: string };
+
+/** Discriminated outcome for `transfer` (Phase 64, XFER-04): `ok: true`
+ * means `onFileTransfer` itself has taken over this connection completely --
+ * writing every further reply line (`transfer_ready`/`transfer_payload`/
+ * `transfer_complete`, per this plan's wire_vocabulary) and streaming every
+ * payload byte -- so THIS listener's own dispatch arm writes NOTHING
+ * further on success (see the `transfer` arm below). `ok: false` means the
+ * callback refused before consuming a single payload byte; `message` is
+ * prose a caller can act on, matching this file's own
+ * detect-then-refuse-by-name convention. */
+export type FileTransferOutcome = { ok: true } | { ok: false; code: ControlErrorCode; message: string };
+
 // `warmFloor` is DELETED, not merely renamed -- the warm floor itself is
 // retired, and a published field whose knob no longer exists is false
 // documentation, so it goes rather than reporting a constant.
@@ -389,6 +445,43 @@ export interface StartControlListenerOptions {
    * that makes an un-awaited send safe lives one layer down, in
    * vice-broker-client.ts's own sendAndAwaitLine(). */
   onOperation: (targetId: string, channel: MonitorChannel, name: string | null) => OperationNoteOutcome;
+  /** Called on `stage_file` (Phase 64, XFER-04, D-01), AFTER the token check
+   * AND this listener's own target_id/ownership gate have already passed --
+   * the SAME dispatch shape `onMonitorClaim`/`onOperation` already
+   * establish. `slot` is whatever the wire line named, narrowed to a string
+   * but NOT further validated here -- sanitising it against the same
+   * allow-list posture `sanitiseSessionLabel()` applies to a session label
+   * is this callback's own job, per this plan's wire_vocabulary block.
+   *
+   * OPTIONAL, unlike `onRelayAttach`/`onOperation`: vice-broker.mts does not
+   * wire this callback until plan 64-03 -- this plan only puts the
+   * operation on the wire. A `stage_file` request against a broker that has
+   * not been updated yet (every test in THIS file included, until this
+   * plan's own suite supplies a stub) is refused `internal` by the dispatch
+   * arm below rather than crashing this connection's `"data"` handler by
+   * calling an undefined function -- the same "a type contract is not a
+   * runtime guarantee at a wire boundary" reasoning the `monitor_owned`
+   * dispatch arm's own comment already states for a required field. */
+  onStageFile?: (targetId: string, slot: string) => StageFileOutcome;
+  /** Called on `transfer` (Phase 64, XFER-04, D-01/D-02), AFTER the token
+   * check has already passed -- deliberately NOT gated by this listener's
+   * own `ownsTarget()`, the SAME T-63-01 reasoning `onRelayAttach`'s own
+   * comment already states for `attach`: this connection is a brand-new
+   * transfer socket, never the one that ran `stage_file`, so the presented
+   * `handle` is the ONLY authority this callback can check. Called AFTER
+   * this listener has already stopped its own line reader on this socket
+   * (the SAME `relayMode` flag `attach` flips) -- a synchronous stream
+   * start inside this callback can never race this connection's next
+   * `"data"` event. `request` is already fully narrowed (see
+   * `FileTransferRequest`'s own header comment); `socket` is the live
+   * transfer connection itself; `pending` is every byte that arrived, in
+   * the SAME chunk, past the `transfer` line's own terminator -- a raw
+   * Buffer, never decoded.
+   *
+   * OPTIONAL, for the same reason `onStageFile` is: not wired into
+   * vice-broker.mts until plan 64-03. Refused `internal` by the dispatch arm
+   * below when absent, never invoked with `undefined`. */
+  onFileTransfer?: (request: FileTransferRequest, socket: Socket, pending: Buffer) => FileTransferOutcome;
   /** Called on `host_tool`, AFTER the token check has already passed --
    * the SAME gate every other op runs. Handed its OWN function, declared
    * alongside these seven and NEVER composed from any of them -- that is
@@ -463,6 +556,15 @@ export type ControlResponse =
   // `monitor_released`'s own posture (the caller already knows what it
   // sent).
   | { kind: "operation_noted" }
+  // Phase 64 (XFER-04, D-01): the successful reply to `stage_file` -- carries
+  // a handle the REQUEST did not supply and the broker-side path the
+  // emulator itself must open. `transfer`'s own successful replies
+  // (`transfer_ready`/`transfer_payload`/`transfer_complete`) are NOT members
+  // of this union: `onFileTransfer` writes those directly to the transfer
+  // connection once this listener has handed it over (see FileTransferOutcome's
+  // own header comment), so this module's own `writeLine()` never produces
+  // them.
+  | { kind: "file_staged"; handle: string; emulator_filename: string }
   // Answered BEFORE the token gate (see handleLine()'s own dispatch-order
   // comment) -- carries no token, username, hostname, home directory,
   // absolute path or per-instance detail, since anything reachable at a
@@ -588,6 +690,18 @@ const MONITOR_OWNERSHIP_DENIAL =
 function resolveMonitorChannel(raw: unknown): MonitorChannel | "bad_request" {
   if (raw === undefined) return "binary";
   if (raw === "binary" || raw === "text") return raw;
+  return "bad_request";
+}
+
+/** Resolves the `transfer` op's own `direction` field: exactly the two
+ * accepted literals, or `bad_request` -- mirrors resolveMonitorChannel()'s
+ * own shape and its no-coercion discipline (an unrecognised value is
+ * refused by name, never guessed at). Unlike resolveMonitorChannel(), there
+ * is no absent-field default: `direction` has no meaningful implicit value
+ * the way an omitted `channel` does, so `undefined` falls into the same
+ * `bad_request` bucket as any other unrecognised value. */
+function resolveTransferDirection(raw: unknown): "upload" | "download" | "bad_request" {
+  if (raw === "upload" || raw === "download") return raw;
   return "bad_request";
 }
 
@@ -1443,6 +1557,95 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
         } else {
           writeLine(socket, { kind: "error", code: outcome.code, message: `operation failed: ${outcome.code}` });
         }
+      } else if (req.op === "stage_file") {
+        // Phase 64 (XFER-04, D-01). Gated on the SAME ownsTarget() predicate
+        // monitor_claim/monitor_release/recycle/operation already share --
+        // dispatched on this connection's ORDINARY line reader; never
+        // touches relayMode.
+        const targetId = typeof req.target_id === "string" ? req.target_id : "";
+        const slot = typeof req.slot === "string" ? req.slot : "";
+        if (targetId === "" || slot === "") {
+          writeLine(socket, { kind: "error", code: "bad_request" as ControlErrorCode, message: "stage_file requires target_id and slot" });
+          return;
+        }
+        if (!ownsTarget(targetId)) {
+          writeLine(socket, {
+            kind: "error",
+            code: "denied" as ControlErrorCode,
+            message: "stage_file may only target the grant this connection itself holds",
+          });
+          return;
+        }
+        // onStageFile is OPTIONAL on StartControlListenerOptions -- see that
+        // field's own header comment for why (vice-broker.mts does not wire
+        // it until plan 64-03). A type contract is not a runtime guarantee
+        // at a wire boundary: refused BY NAME here rather than calling
+        // `undefined` and crashing this socket's "data" handler.
+        if (!opts.onStageFile) {
+          writeLine(socket, { kind: "error", code: "internal" as ControlErrorCode, message: "stage_file is not wired on this broker" });
+          return;
+        }
+        const stageOutcome = opts.onStageFile(targetId, slot);
+        if (stageOutcome.ok) {
+          writeLine(socket, { kind: "file_staged", handle: stageOutcome.handle, emulator_filename: stageOutcome.emulatorFilename });
+        } else {
+          writeLine(socket, { kind: "error", code: stageOutcome.code, message: `stage_file failed: ${stageOutcome.code}` });
+        }
+      } else if (req.op === "transfer") {
+        // Phase 64 (XFER-04, D-01, T-63-01 precedent). Deliberately NOT
+        // gated by ownsTarget(): this connection is a brand-new transfer
+        // socket, never the one that ran stage_file, so
+        // requestIdForThisConnection is null on it -- the per-stage
+        // `handle` presented below is the ONLY authority this arm can
+        // check. Sits AFTER the token gate, like every op except `hello`.
+        const handle = typeof req.handle === "string" ? req.handle : "";
+        const direction = resolveTransferDirection(req.direction);
+        if (handle === "" || direction === "bad_request") {
+          writeLine(socket, {
+            kind: "error",
+            code: "bad_request" as ControlErrorCode,
+            message: 'transfer requires handle and direction ("upload" or "download")',
+          });
+          return;
+        }
+        let fileTransferRequest: FileTransferRequest;
+        if (direction === "upload") {
+          if (typeof req.byteLength !== "number" || typeof req.sha256 !== "string") {
+            writeLine(socket, {
+              kind: "error",
+              code: "bad_request" as ControlErrorCode,
+              message: "transfer (upload) requires byteLength (number) and sha256 (string)",
+            });
+            return;
+          }
+          fileTransferRequest = { direction: "upload", handle, byteLength: req.byteLength, sha256: req.sha256 };
+        } else {
+          fileTransferRequest = { direction: "download", handle };
+        }
+        // onFileTransfer is OPTIONAL for the same reason onStageFile is --
+        // see that field's own header comment. Refused by name, never
+        // called with `undefined`, and this socket's line reader is left
+        // running (relayMode is never flipped on this path).
+        if (!opts.onFileTransfer) {
+          writeLine(socket, { kind: "error", code: "internal" as ControlErrorCode, message: "transfer is not wired on this broker" });
+          return;
+        }
+        // Flipped BEFORE onFileTransfer() is ever called -- mirrors the
+        // `attach` arm's own relayMode flip above: a payload byte must
+        // never be re-examined by this socket's own JSON-line reader.
+        relayMode = true;
+        const transferOutcome = opts.onFileTransfer(fileTransferRequest, socket, remainderAfterLine);
+        if (!transferOutcome.ok) {
+          // The transfer was refused before any payload byte was consumed
+          // by the callback -- this socket never became a payload
+          // connection, so its line reader must resume, exactly as a
+          // failed `attach` resumes its own.
+          relayMode = false;
+          writeLine(socket, { kind: "error", code: transferOutcome.code, message: transferOutcome.message });
+        }
+        // On success this arm writes NOTHING further -- onFileTransfer()
+        // itself owns every reply line and every payload byte from here on
+        // (see FileTransferOutcome's own header comment).
       } else {
         writeLine(socket, { kind: "error", code: "bad_request" as ControlErrorCode, message: `unknown op: ${String(req.op)}` });
       }
