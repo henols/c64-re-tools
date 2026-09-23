@@ -422,6 +422,11 @@ test("structural (D-14): git ls-files agrees -- the identifier appears only in t
     // other allowed *.test.ts file above does. Kept in sync with
     // broker-control.test.ts's own copy of this same guard.
     "broker-relay-text.test.ts",
+    // Phase 64, plan 64-03 (XFER-04/XFER-07): the staging/transfer wiring
+    // test file, constructing the SAME raw InstanceRecord literals every
+    // other allowed *.test.ts file above does. Kept in sync with
+    // broker-control.test.ts's own copy of this same guard.
+    "vice-broker-staging.test.ts",
   ]);
   const offenders: string[] = [];
   for (const rel of files) {
