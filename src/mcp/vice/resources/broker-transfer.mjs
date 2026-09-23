@@ -35,10 +35,21 @@
 //     `transfer-hash.mts`'s `createHashAndCountTransform()`, which enforces
 //     the cap and updates the digest AS BYTES ARRIVE -- never after
 //     accumulating the whole payload (Pitfall 3, `64-RESEARCH.md`).
+//   - Never delete a staged file on an AUTOSTART/DUMP/UNDUMP reply. A reply
+//     confirms the command was ACCEPTED, not that the load completed -- for
+//     `vice_disk_attach` the image must stay attached to unit 8 for the rest
+//     of the session (D-05). The failure a reader would otherwise cause: a
+//     disk pulled out from under a running emulator. This module's staging
+//     surface (below) is deleted ONLY on a fresh `stageFileSlot()` for the
+//     SAME (grantId, slot) -- which supersedes, never a command reply -- or
+//     on `clearStagingForSession()`, which runs when the session's own
+//     connection closes (XFER-07), never when a command merely answers.
 import { createReadStream, createWriteStream, mkdirSync, renameSync, rmSync, statSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Writable } from "node:stream";
+import { randomBytes } from "node:crypto";
+import { brokerStagingDir, ensureBrokerDir } from "./broker-home.mjs";
 // VALUE import of a sibling host-bound module uses the COMPILED artifact's
 // own ".mjs" extension -- the same convention every other host-bound sibling
 // in this directory follows (vice-broker.mts's own imports of
@@ -148,7 +159,7 @@ export function readTransferHeader(chunk, carry = Buffer.alloc(0)) {
  * Resolves `{ ok: true, byteLength, sha256 }` on success or
  * `{ ok: false, reason }` on any failure -- never throws.
  */
-export async function sendPayloadFromFile({ socket, sourcePath, capBytes = TRANSFER_MAX_BYTES }) {
+export async function sendPayloadFromFile({ socket, sourcePath, capBytes = TRANSFER_MAX_BYTES, kind = "file" }) {
     let size;
     try {
         size = statSync(sourcePath).size;
@@ -173,7 +184,7 @@ export async function sendPayloadFromFile({ socket, sourcePath, capBytes = TRANS
         return { ok: false, reason: `vice: failed to digest source file ${sourcePath}: ${e.message}` };
     }
     const { byteLength, sha256 } = digestPass.result();
-    writeTransferHeader(socket, { kind: "file", byteLength, sha256 });
+    writeTransferHeader(socket, { kind, byteLength, sha256 });
     // Second pass: the real send, through a FRESH Transform instance (a
     // Transform is single-use) -- re-enforces the cap from bytes actually
     // read this pass, independently of the first pass's own count.
@@ -256,4 +267,166 @@ export async function receivePayloadToFile({ socket, destPath, header, pending, 
         return { ok: false, reason: `vice: failed to publish ${destPath}: ${e.message}` };
     }
     return { ok: true, byteLength: observed.byteLength, sha256: observed.sha256 };
+}
+/** Handle -> entry. The ONE map `resolveStagedFile()` reads and every other
+ * function in this section writes -- there is no second copy of a staged
+ * entry anywhere in this module. */
+const handleIndex = new Map();
+/** `(grantId, slot)` -> the CURRENT handle for that slot, joined with a NUL
+ * byte -- a byte `refuseUnsafeSegment()` below already refuses inside
+ * either half, so this composite key can never collide ambiguously between
+ * two different (grantId, slot) pairs. */
+const slotIndex = new Map();
+/** The set of handles with a transfer currently in flight -- membership
+ * check and insertion are a single synchronous pair with no `await` between
+ * them (`markTransferInFlight()` below), the same discipline
+ * `broker-launch.mts`'s single-owner launch guard already keeps, for the
+ * same reason (T-64-16). */
+const inFlightHandles = new Set();
+function stagingSlotKey(grantId, slot) {
+    return `${grantId}\u0000${slot}`;
+}
+/** Refuse-not-sanitise: `candidate` must be non-empty, contain no NUL byte,
+ * not be exactly `.` or `..`, and contain no path separator at all (`/` or
+ * `\`) -- refusing every separator unconditionally also catches every
+ * absolute-path and traversal-segment case, since none of those forms can
+ * exist without one. `label` names the field in the refusal message; the
+ * refusal never echoes the offending value itself (T-64-13's own posture
+ * for a handle refusal, applied here too). */
+function refuseUnsafeSegment(candidate, label) {
+    if (candidate.includes("\u0000"))
+        return { ok: false, reason: `vice: ${label} contains a NUL byte` };
+    if (candidate.length === 0)
+        return { ok: false, reason: `vice: ${label} is empty` };
+    if (candidate === "." || candidate === "..")
+        return { ok: false, reason: `vice: ${label} is '${candidate}'` };
+    if (candidate.includes("/") || candidate.includes("\\"))
+        return { ok: false, reason: `vice: ${label} contains a path separator` };
+    return { ok: true };
+}
+/**
+ * Mints a handle for `(grantId, slot)`, creating the grant's own staging
+ * session directory (`<brokerStagingDir()>/<grantId>/`) if absent, and
+ * returns `{ ok: true, handle, stagedPath }` where `stagedPath` is the
+ * ABSOLUTE path the emulator itself must open -- the staged file's own name
+ * is the handle, so the filename carries no client-supplied text at all.
+ *
+ * A repeat call for the SAME `(grantId, slot)` SUPERSEDES the previous entry
+ * (D-05): the previous handle's file is best-effort unlinked (a failure here
+ * must never fail the NEW staging request), the previous handle is dropped
+ * from every index, and the new handle is installed in its place -- staged
+ * bytes are bounded by (slots x cap), never (uploads x cap).
+ *
+ * `grantId` and `slot` are both refused, never rewritten, when either fails
+ * `refuseUnsafeSegment()` above -- BEFORE any directory is created.
+ */
+export function stageFileSlot({ grantId, slot, now = Date.now }) {
+    const grantCheck = refuseUnsafeSegment(grantId, "grant id");
+    if (!grantCheck.ok)
+        return { ok: false, reason: grantCheck.reason };
+    const slotCheck = refuseUnsafeSegment(slot, "slot");
+    if (!slotCheck.ok)
+        return { ok: false, reason: slotCheck.reason };
+    const sessionDir = join(brokerStagingDir(), grantId);
+    ensureBrokerDir(sessionDir);
+    const handle = randomBytes(16).toString("hex");
+    const stagedPath = join(sessionDir, handle);
+    const key = stagingSlotKey(grantId, slot);
+    const previousHandle = slotIndex.get(key);
+    if (previousHandle) {
+        const previousEntry = handleIndex.get(previousHandle);
+        handleIndex.delete(previousHandle);
+        inFlightHandles.delete(previousHandle);
+        if (previousEntry) {
+            try {
+                rmSync(previousEntry.path, { force: true });
+            }
+            catch {
+                // Best-effort unlink -- a superseding stage must never fail because
+                // the PREVIOUS file could not be removed (D-05).
+            }
+        }
+    }
+    const entry = { handle, path: stagedPath, grantId, slot, claimedAt: now() };
+    handleIndex.set(handle, entry);
+    slotIndex.set(key, handle);
+    return { ok: true, handle, stagedPath };
+}
+/**
+ * A handle-index lookup, nothing more -- this function does NOT check
+ * whether `entry.path` still exists on disk (a caller wanting THAT question
+ * answered, e.g. a download, checks it itself; see `vice-broker.mts`'s own
+ * `handleFileTransfer()`). Returns a refusal, never revealing the staging
+ * path, for an unknown, empty, or superseded handle -- a superseded handle
+ * is simply no longer a key in `handleIndex` at all, so it refuses by the
+ * SAME "unknown" path as a handle that was never minted.
+ */
+export function resolveStagedFile(handle) {
+    const entry = handleIndex.get(handle);
+    if (!entry)
+        return { ok: false, reason: "vice: unknown transfer handle" };
+    return { ok: true, entry };
+}
+/**
+ * The in-flight guard a transfer dispatch arm takes before streaming a
+ * single byte (T-64-16): the membership check and the set insertion below
+ * are ONE synchronous statement pair, with no `await` between them, so two
+ * concurrent transfers presenting the SAME handle cannot both observe an
+ * empty set and both proceed.
+ */
+export function markTransferInFlight(handle) {
+    if (inFlightHandles.has(handle)) {
+        return { ok: false, reason: "vice: a transfer for this handle is already in flight" };
+    }
+    inFlightHandles.add(handle);
+    return { ok: true };
+}
+/** Releases the in-flight guard for `handle` -- a no-op if it was never
+ * held (a caller's own `finally` block calls this unconditionally on every
+ * path, including refusals, per this plan's own wiring contract). */
+export function clearTransferInFlight(handle) {
+    inFlightHandles.delete(handle);
+}
+/**
+ * D-06's whole point: "gone when the session closes" is ONE recursive
+ * delete of ONE directory, never per-file bookkeeping. Removes
+ * `<brokerStagingDir()>/<grantId>/` recursively (best-effort -- a directory
+ * that never existed, or one already removed, is tolerated as a no-op, not
+ * an error), then drops every registry entry this grant ever staged, across
+ * every index in this module. Called from `vice-broker.mts`'s own
+ * `handleRelease()` -- the SAME function the control-plane's `onRelease`
+ * callback invokes BOTH on an explicit `release` request AND on the
+ * control connection's own close event (`broker-control.mts`'s own
+ * `onRelease` header comment), so a client killed with `SIGKILL` -- which
+ * sends no goodbye, only a socket close -- still loses its staging.
+ */
+export function clearStagingForSession(grantId) {
+    const sessionDir = join(brokerStagingDir(), grantId);
+    try {
+        rmSync(sessionDir, { recursive: true, force: true });
+    }
+    catch {
+        // Best-effort -- a directory that never existed (no slot was ever
+        // staged for this grant) must not be treated as a failure.
+    }
+    const prefix = `${grantId}\u0000`;
+    for (const [handle, entry] of handleIndex) {
+        if (entry.grantId === grantId) {
+            handleIndex.delete(handle);
+            inFlightHandles.delete(handle);
+        }
+    }
+    for (const key of Array.from(slotIndex.keys())) {
+        if (key.startsWith(prefix))
+            slotIndex.delete(key);
+    }
+}
+/** Test-only reset, following `stock-paths.ts`'s `setIsInsideContainerForTest()`
+ * / `stock-runstate.ts`'s `resetRunStateTrackersForTest()` precedent: a
+ * module-level registry must not leak state between test cases in the SAME
+ * process. Production code never calls this. */
+export function resetStagingForTest() {
+    handleIndex.clear();
+    slotIndex.clear();
+    inFlightHandles.clear();
 }

@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 import { createServer, connect as netConnect, type AddressInfo, type Socket } from "node:net";
 import { mkdtempSync, writeFileSync, rmSync, readFileSync, existsSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 
 import { build } from "./build.ts";
 // transfer-hash.mts has no sibling ".mjs" import of its own, so it is safe
@@ -24,13 +24,21 @@ import { TRANSFER_MAX_BYTES } from "./transfer-hash.mts";
 
 build();
 
+interface StagedFileEntry {
+  handle: string;
+  path: string;
+  grantId: string;
+  slot: string;
+  claimedAt: number;
+}
+
 const brokerTransferModule = (await import(new URL("./resources/broker-transfer.mjs", import.meta.url).href)) as unknown as {
   writeTransferHeader: (socket: Socket, header: { kind: string; byteLength: number; sha256: string }) => void;
   readTransferHeader: (
     chunk: Buffer,
     carry?: Buffer,
   ) => { header?: { kind: string; byteLength: number; sha256: string }; remainder: Buffer; overflow: boolean; error?: string };
-  sendPayloadFromFile: (opts: { socket: Socket; sourcePath: string; capBytes?: number }) => Promise<{ ok: true; byteLength: number; sha256: string } | { ok: false; reason: string }>;
+  sendPayloadFromFile: (opts: { socket: Socket; sourcePath: string; capBytes?: number; kind?: string }) => Promise<{ ok: true; byteLength: number; sha256: string } | { ok: false; reason: string }>;
   receivePayloadToFile: (opts: {
     socket: Socket;
     destPath: string;
@@ -39,8 +47,45 @@ const brokerTransferModule = (await import(new URL("./resources/broker-transfer.
     capBytes?: number;
   }) => Promise<{ ok: true; byteLength: number; sha256: string } | { ok: false; reason: string }>;
   MAX_TRANSFER_HEADER_LINE_BYTES: number;
+  stageFileSlot: (opts: { grantId: string; slot: string; now?: () => number }) => { ok: true; handle: string; stagedPath: string } | { ok: false; reason: string };
+  resolveStagedFile: (handle: string) => { ok: true; entry: StagedFileEntry } | { ok: false; reason: string };
+  markTransferInFlight: (handle: string) => { ok: true } | { ok: false; reason: string };
+  clearTransferInFlight: (handle: string) => void;
+  clearStagingForSession: (grantId: string) => void;
+  resetStagingForTest: () => void;
 };
-const { writeTransferHeader, readTransferHeader, sendPayloadFromFile, receivePayloadToFile } = brokerTransferModule;
+const {
+  writeTransferHeader,
+  readTransferHeader,
+  sendPayloadFromFile,
+  receivePayloadToFile,
+  stageFileSlot,
+  resolveStagedFile,
+  markTransferInFlight,
+  clearTransferInFlight,
+  clearStagingForSession,
+  resetStagingForTest,
+} = brokerTransferModule;
+
+/** Runs `fn` with `VICE_BROKER_HOME` pointed at a fresh `mkdtempSync`
+ * directory -- never the real machine-level root -- restoring the previous
+ * value (or deleting the key if it was unset) in a `finally`, and resetting
+ * this module's own staging registry before and after so no test leaks
+ * state into the next one. */
+async function withStagingFixture<T>(fn: (home: string) => Promise<T> | T): Promise<T> {
+  const home = mkdtempSync(join(tmpdir(), "broker-transfer-staging-"));
+  const previous = process.env.VICE_BROKER_HOME;
+  process.env.VICE_BROKER_HOME = home;
+  resetStagingForTest();
+  try {
+    return await fn(home);
+  } finally {
+    resetStagingForTest();
+    if (previous === undefined) delete process.env.VICE_BROKER_HOME;
+    else process.env.VICE_BROKER_HOME = previous;
+    rmSync(home, { recursive: true, force: true });
+  }
+}
 
 /** Every byte value 0x00..0xFF, repeated `times` times -- definitively not
  * valid UTF-8 (Pitfall 1/2 in this phase's own research: a lone 0x80-0xFF
@@ -452,4 +497,124 @@ test("broker-transfer: a receiver that stops reading stalls the sender's promise
 
 test("TRANSFER_MAX_BYTES: imported (not re-typed) by both transfer-hash and this test, and equals 16 * 1024 * 1024", () => {
   assert.equal(TRANSFER_MAX_BYTES, 16 * 1024 * 1024);
+});
+
+// ---------------------------------------------------------------------------
+// Task 1 (Phase 64-03, XFER-04/XFER-07, D-05/D-06): the staging directory,
+// the minted handle, and slot supersession. Every test sets
+// VICE_BROKER_HOME to a fresh mkdtempSync directory (withStagingFixture())
+// and restores it in a finally -- no test touches the real machine-level
+// root.
+// ---------------------------------------------------------------------------
+
+test("stageFileSlot: two calls with the same grant and slot return different handles; the first handle stops resolving and its file is gone", async () => {
+  await withStagingFixture(async () => {
+    const first = stageFileSlot({ grantId: "req-1-1-aaaaaaaa", slot: "disk8" });
+    assert.equal(first.ok, true);
+    if (!first.ok) return;
+    writeFileSync(first.stagedPath, Buffer.from("first"));
+    assert.ok(existsSync(first.stagedPath));
+
+    const second = stageFileSlot({ grantId: "req-1-1-aaaaaaaa", slot: "disk8" });
+    assert.equal(second.ok, true);
+    if (!second.ok) return;
+    assert.notEqual(second.handle, first.handle);
+
+    assert.equal(existsSync(first.stagedPath), false, "the FIRST staged file must be gone after supersession");
+    const firstResolve = resolveStagedFile(first.handle);
+    assert.equal(firstResolve.ok, false, "the FIRST handle must no longer resolve after supersession");
+
+    const secondResolve = resolveStagedFile(second.handle);
+    assert.equal(secondResolve.ok, true);
+  });
+});
+
+test("stageFileSlot: two calls with the same grant and DIFFERENT slots both resolve, and neither deletes the other's file", async () => {
+  await withStagingFixture(async () => {
+    const a = stageFileSlot({ grantId: "req-1-1-bbbbbbbb", slot: "disk8" });
+    const b = stageFileSlot({ grantId: "req-1-1-bbbbbbbb", slot: "disk9" });
+    assert.equal(a.ok, true);
+    assert.equal(b.ok, true);
+    if (!a.ok || !b.ok) return;
+    writeFileSync(a.stagedPath, Buffer.from("a"));
+    writeFileSync(b.stagedPath, Buffer.from("b"));
+
+    assert.ok(existsSync(a.stagedPath));
+    assert.ok(existsSync(b.stagedPath));
+    assert.equal(resolveStagedFile(a.handle).ok, true);
+    assert.equal(resolveStagedFile(b.handle).ok, true);
+  });
+});
+
+test("stageFileSlot: two calls with different grant ids land in different session directories", async () => {
+  await withStagingFixture(async () => {
+    const a = stageFileSlot({ grantId: "req-1-1-cccccccc", slot: "disk8" });
+    const b = stageFileSlot({ grantId: "req-2-2-dddddddd", slot: "disk8" });
+    assert.equal(a.ok, true);
+    assert.equal(b.ok, true);
+    if (!a.ok || !b.ok) return;
+    assert.notEqual(dirname(a.stagedPath), dirname(b.stagedPath));
+  });
+});
+
+const UNSAFE_SLOTS = ["../escape", "a/b", "a\\b", "foo\u0000bar"];
+
+for (const slot of UNSAFE_SLOTS) {
+  test(`stageFileSlot: a slot ${JSON.stringify(slot)} is refused before any directory is created`, async () => {
+    await withStagingFixture(async (home) => {
+      const before = existsSync(join(home, "staging")) ? readdirSync(join(home, "staging")) : [];
+      const result = stageFileSlot({ grantId: "req-1-1-eeeeeeee", slot });
+      assert.equal(result.ok, false);
+      const after = existsSync(join(home, "staging")) ? readdirSync(join(home, "staging")) : [];
+      assert.deepEqual(after, before, "no session directory may be created for a refused slot");
+    });
+  });
+}
+
+test("clearStagingForSession: removes the session directory recursively and is a no-op on a second call", async () => {
+  await withStagingFixture(async () => {
+    const grantId = "req-1-1-ffffffff";
+    const staged = stageFileSlot({ grantId, slot: "disk8" });
+    assert.equal(staged.ok, true);
+    if (!staged.ok) return;
+    writeFileSync(staged.stagedPath, Buffer.from("bytes"));
+    const sessionDir = dirname(staged.stagedPath);
+    assert.ok(existsSync(sessionDir));
+
+    clearStagingForSession(grantId);
+    assert.equal(existsSync(sessionDir), false);
+    assert.equal(resolveStagedFile(staged.handle).ok, false);
+
+    // Second call: a no-op, never a throw.
+    clearStagingForSession(grantId);
+    assert.equal(existsSync(sessionDir), false);
+  });
+});
+
+test("markTransferInFlight/clearTransferInFlight: a handle already in flight is refused; succeeds again after clearing", async () => {
+  await withStagingFixture(async () => {
+    const staged = stageFileSlot({ grantId: "req-1-1-11111111", slot: "disk8" });
+    assert.equal(staged.ok, true);
+    if (!staged.ok) return;
+
+    const first = markTransferInFlight(staged.handle);
+    assert.equal(first.ok, true);
+    const second = markTransferInFlight(staged.handle);
+    assert.equal(second.ok, false);
+
+    clearTransferInFlight(staged.handle);
+    const third = markTransferInFlight(staged.handle);
+    assert.equal(third.ok, true);
+    clearTransferInFlight(staged.handle);
+  });
+});
+
+test("resolveStagedFile: refuses an unknown handle, never revealing a staging path", async () => {
+  await withStagingFixture(async () => {
+    const result = resolveStagedFile("0000000000000000000000000000000000");
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.doesNotMatch(result.reason, /staging|\/tmp\//);
+    }
+  });
 });
