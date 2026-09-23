@@ -13,7 +13,7 @@
 // broker-control.mts in isolation.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { connect } from "node:net";
+import { connect, createServer, type AddressInfo } from "node:net";
 import { spawn, execFileSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -58,9 +58,72 @@ import type { MonitorChannel } from "./broker-state.mts";
 import type { LaunchProfile } from "./broker-launch.mts";
 import { readBrokerLiveness } from "./vice-broker-client.ts";
 import { build } from "./build.ts";
+import { createBrokerState, type BrokerState, type InstanceRecord } from "./broker-state.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BROKER_ARTIFACT = join(HERE, "resources", "vice-broker.mjs");
+
+// Plan 64-08 (G-64-1 gap closure, Task 2): the SAME "build first, import the
+// compiled artifact" idiom broker-relay.test.ts already established -- this
+// module is host-bound (it value-imports sibling .mjs artifacts), so an
+// unbuilt-source import throws ERR_MODULE_NOT_FOUND. Used only by this
+// plan's own second-attach case below, which needs the REAL
+// handleMonitorClaim()/handleRelayAttach() rather than a stub, so the
+// refusal it observes is the genuine broker-side one, not a fabricated
+// test double.
+build();
+const g6408ViceBrokerModule = (await import(new URL("./resources/vice-broker.mjs", import.meta.url).href)) as unknown as {
+  handleMonitorClaim: (requestId: string, targetId: string, channel: "binary" | "text", state: BrokerState) => { ok: true; handle: string } | { ok: false; code: string };
+  handleRelayAttach: (
+    targetId: string,
+    channel: "binary" | "text",
+    presentedHandle: string,
+    clientSocket: Socket,
+    pending: Buffer,
+    state: BrokerState,
+    deps?: { writeIncident?: (record: unknown) => string },
+  ) => RelayAttachOutcome;
+};
+const { handleMonitorClaim: g6408HandleMonitorClaim, handleRelayAttach: g6408HandleRelayAttach } = g6408ViceBrokerModule;
+
+// broker-incident.mts is ALSO host-bound (it value-imports broker-home.mjs),
+// so it is loaded the SAME way -- built first, then the compiled artifact,
+// never the unbuilt .mts source directly (broker-relay.test.ts's own
+// established convention, mirrored here). Without this, the second-attach
+// case below's own relay-death teardown (the first client's connection
+// closing at the end of the test) would fall back to the REAL,
+// machine-level brokerIncidentsDir() (~/.c64-re-tools/incidents/).
+const g6408BrokerIncidentModule = (await import(new URL("./resources/broker-incident.mjs", import.meta.url).href)) as unknown as {
+  writeBrokerIncident: (record: unknown, opts?: { dir?: string }) => string;
+};
+const { writeBrokerIncident: g6408WriteBrokerIncident } = g6408BrokerIncidentModule;
+
+/** Mirrors broker-relay.test.ts's own makeGrantedInstance()/setupBrokerState()
+ * -- a minimal BrokerState carrying one granted instance and one grant, just
+ * enough for handleMonitorClaim()/handleRelayAttach() to mint and check a
+ * real handle. `port` is a synthetic key, never dialled by this file. */
+function g6408SetupBrokerState(port: number, targetId: string): BrokerState {
+  const state = createBrokerState();
+  const instance: InstanceRecord = {
+    port,
+    url: `http://127.0.0.1:${port}/mcp`,
+    state: "granted",
+    reason: "acquire",
+    epochFile: "/tmp/g64-08-epoch.json",
+    supervisorDir: "/tmp/g64-08",
+    pid: 4242,
+    expectedIdentity: "x64sc",
+    launchedAt: 0,
+    readyAt: 0,
+    viceBin: "x64sc",
+    viceArgs: [],
+    dryRun: false,
+    monitorClients: {},
+  };
+  state.instances.set(port, instance);
+  state.grants.set(targetId, { id: targetId, port, grantedAt: Date.now(), pid: 4242, operation: null, sessionLabel: null });
+  return state;
+}
 
 // --------------------------------------------------------------- test helpers
 
@@ -1373,11 +1436,10 @@ test("transfer: against a listener with NO onFileTransfer stub configured, the r
   }
 });
 
-test("stage_file/transfer: unauthorized when the token is wrong, before either callback is ever invoked", async () => {
-  const { listener, stageFileCalls, fileTransferCalls } = await startTestListener({
+test("stage_file: unauthorized when the token is wrong, before the callback is ever invoked", async () => {
+  const { listener, stageFileCalls } = await startTestListener({
     onAcquire: grantingAcquire(),
     onStageFile: () => ({ ok: true, handle: "x", emulatorFilename: "/x" }),
-    onFileTransfer: (): FileTransferOutcome => ({ ok: true }),
   });
   const client = makeClient(listener.port);
   try {
@@ -1385,22 +1447,129 @@ test("stage_file/transfer: unauthorized when the token is wrong, before either c
     const stageResp = await client.next();
     assert.equal(stageResp.kind, "error");
     assert.equal(stageResp.code, "unauthorized");
-
-    // The wrong token also destroys the connection (T-01.6.2-01/03,
-    // pre-existing behaviour) -- reconnect for the transfer half.
-    client.close();
-    const client2 = makeClient(listener.port);
-    client2.send({ op: "transfer", id: "t-1", direction: "download", handle: "some-handle", token: "wrong-token" });
-    const transferResp = await client2.next();
-    assert.equal(transferResp.kind, "error");
-    assert.equal(transferResp.code, "unauthorized");
-    client2.close();
-
     assert.deepEqual(stageFileCalls, []);
-    assert.deepEqual(fileTransferCalls, []);
   } finally {
     client.close();
     listener.server.close();
+  }
+});
+
+// Plan 64-08 (G-64-1 gap closure, Task 2): SPLIT off the `transfer` half of
+// the test above -- `transfer` no longer sits after the token gate (route
+// (b), owner decision 5), so a wrong token, or no token at all, must reach
+// onFileTransfer exactly as a correct one would; the token is neither
+// required nor read for this op any more.
+test("transfer: a wrong token, and a request with no token field at all, both still reach onFileTransfer -- G-64-1 route (b), the token is neither required nor read for this op", async () => {
+  const { listener, fileTransferCalls } = await startTestListener({
+    onFileTransfer: (): FileTransferOutcome => ({ ok: true }),
+  });
+
+  const wrongTokenClient = makeClient(listener.port);
+  try {
+    wrongTokenClient.send({ op: "transfer", id: "t-wrong-token", direction: "download", handle: "handle-wrong-token", token: "wrong-token" });
+    const sawWrongToken = await waitFor(() => fileTransferCalls.some((c) => "handle" in c && c.handle === "handle-wrong-token"), 1000);
+    assert.ok(sawWrongToken, "a transfer line carrying a wrong token must still reach onFileTransfer -- the token is not read for this op");
+  } finally {
+    wrongTokenClient.close();
+  }
+
+  const noTokenClient = makeClient(listener.port);
+  try {
+    noTokenClient.send({ op: "transfer", id: "t-no-token", direction: "download", handle: "handle-no-token" });
+    const sawNoToken = await waitFor(() => fileTransferCalls.some((c) => "handle" in c && c.handle === "handle-no-token"), 1000);
+    assert.ok(sawNoToken, "a transfer line with no token field at all must still reach onFileTransfer");
+  } finally {
+    noTokenClient.close();
+    listener.server.close();
+  }
+});
+
+test("after a refused attach and a refused transfer on one connection, a token-less status line on that SAME connection is still answered unauthorized -- a pre-gate refusal never unlocks a gated op", async () => {
+  const { listener } = await startTestListener({
+    onRelayAttach: (): RelayAttachOutcome => ({ ok: false, code: "denied" }),
+    onFileTransfer: (): FileTransferOutcome => ({ ok: false, code: "denied", message: "vice: no staged file for this handle" }),
+  });
+  const client = makeClient(listener.port);
+  try {
+    client.send({ op: "attach", target_id: "req-a", channel: "binary", handle: "wrong-handle" });
+    const attachResp = await client.next();
+    assert.equal(attachResp.kind, "error");
+    assert.equal(attachResp.code, "denied");
+
+    client.send({ op: "transfer", id: "t-1", direction: "download", handle: "wrong-handle" });
+    const transferResp = await client.next();
+    assert.equal(transferResp.kind, "error");
+    assert.equal(transferResp.code, "denied");
+
+    client.send({ op: "status" });
+    const statusResp = await client.next();
+    assert.equal(statusResp.kind, "error");
+    assert.equal(
+      statusResp.code,
+      "unauthorized",
+      "a pre-gate refusal on this connection must never unlock a gated op -- the token gate still runs per line, for every op except attach/transfer",
+    );
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+// Plan 64-08 (G-64-1 gap closure, Task 2): wires onRelayAttach to the REAL
+// handleRelayAttach() (the compiled artifact, per this file's own header
+// comment above g6408SetupBrokerState()) so the second-attach refusal
+// observed here is the genuine broker-side one, not a fabricated test
+// double -- and reached with NO token presented at all, proving the
+// pre-existing second-attach refusal (T-63-01, now handle-only per G-64-1)
+// is untouched by moving the dispatch arm ahead of the gate.
+test("attach: a channel already attached is refused by the REAL handleRelayAttach(), reached with no token at all", async () => {
+  const stubEmulator = createServer((socket) => {
+    socket.on("data", () => {});
+  });
+  await new Promise<void>((resolvePromise) => stubEmulator.listen(0, "127.0.0.1", () => resolvePromise()));
+  const emulatorPort = (stubEmulator.address() as AddressInfo).port;
+  const targetId = "req-g6408-second-attach";
+  const state = g6408SetupBrokerState(emulatorPort, targetId);
+  const claim = g6408HandleMonitorClaim("claim-g6408-second-attach", targetId, "binary", state);
+  assert.ok(claim.ok, `expected the claim to succeed: ${JSON.stringify(claim)}`);
+  if (!claim.ok) return;
+
+  // Relay-death incident records (fired when the first client's connection
+  // closes below, tearing down the real relay session) must land here,
+  // never the real, machine-level brokerIncidentsDir() -- mirrors
+  // broker-relay.test.ts's own startRelayListenerForState() default.
+  const incidentsDir = mkdtempSync(join(tmpdir(), "broker-control-g6408-incidents-"));
+  const { listener } = await startTestListener({
+    onRelayAttach: (tId, channel, presentedHandle, socket, pending) =>
+      g6408HandleRelayAttach(tId, channel, presentedHandle, socket, pending, state, {
+        writeIncident: (record) => g6408WriteBrokerIncident(record, { dir: incidentsDir }),
+      }),
+  });
+
+  const firstClient = makeClient(listener.port);
+  try {
+    firstClient.send({ op: "attach", target_id: targetId, channel: "binary", handle: claim.handle });
+    const firstResp = await firstClient.next();
+    assert.equal(firstResp.kind, "attached", `expected the first attach to succeed: ${JSON.stringify(firstResp)}`);
+
+    const secondClient = makeClient(listener.port);
+    try {
+      secondClient.send({ op: "attach", target_id: targetId, channel: "binary", handle: claim.handle });
+      const secondResp = await secondClient.next();
+      assert.equal(secondResp.kind, "error", "a second attach on an already-attached channel must be refused, even with no token presented");
+      assert.notEqual(
+        secondResp.code,
+        "unauthorized",
+        "the refusal observed must be the real handler's own second-attach refusal, never the token gate -- this line carried no token field at all",
+      );
+    } finally {
+      secondClient.close();
+    }
+  } finally {
+    firstClient.close();
+    listener.server.close();
+    await new Promise<void>((resolvePromise) => stubEmulator.close(() => resolvePromise()));
+    rmSync(incidentsDir, { recursive: true, force: true });
   }
 });
 
@@ -1497,6 +1666,12 @@ test("structural (D-14): no halting-path module reads monitorClients -- the only
     // other allowed *.test.ts file above does. Kept in sync with
     // text-connect.test.ts's own copy of this same guard.
     "transfer-disjoint-roots.test.ts",
+    // Plan 64-08 (G-64-1 gap closure): the G-64-1 tracer/transfer/text
+    // fixture (g6408StartFixture()) drives a REAL control listener against
+    // a REAL vice-proxy.ts child and constructs the SAME raw InstanceRecord
+    // literal every other allowed *.test.ts file above does. Kept in sync
+    // with text-connect.test.ts's own copy of this same guard.
+    "vice-proxy.test.ts",
   ]);
   const offenders: string[] = [];
   for (const rel of files) {

@@ -439,6 +439,12 @@ test("structural (D-14): git ls-files agrees -- the identifier appears only in t
     // other allowed *.test.ts file above does. Kept in sync with
     // broker-control.test.ts's own copy of this same guard.
     "transfer-disjoint-roots.test.ts",
+    // Plan 64-08 (G-64-1 gap closure): the G-64-1 tracer/transfer/text
+    // fixture (g6408StartFixture()) drives a REAL control listener against
+    // a REAL vice-proxy.ts child and constructs the SAME raw InstanceRecord
+    // literal every other allowed *.test.ts file above does. Kept in sync
+    // with broker-control.test.ts's own copy of this same guard.
+    "vice-proxy.test.ts",
   ]);
   const offenders: string[] = [];
   for (const rel of files) {
