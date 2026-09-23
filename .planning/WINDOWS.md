@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 48
+open_count: 50
 waived_count: 17
 fixed_count: 9
-total_count: 74
-last_updated: 2026-09-23T17:37:54.064Z
+total_count: 76
+last_updated: 2026-09-23T19:30:56.904Z
 ---
 
 # Broken Windows Ledger
@@ -89,6 +89,8 @@ last_updated: 2026-09-23T17:37:54.064Z
 | 72 | 64 | stub | src/mcp/vice/stock-connect.ts | 477 | defaultTransferFile() has no dedicated end-to-end test even after 64-04 puts real production callers (handleSnapshotSave/handleSnapshotLoad) on the session.deps.transferFile seam it defaults -- the round-trip test proves the seam's SHAPE via its own composed helper (dialFileTransfer + transfer-hash.mts) rather than calling defaultTransferFile() itself, since that function is still module-private and importing broker-transfer.mts directly from stock-connect.ts still fails (measured: unbuilt import now fails on broker-home.mjs, not just transfer-hash.mjs, per 64-04-SUMMARY.md). | open |  | 2026-09-23T12:45:54.961Z |  |
 | 73 | 64 | unrun-verify | .planning/phases/64-files-as-bytes-both-directions/64-07-PLAN.md |  | Human-check item 1 (real broker + real x64sc, all four tools) could not reach a successful tool call: vice-proxy.ts's dispatchStockFor() never wires the broker's control_token into StockDispatchDeps, so the real relay handshake fails before any tool-specific logic runs. Recorded in todos/pending/2026-09-23-vice-proxy-never-wires-the-control-token-into-stockdispatchdeps.md. | open |  | 2026-09-23T14:24:07.460Z |  |
 | 74 | 64 | deviation | src/mcp/vice/broker-relay.test.ts |  | Pre-existing incident-record leak into real ~/.c64-re-tools/incidents/ from broker-relay.test.ts/broker-relay-text.test.ts, confirmed independent of plan 64-08's diff; not fixed (out of scope, files not in files_modified) | open |  | 2026-09-23T17:37:54.064Z |  |
+| 75 | 64 | deviation | src/mcp/vice/vice-broker.mts |  | Live-discovered (plan 64-11): intermittent vice_disk_attach 0x8f condition-syntax-error after a prior vice_snapshot_load/vice_run_until sequence in the same session; functionally the attach appeared to still succeed once. Not a G-64-1 root cause; recorded in 64-g641-live-check.md, not fixed (production edits prohibited in plan 64-11). | open |  | 2026-09-23T19:30:52.212Z |  |
+| 76 | 64 | deviation | src/mcp/vice/text-tools.ts |  | Live-discovered (plan 64-11): vice_keyboard_type's default petscii_upper:true produced screen-RAM bytes that did not decode as readable text and did not execute as a BASIC command (SYNTAX ERROR) against real VICE; petscii_upper:false worked correctly. Recorded in 64-g641-live-check.md, not investigated further (existing tool, untouched by Phase 64's own migration). | open |  | 2026-09-23T19:30:56.904Z |  |
 
 ````json
 [
@@ -985,6 +987,32 @@ last_updated: 2026-09-23T17:37:54.064Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-23T17:37:54.064Z",
+    "resolved_at": null,
+    "milestone": "v2.0.0"
+  },
+  {
+    "id": 75,
+    "kind": "deviation",
+    "phase": "64",
+    "file": "src/mcp/vice/vice-broker.mts",
+    "line": null,
+    "description": "Live-discovered (plan 64-11): intermittent vice_disk_attach 0x8f condition-syntax-error after a prior vice_snapshot_load/vice_run_until sequence in the same session; functionally the attach appeared to still succeed once. Not a G-64-1 root cause; recorded in 64-g641-live-check.md, not fixed (production edits prohibited in plan 64-11).",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-23T19:30:52.212Z",
+    "resolved_at": null,
+    "milestone": "v2.0.0"
+  },
+  {
+    "id": 76,
+    "kind": "deviation",
+    "phase": "64",
+    "file": "src/mcp/vice/text-tools.ts",
+    "line": null,
+    "description": "Live-discovered (plan 64-11): vice_keyboard_type's default petscii_upper:true produced screen-RAM bytes that did not decode as readable text and did not execute as a BASIC command (SYNTAX ERROR) against real VICE; petscii_upper:false worked correctly. Recorded in 64-g641-live-check.md, not investigated further (existing tool, untouched by Phase 64's own migration).",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-23T19:30:56.904Z",
     "resolved_at": null,
     "milestone": "v2.0.0"
   }
