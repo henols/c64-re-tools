@@ -447,7 +447,7 @@ function assertIncidentsDirEmpty(incidentsDir: string | null, context: string): 
 test("tracer: a command sent through a relayed ViceMonitorClient arrives at the stub emulator byte-identical and its reply resolves the same send()", async () => {
   const receivedFrames: Buffer[] = [];
   await withStubEmulatorServer(pingEchoHandler(receivedFrames), async (emulatorPort) => {
-    await withRelayTestBroker(emulatorPort, "grant-tracer", async ({ listenerPort, token, state, incidentsDir }) => {
+    await withRelayTestBroker(emulatorPort, "grant-tracer", async ({ listenerPort, state, incidentsDir }) => {
       const claimOutcome = handleMonitorClaim("claim-tracer", "grant-tracer", "binary", state);
       assert.ok(claimOutcome.ok, `expected the claim to succeed: ${JSON.stringify(claimOutcome)}`);
       if (!claimOutcome.ok) return;
@@ -456,7 +456,6 @@ test("tracer: a command sent through a relayed ViceMonitorClient arrives at the 
         targetId: "grant-tracer",
         channel: "binary",
         handle: claimOutcome.handle,
-        token,
         port: listenerPort,
         candidates: ["127.0.0.1"],
       });
@@ -510,7 +509,7 @@ test("tracer: an attach presenting a handle that does not match the stored one i
       assert.fail("the stub emulator must never accept a connection for a mismatched-handle attach");
     },
     async (emulatorPort, connectionCount) => {
-      await withRelayTestBroker(emulatorPort, "grant-mismatch", async ({ listenerPort, token, state }) => {
+      await withRelayTestBroker(emulatorPort, "grant-mismatch", async ({ listenerPort, state }) => {
         const claimOutcome = handleMonitorClaim("claim-mismatch", "grant-mismatch", "binary", state);
         assert.ok(claimOutcome.ok);
         if (!claimOutcome.ok) return;
@@ -519,7 +518,6 @@ test("tracer: an attach presenting a handle that does not match the stored one i
           targetId: "grant-mismatch",
           channel: "binary",
           handle: "0000000000000000000000000000000",
-          token,
           port: listenerPort,
           candidates: ["127.0.0.1"],
         });
@@ -554,14 +552,16 @@ test("boundary one (broker side): a single write carrying the attach line, its t
       });
     },
     async (emulatorPort) => {
-      await withRelayTestBroker(emulatorPort, "grant-boundary-1", async ({ listenerPort, token, state }) => {
+      await withRelayTestBroker(emulatorPort, "grant-boundary-1", async ({ listenerPort, state }) => {
         const claimOutcome = handleMonitorClaim("claim-boundary-1", "grant-boundary-1", "binary", state);
         assert.ok(claimOutcome.ok);
         if (!claimOutcome.ok) return;
 
+        // G-64-1: no credential key at all -- proves a credential-free
+        // attach is accepted, mirroring what production now writes.
         const binmonBytes = encodeRequestHeader({ commandType: CommandType.Ping, requestId: 1, body: Buffer.alloc(0) });
         const attachLine = Buffer.from(
-          `${JSON.stringify({ op: "attach", target_id: "grant-boundary-1", channel: "binary", handle: claimOutcome.handle, token })}\n`,
+          `${JSON.stringify({ op: "attach", target_id: "grant-boundary-1", channel: "binary", handle: claimOutcome.handle })}\n`,
           "utf8",
         );
         const combined = Buffer.concat([attachLine, binmonBytes]);
@@ -623,7 +623,6 @@ test("boundary two (client side): a single write carrying the attach reply, its 
       targetId: "grant-boundary-2",
       channel: "binary",
       handle: "irrelevant-to-this-fake-broker",
-      token: "irrelevant-to-this-fake-broker",
       port: fakeBrokerPort,
       candidates: ["127.0.0.1"],
       clientVersion: "1.0.0",
@@ -664,7 +663,7 @@ test("byte-transparency: a payload with a lone 0x80-0xFF byte run and an embedde
       });
     },
     async (emulatorPort) => {
-      await withRelayTestBroker(emulatorPort, "grant-weird", async ({ listenerPort, token, state }) => {
+      await withRelayTestBroker(emulatorPort, "grant-weird", async ({ listenerPort, state }) => {
         const claimOutcome = handleMonitorClaim("claim-weird", "grant-weird", "binary", state);
         assert.ok(claimOutcome.ok);
         if (!claimOutcome.ok) return;
@@ -673,7 +672,6 @@ test("byte-transparency: a payload with a lone 0x80-0xFF byte run and an embedde
           targetId: "grant-weird",
           channel: "binary",
           handle: claimOutcome.handle,
-          token,
           port: listenerPort,
           candidates: ["127.0.0.1"],
         });
@@ -770,7 +768,7 @@ test("concurrency: two relay connections attached to two DIFFERENT grants on one
         { port: portA, targetId: "grant-multi-a" },
         { port: portB, targetId: "grant-multi-b" },
       ],
-      async ({ listenerPort, token, state }) => {
+      async ({ listenerPort, state }) => {
         const claimA = handleMonitorClaim("claim-multi-a", "grant-multi-a", "binary", state);
         const claimB = handleMonitorClaim("claim-multi-b", "grant-multi-b", "binary", state);
         assert.ok(claimA.ok && claimB.ok, `expected both claims to succeed: ${JSON.stringify(claimA)} ${JSON.stringify(claimB)}`);
@@ -780,7 +778,6 @@ test("concurrency: two relay connections attached to two DIFFERENT grants on one
           targetId: "grant-multi-a",
           channel: "binary",
           handle: claimA.handle,
-          token,
           port: listenerPort,
           candidates: ["127.0.0.1"],
         });
@@ -788,7 +785,6 @@ test("concurrency: two relay connections attached to two DIFFERENT grants on one
           targetId: "grant-multi-b",
           channel: "binary",
           handle: claimB.handle,
-          token,
           port: listenerPort,
           candidates: ["127.0.0.1"],
         });
@@ -989,14 +985,13 @@ test("stockReconnect: after the binary relay is destroyed, a fresh session estab
         happyPathResponder()(socket);
       },
       async (emulatorPort) => {
-        await withRelayTestBroker(emulatorPort, "grant-reconnect-binary", async ({ listenerPort, token, state }) => {
+        await withRelayTestBroker(emulatorPort, "grant-reconnect-binary", async ({ listenerPort, state }) => {
           const brokerControl = makeRealBrokerControl(state, "grant-reconnect-binary");
           const dialMonitorSocket: DialMonitorSocketFn = async (opts) => {
             const result = await dialMonitorRelay({
               targetId: opts.targetId,
               channel: opts.channel,
               handle: opts.handle,
-              token,
               port: listenerPort,
               candidates: ["127.0.0.1"],
             });
@@ -1052,14 +1047,13 @@ test("stockReconnect: after the binary relay is destroyed, an advanced epoch rej
         happyPathResponder()(socket);
       },
       async (emulatorPort) => {
-        await withRelayTestBroker(emulatorPort, "grant-reconnect-restarted", async ({ listenerPort, token, state }) => {
+        await withRelayTestBroker(emulatorPort, "grant-reconnect-restarted", async ({ listenerPort, state }) => {
           const brokerControl = makeRealBrokerControl(state, "grant-reconnect-restarted");
           const dialMonitorSocket: DialMonitorSocketFn = async (opts) => {
             const result = await dialMonitorRelay({
               targetId: opts.targetId,
               channel: opts.channel,
               handle: opts.handle,
-              token,
               port: listenerPort,
               candidates: ["127.0.0.1"],
             });
@@ -1141,14 +1135,13 @@ test("structural: broker-relay-text.test.ts is present and is not on git's own u
 async function claimAndDialRelay(
   state: BrokerState,
   listenerPort: number,
-  token: string,
   targetId: string,
   channel: MonitorChannel = "binary",
 ): Promise<DialMonitorRelaySuccess> {
   const claim = handleMonitorClaim(`claim-${targetId}`, targetId, channel, state);
   assert.ok(claim.ok, `expected the claim to succeed: ${JSON.stringify(claim)}`);
   if (!claim.ok) throw new Error("unreachable");
-  const dial = await dialMonitorRelay({ targetId, channel, handle: claim.handle, token, port: listenerPort, candidates: ["127.0.0.1"] });
+  const dial = await dialMonitorRelay({ targetId, channel, handle: claim.handle, port: listenerPort, candidates: ["127.0.0.1"] });
   assert.ok(dial.ok, `expected a successful relay dial: ${JSON.stringify(dial)}`);
   if (!dial.ok) throw new Error("unreachable");
   return dial;
@@ -1175,8 +1168,8 @@ test("handleRelayDeath: an abruptly destroyed relay (a real TCP RST) produces ex
       await withRelayTestBroker(
         emulatorPort,
         "grant-death-abrupt",
-        async ({ listenerPort, token, state }) => {
-          const dial = await claimAndDialRelay(state, listenerPort, token, "grant-death-abrupt");
+        async ({ listenerPort, state }) => {
+          const dial = await claimAndDialRelay(state, listenerPort, "grant-death-abrupt");
           assert.ok(state.relaySessions.has(relaySessionKey("grant-death-abrupt", "binary")), "the relay session must be recorded the instant the attach succeeds");
 
           dial.socket.resetAndDestroy();
@@ -1209,8 +1202,8 @@ test("handleRelayDeath: a gracefully ended relay reports a trigger that distingu
       await withRelayTestBroker(
         emulatorPort,
         "grant-death-graceful",
-        async ({ listenerPort, token, state }) => {
-          const dial = await claimAndDialRelay(state, listenerPort, token, "grant-death-graceful");
+        async ({ listenerPort, state }) => {
+          const dial = await claimAndDialRelay(state, listenerPort, "grant-death-graceful");
           dial.socket.end();
           await emulatorClosed;
           assert.deepEqual(order, ["write:relay_close"], "a graceful end must report a DIFFERENT trigger than the abrupt (RST) case");
@@ -1243,8 +1236,8 @@ test("handleRelayDeath: a second close for the same grant and channel after a te
       await withRelayTestBroker(
         emulatorPort,
         "grant-death-double",
-        async ({ listenerPort, token, state }) => {
-          const dial = await claimAndDialRelay(state, listenerPort, token, "grant-death-double");
+        async ({ listenerPort, state }) => {
+          const dial = await claimAndDialRelay(state, listenerPort, "grant-death-double");
           dial.socket.resetAndDestroy();
           await emulatorClosed;
           assert.equal(writeCount, 1);
@@ -1299,9 +1292,9 @@ test("handleRelayDeath: a relay death on one grant leaves the other grant's rela
               { port: emulatorPortA, targetId: "grant-death-multi-a" },
               { port: emulatorPortB, targetId: "grant-death-multi-b" },
             ],
-            async ({ listenerPort, token, state }) => {
-              const dialA = await claimAndDialRelay(state, listenerPort, token, "grant-death-multi-a");
-              const dialB = await claimAndDialRelay(state, listenerPort, token, "grant-death-multi-b");
+            async ({ listenerPort, state }) => {
+              const dialA = await claimAndDialRelay(state, listenerPort, "grant-death-multi-a");
+              const dialB = await claimAndDialRelay(state, listenerPort, "grant-death-multi-b");
 
               // The "attached" reply the client just received is written
               // BEFORE the broker's own dial to the (stub) emulator has
@@ -1361,8 +1354,8 @@ test("handleRelayDeath: the instance record is still present at its port and the
   await withStubEmulatorServer(
     (socket) => socket.once("close", () => resolveEmulatorClosed()),
     async (emulatorPort) => {
-      await withRelayTestBroker(emulatorPort, "grant-death-survives", async ({ listenerPort, token, state }) => {
-        const dial = await claimAndDialRelay(state, listenerPort, token, "grant-death-survives");
+      await withRelayTestBroker(emulatorPort, "grant-death-survives", async ({ listenerPort, state }) => {
+        const dial = await claimAndDialRelay(state, listenerPort, "grant-death-survives");
         dial.socket.resetAndDestroy();
         await emulatorClosed;
 
@@ -1397,13 +1390,13 @@ test("handleRelayDeath: a death with a declared operation marks the run void; a 
           await withRelayTestBroker(
             emulatorPort,
             targetId,
-            async ({ listenerPort, token, state }) => {
+            async ({ listenerPort, state }) => {
               if (declareOp) {
                 const grant = state.grants.get(targetId);
                 assert.ok(grant, "the fixture must have created a grant for this target id");
                 if (grant) grant.operation = { name: "vice_memory_read", declaredAt: Date.now() };
               }
-              const dial = await claimAndDialRelay(state, listenerPort, token, targetId);
+              const dial = await claimAndDialRelay(state, listenerPort, targetId);
               dial.socket.resetAndDestroy();
               await emulatorClosed;
             },
@@ -1511,8 +1504,8 @@ test("spliceRelay/handleRelayDeath: with an injected timer, an interval exactly 
       await withRelayTestBroker(
         emulatorPort,
         "grant-idle-boundary",
-        async ({ listenerPort, token, state }) => {
-          await claimAndDialRelay(state, listenerPort, token, "grant-idle-boundary");
+        async ({ listenerPort, state }) => {
+          await claimAndDialRelay(state, listenerPort, "grant-idle-boundary");
 
           fake.advance(99);
           assert.equal(writeCount, 0, "one tick short of the bound must NOT fire");
@@ -1549,8 +1542,8 @@ test("spliceRelay: a byte in either direction resets the measured idle interval 
       await withRelayTestBroker(
         emulatorPort,
         "grant-idle-reset",
-        async ({ listenerPort, token, state }) => {
-          const dial = await claimAndDialRelay(state, listenerPort, token, "grant-idle-reset");
+        async ({ listenerPort, state }) => {
+          const dial = await claimAndDialRelay(state, listenerPort, "grant-idle-reset");
 
           fake.advance(60);
           assert.equal(writeCount, 0, "60ms of a 100ms bound must not fire yet");
@@ -1631,8 +1624,8 @@ test("handleOperationNote: declaring an operation suspends the idle deadline on 
       await withRelayTestBroker(
         emulatorPort,
         "grant-suspend-resume",
-        async ({ listenerPort, token, state }) => {
-          await claimAndDialRelay(state, listenerPort, token, "grant-suspend-resume");
+        async ({ listenerPort, state }) => {
+          await claimAndDialRelay(state, listenerPort, "grant-suspend-resume");
 
           const declareOutcome = handleOperationNote("grant-suspend-resume", "binary", "vice_memory_read", state);
           assert.ok(declareOutcome.ok);
@@ -1674,8 +1667,8 @@ test("handleRelayDeath: a fired deadline produces one incident record with the i
       await withRelayTestBroker(
         emulatorPort,
         "grant-idle-fired",
-        async ({ listenerPort, token, state }) => {
-          await claimAndDialRelay(state, listenerPort, token, "grant-idle-fired");
+        async ({ listenerPort, state }) => {
+          await claimAndDialRelay(state, listenerPort, "grant-idle-fired");
           fake.advance(50);
 
           assert.ok(capturedRecord, "exactly one incident record must have been written");
@@ -1703,8 +1696,8 @@ test("handleRelayDeath: a writer that throws stops the teardown before any claim
   await withStubEmulatorServer(
     () => {},
     async (emulatorPort) => {
-      await withRelayTestBroker(emulatorPort, "grant-death-throws", async ({ listenerPort, token, state }) => {
-        await claimAndDialRelay(state, listenerPort, token, "grant-death-throws");
+      await withRelayTestBroker(emulatorPort, "grant-death-throws", async ({ listenerPort, state }) => {
+        await claimAndDialRelay(state, listenerPort, "grant-death-throws");
         assert.ok(state.relaySessions.has(relaySessionKey("grant-death-throws", "binary")));
 
         assert.throws(
@@ -2140,8 +2133,8 @@ test("handleRelayDeath: an idle deadline and a socket close in the same turn pro
         await withRelayTestBroker(
           emulatorPort,
           targetId,
-          async ({ listenerPort, token, state }) => {
-            const dial = await claimAndDialRelay(state, listenerPort, token, targetId);
+          async ({ listenerPort, state }) => {
+            const dial = await claimAndDialRelay(state, listenerPort, targetId);
 
             // Both triggers land in the SAME synchronous turn: the idle
             // deadline fires FIRST (advance() runs the whole teardown
@@ -2189,10 +2182,10 @@ test("handleRelayDeath: two channels of one grant dropping together produce one 
           const state = createBrokerState();
           state.instances.set(binaryPort, makeGrantedInstance(binaryPort, { remoteMonitorPort: textPort }));
           state.grants.set("grant-race-concurrency", { id: "grant-race-concurrency", port: binaryPort, grantedAt: Date.now(), pid: 4242, operation: null, sessionLabel: null });
-          const { listener, token, incidentsDir } = await startRelayListenerForState(state, deps);
+          const { listener, incidentsDir } = await startRelayListenerForState(state, deps);
           try {
-            const dialBinary = await claimAndDialRelay(state, listener.port, token, "grant-race-concurrency", "binary");
-            const dialText = await claimAndDialRelay(state, listener.port, token, "grant-race-concurrency", "text");
+            const dialBinary = await claimAndDialRelay(state, listener.port, "grant-race-concurrency", "binary");
+            const dialText = await claimAndDialRelay(state, listener.port, "grant-race-concurrency", "text");
 
             // Dropped together, in the same synchronous turn.
             dialBinary.socket.resetAndDestroy();
@@ -2250,8 +2243,8 @@ test("spliceRelay is byte-transparent for a JAM (0x61) with a zero-length body, 
       socket.write(jamFrame);
     },
     async (emulatorPort) => {
-      await withRelayTestBroker(emulatorPort, "grant-jam-zero-length", async ({ listenerPort, token, state }) => {
-        const dial = await claimAndDialRelay(state, listenerPort, token, "grant-jam-zero-length");
+      await withRelayTestBroker(emulatorPort, "grant-jam-zero-length", async ({ listenerPort, state }) => {
+        const dial = await claimAndDialRelay(state, listenerPort, "grant-jam-zero-length");
 
         // Raw byte capture, alongside (never instead of) the client's own
         // parser -- both are wired to the SAME socket, and Node fans the
@@ -2320,8 +2313,8 @@ test("a JAM frame split across two TCP segments inside its response header reass
       setImmediate(() => socket.write(part2));
     },
     async (emulatorPort) => {
-      await withRelayTestBroker(emulatorPort, "grant-jam-header-split", async ({ listenerPort, token, state }) => {
-        const dial = await claimAndDialRelay(state, listenerPort, token, "grant-jam-header-split");
+      await withRelayTestBroker(emulatorPort, "grant-jam-header-split", async ({ listenerPort, state }) => {
+        const dial = await claimAndDialRelay(state, listenerPort, "grant-jam-header-split");
 
         const client = new ViceMonitorClient();
         const events: unknown[] = [];
@@ -2403,8 +2396,8 @@ async function runJamInterleaveCase(writeMode: "single-write" | "split-write", t
       });
     },
     async (emulatorPort) => {
-      await withRelayTestBroker(emulatorPort, targetId, async ({ listenerPort, token, state }) => {
-        const dial = await claimAndDialRelay(state, listenerPort, token, targetId);
+      await withRelayTestBroker(emulatorPort, targetId, async ({ listenerPort, state }) => {
+        const dial = await claimAndDialRelay(state, listenerPort, targetId);
 
         const client = new ViceMonitorClient();
         const events: unknown[] = [];

@@ -985,7 +985,7 @@ function makeRealStageFile(control: { sendAndRead: (obj: Record<string, unknown>
  * defaultTransferFile() itself is not exported (see that function's own
  * header comment for why it must not become one: no injectable
  * filesystem-root seam is to be added to it). */
-function makeRealTransferFile(port: number, token: string): TransferFileFn {
+function makeRealTransferFile(port: number): TransferFileFn {
   return async (request: TransferFileRequest): Promise<TransferFileResult> => {
     if (request.direction === "upload") {
       let size: number;
@@ -1009,7 +1009,7 @@ function makeRealTransferFile(port: number, token: string): TransferFileFn {
       );
       const { byteLength, sha256 } = digestPass.result();
 
-      const dialResult = await dialFileTransfer({ handle: request.handle, direction: "upload", byteLength, sha256, token, port, candidates: ["127.0.0.1"] });
+      const dialResult = await dialFileTransfer({ handle: request.handle, direction: "upload", byteLength, sha256, port, candidates: ["127.0.0.1"] });
       if (!dialResult.ok) return { ok: false, reason: dialResult.reason };
       const { socket } = dialResult;
       try {
@@ -1023,7 +1023,7 @@ function makeRealTransferFile(port: number, token: string): TransferFileFn {
       }
     }
 
-    const dialResult = await dialFileTransfer({ handle: request.handle, direction: "download", token, port, candidates: ["127.0.0.1"] });
+    const dialResult = await dialFileTransfer({ handle: request.handle, direction: "download", port, candidates: ["127.0.0.1"] });
     if (!dialResult.ok) return { ok: false, reason: dialResult.reason };
     if (dialResult.direction !== "download") {
       dialResult.socket.destroy();
@@ -1134,7 +1134,7 @@ test("vice_snapshot_save/vice_snapshot_load round trip: the same bytes make the 
     });
     session.targetId = grantId;
     session.brokerControl = { ...session.brokerControl, stageFile: makeRealStageFile(control, token) } as StockConnectSession["brokerControl"];
-    session.deps = { ...session.deps, transferFile: makeRealTransferFile(listener.port, token) };
+    session.deps = { ...session.deps, transferFile: makeRealTransferFile(listener.port) };
 
     const saveResult = await handleSnapshotSave({ name: "roundtrip_1" }, session, fakeDeps);
     assert.equal(saveResult.isError, false, `save must succeed: ${JSON.stringify(saveResult)}`);

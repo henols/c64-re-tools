@@ -244,7 +244,7 @@ function makeRealStageFile(control: { sendAndRead: (obj: Record<string, unknown>
  * exported and must not become one (no injectable filesystem-root seam is
  * to be added to it, D-17). Identical in shape to stock-machine.test.ts's
  * own makeRealTransferFile(). */
-function makeRealTransferFile(port: number, token: string): TransferFileFn {
+function makeRealTransferFile(port: number): TransferFileFn {
   return async (request: TransferFileRequest): Promise<TransferFileResult> => {
     if (request.direction === "upload") {
       let size: number;
@@ -268,7 +268,7 @@ function makeRealTransferFile(port: number, token: string): TransferFileFn {
       );
       const { byteLength, sha256 } = digestPass.result();
 
-      const dialResult = await dialFileTransfer({ handle: request.handle, direction: "upload", byteLength, sha256, token, port, candidates: ["127.0.0.1"] });
+      const dialResult = await dialFileTransfer({ handle: request.handle, direction: "upload", byteLength, sha256, port, candidates: ["127.0.0.1"] });
       if (!dialResult.ok) return { ok: false, reason: dialResult.reason };
       const { socket } = dialResult;
       try {
@@ -282,7 +282,7 @@ function makeRealTransferFile(port: number, token: string): TransferFileFn {
       }
     }
 
-    const dialResult = await dialFileTransfer({ handle: request.handle, direction: "download", token, port, candidates: ["127.0.0.1"] });
+    const dialResult = await dialFileTransfer({ handle: request.handle, direction: "download", port, candidates: ["127.0.0.1"] });
     if (!dialResult.ok) return { ok: false, reason: dialResult.reason };
     if (dialResult.direction !== "download") {
       dialResult.socket.destroy();
@@ -512,7 +512,7 @@ test("transfer-disjoint-roots: all four tools complete against a client and a br
 
     session.targetId = grantId;
     session.brokerControl = { ...session.brokerControl, stageFile: makeRealStageFile(control, token) } as StockConnectSession["brokerControl"];
-    session.deps = { ...session.deps, transferFile: makeRealTransferFile(listener.port, token) };
+    session.deps = { ...session.deps, transferFile: makeRealTransferFile(listener.port) };
 
     // --- vice_autostart ---
     const autostartResult = await handleAutostart({ path: autostartFixturePath }, session, fakeDeps);

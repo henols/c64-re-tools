@@ -21,7 +21,9 @@ import {
   DIAL_CANDIDATES,
   HELLO_PROTOCOL_MAGIC,
   dialFileTransfer,
+  dialMonitorRelay,
   TRANSFER_TAG,
+  RELAY_TAG_BINARY,
   resolveEndpointPort,
   type BrokerEndpointConnectFn,
   type DialFailure,
@@ -828,13 +830,11 @@ test("dialFileTransfer: races the same two candidates on the fixed control port,
   const sharedToken = newControlToken();
   const { listener: a } = await startTransferCapableListener(answerEmptyDownload, sharedToken);
   const { listener: b } = await startTransferCapableListener(answerEmptyDownload, sharedToken);
-  const token = sharedToken;
   try {
     const connectFn = makeCandidateConnect({ "cand-a": a.port, "cand-b": b.port });
     const result: DialFileTransferResult = await dialFileTransfer({
       handle: "a-valid-handle",
       direction: "download",
-      token,
       candidates: ["cand-a", "cand-b"],
       connect: connectFn,
       connectTimeoutMs: 500,
@@ -876,7 +876,6 @@ test("dialFileTransfer: the hello line this dial writes carries the value of TRA
     await dialFileTransfer({
       handle: "a-valid-handle",
       direction: "download",
-      token: "irrelevant",
       candidates: ["cand-raw"],
       connect: makeCandidateConnect({ "cand-raw": rawPort }),
       connectTimeoutMs: 500,
@@ -905,7 +904,6 @@ test("dialFileTransfer: a download's transfer_payload reply and its first payloa
     const result = await dialFileTransfer({
       handle: "a-valid-handle",
       direction: "download",
-      token: "irrelevant",
       candidates: ["cand-fixture"],
       connect: makeCandidateConnect({ "cand-fixture": fixture.port }),
       connectTimeoutMs: 500,
@@ -928,12 +926,11 @@ test("dialFileTransfer: a download's transfer_payload reply and its first payloa
 });
 
 test("dialFileTransfer: an error reply resolves ok:false naming the broker's own refusal, and destroys the socket", async () => {
-  const { listener, token } = await startTransferCapableListener((): FileTransferOutcome => ({ ok: false, code: "denied", message: "vice: no staged file for this handle" }));
+  const { listener } = await startTransferCapableListener((): FileTransferOutcome => ({ ok: false, code: "denied", message: "vice: no staged file for this handle" }));
   try {
     const result = await dialFileTransfer({
       handle: "an-unknown-handle",
       direction: "download",
-      token,
       candidates: ["127.0.0.1"],
       port: listener.port,
       connectTimeoutMs: 500,
@@ -955,7 +952,6 @@ test("dialFileTransfer: every failure mode resolves rather than rejecting, and t
     const timeoutResult = await dialFileTransfer({
       handle: "some-handle",
       direction: "download",
-      token: "irrelevant",
       candidates: ["127.0.0.1"],
       port: bare.port,
       connectTimeoutMs: 500,
@@ -977,7 +973,6 @@ test("dialFileTransfer: every failure mode resolves rather than rejecting, and t
     const closeResult = await dialFileTransfer({
       handle: "some-handle",
       direction: "download",
-      token: "irrelevant",
       candidates: ["127.0.0.1"],
       port: closerPort,
       connectTimeoutMs: 500,
@@ -994,7 +989,6 @@ test("dialFileTransfer: every failure mode resolves rather than rejecting, and t
   const noCandidateResult = await dialFileTransfer({
     handle: "some-handle",
     direction: "download",
-    token: "irrelevant",
     candidates: ["127.0.0.1"],
     port: deadPort,
     connectTimeoutMs: 500,
@@ -1002,4 +996,144 @@ test("dialFileTransfer: every failure mode resolves rather than rejecting, and t
   });
   assert.equal(noCandidateResult.ok, false);
   if (!noCandidateResult.ok) assert.ok(noCandidateResult.reason.length > 0, "reason must be a non-empty string");
+});
+
+// ============================================================================
+// Plan 64-09 (G-64-1): the wire proves what the types promise. Plan 64-08
+// moved attach/transfer dispatch ahead of the per-boot control-token gate on
+// the broker side; this plan deleted the client-side credential field these
+// two dials used to write. These three tests capture a REAL request line
+// from a REAL dial and assert its exact key set -- a behavioural observation
+// of the wire, never a scan of source text (D-17, 260914-poo D-1) -- so a
+// later edit that adds a credential key back onto either line goes red here.
+// ============================================================================
+
+/** A raw, hand-written fixture (no broker-control.mts involved at all) that
+ * answers the client's `hello` with a compatible reply tagged
+ * RELAY_TAG_BINARY, THEN answers the client's own `attach` request line with
+ * exactly the bytes `respond` returns -- mirrors startRawTransferFixture()
+ * above exactly, for the attach line instead of the transfer line. `respond`
+ * receives the parsed attach request. */
+function startRawAttachFixture(respond: (attachReq: Record<string, unknown>) => Buffer): Promise<{ server: Server; port: number }> {
+  return new Promise((resolvePromise) => {
+    const server = createServer((socket) => {
+      socket.write(`${JSON.stringify({ kind: "hello", protocol: HELLO_PROTOCOL_MAGIC, version: "5.0.0", tag: RELAY_TAG_BINARY })}\n`);
+      let carry = Buffer.alloc(0);
+      let answered = false;
+      // Mirrors startRawTransferFixture()'s own skip: the client writes its
+      // OWN hello request line before performAttach() ever writes the
+      // attach request line, so the first line this handler reads is the
+      // client's own hello, not the attach request.
+      let skippedHelloLine = false;
+      socket.on("data", (chunk: Buffer) => {
+        if (answered) return;
+        carry = Buffer.concat([carry, chunk]);
+        let idx: number;
+        while ((idx = carry.indexOf(0x0a)) !== -1) {
+          const line = carry.subarray(0, idx).toString("utf8");
+          carry = carry.subarray(idx + 1);
+          if (!skippedHelloLine) {
+            skippedHelloLine = true;
+            continue;
+          }
+          answered = true;
+          let parsed: Record<string, unknown> = {};
+          try {
+            parsed = JSON.parse(line);
+          } catch {
+            parsed = {};
+          }
+          socket.write(respond(parsed));
+          return;
+        }
+      });
+    });
+    server.listen(0, "127.0.0.1", () => {
+      const addr = server.address();
+      const port = typeof addr === "object" && addr !== null ? addr.port : 0;
+      resolvePromise({ server, port });
+    });
+  });
+}
+
+test("dialMonitorRelay: the attach line this dial writes carries exactly op, target_id, channel and handle -- no credential of any kind (G-64-1)", async () => {
+  let capturedAttachLine: Record<string, unknown> | null = null;
+  const fixture = await startRawAttachFixture((req) => {
+    capturedAttachLine = req;
+    return Buffer.from(`${JSON.stringify({ kind: "attached" })}\n`);
+  });
+  try {
+    const result = await dialMonitorRelay({
+      targetId: "target-1",
+      channel: "binary",
+      handle: "a-valid-handle",
+      candidates: ["cand-fixture"],
+      connect: makeCandidateConnect({ "cand-fixture": fixture.port }),
+      connectTimeoutMs: 500,
+      replyTimeoutMs: 500,
+      clientVersion: "5.0.0",
+    });
+    assert.equal(result.ok, true, `expected a completed attach dial, got ${JSON.stringify(result)}`);
+    if (result.ok) result.socket.destroy();
+    assert.ok(capturedAttachLine, "the fixture must have captured an attach line");
+    const keys = Object.keys(capturedAttachLine as Record<string, unknown>).sort();
+    assert.deepEqual(keys, ["channel", "handle", "op", "target_id"].sort());
+    assert.equal((capturedAttachLine as Record<string, unknown>).handle, "a-valid-handle", "the captured handle must equal the one passed in");
+  } finally {
+    fixture.server.close();
+  }
+});
+
+test("dialFileTransfer: a download's transfer request line carries exactly op, direction and handle -- no credential of any kind (G-64-1)", async () => {
+  let capturedTransferLine: Record<string, unknown> | null = null;
+  const fixture = await startRawTransferFixture((req) => {
+    capturedTransferLine = req;
+    return Buffer.from(`${JSON.stringify({ kind: "transfer_payload", byteLength: 0, sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" })}\n`);
+  });
+  try {
+    const result = await dialFileTransfer({
+      handle: "a-valid-handle",
+      direction: "download",
+      candidates: ["cand-fixture"],
+      connect: makeCandidateConnect({ "cand-fixture": fixture.port }),
+      connectTimeoutMs: 500,
+      replyTimeoutMs: 500,
+      clientVersion: "5.0.0",
+    });
+    assert.equal(result.ok, true, `expected a completed download dial, got ${JSON.stringify(result)}`);
+    if (result.ok) result.socket.destroy();
+    assert.ok(capturedTransferLine, "the fixture must have captured a transfer line");
+    const keys = Object.keys(capturedTransferLine as Record<string, unknown>).sort();
+    assert.deepEqual(keys, ["direction", "handle", "op"].sort());
+  } finally {
+    fixture.server.close();
+  }
+});
+
+test("dialFileTransfer: an upload's transfer request line carries exactly op, direction, handle, byteLength and sha256 -- no credential of any kind (G-64-1)", async () => {
+  let capturedTransferLine: Record<string, unknown> | null = null;
+  const fixture = await startRawTransferFixture((req) => {
+    capturedTransferLine = req;
+    return Buffer.from(`${JSON.stringify({ kind: "transfer_ready" })}\n`);
+  });
+  try {
+    const result = await dialFileTransfer({
+      handle: "a-valid-handle",
+      direction: "upload",
+      byteLength: 4,
+      sha256: "irrelevant-for-this-test",
+      candidates: ["cand-fixture"],
+      connect: makeCandidateConnect({ "cand-fixture": fixture.port }),
+      connectTimeoutMs: 500,
+      replyTimeoutMs: 500,
+      clientVersion: "5.0.0",
+    });
+    assert.equal(result.ok, true, `expected a completed upload dial, got ${JSON.stringify(result)}`);
+    if (result.ok) result.socket.destroy();
+    assert.ok(capturedTransferLine, "the fixture must have captured a transfer line");
+    const keys = Object.keys(capturedTransferLine as Record<string, unknown>).sort();
+    assert.deepEqual(keys, ["byteLength", "direction", "handle", "op", "sha256"].sort());
+  } finally {
+    fixture.server.close();
+  }
 });

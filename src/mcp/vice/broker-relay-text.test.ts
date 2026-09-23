@@ -248,7 +248,7 @@ test("tracer: an allowlisted text command sent through a relayed TextMonitorClie
       });
     },
     async (textPort) => {
-      await withRelayTestBroker(textPort, "grant-tracer-text", async ({ listenerPort, token, state }) => {
+      await withRelayTestBroker(textPort, "grant-tracer-text", async ({ listenerPort, state }) => {
         const claimOutcome = handleMonitorClaim("claim-tracer-text", "grant-tracer-text", "text", state);
         assert.ok(claimOutcome.ok, `expected the claim to succeed: ${JSON.stringify(claimOutcome)}`);
         if (!claimOutcome.ok) return;
@@ -257,7 +257,6 @@ test("tracer: an allowlisted text command sent through a relayed TextMonitorClie
           targetId: "grant-tracer-text",
           channel: "text",
           handle: claimOutcome.handle,
-          token,
           port: listenerPort,
           candidates: ["127.0.0.1"],
         });
@@ -309,7 +308,7 @@ test("gap closure 63-11: a real claim/attach/command/release/close round trip th
       // No relayDeathDeps argument -- the harness mints its own scratch
       // incidentsDir and the REAL writeBrokerIncident() is the writer under
       // test, exactly as 63-VERIFICATION.md's own missing[1] asked for.
-      await withRelayTestBroker(textPort, targetId, async ({ listenerPort, token, state, incidentsDir }) => {
+      await withRelayTestBroker(textPort, targetId, async ({ listenerPort, state, incidentsDir }) => {
         assert.ok(incidentsDir, "the harness must have minted its own scratch incidentsDir -- no relayDeathDeps was supplied");
 
         const claimOutcome = handleMonitorClaim("claim-63-11-text-hygiene", targetId, "text", state);
@@ -320,7 +319,6 @@ test("gap closure 63-11: a real claim/attach/command/release/close round trip th
           targetId,
           channel: "text",
           handle: claimOutcome.handle,
-          token,
           port: listenerPort,
           candidates: ["127.0.0.1"],
         });
@@ -390,7 +388,7 @@ test("attach: a text attach against an instance record with no text-monitor port
     async (_textPort, connectionCount) => {
       // remoteMonitorPort is deliberately omitted -- the instance record
       // carries NO text-monitor port at all.
-      await withRelayTestBroker(undefined, "grant-no-text-port", async ({ listenerPort, token, state }) => {
+      await withRelayTestBroker(undefined, "grant-no-text-port", async ({ listenerPort, state }) => {
         const claimOutcome = handleMonitorClaim("claim-no-text-port", "grant-no-text-port", "text", state);
         assert.ok(claimOutcome.ok, `expected the claim to succeed: ${JSON.stringify(claimOutcome)}`);
         if (!claimOutcome.ok) return;
@@ -399,7 +397,6 @@ test("attach: a text attach against an instance record with no text-monitor port
           targetId: "grant-no-text-port",
           channel: "text",
           handle: claimOutcome.handle,
-          token,
           port: listenerPort,
           candidates: ["127.0.0.1"],
         });
@@ -449,7 +446,6 @@ test("handover: prompt bytes delivered in the same write as the attach reply are
       targetId: "grant-handover-text",
       channel: "text",
       handle: "irrelevant-to-this-fake-broker",
-      token: "irrelevant-to-this-fake-broker",
       port: fakeBrokerPort,
       candidates: ["127.0.0.1"],
       clientVersion: "1.0.0",
@@ -499,7 +495,7 @@ test("relay death (text): after the text relay is destroyed, the next text comma
       // the relay dies while the connection is idle.
     },
     async (textPort, connectionCount) => {
-      await withRelayTestBroker(textPort, "grant-relay-death-text", async ({ listenerPort, token, state }) => {
+      await withRelayTestBroker(textPort, "grant-relay-death-text", async ({ listenerPort, state }) => {
         const claimOutcome = handleMonitorClaim("claim-relay-death-text", "grant-relay-death-text", "text", state);
         assert.ok(claimOutcome.ok, `expected the claim to succeed: ${JSON.stringify(claimOutcome)}`);
         if (!claimOutcome.ok) return;
@@ -508,7 +504,6 @@ test("relay death (text): after the text relay is destroyed, the next text comma
           targetId: "grant-relay-death-text",
           channel: "text",
           handle: claimOutcome.handle,
-          token,
           port: listenerPort,
           candidates: ["127.0.0.1"],
         });
@@ -619,7 +614,7 @@ test("handleRelayDeath (text): with an injected timer, an interval exactly equal
       await withRelayTestBroker(
         textPort,
         "grant-idle-boundary-text",
-        async ({ listenerPort, token, state }) => {
+        async ({ listenerPort, state }) => {
           const claimOutcome = handleMonitorClaim("claim-idle-boundary-text", "grant-idle-boundary-text", "text", state);
           assert.ok(claimOutcome.ok);
           if (!claimOutcome.ok) return;
@@ -627,7 +622,6 @@ test("handleRelayDeath (text): with an injected timer, an interval exactly equal
             targetId: "grant-idle-boundary-text",
             channel: "text",
             handle: claimOutcome.handle,
-            token,
             port: listenerPort,
             candidates: ["127.0.0.1"],
           });

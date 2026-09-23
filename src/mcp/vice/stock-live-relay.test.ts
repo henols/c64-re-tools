@@ -437,7 +437,6 @@ test(
         targetId: grant.id,
         channel: "binary",
         handle: claim.handle,
-        token: controlToken,
         port: controlPort,
         candidates: [controlHost],
       });
@@ -911,7 +910,7 @@ test(
       // rather than silently skipped or forced through an unsupported route.
       if (variantThatJammed === "default") {
         let relayResult: Record<string, unknown> | undefined;
-        const relayReport = await withRelayHarness(viceBinPath, async ({ session, grant, controlHost, controlPort, controlToken }) => {
+        const relayReport = await withRelayHarness(viceBinPath, async ({ session, grant, controlHost, controlPort }) => {
           const claim = await session.claimMonitor({ targetId: grant.id, channel: "binary" });
           assert.ok(claim.ok, `gap-probe relay repeat: claimMonitor failed: ${JSON.stringify(claim)}`);
           if (!claim.ok) return;
@@ -919,7 +918,6 @@ test(
             targetId: grant.id,
             channel: "binary",
             handle: claim.handle,
-            token: controlToken,
             port: controlPort,
             candidates: [controlHost],
           });
