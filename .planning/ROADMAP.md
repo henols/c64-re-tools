@@ -2259,7 +2259,7 @@ the first tool rides it.
      fully written, and an age-based sweep removes what a crashed broker or a
      vanished client left behind (XFER-07).
 
-**Plans**: 11/14 plans executed — 7/7 original plans executed, 6 waves; 4 gap-closure plans added for G-64-1 (64-08…64-11), 4/4 executed; 3 gap-closure plans added for G-64-3 and G-64-4 (64-12…64-14), 0/3 executed
+**Plans**: 12/14 plans executed — 7/7 original plans executed, 6 waves; 4 gap-closure plans added for G-64-1 (64-08…64-11), 4/4 executed; 3 gap-closure plans added for G-64-3 and G-64-4 (64-12…64-14), 1/3 executed
 
 Plans:
 
@@ -2275,22 +2275,22 @@ Plans:
 
 **Wave 1**
 
-- [ ] 64-08-PLAN.md — The primary cause: the broker answers relay `attach` and file `transfer` by their broker-minted handle alone, ahead of the per-boot token gate (route b, owner decision 5), proven through the real proxy on both channels and both transfer directions; the T-63-01 reversal recorded as evidence (XFER-04, XFER-08)
+- [x] 64-08-PLAN.md — The primary cause: the broker answers relay `attach` and file `transfer` by their broker-minted handle alone, ahead of the per-boot token gate (route b, owner decision 5), proven through the real proxy on both channels and both transfer directions; the T-63-01 reversal recorded as evidence (XFER-04, XFER-08)
 
 **Wave 2** *(blocked on 64-08; the two plans share no file)*
 
-- [ ] 64-09-PLAN.md — No client dial carries a credential: the empty-token parameters leave the relay and transfer dial paths, and the wire's request lines are pinned by key-set tests (XFER-04, XFER-08)
-- [ ] 64-10-PLAN.md — The secondary cause: broker and client resolve the same `broker.json` for every documented start route, `--repo-root` stops moving broker state into a project (BROKER-06), the tarball ships what it imports, and the container interim limitation is owned by Phase 66 (XFER-08)
+- [x] 64-09-PLAN.md — No client dial carries a credential: the empty-token parameters leave the relay and transfer dial paths, and the wire's request lines are pinned by key-set tests (XFER-04, XFER-08)
+- [x] 64-10-PLAN.md — The secondary cause: broker and client resolve the same `broker.json` for every documented start route, `--repo-root` stops moving broker state into a project (BROKER-06), the tarball ships what it imports, and the container interim limitation is owned by Phase 66 (XFER-08)
 
 **Wave 3** *(blocked on 64-08, 64-09 and 64-10)*
 
-- [ ] 64-11-PLAN.md — The live check: the four migrated tools against a systemd-unit broker and the absolute `/usr/bin/x64sc`, no broker-side path in any result, the write-loss wording read after a real attach-write-close cycle, and a verified teardown (XFER-01, XFER-02, XFER-08)
+- [x] 64-11-PLAN.md — The live check: the four migrated tools against a systemd-unit broker and the absolute `/usr/bin/x64sc`, no broker-side path in any result, the write-loss wording read after a real attach-write-close cycle, and a verified teardown (XFER-01, XFER-02, XFER-08)
 
 **Gap closure, round two** *(added after 64-UAT.md's re-run found two live defects, both diagnosed with measurements: G-64-3, an intermittent 0x8f on vice_disk_attach/vice_snapshot_load because the command names a staged file the broker has not yet published; and G-64-4, a cold session's first vice_* call failing because the broker acknowledges a relay attach before the emulator has bound its port. Same fault class — the broker reports completion when its own side is done, not when the far side is ready — on two seams with no shared code, so two fix plans; they share files, so they run in sequence. `gap_closure: true`, run with `/gsd-execute-phase 64 --gaps-only`)*
 
 **Wave 1**
 
-- [ ] 64-12-PLAN.md — G-64-4: the broker dials the emulator first, retries ECONNREFUSED to a bounded deadline, and answers `attached` only once the emulator leg has connected — one seam covering cold acquire, recycle respawn and the text channel; no incident record for a dial that never connected; regression tests whose emulator stand-in binds after the attach; truthful handshake-failure text (XFER-08)
+- [x] 64-12-PLAN.md — G-64-4: the broker dials the emulator first, retries ECONNREFUSED to a bounded deadline, and answers `attached` only once the emulator leg has connected — one seam covering cold acquire, recycle respawn and the text channel; no incident record for a dial that never connected; regression tests whose emulator stand-in binds after the attach; truthful handshake-failure text (XFER-08)
 
 **Wave 2** *(blocked on 64-12; the two plans share vice-broker.mts, broker-endpoint.ts, stock-handler.ts and resources/vice-broker.mjs)*
 
@@ -2718,7 +2718,7 @@ check. No test reads this table now.
 | 61. The Install Tables Generated, and a Guard That Compares Facts | v1.1.0 | 3/3 | Complete | 2026-09-19 |
 | 62. The Fixed Endpoint and the Broker That Owns the Machine | v2.0.0 | 5/5 | Complete | 2026-09-19 |
 | 63. The Monitor Channel Relayed, and the Connection as the Session | v2.0.0 | 12/12 | Complete | 2026-09-23 |
-| 64. Files as Bytes, Both Directions | v2.0.0 | 11/14 | In Progress | - |
+| 64. Files as Bytes, Both Directions | v2.0.0 | 12/14 | In Progress | - |
 | 65. Every Skill Script Through the One Endpoint, and CI With It | v2.0.0 | — | Not started | - |
 | 66. The Deletion Cutover — Gone, Not Bypassed | v2.0.0 | — | Not started | - |
 | 67. Ghidra's Runs Root Without the Alias | v2.0.0 | — | Not started | - |

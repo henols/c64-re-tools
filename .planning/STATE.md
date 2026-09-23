@@ -4,17 +4,17 @@ milestone: v2.0.0
 milestone_name: One Broker, One Socket
 current_phase: 64
 current_phase_name: Files as Bytes, Both Directions
-status: verifying
-stopped_at: Phase 64 re-verified human_needed (5/5 criteria, G-64-1 met with caveat) -- 2 UAT items pending, run /gsd-verify-work 64
-last_updated: "2026-09-23T20:50:00.000Z"
+status: executing
+stopped_at: Phase 64 gap-closure round 2 executing -- plan 64-12 (G-64-4) complete, 64-13 (G-64-3) and 64-14 (live measurement of both) outstanding
+last_updated: "2026-09-23T22:13:52.000Z"
 last_activity: 2026-09-23
-last_activity_desc: Phase 64 re-verified after gap closure -- human_needed, 2 UAT items pending (owner re-run of UAT test 1; cold-launch race disposition)
-state_head: 4952647dc40455af87a8b27fbc1158ef9508fde7
+last_activity_desc: Phase 64 gap-closure round 2 plan 64-12 complete -- G-64-4 (cold-launch relay-attach race) closed at the attach seam, TDD RED/GREEN per task, 11 new tests, 0 regressions
+state_head: 1f7e94841c908965e3835ef360a24033dfc0e14f
 progress:
   total_phases: 6
   completed_phases: 2
-  total_plans: 28
-  completed_plans: 24
+  total_plans: 31
+  completed_plans: 29
   percent: 33
 carried_forward_phases:
 
@@ -82,9 +82,25 @@ closure still needs to be recorded as one.
 
 ## Current Position
 
-Phase: 64 (Files as Bytes, Both Directions) — GAP CLOSURE COMPLETE (G-64-1), AWAITING HUMAN VERIFICATION
-Plan: 11 of 11 executed (64-08, 64-09, 64-10, 64-11 all done)
-Status: Phase 64 gap closure for G-64-1 (UAT test 1) is complete — all 11 plans executed sequentially on the main working tree. Re-verification 2026-09-23: human_needed, 5/5 ROADMAP criteria verified, G-64-1 met with one caveat (the cold-launch race below); code review 0 critical / 2 warning / 1 info; 2 UAT items pending in 64-UAT.md (/gsd-verify-work 64).
+Phase: 64 (Files as Bytes, Both Directions) — EXECUTING GAP CLOSURE ROUND 2 (G-64-3, G-64-4)
+Plan: 12 of 14 executed (64-13, 64-14 outstanding — gap-closure round 2)
+Status: Executing Phase 64 gap-closure round 2 — 64-12 (G-64-4, the cold-launch relay-attach race) is complete; 64-13 (G-64-3, the intermittent 0x8f on the file-carrying tools) and 64-14 (both measured live) are outstanding, one plan per wave, sequentially on the main working tree. They follow UAT 2026-09-23 (0 passed, 2 issues, 64-UAT.md status diagnosed). Previously: Phase 64 gap closure for G-64-1 (UAT test 1) is complete — all 11 plans executed sequentially on the main working tree. Re-verification 2026-09-23: human_needed, 5/5 ROADMAP criteria verified, G-64-1 met with one caveat (the cold-launch race below); code review 0 critical / 2 warning / 1 info; the 2 UAT items it left pending in 64-UAT.md were run the same day and both failed, becoming G-64-3 and G-64-4.
+Plan 64-12 closed 2026-09-23: G-64-4 closed at the attach seam — the broker now
+dials the emulator with a bounded, retrying wait (dialEmulatorLeg(), ECONNREFUSED
+retried to a 5000ms deadline) and answers `attached` only once that leg has
+genuinely connected, via a synchronous `start` continuation that keeps the
+acknowledgement strictly ahead of any emulator byte in program order. A dial
+that never connects or is abandoned (client gone, or the claim/instance moved
+on mid-dial) writes no incident and leaves the instance and grant standing; a
+genuine failure answers the distinct `emulator_unreachable` code with an
+errno-free wire message, never the wedge/ECONNREFUSED wording that would send
+an agent to reconfigure VICE_BROKER_BINMON_HOST for an emulator merely still
+starting. The client's own attach-reply wait (8000ms) now provably exceeds the
+broker's own dial deadline (5000ms). Both the binary and text channels are
+covered by the SAME seam, no path-specific code. TDD RED/GREEN per task (3
+tasks, 6 commits); 11 new tests, 0 regressions (test:automated 4241→4252,
+0 fail throughout). See
+.planning/phases/64-files-as-bytes-both-directions/64-12-SUMMARY.md.
 Plan 64-11 closed 2026-09-23: G-64-1's own truth measured LIVE — a real systemd-run
 broker spawning the absolute /usr/bin/x64sc granted an unconfigured vice-proxy.ts
 session all four migrated tools (vice_autostart, vice_disk_attach,
@@ -134,7 +150,7 @@ verification passed (6/6 must-haves), nyquist validation PARTIAL and security ve
 with threats_open: 0. The one human decision — 63-REVIEW.md's WR-01 — was ACCEPTED as
 residual risk, recorded as R-63-04 in 63-SECURITY.md.
 Progress: [███░░░░░░░] 33% (2 of 6 v2.0.0 phases complete; Phases 62-67)
-Last activity: 2026-09-23 — Phase 64 gap-closure plan 64-11 complete (G-64-1's own truth measured live); phase ready for verification
+Last activity: 2026-09-23 — Phase 64 gap-closure round 2 plan 64-12 complete (G-64-4 closed); 64-13, 64-14 outstanding
 
 **Planning override recorded at the Phase 64 decision-coverage gate.**
 `check.decision-coverage-plan` returned `passed: false` with
