@@ -83,8 +83,20 @@ closure still needs to be recorded as one.
 ## Current Position
 
 Phase: 64 (Files as Bytes, Both Directions) — EXECUTING GAP CLOSURE (G-64-1)
-Plan: 9 of 11 complete (64-08, 64-09 done; 64-10..64-11 remain)
+Plan: 10 of 11 complete (64-08, 64-09, 64-10 done; 64-11 remains)
 Status: Executing Phase 64 gap closure — plans 64-08..64-11 close G-64-1 (UAT test 1), run sequentially on the main working tree.
+Plan 64-10 closed 2026-09-23: G-64-1's SECONDARY root cause closed — the broker
+and the client now resolve broker.json through the SAME shared resolver
+(broker-home.mts's brokerStateDir()) for every documented start route.
+--repo-root no longer selects a state directory (BROKER-06); vice-launcher.sh
+itself is unchanged. Route-agreement tests spawn a real broker per documented
+route under a scratch HOME and assert broker.json's path matches the client's
+own answer. package.json's files array gained five modules the shipped entry
+points import but the array omitted (broker-home.mts, broker-endpoint.ts,
+transfer-hash.mts, transfer-paths.ts, tool-location.mts) — measured via a real
+npm pack + extract + import, which crashed before the fix and starts cleanly
+after. See .planning/phases/64-files-as-bytes-both-directions/64-10-SUMMARY.md
+and .planning/phases/64-files-as-bytes-both-directions/evidence/64-g641-state-dir-agreement.md.
 Plan 64-09 closed 2026-09-23: the client-side empty-token parameter every relay
 and transfer dial has written since Phase 63 is deleted from every dial option
 and dependency type (DialMonitorRelayOptions, DialFileTransferOptions,
@@ -105,7 +117,7 @@ verification passed (6/6 must-haves), nyquist validation PARTIAL and security ve
 with threats_open: 0. The one human decision — 63-REVIEW.md's WR-01 — was ACCEPTED as
 residual risk, recorded as R-63-04 in 63-SECURITY.md.
 Progress: [███░░░░░░░] 33% (2 of 6 v2.0.0 phases complete; Phases 62-67)
-Last activity: 2026-09-23 — Phase 64 gap-closure plan 64-09 complete (client-side credential removal, G-64-1); plans 64-10..64-11 remain
+Last activity: 2026-09-23 — Phase 64 gap-closure plan 64-10 complete (broker/client state-dir agreement, G-64-1 secondary cause); plan 64-11 remains
 
 **Planning override recorded at the Phase 64 decision-coverage gate.**
 `check.decision-coverage-plan` returned `passed: false` with
@@ -2784,7 +2796,7 @@ and are v1.0.0's inheritance.
 ## Session Continuity
 
 Last session: 2026-09-23T14:28:59.631Z
-Stopped at: Completed 64-07-PLAN.md -- Phase 64 all plans executed, ready for /gsd-verify-work
+Stopped at: Completed 64-10-PLAN.md -- Phase 64 gap closure (G-64-1), plan 64-11 remains
 Resume file: None
 
 Earlier: **v2.0.0 roadmap created.** 36/36 requirements (`ENDPOINT-01..05`,
