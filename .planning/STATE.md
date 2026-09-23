@@ -5,16 +5,16 @@ milestone_name: One Broker, One Socket
 current_phase: 64
 current_phase_name: Files as Bytes, Both Directions
 status: executing
-stopped_at: Completed 64-02-PLAN.md
-last_updated: "2026-09-23T11:07:10.630Z"
+stopped_at: Completed 64-03-PLAN.md
+last_updated: "2026-09-23T12:01:18.351Z"
 last_activity: 2026-09-23
 last_activity_desc: Phase 64 execution started
-state_head: 713beaf0905d845348e09160a66b1f88facbffb8
+state_head: eac6efb30c9d1a06a3ccc1d216fb45871f43ef5f
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 24
-  completed_plans: 19
+  completed_plans: 20
   percent: 33
 carried_forward_phases:
 
@@ -83,7 +83,7 @@ closure still needs to be recorded as one.
 ## Current Position
 
 Phase: 64 (Files as Bytes, Both Directions) — EXECUTING
-Plan: 3 of 7
+Plan: 4 of 7
 Status: Ready to execute
 Phase 63 closed on 2026-09-23: all 12 plans executed, UAT 1/1 passed, canonical
 verification passed (6/6 must-haves), nyquist validation PARTIAL and security verified
@@ -508,6 +508,7 @@ Phase 66 completes.
 | Phase 63 P12 | 12min | 2 tasks | 4 files |
 | Phase 64 P01 | 42min | 3 tasks | 12 files |
 | Phase 64 P02 | 46min | 3 tasks | 13 files |
+| Phase 64 P03 | 50min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -1419,6 +1420,8 @@ Recent decisions affecting current work:
 - [Phase 64]: Phase 64 Plan 1: sendPayloadFromFile() reads its source file twice -- a streaming digest-only pre-pass drained through a discard sink, then the real streamed send. — D-02 requires the header to precede the payload, and a sha256 digest can only be known after processing every byte; both passes stream so the whole file is never buffered in memory.
 - [Phase 64]: 64-02: onStageFile/onFileTransfer made OPTIONAL on StartControlListenerOptions (not required like onRelayAttach/onOperation) since vice-broker.mts is not wired until plan 64-03; the dispatch arm refuses 'internal' by name when either is absent.
 - [Phase 64]: 64-02: stock-connect.ts's default transferFile does NOT import broker-transfer.mts directly (measured ERR_MODULE_NOT_FOUND when loaded unbuilt, since that module's own transfer-hash.mjs import only resolves once built) -- it reimplements the send/receive shape using transfer-hash.mts directly instead.
+- [Phase 64]: 64-03: clearStagingForSession() is wired into handleRelease() only, not into recycle -- a recycle keeps the same grant/session alive (the control connection never closes), so clearing staging there would falsify XFER-07's "session's connection closes" wording. — handleRelease() is the one function broker-control.mts's onRelease callback invokes both on an explicit release request and on the control connection's own close event (including a client SIGKILL); a recycle never closes that connection.
+- [Phase 64]: 64-03: discovered a latent race -- an upload's client-observed completion (socket close) does not guarantee the broker has finished verifying and publishing the staged file, since there is no transfer_complete confirmation frame on the wire. — Reproduced reliably in a same-process loopback test; flagged for plan 64-04's own client-side sequencing awareness rather than fixed here (architectural, out of this plan's scope).
 
 ### Pending Todos
 
@@ -2752,8 +2755,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-23T11:07:10.412Z
-Stopped at: Completed 64-02-PLAN.md
+Last session: 2026-09-23T12:01:18.275Z
+Stopped at: Completed 64-03-PLAN.md
 Resume file: None
 
 Earlier: **v2.0.0 roadmap created.** 36/36 requirements (`ENDPOINT-01..05`,
