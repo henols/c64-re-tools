@@ -37,7 +37,7 @@
 //     imports this file at runtime.
 import { MonitorOwnershipError } from "./vice-broker-client.ts";
 import { MachineRestartedError } from "./vice-errors.ts";
-import { ErrorCode, StockFramingError, StockProtocolError, StockResponseMismatchError, type ViceMonitorClient } from "./stock-protocol.ts";
+import { ErrorCode, StockFramingError, StockProtocolError, StockResponseMismatchError, StockConnectionClosedError, type ViceMonitorClient } from "./stock-protocol.ts";
 import { runStateFor } from "./stock-runstate.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
 import type { StockDispatchDeps } from "./stock-dispatch.ts";
@@ -118,6 +118,26 @@ export function convertHandshakeError(toolName: string, err: unknown): StockErro
         `so a containerized MCP server dialling the host cannot reach it. Set VICE_BROKER_BINMON_HOST on the ` +
         `BROKER's own environment to an address the container can reach, then restart the broker so the emulator ` +
         `is relaunched with the new bind address.`,
+    );
+  }
+  // G-64-4 (plan 64-12, Task 3): a relay that closed (or errored) DURING the
+  // connect handshake, with commands still outstanding -- ahead of the
+  // generic branch below, which stays the pre-existing catch-all for
+  // everything else (including an attach REFUSAL, thrown as a plain
+  // ViceError carrying broker-relay.mjs's own errno-free
+  // buildEmulatorUnreachableMessage() text -- that message already says what
+  // happened and that retrying is safe, so it rides the generic wording
+  // unchanged, never this branch). Named separately from the generic wording
+  // because a dropped relay is NOT the same event as "the handshake never
+  // even connected": StockConnectionClosedError.abandoned is the count of
+  // commands this exact channel lost, and the release this describes is
+  // per-channel ONLY (handleRelayDeath()'s own contract, vice-broker.mts) --
+  // never the instance or the grant, which is why this text says so
+  // explicitly rather than leaving it to be assumed.
+  if (err instanceof StockConnectionClosedError) {
+    return isErrorText(
+      `${toolName}: the relay closed during the connect handshake with ${err.abandoned ?? 0} request(s) unanswered -- ` +
+        `a closed relay releases only this channel, never the instance or the grant; retrying the same call is safe.`,
     );
   }
   return isErrorText(`${toolName}: stock handshake failed (${message}).`);
