@@ -22,7 +22,7 @@ affects: [64-07, 66]
 actuals:
   tokens: 11900
   tasks: 3
-  commits: 2
+  commits: 4
   plan_head_before: 99d7f54ebb64498acb42534b2c647ce484d9eb0f
 
 tech-stack:
@@ -172,7 +172,9 @@ Tasks 1 and 2 are recorded as one combined commit (see Deviations below); Task 3
 1. **Tasks 1+2: handleAutostart/handleDiskAttach migrated onto the file-transfer protocol** - `69a8af87` (feat)
 2. **Task 3: manifest schema, conformance harness fixture fix, and dangling test-stub removal** - `6c1d14ec` (fix)
 
-**Plan metadata:** commit pending (this SUMMARY + STATE/ROADMAP/REQUIREMENTS)
+**Plan metadata:** `b3386869` (docs: SUMMARY + STATE/ROADMAP/REQUIREMENTS/state.json)
+
+**Post-completion follow-up** (coordinator-requested, see Deviations #3): `b7a3777c` (docs: upload-completion race documented in handleAutostart/handleDiskAttach)
 
 ## Files Created/Modified
 
@@ -195,9 +197,11 @@ See `key-decisions` in the frontmatter for the full reasoning on: the combined T
 
 **2. Task 3's manifest-schema and conformance-harness catch-up is recorded as its own separate ("fix") commit, matching 64-04's own precedent for the identical class of fix**, rather than folding it into the Tasks 1+2 commit. This mirrors 64-04-SUMMARY.md's own "Deviation fix: conformance stub and manifest schema for the handle field" commit shape exactly -- the manifest/conformance drift only becomes visible once the handler's own result shape has actually changed, so it is naturally a follow-on rather than a concurrent edit.
 
+**3. Follow-up requested by the coordinator after this plan's initial completion: the accepted upload-completion race was documented in `handleSnapshotLoad` but not in `handleAutostart`/`handleDiskAttach`, even though both chain `transferFile` directly into an AUTOSTART naming the same staged file -- the identical race, undocumented.** Fixed by adding a short comment at each handler's own `transferFile` call site, naming the same accepted risk and pointing to `handleSnapshotLoad`'s own block and `64-04-SUMMARY.md` for the full reasoning, and noting that here it is AUTOSTART, not UNDUMP, that can race the publish. Comments only, no behaviour change -- verified with `npm run typecheck` (clean) and `node --test stock-machine.test.ts stock-dispatch.test.ts` (157/157 pass). Committed separately: `b7a3777c` (docs).
+
 ---
 
-**Total deviations:** 0 auto-fixed Rule 1-4 issues; 2 disclosed procedural deviations (commit granularity, both matching established 64-04 precedent).
+**Total deviations:** 0 auto-fixed Rule 1-4 issues; 3 disclosed procedural deviations (commit granularity x2 matching established 64-04 precedent, plus this documentation follow-up).
 **Impact on plan:** No scope creep. Both handlers migrated exactly as specified; the manifest/conformance catch-up was necessary for the plan's own stated deliverable (a green full suite, a conforming manifest) to actually hold.
 
 ## TDD Gate Compliance
