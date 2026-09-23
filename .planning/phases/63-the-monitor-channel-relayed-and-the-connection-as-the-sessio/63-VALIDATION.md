@@ -3,9 +3,10 @@ phase: "63"
 slug: "the-monitor-channel-relayed-and-the-connection-as-the-session"
 # status lifecycle: draft (seeded by plan-phase) → validated (set by validate-phase §6)
 # audit-milestone §5.5 distinguishes NOT-VALIDATED (draft) from PARTIAL (validated + nyquist_compliant: false) (#2117)
-status: draft
+status: validated
 nyquist_compliant: false
-wave_0_complete: false
+wave_0_complete: true
+validated: "2026-09-23"
 created: "2026-09-19"
 ---
 
@@ -90,34 +91,34 @@ already binding.*
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 63-01 T1 | 63-01 | 1 | SESS-02 | T-63-01 | Attach gated on a per-claim handle compared constant-time, never a bare target id | integration (stub emulator + real control listener, loopback) | `node --test broker-relay.test.ts broker-control.test.ts broker-endpoint.test.ts stock-protocol.test.ts resources-sync.test.ts` | ❌ W0 (`broker-relay.test.ts` new) | ⬜ pending |
-| 63-01 T2 | 63-01 | 1 | SESS-02 | T-63-07 | Pre-splice Buffer carry capped at the control line limit; no string decode of relayed bytes | integration + source gate | `node --test broker-relay.test.ts broker-control.test.ts` | ✅ after T1 | ⬜ pending |
-| 63-01 T3 | 63-01 | 1 | SESS-02 | — | Two grants relay concurrently without cross-wiring | integration + full glob | `node --test stock-connect.test.ts stock-dispatch.test.ts broker-relay.test.ts`; `npm test` | ✅ files exist | ⬜ pending |
-| 63-02 T1 | 63-02 | 2 | SESS-02 | T-63-08 | Text attach refuses a missing text-monitor port by name before any dial | integration (stub text monitor, loopback) | `node --test broker-relay-text.test.ts text-connect.test.ts text-protocol.test.ts resources-sync.test.ts` | ❌ W0 (`broker-relay-text.test.ts` new) | ⬜ pending |
-| 63-02 T2 | 63-02 | 2 | SESS-02 | T-63-09 | A dead text relay fails the session; no reconnect entry point exists on the text path | integration + source gate | `node --test broker-relay-text.test.ts broker-relay.test.ts stock-connect.test.ts` | ✅ after T1 | ⬜ pending |
-| 63-03 T1 | 63-03 | 3 | SESS-05 | T-63-10, T-63-11 | Operation declaration ownership-gated and sanitised before any state sees it | unit/integration (real listener) | `node --test broker-control.test.ts vice-broker-client.test.ts resources-sync.test.ts` | ✅ files exist | ⬜ pending |
-| 63-03 T2 | 63-03 | 3 | SESS-05 | T-63-12 | Atomic, owner-only record written into the machine-level incidents directory | unit (temp dir) | `node --test broker-incident.test.ts resources-sync.test.ts incident-record.test.ts` | ❌ W0 (`broker-incident.test.ts` new) | ⬜ pending |
-| 63-03 T3 | 63-03 | 3 | SESS-05 | T-63-13 | Declaration never blocks or fails a tool call | integration + source gate + full glob | `node --test broker-control.test.ts`; `npm test` | ✅ files exist | ⬜ pending |
-| 63-04 T1 | 63-04 | 4 | SESS-03, SESS-05 | T-63-06, T-63-14 | Record durable before any claim release, socket destroy or kill; teardown idempotent per grant and channel | integration (loopback, injected writer/recorders) | `node --test broker-relay.test.ts resources-sync.test.ts` | ✅ after 63-01 | ⬜ pending |
-| 63-04 T2 | 63-04 | 4 | SESS-04 | T-63-02, T-63-16 | Broker-owned bounded idle deadline, suspended while an operation is declared; keepalive labelled secondary | integration (injected timer, no real sleep) | `node --test broker-relay.test.ts broker-relay-text.test.ts broker-control.test.ts` | ✅ after 63-02 | ⬜ pending |
-| 63-04 T3 | 63-04 | 4 | SESS-05 | T-63-15 | Evidence written ahead of the identity-verified kill; pid-match discipline unchanged | integration + source gate + full glob | `node --test broker-relay.test.ts broker-relay-text.test.ts broker-control.test.ts broker-incident.test.ts`; `npm test` | ✅ after 63-03 | ⬜ pending |
-| 63-05 T1 | 63-05 | 5 | SESS-06 | T-63-03, T-63-18 | Label sanitised and capped; status identity resolved by the same port-and-pid comparison the release path uses | unit/integration (real listener) | `node --test broker-control.test.ts vice-broker-client.test.ts resources-sync.test.ts` | ✅ files exist | ⬜ pending |
-| 63-05 T2 | 63-05 | 5 | SESS-02, SESS-06 | T-63-17 | No target-naming op accepts a session label as a selector | integration (real listener, two connections) | `node --test broker-control.test.ts` | ✅ files exist | ⬜ pending |
-| 63-05 T3 | 63-05 | 5 | SESS-01 | T-63-19 | A stateless call leaves broker state deeply equal and fires no lease callback | integration + source gate + full glob | `node --test broker-control.test.ts host-tool-transport.test.ts`; `npm test` | ✅ files exist | ⬜ pending |
-| 63-06 T1 | 63-06 | 5 | SESS-02 | T-63-20 | Live proof default-skips with a reported reason, never a false pass | live, opt-in, default-SKIP | `env -u VICE_LIVE_RELAY_BIN node --test stock-live-relay.test.ts` | ❌ W0 (`stock-live-relay.test.ts` new) | ⬜ pending |
-| 63-06 T2 | 63-06 | 5 | SESS-02, SESS-06 | T-63-21, T-63-22 | No emulator or broker process outlives the live run; a failing live case is a finding, not a relaxed assertion | live (human-check) + census + full glob | `node --test hostpath-consumers.test.ts`; `npm test`; live run with the opt-in variable set | ✅ after T1 | ⬜ pending |
+| 63-01 T1 | 63-01 | 1 | SESS-02 | T-63-01 | Attach gated on a per-claim handle compared constant-time, never a bare target id | integration (stub emulator + real control listener, loopback) | `node --test broker-relay.test.ts broker-control.test.ts broker-endpoint.test.ts stock-protocol.test.ts resources-sync.test.ts` | ✅ exists (2439 lines) | ✅ green |
+| 63-01 T2 | 63-01 | 1 | SESS-02 | T-63-07 | Pre-splice Buffer carry capped at the control line limit; no string decode of relayed bytes | integration + source gate | `node --test broker-relay.test.ts broker-control.test.ts` | ✅ after T1 | ✅ green |
+| 63-01 T3 | 63-01 | 1 | SESS-02 | — | Two grants relay concurrently without cross-wiring | integration + full glob | `node --test stock-connect.test.ts stock-dispatch.test.ts broker-relay.test.ts`; `npm test` | ✅ files exist | ✅ green |
+| 63-02 T1 | 63-02 | 2 | SESS-02 | T-63-08 | Text attach refuses a missing text-monitor port by name before any dial | integration (stub text monitor, loopback) | `node --test broker-relay-text.test.ts text-connect.test.ts text-protocol.test.ts resources-sync.test.ts` | ✅ exists (649 lines) | ✅ green |
+| 63-02 T2 | 63-02 | 2 | SESS-02 | T-63-09 | A dead text relay fails the session; no reconnect entry point exists on the text path | integration + source gate | `node --test broker-relay-text.test.ts broker-relay.test.ts stock-connect.test.ts` | ✅ after T1 | ✅ green |
+| 63-03 T1 | 63-03 | 3 | SESS-05 | T-63-10, T-63-11 | Operation declaration ownership-gated and sanitised before any state sees it | unit/integration (real listener) | `node --test broker-control.test.ts vice-broker-client.test.ts resources-sync.test.ts` | ✅ files exist | ✅ green |
+| 63-03 T2 | 63-03 | 3 | SESS-05 | T-63-12 | Atomic, owner-only record written into the machine-level incidents directory | unit (temp dir) | `node --test broker-incident.test.ts resources-sync.test.ts incident-record.test.ts` | ✅ exists (235 lines) | ✅ green |
+| 63-03 T3 | 63-03 | 3 | SESS-05 | T-63-13 | Declaration never blocks or fails a tool call | integration + source gate + full glob | `node --test broker-control.test.ts`; `npm test` | ✅ files exist | ✅ green |
+| 63-04 T1 | 63-04 | 4 | SESS-03, SESS-05 | T-63-06, T-63-14 | Record durable before any claim release, socket destroy or kill; teardown idempotent per grant and channel | integration (loopback, injected writer/recorders) | `node --test broker-relay.test.ts resources-sync.test.ts` | ✅ after 63-01 | ✅ green |
+| 63-04 T2 | 63-04 | 4 | SESS-04 | T-63-02, T-63-16 | Broker-owned bounded idle deadline, suspended while an operation is declared; keepalive labelled secondary | integration (injected timer, no real sleep) | `node --test broker-relay.test.ts broker-relay-text.test.ts broker-control.test.ts` | ✅ after 63-02 | ✅ green |
+| 63-04 T3 | 63-04 | 4 | SESS-05 | T-63-15 | Evidence written ahead of the identity-verified kill; pid-match discipline unchanged | integration + source gate + full glob | `node --test broker-relay.test.ts broker-relay-text.test.ts broker-control.test.ts broker-incident.test.ts`; `npm test` | ✅ after 63-03 | ✅ green |
+| 63-05 T1 | 63-05 | 5 | SESS-06 | T-63-03, T-63-18 | Label sanitised and capped; status identity resolved by the same port-and-pid comparison the release path uses | unit/integration (real listener) | `node --test broker-control.test.ts vice-broker-client.test.ts resources-sync.test.ts` | ✅ files exist | ✅ green |
+| 63-05 T2 | 63-05 | 5 | SESS-02, SESS-06 | T-63-17 | No target-naming op accepts a session label as a selector | integration (real listener, two connections) | `node --test broker-control.test.ts` | ✅ files exist | ✅ green |
+| 63-05 T3 | 63-05 | 5 | SESS-01 | T-63-19 | A stateless call leaves broker state deeply equal and fires no lease callback | integration + source gate + full glob | `node --test broker-control.test.ts host-tool-transport.test.ts`; `npm test` | ✅ files exist | ✅ green |
+| 63-06 T1 | 63-06 | 5 | SESS-02 | T-63-20 | Live proof default-skips with a reported reason, never a false pass | live, opt-in, default-SKIP | `env -u VICE_LIVE_RELAY_BIN node --test stock-live-relay.test.ts` | ✅ exists (1080 lines, manual-only) | ✅ green |
+| 63-06 T2 | 63-06 | 5 | SESS-02, SESS-06 | T-63-21, T-63-22 | No emulator or broker process outlives the live run; a failing live case is a finding, not a relaxed assertion | live (human-check) + census + full glob | `node --test hostpath-consumers.test.ts`; `npm test`; live run with the opt-in variable set | ✅ after T1 | ✅ green |
 
 ### Requirement → evidence map (from `63-RESEARCH.md` § Validation Architecture)
 
 | Req ID | Behaviour that must be proven | Test type | File | Exists? |
 |--------|-------------------------------|-----------|------|---------|
 | SESS-01 | A stateless, skill-script-shaped call opens, sends, receives and closes — binding no emulator and holding no lease | unit / structural | extend `host-tool.test.ts` / `host-tool-transport.test.ts`, or a structural assertion over the dispatch path | ✅ files exist |
-| SESS-02 | An MCP server's connection lifetime equals the emulator-hold lifetime, *observable in broker status* | integration (real spawned broker, `VICE_BROKER_CONTROL_PORT: "0"`) | new automated file + mirrored into `broker-e2e.test.ts` | ❌ W0 |
-| SESS-03 | `socket.destroy()` (abrupt, no `FIN`) on the relay connection reclaims the instance from socket events alone | integration, synthetic loopback pair — no live VICE | new `broker-relay.test.ts` | ❌ W0 |
-| SESS-04 | A death that produces no `FIN` at all is detected within a bounded, *injected-clock* time — not the OS's ~7200s keepalive default | integration, synthetic loopback, injected `now()`/timers | same new file | ❌ W0 |
-| SESS-05 | An incident record exists **before** the instance is reclaimed, carrying a broker-minted reason naming the in-flight operation; a live capture/checkpoint run is marked void | integration; assert write-ordering relative to the kill call | same new file | ❌ W0 |
-| SESS-06 | Broker `status` output lets a user positively identify their own session among unrelated projects' sessions | unit | new cases in `broker-control.test.ts` | ❌ W0 (new field) |
-| Criterion 1 | True byte-transparency end to end: a real register read, memory write, checkpoint hit and `JAM` parse identically after relaying | live, opt-in, default-SKIP | a new member of the `stock-*-live.test.ts` family, gated by an env var like its siblings | ❌ W0 |
+| SESS-02 | An MCP server's connection lifetime equals the emulator-hold lifetime, *observable in broker status* | integration (real spawned broker, `VICE_BROKER_CONTROL_PORT: "0"`) | new automated file + mirrored into `broker-e2e.test.ts` | ✅ landed |
+| SESS-03 | `socket.destroy()` (abrupt, no `FIN`) on the relay connection reclaims the instance from socket events alone | integration, synthetic loopback pair — no live VICE | new `broker-relay.test.ts` | ✅ landed |
+| SESS-04 | A death that produces no `FIN` at all is detected within a bounded, *injected-clock* time — not the OS's ~7200s keepalive default | integration, synthetic loopback, injected `now()`/timers | same new file | ✅ landed |
+| SESS-05 | An incident record exists **before** the instance is reclaimed, carrying a broker-minted reason naming the in-flight operation; a live capture/checkpoint run is marked void | integration; assert write-ordering relative to the kill call | same new file | ✅ landed |
+| SESS-06 | Broker `status` output lets a user positively identify their own session among unrelated projects' sessions | unit | new cases in `broker-control.test.ts` | ✅ `sessionLabel` shipped |
+| Criterion 1 | True byte-transparency end to end: a real register read, memory write, checkpoint hit and `JAM` parse identically after relaying | live, opt-in, default-SKIP | a new member of the `stock-*-live.test.ts` family, gated by an env var like its siblings | ✅ landed |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -128,12 +129,12 @@ already binding.*
 Each gap below is closed by the first task of the plan that owns it, before any
 expansion depends on it.
 
-- [ ] A new **automated** test file for the synthetic client/server relay-lifecycle matrix — abrupt (`socket.destroy()`) × graceful (`socket.end()`) × idle (never sends), across the binary and text channels. Styled after `stock-run-until.ts`'s synthetic-client precedent, with `now?: () => number` timer injection. It must NOT be added to `MANUAL_ONLY_TESTS`.
-- [ ] New relay/attach-op cases in `src/mcp/vice/broker-control.test.ts` — no existing case exercises a relay op or a post-handshake byte-pipe mode.
-- [ ] New `status`-identity cases (SESS-06) in `src/mcp/vice/broker-control.test.ts` — `StatusInstanceEntry` carries no identity fields today.
-- [ ] An incident-ordering assertion for SESS-05 — `brokerIncidentsDir()` exists in `broker-home.mts` but is unwired; nothing writes a broker-side incident yet.
-- [ ] A live, default-SKIP byte-transparency test for Success Criterion 1, gated by an env var in the style of `stock-live-broker-monitor.test.ts`.
-- [ ] Framework install: none needed — `node:test` is already wired.
+- [x] A new **automated** test file for the synthetic client/server relay-lifecycle matrix — abrupt (`socket.destroy()`) × graceful (`socket.end()`) × idle (never sends), across the binary and text channels. Styled after `stock-run-until.ts`'s synthetic-client precedent, with `now?: () => number` timer injection. It must NOT be added to `MANUAL_ONLY_TESTS`.
+- [x] New relay/attach-op cases in `src/mcp/vice/broker-control.test.ts` — no existing case exercises a relay op or a post-handshake byte-pipe mode.
+- [x] New `status`-identity cases (SESS-06) in `src/mcp/vice/broker-control.test.ts` — `StatusInstanceEntry` carries no identity fields today.
+- [x] An incident-ordering assertion for SESS-05 — `brokerIncidentsDir()` exists in `broker-home.mts` but is unwired; nothing writes a broker-side incident yet.
+- [x] A live, default-SKIP byte-transparency test for Success Criterion 1, gated by an env var in the style of `stock-live-broker-monitor.test.ts`.
+- [x] Framework install: none needed — `node:test` is already wired.
 
 ---
 
@@ -150,15 +151,83 @@ expansion depends on it.
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 180s
-- [ ] Every lifecycle assertion has a home OUTSIDE `MANUAL_ONLY_TESTS`
-- [ ] Every timing assertion uses an injected clock, never a real sleep
-- [ ] Every transparency assertion compares `Buffer` contents, never strings
-- [ ] Every control-port test allocates dynamically or refuses an unexpected listener
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references — all six Wave 0 items closed
+- [x] No watch-mode flags
+- [x] Feedback latency < 180s — measured 84.5s for the full glob, 3.2s for the six phase-63 files together
+- [x] Every lifecycle assertion has a home OUTSIDE `MANUAL_ONLY_TESTS` — the abrupt/graceful/idle matrix lives in `broker-relay.test.ts` and `broker-relay-text.test.ts`, both automated; only the live byte-transparency proof (`stock-live-relay.test.ts`) is manual-only
+- [x] Every timing assertion uses an injected clock, never a real sleep
+- [x] Every transparency assertion compares `Buffer` contents, never strings
+- [x] Every control-port test allocates dynamically or refuses an unexpected listener
+- [ ] `nyquist_compliant: true` set in frontmatter — **not set**: three of the four
+      Manual-Only rows (two project roots at once; the stdio server's connection
+      lifetime; a real client `SIGKILL`) have no automated route AND were not
+      exercised during this phase — they resolve to `broker-e2e.test.ts` and
+      `vice-proxy.test.ts`, both on the frozen `MANUAL_ONLY_TESTS` list. The
+      fourth row (Success Criterion 1's real-wire transparency) also has no
+      automated route but WAS exercised live and recorded. Phase is PARTIAL, not
+      compliant — the same disposition Phase 48 carries for the same reason.
 
-**Approval:** pending
+**Approval:** validated (PARTIAL) — 2026-09-23
+
+---
+
+## Validation Audit 2026-09-23
+
+| Metric | Count |
+|--------|-------|
+| Gaps found | 0 |
+| Resolved | 0 |
+| Escalated | 0 |
+
+This document was seeded as a `draft` by plan-phase before any plan existed, so every
+row in the Per-Task Verification Map still read `⬜ pending` and every Wave 0 item was
+still unchecked when this audit ran — the phase had since executed all twelve plans.
+The audit reconciled the seeded map against the working tree. No requirement was found
+MISSING, so §4's gap gate and §5's auditor spawn were both skipped per §3 ("No gaps →
+skip to Step 6").
+
+**Measured, not asserted.** Every exit code below was read directly on the same line as
+the command, never through a pipe.
+
+| Command | Result |
+|---|---|
+| `node --test broker-relay.test.ts broker-relay-text.test.ts broker-incident.test.ts broker-control.test.ts broker-endpoint.test.ts resources-sync.test.ts` | 212 pass / 0 fail / 0 skipped, exit 0, 3.2s |
+| `npm --prefix src/mcp/vice test` (full glob) | 4281 tests, 4197 pass / 0 fail / 84 skipped, exit 0, 84.5s |
+
+**Wave 0 closure — all six items verified present, not assumed:**
+
+| Wave 0 item | Evidence |
+|---|---|
+| Automated relay-lifecycle matrix (abrupt × graceful × idle, binary + text) | `broker-relay.test.ts` (2439 lines) + `broker-relay-text.test.ts` (649) — named cases for an abruptly destroyed relay (real TCP RST), a gracefully ended relay with a distinguishing trigger, and a fired idle deadline |
+| Relay/attach-op cases in `broker-control.test.ts` | 53 `monitor_attach`/`monitor_claim`/`monitor_release` references |
+| `status`-identity cases (SESS-06) | `sessionLabel` present, 10 references in `broker-control.test.ts` |
+| Incident-ordering assertion (SESS-05) | `broker-incident.test.ts` (235 lines); ordering cases incl. "a writer that throws stops the teardown before any claim is cleared" and "deletes the relay-session map entry BEFORE calling the session's own close()" |
+| Live default-SKIP byte-transparency test (Criterion 1) | `stock-live-relay.test.ts` (1080 lines), registered as the 13th `MANUAL_ONLY_TESTS` entry — correct per its own design |
+| Framework install | None needed — `node:test` already wired |
+
+**Requirement coverage.** All six SESS requirements resolve to automated, green commands
+in files *outside* `MANUAL_ONLY_TESTS`: SESS-01 (`broker-control.test.ts`,
+`host-tool-transport.test.ts`), SESS-02 (`broker-relay.test.ts`,
+`broker-relay-text.test.ts`, `broker-control.test.ts`, and others), SESS-03
+(`broker-relay.test.ts`), SESS-04 (`broker-relay.test.ts`, `broker-relay-text.test.ts`,
+`broker-control.test.ts`), SESS-05 (`broker-incident.test.ts`, `broker-relay.test.ts`),
+SESS-06 (`broker-control.test.ts`, `vice-broker-client.test.ts`,
+`vice-broker-acquire.test.ts`).
+
+**Why PARTIAL rather than compliant.** Success Criterion 1's real-wire facet has no
+automated route by construction — a stub server cannot emit VICE's actual frames — but
+it *was* exercised: plan 63-06's live run on 2026-09-20 against genuine
+`/usr/bin/x64sc` (VICE 3.9) observed a real register read, memory write, checkpoint hit
+and SESS-06 status identity, and plan 63-10 then measured the two sub-claims that did
+not reproduce (WINDOWS ids 69 and 70), recording both in
+`evidence/phase63-gap-closure-live-measurements.md`. The remaining three Manual-Only
+rows resolve to `broker-e2e.test.ts` and `vice-proxy.test.ts`, both on the frozen
+`MANUAL_ONLY_TESTS` list, and were not exercised during this phase. That is what holds
+`nyquist_compliant` at `false`.
+
+**Note on the automated gate.** `MANUAL_ONLY_TESTS` grew from twelve entries to
+thirteen during this phase (`stock-live-relay.test.ts`). The full glob — not
+`test:automated` — remains this phase's stated gate, exactly as the Sampling Rate
+section above requires.
