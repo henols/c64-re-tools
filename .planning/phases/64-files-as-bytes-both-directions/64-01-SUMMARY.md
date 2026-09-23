@@ -216,3 +216,7 @@ None -- no external service configuration required.
 ---
 *Phase: 64-files-as-bytes-both-directions*
 *Completed: 2026-09-23*
+
+## Self-Check: PASSED
+
+All 8 created files verified present on disk; all 6 commits (5 task/deviation commits + this SUMMARY's own docs commit) verified present in git log.
