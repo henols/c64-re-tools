@@ -141,3 +141,9 @@ None - no external service configuration required.
 ---
 *Phase: 64-files-as-bytes-both-directions*
 *Completed: 2026-09-24*
+
+## Self-Check: PASSED
+
+- Both key-files (`evidence/64-g643-g644-live-run.mjs`, `evidence/64-g643-g644-live-check.md`) found on disk.
+- Both task commits (`ed670985`, `2f094adb`) found in `git log --oneline --all`.
+- Plan-level `<verification>`: every cold session's first call succeeded on both channels, one launch per session, zero `relay_error` relay deaths (Task 1); the loop ran 15 iterations with all 135 calls `isError` false and zero `0x8f`, the autostart burst was clean, and the recycle's first call carried no G-64-4 signature (Task 2); the broker was stopped, all four teardown checks read clean, and `npm test` then passed 4441/4357/0/84, exit 0 (Task 3).
