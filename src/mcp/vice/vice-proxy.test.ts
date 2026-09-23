@@ -286,6 +286,21 @@ interface StandInServer {
 const OPEN_SERVERS = new Set<Server>();
 const OPEN_CHILDREN = new Set<ChildProcessWithoutNullStreams>();
 
+// A per-file scratch machine-level root (Phase 64, plan 64-10, G-64-1):
+// every proxy this file spawns now defaults to VICE_BROKER_HOME pointed
+// here, so a test that names neither VICE_POOL_DIR nor VICE_BROKER_HOME of
+// its own no longer falls through to brokerStateDir()'s real-homedir
+// default -- see startProxy()'s own comment for where this is applied, and
+// the "harness isolation" test below for the proof. Created ONCE at module
+// load (not per-test) since it is read-only from this suite's own
+// perspective: nothing here ever expects a broker.json to actually exist at
+// this path, only that discovery finds nothing there.
+const DEFAULT_BROKER_HOME = mkdtempSync(join(tmpdir(), "vice-proxy-test-broker-home-"));
+
+after(() => {
+  rmSync(DEFAULT_BROKER_HOME, { recursive: true, force: true });
+});
+
 after(() => {
   let closedServers = 0;
   let killedChildren = 0;
@@ -410,10 +425,21 @@ function firstNonInternalIPv4(): string | null {
  * small harness for line-based stdin/stdout JSON-RPC exchange, matching the
  * exact framing vice-proxy.mjs itself implements (newline-delimited, one
  * JSON value per line).
+ *
+ * `VICE_BROKER_HOME` defaults to this file's own `DEFAULT_BROKER_HOME`
+ * scratch directory (Phase 64, plan 64-10, G-64-1), spread BEFORE the
+ * caller's own `env` so any test that names its own `VICE_BROKER_HOME` (or
+ * `VICE_POOL_DIR`, which `brokerStateDir()` still reads first) wins
+ * unchanged. Without this default, a proxy given only `CLAUDE_PROJECT_DIR`
+ * would fall through to `brokerStateDir()`'s real-homedir default and read
+ * this developer's own `~/.c64-re-tools/supervisor/broker.json` -- exactly
+ * the leak this default exists to prevent, now that the client resolves
+ * broker.json through the SAME machine-level resolver the broker itself
+ * does (vice-broker-client.ts's brokerRootDir()).
  */
 function startProxy(env: Record<string, string>): ProxyHandle {
   const child = spawn(process.execPath, [PROXY_PATH], {
-    env: { ...process.env, ...env },
+    env: { ...process.env, VICE_BROKER_HOME: DEFAULT_BROKER_HOME, ...env },
     stdio: ["pipe", "pipe", "pipe"] as const,
   });
   OPEN_CHILDREN.add(child);
@@ -468,6 +494,60 @@ function startProxy(env: Record<string, string>): ProxyHandle {
 
   return { child, send, sendRaw, messages, nextMessage, stderr: stderrChunks };
 }
+
+// -----------------------------------------------------------------------
+// Harness isolation proof (Phase 64, plan 64-10, G-64-1). startProxy()'s own
+// default VICE_BROKER_HOME (above) is what keeps every test in this file off
+// the developer's real ~/.c64-re-tools now that the client resolves
+// broker.json through the SAME machine-level resolver the broker itself
+// does. This test proves the default actually takes effect, and does so
+// deterministically rather than depending on whatever this developer's real
+// machine happens to have on disk right now: it plants a STALE broker.json
+// under a FAKE home directory (via HOME) and asserts the proxy still
+// reports never-started, never dead-or-hung naming the planted pid -- a
+// regression that silently dropped the default would instead read the fake
+// home's own .c64-re-tools/supervisor/broker.json and report dead-or-hung.
+// -----------------------------------------------------------------------
+test("harness isolation: startProxy()'s default VICE_BROKER_HOME wins over a stale broker.json planted at HOME's own .c64-re-tools -- no proxy this suite spawns can read a real machine-level root unless a test names its own override (G-64-1)", async () => {
+  const ws = mkdtempSync(join(tmpdir(), "vice-proxy-isolation-ws-"));
+  const fakeHome = mkdtempSync(join(tmpdir(), "vice-proxy-isolation-fakehome-"));
+  const fakeSupervisorDir = join(fakeHome, ".c64-re-tools", "supervisor");
+  mkdirSync(fakeSupervisorDir, { recursive: true });
+  const staleHeartbeat = new Date(Date.now() - 999999999).toISOString(); // far past any stale threshold
+  writeFileSync(
+    join(fakeSupervisorDir, "broker.json"),
+    JSON.stringify({ version: 1, pid: 424242, heartbeat_at: staleHeartbeat }),
+    "utf8"
+  );
+
+  // No VICE_BROKER_HOME/VICE_POOL_DIR of its own -- relies entirely on
+  // startProxy()'s own default winning over HOME's stale record.
+  const proxy = startProxy({ CLAUDE_PROJECT_DIR: ws, HOME: fakeHome });
+  try {
+    await handshake(proxy);
+    const startedAt = Date.now();
+    proxy.send({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "vice_ping", arguments: {} } });
+    const resp = await proxy.nextMessage(10000);
+    const elapsedMs = Date.now() - startedAt;
+    assert.equal(resp.result.isError, true);
+    const text = resp.result.content[0].text;
+    assert.match(
+      text,
+      /never.*started/i,
+      "startProxy()'s default VICE_BROKER_HOME must win over HOME's own stale broker.json -- a dead-or-hung result here means the default silently stopped applying"
+    );
+    assert.doesNotMatch(
+      text,
+      /424242/,
+      "the planted fake-home pid must never surface -- proves this proxy never read HOME's own .c64-re-tools/supervisor/broker.json"
+    );
+    assert.ok(elapsedMs < 5000, `the never-started diagnosis must be fail-fast -- took ${elapsedMs}ms`);
+  } finally {
+    proxy.child.kill("SIGKILL");
+    rmSync(ws, { recursive: true, force: true });
+    rmSync(fakeHome, { recursive: true, force: true });
+  }
+});
 
 // Plan 55-05: rewritten against the proxy-local annotation route.
 // VICE_MCP_URL no longer forwards a `tools/call` to an HTTP stand-in at all
