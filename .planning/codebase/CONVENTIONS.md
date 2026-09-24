@@ -25,8 +25,33 @@ Code lives in three places, and all three share one hand-maintained style:
 Repo-level guards live in `scripts/*.mjs`: `check-npm-packages.mjs` and
 `check-no-skill-external-spawn.mjs` are the two that remain.
 
-Note: `src/mcp/vice/anno-memmap-render.ts` contains a NUL byte, so plain `grep` treats it as
-binary and silently skips it. Always use `grep -a` for any content census over this tree.
+Note: several tracked source files contain a NUL byte, so plain `grep` treats them as binary and
+silently skips them. Always use `grep -a` for any content census over this tree. Do not work from
+a remembered list of which files — this note named only `anno-memmap-render.ts` until 2026-09-24,
+when four `.ts` files qualified. Recompute it instead of trusting a list:
+
+```
+node -e 'require("child_process").execSync("git ls-files src",{encoding:"utf8"}).trim().split("\n").filter(f=>require("fs").readFileSync(f).indexOf(0)!==-1).forEach(f=>console.log(f))'
+```
+
+## File Placement
+
+**`docs/` is operator-owned.** `docs/` holds only what the project owner put there:
+documentation about the C64 tooling product itself. Every GSD phase artifact — evidence,
+findings, gate verdicts, decision and provenance records, a ROADMAP criterion answered in
+writing — belongs under `.planning/phases/<phase>/evidence/` and never in `docs/`. This binds
+every role that names a destination path, and the planner and the discuss agent most of all: an
+executor writes where its plan says, so a `docs/` path in a `<files>` block is already the defect.
+
+**Do not infer this destination from precedent.** The planning corpus still cites `docs/…` paths
+in historical entries, and some no longer resolve. They are the residue of a convention that was
+reversed, not evidence for it: Phase 53 relocated its documents out of `docs/` on 2026-09-17
+(`ccdc58da`), two more were written straight back in within 24 hours because no file an agent
+reads carried this rule, and those were relocated on 2026-09-19. No guard enforces this — Phase
+53's guard criterion was withdrawn because it would have scanned source text, which `260914-poo`
+D-1 bans — so this rule is the whole enforcement. To check the current state rather than trust a
+count: `ls docs/` should show only operator-authored files, and
+`grep -rl 'docs/phase' $(git ls-files src tools)` should return nothing.
 
 ## Naming Patterns
 

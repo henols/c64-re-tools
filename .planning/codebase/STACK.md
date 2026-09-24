@@ -101,7 +101,7 @@ It bundles an MCP (Model Context Protocol) stdio server that drives a host-side 
 
 **Build/TS config:**
 - `src/mcp/vice/tsconfig.json` - typecheck-only: `target: es2022`, `module`/`moduleResolution: nodenext`, `strict`, `isolatedModules`, `verbatimModuleSyntax`, `erasableSyntaxOnly`, `noEmit`, `allowImportingTsExtensions`, `types: ["node"]`, `skipLibCheck`.
-- `src/mcp/vice/tsconfig.build.json` - `noEmit: false`, `outDir: resources`, `allowImportingTsExtensions: false`; the eight-file include list for `build.ts`.
+- `src/mcp/vice/tsconfig.build.json` - `noEmit: false`, `outDir: resources`, `allowImportingTsExtensions: false`; its include list must match `HOST_BOUND_ARTIFACTS` in `build.ts` entry for entry -- read it there rather than from a copy; it grows, and on 2026-09-24 this line said eight, CLAUDE.md said ten, and the real list held sixteen.
 
 **Environment variables (server behavior):**
 - Transport / endpoint: `VICE_MCP_URL`, `VICE_MCP_HOST`, `VICE_MCP_TIMEOUT_MS`, `VICE_PROBE_TIMEOUT_MS`, `VICE_MAX_RESULT_CHARS`.

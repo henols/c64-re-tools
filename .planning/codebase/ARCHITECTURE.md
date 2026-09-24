@@ -109,7 +109,7 @@ served entirely proxy-locally and touches no emulator at all.
 | Stock handler contract | The cycle-free leaf every `stock-*` family module imports: result types, error converters, `stockAnswer()` | `src/mcp/vice/stock-handler.ts` |
 | Stock tool families | Per-domain handlers: memory, registers, checkpoints, execution, machine, input, disassemble, memory-search, symbols, VIC-II, CIA, sprites, timing, run-until, diagnose, recycle | `src/mcp/vice/stock-*.ts` (26 non-test modules) |
 | Derived-tool leaf | Tools computed client-side rather than asked of the emulator | `src/mcp/vice/stock-derived.ts` |
-| Annotation store | The ONE module that names `node:sqlite`; opens/queries/writes the annotation store, asserted-confined | `src/mcp/vice/anno-store.ts` |
+| Annotation store | The ONE module that imports `node:sqlite`; opens/queries/writes the annotation store. Confinement is a RULE, not an assertion -- Phase 56 deleted the structural scan; check by hand | `src/mcp/vice/anno-store.ts` |
 | Annotation tool surface | The curated `anno_*` definitions, per-verb arg validators, store-path containment, and `runAnnoTool()` | `src/mcp/vice/anno-tools.ts` |
 | Annotation CLI | `vice-mcp anno <verb>` ergonomics layer over the same store | `src/mcp/vice/anno-cli.ts` |
 | Annotation derivations | Address index, derived answers, composed address detail, coverage census, ACME export, memory-map render, symbol round trip, enum/regbit generation, type vocabulary, confidence grades | `src/mcp/vice/anno-index.ts`, `anno-derive.ts`, `anno-details.ts`, `anno-coverage.ts`, `anno-export-asm.ts`, `anno-memmap-render.ts`, `anno-symbols.ts`, `anno-enum-gen.ts`, `anno-regbits-gen.ts`, `anno-types.ts`, `anno-confidence.ts` |
@@ -147,10 +147,12 @@ per-project backend selection (FORKRM-01).
 - **Single seam per concern.** One file owns each cross-cutting
   responsibility: one binmon codec (`stock-protocol.ts`), one `node:sqlite`
   consumer (`anno-store.ts`), one repo-root resolver (`repo-root.ts`), one
-  container detector (`container-guard.mts`), one ACME gate. Several of these
-  confinements are **asserted by a structural test** rather than promised
-  (e.g. `anno-seam.test.ts` scans the shipped module set for a second
-  `node:sqlite` mention).
+  container detector (`container-guard.mts`), one ACME gate. These
+  confinements are **promised, not asserted**: Phase 56 deleted the structural
+  scan that checked them (`anno-seam.test.ts` records its own removal in its
+  header), so a second consumer is caught only by review. Note `node:net` is
+  NOT among them -- a dozen production modules open sockets legitimately; only
+  the binmon WIRE FORMAT is confined, to `stock-protocol.ts`.
 - **Generated-but-committed artifacts.** `.mts` sources are compiled by
   `build.ts` into `resources/*.mjs`, which IS committed, because it is what
   gets deployed to a consuming project's `tools/` with no build step there.
