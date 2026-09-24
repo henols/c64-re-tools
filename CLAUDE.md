@@ -14,9 +14,9 @@ The whole tool surface drives **stock upstream VICE** — any unpatched build
 anyone can install from a package manager — through its binary monitor and
 text channel. There is no non-upstream emulator build to install, and no
 backend to select: this is the only transport the plugin drives. Three
-hardware-level capabilities have no route on stock at all and are recorded
-as permanent, accepted losses rather than a gap awaiting a workaround — see
-`docs/stock-hard-losses.md`.
+hardware-level capabilities have no route on stock at all.
+`docs/stock-hard-losses.md` records them as permanent, accepted losses rather
+than a gap awaiting a workaround.
 
 **Core Value:** A Claude session can reliably drive a real C64 emulator to reverse-engineer a
 program — read and write memory, set checkpoints, capture RAM, inspect chip
@@ -24,7 +24,7 @@ state — and keep working when the emulator misbehaves.
 
 ### Constraints
 
-- **Compatibility**: The stdio MCP surface advertises only the tools this project actually implements against stock VICE — there is no second backend and no per-backend trim to reconcile. A skill written against a tool the server does not advertise therefore *breaks* rather than degrading. Playbooks must name a real route or state that the capability is a permanent limitation (see `docs/stock-hard-losses.md`).
+- **Compatibility**: The stdio MCP surface advertises only the tools this project implements against stock VICE. There is no second backend and no per-backend trim to reconcile. A skill written against a tool the server does not advertise therefore *breaks* rather than degrading. A playbook must name a real route, or state that the capability is a permanent limitation (see `docs/stock-hard-losses.md`).
 - **Protocol (settled, normative)**: 11-byte request header / 12-byte response header, all multi-byte values little-endian. Confirmed opcode set and error codes per `.planning/phases/01-corrected-ground-truth/evidence/phase0-binmon-findings.md` §5.
 - **Protocol**: **Five** unsolicited message types arrive at request-id `0xffffffff`, not three:
 
@@ -35,15 +35,17 @@ state — and keep working when the emulator misbehaves.
   5. `REGISTER_INFO` (0x31), on every monitor open
 
   Types 4 and 5 **share a response type with a legitimate command reply**. Therefore demux must key on request-id. Never resolve a pending request with an event.
-- **Protocol**: `JAM` (0x61) has a **zero-length body**. `monitor_binary.c:384-394` computes the PC then passes `length = 0`, so no PC is sent. Every client surveyed assumes 2 bytes and breaks on it.
-- **Protocol**: A non-stopping checkpoint emits a `CHECKPOINT_INFO` frame per hit **synchronously, over the blocking socket, from inside the CPU loop** — `mon_breakpoint.c:557-562` calls `mon_breakpoint_event()` before checking `cp->stop`. On a hot address this can stall the emulator thread. This is the source-level reason checkpoint-wait code must always resolve state from a response field like `hit_count`, never by assuming a paused state from elapsed time alone.
+- **Protocol**: `JAM` (0x61) has a **zero-length body**. `monitor_binary.c:384-394` computes the PC, then passes `length = 0`. VICE therefore sends no PC. Every client surveyed assumes 2 bytes and breaks on it.
+- **Protocol**: A non-stopping checkpoint emits one `CHECKPOINT_INFO` frame per hit. It sends that frame **synchronously, over the blocking socket, from inside the CPU loop** — `mon_breakpoint.c:557-562` calls `mon_breakpoint_event()` before it checks `cp->stop`. On a hot address this can stall the emulator thread.
+
+  That is the source-level reason for a rule: checkpoint-wait code must always resolve state from a response field such as `hit_count`. Never infer a paused state from elapsed time alone.
 - **Concurrency**: Stock VICE's binary monitor services **exactly one client**. A second `connect()` sits unserviced in the backlog with no reply and no EOF — indistinguishable from a wedge. The broker must guarantee single-client-per-instance and must not diagnose this state as a hang.
 - **Protocol**: `default_memspace` contamination has no direct remedy over the binary monitor. A drive checkpoint hit sets it (`monitor.c:3393-3396`). No binary-monitor command resets it. After that, `ADVANCE_INSTRUCTIONS` and `EXECUTE_UNTIL_RETURN` step the *drive* CPU, and `@bank:` conditions fail outright. This affects any stepping code written after someone adds drive debugging.
 
   **The remedy exists on the text channel.** `device c:` over `-remotemonitor` resets the default device (MEASURED 2026-08-27). Write the colon. `device c` without it is a syntax error.
 
   A live run exercised the contamination itself, not only the remedy. A real drive checkpoint armed over the whole 1541 ROM range froze main-CPU `ADVANCE_INSTRUCTIONS` stepping at a fixed PC. `device c:` restored forward stepping. MEASURED 2026-09-09 on genuine stock `/usr/bin/x64sc` VICE 3.9. See `.planning/phases/41-the-text-channel-its-serialization-authority-and-the-content/evidence/phase41-text-channel-live-evidence.md`.
-- **Protocol**: The wire memspace byte is **not** the internal enum — `0x00` = main, `0x01`–`0x04` = units 8–11 (`monitor_binary.c:401-434`). `0x08` is rejected.
+- **Protocol**: The wire memspace byte is **not** the internal enum — `0x00` = main, `0x01`–`0x04` = units 8–11 (`monitor_binary.c:401-434`). VICE rejects `0x08`.
 - **Protocol**: Checkpoint *conditions* use the pseudo-registers `RL` and `CY` (uppercase), **not** the register-list names `LIN`/`CYC` — those lex as `BANKNAME` and produce a syntax error. Conditions have **no operator precedence** (`mon_parse.y:168`), so `RL == $64 && CY == $14` parses as `(((RL==$64) && CY) == $14)` and is always false. Parenthesise every comparison. Bare integer literals are **hex** by default (`monitor.c:1597`), so `RL == 100` means line 256.
 - **Protocol**: VICE reads `CPUHISTORY_GET`'s count field as a uint32, then stores it in a `uint16_t` (`monitor_binary.c:1492`). A count of 65536 or more therefore wraps. Clamp the count to 65535 in the client.
 - **Capability**: There is no runtime `WarpMode` resource (`vsync.c:220-241`, deliberately). On the stock backend, set warp at launch time with `-warp` or `InitialWarpMode`.
@@ -76,8 +78,18 @@ state — and keep working when the emulator misbehaves.
 - **Tech stack**: Node ≥ 24 (native TypeScript type-stripping — the shipped server has no build step). Host-bound `.mts` files must still be compiled by `build.ts` into committed `resources/*.mjs`, and `resources-sync.test.ts` fails CI on drift.
 - **Architecture**: Any host-facing path or hostname must go through `hostpath.ts` / `containerpath.ts` / `container-guard.mts`. The project maintains a tested closed consumer set for host-path logic.
 - **Architecture**: The broker's single-owner `inFlight` launch guard must stay a synchronous check-and-set with no `await` between. It exists because of the 2026-08-01 triple-launch outage and is regression-tested.
-- **Architecture**: Every shipped module that spawns the emulator binary must do it in the safe form — an argv **array**, never a shell command string and never a string-interpolated binary path — and the set of modules that spawn it at all is frozen rather than assumed. That set currently has exactly **one** member, `src/mcp/vice/broker-launch.mts`, which spawns in argv-array form (`spawn(viceBin, viceArgs)`, never `shell: true`, never a string-interpolated binary path). Its predecessor, a `--help` probe used to tell which VICE backend was installed, was removed when backend detection collapsed to a single stock target. Any NEW module that spawns the emulator binary must use the same argv-array form.
-- **Testing**: The single-resume-per-wait checkpoint invariant (never send a second resume while one wait is outstanding) is unit-tested against a synthetic client in `stock-run-until.ts`, an event-driven port of a rule the project's original polling-based checkpoint-wait code carried untested (that code's correctness only meant anything against a real emulator's timing. The event-driven port removed that dependency). Preserve the invariant if this file changes.
+- **Architecture**: Every shipped module that spawns the emulator binary must spawn it in the safe form. The safe form is an argv **array**. Never use a shell command string. Never use a string-interpolated binary path.
+
+  The set of modules that spawn the emulator is frozen, not assumed. That set has exactly **one** member today: `src/mcp/vice/broker-launch.mts`. It calls `spawn(viceBin, viceArgs)`. It never passes `shell: true`. It never interpolates the binary path into a string.
+
+  That module had a predecessor: a `--help` probe that reported which VICE backend the host carried. Backend detection collapsed to a single stock target, and the probe went with it.
+
+  Any NEW module that spawns the emulator binary must use the same argv-array form.
+- **Testing**: `stock-run-until.ts` holds the single-resume-per-wait checkpoint invariant: never send a second resume while one wait is outstanding. A unit test proves it against a synthetic client.
+
+  `stock-run-until.ts` is an event-driven port. The project's original checkpoint-wait code polled, and it carried this rule untested. That code's correctness meant something only against a real emulator's timing. The event-driven port removed that dependency.
+
+  Preserve the invariant if this file changes.
 - **Dependency**: **Never auto-install an external tool.** The user installs it. The project only detects what is already present. This is the owner's standing constraint, stated 2026-09-08. Do not re-litigate it.
 
   Use this pattern: detect the tool, then refuse by name and put the remedy in the message. Each tool follows it:
@@ -120,12 +132,12 @@ state — and keep working when the emulator misbehaves.
 - The installer package (`@henols/c64-re-tools`) only requires **Node >= 18** (`engines.node` in `installer/package.json`) since it is plain `.mjs`.
 - `type: "module"` (ESM) throughout — both packages and all skill scripts.
 - npm. Lockfiles present: `src/mcp/vice/package-lock.json` (committed). The `installer/` package has no committed lockfile.
-- `node_modules/` for the MCP server is **never committed** (`.gitignore`). It is provisioned on first use by a `SessionStart` hook (`scripts/ensure-mcp-deps.sh`), which gates `npm ci` behind a sha256 hash of the lockfile so normal session starts are a no-op.
+- `node_modules/` for the MCP server is **never committed** (`.gitignore`). A `SessionStart` hook (`scripts/ensure-mcp-deps.sh`) provisions it on first use. That hook gates `npm ci` behind a sha256 hash of the lockfile, so a normal session start does nothing.
 ## Frameworks / Key Runtime Dependencies
 - `@mastra/mcp` `1.15.0` - MCP server/tooling framework (`dependencies` in `src/mcp/vice/package.json`)
 - `@mastra/core` `1.55.0` - underlying Mastra runtime the MCP package depends on
 - `@modelcontextprotocol/sdk` `1.30.0` (transitive, via `@mastra/mcp`) - the official MCP TypeScript SDK
-- `MASTRA_TELEMETRY_DISABLED=1` is set everywhere the server is launched (`.mcp.json`, installer-generated `.mcp.json` entries) to disable Mastra's own telemetry.
+- `MASTRA_TELEMETRY_DISABLED=1` disables Mastra's own telemetry. Every launch path sets it: `.mcp.json`, and the `.mcp.json` entries the installer generates.
 - Node's built-in test runner (`node --test`), no separate test framework. Run via `npm test` in `src/mcp/vice` (the `test` script in `src/mcp/vice/package.json`: `node --test '*.test.*'`).
 - Test files are colocated `*.test.ts` / `*.test.mts` next to the module under test (e.g. `stock-dispatch.ts` / `stock-dispatch.test.ts`).
 - TypeScript `7.0.2` (devDependency, typecheck-only — `tsc --noEmit`). No emitted `.js` from the TS sources at runtime (Node type-stripping runs the `.ts`/`.mts` files directly).
@@ -141,7 +153,7 @@ state — and keep working when the emulator misbehaves.
 - `@posthog/core` / `@posthog/types` - analytics client code inside Mastra (disabled via `MASTRA_TELEMETRY_DISABLED`)
 - `@modelcontextprotocol/ext-apps` `1.7.5`
 - `@isaacs/ttlcache`, `@lukeed/csprng`, `@lukeed/uuid`, `@sindresorhus/slugify` / `transliterate` - small utility libs
-- `x64sc` - stock upstream VICE, any unpatched build installable from a package manager, driven over its binary monitor and text channel — the load-bearing external dependency the whole `vice` MCP tool surface is built on. There is no non-upstream build and no backend to select. Three hardware-level capabilities have no route on stock at all and are recorded as permanent, accepted losses in `docs/stock-hard-losses.md`.
+- `x64sc` - stock upstream VICE. Any unpatched build from a package manager works. The project drives it over its binary monitor and text channel. It is the load-bearing external dependency under the whole `vice` MCP tool surface. There is no non-upstream build and no backend to select. Three hardware-level capabilities have no route on stock at all. `docs/stock-hard-losses.md` records them as permanent, accepted losses.
 ## Configuration
 - `.mcp.json` (repo root) - declares the `vice` MCP server, launched via `node ${CLAUDE_PLUGIN_ROOT}/src/mcp/vice/vice-proxy.ts`, `timeout: 150000`, `env.MASTRA_TELEMETRY_DISABLED=1`.
 - `.claude-plugin/plugin.json` - plugin manifest: points at `./src/skills/` and `./.mcp.json`, registers a `SessionStart` hook running `scripts/ensure-mcp-deps.sh`, `defaultEnabled: false`.
@@ -189,8 +201,11 @@ state — and keep working when the emulator misbehaves.
 - A reachable host running stock upstream VICE (`x64sc`) for any live emulator interaction — the MCP server itself has no in-process emulator.
 - Docker/devcontainer awareness baked in: code checks `isInsideContainer()` (`src/mcp/vice/container-guard.mts`) to decide between `host.docker.internal` and `127.0.0.1` as the default VICE host.
 - Published to the public npm registry as `@henols/vice-mcp` and `@henols/c64-re-tools`, installed via `npx` into consumer projects, or as a Claude Code plugin via `/plugin marketplace add`.
-- CI: GitHub Actions (`.github/workflows/ci.yml`) — two jobs only. `build` runs typecheck plus the MCP-server, installer and skill suites. `publish-npm` triggers on a `v*` tag (or a manual dispatch with an explicit version), derives the version from the ref, and publishes both packages via OIDC Trusted Publishing (no `NPM_TOKEN` secret).
-- Merging to `main` publishes nothing. A release is a git tag: `git tag v1.2.3 && git push origin v1.2.3`. The plugin is installed from the repository, so no release zip is built or attached.
+- CI: GitHub Actions (`.github/workflows/ci.yml`), two jobs only.
+
+  - `build` runs typecheck plus the MCP-server, installer and skill suites.
+  - `publish-npm` triggers on a `v*` tag, or on a manual dispatch that names an explicit version. It derives the version from the ref. It publishes both packages through OIDC Trusted Publishing. There is no `NPM_TOKEN` secret.
+- Merging to `main` publishes nothing. A release is a git tag: `git tag v1.2.3 && git push origin v1.2.3`. A consumer installs the plugin from the repository, so a release builds no zip and attaches none.
 <!-- GSD:stack-end -->
 
 <!-- GSD:conventions-start source:CONVENTIONS.md -->
@@ -259,7 +274,7 @@ Full detail: `.planning/codebase/ARCHITECTURE.md`. The system is a split-process
 
   Phase 56 deleted the structural scan that used to assert this. `anno-seam.test.ts` records that removal in its own header. Nothing now catches a second importer. Check by hand: `grep -rl 'from "node:sqlite"'`.
 
-  **`node:net` is a different case. It is NOT confined.** `stock-protocol.ts` owns the binary-monitor *wire format*. About a dozen production modules open sockets of their own, and they do so legitimately — the broker, the relay, the text channel and the host-tool client. Do not read the binmon-codec seam as a ban on `node:net`.
+  **`node:net` is a different case. It is NOT confined.** `stock-protocol.ts` owns the binary-monitor *wire format*, and nothing wider. About a dozen production modules open sockets of their own, and they do so legitimately: the broker, the relay, the text channel and the host-tool client. Do not read the binmon-codec seam as a ban on `node:net`.
 - **No build step for the shipped server.** Container-side `.ts` modules run under Node type-stripping. `build.ts` compiles only the host-bound `.mts` files, because those run on a bare host Node.
 - **This codebase avoids module cycles deliberately.** Passing `workspaceRoot` explicitly broke the cycle from `repo-root.ts` to `install-resources.ts` to `hostpath.ts`. Adding `stock-handler.ts` broke the cycle from `stock-dispatch.ts` to the `stock-*.ts` modules. Do not reintroduce either import.
 - **Global state lives in four modules.** `stock-dispatch.ts` holds `heldSession`. `backend-detect.mts` holds `memoisedResult`. `broker-launch.mts` holds `inFlight`. `vice-proxy.ts` holds `CONTINUATION_STORE`. The event loop is single-threaded throughout, and the broker spawns emulator instances as child processes rather than worker threads.
