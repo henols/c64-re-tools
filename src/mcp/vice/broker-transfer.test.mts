@@ -12,7 +12,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, connect as netConnect, type AddressInfo, type Socket } from "node:net";
-import { mkdtempSync, writeFileSync, rmSync, readFileSync, existsSync, readdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 
@@ -45,7 +45,13 @@ const brokerTransferModule = (await import(new URL("./resources/broker-transfer.
     header: { kind: string; byteLength: number; sha256: string };
     pending?: Buffer;
     capBytes?: number;
-  }) => Promise<{ ok: true; byteLength: number; sha256: string } | { ok: false; reason: string }>;
+    beforePublish?: () => Promise<void>;
+  }) => Promise<
+    { ok: true; byteLength: number; sha256: string } | { ok: false; reason: string; code?: "bad_request" | "internal"; wireReason?: string }
+  >;
+  /** G-64-5 (plan 64-15, Task 1): the ONE builder of wire text for a caught
+   * transfer fault -- see that function's own JSDoc in broker-transfer.mts. */
+  formatPathFreeFault: (summary: string, fault: unknown) => string;
   MAX_TRANSFER_HEADER_LINE_BYTES: number;
   stageFileSlot: (opts: { grantId: string; slot: string; now?: () => number }) => { ok: true; handle: string; stagedPath: string } | { ok: false; reason: string };
   resolveStagedFile: (handle: string) => { ok: true; entry: StagedFileEntry } | { ok: false; reason: string };
@@ -59,6 +65,7 @@ const {
   readTransferHeader,
   sendPayloadFromFile,
   receivePayloadToFile,
+  formatPathFreeFault,
   stageFileSlot,
   resolveStagedFile,
   markTransferInFlight,
@@ -497,6 +504,135 @@ test("broker-transfer: a receiver that stops reading stalls the sender's promise
 
 test("TRANSFER_MAX_BYTES: imported (not re-typed) by both transfer-hash and this test, and equals 16 * 1024 * 1024", () => {
   assert.equal(TRANSFER_MAX_BYTES, 16 * 1024 * 1024);
+});
+
+// ---------------------------------------------------------------------------
+// G-64-5 (plan 64-15, CR-01): a real filesystem fault caught by
+// receivePayloadToFile()'s three catch branches must never put the broker's
+// own absolute staging paths on the wire. Every test below drives a REAL
+// fault (a real ENOENT/ENAMETOOLONG from a real fs call) -- never a
+// synthetic, already path-free rejection, which is exactly what CR-01
+// found the pre-existing suite could not catch (64-REVIEW.md).
+// ---------------------------------------------------------------------------
+
+test("receivePayloadToFile real fs fault, publish rename: a rename whose directory vanished answers path-free wire text and keeps the full reason", async () => {
+  const fixtureDir = mkdtempSync(join(tmpdir(), "broker-transfer-rename-fault-"));
+  const server = createServer();
+  let client: Socket | undefined;
+  try {
+    const sourcePath = join(fixtureDir, "source.bin");
+    writeFileSync(sourcePath, Buffer.from("hello world, this is the publish-rename fault fixture"));
+    const sessionDir = join(fixtureDir, "session");
+    const destPath = join(sessionDir, "staged.bin");
+
+    const serverDone = new Promise<
+      { ok: true; byteLength: number; sha256: string } | { ok: false; reason: string; code?: "bad_request" | "internal"; wireReason?: string }
+    >((resolve, reject) => {
+      server.on("connection", (socket) => {
+        readHeaderFromSocket(socket)
+          .then(({ header, pending }) =>
+            receivePayloadToFile({
+              socket,
+              destPath,
+              header,
+              pending,
+              // The verdict (digest/count match) has already been reached
+              // by the time this hook runs (D-11's own timing contract) --
+              // removing the destination's own directory here means the
+              // renameSync() that follows fails with a REAL ENOENT, never a
+              // synthetic one authored by the test.
+              beforePublish: async () => {
+                rmSync(sessionDir, { recursive: true, force: true });
+              },
+            }),
+          )
+          .then(resolve, reject);
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as AddressInfo).port;
+    client = netConnect({ host: "127.0.0.1", port });
+    await new Promise<void>((resolve, reject) => {
+      client!.once("connect", resolve);
+      client!.once("error", reject);
+    });
+
+    const sendResult = await sendPayloadFromFile({ socket: client, sourcePath });
+    assert.equal(sendResult.ok, true, sendResult.ok ? "" : (sendResult as { reason: string }).reason);
+
+    const result = await serverDone;
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.code, "internal");
+      const wireReason = result.wireReason ?? "";
+      assert.match(wireReason, /\(ENOENT\)/);
+      assert.ok(!wireReason.includes(fixtureDir), `wireReason must exclude the fixture directory: ${wireReason}`);
+      assert.ok(!wireReason.includes("/"), `wireReason must contain no "/": ${wireReason}`);
+      assert.ok(result.reason.includes(destPath), `reason must still include destPath for the broker's own stderr line: ${result.reason}`);
+    }
+  } finally {
+    // A try/finally around the socket AND the server -- unlike several
+    // pre-existing tests in this file that close the server only at the
+    // end of a passing try block -- because THIS test's own assertions are
+    // expected to fail against today's unfixed tree (RED), and a listening
+    // server left open by a thrown AssertionError keeps the whole test
+    // process alive (measured live while authoring this test).
+    if (client && !client.destroyed) client.destroy();
+    server.close();
+    rmSync(fixtureDir, { recursive: true, force: true });
+  }
+});
+
+test("formatPathFreeFault: path-free fault text carries only a validated errno token", () => {
+  const summary = "vice: test summary";
+  const outputs: string[] = [];
+
+  // A real Node fs error, taken from a failing statSync of a missing file
+  // under a mkdtempSync directory.
+  const missingDir = mkdtempSync(join(tmpdir(), "broker-transfer-fault-filter-"));
+  try {
+    let realFault: unknown;
+    try {
+      statSync(join(missingDir, "no-such-file"));
+    } catch (e) {
+      realFault = e;
+    }
+    assert.ok(realFault, "statSync of a missing file must throw");
+    const realOutput = formatPathFreeFault(summary, realFault);
+    outputs.push(realOutput);
+    assert.match(realOutput, /\(ENOENT\)/);
+    assert.ok(!realOutput.includes(missingDir), `real-fault output must exclude the fixture directory: ${realOutput}`);
+
+    const noParenFaults: unknown[] = [
+      new Error("no code at all"),
+      Object.assign(new Error("numeric code"), { code: 42 }),
+      Object.assign(new Error("code is a path"), { code: "/etc/passwd" }),
+      Object.assign(new Error("code with embedded text"), { code: "ENOENT /tmp/x" }),
+      Object.assign(new Error("lowercase code"), { code: "enoent" }),
+      Object.assign(new Error("overlong code"), { code: "E".repeat(80) }),
+      "a thrown string containing /tmp/leak",
+      null,
+      undefined,
+      Object.defineProperty({}, "code", {
+        enumerable: true,
+        get(): string {
+          throw new Error("a throwing code getter must count as no code");
+        },
+      }),
+    ];
+    for (const fault of noParenFaults) {
+      const output = formatPathFreeFault(summary, fault);
+      outputs.push(output);
+      assert.ok(!output.includes("("), `output for a fault with no valid code must contain no "(": ${JSON.stringify(fault)} -> ${output}`);
+    }
+
+    for (const output of outputs) {
+      assert.ok(output.startsWith(summary), `every output must start with the summary: ${output}`);
+      assert.ok(!output.includes("/"), `every output must contain no "/": ${output}`);
+    }
+  } finally {
+    rmSync(missingDir, { recursive: true, force: true });
+  }
 });
 
 // ---------------------------------------------------------------------------

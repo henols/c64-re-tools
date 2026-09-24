@@ -1354,3 +1354,99 @@ test("vice_snapshot_load refusal (G-64-3, plan 64-13): a publish that fails befo
     rmSync(brokerHome, { recursive: true, force: true });
   }
 });
+
+test("vice_snapshot_load refusal on a real fs fault (CR-01, G-64-5): the staging directory vanishes before the rename, and neither the upload's wire reason nor the tool result names a broker-side path", async () => {
+  const clientDir = mkdtempSync(join(tmpdir(), "vice-snapshot-realfault-client-"));
+  const brokerHome = mkdtempSync(join(tmpdir(), "vice-snapshot-realfault-broker-"));
+  const prevProjectDir = process.env.CLAUDE_PROJECT_DIR;
+  const prevBrokerHome = process.env.VICE_BROKER_HOME;
+  process.env.CLAUDE_PROJECT_DIR = clientDir;
+  process.env.VICE_BROKER_HOME = brokerHome;
+  resetStagingForTest();
+
+  const emulatorPort = nextRoundTripEmulatorPort();
+  const grantId = "req-64-15-t1-realfault";
+  const state = setupRoundTripBrokerState(emulatorPort, grantId);
+  // Starts undefined -- the save's own DOWNLOAD is unaffected by this hook.
+  // Armed to a REAL-fault hook only right before the load's own upload,
+  // below, so the save can succeed first and produce a real local snapshot.
+  let beforePublish: (() => Promise<void>) | undefined;
+  const { listener, token } = await startRoundTripListener(state, emulatorPort, () => ({ beforePublish }));
+  const control = makeRoundTripControlClient(listener.port);
+  try {
+    const acquireReply = await control.sendAndRead({ op: "acquire", id: grantId, token });
+    assert.equal(acquireReply.kind, "grant");
+
+    const payload = fullByteRangeRoundTripPayload();
+    const { session, sends } = makeSession((commandType, body) => {
+      if (commandType === CommandType.Dump) {
+        const filenameLen = body[2]!;
+        const stagedPath = body.subarray(3, 3 + filenameLen).toString("ascii");
+        mkdirSync(dirname(stagedPath), { recursive: true });
+        writeFileSync(stagedPath, payload);
+        return undefined;
+      }
+      if (commandType === CommandType.Undump) {
+        // Must never be reached: a real rename fault must refuse the load
+        // BEFORE UNDUMP is ever sent (this test's own point).
+        assert.fail("UNDUMP must not be sent when the upload's own publish failed on a real fs fault");
+      }
+      return undefined;
+    });
+    session.targetId = grantId;
+    session.brokerControl = { ...session.brokerControl, stageFile: makeRealStageFile(control, token) } as StockConnectSession["brokerControl"];
+    // Wrap makeRealTransferFile() so this test can inspect the upload's own
+    // result directly -- the recorded `reason` is the completion reply's
+    // own message, i.e. the broker's wireReason, forwarded verbatim by
+    // awaitTransferComplete()/defaultTransferFile() (mirrored here by
+    // makeRealTransferFile()).
+    let capturedUploadResult: TransferFileResult | undefined;
+    const baseTransferFile = makeRealTransferFile(listener.port);
+    const transferFile: TransferFileFn = async (request: TransferFileRequest): Promise<TransferFileResult> => {
+      const result = await baseTransferFile(request);
+      if (request.direction === "upload") capturedUploadResult = result;
+      return result;
+    };
+    session.deps = { ...session.deps, transferFile };
+
+    const saveResult = await handleSnapshotSave({ name: "realfault_1" }, session, fakeDeps);
+    assert.equal(saveResult.isError, false, `save must succeed: ${JSON.stringify(saveResult)}`);
+    assert.equal(sends.length, 1);
+
+    // G-64-5 (plan 64-15): the staging directory vanishes AFTER the
+    // digest/count verdict but BEFORE the rename -- the interleaving a
+    // session-close sweep produces mid-upload. Resolves (never rejects):
+    // it is the rename itself that must fail, with a REAL ENOENT, never a
+    // synthetic rejection message the test authored.
+    beforePublish = async () => {
+      rmSync(join(brokerHome, "staging", grantId), { recursive: true, force: true });
+    };
+
+    const loadResult = await handleSnapshotLoad({ name: "realfault_1" }, session, fakeDeps);
+    assert.equal(loadResult.isError, true, `a real rename fault must refuse the load: ${JSON.stringify(loadResult)}`);
+    assert.equal(sends.length, 1, "no UNDUMP may be sent after a real rename failure");
+    const resultText = loadResult.content[0]!.text;
+    assert.ok(!resultText.includes(brokerHome), `the result text must name no path under the broker's own temp root: ${resultText}`);
+    assert.match(resultText, /\(ENOENT\)/, `the result text must name the errno code: ${resultText}`);
+
+    assert.ok(capturedUploadResult, "the upload's own result must have been captured");
+    assert.equal(capturedUploadResult!.ok, false);
+    if (!capturedUploadResult!.ok) {
+      assert.ok(
+        !capturedUploadResult!.reason.includes(brokerHome),
+        `the upload's own reason must name no path under the broker's own temp root: ${capturedUploadResult!.reason}`,
+      );
+      assert.match(capturedUploadResult!.reason, /\(ENOENT\)/, `the upload's own reason must name the errno code: ${capturedUploadResult!.reason}`);
+    }
+  } finally {
+    control.close();
+    listener.server.close();
+    resetStagingForTest();
+    if (prevProjectDir === undefined) delete process.env.CLAUDE_PROJECT_DIR;
+    else process.env.CLAUDE_PROJECT_DIR = prevProjectDir;
+    if (prevBrokerHome === undefined) delete process.env.VICE_BROKER_HOME;
+    else process.env.VICE_BROKER_HOME = prevBrokerHome;
+    rmSync(clientDir, { recursive: true, force: true });
+    rmSync(brokerHome, { recursive: true, force: true });
+  }
+});
