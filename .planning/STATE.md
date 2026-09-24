@@ -4,17 +4,17 @@ milestone: v2.0.0
 milestone_name: One Broker, One Socket
 current_phase: 64
 current_phase_name: Files as Bytes, Both Directions
-status: verifying
-stopped_at: Phase 64 re-verified gaps_found (7/8) -- G-64-3 and G-64-4 verified closed; new blocker CR-01 (broker-transfer.mts wireReason leaks broker paths) -- run /gsd-plan-phase 64 --gaps
-last_updated: "2026-09-24T01:03:12.953Z"
+status: executing
+stopped_at: Phase 64 gap-closure round 3 executed -- plan 64-15 closed G-64-5 (CR-01 path leak in upload failure replies); phase verification next
+last_updated: "2026-09-24T12:28:00.000Z"
 last_activity: 2026-09-24
-last_activity_desc: Phase 64 re-verified after gap-closure round 2 -- gaps_found 7/8, G-64-3 and G-64-4 closed, CR-01 path leak in upload failure replies blocks passed
-state_head: 5198304f96aa4a02a9d649ce54b153a43d9480c0
+last_activity_desc: Plan 64-15 executed -- G-64-5 (CR-01 path leak) closed; ready for Phase 64 re-verification
+state_head: 9874cbf0c7e90aff54b6d4bb794cfe995ac4e151
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 32
-  completed_plans: 31
+  completed_plans: 32
   percent: 33
 carried_forward_phases:
 
@@ -82,9 +82,29 @@ closure still needs to be recorded as one.
 
 ## Current Position
 
-Phase: 64 (Files as Bytes, Both Directions) — READY TO EXECUTE
-Plan: 14 of 14 executed (gap-closure round 2 complete)
-Status: Re-verification 2026-09-24 after gap-closure round 2: gaps_found, 7/8 truths verified. G-64-3 and G-64-4 verified closed (source, targeted suites, live 7/7 cold sessions and 135/135 clean loop); XFER-01..08 all scored SATISFIED, none demoted. One new blocker: CR-01 in 64-REVIEW.md — receivePayloadToFile() in broker-transfer.mts interpolates raw fs error text (which carries the broker's absolute paths) into the client-facing wireReason on three failure branches, which 64-13 now delivers to the client. Next: /gsd-plan-phase 64 --gaps. Before that: Phase 64 gap-closure round 2 executed — 64-12 (G-64-4, the cold-launch relay-attach race), 64-13 (G-64-3, the intermittent 0x8f on the file-carrying tools) and 64-14 (both measured live against genuine stock /usr/bin/x64sc and a systemd-unit broker) are all complete, sequentially on the main working tree. Phase verification (`/gsd-verify-work`) is the next step. They follow UAT 2026-09-23 (0 passed, 2 issues, 64-UAT.md status diagnosed). Previously: Phase 64 gap closure for G-64-1 (UAT test 1) is complete — all 11 plans executed sequentially on the main working tree. Re-verification 2026-09-23: human_needed, 5/5 ROADMAP criteria verified, G-64-1 met with one caveat (the cold-launch race below); code review 0 critical / 2 warning / 1 info; the 2 UAT items it left pending in 64-UAT.md were run the same day and both failed, becoming G-64-3 and G-64-4.
+Phase: 64 (Files as Bytes, Both Directions) — EXECUTED, AWAITING RE-VERIFICATION
+Plan: 15 of 15 executed (gap-closure round 3, 64-15, closed G-64-5)
+Status: Gap-closure round 3 executed 2026-09-24 — plan 64-15 closed G-64-5 (CR-01 in 64-REVIEW.md), sequentially on the main working tree because HEAD is ahead of origin/main. It was planned the same day by /gsd-plan-phase 64 --gaps, after this re-verification: Re-verification 2026-09-24 after gap-closure round 2: gaps_found, 7/8 truths verified. G-64-3 and G-64-4 verified closed (source, targeted suites, live 7/7 cold sessions and 135/135 clean loop); XFER-01..08 all scored SATISFIED, none demoted. One new blocker: CR-01 in 64-REVIEW.md — receivePayloadToFile() in broker-transfer.mts interpolates raw fs error text (which carries the broker's absolute paths) into the client-facing wireReason on three failure branches, which 64-13 now delivers to the client. That blocker was G-64-5, closed by plan 64-15. Before that: Phase 64 gap-closure round 2 executed — 64-12 (G-64-4, the cold-launch relay-attach race), 64-13 (G-64-3, the intermittent 0x8f on the file-carrying tools) and 64-14 (both measured live against genuine stock /usr/bin/x64sc and a systemd-unit broker) are all complete, sequentially on the main working tree. They follow UAT 2026-09-23 (0 passed, 2 issues, 64-UAT.md status diagnosed). Previously: Phase 64 gap closure for G-64-1 (UAT test 1) is complete — all 11 plans executed sequentially on the main working tree. Re-verification 2026-09-23: human_needed, 5/5 ROADMAP criteria verified, G-64-1 met with one caveat (the cold-launch race below); code review 0 critical / 2 warning / 1 info; the 2 UAT items it left pending in 64-UAT.md were run the same day and both failed, becoming G-64-3 and G-64-4.
+Plan 64-15 closed 2026-09-24: G-64-5 (CR-01) closed at the source —
+formatPathFreeFault() (broker-transfer.mts) is now the one builder of wire
+text for a caught transfer fault: a fixed phrase plus at most a validated
+errno token, never the caught error's raw message. All three of
+receivePayloadToFile()'s caught-fault branches (receive-pipeline,
+pre-publish hook, publish-rename) now build wireReason through it, each
+proven against a REAL fault (a session directory removed before the
+rename, a temp filename over NAME_MAX, a hook hitting a real missing
+file) rather than the synthetic, already-path-free rejection the prior
+suite could not catch. ReceivePayloadToFileResult makes code/wireReason
+mandatory on a receive failure, and writeUploadCompletionReply()
+(vice-broker.mts) lost its nullish fallback to the full reason —
+npm run typecheck now refuses a future omission. The receive-pipeline's
+cap refusal is classified by the transform's own observed byte count,
+never by the caught error's text, and still names the limit. TDD
+RED/GREEN per task (2 tasks, 4 commits); 8 new tests, 0 regressions
+(test:automated 4266→4274, 0 fail throughout; full-glob npm test
+4441→4449, 0 fail, one unrelated anno-tools.test.ts transient confirmed
+non-regression on re-run). See
+.planning/phases/64-files-as-bytes-both-directions/64-15-SUMMARY.md.
 Plan 64-14 closed 2026-09-24: G-64-3 and G-64-4 measured live against genuine
 stock `/usr/bin/x64sc` (VICE 3.9) and a broker started as a transient systemd
 user unit. All 7 cold sessions (5 `vice_ping`, 2 `vice_warp_set`) succeeded on
@@ -186,7 +206,7 @@ verification passed (6/6 must-haves), nyquist validation PARTIAL and security ve
 with threats_open: 0. The one human decision — 63-REVIEW.md's WR-01 — was ACCEPTED as
 residual risk, recorded as R-63-04 in 63-SECURITY.md.
 Progress: [███░░░░░░░] 33% (2 of 6 v2.0.0 phases complete; Phases 62-67)
-Last activity: 2026-09-24 — Phase 64 gap-closure round 2 plan 64-13 complete (G-64-3 closed); 64-14 outstanding
+Last activity: 2026-09-24 — Plan 64-15 executed (G-64-5, CR-01 closed); Phase 64 re-verification next
 
 **Planning override recorded at the Phase 64 decision-coverage gate.**
 `check.decision-coverage-plan` returned `passed: false` with
