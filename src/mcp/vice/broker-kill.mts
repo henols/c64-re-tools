@@ -640,10 +640,16 @@ export async function reapOrphanedInstances(options: ReapOrphanedInstancesOption
 }
 
 // ============================================================================
-// Phase 64 (XFER-07, D-07/D-08): two MORE startup-only reaps, both called
-// from vice-broker.mts's SAME unconditional startup-reap block as
-// reapOrphanedInstances() above -- a second and third pass in this existing
-// seam, never a new one.
+// Phase 64 (XFER-07, D-07/D-08): two MORE startup-only reaps, defined in
+// this module after reapOrphanedInstances() -- a second and third pass,
+// never a new seam. They do NOT run at the same place in vice-broker.mts's
+// startup, and that split is deliberate: reapOrphanedConfigScratch() still
+// runs from the SAME unconditional, pre-bind block as reapOrphanedInstances()
+// -- its own mandatory live-pid guard makes that safe even for a process
+// that goes on to lose the singleton race. sweepOrphanedStaging() runs
+// later, only in the process that has actually WON the control-port bind,
+// and only before that process publishes its control token -- see its own
+// call site in vice-broker.mts for why.
 //
 // The two kinds of broker-owned scratch these reap have OPPOSITE lifetime
 // rules, and that is deliberate, not an oversight to "simplify" later:
@@ -659,10 +665,13 @@ export async function reapOrphanedInstances(options: ReapOrphanedInstancesOption
 //     handleRelease()), which already runs for every broker that shuts down
 //     cleanly. Applying the config rule here -- keep whatever has a live pid
 //     -- is a category error: a staging directory is not itself a process,
-//     so there is no pid to check, and "still present at the NEXT broker's
-//     startup" is BY DEFINITION residue the previous, crashed broker left
-//     (D-07's whole argument for a startup-only sweep: this is the one
-//     moment the residue is unambiguous).
+//     so there is no pid to check. Given the precondition above -- this pass
+//     runs only in the process that has won the control-port bind, before it
+//     publishes its token -- every directory still present under the
+//     staging root at that moment is residue the previous, crashed broker
+//     left (D-07's whole argument for a startup-only sweep: this is the one
+//     moment the residue is unambiguous, and ONLY for the process the kernel
+//     has just confirmed is the broker).
 //
 // A sweeper that collapses these two rules into one is exactly the failure
 // D-08 names: the config rule applied to staging leaks a payload onto real
@@ -846,7 +855,9 @@ export interface SweepOrphanedStagingOptions {
    * body. A test injects a spy here specifically to prove that "no pid
    * check" is genuinely true: if this function is ever changed to call it,
    * that test starts failing loudly, rather than the omission silently
-   * rotting into a call nobody notices. */
+   * rotting into a call nobody notices. The liveness guard for this pass is
+   * not a check inside it at all -- it is WHERE this function is called: see
+   * sweepOrphanedStaging()'s own doc comment below. */
   isAlive?: (pid: number) => boolean;
   log?: (line: string) => void;
 }
@@ -854,12 +865,31 @@ export interface SweepOrphanedStagingOptions {
 /** The pass with NO pid check, deliberately (D-07): a staging directory is
  * not itself a process, and its real teardown trigger is its own session's
  * connection closing (SESS-03/SESS-04's handleRelease(), already wired).
- * At broker STARTUP, therefore, every session directory still present under
- * the staging root is BY DEFINITION residue a crashed broker left -- no
- * broker that shut down cleanly leaves one behind -- and every one found is
- * removed unconditionally and recursively. Never throws past a single
- * directory's own failure. Logs found/removed counts including the zero
- * case. */
+ *
+ * This function may be called only by a broker that has won the
+ * control-port bind, and only BEFORE that broker publishes its control
+ * token (vice-broker.mts's own call site sits between the confirmed bind
+ * and the first writeBrokerRecordFile()). Given that precondition, and only
+ * then, every directory still present under the staging root is residue a
+ * crashed broker left -- no broker that shut down cleanly leaves one
+ * behind, and this process's own sessions cannot exist yet because nothing
+ * can hold its token. Every directory found is removed unconditionally and
+ * recursively.
+ *
+ * The defect this precondition exists to prevent: a second broker
+ * that had not yet lost the control-port bind race once ran this pass
+ * before it learned it had lost, and removed a live first broker's active
+ * staging -- every session directory that broker's own sessions owned.
+ *
+ * Never call this function from anywhere else, in particular never from
+ * vice-broker.mts's unconditional pre-bind reap block. Never add a pid check to this
+ * function to make an earlier call site "safe" -- the kernel-enforced
+ * singleton bind is the guard, and a pid check would bring back exactly the
+ * pid-reuse heuristic vice-broker.mts's own startup header records
+ * retiring.
+ *
+ * Never throws past a single directory's own failure. Logs found/removed
+ * counts including the zero case. */
 export function sweepOrphanedStaging(options: SweepOrphanedStagingOptions): StagingSweepResult {
   const log = options.log ?? defaultLog;
   const listStagingSessionDirs = options.listStagingSessionDirs ?? defaultListStagingSessionDirs;

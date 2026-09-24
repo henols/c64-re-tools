@@ -628,12 +628,31 @@ function defaultRemoveStagingSessionDir(root, dirName) {
 /** The pass with NO pid check, deliberately (D-07): a staging directory is
  * not itself a process, and its real teardown trigger is its own session's
  * connection closing (SESS-03/SESS-04's handleRelease(), already wired).
- * At broker STARTUP, therefore, every session directory still present under
- * the staging root is BY DEFINITION residue a crashed broker left -- no
- * broker that shut down cleanly leaves one behind -- and every one found is
- * removed unconditionally and recursively. Never throws past a single
- * directory's own failure. Logs found/removed counts including the zero
- * case. */
+ *
+ * This function may be called only by a broker that has won the
+ * control-port bind, and only BEFORE that broker publishes its control
+ * token (vice-broker.mts's own call site sits between the confirmed bind
+ * and the first writeBrokerRecordFile()). Given that precondition, and only
+ * then, every directory still present under the staging root is residue a
+ * crashed broker left -- no broker that shut down cleanly leaves one
+ * behind, and this process's own sessions cannot exist yet because nothing
+ * can hold its token. Every directory found is removed unconditionally and
+ * recursively.
+ *
+ * The defect this precondition exists to prevent: a second broker
+ * that had not yet lost the control-port bind race once ran this pass
+ * before it learned it had lost, and removed a live first broker's active
+ * staging -- every session directory that broker's own sessions owned.
+ *
+ * Never call this function from anywhere else, in particular never from
+ * vice-broker.mts's unconditional pre-bind reap block. Never add a pid check to this
+ * function to make an earlier call site "safe" -- the kernel-enforced
+ * singleton bind is the guard, and a pid check would bring back exactly the
+ * pid-reuse heuristic vice-broker.mts's own startup header records
+ * retiring.
+ *
+ * Never throws past a single directory's own failure. Logs found/removed
+ * counts including the zero case. */
 export function sweepOrphanedStaging(options) {
     const log = options.log ?? defaultLog;
     const listStagingSessionDirs = options.listStagingSessionDirs ?? defaultListStagingSessionDirs;

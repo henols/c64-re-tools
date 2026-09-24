@@ -676,14 +676,19 @@ test("vice-broker-staging: after the session-close path runs for a grant, the se
 });
 
 // ---------------------------------------------------------------------------
-// 64-05-PLAN.md, Task 3 (XFER-07, D-07/D-08): the broker's startup reap now
-// calls reapOrphanedConfigScratch()/sweepOrphanedStaging() beside
-// reapOrphanedInstances() -- exercised here through the SAME production
-// root-resolution wiring vice-broker.mts itself uses (brokerConfigScratchDir()/
-// brokerStagingDir(), no arguments, reading VICE_BROKER_HOME), against the
-// SAME compiled artifacts, so a drift between the roots this test seeds and
-// the roots the real broker resolves would show up here rather than only at
-// startup.
+// 64-05-PLAN.md, Task 3 (XFER-07, D-07/D-08); placement corrected by G-64-6.
+// reapOrphanedConfigScratch() runs in vice-broker.mts's pre-bind,
+// unconditional startup-reap block, beside reapOrphanedInstances().
+// sweepOrphanedStaging() runs later, only in the process that has won the
+// control-port bind and only before it publishes its control token -- see
+// vice-broker.mts's own call site. This test calls both directly through
+// the SAME production root-resolution wiring vice-broker.mts itself uses
+// (brokerConfigScratchDir()/brokerStagingDir(), no arguments, reading
+// VICE_BROKER_HOME), against the SAME compiled artifacts, so a drift
+// between the roots this test seeds and the roots the real broker resolves
+// would show up here rather than only at startup. It pins ROOT AGREEMENT,
+// not placement -- placement is pinned by broker-control.test.ts's
+// spawned-real-broker `G-64-6` tests, which exercise the real run().
 // ---------------------------------------------------------------------------
 
 const brokerKillModule = (await import(new URL("./resources/broker-kill.mjs", HERE_MODULE_URL).href)) as unknown as {
