@@ -1,7 +1,7 @@
 ---
 phase: 64-files-as-bytes-both-directions
 verified: 2026-09-24T18:57:48Z
-status: human_needed
+status: passed
 score: 8/8 must-haves verified
 covered_files:
   - ".planning/REQUIREMENTS.md"
@@ -40,7 +40,6 @@ covered_files:
   - ".planning/phases/64-files-as-bytes-both-directions/64-16-PLAN.md"
   - ".planning/phases/64-files-as-bytes-both-directions/64-16-SUMMARY.md"
   - ".planning/phases/64-files-as-bytes-both-directions/64-REVIEW.md"
-  - ".planning/phases/64-files-as-bytes-both-directions/64-UAT.md"
   - ".planning/phases/64-files-as-bytes-both-directions/deferred-items.md"
   - ".planning/phases/64-files-as-bytes-both-directions/evidence/64-16-red-evidence-losing-second-broker.json"
   - ".planning/phases/64-files-as-bytes-both-directions/evidence/64-16-red-evidence-squatted-port-broker.json"
@@ -107,7 +106,7 @@ covered_files:
   - "src/mcp/vice/vice-broker.mts"
   - "src/mcp/vice/vice-proxy.test.ts"
   - "src/mcp/vice/vice-proxy.ts"
-covered_digest: "v1:sha256:2017f1c1cdb0e28c06c388d025cc0c7afb7abe53857a370896f219d8bace8eeb"
+covered_digest: "v1:sha256:37e4f7d52e61a69b726011842b5340a8bae668d69c9517b411f8b87e063fca77"
 behavior_unverified: 0
 overrides_applied: 0
 overrides: []
