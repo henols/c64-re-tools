@@ -1,1 +1,1 @@
-No external API integration: "wire" and "endpoint" name this project's own broker control protocol; the phase moves file bytes over that protocol between its own client and its own broker and spawns that broker in tests — no third-party API, SDK, REST/GraphQL/gRPC endpoint, OAuth flow or webhook is in scope.
+No external API integration: "wire" and "endpoint" name this project's own broker control protocol, which moves file bytes between its own client and broker; no third-party API is in scope.
