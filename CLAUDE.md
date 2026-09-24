@@ -24,31 +24,85 @@ state — and keep working when the emulator misbehaves.
 
 ### Constraints
 
-- **Compatibility**: The stdio MCP surface advertises only the tools this project actually implements against stock VICE — there is no second backend and no per-backend trim to reconcile. A skill written against a tool the server does not advertise therefore *breaks* rather than degrading; playbooks must name a real route or state that the capability is a permanent limitation (see `docs/stock-hard-losses.md`).
+- **Compatibility**: The stdio MCP surface advertises only the tools this project actually implements against stock VICE — there is no second backend and no per-backend trim to reconcile. A skill written against a tool the server does not advertise therefore *breaks* rather than degrading. Playbooks must name a real route or state that the capability is a permanent limitation (see `docs/stock-hard-losses.md`).
 - **Protocol (settled, normative)**: 11-byte request header / 12-byte response header, all multi-byte values little-endian. Confirmed opcode set and error codes per `.planning/phases/01-corrected-ground-truth/evidence/phase0-binmon-findings.md` §5.
-- **Protocol**: **Five** unsolicited message types arrive at request-id `0xffffffff`, not three: `STOPPED` (0x62), `RESUMED` (0x63), `JAM` (0x61), plus `CHECKPOINT_INFO` (0x11) on every checkpoint hit and `REGISTER_INFO` (0x31) on every monitor open. The last two **share a response type with a legitimate command reply**, so demux must key on request-id and never resolve a pending request with an event.
+- **Protocol**: **Five** unsolicited message types arrive at request-id `0xffffffff`, not three:
+
+  1. `STOPPED` (0x62)
+  2. `RESUMED` (0x63)
+  3. `JAM` (0x61)
+  4. `CHECKPOINT_INFO` (0x11), on every checkpoint hit
+  5. `REGISTER_INFO` (0x31), on every monitor open
+
+  Types 4 and 5 **share a response type with a legitimate command reply**. Therefore demux must key on request-id. Never resolve a pending request with an event.
 - **Protocol**: `JAM` (0x61) has a **zero-length body**. `monitor_binary.c:384-394` computes the PC then passes `length = 0`, so no PC is sent. Every client surveyed assumes 2 bytes and breaks on it.
 - **Protocol**: A non-stopping checkpoint emits a `CHECKPOINT_INFO` frame per hit **synchronously, over the blocking socket, from inside the CPU loop** — `mon_breakpoint.c:557-562` calls `mon_breakpoint_event()` before checking `cp->stop`. On a hot address this can stall the emulator thread. This is the source-level reason checkpoint-wait code must always resolve state from a response field like `hit_count`, never by assuming a paused state from elapsed time alone.
 - **Concurrency**: Stock VICE's binary monitor services **exactly one client**. A second `connect()` sits unserviced in the backlog with no reply and no EOF — indistinguishable from a wedge. The broker must guarantee single-client-per-instance and must not diagnose this state as a hang.
-- **Protocol**: `default_memspace` contamination has no direct remedy over the binary monitor. A drive checkpoint hit sets it (`monitor.c:3393-3396`) and no command resets it, after which `ADVANCE_INSTRUCTIONS` and `EXECUTE_UNTIL_RETURN` step the *drive* CPU and `@bank:` conditions fail outright. Affects any stepping code written after drive debugging is added. (`binary monitor only` — MEASURED 2026-08-27: `device c:` over the text channel (`-remotemonitor`) resets the default device, so the remedy exists on the second channel. Note `device c` without the colon is a syntax error; the accepted spelling carries it. Re-confirmed live, and the contamination itself — not merely the remedy's availability — was exercised: a real drive checkpoint armed over the whole 1541 ROM range froze main-CPU `ADVANCE_INSTRUCTIONS` stepping at a fixed PC, and `device c:` restored forward-stepping — MEASURED 2026-09-09, genuine stock `/usr/bin/x64sc` VICE 3.9, `.planning/phases/41-the-text-channel-its-serialization-authority-and-the-content/evidence/phase41-text-channel-live-evidence.md`.)
+- **Protocol**: `default_memspace` contamination has no direct remedy over the binary monitor. A drive checkpoint hit sets it (`monitor.c:3393-3396`). No binary-monitor command resets it. After that, `ADVANCE_INSTRUCTIONS` and `EXECUTE_UNTIL_RETURN` step the *drive* CPU, and `@bank:` conditions fail outright. This affects any stepping code written after someone adds drive debugging.
+
+  **The remedy exists on the text channel.** `device c:` over `-remotemonitor` resets the default device (MEASURED 2026-08-27). Write the colon. `device c` without it is a syntax error.
+
+  A live run exercised the contamination itself, not only the remedy. A real drive checkpoint armed over the whole 1541 ROM range froze main-CPU `ADVANCE_INSTRUCTIONS` stepping at a fixed PC. `device c:` restored forward stepping. MEASURED 2026-09-09 on genuine stock `/usr/bin/x64sc` VICE 3.9. See `.planning/phases/41-the-text-channel-its-serialization-authority-and-the-content/evidence/phase41-text-channel-live-evidence.md`.
 - **Protocol**: The wire memspace byte is **not** the internal enum — `0x00` = main, `0x01`–`0x04` = units 8–11 (`monitor_binary.c:401-434`). `0x08` is rejected.
-- **Protocol**: Checkpoint *conditions* use the pseudo-registers `RL` and `CY` (uppercase), **not** the register-list names `LIN`/`CYC` — those lex as `BANKNAME` and produce a syntax error. Conditions have **no operator precedence** (`mon_parse.y:168`), so `RL == $64 && CY == $14` parses as `(((RL==$64) && CY) == $14)` and is always false; parenthesise every comparison. Bare integer literals are **hex** by default (`monitor.c:1597`), so `RL == 100` means line 256.
-- **Protocol**: `CPUHISTORY_GET`'s count field is read as uint32 but stored in a `uint16_t` (`monitor_binary.c:1492`), so counts ≥ 65536 wrap. Clamp client-side to 65535.
-- **Capability**: There is no runtime `WarpMode` resource (`vsync.c:220-241`, deliberately). Warp control on the stock backend must be launch-time (`-warp` / `InitialWarpMode`). (`binary monitor only` — the claim is about the *resource*: `warp on` / `warp off` is a monitor *command* and works at runtime over the text channel, MEASURED 2026-08-27, and it reports its own state. Both directions were re-probed live through the shipped `vice_warp_set` tool with the channel open — MEASURED 2026-09-09, genuine stock `/usr/bin/x64sc` VICE 3.9: both round trips succeeded, though on this build the response itself carried no textual "on"/"off" confirmation beyond the framed prompt, a nuance this run recorded rather than assumed — `.planning/phases/41-the-text-channel-its-serialization-authority-and-the-content/evidence/phase41-text-channel-live-evidence.md`.)
-- **Capability**: Drive memory reads with true drive emulation off return **silent zeros, not an error**. The real gate is `Drive8TrueEmulation` plus a non-zero `Drive8Type` (`drive/drive-resources.c:450`); `check_drive_emu_level_ok()` is a machine-capability check that always passes on `x64sc`.
+- **Protocol**: Checkpoint *conditions* use the pseudo-registers `RL` and `CY` (uppercase), **not** the register-list names `LIN`/`CYC` — those lex as `BANKNAME` and produce a syntax error. Conditions have **no operator precedence** (`mon_parse.y:168`), so `RL == $64 && CY == $14` parses as `(((RL==$64) && CY) == $14)` and is always false. Parenthesise every comparison. Bare integer literals are **hex** by default (`monitor.c:1597`), so `RL == 100` means line 256.
+- **Protocol**: VICE reads `CPUHISTORY_GET`'s count field as a uint32, then stores it in a `uint16_t` (`monitor_binary.c:1492`). A count of 65536 or more therefore wraps. Clamp the count to 65535 in the client.
+- **Capability**: There is no runtime `WarpMode` resource (`vsync.c:220-241`, deliberately). On the stock backend, set warp at launch time with `-warp` or `InitialWarpMode`.
+
+  **This limit binds the binary monitor only.** The claim is about the *resource*. `warp on` and `warp off` are monitor *commands*. They work at runtime over the text channel, and they report their own state (MEASURED 2026-08-27).
+
+  A live run re-probed both directions through the shipped `vice_warp_set` tool with the channel open. Both round trips succeeded. MEASURED 2026-09-09 on genuine stock `/usr/bin/x64sc` VICE 3.9. On that build the response carried no textual "on" or "off" confirmation beyond the framed prompt. This run recorded that nuance rather than assuming it. See `.planning/phases/41-the-text-channel-its-serialization-authority-and-the-content/evidence/phase41-text-channel-live-evidence.md`.
+- **Capability**: Drive memory reads with true drive emulation off return **silent zeros, not an error**. The real gate is `Drive8TrueEmulation` plus a non-zero `Drive8Type` (`drive/drive-resources.c:450`). `check_drive_emu_level_ok()` is a machine-capability check that always passes on `x64sc`.
 - **Safety**: Three resources power-cycle the machine one call deep, destroying all emulation state — `MachineVideoStandard`, `VICIIModel`, `MachinePowerFrequency` (all reach `machine_trigger_reset(POWER_CYCLE)` at `c64/c64.c:1367`). Any resource-set tool exposed to an LLM must deny these.
 - **Compatibility**: Resource names are not version-stable — `TrapDevice8` was `VirtualDevice8` before 3.10, renamed with no alias.
-- **Protocol**: `DISPLAY_GET` (0x84) is INDEXED8-only and needs api_version ≥ 2; RGB conversion and PNG encoding move client-side.
-- **Protocol**: No monotonic cycle register. `LIN`/`CYC` are readable but not monotonic; absolute cycles must be reconstructed or read from the text monitor's `stopwatch`.
-- **Dependency**: `CPUHISTORY_GET` (0x86) requires **VICE ≥ 3.10**. Debian trixie/forky/sid and all current Ubuntu ship 3.9, which lacks the opcode entirely. Homebrew and official builds are fine. (`binary monitor only` — the version floor is on the *opcode*, not the capability: `chis` returned CPU history with per-entry cycle counts over the text channel on genuine stock 3.9, MEASURED 2026-08-27. Note the polarity: text-command tracing/profiling support is opt-**out** at build time, the opposite of a version floor. The affected commands do not each carry their own separate guard — two share one guard and one stub string (`memmapshow`/`chis`), two carry none (`bt`/`prof flat`), and one degrades per-chip at runtime instead of refusing (`io`); per-command probing is unaffected — `.planning/phases/42-the-text-format-parsers-and-their-two-binary-fixtures/evidence/phase42-text-format-drift-citations.md`. Independently re-confirmed by a separate fixture batch (`FIXTURE_UNSUPPORTED: none`, `.planning/phases/39-the-dual-channel-coexistence-gate-go-degrade-no-go/evidence/phase39-dual-channel-coexistence-gate-findings.md` §7) — `chis` succeeded on genuine stock VICE 3.9 over the text channel via a completely different code path than the binary-monitor opcode's version floor; both citations are collected together in `.planning/phases/41-the-text-channel-its-serialization-authority-and-the-content/evidence/phase41-text-channel-live-evidence.md`.)
-- **Capability**: SID `$D400–$D418` is write-only in hardware and the binary monitor has no SID command — read-back is unrecoverable on stock. VIC-II/CIA *internal* state (raster-IRQ latch, timer latches) is likewise unavailable; only the readable register map is.
+- **Protocol**: `DISPLAY_GET` (0x84) is INDEXED8-only and needs api_version ≥ 2. RGB conversion and PNG encoding move client-side.
+- **Protocol**: No monotonic cycle register. `LIN`/`CYC` are readable but not monotonic. Absolute cycles must be reconstructed or read from the text monitor's `stopwatch`.
+- **Dependency**: `CPUHISTORY_GET` (0x86) requires **VICE ≥ 3.10**. Debian trixie, forky and sid ship 3.9. All current Ubuntu releases ship 3.9. Version 3.9 lacks the opcode. Homebrew builds and official builds carry it.
+
+  **This floor binds the binary monitor only.** It applies to the *opcode*, not to the capability. Over the text channel, `chis` returned CPU history with per-entry cycle counts on genuine stock 3.9 (MEASURED 2026-08-27).
+
+  Note the polarity. A build excludes text-command tracing and profiling by opt-**out**. That is the opposite of a version floor.
+
+  The affected text commands do not each carry a separate guard:
+
+  - `memmapshow` and `chis` share one guard and one stub string.
+  - `bt` and `prof flat` carry no guard.
+  - `io` degrades per chip at runtime instead of refusing.
+
+  Per-command probing still works. See `.planning/phases/42-the-text-format-parsers-and-their-two-binary-fixtures/evidence/phase42-text-format-drift-citations.md`.
+
+  A separate fixture batch confirmed this independently (`FIXTURE_UNSUPPORTED: none`, `.planning/phases/39-the-dual-channel-coexistence-gate-go-degrade-no-go/evidence/phase39-dual-channel-coexistence-gate-findings.md` §7). `chis` succeeded on genuine stock VICE 3.9 over the text channel, through a different code path from the binary-monitor opcode. `.planning/phases/41-the-text-channel-its-serialization-authority-and-the-content/evidence/phase41-text-channel-live-evidence.md` collects both citations.
+- **Capability**: SID `$D400–$D418` is write-only in hardware and the binary monitor has no SID command — read-back is unrecoverable on stock. VIC-II/CIA *internal* state (raster-IRQ latch, timer latches) is likewise unavailable. Only the readable register map is.
 - **Capability**: Matrix keyboard is not recoverable on stock. `KEYBOARD_FEED` (0x72) injects buffer text only.
 - **Tech stack**: Node ≥ 24 (native TypeScript type-stripping — the shipped server has no build step). Host-bound `.mts` files must still be compiled by `build.ts` into committed `resources/*.mjs`, and `resources-sync.test.ts` fails CI on drift.
 - **Architecture**: Any host-facing path or hostname must go through `hostpath.ts` / `containerpath.ts` / `container-guard.mts`. The project maintains a tested closed consumer set for host-path logic.
 - **Architecture**: The broker's single-owner `inFlight` launch guard must stay a synchronous check-and-set with no `await` between. It exists because of the 2026-08-01 triple-launch outage and is regression-tested.
 - **Architecture**: Every shipped module that spawns the emulator binary must do it in the safe form — an argv **array**, never a shell command string and never a string-interpolated binary path — and the set of modules that spawn it at all is frozen rather than assumed. That set currently has exactly **one** member, `src/mcp/vice/broker-launch.mts`, which spawns in argv-array form (`spawn(viceBin, viceArgs)`, never `shell: true`, never a string-interpolated binary path). Its predecessor, a `--help` probe used to tell which VICE backend was installed, was removed when backend detection collapsed to a single stock target. Any NEW module that spawns the emulator binary must use the same argv-array form.
-- **Testing**: The single-resume-per-wait checkpoint invariant (never send a second resume while one wait is outstanding) is unit-tested against a synthetic client in `stock-run-until.ts`, an event-driven port of a rule the project's original polling-based checkpoint-wait code carried untested (that code's correctness only meant anything against a real emulator's timing; the event-driven port removed that dependency). Preserve the invariant if this file changes.
-- **Dependency**: External tools are **never auto-installed** — the user installs them and the project only *detects* what is already present (owner's standing constraint, stated 2026-09-08, not up for re-litigation). The permitted pattern, stated positively, is **detect, then refuse by name with the remedy in the message**: `x64sc` is probed by `resolvedBackend()` in `backend-detect.mts` while `README.md` carries the per-distro `apt` / `brew` / `pacman` line for the *user* to run; `c1541` and `petcat` are resolved by `findSiblingBinary()` in `host-tool.mts` as siblings of the already-resolved `x64sc`, memoised per process, with a `$PATH` fallback that logs a warning naming the shadowing hazard; ACME is probed on `$PATH` plus four documented prefixes (`findAcmeLib()` in `src/mcp/vice/host-tool.mts`); Ghidra is declared by version only, non-vendored, at a user-chosen path (search for `analyzeHeadless`, never guess a prefix); and dxa ships as committed source under `src/mcp/vice/vendor/dxa/`, where `findDxaBinary()` in `host-tool.mts` makes `dxa.disassemble` refuse **by name** with `bash vendor/dxa/build.bash build` as the remedy rather than building it — the `curl` inside `build.bash` is user-invoked only and exists to verify the committed tree against the pinned `src/mcp/vice/vendor/dxa/dxa-0.1.5.tar.gz.sha256`, so nothing triggers it automatically. Therefore: never shell out to a package manager, never fetch-and-build on demand, and never `npx -y` a *third-party* package to make a missing tool appear (the project's own documented `npx -y @henols/vice-mcp anno <verb>` route is an invocation, not an install, and is unaffected). Three things are deliberately **out of scope** and must not be "fixed" by a reader of this bullet: `scripts/ensure-mcp-deps.sh` provisioning the MCP server's *own* `node_modules` via `npm ci` on `SessionStart`, gated on a lockfile sha256 (that is this package's dependencies, not an external tool); CI's `retry_apt install -y acme` in `.github/workflows/ci.yml` (a throwaway runner, never a user machine); and `installer/bin/cli.mjs`'s `npm install -D @henols/vice-mcp`, which runs only behind the explicit `--vendor` opt-in.
+- **Testing**: The single-resume-per-wait checkpoint invariant (never send a second resume while one wait is outstanding) is unit-tested against a synthetic client in `stock-run-until.ts`, an event-driven port of a rule the project's original polling-based checkpoint-wait code carried untested (that code's correctness only meant anything against a real emulator's timing. The event-driven port removed that dependency). Preserve the invariant if this file changes.
+- **Dependency**: **Never auto-install an external tool.** The user installs it. The project only detects what is already present. This is the owner's standing constraint, stated 2026-09-08. Do not re-litigate it.
+
+  Use this pattern: detect the tool, then refuse by name and put the remedy in the message. Each tool follows it:
+
+  - `x64sc` — `resolvedBackend()` in `backend-detect.mts` probes for it. `README.md` carries the per-distro `apt` / `brew` / `pacman` line. The **user** runs that line.
+  - `c1541` and `petcat` — `findSiblingBinary()` in `host-tool.mts` finds them beside the resolved `x64sc`. It memoises the result per process. A `$PATH` fallback logs a warning. That warning names the shadowing hazard.
+  - ACME — `findAcmeLib()` in `src/mcp/vice/host-tool.mts` probes `$PATH` and four documented prefixes.
+  - Ghidra — declared by version only, non-vendored, at a path the user chooses. Search for `analyzeHeadless`. Never guess a prefix.
+  - dxa — `findDxaBinary()` in `host-tool.mts` makes `dxa.disassemble` refuse by name. The refusal names `bash vendor/dxa/build.bash build` as the remedy. The tool never builds dxa itself.
+
+  dxa ships as committed source under `src/mcp/vice/vendor/dxa/`. The `curl` inside `build.bash` runs only when the user runs `build.bash`. It verifies the committed tree against the pinned `src/mcp/vice/vendor/dxa/dxa-0.1.5.tar.gz.sha256`. Nothing triggers it automatically.
+
+  Three prohibitions follow:
+
+  1. Never call a package manager from code.
+  2. Never fetch a tool and build it on demand.
+  3. Never run `npx -y` on a **third-party** package to make a missing tool appear.
+
+  Prohibition 3 does not cover `npx -y @henols/vice-mcp anno <verb>`. That route is an invocation, not an install.
+
+  Three things are **out of scope**. Do not "fix" them:
+
+  1. `scripts/ensure-mcp-deps.sh` runs `npm ci` on `SessionStart` for the MCP server's own `node_modules`. A lockfile sha256 gates it. Those are this package's dependencies, not an external tool.
+  2. `.github/workflows/ci.yml` runs `retry_apt install -y acme`. CI uses a throwaway runner, never a user machine.
+  3. `installer/bin/cli.mjs` runs `npm install -D @henols/vice-mcp`. It runs only behind the explicit `--vendor` opt-in.
 <!-- GSD:project-end -->
 
 <!-- GSD:stack-start source:codebase/STACK.md -->
@@ -66,7 +120,7 @@ state — and keep working when the emulator misbehaves.
 - The installer package (`@henols/c64-re-tools`) only requires **Node >= 18** (`engines.node` in `installer/package.json`) since it is plain `.mjs`.
 - `type: "module"` (ESM) throughout — both packages and all skill scripts.
 - npm. Lockfiles present: `src/mcp/vice/package-lock.json` (committed). The `installer/` package has no committed lockfile.
-- `node_modules/` for the MCP server is **never committed** (`.gitignore`); it is provisioned on first use by a `SessionStart` hook (`scripts/ensure-mcp-deps.sh`), which gates `npm ci` behind a sha256 hash of the lockfile so normal session starts are a no-op.
+- `node_modules/` for the MCP server is **never committed** (`.gitignore`). It is provisioned on first use by a `SessionStart` hook (`scripts/ensure-mcp-deps.sh`), which gates `npm ci` behind a sha256 hash of the lockfile so normal session starts are a no-op.
 ## Frameworks / Key Runtime Dependencies
 - `@mastra/mcp` `1.15.0` - MCP server/tooling framework (`dependencies` in `src/mcp/vice/package.json`)
 - `@mastra/core` `1.55.0` - underlying Mastra runtime the MCP package depends on
@@ -74,10 +128,12 @@ state — and keep working when the emulator misbehaves.
 - `MASTRA_TELEMETRY_DISABLED=1` is set everywhere the server is launched (`.mcp.json`, installer-generated `.mcp.json` entries) to disable Mastra's own telemetry.
 - Node's built-in test runner (`node --test`), no separate test framework. Run via `npm test` in `src/mcp/vice` (the `test` script in `src/mcp/vice/package.json`: `node --test '*.test.*'`).
 - Test files are colocated `*.test.ts` / `*.test.mts` next to the module under test (e.g. `stock-dispatch.ts` / `stock-dispatch.test.ts`).
-- TypeScript `7.0.2` (devDependency, typecheck-only — `tsc --noEmit`); no emitted `.js` from the TS sources at runtime (Node type-stripping runs the `.ts`/`.mts` files directly).
-- `src/mcp/vice/build.ts` - a custom build step that compiles the host-bound `.mts` launcher modules into plain `.mjs` files under `resources/`, since the **host** side (outside any container) cannot rely on Node's type-stripping the same way. **Read `HOST_BOUND_ARTIFACTS` in `build.ts` for the current set; it is not reproduced here.** It grows every time a host-side module is added, and the copies drifted apart once already — on 2026-09-24 this file listed ten, `STACK.md` said eight, and the real list held sixteen. `tsconfig.build.json`'s `include` must match it entry for entry.
+- TypeScript `7.0.2` (devDependency, typecheck-only — `tsc --noEmit`). No emitted `.js` from the TS sources at runtime (Node type-stripping runs the `.ts`/`.mts` files directly).
+- `src/mcp/vice/build.ts` - a custom build step. It compiles the host-bound `.mts` launcher modules into plain `.mjs` files under `resources/`. The **host** side runs outside any container, so it cannot rely on Node's type-stripping the same way.
+
+  **Read `HOST_BOUND_ARTIFACTS` in `build.ts` for the current set. This file does not reproduce it.** The set grows every time someone adds a host-side module. The copies drifted apart once already: on 2026-09-24 this file listed ten, `STACK.md` said eight, and the real list held sixteen. `tsconfig.build.json`'s `include` must match it entry for entry.
 - `@types/node` `24.13.3` - Node type definitions for the TypeScript build.
-- ACME cross-assembler (external, not an npm package) - required on `$PATH` for the `acme-build` skill; the skill probes `$ACME`, `/usr/local/share/acme`, `/usr/share/acme`, `/usr/lib/acme`, `~/.acme` (`findAcmeLib()` in `src/mcp/vice/host-tool.mts`). Verified locally against ACME release 0.97 "Zem".
+- ACME cross-assembler (external, not an npm package) - required on `$PATH` for the `acme-build` skill. The skill probes `$ACME`, `/usr/local/share/acme`, `/usr/share/acme`, `/usr/lib/acme`, `~/.acme` (`findAcmeLib()` in `src/mcp/vice/host-tool.mts`). Verified locally against ACME release 0.97 "Zem".
 ## Key Dependencies (transitive, via package-lock.json)
 - `@a2a-js/sdk` `0.3.14`
 - `@ai-sdk/provider` (multiple versions: `2.0.3`, `3.0.14`, `4.0.3`) and `@ai-sdk/provider-utils` (`3.0.30`, `4.0.40`, `5.0.11`) - AI SDK provider abstractions Mastra depends on
@@ -96,14 +152,39 @@ state — and keep working when the emulator misbehaves.
 - `VICE_MCP_HOST` - host to reach the VICE MCP server on (container vs. host detection otherwise picks `host.docker.internal` or `127.0.0.1`).
 - `VICE_MCP_TIMEOUT_MS` - per-RPC client timeout (default 30000).
 - `VICE_SKIP_RESOURCE_INSTALL=1` - disable deploying host launcher scripts into `<project>/.c64-re-tools/bin/`.
-- `.c64-re-tools/` (repo root, gitignored) - the single tool-written root every writer in this codebase derives its location from (`src/mcp/vice/repo-root.ts`'s `toolsDir()`, D-33, 2026-09-08 clean break): `snapshots/` (`.vsf` + `.json` sidecars), `bin/` (deployed host launcher artifacts), `runs/oracle/` (oracle.run scratch), `runs/ghidra/` (`ghidra.analyze` per-run project data), `incidents/` (recycle incident records), `cache/` (the MCP dep lockfile stamp). Broker state (`supervisor/`, carrying `broker.json`) does **not** live here under any documented start route (Phase 64, plan 64-10, G-64-1) — it lives under the machine-level root `src/mcp/vice/broker-home.mts` resolves (`~/.c64-re-tools/supervisor/` by default, or `VICE_BROKER_HOME`), which the broker writes and same-machine clients read through that same resolver, never through `toolsDir()`/`supervisorDir()` above. `VICE_POOL_DIR` / `VICE_EPOCH_FILE` / `VICE_SUPERVISOR_DIR` / `VICE_INCIDENTS_DIR` still override their respective resolved default. Clean break: no dual-read of the previous locations (`.vice-supervisor/`, `.vice-snapshots/`, `tools/*.mjs`, `.planning/incidents/`), no migration shim, no opt-back-in env var — a pre-existing old-layout tree is simply ignored and left on disk for the user to delete by hand. **There is no remaining exception** (corrected 2026-09-08, gap `G-40-1`): `ghidra.analyze`'s per-run project data lands physically under `.c64-re-tools/runs/ghidra/` like everything else, reached through a non-dotted ALIAS at `<repoRoot>/c64-re-tools` — a symlink whose target is the RELATIVE string `.c64-re-tools`, minted host-side by the broker at startup (`vice-broker.mts`) and re-asserted as an idempotent precondition by `ghidra-project.mts`'s `ensureGhidraRunsHandle()` on every resolve, refused BY NAME (never repaired) when something unexpected already sits at the handle path. The alias exists because Ghidra's own project-location refusal binds the ABSOLUTIZED path argument it is handed — `ProjectLocator` calls `java.io.File.getAbsolutePath()`, never `getCanonicalPath()` (MEASURED from the class's own bytecode, `.planning/notes/ghidra-dot-path-check-semantics.md`) — so it absolutizes a relative argument but does **not** resolve a symlink, and a broker-minted symlink handle satisfies three conditions simultaneously: no dotted or bare-`.` segment anywhere in the absolutized path Ghidra receives; the handle sits inside the bind-mounted workspace, since `containerPath()` throws on a host path outside it; and the link's target is RELATIVE, since the container itself must traverse the same link to read the run log. This is fragile by design — the whole arrangement depends on Ghidra never switching to `getCanonicalPath()` — and is guarded by a live, opt-in test against real Ghidra (`src/mcp/vice/ghidra-live.test.ts`'s SYMLINK GUARD cases, phase 40 plan 40-09). The previous record here called the split location "a hard external-tool constraint, not a preference" — an overstatement produced by running this project's own `hasDotPrefixedSegment()` check against a synthetic string, which observes this project and never observed Ghidra; MEASURED 2026-09-08 against real Ghidra 12.1.3 that the refusal binds the path string, not where the bytes physically live.
-- `VICE_BROKER_STALE_MS`, `VICE_BROKER_ACQUIRE_TIMEOUT_MS`, `VICE_BROKER_RECYCLE_TIMEOUT_MS`, `VICE_BROKER_CONTROL_DIAL_HOST`, `VICE_BROKER_CONTROL_HOST` - broker/control-plane tuning. `VICE_BROKER_NODE` - an absolute-path override pinning which `node` interpreter `vice-launcher.sh` execs into (for a service environment whose PATH carries no usable one); the launcher refuses by name, before exec, when the resolved interpreter (override or PATH) is below the floor mirrored from `engines.node`.
+- `.c64-re-tools/` (repo root, gitignored) - the single tool-written root. Every writer in this codebase derives its location from `toolsDir()` in `src/mcp/vice/repo-root.ts` (D-33, 2026-09-08 clean break). It holds:
+
+  - `snapshots/` — `.vsf` files and `.json` sidecars
+  - `bin/` — deployed host launcher artifacts
+  - `runs/oracle/` — oracle.run scratch
+  - `runs/ghidra/` — `ghidra.analyze` per-run project data
+  - `incidents/` — recycle incident records
+  - `cache/` — the MCP dep lockfile stamp
+
+  **Broker state does not live here.** `supervisor/`, which carries `broker.json`, sits under the machine-level root instead (Phase 64, plan 64-10, G-64-1). `src/mcp/vice/broker-home.mts` resolves that root. It defaults to `~/.c64-re-tools/supervisor/`, or to `VICE_BROKER_HOME`. The broker writes there. Same-machine clients read there. Both go through `broker-home.mts`, never through `toolsDir()` or `supervisorDir()`.
+
+  `VICE_POOL_DIR`, `VICE_EPOCH_FILE`, `VICE_SUPERVISOR_DIR` and `VICE_INCIDENTS_DIR` each still override their own resolved default.
+
+  **The 2026-09-08 change was a clean break.** The code does not read the previous locations (`.vice-supervisor/`, `.vice-snapshots/`, `tools/*.mjs`, `.planning/incidents/`). There is no migration shim. There is no env var that restores the old layout. The code ignores an old-layout tree and leaves it on disk. The user deletes it by hand.
+
+  **There is no remaining exception** (corrected 2026-09-08, gap `G-40-1`). `ghidra.analyze` writes its per-run project data under `.c64-re-tools/runs/ghidra/` like everything else. Ghidra reaches it through a non-dotted ALIAS at `<repoRoot>/c64-re-tools`. That alias is a symlink. Its target is the RELATIVE string `.c64-re-tools`. The broker mints it host-side at startup (`vice-broker.mts`). `ensureGhidraRunsHandle()` in `ghidra-project.mts` re-asserts it as an idempotent precondition on every resolve. It refuses BY NAME when something unexpected already sits at the handle path. It never repairs that path.
+
+  The alias exists because Ghidra's project-location refusal binds the ABSOLUTIZED path argument it receives. `ProjectLocator` calls `java.io.File.getAbsolutePath()`. It never calls `getCanonicalPath()` (MEASURED from the class's own bytecode, `.planning/notes/ghidra-dot-path-check-semantics.md`). Ghidra therefore absolutizes a relative argument but does **not** resolve a symlink. A broker-minted symlink handle meets three conditions at the same time:
+
+  1. The absolutized path Ghidra receives carries no dotted segment and no bare-`.` segment.
+  2. The handle sits inside the bind-mounted workspace, because `containerPath()` throws on a host path outside it.
+  3. The link's target is RELATIVE, because the container must traverse the same link to read the run log.
+
+  This arrangement is fragile by design. It depends on Ghidra never switching to `getCanonicalPath()`. A live, opt-in test against real Ghidra guards it — the SYMLINK GUARD cases in `src/mcp/vice/ghidra-live.test.ts` (phase 40, plan 40-09).
+
+  An earlier version of this entry called the split location "a hard external-tool constraint, not a preference". That was an overstatement. It came from running this project's own `hasDotPrefixedSegment()` check against a synthetic string, which observes this project and never observed Ghidra. MEASURED 2026-09-08 against real Ghidra 12.1.3: the refusal binds the path string, not where the bytes physically live.
+- `VICE_BROKER_STALE_MS`, `VICE_BROKER_ACQUIRE_TIMEOUT_MS`, `VICE_BROKER_RECYCLE_TIMEOUT_MS`, `VICE_BROKER_CONTROL_DIAL_HOST`, `VICE_BROKER_CONTROL_HOST` - broker/control-plane tuning. `VICE_BROKER_NODE` - an absolute-path override pinning which `node` interpreter `vice-launcher.sh` execs into (for a service environment whose PATH carries no usable one). The launcher refuses by name, before exec, when the resolved interpreter (override or PATH) is below the floor mirrored from `engines.node`.
 - `CLAUDE_PLUGIN_ROOT`, `CLAUDE_PLUGIN_DATA` - Claude Code-provided plugin paths, consumed by `scripts/ensure-mcp-deps.sh` and `.mcp.json`.
 - `CLAUDE_PROJECT_DIR`, `CONTAINER_WORKSPACE_PATH`, `HOST_WORKSPACE_PATH` - project-root resolution (`src/mcp/vice/repo-root.ts`) and host/container path translation.
 - `MASTRA_TELEMETRY_DISABLED` - disables Mastra's telemetry.
 - `.env` files: none detected in the repository.
 ## Platform Requirements
-- Node.js >= 24 to run/test the MCP server; Node >= 18 to run the installer.
+- Node.js >= 24 to run/test the MCP server. Node >= 18 to run the installer.
 - ACME cross-assembler on `$PATH` for the `acme-build` skill.
 - A reachable host running stock upstream VICE (`x64sc`) for any live emulator interaction — the MCP server itself has no in-process emulator.
 - Docker/devcontainer awareness baked in: code checks `isInsideContainer()` (`src/mcp/vice/container-guard.mts`) to decide between `host.docker.internal` and `127.0.0.1` as the default VICE host.
@@ -117,7 +198,24 @@ state — and keep working when the emulator misbehaves.
 
 Full detail: `.planning/codebase/CONVENTIONS.md`. The rules below change what you write.
 
-- **`docs/` is operator-owned.** `docs/` holds only what the project owner put there: documentation about the C64 tooling product itself. Every GSD phase artifact — evidence, findings, gate verdicts, decision and provenance records, a ROADMAP criterion answered in writing — belongs under `.planning/phases/<phase>/evidence/` and never in `docs/`. This binds every role that names a destination path, and the planner and the discuss agent most of all: an executor writes where its plan says, so a `docs/` path in a `<files>` block is already the defect. **Do not infer this destination from precedent.** The planning corpus still cites `docs/…` paths in historical entries, and some of those paths no longer resolve. They are the residue of a convention that was reversed, not evidence for it: Phase 53 relocated its documents out of `docs/` on 2026-09-17 (`ccdc58da`), two more were written straight back in within 24 hours because no file an agent reads carried this rule, and those were relocated on 2026-09-19. A citation reading "recorded in `docs/phaseNN-….md`" is therefore a stale pointer, never a house style to copy. No guard enforces any of this — Phase 53's guard criterion was withdrawn on 2026-09-17 because it would have scanned source text, which `260914-poo` D-1 bans — so this bullet is the whole enforcement. To check the current state rather than trust a count: `ls docs/` should show only operator-authored files, and `grep -rl 'docs/phase' $(git ls-files src tools)` should return nothing.
+- **`docs/` is operator-owned.** `docs/` holds only what the project owner put there: documentation about the C64 tooling product itself. Put every GSD phase artifact under `.planning/phases/<phase>/evidence/` instead. Never put one in `docs/`. This covers evidence, findings, gate verdicts, decision records, provenance records, and a ROADMAP criterion answered in writing.
+
+  This rule binds every role that names a destination path. It binds the planner and the discuss agent most of all. An executor writes where its plan says, so a `docs/` path in a `<files>` block is already the defect.
+
+  **Do not infer the destination from precedent.** The planning corpus still cites `docs/…` paths in historical entries. Some of those paths no longer resolve. They are the residue of a convention the project reversed. They are not evidence for it:
+
+  - Phase 53 relocated its documents out of `docs/` on 2026-09-17 (`ccdc58da`).
+  - Two more documents went straight back in within 24 hours, because no file an agent reads carried this rule.
+  - Phase 53's work relocated those two on 2026-09-19.
+
+  A citation that reads "recorded in `docs/phaseNN-….md`" is a stale pointer. Never copy it as house style.
+
+  **No guard enforces any of this.** The project withdrew Phase 53's guard criterion on 2026-09-17, because that guard would scan source text, which `260914-poo` D-1 bans. This bullet is the whole enforcement.
+
+  To check the current state instead of trusting a count, run both commands:
+
+  1. `ls docs/` — it must show only operator-authored files.
+  2. `grep -rl 'docs/phase' $(git ls-files src tools)` — it must return nothing.
 - **Files.** A file name is lowercase words joined by hyphens. Domain prefixes carry meaning and you must continue them. `stock-*` is the binary-monitor backend. `anno-*` is the annotation store. `disasm-*` is the disassembler. `broker-*` is the host broker. A test sits beside its module under the same basename plus `.test.ts`, `.test.mts` or `.test.mjs`.
 - **`.mts` against `.ts`.** `.mts` marks a module that `build.ts` compiles into `resources/`. Plain `.ts` runs as source under Node type-stripping. Read the `HOST_BOUND_ARTIFACTS` array in `build.ts` before you rename a file across the two.
 - **Names.** A function name is camelCase and starts with a verb, as in `repoRoot()` and `containerPath()`. A function that returns a boolean reads as a predicate, as in `isInsideContainer()`. A type name is PascalCase. An options type is `<FunctionName>Options`. A result type is `<FunctionName>Result`. An error class name ends in `Error`.
@@ -157,11 +255,15 @@ Full detail: `.planning/codebase/ARCHITECTURE.md`. The system is a split-process
 ### Constraints that bind what you may write
 - **No fall-through to another transport.** Every tool reaches `stockDispatch.dispatchStock()`. It matches a table entry and answers by name, or it matches nothing and refuses by name. There is no third path. `vice_result_continue` and the `anno_*` family touch no transport, and `stock-dispatch.test.ts` asserts those two exceptions by name.
 - **Single-owner launch guard.** The module-level `inFlight` boolean in `broker-launch.mts` is a synchronous check-and-set with no `await` between. It is the sole gate on spawning `x64sc`. It exists because of the 2026-08-01 triple-launch outage. Do not add a second gate. Do not put anything blocking inside that window.
-- **One module per seam — and it is NOT test-enforced.** `anno-store.ts` is the only module that imports `node:sqlite`, and it must stay that way: route annotation-store access through it rather than opening a second database handle. Phase 56 deleted the structural confinement scan that used to assert this (`anno-seam.test.ts` says so in its own header), so nothing catches a second importer — check by hand with `grep -rl 'from "node:sqlite"'`. **`node:net` is a different case and is NOT confined**: `stock-protocol.ts` owns the binary-monitor *wire format*, but a dozen production modules legitimately open sockets of their own (the broker, the relay, the text channel, the host-tool client). Do not read the binmon-codec seam as a ban on `node:net`.
+- **One module per seam. It is NOT test-enforced.** `anno-store.ts` is the only module that imports `node:sqlite`. Keep it that way. Route annotation-store access through it. Do not open a second database handle.
+
+  Phase 56 deleted the structural scan that used to assert this. `anno-seam.test.ts` records that removal in its own header. Nothing now catches a second importer. Check by hand: `grep -rl 'from "node:sqlite"'`.
+
+  **`node:net` is a different case. It is NOT confined.** `stock-protocol.ts` owns the binary-monitor *wire format*. About a dozen production modules open sockets of their own, and they do so legitimately — the broker, the relay, the text channel and the host-tool client. Do not read the binmon-codec seam as a ban on `node:net`.
 - **No build step for the shipped server.** Container-side `.ts` modules run under Node type-stripping. `build.ts` compiles only the host-bound `.mts` files, because those run on a bare host Node.
 - **This codebase avoids module cycles deliberately.** Passing `workspaceRoot` explicitly broke the cycle from `repo-root.ts` to `install-resources.ts` to `hostpath.ts`. Adding `stock-handler.ts` broke the cycle from `stock-dispatch.ts` to the `stock-*.ts` modules. Do not reintroduce either import.
 - **Global state lives in four modules.** `stock-dispatch.ts` holds `heldSession`. `backend-detect.mts` holds `memoisedResult`. `broker-launch.mts` holds `inFlight`. `vice-proxy.ts` holds `CONTINUATION_STORE`. The event loop is single-threaded throughout, and the broker spawns emulator instances as child processes rather than worker threads.
-- **Several tracked source files contain a NUL byte, and plain `grep` skips them silently.** Any content census must use `grep -a`. Do not work from a remembered list of which files — it has been wrong before (this bullet named exactly one until 2026-09-24; four `.ts` files qualified). Recompute it: `node -e 'require("child_process").execSync("git ls-files src",{encoding:"utf8"}).trim().split("\n").filter(f=>require("fs").readFileSync(f).indexOf(0)!==-1).forEach(f=>console.log(f))'`, which also lists the binary fixtures, where a NUL is expected rather than a hazard.
+- **Several tracked source files contain a NUL byte, and plain `grep` skips them silently.** Any content census must use `grep -a`. Do not work from a remembered list of which files — it has been wrong before (this bullet named exactly one until 2026-09-24. Four `.ts` files qualified). Recompute it: `node -e 'require("child_process").execSync("git ls-files src",{encoding:"utf8"}).trim().split("\n").filter(f=>require("fs").readFileSync(f).indexOf(0)!==-1).forEach(f=>console.log(f))'`, which also lists the binary fixtures, where a NUL is expected rather than a hazard.
 
 ### Patterns and anti-patterns
 - **Generated but committed.** `build.ts` compiles `.mts` sources into `resources/*.mjs`, and the repo commits that output, because a consuming project deploys it with no build step. `resources-sync.test.ts` fails CI on drift.
@@ -214,17 +316,17 @@ rather than disabling isolation to avoid them:
 
 1. A plan delivering `.planning/STATE.md` or `ROADMAP.md` content gets the stock per-plan
    carve-out `USE_WORKTREES_FOR_PLAN=false` (worktree executors may not touch those files —
-   `execute-phase.md`; the commit strips them — `execute-plan.md`). `REQUIREMENTS.md`
+   `execute-phase.md`. The commit strips them — `execute-plan.md`). `REQUIREMENTS.md`
    is unaffected.
 2. `cleanup-wave` refuses any branch whose diff contains a deletion, unconditionally
    (`worktree-safety.cjs`'s cleanup-wave deletion check). Merge a deletion plan's branch by hand.
-3. The per-plan worktree gate owns the isolation sentinel; do not hand-force
+3. The per-plan worktree gate owns the isolation sentinel. Do not hand-force
    `--force-isolation` as a standing ritual.
 
 GSD itself is a **vendored, gitignored install** — `/gsd-update` may be run freely and the
 repo never changes as a result. Nothing here may branch on whether it is installed (CI and
 fresh clones have none). It carries **zero local customisations** and must keep carrying zero — never edit a file
-under the vendored tree. `.claude/gsd-local-patches/` should always be empty; if it
+under the vendored tree. `.claude/gsd-local-patches/` should always be empty. If it
 appears, something edited the install.
 
 Full rationale and history: `.planning/ENGINEERING_RULES.md` § 20 and § 20.1.
