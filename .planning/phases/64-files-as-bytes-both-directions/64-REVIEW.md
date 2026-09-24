@@ -2,36 +2,20 @@
 phase: 64-files-as-bytes-both-directions
 reviewed: 2026-09-24T00:00:00Z
 depth: standard
-files_reviewed: 23
+files_reviewed: 7
 files_reviewed_list:
-  - src/mcp/vice/broker-control.mts
-  - src/mcp/vice/broker-control.test.ts
-  - src/mcp/vice/broker-endpoint.test.ts
-  - src/mcp/vice/broker-endpoint.ts
-  - src/mcp/vice/broker-relay-text.test.ts
-  - src/mcp/vice/broker-relay.mts
-  - src/mcp/vice/broker-relay.test.ts
   - src/mcp/vice/broker-transfer.mts
-  - src/mcp/vice/host-tool-transport.test.ts
-  - src/mcp/vice/resources/broker-control.mjs
-  - src/mcp/vice/resources/broker-relay.mjs
+  - src/mcp/vice/broker-transfer.test.mts
   - src/mcp/vice/resources/broker-transfer.mjs
   - src/mcp/vice/resources/vice-broker.mjs
-  - src/mcp/vice/stock-connect.test.ts
-  - src/mcp/vice/stock-connect.ts
-  - src/mcp/vice/stock-handler.test.ts
-  - src/mcp/vice/stock-handler.ts
   - src/mcp/vice/stock-machine.test.ts
-  - src/mcp/vice/stock-machine.ts
-  - src/mcp/vice/text-connect.test.ts
-  - src/mcp/vice/transfer-disjoint-roots.test.ts
-  - src/mcp/vice/vice-broker-staging.test.ts
   - src/mcp/vice/vice-broker.mts
+  - src/mcp/vice/vice-broker-staging.test.ts
 findings:
-  critical: 1
-  warning: 1
+  critical: 2
+  warning: 2
   info: 1
-  total: 3
+  total: 5
 status: issues_found
 ---
 
@@ -39,202 +23,243 @@ status: issues_found
 
 **Reviewed:** 2026-09-24T00:00:00Z
 **Depth:** standard
-**Files Reviewed:** 23
+**Files Reviewed:** 7
 **Status:** issues_found
 
 ## Summary
 
-This is the second gap-closure round for Phase 64, scoped to the diff since
-`b06c74ac` (plan 64-12's bounded emulator-leg dial, G-64-4, and plan 64-13's
-upload-completion confirmation, G-64-3). Both mechanisms are implemented
-carefully and are backed by a large, targeted test suite (all 374 tests in
-the affected files pass locally, and `resources-sync.test.ts` confirms the
-committed `resources/*.mjs` artifacts are byte-identical to a fresh build of
-their `.mts` sources, so they were reviewed only as a drift check per the
-task's instructions).
+This diff (gap-closure plan 64-15, G-64-5/CR-01) replaces `receivePayloadToFile()`'s
+ad-hoc, path-leaking wire text with `formatPathFreeFault()` plus a stricter
+`ReceivePayloadToFileResult` return type, and threads the change through
+`vice-broker.mts`'s `writeUploadCompletionReply()`. The CR-01 fix itself is sound:
+`formatPathFreeFault()`'s errno-token allowlist regex correctly excludes every
+character a path needs, the getter-throws-as-no-code case is handled, every caught-fault
+branch in `receivePayloadToFile()` now routes through it, the compiled `resources/*.mjs`
+artifacts are byte-for-byte in sync with their `.mts`/`.ts` sources, and the new tests
+drive real `fs` faults (ENOENT, ENAMETOOLONG) rather than synthetic already-path-free
+rejections, closing the exact gap the prior review found.
 
-The core race G-64-3 set out to close (an upload naming a staged file before
-the broker had published it) is genuinely closed: `receivePayloadToFile()`
-now only resolves after `verifyObserved()` and `renameSync()` have both
-succeeded, and `stock-connect.ts`'s `defaultTransferFile()` now blocks on the
-broker's own `transfer_complete`/`error` reply rather than on its local
-write finishing. The G-64-4 bounded dial (`dialEmulatorLeg()`) correctly
-serialises against concurrent attach/release/recycle races via an
-identity-based `isAbandoned()` check, and `broker-control.mts`'s dispatch arm
-correctly defers the `attached` acknowledgement until after the emulator leg
-is confirmed connected.
-
-However, in closing G-64-3's race, the new upload-failure wire replies
-introduce a real regression against this same codebase's own path-disclosure
-rule (D-15/D-17): three of `receivePayloadToFile()`'s failure branches build
-the client-facing `wireReason` by concatenating a fixed prefix with the raw
-Node.js `Error.message` of a filesystem failure, and Node's own `fs` errors
-embed both the source and destination absolute paths verbatim in that
-message (CR-01, below). Separately, `dialEmulatorLeg()`'s "bounded" dial has
-no enforcement against a `connect()` call that never settles at all (WR-01).
+Reviewing the full files at standard depth (not just the diff hunks) surfaced two
+pre-existing, untouched-by-this-diff defects in the same staging/transfer machinery this
+phase owns, both severe enough to flag here: an unconditional, liveness-blind staging
+sweep that can delete a live broker's active session data, and an unguarded synchronous
+`mkdirSync()` inside a function whose own contract promises "never throws," reachable from
+a caller with no `.catch()`, in a codebase where an unhandled rejection is documented to
+kill the entire VICE pool.
 
 ## Critical Issues
 
-### CR-01: Upload failure replies can leak the broker's host filesystem paths to the client
+### CR-01: `sweepOrphanedStaging()` deletes a live broker's active staging directories, unconditionally, before the singleton bind race is even decided
 
-**File:** `src/mcp/vice/broker-transfer.mts:354-364`, `:377-389`, `:392-403`
-**Issue:**
+**File:** `src/mcp/vice/vice-broker.mts:2211-2226` (call site; implementation in `src/mcp/vice/broker-kill.mts:837-882`, out of this review's file list but directly load-bearing here)
 
-`receivePayloadToFile()`'s `TransferResult.wireReason` is documented, in this
-same file, as "the PATH-FREE text a caller writes to the client on the
-transfer connection (D-15/D-17)" — and `vice-broker.mts`'s
-`writeUploadCompletionReply()` (added by this same plan, `vice-broker.mts:
-1179-1192`, wired at `:1247-1253`) sends `result.wireReason ?? result.reason`
-verbatim as the `error` line's `message` field to whatever peer dialled the
-transfer connection (per `broker-control.mts`'s own extensive header
-comment, this listener binds not just loopback but every enumerated bridge
-gateway address, i.e. this reply can cross the container/host boundary).
+**Issue:** `run()` calls `sweepOrphanedStaging({ root: brokerStagingDir() })` unconditionally,
+*before* the control-port bind attempt — the same "before the bind, even for a process that
+goes on to lose the singleton race" ordering `vice-broker.mts`'s own comment block explicitly
+documents for the neighbouring `reapOrphanedInstances()` call:
 
-Three of the four failure branches build `wireReason` like this:
+```
+// NOTE: this reap runs UNCONDITIONALLY, before the bind attempt
+// below -- including for a process that goes on to LOSE the singleton
+// race a moment later ...
+// A losing second broker's own reap pass is an accepted, pre-existing
+// consequence of "the reap is unconditional" -- not something the
+// singleton guard below is required to prevent.
+...
+reapOrphanedConfigScratch({ root: brokerConfigScratchDir() });
+sweepOrphanedStaging({ root: brokerStagingDir() });
+```
+
+`sweepOrphanedStaging()` itself (`broker-kill.mts:837-882`) has **no liveness check at
+all** — its own doc comment says so explicitly: the `isAlive` parameter is "[a]ccepted for
+SYMMETRY with `reapOrphanedConfigScratch()`'s own liveness seam only -- deliberately NEVER
+called anywhere in this function's own body." Contrast this with `reapOrphanedConfigScratch()`,
+whose sibling function genuinely checks `configScratchStillOwnedByLiveProcess()` (pid alive
+*and* the process's own args still name the expected identity) before removing anything.
+
+The consequence: if a second broker process starts while a first, genuinely live broker
+still holds the control port (a systemd restart race, an operator accidentally starting a
+second instance, or any other double-launch), the second process runs this sweep — and
+deletes **every** staging session directory under `brokerStagingDir()`, including ones the
+live broker's active grants currently own, before it ever discovers (via `EADDRINUSE`) that
+it lost the race. This directly violates the guarantee `broker-transfer.mts`'s own module
+header states for this exact directory tree: "Never delete a staged file on an
+AUTOSTART/DUMP/UNDUMP reply... for `vice_disk_attach` the image must stay attached to unit
+8 for the rest of the session." A disk image a running emulator has attached, or a file
+mid-upload/mid-download on the live broker, can be unlinked out from under it by a
+completely unrelated, losing process — with no warning to the affected client, and no
+liveness check of any kind standing in the way.
+
+**Fix:** Give `sweepOrphanedStaging()` the same liveness discipline
+`reapOrphanedConfigScratch()` already has, or move it after the singleton bind succeeds (so
+a losing process never reaches it at all) rather than running it unconditionally ahead of
+the bind attempt:
 
 ```ts
+// Only sweep once this process has confirmed it actually owns the
+// control port -- never before the bind is known to have succeeded.
+sweepOrphanedStaging({ root: brokerStagingDir() }); // move below the bind, or
+// gate each directory by liveness the same way reapOrphanedConfigScratch() does,
+// e.g. by writing/reading a per-session-dir owner record.
+```
+
+---
+
+### CR-02: `receivePayloadToFile()`'s unguarded `mkdirSync()` violates its own "never throws" contract, and its only production caller has no `.catch()` — an unhandled rejection here is documented to kill the entire VICE pool
+
+**File:** `src/mcp/vice/broker-transfer.mts:451` (unguarded call); caller: `src/mcp/vice/vice-broker.mts:1254-1266`
+
+**Issue:** `receivePayloadToFile()`'s own doc comment states, twice, that it never throws:
+"On ANY failure path... this function resolves `{ ok: false, reason }`. Never throws," and
+repeats "`wireReason` never reads a caught error's `.message` directly anywhere in this
+function" as if every fs call were already inside a catch. But this line is not:
+
+```ts
+mkdirSync(dirname(destPath), { recursive: true });   // <-- no try/catch
+const tmpPath = `${destPath}.tmp-${process.pid}-${Date.now()}`;
+```
+
+every other filesystem operation in this function (`createWriteStream`/`pipeline`,
+`beforePublish`, `renameSync`) is wrapped in its own `try`/`catch` with a dedicated
+`formatPathFreeFault()` branch — this one is not, and any real fault here (`EACCES`,
+`ENOSPC`, `ENOTDIR` from a colliding path segment, a symlink loop, or the directory having
+been removed out from under an in-flight upload by CR-01 above) throws synchronously
+inside this `async` function, producing a rejected promise.
+
+Its one production call site, `handleFileTransfer()`'s upload branch in `vice-broker.mts`,
+never attaches a `.catch()`:
+
+```ts
+receivePayloadToFile({
+  socket, destPath: entry.path, header: {...}, pending, beforePublish: deps.beforePublish,
+}).then((result) => {
+  if (!result.ok) { ... }
+  clearTransferInFlight(request.handle);
+  writeUploadCompletionReply(socket, result);
+});
+```
+
+A rejection here becomes a genuine Node `unhandledRejection`. This project's own
+`broker-kill.mts` registers a process-wide handler for exactly that event, and
+`host-tool.mts`'s own comments describe its effect in this codebase without hedging:
+"broker-kill.mts's uncaughtException/unhandledRejection handlers kill the whole VICE pool
+on an unhandled [rejection]." One client's failed upload — triggered by an ordinary,
+plausible fs fault at this specific call — can therefore take down every other client's
+running emulator instance on the same broker. No test in `broker-transfer.test.mts` or
+`vice-broker-staging.test.ts` exercises this branch; every fs-fault test in this suite
+targets the *pipeline*, the *hook*, or the *rename*, never this `mkdirSync`.
+
+**Fix:** Wrap the call the same way every sibling fs operation in this function already is:
+
+```ts
+try {
+  mkdirSync(dirname(destPath), { recursive: true });
 } catch (e) {
-  cleanupTmp();
-  const message = (e as Error).message;
   return {
     ok: false,
     code: "internal",
-    reason: `vice: failed to publish ${destPath}: ${message}`,
-    wireReason: `vice: failed to publish the received file: ${message}`,
+    reason: `vice: failed to create the staging directory for ${destPath}: ${(e as Error).message}`,
+    wireReason: formatPathFreeFault("vice: transfer failed before the payload could be received", e),
   };
 }
 ```
 
-`message` is never sanitised. Node's own filesystem errors embed both
-absolute paths in `.message` — MEASURED directly against this exact
-`renameSync`/`createWriteStream` failure shape:
-
-```
-$ node -e "require('fs').renameSync('/tmp/definitely-does-not-exist-xyz123','/tmp/some-other-nonexistent-dir-abc/dest.txt')"
-ENOENT: no such file or directory, rename '/tmp/definitely-does-not-exist-xyz123' -> '/tmp/some-other-nonexistent-dir-abc/dest.txt'
-
-$ node -e "require('fs').createWriteStream('/tmp/nonexistent-dir-zzz/foo.tmp').on('error', e => console.log(e.message))"
-ENOENT: no such file or directory, open '/tmp/nonexistent-dir-zzz/foo.tmp'
-```
-
-So a real ENOSPC/EACCES/ENOENT during the receive pipeline (`:354-364`), the
-`beforePublish` hook (`:377-389`), or the publish rename itself (`:392-403`)
-sends the broker's own absolute `tmpPath` (which discloses the internal
-staging directory layout under `.c64-re-tools`/`VICE_BROKER_HOME`) and/or
-`destPath` (the resolved disk/snapshot destination) straight to the client —
-exactly the disclosure this codebase's own `Boundary` convention and D-17
-forbid, and exactly what this plan's own comments claim never happens.
-
-This is not caught by the suite: `stock-machine.test.ts:1338`'s own
-`beforePublish` rejection test ("a publish that fails before the rename
-refuses the load... names no path") injects `new Error("forced publish
-failure (G-64-3, plan 64-13 test)")` — a synthetic, path-free message
-authored by the test itself — so the assertion passes without ever
-exercising a real filesystem error's `.message` shape. The test proves the
-plumbing forwards `wireReason` correctly; it does not prove `wireReason` is
-actually path-free under a real I/O failure.
-
-**Fix:**
-Never interpolate a caught error's raw `.message` into `wireReason`. Use the
-same discipline `broker-relay.mts`'s `buildEmulatorUnreachableMessage()`
-already uses for the sibling G-64-4 fix ("Deliberately carries NO errno
-token and NO path"): report at most the `errno` code, never the message.
-
-```ts
-} catch (e) {
-  cleanupTmp();
-  const code = (e as NodeJS.ErrnoException).code ?? "unknown_error";
-  return {
-    ok: false,
-    code: "internal",
-    reason: `vice: failed to publish ${destPath}: ${(e as Error).message}`, // broker-side only
-    wireReason: `vice: failed to publish the received file (${code})`,      // never the raw message
-  };
-}
-```
-Apply the same change to the receive-pipeline branch (`:354-364`) and the
-`beforePublish` branch (`:377-389`). Then replace `stock-machine.test.ts:
-1338`'s synthetic path-free rejection with (or add alongside it) a case that
-triggers a **real** `renameSync`/`createWriteStream` failure (e.g. a
-destination directory that does not exist, or a read-only staging root) and
-assert the wire reply contains neither the tmp path nor the destination
-path — the current test cannot detect this defect because its own injected
-error was authored to already be path-free.
+The same unguarded-`mkdirSync` shape also exists one call up the same staging subsystem, in
+`ensureBrokerDir()` (`broker-home.mts:213-215`, `mkdirSync(path, { recursive: true })` with
+no try/catch), reached synchronously from `handleStageFile()` (`vice-broker.mts:1090-1104`)
+via `stageFileSlot()` (`broker-transfer.mts:639-672`) with no try/catch anywhere in that
+chain either, and `broker-control.mts`'s own `stage_file` dispatch arm calls
+`opts.onStageFile(targetId, slot)` directly, uncaught. A throw there is a synchronous
+uncaught exception rather than a rejected promise, but lands on the same registered
+`uncaughtException` handler with the same documented consequence. Worth the same fix,
+though `broker-home.mts` and `broker-control.mts` are outside this review's file list.
 
 ## Warnings
 
-### WR-01: The "bounded" emulator-leg dial has no timeout on an individual connect attempt
+### WR-01: A download-side transfer failure produces no reply line at all, unlike the upload side's rich `transfer_complete`/`error` protocol
 
-**File:** `src/mcp/vice/broker-relay.mts:586-609` (`attemptEmulatorConnect`), `:622-675` (`dialEmulatorLeg`)
-**Issue:**
+**File:** `src/mcp/vice/vice-broker.mts:1267-1275`
 
-G-64-4's whole premise is that `dialEmulatorLeg()` bounds the wait for the
-emulator leg to `deadlineMs` (default 5000ms), and `broker-endpoint.ts`'s
-`DEFAULT_ATTACH_REPLY_TIMEOUT_MS` (8000ms) is deliberately set to exceed
-that bound by at least one retry interval so the client's own wait outlives
-the broker's. That relationship only holds if every individual `connect()`
-attempt itself resolves (with `"connect"` or `"error"`) in bounded time.
+**Issue:** The upload branch of `handleFileTransfer()` now (post G-64-3/G-64-5) always
+writes an explicit `transfer_complete` or path-free `error` completion line before closing
+the socket. The download branch has no equivalent:
 
-`attemptEmulatorConnect()` calls `connectFn({ host, port })` with no
-`timeout` option and installs only `"connect"`/`"error"` listeners — there
-is no `socket.setTimeout()` guarding the attempt itself, and the deadline
-check in `dialEmulatorLeg()`'s loop only runs *between* completed attempts
-(`elapsedMs >= deadlineMs`, checked after an attempt settles). If a single
-`connect()` call neither errors nor connects — e.g. `resolveBinmonHost()`
-resolves to `VICE_BROKER_BINMON_HOST` pointed at a host that silently drops
-SYN packets (a firewalled or unreachable address; this override exists
-precisely for "the MCP server itself runs in a container that must reach
-the host emulator", per `broker-launch.mts:110-134`) — the `await
-attemptEmulatorConnect(...)` never settles, `dialEmulatorLeg()`'s promise
-never resolves, and:
+```ts
+} else {
+  sendPayloadFromFile({ socket, sourcePath: entry.path, kind: "transfer_payload" })
+    .then((result) => {
+      if (!result.ok) {
+        process.stderr.write(`vice-broker: download transfer failed for handle ${request.handle}: ${result.reason}\n`);
+      }
+    })
+    .finally(settle);
+}
+```
 
-- `handleRelayAttach()`'s `holder.attached` (set `true` synchronously before
-  the dial, `vice-broker.mts:1605`/`:1615` area) is never reset, permanently
-  blocking any future `attach` on that channel until the whole grant is
-  recycled.
-- The client eventually gives up at its own 8000ms `attachReplyTimeoutMs`
-  and destroys its socket, but the broker-side promise chain is still
-  alive, waiting on a `connect()` that will never settle — this
-  is a real, if narrow-scope (requires a non-default `VICE_BROKER_BINMON_HOST`
-  and a black-holing network path), regression against the "bounded" dial
-  this plan's own design and tests (`broker-relay.test.ts`) assume.
+On a mid-stream failure (e.g. a read error on the staged file, or the file vanishing
+between the `existsSync()` pre-check and the actual read), the client sees nothing but an
+abrupt connection close — indistinguishable from a plain network drop, with zero
+diagnostic text, even though `sendPayloadFromFile()`'s own `result.reason` is right there
+(logged server-side only). This is not a CR-01-style path leak (nothing is ever sent to the
+client), but it is a real robustness/UX gap: a download failure is strictly harder to
+diagnose from the client side than the equivalent upload failure now is.
 
-Note this is a new risk introduced by this round: before G-64-4,
-`spliceRelay()` dialled and spliced immediately with no wait at all, so a
-hanging `connect()` had no analogous failure mode.
+**Fix:** Write a path-free `error` line (via `formatPathFreeFault()`-shaped text, or a
+fixed phrase) before destroying the socket on a failed download, mirroring
+`writeUploadCompletionReply()`'s shape for the download direction.
 
-**Fix:** Arm a per-attempt timeout inside `attemptEmulatorConnect()` (e.g.
-`socket.setTimeout(remainingMs, () => { socket.destroy(); resolve({connected:
-false, code: "ETIMEDOUT", socket}); })`, computing `remainingMs` from the
-overall deadline so the sum of all attempts still respects `deadlineMs`),
-and treat a timeout either as fatal immediately (safest, since the deadline
-is close to expired anyway) or as a bounded, non-infinite retry case —
-either way, no attempt should be able to keep the overall promise pending
-past `deadlineMs`.
+### WR-02: `stageFileSlot()`'s supersession does not consult the in-flight guard before deleting the previous handle's registry entry and file
+
+**File:** `src/mcp/vice/broker-transfer.mts:651-665`
+
+**Issue:** A repeat `stageFileSlot()` call for the same `(grantId, slot)` unconditionally
+drops the previous handle from `handleIndex`/`inFlightHandles` and best-effort unlinks its
+file — even if `markTransferInFlight()` currently holds that exact handle (i.e. an upload
+or download for it is actively streaming):
+
+```ts
+const previousHandle = slotIndex.get(key);
+if (previousHandle) {
+  const previousEntry = handleIndex.get(previousHandle);
+  handleIndex.delete(previousHandle);
+  inFlightHandles.delete(previousHandle);
+  if (previousEntry) {
+    try { rmSync(previousEntry.path, { force: true }); } catch { /* best-effort */ }
+  }
+}
+```
+
+If a client races a fresh `stage_file` for the same slot against a still-in-flight
+transfer for the old handle: (1) `resolveStagedFile(oldHandle)` starts refusing "unknown
+transfer handle" mid-transfer even though the upload is still genuinely running; (2) once
+that in-flight upload eventually completes and calls `renameSync()`, it silently publishes
+its bytes to a path no registry entry references anymore — an orphaned file invisible to
+every caller until the whole session directory is later cleared. `T-64-16`'s own in-flight
+guard exists precisely to prevent two operations from racing on the same handle; this path
+bypasses it entirely for the *supersession* case.
+
+**Fix:** Either refuse (or queue) a `stageFileSlot()` supersession while
+`inFlightHandles.has(previousHandle)`, or accept the race explicitly and document why an
+orphaned publish is harmless here (it currently is not documented at all — the module's own
+"WHAT NOT TO DO" list covers deletion-on-reply and slot-as-path-component, not this case).
 
 ## Info
 
-### IN-01: A connected emulator socket can be silently leaked if the client socket is destroyed in the resolve/`.then()` gap
+### IN-01: `sendPayloadFromFile()`'s size cap check has a TOCTOU window between `statSync` and the two streaming passes
 
-**File:** `src/mcp/vice/broker-control.mts:1374-1409`
-**Issue:** After `Promise.resolve(opts.onRelayAttach(...))` settles `ok:
-true`, the `.then()` callback checks `if (socket.destroyed) return;` before
-writing `attached` and calling `outcome.start()`. If the client socket
-became destroyed in the narrow window between `handleRelayAttach()`'s own
-internal `isAbandoned()` check (run synchronously just before it returns
-`ok: true`) and this `.then()` callback running, the already-connected
-`dial.socket` (the emulator leg) is never closed and `holder.attached` is
-never reset — both leak until the grant is released or recycled. In
-practice this window is a same-tick microtask handoff with no I/O in
-between, so it is very unlikely to be reachable, but there is no defensive
-check here (unlike the synchronous refusal path, which explicitly calls
-`socket.resume()`).
-**Fix:** Consider having the `.then()` callback's `socket.destroyed` branch
-also call `outcome.start()`-independent cleanup — e.g. widen
-`RelayAttachOutcome`'s `ok: true` case with an `abort()` alongside `start()`
-that destroys the dialled emulator socket and clears `holder.attached` if
-still current, so this path is not silently unhandled even if it never
-fires in practice.
+**File:** `src/mcp/vice/broker-transfer.mts:320-357`
+
+**Issue:** The pre-flight `statSync(sourcePath).size` cap check happens once, before either
+streaming pass. If the source file grows between that stat and the subsequent digest/send
+passes (e.g. a concurrent writer), the friendly pre-flight refusal is bypassed and the
+transform's own mid-stream cap rejection fires instead, with a less specific message. Low
+severity — the cap is still enforced, just later and with a different message shape — but
+worth a one-line acknowledgement given how deliberately every other edge in this file names
+its own race windows.
+
+**Fix:** No action required; note only. If ever revisited, re-stat immediately before the
+send pass, or accept the current behavior and say so in the header comment the way the
+publish-hook race is documented.
 
 ---
 
