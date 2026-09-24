@@ -301,9 +301,18 @@ behaviour rather than local policy**. Honour them; do not "fix" them by disablin
    gets — the per-plan worktree gate re-records the plan-scoped isolation sentinel itself.
    `REQUIREMENTS.md` is unaffected; it is on the committed allow-list.
 
-2. **`cleanup-wave` refuses any branch whose diff contains a file deletion**, unconditionally
-   (`worktree-safety.cjs`'s cleanup-wave deletion check; upstream records an opt-in as a deferred decision). A
-   deletion plan's branch builds and commits correctly — merge it by hand.
+2. **`cleanup-wave` refuses a branch whose diff contains an UNDECLARED file deletion.**
+   **CORRECTED 2026-09-24.** This rule read "any branch whose diff contains a file deletion,
+   unconditionally … merge it by hand", and noted that upstream recorded an opt-in as a
+   deferred decision. Upstream shipped that opt-in. On GSD 1.14.0 the check partitions the
+   deletions against the plan's `declared_deletions` and blocks only the residue —
+   `worktree-safety.cjs`'s own comment reads "#3003: a deletion the PLAN declared is
+   authorized; anything else still blocks." Declare a deletion plan's deletions and let
+   `cleanup-wave` merge it. The former hand-merge remedy was a standing instruction to route
+   around cleanup, which § 20 forbids two paragraphs earlier.
+
+   Verify against the install rather than this line — it went stale once already, and it will
+   go stale again the next time upstream moves.
 
 3. **The per-plan gate owns the isolation sentinel.** Do not hand-force `--force-isolation`
    as a standing ritual; that was an artifact of the project-level opt-out and is now wrong.

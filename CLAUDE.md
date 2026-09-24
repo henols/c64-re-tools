@@ -305,29 +305,31 @@ Do not make direct repo edits outside a GSD workflow unless the user explicitly 
 
 ## GSD Execution Isolation (project policy — NOT installer-managed)
 
-`workflow.use_worktrees` is **true** (stock). Run phases with worktree isolation ON. Do not
-disable it project-wide, do not add standing instructions that route around GSD's dispatch,
-cleanup, or synthesis machinery, and do not treat a single bad worktree run as evidence that
-isolation is unusable. Nested `claude -p` sessions are **not** prohibited — the ban's stated
-cause was tested and refuted on 2026-08-29.
+Run phases with worktree isolation ON. Do not disable it project-wide. Do not add standing
+instructions that route around GSD's dispatch, cleanup or synthesis machinery. Do not treat a
+single bad worktree run as evidence that isolation is unusable.
 
-Three constraints are real and are **stock GSD behaviour, not local policy** — honour them
-rather than disabling isolation to avoid them:
+Nested `claude -p` sessions are **not** prohibited. This project banned them once. A test
+refuted the ban's stated cause on 2026-08-29.
 
-1. A plan delivering `.planning/STATE.md` or `ROADMAP.md` content gets the stock per-plan
-   carve-out `USE_WORKTREES_FOR_PLAN=false` (worktree executors may not touch those files —
-   `execute-phase.md`. The commit strips them — `execute-plan.md`). `REQUIREMENTS.md`
-   is unaffected.
-2. `cleanup-wave` refuses any branch whose diff contains a deletion, unconditionally
-   (`worktree-safety.cjs`'s cleanup-wave deletion check). Merge a deletion plan's branch by hand.
-3. The per-plan worktree gate owns the isolation sentinel. Do not hand-force
-   `--force-isolation` as a standing ritual.
+GSD is a vendored, gitignored install, so CI and fresh clones have none. **Nothing in this repo
+may branch on whether GSD is installed.** The install carries **zero local customisations** and
+must keep carrying zero. Never edit a file under the vendored tree.
 
-GSD itself is a **vendored, gitignored install** — `/gsd-update` may be run freely and the
-repo never changes as a result. Nothing here may branch on whether it is installed (CI and
-fresh clones have none). It carries **zero local customisations** and must keep carrying zero — never edit a file
-under the vendored tree. `.claude/gsd-local-patches/` should always be empty. If it
-appears, something edited the install.
+**GSD's own behaviour is GSD's to document. It does not belong in this file.** The worktree
+carve-outs, the cleanup-wave deletion check and the isolation sentinel are stock mechanics, and
+they change with the GSD version. Read them from the install itself:
+`gsd-core/references/dispatch-isolation-gate.md`,
+`gsd-core/workflows/execute-phase/steps/per-plan-worktree-gate.md` and
+`gsd-core/bin/lib/worktree-safety.cjs`. Read `workflow.use_worktrees` with
+`gsd_run config-get`, which answers from `.planning/config.json`.
+
+A copy of those mechanics goes stale here, and one did. Until 2026-09-24 this section stated
+that `cleanup-wave` refuses every deletion **unconditionally** and told the reader to merge a
+deletion plan's branch by hand. GSD 1.14.0 blocks only the **undeclared** deletions — its own
+`#3003` comment in `worktree-safety.cjs` reads "a deletion the PLAN declared is authorized".
+The hand-merge remedy was therefore unnecessary, and it contradicted this section's own rule
+against routing around cleanup.
 
 Full rationale and history: `.planning/ENGINEERING_RULES.md` § 20 and § 20.1.
 
