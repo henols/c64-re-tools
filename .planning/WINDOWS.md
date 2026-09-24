@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 50
+open_count: 51
 waived_count: 17
 fixed_count: 9
-total_count: 76
-last_updated: 2026-09-23T19:30:56.904Z
+total_count: 77
+last_updated: 2026-09-24T10:06:01.028Z
 ---
 
 # Broken Windows Ledger
@@ -91,6 +91,7 @@ last_updated: 2026-09-23T19:30:56.904Z
 | 74 | 64 | deviation | src/mcp/vice/broker-relay.test.ts |  | Pre-existing incident-record leak into real ~/.c64-re-tools/incidents/ from broker-relay.test.ts/broker-relay-text.test.ts, confirmed independent of plan 64-08's diff; not fixed (out of scope, files not in files_modified) | open |  | 2026-09-23T17:37:54.064Z |  |
 | 75 | 64 | deviation | src/mcp/vice/vice-broker.mts |  | Live-discovered (plan 64-11): intermittent vice_disk_attach 0x8f condition-syntax-error after a prior vice_snapshot_load/vice_run_until sequence in the same session; functionally the attach appeared to still succeed once. Not a G-64-1 root cause; recorded in 64-g641-live-check.md, not fixed (production edits prohibited in plan 64-11). | open |  | 2026-09-23T19:30:52.212Z |  |
 | 76 | 64 | deviation | src/mcp/vice/text-tools.ts |  | Live-discovered (plan 64-11): vice_keyboard_type's default petscii_upper:true produced screen-RAM bytes that did not decode as readable text and did not execute as a BASIC command (SYNTAX ERROR) against real VICE; petscii_upper:false worked correctly. Recorded in 64-g641-live-check.md, not investigated further (existing tool, untouched by Phase 64's own migration). | open |  | 2026-09-23T19:30:56.904Z |  |
+| 77 | 64 | todo | src/mcp/vice/broker-transfer.mts |  | receivePayloadToFile()'s mkdirSync(dirname(destPath)) runs outside every try; handleFileTransfer() attaches only a fulfilment handler, so a mkdirSync failure is an unhandled rejection that ends the broker process (flagged by 64-15-PLAN.md's sweep, not fixed by 64-15) | open |  | 2026-09-24T10:06:01.028Z |  |
 
 ````json
 [
@@ -1013,6 +1014,19 @@ last_updated: 2026-09-23T19:30:56.904Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-23T19:30:56.904Z",
+    "resolved_at": null,
+    "milestone": "v2.0.0"
+  },
+  {
+    "id": 77,
+    "kind": "todo",
+    "phase": "64",
+    "file": "src/mcp/vice/broker-transfer.mts",
+    "line": null,
+    "description": "receivePayloadToFile()'s mkdirSync(dirname(destPath)) runs outside every try; handleFileTransfer() attaches only a fulfilment handler, so a mkdirSync failure is an unhandled rejection that ends the broker process (flagged by 64-15-PLAN.md's sweep, not fixed by 64-15)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-24T10:06:01.028Z",
     "resolved_at": null,
     "milestone": "v2.0.0"
   }
