@@ -71,7 +71,7 @@ for re-derivation during planning:
 - [x] **XFER-04**: The broker chooses its own staging paths and a client never supplies one; a client refers to a staged file only by an opaque handle the broker minted
 - [x] **XFER-05**: File bytes survive the round trip unaltered, including bytes that are not valid UTF-8
 - [x] **XFER-06**: A transfer is integrity-checked end to end, and one that exceeds the size cap is refused with a message naming the limit
-- [ ] **XFER-07**: Staged files are removed when their session closes, and a sweep removes those left behind by a crash
+- [x] **XFER-07**: Staged files are removed when their session closes, and a sweep removes those left behind by a crash
 - [x] **XFER-08**: `vice_autostart`, `vice_disk_attach`, `vice_snapshot_save` and `vice_snapshot_load` all work over the socket with no shared filesystem between client and broker
 
 ### Seam — one client module, two packages
@@ -166,7 +166,7 @@ requirement owned by two phases or by none.
 | XFER-04 | Phase 64 | Complete |
 | XFER-05 | Phase 64 | Complete |
 | XFER-06 | Phase 64 | Complete |
-| XFER-07 | Phase 64 | Gaps Found |
+| XFER-07 | Phase 64 | Complete |
 | XFER-08 | Phase 64 | Complete |
 | SEAM-01 | Phase 65 | Pending |
 | SEAM-02 | Phase 65 | Pending |

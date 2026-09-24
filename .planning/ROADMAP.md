@@ -2259,7 +2259,7 @@ the first tool rides it.
      fully written, and an age-based sweep removes what a crashed broker or a
      vanished client left behind (XFER-07).
 
-**Plans**: 15/16 plans executed — 7/7 original plans executed, 6 waves; 4 gap-closure plans added for G-64-1 (64-08…64-11), 4/4 executed; 3 gap-closure plans added for G-64-3 and G-64-4 (64-12…64-14), 3/3 executed; 1 gap-closure plan added for G-64-5 (64-15), 1/1 executed; 1 gap-closure plan added for G-64-6 (64-16), 0/1 executed
+**Plans**: 16/16 plans executed — 7/7 original plans executed, 6 waves; 4 gap-closure plans added for G-64-1 (64-08…64-11), 4/4 executed; 3 gap-closure plans added for G-64-3 and G-64-4 (64-12…64-14), 3/3 executed; 1 gap-closure plan added for G-64-5 (64-15), 1/1 executed; 1 gap-closure plan added for G-64-6 (64-16), 1/1 executed
 
 Plans:
 
@@ -2310,7 +2310,7 @@ Plans:
 
 **Wave 1**
 
-- [ ] 64-16-PLAN.md — G-64-6 (CR-01, round-three review): the startup staging sweep runs only in a broker that has won the control-port bind, and before it publishes its token, so a losing second broker removes nothing and the winner can never sweep its own sessions; regression tests that fail on today's tree start a real second broker against a live broker's staging, a guard proves a winning broker still removes crash residue through the real startup path, and the suite's spawned brokers stop resolving the machine-level staging root (XFER-07)
+- [x] 64-16-PLAN.md — G-64-6 (CR-01, round-three review): the startup staging sweep runs only in a broker that has won the control-port bind, and before it publishes its token, so a losing second broker removes nothing and the winner can never sweep its own sessions; regression tests that fail on today's tree start a real second broker against a live broker's staging, a guard proves a winning broker still removes crash residue through the real startup path, and the suite's spawned brokers stop resolving the machine-level staging root (XFER-07)
 
 **Cross-cutting constraints:**
 
@@ -2730,7 +2730,7 @@ check. No test reads this table now.
 | 61. The Install Tables Generated, and a Guard That Compares Facts | v1.1.0 | 3/3 | Complete | 2026-09-19 |
 | 62. The Fixed Endpoint and the Broker That Owns the Machine | v2.0.0 | 5/5 | Complete | 2026-09-19 |
 | 63. The Monitor Channel Relayed, and the Connection as the Session | v2.0.0 | 12/12 | Complete | 2026-09-23 |
-| 64. Files as Bytes, Both Directions | v2.0.0 | 15/15 | In Progress | - |
+| 64. Files as Bytes, Both Directions | v2.0.0 | 16/16 | In Progress | - |
 | 65. Every Skill Script Through the One Endpoint, and CI With It | v2.0.0 | — | Not started | - |
 | 66. The Deletion Cutover — Gone, Not Bypassed | v2.0.0 | — | Not started | - |
 | 67. Ghidra's Runs Root Without the Alias | v2.0.0 | — | Not started | - |

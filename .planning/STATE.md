@@ -4,17 +4,17 @@ milestone: v2.0.0
 milestone_name: One Broker, One Socket
 current_phase: 64
 current_phase_name: Files as Bytes, Both Directions
-status: verifying
-stopped_at: "Phase 64 gap-closure round 4 planned -- 64-16 (G-64-6, XFER-07): the startup staging sweep moves after the singleton control-port bind so a losing second broker never removes a live broker's staging; plan-checker passed -- run /gsd-execute-phase 64 --gaps-only"
-last_updated: "2026-09-24T11:20:35.786Z"
+status: executing
+stopped_at: "Completed 64-16-PLAN.md -- all 16 of 16 Phase 64 plans executed; G-64-6 closed; phase re-verification next"
+last_updated: "2026-09-24T18:41:51.916Z"
 last_activity: 2026-09-24
-last_activity_desc: Phase 64 re-verified after gap-closure round 3 -- gaps_found 7/8, G-64-5 closed, the startup staging sweep's missing liveness check (XFER-07) blocks passed
-state_head: 908fd42c62511d0c7099af2518a7c67b9193bb63
+last_activity_desc: Plan 64-16 executed (G-64-6 closed; 16/16 plans executed)
+state_head: 3ba2fb73103511b5edf576fc18caeebe8efd8a47
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 33
-  completed_plans: 32
+  completed_plans: 33
   percent: 33
 carried_forward_phases:
 
@@ -82,9 +82,27 @@ closure still needs to be recorded as one.
 
 ## Current Position
 
-Phase: 64 (Files as Bytes, Both Directions) — READY TO EXECUTE
-Plan: 15 of 15 executed (gap-closure round 3 complete)
-Status: Re-verification 2026-09-24 after gap-closure round 3: gaps_found, 7/8 truths verified. G-64-5 (truth #8) verified closed: formatPathFreeFault() and ReceivePayloadToFileResult confirmed by direct source read, and the real-fault tests independently re-run (test:automated 4274/4265/0/9, exit 0). One new blocker, from round 3's own code review (64-REVIEW.md CR-01, committed d06c4226): vice-broker.mts's run() calls sweepOrphanedStaging() before the control-port singleton bind, and the sweep removes every staging session directory with no liveness check, so a second broker that loses the bind race can delete a live broker's active staging. Truth #5 (XFER-07) is therefore FAILED; XFER-07 reads Gaps Found in REQUIREMENTS.md, and the other seven XFER ids stay SATISFIED. The review's CR-02 (the unguarded mkdirSync in receivePayloadToFile(), WINDOWS.md #77) was scored a disclosed warning, not a gap. Next: /gsd-plan-phase 64 --gaps. Before that: Gap-closure round 3 executed 2026-09-24 — plan 64-15 closed G-64-5 (CR-01 in 64-REVIEW.md), sequentially on the main working tree because HEAD is ahead of origin/main. It was planned the same day by /gsd-plan-phase 64 --gaps, after this re-verification: Re-verification 2026-09-24 after gap-closure round 2: gaps_found, 7/8 truths verified. G-64-3 and G-64-4 verified closed (source, targeted suites, live 7/7 cold sessions and 135/135 clean loop); XFER-01..08 all scored SATISFIED, none demoted. One new blocker: CR-01 in 64-REVIEW.md — receivePayloadToFile() in broker-transfer.mts interpolates raw fs error text (which carries the broker's absolute paths) into the client-facing wireReason on three failure branches, which 64-13 now delivers to the client. That blocker was G-64-5, closed by plan 64-15. Before that: Phase 64 gap-closure round 2 executed — 64-12 (G-64-4, the cold-launch relay-attach race), 64-13 (G-64-3, the intermittent 0x8f on the file-carrying tools) and 64-14 (both measured live against genuine stock /usr/bin/x64sc and a systemd-unit broker) are all complete, sequentially on the main working tree. They follow UAT 2026-09-23 (0 passed, 2 issues, 64-UAT.md status diagnosed). Previously: Phase 64 gap closure for G-64-1 (UAT test 1) is complete — all 11 plans executed sequentially on the main working tree. Re-verification 2026-09-23: human_needed, 5/5 ROADMAP criteria verified, G-64-1 met with one caveat (the cold-launch race below); code review 0 critical / 2 warning / 1 info; the 2 UAT items it left pending in 64-UAT.md were run the same day and both failed, becoming G-64-3 and G-64-4.
+Phase: 64 (Files as Bytes, Both Directions) — EXECUTING
+Plan: 16 of 16 executed (gap-closure round 4 complete; phase re-verification next)
+Status: Gap-closure round 4 executed 2026-09-24 — plan 64-16 closed G-64-6 (XFER-07), sequentially on the main working tree because HEAD is ahead of origin/main; all 16 of 16 Phase 64 plans now have a SUMMARY, and 64-VERIFICATION.md truth #5 is ready to re-score. It was planned the same day by /gsd-plan-phase 64 --gaps (plan-checker passed), after this re-verification: Re-verification 2026-09-24 after gap-closure round 3: gaps_found, 7/8 truths verified. G-64-5 (truth #8) verified closed: formatPathFreeFault() and ReceivePayloadToFileResult confirmed by direct source read, and the real-fault tests independently re-run (test:automated 4274/4265/0/9, exit 0). One new blocker, from round 3's own code review (64-REVIEW.md CR-01, committed d06c4226): vice-broker.mts's run() calls sweepOrphanedStaging() before the control-port singleton bind, and the sweep removes every staging session directory with no liveness check, so a second broker that loses the bind race can delete a live broker's active staging. Truth #5 (XFER-07) is therefore FAILED; XFER-07 reads Gaps Found in REQUIREMENTS.md, and the other seven XFER ids stay SATISFIED. The review's CR-02 (the unguarded mkdirSync in receivePayloadToFile(), WINDOWS.md #77) was scored a disclosed warning, not a gap. That blocker is G-64-6, targeted by plan 64-16. Before that: Gap-closure round 3 executed 2026-09-24 — plan 64-15 closed G-64-5 (CR-01 in 64-REVIEW.md), sequentially on the main working tree because HEAD is ahead of origin/main. It was planned the same day by /gsd-plan-phase 64 --gaps, after this re-verification: Re-verification 2026-09-24 after gap-closure round 2: gaps_found, 7/8 truths verified. G-64-3 and G-64-4 verified closed (source, targeted suites, live 7/7 cold sessions and 135/135 clean loop); XFER-01..08 all scored SATISFIED, none demoted. One new blocker: CR-01 in 64-REVIEW.md — receivePayloadToFile() in broker-transfer.mts interpolates raw fs error text (which carries the broker's absolute paths) into the client-facing wireReason on three failure branches, which 64-13 now delivers to the client. That blocker was G-64-5, closed by plan 64-15. Before that: Phase 64 gap-closure round 2 executed — 64-12 (G-64-4, the cold-launch relay-attach race), 64-13 (G-64-3, the intermittent 0x8f on the file-carrying tools) and 64-14 (both measured live against genuine stock /usr/bin/x64sc and a systemd-unit broker) are all complete, sequentially on the main working tree. They follow UAT 2026-09-23 (0 passed, 2 issues, 64-UAT.md status diagnosed). Previously: Phase 64 gap closure for G-64-1 (UAT test 1) is complete — all 11 plans executed sequentially on the main working tree. Re-verification 2026-09-23: human_needed, 5/5 ROADMAP criteria verified, G-64-1 met with one caveat (the cold-launch race below); code review 0 critical / 2 warning / 1 info; the 2 UAT items it left pending in 64-UAT.md were run the same day and both failed, becoming G-64-3 and G-64-4.
+Plan 64-16 closed 2026-09-24: G-64-6 (round-three CR-01) closed at the
+source — vice-broker.mts's run() now calls sweepOrphanedStaging() once,
+after the loopback control-port bind is confirmed and before the first
+writeBrokerRecordFile() publishes the control token, so a second broker
+that loses the singleton (quietly or on a squatted port) removes nothing
+under the staging root, and nothing can hold the winner's token yet to
+stage a file its own sweep would remove. reapOrphanedConfigScratch() stays
+pre-bind (its D-08 live-pid guard makes that safe). Three spawned-real-
+broker G-64-6 tests in broker-control.test.ts: both losing-broker tests
+fail against the pre-fix tree (retroactive RED evidence, RED_EVIDENCE_OK
+for both), and the winning-broker crash-residue test fails when the
+sweep call is deleted (mutation check). The suite's spawned brokers now
+run against temporary VICE_BROKER_HOMEs. TDD gate violation disclosed:
+Task 1's tests and fix landed in one feat commit with no test(64-16) RED
+commit. 2 tasks, 2 code commits; test:automated 4274→4277, full-glob
+npm test 4452/4368/0/84, 0 fail (one out-of-scope vice-broker-acquire
+waitForFile() race hit once and was deferred). See
+.planning/phases/64-files-as-bytes-both-directions/64-16-SUMMARY.md.
 Plan 64-15 closed 2026-09-24: G-64-5 (CR-01) closed at the source —
 formatPathFreeFault() (broker-transfer.mts) is now the one builder of wire
 text for a caught transfer fault: a fixed phrase plus at most a validated
@@ -206,7 +224,7 @@ verification passed (6/6 must-haves), nyquist validation PARTIAL and security ve
 with threats_open: 0. The one human decision — 63-REVIEW.md's WR-01 — was ACCEPTED as
 residual risk, recorded as R-63-04 in 63-SECURITY.md.
 Progress: [███░░░░░░░] 33% (2 of 6 v2.0.0 phases complete; Phases 62-67)
-Last activity: 2026-09-24 — Phase 64 re-verified after gap-closure round 3: gaps_found 7/8 (G-64-5 closed; the startup staging sweep blocks, XFER-07)
+Last activity: 2026-09-24 — Plan 64-16 executed (G-64-6 closed; 16/16 plans executed)
 
 **Planning override recorded at the Phase 64 decision-coverage gate.**
 `check.decision-coverage-plan` returned `passed: false` with
@@ -633,6 +651,7 @@ named in the evidence document as Phase 66's to reconcile, not force-closed.
 | Phase 64 P05 | 55 min | 3 tasks | 17 files |
 | Phase 64 P06 | 50min | 3 tasks | 4 files |
 | Phase 64 P07 | 105min | 3 tasks | 7 files |
+| Phase 64 P16 | 6h51m wall (about 45 min active) | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -1551,6 +1570,7 @@ Recent decisions affecting current work:
 - [Phase 64]: Plan 64-06 migrated vice_autostart/vice_disk_attach off the shared filesystem onto the broker's own file-transfer protocol, staged into two DISTINCT slots so neither tool supersedes the other's staged file mid-session. — Completes D-18's stock-machine.ts import removal: production importers of hostpath.ts/containerpath.ts/stock-paths.ts dropped from 6 to 5.
 - [Phase 64]: vice_disk_attach's result now states, under its own writeLoss key (D-16), that writes the running program makes to the attached disk image are lost once the session closes. — Surfaced during Phase 64 discussion, not named in ROADMAP.md/REQUIREMENTS.md beforehand; pulling the staged image back on session close was offered and declined because SIGKILL/crash/recycle produce no clean close.
 - [Phase 64]: Phase 64's exit proof (disjoint roots, convergence metric, boundary confirmations) is complete; convergence metric measured at 5, not the roadmap's predicted 4 -- named for Phase 66 to reconcile. — D-18 chose measurement over assertion; the gap is real and honestly recorded rather than manufactured closed.
+- [Phase 64]: 64-16 (G-64-6): the startup staging sweep runs only in the broker that won the control-port bind, between the confirmed loopback bind and the first writeBrokerRecordFile() (route a); route b, per-directory owner records with a pid check, was declined as a return of the retired pid-reuse heuristic. reapOrphanedConfigScratch() stays pre-bind, because its own live-pid guard (D-08) makes it safe in a losing process.
 
 ### Pending Todos
 
@@ -2884,8 +2904,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-23T23:07:14.000Z
-Stopped at: Completed 64-13-PLAN.md -- Phase 64 gap-closure round 2 (G-64-3 closed), plan 64-14 remains
+Last session: 2026-09-24T18:41:51.775Z
+Stopped at: Completed 64-16-PLAN.md
 Resume file: None
 
 Earlier: **v2.0.0 roadmap created.** 36/36 requirements (`ENDPOINT-01..05`,
