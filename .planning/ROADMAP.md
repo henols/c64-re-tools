@@ -2259,7 +2259,7 @@ the first tool rides it.
      fully written, and an age-based sweep removes what a crashed broker or a
      vanished client left behind (XFER-07).
 
-**Plans**: 15/15 plans executed — 7/7 original plans executed, 6 waves; 4 gap-closure plans added for G-64-1 (64-08…64-11), 4/4 executed; 3 gap-closure plans added for G-64-3 and G-64-4 (64-12…64-14), 3/3 executed; 1 gap-closure plan added for G-64-5 (64-15), 1/1 executed
+**Plans**: 15/16 plans executed — 7/7 original plans executed, 6 waves; 4 gap-closure plans added for G-64-1 (64-08…64-11), 4/4 executed; 3 gap-closure plans added for G-64-3 and G-64-4 (64-12…64-14), 3/3 executed; 1 gap-closure plan added for G-64-5 (64-15), 1/1 executed; 1 gap-closure plan added for G-64-6 (64-16), 0/1 executed
 
 Plans:
 
@@ -2305,6 +2305,12 @@ Plans:
 **Wave 1**
 
 - [x] 64-15-PLAN.md — G-64-5 (CR-01): every caught-fault branch of the upload receive builds its wire text from a fixed phrase and at most a validated errno code, the completion reply can no longer fall back to the full reason, the receiver's cap refusal still names the limit, and regression tests that fail on today's tree trigger real rename, open and hook faults and assert that the raw wire line and the tool result name no broker-side path (XFER-06, XFER-08)
+
+**Gap closure, round four** *(added after the 2026-09-24 re-verification of round three scored gaps_found 7/8. Its one open gap is CR-01 in the round-three 64-REVIEW.md, carried here as G-64-6. It is not the round-two review's CR-01, which is G-64-5, and not STATE.md's CR-01 at `text-protocol.ts:850`. `run()` calls `sweepOrphanedStaging()`, which removes every staging session directory with no liveness check, before the control-port singleton bind. A second broker started while a live one holds the port therefore deletes the live broker's staging, a disk image attached to unit 8 included, before EADDRINUSE tells it that it lost. `gap_closure: true`, run with `/gsd-execute-phase 64 --gaps-only`)*
+
+**Wave 1**
+
+- [ ] 64-16-PLAN.md — G-64-6 (CR-01, round-three review): the startup staging sweep runs only in a broker that has won the control-port bind, and before it publishes its token, so a losing second broker removes nothing and the winner can never sweep its own sessions; regression tests that fail on today's tree start a real second broker against a live broker's staging, a guard proves a winning broker still removes crash residue through the real startup path, and the suite's spawned brokers stop resolving the machine-level staging root (XFER-07)
 
 **Cross-cutting constraints:**
 
