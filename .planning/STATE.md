@@ -6,14 +6,14 @@ current_phase: 64
 current_phase_name: Files as Bytes, Both Directions
 status: verifying
 stopped_at: Phase 64 re-verified gaps_found (7/8) -- G-64-3 and G-64-4 verified closed; new blocker CR-01 (broker-transfer.mts wireReason leaks broker paths) -- run /gsd-plan-phase 64 --gaps
-last_updated: "2026-09-23T23:26:31.000Z"
+last_updated: "2026-09-24T01:03:12.953Z"
 last_activity: 2026-09-24
 last_activity_desc: Phase 64 re-verified after gap-closure round 2 -- gaps_found 7/8, G-64-3 and G-64-4 closed, CR-01 path leak in upload failure replies blocks passed
-state_head: 43e7ad12fd8e6dc21c754ae1ecf335e7b2df0ad4
+state_head: 5198304f96aa4a02a9d649ce54b153a43d9480c0
 progress:
   total_phases: 6
   completed_phases: 2
-  total_plans: 31
+  total_plans: 32
   completed_plans: 31
   percent: 33
 carried_forward_phases:
@@ -82,7 +82,7 @@ closure still needs to be recorded as one.
 
 ## Current Position
 
-Phase: 64 (Files as Bytes, Both Directions) — RE-VERIFIED GAPS_FOUND (CR-01), G-64-3 AND G-64-4 CLOSED
+Phase: 64 (Files as Bytes, Both Directions) — READY TO EXECUTE
 Plan: 14 of 14 executed (gap-closure round 2 complete)
 Status: Re-verification 2026-09-24 after gap-closure round 2: gaps_found, 7/8 truths verified. G-64-3 and G-64-4 verified closed (source, targeted suites, live 7/7 cold sessions and 135/135 clean loop); XFER-01..08 all scored SATISFIED, none demoted. One new blocker: CR-01 in 64-REVIEW.md — receivePayloadToFile() in broker-transfer.mts interpolates raw fs error text (which carries the broker's absolute paths) into the client-facing wireReason on three failure branches, which 64-13 now delivers to the client. Next: /gsd-plan-phase 64 --gaps. Before that: Phase 64 gap-closure round 2 executed — 64-12 (G-64-4, the cold-launch relay-attach race), 64-13 (G-64-3, the intermittent 0x8f on the file-carrying tools) and 64-14 (both measured live against genuine stock /usr/bin/x64sc and a systemd-unit broker) are all complete, sequentially on the main working tree. Phase verification (`/gsd-verify-work`) is the next step. They follow UAT 2026-09-23 (0 passed, 2 issues, 64-UAT.md status diagnosed). Previously: Phase 64 gap closure for G-64-1 (UAT test 1) is complete — all 11 plans executed sequentially on the main working tree. Re-verification 2026-09-23: human_needed, 5/5 ROADMAP criteria verified, G-64-1 met with one caveat (the cold-launch race below); code review 0 critical / 2 warning / 1 info; the 2 UAT items it left pending in 64-UAT.md were run the same day and both failed, becoming G-64-3 and G-64-4.
 Plan 64-14 closed 2026-09-24: G-64-3 and G-64-4 measured live against genuine
