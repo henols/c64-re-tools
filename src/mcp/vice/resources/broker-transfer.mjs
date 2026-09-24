@@ -274,6 +274,18 @@ export async function sendPayloadFromFile({ socket, sourcePath, capBytes = TRANS
  * destroyed socket, a failed rename -- the temp file is removed with
  * `rmSync(..., { force: true })` and this function resolves
  * `{ ok: false, reason }`. Never throws.
+ *
+ * G-64-5 (plan 64-15): every failure's `wireReason` comes from exactly one
+ * of three sources -- a fixed phrase with no caught-error content at all
+ * (the two declared-length refusals above and `verifyObserved()`'s own
+ * reasons), `formatPathFreeFault()` (a genuine receive, hook or publish
+ * fault caught from a real `fs`/stream error), or a phrase built ONLY from
+ * `capBytes` and the transform's own observed byte count (the
+ * receive-pipeline's own cap enforcement, classified by that OBSERVED
+ * count -- never by the caught error's class or text, since the same
+ * `pipeline()` promise rejection covers both a genuine cap overflow and an
+ * unrelated stream fault). `wireReason` never reads a caught error's
+ * `.message` directly anywhere in this function.
  */
 export async function receivePayloadToFile({ socket, destPath, header, pending, capBytes = TRANSFER_MAX_BYTES, beforePublish, }) {
     // The declared byteLength is untrusted input (D-11) -- validated here,
@@ -309,12 +321,28 @@ export async function receivePayloadToFile({ socket, destPath, header, pending, 
     }
     catch (e) {
         cleanupTmp();
-        const message = e.message;
+        // Classify by the transform's OWN observed count, never by the caught
+        // error's text or class -- the same pipeline() rejection covers both
+        // the receiver's own cap enforcement (the transform's `_transform`
+        // callback rejecting once the observed count exceeds `capBytes`, per
+        // transfer-hash.mts) and an unrelated stream fault (a destination that
+        // cannot be opened, a socket destroyed mid-payload). Only the OBSERVED
+        // count tells them apart.
+        const observedByteLength = transform.result().byteLength;
+        if (observedByteLength > capBytes) {
+            const capMessage = `vice: transfer exceeds the ${capBytes} byte cap (sixteen mebibytes); observed at least ${observedByteLength} bytes`;
+            return {
+                ok: false,
+                code: "bad_request",
+                reason: `${capMessage} while receiving into ${destPath}`,
+                wireReason: capMessage,
+            };
+        }
         return {
             ok: false,
             code: "internal",
-            reason: `vice: transfer failed while receiving into ${destPath}: ${message}`,
-            wireReason: `vice: transfer failed while receiving the payload: ${message}`,
+            reason: `vice: transfer failed while receiving into ${destPath}: ${e.message}`,
+            wireReason: formatPathFreeFault("vice: transfer failed while receiving the payload", e),
         };
     }
     const observed = transform.result();
@@ -333,12 +361,11 @@ export async function receivePayloadToFile({ socket, destPath, header, pending, 
         }
         catch (e) {
             cleanupTmp();
-            const message = e.message;
             return {
                 ok: false,
                 code: "internal",
-                reason: `vice: transfer publish hook rejected before ${destPath} was published: ${message}`,
-                wireReason: `vice: transfer failed before the upload could be published: ${message}`,
+                reason: `vice: transfer publish hook rejected before ${destPath} was published: ${e.message}`,
+                wireReason: formatPathFreeFault("vice: transfer failed before the upload could be published", e),
             };
         }
     }
