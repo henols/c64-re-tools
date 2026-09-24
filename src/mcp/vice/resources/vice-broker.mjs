@@ -111,7 +111,7 @@ import { brokerStateDir, brokerConfigScratchDir, brokerStagingDir } from "./brok
 // handleFileTransfer() below are this module's own callers; neither
 // re-implements the directory layout, the handle minting or the byte
 // movement broker-transfer.mts already owns.
-import { stageFileSlot, resolveStagedFile, markTransferInFlight, clearTransferInFlight, clearStagingForSession, sendPayloadFromFile, receivePayloadToFile } from "./broker-transfer.mjs";
+import { stageFileSlot, resolveStagedFile, markTransferInFlight, clearTransferInFlight, clearStagingForSession, sendPayloadFromFile, receivePayloadToFile, } from "./broker-transfer.mjs";
 const USAGE = "usage: vice-broker.mjs [--repo-root <path>] [--state-dir <path>] [--check-container] [--dry-run]";
 /** `--repo-root` is now OPTIONAL (BROKER-01/BROKER-06, D-13): the per-project
  * binding it used to enforce is exactly what a machine-level broker removes,
@@ -878,23 +878,27 @@ const UPLOAD_REPLY_DESTROY_GRACE_MS = 2000;
 /**
  * Writes an upload's ONE completion reply line -- `transfer_complete` on
  * success (the OBSERVED byteLength/sha256, an end-to-end publish
- * confirmation, D-11/D-09/XFER-06) or a path-free `error` line on failure
- * (`result.wireReason` when set, else `result.reason`, which is already
- * path-free for every branch that omits `wireReason` -- see
- * `TransferResult`'s own header comment in broker-transfer.mts) -- then ends
- * the socket so the line is flushed, and destroys it once the socket has
- * actually finished closing, or after a short grace period if the client
- * never closes its own end (T-64-G3-03/T-64-G3-04). Writes nothing if the
- * client socket is already gone (T-64-G3-02's own "never put a broker-side
- * path on the wire" is a property of `result.wireReason`/`result.reason`
- * themselves, not of this function).
+ * confirmation, D-11/D-09/XFER-06) or an `error` line on failure -- then
+ * ends the socket so the line is flushed, and destroys it once the socket
+ * has actually finished closing, or after a short grace period if the
+ * client never closes its own end (T-64-G3-03/T-64-G3-04). Writes nothing
+ * if the client socket is already gone.
+ *
+ * G-64-5 (plan 64-15, CR-01): the failure line's `message` is
+ * `result.wireReason`, taken directly -- there is no longer a fallback to
+ * `result.reason`. `ReceivePayloadToFileResult` (broker-transfer.mts)
+ * makes both `code` and `wireReason` REQUIRED on a receive failure, so
+ * `npm run typecheck` refuses a future failure branch that omits path-free
+ * wire text, rather than this function silently falling back to the full,
+ * path-bearing `reason` the way it used to -- that fallback was exactly
+ * how CR-01's leak reached the wire (64-REVIEW.md).
  */
 function writeUploadCompletionReply(socket, result) {
     if (socket.destroyed)
         return;
     const reply = result.ok
         ? { kind: "transfer_complete", byteLength: result.byteLength, sha256: result.sha256 }
-        : { kind: "error", code: result.code ?? "internal", message: result.wireReason ?? result.reason };
+        : { kind: "error", code: result.code, message: result.wireReason };
     socket.write(`${JSON.stringify(reply)}\n`, () => {
         if (!socket.destroyed)
             socket.end();

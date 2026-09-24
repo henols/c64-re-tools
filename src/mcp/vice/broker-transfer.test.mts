@@ -620,11 +620,15 @@ test("formatPathFreeFault: path-free fault text carries only a validated errno t
         },
       }),
     ];
-    for (const fault of noParenFaults) {
+    noParenFaults.forEach((fault, index) => {
       const output = formatPathFreeFault(summary, fault);
       outputs.push(output);
-      assert.ok(!output.includes("("), `output for a fault with no valid code must contain no "(": ${JSON.stringify(fault)} -> ${output}`);
-    }
+      // Never stringify `fault` itself in this message -- the last fixture
+      // is deliberately a throwing `code` getter, and JSON.stringify()
+      // would invoke it as a side effect of building the message, even on
+      // a passing assertion (message arguments evaluate eagerly).
+      assert.ok(!output.includes("("), `output for noParenFaults[${index}] must contain no "(": ${output}`);
+    });
 
     for (const output of outputs) {
       assert.ok(output.startsWith(summary), `every output must start with the summary: ${output}`);

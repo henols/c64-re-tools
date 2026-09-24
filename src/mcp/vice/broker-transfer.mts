@@ -193,10 +193,99 @@ export function readTransferHeader(chunk: Buffer, carry: Buffer = Buffer.alloc(0
  * failure branches below embeds it -- for the broker's own stderr line
  * only. When `wireReason` is absent, `reason` is already path-free (every
  * validation-before-the-pipeline branch, and `verifyObserved()`'s own
- * reasons) and a caller may use it verbatim on the wire too. */
+ * reasons) and a caller may use it verbatim on the wire too.
+ *
+ * G-64-5 (plan 64-15, CR-01): `receivePayloadToFile()` itself no longer
+ * returns this loosely-typed union on its failure branch -- see
+ * `ReceivePayloadToFileResult` below, which makes `code`/`wireReason`
+ * MANDATORY on a receive failure so a future caught-fault branch cannot
+ * omit path-free wire text and have the compiler stay silent about it.
+ * `TransferResult` itself is unchanged and stays the type for
+ * `sendPayloadFromFile()`, whose `code`/`wireReason` really are optional
+ * (it never puts a caught error's message on the wire in the first
+ * place -- see that function's own body). */
 export type TransferResult =
   | { ok: true; byteLength: number; sha256: string }
   | { ok: false; reason: string; code?: "bad_request" | "internal"; wireReason?: string };
+
+/** G-64-5 (plan 64-15, CR-01): `receivePayloadToFile()`'s own return type --
+ * a stricter narrowing of `TransferResult` where a failure MUST carry both
+ * `code` and `wireReason`. The incident this type exists to prevent: an
+ * upload whose publish failed sent the broker's own absolute staging paths
+ * (`tmpPath`, `destPath`) to the client, because a caught-fault branch
+ * built `wireReason` from the raw, unfiltered `Error.message` a Node `fs`
+ * call throws -- and that message embeds the full path (64-REVIEW.md
+ * CR-01). Declared as `Extract<>` plus an intersection, not a fresh object
+ * literal, so `TransferResult`'s own shape (and every existing comment
+ * pointer at it, e.g. broker-endpoint.ts's) stays valid -- this type adds a
+ * constraint, it does not redefine the success branch. */
+export type ReceivePayloadToFileResult =
+  | Extract<TransferResult, { ok: true }>
+  | (Extract<TransferResult, { ok: false }> & { code: "bad_request" | "internal"; wireReason: string });
+
+/** The errno-token shape `formatPathFreeFault()` admits into wire text: an
+ * uppercase ASCII letter first, then only uppercase ASCII letters, digits
+ * or underscores, two to sixty-four characters total. This shape admits
+ * every Node errno code (`ENOENT`, `EACCES`, `ENOSPC`, `EISDIR`,
+ * `ENAMETOOLONG`) and Node's own internal codes
+ * (`ERR_STREAM_PREMATURE_CLOSE`, `ABORT_ERR`). It cannot hold a path
+ * separator, a space or a dot, so a code matching it cannot itself carry a
+ * path -- this is the WHOLE filter; there is no second, separate
+ * path-scrubbing step (D-17's own prohibition on a scrubber, which fails
+ * open on the first path shape it did not anticipate). Not exported --
+ * `formatPathFreeFault()` is the only caller. */
+const WIRE_SAFE_ERROR_CODE_RE = /^[A-Z][A-Z0-9_]{1,63}$/;
+
+/** The fixed text `formatPathFreeFault()` appends after an optional errno
+ * token -- pointing the client at the broker's own log for the full
+ * failure, without saying where that log is. Contains no slash and no
+ * parenthesis, so it can never itself be mistaken for the `(CODE)` form
+ * this function's own output uses. Not exported. */
+const PATH_FREE_FAULT_LOG_HINT = "the broker's own log carries the full error";
+
+/**
+ * The ONE place wire text for a caught transfer fault is built (G-64-5,
+ * plan 64-15). The incident this function exists to close: an upload whose
+ * publish failed on a real filesystem error sent the broker's own absolute
+ * staging paths to the client, because `receivePayloadToFile()`'s
+ * caught-fault branches built their client-facing text from the raw,
+ * unfiltered `(e as Error).message` -- and Node's own `fs` errors embed the
+ * full source and destination paths in that message verbatim
+ * (64-REVIEW.md CR-01). Every one of this file's caught-fault branches now
+ * calls this function instead of reading `.message` itself.
+ *
+ * Returns `summary`, then a space and the fault's `code` in parentheses
+ * ONLY when that code is a string matching `WIRE_SAFE_ERROR_CODE_RE`
+ * above, then the fixed `PATH_FREE_FAULT_LOG_HINT`. The `code` read is
+ * wrapped in its own `try`, so a fault whose `code` property is a
+ * throwing getter counts as no code, exactly like a fault with no `code`
+ * at all -- this function never throws, on any input.
+ *
+ * WHAT NOT TO DO:
+ *   - Never read `fault.message` here, or call `String(fault)` on it --
+ *     that is exactly the leak this function exists to close.
+ *   - Never scrub path text out of a message instead of avoiding the
+ *     message entirely -- a scrubber fails open on the first path shape it
+ *     did not anticipate (D-17).
+ *   - Never widen `WIRE_SAFE_ERROR_CODE_RE` to admit a character a path
+ *     needs (`/`, `\`, a space, a dot) -- the shape's whole safety
+ *     property is that it cannot hold a separator.
+ */
+export function formatPathFreeFault(summary: string, fault: unknown): string {
+  let code: string | undefined;
+  try {
+    if (fault !== null && typeof fault === "object") {
+      const candidate = (fault as { code?: unknown }).code;
+      if (typeof candidate === "string" && WIRE_SAFE_ERROR_CODE_RE.test(candidate)) {
+        code = candidate;
+      }
+    }
+  } catch {
+    // A throwing `code` getter counts as no code -- never propagate it.
+  }
+  const codePart = code ? ` (${code})` : "";
+  return `${summary}${codePart} -- ${PATH_FREE_FAULT_LOG_HINT}`;
+}
 
 export interface SendPayloadFromFileOptions {
   socket: Socket;
@@ -298,7 +387,11 @@ export interface ReceivePayloadToFileOptions {
    * with no rename attempted. The real broker's production wiring
    * (`vice-broker.mts`'s `run()`) never supplies this -- only a test does,
    * to make the publish-race this plan closes deterministic instead of a
-   * 37-67% coin flip. */
+   * 37-67% coin flip. G-64-5 (plan 64-15): a test may also use its own
+   * closure to place a REAL filesystem fault between the verdict and the
+   * rename (e.g. removing the destination's own directory) -- that use
+   * leaves this hook's shape unchanged: no path in, nothing out, and the
+   * real broker's `run()` wiring still supplies none. */
   beforePublish?: () => Promise<void>;
 }
 
@@ -318,7 +411,14 @@ export interface ReceivePayloadToFileOptions {
  * `rmSync(..., { force: true })` and this function resolves
  * `{ ok: false, reason }`. Never throws.
  */
-export async function receivePayloadToFile({ socket, destPath, header, pending, capBytes = TRANSFER_MAX_BYTES, beforePublish }: ReceivePayloadToFileOptions): Promise<TransferResult> {
+export async function receivePayloadToFile({
+  socket,
+  destPath,
+  header,
+  pending,
+  capBytes = TRANSFER_MAX_BYTES,
+  beforePublish,
+}: ReceivePayloadToFileOptions): Promise<ReceivePayloadToFileResult> {
   // The declared byteLength is untrusted input (D-11) -- validated here,
   // independently of whatever check `readTransferHeader()` may already have
   // run, because this function is directly callable with a hand-built
@@ -398,7 +498,7 @@ export async function receivePayloadToFile({ socket, destPath, header, pending, 
       ok: false,
       code: "internal",
       reason: `vice: failed to publish ${destPath}: ${message}`,
-      wireReason: `vice: failed to publish the received file: ${message}`,
+      wireReason: formatPathFreeFault("vice: failed to publish the received file", e),
     };
   }
 
