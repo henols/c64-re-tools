@@ -230,6 +230,41 @@ purpose, parameter semantics, and edge-case behaviour — not terse `@param`/`@r
 // ============================================================================
 ```
 
+## Machine-Read Prose
+
+**Write an LLM-parsed string so a model cannot misread it.** Three surfaces in this repo are
+read by a model with no human present to resolve an ambiguity:
+
+1. Every tool `description` in `src/mcp/vice/tools-manifest.stock.json`. A model reads these to
+   choose a tool.
+2. Every `reason` string a refusal carries. A caller shows it to whoever asked. See the
+   **Error Handling** rules above, which already say a `reason` holds prose for a user.
+3. The `description:` frontmatter in each `src/skills/*/SKILL.md`. It decides when the skill
+   triggers.
+
+On those three surfaces, and on the planning documents that instruct agents, apply this
+discipline:
+
+- Write one instruction per sentence.
+- Use active voice, and name the actor. Write "VICE rejects `0x08`", not "`0x08` is rejected".
+- Use no semicolons. Split the clause into two sentences.
+- Use a list for three or more conditions or steps.
+- Keep every hedge. "May have failed" is not "failed", and shortening it states a different
+  claim.
+
+**Do not apply it to three other things.** `docs/` is the owner's own writing. A historical
+record — a `STATE.md` entry, a phase `SUMMARY` — says what was true when someone wrote it, and
+a rewrite falsifies it. A module header comment must stay WHY-prose that names the incident
+behind the file, which the **Comments** rules above require.
+
+The `asd-ste100` skill automates this check and carries a linter. It is a personal install, and
+the repo gitignores `.claude/skills/`, so CI and a fresh clone do not have it. **Nothing in this repo
+may depend on it.** The discipline above stands without it.
+
+Measured 2026-09-24: the tool descriptions do not yet follow this rule. Nineteen of them carry
+a semicolon, and the longest (`vice_diagnose`) runs to 3639 characters. That is the largest
+unconverted surface, and it is the one a model reads most often.
+
 ## Function Design
 
 **Size:** single-purpose, with comments long relative to code — a 15-line function may carry 30+

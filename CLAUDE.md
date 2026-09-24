@@ -238,6 +238,19 @@ Full detail: `.planning/codebase/CONVENTIONS.md`. The rules below change what yo
 - **Imports.** Import Node built-ins first, always with the `node:` prefix. Leave a blank line. Then import local modules as relative paths that include the real file extension. The repo defines no path alias. `verbatimModuleSyntax` makes `import type` mandatory for a type-only import. The runtime dependency set is exactly `@mastra/mcp` and `@mastra/core`. Nothing enforces that mechanically any more, so do not add a runtime dependency without deciding to.
 - **Errors.** `ViceError` in `src/mcp/vice/vice-errors.ts:158` is the base class and carries an optional `code` and `data`. A subclass extends it and adds domain fields as public properties. A constructor takes a message and an options object. Prefer a structured result over a throw. A `reason` field holds prose that a caller shows to a user. It is not a code to map later.
 - **Comments.** A module header states WHY the file exists and names the incident behind it. Write "a second broker launch raced the first and killed a live capture". Do not write "plan 02-03 (BROK-03, D-14)". State what the file is the one authoritative place for. State what NOT to do and name the past mistake. Give every export a JSDoc block written as prose.
+- **Machine-read prose.** A model reads three surfaces in this repo with no human present to resolve an ambiguity:
+
+  1. Every tool `description` in `src/mcp/vice/tools-manifest.stock.json`. A model reads these to choose a tool.
+  2. Every `reason` string a refusal carries. A caller shows it to whoever asked.
+  3. The `description:` frontmatter in each `src/skills/*/SKILL.md`. It decides when the skill triggers.
+
+  Apply this discipline there, and in the planning documents that instruct agents. Write one instruction per sentence. Use active voice and name the actor: write "VICE rejects `0x08`", not "`0x08` is rejected". Use no semicolons. Use a list for three or more conditions. Keep every hedge. "May have failed" is not "failed", and shortening it states a different claim.
+
+  **Do not apply it to three other things.** `docs/` is the owner's own writing. A historical record — a `STATE.md` entry, a phase `SUMMARY` — says what was true when someone wrote it, and a rewrite falsifies it. A module header comment must stay WHY-prose naming the incident behind the file, which the **Comments** rule above requires.
+
+  The `asd-ste100` skill automates the check and carries a linter. It is a personal install, and the repo gitignores `.claude/skills/`, so CI and a fresh clone do not have it. **Nothing in this repo may depend on it.** The discipline above stands without it.
+
+  Measured 2026-09-24: the tool descriptions do not yet follow this rule. Nineteen carry a semicolon. The longest runs to 3639 characters.
 - **Modules.** Export by name. This repo uses no default export and no barrel file. One module owns each piece of derived knowledge. `repo-root.ts` owns the project root. `stock-connect.ts` owns the binary-monitor handshake. `hostpath.ts` and `containerpath.ts` own path translation. `stock-dispatch.ts` owns the dispatch table. Import the owning function. Do not recompute it inline.
 - **Injection.** Pass parameters as a destructured options object. Do not pass a positional boolean. A function that touches env, time, spawning or I/O accepts an injectable override. The suite has no mocking library.
 - **Boundary.** Any host-facing path or hostname must go through `hostpath.ts`, `containerpath.ts` or `container-guard.mts`. Never call `spawnSync` on an external binary from a skill script. The app runs on the host, so the call must cross a container-out seam.
