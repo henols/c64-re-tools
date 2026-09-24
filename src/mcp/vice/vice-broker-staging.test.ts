@@ -56,7 +56,13 @@ const { resetStagingForTest, resolveStagedFile } = brokerTransferModule;
 const viceBrokerModule = (await import(new URL("./resources/vice-broker.mjs", HERE_MODULE_URL).href)) as unknown as {
   handleRelease: (requestId: string, state: BrokerState) => void;
   handleStageFile: (grantId: string, slot: string, state: BrokerState) => StageFileOutcome;
-  handleFileTransfer: (request: FileTransferRequest, socket: Socket, pending: Buffer, state: BrokerState) => FileTransferOutcome;
+  handleFileTransfer: (
+    request: FileTransferRequest,
+    socket: Socket,
+    pending: Buffer,
+    state: BrokerState,
+    deps?: { beforePublish?: () => Promise<void> },
+  ) => FileTransferOutcome;
 };
 const { handleRelease, handleStageFile, handleFileTransfer } = viceBrokerModule;
 
@@ -99,8 +105,21 @@ function setupBrokerState(emulatorPort: number, targetId: string): BrokerState {
  * stand-in. `onAcquire` is a stub that always succeeds -- this suite never
  * exercises a real spawn; it only needs `requestIdForThisConnection` set on
  * the acquiring connection so `stage_file`'s own ownsTarget() gate passes
- * for a grant this test already pre-populated directly in `state`. */
-async function startStagingListenerForState(state: BrokerState, emulatorPort: number): Promise<{ listener: StartControlListenerResult; token: string }> {
+ * for a grant this test already pre-populated directly in `state`.
+ *
+ * G-64-5 (plan 64-15): `getDeps` is OPTIONAL and read AT CALL TIME (never
+ * captured once), mirroring stock-connect.test.ts's own
+ * `startTransferControlListener()` -- so a test can arm/rearm a
+ * `beforePublish` timing hook right before its own upload, without needing
+ * a fresh listener per case. Every existing caller passes nothing and is
+ * unaffected (defaults to `{}`, which `handleFileTransfer()`'s own default
+ * parameter already treats identically to an entirely absent 5th
+ * argument). */
+async function startStagingListenerForState(
+  state: BrokerState,
+  emulatorPort: number,
+  getDeps: () => { beforePublish?: () => Promise<void> } = () => ({}),
+): Promise<{ listener: StartControlListenerResult; token: string }> {
   const token = newControlToken();
   const listener = await startControlListener({
     host: "127.0.0.1",
@@ -140,7 +159,7 @@ async function startStagingListenerForState(state: BrokerState, emulatorPort: nu
     // SAME way, through their real production entry points, imported above
     // from the compiled artifact.
     onStageFile: (targetId: string, slot: string) => handleStageFile(targetId, slot, state),
-    onFileTransfer: (request, socket, pending) => handleFileTransfer(request, socket, pending, state),
+    onFileTransfer: (request, socket, pending) => handleFileTransfer(request, socket, pending, state, getDeps()),
   });
   return { listener, token };
 }
@@ -416,6 +435,116 @@ test("vice-broker-staging: an upload whose declared digest disagrees with its by
 
         assert.equal(existsSync(emulatorFilename), false, "a digest mismatch must leave no file at the staged path");
         assert.equal(resolveStagedFile(handle).ok, true, "the handle itself is still a known registry entry -- only the FILE is missing");
+      } finally {
+        control.close();
+      }
+    } finally {
+      listener.server.close();
+    }
+  });
+});
+
+test("vice-broker-staging: real fs fault at the publish rename (the session directory removed before the rename) answers an error line with the errno code and no path under VICE_BROKER_HOME", async () => {
+  await withStagingFixture(async (home) => {
+    const emulatorPort = nextEmulatorPort();
+    const grantId = "req-64-15-t2-rename";
+    const state = setupBrokerState(emulatorPort, grantId);
+    // Starts undefined -- armed right before this upload so the hook is
+    // per-case, matching stock-connect.test.ts's own getDeps shape.
+    let beforePublish: (() => Promise<void>) | undefined;
+    const { listener, token } = await startStagingListenerForState(state, emulatorPort, () => ({ beforePublish }));
+    try {
+      const control = makeControlClient(listener.port);
+      try {
+        await control.sendAndRead({ op: "acquire", id: grantId, token });
+        const stageReply = await control.sendAndRead({ op: "stage_file", target_id: grantId, slot: "disk8", token });
+        const handle = stageReply.handle as string;
+        const emulatorFilename = stageReply.emulator_filename as string;
+
+        const payload = fullByteRangeBuffer();
+        const { byteLength, sha256 } = digestOf(payload);
+
+        // The digest/count verdict has already been reached by the time
+        // this hook runs (D-11's own timing contract) -- removing the
+        // WHOLE session directory here means the renameSync() that
+        // follows fails with a REAL ENOENT, never a synthetic one.
+        beforePublish = async () => {
+          rmSync(join(home, "staging", grantId), { recursive: true, force: true });
+        };
+
+        const uploadSocket = netConnect({ host: "127.0.0.1", port: listener.port });
+        await onceConnected(uploadSocket);
+        const uploadReplyPromise = readLineFromSocket(uploadSocket);
+        uploadSocket.write(`${JSON.stringify({ op: "transfer", direction: "upload", handle, byteLength, sha256, token })}\n`);
+        const { obj: uploadReply } = await uploadReplyPromise;
+        assert.equal(uploadReply.kind, "transfer_ready");
+
+        const errorReplyPromise = readLineFromSocket(uploadSocket);
+        uploadSocket.end(payload);
+        const { obj: errorReply } = await errorReplyPromise;
+        assert.equal(errorReply.kind, "error");
+        assert.deepEqual(Object.keys(errorReply).sort(), ["code", "kind", "message"], "the error line's key set must be exactly code/kind/message");
+        assert.equal(errorReply.code, "internal");
+        const message = String(errorReply.message ?? "");
+        assert.match(message, /\(ENOENT\)/);
+        assert.ok(!message.includes(home), "the error line's message must contain no path under VICE_BROKER_HOME");
+        assert.ok(!message.includes(emulatorFilename), "the error line's message must not name the staged path");
+        await onceClosed(uploadSocket);
+
+        assert.equal(existsSync(emulatorFilename), false, "no file may exist at the staged path");
+      } finally {
+        control.close();
+      }
+    } finally {
+      listener.server.close();
+    }
+  });
+});
+
+test("vice-broker-staging: real fs fault in the pre-publish hook (a real ENOENT fs error) answers an error line with the errno code and no path under VICE_BROKER_HOME", async () => {
+  await withStagingFixture(async (home) => {
+    const emulatorPort = nextEmulatorPort();
+    const grantId = "req-64-15-t2-hook";
+    const state = setupBrokerState(emulatorPort, grantId);
+    let beforePublish: (() => Promise<void>) | undefined;
+    const { listener, token } = await startStagingListenerForState(state, emulatorPort, () => ({ beforePublish }));
+    try {
+      const control = makeControlClient(listener.port);
+      try {
+        await control.sendAndRead({ op: "acquire", id: grantId, token });
+        const stageReply = await control.sendAndRead({ op: "stage_file", target_id: grantId, slot: "disk8", token });
+        const handle = stageReply.handle as string;
+        const emulatorFilename = stageReply.emulator_filename as string;
+
+        const payload = fullByteRangeBuffer();
+        const { byteLength, sha256 } = digestOf(payload);
+
+        // A real ENOENT, carrying its own path -- never a synthetic
+        // rejection the test authored itself.
+        beforePublish = async () => {
+          readFileSync(join(home, "staging", grantId, "no-such-file"));
+        };
+
+        const uploadSocket = netConnect({ host: "127.0.0.1", port: listener.port });
+        await onceConnected(uploadSocket);
+        const uploadReplyPromise = readLineFromSocket(uploadSocket);
+        uploadSocket.write(`${JSON.stringify({ op: "transfer", direction: "upload", handle, byteLength, sha256, token })}\n`);
+        const { obj: uploadReply } = await uploadReplyPromise;
+        assert.equal(uploadReply.kind, "transfer_ready");
+
+        const errorReplyPromise = readLineFromSocket(uploadSocket);
+        uploadSocket.end(payload);
+        const { obj: errorReply } = await errorReplyPromise;
+        assert.equal(errorReply.kind, "error");
+        assert.deepEqual(Object.keys(errorReply).sort(), ["code", "kind", "message"], "the error line's key set must be exactly code/kind/message");
+        assert.equal(errorReply.code, "internal");
+        const message = String(errorReply.message ?? "");
+        assert.match(message, /\(ENOENT\)/);
+        assert.ok(!message.includes(home), "the error line's message must contain no path under VICE_BROKER_HOME");
+        assert.ok(!message.includes(emulatorFilename), "the error line's message must not name the staged path");
+        await onceClosed(uploadSocket);
+
+        assert.equal(existsSync(emulatorFilename), false, "no file may exist at the staged path after a hook failure");
       } finally {
         control.close();
       }

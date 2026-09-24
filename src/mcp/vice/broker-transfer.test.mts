@@ -47,7 +47,7 @@ const brokerTransferModule = (await import(new URL("./resources/broker-transfer.
     capBytes?: number;
     beforePublish?: () => Promise<void>;
   }) => Promise<
-    { ok: true; byteLength: number; sha256: string } | { ok: false; reason: string; code?: "bad_request" | "internal"; wireReason?: string }
+    { ok: true; byteLength: number; sha256: string } | { ok: false; reason: string; code: "bad_request" | "internal"; wireReason: string }
   >;
   /** G-64-5 (plan 64-15, Task 1): the ONE builder of wire text for a caught
    * transfer fault -- see that function's own JSDoc in broker-transfer.mts. */
@@ -636,6 +636,225 @@ test("formatPathFreeFault: path-free fault text carries only a validated errno t
     }
   } finally {
     rmSync(missingDir, { recursive: true, force: true });
+  }
+});
+
+test("receivePayloadToFile real fs fault, receive pipeline: a temp file that cannot be opened answers path-free wire text", async () => {
+  const fixtureDir = mkdtempSync(join(tmpdir(), "broker-transfer-pipeline-fault-"));
+  const server = createServer();
+  let client: Socket | undefined;
+  try {
+    // destPath's own basename is 250 'n' characters -- the temp filename
+    // this function derives (`${destPath}.tmp-<pid>-<ms>`) then exceeds
+    // NAME_MAX (255 bytes) regardless of uid, so createWriteStream() fails
+    // ENAMETOOLONG (MEASURED by the planner on this host, 64-15-PLAN.md).
+    const destPath = join(fixtureDir, "n".repeat(250));
+
+    const serverDone = new Promise<Awaited<ReturnType<typeof receivePayloadToFile>>>((resolve, reject) => {
+      server.on("connection", (socket) => {
+        socket.on("error", () => {
+          // pipeline()'s own error teardown destroys this socket once the
+          // destination stream fails to open -- expected here, not a
+          // test failure; only serverDone's own resolution matters.
+        });
+        readHeaderFromSocket(socket)
+          .then(({ header, pending }) => receivePayloadToFile({ socket, destPath, header, pending }))
+          .then(resolve, reject);
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as AddressInfo).port;
+    client = netConnect({ host: "127.0.0.1", port });
+    await new Promise<void>((resolve, reject) => {
+      client!.once("connect", resolve);
+      client!.once("error", reject);
+    });
+    client.on("error", () => {
+      // The server destroying its end of the connection on the
+      // ENAMETOOLONG failure can surface here as ECONNRESET/EPIPE -- not a
+      // test failure.
+    });
+    // The receive pipeline fails before verifyObserved() ever runs, so the
+    // declared header values are never actually checked against the
+    // bytes -- a small hand-built header is enough.
+    writeTransferHeader(client, { kind: "file", byteLength: 5, sha256: "0".repeat(64) });
+    client.end(Buffer.from("hello"));
+
+    const result = await serverDone;
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.code, "internal");
+      const wireReason = result.wireReason;
+      assert.match(wireReason, /\(ENAMETOOLONG\)/);
+      assert.ok(!wireReason.includes(fixtureDir), `wireReason must exclude the fixture directory: ${wireReason}`);
+      assert.ok(!wireReason.includes("/"), `wireReason must contain no "/": ${wireReason}`);
+      assert.ok(result.reason.includes(destPath), `reason must still include destPath: ${result.reason}`);
+    }
+    const leftoverTmp = readdirSync(fixtureDir).filter((f) => f.includes(".tmp-"));
+    assert.deepEqual(leftoverTmp, [], "no leftover .tmp- entry may remain in fixtureDir");
+  } finally {
+    if (client && !client.destroyed) client.destroy();
+    server.close();
+    rmSync(fixtureDir, { recursive: true, force: true });
+  }
+});
+
+test("receivePayloadToFile real fs fault, pre-publish hook: a hook failing on a real fs error answers path-free wire text", async () => {
+  const fixtureDir = mkdtempSync(join(tmpdir(), "broker-transfer-hook-fault-"));
+  const server = createServer();
+  let client: Socket | undefined;
+  try {
+    const sourcePath = join(fixtureDir, "source.bin");
+    writeFileSync(sourcePath, Buffer.from("pre-publish hook fault fixture bytes, task 2"));
+    const destPath = join(fixtureDir, "dest", "staged.bin");
+
+    const serverDone = new Promise<Awaited<ReturnType<typeof receivePayloadToFile>>>((resolve, reject) => {
+      server.on("connection", (socket) => {
+        readHeaderFromSocket(socket)
+          .then(({ header, pending }) =>
+            receivePayloadToFile({
+              socket,
+              destPath,
+              header,
+              pending,
+              // A real ENOENT, carrying its own path -- never a synthetic
+              // rejection the test authored itself.
+              beforePublish: async () => {
+                readFileSync(join(fixtureDir, "no-such-file"));
+              },
+            }),
+          )
+          .then(resolve, reject);
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as AddressInfo).port;
+    client = netConnect({ host: "127.0.0.1", port });
+    await new Promise<void>((resolve, reject) => {
+      client!.once("connect", resolve);
+      client!.once("error", reject);
+    });
+
+    const sendResult = await sendPayloadFromFile({ socket: client, sourcePath });
+    assert.equal(sendResult.ok, true, sendResult.ok ? "" : (sendResult as { reason: string }).reason);
+
+    const result = await serverDone;
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.code, "internal");
+      const wireReason = result.wireReason;
+      assert.match(wireReason, /\(ENOENT\)/);
+      assert.ok(!wireReason.includes(fixtureDir), `wireReason must exclude the fixture directory: ${wireReason}`);
+      assert.ok(!wireReason.includes("/"), `wireReason must contain no "/": ${wireReason}`);
+      assert.ok(result.reason.includes(destPath), `reason must still include destPath: ${result.reason}`);
+    }
+    assert.equal(existsSync(destPath), false, "no file may exist at destPath after a hook failure");
+  } finally {
+    if (client && !client.destroyed) client.destroy();
+    server.close();
+    rmSync(fixtureDir, { recursive: true, force: true });
+  }
+});
+
+test("receivePayloadToFile: cap names the limit on the wire, built from numbers and never from the caught error", async () => {
+  const fixtureDir = mkdtempSync(join(tmpdir(), "broker-transfer-cap-wire-"));
+  try {
+    const capBytes = 4096;
+
+    // Exactly at the cap: accepted and published -- D-11's own comparison
+    // is strictly-greater, so an exact match at the boundary must succeed.
+    // Each inner block's socket/server cleanup runs in its OWN finally --
+    // unlike several pre-existing tests in this file that close the
+    // server only at the end of a passing try block -- because THIS
+    // test's second block is expected to fail against today's unfixed
+    // tree (RED), and a listening server left open by a thrown
+    // AssertionError keeps the whole test process alive (measured live
+    // while authoring this test's earlier sibling in this file).
+    {
+      const sourcePath = join(fixtureDir, "exact.bin");
+      writeFileSync(sourcePath, Buffer.alloc(capBytes, 0x41));
+      const destPath = join(fixtureDir, "ok", "exact.bin");
+
+      const server = createServer();
+      let client: Socket | undefined;
+      try {
+        const serverDone = new Promise<Awaited<ReturnType<typeof receivePayloadToFile>>>((resolve, reject) => {
+          server.on("connection", (socket) => {
+            readHeaderFromSocket(socket)
+              .then(({ header, pending }) => receivePayloadToFile({ socket, destPath, header, pending, capBytes }))
+              .then(resolve, reject);
+          });
+        });
+        await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+        const port = (server.address() as AddressInfo).port;
+        client = netConnect({ host: "127.0.0.1", port });
+        await new Promise<void>((resolve, reject) => {
+          client!.once("connect", resolve);
+          client!.once("error", reject);
+        });
+        const sendResult = await sendPayloadFromFile({ socket: client, sourcePath });
+        assert.equal(sendResult.ok, true, sendResult.ok ? "" : (sendResult as { reason: string }).reason);
+        const result = await serverDone;
+        assert.equal(result.ok, true, result.ok ? "" : (result as { reason: string }).reason);
+        assert.equal(existsSync(destPath), true, "an exactly-at-cap payload must be published");
+      } finally {
+        if (client && !client.destroyed) client.destroy();
+        server.close();
+      }
+    }
+
+    // One byte past capBytes: the receiver's OWN observed count crosses
+    // capBytes mid-stream -- a hand-built header under-declares the
+    // length so this proves the RECEIVER's own enforcement (D-11), not
+    // the pre-pipeline declared-length refusal (sweep row 1, unchanged).
+    {
+      const destPath = join(fixtureDir, "refused", "over.bin");
+      const overPayload = Buffer.alloc(capBytes + 1, 0x42);
+
+      const server = createServer();
+      let client: Socket | undefined;
+      try {
+        const serverDone = new Promise<Awaited<ReturnType<typeof receivePayloadToFile>>>((resolve, reject) => {
+          server.on("connection", (socket) => {
+            socket.on("error", () => {
+              // pipeline()'s own error teardown destroys this socket once
+              // the observed count crosses capBytes -- expected here.
+            });
+            readHeaderFromSocket(socket)
+              .then(({ header, pending }) => receivePayloadToFile({ socket, destPath, header, pending, capBytes }))
+              .then(resolve, reject);
+          });
+        });
+        await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+        const port = (server.address() as AddressInfo).port;
+        client = netConnect({ host: "127.0.0.1", port });
+        await new Promise<void>((resolve, reject) => {
+          client!.once("connect", resolve);
+          client!.once("error", reject);
+        });
+        client.on("error", () => {
+          // The server destroying its end on the cap refusal can surface
+          // here as ECONNRESET/EPIPE -- not a test failure.
+        });
+        writeTransferHeader(client, { kind: "file", byteLength: capBytes, sha256: "0".repeat(64) });
+        client.end(overPayload);
+
+        const result = await serverDone;
+        assert.equal(result.ok, false);
+        if (!result.ok) {
+          assert.equal(result.code, "bad_request");
+          const wireReason = result.wireReason;
+          assert.ok(wireReason.includes(String(capBytes)), `wireReason must name the cap ${capBytes}: ${wireReason}`);
+          assert.ok(!wireReason.includes(fixtureDir), `wireReason must exclude the fixture directory: ${wireReason}`);
+          assert.ok(!wireReason.includes("/"), `wireReason must contain no "/": ${wireReason}`);
+        }
+      } finally {
+        if (client && !client.destroyed) client.destroy();
+        server.close();
+      }
+    }
+  } finally {
+    rmSync(fixtureDir, { recursive: true, force: true });
   }
 });
 

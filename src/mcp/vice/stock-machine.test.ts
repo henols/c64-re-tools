@@ -1335,13 +1335,20 @@ test("vice_snapshot_load refusal (G-64-3, plan 64-13): a publish that fails befo
     assert.equal(saveResult.isError, false, `save must succeed: ${JSON.stringify(saveResult)}`);
     assert.equal(sends.length, 1);
 
-    beforePublish = () => Promise.reject(new Error("forced publish failure (G-64-3, plan 64-13 test)"));
+    // G-64-5 (plan 64-15): a REAL fs error, never the synthetic,
+    // already path-free rejection this test used to author itself -- the
+    // synthetic message is exactly what CR-01 found the suite could not
+    // catch (64-REVIEW.md).
+    beforePublish = async () => {
+      readFileSync(join(brokerHome, "staging", grantId, "no-such-file"));
+    };
 
     const loadResult = await handleSnapshotLoad({ name: "refusal_1" }, session, fakeDeps);
     assert.equal(loadResult.isError, true, `a publish failure must refuse the load: ${JSON.stringify(loadResult)}`);
     assert.equal(sends.length, 1, "no UNDUMP may be sent after a publish failure");
     const resultText = loadResult.content[0]!.text;
     assert.ok(!resultText.includes(brokerHome), `the result text must name no path under the broker's own temp root: ${resultText}`);
+    assert.match(resultText, /\(ENOENT\)/, `the result text must name the errno code: ${resultText}`);
   } finally {
     control.close();
     listener.server.close();
