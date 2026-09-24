@@ -967,6 +967,8 @@ ceiling is explicitly recorded.
 | Guard the generated README by parsing the committed region back into records and comparing facts, never bytes (Phase 61) | A byte comparison fails on a reflow, which trains a reader to regenerate without looking; a fact comparison fails only when a fact moved | ✓ Good — five planted-divergence cases were watched failing and naming what moved, plus round-trip and tolerance cases proving it forgives reflow. Consistent with the owner's 2026-09-13 removal of every byte-identical assertion |
 | Drop the doctor mid-milestone rather than build it (owner decision, 2026-09-18, during `/gsd-discuss-phase 61`) | *"I don't want the doctor — if something is called that isn't there, the tool or script tells a short message that it's broken."* `DECL-03` had already shipped exactly that in Phase 60, so the doctor would have been a second surface over facts already surfaced | ⚠️ Revisit — correct on its own terms and taken before any plan existed, which is the cheapest moment to take it. But the milestone's opening ground truth is **not** closed by it: a user still discovers missing prerequisites one refusal at a time, which is the thing the milestone was opened to fix. `DOCTOR-01..09` are parked in Future Requirements unbuilt and un-retracted, and the gap is recorded as live rather than resolved |
 | Accept the crash-races-a-release incident-loss window rather than close it (owner decision, 2026-09-23, during `/gsd-verify-work 63`) | `handleMonitorRelease()`'s no-current-holder branch cannot distinguish a prior deliberate release from `handleExit()` having just cleared the holder because the emulator crashed, so a client's own in-flight release landing in that window can delete the `relaySessions` entry and make `handleRelayDeath()` early-return — losing an incident record ROADMAP Success Criterion 4 requires. Reachability depends on event-loop ordering between a child `exit` and a socket `close` that neither this codebase nor Node orders, so no grep or single run settles it | ⚠️ Revisit — the four load-bearing code claims were re-read against the working tree and all hold, so the window is real, not hypothetical; what was judged is its *likelihood*, not its existence. The crash itself still respawns correctly — only the evidence is lost, and only in that window. Recorded as accepted risk `R-63-04` in `63-SECURITY.md`; `63-REVIEW.md`'s proposed fix (b) was explicitly not adopted |
+| Leave `vice_autostart`'s and `vice_disk_attach`'s `path` unrestricted: any absolute path the client can read (owner decision D-14, Phase 64) | This tree analyses artifacts wherever the user put them. Confining the path was offered and declined as a regression dressed as hardening. The 16 MiB transfer cap and session-scoped staging bound the exposure. They do not remove it. | ✓ Accepted and named — `T-64-05`/`T-64-26` in `64-SECURITY.md`, stated at `stock-machine.ts:151-163` |
+| Authenticate `attach` and `transfer` by their broker-minted handle alone, dispatched ahead of the per-boot control-token gate (owner decision 5, Phase 64 gap G-64-1) | A relay or transfer connection is a new socket that cannot present the control token without re-threading the credential through every dial. The token-gated control session is the only place a handle is minted. This reverses Phase 63's `T-63-01` stance on the relay attach. | ✓ Good — verified through a real `vice-proxy.ts` over stdio (`evidence/64-g641-handle-only-authority.md`). The production dials no longer carry a credential field (plan 64-09) |
 ## Evolution
 
 This document evolves at phase transitions and milestone boundaries.
@@ -2892,13 +2894,14 @@ written).
 
 ---
 
-*Last updated: 2026-09-23 after **Phase 63 (The Monitor Channel Relayed, and the
-Connection as the Session)**, which closed with all 12 of 12 plans executed — 6
-original, 4 gap-closure round one, 2 gap-closure round two — canonical verification at
-6/6 must-haves, UAT 1/1, security verified at `threats_open: 0` across a 52-entry
-register, and nyquist validation **PARTIAL** rather than compliant. `SESS-01..06` are
-complete. One section changed and no others: **Key Decisions** gained the row recording
-the owner's acceptance of the crash-races-a-release incident-loss window (`R-63-04`).*
+*Last updated: 2026-09-24 after **Phase 64 (Files as Bytes, Both Directions)**, which closed with all 16 of 16 plans executed.
+Seven were original and nine were gap-closure plans across four rounds (G-64-1, G-64-3 to G-64-6). Canonical verification reached 8/8 truths.
+UAT passed 1/1: a live in-session run against `/usr/bin/x64sc` 3.9, 12/12 calls clean with zero 0x8f. Security is verified at `threats_open: 0` across a
+96-entry register, with two low-severity items open below the threshold. Nyquist validation is **compliant**. `XFER-01..08` are complete. One
+section changed and no others: **Key Decisions** gained two rows, D-14 (unrestricted file path, accepted) and owner decision 5
+(handle-only authority for `attach` and `transfer`).*
+
+*Previous: 2026-09-23 after Phase 63 — Key Decisions gained the `R-63-04` row.*
 
 *Deliberately unchanged: **Core Value**, **Validated**, **Out of Scope** and **`## Next
 Milestone Goals`** — this phase shipped inside an open milestone and excluded nothing

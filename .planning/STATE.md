@@ -2,20 +2,20 @@
 gsd_state_version: "1.0"
 milestone: v2.0.0
 milestone_name: One Broker, One Socket
-current_phase: 64
-current_phase_name: Files as Bytes, Both Directions
-status: verifying
-stopped_at: "Phase 64 re-verified after gap-closure round 4 -- human_needed 8/8 (G-64-6 closed); one owner in-session live check queued in 64-UAT.md -- run /gsd-verify-work 64"
-last_updated: "2026-09-24T18:41:51.916Z"
+current_phase: 65
+current_phase_name: Every Skill Script Through the One Endpoint, and CI With It
+status: planning
+stopped_at: Phase 64 complete, ready to plan Phase 65
+last_updated: "2026-09-24T21:54:00.928Z"
 last_activity: 2026-09-24
-last_activity_desc: Phase 64 re-verified after gap-closure round 4 -- human_needed 8/8, G-64-6 closed, one owner live check queued
-state_head: 3ba2fb73103511b5edf576fc18caeebe8efd8a47
+last_activity_desc: Phase 64 complete, transitioned to Phase 65
+state_head: b73495b541beaa6a9bab0dbac964b48cd1a68eae
 progress:
   total_phases: 6
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 33
   completed_plans: 33
-  percent: 33
+  percent: 50
 carried_forward_phases:
 
   - 51
@@ -29,12 +29,11 @@ carried_forward_phases:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (last update **2026-09-23 after Phase 63** — one section
-changed: `## Key Decisions` gained the row recording the owner's acceptance of the
-crash-races-a-release incident-loss window (`R-63-04`). Core Value, Validated, Out of
-Scope and `## Next Milestone Goals` deliberately untouched — the phase shipped inside
-an open milestone and excluded nothing new. The last full evolution review remains the
-v1.1.0 close on 2026-09-19.)
+See: .planning/PROJECT.md (last update **2026-09-24 after Phase 64**. One section
+changed: `## Key Decisions` gained two rows, D-14 (the file path stays unrestricted, accepted and
+named) and owner decision 5 (`attach`/`transfer` authenticated by handle alone). Core Value,
+Validated, Out of Scope and `## Next Milestone Goals` deliberately untouched, because the phase
+shipped inside an open milestone. The last full evolution review remains the v1.1.0 close on 2026-09-19.)
 
 **Core value:** A Claude session can reliably drive a real C64 emulator to
 reverse-engineer a program — read and write memory, set checkpoints, capture
@@ -46,7 +45,11 @@ v2.0.0 close is where it can be weighed — and it will have evidence to weigh,
 because "keep working when the emulator misbehaves" is exactly what a
 connection-is-the-session broker changes the mechanics of.*
 
-**Current focus:** Phase 64 — Files as Bytes, Both Directions
+**Current focus:** Phase 65 — Every Skill Script Through the One Endpoint, and CI With It
+Phase 64 closed 2026-09-24: all 16 of 16 plans executed (7 original, 9 gap-closure across
+four rounds), verification passed 8/8 truths, UAT 1/1 (live, in-session), security verified
+with `threats_open: 0` (96 threats, 2 low open below threshold), nyquist validation compliant.
+`XFER-01..08` complete.
 Phase 63 closed 2026-09-23: all 12 of 12 plans executed (6 original, 4 gap-closure
 round one, 2 gap-closure round two), verification passed 6/6 must-haves, UAT 1/1,
 security verified with `threats_open: 0`, nyquist validation PARTIAL. `SESS-01..06`
@@ -82,9 +85,15 @@ closure still needs to be recorded as one.
 
 ## Current Position
 
-Phase: 64 (Files as Bytes, Both Directions) — AWAITING HUMAN VERIFICATION
-Plan: 16 of 16 executed (gap-closure round 4 complete; phase re-verification next)
-Status: Re-verification 2026-09-24 after gap-closure round 4: human_needed, 8/8 truths verified. G-64-6 (truth #5, XFER-07) verified closed by direct source read and independent re-runs; round 4 code review 0 critical / 1 warning / 1 info (64-REVIEW.md, fc8130ea); typecheck exit 0 and test:automated 4277/4268/0/9 exit 0. The one remaining item is plan 64-14's owner in-session live re-run, persisted to 64-UAT.md. Next: /gsd-verify-work 64. Before that: Gap-closure round 4 executed 2026-09-24 — plan 64-16 closed G-64-6 (XFER-07), sequentially on the main working tree because HEAD is ahead of origin/main; all 16 of 16 Phase 64 plans now have a SUMMARY, and 64-VERIFICATION.md truth #5 is ready to re-score. It was planned the same day by /gsd-plan-phase 64 --gaps (plan-checker passed), after this re-verification: Re-verification 2026-09-24 after gap-closure round 3: gaps_found, 7/8 truths verified. G-64-5 (truth #8) verified closed: formatPathFreeFault() and ReceivePayloadToFileResult confirmed by direct source read, and the real-fault tests independently re-run (test:automated 4274/4265/0/9, exit 0). One new blocker, from round 3's own code review (64-REVIEW.md CR-01, committed d06c4226): vice-broker.mts's run() calls sweepOrphanedStaging() before the control-port singleton bind, and the sweep removes every staging session directory with no liveness check, so a second broker that loses the bind race can delete a live broker's active staging. Truth #5 (XFER-07) is therefore FAILED; XFER-07 reads Gaps Found in REQUIREMENTS.md, and the other seven XFER ids stay SATISFIED. The review's CR-02 (the unguarded mkdirSync in receivePayloadToFile(), WINDOWS.md #77) was scored a disclosed warning, not a gap. That blocker is G-64-6, targeted by plan 64-16. Before that: Gap-closure round 3 executed 2026-09-24 — plan 64-15 closed G-64-5 (CR-01 in 64-REVIEW.md), sequentially on the main working tree because HEAD is ahead of origin/main. It was planned the same day by /gsd-plan-phase 64 --gaps, after this re-verification: Re-verification 2026-09-24 after gap-closure round 2: gaps_found, 7/8 truths verified. G-64-3 and G-64-4 verified closed (source, targeted suites, live 7/7 cold sessions and 135/135 clean loop); XFER-01..08 all scored SATISFIED, none demoted. One new blocker: CR-01 in 64-REVIEW.md — receivePayloadToFile() in broker-transfer.mts interpolates raw fs error text (which carries the broker's absolute paths) into the client-facing wireReason on three failure branches, which 64-13 now delivers to the client. That blocker was G-64-5, closed by plan 64-15. Before that: Phase 64 gap-closure round 2 executed — 64-12 (G-64-4, the cold-launch relay-attach race), 64-13 (G-64-3, the intermittent 0x8f on the file-carrying tools) and 64-14 (both measured live against genuine stock /usr/bin/x64sc and a systemd-unit broker) are all complete, sequentially on the main working tree. They follow UAT 2026-09-23 (0 passed, 2 issues, 64-UAT.md status diagnosed). Previously: Phase 64 gap closure for G-64-1 (UAT test 1) is complete — all 11 plans executed sequentially on the main working tree. Re-verification 2026-09-23: human_needed, 5/5 ROADMAP criteria verified, G-64-1 met with one caveat (the cold-launch race below); code review 0 critical / 2 warning / 1 info; the 2 UAT items it left pending in 64-UAT.md were run the same day and both failed, becoming G-64-3 and G-64-4.
+Phase: 65 — Every Skill Script Through the One Endpoint, and CI With It
+Plan: Not started
+Status: Ready to plan
+Phase 64 closed on 2026-09-24: all 16 plans executed. Verification passed 8/8 after gap-closure round 4.
+UAT 1/1 passed: the owner's in-session live check, run in-session on request, 12/12 MCP calls
+clean against /usr/bin/x64sc 3.9, zero 0x8f, clean teardown. Security verified with threats_open: 0.
+Nyquist validation is compliant. The round-4 VERIFICATION.md fingerprint had captured 64-UAT.md before
+436fce2d rewrote it, so verification read "stale" from the start. The UAT entry was dropped and the
+digest recomputed (b73495b5).
 Plan 64-16 closed 2026-09-24: G-64-6 (round-three CR-01) closed at the
 source — vice-broker.mts's run() now calls sweepOrphanedStaging() once,
 after the loopback control-port bind is confirmed and before the first
@@ -223,8 +232,8 @@ Phase 63 closed on 2026-09-23: all 12 plans executed, UAT 1/1 passed, canonical
 verification passed (6/6 must-haves), nyquist validation PARTIAL and security verified
 with threats_open: 0. The one human decision — 63-REVIEW.md's WR-01 — was ACCEPTED as
 residual risk, recorded as R-63-04 in 63-SECURITY.md.
-Progress: [███░░░░░░░] 33% (2 of 6 v2.0.0 phases complete; Phases 62-67)
-Last activity: 2026-09-24 — Phase 64 re-verified after gap-closure round 4: human_needed 8/8 (G-64-6 closed; one owner live check queued in 64-UAT.md)
+Progress: [█████░░░░░] 50% (3 of 6 v2.0.0 phases complete; Phases 62-67)
+Last activity: 2026-09-24 — Phase 64 complete, transitioned to Phase 65
 
 **Planning override recorded at the Phase 64 decision-coverage gate.**
 `check.decision-coverage-plan` returned `passed: false` with
@@ -255,7 +264,7 @@ named in the evidence document as Phase 66's to reconcile, not force-closed.
 
 **Velocity:**
 
-- Total plans completed: 474
+- Total plans completed: 490
 - Average duration: —
 - Total execution time: —
 
@@ -316,6 +325,7 @@ named in the evidence document as Phase 66's to reconcile, not force-closed.
 | 61 | 3 | - | - |
 | 62 | 5 | - | - |
 | 63 | 12 | - | - |
+| 64 | 16 | - | - |
 
 **Recent Trend:**
 
@@ -1869,6 +1879,17 @@ ledger table row below were both updated in the same change as this one.
 
 ### Blockers/Concerns
 
+- **Phase 64 carried items (2026-09-24), none blocking Phase 65.** Two threats are open, both low severity and below
+  `security_block_on: high`, recorded in `64-SECURITY.md`:
+  - T-64-21: a 32-hex handle passes `validateSnapshotName()`, so a handle given as a snapshot `name` is accepted silently.
+    The comment at `stock-machine.ts:445-451` claims otherwise.
+  - T-64-G3-03: `receivePayloadToFile()`'s `mkdirSync` (`broker-transfer.mts:451`) sits outside its try, and the upload
+    `.then()` at `vice-broker.mts:1254-1266` has no `.catch`. A throwing mkdir would leave the in-flight guard set and reach
+    the pool-ending unhandled-rejection handler. Normal use cannot reach it.
+  Three deferred items sit in `64-files-as-bytes-both-directions/deferred-items.md`: the incident-record leak into the real
+  home, the real-home reap and writes on a broker spawn with no `VICE_BROKER_HOME`, and a racy `waitForFile()` in
+  `vice-broker-acquire.test.ts`. The config-scratch reap also left 133 `vice-broker-vicerc-*` directories with no pid record
+  on this host (377 found, 244 removed, 2026-09-24).
 - **Phase 58 carried items (2026-09-17), none blocking Phase 59.** The phase closed
   at 5/5 roadmap success criteria with UAT 1/1, `threats_open: 0` and
   `nyquist_compliant: true`. Four code-review findings against the NEW citation-ledger
@@ -2904,8 +2925,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-24T18:41:51.775Z
-Stopped at: Completed 64-16-PLAN.md
+Last session: 2026-09-24T21:58:00Z
+Stopped at: Phase 64 complete, ready to plan Phase 65
 Resume file: None
 
 Earlier: **v2.0.0 roadmap created.** 36/36 requirements (`ENDPOINT-01..05`,
