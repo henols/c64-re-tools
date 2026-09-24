@@ -5,11 +5,11 @@ milestone_name: One Broker, One Socket
 current_phase: 65
 current_phase_name: Every Skill Script Through the One Endpoint, and CI With It
 status: planning
-stopped_at: Phase 64 complete, ready to plan Phase 65
-last_updated: "2026-09-24T21:54:00.928Z"
+stopped_at: Phase 65 context gathered
+last_updated: "2026-09-24T22:23:57.026Z"
 last_activity: 2026-09-24
 last_activity_desc: Phase 64 complete, transitioned to Phase 65
-state_head: b73495b541beaa6a9bab0dbac964b48cd1a68eae
+state_head: 3476be6d704e97faec317117ba9c958aa4561203
 progress:
   total_phases: 6
   completed_phases: 3
@@ -2925,9 +2925,9 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-24T21:58:00Z
-Stopped at: Phase 64 complete, ready to plan Phase 65
-Resume file: None
+Last session: 2026-09-24T22:23:56.855Z
+Stopped at: Phase 65 context gathered
+Resume file: .planning/phases/65-every-skill-script-through-the-one-endpoint-and-ci-with-it/65-CONTEXT.md
 
 Earlier: **v2.0.0 roadmap created.** 36/36 requirements (`ENDPOINT-01..05`,
   `BROKER-01..06`, `SESS-01..06`, `XFER-01..08`, `SEAM-01..03`, `RM-01..08`)
