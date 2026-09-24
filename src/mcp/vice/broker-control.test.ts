@@ -15,10 +15,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { connect, createServer, type AddressInfo } from "node:net";
 import { spawn, execFileSync, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createHash, randomBytes } from "node:crypto";
 import type { NetworkInterfaceInfo } from "node:os";
 
 import {
@@ -2119,7 +2120,11 @@ test("liveness round trip: the existing container-side classifier reads a runnin
   build();
   const stateDir = mkdtempSync(join(tmpdir(), "broker-control-liveness-"));
   const child = spawn(process.execPath, [BROKER_ARTIFACT, "--repo-root", "/tmp/fake-repo-root-liveness", "--state-dir", stateDir], {
-    env: { ...process.env, VICE_SUPERVISOR_ALLOW_CONTAINER: "1", VICE_BIN: "/bin/sleep", VICE_ARGS: "600", VICE_BROKER_CONTROL_PORT: "0" },
+    // G-64-6: confined to this test's own mkdtempSync stateDir -- with no
+    // VICE_BROKER_HOME this spawned broker would resolve the machine-level
+    // ~/.c64-re-tools and its own startup staging sweep would run against
+    // real, possibly-live staging on this host.
+    env: { ...process.env, VICE_SUPERVISOR_ALLOW_CONTAINER: "1", VICE_BIN: "/bin/sleep", VICE_ARGS: "600", VICE_BROKER_CONTROL_PORT: "0", VICE_BROKER_HOME: stateDir },
   }) as ChildProcessWithoutNullStreams;
   try {
     const recordPath = join(stateDir, "broker.json");
@@ -2150,7 +2155,12 @@ test("liveness round trip: the existing container-side classifier reads a runnin
 
 function startRealBroker(stateDir: string, env: Record<string, string> = {}): ChildProcessWithoutNullStreams {
   const child = spawn(process.execPath, [BROKER_ARTIFACT, "--repo-root", "/tmp/fake-repo-root-singleton", "--state-dir", stateDir], {
-    env: { ...process.env, VICE_SUPERVISOR_ALLOW_CONTAINER: "1", VICE_BIN: "/bin/sleep", VICE_ARGS: "600", ...env },
+    // G-64-6: VICE_BROKER_HOME defaults to this test's own stateDir --
+    // placed BEFORE the caller's own `env` spread so a caller can still
+    // override it -- confining every spawned broker's staging sweep to a
+    // temporary home rather than the machine-level ~/.c64-re-tools a real
+    // developer or CI host may hold live staging under.
+    env: { ...process.env, VICE_SUPERVISOR_ALLOW_CONTAINER: "1", VICE_BIN: "/bin/sleep", VICE_ARGS: "600", VICE_BROKER_HOME: stateDir, ...env },
   }) as ChildProcessWithoutNullStreams;
   return child;
 }
@@ -2237,6 +2247,149 @@ test("singleton: a broker started against a port held by a plain non-broker list
   } finally {
     squatter.server.close();
     rmSync(stateDir, { recursive: true, force: true });
+  }
+});
+
+// ============================================================================
+// G-64-6 (XFER-07, gap-closure round 4): the startup staging sweep must
+// never remove a live broker's active staging, whether a second, losing
+// broker process exits quietly or loudly -- and the sweep that DOES run, in
+// the process that actually wins the control-port bind, must still remove
+// genuine crash residue before that broker's discovery record exists. Uses
+// the SAME startRealBroker()/stopRealBroker() helpers as the `singleton:`
+// tests directly above, so every spawned broker here is confined to a
+// temporary VICE_BROKER_HOME the same way.
+// ============================================================================
+
+/** G-64-6: writes one staged file of random bytes under
+ * `<home>/staging/<sessionName>/`, the same shape stageFileSlot() itself
+ * creates (a session directory holding one handle-named file) -- named here
+ * only so the drift pass does not flag it. Returns the directory, the
+ * file's path and its sha256, so a test can assert the file survives (or is
+ * removed) byte-for-byte, never merely by existence. */
+function seedStagingSession(home: string, sessionName: string): { dir: string; filePath: string; sha256: string } {
+  const dir = join(home, "staging", sessionName);
+  mkdirSync(dir, { recursive: true });
+  const fileName = randomBytes(16).toString("hex"); // 32 hex characters, the shape stageFileSlot()'s own handle takes
+  const filePath = join(dir, fileName);
+  const payload = randomBytes(4096);
+  writeFileSync(filePath, payload);
+  const sha256 = createHash("sha256").update(payload).digest("hex");
+  return { dir, filePath, sha256 };
+}
+
+test("singleton staging (G-64-6): a losing second broker leaves a live first broker's staging session directory and its staged file in place", { timeout: 20000 }, async () => {
+  build();
+  const home = mkdtempSync(join(tmpdir(), "broker-control-g646-live-"));
+  const first = startRealBroker(home, { VICE_BROKER_CONTROL_PORT: "0", VICE_BROKER_CONTROL_HOST: "127.0.0.1" });
+  try {
+    const recordPath = join(home, "broker.json");
+    const appeared = await waitFor(() => existsSync(recordPath), 5000);
+    assert.ok(appeared, "the first broker's broker.json did not appear within deadline");
+    const bound = JSON.parse(readFileSync(recordPath, "utf8")).control_port as number;
+    assert.ok(Number.isInteger(bound) && bound > 0);
+
+    // Only NOW, after the live first broker has already bound and published
+    // its record, does this test create the session directory its own sweep
+    // must never reach.
+    const { dir: sessionDir, filePath, sha256: sha256Before } = seedStagingSession(home, "req-live-1-aaaaaaaa");
+
+    const second = startRealBroker(home, { VICE_BROKER_CONTROL_PORT: String(bound), VICE_BROKER_CONTROL_HOST: "127.0.0.1" });
+    let secondStderr = "";
+    second.stderr.on("data", (d: Buffer) => (secondStderr += d.toString("utf8")));
+    const exited = await waitFor(() => second.exitCode !== null, 5000);
+    assert.ok(exited, `second broker never exited; stderr so far:\n${secondStderr}`);
+    assert.equal(second.exitCode, 0, `a losing second broker must exit quietly (status 0); stderr:\n${secondStderr}`);
+    assert.match(secondStderr, /second instance/i, `expected the losing branch's own message, proving this test is non-vacuous; stderr:\n${secondStderr}`);
+    assert.doesNotMatch(secondStderr, /staging sweep found/, `a losing second broker must never run the staging sweep at all; stderr:\n${secondStderr}`);
+
+    assert.ok(existsSync(sessionDir), "the live first broker's staging session directory must still exist");
+    const sha256After = createHash("sha256").update(readFileSync(filePath)).digest("hex");
+    assert.equal(sha256After, sha256Before, "the staged file's bytes must be unchanged");
+    assert.equal(first.exitCode, null, "the first, live broker must still be running");
+  } finally {
+    await stopRealBroker(first);
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("singleton staging (G-64-6): a broker that fails loudly on a squatted control port leaves the staging root untouched", { timeout: 20000 }, async () => {
+  build();
+  const stateDir = mkdtempSync(join(tmpdir(), "broker-control-g646-squat-"));
+  const recordPath = join(stateDir, "broker.json");
+  // A stale discovery record, copied from the squatted-port test directly
+  // above -- a plausible-looking pid, but a heartbeat far older than the
+  // stale threshold.
+  writeFileSync(
+    recordPath,
+    JSON.stringify({
+      version: 1,
+      written_by: "vice-broker.mjs",
+      pid: 999999998,
+      started_at: "2020-01-01T00:00:00Z",
+      heartbeat_at: "2020-01-01T00:00:00Z",
+      node_version: process.version,
+      control_host: "0.0.0.0",
+      control_port: 0,
+      control_token: "0".repeat(64),
+      max_instances: 16,
+      base_port: 6600,
+      poll_ms: 500,
+      dry_run: false,
+    }),
+  );
+
+  const { dir: sessionDir, filePath, sha256: sha256Before } = seedStagingSession(stateDir, "req-squat-1-dddddddd");
+
+  // A plain, non-broker listener holding a real port -- stands in for
+  // "something that is not a broker", exactly as the squatted-port test
+  // directly above uses it.
+  const squatter = await bindControlListener("127.0.0.1", 0);
+  try {
+    const child = startRealBroker(stateDir, { VICE_BROKER_CONTROL_PORT: String(squatter.port), VICE_BROKER_CONTROL_HOST: "127.0.0.1" });
+    let stderr = "";
+    child.stderr.on("data", (d: Buffer) => (stderr += d.toString("utf8")));
+    const exited = await waitFor(() => child.exitCode !== null, 5000);
+    assert.ok(exited, `broker never exited; stderr so far:\n${stderr}`);
+    assert.notEqual(child.exitCode, 0, `must exit non-zero when the port is squatted; stderr:\n${stderr}`);
+    assert.match(stderr, new RegExp(String(squatter.port)));
+
+    assert.ok(existsSync(sessionDir), "the seeded staging session directory must still exist");
+    const sha256After = createHash("sha256").update(readFileSync(filePath)).digest("hex");
+    assert.equal(sha256After, sha256Before, "the seeded staged file's bytes must be unchanged");
+  } finally {
+    squatter.server.close();
+    rmSync(stateDir, { recursive: true, force: true });
+  }
+});
+
+test("startup staging sweep (G-64-6): a broker that wins the control-port bind has removed a crashed broker's staging residue by the time its discovery record exists", { timeout: 20000 }, async () => {
+  build();
+  const home = mkdtempSync(join(tmpdir(), "broker-control-g646-crash-"));
+  try {
+    // Seeded BEFORE this broker starts -- the shape a genuinely crashed
+    // broker's own staging leaves: one session directory holding a staged
+    // file, and one EMPTY session directory, the shape an interrupted
+    // recursive removal leaves.
+    const { dir: crashedWithFile } = seedStagingSession(home, "req-crashed-1-bbbbbbbb");
+    const crashedEmpty = join(home, "staging", "req-crashed-2-cccccccc");
+    mkdirSync(crashedEmpty, { recursive: true });
+
+    const child = startRealBroker(home, { VICE_BROKER_CONTROL_PORT: "0", VICE_BROKER_CONTROL_HOST: "127.0.0.1" });
+    try {
+      const recordPath = join(home, "broker.json");
+      const appeared = await waitFor(() => existsSync(recordPath), 5000);
+      assert.ok(appeared, "broker.json did not appear within deadline");
+      // No `await` between the existsSync() above and these two assertions:
+      // the sweep and the record write are both synchronous within run(),
+      // so nothing else can interleave once the record is known to exist.
+      assert.equal(existsSync(crashedWithFile), false, "the crashed session directory holding a staged file must be gone");
+      assert.equal(existsSync(crashedEmpty), false, "the empty, interrupted-removal-shaped crashed session directory must be gone");
+    } finally {
+      await stopRealBroker(child);
+    }
+  } finally {
+    rmSync(home, { recursive: true, force: true });
   }
 });
 

@@ -1704,21 +1704,27 @@ async function run(args) {
         nextEpochFor,
         writeEpochRecord,
     });
-    // Phase 64 (XFER-07, D-07/D-08): two MORE startup-only sweeps, beside the
+    // Phase 64 (XFER-07, D-08): one MORE startup-only reap, beside the
     // unconditional reap directly above -- never reordering or gating it (its
     // own placement, before the bind attempt and unconditional even for a
     // process that goes on to lose the singleton race, is unchanged, and is
     // already covered by broker-kill.test.ts's own structural source-order
-    // check). SESS-03/SESS-04 already reclaim a session's own staging on
-    // socket events and on bounded liveness detection, so the only residue
-    // either sweep can ever find here is what a CRASHED broker left -- and
-    // that is unambiguous exactly once, at the moment the NEXT broker starts.
-    // A periodic timer was offered and declined for both (D-07): it adds an
-    // interval to tune and a window where a sweep can race a live transfer,
-    // which the startup-only variant structurally cannot. Do not add one back
-    // as an "improvement".
+    // check). This pass's own mandatory live-pid and identity guard (D-08)
+    // makes it safe here, unconditional, even in a process that goes on to
+    // lose the singleton race a moment later: a config-scratch directory whose
+    // recorded process is still alive and still identifies as the expected
+    // binary is left completely untouched, so a losing second broker's own
+    // pass here cannot touch a live emulator's configuration.
+    //
+    // The staging sweep used to run in this same unconditional block. It has
+    // no liveness guard of any kind: a second broker that had not yet lost
+    // its bind ran this sweep here and removed a live broker's staging -- see
+    // sweepOrphanedStaging()'s own call site, below the confirmed bind, for
+    // the fix and the reasoning. A periodic timer was offered and declined
+    // for both passes (D-07): it adds an interval to tune and a window where
+    // a sweep can race a live transfer, which the startup-only variant
+    // structurally cannot. Do not add one back as an "improvement".
     reapOrphanedConfigScratch({ root: brokerConfigScratchDir() });
-    sweepOrphanedStaging({ root: brokerStagingDir() });
     // Resolved ONCE here, after the unconditional
     // startup reap and BEFORE the control listener binds -- never re-read per
     // launch, and never called from inside broker-launch.mts's `inFlight`
@@ -1990,6 +1996,37 @@ async function run(args) {
         process.stderr.write(`vice-broker: state directory: ${args.stateDir}\n`);
         listener = { host: loopbackListener.host, port: loopbackListener.port, pendingAcquires: bindResult.pendingAcquires };
     }
+    // The one place this broker calls the staging sweep. A second broker
+    // started while a live broker still held the control port used to run
+    // this sweep BEFORE it learned (via EADDRINUSE, above) that it had lost --
+    // and unconditionally deleted a live broker's staging: every session
+    // directory that live broker's own sessions owned, including a disk image
+    // attached to unit 8 and a file in the middle of a transfer. Every early
+    // return above (a failed loopback bind, a squatted port, a genuine
+    // singleton loss) returns before this line is ever reached, so a process
+    // that does not own the control port never runs this sweep at all.
+    //
+    // This process's OWN sessions cannot be caught by it either: `acquire`
+    // and `stage_file` are both gated on the control token (see
+    // broker-control.mts's token check), and that token has no distribution
+    // channel until the FIRST writeBrokerRecordFile() call below publishes
+    // it. Nothing can hold this process's token yet, so nothing can have
+    // created a staging directory this sweep might find.
+    //
+    // Never move this call back above the bind -- that reintroduces the
+    // defect above. Never move it below the record write -- once that line
+    // runs, a client can hold the token, call `acquire` and `stage_file`, and
+    // this sweep would remove the very file it just staged. Never add a
+    // timer (D-07): the sweep runs once, here, in the process that has just
+    // confirmed it won the bind.
+    //
+    // The residual this does NOT cover: a broker deliberately configured onto
+    // a different control port, or an explicit control host this process did
+    // not bind, while sharing this VICE_BROKER_HOME. That broker wins its OWN
+    // bind and reaches this same line, sweeping this same root -- the same
+    // scope limit the singleton comment above the bind states for the
+    // singleton guarantee itself.
+    sweepOrphanedStaging({ root: brokerStagingDir() });
     // Every catchable shutdown path (SIGTERM/SIGINT/SIGHUP, an uncaught
     // exception, an unhandled rejection, normal exit) converges on ONE
     // re-entrant-safe teardown that identity-verified-kills every instance
