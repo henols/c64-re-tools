@@ -143,7 +143,7 @@ test("nextFreePort: a port the injected port-in-use probe reports as in use is s
 });
 
 // Gap closure (plan 14, discovered live during Task 2's own end-to-end
-// proof -- RE-FINDINGS.md carries the full account): a scan running against
+// proof): a scan running against
 // MANY in-use candidates in a row does not merely take longer -- verified
 // live against the real defaultPortInUse(), for its ENTIRE duration the
 // control listener could not accept a new connection or read data already

@@ -909,8 +909,8 @@ test(
 // so pre-occupying a contiguous run of candidates at the allocator's own
 // configured band base makes the first allocation cost one full round trip
 // PER occupied candidate -- a wide, deterministic window rather than a raced
-// one. See the dated entry appended to RE-FINDINGS.md by this same task for
-// the general technique.
+// one. The technique generalises: pre-occupy a contiguous run at the
+// allocator's own band base, and the cost becomes deterministic.
 // ---------------------------------------------------------------------------
 
 /** How many contiguous loopback candidates to pre-occupy, starting at

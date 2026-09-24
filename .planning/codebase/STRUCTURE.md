@@ -1,5 +1,12 @@
 # Codebase Structure
 
+> **MEASURED 2026-09-24: this document names 22 file(s) that do not exist.**
+> Phases 52, 56 and 62 deleted modules, guards and scripts that this map still cites as present.
+> Verify a path against `git ls-files` before you act on it here. Do not recreate a file just
+> because this document names it. A dated correction note marks the entries fixed so far. The
+> rest are unreviewed, and a reader should treat every uncorrected path as unverified.
+
+
 **Analysis Date:** 2026-09-01
 
 **SUPERSEDED note (2026-09-12):** This document's description of the emulator
@@ -30,9 +37,7 @@ c64-re-tools/
 │   │   ├── vice-probe.ts           # fragile no-retry liveness check
 │   │   ├── vice-sync.ts            # checkpoint-wait invariants (deliberately not unit-tested)
 │   │   ├── vice-broker-client.ts   # container-side broker protocol client + HeldLease
-│   │   ├── backend-detect.mts      # THE fork-vs-stock resolver (host-bound)
-│   │   ├── capability-registry.ts  # per-backend capability/refusal text
-│   │   ├── fork-deleted-tools.ts   # "deleted from the fork manifest, not stale"
+│   │   ├── backend-detect.mts      # resolves the single stock target (host-bound)
 │   │   ├── stock-protocol.ts       # THE binary-monitor codec + ViceMonitorClient
 │   │   ├── stock-connect.ts        # stock connect handshake / capability settling
 │   │   ├── stock-dispatch.ts       # THE stock tool surface + dispatch table
@@ -358,8 +363,7 @@ c64-re-tools/
 **Shared/cross-cutting helper (path resolution, backend, container check):**
 - Do not create a new one. Check whether `repo-root.ts`, `hostpath.ts`,
   `containerpath.ts`, `stock-paths.ts`, `container-guard.mts`,
-  `backend-detect.mts`, `capability-registry.ts`, `shipped-modules.ts`, or
-  `vice.ts`'s `mcpHost()` already owns the concern — a second,
+  `backend-detect.mts`, or `broker-home.mts` already owns the concern — a second,
   independently-derived copy of any of these is a documented bug class.
 
 **Utilities:**

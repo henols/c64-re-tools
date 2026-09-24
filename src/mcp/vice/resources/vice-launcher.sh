@@ -9,7 +9,7 @@
 # HOST-ONLY. Phase 01.6.2: the container guard no longer lives in bash here
 # -- it ported to TypeScript (container-guard.mts, PD-03) and now runs at
 # the BROKER PROCESS's own startup, closing the invocation-scoped hole
-# recorded in RE-FINDINGS.md (running the compiled broker directly, bypassing
+# found on 2026-08-03 (running the compiled broker directly, bypassing
 # this launcher, was previously unguarded). This launcher no longer sources
 # the bash guard module or calls its enforce/report functions itself --
 # --check-container is now forwarded through to the Node entry point, which

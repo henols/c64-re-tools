@@ -1,5 +1,12 @@
 # External Integrations
 
+> **MEASURED 2026-09-24: this document names 10 file(s) that do not exist.**
+> Phases 52, 56 and 62 deleted modules, guards and scripts that this map still cites as present.
+> Verify a path against `git ls-files` before you act on it here. Do not recreate a file just
+> because this document names it. A dated correction note marks the entries fixed so far. The
+> rest are unreviewed, and a reader should treat every uncorrected path as unverified.
+
+
 **Analysis Date:** 2026-09-01
 
 **SUPERSEDED note (2026-09-12):** This document's description of the emulator
@@ -42,7 +49,7 @@ The `vice` MCP server (`@henols/vice-mcp`, source in `src/mcp/vice/`) is a stdio
 - **Concurrency constraint:** stock's binary monitor services **exactly one client**. A second `connect()` sits unserviced in the backlog with no reply and no EOF, indistinguishable from a wedge — hence the broker-side `claimMonitor()` before dial (`MonitorOwnershipError` in `vice-broker-client.ts`).
 - Launch-order constraint: `-default` must precede `-binarymonitor` or the monitor never binds.
 - Tool surface: **38** tools, `src/mcp/vice/tools-manifest.stock.json` — a strict subset; the surface is trimmed per backend rather than degraded.
-- Capability delta: `src/mcp/vice/capability-registry.ts` is the single authoritative table of gaps and their reason text (read-only message lookup, **never** an authorization boundary); `docs/stock-vice-parity.md` documents it. Version gate: `CPUHISTORY_GET` (0x86) needs VICE >= 3.10.
+- Capability delta: **CORRECTED 2026-09-24.** This line named `src/mcp/vice/capability-registry.ts` as the single authoritative table of gaps. Phase 52 deleted that module. The capabilities with no route on stock are now permanent accepted losses; `docs/stock-vice-parity.md` documents it. Version gate: `CPUHISTORY_GET` (0x86) needs VICE >= 3.10.
 
 ### On-demand broker / control plane (shared by both backends)
 
@@ -55,9 +62,9 @@ The `vice` MCP server (`@henols/vice-mcp`, source in `src/mcp/vice/`) is a stdio
 
 ### Reliability / session-identity handling
 
-- Fork transport failures retried with backoff (`RECONNECT_ATTEMPTS = 5`, `[2000, 5000, 12000, 30000, 0]` ms) in `withReconnect()` (`vice.ts`).
+- **CORRECTED 2026-09-24:** this line described `withReconnect()` in `vice.ts`, a fork-transport module Phase 52 deleted. Stock reconnect lives in `stock-connect.ts`.
 - Because the broker can respawn a **blank** emulator after a crash, an epoch file (`.vice-supervisor/epoch.json`, path via `repo-root.ts:supervisorDir()`) is compared before/after any reconnect: `readEpoch()`, `beginSession()`, `assertSameMachine()`, throwing `MachineRestartedError` — the ONE restart error type in the tree, reused by `stock-connect.ts`.
-- `DENY_LIST` (`vice.ts`) permanently refuses certain tool names before any call is serialized — `vice_disk_list` (crashes the shared host fork server) plus generic meta-tools (`tools_list`, `tools_call`, `initialize`, `notifications_initialized`) that could smuggle a forbidden name as a nested argument. This is the only refusal in the tree that is a security control, and it runs strictly before any capability-registry lookup.
+- `DENY_LIST` (**CORRECTED 2026-09-24:** this cited `vice.ts`, deleted in Phase 52) permanently refuses certain tool names before any call is serialized — `vice_disk_list` (crashes the shared host fork server) plus generic meta-tools (`tools_list`, `tools_call`, `initialize`, `notifications_initialized`) that could smuggle a forbidden name as a nested argument. This is the only refusal in the tree that is a security control, and it runs strictly before any capability-registry lookup.
 - Three resources are denied outright because they power-cycle the machine one call deep: `MachineVideoStandard`, `VICIIModel`, `MachinePowerFrequency`.
 - Incident capture: `src/mcp/vice/incident-record.ts` writes a pre-kill record before any recycle/kill.
 

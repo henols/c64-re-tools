@@ -656,7 +656,7 @@ test("route agreement, VICE_BROKER_HOME variant: the --repo-root route and the c
 // The guard runs at the BROKER PROCESS's own startup (not only inside the
 // launcher's shell wrapper) -- these two exercise the emitted artifact
 // DIRECTLY, bypassing vice-launcher.sh entirely, closing the
-// invocation-scoped hole recorded in RE-FINDINGS.md 2026-08-03. Each case
+// invocation-scoped hole found on 2026-08-03. Each case
 // hands its own process SIMULATED_CONTAINER_ENV rather than relying on an
 // ambient signal, so it runs identically on a bare host and on a CI runner.
 

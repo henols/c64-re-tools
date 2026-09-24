@@ -1,6 +1,13 @@
 <!-- refreshed: 2026-09-01 -->
 # Architecture
 
+> **MEASURED 2026-09-24: this document names 4 file(s) that do not exist.**
+> Phases 52, 56 and 62 deleted modules, guards and scripts that this map still cites as present.
+> Verify a path against `git ls-files` before you act on it here. Do not recreate a file just
+> because this document names it. A dated correction note marks the entries fixed so far. The
+> rest are unreviewed, and a reader should treat every uncorrected path as unverified.
+
+
 **Analysis Date:** 2026-09-01
 
 **Fork-backend content corrected: 2026-09-12.** Every claim in this document

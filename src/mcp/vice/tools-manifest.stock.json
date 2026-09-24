@@ -324,7 +324,7 @@
     },
     {
       "name": "vice_registers_available",
-      "description": "Stock-only, no fork counterpart -- the fork surface has no register-enumeration tool. Lists every register the connected VICE build enumerates via REGISTERS_AVAILABLE, with each register's wire id, name, and width -- the width the emulator itself reports, in BITS (8 or 16 on a 6510), taken verbatim from REGISTERS_AVAILABLE's size byte.",
+      "description": "Lists every register the connected VICE build enumerates via REGISTERS_AVAILABLE, with each register's wire id, name, and width -- the width the emulator itself reports, in BITS (8 or 16 on a 6510), taken verbatim from REGISTERS_AVAILABLE's size byte.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false
@@ -511,7 +511,7 @@
     },
     {
       "name": "vice_execution_until_return",
-      "description": "Stock-only, no fork counterpart. Runs until the current subroutine returns (EXECUTE_UNTIL_RETURN). This is a different operation from vice_execution_step's stepOver, which steps over a single call rather than running out of the current one. Refuses while runState is \"unknown\" (D-07), identically to vice_execution_step.",
+      "description": "Runs until the current subroutine returns (EXECUTE_UNTIL_RETURN). This is a different operation from vice_execution_step's stepOver, which steps over a single call rather than running out of the current one. Refuses while runState is \"unknown\" (D-07), identically to vice_execution_step.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false
@@ -546,7 +546,7 @@
     },
     {
       "name": "vice_checkpoint_add",
-      "description": "Add checkpoint/breakpoint. stop:false requires acknowledgeTraceRisk:true -- a non-stopping checkpoint emits a CHECKPOINT_INFO frame per hit synchronously from inside the emulator's CPU loop and can stall the emulator on a hot address (D-11). No condition property here -- D-12 keeps the fork's add-then-vice_checkpoint_set_condition split.",
+      "description": "Add checkpoint/breakpoint. stop:false requires acknowledgeTraceRisk:true -- a non-stopping checkpoint emits a CHECKPOINT_INFO frame per hit synchronously from inside the emulator's CPU loop and can stall the emulator on a hot address (D-11). No condition property here -- D-12 keeps the add-then-vice_checkpoint_set_condition split.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1015,7 +1015,7 @@
     },
     {
       "name": "vice_machine_reset",
-      "description": "Reset the machine (soft or hard reset). run_after defaults to false on stock (the fork defaults it true) -- D-05 forbids resuming a machine nobody asked to resume; pass run_after:true to resume explicitly after the reset.",
+      "description": "Reset the machine (soft or hard reset). run_after defaults to false -- D-05 forbids resuming a machine nobody asked to resume; pass run_after:true to resume explicitly after the reset.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1466,7 +1466,7 @@
     },
     {
       "name": "vice_disassemble",
-      "description": "Disassemble memory to 6502 instructions, computed client-side (DERIV-07) -- the binary monitor has no disassemble opcode. Stock divergences from the fork: reading memory halts the machine and runState reports it (D-05); an illegal opcode ACME's !cpu 6510 cannot express renders as !byte with the mnemonic moved into a comment (D-09); listing formatting diverges from the fork by design (docs/stock-vice-parity.md Section A.7).",
+      "description": "Disassemble memory to 6502 instructions, computed client-side (DERIV-07) -- the binary monitor has no disassemble opcode. Behaviour to know: reading memory halts the machine and runState reports it (D-05); an illegal opcode ACME's !cpu 6510 cannot express renders as !byte with the mnemonic moved into a comment (D-09).",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -3618,7 +3618,7 @@
     },
     {
       "name": "vice_diagnose",
-      "description": "Read-mostly. Answers which of five states this session's emulator is in on the stock backend -- restarted, checkpoint_trap, wedged, monitor_held_elsewhere, or live -- with the evidence that produced the verdict. The fork's sixth verdict, naming a stale-versus-fresh read distinction, is absent on stock: every stock read pauses the machine uniformly, so that distinction is unreachable by construction. It may resume the machine once or twice to measure a cycle bracket, so it is never something to call reflexively; when it runs a bracket it leaves the machine PAUSED afterward -- resuming is your own next call. A \"checkpoint_trap\" verdict means the machine stopped ITSELF at an armed checkpoint and must NOT be recycled -- recycling a self-inflicted stop destroys a healthy instance. \"monitor_held_elsewhere\" means a different client already holds this instance's single binary-monitor slot -- the instance is healthy, just claimed elsewhere. machinePaused is derived from the emulator's own observed run state, never hand-passed; machinePausedSource says whether that derivation was a direct wire observation of a STOPPED/JAM event agreeing with this path's own halting reads (\"observed\"), inferred because no session was ever obtained (\"no_session\"), or inferred (\"structural\") -- which covers both an unknown run state AND a run state reading of \"running\", since every path reaching a verdict has already sent a halting read, so \"running\" contradicts this path's own reads rather than observing the machine. machinePaused is therefore never false for a session that reached a verdict. evidence.jamObserved is always present (never omitted) and is true once a JAM (0x61) event has arrived on this instance's wire: the 6510 hit an illegal opcode and the CPU is dead REGARDLESS of the verdict. Recover with vice_machine_reset, NOT vice_recycle -- recycling destroys an instance a reset would have fixed. With -jamaction 2 a jam reads as wedged (both brackets zero advance); with the default jamaction the emulator keeps burning cycles refetching the same opcode, so both brackets ADVANCE and it reads as live. Neither is a wedge, and jamObserved is the only thing that tells them apart. evidence.channelContention is always present (never omitted); when held is true the OTHER monitor channel (stock's binary and -remotemonitor text channels) holds this instance's halt authority, the verdict is live, bracketsRun is 0 because no bracket was run at all, and the instance is healthy -- never a reason to recycle; wait for the other channel's operation to finish, or find its holder. channelContention.channel/operation/grantId/heldMs name the holder's channel, operation, grant id (the literal \"unknown\" when the holder carries none) and hold duration in whole milliseconds when held is true, and are null -- never omitted, never 0 for heldMs -- when held is false. EVERY answer that establishes no verdict at all -- with no exception left -- is isError:true with text beginning \"vice_diagnose: diagnosis_unavailable (<reason>)\", for one of: protocol_decode_failure, connection_lost, request_timeout, monitor_acquisition_timeout, session_refused, evidence_gathering_failed, liveness_unmeasurable, unknown. liveness_unmeasurable is the expected outcome on a stock 3.9-class build (no CPUHISTORY_GET and no LIN/CYC enumerated): the bracket could not be MEASURED, which is not the same as measuring zero advance and is never a wedge. That outcome is deliberately NOT one of the five verdicts above -- it means the machine's state is UNKNOWN, not live, wedged, or anything else, and is never on its own grounds a reason to call vice_recycle.",
+      "description": "Read-mostly. Answers which of five states this session's emulator is in on the stock backend -- restarted, checkpoint_trap, wedged, monitor_held_elsewhere, or live -- with the evidence that produced the verdict. There is no stale-versus-fresh read distinction: every read pauses the machine uniformly, so that distinction is unreachable by construction. It may resume the machine once or twice to measure a cycle bracket, so it is never something to call reflexively; when it runs a bracket it leaves the machine PAUSED afterward -- resuming is your own next call. A \"checkpoint_trap\" verdict means the machine stopped ITSELF at an armed checkpoint and must NOT be recycled -- recycling a self-inflicted stop destroys a healthy instance. \"monitor_held_elsewhere\" means a different client already holds this instance's single binary-monitor slot -- the instance is healthy, just claimed elsewhere. machinePaused is derived from the emulator's own observed run state, never hand-passed; machinePausedSource says whether that derivation was a direct wire observation of a STOPPED/JAM event agreeing with this path's own halting reads (\"observed\"), inferred because no session was ever obtained (\"no_session\"), or inferred (\"structural\") -- which covers both an unknown run state AND a run state reading of \"running\", since every path reaching a verdict has already sent a halting read, so \"running\" contradicts this path's own reads rather than observing the machine. machinePaused is therefore never false for a session that reached a verdict. evidence.jamObserved is always present (never omitted) and is true once a JAM (0x61) event has arrived on this instance's wire: the 6510 hit an illegal opcode and the CPU is dead REGARDLESS of the verdict. Recover with vice_machine_reset, NOT vice_recycle -- recycling destroys an instance a reset would have fixed. With -jamaction 2 a jam reads as wedged (both brackets zero advance); with the default jamaction the emulator keeps burning cycles refetching the same opcode, so both brackets ADVANCE and it reads as live. Neither is a wedge, and jamObserved is the only thing that tells them apart. evidence.channelContention is always present (never omitted); when held is true the OTHER monitor channel (stock's binary and -remotemonitor text channels) holds this instance's halt authority, the verdict is live, bracketsRun is 0 because no bracket was run at all, and the instance is healthy -- never a reason to recycle; wait for the other channel's operation to finish, or find its holder. channelContention.channel/operation/grantId/heldMs name the holder's channel, operation, grant id (the literal \"unknown\" when the holder carries none) and hold duration in whole milliseconds when held is true, and are null -- never omitted, never 0 for heldMs -- when held is false. EVERY answer that establishes no verdict at all -- with no exception left -- is isError:true with text beginning \"vice_diagnose: diagnosis_unavailable (<reason>)\", for one of: protocol_decode_failure, connection_lost, request_timeout, monitor_acquisition_timeout, session_refused, evidence_gathering_failed, liveness_unmeasurable, unknown. liveness_unmeasurable is the expected outcome on a stock 3.9-class build (no CPUHISTORY_GET and no LIN/CYC enumerated): the bracket could not be MEASURED, which is not the same as measuring zero advance and is never a wedge. That outcome is deliberately NOT one of the five verdicts above -- it means the machine's state is UNKNOWN, not live, wedged, or anything else, and is never on its own grounds a reason to call vice_recycle.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false
@@ -3745,7 +3745,7 @@
     },
     {
       "name": "vice_device_console",
-      "description": "Stock-only, no fork counterpart -- reaches VICE's text monitor over the -remotemonitor channel and halts the machine for the duration of the command, exactly as a binary-monitor command does. Issues the single allowlisted verb \"device c:\", resetting the current default device (memspace) back to the main CPU. Use this after a drive checkpoint hit leaves default_memspace pointed at a drive unit -- ADVANCE_INSTRUCTIONS and EXECUTE_UNTIL_RETURN then step the wrong CPU, and a bank-qualified checkpoint condition fails outright, until this is issued. This is an explicit tool, not auto-healing: nothing on the binary-side stepping path calls it automatically.",
+      "description": "Reaches VICE's text monitor over the -remotemonitor channel and halts the machine for the duration of the command, exactly as a binary-monitor command does. Issues the single allowlisted verb \"device c:\", resetting the current default device (memspace) back to the main CPU. Use this after a drive checkpoint hit leaves default_memspace pointed at a drive unit -- ADVANCE_INSTRUCTIONS and EXECUTE_UNTIL_RETURN then step the wrong CPU, and a bank-qualified checkpoint condition fails outright, until this is issued. This is an explicit tool, not auto-healing: nothing on the binary-side stepping path calls it automatically.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false
@@ -3777,7 +3777,7 @@
     },
     {
       "name": "vice_warp_set",
-      "description": "Stock-only, no fork counterpart -- reaches VICE's text monitor over the -remotemonitor channel and halts the machine for the duration of the command, exactly as a binary-monitor command does. Issues \"warp on\" or \"warp off\" depending on \"enabled\". There is no runtime WarpMode *resource* on stock -- measured err=0x01 OBJECT_MISSING over RESOURCE_GET -- so this is the only way to toggle warp at runtime on this backend; warp requested at launch time (-warp / InitialWarpMode) is a separate mechanism this tool does not touch. The response reports warp's own OBSERVED state rather than assuming the write took.",
+      "description": "Reaches VICE's text monitor over the -remotemonitor channel and halts the machine for the duration of the command, exactly as a binary-monitor command does. Issues \"warp on\" or \"warp off\" depending on \"enabled\". There is no runtime WarpMode *resource* on stock -- measured err=0x01 OBJECT_MISSING over RESOURCE_GET -- so this is the only way to toggle warp at runtime on this backend; warp requested at launch time (-warp / InitialWarpMode) is a separate mechanism this tool does not touch. The response reports warp's own OBSERVED state rather than assuming the write took.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -3822,7 +3822,7 @@
     },
     {
       "name": "vice_memmap_show",
-      "description": "Stock-only, no fork counterpart -- reaches VICE's text monitor over the -remotemonitor channel and issues the single allowlisted verb \"memmapshow\", returning a structured, adjacency-merged access map in which execute is its own bit, for both RAM and ROM, never folded into a read. \"startAddress\", \"endAddress\" and \"maxRanges\" are client-side projection filters applied AFTER parsing -- none of the three ever reaches the socket, and the dialed command is always the frozen literal \"memmapshow\". An address with no recorded access is reported only via the gap between \"addressesWithRecordedAccess\" and \"addressesQueried\" -- never rendered, named, or implied as data.",
+      "description": "Reaches VICE's text monitor over the -remotemonitor channel and issues the single allowlisted verb \"memmapshow\", returning a structured, adjacency-merged access map in which execute is its own bit, for both RAM and ROM, never folded into a read. \"startAddress\", \"endAddress\" and \"maxRanges\" are client-side projection filters applied AFTER parsing -- none of the three ever reaches the socket, and the dialed command is always the frozen literal \"memmapshow\". An address with no recorded access is reported only via the gap between \"addressesWithRecordedAccess\" and \"addressesQueried\" -- never rendered, named, or implied as data.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -4000,7 +4000,7 @@
     },
     {
       "name": "vice_memmap_zap",
-      "description": "Stock-only, no fork counterpart -- reaches VICE's text monitor over the -remotemonitor channel and halts the machine for the duration of the command, exactly as a binary-monitor command does. Issues the single allowlisted verb \"memmapzap\", which clears the emulator's accumulated memory-access map, and then \"memmapshow\", so the returned \"addressesWithRecordedAccess\" and \"addressesQueried\" are observable proof the map was cleared, never a bare acknowledgement. Takes no parameters at all. An address with no recorded access is reported only via the gap between \"addressesWithRecordedAccess\" and \"addressesQueried\" -- never rendered, named, or implied as data.",
+      "description": "Reaches VICE's text monitor over the -remotemonitor channel and halts the machine for the duration of the command, exactly as a binary-monitor command does. Issues the single allowlisted verb \"memmapzap\", which clears the emulator's accumulated memory-access map, and then \"memmapshow\", so the returned \"addressesWithRecordedAccess\" and \"addressesQueried\" are observable proof the map was cleared, never a bare acknowledgement. Takes no parameters at all. An address with no recorded access is reported only via the gap between \"addressesWithRecordedAccess\" and \"addressesQueried\" -- never rendered, named, or implied as data.",
       "inputSchema": {
         "type": "object",
         "properties": {},
@@ -4060,7 +4060,7 @@
     },
     {
       "name": "vice_cpu_history",
-      "description": "Stock-only, no fork counterpart -- reaches VICE's text monitor over the -remotemonitor channel and halts the machine for the duration of the command, exactly as a binary-monitor command does. Issues \"chis\" (or \"chis N\" for a caller-chosen decimal row count -- the ONE place that string is built, and validated/rendered there, never here), returning the decoded CPU-history entries -- address, raw bytes, disassembly, registers, processor flags and cycle count -- in the emulator's own emitted order. \"chis\" is compiled behind the same build-time flag as vice_memmap_show's \"memmapshow\"; a build without --enable-cpuhistory is reported as a named missing capability with its remedy, never a parse error.",
+      "description": "Reaches VICE's text monitor over the -remotemonitor channel and halts the machine for the duration of the command, exactly as a binary-monitor command does. Issues \"chis\" (or \"chis N\" for a caller-chosen decimal row count -- the ONE place that string is built, and validated/rendered there, never here), returning the decoded CPU-history entries -- address, raw bytes, disassembly, registers, processor flags and cycle count -- in the emulator's own emitted order. \"chis\" is compiled behind the same build-time flag as vice_memmap_show's \"memmapshow\"; a build without --enable-cpuhistory is reported as a named missing capability with its remedy, never a parse error.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -4197,7 +4197,7 @@
     },
     {
       "name": "vice_profile_flat",
-      "description": "Stock-only, no fork counterpart -- reaches VICE's text monitor over the -remotemonitor channel and halts the machine for the duration of the command, exactly as a binary-monitor command does. Issues \"prof flat\" (or \"prof flat N\" for a caller-chosen decimal row count, validated/rendered by the transport's own builder), returning ranked cycle counts by address -- total and self cycles, each with a percentage -- in the emulator's own rank order (highest first). \"prof flat\" carries no build-time guard at all.",
+      "description": "Reaches VICE's text monitor over the -remotemonitor channel and halts the machine for the duration of the command, exactly as a binary-monitor command does. Issues \"prof flat\" (or \"prof flat N\" for a caller-chosen decimal row count, validated/rendered by the transport's own builder), returning ranked cycle counts by address -- total and self cycles, each with a percentage -- in the emulator's own rank order (highest first). \"prof flat\" carries no build-time guard at all.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -4279,7 +4279,7 @@
     },
     {
       "name": "vice_backtrace",
-      "description": "Reaches VICE's text monitor over the -remotemonitor channel and halts the machine for the duration of the command, exactly as a binary-monitor command does. Issues the bare, unparameterized \"bt\" verb -- \"depth\" never reaches the wire; it truncates the PARSED frame list client-side, since \"bt\" itself takes no wire parameter -- returning the current-PC frame plus the reconstructed JSR-chain frames in the emulator's own emitted order, each with its origin, callee, SP offset, raw bytes and disassembly. The fork advertises this same tool name over its own custom HTTP API with an UNDECLARED response shape; this stock entry's structured, declared outputSchema is the two backends' one point of difference for this shared name.",
+      "description": "Reaches VICE's text monitor over the -remotemonitor channel and halts the machine for the duration of the command, exactly as a binary-monitor command does. Issues the bare, unparameterized \"bt\" verb -- \"depth\" never reaches the wire; it truncates the PARSED frame list client-side, since \"bt\" itself takes no wire parameter -- returning the current-PC frame plus the reconstructed JSR-chain frames in the emulator's own emitted order, each with its origin, callee, SP offset, raw bytes and disassembly. ",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -4387,7 +4387,7 @@
     },
     {
       "name": "vice_io_registers",
-      "description": "Stock-only, no fork counterpart -- reaches VICE's text monitor over the -remotemonitor channel and halts the machine for the duration of the command, exactly as a binary-monitor command does. Issues \"io $aaaa\" for the REQUIRED \"address\" argument (the bare \"io\" verb dumps every chip; this tool decodes the chip covering exactly one address), returning the chip's 64-byte register dump, its decoded VIC-II display state, and its sprite table. Every decoded-prose line this parser does not recognise is preserved verbatim and counted, never silently dropped or mapped onto a typed field. \"io\" carries no build-time guard, but degrades per-chip at runtime with its own two fixed strings when a chip has nothing to report -- reported as a named chip fact, never mistaken for a missing build capability. The decoded display state and sprite table are VIC-II only; an address covered by another chip (e.g. CIA1, CIA2, SID) is refused by name, with its register dump reported as having read cleanly.",
+      "description": "Reaches VICE's text monitor over the -remotemonitor channel and halts the machine for the duration of the command, exactly as a binary-monitor command does. Issues \"io $aaaa\" for the REQUIRED \"address\" argument (the bare \"io\" verb dumps every chip; this tool decodes the chip covering exactly one address), returning the chip's 64-byte register dump, its decoded VIC-II display state, and its sprite table. Every decoded-prose line this parser does not recognise is preserved verbatim and counted, never silently dropped or mapped onto a typed field. \"io\" carries no build-time guard, but degrades per-chip at runtime with its own two fixed strings when a chip has nothing to report -- reported as a named chip fact, never mistaken for a missing build capability. The decoded display state and sprite table are VIC-II only; an address covered by another chip (e.g. CIA1, CIA2, SID) is refused by name, with its register dump reported as having read cleanly.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -4512,7 +4512,7 @@
     },
     {
       "name": "vice_program_load",
-      "description": "Stock-only, no fork counterpart -- reaches VICE's text monitor over the -remotemonitor channel and halts the machine for the duration of the command, exactly as a binary-monitor command does. Issues \"load \\\"<path>\\\" <device>\" for ONE member of a closed, reviewed Phase 50 hazard-subject table -- four committed fixtures under fixtures/hazard-subject/ plus the rebuild produced under the phase evidence directory. Every loadable path is baked into this tool's own frozen dialed verbs and is never a caller-supplied argument, so there is nothing here for a caller to inject. Takes an OPTIONAL \"subject\", an enumerated subject id, defaulting to \"original\". Takes an OPTIONAL \"device\" number, 0 through 11; an omitted device defaults to 0 (\"the file is read from the file system\", VICE Manual ch. 12). No address argument is offered -- omitting it makes VICE use the load address embedded in the .prg file's own two-byte header, which is exactly what these committed machine-code fixtures need.",
+      "description": "Reaches VICE's text monitor over the -remotemonitor channel and halts the machine for the duration of the command, exactly as a binary-monitor command does. Issues \"load \\\"<path>\\\" <device>\" for ONE member of a closed, reviewed Phase 50 hazard-subject table -- four committed fixtures under fixtures/hazard-subject/ plus the rebuild produced under the phase evidence directory. Every loadable path is baked into this tool's own frozen dialed verbs and is never a caller-supplied argument, so there is nothing here for a caller to inject. Takes an OPTIONAL \"subject\", an enumerated subject id, defaulting to \"original\". Takes an OPTIONAL \"device\" number, 0 through 11; an omitted device defaults to 0 (\"the file is read from the file system\", VICE Manual ch. 12). No address argument is offered -- omitting it makes VICE use the load address embedded in the .prg file's own two-byte header, which is exactly what these committed machine-code fixtures need.",
       "inputSchema": {
         "type": "object",
         "properties": {

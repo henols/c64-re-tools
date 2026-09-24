@@ -1,5 +1,12 @@
 # Coding Conventions
 
+> **MEASURED 2026-09-24: this document names 8 file(s) that do not exist.**
+> Phases 52, 56 and 62 deleted modules, guards and scripts that this map still cites as present.
+> Verify a path against `git ls-files` before you act on it here. Do not recreate a file just
+> because this document names it. A dated correction note marks the entries fixed so far. The
+> rest are unreviewed, and a reader should treat every uncorrected path as unverified.
+
+
 **Analysis Date:** 2026-09-01
 
 **Fork-backend content corrected: 2026-09-12.** Every claim below that named
@@ -22,8 +29,11 @@ Code lives in three places, and all three share one hand-maintained style:
 - **Skills** — `src/skills/<skill>/SKILL.md` plus `scripts/*.mjs` (plain ESM JavaScript).
 - **Installer** — `installer/bin/cli.mjs`, `installer/scripts/sync-skills.mjs` (plain ESM).
 
-Repo-level guards live in `scripts/*.mjs`: `check-npm-packages.mjs` and
-`check-no-skill-external-spawn.mjs` are the two that remain.
+Repo-level guard scripts are GONE. **CORRECTED 2026-09-24:** this paragraph named
+`check-npm-packages.mjs` and `check-no-skill-external-spawn.mjs` as "the two that remain".
+Neither exists. `scripts/` now holds exactly one file, `ensure-mcp-deps.sh`, and it is a
+SessionStart dependency hook rather than a guard. Do not cite a `scripts/*.mjs` guard without
+checking `git ls-files scripts` first.
 
 Note: several tracked source files contain a NUL byte, so plain `grep` treats them as binary and
 silently skips them. Always use `grep -a` for any content census over this tree. Do not work from

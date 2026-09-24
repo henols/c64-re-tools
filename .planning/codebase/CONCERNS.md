@@ -1,6 +1,13 @@
 <!-- refreshed: 2026-09-01 -->
 # Codebase Concerns
 
+> **MEASURED 2026-09-24: this document names 15 file(s) that do not exist.**
+> Phases 52, 56 and 62 deleted modules, guards and scripts that this map still cites as present.
+> Verify a path against `git ls-files` before you act on it here. Do not recreate a file just
+> because this document names it. A dated correction note marks the entries fixed so far. The
+> rest are unreviewed, and a reader should treat every uncorrected path as unverified.
+
+
 **Analysis Date:** 2026-09-01
 
 **Scope:** full repo, excluding `.claude/gsd-core/` (vendored, gitignored third-party
@@ -144,9 +151,10 @@ Confirmed against the current tree. Do not re-raise these.
 - Workaround: permanent client-side refusal. Recovery after a real crash needs a manual host-side
   restart. Now defended at three layers: the name never reaches the stock manifest
   (`stock-dispatch.test.ts:435-439`), never duplicates into the capability registry
-  (`capability-registry.test.ts:96-101`), and is stripped from discovery
-  (`vice.test.ts:22`). `capability-registry.ts:22` states plainly that the registry is
-  *"NEVER an authorization boundary"* and `DENY_LIST` remains the only one.
+  and is stripped from discovery. **CORRECTED 2026-09-24:** the two other layers cited
+  `capability-registry.test.ts:96-101` and `vice.test.ts:22`, and the registry's own
+  `capability-registry.ts:22`. Phase 52 deleted all three files. `DENY_LIST` is now the only
+  layer, and it was always the only authorization boundary.
 
 **`BACK-05` D-G ordering test fails deterministically whenever a live broker is running:**
 - Symptoms: `src/mcp/vice/vice-proxy.test.ts:6382` fails with the `systemctl --user` broker unit

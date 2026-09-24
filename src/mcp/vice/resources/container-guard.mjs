@@ -9,7 +9,7 @@
 // PD-03: TypeScript port of resources/lib/container-guard.sh's five
 // container-detection signals, checked at broker PROCESS STARTUP -- not
 // only at vice-launcher.sh's shell wrapper. This closes the
-// invocation-scoped hole recorded in RE-FINDINGS.md (2026-08-03): running
+// invocation-scoped hole found on 2026-08-03: running
 // the compiled broker directly (bypassing the launcher) was previously
 // unguarded, since the bash guard only ever ran inside the scripts that
 // sourced it.
