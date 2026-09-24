@@ -2,20 +2,19 @@
 phase: 64-files-as-bytes-both-directions
 reviewed: 2026-09-24T00:00:00Z
 depth: standard
-files_reviewed: 7
+files_reviewed: 6
 files_reviewed_list:
-  - src/mcp/vice/broker-transfer.mts
-  - src/mcp/vice/broker-transfer.test.mts
-  - src/mcp/vice/resources/broker-transfer.mjs
+  - src/mcp/vice/broker-control.test.ts
+  - src/mcp/vice/broker-kill.mts
+  - src/mcp/vice/resources/broker-kill.mjs
   - src/mcp/vice/resources/vice-broker.mjs
-  - src/mcp/vice/stock-machine.test.ts
-  - src/mcp/vice/vice-broker.mts
   - src/mcp/vice/vice-broker-staging.test.ts
+  - src/mcp/vice/vice-broker.mts
 findings:
-  critical: 2
-  warning: 2
+  critical: 0
+  warning: 1
   info: 1
-  total: 5
+  total: 2
 status: issues_found
 ---
 
@@ -23,243 +22,113 @@ status: issues_found
 
 **Reviewed:** 2026-09-24T00:00:00Z
 **Depth:** standard
-**Files Reviewed:** 7
+**Files Reviewed:** 6
 **Status:** issues_found
 
 ## Summary
 
-This diff (gap-closure plan 64-15, G-64-5/CR-01) replaces `receivePayloadToFile()`'s
-ad-hoc, path-leaking wire text with `formatPathFreeFault()` plus a stricter
-`ReceivePayloadToFileResult` return type, and threads the change through
-`vice-broker.mts`'s `writeUploadCompletionReply()`. The CR-01 fix itself is sound:
-`formatPathFreeFault()`'s errno-token allowlist regex correctly excludes every
-character a path needs, the getter-throws-as-no-code case is handled, every caught-fault
-branch in `receivePayloadToFile()` now routes through it, the compiled `resources/*.mjs`
-artifacts are byte-for-byte in sync with their `.mts`/`.ts` sources, and the new tests
-drive real `fs` faults (ENOENT, ENAMETOOLONG) rather than synthetic already-path-free
-rejections, closing the exact gap the prior review found.
+This is gap-closure round 4 (plan 64-16, commits `7af0dcdd`/`4516584a`), fixing round 3's
+CR-01: `sweepOrphanedStaging()` used to run unconditionally in the pre-bind startup-reap
+block, so a second broker that had not yet learned it lost the control-port singleton race
+could delete a live first broker's active staging directories (a disk image attached to
+unit 8, a file mid-transfer) before ever hitting `EADDRINUSE`. The fix moves the call to a
+single new site strictly between the confirmed control-port bind and the first
+`writeBrokerRecordFile()` — a window in which (a) every early-return path (bind failure,
+squatted port, genuine singleton loss) has already exited before reaching the call, and
+(b) this process's own control token has no distribution channel yet, so no session of its
+own can have created a staging directory the sweep might touch.
 
-Reviewing the full files at standard depth (not just the diff hunks) surfaced two
-pre-existing, untouched-by-this-diff defects in the same staging/transfer machinery this
-phase owns, both severe enough to flag here: an unconditional, liveness-blind staging
-sweep that can delete a live broker's active session data, and an unguarded synchronous
-`mkdirSync()` inside a function whose own contract promises "never throws," reachable from
-a caller with no `.catch()`, in a codebase where an unhandled rejection is documented to
-kill the entire VICE pool.
+I traced the fix by hand against the actual `run()` control flow (confirmed there is
+exactly one code path that reaches the new call site, confirmed no `await` sits between the
+bind-success assignment and the sweep call so no interleaving is possible, confirmed
+`writeBrokerRecordFile()` runs strictly after), verified `resources/vice-broker.mjs` and
+`resources/broker-kill.mjs` are byte-consistent with their `.mts` sources for every change
+(diffs are comment-relocation plus the identical call-site move), and ran the full
+`broker-control.test.ts`, `broker-kill.test.ts` and `vice-broker-staging.test.ts` suites
+(238 tests, 0 failures) against the rebuilt artifacts, including the three new G-64-6
+end-to-end tests that spawn real broker processes and assert byte-for-byte staging-file
+survival/removal in each of the three scenarios the original CR-01 named (live-first-broker
+survives; squatted-port failure leaves staging untouched; a genuinely winning broker still
+clears real crash residue before its record exists). The fix is sound and the three new
+tests are non-vacuous (each asserts the broker actually reached the branch it claims to, via
+a stderr message match, not merely a generic exit code).
 
-## Critical Issues
-
-### CR-01: `sweepOrphanedStaging()` deletes a live broker's active staging directories, unconditionally, before the singleton bind race is even decided
-
-**File:** `src/mcp/vice/vice-broker.mts:2211-2226` (call site; implementation in `src/mcp/vice/broker-kill.mts:837-882`, out of this review's file list but directly load-bearing here)
-
-**Issue:** `run()` calls `sweepOrphanedStaging({ root: brokerStagingDir() })` unconditionally,
-*before* the control-port bind attempt — the same "before the bind, even for a process that
-goes on to lose the singleton race" ordering `vice-broker.mts`'s own comment block explicitly
-documents for the neighbouring `reapOrphanedInstances()` call:
-
-```
-// NOTE: this reap runs UNCONDITIONALLY, before the bind attempt
-// below -- including for a process that goes on to LOSE the singleton
-// race a moment later ...
-// A losing second broker's own reap pass is an accepted, pre-existing
-// consequence of "the reap is unconditional" -- not something the
-// singleton guard below is required to prevent.
-...
-reapOrphanedConfigScratch({ root: brokerConfigScratchDir() });
-sweepOrphanedStaging({ root: brokerStagingDir() });
-```
-
-`sweepOrphanedStaging()` itself (`broker-kill.mts:837-882`) has **no liveness check at
-all** — its own doc comment says so explicitly: the `isAlive` parameter is "[a]ccepted for
-SYMMETRY with `reapOrphanedConfigScratch()`'s own liveness seam only -- deliberately NEVER
-called anywhere in this function's own body." Contrast this with `reapOrphanedConfigScratch()`,
-whose sibling function genuinely checks `configScratchStillOwnedByLiveProcess()` (pid alive
-*and* the process's own args still name the expected identity) before removing anything.
-
-The consequence: if a second broker process starts while a first, genuinely live broker
-still holds the control port (a systemd restart race, an operator accidentally starting a
-second instance, or any other double-launch), the second process runs this sweep — and
-deletes **every** staging session directory under `brokerStagingDir()`, including ones the
-live broker's active grants currently own, before it ever discovers (via `EADDRINUSE`) that
-it lost the race. This directly violates the guarantee `broker-transfer.mts`'s own module
-header states for this exact directory tree: "Never delete a staged file on an
-AUTOSTART/DUMP/UNDUMP reply... for `vice_disk_attach` the image must stay attached to unit
-8 for the rest of the session." A disk image a running emulator has attached, or a file
-mid-upload/mid-download on the live broker, can be unlinked out from under it by a
-completely unrelated, losing process — with no warning to the affected client, and no
-liveness check of any kind standing in the way.
-
-**Fix:** Give `sweepOrphanedStaging()` the same liveness discipline
-`reapOrphanedConfigScratch()` already has, or move it after the singleton bind succeeds (so
-a losing process never reaches it at all) rather than running it unconditionally ahead of
-the bind attempt:
-
-```ts
-// Only sweep once this process has confirmed it actually owns the
-// control port -- never before the bind is known to have succeeded.
-sweepOrphanedStaging({ root: brokerStagingDir() }); // move below the bind, or
-// gate each directory by liveness the same way reapOrphanedConfigScratch() does,
-// e.g. by writing/reading a per-session-dir owner record.
-```
-
----
-
-### CR-02: `receivePayloadToFile()`'s unguarded `mkdirSync()` violates its own "never throws" contract, and its only production caller has no `.catch()` — an unhandled rejection here is documented to kill the entire VICE pool
-
-**File:** `src/mcp/vice/broker-transfer.mts:451` (unguarded call); caller: `src/mcp/vice/vice-broker.mts:1254-1266`
-
-**Issue:** `receivePayloadToFile()`'s own doc comment states, twice, that it never throws:
-"On ANY failure path... this function resolves `{ ok: false, reason }`. Never throws," and
-repeats "`wireReason` never reads a caught error's `.message` directly anywhere in this
-function" as if every fs call were already inside a catch. But this line is not:
-
-```ts
-mkdirSync(dirname(destPath), { recursive: true });   // <-- no try/catch
-const tmpPath = `${destPath}.tmp-${process.pid}-${Date.now()}`;
-```
-
-every other filesystem operation in this function (`createWriteStream`/`pipeline`,
-`beforePublish`, `renameSync`) is wrapped in its own `try`/`catch` with a dedicated
-`formatPathFreeFault()` branch — this one is not, and any real fault here (`EACCES`,
-`ENOSPC`, `ENOTDIR` from a colliding path segment, a symlink loop, or the directory having
-been removed out from under an in-flight upload by CR-01 above) throws synchronously
-inside this `async` function, producing a rejected promise.
-
-Its one production call site, `handleFileTransfer()`'s upload branch in `vice-broker.mts`,
-never attaches a `.catch()`:
-
-```ts
-receivePayloadToFile({
-  socket, destPath: entry.path, header: {...}, pending, beforePublish: deps.beforePublish,
-}).then((result) => {
-  if (!result.ok) { ... }
-  clearTransferInFlight(request.handle);
-  writeUploadCompletionReply(socket, result);
-});
-```
-
-A rejection here becomes a genuine Node `unhandledRejection`. This project's own
-`broker-kill.mts` registers a process-wide handler for exactly that event, and
-`host-tool.mts`'s own comments describe its effect in this codebase without hedging:
-"broker-kill.mts's uncaughtException/unhandledRejection handlers kill the whole VICE pool
-on an unhandled [rejection]." One client's failed upload — triggered by an ordinary,
-plausible fs fault at this specific call — can therefore take down every other client's
-running emulator instance on the same broker. No test in `broker-transfer.test.mts` or
-`vice-broker-staging.test.ts` exercises this branch; every fs-fault test in this suite
-targets the *pipeline*, the *hook*, or the *rename*, never this `mkdirSync`.
-
-**Fix:** Wrap the call the same way every sibling fs operation in this function already is:
-
-```ts
-try {
-  mkdirSync(dirname(destPath), { recursive: true });
-} catch (e) {
-  return {
-    ok: false,
-    code: "internal",
-    reason: `vice: failed to create the staging directory for ${destPath}: ${(e as Error).message}`,
-    wireReason: formatPathFreeFault("vice: transfer failed before the payload could be received", e),
-  };
-}
-```
-
-The same unguarded-`mkdirSync` shape also exists one call up the same staging subsystem, in
-`ensureBrokerDir()` (`broker-home.mts:213-215`, `mkdirSync(path, { recursive: true })` with
-no try/catch), reached synchronously from `handleStageFile()` (`vice-broker.mts:1090-1104`)
-via `stageFileSlot()` (`broker-transfer.mts:639-672`) with no try/catch anywhere in that
-chain either, and `broker-control.mts`'s own `stage_file` dispatch arm calls
-`opts.onStageFile(targetId, slot)` directly, uncaught. A throw there is a synchronous
-uncaught exception rather than a rejected promise, but lands on the same registered
-`uncaughtException` handler with the same documented consequence. Worth the same fix,
-though `broker-home.mts` and `broker-control.mts` are outside this review's file list.
+One accuracy problem remains in a retained code comment (not touched by this diff, but
+present in a file under review), and one lower-severity gap in regression coverage for the
+fix's own critical invariant.
 
 ## Warnings
 
-### WR-01: A download-side transfer failure produces no reply line at all, unlike the upload side's rich `transfer_complete`/`error` protocol
+### WR-01: A retained comment claims a structural test covers `reapOrphanedConfigScratch()`'s pre-bind placement, but no such test exists
 
-**File:** `src/mcp/vice/vice-broker.mts:1267-1275`
+**File:** `src/mcp/vice/vice-broker.mts:2212-2217`
 
-**Issue:** The upload branch of `handleFileTransfer()` now (post G-64-3/G-64-5) always
-writes an explicit `transfer_complete` or path-free `error` completion line before closing
-the socket. The download branch has no equivalent:
+**Issue:** The comment directly above the `reapOrphanedConfigScratch()` call reads:
 
-```ts
-} else {
-  sendPayloadFromFile({ socket, sourcePath: entry.path, kind: "transfer_payload" })
-    .then((result) => {
-      if (!result.ok) {
-        process.stderr.write(`vice-broker: download transfer failed for handle ${request.handle}: ${result.reason}\n`);
-      }
-    })
-    .finally(settle);
-}
+```
+// Phase 64 (XFER-07, D-08): one MORE startup-only reap, beside the
+// unconditional reap directly above -- never reordering or gating it (its
+// own placement, before the bind attempt and unconditional even for a
+// process that goes on to lose the singleton race, is unchanged, and is
+// already covered by broker-kill.test.ts's own structural source-order
+// check).
 ```
 
-On a mid-stream failure (e.g. a read error on the staged file, or the file vanishing
-between the `existsSync()` pre-check and the actual read), the client sees nothing but an
-abrupt connection close — indistinguishable from a plain network drop, with zero
-diagnostic text, even though `sendPayloadFromFile()`'s own `result.reason` is right there
-(logged server-side only). This is not a CR-01-style path leak (nothing is ever sent to the
-client), but it is a real robustness/UX gap: a download failure is strictly harder to
-diagnose from the client side than the equivalent upload failure now is.
-
-**Fix:** Write a path-free `error` line (via `formatPathFreeFault()`-shaped text, or a
-fixed phrase) before destroying the socket on a failed download, mirroring
-`writeUploadCompletionReply()`'s shape for the download direction.
-
-### WR-02: `stageFileSlot()`'s supersession does not consult the in-flight guard before deleting the previous handle's registry entry and file
-
-**File:** `src/mcp/vice/broker-transfer.mts:651-665`
-
-**Issue:** A repeat `stageFileSlot()` call for the same `(grantId, slot)` unconditionally
-drops the previous handle from `handleIndex`/`inFlightHandles` and best-effort unlinks its
-file — even if `markTransferInFlight()` currently holds that exact handle (i.e. an upload
-or download for it is actively streaming):
+The only structural source-order test in `broker-kill.test.ts` is:
 
 ```ts
-const previousHandle = slotIndex.get(key);
-if (previousHandle) {
-  const previousEntry = handleIndex.get(previousHandle);
-  handleIndex.delete(previousHandle);
-  inFlightHandles.delete(previousHandle);
-  if (previousEntry) {
-    try { rmSync(previousEntry.path, { force: true }); } catch { /* best-effort */ }
-  }
-}
+test("structural: the real broker's startup reap runs before its control listener accepts ...", () => {
+  const source = readFileSync(join(HERE, "vice-broker.mts"), "utf8");
+  const reapIdx = source.indexOf("await reapOrphanedInstances(");
+  const listenerIdx = source.indexOf("await startControlListenerOnHosts(");
+  assert.ok(reapIdx !== -1 && listenerIdx !== -1);
+  assert.ok(reapIdx < listenerIdx);
+});
 ```
 
-If a client races a fresh `stage_file` for the same slot against a still-in-flight
-transfer for the old handle: (1) `resolveStagedFile(oldHandle)` starts refusing "unknown
-transfer handle" mid-transfer even though the upload is still genuinely running; (2) once
-that in-flight upload eventually completes and calls `renameSync()`, it silently publishes
-its bytes to a path no registry entry references anymore — an orphaned file invisible to
-every caller until the whole session directory is later cleared. `T-64-16`'s own in-flight
-guard exists precisely to prevent two operations from racing on the same handle; this path
-bypasses it entirely for the *supersession* case.
+This checks only `reapOrphanedInstances()`'s placement relative to the listener bind. It
+never calls `source.indexOf("reapOrphanedConfigScratch(")` at all (confirmed by grep across
+every `*.test.ts` in the directory — zero hits). So the claim that `reapOrphanedConfigScratch()`'s
+own pre-bind placement is "already covered by broker-kill.test.ts's own structural
+source-order check" is false: nothing would fail fast if a future edit moved
+`reapOrphanedConfigScratch()` to after the bind (which, unlike `sweepOrphanedStaging()`,
+would still be *safe* today because of its own live-pid+identity guard — but the false
+confidence is the problem, not present safety). This sentence predates this round's plan
+(it was already present, describing both `reapOrphanedConfigScratch()` and the
+since-relocated `sweepOrphanedStaging()`, in the pre-64-16 tree) and this round left it in
+place unchanged while narrowing its scope to `reapOrphanedConfigScratch()` alone.
 
-**Fix:** Either refuse (or queue) a `stageFileSlot()` supersession while
-`inFlightHandles.has(previousHandle)`, or accept the race explicitly and document why an
-orphaned publish is harmless here (it currently is not documented at all — the module's own
-"WHAT NOT TO DO" list covers deletion-on-reply and slot-as-path-component, not this case).
+**Fix:** Either add a `source.indexOf("reapOrphanedConfigScratch(")` assertion to the
+existing structural test (comparing it against `listenerIdx` the same way
+`reapOrphanedInstances()` is), or soften the comment to stop claiming test coverage that
+does not exist, e.g. "this placement is not itself structurally pinned by a fast test —
+see G-64-6's live spawned-broker tests in broker-control.test.ts for the closest behavioral
+coverage."
 
 ## Info
 
-### IN-01: `sendPayloadFromFile()`'s size cap check has a TOCTOU window between `statSync` and the two streaming passes
+### IN-01: No fast structural regression guard for the fix's own new invariant — only slow, spawned-process tests protect it
 
-**File:** `src/mcp/vice/broker-transfer.mts:320-357`
+**File:** `src/mcp/vice/vice-broker.mts:2525-2555` (call site); `src/mcp/vice/broker-kill.test.ts` (existing structural-test pattern, not itself in this round's file list)
 
-**Issue:** The pre-flight `statSync(sourcePath).size` cap check happens once, before either
-streaming pass. If the source file grows between that stat and the subsequent digest/send
-passes (e.g. a concurrent writer), the friendly pre-flight refusal is bypassed and the
-transform's own mid-stream cap rejection fires instead, with a less specific message. Low
-severity — the cap is still enforced, just later and with a different message shape — but
-worth a one-line acknowledgement given how deliberately every other edge in this file names
-its own race windows.
+**Issue:** The project's own established pattern for `reapOrphanedInstances()` pairs a
+cheap, source-text structural test (asserting the call sits before the listener bind) with
+slower behavioral coverage. `sweepOrphanedStaging()`'s new call site carries an equally
+critical ordering invariant — it must sit strictly between the confirmed bind and the first
+`writeBrokerRecordFile()`, per this round's own doc comment ("Never move this call back
+above the bind... Never move it below the record write..."). The only regression coverage
+for that invariant is the three new G-64-6 tests in `broker-control.test.ts`, each of which
+spawns a real Node child process running the compiled broker artifact (per-test cost in the
+run above: 295–452ms, each declared with a 20-second timeout). There is no equivalent
+`source.indexOf("sweepOrphanedStaging(")` structural check that would catch a careless
+reordering in milliseconds, the way the sibling reap's placement is caught.
 
-**Fix:** No action required; note only. If ever revisited, re-stat immediately before the
-send pass, or accept the current behavior and say so in the header comment the way the
-publish-hook race is documented.
+**Fix:** No action required for this round — the live coverage is real and the three new
+tests are each non-vacuous. If a fast regression guard is wanted later, add a structural
+assertion comparing `source.indexOf("sweepOrphanedStaging(")` against both
+`source.indexOf("await startControlListenerOnHosts(")` and
+`source.indexOf("writeBrokerRecordFile(args.stateDir, record)")`, mirroring the existing
+`reapOrphanedInstances()`-vs-listener check.
 
 ---
 
