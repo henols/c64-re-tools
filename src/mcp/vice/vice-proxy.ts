@@ -87,29 +87,14 @@
 // apparatus, `call()`/`callTool`, `serverInfo()`) is gone entirely: every
 // remaining tool dispatch in this file goes through stock-tools.ts, never
 // through a fork transport.
-import { activeInstance, useInstance, mcpHost, type ActiveInstance, type ToolInfo } from "./vice-errors.ts";
+import { activeInstance, useInstance, type ActiveInstance, type ToolInfo } from "./vice-errors.ts";
 import { repoRoot, toolsDir } from "./repo-root.ts";
 // The single version-resolution seam (quick-260819-tsz, D-5) -- PROXY_VERSION
 // below is the only consumer in this file; see version.mts's own header for
 // why this file must never re-derive any part of the algorithm itself.
 import { runtimeVersion } from "./version.mts";
-import { hostPath, SET_ENV_HINT } from "./hostpath.ts";
-// The INVERSE direction (host -> container), for inverting a broker grant's
-// own host-local coordinates before useInstance() ever adopts them (this
-// task, quick-260801-ccn). Consuming this from the proxy -- rather than
-// hand-translating a host path here -- is what keeps the host-path consumer
-// set closed to a fixed, traced list of exactly four production modules
-// (containerpath.ts, install-resources.ts, stock-paths.ts, vice-proxy.ts),
-// pinned by hostpath-consumers.test.ts.
-import { containerizeRecord } from "./containerpath.ts";
-// The container-side half of the on-demand broker protocol (Phase 01.2).
-// This module deliberately does NOT import hostpath.mjs itself -- the
-// host-path consumer set stays closed to exactly four production modules
-// (containerpath.ts, install-resources.ts, stock-paths.ts, vice-proxy.ts),
-// pinned by hostpath-consumers.test.ts, and this file is
-// already on that list, so any broker-related host path text is built HERE.
-// Acquisition and release go over the TCP control session
-// (openBrokerControl()/BrokerControlSession).
+// The client half of the broker protocol. Acquisition and release go over
+// the TCP control session (openBrokerControl()/BrokerControlSession).
 import {
   readBrokerLiveness,
   brokerRootDir,
@@ -119,9 +104,10 @@ import {
   type ControlFailureKind,
   type HeldLease,
 } from "./vice-broker-client.ts";
+import { BROKER_START_COMMAND } from "./broker-endpoint.mts";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 // The wire-layer replacement (this plan, D-01): MCPServer owns tools/list's
 // schema-conversion dispatch; the CallToolRequestSchema override installed
 // below (immediately after startStdio(), see that call site's own comment)
@@ -583,41 +569,17 @@ const ONLY_ROUTE_NOTE =
   "the human to start it on the host -- falling back to a direct shell invocation of the underlying " +
   "transport is not an available workaround.";
 
-/** The absolute path of the command a human should run on the HOST to
- * start/restart access to the emulator -- computed via hostPath() over the
- * deployed launcher's container path, degrading to the container path plus
- * SET_ENV_HINT exactly as install-resources.ts's hostLaunchInstructions()
- * does, so a translation failure still yields something to act on rather
- * than an empty message. Recomputed fresh every call -- never cached (see
- * the never-cache-a-negative-result invariant above, near tools/call).
- * Points at resources/vice-launcher.sh's deployed copy -- the one surviving
- * host script (01.6.2-09). Every message in this file that used to name
- * either the retiring per-instance supervisor (vice-supervisor.sh) or the
- * retiring bash broker (vice-broker.sh) now names THIS launcher instead: its
- * own broker performs both the acquire-on-demand job the bash broker did and
- * the launch/supervise/respawn-with-backoff job the bash supervisor did. */
+/** The command a human runs on the host to start the broker. */
 function brokerHostPath(): string {
-  const root = repoRoot();
-  // Moved 2026-09-08 (D-33): was join(root, "tools", "vice-launcher.sh"),
-  // matching installTargetDir()'s pre-consolidation value. Now derived from
-  // repo-root.ts's own toolsDir() -- this module is container-side, unlike
-  // install-resources.ts, so it CAN import that resolver directly rather
-  // than joining the literal a second time -- matching installTargetDir()'s
-  // new `<root>/.c64-re-tools/bin` value exactly.
-  const target = join(toolsDir(), "bin", "vice-launcher.sh");
-  try {
-    return hostPath(target, { workspaceRoot: root });
-  } catch {
-    return `${target}\n  (host path could not be determined -- ${SET_ENV_HINT})`;
-  }
+  return BROKER_START_COMMAND;
 }
 
 // ------------------------------------------------- broker-absent diagnostics
 //
 // Plan 01.2-03 task 1 / must_have C10. A missing broker answers exactly one
 // generic message two times out of three sends the reader to the wrong fix.
-// Every message here quotes brokerHostPath() (an absolute HOST path,
-// recomputed fresh -- see that function's own comment) and the single
+// Every message here quotes brokerHostPath() (the broker start command) and
+// the single
 // shared ONLY_ROUTE_NOTE definition; no message below writes its own second
 // only-route sentence.
 
@@ -655,9 +617,9 @@ function brokerDeadOrHungMessage(liveness: BrokerLivenessResult): string {
  * launcher, purely as a reference) and the only-route sentence, both
  * required of every broker-absent-adjacent message this proxy emits. */
 function brokerLaunchFailedMessage(reason: string): string {
-  const hostRef = brokerHostPath().split("\n")[0];
+  const hostRef = brokerHostPath();
   return (
-    `vice: the on-demand VICE broker (running via the host-side launcher at ${hostRef}) declined ` +
+    `vice: the on-demand VICE broker (started with ${hostRef}) declined ` +
     `to grant an instance for this session: ${reason} ${ONLY_ROUTE_NOTE}`
   );
 }
@@ -707,10 +669,10 @@ function brokerWarmingMessage(elapsedMs: number): string {
  * alive and answering correctly; restarting it would be the wrong fix. */
 function brokerControlUnreachableMessage(opened: { kind: ControlFailureKind; message: string; target?: string }, liveness: BrokerLivenessResult): string {
   const pidNote = liveness && liveness.pid != null ? ` (pid ${liveness.pid})` : "";
-  const hostRef = brokerHostPath().split("\n")[0];
+  const hostRef = brokerHostPath();
   const targetNote = opened.target ?? opened.message;
   return (
-    `vice: the on-demand VICE broker${pidNote} (running via the host-side launcher at ${hostRef}) has ` +
+    `vice: the on-demand VICE broker${pidNote} (started with ${hostRef}) has ` +
     `a fresh, healthy heartbeat -- this is NOT a dead or hung broker. This MCP tool surface could not ` +
     `reach the control plane at ${targetNote}. broker.json's own control_host field records the broker's BIND ` +
     `address, valid on the host where the broker wrote it and structurally undialable from inside this ` +
@@ -735,34 +697,6 @@ function brokerControlUnreachableMessage(opened: { kind: ControlFailureKind; mes
 // forwarding function; stock has no equivalent probe-then-replace step at
 // this proxy layer, and a dead lease surfaces through stock-session.ts's own
 // error handling instead.
-
-// ------------------------------------------------------------ path rewriting
-//
-// isInsideWorkspace() below is the ONE survivor of what used to be a larger
-// container->host path-translation seam here (decision D-G, plan 01.1-03
-// task 3): the per-call argument path-rewriter and its recursive value
-// walker, along with their own refusal classes
-// (PathOutOfWorkspaceError/PathTranslationError), were the fork-only
-// per-forwarded-call rewriter the fork-only generic forwarding function ran
-// before delegating to the fork transport's own dispatch call -- deleted
-// along with it. isInsideWorkspace() itself SURVIVES
-// because it has a second, backend-agnostic consumer: containerizeGrant()
-// (further down this file) re-checks a broker grant's translated
-// epoch_file/supervisor_dir fields against the workspace boundary before
-// trusting them. Stock's OWN emulator-side path translation
-// (stock-paths.ts's withEmulatorSidePath()/STOCK_EMULATOR_SIDE_PATH_TOOLS)
-// is a separate, still-untouched mechanism -- see that file's own header.
-//
-// STATED RESIDUAL, unchanged from before this deletion: this check is
-// lexical, not physical -- a symlink inside the workspace whose target lives
-// outside it still translates. realpathSync() would catch that but requires
-// the file to already exist, which is wrong for the write-side tools
-// (snapshot_save and friends name a path that does not exist yet). Lexical
-// normalization is the part that can be enforced for both directions
-// without breaking writes.
-function isInsideWorkspace(absPath: string, root: string): boolean {
-  return absPath === root || absPath.startsWith(root.endsWith("/") ? root : root + "/");
-}
 
 // ------------------------------------------------------- oversized results
 //
@@ -953,111 +887,35 @@ let grantId: string | null = null;
 // above it -- never cached past a replacement acquisition.
 let grantRemoteMonitorPort: number | null = null;
 
-// ----------------------------------------------------- grant containerization
+// ------------------------------------------------------- grant validation
 //
-// Quick task 260801-ccn (the inverse of Phase 01.1 criterion 9). The broker
-// runs on the HOST, legitimately resolves its own repo root, and writes a
-// grant carrying host-local coordinates: a loopback `url`, and
-// `epoch_file`/`supervisor_dir` paths rooted at the host's own checkout --
-// entirely correct from where the broker stands. Nothing inverted them
-// before this task: loopback meant the CONTAINER's own loopback
-// (ECONNREFUSED, since nothing listens there) and the host-rooted epoch
-// path simply never resolved, so every broker-granted instance was silently
-// unreachable. containerizeGrant() is the seam that fixes this -- called in
-// ensureBrokerLease() below between session.acquire() returning a grant and
-// useInstance() adopting it, since that is the LAST point before the
-// coordinates become the session's identity (D-1).
-function containerizeGrant(grant: Record<string, unknown>): Record<string, unknown> {
-  const grantId = grant && typeof grant.id === "string" ? grant.id : "(no id)";
-  const port = Number(grant && grant.port);
+// The grant is adopted as received: the broker names only ports and a URL,
+// never a path this side must translate. Two checks stay, because nothing
+// downstream can be trusted without them: `port` must be a valid integer
+// port, and `url`'s own port must equal it. A mismatched or unparseable
+// `url` is replaced by one derived from the validated port and reported on
+// stderr, never silently.
+function checkGrant(grant: Record<string, unknown>): Record<string, unknown> {
+  const grantId = typeof grant.id === "string" ? grant.id : "(no id)";
+  const port = Number(grant.port);
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    // T-mef-01's rule, reused here: nothing downstream can be trusted
-    // without a validated port, so no translation is even attempted --
-    // useInstance() fails on its own terms, exactly as it would have before
-    // this function existed.
-    console.error(
-      `vice-proxy: containerizeGrant ${grantId}: grant.port (${grant && grant.port}) is not a valid integer ` +
-        `port -- skipping translation entirely.`
-    );
+    console.error(`vice-proxy: grant ${grantId}: grant.port (${grant.port}) is not a valid integer port.`);
     return grant;
   }
-
-  const alias = mcpHost();
-  // containerizeRecord() (containerpath.ts) does the translation itself:
-  // `url` through the loopback-rewrite (D-4), `epoch_file`/`supervisor_dir`
-  // through the host->container path inverse (D-2 -- all three fields). An
-  // already container-shaped record (every pre-existing broker test's
-  // tmpdir-rooted VICE_POOL_DIR) matches no known host root and comes back
-  // byte-identical -- D-7's whole point.
-  const { record, changes } = containerizeRecord(grant, {
-    pathFields: ["epoch_file", "supervisor_dir"],
-    urlFields: ["url"],
-    alias,
-  });
-
-  // Safety net (T-ccn-01, T-ccn-02), mirroring the outbound seam's own
-  // posture: never open/connect to an unvalidated string read out of a
-  // grant file. On either failure below, substitute the coordinate DERIVED
-  // FROM THE VALIDATED PORT instead (instanceFor()'s own T-mef-01 rule,
-  // reused here) and report the substitution -- never silently.
-  const root = repoRoot();
-  const fallbackDir = join(brokerRootDir(), String(port));
-  const fallbackEpochFile = join(fallbackDir, "epoch.json");
-  const fallbackUrl = `http://${alias}:${port}/mcp`;
-  const changedFields = new Set(changes.map((c) => c.field));
-  const substituted: Record<string, boolean> = { url: false, epoch_file: false, supervisor_dir: false };
-
-  // T-ccn-01: only a field that was ACTUALLY TRANSLATED (its host root
-  // matched) is re-checked for workspace containment -- an already
-  // container-shaped path was never translated at all (D-7's passthrough)
-  // and is trusted exactly as every pre-existing broker test already relies
-  // on. A translated path escaping the workspace (a lexical ".." sequence
-  // in the grant's own host-rooted field) is exactly what this check
-  // catches.
-  if (changedFields.has("epoch_file") && !isInsideWorkspace(resolve(record.epoch_file as string), root)) {
-    record.epoch_file = fallbackEpochFile;
-    substituted.epoch_file = true;
-  }
-  if (changedFields.has("supervisor_dir") && !isInsideWorkspace(resolve(record.supervisor_dir as string), root)) {
-    record.supervisor_dir = fallbackDir;
-    substituted.supervisor_dir = true;
-  }
-
-  // T-ccn-02: the FINAL url's port must equal the validated grant port,
-  // checked UNCONDITIONALLY (translated or not) -- a grant could simply
-  // declare a mismatched port from the start, translation aside, and that
-  // is exactly the spoofing shape this check exists to catch.
   let urlPortOk = false;
-  if (typeof record.url === "string") {
+  if (typeof grant.url === "string") {
     try {
-      urlPortOk = Number(new URL(record.url).port) === port;
+      urlPortOk = Number(new URL(grant.url).port) === port;
     } catch {
       urlPortOk = false;
     }
   }
-  if (!urlPortOk) {
-    record.url = fallbackUrl;
-    substituted.url = true;
-  }
-
-  // Exactly ONE stderr line, naming every field's before/after (or
-  // "unchanged") -- this is the signal whose absence made the original bug
-  // invisible; it must never become a line per field (D-2's own reporting
-  // requirement).
-  const parts = ["url", "epoch_file", "supervisor_dir"].map((field) => {
-    const original = grant ? grant[field] : undefined;
-    const final = record[field];
-    if (substituted[field]) {
-      return `${field}: SUBSTITUTED ${JSON.stringify(original)} -> ${JSON.stringify(final)} (port-derived fallback)`;
-    }
-    if (final === original) {
-      return `${field}: unchanged (${JSON.stringify(final)})`;
-    }
-    return `${field}: ${JSON.stringify(original)} -> ${JSON.stringify(final)}`;
-  });
-  console.error(`vice-proxy: containerized grant ${grantId} -- ${parts.join("; ")}`);
-
-  return record;
+  if (urlPortOk) return grant;
+  const fallbackUrl = `http://127.0.0.1:${port}/mcp`;
+  console.error(
+    `vice-proxy: grant ${grantId}: url ${JSON.stringify(grant.url)} does not name port ${port} -- using ${fallbackUrl}`,
+  );
+  return { ...grant, url: fallbackUrl };
 }
 
 /**
@@ -1092,10 +950,9 @@ type BrokerLeaseResult = { ok: true; lease: HeldLease | null } | { ok: false; me
  * call -- activeInstance() and grantId -- never memoised here:
  * handleGrantedInstanceUnreachable() overwrites both on a replacement
  * acquisition, and a cached lease would keep pointing at the retired
- * instance. `host` is the hostname of the active instance's ALREADY
- * containerized `url` (containerizeGrant()'s own loopback rewrite already
- * owns host/container translation -- reading its result here is reuse, not
- * re-derivation). `port` is activeInstance().port (the broker allocates one
+ * instance. `host` is the hostname of the active instance's `url`; the
+ * monitor dial itself goes through the broker endpoint's relay, not to this
+ * host. `port` is activeInstance().port (the broker allocates one
  * port per instance and passes it to -binarymonitoraddress on the stock
  * backend, per plan 02-03). `targetId` is grantId. Called only
  * from the two success returns below that hold a control session.
@@ -1117,9 +974,7 @@ function buildHeldLease(session: BrokerControlSession): HeldLease {
   //
   // Two DIFFERENT directories, deliberately, and not interchangeable:
   //   - epochFile is THIS instance's own `<stateDir>/<port>/epoch.json`, read
-  //     fresh from activeInstance() like every other field here (adoptGrant()
-  //     put the CONTAINERIZED path there, so it is already in this process's
-  //     view of the filesystem -- no second translation here).
+  //     fresh from activeInstance() like every other field here.
   //   - supervisorDir is the TOP-LEVEL `.c64-re-tools/supervisor`, where backend.json
   //     lives, resolved through brokerRootDir() -- the SAME resolver
   //     broker.json is read from, never a locally re-derived path (the
@@ -1231,8 +1086,8 @@ async function ensureBrokerLease(): Promise<BrokerLeaseResult> {
 }
 
 /**
- * The ONE adoption seam (D-13): containerize a grant's host-local
- * coordinates and adopt them as this session's active instance, recording
+ * The ONE adoption seam (D-13): check a grant (checkGrant()) and adopt it
+ * as this session's active instance, recording
  * the grant id. Called by ensureBrokerLease() above for an ORDINARY
  * acquisition and by handleGrantedInstanceUnreachable() below for BOTH of
  * its replacement acquisitions (the same-session retry and the
@@ -1241,16 +1096,13 @@ async function ensureBrokerLease(): Promise<BrokerLeaseResult> {
  */
 function adoptGrant(grant: Record<string, unknown>): void {
   grantId = typeof grant.id === "string" ? grant.id : null;
-  const containerized = containerizeGrant({ ...grant });
+  const granted = checkGrant({ ...grant });
 
-  // Plan 41-01 (D-15): validate before stashing. `containerizeGrant()` never
-  // translates this field (a port number needs no host<->container path or
-  // URL rewrite), so `containerized.remote_monitor_port` is exactly the raw
-  // wire value. A value that is not an integer in 1..65535 is rejected,
-  // grantRemoteMonitorPort is left null, and a one-line stderr warning names
-  // the observed value -- never a silent coercion, matching
-  // containerizeGrant()'s own posture for an invalid grant.port.
-  const rawRemoteMonitorPort = containerized.remote_monitor_port;
+  // Plan 41-01 (D-15): validate before stashing. A value that is not an
+  // integer in 1..65535 is rejected, grantRemoteMonitorPort is left null, and
+  // a one-line stderr warning names the observed value -- never a silent
+  // coercion, matching checkGrant()'s own posture for an invalid grant.port.
+  const rawRemoteMonitorPort = granted.remote_monitor_port;
   if (rawRemoteMonitorPort === undefined) {
     grantRemoteMonitorPort = null;
   } else {
@@ -1266,9 +1118,9 @@ function adoptGrant(grant: Record<string, unknown>): void {
   }
 
   useInstance({
-    port: containerized.port as number,
-    url: containerized.url as string,
-    epochFile: containerized.epoch_file as string,
+    port: granted.port as number,
+    url: granted.url as string,
+    epochFile: granted.epoch_file as string,
     pooled: true,
   });
 }

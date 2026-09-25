@@ -110,9 +110,11 @@ naive-grep false-fire hazard `ghidra-harness-gates.test.ts` proves.
 **Command (via the `ghidra.analyze` host tool, `importRoute: "flat64k"`,
 `loaderBaseAddr` defaulted to `0x0`):**
 
+Captured with the since-removed `host-tool.mjs` CLI. The same request now
+goes through `runHostTool(request, { repoRoot: <scratch> })`:
+
 ```
-$ node resources/host-tool.mjs run --repo-root <scratch> --request \
-    '{"tool":"ghidra.analyze","args":{"runId":"benign-base0","importPath":"base0.bin","processor":"6502:LE:16:default","importRoute":"flat64k"}}'
+{"tool":"ghidra.analyze","args":{"runId":"benign-base0","importPath":"base0.bin","processor":"6502:LE:16:default","importRoute":"flat64k"}}
 ```
 
 Image: 4096 bytes of cryptographically-random content (`node:crypto`'s
@@ -151,9 +153,10 @@ of `scriptPath`; a bare filename resolves against the workspace ROOT and
 Ghidra reports `Script not found`, MEASURED this session on the first
 attempt before this was corrected):
 
+Request (sent through `runHostTool()`, as above):
+
 ```
-$ node resources/host-tool.mjs run --repo-root <scratch> --request \
-    '{"tool":"ghidra.analyze","args":{"runId":"script-error","importPath":"bank.prg","processor":"6502:LE:16:default","importRoute":"prg","noanalysis":true,"scriptPath":"vendor/ghidra-scripts","postScript":"vendor/ghidra-scripts/GhidraStructExport.java","exportPath":"export.txt","expectedClassificationLines":1}}'
+{"tool":"ghidra.analyze","args":{"runId":"script-error","importPath":"bank.prg","processor":"6502:LE:16:default","importRoute":"prg","noanalysis":true,"scriptPath":"vendor/ghidra-scripts","postScript":"vendor/ghidra-scripts/GhidraStructExport.java","exportPath":"export.txt","expectedClassificationLines":1}}
 ```
 
 Image: `bank.prg` (the committed fixture above, 60 bytes, `.prg` route, base

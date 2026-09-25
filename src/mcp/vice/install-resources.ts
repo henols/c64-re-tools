@@ -37,7 +37,7 @@ import {
 import { fileURLToPath } from "node:url";
 import { dirname, join, isAbsolute, resolve, sep } from "node:path";
 
-import { hostPath, SET_ENV_HINT } from "./hostpath.ts";
+import { BROKER_START_COMMAND } from "./broker-endpoint.mts";
 import { HOST_BOUND_ARTIFACTS } from "./build.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -147,41 +147,14 @@ export function resourcesStatus({ root }: { root: string }): Record<string, Reso
   return out;
 }
 
-/** The D-4 host-launch instructions, as prose covering: the host path to
- * run, that it cannot run inside the container and will refuse with exit 2,
- * --check-container as the diagnostic, and that Ctrl-C stops it cleanly.
- * hostPath() (devcontainer-host-path skill) translates the deployed
- * launcher's container path into the HOST path a human should actually
- * type -- the same cross-skill shape tools/recover.mjs already uses -- and
- * degrades to the container path plus hostpath.mjs's own SET_ENV_HINT when
- * translation fails (e.g. no /proc/self/mountinfo, or an unmapped mount).
- *
- * 01.6.2-09 (D-23, T-01.6.2-56): this used to return TWO paragraphs, one
- * per script -- the broker launcher (start the on-demand broker) and the
- * per-instance supervisor (a "standalone (non-MCP) recovery pipeline"). The
- * supervisor paragraph is DELETED here, not repointed: the standalone
- * pipeline it advertised (vice-pool.mjs/vice-session.mjs) was already
- * deleted behind a zero-consumers gate in an earlier phase
- * (01.6-CONTEXT.md D-02), so repointing its path would keep advertising a
- * capability that no longer exists. Only ONE script survives
- * (resources/vice-launcher.sh, deployed to tools/vice-launcher.sh), and its
- * own broker now performs both jobs: on-demand acquisition (what the old
- * broker paragraph promised) and launch/supervise/respawn-with-backoff
- * (what the old supervisor paragraph promised). Exactly one resolved host
- * path is returned as a result -- asserted directly in
- * install-resources.test.ts. */
+/** The host-launch instructions: the command that starts the broker on the
+ * host, that it refuses with exit 2 inside a container, --check-container as
+ * the diagnostic, and that Ctrl-C stops it cleanly. */
 export function hostLaunchInstructions(root: string): string {
-  const target = join(installTargetDir(root), "vice-launcher.sh");
-  let displayPath: string;
-  try {
-    displayPath = hostPath(target, { workspaceRoot: root });
-  } catch {
-    displayPath = `${target}\n  (host path could not be determined -- ${SET_ENV_HINT})`;
-  }
   return [
     `vice-mcp-selector: deployed host launcher scripts to ${installTargetDir(root)}`,
-    "vice-mcp-selector: for MCP-mediated access (mcp__vice__* tools), start the on-demand broker from the HOST workspace, e.g.:",
-    `  ${displayPath}`,
+    "vice-mcp-selector: for MCP-mediated access (mcp__vice__* tools), start the on-demand broker on the HOST:",
+    `  ${BROKER_START_COMMAND}`,
     // Plan 41-05 (folded todo): the warm floor is retired -- the broker
     // launches strictly on demand now, with no speculative pre-warming.
     "vice-mcp-selector: the broker launches a boot-fresh instance strictly on demand, on the first request, supervises it, and respawns a crashed one with backoff.",

@@ -35,6 +35,7 @@ import {
   type PruneResourcesResult,
 } from "./install-resources.ts";
 import { containerGuardReport, containerGuardEnforce } from "./container-guard.mts";
+import { BROKER_START_COMMAND } from "./broker-endpoint.mts";
 
 const execFileP = promisify(execFile);
 
@@ -344,27 +345,13 @@ test("pruneResources(): an absolute-path manifest entry is refused and reported 
   assert.ok(existsSync("/etc/passwd"), "sanity: the real /etc/passwd must survive completely untouched");
 });
 
-// ============================================================================
-// Plan 01.6.2-09 (D-23, T-01.6.2-56): hostLaunchInstructions() used to
-// return TWO paragraphs -- one repointable (the broker launcher) and one
-// advertising a standalone (non-MCP) recovery pipeline whose own scripts
-// were already deleted behind a zero-consumers gate in an earlier phase
-// (01.6-CONTEXT.md D-02). That second paragraph is DELETED here, not
-// repointed -- swapping its path would keep advertising a capability that
-// no longer exists. This was never covered by a test before this plan.
-// ============================================================================
-
-test("hostLaunchInstructions(): contains exactly one resolved host path, names the surviving launcher, and advertises no standalone recovery pipeline", () => {
+test("hostLaunchInstructions(): names the broker start command once and advertises no standalone recovery pipeline", () => {
   const root = mkdtempSync(join(tmpdir(), "vice-hostlaunch-"));
   const text = hostLaunchInstructions(root);
 
-  // Counted by the launcher's own basename, not the full absolute path --
-  // hostPath() may translate installTargetDir(root) into a different HOST
-  // path (or degrade to the container path plus SET_ENV_HINT) depending on
-  // this test process's own mount view, but "vice-launcher.sh" survives
-  // either way as the resolved path's own final path segment.
-  const occurrences = (text.match(/vice-launcher\.sh/g) || []).length;
-  assert.equal(occurrences, 1, `expected exactly one resolved host path (naming vice-launcher.sh) in hostLaunchInstructions(), found ${occurrences}`);
+  const occurrences = text.split(BROKER_START_COMMAND).length - 1;
+  assert.equal(occurrences, 1, `expected the broker start command exactly once in hostLaunchInstructions(), found ${occurrences}`);
+  assert.doesNotMatch(text, /host path could not be determined/, "must not name a translated host path at all");
 
   assert.doesNotMatch(text, /vice-supervisor\.sh/, "must not still name the retiring per-instance supervisor");
   assert.doesNotMatch(text, /vice-broker\.sh/, "must not still name the retiring bash broker by its own filename");

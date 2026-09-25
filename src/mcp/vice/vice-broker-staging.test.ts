@@ -143,7 +143,6 @@ async function startStagingListenerForState(
     onMonitorRelease: (): MonitorReleaseOutcome => ({ ok: false, code: "bad_request" }),
     onRelayAttach: (): RelayAttachOutcome => ({ ok: false, code: "internal" }),
     onOperation: (): OperationNoteOutcome => ({ ok: true }),
-    onHostTool: async () => ({ ok: false, message: "not exercised by vice-broker-staging.test.ts" }),
     // vice-broker.mts's own real handleStageFile()/handleFileTransfer() are
     // wired via the real broker's own startup -- this suite calls them the
     // SAME way, through their real production entry points, imported above

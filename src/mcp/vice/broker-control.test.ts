@@ -211,7 +211,6 @@ interface StubDeps {
   onStageFile?: (targetId: string, slot: string) => StageFileOutcome;
   /** Phase 64, plan 64-02 (XFER-04): same optionality as onStageFile above. */
   onFileTransfer?: (request: FileTransferRequest, socket: Socket, pending: Buffer) => FileTransferOutcome;
-  onHostTool?: (raw: unknown) => Promise<unknown>;
   /** Phase 65, plan 65-01 (SEAM-01): OPTIONAL on StartControlListenerOptions
    * itself (vice-broker.mts wires all three), and absent by default here
    * too -- a `host_tool_stage`/`host_tool_run` request against a listener
@@ -298,11 +297,6 @@ async function startTestListener(deps: StubDeps = {}): Promise<{
       operationCalls.push({ targetId, channel, name });
       return deps.onOperation?.(targetId, channel, name) ?? ({ ok: true } as OperationNoteOutcome);
     },
-    // Phase 34, plan 34-01: a required field on StartControlListenerOptions
-    // as of this plan -- no existing test in this file exercises host_tool
-    // yet (task 2 adds that coverage), so this default is a no-op refusal,
-    // never called by any pre-existing case here.
-    onHostTool: deps.onHostTool ?? (async () => ({ ok: false, message: "no onHostTool stub configured" })),
     helloVersion: deps.helloVersion,
     // Phase 64, plan 64-02 (XFER-04): CONDITIONALLY wired, unlike every
     // callback above -- StartControlListenerOptions' own `onStageFile`/
@@ -1402,46 +1396,12 @@ test("transfer: a wrong token, and a request with no token field at all, both st
 });
 
 // ============================================================================
-// Phase 65, plan 65-01 (SEAM-01): host_tool_stage/host_tool_run coexist with
-// the legacy token-gated host_tool op, bind to their own connection, and
-// clean up on close (Task 2, behaviours 1-5). Behaviours 6-10 live in
+// Phase 65, plan 65-01 (SEAM-01): host_tool_stage/host_tool_run bind to
+// their own connection and clean up on close (Task 2, behaviours 2-5).
+// Behaviours 6-10 live in
 // host-tool-endpoint.test.ts, against the real, compiled broker (a harness
 // broker), because they need a real transfer connection.
 // ============================================================================
-
-test("Test 1: a host_tool line with no token answers unauthorized and destroys the connection; the same line with the real token reaches onHostTool -- the legacy op is unchanged", async () => {
-  const hostToolCalls: unknown[] = [];
-  const { listener, token } = await startTestListener({
-    onHostTool: async (raw) => {
-      hostToolCalls.push(raw);
-      return { ok: false, message: "no real tool run in this test" };
-    },
-  });
-
-  const noTokenClient = makeClient(listener.port);
-  try {
-    noTokenClient.send({ op: "host_tool", id: "ht-1", tool: "acme.build", args: {} });
-    const resp = await noTokenClient.next();
-    assert.equal(resp.kind, "error");
-    assert.equal(resp.code, "unauthorized");
-    const destroyed = await waitFor(() => noTokenClient.socket.destroyed, 1000);
-    assert.ok(destroyed, "a token-less host_tool line must destroy the connection, exactly like any other post-gate op");
-    assert.deepEqual(hostToolCalls, [], "onHostTool must never be invoked for a token-less request");
-  } finally {
-    noTokenClient.close();
-  }
-
-  const realTokenClient = makeClient(listener.port);
-  try {
-    realTokenClient.send({ op: "host_tool", id: "ht-2", tool: "acme.build", args: {}, token });
-    const resp = await realTokenClient.next();
-    assert.equal(resp.ok, false);
-    assert.equal(hostToolCalls.length, 1, "onHostTool must be invoked exactly once for the real-token request");
-  } finally {
-    realTokenClient.close();
-    listener.server.close();
-  }
-});
 
 test("Test 2: host_tool_stage and host_tool_run sent with no token are answered (not unauthorized), proving they sit ahead of the gate", async () => {
   const { listener, hostToolStageCalls, hostToolRunCalls } = await startTestListener({
@@ -2015,32 +1975,13 @@ test("structural: attemptAcquire()'s own comment names which half bounds which f
   assert.match(comment, /does NOT eliminate that race/i);
 });
 
-test("ControlRequestKind (34-01/62-01/63-01/63-03/64-02/65-01, A-01/D-06/D-01/SEAM-01): now exactly fifteen members -- host_tool is the whole host-tool subsystem (never widened again per-tool), hello is plan 62-01's pre-token-gate handshake op, attach is plan 63-01's post-token-gate relay handshake op, operation is plan 63-03's post-token-gate declaration op, stage_file/transfer are plan 64-02's file-transfer ops (XFER-04), host_tool_stage/host_tool_run are plan 65-01's pre-token-gate host-tool ops (SEAM-01)", () => {
+test("ControlRequestKind: exactly thirteen members -- hello is the pre-gate handshake, attach/transfer/host_tool_stage/host_tool_run sit ahead of the token gate, and a new host tool is a HOST_TOOL_IDS entry, never a new member", () => {
   const source = readFileSync(join(HERE, "broker-control.mts"), "utf8");
   const match = source.match(/export type ControlRequestKind = ([^;]+);/);
   assert.ok(match, "ControlRequestKind's own type declaration must be found");
-  // Plan 34-01 (A-01) is the ONE deliberate per-tool-adjacent widening --
-  // the eighth member, "host_tool", is the WHOLE host-tool subsystem: a
-  // second tool (dxa, Ghidra, c1541, petcat, cartconv, ...) is a new entry
-  // in host-tool.mts's own HOST_TOOL_IDS allowlist, never a further
-  // ControlRequestKind member -- this union is not widened again per-tool.
-  // Plan 62-01 (D-06/ENDPOINT-03) adds the ninth member: "hello", the
-  // pre-token-gate handshake op -- see handleLine()'s own dispatch-order
-  // comment for why it is answered BEFORE tokensMatch(). Plan 63-01
-  // (SESS-02) adds the tenth member: "attach", UNLIKE hello dispatched
-  // AFTER the token gate, in the same post-gate chain as every other
-  // target-naming op. Plan 63-03 (SESS-05) adds the eleventh member:
-  // "operation", gated on the SAME ownsTarget() predicate as
-  // monitor_claim/monitor_release. Plan 64-02 (XFER-04, D-01) adds
-  // the twelfth and thirteenth members: "stage_file" (gated by ownsTarget(),
-  // like operation) and "transfer" (deliberately NOT gated, like attach).
-  // Plan 65-01 (SEAM-01) adds the fourteenth and fifteenth members:
-  // "host_tool_stage"/"host_tool_run", dispatched ahead of the token gate
-  // beside attach/transfer, never gated by ownsTarget() -- a skill call
-  // holds no acquire-level grant to gate on.
   assert.equal(match![1].trim(),
-    '"acquire" | "release" | "status" | "host_state" | "monitor_claim" | "monitor_release" | "host_tool" | "hello" | "attach" | "operation" | "stage_file" | "transfer" | "host_tool_stage" | "host_tool_run"',
-    "the union must be exactly these fourteen members (recycle was removed with vice_recycle)",
+    '"acquire" | "release" | "status" | "host_state" | "monitor_claim" | "monitor_release" | "hello" | "attach" | "operation" | "stage_file" | "transfer" | "host_tool_stage" | "host_tool_run"',
+    "the union must be exactly these thirteen members (recycle went with vice_recycle, host_tool with the legacy client)",
   );
 });
 
@@ -2609,7 +2550,7 @@ async function startProfileRecordingListener(): Promise<{
   return { listener, token, received };
 }
 
-test("ControlRequestKind (34-01/62-01/63-01/63-03/64-02/65-01, A-01/D-06/D-01/SEAM-01): now exactly fifteen members -- host_tool is a reviewed eighth op, hello is plan 62-01's reviewed ninth op, attach is plan 63-01's reviewed tenth op, operation is plan 63-03's reviewed eleventh op, stage_file/transfer are plan 64-02's twelfth/thirteenth ops (XFER-04), host_tool_stage/host_tool_run are plan 65-01's fourteenth/fifteenth ops (SEAM-01), and this union is never widened again PER-TOOL", () => {
+test("ControlRequestKind: the message set is exactly thirteen reviewed members, and this union is never widened PER-TOOL", () => {
   // Read off the type's own declaration in the source rather than a
   // hand-maintained list here: a second list would be the very drift this
   // asserts against. The union is a single line by convention in this file.
@@ -2621,24 +2562,10 @@ test("ControlRequestKind (34-01/62-01/63-01/63-03/64-02/65-01, A-01/D-06/D-01/SE
     .map((s) => s.trim().replace(/^"|"$/g, ""))
     .filter((s) => s !== "");
   assert.deepEqual(members,
-    ["acquire", "release", "status", "host_state", "monitor_claim", "monitor_release", "host_tool", "hello", "attach", "operation", "stage_file", "transfer", "host_tool_stage", "host_tool_run"],
-    "the message set must be exactly these fourteen members " +
+    ["acquire", "release", "status", "host_state", "monitor_claim", "monitor_release", "hello", "attach", "operation", "stage_file", "transfer", "host_tool_stage", "host_tool_run"],
+    "the message set must be exactly these thirteen members " +
       "(SEAM-01) -- a genuinely reviewed widening, not a per-tool one: a second host tool is still a new " +
       "HOST_TOOL_IDS entry in host-tool.mts, never a further ControlRequestKind member",
-  );
-});
-
-test("structural (34-01, SEAM-01): StartControlListenerOptions declares onHostTool, and the host_tool dispatch branch in handleLine() appears BEFORE the acquire branch -- routed before any lease-bearing path", () => {
-  const source = readFileSync(join(HERE, "broker-control.mts"), "utf8");
-  assert.match(source, /onHostTool:\s*\(raw: unknown\) => Promise<unknown>/, "StartControlListenerOptions must declare onHostTool");
-  const hostToolDispatchIdx = source.indexOf('req.op === "host_tool"');
-  const acquireDispatchIdx = source.indexOf('req.op === "acquire"');
-  assert.ok(hostToolDispatchIdx !== -1, "the host_tool dispatch branch must exist in handleLine()");
-  assert.ok(acquireDispatchIdx !== -1, "the acquire dispatch branch must exist in handleLine()");
-  assert.ok(
-    hostToolDispatchIdx < acquireDispatchIdx,
-    "the host_tool dispatch branch must appear at a LOWER character index than the acquire comparison -- routed " +
-      "before any lease-bearing path",
   );
 });
 
@@ -2929,7 +2856,7 @@ test("acquire profile (33-06): the profile survives being QUEUED behind an in-fl
 
 const BROKER_CONTROL_MTS = join(HERE, "broker-control.mts");
 
-test("the ControlRequestKind union has exactly fourteen members including hello, attach, operation, stage_file, transfer, host_tool_stage and host_tool_run, and the hello arm's dispatch sits before the tokensMatch() call", () => {
+test("the ControlRequestKind union has exactly thirteen members including hello, attach, operation, stage_file, transfer, host_tool_stage and host_tool_run, and the hello arm's dispatch sits before the tokensMatch() call", () => {
   const source = readFileSync(BROKER_CONTROL_MTS, "utf8");
 
   const unionMatch = source.match(/export type ControlRequestKind = ([^;]+);/);
@@ -2938,7 +2865,7 @@ test("the ControlRequestKind union has exactly fourteen members including hello,
     .split("|")
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
-  assert.equal(members.length, 14, `expected 14 ControlRequestKind members, got ${members.length}: ${JSON.stringify(members)}`);
+  assert.equal(members.length, 13, `expected 13 ControlRequestKind members, got ${members.length}: ${JSON.stringify(members)}`);
   assert.ok(members.includes('"hello"'), `hello must be a member of ControlRequestKind, got ${JSON.stringify(members)}`);
   assert.ok(members.includes('"attach"'), `attach must be a member of ControlRequestKind, got ${JSON.stringify(members)}`);
   assert.ok(members.includes('"operation"'), `operation must be a member of ControlRequestKind, got ${JSON.stringify(members)}`);
@@ -3190,7 +3117,6 @@ test("startControlListenerOnHosts: two listeners on two different bound addresse
     onMonitorRelease: (): MonitorReleaseOutcome => ({ ok: true }),
     onRelayAttach: (): RelayAttachOutcome => ({ ok: false, code: "internal" }),
     onOperation: (): OperationNoteOutcome => ({ ok: true }),
-    onHostTool: async () => ({ ok: false, message: "not exercised by this test" }),
   };
 
   // Two distinct loopback addresses -- both bindable without extra
@@ -3380,7 +3306,7 @@ test("two sessions, one broker: two connections declaring two labels each acquir
 // `files`, `host_tool_run` carries `tool`/`args`/`request` (a request KEY,
 // never a target id), and both are gated on a per-connection BOUND request
 // key, never on `ownsTarget()`.
-const KNOWN_NON_TARGET_NAMING_OPS = new Set(["acquire", "release", "status", "host_state", "host_tool", "hello", "transfer", "host_tool_stage", "host_tool_run"]);
+const KNOWN_NON_TARGET_NAMING_OPS = new Set(["acquire", "release", "status", "host_state", "hello", "transfer", "host_tool_stage", "host_tool_run"]);
 // The set this invariant test actually EXERCISES below -- every op whose
 // dispatch arm reads `req.target_id` and resolves it against a grant.
 // `stage_file` (Phase 64, XFER-04) joins this set: gated by the SAME
@@ -3473,18 +3399,17 @@ test("invariant (63-05, T-63-17): every target-naming op refuses ANOTHER session
 
 // ============================================================================
 // Plan 63-05, Task 3 (SESS-01): the behavioural half of "a stateless call
-// binds no lease". The stateless call shape already ships (host-tool-
-// client.ts's hostToolOverControlPlane()) and its own callback (onHostTool)
-// is declared separately from every lease callback, so the dispatch branch
-// structurally cannot reach lease state -- see StartControlListenerOptions'
-// own onHostTool comment. What this proves is the OBSERVATION a reader of
+// binds no lease". The host-tool callbacks are declared separately from
+// every lease callback, so the dispatch arms structurally cannot reach lease
+// state. What this proves is the OBSERVATION a reader of
 // status would actually rely on: the broker's state is unchanged across
 // such a call, not merely "the callback is declared separately" as a claim
 // read out of a comment.
 // ============================================================================
 
-test("stateless call (63-05, SESS-01): a host_tool request never fires an acquire, release, monitor-claim, monitor-release, attach or operation callback, the closed connection's own close triggers no release, and status is unchanged across ten sequential calls", async () => {
+test("stateless call (63-05, SESS-01): a host_tool_stage/host_tool_run pair never fires an acquire, release, monitor-claim, monitor-release, attach or operation callback, the closed connection's own close triggers no release, and status is unchanged across ten sequential calls", async () => {
   const calls = { acquire: 0, release: 0, monitorClaim: 0, monitorRelease: 0, attach: 0, operation: 0 };
+  let stageCounter = 0;
   const fixedStatus: StatusInstanceEntry[] = [
     { port: 6600, url: "http://127.0.0.1:6600/mcp", state: "ready", reason: "spare", epoch: null, hasMonitorClient: false, sessionLabel: null, grantId: null, operation: null },
   ];
@@ -3513,7 +3438,8 @@ test("stateless call (63-05, SESS-01): a host_tool request never fires an acquir
       calls.operation++;
       return { ok: true };
     },
-    onHostTool: async () => ({ ok: true, tool: "acme.build", exitStatus: 0, results: [], stderrTail: "" }),
+    onHostToolStage: () => ({ ok: true, requestKey: `stateless-${stageCounter++}`, treeHandles: [], fileHandles: [] }),
+    onHostToolRun: async () => ({ ok: true, tool: "acme.build", exitStatus: 0, results: [], stderrTail: "" }),
   });
 
   const observer = makeClient(listener.port);
@@ -3523,9 +3449,12 @@ test("stateless call (63-05, SESS-01): a host_tool request never fires an acquir
 
     for (let i = 0; i < 10; i++) {
       const stateless = makeClient(listener.port);
-      stateless.send({ op: "host_tool", id: `stateless-${i}`, token, tool: "acme.build", args: {} });
+      stateless.send({ op: "host_tool_stage", files: [] });
+      const staged = (await stateless.next()) as { kind: string; request: string };
+      assert.equal(staged.kind, "host_tool_staged", `stateless stage ${i} must succeed against the stubbed onHostToolStage`);
+      stateless.send({ op: "host_tool_run", tool: "acme.build", args: {}, request: staged.request });
       const reply = (await stateless.next()) as { ok: boolean };
-      assert.equal(reply.ok, true, `stateless call ${i} must succeed against the stubbed onHostTool`);
+      assert.equal(reply.ok, true, `stateless call ${i} must succeed against the stubbed onHostToolRun`);
       stateless.close();
       // Let the "close" event on THIS connection actually fire and run
       // through attachControlProtocol()'s own close handler before moving
@@ -3541,7 +3470,7 @@ test("stateless call (63-05, SESS-01): a host_tool request never fires an acquir
     assert.deepEqual(
       calls,
       { acquire: 0, release: 0, monitorClaim: 0, monitorRelease: 0, attach: 0, operation: 0 },
-      "no lease-bearing callback may ever fire for a stateless host_tool call, across any of the ten repetitions",
+      "no lease-bearing callback may ever fire for a stateless host-tool call, across any of the ten repetitions",
     );
   } finally {
     observer.close();

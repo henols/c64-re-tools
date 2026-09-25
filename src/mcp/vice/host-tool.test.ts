@@ -33,18 +33,11 @@ const execFileP = promisify(execFile);
 
 import { build } from "./build.ts";
 import { startControlListener, type StartControlListenerResult, type AcquireOutcome, type StatusInstanceEntry, type HostStateFields, type MonitorClaimOutcome, type MonitorReleaseOutcome } from "./broker-control.mts";
-import { hostToolOverControlPlane, hostToolRequestTimeoutMs } from "./host-tool-client.ts";
-// Phase 65, plan 65-03 (RESEARCH Pitfall 4): the CLIENT side of the
-// fixed-endpoint route's own cross-seam ordering, reached directly -- this
-// is a container-side module (host-tool-endpoint.mts carries no host-bound
-// APIs and ships no build step), so it is imported by its own .mts source,
-// never through the compiled hostTool artifact above. Deliberately a
-// SEPARATE identifier (endpointHostToolRequestTimeoutMs) from the
-// legacy-seam `hostToolRequestTimeoutMs` imported immediately above --
-// the two functions read DIFFERENT tables and must never be confused.
+// The CLIENT side of the endpoint route's cross-seam ordering, imported
+// from its own .mts source.
 import {
   runHostToolOverEndpoint,
-  hostToolRequestTimeoutMs as endpointHostToolRequestTimeoutMs,
+  hostToolRequestTimeoutMs,
   walkUploadTree,
   HOST_TOOL_FILE_INPUT_KEYS,
   HOST_TOOL_TREE_INPUT_KEYS,
@@ -1128,29 +1121,6 @@ test("resolveWorkspacePath and anno-types.ts's storePathWithinWorkspace() agree:
   });
 });
 
-test(
-  "END TO END: an acme.build request whose includes escapes the workspace root is refused at the container-side caller with ok: false, over the real control-plane route, with all seven VICE callbacks provably uncalled -- no skip option, since nothing is ever spawned",
-  async () => {
-    await withTempDir(async (dir) => {
-      writeFileSync(join(dir, "a.a"), "!cpu 6510\n* = $0801\nlda #$01\nsta $d020\nrts\n", "utf8");
-      const { listener, token, spies } = await startListenerWithSpies(dir);
-      try {
-        const stateDir = mkdtempSync(join(tmpdir(), "host-tool-broker-json-"));
-        try {
-          writeFileSync(brokerJsonPath(stateDir), JSON.stringify({ control_host: "127.0.0.1", control_port: listener.port, control_token: token }));
-          const response = await hostToolOverControlPlane(stateDir, "acme.build", { source: "a.a", includes: ["../outside"] });
-          assert.equal(response.ok, false);
-          assertAllSpiesEmpty(spies);
-        } finally {
-          rmSync(stateDir, { recursive: true, force: true });
-        }
-      } finally {
-        listener.server.close();
-      }
-    });
-  },
-);
-
 // ---------------------------------------------------------------------------
 // runHostTool -- exit status, zero-byte digest, byte-vs-character length
 // ---------------------------------------------------------------------------
@@ -2054,134 +2024,6 @@ test("Plan 60-07 Test 6 (the memo is unchanged): within one module instance, a s
 });
 
 // ---------------------------------------------------------------------------
-// End-to-end: a real control-plane round trip, all seven VICE callbacks
-// provably uncalled (SEAM-01). Skipped with a named reason when ACME is
-// absent; hard-fails under VICE_REQUIRE_ACME via the always-runs gate above.
-// ---------------------------------------------------------------------------
-
-interface CallbackSpies {
-  onAcquire: unknown[];
-  onRelease: unknown[];
-  onStatus: unknown[];
-  onHostState: unknown[];
-  onMonitorClaim: unknown[];
-  onMonitorRelease: unknown[];
-}
-
-async function startListenerWithSpies(repoRootForHostTool: string): Promise<{ listener: StartControlListenerResult; token: string; spies: CallbackSpies }> {
-  const spies: CallbackSpies = { onAcquire: [], onRelease: [], onStatus: [], onHostState: [], onMonitorClaim: [], onMonitorRelease: [] };
-  const token = "host-tool-test-token";
-  const listener = await startControlListener({
-    host: "127.0.0.1",
-    port: 0,
-    token,
-    onAcquire: async (): Promise<AcquireOutcome> => {
-      spies.onAcquire.push(true);
-      return { ok: false, reason: "internal" };
-    },
-    onRelease: (): void => {
-      spies.onRelease.push(true);
-    },
-    onStatus: (): StatusInstanceEntry[] => {
-      spies.onStatus.push(true);
-      return [];
-    },
-    onHostState: (): HostStateFields => {
-      spies.onHostState.push(true);
-      return { pid: process.pid, startedAt: "2026-01-01T00:00:00Z", nodeVersion: process.version, viceBin: "x64sc", maxInstances: 1, basePort: 6600, backend: "stock" };
-    },
-    onMonitorClaim: (): MonitorClaimOutcome => {
-      spies.onMonitorClaim.push(true);
-      return { ok: false, code: "internal" };
-    },
-    onMonitorRelease: (): MonitorReleaseOutcome => {
-      spies.onMonitorRelease.push(true);
-      return { ok: false, code: "internal" };
-    },
-    // Phase 63, plan 63-01: a required field on StartControlListenerOptions
-    // as of this plan -- NOT one of this file's own tracked "seven VICE
-    // callbacks" (no host_tool request can ever reach `attach`, so it is
-    // never spied on here; broker-relay.test.ts is the home for `attach`
-    // coverage).
-    onRelayAttach: () => ({ ok: false, code: "internal" as const }),
-    onOperation: () => ({ ok: true as const }),
-    onHostTool: (raw: unknown) => runHostTool(raw, { repoRoot: repoRootForHostTool }),
-  });
-  return { listener, token, spies };
-}
-
-function assertAllSpiesEmpty(spies: CallbackSpies): void {
-  for (const [name, calls] of Object.entries(spies)) {
-    assert.equal(calls.length, 0, `${name} must never be called by a host_tool request -- it recorded ${calls.length} call(s)`);
-  }
-}
-
-test(
-  "END TO END: a real control-plane round trip assembles a real source file with real ACME and returns a response whose sha256 matches an independent digest of the produced .prg, with all seven VICE callbacks provably uncalled",
-  { skip: SKIP_REASON },
-  async () => {
-    await withTempDir(async (dir) => {
-      writeFileSync(join(dir, "a.a"), "!cpu 6510\n* = $0801\nlda #$01\nsta $d020\nrts\n", "utf8");
-      const { listener, token, spies } = await startListenerWithSpies(dir);
-      try {
-        const stateDir = mkdtempSync(join(tmpdir(), "host-tool-broker-json-"));
-        try {
-          writeFileSync(brokerJsonPath(stateDir), JSON.stringify({ control_host: "127.0.0.1", control_port: listener.port, control_token: token }));
-          const response = await hostToolOverControlPlane(stateDir, "acme.build", { source: "a.a", noReport: true });
-          assert.equal(response.ok, true);
-          if (!response.ok) return;
-          assert.equal(response.results.length, 3);
-          const producedBytes = statSync(response.results[0].path);
-          assert.ok(producedBytes.size > 0);
-          const independentSha256 = createHash("sha256")
-            .update(readFileSync(response.results[0].path))
-            .digest("hex");
-          assert.equal(response.results[0].sha256, independentSha256);
-          assertAllSpiesEmpty(spies);
-        } finally {
-          rmSync(stateDir, { recursive: true, force: true });
-        }
-      } finally {
-        listener.server.close();
-      }
-    });
-  },
-);
-
-test(
-  "two overlapping host_tool requests on the same listener both resolve, write to distinct output paths, and leave all seven VICE-callback spies at zero calls",
-  { skip: SKIP_REASON },
-  async () => {
-    await withTempDir(async (dir) => {
-      writeFileSync(join(dir, "a.a"), "!cpu 6510\n* = $0801\nlda #$01\nsta $d020\nrts\n", "utf8");
-      writeFileSync(join(dir, "b.a"), "!cpu 6510\n* = $0801\nlda #$02\nsta $d021\nrts\n", "utf8");
-      const { listener, token, spies } = await startListenerWithSpies(dir);
-      try {
-        const stateDir = mkdtempSync(join(tmpdir(), "host-tool-broker-json-"));
-        try {
-          writeFileSync(brokerJsonPath(stateDir), JSON.stringify({ control_host: "127.0.0.1", control_port: listener.port, control_token: token }));
-          const [responseA, responseB] = await Promise.all([
-            hostToolOverControlPlane(stateDir, "acme.build", { source: "a.a", noReport: true }),
-            hostToolOverControlPlane(stateDir, "acme.build", { source: "b.a", noReport: true }),
-          ]);
-          assert.equal(responseA.ok, true);
-          assert.equal(responseB.ok, true);
-          if (!responseA.ok || !responseB.ok) return;
-          assert.equal(responseA.results.length, 3);
-          assert.equal(responseB.results.length, 3);
-          assert.notEqual(responseA.results[0].path, responseB.results[0].path);
-          assertAllSpiesEmpty(spies);
-        } finally {
-          rmSync(stateDir, { recursive: true, force: true });
-        }
-      } finally {
-        listener.server.close();
-      }
-    });
-  },
-);
-
-// ---------------------------------------------------------------------------
 // ghidra.analyze -- the second HOST_TOOL_IDS entry (SEAM-04, plan 34-03).
 // Reaches the dot-segment rule and the per-run project location through
 // ghidra-project.mjs, never a copy in host-tool.mts itself.
@@ -2614,43 +2456,6 @@ test("buildHostToolArgv: a well-formed ghidra.analyze request produces an argv w
 // bound.
 // ---------------------------------------------------------------------------
 
-test(
-  "END TO END (slow): a ghidra.analyze request whose fake launcher sleeps longer than the connect-timeout constant resolves ok:true over the real control-plane route, with all seven VICE callbacks provably uncalled",
-  async () => {
-    await withTempDir(async (dir) => {
-      writeFileSync(join(dir, "x.bin"), "tiny\n", "utf8");
-      const { listener, token, spies } = await startListenerWithSpies(dir);
-      try {
-        await withFakeGhidraHome(
-          async () => {
-            const stateDir = mkdtempSync(join(tmpdir(), "host-tool-broker-json-"));
-            try {
-              writeFileSync(brokerJsonPath(stateDir), JSON.stringify({ control_host: "127.0.0.1", control_port: listener.port, control_token: token }));
-              const startedAt = Date.now();
-              const response = await hostToolOverControlPlane(stateDir, "ghidra.analyze", { runId: "slow-e2e-run", importPath: "x.bin", processor: "6502:LE:16:default", importRoute: "flat64k" });
-              const elapsedMs = Date.now() - startedAt;
-              assert.equal(response.ok, true, response.ok ? "" : (response as { ok: false; message: string }).message);
-              // The exact round trip that could not complete before this
-              // plan: the fake launcher sleeps 6s, comfortably longer than
-              // CONTROL_CONNECT_TIMEOUT_MS (5000ms) -- a measured elapsed
-              // time above that constant is proof the connect timer was
-              // cleared and replaced by the larger request-deadline timer,
-              // not merely reasoned about.
-              assert.ok(elapsedMs > CONTROL_CONNECT_TIMEOUT_MS, `expected elapsed (${elapsedMs}ms) to exceed the connect-timeout constant (${CONTROL_CONNECT_TIMEOUT_MS}ms)`);
-              assertAllSpiesEmpty(spies);
-            } finally {
-              rmSync(stateDir, { recursive: true, force: true });
-            }
-          },
-          { sleepSeconds: 6 },
-        );
-      } finally {
-        listener.server.close();
-      }
-    });
-  },
-);
-
 test("runHostTool: a slow ghidra.analyze launcher killed on expiry names the small budget it was given, and returns well under the launcher's own sleep", async () => {
   await withFakeGhidraHome(
     async (ghidraHome) => {
@@ -2669,39 +2474,6 @@ test("runHostTool: a slow ghidra.analyze launcher killed on expiry names the sma
     },
     { sleepSeconds: 6 },
   );
-});
-
-test("hostToolOverControlPlane rejects with a connect-phase message naming the connect-timeout constant when nothing accepts the connection within it", async () => {
-  const stateDir = mkdtempSync(join(tmpdir(), "host-tool-connect-timeout-"));
-  // 10.255.255.1 is a private-range address with no route configured in
-  // this sandbox -- the TCP handshake never completes and never errors, so
-  // the connect TIMER (not the socket "error" handler) is what settles this
-  // promise. Empirically confirmed to hang (not fail fast) in this
-  // environment before this test was written.
-  const previousDialHost = process.env.VICE_BROKER_CONTROL_DIAL_HOST;
-  process.env.VICE_BROKER_CONTROL_DIAL_HOST = "10.255.255.1";
-  try {
-    writeFileSync(brokerJsonPath(stateDir), JSON.stringify({ control_host: "10.255.255.1", control_port: 65000, control_token: "unused" }));
-    const startedAt = Date.now();
-    await assert.rejects(hostToolOverControlPlane(stateDir, "acme.build", { source: "a.a", noReport: true }), (err: unknown) => {
-      assert.ok(err instanceof Error);
-      assert.match(err.message, /connect phase/);
-      assert.match(err.message, new RegExp(String(CONTROL_CONNECT_TIMEOUT_MS)));
-      return true;
-    });
-    const elapsedMs = Date.now() - startedAt;
-    assert.ok(elapsedMs >= CONTROL_CONNECT_TIMEOUT_MS, `expected at least ${CONTROL_CONNECT_TIMEOUT_MS}ms, took ${elapsedMs}ms`);
-  } finally {
-    if (previousDialHost === undefined) delete process.env.VICE_BROKER_CONTROL_DIAL_HOST;
-    else process.env.VICE_BROKER_CONTROL_DIAL_HOST = previousDialHost;
-    rmSync(stateDir, { recursive: true, force: true });
-  }
-});
-
-test("host-tool-client.ts's connect-phase and request-deadline rejection messages are textually distinct, each naming its own budget", () => {
-  const source = readFileSync(new URL("./host-tool-client.ts", import.meta.url), "utf8");
-  assert.match(source, /no connection within \$\{CONTROL_CONNECT_TIMEOUT_MS\}ms \(connect phase\)/);
-  assert.match(source, /no response within \$\{requestTimeoutMs\}ms \(request deadline\)/);
 });
 
 test("hostToolRequestTimeoutMs: every tool id's client request deadline is a positive finite number", () => {
@@ -3307,29 +3079,6 @@ test("runHostTool: oracle.run resolves { ok: false } rather than throwing when t
   });
 });
 
-test(
-  'END TO END: an oracle.probe request carrying the retired "command" key is refused at the container-side caller with ok: false naming the key, over the real control-plane route, with all seven VICE callbacks provably uncalled',
-  async () => {
-    await withTempDir(async (dir) => {
-      const { listener, token, spies } = await startListenerWithSpies(dir);
-      try {
-        const stateDir = mkdtempSync(join(tmpdir(), "host-tool-broker-json-"));
-        try {
-          writeFileSync(brokerJsonPath(stateDir), JSON.stringify({ control_host: "127.0.0.1", control_port: listener.port, control_token: token }));
-          const response = await hostToolOverControlPlane(stateDir, "oracle.probe", { command: "/usr/local/bin/unp64" });
-          assert.equal(response.ok, false);
-          if (!response.ok) assert.match(response.message, /command/);
-          assertAllSpiesEmpty(spies);
-        } finally {
-          rmSync(stateDir, { recursive: true, force: true });
-        }
-      } finally {
-        listener.server.close();
-      }
-    });
-  },
-);
-
 // ---------------------------------------------------------------------------
 // HOST_TOOL_PATH_ARG_KEYS -- the census that makes "no argv passthrough
 // anywhere" a mechanism rather than three point fixes (34-08, Task 3).
@@ -3583,7 +3332,7 @@ test("HOST_TOOL_TIMEOUT_MS: every HOST_TOOL_IDS member has a server-side table e
   }
 });
 
-test("cross-seam ordering: for every HOST_TOOL_IDS member, the client-side request deadline (host-tool-client.ts) is strictly greater than the server-side budget (host-tool.mts)", () => {
+test("cross-seam ordering: for every HOST_TOOL_IDS member, the client-side request deadline (host-tool-endpoint.mts) is strictly greater than the server-side budget (host-tool.mts)", () => {
   for (const tool of HOST_TOOL_IDS) {
     const serverBudget = HOST_TOOL_TIMEOUT_MS[tool];
     const clientDeadline = hostToolRequestTimeoutMs(tool);
@@ -3593,64 +3342,6 @@ test("cross-seam ordering: for every HOST_TOOL_IDS member, the client-side reque
     );
   }
 });
-
-test(
-  "two overlapping slow ghidra.analyze host_tool requests over the real control-plane route both resolve ok:true, reserve distinct project locations, and the pair completes in appreciably less than the sum of the two sleeps",
-  async () => {
-    await withTempDir(async (dir) => {
-      writeFileSync(join(dir, "x.bin"), "tiny\n", "utf8");
-      const { listener, token, spies } = await startListenerWithSpies(dir);
-      const sleepSeconds = 3;
-      try {
-        await withFakeGhidraHome(
-          async () => {
-            const stateDir = mkdtempSync(join(tmpdir(), "host-tool-broker-json-"));
-            try {
-              writeFileSync(brokerJsonPath(stateDir), JSON.stringify({ control_host: "127.0.0.1", control_port: listener.port, control_token: token }));
-              const runIdA = "overlap-run-a";
-              const runIdB = "overlap-run-b";
-              const startedAt = Date.now();
-              const [responseA, responseB] = await Promise.all([
-                hostToolOverControlPlane(stateDir, "ghidra.analyze", { runId: runIdA, importPath: "x.bin", processor: "6502:LE:16:default", importRoute: "flat64k" }),
-                hostToolOverControlPlane(stateDir, "ghidra.analyze", { runId: runIdB, importPath: "x.bin", processor: "6502:LE:16:default", importRoute: "flat64k" }),
-              ]);
-              const elapsedMs = Date.now() - startedAt;
-              assert.equal(responseA.ok, true, responseA.ok ? "" : (responseA as { ok: false; message: string }).message);
-              assert.equal(responseB.ok, true, responseB.ok ? "" : (responseB as { ok: false; message: string }).message);
-              // resolveGhidraProject() reserves the run directory as the
-              // LAST step of a successful resolution (ghidra-project.mts) --
-              // its presence on disk is the observable proof the two runs
-              // used distinct project locations, since the response itself
-              // carries no project-location field for ghidra.analyze.
-              assert.ok(statSync(join(ghidraRunsRealRoot(dir), runIdA)).isDirectory());
-              assert.ok(statSync(join(ghidraRunsRealRoot(dir), runIdB)).isDirectory());
-              // Gap G-40-1 (plan 40-09): the SAME directory must also be
-              // reachable through the non-dotted, broker-minted HANDLE --
-              // the path Ghidra was actually handed (ghidraRunsRoot()), not
-              // merely where the bytes physically live. Either assertion
-              // alone permits a regression the other catches: a handle
-              // pointed at the wrong target would still show the physical
-              // directory as present, and a physical-location mistake could
-              // still leave the handle-reachable path looking fine.
-              assert.ok(statSync(join(ghidraRunsRoot(dir), runIdA)).isDirectory());
-              assert.ok(statSync(join(ghidraRunsRoot(dir), runIdB)).isDirectory());
-              assert.ok(
-                elapsedMs < sleepSeconds * 2 * 1000,
-                `expected the overlapping pair to finish well under the summed sleeps (${sleepSeconds * 2}s); took ${elapsedMs}ms`,
-              );
-              assertAllSpiesEmpty(spies);
-            } finally {
-              rmSync(stateDir, { recursive: true, force: true });
-            }
-          },
-          { sleepSeconds },
-        );
-      } finally {
-        listener.server.close();
-      }
-    });
-  },
-);
 
 // ---------------------------------------------------------------------------
 // Gap G-40-1 (plan 40-09): the handle-only invariant. debug/ghidra-run-dir-
@@ -3770,59 +3461,6 @@ test("planted-violation (gap G-40-1, plan 40-09): the SAME structural predicate 
     1,
     `planted violation: expected the synthetic project-location-derived resolveWorkspacePath() call to be reported exactly once, found ${plantedResult.forbiddenCalls.length} -- without this control, the real assertion above could be passing on a predicate that never fires at all`,
   );
-});
-
-// ---------------------------------------------------------------------------
-// WR-03 hole 2 regression (D-26, plan 40-01 Task 2): the standalone
-// host-tool.mjs CLI entry point's `runHostTool(...).then(...)` used to have
-// no `.catch()` -- a rejected promise became an unhandled rejection with NO
-// stdout at all, surfacing to a container-side caller as the opaque
-// "host-tool.mjs produced no output on stdout", indistinguishable from a
-// hang. Every fs call reachable from runHostTool()'s real business logic is
-// deliberately guarded (this file's own ghidra.analyze/acme.build/oracle.run
-// cases above all resolve `{ ok: false, ... }` rather than reject, by
-// design), so there is no organic wire input left that makes the CURRENT
-// implementation reject -- this is the never-throw discipline working as
-// intended, not a gap. Regression-testing the CLI's own `.catch()` plumbing
-// therefore uses the file's own documented TEST-ONLY escape hatch,
-// HOST_TOOL_TEST_FORCE_CLI_REJECT=1 (read from the BROKER PROCESS'S OWN
-// environment, exactly like resolveOracleCommand()'s UNP64/UNP64_PATH
-// lookup -- never a wire value, so a caller can never reach it by shaping
-// --request), which swaps in a Promise.reject() ahead of the real
-// runHostTool() call so this test spawns the REAL compiled CLI end-to-end.
-// ---------------------------------------------------------------------------
-
-test("CLI entry point: HOST_TOOL_TEST_FORCE_CLI_REJECT=1 forces runHostTool() to reject, and the standalone host-tool.mjs still prints a parseable { ok: false, message } JSON line to stdout with a non-zero exit code -- never an unhandled rejection with no output", async () => {
-  const hostToolMjsPath = fileURLToPath(new URL("./resources/host-tool.mjs", import.meta.url));
-  await withTempDir(async (dir) => {
-    const request = JSON.stringify({ tool: "oracle.probe", args: {} });
-    let stdout = "";
-    let exitCode: number | null = 0;
-    try {
-      const result = await execFileP(process.execPath, [hostToolMjsPath, "run", "--repo-root", dir, "--request", request], {
-        env: { ...process.env, HOST_TOOL_TEST_FORCE_CLI_REJECT: "1" },
-      });
-      stdout = result.stdout;
-    } catch (e) {
-      // execFile rejects when the child exits non-zero -- exactly the
-      // exit-code convention under test, so the rejection's own stdout/code
-      // fields (not a thrown assertion) are what this test reads.
-      const err = e as NodeJS.ErrnoException & { stdout?: string; code?: number | string };
-      stdout = err.stdout ?? "";
-      exitCode = typeof err.code === "number" ? err.code : 1;
-    }
-    assert.notEqual(exitCode, 0, "a rejected runHostTool() must produce a non-zero exit code, never a silent success");
-    const lastLine = stdout.trim().split("\n").filter(Boolean).at(-1);
-    assert.ok(lastLine, "stdout must carry at least one line -- the exact failure this regression guards against is NO output at all");
-    let parsed: unknown;
-    assert.doesNotThrow(() => {
-      parsed = JSON.parse(lastLine!);
-    }, "stdout's last line must be parseable JSON, not an unhandled-rejection stack trace");
-    const body = parsed as { ok?: unknown; message?: unknown };
-    assert.equal(body.ok, false, "the envelope's ok field must be false");
-    assert.equal(typeof body.message, "string", "the envelope's message field must be a string");
-    assert.ok((body.message as string).length > 0, "the envelope's message field must be non-empty");
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -4286,7 +3924,7 @@ test("Phase 65-03 Task 1 Test 7 (RESEARCH Pitfall 4): for every HOST_TOOL_IDS me
         DEFAULT_HOST_TOOL_STAGE_REPLY_TIMEOUT_MS,
         `${tool}: the stage-reply wait must equal DEFAULT_HOST_TOOL_STAGE_REPLY_TIMEOUT_MS (bounds no tool budget)`,
       );
-      assert.equal(recorded.runTimeoutMs, endpointHostToolRequestTimeoutMs(tool), `${tool}: the run-reply wait must equal hostToolRequestTimeoutMs(tool)`);
+      assert.equal(recorded.runTimeoutMs, hostToolRequestTimeoutMs(tool), `${tool}: the run-reply wait must equal hostToolRequestTimeoutMs(tool)`);
       assert.ok(
         recorded.runTimeoutMs! > hostToolTimeoutMs(tool),
         `${tool}: the run-reply wait (${recorded.runTimeoutMs}) must strictly exceed host-tool.mts's own budget (${hostToolTimeoutMs(tool)})`,

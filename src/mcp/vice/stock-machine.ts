@@ -191,9 +191,9 @@ export const handleAutostart: StockSessionHandler = async (args, session) => {
 
   // D-14: resolved to an absolute path, and NOT confined to the workspace --
   // any absolute path the client can read is accepted and uploaded.
-  const containerPath = resolve(path);
+  const localPath = resolve(path);
 
-  const readError = checkLocalFileReadable("vice_autostart", containerPath);
+  const readError = checkLocalFileReadable("vice_autostart", localPath);
   if (readError !== null) return isErrorText(readError);
 
   // Step 1: stage a slot on the broker's own disk for this grant. A refusal
@@ -218,7 +218,7 @@ export const handleAutostart: StockSessionHandler = async (args, session) => {
   if (!transferFile) {
     return isErrorText("vice_autostart: internal error -- no transferFile implementation is available on this session");
   }
-  const uploadResult = await transferFile({ direction: "upload", handle: stageOutcome.handle, sourcePath: containerPath });
+  const uploadResult = await transferFile({ direction: "upload", handle: stageOutcome.handle, sourcePath: localPath });
   if (!uploadResult.ok) {
     return isErrorText(`vice_autostart: uploading the program failed (${uploadResult.reason})`);
   }
@@ -235,7 +235,7 @@ export const handleAutostart: StockSessionHandler = async (args, session) => {
     return convertWireError("vice_autostart", err, { cmdFailureText: AUTOSTART_CMD_FAILURE_TEXT });
   }
 
-  return stockAnswer(session.client, { path: containerPath, handle: stageOutcome.handle, run, index });
+  return stockAnswer(session.client, { path: localPath, handle: stageOutcome.handle, run, index });
 };
 
 // ---------------------------------------------------------------------------
@@ -350,9 +350,9 @@ export const handleDiskAttach: StockSessionHandler = async (args, session) => {
 
   // D-14: resolved to an absolute path, and NOT confined to the workspace --
   // any absolute path the client can read is accepted and uploaded.
-  const containerPath = resolve(path);
+  const localPath = resolve(path);
 
-  const readError = checkLocalFileReadable("vice_disk_attach", containerPath);
+  const readError = checkLocalFileReadable("vice_disk_attach", localPath);
   if (readError !== null) return isErrorText(readError);
 
   // Step 1: stage a slot on the broker's own disk for this grant. A refusal
@@ -377,7 +377,7 @@ export const handleDiskAttach: StockSessionHandler = async (args, session) => {
   if (!transferFile) {
     return isErrorText("vice_disk_attach: internal error -- no transferFile implementation is available on this session");
   }
-  const uploadResult = await transferFile({ direction: "upload", handle: stageOutcome.handle, sourcePath: containerPath });
+  const uploadResult = await transferFile({ direction: "upload", handle: stageOutcome.handle, sourcePath: localPath });
   if (!uploadResult.ok) {
     return isErrorText(`vice_disk_attach: uploading the disk image failed (${uploadResult.reason})`);
   }
@@ -396,7 +396,7 @@ export const handleDiskAttach: StockSessionHandler = async (args, session) => {
 
   return stockAnswer(session.client, {
     unit: 8,
-    path: containerPath,
+    path: localPath,
     handle: stageOutcome.handle,
     approximation: DISK_ATTACH_APPROXIMATION,
     writeLoss: DISK_ATTACH_WRITE_LOSS,

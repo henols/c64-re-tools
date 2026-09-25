@@ -2,7 +2,7 @@
 // to reach a module inside the OTHER package's `src/mcp/vice/` tree.
 //
 // Real files, no fixtures: this repo's own layout already has
-// `src/mcp/vice/vsf-slice.ts` and `src/mcp/vice/host-tool-client.ts` on disk,
+// `src/mcp/vice/vsf-slice.ts` and `src/mcp/vice/transfer-paths.ts` on disk,
 // so the "in-repo rung resolves" cases exercise the real tree rather than a
 // synthetic stand-in -- and prove "no per-file special-casing" by resolving
 // TWO different real file names through the identical code path.
@@ -61,13 +61,13 @@ test("resolveMcpModule: VICE_MCP_DIR rung resolves too, and is preferred over th
   }
 });
 
-test("resolveMcpModule: no per-file special-casing -- host-tool-client.ts resolves through the identical rungs", () => {
+test("resolveMcpModule: no per-file special-casing -- transfer-paths.ts resolves through the identical rungs", () => {
   withViceMcpDir(undefined, () => {
-    const result = resolveMcpModule("host-tool-client.ts");
+    const result = resolveMcpModule("transfer-paths.ts");
     assert.equal(result.ok, true);
     assert.equal(result.rung, "in-repo relative path");
     assert.ok(existsSync(result.path));
-    assert.ok(result.path.endsWith(join("mcp", "vice", "host-tool-client.ts")));
+    assert.ok(result.path.endsWith(join("mcp", "vice", "transfer-paths.ts")));
   });
 });
 

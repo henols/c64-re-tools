@@ -11,7 +11,7 @@
 // `resolveTarget()`), and TWO MORE skill scripts (`acme.mjs`,
 // `packer-finding.mjs`) were about to migrate onto the host-tool execution
 // seam and were each going to need the identical lookup to reach
-// `host-tool-client.ts`. Three production consumers were about to carry
+// the host-tool client. Three production consumers were about to carry
 // three copies of one ladder -- so it is extracted here instead, and
 // `vsf-slice.mjs` is rewritten to import it rather than keep its own.
 //
@@ -56,7 +56,7 @@
 //     project's OWN tree reaches NO external host binary -- it is the
 //     interpreter already running the calling script, pointed at an in-tree
 //     module. This is NOT what the host-tool execution seam (`host-tool.mts`
-//     / `host-tool-client.ts`) exists for, and must never be confused with
+//     / `host-tool-endpoint.mts`) exists for, and must never be confused with
 //     it: the seam is for binaries that live on the HOST, outside any
 //     container; this ladder is for locating a file inside this project's own
 //     two npm packages.
@@ -159,7 +159,7 @@ export function refusalMessage(fileName, rungs) {
 }
 
 /**
- * Resolves `fileName` (e.g. `"vsf-slice.ts"`, `"host-tool-client.ts"`) against
+ * Resolves `fileName` (e.g. `"vsf-slice.ts"`, `"resources/host-tool-endpoint.mjs"`) against
  * the three-rung ladder above, with NO per-file special-casing -- every
  * caller gets the same three rungs in the same order.
  *

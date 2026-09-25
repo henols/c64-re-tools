@@ -1902,23 +1902,6 @@ async function run(args) {
             }),
             onRelease: (requestId) => handleRelease(requestId, state),
             onStatus: () => handleStatus(state),
-            // Its OWN callback, wired alongside
-            // (never derived from) the other six above -- handed only
-            // `args.repoRoot` and a stderr logger, never this broker's `state` map,
-            // so it structurally cannot reach lease state through this closure.
-            // Deliberately supplies no timeout, and that is
-            // authoritative here, not an omission -- the per-tool budget table
-            // inside runHostTool()/hostToolTimeoutMs() (host-tool.mts) is the ONE
-            // place a budget is decided, and no wire field carries one across the
-            // seam at all (the `deps.timeoutMs` this callback could pass is an
-            // in-process test seam, not something a caller's request ever
-            // supplies). A reader arriving here from the artifact this plan's
-            // completeness case checks should find this comment as the answer,
-            // not an apparent gap.
-            onHostTool: (raw) => runHostTool(raw, {
-                repoRoot: args.repoRoot,
-                log: (line) => process.stderr.write(`${line}\n`),
-            }),
             onMonitorClaim: (requestId, targetId, channel) => handleMonitorClaim(requestId, targetId, channel, state),
             onMonitorRelease: (requestId, targetId, channel) => handleMonitorRelease(requestId, targetId, channel, state),
             onRelayAttach: (targetId, channel, presentedHandle, socket, pending) => handleRelayAttach(targetId, channel, presentedHandle, socket, pending, state),
@@ -1930,8 +1913,7 @@ async function run(args) {
             onFileTransfer: (request, socket, pendingBytes) => handleFileTransfer(request, socket, pendingBytes, state),
             // Phase 65 (SEAM-01): wired in the SAME options object as the two
             // staging callbacks immediately above, never as a second listener.
-            // Deliberately handed no `state` reference (mirrors `onHostTool`'s own
-            // isolation from lease state one screen down): this route reaches
+            // Deliberately handed no `state` reference: this route reaches
             // only the request's own per-request scratch subtree under
             // brokerStagingDir(), never this broker's acquire/release map.
             onHostToolStage: (files) => handleHostToolStage(files),

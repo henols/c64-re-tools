@@ -146,7 +146,7 @@ import type { ViceBackend } from "./backend-detect.mjs";
 // reader, never handing the connection to a splice. The legacy `host_tool`
 // literal, below the token gate, is UNTOUCHED by either -- two distinct
 // functions, never a shared literal or a mode flag (T-65-05).
-export type ControlRequestKind = "acquire" | "release" | "status" | "host_state" | "monitor_claim" | "monitor_release" | "host_tool" | "hello" | "attach" | "operation" | "stage_file" | "transfer" | "host_tool_stage" | "host_tool_run";
+export type ControlRequestKind = "acquire" | "release" | "status" | "host_state" | "monitor_claim" | "monitor_release" | "hello" | "attach" | "operation" | "stage_file" | "transfer" | "host_tool_stage" | "host_tool_run";
 // `no_free_text_port` joins the vocabulary as its OWN code -- a stock
 // acquire that fails only on the SECOND (`-remotemonitor`) allocation is
 // reported distinctly from `no_free_port` (which still means the
@@ -551,20 +551,6 @@ export interface StartControlListenerOptions {
    * vice-broker.mts until plan 64-03. Refused `internal` by the dispatch arm
    * below when absent, never invoked with `undefined`. */
   onFileTransfer?: (request: FileTransferRequest, socket: Socket, pending: Buffer) => FileTransferOutcome;
-  /** Called on `host_tool`, AFTER the token check has already passed --
-   * the SAME gate every other op runs. Handed its OWN function, declared
-   * alongside these seven and NEVER composed from any of them -- that is
-   * what gives the `host_tool` branch zero reachability into lease state:
-   * it cannot call onAcquire/onRelease/onStatus/onHostState/
-   * onMonitorClaim/onMonitorRelease because nothing hands it a reference
-   * to any of them. `raw` is the FULL, un-narrowed request object;
-   * host-tool.mts's own normaliseHostToolRequest() is the one place it is
-   * narrowed -- this listener never inspects its shape beyond the
-   * `op`/`token` fields every op already reads. Never rejects in production
-   * (host-tool.mts's runHostTool() resolves on every failure path), but the
-   * dispatch branch below treats a rejection as a genuine possibility
-   * anyway and answers `internal` rather than letting it escape uncaught. */
-  onHostTool: (raw: unknown) => Promise<unknown>;
   /** Called on `host_tool_stage` (Phase 65, SEAM-01, D-03), ahead of the
    * token gate, by the SAME "brand-new connection, no ownership to gate on"
    * reasoning `onFileTransfer`'s own comment states. OPTIONAL, for the same
@@ -574,13 +560,13 @@ export interface StartControlListenerOptions {
   /** Called on `host_tool_run` (Phase 65, SEAM-01, D-03/D-09), AFTER this
    * listener's own per-connection request-key binding check has already
    * passed (T-65-04) -- `requestKey` is the bound key, never re-read from
-   * the wire line itself. `raw` is the FULL, un-narrowed request object,
-   * mirroring `onHostTool`'s own contract: `host-tool.mts`'s own
-   * `bindStagedInputs()` is the one place it is narrowed. Resolves the
+   * the wire line itself. `raw` is the FULL, un-narrowed request object;
+   * `host-tool.mts`'s own `bindStagedInputs()` is the one place it is
+   * narrowed. Resolves the
    * SAME shape `host-tool.mts`'s `runHostTool()` produces, rewritten to
    * carry handles instead of a broker path (D-10) -- never rejects in
    * production, but the dispatch arm below treats a rejection as a genuine
-   * possibility anyway, exactly like `onHostTool`. OPTIONAL, for the same
+   * possibility anyway. OPTIONAL, for the same
    * reason `onHostToolStage` is. */
   onHostToolRun?: (requestKey: string, raw: unknown) => Promise<unknown>;
   /** Called when the connection that ran `host_tool_stage` closes (Phase 65,
@@ -929,15 +915,10 @@ function writeLine(socket: Socket, obj: ControlResponse): void {
   }
 }
 
-/** Writes a `host_tool` SUCCESS response line -- the object host-tool.mts's
- * runHostTool() produced, whatever shape that is (`{ ok: true, ... }` or
- * its own `{ ok: false, message }` refusal). This is deliberately NOT
- * `writeLine()`/`ControlResponse`: the host-tool response shape is
- * host-tool.mts's own contract, not one more `ControlResponse` variant this
- * module would otherwise have to keep in sync with a sibling module's
- * allowlist. A REJECTED onHostTool() promise never reaches this function --
- * it is answered through the ordinary `writeLine()`/`error` path instead,
- * so every protocol-level failure still goes through one shape. */
+/** Writes a `host_tool_run` response line: the object host-tool.mts's
+ * runHostTool() produced (`{ ok: true, ... }` or `{ ok: false, message }`).
+ * Deliberately not `writeLine()`/`ControlResponse`, because that shape is
+ * host-tool.mts's own contract. */
 function writeHostToolLine(socket: Socket, obj: unknown): void {
   if (socket.writable) {
     socket.write(`${JSON.stringify(obj)}\n`);
@@ -1636,26 +1617,7 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
         return;
       }
 
-      // Dispatched FIRST in the chain, before "acquire" -- so the ordering
-      // reads clearly. Dispatch here is on EXACT STRING EQUALITY, never
-      // fallthrough, so branch order does not itself change which requests
-      // reach attemptAcquire() -- what actually makes this branch unable to
-      // touch lease state is that opts.onHostTool is its OWN callback (see
-      // StartControlListenerOptions' own comment), never composed from
-      // onAcquire/onRelease/onStatus/onHostState/onMonitorClaim/
-      // onMonitorRelease.
-      if (req.op === "host_tool") {
-        opts
-          .onHostTool(req)
-          .then((result) => {
-            if (!socket.destroyed) writeHostToolLine(socket, result);
-          })
-          .catch(() => {
-            if (!socket.destroyed) {
-              writeLine(socket, { kind: "error", code: "internal" as ControlErrorCode, message: "host_tool threw" });
-            }
-          });
-      } else if (req.op === "acquire") {
+      if (req.op === "acquire") {
         const requestId = typeof req.id === "string" && req.id !== "" ? req.id : defaultRequestId("req");
         // Narrow BEFORE attemptAcquire, so a malformed profile never
         // reaches onAcquire and therefore never reaches the port allocator,

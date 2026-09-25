@@ -1408,10 +1408,10 @@ function defaultExportAsmOut(imagePath: string, storeDir: string): string {
 }
 
 /**
- * Whether `containerPath` (a directory `--out` is about to become, or
+ * Whether `dir` (a directory `--out` is about to become, or
  * already is) either equals `candidate` exactly, or genuinely CONTAINS it.
  * Compared by PATH SEGMENT via a trailing separator, never by string prefix
- * (T-47-14) -- `candidate.startsWith(containerPath)` alone would also match a
+ * (T-47-14) -- `candidate.startsWith(dir)` alone would also match a
  * SIBLING whose name merely starts with the same characters (`game-src2`
  * beside `game-src`), which is exactly the false positive a segment boundary
  * rules out.
@@ -1421,9 +1421,9 @@ function defaultExportAsmOut(imagePath: string, storeDir: string): string {
  * before either ever reaches here); this function performs no confinement of
  * its own and compares the two strings it is given.
  */
-function pathIsOrContains(containerPath: string, candidate: string): boolean {
-  if (candidate === containerPath) return true;
-  const withTrailingSep = containerPath.endsWith(sep) ? containerPath : containerPath + sep;
+function pathIsOrContains(dir: string, candidate: string): boolean {
+  if (candidate === dir) return true;
+  const withTrailingSep = dir.endsWith(sep) ? dir : dir + sep;
   return candidate.startsWith(withTrailingSep);
 }
 

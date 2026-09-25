@@ -1254,7 +1254,6 @@ async function startTransferControlListener(
     onMonitorRelease: (): MonitorReleaseOutcome => ({ ok: false, code: "bad_request" }),
     onRelayAttach: (): RelayAttachOutcome => ({ ok: false, code: "internal" }),
     onOperation: (): OperationNoteOutcome => ({ ok: true }),
-    onHostTool: async () => ({ ok: false, message: "not exercised by stock-connect.test.ts" }),
     onStageFile: (targetId: string, slot: string) => handleStageFile(targetId, slot, state),
     onFileTransfer: (request, socket, pending) => handleFileTransfer(request, socket, pending, state, getDeps()),
   });

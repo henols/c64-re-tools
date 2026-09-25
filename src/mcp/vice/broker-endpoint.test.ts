@@ -101,7 +101,6 @@ test("dialBrokerEndpoint completes a real handshake end to end against a real li
     onMonitorRelease: () => ({ ok: false, code: "internal" as const }),
     onRelayAttach: () => ({ ok: false, code: "internal" as const }),
     onOperation: () => ({ ok: false, code: "bad_request" as const }),
-    onHostTool: async () => ({ ok: false, message: "no onHostTool stub configured" }),
   });
   try {
     const result = await dialBrokerEndpoint({ port: listener.port, candidates: ["127.0.0.1"] });
@@ -180,7 +179,6 @@ test("dialBrokerEndpoint with no port option reaches a hello-answering listener 
     onMonitorRelease: () => ({ ok: false, code: "internal" as const }),
     onRelayAttach: () => ({ ok: false, code: "internal" as const }),
     onOperation: () => ({ ok: false, code: "bad_request" as const }),
-    onHostTool: async () => ({ ok: false, message: "no onHostTool stub configured" }),
   });
   const prev = process.env.VICE_BROKER_CONTROL_PORT;
   try {
@@ -262,7 +260,6 @@ async function startHealthyListener(overrides: { helloVersion?: string } = {}) {
     onMonitorRelease: () => ({ ok: false, code: "internal" as const }),
     onRelayAttach: () => ({ ok: false, code: "internal" as const }),
     onOperation: () => ({ ok: false, code: "bad_request" as const }),
-    onHostTool: async () => ({ ok: false, message: "no onHostTool stub configured" }),
     helloVersion: overrides.helloVersion,
   });
   return { listener, token };
@@ -752,7 +749,6 @@ async function startTransferCapableListener(onFileTransfer: NonNullable<StartCon
     onMonitorRelease: () => ({ ok: false, code: "internal" as const }),
     onRelayAttach: () => ({ ok: false, code: "internal" as const }),
     onOperation: () => ({ ok: false, code: "bad_request" as const }),
-    onHostTool: async () => ({ ok: false, message: "no onHostTool stub configured" }),
     onFileTransfer,
   });
   return { listener, token };

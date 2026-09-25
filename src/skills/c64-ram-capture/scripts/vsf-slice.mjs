@@ -71,7 +71,7 @@ import { spawnSync } from "node:child_process";
 // as this file's own `ladder()`/`resolveTarget()` pair. It is now extracted
 // to `mcp-module.mjs` (`resolveMcpModule()`/`refusalMessage()`), because two
 // MORE skill scripts (`acme.mjs`, `packer-finding.mjs`) needed the identical
-// lookup to reach the host-tool execution seam's `host-tool-client.ts`, and
+// lookup to reach the host-tool execution seam's endpoint client, and
 // three copies of one ladder is exactly the divergence hazard this file's own
 // header (below) already warns about for the `.vsf` layout itself. Import
 // the ladder rather than re-adding a copy here.

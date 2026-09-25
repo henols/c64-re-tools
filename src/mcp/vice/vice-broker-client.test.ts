@@ -365,7 +365,6 @@ async function startFullBrokerListener(deps: FullBrokerDeps = {}): Promise<{
     // Phase 34, plan 34-01: a required field on StartControlListenerOptions
     // as of this plan -- this client-focused fixture never exercises
     // host_tool itself, so this stub exists only to satisfy the type.
-    onHostTool: async () => ({ ok: false, message: "no onHostTool stub configured" }),
     // Phase 64, plan 64-02 (XFER-04): OPTIONAL on StartControlListenerOptions
     // -- conditionally wired, so a test that supplies no stub sees the real
     // "not wired" refusal the dispatch arm itself produces.

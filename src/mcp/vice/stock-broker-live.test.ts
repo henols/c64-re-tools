@@ -130,7 +130,7 @@ import { clearHeldStockSession, type StockSessionDeps } from "./stock-session.ts
 import { stockConnect, type StockConnectOptions } from "./stock-connect.ts";
 import { tryLaunchOne, probeReady } from "./broker-launch.mts";
 import { createBrokerState } from "./broker-state.mts";
-import { snapshotPathFor, snapshotMetaPathFor } from "./stock-paths.ts";
+import { snapshotPathFor, snapshotMetaPathFor } from "./transfer-paths.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BROKER_ARTIFACT = join(HERE, "resources", "vice-broker.mjs");

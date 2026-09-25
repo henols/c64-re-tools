@@ -116,7 +116,7 @@ test("importsRepoRoot(): regression corpus -- catches every import shape, includ
       "file for describing the rule it correctly follows"
   );
   assert.ok(
-    !importsRepoRoot('import { hostPath, SET_ENV_HINT } from "./hostpath.mjs";'),
+    !importsRepoRoot('import { BROKER_START_COMMAND } from "./broker-endpoint.mjs";'),
     "an unrelated sibling import must not false-positive"
   );
 });
@@ -162,18 +162,18 @@ function resolveModuleByStem(stem: string): string {
 
 test("resolveStemAgainst(): regression corpus -- exactly one match resolves by stem regardless of extension, zero matches throws naming the stem, two matches throws rather than silently picking one", () => {
   assert.equal(
-    resolveStemAgainst(["install-resources.mjs", "hostpath.mjs"], "install-resources"),
+    resolveStemAgainst(["install-resources.mjs", "broker-endpoint.mjs"], "install-resources"),
     "install-resources.mjs",
     "exactly one match for the stem must resolve to that file, whatever its extension"
   );
   assert.equal(
-    resolveStemAgainst(["install-resources.ts", "hostpath.mjs"], "install-resources"),
+    resolveStemAgainst(["install-resources.ts", "broker-endpoint.mjs"], "install-resources"),
     "install-resources.ts",
     "the resolver must be extension-agnostic -- a renamed subject resolves identically, which is the " +
       "whole point: no future rename of this file's own subject requires an edit here"
   );
   assert.throws(
-    () => resolveStemAgainst(["hostpath.mjs", "containerpath.mjs"], "install-resources"),
+    () => resolveStemAgainst(["broker-endpoint.mjs", "version.mjs"], "install-resources"),
     /expected exactly one match, found 0/,
     "zero matches must throw loudly, naming the stem and the count -- a skipped assertion here (the " +
       "subject silently going unpoliced after a rename) is the failure this task exists to prevent"
@@ -340,11 +340,11 @@ test("cycle allowlist: module enumeration under src/mcp/vice/ returns a non-empt
   assert.ok(moduleNames.length > 0, "module enumeration returned nothing -- path resolution is broken, not a real pass");
   // Resolved by STEM (Task 1's own resolveModuleByStem(), reused here) rather
   // than a hardcoded extension -- so THIS sanity check does not go stale the
-  // next time one of these three renames, exactly the failure mode Task 1
+  // next time one of these renames, exactly the failure mode Task 1
   // fixed for Part 1's real-file guard above.
   assert.ok(resolveModuleByStem("repo-root"), "expected a repo-root module to be part of the enumerated module set");
   assert.ok(resolveModuleByStem("install-resources"), "expected an install-resources module to be part of the enumerated module set");
-  assert.ok(resolveModuleByStem("hostpath"), "expected a hostpath module to be part of the enumerated module set");
+  assert.ok(resolveModuleByStem("broker-endpoint"), "expected a broker-endpoint module to be part of the enumerated module set");
 });
 
 test("cycle allowlist: exactly the recorded three-module cycle passes through repo-root.mjs", () => {

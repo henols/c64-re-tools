@@ -386,7 +386,6 @@ async function startRelayListenerForState(
     // as of this plan -- not exercised by this suite (broker-control.test.ts
     // is the home for `operation` coverage).
     onOperation: () => ({ ok: true }),
-    onHostTool: async () => ({ ok: false, message: "not exercised by broker-relay.test.ts" }),
   });
   return { listener, token, incidentsDir };
 }
