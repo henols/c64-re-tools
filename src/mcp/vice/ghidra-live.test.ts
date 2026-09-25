@@ -54,7 +54,8 @@
 // See `.planning/phases/36-the-sleigh-language-and-the-ghidra-harness/
 // evidence/36-04-three-gates.md` for the recorded transcript of all three
 // gates firing.
-import { test } from "node:test";
+import { test, before, after } from "node:test";
+import { startHarnessBroker, type HarnessBroker } from "./broker-harness.ts";
 import assert from "node:assert/strict";
 import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -143,6 +144,28 @@ function computeGhidraSkipReason(): string | false {
 }
 
 const SKIP_REASON: string | false = computeGhidraSkipReason();
+
+// This suite reaches the tool only through the broker's fixed endpoint, so it
+// runs against its OWN harness broker (never a machine broker), started once
+// when the suite is enabled; the in-process client dials it through
+// VICE_BROKER_CONTROL_PORT.
+let harnessBroker: HarnessBroker | null = null;
+let harnessProjectRoot: string | null = null;
+let savedControlPort: string | undefined;
+before(async () => {
+  if (SKIP_REASON) return;
+  // Its own project root, so nothing the broker writes lands in this checkout.
+  harnessProjectRoot = mkdtempSync(join(tmpdir(), "live-broker-project-"));
+  harnessBroker = await startHarnessBroker({ repoRoot: harnessProjectRoot });
+  savedControlPort = process.env.VICE_BROKER_CONTROL_PORT;
+  process.env.VICE_BROKER_CONTROL_PORT = String(harnessBroker.port);
+});
+after(async () => {
+  if (savedControlPort === undefined) delete process.env.VICE_BROKER_CONTROL_PORT;
+  else process.env.VICE_BROKER_CONTROL_PORT = savedControlPort;
+  await harnessBroker?.stop();
+  if (harnessProjectRoot) rmSync(harnessProjectRoot, { recursive: true, force: true });
+});
 
 interface ScratchWorkspace {
   root: string;

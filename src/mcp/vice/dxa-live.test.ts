@@ -37,7 +37,8 @@
 // content this repository does not ship. It is gated behind its OWN
 // opt-in, VICE_LIVE_DXA_CORPUS=1, in addition to VICE_LIVE_DXA=1 -- see
 // CORPUS_SKIP_REASON.
-import { test } from "node:test";
+import { test, before, after } from "node:test";
+import { startHarnessBroker, type HarnessBroker } from "./broker-harness.ts";
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -85,6 +86,33 @@ const SKIP_REASON: string | false = process.env.VICE_LIVE_DXA !== "1"
       `"bash vendor/dxa/build.bash build" first.`
     : false;
 
+// This suite reaches the tool only through the broker's fixed endpoint, so it
+// runs against its OWN harness broker (never a machine broker), started once
+// when the suite is enabled; the in-process client dials it through
+// VICE_BROKER_CONTROL_PORT.
+let harnessBroker: HarnessBroker | null = null;
+let harnessProjectRoot: string | null = null;
+let savedControlPort: string | undefined;
+before(async () => {
+  if (SKIP_REASON) return;
+  // Its own project root, so nothing the broker writes lands in this checkout.
+  harnessProjectRoot = mkdtempSync(join(tmpdir(), "live-broker-project-"));
+  harnessBroker = await startHarnessBroker({ repoRoot: harnessProjectRoot });
+  savedControlPort = process.env.VICE_BROKER_CONTROL_PORT;
+  process.env.VICE_BROKER_CONTROL_PORT = String(harnessBroker.port);
+});
+/** Where this suite's downloads land -- inside the harness project root,
+ * never this checkout. */
+function liveToolsRoot(): string | undefined {
+  return harnessProjectRoot ? join(harnessProjectRoot, ".c64-re-tools") : undefined;
+}
+after(async () => {
+  if (savedControlPort === undefined) delete process.env.VICE_BROKER_CONTROL_PORT;
+  else process.env.VICE_BROKER_CONTROL_PORT = savedControlPort;
+  await harnessBroker?.stop();
+  if (harnessProjectRoot) rmSync(harnessProjectRoot, { recursive: true, force: true });
+});
+
 test(
   "dxa-live END TO END: runDxaDisassemble against fixtures/dxa/tracer.prg produces the MEASURED byte-level code/data map",
   { skip: SKIP_REASON },
@@ -100,7 +128,7 @@ test(
     try {
       const result = await runDxaDisassemble(
         { image: "fixtures/dxa/tracer.prg", imageKind: "prg", entrypointsPath: "fixtures/dxa/tracer.entrypoints" },
-        { repoRoot: root },
+        { toolsRoot: liveToolsRoot(), repoRoot: root },
       );
 
       // The four MEASURED literals (fixtures/dxa/README.md's own recorded
@@ -140,7 +168,7 @@ test(
       // (the entry point's own three-instruction body) as code.
       const withoutRange = await runDxaDisassemble(
         { image: "fixtures/dxa/tracer.prg", imageKind: "prg", entrypointsPath: "fixtures/dxa/tracer.entrypoints" },
-        { repoRoot: root },
+        { toolsRoot: liveToolsRoot(), repoRoot: root },
       );
       assert.equal(withoutRange.map.codeBytes, 6, "without a known-data range, dxa classifies $0810-$0815 as code");
       assert.equal(withoutRange.map.dataBytes, 15, "without a known-data range, data bytes are $0801-$080f");
@@ -155,7 +183,7 @@ test(
           entrypointsPath: "fixtures/dxa/tracer.entrypoints",
           knownDataRows: [{ start: 0x0810, endInclusive: 0x0815, dataType: "byte" }],
         },
-        { repoRoot: root },
+        { toolsRoot: liveToolsRoot(), repoRoot: root },
       );
       assert.equal(withRange.map.codeBytes, 0, "the named range's six bytes no longer classify as code");
       assert.equal(withRange.map.dataBytes, 21, "all 21 accounted bytes now classify as data");
@@ -194,7 +222,7 @@ test(
       // listing satisfying that exact one-byte window -- this case is about
       // the CONSTRUCTED REQUEST, never about the parsed map, so no real
       // fixture bytes are needed here.
-      { repoRoot: HERE, run, imageBytes: new Uint8Array([0x01, 0x08, 0x00]), listingText: "0801 00 \t.byt $00\n" },
+      { toolsRoot: liveToolsRoot(), repoRoot: HERE, run, imageBytes: new Uint8Array([0x01, 0x08, 0x00]), listingText: "0801 00 \t.byt $00\n" },
     );
 
     assert.ok(capturedArgs !== undefined, "the injected run() must have been called");
@@ -234,7 +262,7 @@ test(
       image[65535] = 0xeb;
       writeFileSync(join(scratch, "boundary.bin"), image);
 
-      const result = await runDxaDisassemble({ image: "boundary.bin", imageKind: "flat64k" }, { repoRoot: scratch });
+      const result = await runDxaDisassemble({ image: "boundary.bin", imageKind: "flat64k" }, { toolsRoot: liveToolsRoot(), repoRoot: scratch });
 
       assert.equal(result.map.covered.size, 65536, "the full [0, 65536) window is accounted for despite the over-read");
       assert.ok(result.outOfWindow.length > 0, "the top-of-memory over-read line must be REPORTED, never silently dropped");
@@ -370,7 +398,7 @@ test(
 
       const withoutRange = await runDxaDisassemble(
         { image: "release.prg", imageKind: "prg", entrypointsPath: "release.entrypoints" },
-        { repoRoot: scratch },
+        { toolsRoot: liveToolsRoot(), repoRoot: scratch },
       );
       for (let addr = RANGE_START; addr <= RANGE_END; addr++) {
         assert.ok(withoutRange.map.code.has(addr), `without a known-data range, dxa classifies 0x${addr.toString(16)} as code`);
@@ -383,7 +411,7 @@ test(
           entrypointsPath: "release.entrypoints",
           knownDataRows: [{ start: RANGE_START, endInclusive: RANGE_END, dataType: "byte" }],
         },
-        { repoRoot: scratch },
+        { toolsRoot: liveToolsRoot(), repoRoot: scratch },
       );
       for (let addr = RANGE_START; addr <= RANGE_END; addr++) {
         assert.ok(!withRange.map.code.has(addr), `with the known-data range, 0x${addr.toString(16)} no longer classifies as code`);

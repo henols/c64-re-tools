@@ -1,23 +1,16 @@
 #!/usr/bin/env node
 // dxa-run.ts
 //
-// Phase 35, plan 35-01 (DXA-02): CONTAINER-SIDE orchestration ONLY for the
-// `dxa.disassemble` host tool. Reaches dxa through
-// `runHostToolFromContainer("dxa.disassemble", …)` (host-tool-client.ts) and
-// NEVER `node:child_process` -- SEAM-05's `BANNED_COMMAND_SHAPES` already
-// names `dxa`, so a direct spawn here is a caught violation, not an
-// invisible one.
+// Phase 35, plan 35-01 (DXA-02): client-side orchestration ONLY for the
+// `dxa.disassemble` host tool. Reaches dxa through the broker's fixed
+// endpoint (`runHostToolOverEndpoint("dxa.disassemble", …)`,
+// host-tool-endpoint.mts) and NEVER `node:child_process` -- SEAM-05's
+// `BANNED_COMMAND_SHAPES` already names `dxa`, so a direct spawn here is a
+// caught violation, not an invisible one.
 //
-// THIS MODULE MUST NEVER IMPORT `hostpath.ts` (mirrors host-tool-client.ts's
-// own stated rule for itself). The response's listing path has ALREADY been
-// translated through `containerPath()` by `runHostToolFromContainer()`
-// (host-tool-client.ts's own `translateHostToolResponse()`) before this
-// module ever sees it on the container route; on the host route the two
-// coordinate systems are the same filesystem, so no translation is needed
-// there either. This module therefore reads the listing at the path the
-// response returns AS GIVEN -- it never calls `hostPath()` (the wrong
-// direction entirely) and never needs to call `containerPath()` a second
-// time.
+// THIS MODULE MUST NEVER IMPORT `hostpath.ts`. The endpoint client uploads
+// every input by bytes and downloads the listing under this module's own
+// tools root, so the listing's path is a local path read AS GIVEN.
 //
 // The parser's window is computed from the IMAGE FILE, never from the
 // listing itself (A-04's own boundary: inferring the window from the same
@@ -31,14 +24,14 @@
 // ALTERNATIVE to a caller-supplied `datablocksPath`/`labelsPath` -- see that
 // field's own doc comment below. This module calls `dxa-blocks.ts`'s
 // `emitDataBlocks()`/`emitLabels()` to write the files and wires the
-// resulting workspace-relative paths into the wire request; it adds no new
+// resulting paths into the wire request; it adds no new
 // `HostToolId` argument key (plan 35-01 already landed all five path keys on
 // `dxa.disassemble`) and touches no allowlist table.
-import { readFileSync, realpathSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { basename, dirname, join, sep, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { runHostToolFromContainer, type HostToolClientResult, type RunHostToolFromContainerOptions } from "./host-tool-client.ts";
+import { runHostToolOverEndpoint, type HostToolClientResult, type RunHostToolOverEndpointOptions } from "./host-tool-endpoint.mts";
 import { repoRoot } from "./repo-root.ts";
 import { parsePrg, flatImageOrigin } from "./prg-image.ts";
 import { parseDumpListing, type DumpListingMap } from "./dxa-listing.ts";
@@ -57,11 +50,11 @@ export interface DxaRunArgs {
   entrypointsPath?: string;
   datablocksPath?: string;
   labelsPath?: string;
-  outDir?: string;
   /** Phase 35, plan 35-04 (DXA-03). AN ALTERNATIVE to supplying
    * `datablocksPath`/`labelsPath` directly: this module emits `knownDataRows`
    * to per-invocation `-B`/`-l` files (`dxa-blocks.ts`'s `emitDataBlocks()`/
-   * `emitLabels()`) under the same directory `outDir` resolves to, and wires
+   * `emitLabels()`) in a per-run input directory under the tools root
+   * (removed when the run ends), and wires
    * the resulting paths into the wire request in their place. Mutually
    * exclusive with `datablocksPath`/`labelsPath` -- supplying both throws,
    * naming which pair collided, rather than silently preferring one. When
@@ -72,21 +65,23 @@ export interface DxaRunArgs {
   knownDataRows?: readonly KnownDataRow[];
 }
 
-/** The function shape `runHostToolFromContainer()` itself has -- named here
- * so `DxaRunOptions.run` below can be typed without importing a value this
- * module does not otherwise need. */
-export type DxaRunFn = (tool: string, args: Record<string, unknown>, opts: RunHostToolFromContainerOptions) => Promise<HostToolClientResult>;
+/** The function shape `runHostToolOverEndpoint()` itself has. */
+export type DxaRunFn = (tool: string, args: Record<string, unknown>, opts: RunHostToolOverEndpointOptions) => Promise<HostToolClientResult>;
 
 export interface DxaRunOptions {
   /** Test seam, mirroring `HostToolDeps`'s own injectable shape
    * (host-tool.mts): an injectable runner, defaulting to
-   * `runHostToolFromContainer()`. Lets a hermetic test drive this module
-   * with no host process at all. */
+   * `runHostToolOverEndpoint()`. Lets a hermetic test drive this module
+   * with no broker at all. */
   run?: DxaRunFn;
-  /** Passed straight through to the (injected or default) runner's own
-   * `dir`/`repoRoot` options. */
-  dir?: string;
+  /** The local root: relative paths in the args resolve against it, and
+   * every result downloads under `<repoRoot>/.c64-re-tools/`. Defaults to
+   * this checkout's own root. */
   repoRoot?: string;
+  /** Where results download; defaults to `<repoRoot>/.c64-re-tools`. */
+  toolsRoot?: string;
+  /** The broker endpoint port; defaults to the endpoint client's own. */
+  port?: number;
   /** Test seam: injected image bytes, bypassing the filesystem read this
    * module otherwise performs to compute the parser's window. */
   imageBytes?: Uint8Array;
@@ -226,50 +221,45 @@ export async function runDxaDisassemble(args: DxaRunArgs, opts: DxaRunOptions = 
   // refusal wins" discipline for its resolved paths.
   let datablocksPath = args.datablocksPath;
   let labelsPath = args.labelsPath;
+  const toolsRoot = opts.toolsRoot ?? join(root, ".c64-re-tools");
+  let inputsDir: string | undefined;
   if (args.knownDataRows !== undefined) {
     if (datablocksPath !== undefined || labelsPath !== undefined) {
       throw new Error(
         "runDxaDisassemble: knownDataRows is mutually exclusive with datablocksPath/labelsPath -- supply the rows OR pre-written paths, never both",
       );
     }
-    // Per-invocation paths under the SAME directory dxa.disassemble's own
-    // server-side default resolves outDir to (dirname(imagePath)) when the
-    // caller omits outDir -- mirrored here so the emitted files land where
-    // the resolved image and listing already do. Workspace-relative
-    // strings throughout: emitDataBlocks()/emitLabels() are handed the
-    // absolute path (root-joined) to WRITE to; the wire argument stays the
-    // workspace-relative string, exactly like every other path field here.
-    const outDirRelative = args.outDir ?? dirname(args.image);
+    // Per-run input files, written under the tools root and uploaded by the
+    // endpoint client like any other input; the directory is removed when
+    // the run ends.
+    mkdirSync(join(toolsRoot, "runs"), { recursive: true });
+    inputsDir = mkdtempSync(join(toolsRoot, "runs", "dxa-inputs-"));
     const imageStem = basename(args.image).replace(/\.[^./]+$/, "");
-    const blocksRelPath = `${outDirRelative}/${imageStem}.dxa-blocks.txt`;
-    const labelsRelPath = `${outDirRelative}/${imageStem}.dxa-labels.lbl`;
-
-    // CR-01: confine the WRITE targets too -- `outDir` is caller-supplied,
-    // so `join(root, ...)` alone let `outDir: "../sibling-dir"` write
-    // outside the workspace. The confined absolute path is what is opened
-    // (WR-08); the wire argument stays the workspace-relative string.
-    const blocksAbs = confineToWorkspace(root, blocksRelPath, "outDir (data-blocks output)");
-    const labelsAbs = confineToWorkspace(root, labelsRelPath, "outDir (labels output)");
+    const blocksAbs = join(inputsDir, `${imageStem}.dxa-blocks.txt`);
+    const labelsAbs = join(inputsDir, `${imageStem}.dxa-labels.lbl`);
 
     const blocksResult = emitDataBlocks(args.knownDataRows, blocksAbs);
-    if (blocksResult.path !== undefined) datablocksPath = blocksRelPath;
+    if (blocksResult.path !== undefined) datablocksPath = blocksAbs;
 
     const labelsResult = emitLabels(args.knownDataRows, labelsAbs);
-    if (labelsResult.path !== undefined) labelsPath = labelsRelPath;
+    if (labelsResult.path !== undefined) labelsPath = labelsAbs;
   }
 
-  const run = opts.run ?? runHostToolFromContainer;
+  const run = opts.run ?? runHostToolOverEndpoint;
   const wireArgs: Record<string, unknown> = { image: args.image, imageKind: args.imageKind };
   if (args.entrypointsPath !== undefined) wireArgs.entrypointsPath = args.entrypointsPath;
   if (datablocksPath !== undefined) wireArgs.datablocksPath = datablocksPath;
   if (labelsPath !== undefined) wireArgs.labelsPath = labelsPath;
-  if (args.outDir !== undefined) wireArgs.outDir = args.outDir;
 
-  const runOpts: RunHostToolFromContainerOptions = {};
-  if (opts.dir !== undefined) runOpts.dir = opts.dir;
-  if (opts.repoRoot !== undefined) runOpts.repoRoot = opts.repoRoot;
+  const runOpts: RunHostToolOverEndpointOptions = { baseDir: root, toolsRoot };
+  if (opts.port !== undefined) runOpts.port = opts.port;
 
-  const response = await run("dxa.disassemble", wireArgs, runOpts);
+  let response: HostToolClientResult;
+  try {
+    response = await run("dxa.disassemble", wireArgs, runOpts);
+  } finally {
+    if (inputsDir !== undefined) rmSync(inputsDir, { recursive: true, force: true });
+  }
   if (!response.ok) {
     throw new Error(`runDxaDisassemble: dxa.disassemble refused: ${response.message}`);
   }
@@ -278,9 +268,7 @@ export async function runDxaDisassemble(args: DxaRunArgs, opts: DxaRunOptions = 
     throw new Error("runDxaDisassemble: dxa.disassemble reported no listing output");
   }
 
-  // Read at the path the response returns, AS GIVEN -- already
-  // container-translated by runHostToolFromContainer() where applicable; see
-  // this module's own header for why no second translation belongs here.
+  // Read at the path the response returns, AS GIVEN -- a local download.
   const text = opts.listingText ?? readFileSync(resolvePath(listingResult.path), "utf8");
   const map = parseDumpListing(text, { origin, imageSize });
 
