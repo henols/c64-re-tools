@@ -47,6 +47,8 @@ import {
   type StageFileOutcome,
   type FileTransferRequest,
   type FileTransferOutcome,
+  type HostToolStageFileSpec,
+  type HostToolStageOutcome,
   sanitiseSessionLabel,
 } from "./broker-control.mts";
 import type { Socket } from "node:net";
@@ -212,6 +214,14 @@ interface StubDeps {
   /** Phase 64, plan 64-02 (XFER-04): same optionality as onStageFile above. */
   onFileTransfer?: (request: FileTransferRequest, socket: Socket, pending: Buffer) => FileTransferOutcome;
   onHostTool?: (raw: unknown) => Promise<unknown>;
+  /** Phase 65, plan 65-01 (SEAM-01): OPTIONAL on StartControlListenerOptions
+   * itself (vice-broker.mts wires all three), and absent by default here
+   * too -- a `host_tool_stage`/`host_tool_run` request against a listener
+   * started with no stub is refused `internal` by the dispatch arm's own
+   * not-wired check, mirroring onStageFile/onFileTransfer above. */
+  onHostToolStage?: (files: HostToolStageFileSpec[]) => HostToolStageOutcome;
+  onHostToolRun?: (requestKey: string, raw: unknown) => Promise<unknown>;
+  onHostToolEnd?: (requestKey: string) => void;
   /** Plan 62-01: the `hello` reply's injectable version override, passed
    * straight through to StartControlListenerOptions.helloVersion. Absent by
    * default -- pre-existing tests never exercise `hello` and are unaffected. */
@@ -241,6 +251,14 @@ async function startTestListener(deps: StubDeps = {}): Promise<{
   // StartControlListenerOptions' own optionality for these two callbacks.
   stageFileCalls: Array<{ targetId: string; slot: string }>;
   fileTransferCalls: FileTransferRequest[];
+  // Phase 65, plan 65-01 (SEAM-01): every host_tool_stage/host_tool_run/
+  // connection-close call this listener actually forwarded to a supplied
+  // stub, in arrival order. Empty when the test supplies no
+  // onHostToolStage/onHostToolRun stub, mirroring stageFileCalls/
+  // fileTransferCalls above.
+  hostToolStageCalls: HostToolStageFileSpec[][];
+  hostToolRunCalls: Array<{ requestKey: string; raw: unknown }>;
+  hostToolEndCalls: string[];
 }> {
   const token = newControlToken();
   const releases: string[] = [];
@@ -252,6 +270,9 @@ async function startTestListener(deps: StubDeps = {}): Promise<{
   const operationCalls: Array<{ targetId: string; channel: MonitorChannel; name: string | null }> = [];
   const stageFileCalls: Array<{ targetId: string; slot: string }> = [];
   const fileTransferCalls: FileTransferRequest[] = [];
+  const hostToolStageCalls: HostToolStageFileSpec[][] = [];
+  const hostToolRunCalls: Array<{ requestKey: string; raw: unknown }> = [];
+  const hostToolEndCalls: string[] = [];
   const listener = await startControlListener({
     host: "127.0.0.1",
     port: 0,
@@ -311,6 +332,24 @@ async function startTestListener(deps: StubDeps = {}): Promise<{
           return deps.onFileTransfer!(request, socket, pending);
         }
       : undefined,
+    onHostToolStage: deps.onHostToolStage
+      ? (files: HostToolStageFileSpec[]) => {
+          hostToolStageCalls.push(files);
+          return deps.onHostToolStage!(files);
+        }
+      : undefined,
+    onHostToolRun: deps.onHostToolRun
+      ? (requestKey: string, raw: unknown) => {
+          hostToolRunCalls.push({ requestKey, raw });
+          return deps.onHostToolRun!(requestKey, raw);
+        }
+      : undefined,
+    onHostToolEnd: deps.onHostToolEnd
+      ? (requestKey: string) => {
+          hostToolEndCalls.push(requestKey);
+          deps.onHostToolEnd!(requestKey);
+        }
+      : undefined,
   });
   return {
     listener,
@@ -324,6 +363,9 @@ async function startTestListener(deps: StubDeps = {}): Promise<{
     operationCalls,
     stageFileCalls,
     fileTransferCalls,
+    hostToolStageCalls,
+    hostToolRunCalls,
+    hostToolEndCalls,
   };
 }
 
@@ -1485,6 +1527,180 @@ test("transfer: a wrong token, and a request with no token field at all, both st
   }
 });
 
+// ============================================================================
+// Phase 65, plan 65-01 (SEAM-01): host_tool_stage/host_tool_run coexist with
+// the legacy token-gated host_tool op, bind to their own connection, and
+// clean up on close (Task 2, behaviours 1-5). Behaviours 6-10 live in
+// host-tool-endpoint.test.ts, against the real, compiled broker (a harness
+// broker), because they need a real transfer connection.
+// ============================================================================
+
+test("Test 1: a host_tool line with no token answers unauthorized and destroys the connection; the same line with the real token reaches onHostTool -- the legacy op is unchanged", async () => {
+  const hostToolCalls: unknown[] = [];
+  const { listener, token } = await startTestListener({
+    onHostTool: async (raw) => {
+      hostToolCalls.push(raw);
+      return { ok: false, message: "no real tool run in this test" };
+    },
+  });
+
+  const noTokenClient = makeClient(listener.port);
+  try {
+    noTokenClient.send({ op: "host_tool", id: "ht-1", tool: "acme.build", args: {} });
+    const resp = await noTokenClient.next();
+    assert.equal(resp.kind, "error");
+    assert.equal(resp.code, "unauthorized");
+    const destroyed = await waitFor(() => noTokenClient.socket.destroyed, 1000);
+    assert.ok(destroyed, "a token-less host_tool line must destroy the connection, exactly like any other post-gate op");
+    assert.deepEqual(hostToolCalls, [], "onHostTool must never be invoked for a token-less request");
+  } finally {
+    noTokenClient.close();
+  }
+
+  const realTokenClient = makeClient(listener.port);
+  try {
+    realTokenClient.send({ op: "host_tool", id: "ht-2", tool: "acme.build", args: {}, token });
+    const resp = await realTokenClient.next();
+    assert.equal(resp.ok, false);
+    assert.equal(hostToolCalls.length, 1, "onHostTool must be invoked exactly once for the real-token request");
+  } finally {
+    realTokenClient.close();
+    listener.server.close();
+  }
+});
+
+test("Test 2: host_tool_stage and host_tool_run sent with no token are answered (not unauthorized), proving they sit ahead of the gate", async () => {
+  const { listener, hostToolStageCalls, hostToolRunCalls } = await startTestListener({
+    onHostToolStage: (files) => ({ ok: true, requestKey: "ht-test-2", treeHandles: files.map((_, i) => `tree-${i}`), fileHandles: files.map((_, i) => `file-${i}`) }),
+    onHostToolRun: async () => ({ ok: false, message: "no real tool run in this test" }),
+  });
+  const client = makeClient(listener.port);
+  try {
+    client.send({ op: "host_tool_stage", files: [{ tree: 0, rel: "a.a", byteLength: 4 }] });
+    const stageResp = await client.next();
+    assert.notEqual(stageResp.kind, "error", `host_tool_stage with no token must not be refused, got ${JSON.stringify(stageResp)}`);
+    assert.equal(stageResp.kind, "host_tool_staged");
+    assert.equal(stageResp.request, "ht-test-2");
+    assert.deepEqual(hostToolStageCalls, [[{ tree: 0, rel: "a.a", byteLength: 4 }]]);
+
+    client.send({ op: "host_tool_run", tool: "acme.build", args: {}, request: "ht-test-2" });
+    const runResp = await client.next();
+    assert.notEqual((runResp as { kind?: unknown }).kind, "error", `host_tool_run with no token must not be refused, got ${JSON.stringify(runResp)}`);
+    assert.equal(runResp.ok, false);
+    assert.equal(hostToolRunCalls.length, 1);
+    assert.equal(hostToolRunCalls[0]!.requestKey, "ht-test-2");
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("Test 3: host_tool_run on a fresh connection with no prior stage answers denied; a request minted on connection A is refused denied when presented on connection B", async () => {
+  let stageCounter = 0;
+  const { listener, hostToolRunCalls } = await startTestListener({
+    onHostToolStage: () => ({ ok: true, requestKey: `ht-test-3-${stageCounter++}`, treeHandles: [], fileHandles: [] }),
+    onHostToolRun: async () => ({ ok: false, message: "must never be reached" }),
+  });
+
+  const freshClient = makeClient(listener.port);
+  try {
+    freshClient.send({ op: "host_tool_run", tool: "acme.build", args: {}, request: "whatever" });
+    const resp = await freshClient.next();
+    assert.equal(resp.kind, "error");
+    assert.equal(resp.code, "denied");
+  } finally {
+    freshClient.close();
+  }
+
+  const connectionA = makeClient(listener.port);
+  const connectionB = makeClient(listener.port);
+  try {
+    connectionA.send({ op: "host_tool_stage", files: [] });
+    const stageRespA = await connectionA.next();
+    assert.equal(stageRespA.kind, "host_tool_staged");
+    const mintedKeyA = stageRespA.request as string;
+
+    // B has NO stage of its own -- presenting A's key must still be denied.
+    connectionB.send({ op: "host_tool_run", tool: "acme.build", args: {}, request: mintedKeyA });
+    const crossRespNoStage = await connectionB.next();
+    assert.equal(crossRespNoStage.kind, "error");
+    assert.equal(crossRespNoStage.code, "denied", "a request key minted on connection A must be refused denied on connection B, which never staged");
+
+    // B now stages its OWN request -- presenting A's key must STILL be
+    // denied, proving the check is against B's own bound key, not merely
+    // "did B ever stage anything".
+    connectionB.send({ op: "host_tool_stage", files: [] });
+    const stageRespB = await connectionB.next();
+    assert.equal(stageRespB.kind, "host_tool_staged");
+    const mintedKeyB = stageRespB.request as string;
+    assert.notEqual(mintedKeyB, mintedKeyA, "the two connections must mint distinct request keys");
+
+    connectionB.send({ op: "host_tool_run", tool: "acme.build", args: {}, request: mintedKeyA });
+    const crossRespOwnStage = await connectionB.next();
+    assert.equal(crossRespOwnStage.kind, "error");
+    assert.equal(crossRespOwnStage.code, "denied", "connection B's own bound key must not accept connection A's key");
+
+    assert.deepEqual(hostToolRunCalls, [], "onHostToolRun must never be invoked for any denied case in this test");
+  } finally {
+    connectionA.close();
+    connectionB.close();
+    listener.server.close();
+  }
+});
+
+test("Test 4: a second host_tool_stage on the same connection is refused by name", async () => {
+  const { listener, hostToolStageCalls } = await startTestListener({
+    onHostToolStage: () => ({ ok: true, requestKey: "ht-test-4", treeHandles: [], fileHandles: [] }),
+  });
+  const client = makeClient(listener.port);
+  try {
+    client.send({ op: "host_tool_stage", files: [] });
+    const first = await client.next();
+    assert.equal(first.kind, "host_tool_staged");
+
+    client.send({ op: "host_tool_stage", files: [] });
+    const second = await client.next();
+    assert.equal(second.kind, "error");
+    assert.equal(second.code, "bad_request");
+    assert.match(String(second.message), /already bound/i);
+
+    assert.equal(hostToolStageCalls.length, 1, "onHostToolStage must be invoked only once -- the second stage is refused before the callback runs");
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
+test("Test 5: a stage entry whose rel is unsafe is refused bad_request, and onHostToolStage sees it (the validator itself lives in broker-transfer.mts, exercised end to end in host-tool-endpoint.test.ts)", async () => {
+  // This connection's own onHostToolStage stub simulates the SAME refusal
+  // stageHostToolRequest() (broker-transfer.mts) produces for an unsafe
+  // rel -- broker-control.mts's own dispatch arm narrows shape only
+  // (tree/rel/byteLength types), never path safety; see this file's own
+  // "Where the cap is enforced" constraint. The real validator's own
+  // per-case refusals (../x, /abs, a\\b, a/../b, "", NUL) are proven end to
+  // end against the real broker in host-tool-endpoint.test.ts's Test 5
+  // case, because the validator itself lives in a host-bound module this
+  // file cannot import unbuilt.
+  const seen: HostToolStageFileSpec[][] = [];
+  const { listener } = await startTestListener({
+    onHostToolStage: (files) => {
+      seen.push(files);
+      return { ok: false, code: "bad_request", message: "vice: rel segment is '..'" };
+    },
+  });
+  const client = makeClient(listener.port);
+  try {
+    client.send({ op: "host_tool_stage", files: [{ tree: 0, rel: "../x", byteLength: 1 }] });
+    const resp = await client.next();
+    assert.equal(resp.kind, "error");
+    assert.equal(resp.code, "bad_request");
+    assert.deepEqual(seen, [[{ tree: 0, rel: "../x", byteLength: 1 }]]);
+  } finally {
+    client.close();
+    listener.server.close();
+  }
+});
+
 test("after a refused attach and a refused transfer on one connection, a token-less status line on that SAME connection is still answered unauthorized -- a pre-gate refusal never unlocks a gated op", async () => {
   const { listener } = await startTestListener({
     onRelayAttach: (): RelayAttachOutcome => ({ ok: false, code: "denied" }),
@@ -1925,7 +2141,7 @@ test("structural: attemptAcquire()'s own comment names which half bounds which f
   assert.match(comment, /does NOT eliminate that race/i);
 });
 
-test("ControlRequestKind (34-01/62-01/63-01/63-03/64-02, A-01/D-06/D-01): now exactly thirteen members -- host_tool is the whole host-tool subsystem (never widened again per-tool), hello is plan 62-01's pre-token-gate handshake op, attach is plan 63-01's post-token-gate relay handshake op, operation is plan 63-03's post-token-gate declaration op, stage_file/transfer are plan 64-02's file-transfer ops (XFER-04)", () => {
+test("ControlRequestKind (34-01/62-01/63-01/63-03/64-02/65-01, A-01/D-06/D-01/SEAM-01): now exactly fifteen members -- host_tool is the whole host-tool subsystem (never widened again per-tool), hello is plan 62-01's pre-token-gate handshake op, attach is plan 63-01's post-token-gate relay handshake op, operation is plan 63-03's post-token-gate declaration op, stage_file/transfer are plan 64-02's file-transfer ops (XFER-04), host_tool_stage/host_tool_run are plan 65-01's pre-token-gate host-tool ops (SEAM-01)", () => {
   const source = readFileSync(join(HERE, "broker-control.mts"), "utf8");
   const match = source.match(/export type ControlRequestKind = ([^;]+);/);
   assert.ok(match, "ControlRequestKind's own type declaration must be found");
@@ -1944,9 +2160,13 @@ test("ControlRequestKind (34-01/62-01/63-01/63-03/64-02, A-01/D-06/D-01): now ex
   // monitor_claim/monitor_release/recycle. Plan 64-02 (XFER-04, D-01) adds
   // the twelfth and thirteenth members: "stage_file" (gated by ownsTarget(),
   // like operation) and "transfer" (deliberately NOT gated, like attach).
+  // Plan 65-01 (SEAM-01) adds the fourteenth and fifteenth members:
+  // "host_tool_stage"/"host_tool_run", dispatched ahead of the token gate
+  // beside attach/transfer, never gated by ownsTarget() -- a skill call
+  // holds no acquire-level grant to gate on.
   assert.equal(match![1].trim(),
-    '"acquire" | "release" | "recycle" | "status" | "host_state" | "monitor_claim" | "monitor_release" | "host_tool" | "hello" | "attach" | "operation" | "stage_file" | "transfer"',
-    "the union must be exactly the prior eleven members plus plan 64-02's stage_file and transfer (XFER-04)",
+    '"acquire" | "release" | "recycle" | "status" | "host_state" | "monitor_claim" | "monitor_release" | "host_tool" | "hello" | "attach" | "operation" | "stage_file" | "transfer" | "host_tool_stage" | "host_tool_run"',
+    "the union must be exactly the prior thirteen members plus plan 65-01's host_tool_stage and host_tool_run (SEAM-01)",
   );
 });
 
@@ -2564,7 +2784,7 @@ async function startProfileRecordingListener(): Promise<{
   return { listener, token, received };
 }
 
-test("ControlRequestKind (34-01/62-01/63-01/63-03/64-02, A-01/D-06/D-01): now exactly thirteen members -- host_tool is a reviewed eighth op, hello is plan 62-01's reviewed ninth op, attach is plan 63-01's reviewed tenth op, operation is plan 63-03's reviewed eleventh op, stage_file/transfer are plan 64-02's twelfth/thirteenth ops (XFER-04), and this union is never widened again PER-TOOL", () => {
+test("ControlRequestKind (34-01/62-01/63-01/63-03/64-02/65-01, A-01/D-06/D-01/SEAM-01): now exactly fifteen members -- host_tool is a reviewed eighth op, hello is plan 62-01's reviewed ninth op, attach is plan 63-01's reviewed tenth op, operation is plan 63-03's reviewed eleventh op, stage_file/transfer are plan 64-02's twelfth/thirteenth ops (XFER-04), host_tool_stage/host_tool_run are plan 65-01's fourteenth/fifteenth ops (SEAM-01), and this union is never widened again PER-TOOL", () => {
   // Read off the type's own declaration in the source rather than a
   // hand-maintained list here: a second list would be the very drift this
   // asserts against. The union is a single line by convention in this file.
@@ -2576,10 +2796,10 @@ test("ControlRequestKind (34-01/62-01/63-01/63-03/64-02, A-01/D-06/D-01): now ex
     .map((s) => s.trim().replace(/^"|"$/g, ""))
     .filter((s) => s !== "");
   assert.deepEqual(members,
-    ["acquire", "release", "recycle", "status", "host_state", "monitor_claim", "monitor_release", "host_tool", "hello", "attach", "operation", "stage_file", "transfer"],
-    "the message set must be exactly the prior eleven plus plan 64-02's stage_file and transfer (XFER-04) -- a " +
-      "genuinely reviewed widening, not a per-tool one: a second host tool is still a new HOST_TOOL_IDS entry in " +
-      "host-tool.mts, never a fourteenth ControlRequestKind member",
+    ["acquire", "release", "recycle", "status", "host_state", "monitor_claim", "monitor_release", "host_tool", "hello", "attach", "operation", "stage_file", "transfer", "host_tool_stage", "host_tool_run"],
+    "the message set must be exactly the prior thirteen plus plan 65-01's host_tool_stage and host_tool_run " +
+      "(SEAM-01) -- a genuinely reviewed widening, not a per-tool one: a second host tool is still a new " +
+      "HOST_TOOL_IDS entry in host-tool.mts, never a further ControlRequestKind member",
   );
 });
 
@@ -2884,7 +3104,7 @@ test("acquire profile (33-06): the profile survives being QUEUED behind an in-fl
 
 const BROKER_CONTROL_MTS = join(HERE, "broker-control.mts");
 
-test("the ControlRequestKind union has exactly thirteen members including hello, attach, operation, stage_file and transfer, and the hello arm's dispatch sits before the tokensMatch() call", () => {
+test("the ControlRequestKind union has exactly fifteen members including hello, attach, operation, stage_file, transfer, host_tool_stage and host_tool_run, and the hello arm's dispatch sits before the tokensMatch() call", () => {
   const source = readFileSync(BROKER_CONTROL_MTS, "utf8");
 
   const unionMatch = source.match(/export type ControlRequestKind = ([^;]+);/);
@@ -2893,12 +3113,14 @@ test("the ControlRequestKind union has exactly thirteen members including hello,
     .split("|")
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
-  assert.equal(members.length, 13, `expected 13 ControlRequestKind members, got ${members.length}: ${JSON.stringify(members)}`);
+  assert.equal(members.length, 15, `expected 15 ControlRequestKind members, got ${members.length}: ${JSON.stringify(members)}`);
   assert.ok(members.includes('"hello"'), `hello must be a member of ControlRequestKind, got ${JSON.stringify(members)}`);
   assert.ok(members.includes('"attach"'), `attach must be a member of ControlRequestKind, got ${JSON.stringify(members)}`);
   assert.ok(members.includes('"operation"'), `operation must be a member of ControlRequestKind, got ${JSON.stringify(members)}`);
   assert.ok(members.includes('"stage_file"'), `stage_file must be a member of ControlRequestKind, got ${JSON.stringify(members)}`);
   assert.ok(members.includes('"transfer"'), `transfer must be a member of ControlRequestKind, got ${JSON.stringify(members)}`);
+  assert.ok(members.includes('"host_tool_stage"'), `host_tool_stage must be a member of ControlRequestKind, got ${JSON.stringify(members)}`);
+  assert.ok(members.includes('"host_tool_run"'), `host_tool_run must be a member of ControlRequestKind, got ${JSON.stringify(members)}`);
 
   const helloArmOffset = source.indexOf('req.op === "hello"');
   const tokensMatchCallOffset = source.indexOf("tokensMatch(token, opts.token)");
@@ -3337,7 +3559,12 @@ test("two sessions, one broker: two connections declaring two labels each acquir
 // on a DIFFERENT connection than the one that named a target_id, except
 // `transfer` never reads target_id at all, so it cannot be exercised by
 // this test's target_id-substitution shape.
-const KNOWN_NON_TARGET_NAMING_OPS = new Set(["acquire", "release", "status", "host_state", "host_tool", "hello", "transfer"]);
+// `host_tool_stage`/`host_tool_run` (Phase 65, SEAM-01) join this set too:
+// neither reads `target_id` at all -- `host_tool_stage` carries only
+// `files`, `host_tool_run` carries `tool`/`args`/`request` (a request KEY,
+// never a target id), and both are gated on a per-connection BOUND request
+// key, never on `ownsTarget()`.
+const KNOWN_NON_TARGET_NAMING_OPS = new Set(["acquire", "release", "status", "host_state", "host_tool", "hello", "transfer", "host_tool_stage", "host_tool_run"]);
 // The set this invariant test actually EXERCISES below -- every op whose
 // dispatch arm reads `req.target_id` and resolves it against a grant.
 // `stage_file` (Phase 64, XFER-04) joins this set: gated by the SAME

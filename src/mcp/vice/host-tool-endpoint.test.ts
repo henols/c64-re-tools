@@ -10,13 +10,16 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { connect } from "node:net";
 
 import { acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
 import { runHostToolOverEndpoint } from "./host-tool-endpoint.mts";
 import { startHarnessBroker, type HarnessBroker } from "./broker-harness.ts";
+import { dialHostToolSession, dialFileTransfer } from "./broker-endpoint.ts";
+import { transferFileOverEndpoint } from "./transfer-client.mts";
 
 const SKIP_REASON = acmeSkipReasonFor("host-tool-endpoint.test.ts");
 
@@ -89,6 +92,219 @@ test("Task 1: acme.build runs through the fixed endpoint, one file in, one resul
     const sawNoHtDir = await waitForNoRequestStagingDir(broker.home);
     assert.ok(sawNoHtDir, "expected the host-tool request's own staging directory to be removed after the connection closed");
   } finally {
+    await broker.stop();
+  }
+});
+
+// ============================================================================
+// Task 2, behaviours 6-10 -- against the real, compiled broker (the Task 1
+// harness). Behaviours 1-5 live in broker-control.test.ts, against a stub
+// listener; these five need a REAL transfer connection and a REAL
+// runHostTool() run, which only a real broker provides.
+// ============================================================================
+
+async function waitForDirAbsent(path: string, deadlineMs = 5000): Promise<boolean> {
+  const deadline = Date.now() + deadlineMs;
+  for (;;) {
+    if (!existsAt(path)) return true;
+    if (Date.now() >= deadline) return false;
+    await new Promise((r) => setTimeout(r, 25));
+  }
+}
+
+function existsAt(path: string): boolean {
+  try {
+    statSync(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** A minimal RAW line client for Test 10 -- unlike dialHostToolSession(),
+ * this keeps every reply line as an un-parsed STRING, so the test can
+ * assert on the raw bytes the broker actually wrote, not a JS object that
+ * has already forgotten which substring the wire text used. */
+function makeRawHostToolClient(port: number, host = "127.0.0.1") {
+  const socket = connect({ port, host });
+  const lines: string[] = [];
+  const waiters: Array<(v: string) => void> = [];
+  let buffer = "";
+  socket.on("data", (chunk: Buffer) => {
+    buffer += chunk.toString("utf8");
+    let idx: number;
+    while ((idx = buffer.indexOf("\n")) !== -1) {
+      const line = buffer.slice(0, idx);
+      buffer = buffer.slice(idx + 1);
+      if (line.trim() === "") continue;
+      const waiter = waiters.shift();
+      if (waiter) waiter(line);
+      else lines.push(line);
+    }
+  });
+  return {
+    send(obj: Record<string, unknown>): void {
+      socket.write(`${JSON.stringify(obj)}\n`);
+    },
+    nextLine(timeoutMs = 5000): Promise<string> {
+      if (lines.length > 0) return Promise.resolve(lines.shift()!);
+      return new Promise((resolvePromise, reject) => {
+        const timer = setTimeout(() => reject(new Error(`no line within ${timeoutMs}ms`)), timeoutMs);
+        waiters.push((v) => {
+          clearTimeout(timer);
+          resolvePromise(v);
+        });
+      });
+    },
+    close(): void {
+      socket.destroy();
+    },
+  };
+}
+
+test("Test 6: through the harness broker, an upload whose transfer line declares a byteLength that differs from the manifest is refused denied before transfer_ready", { skip: SKIP_REASON }, async () => {
+  const broker = await startHarnessBroker();
+  try {
+    const dialResult = await dialHostToolSession({ port: broker.port, candidates: ["127.0.0.1"] });
+    assert.ok(dialResult.ok, `expected the host-tool dial to succeed, got ${JSON.stringify(dialResult)}`);
+    if (!dialResult.ok) return;
+    const { session } = dialResult;
+    try {
+      const stageResult = await session.stage([{ tree: 0, rel: "a.a", byteLength: 10 }]);
+      assert.ok(stageResult.ok, `expected the stage to succeed, got ${JSON.stringify(stageResult)}`);
+      if (!stageResult.ok) return;
+      const handle = stageResult.files[0]!;
+
+      // A raw `transfer` (upload) declaring a DIFFERENT byteLength than the
+      // manifest's own declared 10 -- refused before transfer_ready, never
+      // reaching a payload byte.
+      const transferResult = await dialFileTransfer({
+        handle,
+        direction: "upload",
+        byteLength: 999,
+        sha256: "0".repeat(64),
+        port: broker.port,
+        candidates: ["127.0.0.1"],
+      });
+      assert.equal(transferResult.ok, false, `expected the mismatched-byteLength upload to be refused, got ${JSON.stringify(transferResult)}`);
+      if (!transferResult.ok) {
+        assert.match(transferResult.reason, /declared byteLength/i);
+      }
+    } finally {
+      session.close();
+    }
+  } finally {
+    await broker.stop();
+  }
+});
+
+test("Test 7: closing the host-tool connection after a successful stage removes the request's own staging directory, and the minted handle then answers unknown transfer handle", { skip: SKIP_REASON }, async () => {
+  const broker = await startHarnessBroker();
+  try {
+    const dialResult = await dialHostToolSession({ port: broker.port, candidates: ["127.0.0.1"] });
+    assert.ok(dialResult.ok);
+    if (!dialResult.ok) return;
+    const { session } = dialResult;
+
+    const stageResult = await session.stage([{ tree: 0, rel: "a.a", byteLength: 10 }]);
+    assert.ok(stageResult.ok);
+    if (!stageResult.ok) return;
+    const requestKey = stageResult.request;
+    const handle = stageResult.files[0]!;
+
+    session.close();
+
+    const requestDir = join(broker.home, "staging", requestKey);
+    const removed = await waitForDirAbsent(requestDir);
+    assert.ok(removed, `expected ${requestDir} to be removed once the host-tool connection closed`);
+
+    const downloadResult = await dialFileTransfer({ handle, direction: "download", port: broker.port, candidates: ["127.0.0.1"] });
+    assert.equal(downloadResult.ok, false);
+    if (!downloadResult.ok) {
+      assert.match(downloadResult.reason, /unknown transfer handle/i);
+    }
+  } finally {
+    await broker.stop();
+  }
+});
+
+test("Test 8: two concurrent host-tool connections receive distinct request keys, and each connection's host_tool_run refuses the other's key", { skip: SKIP_REASON }, async () => {
+  const broker = await startHarnessBroker();
+  try {
+    const dialA = await dialHostToolSession({ port: broker.port, candidates: ["127.0.0.1"] });
+    const dialB = await dialHostToolSession({ port: broker.port, candidates: ["127.0.0.1"] });
+    assert.ok(dialA.ok);
+    assert.ok(dialB.ok);
+    if (!dialA.ok || !dialB.ok) return;
+    const { session: sessionA } = dialA;
+    const { session: sessionB } = dialB;
+    try {
+      const stageA = await sessionA.stage([]);
+      const stageB = await sessionB.stage([]);
+      assert.ok(stageA.ok);
+      assert.ok(stageB.ok);
+      if (!stageA.ok || !stageB.ok) return;
+      assert.notEqual(stageA.request, stageB.request, "two concurrent host-tool connections must mint distinct request keys");
+
+      // Connection A presents connection B's own request key -- refused,
+      // never reaching a real run.
+      const crossRun = await sessionA.run("oracle.probe", {}, stageB.request);
+      assert.equal(crossRun.ok, false, `expected connection A presenting connection B's key to be refused, got ${JSON.stringify(crossRun)}`);
+
+      // Connection B presents connection A's own request key -- refused too.
+      const crossRunReverse = await sessionB.run("oracle.probe", {}, stageA.request);
+      assert.equal(crossRunReverse.ok, false, `expected connection B presenting connection A's key to be refused, got ${JSON.stringify(crossRunReverse)}`);
+    } finally {
+      sessionA.close();
+      sessionB.close();
+    }
+  } finally {
+    await broker.stop();
+  }
+});
+
+test("Test 9: an oracle.probe request stages an empty manifest, runs, and returns the executor's own oracle.probe response shape through runHostToolOverEndpoint()", { skip: SKIP_REASON }, async () => {
+  const broker = await startHarnessBroker();
+  try {
+    const toolsRoot = freshDir("tools-root-oracle");
+    const result = await runHostToolOverEndpoint("oracle.probe", {}, { toolsRoot, port: broker.port, candidates: ["127.0.0.1"] });
+    assert.equal(result.ok, true, `expected ok:true, got ${JSON.stringify(result)}`);
+    if (!result.ok) return;
+    assert.equal((result as unknown as { tool: string }).tool, "oracle.probe");
+    assert.equal(typeof (result as unknown as { available: unknown }).available, "boolean");
+  } finally {
+    await broker.stop();
+  }
+});
+
+test("Test 10: the raw host_tool_run reply line, read off the socket, contains no occurrence of the harness home path", { skip: SKIP_REASON }, async () => {
+  const broker = await startHarnessBroker();
+  const client = makeRawHostToolClient(broker.port);
+  try {
+    client.send({ op: "hello", tag: "host-tool" });
+    const helloLine = await client.nextLine();
+    assert.match(helloLine, /"kind":"hello"/);
+
+    const clientDir = freshDir("raw-client");
+    const sourcePath = join(clientDir, "raw.a");
+    writeFileSync(sourcePath, "* = $0801\nstart\n\trts\n", "utf8");
+    const byteLength = statSync(sourcePath).size;
+
+    client.send({ op: "host_tool_stage", files: [{ tree: 0, rel: "raw.a", byteLength }] });
+    const stageLine = await client.nextLine();
+    const stageParsed = JSON.parse(stageLine) as { kind: string; request: string; files: string[] };
+    assert.equal(stageParsed.kind, "host_tool_staged");
+    const handle = stageParsed.files[0]!;
+    const requestKey = stageParsed.request;
+
+    const uploadResult = await transferFileOverEndpoint({ direction: "upload", handle, sourcePath }, { port: broker.port, candidates: ["127.0.0.1"] });
+    assert.ok(uploadResult.ok, `expected the upload to succeed, got ${JSON.stringify(uploadResult)}`);
+
+    client.send({ op: "host_tool_run", tool: "acme.build", args: { source: handle }, request: requestKey });
+    const runLine = await client.nextLine(30_000);
+    assert.ok(!runLine.includes(broker.home), `the raw host_tool_run reply line must not contain the harness home path (${broker.home}); got: ${runLine}`);
+  } finally {
+    client.close();
     await broker.stop();
   }
 });

@@ -148,22 +148,7 @@ import type { ViceBackend } from "./backend-detect.mjs";
 // reader, never handing the connection to a splice. The legacy `host_tool`
 // literal, below the token gate, is UNTOUCHED by either -- two distinct
 // functions, never a shared literal or a mode flag (T-65-05).
-export type ControlRequestKind =
-  | "acquire"
-  | "release"
-  | "recycle"
-  | "status"
-  | "host_state"
-  | "monitor_claim"
-  | "monitor_release"
-  | "host_tool"
-  | "hello"
-  | "attach"
-  | "operation"
-  | "stage_file"
-  | "transfer"
-  | "host_tool_stage"
-  | "host_tool_run";
+export type ControlRequestKind = "acquire" | "release" | "recycle" | "status" | "host_state" | "monitor_claim" | "monitor_release" | "host_tool" | "hello" | "attach" | "operation" | "stage_file" | "transfer" | "host_tool_stage" | "host_tool_run";
 // `no_free_text_port` joins the vocabulary as its OWN code -- a stock
 // acquire that fails only on the SECOND (`-remotemonitor`) allocation is
 // reported distinctly from `no_free_port` (which still means the

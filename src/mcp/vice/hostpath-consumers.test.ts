@@ -525,6 +525,12 @@ function hostToolFamilyProductionModules(dir: string = HERE): string[] {
 // does not distinguish "reaches the host tool directly" from "joins two of
 // this family's own outputs" -- both are host-tool-family members by this
 // glob's own definition.
+// Phase 65, plan 65-01 (SEAM-01): the final `+ 1` is `host-tool-endpoint.mts`,
+// the container-side driver for a host tool run over the fixed endpoint
+// (`runHostToolOverEndpoint()`) -- it carries the `host-tool` prefix because
+// it is the client half of the same seam `host-tool.mts`/`host-tool-client.ts`
+// already occupy, reached instead of the legacy control-plane/host-spawn
+// route this plan runs alongside, not through.
 //
 // MUST BE RAISED, NEVER LOWERED (D-13, read exactly the way
 // `ANNO_MODULE_FLOOR` above reads it), and MUST NEVER BE DERIVED FROM DISK:
@@ -533,7 +539,7 @@ function hostToolFamilyProductionModules(dir: string = HERE): string[] {
 // floor exists to provide. Keep it a hand-pinned integer literal. Cite
 // SEAM-06 and `34-RESEARCH.md`'s Pitfall 2 for why this floor exists at all
 // rather than widening `ANNO_MODULE_FLOOR`'s own `anno-` glob.
-const HOST_TOOL_FAMILY_FLOOR = 2 + 1 + 2 + 2 + 1 + 1;
+const HOST_TOOL_FAMILY_FLOOR = 2 + 1 + 2 + 2 + 1 + 1 + 1;
 
 test("the host-tool execution-seam module family (SEAM-06) is derived from disk with a non-vacuity floor, not a hard-coded list", () => {
   const modules = hostToolFamilyProductionModules();
