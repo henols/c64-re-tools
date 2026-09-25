@@ -5,16 +5,16 @@ milestone_name: One Broker, One Socket
 current_phase: 65
 current_phase_name: Every Skill Script Through the One Endpoint, and CI With It
 status: executing
-stopped_at: Completed 65-02-PLAN.md
-last_updated: "2026-09-25T09:11:48.161Z"
+stopped_at: Completed 65-03-PLAN.md
+last_updated: "2026-09-25T10:19:32.592Z"
 last_activity: 2026-09-25
-last_activity_desc: Phase 65 plan 02 executed (anno left the MCP surface, moved to the anno CLI's call verb)
-state_head: 7a61fe013abc4d6c53a1cc8d4fbf1ba0a80a65b5
+last_activity_desc: Phase 65 plan 03 executed (every host tool's input binds by handle on the fixed-endpoint route, with caps, no torn writes, no leaked paths)
+state_head: e6f340084dc2bc2320fefb80e3e8230bb2207e21
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 42
-  completed_plans: 35
+  completed_plans: 36
   percent: 50
 carried_forward_phases:
 
@@ -86,8 +86,29 @@ closure still needs to be recorded as one.
 ## Current Position
 
 Phase: 65 (Every Skill Script Through the One Endpoint, and CI With It) — EXECUTING
-Plan: 3 of 9
+Plan: 4 of 9
 Status: Ready to execute
+Plan 65-03 closed 2026-09-25 (SEAM-03): every host tool's path-bearing input
+now binds by handle on the fixed-endpoint route -- a single file (unchanged),
+a whole directory tree (acme.build's includes, ghidra.analyze's scriptPath,
+via the new walkUploadTree()), or a bare output name (ghidra.analyze's
+exportPath) -- proven identical client/server classification via a
+two-sided census. Both-end 16 MiB caps, a mirrored stage-line budget, and a
+missing-!source remedy note (measured against real ACME) are enforced
+before any dial. D-09/D-10 proven end to end against a real harness broker:
+declared-results-only, scratch cleanup on a clean close and on a SIGKILLed
+client, reply-order preservation, a zero-byte round trip, and no
+broker-side path on the wire (a hand-written recording TCP proxy proves
+it) -- the client detokenizes the broker's own scratch-root token back into
+the caller's local path. Found and fixed a real tmpPath collision race in
+transferFileOverEndpoint()/receivePayloadToFile() (pid+timestamp alone
+collides under sub-millisecond concurrency) while proving the same-basename
+concurrency property. 3 tasks, 3 commits (f5032e16, 4fce3dd0, e72d7972).
+Full-glob npm test: 4491/4405/2/84 -- one failure is the same pre-existing,
+out-of-scope PROJECT.md:2109 citation-ledger drift; the other is a
+confirmed-flaky, unrelated broker-e2e.test.ts case that passes when run
+alone. See
+.planning/phases/65-every-skill-script-through-the-one-endpoint-and-ci-with-it/65-03-SUMMARY.md.
 Plan 65-02 closed 2026-09-25 (SEAM-01, folded todo): the 28 (MEASURED, not
 the plan's own estimated 25) anno_* MCP tools are gone from tools/list --
 anno-cli.ts's new call <name> (--args JSON | --args-file FILE) verb answers
@@ -715,6 +736,7 @@ named in the evidence document as Phase 66's to reconcile, not force-closed.
 | Phase 64 P16 | 6h51m wall (about 45 min active) | 2 tasks | 6 files |
 | Phase 65 P01 | 90min | 2 tasks | 17 files |
 | Phase 65 P02 | 51min | 3 tasks | 24 files |
+| Phase 65 P03 | 105min | 3 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -1638,6 +1660,7 @@ Recent decisions affecting current work:
 - [Phase 65]: Phase 65 plan 01: staging lifetime for a host-tool request is per-connection -- the request key is bound to the connection that ran host_tool_stage, and that connection's close removes the scratch and every registry entry. — Reuses broker-transfer.mts's existing clearStagingForSession() unchanged, mirroring the SESS-01..03 connection-is-the-session shape and the 64 D-07 startup sweep as the crash-residue backstop, so no new cleanup mechanism was needed.
 - [Phase 65]: CURATED_ANNO_TOOLS is MEASURED at 28 names, not the plan's own working estimate of 25; corrected everywhere the stale figure had already been written (code comments, codebase docs). — A direct measurement (CURATED_ANNO_TOOLS.length) confirmed 28; the "before" tools/list count this implies (76) matches CLAUDE.md's own pre-existing figure exactly, so 28 is correct and the plan's own 25 undercounted.
 - [Phase 65]: Retired vice-proxy.test.ts's wire-level anno path-confinement test rather than porting it, and replaced its anno_get_symbols-driven chunking test vehicle with a new gated, anno-independent fixture tool. — The confinement property now has exactly one live surface, the anno CLI's call verb (proven by Task 1's own Test 5); the chunking/continuation property was never about anno specifically and reusing it after D-13 would have reopened the MCP surface this plan closes.
+- [Phase 65]: Every host tool's path-bearing input now binds by handle on the fixed-endpoint route: a single file, a whole directory tree (acme.build includes, ghidra.analyze scriptPath), or a bare output name (ghidra.analyze exportPath), proven identical client/server via a two-sided census. — Completes D-03/D-04/D-05/D-09/D-10/D-11 for the endpoint route the 65-01 tracer proved on acme.build alone; also fixed a real tmpPath collision race in transferFileOverEndpoint()/receivePayloadToFile() found while proving the same-basename concurrency property.
 
 ### Pending Todos
 
@@ -2982,8 +3005,8 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-25T09:11:47.992Z
-Stopped at: Completed 65-02-PLAN.md
+Last session: 2026-09-25T10:19:32.428Z
+Stopped at: Completed 65-03-PLAN.md
 Resume file: None
 
 Earlier: **v2.0.0 roadmap created.** 36/36 requirements (`ENDPOINT-01..05`,

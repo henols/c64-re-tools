@@ -2389,7 +2389,7 @@ each can be swapped and merged on its own.
      direct spawn, so Phase 66 can delete it without CI being the thing that
      discovers the dependency (RM-08).
 
-**Plans**: 2/9 plans executed, 6 waves
+**Plans**: 3/9 plans executed, 6 waves
 
 Plans:
 
@@ -2400,7 +2400,7 @@ Plans:
 
 **Wave 2** *(blocked on 65-01)*
 
-- [ ] 65-03-PLAN.md — every host tool's inputs cross as handles (files and trees), the acme tree walk with dot-skip and real-path symlink refusal, the 16 MiB cap per file and per request at both ends, only declared results returned, no broker path in any reply (SEAM-03)
+- [x] 65-03-PLAN.md — every host tool's inputs cross as handles (files and trees), the acme tree walk with dot-skip and real-path symlink refusal, the 16 MiB cap per file and per request at both ends, only declared results returned, no broker path in any reply (SEAM-03)
 
 **Wave 3** *(blocked on 65-02 and 65-03)*
 
@@ -2760,7 +2760,7 @@ check. No test reads this table now.
 | 62. The Fixed Endpoint and the Broker That Owns the Machine | v2.0.0 | 5/5 | Complete | 2026-09-19 |
 | 63. The Monitor Channel Relayed, and the Connection as the Session | v2.0.0 | 12/12 | Complete | 2026-09-23 |
 | 64. Files as Bytes, Both Directions | v2.0.0 | 16/16 | Complete | 2026-09-24 |
-| 65. Every Skill Script Through the One Endpoint, and CI With It | v2.0.0 | 2/9 | In Progress | - |
+| 65. Every Skill Script Through the One Endpoint, and CI With It | v2.0.0 | 3/9 | In Progress | - |
 | 66. The Deletion Cutover — Gone, Not Bypassed | v2.0.0 | — | Not started | - |
 | 67. Ghidra's Runs Root Without the Alias | v2.0.0 | — | Not started | - |
 
