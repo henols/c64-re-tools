@@ -1,0 +1,1 @@
+No external API integration: the phase rewires this project's own broker endpoint (port 19510, its own wire ops) and its own two npm packages; the detector matched the phrase "dials the endpoint and speaks the wire protocol", which names this project's broker, not a third-party API, SDK or service.

@@ -2389,7 +2389,36 @@ each can be swapped and merged on its own.
      direct spawn, so Phase 66 can delete it without CI being the thing that
      discovers the dependency (RM-08).
 
-**Plans**: TBD
+**Plans**: 9 plans, 6 waves
+
+Plans:
+
+**Wave 1**
+
+- [ ] 65-01-PLAN.md — the tracer: acme.build through the one endpoint, one file in and one result back, on new `host_tool_stage`/`host_tool_run` ops answered ahead of the token gate; per-request staging removed on close; the D-01 broker harness in its minimal form; legacy routes untouched (SEAM-01, SEAM-03)
+- [ ] 65-02-PLAN.md — anno leaves the MCP surface: an `anno call` CLI verb over `runAnnoTool()`, the 25 `anno_*` tools gone from `tools/list`, five skills moved to runnable CLI forms, living docs corrected, a measured census in place of the deleted guard, the folded todo closed (D-12, D-13, D-14; frontmatter SEAM-01)
+
+**Wave 2** *(blocked on 65-01)*
+
+- [ ] 65-03-PLAN.md — every host tool's inputs cross as handles (files and trees), the acme tree walk with dot-skip and real-path symlink refusal, the 16 MiB cap per file and per request at both ends, only declared results returned, no broker path in any reply (SEAM-03)
+
+**Wave 3** *(blocked on 65-02 and 65-03)*
+
+- [ ] 65-04-PLAN.md — the ladder's rung-3 target executes from `node_modules`: the client closure compiled into `resources/`, the `resources/host-tool-endpoint.mjs` CLI entry, an execution test from a `node_modules` copy with a negative control, and the D-14 follow-up todo (SEAM-02)
+
+**Wave 4** *(blocked on 65-04; the three plans share no file)*
+
+- [ ] 65-05-PLAN.md — acme.mjs through the endpoint; CI's ACME tests on a broker each suite owns, with teardown and FAIL-not-skip proven; the queued-disconnect flake fixed (SEAM-02, SEAM-03, RM-08)
+- [ ] 65-06-PLAN.md — c1541.mjs, petcat.mjs and packer-finding.mjs through the endpoint, each suite on its own broker, `--out-dir` refused, the broker stated as a prerequisite (SEAM-02, SEAM-03)
+- [ ] 65-07-PLAN.md — ghidra-run.ts and dxa-run.ts on the one route by in-package import, the two-route branch left dormant for Phase 66, and the same-answer proof with and without a container signal (SEAM-01, SEAM-03)
+
+**Wave 5** *(blocked on 65-05, 65-06 and 65-07)*
+
+- [ ] 65-08-PLAN.md — the executor's allowlist loses `outDir` and `sourceDir` with named refusals, and `ghidra.installExtension` installs from the broker's own vendored tree (SEAM-03)
+
+**Wave 6** *(blocked on every plan above)*
+
+- [ ] 65-09-PLAN.md — the SEAM-01 census and the convergence metric measured into evidence, stale guard citations corrected and dispositioned, the pre-warm todo closed, and the full gate green (SEAM-01, RM-08)
 
 **Cross-cutting constraints:**
 
@@ -2731,7 +2760,7 @@ check. No test reads this table now.
 | 62. The Fixed Endpoint and the Broker That Owns the Machine | v2.0.0 | 5/5 | Complete | 2026-09-19 |
 | 63. The Monitor Channel Relayed, and the Connection as the Session | v2.0.0 | 12/12 | Complete | 2026-09-23 |
 | 64. Files as Bytes, Both Directions | v2.0.0 | 16/16 | Complete | 2026-09-24 |
-| 65. Every Skill Script Through the One Endpoint, and CI With It | v2.0.0 | — | Not started | - |
+| 65. Every Skill Script Through the One Endpoint, and CI With It | v2.0.0 | 0/9 | Planned | - |
 | 66. The Deletion Cutover — Gone, Not Bypassed | v2.0.0 | — | Not started | - |
 | 67. Ghidra's Runs Root Without the Alias | v2.0.0 | — | Not started | - |
 
