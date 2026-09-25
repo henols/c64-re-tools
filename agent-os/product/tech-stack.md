@@ -132,7 +132,7 @@ declared in `src/mcp/vice/prerequisites.json`.
   no cross-project query. `anno-store.ts` then becomes host-bound. Today the
   store is still one client-local `.annostore` file per project.
 - Skill scripts never spawn external binaries. Every host tool goes through the
-  broker's typed `host_tool` operation, which reads no path from the raw wire
-  request.
+  broker's fixed endpoint (`host_tool_stage`/`host_tool_run`): inputs upload as
+  bytes, results download by handle, and no request names a broker-side path.
 - Tool location has one declaration (`prerequisites.json`) and one resolver
   (`tool-location.mts`). A missing tool is refused by name, with the remedy.

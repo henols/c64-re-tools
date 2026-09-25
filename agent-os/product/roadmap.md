@@ -39,7 +39,8 @@
   state is resolved before the address, and the tool declines where bank state
   depends on the execution path.
 - The host tools (ACME, dxa, Ghidra, `c1541`, `petcat`) are reached only through
-  one typed `host_tool` operation on the broker.
+  the broker's fixed endpoint: inputs upload as bytes, results download by
+  handle, and no request names a broker-side path.
 
 **Rebuild**
 - The store exports as a directory of ACME source: one file per scope, joined
@@ -87,7 +88,8 @@ inside a devcontainer, with no discovery file, no bind mount and no path
 translation. This goal is met only when the old host/container seam is **gone
 from production code**, not only bypassed.
 
-- **Every caller through one endpoint module.** Compile the endpoint client into
+- **Done: every caller through one endpoint module** (spec
+  `agent-os/specs/2026-09-25-1853-one-endpoint-client/`). Compile the endpoint client into
   `resources/`, because Node does not type-strip `.ts` under `node_modules`.
   Then move every host-tool skill script (`acme-build` first) and the MCP-side
   Ghidra and dxa callers onto it. Remove the `outDir`/`sourceDir` arguments; the
