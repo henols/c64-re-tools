@@ -189,6 +189,7 @@ const CLI_PATH_ARGUMENTS: readonly CliPathArgument[] = [
   { verb: "decomp-completeness", argument: "--manifest", kind: "flag" },
   { verb: "hazard-report", argument: "--store", kind: "flag" },
   { verb: "hazard-report", argument: "--image", kind: "flag" },
+  { verb: "call", argument: "--args-file", kind: "flag" },
 ];
 
 /**
@@ -202,7 +203,7 @@ const CLI_PATH_ARGUMENTS: readonly CliPathArgument[] = [
  * to the CLI without a confinement call reds HERE, BY NAME, instead of being
  * reviewed.
  */
-const NON_PATH_OPTIONS: readonly string[] = ["--check", "--force", "--sample", "--json"];
+const NON_PATH_OPTIONS: readonly string[] = ["--check", "--force", "--sample", "--json", "--args"];
 
 /**
  * MEASURED, NOT COPIED: nine caller-supplied path arguments across the three
@@ -236,6 +237,12 @@ const NON_PATH_OPTIONS: readonly string[] = ["--check", "--force", "--sample", "
  * `cmdHazardReport()`; the verb has no positional and no `--out`, so it
  * contributes exactly two to this floor.
  *
+ * RAISED 16 -> 17, in the commit that added `call` (D-12, plan 65-02). Its
+ * ONE path argument, `--args-file`, is confined by the same seam in
+ * `cmdCall()`; the positional (the curated tool NAME) is not a path and
+ * carries no confinement call, so `call` contributes exactly one to this
+ * floor, not two.
+ *
  * HAND-PINNED AS AN INTEGER LITERAL, AND IT MUST STAY THAT WAY. Deriving it
  * from `CLI_PATH_ARGUMENTS.length` (or from disk) would make it unfailable and
  * would discard the entire non-vacuity it exists to provide: a truncated or
@@ -243,7 +250,7 @@ const NON_PATH_OPTIONS: readonly string[] = ["--check", "--force", "--sample", "
  * trivially. Raise it when a verb genuinely grows a path argument; never lower
  * it to fit.
  */
-const CLI_PATH_ARGUMENT_FLOOR = 16;
+const CLI_PATH_ARGUMENT_FLOOR = 17;
 
 // ---------------------------------------------------------------------------
 // 1. The inventory is declared and complete.
