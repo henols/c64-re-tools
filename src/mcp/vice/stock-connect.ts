@@ -86,10 +86,10 @@ export type { TransferFileRequest, TransferFileResult, TransferFileFn };
 //
 // `noteOperation` joined this narrow surface in Phase 63 (SESS-05) -- NOT
 // because stockConnect()/stockReconnect() themselves ever call it, but
-// because stock-dispatch.ts's own channel-lock wrapper reaches it through
+// because stock-session.ts's own channel-lock wrapper reaches it through
 // `session.brokerControl` (this interface), the SAME connection the session
 // was claimed on, rather than through a second, locally-derived one. See
-// stock-dispatch.ts's withChannelLockHeld() for the one caller.
+// stock-session.ts's withChannelLockHeld() for the one caller.
 // ---------------------------------------------------------------------------
 
 export interface StockConnectBrokerControl {
@@ -626,7 +626,7 @@ export async function stockConnect({ host, port, targetId, brokerControl, deps =
  * OLD order -- close first, release second -- a teardown looked to the
  * broker exactly like an unannounced relay death: the socket died with a
  * live session still registered against it. This channel reaches that path
- * less often than the text channel only because stock-dispatch.ts holds a
+ * less often than the text channel only because stock-session.ts holds a
  * module-level session for the life of the process, so it fires on a
  * lease-target switch or a forced reconnect rather than once per call --
  * which makes it rarer, not benign. The `finally` below exists so a

@@ -9,7 +9,7 @@
 // the only prior single-flight queue died with the retired analyser and was
 // explicitly not extracted. None of the four pieces this module owns -- the
 // mutex, its FIFO queue, its holder record, its refusal text -- may be
-// re-derived in stock-dispatch.ts, text-protocol.ts or stock-diagnose.ts.
+// re-derived in stock-session.ts or text-protocol.ts.
 //
 // WHY HAND-BUILT RATHER THAN TAKEN FROM A LIBRARY: a generic mutex (e.g.
 // `async-mutex`) grants and releases but exposes no holder record -- it
@@ -31,7 +31,7 @@
 // WHAT NOT TO DO:
 //   - Never acquire this lock per wire command in a way that lets a foreign
 //     command land between a resume and its checkpoint observation -- the
-//     lock is acquired per LOGICAL OPERATION (see stock-dispatch.ts's
+//     lock is acquired per LOGICAL OPERATION (see stock-session.ts's
 //     withChannelLockHeld() and text-protocol.ts's withTextChannelLock()),
 //     spanning resume -> wait -> observe. A design that preserves the resume
 //     count while destroying what the count protects is a regression, not a
@@ -314,7 +314,7 @@ export function currentChannelLockHolder(): ChannelLockHolder | null {
 /**
  * Clears the holder and drains the queue by rejecting every waiter --
  * exists only so a test file can start from a known state, in the register
- * stock-dispatch.ts's own clearHeldStockSession() already establishes.
+ * stock-session.ts's own clearHeldStockSession() already establishes.
  * Never called from production code.
  */
 export function resetChannelLockForTests(): void {

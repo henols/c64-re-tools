@@ -4,7 +4,7 @@
 // change behaviour after a load with no edit to any other module. Every
 // "workspace" below is a real mkdtempSync() directory pointed at via
 // CLAUDE_PROJECT_DIR (repoRoot()'s branch 0), copied from
-// stock-dispatch.test.ts's own withTempRepoRootForConformance() shape --
+// stock-tools.test.ts's own withTempRepoRootForConformance() shape --
 // never a write into this worktree itself.
 import { test, afterEach, type TestContext } from "node:test";
 import assert from "node:assert/strict";
@@ -15,9 +15,9 @@ import { join } from "node:path";
 import { handleSymbolsLoad, handleSymbolsLookup, resetSymbolStoreForTest } from "./stock-symbols.ts";
 import { parseAddress, symbolNameFor, hasSymbolStore, setSymbolResolver } from "./stock-address.ts";
 import { checkAgainstSchema } from "./stock-schema-check.ts";
-import type { StockDispatchDeps } from "./stock-dispatch.ts";
+import type { StockSessionDeps } from "./stock-session.ts";
 
-const DEPS = {} as unknown as StockDispatchDeps;
+const DEPS = {} as unknown as StockSessionDeps;
 
 /** The shipped manifest's own declared `outputSchema` for `vice_symbols_lookup`
  * -- read directly with node:fs (relative to this test file, matching the
@@ -36,7 +36,7 @@ function parseAnswer(result: { content: { text: string }[] }): Record<string, un
   return JSON.parse(result.content[0]!.text);
 }
 
-/** Copied from stock-dispatch.test.ts's own withTempRepoRootForConformance()
+/** Copied from stock-tools.test.ts's own withTempRepoRootForConformance()
  * shape: mkdtempSync() + a CLAUDE_PROJECT_DIR swap so repoRoot() (branch 0)
  * resolves to a scratch directory, restored and removed afterwards. Never
  * writes into this worktree. */

@@ -16,11 +16,9 @@
 // mechanical fix for a failing test -- a new tool that genuinely needs
 // host-path translation is rare (D-17's own table is exactly four tools,
 // all long-lived emulator-side file operations) and each addition should be
-// deliberate. A DERIVED module (anything registered in
-// STOCK_DERIVED_TOOLS, stock-derived.ts) may NEVER be added to this list at
-// all -- see stock-derived.ts's own header for why translating a
-// client-side-derived path is exactly the bug DERIV-07's seam exists to
-// prevent.
+// deliberate. A DERIVED module (see DERIVED_TOOL_MODULES below) may NEVER be
+// added to this list at all -- translating a client-side-derived path is
+// exactly the bug DERIV-07's seam exists to prevent.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync, existsSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
@@ -28,7 +26,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 
-import { STOCK_DERIVED_TOOLS } from "./stock-derived.ts";
+import { STOCK_TOOLS } from "./stock-tools.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -165,11 +163,7 @@ test("hostpath.ts's production consumer set is exactly the four declared modules
   assert.equal(importers.length, 4);
 });
 
-test("stock-derived.ts is absent from the hostpath.ts consumer set", () => {
-  assert.equal(hostpathImporters().includes("stock-derived.ts"), false);
-});
-
-test("the disassembler modules (not yet reachable from stock-dispatch.ts in this wave) are absent from the consumer set", () => {
+test("the disassembler modules are absent from the consumer set", () => {
   const importers = hostpathImporters();
   for (const name of [
     "stock-disassemble.ts",
@@ -682,8 +676,8 @@ test("SEAM-06, edge: adjacency -- the family glob and the anno- glob are disjoin
 // "stock-memory-search.ts" -- so the absence assertion could never match a
 // real file for any multi-word tool name and read as coverage while testing
 // nothing (only vice_disassemble's single-word name ever produced a real
-// hit). This declared map replaces the guess: every STOCK_DERIVED_TOOLS
-// member is named explicitly, and its filename is asserted to exist on disk
+// hit). This declared map replaces the guess: every derived tool is named
+// explicitly, and its filename is asserted to exist on disk
 // so a typo fails loudly instead of passing vacuously.
 const DERIVED_TOOL_MODULES: Record<string, string> = {
   vice_disassemble: "stock-disassemble.ts",
@@ -708,10 +702,14 @@ const DERIVED_TOOL_MODULES: Record<string, string> = {
   vice_program_load: "text-tools.ts",
 };
 
-test("D-05-12: DERIVED_TOOL_MODULES' key set equals STOCK_DERIVED_TOOLS exactly", () => {
-  const mapped = Object.keys(DERIVED_TOOL_MODULES).sort();
-  const registered = [...STOCK_DERIVED_TOOLS].sort();
-  assert.deepEqual(mapped, registered, "a derived tool with no DERIVED_TOOL_MODULES entry must fail this test rather than escape it");
+test("D-05-12: every DERIVED_TOOL_MODULES key is a STOCK_TOOLS name, and every pure tool is a key", () => {
+  const toolNames = new Set(STOCK_TOOLS.map((t) => t.name));
+  for (const name of Object.keys(DERIVED_TOOL_MODULES)) {
+    assert.ok(toolNames.has(name), `${name} is in DERIVED_TOOL_MODULES but not in STOCK_TOOLS`);
+  }
+  for (const tool of STOCK_TOOLS.filter((t) => t.kind === "pure")) {
+    assert.ok(tool.name in DERIVED_TOOL_MODULES, `pure tool ${tool.name} has no DERIVED_TOOL_MODULES entry`);
+  }
 });
 
 test("D-05-12: every DERIVED_TOOL_MODULES filename exists on disk", () => {
@@ -720,7 +718,7 @@ test("D-05-12: every DERIVED_TOOL_MODULES filename exists on disk", () => {
   }
 });
 
-test("D-02 mechanism 2: no module implementing a STOCK_DERIVED_TOOLS entry may ever join the hostpath.ts consumer set", () => {
+test("D-02 mechanism 2: no module implementing a derived tool may ever join the hostpath.ts consumer set", () => {
   // Uses the declared map, not a guess at file names -- a FUTURE derived
   // tool that reaches hostpath.ts fails THIS test rather than shipping,
   // which is the whole point of a second, independent enforcement
@@ -729,6 +727,6 @@ test("D-02 mechanism 2: no module implementing a STOCK_DERIVED_TOOLS entry may e
   const importers = new Set(hostpathImporters());
   const distinctModules = new Set(Object.values(DERIVED_TOOL_MODULES));
   for (const moduleName of distinctModules) {
-    assert.equal(importers.has(moduleName), false, `${moduleName} (implementing a STOCK_DERIVED_TOOLS entry) must not import hostpath.ts`);
+    assert.equal(importers.has(moduleName), false, `${moduleName} (implementing a derived tool) must not import hostpath.ts`);
   }
 });

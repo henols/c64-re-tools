@@ -4,7 +4,7 @@
 // OPT-IN, MANUAL-ONLY. The FIRST test in this tree that launches genuine
 // stock VICE through the REAL spawned broker artifact (resources/
 // vice-broker.mjs) and dispatches vice_disk_attach / vice_autostart through
-// dispatchStock() against the instance it granted -- so both buildViceArgs()
+// callStockTool() against the instance it granted -- so both buildViceArgs()
 // AND the production makeLoggingSpawn() + withCrashSupervision() daemon
 // composition are in the call path, not merely a hand-built argv string.
 //
@@ -125,7 +125,8 @@ import { createServer } from "node:net";
 
 import { build } from "./build.ts";
 import { openBrokerControl, type BrokerControlSession, type HeldLease, type AcquireGrant } from "./vice-broker-client.ts";
-import { dispatchStock, clearHeldStockSession, type StockDispatchDeps } from "./stock-dispatch.ts";
+import { callStockTool } from "./stock-tools.ts";
+import { clearHeldStockSession, type StockSessionDeps } from "./stock-session.ts";
 import { stockConnect, type StockConnectOptions } from "./stock-connect.ts";
 import { tryLaunchOne, probeReady } from "./broker-launch.mts";
 import { createBrokerState } from "./broker-state.mts";
@@ -320,12 +321,12 @@ async function waitForStockReady(port: number, deadlineMs = 30000): Promise<bool
   return false;
 }
 
-/** Builds a REAL, production-shaped StockDispatchDeps for one grant --
+/** Builds a REAL, production-shaped StockSessionDeps for one grant --
  * `ensureLease` hands back the lease this grant already holds (never
  * re-acquiring), and `connect` is a thin pass-through to the real
  * stockConnect(). Mirrors stock-live-broker-monitor.test.ts's own
  * depsFor(). */
-function depsFor(host: string, grant: AcquireGrant, controlSession: BrokerControlSession, stateDir: string): StockDispatchDeps {
+function depsFor(host: string, grant: AcquireGrant, controlSession: BrokerControlSession, stateDir: string): StockSessionDeps {
   const lease: HeldLease = {
     host,
     port: grant.port,
@@ -358,15 +359,15 @@ interface PollResult {
  * run time almost entirely -- confirmed empirically while writing this
  * file. Never a fixed sleep alone: this polls until either the expected
  * bytes appear or `deadlineMs` elapses. */
-async function pollUntilBytesMatch(deps: StockDispatchDeps, address: number, expected: readonly number[], deadlineMs: number, intervalMs = 500): Promise<PollResult> {
+async function pollUntilBytesMatch(deps: StockSessionDeps, address: number, expected: readonly number[], deadlineMs: number, intervalMs = 500): Promise<PollResult> {
   const deadline = Date.now() + deadlineMs;
   let attempts = 0;
   let lastObserved: number[] | null = null;
   while (Date.now() < deadline) {
     attempts++;
-    await dispatchStock("vice_execution_run", {}, deps);
+    await callStockTool("vice_execution_run", {}, deps);
     await new Promise((r) => setTimeout(r, intervalMs));
-    const memResult = await dispatchStock(
+    const memResult = await callStockTool(
       "vice_memory_read",
       { address: `$${address.toString(16)}`, size: expected.length, encoding: "array", sideEffects: false },
       deps,
@@ -516,11 +517,11 @@ test(
 
       const deps = depsFor(host, grant, controlSession, stateDir);
 
-      const diskAttachResult = await dispatchStock("vice_disk_attach", { unit: 8, path: d64Path }, deps);
+      const diskAttachResult = await callStockTool("vice_disk_attach", { unit: 8, path: d64Path }, deps);
       const diskAttachPayload = parseOkPayload(diskAttachResult as { content: { type: "text"; text: string }[]; isError: boolean });
       console.log(`stock-broker-live (.d64): vice_disk_attach -> ${JSON.stringify(diskAttachPayload)}`);
 
-      const autostartResult = await dispatchStock("vice_autostart", { path: d64Path, run: true }, deps);
+      const autostartResult = await callStockTool("vice_autostart", { path: d64Path, run: true }, deps);
       const autostartPayload = parseOkPayload(autostartResult as { content: { type: "text"; text: string }[]; isError: boolean });
       console.log(`stock-broker-live (.d64): vice_autostart -> ${JSON.stringify(autostartPayload)}`);
 
@@ -610,11 +611,11 @@ test(
 
         const deps = depsFor(host, grant, controlSession, stateDir);
 
-        const diskAttachResult = await dispatchStock("vice_disk_attach", { unit: 8, path: d64Path }, deps);
+        const diskAttachResult = await callStockTool("vice_disk_attach", { unit: 8, path: d64Path }, deps);
         const diskAttachPayload = parseOkPayload(diskAttachResult as { content: { type: "text"; text: string }[]; isError: boolean });
         console.log(`stock-broker-live (snapshot round trip): vice_disk_attach -> ${JSON.stringify(diskAttachPayload)}`);
 
-        const autostartResult = await dispatchStock("vice_autostart", { path: d64Path, run: true }, deps);
+        const autostartResult = await callStockTool("vice_autostart", { path: d64Path, run: true }, deps);
         const autostartPayload = parseOkPayload(autostartResult as { content: { type: "text"; text: string }[]; isError: boolean });
         console.log(`stock-broker-live (snapshot round trip): vice_autostart -> ${JSON.stringify(autostartPayload)}`);
 
@@ -629,7 +630,7 @@ test(
         // this is exactly what vice_snapshot_save below captures, and
         // exactly what vice_snapshot_load must restore. Never assumed to be
         // zero or any other fixed value -- whatever it genuinely is.
-        const baselineRead = await dispatchStock(
+        const baselineRead = await callStockTool(
           "vice_memory_read",
           { address: `$${SNAPSHOT_SCRATCH_ADDRESS.toString(16)}`, size: SNAPSHOT_PERTURB_BYTES.length, encoding: "array", sideEffects: false },
           deps,
@@ -638,18 +639,18 @@ test(
         const baselineBytes = baselinePayload.bytes as number[];
         console.log(`stock-broker-live (snapshot round trip): baseline $${SNAPSHOT_SCRATCH_ADDRESS.toString(16)} bytes = ${JSON.stringify(baselineBytes)}`);
 
-        const saveResult = await dispatchStock("vice_snapshot_save", { name: SNAPSHOT_ROUND_TRIP_NAME }, deps);
+        const saveResult = await callStockTool("vice_snapshot_save", { name: SNAPSHOT_ROUND_TRIP_NAME }, deps);
         const savePayload = parseOkPayload(saveResult as { content: { type: "text"; text: string }[]; isError: boolean });
         console.log(`stock-broker-live (snapshot round trip): vice_snapshot_save -> ${JSON.stringify(savePayload)}`);
 
-        const perturbResult = await dispatchStock(
+        const perturbResult = await callStockTool(
           "vice_memory_write",
           { address: `$${SNAPSHOT_SCRATCH_ADDRESS.toString(16)}`, data: [...SNAPSHOT_PERTURB_BYTES] },
           deps,
         );
         parseOkPayload(perturbResult as { content: { type: "text"; text: string }[]; isError: boolean });
 
-        const perturbedRead = await dispatchStock(
+        const perturbedRead = await callStockTool(
           "vice_memory_read",
           { address: `$${SNAPSHOT_SCRATCH_ADDRESS.toString(16)}`, size: SNAPSHOT_PERTURB_BYTES.length, encoding: "array", sideEffects: false },
           deps,
@@ -663,13 +664,13 @@ test(
           `the perturbation write must stick before the round trip proves anything: expected ${JSON.stringify(SNAPSHOT_PERTURB_BYTES)}, got ${JSON.stringify(perturbedBytes)}`,
         );
 
-        const loadResult = await dispatchStock("vice_snapshot_load", { name: SNAPSHOT_ROUND_TRIP_NAME }, deps);
+        const loadResult = await callStockTool("vice_snapshot_load", { name: SNAPSHOT_ROUND_TRIP_NAME }, deps);
         const loadPayload = parseOkPayload(loadResult as { content: { type: "text"; text: string }[]; isError: boolean });
         console.log(`stock-broker-live (snapshot round trip): vice_snapshot_load -> ${JSON.stringify(loadPayload)}`);
 
         // --- Half 1: the perturbed region must have RETURNED to its
         // pre-perturbation bytes -- proves the load restored state.
-        const restoredRead = await dispatchStock(
+        const restoredRead = await callStockTool(
           "vice_memory_read",
           { address: `$${SNAPSHOT_SCRATCH_ADDRESS.toString(16)}`, size: SNAPSHOT_PERTURB_BYTES.length, encoding: "array", sideEffects: false },
           deps,
@@ -686,7 +687,7 @@ test(
 
         // --- Half 2: the program's own verified payload region must STILL
         // match -- proves the load restored THIS machine, not some other.
-        const payloadRead = await dispatchStock(
+        const payloadRead = await callStockTool(
           "vice_memory_read",
           { address: `$${VERIFIED_PAYLOAD_ADDRESS.toString(16)}`, size: VERIFIED_PAYLOAD.length, encoding: "array", sideEffects: false },
           deps,
@@ -752,7 +753,7 @@ test(
 
       // NO vice_disk_attach at all -- the whole question is what a BARE
       // .prg autostart does with no disk ever in the loop.
-      const autostartResult = await dispatchStock("vice_autostart", { path: prgPath, run: true }, deps);
+      const autostartResult = await callStockTool("vice_autostart", { path: prgPath, run: true }, deps);
       const autostartPayload = parseOkPayload(autostartResult as { content: { type: "text"; text: string }[]; isError: boolean });
       console.log(`stock-broker-live (post-fix .prg): vice_autostart -> ${JSON.stringify(autostartPayload)}`);
 
@@ -862,14 +863,14 @@ test(
         epochFile: "",
         supervisorDir: "",
       };
-      const deps: StockDispatchDeps = {
+      const deps: StockSessionDeps = {
         ensureLease: async () => ({ ok: true as const, lease }),
         connect: (opts: StockConnectOptions) => stockConnect(opts),
       };
 
       // NO vice_disk_attach -- bare .prg autostart, same as the post-fix
       // case above, so the two are directly comparable.
-      const autostartResult = await dispatchStock("vice_autostart", { path: prgPath, run: true }, deps);
+      const autostartResult = await callStockTool("vice_autostart", { path: prgPath, run: true }, deps);
       console.log(`stock-broker-live (pre-fix .prg): vice_autostart -> ${JSON.stringify(autostartResult)}`);
 
       // MEASURED, not asserted-then-explained: this run's own AUTOSTART
@@ -1021,7 +1022,7 @@ test(
 
       // NO vice_disk_attach -- bare .prg autostart, same shape as Task 2's
       // POST-FIX case above; this test needs no disk at all.
-      const autostartResult = await dispatchStock("vice_autostart", { path: prgPath, run: true }, deps);
+      const autostartResult = await callStockTool("vice_autostart", { path: prgPath, run: true }, deps);
       const autostartPayload = parseOkPayload(autostartResult as { content: { type: "text"; text: string }[]; isError: boolean });
       console.log(`stock-broker-live (scenario 2, keyboard): vice_autostart -> ${JSON.stringify(autostartPayload)}`);
 
@@ -1032,9 +1033,9 @@ test(
       let lastRegisters: Record<string, number> | null = null;
       let confirmedPc: number | null = null;
       for (let attempt = 0; attempt < 10 && !confirmedRunning; attempt++) {
-        await dispatchStock("vice_execution_run", {}, deps);
+        await callStockTool("vice_execution_run", {}, deps);
         await new Promise((r) => setTimeout(r, 500));
-        const regsResult = await dispatchStock("vice_registers_get", {}, deps);
+        const regsResult = await callStockTool("vice_registers_get", {}, deps);
         const regsPayload = parseOkPayload(regsResult as { content: { type: "text"; text: string }[]; isError: boolean });
         lastRegisters = regsPayload.registers as Record<string, number>;
         const pcKey = Object.keys(lastRegisters).find((k) => k.toUpperCase() === "PC");
@@ -1058,17 +1059,17 @@ test(
       // observation cell -- before AND after quoted, per this plan's own
       // instruction never to summarise "input was observed".
       const injectedByte = 0x41;
-      const beforeInjectRead = await dispatchStock("vice_memory_read", { address: "$0400", size: 1, encoding: "array", sideEffects: false }, deps);
+      const beforeInjectRead = await callStockTool("vice_memory_read", { address: "$0400", size: 1, encoding: "array", sideEffects: false }, deps);
       const beforeInjectPayload = parseOkPayload(beforeInjectRead as { content: { type: "text"; text: string }[]; isError: boolean });
       console.log(`stock-broker-live (scenario 2, keyboard): $0400 before injection = ${JSON.stringify(beforeInjectPayload.bytes)}`);
 
-      const petsciiResult = await dispatchStock("vice_keyboard_petscii", { data: [injectedByte] }, deps);
+      const petsciiResult = await callStockTool("vice_keyboard_petscii", { data: [injectedByte] }, deps);
       const petsciiPayload = parseOkPayload(petsciiResult as { content: { type: "text"; text: string }[]; isError: boolean });
       console.log(`stock-broker-live (scenario 2, keyboard): vice_keyboard_petscii([0x${injectedByte.toString(16)}]) -> ${JSON.stringify(petsciiPayload)}`);
 
-      await dispatchStock("vice_execution_run", {}, deps);
+      await callStockTool("vice_execution_run", {}, deps);
       await new Promise((r) => setTimeout(r, 800));
-      const afterInjectRead = await dispatchStock("vice_memory_read", { address: "$0400", size: 1, encoding: "array", sideEffects: false }, deps);
+      const afterInjectRead = await callStockTool("vice_memory_read", { address: "$0400", size: 1, encoding: "array", sideEffects: false }, deps);
       const afterInjectPayload = parseOkPayload(afterInjectRead as { content: { type: "text"; text: string }[]; isError: boolean });
       console.log(`stock-broker-live (scenario 2, keyboard): $0400 after injection (byte 0x${injectedByte.toString(16)}) = ${JSON.stringify(afterInjectPayload.bytes)}`);
 

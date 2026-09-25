@@ -297,7 +297,7 @@ export interface ResolvedBackendResult {
   /**
    * WR-05: the ABSOLUTE path this binary resolved to when it could be resolved,
    * falling back to the configured name otherwise. Two consumers read this as
-   * a resolved path in their own doc comments (StockDispatchDeps.resolvedBinaryPath,
+   * a resolved path in their own doc comments (StockSessionDeps.resolvedBinaryPath,
    * and BACK-03's `vice_ping` answer), so a bare configured name (e.g. `"x64sc"`)
    * would report a name that, inside a container, resolves to nothing at all.
    *

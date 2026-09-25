@@ -50,7 +50,8 @@ import { join } from "node:path";
 import { OPCODES, type OpcodeEntry, type AddressingMode } from "./disasm-opcodes.ts";
 import { decode } from "./disasm-decoder.ts";
 import { render } from "./disasm-renderer.ts";
-import { dispatchStock, type StockDispatchDeps } from "./stock-dispatch.ts";
+import { callStockTool } from "./stock-tools.ts";
+import { type StockSessionDeps } from "./stock-session.ts";
 import { CommandType } from "./stock-protocol.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
 import type { HeldLease, BrokerControlSession } from "./vice-broker-client.ts";
@@ -104,8 +105,8 @@ after(() => {
 });
 
 // ---------------------------------------------------------------------------
-// A minimal StockConnectSession/StockDispatchDeps pair -- the same shape
-// stock-dispatch.test.ts's own buildConformanceSession()/buildConformanceDeps()
+// A minimal StockConnectSession/StockSessionDeps pair -- the same shape
+// stock-tools.test.ts's own buildConformanceSession()/buildConformanceDeps()
 // use (not imported from there: that file exports nothing, per its own
 // module-local convention). `sendImpl` decides what every client.send() call
 // resolves to; this file only ever needs to answer MemoryGet.
@@ -138,7 +139,7 @@ function buildRoundtripSession(targetId: string, sendImpl: (commandType: number,
   } as unknown as StockConnectSession;
 }
 
-function buildRoundtripDeps(session: StockConnectSession): StockDispatchDeps {
+function buildRoundtripDeps(session: StockConnectSession): StockSessionDeps {
   return {
     ensureLease: async () => ({
       ok: true as const,
@@ -231,7 +232,7 @@ test("Suite A: full 256-opcode round-trip through vice_disassemble's own listing
   const listings: string[] = [];
   let address = BASE_ADDRESS;
   for (let page = 0; page < 10; page++) {
-    const result = await dispatchStock("vice_disassemble", { address: toHexArg(address), end: toHexArg(corpusEnd) }, deps);
+    const result = await callStockTool("vice_disassemble", { address: toHexArg(address), end: toHexArg(corpusEnd) }, deps);
     assert.equal(result.isError, false, `Suite A: vice_disassemble refused at address ${toHexArg(address)}: ${JSON.stringify((result as { content: unknown }).content)}`);
     const answer = JSON.parse((result as { content: { text: string }[] }).content[0]!.text) as {
       listing: string;
@@ -255,7 +256,7 @@ test("Suite A: full 256-opcode round-trip through vice_disassemble's own listing
 // Suite B: a realistic fragment -- forward/backward branches, a
 // page-crossing branch, the D-11 shrink hazard, the D-10 page-wrap note,
 // jsr, and three illegal-but-ACME-expressible opcodes. Exercised directly
-// through decode()/render() (Suite A already exercises the dispatchStock()
+// through decode()/render() (Suite A already exercises the callStockTool()
 // path; this suite is about the renderer's specific edge cases).
 // ---------------------------------------------------------------------------
 

@@ -13,7 +13,7 @@ import { CommandType, ErrorCode } from "./stock-protocol.ts";
 import { setSymbolResolver } from "./stock-address.ts";
 import { resetRunStateTrackersForTest } from "./stock-runstate.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
-import type { StockDispatchDeps } from "./stock-dispatch.ts";
+import type { StockSessionDeps } from "./stock-session.ts";
 
 beforeEach(() => {
   resetRunStateTrackersForTest();
@@ -43,7 +43,7 @@ function makeSession(sendImpl: (commandType: number, body: Buffer) => unknown): 
   return { session, calls };
 }
 
-const DEPS = {} as unknown as StockDispatchDeps;
+const DEPS = {} as unknown as StockSessionDeps;
 
 function memoryGetReply(bytes: number[], requestId = 1) {
   return { type: "memory_get" as const, requestId, errorCode: ErrorCode.Ok, bytes: Buffer.from(bytes), related: [] };

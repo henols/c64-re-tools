@@ -1,9 +1,10 @@
-// node:test coverage of stock-dispatch.ts. Task 1: the manifest selector
-// (manifestPathForBackend()) and the two committed manifests it chooses
-// between. Task 2 (added later in this same file): the lease-to-session
-// seam (ensureStockSession()). Every test in this file is pure/offline --
-// no broker process, no emulator, matching this plan's own environment
-// constraint.
+// stock-tools.test.ts
+//
+// The tool list and its pairing with tools-manifest.stock.json, the manifest's
+// own structural checks, vice_ping, and the D-02 answer-conformance harness:
+// every manifest tool is called through callStockTool() against a stubbed
+// session and its answer is checked against its own declared outputSchema.
+// Every test here is offline -- no broker process, no emulator.
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, mkdtempSync, writeFileSync, rmSync, mkdirSync, realpathSync } from "node:fs";
@@ -15,17 +16,17 @@ import { dirname } from "node:path";
 import { EventEmitter } from "node:events";
 
 import {
-  manifestPathForBackend,
   ensureStockSession,
   clearHeldStockSession,
-  stockHandlerFor,
-  dispatchStock,
   stockDisconnect,
-  withStockSession,
-  withDerivedTool,
-  type StockDispatchDeps,
-} from "./stock-dispatch.ts";
-import type { DerivedPureHandler } from "./stock-derived.ts";
+  runBinary,
+  runPure,
+  type StockSessionDeps,
+} from "./stock-session.ts";
+import { STOCK_TOOLS, callStockTool, stockToolDefinitions, StockToolManifestMismatchError } from "./stock-tools.ts";
+import { STUB_BROKER_CONTROL, makeLease, fakeSession } from "./stock-session-fixtures.ts";
+import type { ToolInfo } from "./vice-errors.ts";
+import type { DerivedPureHandler } from "./stock-handler.ts";
 import { encodeResponseFrame } from "./binmon-fixtures.ts";
 import { MachineRestartedError } from "./vice-errors.ts";
 import { MonitorOwnershipError } from "./vice-broker-client.ts";
@@ -108,16 +109,6 @@ const STOCK_ONLY_TOOLS = new Set([
   "vice_program_load",
 ]);
 
-// --------------------------------------------------------- manifestPathForBackend
-
-test("manifest/backend: with no override resolves to <hereDir>/tools-manifest.stock.json", () => {
-  assert.equal(manifestPathForBackend(HERE, undefined), join(HERE, "tools-manifest.stock.json"));
-});
-
-test("manifest/backend: VICE_TOOLS_MANIFEST override wins, resolved", () => {
-  assert.equal(manifestPathForBackend(HERE, "/tmp/custom.json"), join("/tmp/custom.json"));
-});
-
 // --------------------------------------------------------- tools-manifest.stock.json shape
 
 test("manifest/backend: tools-manifest.stock.json parses and carries the expected three top-level keys", () => {
@@ -166,17 +157,6 @@ test("manifest/backend (D-03 name coverage): every STOCK_ONLY_TOOLS name is pres
 // is nothing left to compare. `manifest-arg-compat.test.ts` was the other,
 // more thorough guard over the same premise and is deleted whole for the
 // same reason.
-
-test("manifest/backend (bidirectional table/manifest agreement): every stock manifest entry has a dispatch handler, and every dispatch entry has a manifest entry", () => {
-  const stock = readManifest(STOCK_MANIFEST_PATH);
-  for (const tool of stock.tools) {
-    assert.equal(typeof stockHandlerFor(tool.name), "function", `stock manifest advertises "${tool.name}" but STOCK_DISPATCH_TABLE has no handler for it`);
-  }
-  const stockNames = new Set(stock.tools.map((t) => t.name));
-  for (const name of REGISTERED_TOOL_NAMES) {
-    assert.ok(stockNames.has(name), `STOCK_DISPATCH_TABLE registers "${name}" but the stock manifest has no entry for it`);
-  }
-});
 
 test("manifest/backend (D-02 outputSchema presence): every stock manifest entry declares an outputSchema whose type is \"object\"", () => {
   const stock = readManifest(STOCK_MANIFEST_PATH);
@@ -248,7 +228,7 @@ test("manifest/backend (D-02 structural): the five parse-target verbs are presen
   // protects -- a verb string is never itself a tool name, no matter how
   // reachable the verb becomes -- is MORE load-bearing after this plan than
   // before it: every one of the five names below is now a live derived-tool
-  // registration (STOCK_DERIVED_TOOLS/stock-dispatch.ts), so a future change
+  // registration (STOCK_TOOLS in stock-tools.ts), so a future change
   // that accidentally advertised a bare verb as a tool name would collide
   // with this exact assertion, not merely with an unreached one.
   const PARSE_TARGET_VERBS = ["memmapshow", "prof flat", "chis", "bt", "io"];
@@ -357,16 +337,6 @@ test("manifest/backend (trimmed tools absent): none of the twelve decision-trimm
   }
 });
 
-// ---------------------------------------------------------------------------
-// Task 2: ensureStockSession() -- the lease-to-session seam. Every
-// brokerControl below is an injected two-method stub, never a real
-// BrokerControlSession opened by this test file (D-13: this module must
-// never open a control session of its own). Every "connect"/"reconnect" is
-// a spy stub, never stock-connect.ts's real socket-touching implementation
-// -- these tests assert WIRING (call order, call count, field identity),
-// never protocol shape (stock-connect.test.ts already owns that).
-// ---------------------------------------------------------------------------
-
 beforeEach(() => {
   clearHeldStockSession();
   resetRunStateTrackersForTest();
@@ -385,805 +355,82 @@ beforeEach(() => {
   resetChannelLockForTests();
 });
 
-const STUB_BROKER_CONTROL = {
-  claimMonitor: async () => ({ ok: true as const }),
-  releaseMonitor: async () => ({ ok: true as const }),
-  noteOperation: async () => ({ ok: true as const }),
-} as unknown as BrokerControlSession;
+const THROWING_ENSURE_LEASE: StockSessionDeps["ensureLease"] = async () => {
+  throw new Error("ensureLease must never be called for this test");
+};
 
-// stockConnect()'s own StockConnectOptions.brokerControl (and
-// StockConnectSession.brokerControl) is typed as the narrower
-// StockConnectBrokerControl (claimMonitor/releaseMonitor only) -- alias it
-// off StockConnectSession itself rather than importing a second name, so a
-// value satisfying HeldLease.brokerControl (the wider BrokerControlSession)
-// still structurally satisfies this narrower field when threaded through.
-type FakeSessionBrokerControl = StockConnectSession["brokerControl"];
-
-/** Builds a HeldLease from the four coordinates a test actually cares about,
- * defaulting the two CR-06 directory fields. They are REQUIRED on HeldLease
- * (not optional) precisely so vice-proxy.ts's buildHeldLease() -- the ONE
- * production construction site -- cannot silently omit them again; this helper
- * keeps that requirement from turning into noise at 16 test call sites. Tests
- * that care about the threading pass them explicitly. */
-function makeLease(opts: Omit<HeldLease, "epochFile" | "supervisorDir"> & Partial<Pick<HeldLease, "epochFile" | "supervisorDir">>): HeldLease {
-  return { epochFile: "", supervisorDir: "", ...opts };
+/** Adapters that turn a handler into a (args, deps) runner, for tests that
+ * exercise the two runners through a handler of their own. */
+function asBinary(toolName: string, handler: StockSessionHandler) {
+  return (args: Record<string, unknown>, deps: StockSessionDeps) => runBinary(toolName, handler, args, deps);
+}
+function asPure(toolName: string, handler: DerivedPureHandler) {
+  return (args: Record<string, unknown>, deps: StockSessionDeps) => runPure(toolName, handler, args, deps);
 }
 
-/** The fake client carries a REAL disconnect() that flips `connected` to
- * false (CR-05): a session teardown that only drops the reference is exactly
- * the defect under test, so the stub has to be able to tell the two apart.
- *
- * The client is a real `EventEmitter` (Task 1, plan 03-12), matching this
- * codebase's own DI-stub convention (stock-memory.test.ts's makeSession() et
- * al.) -- `attachRunStateTracker()` now calls `client.on("event", ...)` at
- * every fresh connect/reconnect this seam produces, so a plain object
- * literal with no `.on()` throws the moment ensureStockSession() attaches a
- * tracker to it. */
-function fakeSession(opts: { targetId: string; host: string; port: number; brokerControl: FakeSessionBrokerControl; connected?: boolean }): StockConnectSession {
-  const client = Object.assign(new EventEmitter(), {
-    connected: opts.connected ?? true,
-    disconnect: async (): Promise<void> => {
-      client.connected = false;
-    },
-  });
-  return {
-    client: client as unknown as StockConnectSession["client"],
-    versionQuad: "3.9.0",
-    capabilities: { cpuHistory: "absent" },
-    host: opts.host,
-    port: opts.port,
-    targetId: opts.targetId,
-    brokerControl: opts.brokerControl,
-    deps: {},
-    baselineEpoch: null,
-  };
-}
-
-test("lease: ensureLease is awaited strictly before stockConnect is ever called (lease-before-connect ordering)", async () => {
-  let counter = 0;
-  let leaseCallIndex = -1;
-  let connectCallIndex = -1;
-  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-1", brokerControl: STUB_BROKER_CONTROL });
-  const deps: StockDispatchDeps = {
-    ensureLease: async () => {
-      leaseCallIndex = counter++;
-      return { ok: true, lease };
-    },
-    connect: async (opts) => {
-      connectCallIndex = counter++;
-      return fakeSession(opts);
-    },
-  };
-  const outcome = await ensureStockSession(deps);
-  assert.ok(outcome.ok);
-  assert.ok(leaseCallIndex >= 0 && connectCallIndex >= 0);
-  assert.ok(leaseCallIndex < connectCallIndex, "ensureLease must be awaited before stockConnect is called");
-});
-
-test("lease: stockConnect receives the exact host/port/targetId/brokerControl the lease provider returned", async () => {
-  const brokerControl = { ...STUB_BROKER_CONTROL };
-  const lease: HeldLease = makeLease({ host: "10.0.0.5", port: 9002, targetId: "grant-42", brokerControl });
-  const receivedCalls: StockConnectOptions[] = [];
-  const deps: StockDispatchDeps = {
-    ensureLease: async () => ({ ok: true, lease }),
-    connect: async (opts) => {
-      receivedCalls.push(opts);
-      return fakeSession(opts);
-    },
-  };
-  const outcome = await ensureStockSession(deps);
-  assert.ok(outcome.ok);
-  assert.equal(receivedCalls.length, 1, "stockConnect must be called exactly once");
-  const received = receivedCalls[0]!;
-  assert.strictEqual(received.host, lease.host);
-  assert.strictEqual(received.port, lease.port);
-  assert.strictEqual(received.targetId, lease.targetId);
-  assert.strictEqual(received.brokerControl, lease.brokerControl);
-});
-
-test("lease: a provider failure never calls stockConnect and its message passes through verbatim", async () => {
-  let connectCalls = 0;
-  const deps: StockDispatchDeps = {
-    ensureLease: async () => ({ ok: false, message: "broker: dead_or_hung" }),
-    connect: async (opts) => {
-      connectCalls++;
-      return fakeSession(opts);
-    },
-  };
-  const outcome = await ensureStockSession(deps);
-  assert.equal(outcome.ok, false);
-  assert.equal((outcome as { ok: false; message: string }).message, "broker: dead_or_hung");
-  assert.equal(connectCalls, 0);
-});
-
-test("lease: a lease of null (the VICE_MCP_URL override) never calls stockConnect and names VICE_MCP_URL in the refusal", async () => {
-  let connectCalls = 0;
-  const deps: StockDispatchDeps = {
-    ensureLease: async () => ({ ok: true, lease: null }),
-    connect: async (opts) => {
-      connectCalls++;
-      return fakeSession(opts);
-    },
-  };
-  const outcome = await ensureStockSession(deps);
-  assert.equal(outcome.ok, false);
-  assert.match((outcome as { ok: false; message: string }).message, /VICE_MCP_URL/);
-  assert.equal(connectCalls, 0);
-});
-
-test("lease: two successive calls with the same targetId call stockConnect exactly once -- the held session is reused", async () => {
-  let connectCalls = 0;
-  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-1", brokerControl: STUB_BROKER_CONTROL });
-  const deps: StockDispatchDeps = {
-    ensureLease: async () => ({ ok: true, lease }),
-    connect: async (opts) => {
-      connectCalls++;
-      return fakeSession(opts);
-    },
-  };
-  const first = await ensureStockSession(deps);
-  const second = await ensureStockSession(deps);
-  assert.ok(first.ok && second.ok);
-  assert.equal(connectCalls, 1);
-});
-
-test("lease: a replacement acquisition naming a different targetId calls stockConnect a second time", async () => {
-  let connectCalls = 0;
-  const leaseA: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-1", brokerControl: STUB_BROKER_CONTROL });
-  const leaseB: HeldLease = makeLease({ host: "127.0.0.1", port: 6503, targetId: "grant-2", brokerControl: STUB_BROKER_CONTROL });
-  let currentLease: HeldLease = leaseA;
-  const deps: StockDispatchDeps = {
-    ensureLease: async () => ({ ok: true, lease: currentLease }),
-    connect: async (opts) => {
-      connectCalls++;
-      return fakeSession(opts);
-    },
-  };
-  const first = await ensureStockSession(deps);
-  currentLease = leaseB;
-  const second = await ensureStockSession(deps);
-  assert.ok(first.ok && second.ok);
-  assert.equal(connectCalls, 2);
-});
-
 // ---------------------------------------------------------------------------
-// CR-06 (code review 2026-08-13): production never passed StockConnectDeps, so
-// `baselineEpoch` was always null (making stockReconnect() throw a FALSE
-// MachineRestartedError on every transient drop) and the BACK-04 capability
-// cache was never read or written. The existing tests above could not see it
-// because they only assert on the four coordinates. These assert on `deps`.
-// ---------------------------------------------------------------------------
-
-test("CR-06: the lease's epochFile/supervisorDir and the settled binary path all reach stockConnect as deps", async () => {
-  const received: StockConnectOptions[] = [];
-  const lease = makeLease({
-    host: "127.0.0.1",
-    port: 6502,
-    targetId: "grant-deps-1",
-    brokerControl: STUB_BROKER_CONTROL,
-    epochFile: "/ws/.vice-supervisor/6502/epoch.json",
-    supervisorDir: "/ws/.vice-supervisor",
-  });
-  const outcome = await ensureStockSession({
-    ensureLease: async () => ({ ok: true, lease }),
-    connect: async (opts) => {
-      received.push(opts);
-      return fakeSession(opts);
-    },
-    resolvedBinaryPath: "/usr/bin/x64sc",
-  });
-  assert.ok(outcome.ok);
-  assert.equal(received.length, 1);
-  assert.deepEqual(received[0]!.deps, {
-    epochPath: "/ws/.vice-supervisor/6502/epoch.json",
-    supervisorDir: "/ws/.vice-supervisor",
-    binPath: "/usr/bin/x64sc",
-  });
-});
-
-test("CR-06: the epoch path is the per-instance epoch.json, NOT the top-level supervisor dir -- the two are threaded independently", async () => {
-  const received: StockConnectOptions[] = [];
-  const lease = makeLease({
-    host: "127.0.0.1",
-    port: 6503,
-    targetId: "grant-deps-2",
-    brokerControl: STUB_BROKER_CONTROL,
-    epochFile: "/ws/.vice-supervisor/6503/epoch.json",
-    supervisorDir: "/ws/.vice-supervisor",
-  });
-  await ensureStockSession({
-    ensureLease: async () => ({ ok: true, lease }),
-    connect: async (opts) => {
-      received.push(opts);
-      return fakeSession(opts);
-    },
-  });
-  const deps = received[0]!.deps!;
-  assert.notEqual(deps.epochPath, deps.supervisorDir, "backend.json and epoch.json live in DIFFERENT directories");
-  assert.match(String(deps.epochPath), /\/6503\/epoch\.json$/);
-  assert.doesNotMatch(String(deps.supervisorDir), /\/6503$/, "the capability cache must not be pointed at the per-instance directory");
-});
-
-test("CR-06: an empty lease field is threaded as ABSENT, never as an empty-string path", async () => {
-  const received: StockConnectOptions[] = [];
-  const lease = makeLease({ host: "127.0.0.1", port: 6504, targetId: "grant-deps-3", brokerControl: STUB_BROKER_CONTROL });
-  await ensureStockSession({
-    ensureLease: async () => ({ ok: true, lease }),
-    connect: async (opts) => {
-      received.push(opts);
-      return fakeSession(opts);
-    },
-  });
-  assert.deepEqual(received[0]!.deps, {}, "no epochPath, no supervisorDir, no binPath -- absent, not empty strings");
-});
-
-test("CR-06: the real stockConnect, driven against a loopback binmon stub through ensureStockSession, records a non-null baselineEpoch", async () => {
-  // The one test in this file that uses the REAL stockConnect -- because the
-  // defect was precisely that the real function never received `deps`. The
-  // emulator is a loopback stub answering the four handshake commands; no
-  // broker process and no x64sc are involved.
-  const dir = mkdtempSync(join(tmpdir(), "stock-dispatch-cr06-"));
-  const epochPath = join(dir, "epoch.json");
-  writeFileSync(epochPath, JSON.stringify({ epoch: 7, spawned_at: new Date().toISOString(), pid: 4242 }));
-
-  const sockets = new Set<Socket>();
-  const server = createServer((socket) => {
-    sockets.add(socket);
-    socket.on("close", () => sockets.delete(socket));
-    let buf = Buffer.alloc(0);
-    socket.on("data", (chunk: Buffer) => {
-      buf = Buffer.concat([buf, chunk]);
-      for (;;) {
-        if (buf.length < 11) break;
-        const bodyLength = buf.readUInt32LE(2);
-        const total = 11 + bodyLength;
-        if (buf.length < total) break;
-        const requestId = buf.readUInt32LE(6);
-        const commandType = buf[10]!;
-        buf = buf.subarray(total);
-        if (commandType === 0x85) {
-          // VICE_INFO: [len][3,9,0,0][svnLen]
-          socket.write(encodeResponseFrame({ responseType: 0x85, errorCode: 0x00, requestId, body: Buffer.from([4, 3, 9, 0, 0, 0]) }));
-        } else if (commandType === 0x86) {
-          // CPUHISTORY_GET: plan 07-02 added a real body parser (need()-
-          // guarded, requiring at least the 4-byte count field on an OK
-          // reply) where this stub previously sent a zero-length body no
-          // real stock build would ever produce -- an OK reply always
-          // carries at least count(u32LE), even for zero entries
-          // (monitor_binary.c:1563-1617). count(u32LE) = 0 here.
-          socket.write(encodeResponseFrame({ responseType: 0x86, errorCode: 0x00, requestId, body: Buffer.alloc(4) }));
-        } else {
-          socket.write(encodeResponseFrame({ responseType: commandType, errorCode: 0x00, requestId }));
-        }
-      }
-    });
-  });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
-  const port = (server.address() as AddressInfo).port;
-
-  try {
-    const lease = makeLease({ host: "127.0.0.1", port, targetId: "grant-real-1", brokerControl: STUB_BROKER_CONTROL, epochFile: epochPath, supervisorDir: dir });
-    // Phase 63 (SESS-02): stockConnect()'s default socket source is now a
-    // relay dial against a broker that is not running in this test process.
-    // This test is specifically about the REAL stockConnect handshake, not
-    // about the socket source, so `connect` is wrapped with a
-    // dialMonitorSocket that dials the loopback stub server above directly
-    // -- byte-identical handshake behaviour to the pre-relay direct dial
-    // this replaces.
-    const directDialMonitorSocket: DialMonitorSocketFn = (opts) =>
-      new Promise((resolve, reject) => {
-        const socket = netConnect({ host: opts.host, port: opts.port });
-        socket.once("connect", () => resolve({ socket, pending: Buffer.alloc(0) }));
-        socket.once("error", reject);
-      });
-    const outcome = await ensureStockSession({
-      ensureLease: async () => ({ ok: true, lease }),
-      connect: (opts) => stockConnect({ ...opts, deps: { dialMonitorSocket: directDialMonitorSocket, ...opts.deps } }),
-    });
-    assert.ok(outcome.ok, `expected a live session: ${JSON.stringify(outcome)}`);
-    assert.equal(outcome.session.baselineEpoch, 7, "the reconnect baseline must be the epoch the lease's own epoch.json carries, not null");
-    assert.equal(outcome.session.versionQuad, "3.9.0.0");
-    await stockDisconnect(outcome.session);
-    clearHeldStockSession();
-  } finally {
-    for (const socket of sockets) socket.destroy();
-    await new Promise<void>((resolve) => server.close(() => resolve()));
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-// ---------------------------------------------------------------------------
-// CR-05 (code review 2026-08-13): a replaced lease must TEAR DOWN the outgoing
-// session, not merely drop the reference. The holder is module-private, so the
-// reference is the last handle anything has on that socket and its broker-side
-// monitor claim; and stock VICE services exactly ONE binmon client, so a
-// leaked socket keeps occupying the instance's single client slot.
-// ---------------------------------------------------------------------------
-
-test("CR-05: a replacement acquisition disconnects the replaced session and releases ITS monitor claim, naming the old targetId", async () => {
-  const releasedTargets: string[] = [];
-  const brokerControl = {
-    claimMonitor: async () => ({ ok: true as const }),
-    releaseMonitor: async (opts: { targetId: string }) => {
-      releasedTargets.push(opts.targetId);
-      return { ok: true as const };
-    },
-  } as unknown as BrokerControlSession;
-
-  const leaseA: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-1", brokerControl });
-  const leaseB: HeldLease = makeLease({ host: "127.0.0.1", port: 6503, targetId: "grant-2", brokerControl });
-  let currentLease: HeldLease = leaseA;
-  const sessions: StockConnectSession[] = [];
-  const deps: StockDispatchDeps = {
-    ensureLease: async () => ({ ok: true, lease: currentLease }),
-    connect: async (opts) => {
-      const session = fakeSession(opts);
-      sessions.push(session);
-      return session;
-    },
-  };
-
-  const first = await ensureStockSession(deps);
-  assert.ok(first.ok);
-  const stale = sessions[0]!;
-  assert.equal(stale.client.connected, true, "precondition: the first session is live");
-
-  currentLease = leaseB;
-  const second = await ensureStockSession(deps);
-  assert.ok(second.ok);
-
-  assert.equal(stale.client.connected, false, "the replaced session's socket must be disconnected, not merely dereferenced");
-  assert.deepEqual(releasedTargets, ["grant-1"], "exactly one releaseMonitor, naming the OLD targetId -- never the replacement's");
-  assert.equal(second.session.targetId, "grant-2");
-  assert.equal(second.session.client.connected, true, "the replacement session must be live");
-});
-
-test("CR-05: a teardown failure on the replaced session does not stop the replacement handshake, and never leaves the dead session held", async () => {
-  const brokerControl = {
-    claimMonitor: async () => ({ ok: true as const }),
-    releaseMonitor: async () => {
-      throw new Error("test: broker refused the release");
-    },
-  } as unknown as BrokerControlSession;
-
-  const leaseA: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-1", brokerControl });
-  const leaseB: HeldLease = makeLease({ host: "127.0.0.1", port: 6503, targetId: "grant-2", brokerControl });
-  let currentLease: HeldLease = leaseA;
-  let connectCalls = 0;
-  const deps: StockDispatchDeps = {
-    ensureLease: async () => ({ ok: true, lease: currentLease }),
-    connect: async (opts) => {
-      connectCalls++;
-      return fakeSession(opts);
-    },
-  };
-
-  assert.ok((await ensureStockSession(deps)).ok);
-  currentLease = leaseB;
-  const second = await ensureStockSession(deps);
-  assert.ok(second.ok, "a failed teardown of the OUTGOING session must not fail the replacement");
-  assert.equal(second.session.targetId, "grant-2");
-  assert.equal(connectCalls, 2);
-
-  // And the holder now names the replacement -- a third call with lease B
-  // reuses it rather than reconnecting.
-  const third = await ensureStockSession(deps);
-  assert.ok(third.ok);
-  assert.equal(connectCalls, 2, "the replacement must be the held session, so a third call reuses it");
-});
-
-// ---------------------------------------------------------------------------
-// WR-03 (03-REVIEW.md): the wiring half of the condition-registry eviction
-// hook. stock-checkpoints.test.ts owns the hook's own semantics; these two
-// assert that this seam CALLS it at the one right moment and at no other --
-// the "correct module, never called" failure shape this module tree has been
-// bitten by before.
-// ---------------------------------------------------------------------------
-
-/** fakeSession() plus the `send` a condition-setting handler needs -- the
- * dispatch harness's own client has no send() because nothing else in this
- * file's tests reaches a family handler. */
-function conditionCapableSession(opts: Parameters<typeof fakeSession>[0]): StockConnectSession {
-  const session = fakeSession(opts);
-  (session.client as unknown as { send: unknown }).send = async () => ({ type: "condition_set" as const });
-  return session;
-}
-
-test("WR-03: a fresh handshake for a NEW targetId evicts the abandoned target's condition-registry entry", async () => {
-  const leaseA: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-1", brokerControl: STUB_BROKER_CONTROL });
-  const leaseB: HeldLease = makeLease({ host: "127.0.0.1", port: 6503, targetId: "grant-2", brokerControl: STUB_BROKER_CONTROL });
-  let currentLease: HeldLease = leaseA;
-  const deps: StockDispatchDeps = {
-    ensureLease: async () => ({ ok: true, lease: currentLease }),
-    connect: async (opts) => conditionCapableSession(opts),
-  };
-
-  const first = await ensureStockSession(deps);
-  assert.ok(first.ok);
-  const recorded = await handleCheckpointSetCondition({ checkpoint_num: 1, condition: "A == $42" }, first.session, deps);
-  assert.equal(recorded.isError, false, `setup: the condition must be recorded, got ${recorded.content[0]!.text}`);
-  assert.deepEqual(_conditionRegistryTargetsForTest(), ["grant-1"], "setup: the first target's condition is registered");
-
-  currentLease = leaseB;
-  const second = await ensureStockSession(deps);
-  assert.ok(second.ok);
-  assert.equal(second.session.targetId, "grant-2");
-  assert.deepEqual(
-    _conditionRegistryTargetsForTest(),
-    [],
-    "WR-03 REGRESSION: the abandoned target's condition map is still held, so the registry grows one entry per instance the broker ever hands this process",
-  );
-});
-
-test("WR-03: reusing the held session for the SAME targetId never evicts its conditions", async () => {
-  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-1", brokerControl: STUB_BROKER_CONTROL });
-  const deps: StockDispatchDeps = {
-    ensureLease: async () => ({ ok: true, lease }),
-    connect: async (opts) => conditionCapableSession(opts),
-  };
-
-  const first = await ensureStockSession(deps);
-  assert.ok(first.ok);
-  assert.equal((await handleCheckpointSetCondition({ checkpoint_num: 1, condition: "A == $42" }, first.session, deps)).isError, false);
-
-  const second = await ensureStockSession(deps);
-  assert.ok(second.ok);
-  assert.equal(second.session, first.session, "precondition: this must be the reuse branch, not a fresh handshake");
-  assert.deepEqual(_conditionRegistryTargetsForTest(), ["grant-1"], "the live target's registry entry must never be evicted underneath it");
-  assert.equal(conditionTextFor(second.session, 1), "(A == $42)", "and its recorded condition text must still be readable");
-});
-
-test("CR-05: a FIRST acquisition with nothing held releases nothing -- no spurious releaseMonitor", async () => {
-  const releasedTargets: string[] = [];
-  const brokerControl = {
-    claimMonitor: async () => ({ ok: true as const }),
-    releaseMonitor: async (opts: { targetId: string }) => {
-      releasedTargets.push(opts.targetId);
-      return { ok: true as const };
-    },
-  } as unknown as BrokerControlSession;
-  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-1", brokerControl });
-  const outcome = await ensureStockSession({
-    ensureLease: async () => ({ ok: true, lease }),
-    connect: async (opts) => fakeSession(opts),
-  });
-  assert.ok(outcome.ok);
-  assert.deepEqual(releasedTargets, []);
-});
-
-test("lease: a held session whose socket has closed is re-established via stockReconnect, not silently reused", async () => {
-  let connectCalls = 0;
-  let reconnectCalls = 0;
-  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-9", brokerControl: STUB_BROKER_CONTROL });
-  const deps: StockDispatchDeps = {
-    ensureLease: async () => ({ ok: true, lease }),
-    connect: async (opts) => {
-      connectCalls++;
-      return fakeSession({ ...opts, connected: false });
-    },
-    reconnect: async (session) => {
-      reconnectCalls++;
-      return fakeSession({ targetId: session.targetId, host: session.host, port: session.port, brokerControl: session.brokerControl, connected: true });
-    },
-  };
-  const first = await ensureStockSession(deps);
-  assert.ok(first.ok);
-  const second = await ensureStockSession(deps);
-  assert.ok(second.ok);
-  assert.equal(connectCalls, 1);
-  assert.equal(reconnectCalls, 1);
-});
-
-test("lease: MachineRestartedError out of a held session's reconnect clears the holder so the next call re-handshakes", async () => {
-  let connectCalls = 0;
-  let reconnectCalls = 0;
-  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-9", brokerControl: STUB_BROKER_CONTROL });
-  const deps: StockDispatchDeps = {
-    ensureLease: async () => ({ ok: true, lease }),
-    connect: async (opts) => {
-      connectCalls++;
-      return fakeSession({ ...opts, connected: false });
-    },
-    reconnect: async () => {
-      reconnectCalls++;
-      throw new MachineRestartedError("test: machine restarted across reconnect", { baselineEpoch: 1, currentEpoch: 2 });
-    },
-  };
-  await ensureStockSession(deps); // connects, holds a session whose client reports not connected
-  await assert.rejects(() => ensureStockSession(deps), MachineRestartedError);
-  const third = await ensureStockSession(deps); // holder was cleared on the rejection -- re-handshakes from scratch
-  assert.ok(third.ok);
-  assert.equal(connectCalls, 2);
-  assert.equal(reconnectCalls, 1);
-});
-
-// ---------------------------------------------------------------------------
-// Task 1 (plan 03-12): the runState tracker attach points (RESEARCH.md
-// Pitfall 4) -- attached at exactly the two branches that produce a FRESH
-// ViceMonitorClient, never in the `heldSession.client.connected` reuse
-// branch. Every client below is the same real-EventEmitter fakeSession()
-// stub every other test in this file uses; `listenerCount("event")` is the
-// literal proof a second attach never registers a second listener.
-// ---------------------------------------------------------------------------
-
-test("runState/Pitfall4: a fresh connect attaches exactly one 'event' listener to the new client", async () => {
-  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-tracker-1", brokerControl: STUB_BROKER_CONTROL });
-  const deps: StockDispatchDeps = {
-    ensureLease: async () => ({ ok: true, lease }),
-    connect: async (opts) => fakeSession(opts),
-  };
-  const outcome = await ensureStockSession(deps);
-  assert.ok(outcome.ok);
-  assert.equal(outcome.session.client.listenerCount("event"), 1);
-});
-
-test("runState/Pitfall4: a session-reuse call (same targetId, still connected) does NOT add a second listener", async () => {
-  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-tracker-2", brokerControl: STUB_BROKER_CONTROL });
-  const deps: StockDispatchDeps = {
-    ensureLease: async () => ({ ok: true, lease }),
-    connect: async (opts) => fakeSession(opts),
-  };
-  const first = await ensureStockSession(deps);
-  const second = await ensureStockSession(deps);
-  assert.ok(first.ok && second.ok);
-  assert.equal(first.session.client, second.session.client, "precondition: the reuse branch returns the SAME client");
-  assert.equal(second.session.client.listenerCount("event"), 1, "the reuse branch must never call attachRunStateTracker a second time");
-});
-
-test("runState/Pitfall4: a reconnect (socket dead) attaches exactly one listener to the NEW client from stockReconnect", async () => {
-  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-tracker-3", brokerControl: STUB_BROKER_CONTROL });
-  const deps: StockDispatchDeps = {
-    ensureLease: async () => ({ ok: true, lease }),
-    connect: async (opts) => fakeSession({ ...opts, connected: false }),
-    reconnect: async (session) => fakeSession({ targetId: session.targetId, host: session.host, port: session.port, brokerControl: session.brokerControl, connected: true }),
-  };
-  await ensureStockSession(deps); // connects, holds a not-connected session (no tracker assertion here -- see the fresh-connect test above)
-  const second = await ensureStockSession(deps); // triggers the reconnect branch
-  assert.ok(second.ok);
-  assert.equal(second.session.client.listenerCount("event"), 1);
-});
-
-// ---------------------------------------------------------------------------
-// Task 1 (plan 03-12): withStockSession() -- the one adapter every table
-// entry goes through.
-// ---------------------------------------------------------------------------
-
-test("withStockSession: returns convertHandshakeError's text when ensureStockSession throws MonitorOwnershipError", async () => {
-  const handler: StockSessionHandler = async () => {
-    throw new Error("must not be called -- the handshake itself failed");
-  };
-  const wrapped = withStockSession("vice_test_tool", handler);
-  const deps: StockDispatchDeps = {
-    ensureLease: async () => ({ ok: true, lease: makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-wss-1", brokerControl: STUB_BROKER_CONTROL }) }),
-    connect: async () => {
-      throw new MonitorOwnershipError("stockConnect: monitor for target grant-wss-1 on port 6502 is already claimed by grant grant-other", {
-        holderGrantId: "grant-other",
-        holderClaimedAt: 1700000000000,
-        port: 6502,
-      });
-    },
-  };
-  const result = await wrapped({}, deps);
-  assert.equal(result.isError, true);
-  assert.match(JSON.stringify(result.content), /grant-other/);
-});
-
-test("withStockSession: returns outcome.message verbatim on an { ok: false } refusal, without touching the handler", async () => {
-  let handlerCalled = false;
-  const handler: StockSessionHandler = async () => {
-    handlerCalled = true;
-    return { content: [{ type: "text", text: "{}" }], isError: false };
-  };
-  const wrapped = withStockSession("vice_test_tool", handler);
-  const deps: StockDispatchDeps = {
-    ensureLease: async () => ({ ok: false, message: "broker: dead_or_hung (verbatim message)" }),
-  };
-  const result = await wrapped({}, deps);
-  assert.equal(result.isError, true);
-  assert.match(JSON.stringify(result.content), /broker: dead_or_hung \(verbatim message\)/);
-  assert.equal(handlerCalled, false, "a refusal must never reach the delegated handler");
-});
-
-test("withStockSession: a family handler that throws yields isError:true rather than propagating", async () => {
-  const handler: StockSessionHandler = async () => {
-    throw new Error("boom: something the family handler let escape");
-  };
-  const wrapped = withStockSession("vice_test_tool", handler);
-  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-wss-3", brokerControl: STUB_BROKER_CONTROL });
-  const deps: StockDispatchDeps = {
-    ensureLease: async () => ({ ok: true, lease }),
-    connect: async (opts) => fakeSession(opts),
-  };
-  const result = await wrapped({}, deps);
-  assert.equal(result.isError, true);
-  assert.match(JSON.stringify(result.content), /vice_test_tool/);
-  assert.match(JSON.stringify(result.content), /boom: something the family handler let escape/);
-});
-
-// ---------------------------------------------------------------------------
-// Task 1 (plan 02-10): the dispatch table, the hard refusal, and vice_ping.
+// Task 1 (plan 02-10): vice_ping and the handshake-error wording.
 // Every deps.connect/deps.reconnect below is a spy stub, never
 // stock-connect.ts's real socket-touching implementation -- these tests
 // assert dispatch WIRING and refusal TEXT, never protocol shape. Every
-// ping test drives dispatchStock() through a REAL ensureStockSession(), per
+// ping test drives callStockTool() through a REAL ensureStockSession(), per
 // this plan's own test-stubbing-boundary decision -- never a stubbed
 // ensureStockSession.
 // ---------------------------------------------------------------------------
 
-test("dispatch: stockHandlerFor(\"vice_ping\") returns a handler; stockHandlerFor(\"vice_mem_read\") returns undefined", () => {
-  assert.equal(typeof stockHandlerFor("vice_ping"), "function");
-  assert.equal(stockHandlerFor("vice_mem_read"), undefined);
-});
-
 // ---------------------------------------------------------------------------
-// Task 2 (plan 03-12): all 24 Phase 3 family tools plus vice_ping are
-// registered in the ONE dispatch table, and the eight deliberately-absent
-// tools are refused without ever touching `deps`.
+// The one tool list and its pairing with the manifest.
 // ---------------------------------------------------------------------------
 
-/** The 36 tool names registered in STOCK_DISPATCH_TABLE (25 Phase 3 direct
- * tools, 04-05's vice_disassemble, Phase 5's eight DERIV-01/DERIV-04/
- * DERIV-05/DERIV-06 derived tools, and Phase 7's two TIME-01/TIME-02
- * derived tools -- vice_cycles_stopwatch and vice_run_until), driven from an explicit array literal (per this plan's own
- * acceptance criteria) so a missing entry fails as a NAMED assertion rather
- * than a generic count mismatch. */
-const REGISTERED_TOOL_NAMES = [
-  "vice_ping",
-  "vice_memory_read",
-  "vice_memory_write",
-  "vice_memory_banks",
-  "vice_registers_get",
-  "vice_registers_set",
-  "vice_registers_available",
-  "vice_checkpoint_add",
-  "vice_checkpoint_delete",
-  "vice_checkpoint_list",
-  "vice_checkpoint_toggle",
-  "vice_checkpoint_set_condition",
-  "vice_watch_add",
-  "vice_execution_pause",
-  "vice_execution_run",
-  "vice_execution_step",
-  "vice_execution_until_return",
-  "vice_machine_reset",
-  "vice_autostart",
-  "vice_disk_attach",
-  "vice_snapshot_save",
-  "vice_snapshot_load",
-  "vice_keyboard_type",
-  "vice_keyboard_petscii",
-  "vice_joystick_set",
-  "vice_disassemble",
-  "vice_memory_search",
-  "vice_memory_compare",
-  "vice_symbols_load",
-  "vice_symbols_lookup",
-  "vice_vicii_get_state",
-  "vice_cia_get_state",
-  "vice_sprite_get",
-  "vice_sprite_inspect",
-  "vice_cycles_stopwatch",
-  "vice_run_until",
-];
-
-/** The eight tools this plan deliberately does NOT register -- each name's
- * absence is a planner decision (see the block comment above
- * STOCK_DISPATCH_TABLE in stock-dispatch.ts), never an oversight. */
-const DELIBERATELY_ABSENT_TOOL_NAMES = [
-  "vice_checkpoint_set_ignore_count",
-  "vice_snapshot_list",
-  "vice_disk_detach",
-  "vice_joystick_tap",
-  "vice_disk_read_sector",
-  "vice_sid_get_state",
-  "vice_machine_config_get",
-  "vice_machine_config_set",
-];
-
-/** FORKRM-05 (plan 52-07): dispatchStock()'s miss branch used to fall back
- * to a per-backend capability registry's renderer first, naming the tool's
- * category (hardware/descoped/stock-only-gain) and the other backend that
- * provided it. That renderer, and the registry behind it, are both deleted -- every
- * name in DELIBERATELY_ABSENT_TOOL_NAMES now gets the SAME internal-
- * inconsistency wording, whether it is a permanent hardware loss
- * (vice_sid_get_state), a descoped-but-buildable tool, or a name absent
- * from the manifest entirely (vice_snapshot_list). This helper is kept only
- * so the literal lives once. */
-function expectedStockMissMessage(name: string): string {
-  return (
-    `${name} is advertised on the stock backend's manifest but has no handler in the stock ` +
-    `dispatch table -- this is an internal inconsistency, not a capability gap; please file an issue.`
-  );
-}
-
-test("dispatch: stockHandlerFor returns a function for every one of the 36 registered tool names", () => {
-  for (const name of REGISTERED_TOOL_NAMES) {
-    assert.equal(typeof stockHandlerFor(name), "function", `expected a handler for ${name}`);
-  }
-});
-
-test("dispatch: the table's key count is exactly 36", () => {
-  // STOCK_DISPATCH_TABLE itself is not exported -- stockHandlerFor() over
-  // every name this plan knows about is the table's own public surface, so
-  // this test drives the same 36-name list rather than reaching into the
-  // module's private object.
-  const hits = REGISTERED_TOOL_NAMES.filter((name) => typeof stockHandlerFor(name) === "function");
-  assert.equal(hits.length, 36);
-  assert.equal(REGISTERED_TOOL_NAMES.length, 36);
-});
-
-test("dispatch: every registered tool name matches /^vice_[a-z0-9_]+$/", () => {
-  for (const name of REGISTERED_TOOL_NAMES) {
+test("STOCK_TOOLS: every name matches /^vice_[a-z0-9_]+$/ and appears once", () => {
+  const names = STOCK_TOOLS.map((t) => t.name);
+  for (const name of names) {
     assert.match(name, /^vice_[a-z0-9_]+$/, `${name} does not match the expected tool-name shape`);
   }
+  assert.equal(new Set(names).size, names.length, "a tool name appears twice in STOCK_TOOLS");
 });
 
-test("dispatch: stockHandlerFor returns undefined for every deliberately-absent tool name", () => {
-  for (const name of DELIBERATELY_ABSENT_TOOL_NAMES) {
-    assert.equal(stockHandlerFor(name), undefined, `expected NO handler for ${name}`);
+test("stockToolDefinitions: the real manifest pairs with STOCK_TOOLS one to one, in manifest order", () => {
+  const manifestTools = readManifest(STOCK_MANIFEST_PATH).tools as unknown as ToolInfo[];
+  const paired = stockToolDefinitions(manifestTools);
+  assert.deepEqual(paired.map((p) => p.def.name), manifestTools.map((t) => t.name));
+  for (const { def, tool } of paired) {
+    assert.equal(tool.name, def.name);
   }
 });
 
-test("dispatch: dispatchStock refuses every deliberately-absent tool with the internal-inconsistency message (WR-13/FORKRM-05), without reading deps", async () => {
-  for (const name of DELIBERATELY_ABSENT_TOOL_NAMES) {
-    const deps = {
-      ensureLease: () => {
-        throw new Error(`ensureLease must never be called for ${name} -- it has no dispatch entry`);
-      },
-    } as unknown as StockDispatchDeps;
-    const result = await dispatchStock(name, {}, deps);
-    assert.equal(result.isError, true);
-    const text = JSON.stringify(result.content);
-    assert.match(text, new RegExp(name));
-    assert.ok(
-      text.includes(JSON.stringify(expectedStockMissMessage(name)).slice(1, -1)),
-      `expected the miss-branch text for ${name} to equal the internal-inconsistency fallback, got: ${text}`,
-    );
-  }
+test("stockToolDefinitions: a manifest entry with no tool is refused by name", () => {
+  const manifestTools = readManifest(STOCK_MANIFEST_PATH).tools as unknown as ToolInfo[];
+  const extra = [...manifestTools, { name: "vice_not_a_tool", inputSchema: { type: "object" } }];
+  assert.throws(() => stockToolDefinitions(extra), (err: unknown) => err instanceof StockToolManifestMismatchError && /vice_not_a_tool/.test(err.message));
 });
 
-test("refus: dispatchStock on a former fork-only hardware tool (vice_sid_get_state) refuses with the same internal-inconsistency text as any other miss, never calls forwardToVice, and never touches deps (WR-13/FORKRM-05)", async () => {
+test("stockToolDefinitions: a tool with no manifest entry is refused by name", () => {
+  const manifestTools = (readManifest(STOCK_MANIFEST_PATH).tools as unknown as ToolInfo[]).filter((t) => t.name !== "vice_ping");
+  assert.throws(() => stockToolDefinitions(manifestTools), (err: unknown) => err instanceof StockToolManifestMismatchError && /vice_ping/.test(err.message));
+});
+
+test("callStockTool: an unknown name is refused by name, without reading deps", async () => {
   let depsTouched = false;
-  const emptyDeps = new Proxy({} as StockDispatchDeps, {
+  const emptyDeps = new Proxy({} as StockSessionDeps, {
     get(target, prop) {
       depsTouched = true;
       return (target as unknown as Record<string | symbol, unknown>)[prop];
     },
   });
-  const result = await dispatchStock("vice_sid_get_state", {}, emptyDeps);
-  assert.equal(result.isError, true);
-  const text = JSON.stringify(result.content);
-  assert.match(text, /vice_sid_get_state/);
-  assert.ok(
-    text.includes(JSON.stringify(expectedStockMissMessage("vice_sid_get_state")).slice(1, -1)),
-    `expected dispatchStock()'s miss text for vice_sid_get_state to equal the internal-inconsistency fallback, got: ${text}`,
-  );
+  for (const name of ["vice_sid_get_state", "vice_snapshot_list", "vice_totally_unknown_tool"]) {
+    const result = await callStockTool(name, {}, emptyDeps);
+    assert.equal(result.isError, true);
+    assert.match(JSON.stringify(result.content), new RegExp(`${name}: no stock tool has this name`));
+  }
   assert.equal(depsTouched, false, "a miss must never read any field off deps");
 });
 
-test("refus: dispatchStock on a name absent from BOTH manifests (no registry entry) falls back to the internal-inconsistency message, never a false backend claim (WR-13)", async () => {
-  const result = await dispatchStock("vice_snapshot_list", {}, { ensureLease: async () => ({ ok: true, lease: null }) });
-  assert.equal(result.isError, true);
-  const text = JSON.stringify(result.content);
-  assert.match(text, /vice_snapshot_list/);
-  assert.match(text, /internal inconsistency/);
-  assert.doesNotMatch(text, /fork backend provides this tool/, "must never assert a specific providing backend when the registry has no entry");
-  assert.ok(
-    text.includes(JSON.stringify(expectedStockMissMessage("vice_snapshot_list")).slice(1, -1)),
-    `expected the fallback text to equal expectedStockMissMessage("vice_snapshot_list"), got: ${text}`,
-  );
-});
-
-test("refus: dispatchStock never returns a success shape for an unknown tool name", async () => {
-  const result = await dispatchStock("vice_totally_unknown_tool", {}, { ensureLease: async () => ({ ok: true, lease: null }) });
-  assert.equal(result.isError, true);
-});
-
-test("ping: dispatchStock(\"vice_ping\", ...) calls deps.ensureLease exactly once and deps.connect receives the exact lease fields", async () => {
+test("ping: callStockTool(\"vice_ping\", ...) calls deps.ensureLease exactly once and deps.connect receives the exact lease fields", async () => {
   let ensureLeaseCalls = 0;
   const lease: HeldLease = makeLease({ host: "10.1.2.3", port: 6510, targetId: "grant-ping-1", brokerControl: STUB_BROKER_CONTROL });
   const receivedCalls: StockConnectOptions[] = [];
-  const deps: StockDispatchDeps = {
+  const deps: StockSessionDeps = {
     ensureLease: async () => {
       ensureLeaseCalls++;
       return { ok: true, lease };
@@ -1194,7 +441,7 @@ test("ping: dispatchStock(\"vice_ping\", ...) calls deps.ensureLease exactly onc
     },
     resolvedBinaryPath: "/usr/local/bin/x64sc",
   };
-  const result = await dispatchStock("vice_ping", {}, deps);
+  const result = await callStockTool("vice_ping", {}, deps);
   assert.equal(result.isError, false);
   assert.equal(ensureLeaseCalls, 1);
   assert.equal(receivedCalls.length, 1);
@@ -1207,14 +454,14 @@ test("ping: dispatchStock(\"vice_ping\", ...) calls deps.ensureLease exactly onc
 
 test("ping: a failing ensureLease yields isError:true carrying the provider's message and never calls connect", async () => {
   let connectCalls = 0;
-  const deps: StockDispatchDeps = {
+  const deps: StockSessionDeps = {
     ensureLease: async () => ({ ok: false, message: "broker: dead_or_hung (pid 1234)" }),
     connect: async (opts) => {
       connectCalls++;
       return fakeSession(opts);
     },
   };
-  const result = await dispatchStock("vice_ping", {}, deps);
+  const result = await callStockTool("vice_ping", {}, deps);
   assert.equal(result.isError, true);
   const text = JSON.stringify(result.content);
   assert.match(text, /dead_or_hung/);
@@ -1223,13 +470,13 @@ test("ping: a failing ensureLease yields isError:true carrying the provider's me
 
 test("ping: the success payload carries backend, viceVersion, resolvedBinaryPath, and runState (D-06)", async () => {
   const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-ping-2", brokerControl: STUB_BROKER_CONTROL });
-  const deps: StockDispatchDeps = {
+  const deps: StockSessionDeps = {
     ensureLease: async () => ({ ok: true, lease }),
     connect: async (opts) => fakeSession(opts),
     resolvedBinaryPath: "/opt/vice/bin/x64sc",
     resolvedBinaryPathIsResolved: true,
   };
-  const result = await dispatchStock("vice_ping", {}, deps);
+  const result = await callStockTool("vice_ping", {}, deps);
   assert.equal(result.isError, false);
   const payload = JSON.parse(result.content[0]!.text);
   assert.equal(payload.backend, "stock");
@@ -1246,7 +493,7 @@ test("ping: the success payload carries backend, viceVersion, resolvedBinaryPath
 
 test("WR-05 ping: an UNRESOLVED binary path is reported as such, so a bare name is never presented as a resolved path", async () => {
   const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-ping-wr05", brokerControl: STUB_BROKER_CONTROL });
-  const result = await dispatchStock("vice_ping", {}, {
+  const result = await callStockTool("vice_ping", {}, {
     ensureLease: async () => ({ ok: true, lease }),
     connect: async (opts) => fakeSession(opts),
     // The pre-WR-05 production value: the raw configured name, which inside a
@@ -1261,7 +508,7 @@ test("WR-05 ping: an UNRESOLVED binary path is reported as such, so a bare name 
 
 test("WR-05 ping: the resolution flag defaults to false when nothing said otherwise", async () => {
   const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-ping-wr05b", brokerControl: STUB_BROKER_CONTROL });
-  const result = await dispatchStock("vice_ping", {}, {
+  const result = await callStockTool("vice_ping", {}, {
     ensureLease: async () => ({ ok: true, lease }),
     connect: async (opts) => fakeSession(opts),
   });
@@ -1271,7 +518,7 @@ test("WR-05 ping: the resolution flag defaults to false when nothing said otherw
 
 test("WR-06: a connect REFUSAL on the stock path names VICE_BROKER_BINMON_HOST and the loopback default", async () => {
   const lease: HeldLease = makeLease({ host: "host.docker.internal", port: 6605, targetId: "grant-wr06", brokerControl: STUB_BROKER_CONTROL });
-  const result = await dispatchStock("vice_ping", {}, {
+  const result = await callStockTool("vice_ping", {}, {
     ensureLease: async () => ({ ok: true, lease }),
     connect: async () => {
       throw new Error("connect ECONNREFUSED 172.17.0.1:6605");
@@ -1287,7 +534,7 @@ test("WR-06: a connect REFUSAL on the stock path names VICE_BROKER_BINMON_HOST a
 
 test("WR-06: a non-connect handshake failure keeps the plain wording -- the binmon-host advice is not sprayed over unrelated causes", async () => {
   const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6605, targetId: "grant-wr06b", brokerControl: STUB_BROKER_CONTROL });
-  const result = await dispatchStock("vice_ping", {}, {
+  const result = await callStockTool("vice_ping", {}, {
     ensureLease: async () => ({ ok: true, lease }),
     connect: async () => {
       throw new Error("observed api_version 0x03, expected 0x02");
@@ -1310,7 +557,7 @@ test("WR-06: the WHATWG URL parser keeps IPv6 brackets in .hostname, and the sam
 
 test("ping: a MonitorOwnershipError from the handshake becomes isError:true naming the holder, without wedge/hung/unresponsive language", async () => {
   const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-ping-3", brokerControl: STUB_BROKER_CONTROL });
-  const deps: StockDispatchDeps = {
+  const deps: StockSessionDeps = {
     ensureLease: async () => ({ ok: true, lease }),
     connect: async () => {
       throw new MonitorOwnershipError("stockConnect: monitor for target grant-ping-3 on port 6502 is already claimed by grant grant-other", {
@@ -1320,7 +567,7 @@ test("ping: a MonitorOwnershipError from the handshake becomes isError:true nami
       });
     },
   };
-  const result = await dispatchStock("vice_ping", {}, deps);
+  const result = await callStockTool("vice_ping", {}, deps);
   assert.equal(result.isError, true);
   const text = JSON.stringify(result.content).toLowerCase();
   assert.match(text, /grant-other/);
@@ -1330,7 +577,7 @@ test("ping: a MonitorOwnershipError from the handshake becomes isError:true nami
 test("ping: a MachineRestartedError from the handshake becomes isError:true distinguishable from a provider-timeout message", async () => {
   const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-ping-4", brokerControl: STUB_BROKER_CONTROL });
   let connectCalls = 0;
-  const deps: StockDispatchDeps = {
+  const deps: StockSessionDeps = {
     ensureLease: async () => ({ ok: true, lease }),
     connect: async (opts) => {
       connectCalls++;
@@ -1341,23 +588,14 @@ test("ping: a MachineRestartedError from the handshake becomes isError:true dist
       throw new MachineRestartedError("test: machine restarted across reconnect", { baselineEpoch: 5, currentEpoch: 9 });
     },
   };
-  await dispatchStock("vice_ping", {}, deps); // first call connects and holds a not-connected session
-  const result = await dispatchStock("vice_ping", {}, deps); // second call triggers the reconnect path
+  await callStockTool("vice_ping", {}, deps); // first call connects and holds a not-connected session
+  const result = await callStockTool("vice_ping", {}, deps); // second call triggers the reconnect path
   assert.equal(result.isError, true);
   const text = JSON.stringify(result.content);
   assert.match(text, /epoch/i);
   assert.match(text, /baseline epoch 5/);
   assert.match(text, /current epoch 9/);
   assert.doesNotMatch(text.toLowerCase(), /timeout/);
-});
-
-test("dispatch: no handler in the table ever throws -- dispatchStock always resolves to a well-formed {content,isError} result", async () => {
-  const names = ["vice_ping", "vice_totally_unknown_tool", "vice_mem_read"];
-  for (const name of names) {
-    const result = await dispatchStock(name, {}, { ensureLease: async () => ({ ok: false, message: "unreachable in this test" }) });
-    assert.equal(typeof result.isError, "boolean");
-    assert.ok(Array.isArray(result.content));
-  }
 });
 
 test("anno_* curation (plan 29-01): every curated anno_* name is absent from tools-manifest.stock.json", () => {
@@ -1382,8 +620,8 @@ test("anno_* curation (plan 29-01): every curated anno_* name is absent from too
 
 // ---------------------------------------------------------------------------
 // Task 3 (plan 03-13): the D-02 answer-conformance harness. Every one of the
-// 25 stock tools is dispatched through dispatchStock() -- the REAL path,
-// exercising withStockSession()'s adapter and stockAnswer()'s runState stamp
+// 25 stock tools is dispatched through callStockTool() -- the REAL path,
+// exercising runBinary() and stockAnswer()'s runState stamp
 // -- against a stubbed session, never a family handler called directly. Each
 // case's actual answer is validated against ITS OWN declared outputSchema in
 // tools-manifest.stock.json. A completeness guard ties the case list to the
@@ -1395,7 +633,7 @@ const CONFORMANCE_BROKER_CONTROL = {
   claimMonitor: async () => ({ ok: true as const }),
   releaseMonitor: async () => ({ ok: true as const }),
   // Phase 63, plan 63-03 (SESS-05): every conformance case runs through the
-  // REAL withStockSession()/withChannelLockHeld() path, which now declares
+  // REAL runBinary()/withChannelLockHeld() path, which now declares
   // and clears an in-flight operation for every call -- a stub without this
   // method would throw "noteOperation is not a function" on the very first
   // conformance case, not merely fail a type check the `as unknown as` cast
@@ -1462,11 +700,11 @@ function buildConformanceSession(targetId: string, sendImpl: ConformanceSendImpl
   return session;
 }
 
-/** Builds the StockDispatchDeps for one conformance case: a fresh lease
+/** Builds the StockSessionDeps for one conformance case: a fresh lease
  * (the session's own unique targetId, so ensureStockSession() never reuses
  * a DIFFERENT case's held session) and a `connect` stub that ignores the
  * lease's coordinates and hands back the pre-built session. */
-function buildConformanceDeps(session: StockConnectSession): StockDispatchDeps {
+function buildConformanceDeps(session: StockConnectSession): StockSessionDeps {
   return {
     ensureLease: async () => ({
       ok: true as const,
@@ -1565,7 +803,7 @@ async function withTempRepoRootForConformance<T>(fn: (repoRootDir: string) => Pr
 // deps.transferFile stub instead (both added in plan 64-04, above).
 
 /** Shared post-dispatch assertions every conformance case makes: the real
- * dispatchStock() answer must be a success, must validate against the
+ * callStockTool() answer must be a success, must validate against the
  * manifest's own declared outputSchema for that tool, and its runState must
  * be one of the three allowed values -- checked independently of the schema
  * (a broken schema could otherwise mask a broken runState). */
@@ -1595,7 +833,7 @@ const CONFORMANCE_TOOL_NAMES: string[] = [];
  * registered cases. */
 function conformanceTest(toolName: string, run: () => Promise<void>): void {
   CONFORMANCE_TOOL_NAMES.push(toolName);
-  test(`conformance (D-02): dispatchStock("${toolName}", ...) answers, validating against its own declared outputSchema`, run);
+  test(`conformance (D-02): callStockTool("${toolName}", ...) answers, validating against its own declared outputSchema`, run);
 }
 
 // --------------------------------------------------------- memory
@@ -1608,7 +846,7 @@ conformanceTest("vice_memory_read", async () => {
     throw new Error(`vice_memory_read: unexpected commandType ${commandType}`);
   });
   const deps = buildConformanceDeps(session);
-  const result = await dispatchStock("vice_memory_read", { address: "$1000", size: 2 }, deps);
+  const result = await callStockTool("vice_memory_read", { address: "$1000", size: 2 }, deps);
   assertAnswerConforms("vice_memory_read", result);
 });
 
@@ -1620,7 +858,7 @@ conformanceTest("vice_memory_write", async () => {
     throw new Error(`vice_memory_write: unexpected commandType ${commandType}`);
   });
   const deps = buildConformanceDeps(session);
-  const result = await dispatchStock("vice_memory_write", { address: "$1000", data: [0x01, 0x02] }, deps);
+  const result = await callStockTool("vice_memory_write", { address: "$1000", data: [0x01, 0x02] }, deps);
   assertAnswerConforms("vice_memory_write", result);
 });
 
@@ -1632,7 +870,7 @@ conformanceTest("vice_memory_banks", async () => {
     throw new Error(`vice_memory_banks: unexpected commandType ${commandType}`);
   });
   const deps = buildConformanceDeps(session);
-  const result = await dispatchStock("vice_memory_banks", {}, deps);
+  const result = await callStockTool("vice_memory_banks", {}, deps);
   assertAnswerConforms("vice_memory_banks", result);
 });
 
@@ -1649,7 +887,7 @@ conformanceTest("vice_memory_search", async () => {
     throw new Error(`vice_memory_search: unexpected commandType ${commandType}`);
   });
   const deps = buildConformanceDeps(session);
-  const result = await dispatchStock("vice_memory_search", { start: "$1000", end: "$100f", pattern: [0x4c] }, deps);
+  const result = await callStockTool("vice_memory_search", { start: "$1000", end: "$100f", pattern: [0x4c] }, deps);
   assertAnswerConforms("vice_memory_search", result);
 });
 
@@ -1664,7 +902,7 @@ conformanceTest("vice_memory_compare", async () => {
     throw new Error(`vice_memory_compare: unexpected commandType ${commandType}`);
   });
   const deps = buildConformanceDeps(session);
-  const result = await dispatchStock("vice_memory_compare", { mode: "ranges", range1_start: "$1000", range1_end: "$1007", range2_start: "$2000" }, deps);
+  const result = await callStockTool("vice_memory_compare", { mode: "ranges", range1_start: "$1000", range1_end: "$1007", range2_start: "$2000" }, deps);
   assertAnswerConforms("vice_memory_compare", result);
   assert.equal(calls, 2, "vice_memory_compare must answer exactly two MemoryGet calls, one per range");
 });
@@ -1682,7 +920,7 @@ conformanceTest("vice_registers_get", async () => {
     throw new Error(`vice_registers_get: unexpected commandType ${commandType}`);
   });
   const deps = buildConformanceDeps(session);
-  const result = await dispatchStock("vice_registers_get", {}, deps);
+  const result = await callStockTool("vice_registers_get", {}, deps);
   assertAnswerConforms("vice_registers_get", result);
 });
 
@@ -1697,7 +935,7 @@ conformanceTest("vice_registers_set", async () => {
     throw new Error(`vice_registers_set: unexpected commandType ${commandType}`);
   });
   const deps = buildConformanceDeps(session);
-  const result = await dispatchStock("vice_registers_set", { register: "PC", value: 0x0801 }, deps);
+  const result = await callStockTool("vice_registers_set", { register: "PC", value: 0x0801 }, deps);
   assertAnswerConforms("vice_registers_set", result);
 });
 
@@ -1709,7 +947,7 @@ conformanceTest("vice_registers_available", async () => {
     throw new Error(`vice_registers_available: unexpected commandType ${commandType}`);
   });
   const deps = buildConformanceDeps(session);
-  const result = await dispatchStock("vice_registers_available", {}, deps);
+  const result = await callStockTool("vice_registers_available", {}, deps);
   assertAnswerConforms("vice_registers_available", result);
 });
 
@@ -1723,7 +961,7 @@ conformanceTest("vice_checkpoint_add", async () => {
     throw new Error(`vice_checkpoint_add: unexpected commandType ${commandType}`);
   });
   const deps = buildConformanceDeps(session);
-  const result = await dispatchStock("vice_checkpoint_add", { start: "$c000" }, deps);
+  const result = await callStockTool("vice_checkpoint_add", { start: "$c000" }, deps);
   assertAnswerConforms("vice_checkpoint_add", result);
 });
 
@@ -1735,7 +973,7 @@ conformanceTest("vice_checkpoint_delete", async () => {
     throw new Error(`vice_checkpoint_delete: unexpected commandType ${commandType}`);
   });
   const deps = buildConformanceDeps(session);
-  const result = await dispatchStock("vice_checkpoint_delete", { checkpoint_num: 1 }, deps);
+  const result = await callStockTool("vice_checkpoint_delete", { checkpoint_num: 1 }, deps);
   assertAnswerConforms("vice_checkpoint_delete", result);
 });
 
@@ -1749,7 +987,7 @@ conformanceTest("vice_checkpoint_list", async () => {
     throw new Error(`vice_checkpoint_list: unexpected commandType ${commandType}`);
   });
   const deps = buildConformanceDeps(session);
-  const result = await dispatchStock("vice_checkpoint_list", {}, deps);
+  const result = await callStockTool("vice_checkpoint_list", {}, deps);
   assertAnswerConforms("vice_checkpoint_list", result);
 });
 
@@ -1761,7 +999,7 @@ conformanceTest("vice_checkpoint_toggle", async () => {
     throw new Error(`vice_checkpoint_toggle: unexpected commandType ${commandType}`);
   });
   const deps = buildConformanceDeps(session);
-  const result = await dispatchStock("vice_checkpoint_toggle", { checkpoint_num: 1, enabled: true }, deps);
+  const result = await callStockTool("vice_checkpoint_toggle", { checkpoint_num: 1, enabled: true }, deps);
   assertAnswerConforms("vice_checkpoint_toggle", result);
 });
 
@@ -1773,7 +1011,7 @@ conformanceTest("vice_checkpoint_set_condition", async () => {
     throw new Error(`vice_checkpoint_set_condition: unexpected commandType ${commandType}`);
   });
   const deps = buildConformanceDeps(session);
-  const result = await dispatchStock("vice_checkpoint_set_condition", { checkpoint_num: 1, condition: "A == $42" }, deps);
+  const result = await callStockTool("vice_checkpoint_set_condition", { checkpoint_num: 1, condition: "A == $42" }, deps);
   assertAnswerConforms("vice_checkpoint_set_condition", result);
 });
 
@@ -1785,7 +1023,7 @@ conformanceTest("vice_watch_add", async () => {
     throw new Error(`vice_watch_add: unexpected commandType ${commandType}`);
   });
   const deps = buildConformanceDeps(session);
-  const result = await dispatchStock("vice_watch_add", { address: "$c000" }, deps);
+  const result = await callStockTool("vice_watch_add", { address: "$c000" }, deps);
   assertAnswerConforms("vice_watch_add", result);
 });
 
@@ -1803,7 +1041,7 @@ conformanceTest("vice_execution_pause", async () => {
     "resumed", // known "running" pre-state, so this exercises the sent:true path
   );
   const deps = buildConformanceDeps(session);
-  const result = await dispatchStock("vice_execution_pause", {}, deps);
+  const result = await callStockTool("vice_execution_pause", {}, deps);
   assertAnswerConforms("vice_execution_pause", result);
 });
 
@@ -1819,7 +1057,7 @@ conformanceTest("vice_execution_run", async () => {
     "stopped", // known "stopped" pre-state, so this exercises the sent:true path
   );
   const deps = buildConformanceDeps(session);
-  const result = await dispatchStock("vice_execution_run", {}, deps);
+  const result = await callStockTool("vice_execution_run", {}, deps);
   assertAnswerConforms("vice_execution_run", result);
 });
 
@@ -1835,7 +1073,7 @@ conformanceTest("vice_execution_step", async () => {
     "stopped", // D-07: a known state is required, or the handler refuses
   );
   const deps = buildConformanceDeps(session);
-  const result = await dispatchStock("vice_execution_step", {}, deps);
+  const result = await callStockTool("vice_execution_step", {}, deps);
   assertAnswerConforms("vice_execution_step", result);
 });
 
@@ -1851,7 +1089,7 @@ conformanceTest("vice_execution_until_return", async () => {
     "stopped", // D-07: a known state is required, or the handler refuses
   );
   const deps = buildConformanceDeps(session);
-  const result = await dispatchStock("vice_execution_until_return", {}, deps);
+  const result = await callStockTool("vice_execution_until_return", {}, deps);
   assertAnswerConforms("vice_execution_until_return", result);
 });
 
@@ -1865,7 +1103,7 @@ conformanceTest("vice_machine_reset", async () => {
     throw new Error(`vice_machine_reset: unexpected commandType ${commandType}`);
   });
   const deps = buildConformanceDeps(session);
-  const result = await dispatchStock("vice_machine_reset", {}, deps);
+  const result = await callStockTool("vice_machine_reset", {}, deps);
   assertAnswerConforms("vice_machine_reset", result);
 });
 
@@ -1897,7 +1135,7 @@ conformanceTest("vice_autostart", async () => {
       throw new Error(`vice_autostart: unexpected commandType ${commandType}`);
     });
     const deps = buildConformanceDeps(session);
-    const result = await dispatchStock("vice_autostart", { path: fixturePath }, deps);
+    const result = await callStockTool("vice_autostart", { path: fixturePath }, deps);
     assertAnswerConforms("vice_autostart", result);
   });
 });
@@ -1911,7 +1149,7 @@ conformanceTest("vice_disk_attach", async () => {
       throw new Error(`vice_disk_attach: unexpected commandType ${commandType}`);
     });
     const deps = buildConformanceDeps(session);
-    const result = await dispatchStock("vice_disk_attach", { unit: 8, path: fixturePath }, deps);
+    const result = await callStockTool("vice_disk_attach", { unit: 8, path: fixturePath }, deps);
     assertAnswerConforms("vice_disk_attach", result);
   });
 });
@@ -1925,7 +1163,7 @@ conformanceTest("vice_snapshot_save", async () => {
       throw new Error(`vice_snapshot_save: unexpected commandType ${commandType}`);
     });
     const deps = buildConformanceDeps(session);
-    const result = await dispatchStock("vice_snapshot_save", { name: "conformance_snapshot" }, deps);
+    const result = await callStockTool("vice_snapshot_save", { name: "conformance_snapshot" }, deps);
     assertAnswerConforms("vice_snapshot_save", result);
   });
 });
@@ -1941,7 +1179,7 @@ conformanceTest("vice_snapshot_load", async () => {
       throw new Error(`vice_snapshot_load: unexpected commandType ${commandType}`);
     });
     const deps = buildConformanceDeps(session);
-    const result = await dispatchStock("vice_snapshot_load", { name: "conformance_snapshot" }, deps);
+    const result = await callStockTool("vice_snapshot_load", { name: "conformance_snapshot" }, deps);
     assertAnswerConforms("vice_snapshot_load", result);
   });
 });
@@ -1956,7 +1194,7 @@ conformanceTest("vice_keyboard_type", async () => {
     throw new Error(`vice_keyboard_type: unexpected commandType ${commandType}`);
   });
   const deps = buildConformanceDeps(session);
-  const result = await dispatchStock("vice_keyboard_type", { text: "RUN" }, deps);
+  const result = await callStockTool("vice_keyboard_type", { text: "RUN" }, deps);
   assertAnswerConforms("vice_keyboard_type", result);
 });
 
@@ -1968,7 +1206,7 @@ conformanceTest("vice_keyboard_petscii", async () => {
     throw new Error(`vice_keyboard_petscii: unexpected commandType ${commandType}`);
   });
   const deps = buildConformanceDeps(session);
-  const result = await dispatchStock("vice_keyboard_petscii", { data: [0x52, 0x55, 0x4e, 0x0d] }, deps);
+  const result = await callStockTool("vice_keyboard_petscii", { data: [0x52, 0x55, 0x4e, 0x0d] }, deps);
   assertAnswerConforms("vice_keyboard_petscii", result);
 });
 
@@ -1980,7 +1218,7 @@ conformanceTest("vice_joystick_set", async () => {
     throw new Error(`vice_joystick_set: unexpected commandType ${commandType}`);
   });
   const deps = buildConformanceDeps(session);
-  const result = await dispatchStock("vice_joystick_set", { port: 1, direction: "up", fire: true }, deps);
+  const result = await callStockTool("vice_joystick_set", { port: 1, direction: "up", fire: true }, deps);
   assertAnswerConforms("vice_joystick_set", result);
 });
 
@@ -2002,11 +1240,11 @@ conformanceTest("vice_disassemble", async () => {
     throw new Error(`vice_disassemble: unexpected commandType ${commandType}`);
   });
   const deps = buildConformanceDeps(session);
-  const result = await dispatchStock("vice_disassemble", { address: "$1000" }, deps);
+  const result = await callStockTool("vice_disassemble", { address: "$1000" }, deps);
   assertAnswerConforms("vice_disassemble", result);
 });
 
-test("end-to-end (criterion 1, D-02): vice_disassemble succeeds through the REAL dispatchStock() path under a translating environment -- the derived path never reaches host-path translation", async () => {
+test("end-to-end (criterion 1, D-02): vice_disassemble succeeds through the REAL callStockTool() path under a translating environment -- the derived path never reaches host-path translation", async () => {
   const prevHostWs = process.env.HOST_WORKSPACE_PATH;
   const prevProjectDir = process.env.CLAUDE_PROJECT_DIR;
   process.env.HOST_WORKSPACE_PATH = "/home/user/project";
@@ -2019,7 +1257,7 @@ test("end-to-end (criterion 1, D-02): vice_disassemble succeeds through the REAL
       throw new Error(`vice_disassemble: unexpected commandType ${commandType}`);
     });
     const deps = buildConformanceDeps(session);
-    const result = await dispatchStock("vice_disassemble", { address: "$1000" }, deps);
+    const result = await callStockTool("vice_disassemble", { address: "$1000" }, deps);
     assert.equal(
       result.isError,
       false,
@@ -2052,8 +1290,8 @@ al C:0810 .entry
 conformanceTest("vice_symbols_load", async () => {
   await withTempRepoRootForConformance(async (repoRootDir) => {
     writeFileSync(join(repoRootDir, "labels.lbl"), SYMBOLS_FIXTURE);
-    const deps: StockDispatchDeps = { ensureLease: THROWING_ENSURE_LEASE };
-    const result = await dispatchStock("vice_symbols_load", { path: "labels.lbl" }, deps);
+    const deps: StockSessionDeps = { ensureLease: THROWING_ENSURE_LEASE };
+    const result = await callStockTool("vice_symbols_load", { path: "labels.lbl" }, deps);
     assertAnswerConforms("vice_symbols_load", result);
     resetSymbolStoreForTest();
   });
@@ -2062,18 +1300,18 @@ conformanceTest("vice_symbols_load", async () => {
 conformanceTest("vice_symbols_lookup", async () => {
   await withTempRepoRootForConformance(async (repoRootDir) => {
     writeFileSync(join(repoRootDir, "labels.lbl"), SYMBOLS_FIXTURE);
-    const loadDeps: StockDispatchDeps = { ensureLease: THROWING_ENSURE_LEASE };
-    const loadResult = await dispatchStock("vice_symbols_load", { path: "labels.lbl" }, loadDeps);
+    const loadDeps: StockSessionDeps = { ensureLease: THROWING_ENSURE_LEASE };
+    const loadResult = await callStockTool("vice_symbols_load", { path: "labels.lbl" }, loadDeps);
     assert.equal(loadResult.isError, false, "the fixture load must succeed before this case looks anything up");
 
-    const deps: StockDispatchDeps = { ensureLease: THROWING_ENSURE_LEASE };
-    const result = await dispatchStock("vice_symbols_lookup", { name: "main" }, deps);
+    const deps: StockSessionDeps = { ensureLease: THROWING_ENSURE_LEASE };
+    const result = await callStockTool("vice_symbols_lookup", { name: "main" }, deps);
     assertAnswerConforms("vice_symbols_lookup", result);
     resetSymbolStoreForTest();
   });
 });
 
-test("end-to-end (criterion 1, D-02): vice_symbols_load succeeds through the REAL dispatchStock() path under a translating environment -- resolvedPath stays container-side", async () => {
+test("end-to-end (criterion 1, D-02): vice_symbols_load succeeds through the REAL callStockTool() path under a translating environment -- resolvedPath stays container-side", async () => {
   const prevHostWs = process.env.HOST_WORKSPACE_PATH;
   process.env.HOST_WORKSPACE_PATH = "/home/user/project";
   try {
@@ -2083,8 +1321,8 @@ test("end-to-end (criterion 1, D-02): vice_symbols_load succeeds through the REA
       // above) and restores it in its own finally block -- this test only
       // needs to manage HOST_WORKSPACE_PATH around the call.
       writeFileSync(join(repoRootDir, "labels.lbl"), SYMBOLS_FIXTURE);
-      const deps: StockDispatchDeps = { ensureLease: THROWING_ENSURE_LEASE };
-      const result = await dispatchStock("vice_symbols_load", { path: "labels.lbl" }, deps);
+      const deps: StockSessionDeps = { ensureLease: THROWING_ENSURE_LEASE };
+      const result = await callStockTool("vice_symbols_load", { path: "labels.lbl" }, deps);
       assert.equal(
         result.isError,
         false,
@@ -2157,7 +1395,7 @@ conformanceTest("vice_vicii_get_state", async () => {
   viciiBytes[0x18] = 0x31; // $D018 -- arbitrary but non-zero, exercising memorySetup's decode
   const session = buildConformanceSession("conformance-vice_vicii_get_state", chipStateSendImpl(new Map([[0xd000, viciiBytes]])));
   const deps = buildConformanceDeps(session);
-  const result = await dispatchStock("vice_vicii_get_state", {}, deps);
+  const result = await callStockTool("vice_vicii_get_state", {}, deps);
   assertAnswerConforms("vice_vicii_get_state", result);
 
   // Belt-and-braces (T-05-07-02): the schema pin and the REAL answer must
@@ -2192,7 +1430,7 @@ conformanceTest("vice_cia_get_state", async () => {
     ),
   );
   const deps = buildConformanceDeps(session);
-  const result = await dispatchStock("vice_cia_get_state", {}, deps);
+  const result = await callStockTool("vice_cia_get_state", {}, deps);
   assertAnswerConforms("vice_cia_get_state", result);
 
   // Belt-and-braces (T-05-07-02): both chips' unavailable pins must agree
@@ -2246,7 +1484,7 @@ conformanceTest("vice_sprite_get", async () => {
     ),
   );
   const deps = buildConformanceDeps(session);
-  const result = await dispatchStock("vice_sprite_get", {}, deps);
+  const result = await callStockTool("vice_sprite_get", {}, deps);
   assertAnswerConforms("vice_sprite_get", result);
   const parsed: Record<string, unknown> = JSON.parse((result as { content: { text: string }[] }).content[0]!.text);
   assert.equal(parsed.pointerTableAddress, 36856, "the resolved pointer table address must match the $DD00/$D018 fixture pair");
@@ -2268,7 +1506,7 @@ conformanceTest("vice_sprite_inspect", async () => {
     ),
   );
   const deps = buildConformanceDeps(session);
-  const result = await dispatchStock("vice_sprite_inspect", { sprite_number: 0 }, deps);
+  const result = await callStockTool("vice_sprite_inspect", { sprite_number: 0 }, deps);
   assertAnswerConforms("vice_sprite_inspect", result);
   const parsed: Record<string, unknown> = JSON.parse((result as { content: { text: string }[] }).content[0]!.text);
   assert.equal(parsed.dataAddress, 40960, "sprite 0's resolved dataAddress must match the fixture's pointer byte");
@@ -2280,12 +1518,12 @@ conformanceTest("vice_ping", async () => {
   const session = buildConformanceSession("conformance-vice_ping", () => {
     throw new Error("vice_ping's handler must never call client.send()");
   });
-  const deps: StockDispatchDeps = {
+  const deps: StockSessionDeps = {
     ...buildConformanceDeps(session),
     resolvedBinaryPath: "/usr/local/bin/x64sc",
     resolvedBinaryPathIsResolved: true,
   };
-  const result = await dispatchStock("vice_ping", {}, deps);
+  const result = await callStockTool("vice_ping", {}, deps);
   assertAnswerConforms("vice_ping", result);
 });
 
@@ -2330,7 +1568,7 @@ conformanceTest("vice_cycles_stopwatch", async () => {
     throw new Error(`vice_cycles_stopwatch: unexpected commandType ${commandType}`);
   });
   const deps = buildConformanceDeps(session);
-  const result = await dispatchStock("vice_cycles_stopwatch", { action: "reset" }, deps);
+  const result = await callStockTool("vice_cycles_stopwatch", { action: "reset" }, deps);
   assertAnswerConforms("vice_cycles_stopwatch", result);
 });
 
@@ -2353,13 +1591,13 @@ conformanceTest("vice_run_until", async () => {
     throw new Error(`vice_run_until: unexpected commandType ${commandType}`);
   });
   const deps = buildConformanceDeps(session);
-  const result = await dispatchStock("vice_run_until", { address: "$c000", timeout_ms: 25 }, deps);
+  const result = await callStockTool("vice_run_until", { address: "$c000", timeout_ms: 25 }, deps);
   assertAnswerConforms("vice_run_until", result);
 });
 
 // --------------------------------------------------------- text-channel remedy tools (plan 41-06, CHAN-03)
 //
-// Neither tool is needsSession:true, so buildConformanceSession()/
+// Neither tool is "binary", so buildConformanceSession()/
 // buildConformanceDeps() (the BINARY-protocol stub above) do not apply --
 // each handler resolves its OWN lease via deps.ensureLease() and dials a
 // TEXT-monitor session through textConnect(), so the stub server here speaks
@@ -2405,7 +1643,7 @@ const directTextDialMonitorSocket: DialMonitorSocketFn = (opts) =>
     socket.once("error", reject);
   });
 
-function buildTextConformanceDeps(port: number, overrides: Partial<StockDispatchDeps> = {}): StockDispatchDeps {
+function buildTextConformanceDeps(port: number, overrides: Partial<StockSessionDeps> = {}): StockSessionDeps {
   const lease: HeldLease = {
     host: "127.0.0.1",
     port: 6502,
@@ -2427,7 +1665,7 @@ conformanceTest("vice_device_console", async () => {
     (_line, socket) => socket.write("(C:$0000) "),
     async (port) => {
       const deps = buildTextConformanceDeps(port);
-      const result = await dispatchStock("vice_device_console", {}, deps);
+      const result = await callStockTool("vice_device_console", {}, deps);
       assertAnswerConforms("vice_device_console", result);
     },
   );
@@ -2438,7 +1676,7 @@ conformanceTest("vice_warp_set", async () => {
     (_line, socket) => socket.write("warp: on(C:$0000) "),
     async (port) => {
       const deps = buildTextConformanceDeps(port);
-      const result = await dispatchStock("vice_warp_set", { enabled: true }, deps);
+      const result = await callStockTool("vice_warp_set", { enabled: true }, deps);
       assertAnswerConforms("vice_warp_set", result);
     },
   );
@@ -2449,7 +1687,7 @@ conformanceTest("vice_memmap_show", async () => {
     (_line, socket) => socket.write("addr: IO  ROM RAM\n0000: --- --- rw-\n(C:$0000) "),
     async (port) => {
       const deps = buildTextConformanceDeps(port);
-      const result = await dispatchStock("vice_memmap_show", {}, deps);
+      const result = await callStockTool("vice_memmap_show", {}, deps);
       assertAnswerConforms("vice_memmap_show", result);
     },
   );
@@ -2469,7 +1707,7 @@ conformanceTest("vice_memmap_zap", async () => {
     },
     async (port) => {
       const deps = buildTextConformanceDeps(port);
-      const result = await dispatchStock("vice_memmap_zap", {}, deps);
+      const result = await callStockTool("vice_memmap_zap", {}, deps);
       assertAnswerConforms("vice_memmap_zap", result);
     },
   );
@@ -2483,7 +1721,7 @@ conformanceTest("vice_cpu_history", async () => {
       socket.write(".C:e5d1  8D 92 02    STA $0292      A:00 X:00 Y:0a SP:f3 ..-...Z.     11302187\n(C:$e5d1) "),
     async (port) => {
       const deps = buildTextConformanceDeps(port);
-      const result = await dispatchStock("vice_cpu_history", {}, deps);
+      const result = await callStockTool("vice_cpu_history", {}, deps);
       assertAnswerConforms("vice_cpu_history", result);
     },
   );
@@ -2498,7 +1736,7 @@ conformanceTest("vice_profile_flat", async () => {
       ),
     async (port) => {
       const deps = buildTextConformanceDeps(port);
-      const result = await dispatchStock("vice_profile_flat", {}, deps);
+      const result = await callStockTool("vice_profile_flat", {}, deps);
       assertAnswerConforms("vice_profile_flat", result);
     },
   );
@@ -2509,7 +1747,7 @@ conformanceTest("vice_backtrace", async () => {
     (_line, socket) => socket.write("             PC        .C:e5d1   8D 92 02    STA $0292\n(C:$e5d1) "),
     async (port) => {
       const deps = buildTextConformanceDeps(port);
-      const result = await dispatchStock("vice_backtrace", {}, deps);
+      const result = await callStockTool("vice_backtrace", {}, deps);
       assertAnswerConforms("vice_backtrace", result);
     },
   );
@@ -2544,7 +1782,7 @@ conformanceTest("vice_io_registers", async () => {
       ),
     async (port) => {
       const deps = buildTextConformanceDeps(port);
-      const result = await dispatchStock("vice_io_registers", { address: 0xd020 }, deps);
+      const result = await callStockTool("vice_io_registers", { address: 0xd020 }, deps);
       assertAnswerConforms("vice_io_registers", result);
     },
   );
@@ -2555,7 +1793,7 @@ conformanceTest("vice_program_load", async () => {
     (_line, socket) => socket.write("(C:$0801) "),
     async (port) => {
       const deps = buildTextConformanceDeps(port);
-      const result = await dispatchStock("vice_program_load", {}, deps);
+      const result = await callStockTool("vice_program_load", {}, deps);
       assertAnswerConforms("vice_program_load", result);
     },
   );
@@ -2591,230 +1829,4 @@ test("conformance (D-02) negative control: checkAgainstSchema rejects a delibera
       "here would mean the checker itself has regressed to a no-op, and every conformance case above would be " +
       "vacuously passing",
   );
-});
-
-// ---------------------------------------------------------------------------
-// Task 2 (plan 04-02): withDerivedTool() -- the adapter for a client-side
-// derived tool, sitting beside withStockSession(). Every deps.ensureLease
-// below that must never be called is a THROWING stub, never a spy that
-// merely records -- an unreachable stub proves the pure branch never
-// touches the wire far more strongly than a call counter would.
-// ---------------------------------------------------------------------------
-
-const THROWING_ENSURE_LEASE: StockDispatchDeps["ensureLease"] = async () => {
-  throw new Error("ensureLease must never be called for this test");
-};
-
-test("withDerivedTool: an undeclared tool name is refused by name, without ever reaching ensureLease", async () => {
-  const handler: DerivedPureHandler = async () => {
-    throw new Error("must not be called -- the tool is not declared in STOCK_DERIVED_TOOLS");
-  };
-  const wrapped = withDerivedTool("vice_not_a_derived_tool", { needsSession: false }, handler);
-  const deps: StockDispatchDeps = { ensureLease: THROWING_ENSURE_LEASE };
-  const result = await wrapped({}, deps);
-  assert.equal(result.isError, true);
-  assert.match(JSON.stringify(result.content), /vice_not_a_derived_tool/);
-  assert.match(JSON.stringify(result.content), /STOCK_DERIVED_TOOLS/);
-});
-
-test("withDerivedTool: needsSession:false invokes the handler with (args, deps) and never calls ensureLease", async () => {
-  let receivedArgs: Record<string, unknown> | undefined;
-  const handler: DerivedPureHandler = async (args) => {
-    receivedArgs = args;
-    return { content: [{ type: "text", text: "{}" }], isError: false };
-  };
-  const wrapped = withDerivedTool("vice_disassemble", { needsSession: false }, handler);
-  const deps: StockDispatchDeps = { ensureLease: THROWING_ENSURE_LEASE };
-  const result = await wrapped({ address: "$c000" }, deps);
-  assert.equal(result.isError, false);
-  assert.deepEqual(receivedArgs, { address: "$c000" });
-});
-
-test("withDerivedTool: needsSession:true delegates to ensureStockSession and hands the handler the resolved session", async () => {
-  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-derived-1", brokerControl: STUB_BROKER_CONTROL });
-  let receivedSession: StockConnectSession | undefined;
-  const handler: StockSessionHandler = async (_args, session) => {
-    receivedSession = session;
-    return { content: [{ type: "text", text: "{}" }], isError: false };
-  };
-  const wrapped = withDerivedTool("vice_disassemble", { needsSession: true }, handler);
-  const deps: StockDispatchDeps = {
-    ensureLease: async () => ({ ok: true, lease }),
-    connect: async (opts) => fakeSession(opts),
-  };
-  const result = await wrapped({}, deps);
-  assert.equal(result.isError, false);
-  assert.ok(receivedSession);
-  assert.equal(receivedSession!.targetId, "grant-derived-1");
-});
-
-test("withDerivedTool: a handler that throws is converted via convertWireError, not propagated", async () => {
-  const handler: DerivedPureHandler = async () => {
-    throw new Error("boom: something the derived handler let escape");
-  };
-  const wrapped = withDerivedTool("vice_disassemble", { needsSession: false }, handler);
-  const deps: StockDispatchDeps = { ensureLease: THROWING_ENSURE_LEASE };
-  const result = await wrapped({}, deps);
-  assert.equal(result.isError, true);
-  assert.match(JSON.stringify(result.content), /vice_disassemble/);
-  assert.match(JSON.stringify(result.content), /boom: something the derived handler let escape/);
-});
-
-test("withDerivedTool: needsSession:true converts a handshake failure via convertHandshakeError, naming the tool", async () => {
-  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-derived-2", brokerControl: STUB_BROKER_CONTROL });
-  const handler: StockSessionHandler = async () => {
-    throw new Error("must not be called -- the handshake itself failed");
-  };
-  const wrapped = withDerivedTool("vice_disassemble", { needsSession: true }, handler);
-  const deps: StockDispatchDeps = {
-    ensureLease: async () => ({ ok: true, lease }),
-    connect: async () => {
-      throw new MonitorOwnershipError("stockConnect: monitor for target grant-derived-2 on port 6502 is already claimed by grant grant-other", {
-        holderGrantId: "grant-other",
-        holderClaimedAt: 1700000000000,
-        port: 6502,
-      });
-    },
-  };
-  const result = await wrapped({}, deps);
-  assert.equal(result.isError, true);
-  assert.match(JSON.stringify(result.content), /vice_disassemble/);
-  assert.match(JSON.stringify(result.content), /grant-other/);
-});
-
-test("withDerivedTool: needsSession:true returns an { ok: false } lease refusal verbatim, without touching the handler", async () => {
-  let handlerCalled = false;
-  const handler: StockSessionHandler = async () => {
-    handlerCalled = true;
-    return { content: [{ type: "text", text: "{}" }], isError: false };
-  };
-  const wrapped = withDerivedTool("vice_disassemble", { needsSession: true }, handler);
-  const deps: StockDispatchDeps = {
-    ensureLease: async () => ({ ok: false, message: "broker: dead_or_hung (verbatim message)" }),
-  };
-  const result = await wrapped({}, deps);
-  assert.equal(result.isError, true);
-  assert.match(JSON.stringify(result.content), /broker: dead_or_hung \(verbatim message\)/);
-  assert.equal(handlerCalled, false, "a refusal must never reach the delegated handler");
-});
-
-// ---------------------------------------------------------------------------
-// Plan 41-02 (CHAN-04): both binary-side adapters route through
-// channel-lock.ts's mutex via withChannelLockHeld(), and the needsSession:
-// false branch does not.
-// ---------------------------------------------------------------------------
-
-test("CHAN-04: withStockSession and withDerivedTool's needsSession:true branch both reach acquireChannelLock; the needsSession:false branch does not", async () => {
-  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-chan04-1", brokerControl: STUB_BROKER_CONTROL });
-  const deps: StockDispatchDeps = {
-    ensureLease: async () => ({ ok: true, lease }),
-    connect: async (opts) => fakeSession(opts),
-  };
-
-  // A single mutable holder object, rather than separate `let` bindings, so
-  // TypeScript's control-flow narrowing does not collapse each observation
-  // to its initial value -- it only tracks a plain `let`'s last
-  // DIRECTLY-VISIBLE assignment in its own declaring scope, ignoring
-  // assignments made inside a nested closure (see
-  // stock-a4-checkpoint-flood.test.ts's own identical note).
-  const observed: {
-    duringStockSession: ReturnType<typeof currentChannelLockHolder>;
-    duringDerivedTrue: ReturnType<typeof currentChannelLockHolder>;
-    duringDerivedFalse: ReturnType<typeof currentChannelLockHolder> | "unset";
-  } = { duringStockSession: null, duringDerivedTrue: null, duringDerivedFalse: "unset" };
-
-  const stockSessionHandler: StockSessionHandler = async () => {
-    observed.duringStockSession = currentChannelLockHolder();
-    return { content: [{ type: "text", text: "{}" }], isError: false };
-  };
-  await withStockSession("vice_probe_stock_session", stockSessionHandler)({}, deps);
-  assert.ok(observed.duringStockSession, "withStockSession must hold the lock while the handler runs");
-  assert.equal(observed.duringStockSession!.channel, "binary");
-  assert.equal(observed.duringStockSession!.operation, "vice_probe_stock_session");
-  assert.equal(currentChannelLockHolder(), null, "the lock must be released once withStockSession's handler returns");
-
-  const derivedTrueHandler: StockSessionHandler = async () => {
-    observed.duringDerivedTrue = currentChannelLockHolder();
-    return { content: [{ type: "text", text: "{}" }], isError: false };
-  };
-  await withDerivedTool("vice_disassemble", { needsSession: true }, derivedTrueHandler)({}, deps);
-  assert.ok(observed.duringDerivedTrue, "withDerivedTool's needsSession:true branch must hold the lock while the handler runs");
-  assert.equal(observed.duringDerivedTrue!.channel, "binary");
-  assert.equal(observed.duringDerivedTrue!.operation, "vice_disassemble");
-  assert.equal(currentChannelLockHolder(), null);
-
-  const derivedFalseHandler: DerivedPureHandler = async () => {
-    observed.duringDerivedFalse = currentChannelLockHolder();
-    return { content: [{ type: "text", text: "{}" }], isError: false };
-  };
-  await withDerivedTool("vice_symbols_lookup", { needsSession: false }, derivedFalseHandler)({}, deps);
-  assert.equal(observed.duringDerivedFalse, null, "the needsSession:false branch must NEVER acquire the lock -- it never touches the wire");
-  assert.equal(currentChannelLockHolder(), null);
-});
-
-test("CHAN-04: dispatching vice_symbols_lookup (needsSession:false) through the REAL dispatch table leaves currentChannelLockHolder() null throughout", async () => {
-  const deps: StockDispatchDeps = { ensureLease: THROWING_ENSURE_LEASE };
-  assert.equal(currentChannelLockHolder(), null);
-  const result = await dispatchStock("vice_symbols_lookup", { name: "main" }, deps);
-  assert.equal(result.isError, false);
-  assert.equal(currentChannelLockHolder(), null, "vice_symbols_lookup is needsSession:false and pure client-side -- it must never acquire halt authority");
-});
-
-test("CHAN-04: a handler that throws leaves currentChannelLockHolder() null after dispatch returns", async () => {
-  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-chan04-2", brokerControl: STUB_BROKER_CONTROL });
-  const handler: StockSessionHandler = async () => {
-    throw new Error("boom: the handler let this escape");
-  };
-  const deps: StockDispatchDeps = {
-    ensureLease: async () => ({ ok: true, lease }),
-    connect: async (opts) => fakeSession(opts),
-  };
-  const result = await withStockSession("vice_probe_throwing", handler)({}, deps);
-  assert.equal(result.isError, true);
-  assert.equal(currentChannelLockHolder(), null, "the lock must be released even when the delegated handler throws (release-on-throw, D-05)");
-});
-
-test("CHAN-04: a second concurrent dispatch of a session-taking tool with a 1ms channelLockTimeoutMs override is refused with channelLockRefusalMessage()'s own wording, byte-identical, with none of the forbidden words", async () => {
-  let releaseFirstHandler: (() => void) | null = null;
-  const firstHandlerGate = new Promise<void>((resolve) => {
-    releaseFirstHandler = resolve;
-  });
-  const firstHandler: StockSessionHandler = async () => {
-    await firstHandlerGate;
-    return { content: [{ type: "text", text: "{}" }], isError: false };
-  };
-  const secondHandler: StockSessionHandler = async () => {
-    throw new Error("must not be called -- the second dispatch must be refused before reaching this handler");
-  };
-
-  const lease: HeldLease = makeLease({ host: "127.0.0.1", port: 6502, targetId: "grant-chan04-3", brokerControl: STUB_BROKER_CONTROL });
-  const firstDeps: StockDispatchDeps = {
-    ensureLease: async () => ({ ok: true, lease }),
-    connect: async (opts) => fakeSession(opts),
-  };
-  const secondDeps: StockDispatchDeps = { ...firstDeps, channelLockTimeoutMs: 1 };
-
-  const firstPromise = withStockSession("vice_probe_first_holder", firstHandler)({}, firstDeps);
-  // Give the first dispatch a turn to acquire the lock and enter its
-  // (still-gated) handler before the second dispatch attempts to acquire.
-  await new Promise((resolve) => setTimeout(resolve, 5));
-  const holderDuringSecond = currentChannelLockHolder();
-  assert.ok(holderDuringSecond, "the first dispatch must be holding the lock by the time the second one is attempted");
-  assert.equal(holderDuringSecond!.channel, "binary");
-  assert.equal(holderDuringSecond!.operation, "vice_probe_first_holder");
-
-  const secondResult = await withStockSession("vice_probe_second_tool", secondHandler)({}, secondDeps);
-  assert.equal(secondResult.isError, true);
-  const refusalText = JSON.parse(JSON.stringify(secondResult.content))[0].text as string;
-  const expectedShape = /^channel-lock: the binary channel currently holds halt authority \(operation "vice_probe_first_holder", grant unknown, held for \d+ms\) -- this call must wait for that channel to release before it can proceed$/;
-  assert.match(refusalText, expectedShape, `expected byte-identical channelLockRefusalMessage() wording, got: ${JSON.stringify(refusalText)}`);
-  const lower = refusalText.toLowerCase();
-  for (const forbidden of ["wedge", "wedged", "hang", "hung", "frozen", "stuck", "unresponsive"]) {
-    assert.ok(!lower.includes(forbidden), `refusal text must not contain "${forbidden}": ${refusalText}`);
-  }
-
-  releaseFirstHandler!();
-  const firstResult = await firstPromise;
-  assert.equal(firstResult.isError, false);
-  assert.equal(currentChannelLockHolder(), null);
 });

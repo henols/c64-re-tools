@@ -8,7 +8,7 @@
 // second holder or a family-local address->name map is that file's own
 // named anti-pattern ("Never add a second resolver holder").
 //
-// Both tools are `needsSession: false` (D-04 of Phase 4): loading or
+// Both tools are "pure" in stock-tools.ts (D-04 of Phase 4): loading or
 // looking up a symbol never opens a monitor connection and therefore never
 // halts the user's running program -- a genuine ergonomic win over the
 // fork, whose implementation lives inside the emulator process.
@@ -57,7 +57,7 @@ import { ViceError, type ViceErrorOptions } from "./vice-errors.ts";
 import { repoRoot } from "./repo-root.ts";
 import { parseAddress, setSymbolResolver, type SymbolResolver } from "./stock-address.ts";
 import { derivedAnswer, isErrorText } from "./stock-handler.ts";
-import type { DerivedPureHandler } from "./stock-derived.ts";
+import type { DerivedPureHandler } from "./stock-handler.ts";
 
 /** True iff `value` is a well-formed, generic JSON object -- not null, not
  * an array. Matches this module tree's own isPlainObject() convention

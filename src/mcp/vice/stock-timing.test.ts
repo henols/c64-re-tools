@@ -2,7 +2,7 @@
 // send-only stub object cast via `as unknown as ViceMonitorClient` --
 // never a real socket, matching this module tree's own DI-stubbing
 // convention (stock-registers.test.ts's own header comment,
-// stock-dispatch.test.ts:1-133). Synthetic replies are returned DIRECTLY as
+// stock-session.test.ts:1-133). Synthetic replies are returned DIRECTLY as
 // already-parsed shapes, not built through binmon-fixtures.ts's
 // encodeResponseFrame() -- these tests assert route selection, arithmetic,
 // caching, and every honest-refusal path, never frame decoding (which
@@ -19,7 +19,7 @@ import {
 } from "./stock-protocol.ts";
 import { MachineRestartedError } from "./vice-errors.ts";
 import type { StockConnectSession, CpuHistoryCapability } from "./stock-connect.ts";
-import type { StockDispatchDeps } from "./stock-dispatch.ts";
+import type { StockSessionDeps } from "./stock-session.ts";
 import {
   VIDEO_STANDARDS,
   resolveVideoStandard,
@@ -152,7 +152,7 @@ function makeFakeSession(options: FakeSessionOptions = {}): { session: StockConn
   return { session, sendCalls };
 }
 
-const FAKE_DEPS = {} as unknown as StockDispatchDeps;
+const FAKE_DEPS = {} as unknown as StockSessionDeps;
 
 function parseAnswer(result: { content: { type: "text"; text: string }[]; isError: boolean }): Record<string, unknown> {
   return JSON.parse(result.content[0]!.text) as Record<string, unknown>;

@@ -132,7 +132,7 @@ const STOP_FALSE_HAZARD_TEXT =
 // instances routinely (exactly what this milestone's own broker machinery
 // exists to do) sees an unbounded succession of distinct targetIds, and every
 // one of them would keep its condition map forever. The eviction hook below --
-// called by stock-dispatch.ts's ensureStockSession() at the ONE point a
+// called by stock-session.ts's ensureStockSession() at the ONE point a
 // replacement acquisition proves the previous target is gone for good -- is
 // what bounds it, without weakening the survives-a-stockReconnect() guarantee
 // that motivated the targetId key in the first place (a reconnect to the SAME
@@ -144,7 +144,7 @@ let conditionRegistry = new Map<string, Map<number, string>>();
 /** Drops every registered target's condition map EXCEPT `activeTargetId`'s --
  * the WR-03 eviction hook, and the only thing that ever shrinks this registry.
  *
- * Called from stock-dispatch.ts's ensureStockSession() immediately after a
+ * Called from stock-session.ts's ensureStockSession() immediately after a
  * FRESH stockConnect() installs a new held session. At that moment exactly one
  * target is reachable through this module (conditionTextFor() is only ever
  * consulted with the live session), so every other key is unreachable

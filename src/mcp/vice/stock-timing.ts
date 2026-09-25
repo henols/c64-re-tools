@@ -375,7 +375,7 @@ export function resetTimingStateForTest(): void {
  * WR-14: THE per-target eviction seam for both of this file's `targetId`-keyed
  * caches, mirroring stock-checkpoints.ts's `forgetConditionsForOtherTargets()`
  * exactly -- including being called from the SAME place in
- * stock-dispatch.ts's ensureStockSession(), so the two registries can never
+ * stock-session.ts's ensureStockSession(), so the two registries can never
  * drift apart on when they forget.
  *
  * Reaching that call site means a fresh handshake just installed a new held

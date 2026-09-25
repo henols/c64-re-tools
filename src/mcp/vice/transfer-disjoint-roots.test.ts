@@ -66,7 +66,7 @@ import type {
 } from "./broker-control.mts";
 import { createBrokerState, type BrokerState, type InstanceRecord } from "./broker-state.mts";
 import type { StockConnectSession, TransferFileFn, TransferFileRequest, TransferFileResult } from "./stock-connect.ts";
-import type { StockDispatchDeps } from "./stock-dispatch.ts";
+import type { StockSessionDeps } from "./stock-session.ts";
 
 // vice-broker.mts/broker-transfer.mts are host-bound (.mts, compiled into
 // resources/) -- like vice-broker-staging.test.ts's own load, this file
@@ -93,7 +93,7 @@ const viceBrokerModule = (await import(new URL("./resources/vice-broker.mjs", HE
 };
 const { handleRelease, handleStageFile, handleFileTransfer } = viceBrokerModule;
 
-const fakeDeps = {} as StockDispatchDeps;
+const fakeDeps = {} as StockSessionDeps;
 
 // ---------------------------------------------------------------------------
 // Broker-state / listener fixtures -- mirrors vice-broker-staging.test.ts's

@@ -29,7 +29,7 @@
 //     through convertWireError() directly (the established per-handler
 //     convention every sibling family module already follows); a failure
 //     surfacing from the resume/wait step is left to propagate uncaught, so
-//     the ONE existing converter seam (withStockSession's own
+//     the ONE existing converter seam (runBinary()'s own
 //     convertHandshakeError/convertWireError) produces the answer, not a
 //     second one written in this file.
 import {
@@ -354,7 +354,7 @@ export const handleRunUntil: StockSessionHandler = async (args, session, _deps) 
   // the instance and every checkpoint on it are already gone, so there is
   // nothing to clean up, and the standard restarted wording is produced by
   // the one existing convertHandshakeError()/convertWireError() seam
-  // (stock-handler.ts / withStockSession), not a second converter written
+  // (stock-handler.ts / runBinary()), not a second converter written
   // here.
   const outcome = await waitForCheckpointHit(session.client, checkpointId, timeoutMs);
 

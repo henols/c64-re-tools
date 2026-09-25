@@ -4,10 +4,8 @@
 // vice_disassemble -- a DERIVED tool (DERIV-07, DISASM-01): its answer is
 // computed CLIENT-SIDE from bytes MEM_GET returned (disasm-decoder.ts's
 // decode() + disasm-renderer.ts's render()), never answered by one
-// binary-monitor opcode the way a direct tool's answer is. Registered
-// through withDerivedTool() in stock-dispatch.ts, never withStockSession()
-// (D-01/D-03) -- this is the first and largest consumer of the derived-tool
-// seam 04-02 built.
+// binary-monitor opcode the way a direct tool's answer is. Listed in
+// stock-tools.ts as a "binary" tool (it reads memory over the session).
 //
 // WHY THIS FILE EXISTS: DISASM-01 is criterion 2's own sentence -- "a user
 // can disassemble a memory range on the stock backend" -- and the binary

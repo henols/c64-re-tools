@@ -258,7 +258,7 @@ export function readEpoch(path: string = activeEpochFile): EpochResult {
 }
 
 // A single tool's discovery metadata, as returned by the fork's tools/list
-// RPC. Moved here (rather than left in vice.ts) because stock-dispatch.ts
+// RPC. Moved here (rather than left in vice.ts) because stock-tools.ts
 // needs the TYPE ONLY, with no other dependency on the fork transport that
 // declares it.
 export interface ToolInfo {

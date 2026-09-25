@@ -3,9 +3,8 @@
 //
 // vice_vicii_get_state -- a DERIVED tool (DERIV-05): its answer is computed
 // CLIENT-SIDE from bytes ONE MEM_GET returns, never from a single
-// binary-monitor opcode the way a direct tool's answer is. Registered
-// through withDerivedTool("vice_vicii_get_state", { needsSession: true }, ...)
-// in stock-dispatch.ts (05-07's task), never withStockSession().
+// binary-monitor opcode the way a direct tool's answer is. Listed in
+// stock-tools.ts as a "binary" tool.
 //
 // WHY THIS FILE EXISTS: half of criterion 3 -- "a user can read decoded
 // VIC-II state on the stock backend". The binary monitor has no VIC-II

@@ -2,7 +2,7 @@
 // bankCatalogFor(), and handleMemoryBanks. Every "session" below is built by
 // makeSession(), whose `client` is a real EventEmitter (never a real socket)
 // with a `send` spy recording every call as [commandType, body], matching
-// stock-dispatch.test.ts's own DI-stub convention: these tests assert WIRING
+// stock-session.test.ts's own DI-stub convention: these tests assert WIRING
 // (call order, call count, byte-level body contents, answer shape), never a
 // real protocol round trip.
 import { test, beforeEach } from "node:test";
@@ -13,7 +13,7 @@ import { handleMemoryRead, handleMemoryWrite, handleMemoryBanks, bankCatalogFor,
 import { CommandType, ErrorCode, StockProtocolError } from "./stock-protocol.ts";
 import { resetRunStateTrackersForTest } from "./stock-runstate.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
-import type { StockDispatchDeps } from "./stock-dispatch.ts";
+import type { StockSessionDeps } from "./stock-session.ts";
 
 beforeEach(() => {
   resetBankCatalogsForTest();
@@ -40,7 +40,7 @@ function makeSession(sendImpl: (commandType: number, body: Buffer) => unknown): 
   return { session, calls };
 }
 
-const DEPS = {} as unknown as StockDispatchDeps;
+const DEPS = {} as unknown as StockSessionDeps;
 
 function memoryGetReply(bytes: number[], requestId = 1) {
   return { type: "memory_get" as const, requestId, errorCode: ErrorCode.Ok, bytes: Buffer.from(bytes), related: [] };

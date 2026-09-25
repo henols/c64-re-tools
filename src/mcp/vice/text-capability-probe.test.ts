@@ -8,7 +8,7 @@
 //
 // The stub `dial` function used throughout is never a socket, never an
 // emulator -- exactly as `withTextTool()`'s own callers are dependency-
-// injected in stock-dispatch.test.ts. The capable path is proven against the
+// injected in stock-session.test.ts. The capable path is proven against the
 // real committed captures via `loadTextFixture`, never a hand-typed success
 // string.
 import { test } from "node:test";

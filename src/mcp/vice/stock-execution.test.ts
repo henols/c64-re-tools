@@ -16,7 +16,7 @@ import {
 import { attachRunStateTracker, resetRunStateTrackersForTest } from "./stock-runstate.ts";
 import { CommandType, type ResolvedResponse, type ViceMonitorClient } from "./stock-protocol.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
-import type { StockDispatchDeps } from "./stock-dispatch.ts";
+import type { StockSessionDeps } from "./stock-session.ts";
 
 beforeEach(() => {
   resetRunStateTrackersForTest();
@@ -52,7 +52,7 @@ function fakeSession(client: ViceMonitorClient): StockConnectSession {
   return { client } as unknown as StockConnectSession;
 }
 
-const NO_DEPS = {} as unknown as StockDispatchDeps;
+const NO_DEPS = {} as unknown as StockSessionDeps;
 
 function payloadOf(result: { content: { type: "text"; text: string }[] }): Record<string, unknown> {
   return JSON.parse(result.content[0]!.text) as Record<string, unknown>;

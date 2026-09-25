@@ -57,7 +57,7 @@ import { CommandType, ErrorCode, StockProtocolError } from "./stock-protocol.ts"
 import { resetRunStateTrackersForTest } from "./stock-runstate.ts";
 import type { StockConnectSession, TransferFileFn, TransferFileRequest, TransferFileResult } from "./stock-connect.ts";
 import type { ViceMonitorClient } from "./stock-protocol.ts";
-import type { StockDispatchDeps } from "./stock-dispatch.ts";
+import type { StockSessionDeps } from "./stock-session.ts";
 import { dialFileTransfer, awaitTransferComplete } from "./broker-endpoint.ts";
 import { createHashAndCountTransform, verifyObserved, TRANSFER_MAX_BYTES } from "./transfer-hash.mts";
 import { build } from "./build.ts";
@@ -298,7 +298,7 @@ function assertNoLeak(payload: Record<string, unknown>, forbiddenDir: string, fo
   }
 }
 
-const fakeDeps = {} as StockDispatchDeps;
+const fakeDeps = {} as StockSessionDeps;
 
 beforeEach(() => {
   resetRunStateTrackersForTest();

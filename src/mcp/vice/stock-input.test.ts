@@ -1,5 +1,5 @@
 // node:test coverage of stock-input.ts's keyboard and joystick handlers.
-// DI-stub convention (stock-dispatch.test.ts's own idiom): a fake session
+// DI-stub convention (stock-session.test.ts's own idiom): a fake session
 // whose client.send() is a spy recording [commandType, body] -- never a
 // real socket. beforeEach() resets the runState trackers so stockAnswer()'s
 // runState projection starts clean for every test, matching
@@ -19,7 +19,7 @@ interface RecordedSend {
 }
 
 /** Builds a fake StockConnectSession whose client.send() is a counting/
- * recording spy -- never a real socket. Matches stock-dispatch.test.ts's own
+ * recording spy -- never a real socket. Matches stock-session.test.ts's own
  * "two-method stub object cast via `as unknown as <RealType>`" convention. */
 function createFakeSession(): { session: StockConnectSession; sends: RecordedSend[] } {
   const sends: RecordedSend[] = [];

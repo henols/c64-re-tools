@@ -1,55 +1,33 @@
 #!/usr/bin/env node
 // stock-handler.ts
 //
-// THE shared, cycle-free handler contract every Phase 3+ family module
-// (stock-memory.ts, stock-checkpoints.ts, stock-execution.ts, ...) imports:
-// the result types, both error converters, and stockAnswer() -- the ONE
-// place a successful stock answer is constructed.
-//
-// WHY THIS FILE EXISTS: stock-dispatch.ts is THE dispatch table (D-07/D-09)
-// and, starting with a later plan, imports every family module so it can
-// register their handlers. A family module that needs stockAnswer() or
-// convertHandshakeError() cannot import stock-dispatch.ts for them without
-// creating exactly that import cycle (stock-dispatch.ts -> stock-memory.ts
-// -> stock-dispatch.ts). This file is the leaf both sides import instead:
-// stock-dispatch.ts re-exports these names (so Phase 2's existing import
-// surface and its 921-line test file keep working unchanged), and every
-// family module imports them straight from here, never from
-// stock-dispatch.ts.
+// WHY THIS FILE EXISTS: the handler contract every stock tool module
+// imports -- the result types, the handler types, both error converters, and
+// stockAnswer()/derivedAnswer(), the only places a successful answer is
+// built. It is a leaf: it imports stock-session.ts for a type only, so no
+// module can form a runtime cycle through it.
 //
 // WHAT NOT TO DO:
 //   - Never build a `{ content: [...], isError: false }` literal outside
-//     stockAnswer() -- that is exactly how an answer ships without
-//     `runState`, which D-06 requires on EVERY stock tool answer.
-//   - Never construct a session-free derived answer as a bare literal
-//     either -- a `needsSession: false` handler calls derivedAnswer(), a
-//     sessioned handler calls stockAnswer(), and there is no third shape.
-//   - Never write a third error converter. convertHandshakeError() (moved
-//     here, unchanged, from stock-dispatch.ts) is the ONE conversion for a
-//     failed ensureStockSession()/stockConnect(); convertWireError() (new
-//     here) is the ONE conversion for a client.send() rejection. A family
-//     module that finds itself writing prose for a wire ErrorCode or a
-//     handshake error is re-deriving one of these two -- import instead.
-//   - Never import stock-dispatch.ts at RUNTIME from this file -- only a
-//     type-only import of StockDispatchDeps is permitted. Under
-//     verbatimModuleSyntax an `import type` erases completely at compile
-//     time, so it creates no runtime cycle even though stock-dispatch.ts
-//     imports this file at runtime.
+//     stockAnswer()/derivedAnswer() -- that is how an answer ships without
+//     `runState`.
+//   - Never write a third error converter. convertHandshakeError() is the
+//     one conversion for a failed session handshake; convertWireError() is
+//     the one conversion for a client.send() rejection.
+//   - Never value-import stock-session.ts from this file; `import type` only.
 import { MonitorOwnershipError } from "./vice-broker-client.ts";
 import { MachineRestartedError } from "./vice-errors.ts";
 import { ErrorCode, StockFramingError, StockProtocolError, StockResponseMismatchError, StockConnectionClosedError, type ViceMonitorClient } from "./stock-protocol.ts";
 import { runStateFor } from "./stock-runstate.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
-import type { StockDispatchDeps } from "./stock-dispatch.ts";
+import type { StockSessionDeps } from "./stock-session.ts";
 
 // ---------------------------------------------------------------------------
-// Result types -- moved verbatim from stock-dispatch.ts. Structurally
-// IDENTICAL to vice-proxy.ts's own private ToolCallResult (ErrorTextResult |
-// OkTextResult) by field name and type, but declared here rather than
-// imported -- vice-proxy.ts imports stock-dispatch.ts, which imports THIS
-// file, so importing back from vice-proxy.ts would be the exact
-// module-cycle this codebase's own "module-cycle avoidance is deliberate"
-// constraint forbids. TypeScript's structural typing makes the two
+// Result types. Structurally IDENTICAL to vice-proxy.ts's own private
+// ToolCallResult (ErrorTextResult | OkTextResult) by field name and type, but
+// declared here rather than imported -- vice-proxy.ts imports the tool list,
+// which imports THIS file, so importing back from vice-proxy.ts would form a
+// module cycle. TypeScript's structural typing makes the two
 // interchangeable at every call site that matters.
 // ---------------------------------------------------------------------------
 
@@ -72,10 +50,15 @@ export function isErrorText(text: string): StockErrorResult {
  * no handler resolves a lease or opens a socket of its own. `deps` is
  * threaded through for anything a handler needs beyond the session (e.g. a
  * path-translation root). */
-export type StockSessionHandler = (args: Record<string, unknown>, session: StockConnectSession, deps: StockDispatchDeps) => Promise<StockToolResult>;
+export type StockSessionHandler = (args: Record<string, unknown>, session: StockConnectSession, deps: StockSessionDeps) => Promise<StockToolResult>;
+
+/** The shape of a tool that must not take the binary session or lock -- a
+ * pure client-side tool, or a text-channel tool that takes its own lock.
+ * Run through stock-session.ts's runPure(). */
+export type DerivedPureHandler = (args: Record<string, unknown>, deps: StockSessionDeps) => Promise<StockToolResult>;
 
 // ---------------------------------------------------------------------------
-// convertHandshakeError() -- moved verbatim from stock-dispatch.ts. Converts
+// convertHandshakeError(). Converts
 // the typed errors ensureStockSession()/stockConnect() can propagate into
 // well-formed refusal text, naming the tool. Never mentions "wedge",
 // "hung", or "unresponsive" -- a monitor-ownership conflict is the broker's
@@ -223,17 +206,15 @@ export function stockAnswer(client: ViceMonitorClient, payload: Record<string, u
 
 // ---------------------------------------------------------------------------
 // derivedAnswer() -- new here (Phase 5, 05-02, D-05-06). The ONE place a
-// SESSION-FREE (`withDerivedTool(..., { needsSession: false }, ...)`) derived
-// tool's successful answer is constructed. `runState: "unknown"` is the
+// SESSION-FREE (`kind: "pure"`) tool's successful answer is constructed. `runState: "unknown"` is the
 // honest value here, not a placeholder: a session-free handler never opens a
 // monitor connection, so the emulator's run state was genuinely never
 // observed -- "unknown" is already documented (docs/stock-vice-parity.md
 // §A.7) as "the honest post-connect value and is not a failure". This
-// function exists so the standing D-06 gate in stock-dispatch.test.ts
+// function exists so the standing D-06 gate in stock-tools.test.ts
 // ("every stock entry's outputSchema declares a required runState enum of
 // [running, stopped, unknown]") needs no exemption list for the two DERIV-04
-// symbol tools (`vice_symbols_load`/`vice_symbols_lookup`) -- currently the
-// only `needsSession: false` tools in the milestone, and this function's
+// symbol tools (`vice_symbols_load`/`vice_symbols_lookup`), this function's
 // only consumer (stock-symbols.ts).
 //
 // Unlike stockAnswer(), this function takes NO client argument at all --

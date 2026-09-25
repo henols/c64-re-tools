@@ -7,8 +7,7 @@
 // live against genuine stock VICE -- has no MEMORY_SEARCH or MEMORY_COMPARE
 // opcode at all, so both answers are computed CLIENT-SIDE from one bounded
 // MEM_GET read per range -- the same shape stock-disassemble.ts already
-// uses. Registered through withDerivedTool("...", { needsSession: true },
-// ...) in stock-dispatch.ts, never withStockSession() (D-01/D-03).
+// uses. Listed in stock-tools.ts as "binary" tools.
 //
 // WHAT NOT TO DO:
 //   - Never import hostpath.ts or vice-proxy.ts, and never call the

@@ -1347,7 +1347,7 @@ test("stage_file: against a REAL broker (no onStageFile stub configured), the no
 // method above uses, over the SAME session/socket a grant was acquired
 // through -- these tests assert the outcome mapping (the caller-visible
 // contract), never that a caller must await it; that "never await" contract
-// is stock-dispatch.ts's/text-tools.ts's own, proven in Task 3's own
+// is stock-session.ts's/text-tools.ts's own, proven in Task 3's own
 // broker-control.test.ts case.
 // ============================================================================
 

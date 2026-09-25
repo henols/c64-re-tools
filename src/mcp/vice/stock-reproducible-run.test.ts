@@ -41,7 +41,7 @@ import { resetRegisterCatalogsForTest } from "./stock-registers.ts";
 import { MachineRestartedError } from "./vice-errors.ts";
 import { ORACLE_TERMS } from "./stop-oracle.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
-import type { StockDispatchDeps } from "./stock-dispatch.ts";
+import type { StockSessionDeps } from "./stock-session.ts";
 
 // ---------------------------------------------------------------------------
 // DI stub helpers
@@ -79,7 +79,7 @@ function makeSession(client: ViceMonitorClient): StockConnectSession {
   return { client, targetId: `target-${sessionCounter}` } as unknown as StockConnectSession;
 }
 
-const FAKE_DEPS = {} as unknown as StockDispatchDeps;
+const FAKE_DEPS = {} as unknown as StockSessionDeps;
 
 const TARGET_ADDR = 0xc000;
 const ANCHOR_ADDR = 0xea31;

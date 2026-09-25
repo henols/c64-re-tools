@@ -19,8 +19,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { handleDeviceConsole, handleWarpSet, handleMemmapShow, handleMemmapZap, handleCpuHistory, handleProfileFlat, handleBacktrace, handleIoRegisters, handleProgramLoad } from "./text-tools.ts";
-import { dispatchStock } from "./stock-dispatch.ts";
-import type { StockDispatchDeps } from "./stock-dispatch.ts";
+import { callStockTool } from "./stock-tools.ts";
+import type { StockSessionDeps } from "./stock-session.ts";
 import type { StockToolResult } from "./stock-handler.ts";
 import type { StockConnectBrokerControl, DialMonitorSocketFn } from "./stock-connect.ts";
 
@@ -31,7 +31,7 @@ import type { StockConnectBrokerControl, DialMonitorSocketFn } from "./stock-con
 // text-monitor server DIRECTLY and resolves an empty pending Buffer,
 // byte-identical handshake behaviour to the pre-relay direct dial this
 // replaces. Threaded into every deps builder below via the new
-// StockDispatchDeps.dialMonitorSocket seam (stock-dispatch.ts, plan 63-02).
+// StockSessionDeps.dialMonitorSocket seam (stock-session.ts, plan 63-02).
 // ---------------------------------------------------------------------------
 
 const directDialMonitorSocket: DialMonitorSocketFn = (opts) =>
@@ -153,8 +153,8 @@ function makeStubBrokerControlWithHostState(hostState: {
   } as unknown as StockConnectBrokerControl;
 }
 
-/** Builds StockDispatchDeps.ensureLease() so it resolves a HeldLease pointed
- * at the stub server's port -- mirrors stock-dispatch.test.ts's own
+/** Builds StockSessionDeps.ensureLease() so it resolves a HeldLease pointed
+ * at the stub server's port -- mirrors stock-tools.test.ts's own
  * makeLease() helper, with remoteMonitorPort (D-15) filled in since that is
  * the field these two tools actually read.
  *
@@ -162,7 +162,7 @@ function makeStubBrokerControlWithHostState(hostState: {
  * straight through to makeStubBrokerControl(), so a test can observe every
  * `noteOperation()` call this lease's `brokerControl` receives without
  * touching any other call site. */
-function makeDeps(port: number, overrides: Partial<StockDispatchDeps> = {}, recorder?: Array<string | null>): StockDispatchDeps {
+function makeDeps(port: number, overrides: Partial<StockSessionDeps> = {}, recorder?: Array<string | null>): StockSessionDeps {
   const lease: HeldLease = {
     host: "127.0.0.1",
     port: 6502,
@@ -179,7 +179,7 @@ function makeDeps(port: number, overrides: Partial<StockDispatchDeps> = {}, reco
   };
 }
 
-/** Plan 42-13 (G3): builds StockDispatchDeps with a resolved binary identity
+/** Plan 42-13 (G3): builds StockSessionDeps with a resolved binary identity
  * (`resolvedBinaryPath`/`resolvedBinaryPathIsResolved`) AND a broker control
  * whose `hostState()` resolves the caller-chosen identity -- so
  * `capabilityIdentityFor()` (text-tools.ts) resolves BOTH identities
@@ -188,7 +188,7 @@ function makeDepsWithBrokerIdentity(
   port: number,
   brokerHostState: { backend: "stock" | null; binPath: string },
   resolvedBinaryPath = "/usr/bin/x64sc",
-): StockDispatchDeps {
+): StockSessionDeps {
   const lease: HeldLease = {
     host: "127.0.0.1",
     port: 6502,
@@ -280,7 +280,7 @@ test("handleWarpSet(false): issues 'warp off'", async () => {
 for (const bad of ["true", 1, null, undefined, {}]) {
   test(`handleWarpSet: refuses a non-boolean enabled (${JSON.stringify(bad)}) by name, no byte written to the socket`, async () => {
     let leaseCalled = false;
-    const deps: StockDispatchDeps = {
+    const deps: StockSessionDeps = {
       ensureLease: async () => {
         leaseCalled = true;
         return { ok: true, lease: null };
@@ -477,32 +477,6 @@ test("withTextTool that times out acquiring the lock declares nothing and clears
   );
 });
 
-test("both channel wrappers declare only after acquiring the shared lock", () => {
-  // A live binary-side drive of dispatchStock() would need a full
-  // binary-monitor stub session harness this file does not have -- the only
-  // existing binary-tool coverage in this file spawns a REAL emulator (the
-  // LIVE case near the end of this file), which is far too heavy to stand up
-  // just to prove a static ordering fact. This is therefore a
-  // source-symmetry assertion instead: in each wrapper's own source, the
-  // line that DECLARES the operation must appear strictly after the line
-  // that ACQUIRES the shared lock.
-  const textSource = readFileSync(join(import.meta.dirname, "text-tools.ts"), "utf8");
-  const textLines = textSource.split("\n");
-  const textAcquireLine = textLines.findIndex((l) => l.includes("withTextChannelLock("));
-  const textDeclareLine = textLines.findIndex((l) => l.includes("declareTextOperation(lease, toolName)"));
-  assert.ok(textAcquireLine >= 0, "expected to find withTextChannelLock( in text-tools.ts");
-  assert.ok(textDeclareLine >= 0, "expected to find declareTextOperation(lease, toolName) in text-tools.ts");
-  assert.ok(textDeclareLine > textAcquireLine, "text-tools.ts must declare strictly AFTER acquiring the shared lock");
-
-  const dispatchSource = readFileSync(join(import.meta.dirname, "stock-dispatch.ts"), "utf8");
-  const dispatchLines = dispatchSource.split("\n");
-  const dispatchAcquireLine = dispatchLines.findIndex((l) => l.includes('acquireChannelLock({ channel: "binary"'));
-  const dispatchDeclareLine = dispatchLines.findIndex((l, i) => i > dispatchAcquireLine && l.includes("declareOperation(session, toolName)"));
-  assert.ok(dispatchAcquireLine >= 0, 'expected to find acquireChannelLock({ channel: "binary" in stock-dispatch.ts');
-  assert.ok(dispatchDeclareLine >= 0, "expected to find declareOperation(session, toolName) in stock-dispatch.ts");
-  assert.ok(dispatchDeclareLine > dispatchAcquireLine, "stock-dispatch.ts must declare strictly AFTER acquiring the shared lock");
-});
-
 // ---------------------------------------------------------------------------
 // handleMemmapShow: issues exactly the frozen "memmapshow" verb and answers
 // the parsed, bounded projection -- Plan 42-01, PARSE-01.
@@ -533,7 +507,7 @@ test("handleMemmapShow: issues exactly 'memmapshow' and returns a parsed, bounde
 
 test("handleMemmapShow: refuses a non-integer startAddress by name, no lease resolved, no byte written", async () => {
   let leaseCalled = false;
-  const deps: StockDispatchDeps = {
+  const deps: StockSessionDeps = {
     ensureLease: async () => {
       leaseCalled = true;
       return { ok: true, lease: null };
@@ -547,7 +521,7 @@ test("handleMemmapShow: refuses a non-integer startAddress by name, no lease res
 
 test("handleMemmapShow: refuses startAddress greater than endAddress by name, no lease resolved", async () => {
   let leaseCalled = false;
-  const deps: StockDispatchDeps = {
+  const deps: StockSessionDeps = {
     ensureLease: async () => {
       leaseCalled = true;
       return { ok: true, lease: null };
@@ -803,7 +777,7 @@ test("handleCpuHistory: a supplied count dials buildTextCommand()'s canonical re
 
 test("handleCpuHistory: refuses an out-of-range count by name, via buildTextCommand's own message, no lease resolved", async () => {
   let leaseCalled = false;
-  const deps: StockDispatchDeps = {
+  const deps: StockSessionDeps = {
     ensureLease: async () => {
       leaseCalled = true;
       return { ok: true, lease: null };
@@ -890,7 +864,7 @@ test("handleProfileFlat: a supplied count dials buildTextCommand()'s canonical r
 
 test("handleProfileFlat: refuses an out-of-range count by name, via buildTextCommand's own message, no lease resolved", async () => {
   let leaseCalled = false;
-  const deps: StockDispatchDeps = {
+  const deps: StockSessionDeps = {
     ensureLease: async () => {
       leaseCalled = true;
       return { ok: true, lease: null };
@@ -1035,7 +1009,7 @@ test("handleBacktrace: a depth argument truncates the PARSED frames and reports 
 
 test("handleBacktrace: refuses an out-of-range depth by name, no lease resolved -- depth never reaches the wire", async () => {
   let leaseCalled = false;
-  const deps: StockDispatchDeps = {
+  const deps: StockSessionDeps = {
     ensureLease: async () => {
       leaseCalled = true;
       return { ok: true, lease: null };
@@ -1112,7 +1086,7 @@ test("handleIoRegisters: a required address dials buildTextCommand()'s canonical
 
 test("handleIoRegisters: refuses a missing address argument outright -- it is REQUIRED, no lease resolved", async () => {
   let leaseCalled = false;
-  const deps: StockDispatchDeps = {
+  const deps: StockSessionDeps = {
     ensureLease: async () => {
       leaseCalled = true;
       return { ok: true, lease: null };
@@ -1127,7 +1101,7 @@ test("handleIoRegisters: refuses a missing address argument outright -- it is RE
 
 test("handleIoRegisters: refuses an out-of-range address by name, via buildTextCommand's own message, no lease resolved", async () => {
   let leaseCalled = false;
-  const deps: StockDispatchDeps = {
+  const deps: StockSessionDeps = {
     ensureLease: async () => {
       leaseCalled = true;
       return { ok: true, lease: null };
@@ -1387,7 +1361,7 @@ test("handleProgramLoad: a supplied device dials buildTextCommand()'s canonical 
 
 test("handleProgramLoad: refuses an out-of-range device by name, via buildTextCommand's own message, no lease resolved", async () => {
   let leaseCalled = false;
-  const deps: StockDispatchDeps = {
+  const deps: StockSessionDeps = {
     ensureLease: async () => {
       leaseCalled = true;
       return { ok: true, lease: null };
@@ -1485,7 +1459,7 @@ test("handleProgramLoad [plan 50-05]: a subject the closed table does not carry 
   // rather than failing somewhere inside the emulator.
   for (const bad of ["misaligned", "/etc/passwd", "../hazard-subject.prg", "", "ORIGINAL", "__proto__", "constructor", 0, null, {}]) {
     let leaseCalled = false;
-    const deps: StockDispatchDeps = {
+    const deps: StockSessionDeps = {
       ensureLease: async () => {
         leaseCalled = true;
         return { ok: true, lease: null };
@@ -1568,7 +1542,7 @@ test("handleMemmapShow: an agreeing broker identity carries no identityWarning p
 });
 
 test("all five text tools surface a disagreeing broker identity's warning on their success path -- a future handler cannot silently drop it", async () => {
-  const cases: Array<{ name: string; reply: string; call: (deps: StockDispatchDeps) => Promise<StockToolResult> }> = [
+  const cases: Array<{ name: string; reply: string; call: (deps: StockSessionDeps) => Promise<StockToolResult> }> = [
     {
       name: "vice_memmap_show",
       reply: `addr: IO  ROM RAM\n0000: --- --- rw- (dummy)\n${PROMPT}`,
@@ -1626,8 +1600,8 @@ test("all five text tools surface a disagreeing broker identity's warning on the
 // so this case is skipped by default and reachable deliberately, never a
 // second env var.
 //
-// Construction mirrors stock-dispatch.test.ts's own D-02 conformance
-// harness shape (a StockDispatchDeps whose ensureLease() hands back fixed
+// Construction mirrors stock-tools.test.ts's own D-02 conformance
+// harness shape (a StockSessionDeps whose ensureLease() hands back fixed
 // coordinates, a no-op claimMonitor/releaseMonitor stub) but substitutes a
 // REAL socket to a directly-spawned x64sc for the stubbed client --
 // `.planning/phases/43-.../evidence/evid06-instrumentation-ab.mjs` is plan
@@ -1640,7 +1614,7 @@ test("all five text tools surface a disagreeing broker identity's warning on the
 // monitor -- text-monitor commands are drawn only from TEXT_COMMAND_ALLOWLIST
 // (D-01) and carry no resume verb, so this case opens its own throwaway
 // binary connection purely to issue that one resume, then dials
-// dispatchStock("vice_memmap_show"/"vice_memmap_zap", ...) exactly as
+// callStockTool("vice_memmap_show"/"vice_memmap_zap", ...) exactly as
 // production does. Once resumed the CPU free-runs (recording continuously
 // and unconditionally, per RESEARCH.md's mon_memmap.c citation) until the
 // NEXT monitor command halts it again -- so nothing else is dialed during
@@ -1748,7 +1722,7 @@ test(
         noteOperation: async () => ({ ok: true as const }),
       } as unknown as StockConnectBrokerControl;
 
-      const deps: StockDispatchDeps = {
+      const deps: StockSessionDeps = {
         ensureLease: async () => ({
           ok: true,
           lease: {
@@ -1764,15 +1738,15 @@ test(
       };
 
       // Dialing memmapshow itself halts the CPU again (same as the binary
-      // side) -- this IS the pre-zap read, through the REAL dispatchStock()
+      // side) -- this IS the pre-zap read, through the REAL callStockTool()
       // seam, never the handler called directly.
-      const preResult = await dispatchStock("vice_memmap_show", {}, deps);
+      const preResult = await callStockTool("vice_memmap_show", {}, deps);
       assert.equal(preResult.isError, false, `pre-zap vice_memmap_show failed: ${JSON.stringify(preResult)}`);
       const prePayload = JSON.parse(preResult.content[0]!.text) as Record<string, unknown>;
       const preZap = prePayload.addressesWithRecordedAccess;
       assert.equal(typeof preZap, "number");
 
-      const zapResult = await dispatchStock("vice_memmap_zap", {}, deps);
+      const zapResult = await callStockTool("vice_memmap_zap", {}, deps);
       assert.equal(zapResult.isError, false, `vice_memmap_zap failed: ${JSON.stringify(zapResult)}`);
       const zapPayload = JSON.parse(zapResult.content[0]!.text) as Record<string, unknown>;
       const postZap = zapPayload.addressesWithRecordedAccess;

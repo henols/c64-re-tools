@@ -18,7 +18,7 @@
 // there, closing an import cycle (`stock-paths.ts` -> `transfer-paths.ts` ->
 // `stock-paths.ts`) -- exactly the shape this codebase's own CONVENTIONS
 // deliberately avoid elsewhere (`repo-root.ts`/`install-resources.ts`,
-// `stock-dispatch.ts`/`stock-*.ts`). Defining the class here instead keeps
+// `stock-handler.ts`/`stock-*.ts`). Defining the class here instead keeps
 // this module a leaf with respect to `stock-paths.ts` (it imports only
 // `vice-errors.ts` and `repo-root.ts`, neither of which import back), and
 // `stock-paths.ts` re-exports the SAME class value, so every existing

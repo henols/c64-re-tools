@@ -51,7 +51,7 @@
 //        deleted them) and its parent (the last commit where they still
 //        existed).
 //     2. Re-point every tool's dispatch: each tool's `execute` body
-//        (`stockDispatch.dispatchStock(def.name, args, ...)` as of the
+//        (`runStockTool(tool, args, ...)` as of the
 //        fork-backend removal -- UNCHANGED by this rollback either way, it
 //        predates and outlives the swap) currently runs inside the
 //        `CallToolRequestSchema` override's per-tool lookup; re-wire that
@@ -85,7 +85,7 @@
 // tool call too) live in vice-errors.ts. The fork's own HTTP/JSON-RPC
 // transport module (its outer-name refusal array, the session-identity
 // apparatus, `call()`/`callTool`, `serverInfo()`) is gone entirely: every
-// remaining tool dispatch in this file goes through stockDispatch, never
+// remaining tool dispatch in this file goes through stock-tools.ts, never
 // through a fork transport.
 import { activeInstance, useInstance, mcpHost, type ActiveInstance, type ToolInfo } from "./vice-errors.ts";
 import { repoRoot, toolsDir } from "./repo-root.ts";
@@ -137,14 +137,15 @@ import type { StandardSchemaWithJSON } from "@mastra/core/schema";
 // A real, already-resolved transitive dependency of @mastra/mcp (Plan 01's
 // Task 2 note) -- deliberately NOT added to package.json directly.
 import { CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-// Plan 02-10: this file's own backend-detection and stock-dispatch consumer
+// Plan 02-10: this file's own backend-detection and stock-tools consumer
 // edits. Both are namespace imports, deliberately -- keeps every reference to
 // their exported members's names down to the ONE call site each below (this
 // file's own grep-gated single-occurrence acceptance criteria), rather than a
 // named import whose binding is textually repeated at both the import line
 // and every call site.
 import * as backendDetect from "./backend-detect.mts";
-import * as stockDispatch from "./stock-dispatch.ts";
+import { stockToolDefinitions, runStockTool } from "./stock-tools.ts";
+import type { StockSessionDeps } from "./stock-session.ts";
 // D-13 (plan 65-02) removed the anno_* family's registration -- the whole
 // per-tool registration loop over the curated definitions, and the static
 // import feeding it, both of which used to sit here -- from tools/list.
@@ -291,7 +292,7 @@ const HERE_DIR = dirname(fileURLToPath(import.meta.url));
 // instead of a backend-shaped object.
 //
 // `RESOLVED_BINARY.binPath` is what `vice_ping`'s `resolvedBinaryPath` field
-// reports (see stock-dispatch.ts's `handlePing()`). It is resolved exactly
+// reports (see stock-tools.ts's `handlePing()`). It is resolved exactly
 // ONCE here, at MCP-server process startup -- Phase 60 (LOC-01/LOC-02) routes
 // that resolution through the tool-location seam (a `.c64-re-tools/tools.json`
 // entry for `x64sc`, then a bare `x64sc` `$PATH` probe, in THIS process's own
@@ -491,53 +492,26 @@ const RESULT_CONTINUE_TOOL: ToolDefinition = {
   },
 };
 
-// Edit 1 (plan 02-10): delegates to stock-dispatch.ts's own selector function
-// -- the ONE manifest site this file keeps. FORKRM-01: always resolves the
-// stock manifest now, since there is nothing else to select between; the
-// existing malformed-manifest fallbacks in readManifestTools() below are
-// untouched: a missing or unreadable stock manifest still answers tools/list
-// with an empty array rather than crashing the server.
-function manifestPath(): string {
-  return stockDispatch.manifestPathForBackend(HERE_DIR, process.env.VICE_TOOLS_MANIFEST);
-}
-
+// The committed manifest beside this file is the only source of the
+// advertised schemas. A missing or malformed manifest is a packaging bug, so
+// reading it throws and the server fails at startup rather than advertising
+// a partial tool surface.
 function readManifestTools(): ToolInfo[] {
-  const path = manifestPath();
-  let raw: string;
-  try {
-    raw = readFileSync(path, "utf8");
-  } catch (e) {
-    console.error(
-      `vice-proxy: tools-manifest not readable at ${path} (${(e as Error).message}) -- answering tools/list with an empty tools array`
-    );
-    return [];
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (e) {
-    console.error(
-      `vice-proxy: tools-manifest at ${path} is not valid JSON (${(e as Error).message}) -- answering tools/list with an empty tools array`
-    );
-    return [];
-  }
+  const path = join(HERE_DIR, "tools-manifest.stock.json");
+  const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
   const shapeOk =
     isPlainObject(parsed) &&
     Array.isArray(parsed.tools) &&
     parsed.tools.every((t: unknown) => isPlainObject(t) && typeof t.name === "string");
   if (!shapeOk) {
-    console.error(
-      `vice-proxy: tools-manifest at ${path} has an unexpected shape ("tools" must be an array of objects ` +
-        `each carrying a string "name") -- answering tools/list with an empty tools array`
-    );
-    return [];
+    throw new Error(`the tools manifest at ${path} has an unexpected shape ("tools" must be an array of objects each carrying a string "name")`);
   }
   return (parsed as { tools: ToolInfo[] }).tools;
 }
 
 // --------------------------------------------------------------- tools/call
 //
-// Every advertised tool dispatches through stockDispatch.dispatchStock(),
+// Every advertised tool runs through stock-tools.ts's runStockTool(),
 // which owns its own reconnect and epoch-drift handling (stock-connect.ts).
 // This proxy layer performs no per-call epoch re-check of its own -- the
 // generic forwarding function that once needed one here is gone. Malformed
@@ -577,22 +551,15 @@ interface OkTextResult {
 }
 type ToolCallResult = ErrorTextResult | OkTextResult;
 
-// -------------------------------------------------------- dispatchStockFor
+// ----------------------------------------------------------- stockDeps
 //
-// The one place every stock tool call's shared deps object is built -- used
-// by the manifest loop below,
-// so there is exactly one definition of "what dispatchStock needs" rather
-// than three copies that could drift apart. Kept as a single-line-callable
-// helper (not inlined at each call site) so every registration reads as one
-// source line -- vice-proxy.test.ts's own registration scanner keys each
-// `tools[...] = ...;` line by its raw captured text and expects one
-// registration per line.
-function dispatchStockFor(name: string, args: Record<string, unknown>): Promise<ToolCallResult> {
-  return stockDispatch.dispatchStock(name, args, {
+// The one place every stock tool call's shared deps object is built.
+function stockDeps(): StockSessionDeps {
+  return {
     ensureLease: ensureBrokerLease,
     resolvedBinaryPath: RESOLVED_BINARY.binPath,
     resolvedBinaryPathIsResolved: RESOLVED_BINARY.binPathResolved,
-  });
+  };
 }
 
 // --------------------------------------------------- unreachable diagnostics
@@ -604,7 +571,7 @@ function dispatchStockFor(name: string, args: Record<string, unknown>): Promise<
 // classifying a failed pre-flight liveness check over the fork's own HTTP
 // transport) is deleted along with the fork-only generic forwarding
 // function and its liveness-probe module: stock has no equivalent
-// probe-then-classify step of its own, and stockDispatch's own
+// probe-then-classify step of its own, and stock-session.ts's own
 // session/lease handling reports unreachability through its own vocabulary
 // instead.
 //
@@ -767,7 +734,7 @@ function brokerControlUnreachableMessage(opened: { kind: ControlFailureKind; mes
 // instance stopped answering the fork-only generic forwarding function's own
 // pre-flight liveness check -- their only caller. Deleted along with that
 // forwarding function; stock has no equivalent probe-then-replace step at
-// this proxy layer, and a dead lease surfaces through stockDispatch's own
+// this proxy layer, and a dead lease surfaces through stock-session.ts's own
 // error handling instead.
 
 // ------------------------------------------------------------ path rewriting
@@ -1319,14 +1286,14 @@ function adoptGrant(grant: Record<string, unknown>): void {
 // replace-and-report mechanism existed to handle a granted instance failing
 // that forwarding function's own pre-flight liveness check (a fork-only
 // HTTP round trip) -- its only caller. The D-16 mechanism has no other
-// caller either, and stock-dispatch.ts's own per-tool handlers have no
+// caller either, and stock-tools.ts's per-tool handlers have no
 // equivalent hook today. Every advertised tool now registers straight
-// through buildViceTool() to stockDispatch.dispatchStock() (see the
+// through buildViceTool() to runStockTool() (see the
 // registration loop below) -- there is no surviving generic-dispatch
 // surface for a derived tool to slip behind, matching this plan's own
 // prohibition against re-opening the nested-argument hazard an outer-name
 // refusal array used to close. Stock has no equivalent probe-then-replace
-// step at this proxy layer; a dead lease surfaces through stockDispatch's
+// step at this proxy layer; a dead lease surfaces through stock-session.ts's
 // own error handling instead.
 
 // -------------------------------------------------------------- teardown
@@ -1403,7 +1370,7 @@ warnOnceAboutOutputLimit(); // D-1.2-H -- one stderr line, at most once per proc
 // ------------------------------------------------------- @mastra/mcp seam
 //
 // D-01: the wire layer is MCPServer + startStdio(), with each registered
-// tool's own runner (stockDispatch.dispatchStock(), or a proxy-local
+// tool's own runner (runStockTool(), or a proxy-local
 // handler for the synthetic/anno_* tools, above) doing the actual dispatch
 // work -- only the top-level caller changed from the original hand-rolled
 // framing. See this plan's PLAN.md "Ground truth" section (read directly
@@ -1476,38 +1443,17 @@ function buildViceTool(def: ToolDefinition, run: (args: Record<string, unknown>)
   });
 }
 
-// This loop registers every tool the active manifest advertises. It used
-// to skip a fixed outer-name refusal array covering the fork HTTP server's
-// own generic-surface meta-tools (`tools_call`/`tools_list`/`initialize`/
-// `notifications_initialized`, all of which the fork's manifest advertised
-// as ordinary forwardable tools) plus `vice_disk_list` (a tool known to
-// crash that same server). Both the fork manifest and the refusal array are
-// gone: the manifest this loop reads never advertised any of those names,
-// so there is nothing left to skip -- every entry registers unconditionally.
-// tools/list is served entirely by MCPServer's own ListToolsRequestSchema
-// handler (unmodified, not overridden), reading from this SAME `tools`
-// object. A manifest hot-reload mid-session is not picked up until the
-// proxy restarts; the manifest is regenerated by a manual, rare build step,
-// never mid-session in practice.
-//
-// The per-backend registration seam this section used to describe
-// (D-09, CR-07) is deleted: every tool this file
-// registers now dispatches through stockDispatch.dispatchStock()
-// unconditionally, which either has a table entry for the name or REFUSES
-// BY NAME. There is no third path and no fall-through -- D-09's whole
-// point, true by construction now rather than by a runtime backend check.
+// Registers every tool in the manifest, in manifest order (the tools/list
+// order), each paired with its entry in stock-tools.ts's STOCK_TOOLS.
+// stockToolDefinitions() throws if the two disagree. tools/list is served by
+// MCPServer's own ListToolsRequestSchema handler, reading this SAME object.
 const tools: Record<string, ReturnType<typeof buildViceTool>> = {};
-// Read ONCE and reused below for both the manifest loop and the two
-// synthetic registrations' own resolveAdvertisedToolDefinition() calls --
-// never re-read per registration (WR-07, plan 07-16).
-const manifestTools = readManifestTools();
-for (const def of manifestTools) {
-  tools[def.name] = buildViceTool(def, (args) => dispatchStockFor(def.name, args));
+for (const { def, tool } of stockToolDefinitions(readManifestTools())) {
+  tools[def.name] = buildViceTool(def, (args) => runStockTool(tool, args, stockDeps()));
 }
 // Backend-INDEPENDENT by construction: handleResultContinue() is served
 // entirely from this proxy's own CONTINUATION_STORE and opens no socket of any
-// kind, so it is correct on either backend and is deliberately NOT routed
-// through dispatchStock (which would refuse the continuation mechanism itself).
+// kind, so it is deliberately NOT one of the stock tools.
 tools[RESULT_CONTINUE_TOOL.name] = buildViceTool(RESULT_CONTINUE_TOOL, (args) => Promise.resolve(handleResultContinue(args)));
 // D-13 (plan 65-02): the anno_* registration loop that used to sit here --
 // 25 tools, imported from anno-tools.ts's own curated definitions -- is

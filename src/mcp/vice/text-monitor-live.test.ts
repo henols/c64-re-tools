@@ -87,7 +87,8 @@ import { build } from "./build.ts";
 import { openBrokerControl, type BrokerControlSession, type HeldLease } from "./vice-broker-client.ts";
 import { textConnect, textDisconnect } from "./text-connect.ts";
 import { TEXT_COMMAND_ALLOWLIST, withTextChannelLock, buildTextCommand } from "./text-protocol.ts";
-import { dispatchStock, clearHeldStockSession, ensureStockSession, type StockDispatchDeps } from "./stock-dispatch.ts";
+import { callStockTool } from "./stock-tools.ts";
+import { clearHeldStockSession, ensureStockSession, type StockSessionDeps } from "./stock-session.ts";
 import { stockConnect, type StockConnectOptions } from "./stock-connect.ts";
 import { resetChannelLockForTests, acquireChannelLock } from "./channel-lock.ts";
 import { CommandType, checkpointSetBody, CheckpointOperation, cpNumBody } from "./stock-protocol.ts";
@@ -632,7 +633,7 @@ function readKernalIrqAddress(): KernalIrqAddress {
   return { address: parseInt(m![1]!, 16), addressHex: `$${m![1]!.toUpperCase()}` };
 }
 
-/** Parses a dispatchStock() answer's JSON payload, asserting it is NOT an
+/** Parses a callStockTool() answer's JSON payload, asserting it is NOT an
  * error result first -- copied from stock-a4-checkpoint-flood.test.ts's own
  * parseOkPayload() (module-local, not exported there either). */
 function parseOkPayload(result: { content: { type: "text"; text: string }[]; isError: boolean }): Record<string, unknown> {
@@ -677,7 +678,7 @@ test(
         epochFile: grant.epoch_file,
         supervisorDir: stateDir,
       };
-      const deps: StockDispatchDeps = {
+      const deps: StockSessionDeps = {
         ensureLease: async () => ({ ok: true as const, lease }),
         connect: (opts: StockConnectOptions) => stockConnect(opts),
       };
@@ -685,7 +686,7 @@ test(
       const textSession = await textConnect({ host, remoteMonitorPort, targetId: grant.id, brokerControl: session });
 
       try {
-        const addResult = await dispatchStock("vice_checkpoint_add", { start: kernalIrq.addressHex, stop: true }, deps);
+        const addResult = await callStockTool("vice_checkpoint_add", { start: kernalIrq.addressHex, stop: true }, deps);
         const addPayload = parseOkPayload(addResult as { content: { type: "text"; text: string }[]; isError: boolean });
         const checkpointId = addPayload.id as number;
         assert.equal(addPayload.enabled, true, `expected the freshly added checkpoint to report enabled:true, got: ${JSON.stringify(addPayload)}`);
@@ -708,9 +709,9 @@ test(
         const deadline = Date.now() + 20000;
         let hitEntry: Record<string, unknown> | null = null;
         while (Date.now() < deadline && !hitEntry) {
-          await dispatchStock("vice_execution_run", {}, deps);
+          await callStockTool("vice_execution_run", {}, deps);
           await new Promise((r) => setTimeout(r, 100));
-          const listResult = await dispatchStock("vice_checkpoint_list", {}, deps);
+          const listResult = await callStockTool("vice_checkpoint_list", {}, deps);
           const listPayload = parseOkPayload(listResult as { content: { type: "text"; text: string }[]; isError: boolean });
           const checkpoints = (listPayload.checkpoints as Array<Record<string, unknown>>) ?? [];
           const found = checkpoints.find((c) => c.id === checkpointId) ?? null;
@@ -806,7 +807,7 @@ test(
         epochFile: grant.epoch_file,
         supervisorDir: stateDir,
       };
-      const deps: StockDispatchDeps = {
+      const deps: StockSessionDeps = {
         ensureLease: async () => ({ ok: true as const, lease }),
         connect: (opts: StockConnectOptions) => stockConnect(opts),
       };
@@ -820,13 +821,13 @@ test(
         // session and reaches withChannelLockHeld() almost immediately,
         // rather than racing an unpredictable first-connect handshake cost
         // against the head-start delay below.
-        await dispatchStock("vice_ping", {}, deps);
+        await callStockTool("vice_ping", {}, deps);
 
         // $9000 is ordinary, unused RAM on a freshly booted, unmodified
         // machine -- never executed as code within this test's own bounded
         // window, so vice_run_until genuinely spans its full timeout_ms,
         // giving ample window for the concurrent text-lock attempt below.
-        const runUntilPromise = dispatchStock("vice_run_until", { address: "$9000", timeout_ms: 5000 }, deps);
+        const runUntilPromise = callStockTool("vice_run_until", { address: "$9000", timeout_ms: 5000 }, deps);
 
         // Give the binary side a head start to acquire channel-lock.ts's
         // mutex before the concurrent text acquire is attempted.
@@ -964,7 +965,7 @@ test(
         epochFile: grant.epoch_file,
         supervisorDir: stateDir,
       };
-      const deps: StockDispatchDeps = {
+      const deps: StockSessionDeps = {
         ensureLease: async () => ({ ok: true as const, lease }),
         connect: (opts: StockConnectOptions) => stockConnect(opts),
       };
@@ -1037,7 +1038,7 @@ test(
         const deadline = Date.now() + 15000;
         try {
           while (Date.now() < deadline && checkpointHits.length === 0) {
-            await dispatchStock("vice_execution_run", {}, deps);
+            await callStockTool("vice_execution_run", {}, deps);
             await new Promise((r) => setTimeout(r, 150));
           }
         } finally {
@@ -1059,7 +1060,7 @@ test(
 
         // Ground truth: main-CPU PC via vice_registers_get, which always
         // sends an explicit memspace:0x00 -- immune to contamination.
-        const regsBeforeResult = await dispatchStock("vice_registers_get", {}, deps);
+        const regsBeforeResult = await callStockTool("vice_registers_get", {}, deps);
         const regsBefore = parseOkPayload(regsBeforeResult as { content: { type: "text"; text: string }[]; isError: boolean });
         const pcBefore = (regsBefore.registers as Record<string, number>).PC;
         assert.equal(typeof pcBefore, "number", `expected a numeric main-CPU PC before stepping, got: ${JSON.stringify(regsBefore)}`);
@@ -1067,10 +1068,10 @@ test(
         // vice_execution_step's own ADVANCE_INSTRUCTIONS request has NO
         // memspace field (CLAUDE.md's cited fact) -- contaminated, it steps
         // whichever CPU default_memspace currently names, silently.
-        const stepDuringContaminationResult = await dispatchStock("vice_execution_step", { count: 1 }, deps);
+        const stepDuringContaminationResult = await callStockTool("vice_execution_step", { count: 1 }, deps);
         const stepDuringContamination = parseOkPayload(stepDuringContaminationResult as { content: { type: "text"; text: string }[]; isError: boolean });
 
-        const regsAfterStepResult = await dispatchStock("vice_registers_get", {}, deps);
+        const regsAfterStepResult = await callStockTool("vice_registers_get", {}, deps);
         const regsAfterStep = parseOkPayload(regsAfterStepResult as { content: { type: "text"; text: string }[]; isError: boolean });
         const pcAfterContaminatedStep = (regsAfterStep.registers as Record<string, number>).PC;
 
@@ -1128,9 +1129,9 @@ test(
         console.log(`text-monitor-live (criterion 5): MEASURED device c: remedy response (${remedyResponse.length} bytes): ${JSON.stringify(remedyResponseLogSnippet)}`);
 
         // Confirm the remedy: main-CPU stepping must now work again.
-        const stepAfterRemedyResult = await dispatchStock("vice_execution_step", { count: 1 }, deps);
+        const stepAfterRemedyResult = await callStockTool("vice_execution_step", { count: 1 }, deps);
         parseOkPayload(stepAfterRemedyResult as { content: { type: "text"; text: string }[]; isError: boolean });
-        const regsAfterRemedyResult = await dispatchStock("vice_registers_get", {}, deps);
+        const regsAfterRemedyResult = await callStockTool("vice_registers_get", {}, deps);
         const regsAfterRemedy = parseOkPayload(regsAfterRemedyResult as { content: { type: "text"; text: string }[]; isError: boolean });
         const pcAfterRemedy = (regsAfterRemedy.registers as Record<string, number>).PC;
 
@@ -1171,8 +1172,8 @@ test(
 
 // ---------------------------------------------------------------------------
 // Plan 41-06 (D-04): the warp on/warp off re-probe, WITH THE CHANNEL OPEN,
-// issued through the real vice_warp_set tool (needsSession:false --
-// dispatchStock() reaches text-tools.ts's handleWarpSet() directly).
+// issued through the real vice_warp_set tool ("pure" --
+// callStockTool() reaches text-tools.ts's handleWarpSet() directly).
 // ---------------------------------------------------------------------------
 
 test(
@@ -1202,7 +1203,7 @@ test(
       const binmonReady = await waitForPortOpen(host, grant.port, 30000);
       assert.ok(binmonReady, `the cold-launched instance's binmon port ${grant.port} never accepted a connection within 30s`);
 
-      // vice_warp_set is needsSession:false (text-tools.ts) -- it resolves
+      // vice_warp_set is "pure" (text-tools.ts) -- it resolves
       // its own lease via deps.ensureLease() and dials the text channel
       // itself through textConnect(); no binary session is opened by this
       // test at all, and remoteMonitorPort MUST be on the lease this time
@@ -1217,11 +1218,11 @@ test(
         supervisorDir: stateDir,
         remoteMonitorPort,
       };
-      const deps: StockDispatchDeps = {
+      const deps: StockSessionDeps = {
         ensureLease: async () => ({ ok: true as const, lease }),
       };
 
-      const onResult = await dispatchStock("vice_warp_set", { enabled: true }, deps);
+      const onResult = await callStockTool("vice_warp_set", { enabled: true }, deps);
       const onPayload = parseOkPayload(onResult as { content: { type: "text"; text: string }[]; isError: boolean });
       assert.equal(onPayload.requested, true);
       assert.ok(
@@ -1230,7 +1231,7 @@ test(
       );
       console.log(`text-monitor-live (D-04): MEASURED vice_warp_set(true) on ${viceBinPath}: ${JSON.stringify(onPayload.response)}`);
 
-      const offResult = await dispatchStock("vice_warp_set", { enabled: false }, deps);
+      const offResult = await callStockTool("vice_warp_set", { enabled: false }, deps);
       const offPayload = parseOkPayload(offResult as { content: { type: "text"; text: string }[]; isError: boolean });
       assert.equal(offPayload.requested, false);
       assert.ok(
@@ -1315,7 +1316,7 @@ test(
       // A binary-channel lease/deps pair -- needed only to resume real
       // execution briefly before dialing `prof flat` (see that section
       // below), mirroring the "criterion 3"/"criterion 5" tests' own
-      // HeldLease/StockDispatchDeps construction earlier in this file.
+      // HeldLease/StockSessionDeps construction earlier in this file.
       const lease: HeldLease = {
         host,
         port: grant.port,
@@ -1324,7 +1325,7 @@ test(
         epochFile: grant.epoch_file,
         supervisorDir: stateDir,
       };
-      const deps: StockDispatchDeps = {
+      const deps: StockSessionDeps = {
         ensureLease: async () => ({ ok: true as const, lease }),
         connect: (opts: StockConnectOptions) => stockConnect(opts),
       };
@@ -1431,7 +1432,7 @@ test(
 
         const sessionOutcome = await ensureStockSession(deps);
         assert.ok(sessionOutcome.ok, `ensureStockSession failed: ${JSON.stringify(sessionOutcome)}`);
-        await dispatchStock("vice_execution_run", {}, deps);
+        await callStockTool("vice_execution_run", {}, deps);
         await new Promise((r) => setTimeout(r, 500));
 
         // MEASURED (this plan, live): resuming the CPU and then halting it

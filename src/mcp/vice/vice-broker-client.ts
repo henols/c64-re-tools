@@ -901,7 +901,7 @@ export interface BrokerControlSession {
    * second connection. Built on the same `sendAndAwaitLine()` every other
    * method uses, so it registers its own pending-response entry and never
    * throws; callers are expected to call this WITHOUT awaiting the returned
-   * promise (stock-dispatch.ts's and text-tools.ts's own channel-lock
+   * promise (stock-session.ts's and text-tools.ts's own channel-lock
    * wrappers do exactly that) -- a declaration must never add latency to,
    * or fail, the tool call that triggered it (T-63-13). The un-awaited
    * pending entry this method registers is exactly what makes that safe:
@@ -937,7 +937,7 @@ export type OpenBrokerControlOutcome =
  * `targetId` is the GRANT ID, not the port.
  * `brokerControl` is the SAME control session the grant was acquired
  * through; a stock handler must claim its monitor socket on this session,
- * never on one it opened itself (see stock-dispatch.ts's own
+ * never on one it opened itself (see stock-session.ts's own
  * ensureStockSession() header comment for why a second acquisition would
  * break the claim-before-dial guarantee this type exists to preserve). */
 export interface HeldLease {

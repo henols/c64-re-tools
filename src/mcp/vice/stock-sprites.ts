@@ -4,10 +4,7 @@
 // vice_sprite_get / vice_sprite_inspect -- DERIVED tools (DERIV-06): the
 // binary monitor has no sprite command at all, so both answers are
 // pointer-chain arithmetic plus bit rendering computed CLIENT-SIDE over
-// MEM_GET reads. Registered through withDerivedTool(..., { needsSession:
-// true }, ...) in stock-dispatch.ts by 05-07 (wave 3) -- THIS PLAN DOES NOT
-// REGISTER EITHER TOOL. No write to stock-dispatch.ts, stock-derived.ts,
-// tools-manifest.stock.json or package.json happens here.
+// MEM_GET reads. Both are listed in stock-tools.ts as "binary" tools.
 //
 // PROVENANCE (required reading before touching the four geometry
 // functions below): vicBank(), vicBankBase(), screenBase() and

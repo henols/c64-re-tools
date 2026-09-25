@@ -4,9 +4,8 @@
 // vice_cia_get_state -- a DERIVED tool (DERIV-05): its answer is computed
 // CLIENT-SIDE by decoding the bytes one MEM_GET per CIA returns, never
 // answered by a binary-monitor opcode -- the monitor has no CIA command at
-// all. Registered through withDerivedTool("vice_cia_get_state",
-// { needsSession: true }, handleCiaGetState) in stock-dispatch.ts, never
-// withStockSession(). This is stock-vicii.ts's sibling, not a second
+// all. Listed in stock-tools.ts as a "binary" tool. This is stock-vicii.ts's
+// sibling, not a second
 // template -- both follow the exact same "one sidefx:false MEM_GET, decode
 // client-side, wrap unreadable fields" shape.
 //

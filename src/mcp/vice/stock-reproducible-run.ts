@@ -89,7 +89,7 @@
 //   - Never invent a second wire-error converter. An arming/read failure goes
 //     through `convertWireError()` (the established per-handler convention);
 //     a failure surfacing from the resume/wait step is left to PROPAGATE
-//     uncaught, so the ONE existing converter seam (`withStockSession`'s own
+//     uncaught, so the ONE existing converter seam (`runBinary()`'s own
 //     `convertHandshakeError`/`convertWireError`) produces the answer.
 //   - Never publish a sub-flag that removes a step from this procedure.
 //     `D-13`: there is no `skip_reset`, no `no_anchor` and no `reset_only`, so

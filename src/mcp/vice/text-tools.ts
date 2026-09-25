@@ -21,17 +21,15 @@
 //
 // SESSION LIFECYCLE -- MEASURED, not this plan's assumed default (Rule 1
 // deviation, see SUMMARY): StockConnectSession (stock-connect.ts) carries no
-// text session at all, and ensureStockSession()/withStockSession() never
+// text session at all, and ensureStockSession()/runBinary() never
 // call textConnect() -- as of this plan, textConnect()/textDisconnect() are
 // invoked ONLY from test code. So there is no session-lifetime-held text
 // session anywhere in production code to reuse. Each call below is its OWN
 // textConnect()/textDisconnect() pair -- the ONLY acquisition path these two
 // tools have, not a second one competing with a first.
 //
-// ADAPTER CHOICE -- MEASURED, deviates from this plan's literal instruction
-// (Rule 1 deviation, see SUMMARY): withStockSession() and
-// withDerivedTool(..., { needsSession: true }, ...) (stock-dispatch.ts) both
-// wrap the ENTIRE delegated handler call in withChannelLockHeld(), which
+// ADAPTER CHOICE -- MEASURED: stock-session.ts's runBinary() wraps the
+// ENTIRE delegated handler call in withChannelLockHeld(), which
 // acquires channel-lock.ts's SINGLE, cross-channel mutex for `channel:
 // "binary"` for the whole call. A handler reached through either adapter
 // that then called withTextChannelLock() internally would be a SECOND
@@ -41,11 +39,9 @@
 // inner acquire would queue behind itself and could only ever resolve by
 // expiring CHANNEL_LOCK_ACQUIRE_TIMEOUT_MS (630s by default) and erroring: a
 // de facto deadlock, not a working call. Neither handler below needs a
-// binary session or the binary channel's authority at all, so both are
-// registered in stock-dispatch.ts with
-// `withDerivedTool(toolName, { needsSession: false }, handler)` instead --
-// the SAME existing adapter configuration `vice_diagnose`/
-// `vice_symbols_load` already use, never a third adapter. Each handler
+// binary session or the binary channel's authority at all, so every tool in
+// this file is listed in stock-tools.ts as "pure" and runs through
+// runPure(), the same runner `vice_symbols_load` uses. Each handler
 // resolves the lease through `deps.ensureLease()` itself (free to call
 // repeatedly -- ensureStockSession()'s own header comment) and takes ONLY
 // the text channel's own lock, via withTextChannelLock(), around its one
@@ -55,9 +51,9 @@
 //   - Never accept a caller-supplied, free-text command string anywhere in
 //     this module's public surface (D-01).
 //   - Never call TextMonitorClient.command() outside withTextChannelLock().
-//   - Never register either handler through withStockSession() or
-//     withDerivedTool(..., { needsSession: true }, ...) -- see the ADAPTER
-//     CHOICE comment above for the self-deadlock this would cause.
+//   - Never list a handler here as a "binary" tool in stock-tools.ts --
+//     see the ADAPTER CHOICE comment above for the self-deadlock this would
+//     cause.
 //   - Never dial a raw host/port or open a second broker lease -- both
 //     handlers obtain lease coordinates through deps.ensureLease() (the SAME
 //     provider ensureStockSession() itself calls) and dial only through
@@ -66,7 +62,7 @@
 //     and convertWireError() (stock-handler.ts) exactly as every other stock
 //     handler does; a ChannelLockTimeoutError is passed through verbatim
 //     (its own `.message` IS channelLockRefusalMessage()'s output), matching
-//     withChannelLockHeld()'s own discipline in stock-dispatch.ts.
+//     withChannelLockHeld()'s own discipline in stock-session.ts.
 //   - Never embed a phase number in any string or template literal here.
 //   - Never declare an operation on the grant before the shared cross-channel
 //     mutex is actually held, and never clear one outside that same locked
@@ -100,11 +96,11 @@ import {
   type TextCapabilityIdentity,
   type TextCapabilityBrokerIdentity,
 } from "./text-capability-probe.ts";
-import type { StockDispatchDeps } from "./stock-dispatch.ts";
+import type { StockSessionDeps } from "./stock-session.ts";
 import type { HeldLease } from "./vice-broker-client.ts";
 
 /**
- * Phase 63 (SESS-05): the text-channel counterpart of `stock-dispatch.ts`'s
+ * Phase 63 (SESS-05): the text-channel counterpart of `stock-session.ts`'s
  * own `declareOperation()` -- same shape, same discipline, over the LEASE'S
  * OWN control session rather than a locally-derived one. Both calls below
  * are written WITHOUT being awaited: a declaration must never add latency to
@@ -126,7 +122,7 @@ function declareTextOperation(lease: HeldLease, name: string | null): void {
  */
 async function withTextTool(
   toolName: string,
-  deps: StockDispatchDeps,
+  deps: StockSessionDeps,
   fn: (client: TextMonitorClient) => Promise<StockToolResult>,
 ): Promise<StockToolResult> {
   const leaseOutcome = await deps.ensureLease();
@@ -166,7 +162,7 @@ async function withTextTool(
 
   // Phase 63 (SESS-05), corrected: the declaration is made ONLY once the
   // shared cross-channel mutex is actually held, never before -- symmetric
-  // with stock-dispatch.ts's withChannelLockHeld()/declareOperation()
+  // with stock-session.ts's withChannelLockHeld()/declareOperation()
   // ordering (acquire, THEN declare) on the binary side. GrantRecord.operation
   // (vice-broker.mts's handleOperationNote()) is a SINGLE field per grant,
   // valid only if every caller declares after it holds channel-lock.ts's
@@ -195,7 +191,7 @@ async function withTextTool(
     // ChannelLockTimeoutError's own `.message` IS
     // channelLockRefusalMessage()'s output -- passed through verbatim below,
     // never routed through convertWireError(), matching
-    // withChannelLockHeld()'s (stock-dispatch.ts) own discipline for the
+    // withChannelLockHeld()'s (stock-session.ts) own discipline for the
     // binary side. A timeout here means the lock was never granted, so
     // declareTextOperation() above never ran -- this call declares nothing
     // and clears nothing, leaving whichever operation genuinely holds the
@@ -226,7 +222,7 @@ async function withTextTool(
  * acquisition to the hottest binary-side path to defend a route nothing
  * currently opens.
  */
-export async function handleDeviceConsole(_args: Record<string, unknown>, deps: StockDispatchDeps): Promise<StockToolResult> {
+export async function handleDeviceConsole(_args: Record<string, unknown>, deps: StockSessionDeps): Promise<StockToolResult> {
   return withTextTool("vice_device_console", deps, async (client) => {
     const response = await client.command("device c:");
     return derivedAnswer({
@@ -248,7 +244,7 @@ export async function handleDeviceConsole(_args: Record<string, unknown>, deps: 
  * warp requested at launch time is a separate mechanism -- this tool changes
  * neither of those facts.
  */
-export async function handleWarpSet(args: Record<string, unknown>, deps: StockDispatchDeps): Promise<StockToolResult> {
+export async function handleWarpSet(args: Record<string, unknown>, deps: StockSessionDeps): Promise<StockToolResult> {
   const enabled = args.enabled;
   if (typeof enabled !== "boolean") {
     return isErrorText(
@@ -318,7 +314,7 @@ function executeCounts(map: AccessMap): { io: number; rom: number; ram: number }
  * `isErrorText` naming the tool, the refusal code, and the offending
  * line/lineNumber -- never a partial or best-effort access map.
  */
-export async function handleMemmapShow(args: Record<string, unknown>, deps: StockDispatchDeps): Promise<StockToolResult> {
+export async function handleMemmapShow(args: Record<string, unknown>, deps: StockSessionDeps): Promise<StockToolResult> {
   const { startAddress, endAddress, maxRanges } = args;
 
   if (startAddress !== undefined && !isValidAddressArg(startAddress)) {
@@ -440,7 +436,7 @@ export async function handleMemmapShow(args: Record<string, unknown>, deps: Stoc
  * to narrow it) plus the same `executeCounts` triple `handleMemmapShow`
  * reports.
  */
-export async function handleMemmapZap(_args: Record<string, unknown>, deps: StockDispatchDeps): Promise<StockToolResult> {
+export async function handleMemmapZap(_args: Record<string, unknown>, deps: StockSessionDeps): Promise<StockToolResult> {
   const { identity, brokerIdentity } = await capabilityIdentityFor(deps);
   const identityWarning = textCapabilityIdentityWarning(identity, brokerIdentity);
 
@@ -498,9 +494,9 @@ export async function handleMemmapZap(_args: Record<string, unknown>, deps: Stoc
  * attributed to (D-42-2), used by all five text tools in this file.
  * `identity` comes from `deps.resolvedBinaryPath`/
  * `deps.resolvedBinaryPathIsResolved` -- the SAME single dispatch-layer
- * resolution `stock-dispatch.ts`'s own `StockDispatchDeps` doc comment
+ * resolution `stock-session.ts`'s own `StockSessionDeps` doc comment
  * documents, never re-resolved here. Every tool registered in this file
- * runs ONLY on the stock backend (STOCK_DERIVED_TOOLS), so `backend` is
+ * runs ONLY on the stock backend, so `backend` is
  * always the "stock" literal -- never invented for a caller this module
  * could not actually be talking to.
  *
@@ -513,7 +509,7 @@ export async function handleMemmapZap(_args: Record<string, unknown>, deps: Stoc
  * treatment of an omitted broker identity.
  */
 async function capabilityIdentityFor(
-  deps: StockDispatchDeps,
+  deps: StockSessionDeps,
 ): Promise<{ identity: TextCapabilityIdentity; brokerIdentity?: TextCapabilityBrokerIdentity }> {
   const identity: TextCapabilityIdentity = {
     backend: "stock",
@@ -559,7 +555,7 @@ function withIdentityWarning(text: string, warning: string): string {
  * is named by capability, command, binary and remedy -- never a parser
  * refusal.
  */
-export async function handleCpuHistory(args: Record<string, unknown>, deps: StockDispatchDeps): Promise<StockToolResult> {
+export async function handleCpuHistory(args: Record<string, unknown>, deps: StockSessionDeps): Promise<StockToolResult> {
   const { count } = args;
   let command = "chis";
   if (count !== undefined) {
@@ -611,7 +607,7 @@ export async function handleCpuHistory(args: Record<string, unknown>, deps: Stoc
  * an indeterminate (empty/unframeable) reply is a named state rather than a
  * silent empty success.
  */
-export async function handleProfileFlat(args: Record<string, unknown>, deps: StockDispatchDeps): Promise<StockToolResult> {
+export async function handleProfileFlat(args: Record<string, unknown>, deps: StockSessionDeps): Promise<StockToolResult> {
   const { count } = args;
   let command = "prof flat";
   if (count !== undefined) {
@@ -689,7 +685,7 @@ function isValidBacktraceDepthArg(value: unknown): value is number {
  * `bt` carries no build-time guard; classified before parsing anyway so an
  * indeterminate reply is a named state.
  */
-export async function handleBacktrace(args: Record<string, unknown>, deps: StockDispatchDeps): Promise<StockToolResult> {
+export async function handleBacktrace(args: Record<string, unknown>, deps: StockSessionDeps): Promise<StockToolResult> {
   const { depth } = args;
   if (depth !== undefined && !isValidBacktraceDepthArg(depth)) {
     return isErrorText(
@@ -767,7 +763,7 @@ export async function handleBacktrace(args: Record<string, unknown>, deps: Stock
  * in text-capability-probe.ts) so this handler could not reach it that way
  * even by accident.
  */
-export async function handleIoRegisters(args: Record<string, unknown>, deps: StockDispatchDeps): Promise<StockToolResult> {
+export async function handleIoRegisters(args: Record<string, unknown>, deps: StockSessionDeps): Promise<StockToolResult> {
   const { address } = args;
   if (address === undefined) {
     return isErrorText(
@@ -904,7 +900,7 @@ function resolveSubjectId(raw: unknown): HazardSubjectId | null {
  * choice and why a second numeric slot is not worth bounding for no present
  * use.
  */
-export async function handleProgramLoad(args: Record<string, unknown>, deps: StockDispatchDeps): Promise<StockToolResult> {
+export async function handleProgramLoad(args: Record<string, unknown>, deps: StockSessionDeps): Promise<StockToolResult> {
   const { device, subject } = args;
   const subjectId = resolveSubjectId(subject);
   if (subjectId === null) {

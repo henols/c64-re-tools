@@ -107,7 +107,7 @@ import type { ViceBackend } from "./backend-detect.mjs";
 // the declaring connection's own grant currently has in flight, so a
 // broker-side incident record (broker-incident.mts, a later plan) can name
 // what was running when a relay died. Written WITHOUT being awaited by its
-// caller (stock-dispatch.ts/text-tools.ts) -- see
+// caller (stock-session.ts/text-tools.ts) -- see
 // StartControlListenerOptions' onOperation comment for why that is safe.
 // `stage_file` joins as the TWELFTH member, Phase 64 (XFER-04, D-01) --
 // gated on the SAME ownsTarget() predicate `monitor_claim`/`monitor_release`/

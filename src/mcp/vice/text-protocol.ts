@@ -687,9 +687,9 @@ export interface WithTextChannelLockOptions {
 /**
  * The text channel's ONE acquire seam for channel-lock.ts's mutex. Acquires
  * `channel: "text"`, runs `fn`, and releases in a `finally` so a throwing
- * `fn` still releases -- matching stock-dispatch.ts's `withChannelLockHeld()`
+ * `fn` still releases -- matching stock-session.ts's `withChannelLockHeld()`
  * on the binary side exactly, and satisfying D-07's requirement that
- * `text-protocol.ts` and `stock-dispatch.ts` both import the one primitive.
+ * `text-protocol.ts` and `stock-session.ts` both import the one primitive.
  *
  * Every real text-monitor command MUST be issued from inside this function:
  * `command()` below refuses, by name, whenever channel-lock.ts's mutex is

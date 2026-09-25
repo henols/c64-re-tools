@@ -18,8 +18,6 @@
 //   There is no second annotation family advertised alongside this one: the
 //   registration loop in `vice-proxy.ts` was SUBSTITUTED, not appended to, so
 //   an agent never has to choose between two surfaces over the same subject.
-//   `stock-dispatch.test.ts`'s ordered two-entry `BACKEND_SEAM_BYPASS_KEYS`
-//   goes red the instant a second family is registered beside this one.
 //
 //   OPEN/CLOSE PER CALL, EXPLICIT `store` ON EVERY VERB. This module
 //   holds NO module-level store handle and no ambient "current store" -- every

@@ -30,7 +30,7 @@ import { CommandType, ErrorCode } from "./stock-protocol.ts";
 import { resetRunStateTrackersForTest } from "./stock-runstate.ts";
 import { resetBankCatalogsForTest } from "./stock-memory.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
-import type { StockDispatchDeps } from "./stock-dispatch.ts";
+import type { StockSessionDeps } from "./stock-session.ts";
 
 beforeEach(() => {
   resetRunStateTrackersForTest();
@@ -39,7 +39,7 @@ beforeEach(() => {
 
 type SendCall = [number, Buffer];
 
-const DEPS = {} as unknown as StockDispatchDeps;
+const DEPS = {} as unknown as StockSessionDeps;
 
 function memoryGetReply(bytes: number[], requestId = 1) {
   return { type: "memory_get" as const, requestId, errorCode: ErrorCode.Ok, bytes: Buffer.from(bytes), related: [] };

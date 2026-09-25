@@ -80,7 +80,8 @@ import { fileURLToPath } from "node:url";
 
 import { build } from "./build.ts";
 import { openBrokerControl, type BrokerControlSession, type AcquireGrant, type HeldLease } from "./vice-broker-client.ts";
-import { dispatchStock, clearHeldStockSession, type StockDispatchDeps } from "./stock-dispatch.ts";
+import { callStockTool } from "./stock-tools.ts";
+import { clearHeldStockSession, type StockSessionDeps } from "./stock-session.ts";
 import { stockConnect, type StockConnectOptions } from "./stock-connect.ts";
 import { probeReady } from "./broker-launch.mts";
 import { TRACE_HITS_PER_SECOND_LIMIT } from "./stock-checkpoints.ts";
@@ -275,7 +276,7 @@ async function waitForStockReady(port: number, deadlineMs = 30000): Promise<bool
   return false;
 }
 
-function depsFor(host: string, grant: AcquireGrant, controlSession: BrokerControlSession, stateDir: string): StockDispatchDeps {
+function depsFor(host: string, grant: AcquireGrant, controlSession: BrokerControlSession, stateDir: string): StockSessionDeps {
   const lease: HeldLease = {
     host,
     port: grant.port,
@@ -381,7 +382,7 @@ interface FloodPollResult {
 }
 
 async function pollForAutoDisable(
-  deps: StockDispatchDeps,
+  deps: StockSessionDeps,
   checkpointId: number,
   { pollIntervalMs, deadlineMs }: { pollIntervalMs: number; deadlineMs: number },
 ): Promise<FloodPollResult> {
@@ -395,7 +396,7 @@ async function pollForAutoDisable(
     iterations++;
     // Resume -- the CIA1 timer IRQ (or, in the escalated tier, the tight
     // loop) only advances while the machine is actually running.
-    const runResult = await dispatchStock("vice_execution_run", {}, deps);
+    const runResult = await callStockTool("vice_execution_run", {}, deps);
     if ((runResult as { isError: boolean }).isError) {
       console.log(`stock-a4-checkpoint-flood: vice_execution_run reported an error mid-poll (iteration ${iterations}): ${JSON.stringify(runResult)}`);
     }
@@ -404,7 +405,7 @@ async function pollForAutoDisable(
     // Read -- this halts the machine again (every inbound byte does, on
     // stock), which is why the loop resumes again at the top of the next
     // iteration rather than trying to read while running.
-    const listResult = await dispatchStock("vice_checkpoint_list", {}, deps);
+    const listResult = await callStockTool("vice_checkpoint_list", {}, deps);
     if ((listResult as { isError: boolean }).isError) {
       console.log(`stock-a4-checkpoint-flood: vice_checkpoint_list reported an error mid-poll (iteration ${iterations}): ${JSON.stringify(listResult)}`);
       continue;
@@ -494,7 +495,7 @@ test(
       // --- Step 1/2: arm the gentle-tier checkpoint on the freshly booted,
       // unmodified machine -- no autostart needed, the KERNAL IRQ fires on
       // its own via the CIA1 timer.
-      const addResult = await dispatchStock(
+      const addResult = await callStockTool(
         "vice_checkpoint_add",
         { start: kernalIrq.addressHex, stop: false, acknowledgeTraceRisk: true },
         deps,
@@ -531,17 +532,17 @@ test(
 
         // Delete the gentle-tier checkpoint first so it stops contributing
         // hits (and confusing the payload) once the tight loop is armed.
-        await dispatchStock("vice_checkpoint_delete", { checkpoint_num: gentleCheckpointId }, deps);
+        await callStockTool("vice_checkpoint_delete", { checkpoint_num: gentleCheckpointId }, deps);
 
         const { prgPath, acmeVersion } = assembleEscalationProgram(scratchDir);
         outcome.escalationAcmeVersion = acmeVersion;
         console.log(`stock-a4-checkpoint-flood: escalation -- acme --version -> ${acmeVersion}`);
 
-        const autostartResult = await dispatchStock("vice_autostart", { path: prgPath, run: true }, deps);
+        const autostartResult = await callStockTool("vice_autostart", { path: prgPath, run: true }, deps);
         const autostartPayload = parseOkPayload(autostartResult as { content: { type: "text"; text: string }[]; isError: boolean });
         console.log(`stock-a4-checkpoint-flood: escalation -- vice_autostart -> ${JSON.stringify(autostartPayload)}`);
 
-        const escAddResult = await dispatchStock(
+        const escAddResult = await callStockTool(
           "vice_checkpoint_add",
           { start: `$${ESCALATION_LOOP_ADDRESS.toString(16)}`, stop: false, acknowledgeTraceRisk: true },
           deps,
@@ -565,7 +566,7 @@ test(
       // response. An entry in the local report with a still-enabled
       // checkpoint on the wire is precisely the A4 race.
       if (activeResult.triggered) {
-        const verifyListResult = await dispatchStock("vice_checkpoint_list", {}, deps);
+        const verifyListResult = await callStockTool("vice_checkpoint_list", {}, deps);
         const verifyPayload = parseOkPayload(verifyListResult as { content: { type: "text"; text: string }[]; isError: boolean });
         const verifyEntry = ((verifyPayload.checkpoints as CheckpointEntry[]) ?? []).find((c) => c.id === activeCheckpointId) ?? null;
         outcome.wireEnabledAfterDisable = verifyEntry?.enabled ?? null;
@@ -592,9 +593,9 @@ test(
       const PROGRESS_CHECK_ATTEMPTS = 5;
       const PROGRESS_CHECK_SLEEP_MS = 400;
       for (let attempt = 0; attempt < PROGRESS_CHECK_ATTEMPTS; attempt++) {
-        await dispatchStock("vice_execution_run", {}, deps);
+        await callStockTool("vice_execution_run", {}, deps);
         await new Promise((r) => setTimeout(r, PROGRESS_CHECK_SLEEP_MS));
-        const regsResult = await dispatchStock("vice_registers_get", {}, deps);
+        const regsResult = await callStockTool("vice_registers_get", {}, deps);
         const regsPayload = parseOkPayload(regsResult as { content: { type: "text"; text: string }[]; isError: boolean });
         const pc = findRegister(regsPayload.registers as Record<string, number>, "PC");
         outcome.progressPcSamples.push(pc ?? -1);
@@ -602,7 +603,7 @@ test(
       console.log(`stock-a4-checkpoint-flood: post-flood progress check -- PC samples over ${PROGRESS_CHECK_ATTEMPTS} bounded resume/sleep/read attempts = ${JSON.stringify(outcome.progressPcSamples)}`);
 
       // Clean up whichever checkpoint is still armed.
-      await dispatchStock("vice_checkpoint_delete", { checkpoint_num: activeCheckpointId }, deps);
+      await callStockTool("vice_checkpoint_delete", { checkpoint_num: activeCheckpointId }, deps);
 
       await controlSession.release();
     });

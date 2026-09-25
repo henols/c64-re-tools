@@ -1061,7 +1061,7 @@ test("operation: Task 3 ordering proof -- a declare, the wrapped work, then a cl
 
     let wrappedWorkDone = false;
     // Fire the declare WITHOUT awaiting its reply -- mirrors
-    // stock-dispatch.ts's declareOperation()/text-tools.ts's own
+    // stock-session.ts's declareOperation()/text-tools.ts's own
     // fire-and-forget discipline exactly: neither reads a response before
     // moving on.
     client.send({ op: "operation", id: "op-declare", target_id: "req-a", name: "vice_run_until", token });

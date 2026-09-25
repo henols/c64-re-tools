@@ -98,7 +98,7 @@ export function runStateFor(client: ViceMonitorClient): RunState {
 }
 
 /** Test-only: replaces the module-level WeakMap with a fresh one, matching
- * clearHeldStockSession()'s role in stock-dispatch.test.ts's beforeEach()
+ * clearHeldStockSession()'s role in stock-session.test.ts's beforeEach()
  * convention. */
 export function resetRunStateTrackersForTest(): void {
   trackers = new WeakMap<ViceMonitorClient, RunStateTracker>();

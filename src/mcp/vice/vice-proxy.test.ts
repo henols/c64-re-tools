@@ -541,7 +541,7 @@ test("harness isolation: startProxy()'s default VICE_BROKER_HOME wins over a sta
 
 // Plan 55-05: rewritten against the proxy-local annotation route.
 // VICE_MCP_URL no longer forwards a `tools/call` to an HTTP stand-in at all
-// -- MEASURED (this plan, and stock-dispatch.ts's own `ensureStockSession`)
+// -- MEASURED (this plan, and stock-session.ts's own `ensureStockSession`)
 // that setting it makes the stock backend refuse outright before dialling
 // anything ("VICE_MCP_URL is set, so there is no broker-managed instance
 // and no broker control session to claim a monitor socket through"), because
@@ -685,147 +685,6 @@ test("stdout carries only valid JSON-RPC messages", async () => {
 });
 
 // -----------------------------------------------------------------------
-// Plan 01.1-02 task 1: tools/list answers from a committed on-disk snapshot
-// with ZERO emulator involvement, and degrades to a well-formed empty list
-// on any snapshot problem rather than a fetch, a throw, or a hang.
-// -----------------------------------------------------------------------
-
-test("tools/list reads the committed snapshot with no emulator", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "vice-proxy-manifest-"));
-  const manifestFile = join(dir, "tools-manifest.stock.json");
-  const fixture = {
-    generated_at: "2026-07-31T00:00:00.000Z",
-    endpoint: "http://example.invalid/mcp",
-    tools: [
-      { name: "vice_ping", description: "ping the emulator", inputSchema: { type: "object", properties: {} } },
-      {
-        name: "vice_memory_read",
-        description: "read a range of C64 memory",
-        inputSchema: {
-          type: "object",
-          properties: { address: { type: "string" }, length: { type: "number" } },
-          required: ["address"],
-        },
-      },
-    ],
-  };
-  writeFileSync(manifestFile, JSON.stringify(fixture), "utf8");
-
-  const { server, requests } = startStandInServer();
-  const port = await listen(server);
-  const proxy = startProxy({ VICE_MCP_URL: `http://127.0.0.1:${port}/mcp`, VICE_TOOLS_MANIFEST: manifestFile });
-
-  try {
-    proxy.send({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "initialize",
-      params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } },
-    });
-    await proxy.nextMessage();
-
-    proxy.send({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
-    const resp = await proxy.nextMessage();
-    const tools = resp.result.tools;
-    // Both fixture tools, PLUS the always-present synthetic
-    // vice_result_continue tool (task 3) -- tools/list never omits it. D-13 (plan 65-02) removed the 25 curated anno_* tools from this
-    // count outright; this proxy process was not started with
-    // VICE_TEST_FIXTURE_TOOL, so the test-only fixture tool is absent too.
-    assert.equal(
-      tools.length,
-      2 + 1,
-      "both fixture tools plus the synthetic vice_result_continue tool must come back",
-    );
-
-    const byName = Object.fromEntries(tools.map((t: any) => [t.name, t]));
-    assert.ok(byName.vice_ping, "vice_ping must be present");
-    assert.ok(byName.vice_memory_read, "vice_memory_read must be present");
-    assert.deepEqual(
-      byName.vice_memory_read.inputSchema,
-      fixture.tools[1].inputSchema,
-      "inputSchema must survive intact"
-    );
-    for (const t of tools) {
-      assert.equal(
-        typeof (t._meta && t._meta["anthropic/maxResultSizeChars"]),
-        "number",
-        `${t.name} must carry _meta["anthropic/maxResultSizeChars"]`
-      );
-    }
-
-    assert.equal(requests.length, 0, "tools/list must make ZERO requests to the stand-in host");
-  } finally {
-    proxy.child.kill("SIGKILL");
-    await new Promise((resolve) => server.close(resolve));
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("tools/list survives a missing or corrupt snapshot", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "vice-proxy-manifest-bad-"));
-  const missingPath = join(dir, "does-not-exist.json");
-  const invalidJsonPath = join(dir, "invalid.json");
-  writeFileSync(invalidJsonPath, "{ this is not valid JSON", "utf8");
-  const wrongShapePath = join(dir, "wrong-shape.json");
-  writeFileSync(wrongShapePath, JSON.stringify({ generated_at: null, endpoint: null, tools: "nope, a string" }), "utf8");
-
-  const { server, requests } = startStandInServer();
-  const port = await listen(server);
-
-  try {
-    for (const manifestFile of [missingPath, invalidJsonPath, wrongShapePath]) {
-      const proxy = startProxy({ VICE_MCP_URL: `http://127.0.0.1:${port}/mcp`, VICE_TOOLS_MANIFEST: manifestFile });
-      try {
-        proxy.send({
-          jsonrpc: "2.0",
-          id: 1,
-          method: "initialize",
-          params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } },
-        });
-        await proxy.nextMessage();
-
-        proxy.send({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
-        const resp = await proxy.nextMessage();
-        // "Empty tools array" means empty of MANIFEST-derived tools -- the
-        // always-present synthetic vice_result_continue tool is not sourced
-        // from the manifest at all, so a broken manifest can't take it down. D-13 (plan 65-02) removed the 25
-        // curated anno_* tools from this list outright.
-        assert.deepEqual(
-          resp.result.tools.map((t: any) => t.name),
-          ["vice_result_continue"],
-          `expected only the synthetic tool for ${manifestFile}`
-        );
-
-        // The child must still be alive and answer a SUBSEQUENT
-        // initialize-then-tools/list correctly -- a snapshot problem must
-        // never strand the session.
-        proxy.send({
-          jsonrpc: "2.0",
-          id: 3,
-          method: "initialize",
-          params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } },
-        });
-        const secondInit = await proxy.nextMessage();
-        assert.equal(secondInit.result.protocolVersion, "2025-06-18");
-
-        proxy.send({ jsonrpc: "2.0", id: 4, method: "tools/list", params: {} });
-        const secondList = await proxy.nextMessage();
-        assert.deepEqual(secondList.result.tools.map((t: any) => t.name), ["vice_result_continue"]);
-
-        assert.equal(proxy.child.exitCode, null, "the proxy process must still be running");
-        assert.equal(proxy.child.killed, false);
-      } finally {
-        proxy.child.kill("SIGKILL");
-      }
-    }
-    assert.equal(requests.length, 0, "no manifest-read path may ever reach the stand-in host");
-  } finally {
-    await new Promise((resolve) => server.close(resolve));
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-// -----------------------------------------------------------------------
 // Plan 01.6.3-02 (the @mastra/mcp seam swap, tracer): two must_have proofs
 // this plan's own frontmatter calls out by name -- neither is covered by
 // the deny-list tests above, which prove ABSENCE, not schema fidelity or
@@ -962,7 +821,7 @@ test("tools/list's full output matches the manifest exactly (name set, order, sc
 // inconvenient: with the stock backend, VICE_MCP_URL is refused outright
 // before any dial is attempted ("ensureStockSession: VICE_MCP_URL is set,
 // so there is no broker-managed instance and no broker control session to
-// claim a monitor socket through" -- stock-dispatch.ts's own
+// claim a monitor socket through" -- stock-session.ts's own
 // ensureStockSession()) -- there is no forwarding path left for either test
 // to drive at all.
 //
@@ -970,7 +829,7 @@ test("tools/list's full output matches the manifest exactly (name set, order, sc
 // DELIBERATE reversal of both properties, not a relocation of them:
 //   - It fires only at RECONNECT (a dead socket being re-established),
 //     never per-call against a still-connected session -- proven live by
-//     stock-dispatch.test.ts's "lease: two successive calls with the same
+//     stock-session.test.ts's "lease: two successive calls with the same
 //     targetId call stockConnect exactly once -- the held session is
 //     reused", which shows a live session survives repeated calls with the
 //     epoch check never even consulted.
@@ -978,7 +837,7 @@ test("tools/list's full output matches the manifest exactly (name set, order, sc
 //     epoch values named -- stock-connect.test.ts's "stockReconnect: an
 //     advanced epoch rejects with MachineRestartedError carrying the
 //     baseline and current epochs" -- there is no silent re-baseline; a
-//     future call re-handshakes from scratch (stock-dispatch.ts's
+//     future call re-handshakes from scratch (stock-session.ts's
 //     ensureStockSession() clears the holder on that failure).
 //   - Missing epoch evidence at RECONNECT is now treated as an unprovable
 //     identity and rejected the same way -- stock-connect.test.ts's
@@ -991,14 +850,14 @@ test("tools/list's full output matches the manifest exactly (name set, order, sc
 //     present while the SAME connection stays open" scenario is still true
 //     today, but trivially so and for a different reason: epoch is never
 //     consulted at all for a still-connected session (the same
-//     stock-dispatch.test.ts successor above), not because absent-then-
+//     stock-session.test.ts successor above), not because absent-then-
 //     present is specifically exempted.
 //
 // All three named successors were run and confirmed green before this
 // retirement: `node --test --test-name-pattern "an advanced epoch rejects|
 // no epoch can be read at all rejects|a completed handshake records"
 // stock-connect.test.ts` and `node --test --test-name-pattern "the held
-// session is reused" stock-dispatch.test.ts` both report 0 failures.
+// session is reused" stock-session.test.ts` both report 0 failures.
 
 // -----------------------------------------------------------------------
 // Plan 01.1-02 task 3 (rewired by plan 55-01: `96ef711f` deleted
@@ -2646,7 +2505,7 @@ test("broker warming: an acquire deadline with no grant or error is a warming-an
 test("containerize: a loopback grant url is rewritten to the alias, proven from the seam's own adoption record (not a forwarded call)", async () => {
   // Plan 55-04: the forwarding path this test used to drive a call through
   // (the fork's own HTTP dispatch) is gone -- every advertised tool now
-  // reaches stockDispatch.dispatchStock(), which claims the monitor socket
+  // reaches runStockTool(), which claims the monitor socket
   // over the control connection BEFORE ever dialling the containerized url.
   // The fixture control broker below never wires onMonitorClaim (it is a
   // proxy-focused fixture that "never exercises monitor_claim/

@@ -3,7 +3,7 @@
 // watch-add. Task 3 (added below): the D-11 trace guard's rate limit and
 // deferred auto-disable. Every client is a bare EventEmitter with a spy
 // `send()` -- no broker, no real socket, no emulator (matching this repo's
-// established DI-stub convention, stock-dispatch.test.ts:1-133).
+// established DI-stub convention, stock-session.test.ts:1-133).
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
@@ -25,7 +25,7 @@ import {
 } from "./stock-checkpoints.ts";
 import { CheckpointOperation, type ParsedCheckpoint, type ViceMonitorClient } from "./stock-protocol.ts";
 import type { StockConnectSession } from "./stock-connect.ts";
-import type { StockDispatchDeps } from "./stock-dispatch.ts";
+import type { StockSessionDeps } from "./stock-session.ts";
 
 // ---------------------------------------------------------------------------
 // DI stub helpers
@@ -59,7 +59,7 @@ function makeSession(client: ViceMonitorClient, targetId = "target-1"): StockCon
   return { client, targetId } as unknown as StockConnectSession;
 }
 
-const FAKE_DEPS = {} as unknown as StockDispatchDeps;
+const FAKE_DEPS = {} as unknown as StockSessionDeps;
 
 function fakeCheckpoint(overrides: Partial<ParsedCheckpoint> = {}): ParsedCheckpoint {
   return {
