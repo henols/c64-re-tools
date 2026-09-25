@@ -36,10 +36,17 @@ import {
   type HostStateFields,
   type MonitorClaimOutcome,
   type MonitorReleaseOutcome,
+  MAX_LINE_BYTES,
 } from "./broker-control.mts";
 import { hostToolOverControlPlane } from "./host-tool-client.ts";
 import { brokerJsonPath } from "./vice-broker-client.ts";
 import { build } from "./build.ts";
+// Phase 65 (plan 65-03, D-11, Task 2 Test 6): the CLIENT-side mirrored
+// stage-line budget -- kept at or under MAX_LINE_BYTES above by the relation
+// case near CAP's own tests below. A container-side module, imported
+// directly by its own .mts source (host-tool-endpoint.mts carries no
+// host-bound APIs and ships no build step).
+import { HOST_TOOL_STAGE_LINE_MAX_BYTES } from "./host-tool-endpoint.mts";
 
 // This file's cases dial a control-plane listener THIS test file itself
 // started moments earlier, on loopback -- so loopback is the only address
@@ -79,6 +86,17 @@ const CAP = readCapFromBrokerControlSource();
 test("the parsed cap is a positive integer read from broker-control.mts's own source -- a parse failure here is loud, never a silent zero", () => {
   assert.equal(Number.isInteger(CAP), true);
   assert.ok(CAP > 0);
+});
+
+test("the exported MAX_LINE_BYTES binding matches the source-parsed cap above -- proving the export is the same value, not a second, drifted copy", () => {
+  assert.equal(MAX_LINE_BYTES, CAP);
+});
+
+test("Phase 65-03 Task 2 Test 6: HOST_TOOL_STAGE_LINE_MAX_BYTES (host-tool-endpoint.mts) is at or below broker-control.mts's own exported MAX_LINE_BYTES", () => {
+  assert.ok(
+    HOST_TOOL_STAGE_LINE_MAX_BYTES <= MAX_LINE_BYTES,
+    `HOST_TOOL_STAGE_LINE_MAX_BYTES (${HOST_TOOL_STAGE_LINE_MAX_BYTES}) must not exceed broker-control.mts's own MAX_LINE_BYTES (${MAX_LINE_BYTES}) -- a client-side manifest line the broker itself would destroy the connection over must never be dialled in the first place`,
+  );
 });
 
 // ---------------------------------------------------------------------------

@@ -3344,6 +3344,25 @@ export async function runHostTool(raw: unknown, deps: HostToolDeps): Promise<Hos
   if (acmeLib && /ACME.*environment variable/i.test(stderrText)) {
     stderrText += `\nfor <...> includes, set $ACME to the directory holding ${ACME_LIB_MARKER} (looked in: ${acmeLib.tried.join(", ")})`;
   }
+  // Phase 65 (plan 65-03, D-04): acme.build only -- a `!source`/`!binary`
+  // reference to a file outside the uploaded source tree AND every uploaded
+  // `-I` tree fails with ACME 0.97's own "Cannot open input file" message,
+  // which names the file but never says WHY -- a container-side caller has
+  // no local filesystem to inspect and diagnose it against. Append one note
+  // line (in the plain, non-MSVC shape acme.mjs's own parseDiagnostics()
+  // already treats as a "note" entry, mirroring the $ACME note above)
+  // naming the file and the remedy: add its own directory as an -I entry so
+  // it uploads as its own tree (D-04's own directory-is-the-unit posture --
+  // never a client-side scan of the source to find it automatically).
+  // MEASURED against real ACME 0.97 "Zem": `Error - File src.a, line 3
+  // (Zone <untitled>): Cannot open input file "missing-subfile.a".`
+  if (request.tool === "acme.build") {
+    const missingInputMatch = /Cannot open input file "([^"]+)"/.exec(stderrText);
+    if (missingInputMatch) {
+      const missingFile = missingInputMatch[1]!;
+      stderrText += `\n${missingFile} is outside the uploaded source tree and every uploaded -I tree; add its own directory as an includes (-I) entry so it uploads as its own tree`;
+    }
+  }
 
   // The two verdict fields attach ONLY to petcat.decode's own response,
   // never to the shared envelope below -- every other tool id's response

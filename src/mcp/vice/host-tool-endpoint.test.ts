@@ -10,16 +10,17 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { connect } from "node:net";
 
 import { acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
-import { runHostToolOverEndpoint } from "./host-tool-endpoint.mts";
+import { runHostToolOverEndpoint, walkUploadTree, HOST_TOOL_STAGE_LINE_MAX_BYTES } from "./host-tool-endpoint.mts";
 import { startHarnessBroker, type HarnessBroker } from "./broker-harness.ts";
 import { dialHostToolSession, dialFileTransfer } from "./broker-endpoint.ts";
 import { transferFileOverEndpoint } from "./transfer-client.mts";
+import { TRANSFER_MAX_BYTES } from "./transfer-hash.mts";
 
 const SKIP_REASON = acmeSkipReasonFor("host-tool-endpoint.test.ts");
 
@@ -357,6 +358,170 @@ test("Task 1 Test 6: acme.build with a subdirectory !source and a separate -I tr
     const bytes = readFileSync(resultPath);
     assert.equal(bytes[0], 0x01);
     assert.equal(bytes[1], 0x08);
+  } finally {
+    await broker.stop();
+  }
+});
+
+// ============================================================================
+// Phase 65, plan 65-03, Task 2 (D-04/D-05/D-11): the tree walk itself, both
+// halves of the client-side cap, the stage-line budget, and the missing-file
+// remedy.
+// ============================================================================
+
+test("Task 2 Test 1: walkUploadTree() skips dot-prefixed entries and returns files in sorted order with forward-slash rel paths", () => {
+  const dir = freshDir("walk-t1");
+  mkdirSync(join(dir, ".git"), { recursive: true });
+  writeFileSync(join(dir, ".git", "config"), "x", "utf8");
+  writeFileSync(join(dir, ".hidden"), "x", "utf8");
+  writeFileSync(join(dir, "a.a"), "x", "utf8");
+  mkdirSync(join(dir, "sub"), { recursive: true });
+  writeFileSync(join(dir, "sub", "b.a"), "x", "utf8");
+  writeFileSync(join(dir, "sub", ".x"), "x", "utf8");
+
+  const walked = walkUploadTree(dir);
+  assert.equal(walked.ok, true, walked.ok ? "" : walked.message);
+  if (!walked.ok) return;
+  assert.deepEqual(
+    walked.entries.map((e) => e.rel),
+    ["a.a", "sub/b.a"],
+    "expected exactly a.a and sub/b.a, in sorted order, with forward-slash rel paths",
+  );
+});
+
+test("Task 2 Test 2: a symlink inside the tree to a file inside it uploads under its own lexical rel; a symlink to the tree root itself does not loop and is accepted; a symlinked directory cycle terminates", () => {
+  const dir = freshDir("walk-t2");
+  writeFileSync(join(dir, "real.a"), "x", "utf8");
+  symlinkSync(join(dir, "real.a"), join(dir, "link-to-file.a"));
+  symlinkSync(dir, join(dir, "link-to-root"));
+
+  const walked = walkUploadTree(dir);
+  assert.equal(walked.ok, true, walked.ok ? "" : walked.message);
+  if (!walked.ok) return;
+  const rels = walked.entries.map((e) => e.rel);
+  assert.ok(rels.includes("link-to-file.a"), `expected the symlinked file's own lexical rel; got ${JSON.stringify(rels)}`);
+  assert.ok(rels.includes("real.a"));
+
+  const cycleDir = freshDir("walk-t2-cycle");
+  mkdirSync(join(cycleDir, "a"), { recursive: true });
+  mkdirSync(join(cycleDir, "b"), { recursive: true });
+  symlinkSync(join(cycleDir, "b"), join(cycleDir, "a", "to-b"));
+  symlinkSync(join(cycleDir, "a"), join(cycleDir, "b", "to-a"));
+  const cycleWalk = walkUploadTree(cycleDir);
+  assert.equal(cycleWalk.ok, true, cycleWalk.ok ? "a symlinked directory cycle must terminate, not loop forever" : cycleWalk.message);
+});
+
+test("Task 2 Test 3: a symlink whose real target is outside the tree -- including a sibling directory sharing the root's own name as a lexical prefix -- refuses the whole call by name, before any dial", async () => {
+  const outerDir = freshDir("walk-t3-outer");
+  const root = join(outerDir, "src");
+  mkdirSync(root, { recursive: true });
+  const outsideFile = join(outerDir, "outside.a");
+  writeFileSync(outsideFile, "x", "utf8");
+  symlinkSync(outsideFile, join(root, "escape.a"));
+
+  const walked = walkUploadTree(root);
+  assert.equal(walked.ok, false);
+  if (walked.ok) return;
+  assert.match(walked.message, /escape\.a/, "the refusal must name the link's own path");
+  assert.match(walked.message, /outside\.a/, "the refusal must name the real target");
+
+  // Adjacency: root /x/src, target /x/src2/f -- a lexical startsWith("/x/src")
+  // prefix check would wrongly accept this; the real, separator-appended
+  // comparison must not.
+  const adjacencyBase = freshDir("walk-t3-adjacency");
+  const adjacencyRoot = join(adjacencyBase, "src");
+  const adjacencySibling = join(adjacencyBase, "src2");
+  mkdirSync(adjacencyRoot, { recursive: true });
+  mkdirSync(adjacencySibling, { recursive: true });
+  const siblingFile = join(adjacencySibling, "f.a");
+  writeFileSync(siblingFile, "x", "utf8");
+  symlinkSync(siblingFile, join(adjacencyRoot, "escape2.a"));
+  const adjacencyWalk = walkUploadTree(adjacencyRoot);
+  assert.equal(adjacencyWalk.ok, false, "a sibling directory sharing the root's own name as a lexical prefix must still be refused");
+
+  // Integration: the SAME class of escaping symlink must refuse the whole
+  // runHostToolOverEndpoint() call BEFORE any dial -- proven with a
+  // call-counting fake dialSession.
+  let dialCalled = false;
+  const dialSession = async () => {
+    dialCalled = true;
+    return { ok: false as const, reason: "must not reach here" };
+  };
+  const sourceDir = freshDir("walk-t3-source");
+  writeFileSync(join(sourceDir, "hello.a"), "* = $0801\nrts\n", "utf8");
+  symlinkSync(outsideFile, join(sourceDir, "escaping-sibling.a"));
+  const result = await runHostToolOverEndpoint("acme.build", { source: join(sourceDir, "hello.a") }, { toolsRoot: freshDir("walk-t3-tools-root"), dialSession });
+  assert.equal(result.ok, false);
+  assert.equal(dialCalled, false, "dial must never be attempted once the tree walk itself refused");
+});
+
+test("Task 2 Test 4: a tree whose files sum past TRANSFER_MAX_BYTES is refused client-side before any dial, naming 16777216; a single oversize file is refused the same way", async () => {
+  let dialCalled = false;
+  const dialSession = async () => {
+    dialCalled = true;
+    return { ok: false as const, reason: "must not reach here" };
+  };
+
+  const singleDir = freshDir("cap-t4-single");
+  const bigFile = join(singleDir, "big.a");
+  writeFileSync(bigFile, Buffer.alloc(TRANSFER_MAX_BYTES + 1));
+  const singleResult = await runHostToolOverEndpoint("acme.build", { source: bigFile }, { toolsRoot: freshDir("cap-t4-single-tools"), dialSession });
+  assert.equal(singleResult.ok, false);
+  if (!singleResult.ok) assert.match(singleResult.message, /16777216/);
+  assert.equal(dialCalled, false);
+
+  const treeDir = freshDir("cap-t4-tree");
+  writeFileSync(join(treeDir, "hello.a"), "* = $0801\nrts\n", "utf8");
+  const includeDir = freshDir("cap-t4-include");
+  writeFileSync(join(includeDir, "big.a"), Buffer.alloc(TRANSFER_MAX_BYTES));
+  writeFileSync(join(includeDir, "small.a"), Buffer.alloc(2));
+  const treeResult = await runHostToolOverEndpoint(
+    "acme.build",
+    { source: join(treeDir, "hello.a"), includes: [includeDir] },
+    { toolsRoot: freshDir("cap-t4-tree-tools"), dialSession },
+  );
+  assert.equal(treeResult.ok, false);
+  if (!treeResult.ok) assert.match(treeResult.message, /16777216/);
+  assert.equal(dialCalled, false);
+});
+
+test("Task 2 Test 6: a tree whose manifest line would exceed HOST_TOOL_STAGE_LINE_MAX_BYTES is refused by name before any dial", async () => {
+  let dialCalled = false;
+  const dialSession = async () => {
+    dialCalled = true;
+    return { ok: false as const, reason: "must not reach here" };
+  };
+
+  const treeDir = freshDir("linebudget-t6");
+  writeFileSync(join(treeDir, "hello.a"), "* = $0801\nrts\n", "utf8");
+  const includeDir = freshDir("linebudget-t6-include");
+  for (let i = 0; i < 3000; i++) {
+    writeFileSync(join(includeDir, `a-very-long-include-filename-${String(i).padStart(6, "0")}.a`), "x", "utf8");
+  }
+  const result = await runHostToolOverEndpoint(
+    "acme.build",
+    { source: join(treeDir, "hello.a"), includes: [includeDir] },
+    { toolsRoot: freshDir("linebudget-t6-tools"), dialSession },
+  );
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.match(result.message, /stage.*manifest|budget/i);
+  assert.equal(dialCalled, false, "dial must never be attempted once the stage-line budget refused");
+});
+
+test("Task 2 Test 7: a source that !source's a file outside every uploaded tree fails, and the result's stderrTail names the file and says to add an -I for its directory", { skip: SKIP_REASON }, async () => {
+  const broker: HarnessBroker = await startHarnessBroker();
+  try {
+    const sourceDir = freshDir("missing-include-source");
+    writeFileSync(join(sourceDir, "hello.a"), '* = $0801\nstart\n\t!source "../outside.a"\n\trts\n', "utf8");
+    const toolsRoot = freshDir("missing-include-tools-root");
+
+    const result = await runHostToolOverEndpoint("acme.build", { source: join(sourceDir, "hello.a") }, { toolsRoot, port: broker.port, candidates: ["127.0.0.1"] });
+
+    assert.equal(result.ok, true, `expected ok:true (the ACME child itself fails, the seam does not); got ${JSON.stringify(result)}`);
+    if (!result.ok) return;
+    assert.notEqual(result.exitStatus, 0, "the ACME child itself must have failed to open the missing include");
+    assert.match(result.stderrTail, /outside\.a/, "the note must name the missing file");
+    assert.match(result.stderrTail, /-I/, "the note must say to add an -I entry for its directory");
   } finally {
     await broker.stop();
   }

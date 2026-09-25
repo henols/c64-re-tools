@@ -720,6 +720,15 @@ export function newControlToken(): string {
 }
 
 const MAX_LINE_BYTES = 65536;
+// Phase 65 (plan 65-03, D-11): exported as a SEPARATE statement, never
+// folded into the declaration above -- host-tool-transport.test.ts parses
+// that exact `const MAX_LINE_BYTES = <n>;` line by regex, off this module's
+// own source text, and an `export const` form would break that parse.
+// host-tool-endpoint.mts's own HOST_TOOL_STAGE_LINE_MAX_BYTES (a mirrored,
+// duplicated constant -- this module is host-bound and that one is not, per
+// this file's own leaf-module posture) is kept at or under this value by a
+// relation test that imports both modules directly.
+export { MAX_LINE_BYTES };
 
 /** Plan 63-04 Task 2 (SESS-04) DEFAULT, mirrored -- NOT imported -- from
  * broker-relay.mts's own DEFAULT_RELAY_KEEPALIVE_MS. Keeping the two

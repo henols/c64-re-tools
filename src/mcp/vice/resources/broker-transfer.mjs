@@ -634,6 +634,14 @@ export function refuseUnsafeRelativePath(rel) {
  * with no separate host-tool-specific cleanup path.
  */
 export function stageHostToolRequest({ files, now = Date.now, }) {
+    // Phase 65 (plan 65-03, D-11): the AGGREGATE half of the two-sided cap --
+    // summed independently of the per-file check just below, so a request
+    // whose individual files each pass but whose TOTAL exceeds the cap is
+    // refused too. Checked in the SAME upfront validation pass, before a
+    // single directory is created or a single handle is minted -- the first
+    // failing entry (a bad rel, an oversized file, OR an oversized aggregate)
+    // refuses the WHOLE request, nothing partial is registered.
+    let declaredAggregate = 0;
     for (const file of files) {
         const relCheck = refuseUnsafeRelativePath(file.rel);
         if (!relCheck.ok)
@@ -646,6 +654,10 @@ export function stageHostToolRequest({ files, now = Date.now, }) {
         }
         if (typeof file.tree !== "number" || !Number.isSafeInteger(file.tree) || file.tree < 0) {
             return { ok: false, reason: `vice: tree must be a non-negative integer, got ${JSON.stringify(file.tree)}` };
+        }
+        declaredAggregate += file.byteLength;
+        if (declaredAggregate > TRANSFER_MAX_BYTES) {
+            return { ok: false, reason: `vice: this request's declared upload aggregate ${declaredAggregate} exceeds the ${TRANSFER_MAX_BYTES} byte cap (sixteen mebibytes)` };
         }
     }
     const requestKey = `ht-${randomBytes(16).toString("hex")}`;

@@ -376,15 +376,21 @@ export async function runHostToolOverEndpoint(tool: string, args: Record<string,
     const treeArrayBindings: { key: string; treeIndices: number[] }[] = [];
     const outputNameBindings: { key: string; base: string }[] = [];
 
+    // Phase 65 (plan 65-03, D-11): both halves of the client-side cap,
+    // checked before any dial -- each file at most TRANSFER_MAX_BYTES
+    // (16777216), and this WHOLE REQUEST's upload aggregate at or below the
+    // same cap. `TRANSFER_MAX_BYTES` is imported, never retyped -- the
+    // literal `16777216` appears only inside this comment and inside the
+    // refusal text below, by interpolation.
     function pushManifestEntry(tree: number, rel: string, localPath: string, byteLength: number): { ok: true; index: number } | { ok: false; message: string } {
       if (byteLength > TRANSFER_MAX_BYTES) {
-        return { ok: false, message: `runHostToolOverEndpoint: ${JSON.stringify(localPath)} is ${byteLength} bytes, exceeding the ${TRANSFER_MAX_BYTES} byte cap (16777216)` };
+        return { ok: false, message: `runHostToolOverEndpoint: ${JSON.stringify(localPath)} is ${byteLength} bytes, exceeding the ${TRANSFER_MAX_BYTES} byte cap` };
       }
       declaredAggregate += byteLength;
       if (declaredAggregate > TRANSFER_MAX_BYTES) {
         return {
           ok: false,
-          message: `runHostToolOverEndpoint: this request's upload aggregate reaches ${declaredAggregate} bytes, exceeding the ${TRANSFER_MAX_BYTES} byte cap (16777216)`,
+          message: `runHostToolOverEndpoint: this request's upload aggregate reaches ${declaredAggregate} bytes, exceeding the ${TRANSFER_MAX_BYTES} byte cap`,
         };
       }
       const index = manifest.length;
