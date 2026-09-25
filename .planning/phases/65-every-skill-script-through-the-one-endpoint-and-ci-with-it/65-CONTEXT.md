@@ -286,6 +286,40 @@ is the same standing rule Phase 62's D-07/D-08 and Phase 64 established.
   — **Reversibility:** one-way — it removes 25 tools from a published MCP
   surface. Restoring them after release is a second breaking change.
 
+### Plan-time owner decision (2026-09-25, during /gsd-plan-phase 65)
+
+- **D-14: Phase 65 fixes the npm-installed route for the four host-tool skill scripts only.**
+  Direct owner decision, taken at plan time as the recommended option,
+  after research measured a defect the discussion did not have.
+
+  *What was measured* (`65-RESEARCH.md` "Critical Finding 1", reproduced
+  again at the orchestrator seat on Node v24.20.0): Node refuses to
+  type-strip any `.ts` file whose path sits under `node_modules`
+  (`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`). No flag lifts the
+  restriction. `vice-cli.mjs` imports `./vice-proxy.ts`, so
+  `npx -y @henols/vice-mcp` (the MCP server) and
+  `npx -y @henols/vice-mcp anno <verb>` crash today on every npm-installed
+  route. Only `vice-cli.mjs broker` runs, because it imports a compiled
+  `.mjs`. The plugin route and an in-repo checkout are unaffected.
+
+  *In scope:* the file that the four host-tool skill scripts (`acme.mjs`,
+  `c1541.mjs`, `petcat.mjs`, `packer-finding.mjs`) resolve on ladder rung 3
+  must execute from a real `npm install`. An execution test proves it. A
+  path-resolution test alone does not. SEAM-02 criterion 2 needs this.
+
+  *Out of scope, filed as a follow-up:* the MCP server's own npm route and
+  the anno CLI's `npx` route stay broken exactly as they are today. A plan
+  files that follow-up as a pending todo that carries the measured
+  reproduction.
+
+  *Consequence for D-12 and D-13:* every SKILL.md line that invokes the
+  anno CLI names a form that runs today (the plugin or in-repo form). No
+  SKILL.md line names the `npx -y` form, which crashes. This covers the
+  lines D-13 moves off the `anno_*` tools and the `npx -y` lines that
+  already exist. D-12's premise that `vice-mcp anno <verb>` resolves
+  identically on every route holds for path resolution only. A plan must
+  not restate it as a claim that the CLI executes on every route.
+
 ### Claude's Discretion
 
 The owner explicitly left these to Claude at the close of the discussion
