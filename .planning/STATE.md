@@ -5,16 +5,16 @@ milestone_name: One Broker, One Socket
 current_phase: 65
 current_phase_name: Every Skill Script Through the One Endpoint, and CI With It
 status: executing
-stopped_at: Phase 65 planned (9 plans in 6 waves)
-last_updated: "2026-09-25T07:29:17.745Z"
+stopped_at: Completed 65-01-PLAN.md
+last_updated: "2026-09-25T08:17:56.055Z"
 last_activity: 2026-09-25
-last_activity_desc: Phase 65 execution started
-state_head: 88990a34f5f1ea23360cd38544c4f1a278a78f64
+last_activity_desc: Phase 65 plan 01 executed (acme.build through the fixed endpoint)
+state_head: a38f81e99531d14e56ae0c22a55c13fcce27b668
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 42
-  completed_plans: 33
+  completed_plans: 34
   percent: 50
 carried_forward_phases:
 
@@ -86,8 +86,27 @@ closure still needs to be recorded as one.
 ## Current Position
 
 Phase: 65 (Every Skill Script Through the One Endpoint, and CI With It) — EXECUTING
-Plan: 1 of 9
-Status: Executing Phase 65
+Plan: 2 of 9
+Status: Ready to execute
+Plan 65-01 closed 2026-09-25 (SEAM-01/SEAM-03, tracer): a real acme.build
+runs through the fixed endpoint end to end -- host_tool_stage/host_tool_run
+wire ops (broker-control.mts) sit ahead of the token gate, bound to their
+own connection; runHostToolOverEndpoint() (new host-tool-endpoint.mts)
+stages, uploads, runs, validates and downloads a result under the caller's
+own toolsRoot/<kind>/; transfer-client.mts holds transferFileOverEndpoint()
+and validateContainedDestination(), moved unchanged from stock-connect.ts/
+transfer-paths.ts and re-exported from both. The legacy token-gated
+host_tool op and both existing host-tool-client.ts routes are untouched.
+10 behaviours proven (5 stub-listener, 5 real-broker-harness): coexistence
+with the legacy op, per-connection request-key binding (T-65-04), a
+size-lie refusal before any payload byte moves (D-11), D-09 cleanup on
+connection close, adjacency, a zero-file request, and path-freedom of the
+wire reply (T-65-06). 2 tasks, 2 commits (6a75b24f, a38f81e9). Full-glob
+npm test: 4464/4379/1/84 -- the 1 failure is the pre-existing, out-of-scope
+PROJECT.md:2109 citation-ledger drift; two OTHER citation-drift entries
+this plan's own host-tool.mts/package.json edits caused (phase58/phase59
+evidence documents) were repaired in the same plan. See
+.planning/phases/65-every-skill-script-through-the-one-endpoint-and-ci-with-it/65-01-SUMMARY.md.
 Phase 64 closed on 2026-09-24: all 16 plans executed. Verification passed 8/8 after gap-closure round 4.
 UAT 1/1 passed: the owner's in-session live check, run in-session on request, 12/12 MCP calls
 clean against /usr/bin/x64sc 3.9, zero 0x8f, clean teardown. Security verified with threats_open: 0.
@@ -675,6 +694,7 @@ named in the evidence document as Phase 66's to reconcile, not force-closed.
 | Phase 64 P06 | 50min | 3 tasks | 4 files |
 | Phase 64 P07 | 105min | 3 tasks | 7 files |
 | Phase 64 P16 | 6h51m wall (about 45 min active) | 2 tasks | 6 files |
+| Phase 65 P01 | 90min | 2 tasks | 17 files |
 
 ## Accumulated Context
 
@@ -1594,6 +1614,8 @@ Recent decisions affecting current work:
 - [Phase 64]: vice_disk_attach's result now states, under its own writeLoss key (D-16), that writes the running program makes to the attached disk image are lost once the session closes. — Surfaced during Phase 64 discussion, not named in ROADMAP.md/REQUIREMENTS.md beforehand; pulling the staged image back on session close was offered and declined because SIGKILL/crash/recycle produce no clean close.
 - [Phase 64]: Phase 64's exit proof (disjoint roots, convergence metric, boundary confirmations) is complete; convergence metric measured at 5, not the roadmap's predicted 4 -- named for Phase 66 to reconcile. — D-18 chose measurement over assertion; the gap is real and honestly recorded rather than manufactured closed.
 - [Phase 64]: 64-16 (G-64-6): the startup staging sweep runs only in the broker that won the control-port bind, between the confirmed loopback bind and the first writeBrokerRecordFile() (route a); route b, per-directory owner records with a pid check, was declined as a return of the retired pid-reuse heuristic. reapOrphanedConfigScratch() stays pre-bind, because its own live-pid guard (D-08) makes it safe in a losing process.
+- [Phase 65]: Phase 65 plan 01: new host_tool_stage/host_tool_run wire ops sit ahead of the token gate, bound to a per-connection request key; the legacy token-gated host_tool op is untouched. — A skill call holds no acquire-level grant to gate host_tool_stage/host_tool_run on (RESEARCH.md Critical Finding 2), so the two new ops follow the same pre-gate dispatch shape attach/transfer already established, while the legacy op keeps its existing gate for backward compatibility during the migration.
+- [Phase 65]: Phase 65 plan 01: staging lifetime for a host-tool request is per-connection -- the request key is bound to the connection that ran host_tool_stage, and that connection's close removes the scratch and every registry entry. — Reuses broker-transfer.mts's existing clearStagingForSession() unchanged, mirroring the SESS-01..03 connection-is-the-session shape and the 64 D-07 startup sweep as the crash-residue backstop, so no new cleanup mechanism was needed.
 
 ### Pending Todos
 
@@ -2938,9 +2960,9 @@ and are v1.0.0's inheritance.
 
 ## Session Continuity
 
-Last session: 2026-09-24T22:23:56.855Z
-Stopped at: Phase 65 context gathered
-Resume file: .planning/phases/65-every-skill-script-through-the-one-endpoint-and-ci-with-it/65-CONTEXT.md
+Last session: 2026-09-25T08:17:55.871Z
+Stopped at: Completed 65-01-PLAN.md
+Resume file: None
 
 Earlier: **v2.0.0 roadmap created.** 36/36 requirements (`ENDPOINT-01..05`,
   `BROKER-01..06`, `SESS-01..06`, `XFER-01..08`, `SEAM-01..03`, `RM-01..08`)

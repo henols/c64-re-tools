@@ -2389,13 +2389,13 @@ each can be swapped and merged on its own.
      direct spawn, so Phase 66 can delete it without CI being the thing that
      discovers the dependency (RM-08).
 
-**Plans**: 9 plans, 6 waves
+**Plans**: 1/9 plans executed, 6 waves
 
 Plans:
 
 **Wave 1**
 
-- [ ] 65-01-PLAN.md — the tracer: acme.build through the one endpoint, one file in and one result back, on new `host_tool_stage`/`host_tool_run` ops answered ahead of the token gate; per-request staging removed on close; the D-01 broker harness in its minimal form; legacy routes untouched (SEAM-01, SEAM-03)
+- [x] 65-01-PLAN.md — the tracer: acme.build through the one endpoint, one file in and one result back, on new `host_tool_stage`/`host_tool_run` ops answered ahead of the token gate; per-request staging removed on close; the D-01 broker harness in its minimal form; legacy routes untouched (SEAM-01, SEAM-03)
 - [ ] 65-02-PLAN.md — anno leaves the MCP surface: an `anno call` CLI verb over `runAnnoTool()`, the 25 `anno_*` tools gone from `tools/list`, five skills moved to runnable CLI forms, living docs corrected, a measured census in place of the deleted guard, the folded todo closed (D-12, D-13, D-14; frontmatter SEAM-01)
 
 **Wave 2** *(blocked on 65-01)*
@@ -2760,7 +2760,7 @@ check. No test reads this table now.
 | 62. The Fixed Endpoint and the Broker That Owns the Machine | v2.0.0 | 5/5 | Complete | 2026-09-19 |
 | 63. The Monitor Channel Relayed, and the Connection as the Session | v2.0.0 | 12/12 | Complete | 2026-09-23 |
 | 64. Files as Bytes, Both Directions | v2.0.0 | 16/16 | Complete | 2026-09-24 |
-| 65. Every Skill Script Through the One Endpoint, and CI With It | v2.0.0 | 0/9 | Planned | - |
+| 65. Every Skill Script Through the One Endpoint, and CI With It | v2.0.0 | 1/9 | In Progress | - |
 | 66. The Deletion Cutover — Gone, Not Bypassed | v2.0.0 | — | Not started | - |
 | 67. Ghidra's Runs Root Without the Alias | v2.0.0 | — | Not started | - |
 
