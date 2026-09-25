@@ -26,7 +26,7 @@ This is **not** a web/backend application. It is a **Claude Code plugin** (`.cla
 1. As a Claude Code plugin marketplace entry (`.claude-plugin/marketplace.json`).
 2. As two published npm packages (`@henols/vice-mcp`, `@henols/c64-re-tools`) installable via `npx` into any project.
 
-It bundles an MCP (Model Context Protocol) stdio server that drives a host-side stock upstream VICE Commodore 64 emulator over its binary monitor (there is no second backend and no per-project selection — FORKRM-01), plus an **SQLite-backed annotation store** (`anno_*` tool family), plus **seven** Claude Code skills for 6502/6510 reverse-engineering and rebuilding.
+It bundles an MCP (Model Context Protocol) stdio server that drives a host-side stock upstream VICE Commodore 64 emulator over its binary monitor (there is no second backend and no per-project selection — FORKRM-01), plus an **SQLite-backed annotation store** reached through the `anno` CLI's stateless `call <name> --args JSON` verb rather than the MCP surface (D-12/D-13, plan 65-02), plus **seven** Claude Code skills for 6502/6510 reverse-engineering and rebuilding.
 
 ## Languages
 
@@ -104,7 +104,7 @@ It bundles an MCP (Model Context Protocol) stdio server that drives a host-side 
 
 **Tool manifest (one, a committed snapshot):**
 - `src/mcp/vice/tools-manifest.stock.json` - the whole advertised tool surface, **46** tools, read offline at `tools/list`; nothing regenerates it from a live host (FORKRM-01). `vice_diagnose` / `vice_recycle` are synthetic proxy-local tools and do not appear in the raw manifest either. Three capabilities stock cannot provide at all (`vice_sid_get_state`, `vice_keyboard_matrix`, `vice_keyboard_restore`) are recorded as permanent, accepted losses in `docs/stock-hard-losses.md` rather than in a per-backend capability table.
-- The `anno_*` family (`src/mcp/vice/anno-tools.ts`) is registered through `buildViceTool()` and never appears in the manifest JSON.
+- The `anno_*` family (`src/mcp/vice/anno-tools.ts`) is reached only through the `anno` CLI's `call` verb now (D-12/D-13, plan 65-02) — it is registered nowhere on the MCP tool registry any more, and (as before) never appeared in the manifest JSON.
 
 **Build/TS config:**
 - `src/mcp/vice/tsconfig.json` - typecheck-only: `target: es2022`, `module`/`moduleResolution: nodenext`, `strict`, `isolatedModules`, `verbatimModuleSyntax`, `erasableSyntaxOnly`, `noEmit`, `allowImportingTsExtensions`, `types: ["node"]`, `skipLibCheck`.

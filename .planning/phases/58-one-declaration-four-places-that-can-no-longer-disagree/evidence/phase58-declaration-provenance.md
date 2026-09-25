@@ -272,7 +272,7 @@ writing `prerequisites.json` (plan 58-01) and this doc (plan 58-02):
 - **Absent remedy entries.** Not every tool carries an entry for every
   platform key. `acme`, for instance, has `linux` entries (`ubuntu`,
   `debian`) and a `universal` fallback (`"Install ACME."`,
-  `src/skills/acme-build/SKILL.md:254`), but no `darwin` or `win32` key at
+  `src/skills/acme-build/SKILL.md:262`), but no `darwin` or `win32` key at
   all -- there is no macOS- or Windows-specific ACME install instruction
   anywhere in this tree to carry. The rule this phase establishes: an absent
   platform key is the schema's own answer for "no platform-specific remedy
@@ -302,7 +302,7 @@ fixed-prefix list, which is now the seam's probe layer rather than the
 whole story. The net resolution order a caller observes is unchanged
 (`$ACME` still wins over every fixed prefix); only which function reads the
 environment variable moved. This list has no other home in the tree since D-02:
-`src/skills/acme-build/SKILL.md:211-212` states in as many words that these
+`src/skills/acme-build/SKILL.md:219-220` states in as many words that these
 prefixes are "none of them documented a second time here", so this doc is
 now the one place a reader who does not want to open `host-tool.mts` can
 find the current probe list. `CLAUDE.md`'s constraint list still cites
@@ -473,8 +473,8 @@ its entry here, or letting an entry drift off its anchor, fails the build.
   { "citation": "README.md:133", "anchor": "brew install vice" },
   { "citation": "src/mcp/vice/host-tool.mts:2529-2555", "anchor": "function findAcmeLib(locate?: HostToolLocator): { path: string | null; tried: string[] } {" },
   { "citation": "src/mcp/vice/host-tool.mts:2521", "anchor": "ACME_LIB_MARKER = join(\"cbm\", \"c64\", \"vic.a\")" },
-  { "citation": "src/skills/acme-build/SKILL.md:211-212", "anchor": "documented a second time here" },
-  { "citation": "src/skills/acme-build/SKILL.md:254", "anchor": "Install ACME." },
+  { "citation": "src/skills/acme-build/SKILL.md:219-220", "anchor": "documented a second time here" },
+  { "citation": "src/skills/acme-build/SKILL.md:262", "anchor": "Install ACME." },
   { "citation": "src/mcp/vice/resources/vice-launcher.sh:266", "anchor": "NODE_MAJOR\" -lt \"$NODE_FLOOR_MAJOR\"" }
 ]
 ```

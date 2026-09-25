@@ -1,15 +1,15 @@
 # Memory map generation
 
 **A generator writes the memory map. Nobody hand-authors it.** The store — labels, comments, block
-types and scopes written through the `anno_*` tools described in `../SKILL.md` — is canonical. This
+types and scopes written through the `anno call anno_*` verbs described in `../SKILL.md` — is canonical. This
 file used to be a fill-in-the-rows document. It is now the schema for the one input the generator
 needs beyond the store itself, plus the confidence vocabulary that store comments carry.
 
 Run the generator once findings are in the store:
 
 ```bash
-npx -y @henols/vice-mcp anno render-memmap game.annostore --provenance sidecar.json
 node <plugin-root>/src/mcp/vice/vice-proxy.ts anno render-memmap game.annostore --provenance sidecar.json
+node src/mcp/vice/vice-proxy.ts anno render-memmap game.annostore --provenance sidecar.json
 ```
 
 Add `--check` to compare the rendered file on disk against a fresh render — it exits non-zero and
@@ -82,7 +82,7 @@ literal values:
 
 ## Confidence vocabulary
 
-Every comment written into the store through `anno_set_comment` that grades a finding leads with
+Every comment written into the store through `anno call anno_set_comment` that grades a finding leads with
 one of these five bracket tokens (the parser in `anno-confidence.ts` throws on anything that is
 close but not exact — a typo never silently degrades into an ungraded comment):
 
@@ -98,4 +98,4 @@ Do not force an unknown range through a disassembler and record the output as co
 decode of data is silently wrong and contaminates everything downstream.
 
 **Do not promote a row by editing its grade.** Re-confirm and restate the evidence with a fresh
-`anno_set_comment` call, so the record of when something stopped being a guess survives.
+`anno call anno_set_comment` call, so the record of when something stopped being a guess survives.

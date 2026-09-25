@@ -53,8 +53,8 @@ c64-re-tools/
 │   │   ├── disasm-decoder.ts       # pure decode(bytes, startAddress) -> Instruction[]
 │   │   ├── disasm-renderer.ts      # pure render(instructions) -> string
 │   │   ├── anno-store.ts           # THE only node:sqlite consumer (annotation store)
-│   │   ├── anno-tools.ts           # curated anno_* surface (19 verbs) + runAnnoTool()
-│   │   ├── anno-cli.ts             # `vice-mcp anno <verb>` CLI layer
+│   │   ├── anno-tools.ts           # curated anno_* names (28 MEASURED, D-12/D-13) + runAnnoTool()
+│   │   ├── anno-cli.ts             # `vice-mcp anno <verb>` CLI layer -- `call` reaches all 28
 │   │   ├── anno-*.ts               # index, derive, details, coverage, export-asm,
 │   │   │                           #  memmap-render, symbols, register, types, d64,
 │   │   │                           #  confidence, acme-ident, enum-gen, regbits-gen
@@ -233,7 +233,9 @@ c64-re-tools/
 - `src/mcp/vice/vice-proxy.ts` — `gatherWedgeEvidence()` `:1505`
   (`rewriteArguments()` at `:1529`), `rewriteArguments()` `:2007`,
   `forwardToVice()` `:2985` (`rewriteArguments()` at `:3050`),
-  `buildBackendAwareTool()` `:3329`, `anno_*` registration `:3388`.
+  `buildBackendAwareTool()` `:3329`. The `anno_*` registration loop this line
+  used to cite is deleted outright (D-13, plan 65-02) -- `vice-proxy.ts`
+  imports nothing from `anno-tools.ts` any more.
 - `src/mcp/vice/backend-detect.mts` — the fork/stock decision.
 - `src/mcp/vice/stock-dispatch.ts` + `stock-*.ts` — the stock backend.
 - `src/mcp/vice/anno-store.ts` + `anno-tools.ts` — the annotation store.
@@ -315,13 +317,14 @@ c64-re-tools/
   `src/mcp/vice/anno-tools.ts` with a per-verb argument validator; put the
   query/write itself in `anno-store.ts` (the only module allowed to name
   `node:sqlite`) and any derived shaping in `anno-index.ts` /
-  `anno-derive.ts` / `anno-details.ts`.
-- Add the module to `package.json`'s `files[]` if it is a new file, add the
-  CLI verb in `anno-cli.ts` and `scripts/lib/anno-cli-verbs.mjs`, and do
+  `anno-derive.ts` / `anno-details.ts`. Since D-12/D-13 (plan 65-02), a new
+  entry needs no CLI wiring of its own: `anno-cli.ts`'s `call` verb reaches
+  any name in `CURATED_ANNO_TOOLS` automatically through `runAnnoTool()`. Do
   **not** add the tool to either `tools-manifest*.json` (both are regenerated
-  from a live host and a hand-added entry would be wiped).
-- Tests: `anno-*.test.ts`, plus `anno-verb-coverage.test.ts` and
-  `anno-seam.test.ts`.
+  from a live host and a hand-added entry would be wiped) or to
+  `vice-proxy.ts` (D-13 removed its registration loop outright; the MCP
+  surface never advertises this family again).
+- Tests: `anno-*.test.ts`, plus `anno-seam.test.ts`.
 
 **New broker/host-side behavior:**
 - Implementation goes in the relevant `src/mcp/vice/broker-*.mts` (state →

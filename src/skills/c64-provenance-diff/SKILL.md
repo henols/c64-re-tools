@@ -152,12 +152,21 @@ at the point of use. What gets reversed, kept or left out remains the
 end-user's decision, never the tool's. `--ledger` is optional: omitting it
 exports exactly as before, with no provenance comment anywhere in the output.
 
+**How to run an anno verb.** Two forms run today. The plugin form is
+`node <plugin-root>/src/mcp/vice/vice-proxy.ts anno call <name> --args '<json>'`.
+The in-repo form is `node src/mcp/vice/vice-proxy.ts anno call <name> --args '<json>'`.
+The JSON object carries the same argument names each verb documents. Use
+`--args-file <path>` for a large object, such as `anno_batch_execute`'s. The
+npm-installed route has no working `anno` command today.
+
 **When the operator, reading the ledger, decides a range genuinely should be
 left out of the rebuild output** — a trainer patch, a cracktro block, anything
-they choose — the round trip runs entirely on the `anno_*` MCP surface, never
-by editing the ledger or the export: `anno_exclude_range` records the span
-WITH the reason the operator gave, and `anno_include_range` takes the record
-back if the decision changes. Recording an exclusion changes nothing about
+they choose — the round trip runs entirely through the `anno` CLI's `call`
+verb, never by editing the ledger or the export:
+`anno call anno_exclude_range --args '{"store":"game.annostore","start_address":"$1000","end_address":"$10ff","reason":"..."}'`
+records the span WITH the reason the operator gave, and
+`anno call anno_include_range --args '{"store":"game.annostore","start_address":"$1000","end_address":"$10ff"}'`
+takes the record back if the decision changes. Recording an exclusion changes nothing about
 which bytes the export emits — the exported block still carries every byte
 of that span, now with a visible marker naming the exclusion and its reason,
 so the export removes nothing and no gap appears in the output. The ledger's

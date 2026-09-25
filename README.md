@@ -193,10 +193,10 @@ while the plugin is also driving the same emulator instance. Concrete traps
 that cause this, none of them specific to this project: a stray `nc` session
 against the monitor port, a second Claude Code session pointed at the same
 instance, VICE's own `-remotemonitor` flag, or any other 6502 debugger that
-dials in. This plugin's own annotation route can never cause it: the `anno_*`
-tools and the `anno` CLI open a SQLite annotation store and decode bytes out
-of a file on disk, and there is no emulator connection anywhere on that path
-to contend for the port. If an emulator has gone silent, see the
+dials in. This plugin's own annotation route can never cause it: the `anno`
+CLI opens a SQLite annotation store and decodes bytes out of a file on disk,
+and there is no emulator connection anywhere on that path to contend for the
+port. If an emulator has gone silent, see the
 `vice-wedge-triage` skill before assuming it is wedged.
 
 ## Starting the broker
@@ -256,7 +256,7 @@ MCP route, which this project never used and now cannot.
 
 **What replaced it.** Annotations — labels, comments, typed ranges, scopes and
 enums — live in this project's own SQLite annotation store, reached through the
-`anno_*` MCP tools and the `anno` CLI, with no external process anywhere on the
+`anno` CLI's `call` verb, with no external process anywhere on the
 path. Whole-program ACME export is **withdrawn and returns in Phase 30**,
 rebuilt over that store and settled by assembling the output with a real ACME
 and diffing the bytes against the input. The skill playbooks name that

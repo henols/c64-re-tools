@@ -139,6 +139,13 @@ you also assemble by hand, so these stay recognised as mnemonics.
 
 ## Disassembly
 
+**How to run an anno verb.** Two forms run today. The plugin form is
+`node <plugin-root>/src/mcp/vice/vice-proxy.ts anno call <name> --args '<json>'`.
+The in-repo form is `node src/mcp/vice/vice-proxy.ts anno call <name> --args '<json>'`.
+The JSON object carries the same argument names each verb documents. Use
+`--args-file <path>` for a large object, such as `anno_batch_execute`'s. The
+npm-installed route has no working `anno` command today.
+
 This skill does not disassemble. The route that does is `anno export-asm`, and
 it lives in the `anno` CLI rather than here.
 
@@ -158,8 +165,8 @@ match on the exporter's own output.
 **The live invocation:**
 
 ```bash
-npx -y @henols/vice-mcp anno export-asm game.prg --store game.annostore --out game-src
-node <plugin-root>/src/mcp/vice/vice-proxy.ts anno export-asm game.prg --store game.annostore
+node <plugin-root>/src/mcp/vice/vice-proxy.ts anno export-asm game.prg --store game.annostore --out game-src
+node src/mcp/vice/vice-proxy.ts anno export-asm game.prg --store game.annostore
 ```
 
 `<image>` and `--store` are **two separate arguments, and neither one derives from
@@ -188,10 +195,11 @@ assembler verdict. If you need to know the emitted source reassembles, assemble
 it yourself — that is what this skill's own build route is for.
 
 **Reading one range at a time is still the right move for a single routine.**
-`anno_read_region` and `anno_disassemble` render an explicit inclusive range out
-of the image on demand, capped at 4096 bytes per call and REFUSED by name above
-the cap rather than truncated. `c64-program-recon` documents that route and this
-history together. It is not restated there.
+`anno call anno_read_region` and `anno call anno_disassemble` render an
+explicit inclusive range out of the image on demand, capped at 4096 bytes
+per call and REFUSED by name above the cap rather than truncated.
+`c64-program-recon` documents that route and this history together. It is
+not restated there.
 
 ## Setup
 

@@ -5,10 +5,15 @@
 
 A Claude Code plugin bundling the tooling used to reverse-engineer and rebuild
 Commodore 64 games, reusable across C64 projects. It ships a `vice` MCP server
-(76 tools driving a host VICE emulator through an on-demand broker: 47 from the
-`vice_*` manifest plus 29 registered directly) plus nine C64
+(48 tools driving a host VICE emulator through an on-demand broker: 47 from
+the `vice_*` manifest, which already includes `vice_recycle` and
+`vice_diagnose`, plus `vice_result_continue`, the one tool still registered
+proxy-locally rather than sourced from the manifest — MEASURED 2026-09-25
+from a real `tools/list`, plan 65-02) plus nine C64
 reverse-engineering skills, distributed both as two npm packages
 (`@henols/vice-mcp`, `@henols/c64-re-tools`) and as a Claude Code plugin.
+Annotation (`.annostore`) is a stateless, client-local CLI now (`anno call
+<name> --args JSON`), off the MCP surface entirely (D-12/D-13, plan 65-02).
 
 The whole tool surface drives **stock upstream VICE** — any unpatched build
 anyone can install from a package manager — through its binary monitor and
@@ -281,7 +286,7 @@ Full detail: `.planning/codebase/ARCHITECTURE.md`. The system is a split-process
 | Skills (nine) | Markdown playbooks and Node scripts. They drive the MCP tools or work offline on files | `src/skills/*/SKILL.md`, `src/skills/*/scripts/*.mjs` |
 
 ### Constraints that bind what you may write
-- **No fall-through to another transport.** Every tool reaches `stockDispatch.dispatchStock()`. It matches a table entry and answers by name, or it matches nothing and refuses by name. There is no third path. `vice_result_continue` and the `anno_*` family touch no transport, and `stock-dispatch.test.ts` asserts those two exceptions by name.
+- **No fall-through to another transport.** Every tool reaches `stockDispatch.dispatchStock()`. It matches a table entry and answers by name, or it matches nothing and refuses by name. There is no third path. `vice_result_continue` touches no transport, and `stock-dispatch.test.ts` asserts that one exception by name. The `anno_*` family left the MCP surface entirely (D-13, plan 65-02) — it is a stateless, client-local CLI now, so it is no longer an exception to this rule at all.
 - **Single-owner launch guard.** The module-level `inFlight` boolean in `broker-launch.mts` is a synchronous check-and-set with no `await` between. It is the sole gate on spawning `x64sc`. It exists because of the 2026-08-01 triple-launch outage. Do not add a second gate. Do not put anything blocking inside that window.
 - **One module per seam. It is NOT test-enforced.** `anno-store.ts` is the only module that imports `node:sqlite`. Keep it that way. Route annotation-store access through it. Do not open a second database handle.
 

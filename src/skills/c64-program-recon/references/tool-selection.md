@@ -24,26 +24,36 @@ usage, not measured). Individual rows that have since been exercised live are ma
 
 ## Delegate rather than restate
 
+**How to run an anno verb.** Two forms run today. The plugin form is
+`node <plugin-root>/src/mcp/vice/vice-proxy.ts anno call <name> --args '<json>'`.
+The in-repo form is `node src/mcp/vice/vice-proxy.ts anno call <name> --args '<json>'`.
+The JSON object carries the same argument names each verb documents. Use
+`--args-file <path>` for a large object, such as `anno_batch_execute`'s. The
+npm-installed route has no working `anno` command today. `anno export-asm`,
+`anno evid-disagreements` and `anno hazard-report` below are native CLI
+verbs and skip `call` entirely; every other `anno_*` name below is reached
+through `anno call <name> --args '<json>'`.
+
 | Question | Go to |
 |---|---|
 | What does address X mean? | the `c64-memory-mapping` skill — `node … lookup '$D018'`. **Do not restate its tables.** |
 | Is this byte original or cracker-patched? | the `c64-provenance-diff` skill |
 | A verified 64K image, or comparing two captures | the `c64-ram-capture` skill |
-| Whole-program static disassembly with code/data separation | **`anno export-asm`** — withdrawn 2026-08-29, returned 2026-08-31. It settles correctness by assembling the output with a real ACME and diffing the bytes against the input. That oracle is test-only, so the verb itself writes source and runs no assembler. For a single routine, read one explicit range at a time with `anno_read_region` / `anno_disassemble` (4096-byte cap per call, refused rather than truncated above it). Record what you checked with `anno_set_data_type` |
+| Whole-program static disassembly with code/data separation | **`anno export-asm`** — withdrawn 2026-08-29, returned 2026-08-31. It settles correctness by assembling the output with a real ACME and diffing the bytes against the input. That oracle is test-only, so the verb itself writes source and runs no assembler. For a single routine, read one explicit range at a time with `anno call anno_read_region` / `anno call anno_disassemble` (4096-byte cap per call, refused rather than truncated above it). Record what you checked with `anno call anno_set_data_type` |
 
 ## Runtime evidence versus the byte-derived guess
 
 | Question | Call |
 |---|---|
-| Where the store's byte-derived block table (`anno_set_data_type`'s own ranges) disagrees with what the emulator was actually observed executing | **`anno evid-disagreements`** (also `anno_evid_disagreements`) — joins the typed ranges against the runtime-observed rows an `anno_evid_ingest` call already wrote. It reports disagreements first, agreement as a count only, and a never-observed count. A never-observed count is explicitly NOT evidence the address holds data |
-| What evidence a store already holds, without re-running the program | `anno_evid_runs` — every run identity's observation count beside its denominator |
-| Reset one run identity's evidence for a fresh re-measurement | `anno_evid_reset` — clears only that run identity's rows. Pair it with `vice_memmap_zap` on the emulator side |
+| Where the store's byte-derived block table (`anno_set_data_type`'s own ranges) disagrees with what the emulator was actually observed executing | **`anno evid-disagreements`** (the native CLI verb; `anno call anno_evid_disagreements --args '<json>'` answers the identical join) — joins the typed ranges against the runtime-observed rows an `anno call anno_evid_ingest` call already wrote. It reports disagreements first, agreement as a count only, and a never-observed count. A never-observed count is explicitly NOT evidence the address holds data |
+| What evidence a store already holds, without re-running the program | `anno call anno_evid_runs` — every run identity's observation count beside its denominator |
+| Reset one run identity's evidence for a fresh re-measurement | `anno call anno_evid_reset` — clears only that run identity's rows. Pair it with `vice_memmap_zap` on the emulator side |
 
 ## What blocks this program's code from being moved
 
 | Question | Call |
 |---|---|
-| Which constructions block relocating, rebasing or stripping part of this program | **`anno hazard-report`** (also `anno_hazard_report`) — enumerates movement-hazard findings derived from decoded bytes alone. For example, a store or read-modify-write instruction may land its literal target on another instruction's opcode or operand byte. A later pass may then run different code or read a different value there. Each finding carries its own detection mechanism and a detection-strength token. It reports and touches NOTHING. It never relocates, strips or rebases anything, and it never emits a flag a caller could act on as an automatic relocation |
+| Which constructions block relocating, rebasing or stripping part of this program | **`anno hazard-report`** (the native CLI verb; `anno call anno_hazard_report --args '<json>'` answers the identical report) — enumerates movement-hazard findings derived from decoded bytes alone. For example, a store or read-modify-write instruction may land its literal target on another instruction's opcode or operand byte. A later pass may then run different code or read a different value there. Each finding carries its own detection mechanism and a detection-strength token. It reports and touches NOTHING. It never relocates, strips or rebases anything, and it never emits a flag a caller could act on as an automatic relocation |
 
 **A region this report does not flag is undecided or unflagged, never certified safe to move.** Every checked
 region reports one of exactly three outcomes, and only one of them means a construction was actually found

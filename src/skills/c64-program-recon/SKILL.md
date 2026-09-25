@@ -99,7 +99,7 @@ node src/skills/c64-program-recon/scripts/packer-finding.mjs game.prg      # fro
 node src/skills/c64-program-recon/scripts/packer-finding.mjs game.prg --entropy 7.83
 ```
 
-Pass `--entropy` when you already have the number from `anno_get_binary_info`. Otherwise the
+Pass `--entropy` when you already have the number from `anno call anno_get_binary_info`. Otherwise the
 script measures it from the file. It prints one JSON object. Read the `verdict`:
 
 | Verdict | What it means | What to do |
@@ -174,17 +174,24 @@ Recon's findings are not memory-map prose written once and left to rot — they 
 queryable annotation store, and the Markdown memory map is a *generated view* of that store,
 not something you hand-edit yourself.
 
+**How to run an anno verb.** Two forms run today. The plugin form is
+`node <plugin-root>/src/mcp/vice/vice-proxy.ts anno call <name> --args '<json>'`.
+The in-repo form is `node src/mcp/vice/vice-proxy.ts anno call <name> --args '<json>'`.
+The JSON object carries the same argument names each verb below documents.
+Use `--args-file <path>` for a large object, such as `anno_batch_execute`'s.
+The npm-installed route has no working `anno` command today.
+
 **There is no bootstrap step, and no bootstrap verb.** The store is created by the first write to
-it: name a `.annostore` path on any mutating call — `anno_set_label_name`, `anno_set_comment`,
-`anno_set_data_type`, `anno_add_scope` — and it is created, committed and closed inside that call.
+it: name a `.annostore` path on any mutating call — `anno call anno_set_label_name`, `anno call anno_set_comment`,
+`anno call anno_set_data_type`, `anno call anno_add_scope` — and it is created, committed and closed inside that call.
 A read-only call against a path that does not exist yet is REFUSED by name rather than answering
 against an empty store, so "I read nothing" and "there is nothing to read" stay distinguishable.
 
-Every `anno_*` tool takes an explicit `store` path — there is no ambient session state
+Every `anno_*` verb (reached through `anno call`) takes an explicit `store` path — there is no ambient session state
 naming the store, so which store a call touched is always visible in the transcript. Every call
 that derives its answer from the program's **bytes** rather than from the annotations takes an
-`image` path as well — `anno_get_binary_info`, `anno_read_region`, `anno_disassemble`,
-`anno_get_cross_references`, `anno_search` and `anno_get_address_details`. The store holds
+`image` path as well — `anno call anno_get_binary_info`, `anno call anno_read_region`, `anno call anno_disassemble`,
+`anno call anno_get_cross_references`, `anno call anno_search` and `anno call anno_get_address_details`. The store holds
 annotations and never bytes, so an omitted image would read as a plausible success against
 whatever was recorded last. `image` is a `.prg` (2-byte little-endian load address plus payload) or
 an exactly-65536-byte flat capture, dispatched **by extension first**, never by length.
@@ -193,11 +200,11 @@ an exactly-65536-byte flat capture, dispatched **by extension first**, never by 
 
 | Tool | Use for |
 |---|---|
-| `anno_set_label_name` | Naming a routine or table (`init_screen`, `sprite_table`) |
-| `anno_set_data_type` | Classifying a block (`code`, `byte`, `address`, `petscii`, …) |
-| `anno_add_scope` | Marking a handler's extent as a lexical scope |
-| `anno_set_comment` | Recording the evidence — the carrier for the confidence grade below |
-| `anno_batch_execute` | Bulk annotation, 5+ independent calls at once — a real memory map is dozens of labels, comments and block ranges. One batch is one open, commit, close instead of dozens. You name the store (and the image, when an inner call needs one) ONCE at the top level, and every inner call inherits it. A malformed payload, an empty `calls` array, an uncurated inner name at any depth, or an illegal label name refuses the **whole** batch by index. It executes nothing. Past that gate, execution runs to completion and each entry carries its own status. So an error entry inside a successful result means that one call did not work |
+| `anno call anno_set_label_name` | Naming a routine or table (`init_screen`, `sprite_table`) |
+| `anno call anno_set_data_type` | Classifying a block (`code`, `byte`, `address`, `petscii`, …) |
+| `anno call anno_add_scope` | Marking a handler's extent as a lexical scope |
+| `anno call anno_set_comment` | Recording the evidence — the carrier for the confidence grade below |
+| `anno call anno_batch_execute` | Bulk annotation, 5+ independent calls at once — a real memory map is dozens of labels, comments and block ranges. One batch is one open, commit, close instead of dozens. You name the store (and the image, when an inner call needs one) ONCE at the top level, and every inner call inherits it. A malformed payload, an empty `calls` array, an uncurated inner name at any depth, or an illegal label name refuses the **whole** batch by index. It executes nothing. Past that gate, execution runs to completion and each entry carries its own status. So an error entry inside a successful result means that one call did not work |
 
 **Grade with the confidence prefix.** Lead every evidence comment with exactly one of these five
 bracket tokens (quoted verbatim from `anno-confidence.ts`, the parser's own source of truth):
@@ -207,12 +214,12 @@ bracket tokens (quoted verbatim from `anno-confidence.ts`, the parser's own sour
 
 A typo in the bracket token — wrong case, an underscore, a plural, stray whitespace — **fails
 loudly**. It does not silently degrade into an ungraded comment. Do not promote a row by editing
-its grade in place. Re-check and restate the evidence with a fresh `anno_set_comment` call, so the
+its grade in place. Re-check and restate the evidence with a fresh `anno call anno_set_comment` call, so the
 record of when something stopped being a guess survives.
 
-**Query instead of re-deriving.** `anno_get_symbols`, `anno_get_comments` and `anno_get_blocks`
-answer straight from the store. `anno_get_cross_references` and `anno_search` derive their answers
-from the image bytes plus the store's typed ranges, so they take `image` too. `anno_search` searches
+**Query instead of re-deriving.** `anno call anno_get_symbols`, `anno call anno_get_comments` and `anno call anno_get_blocks`
+answer straight from the store. `anno call anno_get_cross_references` and `anno call anno_search` derive their answers
+from the image bytes plus the store's typed ranges, so they take `image` too. `anno call anno_search` searches
 three corpora together — label names, comment text, and the instruction text rendered from every
 range typed `code` — **byte-exact and case-sensitive**, with each corpus named in the answer
 alongside how many entries it held, so a genuine zero over a real corpus stays distinguishable from
@@ -223,14 +230,14 @@ implicit default silently truncates a full-program pass, and here the true match
 the truncated list, so truncation is a fact you are told rather than one you infer. The query this
 whole workflow exists to make cheap:
 
-> "Show me everything still `[unknown]`" → `anno_search` with `query: "[unknown]"` and
+> "Show me everything still `[unknown]`" → `anno call anno_search` with `query: "[unknown]"` and
 > an explicit `max_results` set above your program's comment count.
 
-`anno_get_blocks` is also the read route for the store's other structural annotations: pass
-`include: ["scopes", "enums", "enum_usage"]` to get scope spans (which `anno_remove_scope` must
+`anno call anno_get_blocks` is also the read route for the store's other structural annotations: pass
+`include: ["scopes", "enums", "enum_usage"]` to get scope spans (which `anno call anno_remove_scope` must
 match exactly), every project enum with its variants, and every address-to-enum association.
 
-`anno_get_address_details` composes everything known about ONE address — the labels bound there,
+`anno call anno_get_address_details` composes everything known about ONE address — the labels bound there,
 the comments there, the typed range covering it, and the cross-references reaching it. **The call
 discloses the composition:** the body carries `composed_client_side` and a `composed_from` list
 naming all four sources, so a composition is never mistaken for something the store held whole.
@@ -252,7 +259,7 @@ what to keep doing by hand for as long as they stay gone:
 
 1. **The store is the merge point, not your own notes.** Write a name discovered live —
    disassembling the running machine, a checkpoint hit — into the store with
-   `anno_set_label_name` *first*, before you carry it anywhere else.
+   `anno call anno_set_label_name` *first*, before you carry it anywhere else.
 2. **`vice_symbols_load` REPLACES the machine's symbol table rather than merging into it.** Call it
    **exactly once** per generated `.lbl` file. Loading an older file a second time, after the store
    has moved on, silently discards the newer names.
@@ -274,8 +281,8 @@ the by-hand route that stays open.
 filled example live in `templates/memory-map.template.md`), then:
 
 ```bash
-npx -y @henols/vice-mcp anno render-memmap game.annostore --provenance sidecar.json
 node <plugin-root>/src/mcp/vice/vice-proxy.ts anno render-memmap game.annostore --provenance sidecar.json
+node src/mcp/vice/vice-proxy.ts anno render-memmap game.annostore --provenance sidecar.json
 ```
 
 Add `--check` to detect drift. `--check` reports drift when, and only when, one of these changed:
@@ -328,14 +335,14 @@ reader comparing two dated claims can tell which one to believe.
 (a separate, host-side capability) has produced a transfer file, two calls land its findings in the
 store — in this order, and each is one mechanical call, not an agent turn:
 
-1. **`anno_import_ghidra_export`** reads the transfer file, writes one cross-reference row per
+1. **`anno call anno_import_ghidra_export`** reads the transfer file, writes one cross-reference row per
    surviving reference, and REMOVES the transfer file once every write has durably committed. It
    reports `referencesSeen`, `xrefsWritten`, `xrefsAlreadyPresent` (the call deduplicates a
    duplicate reference rather than double-counting it) and `kindsSeenNotImported` — reference kinds
    outside this store's four-member vocabulary, dropped and counted rather than guessed or refused.
    The call refuses a malformed, truncated or digest-mismatched export by name, naming the section
    and the offending line, and writes nothing.
-2. **`anno_join_memmap`** then reads every cross-reference target the store already holds, skips
+2. **`anno call anno_join_memmap`** then reads every cross-reference target the store already holds, skips
    addresses inside the program's own loaded image (those are code/data addresses, not hardware
    features), and annotates everything else with the narrowest `c64-memory-mapping/memmap.json` entry
    containing it. It reports `addressesConsidered`, `annotated`, `skippedInImage`,
@@ -359,8 +366,8 @@ ACME and diffing the bytes against the input** — never by an exit code and nev
 on the exporter's own output.
 
 ```bash
-npx -y @henols/vice-mcp anno export-asm game.prg --store game.annostore --out game-src
-node <plugin-root>/src/mcp/vice/vice-proxy.ts anno export-asm game.prg --store game.annostore
+node <plugin-root>/src/mcp/vice/vice-proxy.ts anno export-asm game.prg --store game.annostore --out game-src
+node src/mcp/vice/vice-proxy.ts anno export-asm game.prg --store game.annostore
 ```
 
 `<image>` and `--store` are **two separate arguments and neither derives from the other**: the
@@ -380,7 +387,7 @@ full statement of that split.
 Two routes remain for reading a single routine, and they are the ones the rest of this playbook
 already uses:
 
-- **`anno_read_region`** and **`anno_disassemble`** render one routine or table at an **explicit**
+- **`anno call anno_read_region`** and **`anno call anno_disassemble`** render one routine or table at an **explicit**
   inclusive range, decoded fresh from the image bytes on every call and written nowhere. That is
   the static route, bounded on purpose: these calls cap the combined byte count at **4096 bytes**
   (`ANNO_READ_REGION_MAX_BYTES`), and they REFUSE a wider request by name rather than truncating it,
@@ -427,7 +434,7 @@ symbols it touches, is the absorbed pair in `c64-memory-mapping`.
 
 ### 1. Context first
 
-`anno_get_binary_info` for `system`, `filename`, `description` and
+`anno call anno_get_binary_info` for `system`, `filename`, `description` and
 `may_contain_undocumented_opcodes`.
 
 - `system` names the target machine and therefore which memory map, hardware
@@ -457,7 +464,7 @@ Find the start (the entry point or its label) and the end (`RTS`, `RTI`, or a
 
 ### 3. Read the range
 
-`anno_read_region` over the routine's explicit range, naming the `store` and
+`anno call anno_read_region` over the routine's explicit range, naming the `store` and
 the `image`, with `view` **omitted** — the disassembly view is that parameter's
 documented default, so the call needs no `view` at all here.
 
@@ -488,7 +495,7 @@ Recurring shapes worth recognising on sight:
 
 ### 4. Who calls it
 
-`anno_get_cross_references` on the entry point. The caller is often more
+`anno call anno_get_cross_references` on the entry point. The caller is often more
 decisive than the body:
 
 - Called from an init block → a setup routine, runs once.
@@ -505,15 +512,15 @@ For every address the routine reads or writes:
 
 1. `lookup` it first (see `c64-memory-mapping`). A hardware register or KERNAL
    entry point is answered outright and needs no further work.
-2. Otherwise `anno_get_cross_references` on that address, and read the shape:
+2. Otherwise `anno call anno_get_cross_references` on that address, and read the shape:
    - Written once, in init → a constant or a config value.
    - Written *and* read by several routines → shared state, a global.
    - In the zero page and used as `($addr),Y` → an indirect pointer.
 3. **Enums.** If the accessed addresses or the immediate values form a logical
    set — state constants, joystick direction bits, colour codes — check for an
    existing project, global or system enum that matches, and apply it with
-   `anno_apply_enum_usage` at the accessing instruction. If none matches but
-   the set is clean, define one with `anno_create_project_enum` (give it a
+   `anno call anno_apply_enum_usage` at the accessing instruction. If none matches but
+   the set is clean, define one with `anno call anno_create_project_enum` (give it a
    real `description`) and then apply it everywhere it fits. This is what turns
    `lda #$1b` into something a reader understands.
 
@@ -535,8 +542,8 @@ Four things, and they are the four things the comment block carries: **purpose**
 (one sentence), **inputs** (registers and memory used as arguments), **outputs**
 (registers and memory modified), **side effects** (hardware, screen, sound).
 
-Rename the label with `anno_set_label_name`, then put a multi-line `"line"`
-comment above the first instruction with `anno_set_comment`, in this exact
+Rename the label with `anno call anno_set_label_name`, then put a multi-line `"line"`
+comment above the first instruction with `anno call anno_set_comment`, in this exact
 shape — the separator is both the first and the last line:
 
 ```
@@ -608,7 +615,7 @@ A tokenised BASIC program is a linked list in memory. Each line is:
 3. **Bytes 4–N — the tokens**, running until a `$00` terminator.
 4. **End of program** when a line's next-line pointer is `$00 $00`.
 
-Read the range with `anno_read_region`, `view: "hexdump"`, over an explicit
+Read the range with `anno call anno_read_region`, `view: "hexdump"`, over an explicit
 start and end address — subject to the same 4096-byte ceiling as every other
 range read on this surface. Then walk the pointer chain from the first line
 until the pointer is `$00 $00`.
@@ -644,19 +651,19 @@ variable names, numbers.
 
 ### What a decoding pass would write
 
-Per line, batched through `anno_batch_execute`:
+Per line, batched through `anno call anno_batch_execute`:
 
-1. `anno_set_data_type` `address` over bytes 0–1 (the next-line pointer).
-2. `anno_set_data_type` `word` over bytes 2–3 (the line number).
-3. `anno_set_data_type` `byte` from byte 4 through the `$00` terminator,
+1. `anno call anno_set_data_type` `address` over bytes 0–1 (the next-line pointer).
+2. `anno call anno_set_data_type` `word` over bytes 2–3 (the line number).
+3. `anno call anno_set_data_type` `byte` from byte 4 through the `$00` terminator,
    inclusive.
-4. `anno_set_comment` `"side"` at byte 0, carrying the reconstructed line —
+4. `anno call anno_set_comment` `"side"` at byte 0, carrying the reconstructed line —
    `10 REM LODE RUNNER`.
 
 Then jump to the next-line pointer and repeat until it reads `$00 $00`, and
 finally mark that `$00 $00` terminator itself as `word`. Nothing needs to be
 "saved": every one of those writes committed and fsynced inside its own call.
-`anno_save_project` performs **no write at all** — it reports the store's current
+`anno call anno_save_project` performs **no write at all** — it reports the store's current
 revision, which is what to quote when you write the pass up.
 
 ## Which skill does what
@@ -670,7 +677,7 @@ This one is the route between the stations. It does not restate what the others 
 | A verified 64K image, or comparing two captures | `c64-ram-capture` |
 | What a specific address or bit means | `c64-memory-mapping` — `node … lookup '$D018'` |
 | Assembling | `acme-build` |
-| Static disassembly of a `.prg` or flat image | **`anno export-asm`** — withdrawn 2026-08-29, returned 2026-08-31 behind a real-ACME byte-diff oracle that is test-only, so the verb writes source and assembles nothing. Read one range at a time with `anno_read_region` for a single routine (see above) |
+| Static disassembly of a `.prg` or flat image | **`anno export-asm`** — withdrawn 2026-08-29, returned 2026-08-31 behind a real-ACME byte-diff oracle that is test-only, so the verb writes source and assembles nothing. Read one range at a time with `anno call anno_read_region` for a single routine (see above) |
 | Whether a byte is original or cracker-changed | `c64-provenance-diff` |
 | The emulator stopped moving — wedged, self-trapped, or respawned | `vice-wedge-triage` |
 | **Which address to read next, and what the answer rules out** | here |

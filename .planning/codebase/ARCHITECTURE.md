@@ -25,11 +25,19 @@ that replaced the deleted per-backend capability table.
 This repository is a **Claude Code plugin** distributed as two npm packages
 (`@henols/vice-mcp`, `@henols/c64-re-tools`) plus a plugin manifest. It has
 three independently-deployable halves: an **MCP server** (`src/mcp/vice/`)
-that presents a `vice_*` + `anno_*` tool surface over stdio, a **host broker
+that presents a `vice_*` tool surface over stdio, a **host broker
 daemon** that owns a pool of real `x64sc` emulator processes, and a set of
 seven **skills** (`src/skills/`) that are markdown playbooks plus offline Node
 scripts. Nothing here runs a C64 emulator itself — `x64sc` always runs on the
 **host**, outside the container/sandbox Claude Code executes in.
+
+**Anno left the MCP surface (D-13, plan 65-02).** The whole `anno_*` MCP
+tool family — `CURATED_ANNO_TOOLS`, MEASURED at 28 names at this commit —
+was deleted from `tools/list` outright, in the same change that gave the
+`anno` CLI (`anno-cli.ts`) a generic `call <name> --args JSON` verb reaching
+every former tool's own `runAnnoTool()`. Annotation is a stateless,
+client-local CLI now (D-12) — it is never advertised over stdio, and
+`vice-proxy.ts` no longer imports anything from `anno-tools.ts`.
 
 The fork backend this section used to describe here is **removed, not
 degraded**: `x64sc` now names exactly one accepted shape — stock upstream
@@ -46,10 +54,18 @@ One structural fact dominates the rest of the current shape:
 
 **An in-repo annotation store.** `anno-store.ts` owns a `node:sqlite`
 database of labels, comments, block types, enums and cross-references for
-the binary under analysis. The `anno_*` tool family (`anno-tools.ts`) is
-served entirely proxy-locally and touches no emulator at all.
+the binary under analysis. Every verb in `anno-tools.ts` is reached only
+through the `anno` CLI's `call` verb now (D-12/D-13) — never through the MCP
+server's tool registry — and touches no emulator at all.
 
 ```text
+┌──────────────────────────────────────────────────────────────────────────┐
+│  `vice-proxy.ts`'s own argv dispatch (runs BEFORE the MCP server starts)  │
+│  `node vice-proxy.ts anno call <name> --args JSON` -> `anno-cli.ts` ->    │
+│  `anno-tools.ts`'s `runAnnoTool()` -> `anno-store.ts` (node:sqlite,       │
+│  no emulator, no MCP server, no tools/list entry -- D-12/D-13)           │
+└──────────────────────────────────────────────────────────────────────────┘
+
 ┌──────────────────────────────────────────────────────────────────────────┐
 │                     Claude Code (client, in-container)                    │
 │  loads skills as playbooks; calls mcp__plugin_c64-re-tools_vice__*        │
@@ -58,25 +74,24 @@ served entirely proxy-locally and touches no emulator at all.
 │  Node scripts)                 │  `src/mcp/vice/vice-proxy.ts`            │
 │  `src/skills/*/SKILL.md`       │  answers initialize/tools_list locally   │
 │  `src/skills/*/scripts/*.mjs`  │  from the committed stock manifest       │
-└───────────────┬────────────────┴───┬───────────────────┬─────────────────┘
-                │                    │                   │
-                │        ┌───────────┘                   └──────────┐
-                │        ▼                                          ▼
-                │  ┌──────────────────────────┐        ┌──────────────────────────┐
-                │  │ anno_* family (LOCAL)    │        │ vice_* family (REMOTE)   │
-                │  │ `anno-tools.ts` ->        │        │ registered via           │
-                │  │ `anno-store.ts`           │        │ `buildViceTool()`         │
-                │  │ (node:sqlite, no emulator)│        │ dispatched to below       │
-                │  └──────────────────────────┘        └────────────┬─────────────┘
-                │                                                    │
-                │                                                    ▼
-                │                                     ┌──────────────────────────┐
-                │                                     │ `stock-dispatch.ts`       │
-                │                                     │ dispatch table; refuses   │
-                │                                     │ any unmatched tool name   │
-                │                                     └────────────┬─────────────┘
-                │                                                  │
-                │                                                  ▼
+└───────────────┬────────────────┴──────────────────┬──────────────────────┘
+                │                                    │
+                │                                    ▼
+                │                     ┌──────────────────────────┐
+                │                     │ vice_* family (REMOTE)   │
+                │                     │ registered via           │
+                │                     │ `buildViceTool()`         │
+                │                     │ dispatched to below       │
+                │                     └────────────┬─────────────┘
+                │                                   │
+                │                                   ▼
+                │                     ┌──────────────────────────┐
+                │                     │ `stock-dispatch.ts`       │
+                │                     │ dispatch table; refuses   │
+                │                     │ any unmatched tool name   │
+                │                     └────────────┬─────────────┘
+                │                                  │
+                │                                  ▼
                 │                                     ┌──────────────────────────┐
                 │                                     │ `stock-connect.ts` /      │
                 │                                     │ `stock-protocol.ts`       │
@@ -117,7 +132,7 @@ served entirely proxy-locally and touches no emulator at all.
 | Stock tool families | Per-domain handlers: memory, registers, checkpoints, execution, machine, input, disassemble, memory-search, symbols, VIC-II, CIA, sprites, timing, run-until, diagnose, recycle | `src/mcp/vice/stock-*.ts` (26 non-test modules) |
 | Derived-tool leaf | Tools computed client-side rather than asked of the emulator | `src/mcp/vice/stock-derived.ts` |
 | Annotation store | The ONE module that imports `node:sqlite`; opens/queries/writes the annotation store. Confinement is a RULE, not an assertion -- Phase 56 deleted the structural scan; check by hand | `src/mcp/vice/anno-store.ts` |
-| Annotation tool surface | The curated `anno_*` definitions, per-verb arg validators, store-path containment, and `runAnnoTool()` | `src/mcp/vice/anno-tools.ts` |
+| Annotation verb surface | The curated `anno_*` definitions, per-verb arg validators, store-path containment, and `runAnnoTool()` — reached only through the `anno` CLI's `call` verb (D-12/D-13), never through `vice-proxy.ts`'s tool registry | `src/mcp/vice/anno-tools.ts` |
 | Annotation CLI | `vice-mcp anno <verb>` ergonomics layer over the same store | `src/mcp/vice/anno-cli.ts` |
 | Annotation derivations | Address index, derived answers, composed address detail, coverage census, ACME export, memory-map render, symbol round trip, enum/regbit generation, type vocabulary, confidence grades | `src/mcp/vice/anno-index.ts`, `anno-derive.ts`, `anno-details.ts`, `anno-coverage.ts`, `anno-export-asm.ts`, `anno-memmap-render.ts`, `anno-symbols.ts`, `anno-enum-gen.ts`, `anno-regbits-gen.ts`, `anno-types.ts`, `anno-confidence.ts` |
 | Pure 6510 disassembler | Committed 256-entry opcode table, pure `decode()`, pure `render()` — import-free of any `stock-*`/`vice*` module | `src/mcp/vice/disasm-opcodes.ts`, `disasm-decoder.ts`, `disasm-renderer.ts` |
@@ -192,12 +207,15 @@ per-project backend selection (FORKRM-01).
   plus `templates/`, `references/`, `memmap.json`, `template.a` where needed.
   Two skills (`routine-queue-walker`, `vice-wedge-triage`) are pure prose with
   no scripts.
-- Depends on: the `vice_*` / `anno_*` MCP surface, or pure filesystem work.
+- Depends on: the `vice_*` MCP surface, the `anno` CLI's `call` verb (D-12/D-13), or pure filesystem work.
 - Used by: Claude Code directly, matched by `SKILL.md` `description`.
 
 **MCP server layer (container-side):**
-- Purpose: Presents a stable `vice_*` + `anno_*` surface over stdio; routes
-  each call to the stock binary monitor or the local annotation store.
+- Purpose: Presents a stable `vice_*` surface over stdio; routes each call
+  to the stock binary monitor. The `anno` CLI's `argv[2] === "anno"` branch
+  short-circuits before this server starts and reaches the local annotation
+  store directly (D-12/D-13, plan 65-02) — it is never part of the surface
+  `tools/list` advertises.
 - Location: `src/mcp/vice/*.ts` (78 non-test source modules, run unbuilt).
 - Sub-groups: proxy/transport (`vice-proxy.ts`, `vice-errors.ts`,
   `vice-broker-client.ts`), stock backend (`stock-*.ts`,
@@ -260,20 +278,22 @@ Four named flows, each walked step by step below.
 7. Path arguments are translated through `stock-paths.ts`'s single declared
    table and wrapper.
 
-### Annotation-store path (`anno_*`)
+### Annotation-store path (`anno call <name>`, D-12/D-13, plan 65-02)
 
-1. `runAnnoTool(name, args)` (`anno-tools.ts:2093-2097`) resolves the store
+1. `vice-proxy.ts`'s `argv[2] === "anno"` branch short-circuits before the
+   MCP server starts and dynamically imports `anno-cli.ts`, whose `call`
+   verb takes a curated `anno_*` name and one JSON argument object.
+2. `runAnnoTool(name, args)` (`anno-tools.ts:2093-2097`) resolves the store
    path through `storePathWithinWorkspace(raw, repoRoot())`.
-2. It asserts the store already **exists** (`assertStorePresent()`, refusing
+3. It asserts the store already **exists** (`assertStorePresent()`, refusing
    to create one), records the inode, opens it, re-checks the inode
    (`assertSameFile()`), answers exactly one call, and closes it again.
-3. `anno-store.ts` is the only module that names `node:sqlite`; derived
+4. `anno-store.ts` is the only module that names `node:sqlite`; derived
    answers come from `anno-index.ts`, `anno-derive.ts`, `anno-details.ts`,
    `anno-coverage.ts`, `anno-export-asm.ts`, `anno-memmap-render.ts`.
-4. No emulator, no HTTP, no socket — the family is backend-independent and is
-   not part of the committed `tools-manifest.stock.json` snapshot at all; it
-   is registered directly through `buildViceTool()`, separate from the
-   manifest-driven registration loop.
+5. No emulator, no HTTP, no socket, no MCP tool registration at all — the
+   family left `tools/list` outright (D-13). `vice-proxy.ts` no longer
+   imports anything from `anno-tools.ts`.
 
 ### Recovery/incident path (recycle or crash)
 
@@ -389,14 +409,20 @@ Four named flows, each walked step by step below.
   `${CLAUDE_PLUGIN_ROOT}/src/mcp/vice/vice-proxy.ts` in `.mcp.json`).
 - Triggers: Claude Code spawning the `vice` MCP server once per session.
 - Responsibilities: global error handlers first, binary identity resolution,
-  tool registration from the committed stock manifest (manifest loop and the
-  `anno_*` family both → `buildViceTool()`), dispatch through
-  `stockDispatch.dispatchStock()`.
+  tool registration from the committed stock manifest (manifest loop →
+  `buildViceTool()`), dispatch through `stockDispatch.dispatchStock()`. The
+  `anno_*` family is registered nowhere here — D-13 (plan 65-02) deleted its
+  registration loop outright.
 
 **Annotation CLI:**
-- Location: `src/mcp/vice/anno-cli.ts`, reached as `vice-mcp anno <verb>` (or
-  `npx -y @henols/vice-mcp anno <verb>`) — that bin is the only surface that
-  resolves identically across the plugin route and the npm route (D-06).
+- Location: `src/mcp/vice/anno-cli.ts`, reached as `vice-mcp anno call
+  <name> --args JSON` (D-12) through `vice-proxy.ts`'s own `argv[2] ===
+  "anno"` branch, which runs before the MCP server starts. That bin resolves
+  identically across the plugin route and the npm route for PATH RESOLUTION
+  only (D-06) — the npm-installed route does not actually execute it: Node
+  refuses to type-strip a `.ts` file under `node_modules`, so `npx -y
+  @henols/vice-mcp anno <verb>` crashes today (D-14, 65-RESEARCH.md Critical
+  Finding 1). The plugin route and an in-repo checkout are unaffected.
 - Triggers: Skill scripts and humans working the annotation store without an
   MCP session.
 
@@ -437,9 +463,11 @@ Four named flows, each walked step by step below.
   transport left to fall through to — every tool reaches
   `stockDispatch.dispatchStock()`, which either matches a table entry and
   answers by name or matches nothing and refuses by name; there is no third
-  path. The only runners that touch no transport at all are
-  `vice_result_continue` and the `anno_*` family, and those exceptions are
-  asserted **by name** in `stock-dispatch.test.ts`.
+  path. The only runner on the MCP tool registry that touches no transport
+  at all is `vice_result_continue`, and that exception is asserted **by
+  name** in `stock-dispatch.test.ts`. The `anno_*` family is not a second
+  exception any more — it left the tool registry entirely (D-13, plan
+  65-02) and is reached only through the `anno` CLI's `call` verb.
 - **Derived tools are refused by name unless declared.** A derived tool must
   be listed in `STOCK_DERIVED_TOOLS` (`stock-derived.ts`, D-03); anything not
   declared there is refused at call time by `withDerivedTool()`

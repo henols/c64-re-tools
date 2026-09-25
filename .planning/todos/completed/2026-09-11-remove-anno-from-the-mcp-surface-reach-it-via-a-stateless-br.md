@@ -90,3 +90,38 @@ Either way, these are settled and should not be re-litigated:
 Open question for the owner before planning: which reading is intended, and should the
 `anno` CLI subcommand (`vice-proxy.ts:273`) remain as-is, become the primary surface, or
 also move behind the broker?
+
+## Resolution
+
+**Answered at the Phase 65 discussion (D-12/D-13, 65-CONTEXT.md), planned and executed
+in plan 65-02.** The owner took the "stateless, off-MCP" half of the original directive
+and explicitly **declined** the "via the broker" half.
+
+**Which reading was taken, and why (D-12, owner's reasoning verbatim from
+65-CONTEXT.md):** *"[The owner] departs from half of the owner's original directive,
+knowingly. The directive (this todo, 2026-09-11) read 'remove it from the mcp and it
+shall acces the broker as a state less call'. The owner took the 'stateless, off-MCP'
+half and declined the 'via the broker' half. That half predates v2.0.0, when getting the
+store to the host side of the container split was its motivation (the todo's
+'host-placement reading'). Under v2.0.0 a client-local store has nothing to cross. Anno
+never needed the host."*
+
+**Declined reading, with the owner's stated reason:** routing `anno` through the broker
+and moving the store to the host side was declined because it would have made annotation
+need a running broker, moved the store out of the project tree (and out of what a
+project can commit), and required inventing a project-identity key with no present need
+for one.
+
+**What shipped (plan 65-02):**
+- The 25→28-name (MEASURED) `anno_*` MCP tool family is deleted outright from
+  `tools/list` — no deprecated alias, no hidden registration (D-13).
+- `anno-cli.ts` gained one generic verb, `call <name> (--args JSON | --args-file FILE)`,
+  reaching every one of those names through `runAnnoTool()` unchanged (D-12).
+- The store stays exactly where it always was — the project's own `.c64-re-tools` tree,
+  opened and closed per call, with no emulator and no broker dependency.
+- Every skill that named an `anno_*` tool moved to `anno call <name>`, naming only the
+  plugin and in-repo invocation forms that run today (D-14) — the npm-installed route
+  for this bin stays broken and is tracked separately.
+
+See `.planning/phases/65-every-skill-script-through-the-one-endpoint-and-ci-with-it/65-02-SUMMARY.md`
+and `.planning/phases/65-every-skill-script-through-the-one-endpoint-and-ci-with-it/evidence/65-anno-surface-census.md`.

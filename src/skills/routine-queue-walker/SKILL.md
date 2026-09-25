@@ -30,18 +30,25 @@ then have to re-derive and replay. Reading fan-out — several agents *thinking*
 over answers they already got — is fine, and its value is reasoning
 bandwidth, never I/O.
 
+**How to run an anno verb.** Two forms run today. The plugin form is
+`node <plugin-root>/src/mcp/vice/vice-proxy.ts anno call <name> --args '<json>'`.
+The in-repo form is `node src/mcp/vice/vice-proxy.ts anno call <name> --args '<json>'`.
+The JSON object carries the same argument names each verb below documents.
+Use `--args-file <path>` for a large object, such as `anno_batch_execute`'s.
+The npm-installed route has no working `anno` command today.
+
 **Every call names its own store.** There is no ambient "current store" on
 this surface: pass `store` (a `.annostore` path) on every call. Also pass
 `image` on every call that derives its answer from the program's bytes rather
-than from the annotations. Those calls are `anno_get_binary_info`,
-`anno_read_region`, `anno_disassemble`, `anno_get_cross_references`,
-`anno_search` and `anno_get_address_details`. The store holds annotations and
+than from the annotations. Those calls are `anno call anno_get_binary_info`,
+`anno call anno_read_region`, `anno call anno_disassemble`, `anno call anno_get_cross_references`,
+`anno call anno_search` and `anno call anno_get_address_details`. The store holds annotations and
 never bytes, so an omitted image would read as a plausible success against
 whatever was recorded last.
 
 ## Phase 0 — context, and the packed-binary gate
 
-1. Call `anno_get_binary_info`. Keep `origin`, `size`, `system`, `filename`,
+1. Run `anno call anno_get_binary_info`. Keep `origin`, `size`, `system`, `filename`,
    `description` and `may_contain_undocumented_opcodes` — every later step
    quotes them.
 2. Read the returned `entropy` against the threshold of **7.5** carried in that
@@ -76,19 +83,19 @@ candidate is only meaningful once you know the bytes around it are code.
 A routine counts as **already documented** when its entry address carries a
 line comment. That is the only test. Do not guess from the label name.
 
-1. Call `anno_get_symbols` for all labels — user, system and external. Use
+1. Run `anno call anno_get_symbols` for all labels — user, system and external. Use
    an explicit `max_results` above the program's label count. `max_results`
    is REQUIRED on this surface and has no default. So a truncated answer is
    always a ceiling you chose. Keep the answer. Phase 3 reuses it.
-2. Call `anno_get_comments`, again with an explicit `max_results`. Keep that
+2. Run `anno call anno_get_comments`, again with an explicit `max_results`. Keep that
    too. The true match count rides beside the list. So truncation is a fact
    you are told rather than one you infer.
 3. **Candidate source A — cross-reference and block-derived, checked FIRST and
-   independently of whatever `anno_get_symbols` returned.** Call
-   `anno_get_blocks` with `block_type: "code"` for every code-typed range,
-   read each one with `anno_disassemble`, and collect every `jsr` target
+   independently of whatever `anno call anno_get_symbols` returned.** Call
+   `anno call anno_get_blocks` with `block_type: "code"` for every code-typed range,
+   read each one with `anno call anno_disassemble`, and collect every `jsr` target
    address. For each candidate target, check that it is a real routine. Also
-   gather its full caller list with `anno_get_cross_references`. Use a
+   gather its full caller list with `anno call anno_get_cross_references`. Use a
    generous `max_results`. This is also the call that fills in "called from"
    when you write up the entry in Phase 2.2. Every one of these targets is a
    routine candidate **regardless of whether it carries any label at all**.
@@ -104,7 +111,7 @@ line comment. That is the only test. Do not guess from the label name.
    any of these holds:
    - its name starts with `s_` (an auto-generated subroutine label).
    - it sits in a code region and is the target of at least one `JSR`
-     cross-reference (`anno_get_cross_references`).
+     cross-reference (`anno call anno_get_cross_references`).
    - it is a `p_XXXX` label sitting **inside a code region**. These come from
      split lo/hi immediate loads and from address tables. They are almost
      always chained raster-IRQ handlers, hardware- or shadow-vector handlers,
@@ -125,7 +132,7 @@ Take **one** entry at a time, to completion, before starting the next — the
 queue discipline this section owns. For each entry, run `c64-program-recon`
 `SKILL.md`'s **"Documenting one routine, end to end"** procedure (steps 1-7)
 against the entry's explicit address. That procedure has a 4096-byte
-`anno_read_region` cap. Above the cap, use consecutive ranges. Never use a
+`anno call anno_read_region` cap. Above the cap, use consecutive ranges. Never use a
 raised cap. That procedure also carries its tail-call and fall-through
 bounds rules. A `JMP shared_epilogue` still ends the routine. No return may
 mean fall-through — say so. Do not re-derive or paraphrase that procedure
@@ -136,7 +143,7 @@ one-line summary, and any uncertainty.
 
 ### 2.3 Refresh point
 
-When the queue is empty, read the store's revision with `anno_save_project`.
+When the queue is empty, read the store's revision with `anno call anno_save_project`.
 **It performs no write, and it exists to say so.** Every mutating verb on
 this surface has already committed and fsynced its own write by the time it
 returned. So there is nothing for an explicit save to flush. Record the
@@ -153,11 +160,11 @@ A symbol counts as **already documented** when it has a name a human chose.
 It also counts as documented when it is a well-known system address (hardware
 register, KERNAL entry point, OS variable).
 
-1. Call `anno_get_symbols` **again** — Phase 2 renamed things.
+1. Run `anno call anno_get_symbols` **again** — Phase 2 renamed things.
 2. **Candidate source A — cross-reference and block-derived, checked FIRST
    and independently of whatever label population exists.** Call
-   `anno_get_blocks` (with `include: ["enum_usage"]` where useful) for every
-   typed range. Then use `anno_get_cross_references` to find every address
+   `anno call anno_get_blocks` (with `include: ["enum_usage"]` where useful) for every
+   typed range. Then use `anno call anno_get_cross_references` to find every address
    referenced by one half of a split lo/hi pair. Also find any address
    referenced by an address table. An address table is a
    `lo_hi_address`/`hi_lo_address`/`lo_hi_word`/`hi_lo_word` range. The
@@ -186,7 +193,7 @@ register, KERNAL entry point, OS variable).
 ### 3.2 Walk it
 
 Same discipline as Phase 2: explicit address, one entry at a time, to
-completion. For each symbol, use `anno_get_cross_references` to find who
+completion. For each symbol, use `anno call anno_get_cross_references` to find who
 touches it. A symbol's meaning is what its callers do with it. Then rename
 it and comment it. Classify it plainly: flag, counter, pointer, state
 variable, buffer, table.
@@ -204,12 +211,12 @@ means, follow `src/skills/c64-memory-mapping/SKILL.md` rather than guessing.
 
 ### 3.3 Refresh point
 
-Read the revision again with `anno_save_project` and record it. No write is
+Read the revision again with `anno call anno_save_project` and record it. No write is
 performed. The writes already landed.
 
 ## Phase 4 — save and report
 
-1. Read the revision one last time with `anno_save_project` and quote it in
+1. Read the revision one last time with `anno call anno_save_project` and quote it in
    the report. This makes the pass attributable to an exact store state.
 2. Write the report. Four sections, all of them required:
 
@@ -378,7 +385,7 @@ exit code.
 - **A genuinely unresolvable target gets a `DECLINED:` comment, never a
   fabricated name.** When a referenced address's target is truly
   path-dependent or otherwise cannot be determined, record it with
-  `anno_set_comment`. Use the literal prefix `DECLINED:` naming what is
+  `anno call anno_set_comment`. Use the literal prefix `DECLINED:` naming what is
   unknown and why. `.annostore`'s own importer already uses this same
   convention for bank-state declines. This is never a second mechanism. A
   confident wrong label is worse than an absent one.
@@ -387,8 +394,8 @@ exit code.
   byte-derived block table calls `data` but the runtime evidence shows
   executing. Also, a review finds the runtime evidence correct. Or the
   disagreement is otherwise a reviewed, accepted fact rather than a
-  classification bug. When either holds, record it with `anno_set_comment`.
+  classification bug. When either holds, record it with `anno call anno_set_comment`.
   Use the literal prefix `DISAGREEMENT-ACCEPTED:` naming why. This is
   greppable, and the gate itself reads it as the resolution for that
-  address. Both conventions ride the existing `anno_set_comment` tool.
+  address. Both conventions ride the existing `anno call anno_set_comment` tool.
   Neither is a new mechanism.

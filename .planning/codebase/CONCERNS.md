@@ -296,10 +296,13 @@ Confirmed against the current tree. Do not re-raise these.
   `forwardToVice()` at `:2985`; the second call site in `gatherWedgeEvidence()` at `:1529`,
   function start `:1505`)
 - Why fragile: a derived tool placed behind `call()` receives **host-translated paths** and acts
-  on them inside the container. `CLAUDE.md`'s `MCP-02` names this and both call sites. The
-  `anno_*` family is safe *by construction* (it registers through `buildViceTool()` and never
-  reaches `forwardToVice()`), not by an interception — so the guarantee does not transfer to the
-  next family added.
+  on them inside the container. `CLAUDE.md`'s `MCP-02` names this and both call sites. MCP-02 is
+  now **moot for the `anno_*` family rather than merely satisfied** (D-13, plan 65-02): the
+  family left `tools/list` and `vice-proxy.ts`'s tool registry outright, so there is no
+  registration at all for `call()`/`forwardToVice()` to reach — not "registers through
+  `buildViceTool()` but never reaches `forwardToVice()`" any more, but unreachable from this
+  file's dispatch surface by construction. The guarantee still does not transfer to the next
+  family added.
 - Safe modification: re-derive the constraint before adding any derived tool. All four cited line
   numbers moved by −2 in plan 29-10; treat a mismatch as drift, not as a changed constraint.
 - Test coverage: `docs-linerefs.test.ts` checks the two `rewriteArguments()` citations

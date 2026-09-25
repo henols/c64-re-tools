@@ -220,8 +220,15 @@ program's own disassembly, created one enum variant per DISTINCT value actually 
 matching immediate-load address (named from the curated table above), and printed
 total/paired/unpaired register-store counts plus a per-enum variant count.
 
+**How to run an anno verb.** Two forms run today. The plugin form is
+`node <plugin-root>/src/mcp/vice/vice-proxy.ts anno call <name> --args '<json>'`.
+The in-repo form is `node src/mcp/vice/vice-proxy.ts anno call <name> --args '<json>'`.
+The JSON object carries the same argument names each verb below documents.
+Use `--args-file <path>` for a large object, such as `anno_batch_execute`'s.
+The npm-installed route has no working `anno` command today.
+
 **The by-hand route is open in the meantime, and it is the same one this skill already documents
-for any other enum.** `anno_create_project_enum` defines the variants and `anno_apply_enum_usage`
+for any other enum.** `anno call anno_create_project_enum` defines the variants and `anno call anno_apply_enum_usage`
 binds one to the accessing instruction's address — see "Name it" and "Document it" below. That is
 manual where `gen-enums` was bulk, but it writes exactly the same rows into the store.
 
@@ -259,7 +266,7 @@ that is *not* evidence of code — it is a property of the 6502's dense opcode
 map. A region earns the Code type only when at least one of these holds:
 
 - **It is a `JSR`/`JMP` target.** Already-analysed code contains `JSR $addr` or
-  `JMP $addr` landing in it. Check with `anno_get_cross_references` — it names
+  `JMP $addr` landing in it. Check with `anno call anno_get_cross_references` — it names
   the `image` as well as the `store`, takes a REQUIRED `max_results`, and unions
   three sources on every call without caching any of them: the instructions
   decoded fresh out of every range typed `code`, the typed split ADDRESS tables
@@ -283,9 +290,9 @@ Work the Undefined blocks in four passes, in this order. Do not interleave
 them. Each pass makes the next one cheaper.
 
 1. **Provably-reachable code** — read from the entry point of each region that
-   meets the proof bar above with `anno_disassemble`, then type the range you
-   actually checked as `code` with `anno_set_data_type`. **Reading and typing
-   are two calls on this surface, and that is deliberate:** `anno_disassemble`
+   meets the proof bar above with `anno call anno_disassemble`, then type the range you
+   actually checked as `code` with `anno call anno_set_data_type`. **Reading and typing
+   are two calls on this surface, and that is deliberate:** `anno call anno_disassemble`
    decodes fresh from the image bytes and writes nothing at all, so nothing is
    ever classified as code by a decoder's guess — the boundary you record is
    the one you read and judged.
@@ -297,7 +304,7 @@ them. Each pass makes the next one cheaper.
 
 #### Scope, and reading a region
 
-1. `anno_get_binary_info` first. Keep `origin`, `size`, `system`, `filename`,
+1. `anno call anno_get_binary_info` first. Keep `origin`, `size`, `system`, `filename`,
    `description` and `may_contain_undocumented_opcodes`.
    - `system` names the target machine. On a C64 the rest of this skill *is*
      the memory map you need — `lookup` any address a region touches before
@@ -309,14 +316,14 @@ them. Each pass makes the next one cheaper.
      `SAX`, `SLO`, `DCP`, `ISC`) may appear. **Do not misclassify those as
      data** — they are valid instructions. The flag is a human's hint, not a
      guarantee: some programs use them with the flag false.
-2. `anno_get_blocks` to see what is already classified, and focus on the
+2. `anno call anno_get_blocks` to see what is already classified, and focus on the
    Undefined entries. `max_results` is REQUIRED with no default. Pass a ceiling
    above the range count you expect and compare the returned count against it.
-3. Read each candidate region twice, through `anno_read_region` (which names
+3. Read each candidate region twice, through `anno call anno_read_region` (which names
    both the `store` and the `image`): `view:
    "hexdump"` shows the byte patterns, and **omitting `view`** gives the
    disassembly view — that is the parameter's documented default — which shows
-   how the region would decode. `anno_read_region` caps the combined byte count
+   how the region would decode. `anno call anno_read_region` caps the combined byte count
    at **4096 bytes** per call (`ANNO_READ_REGION_MAX_BYTES`). It refuses a
    request above the cap by name rather than truncating it — so walk a large binary in consecutive ranges.
    Chunks of **256–512 bytes** are the practical working size for
@@ -325,18 +332,18 @@ them. Each pass makes the next one cheaper.
 
 #### Applying the classification
 
-- **Code**: `anno_disassemble` from the entry-point address to READ, then
-  `anno_set_data_type` with `"code"` to RECORD the range you checked.
-  `anno_disassemble` performs no write, so it classifies nothing until you say
+- **Code**: `anno call anno_disassemble` from the entry-point address to READ, then
+  `anno call anno_set_data_type` with `"code"` to RECORD the range you checked.
+  `anno call anno_disassemble` performs no write, so it classifies nothing until you say
   so. Type only as far as you actually followed the flow — the end of a routine
   at its `RTS`/`RTI`/`JMP`, not "to the end of the region" — because the typed
-  `code` ranges are what `anno_get_cross_references` and `anno_search` decode
+  `code` ranges are what `anno call anno_get_cross_references` and `anno call anno_search` decode
   instructions out of later.
-- **Data**: batch the `anno_set_data_type` calls through
-  `anno_batch_execute`. A real classification pass is dozens of ranges, and one
+- **Data**: batch the `anno call anno_set_data_type` calls through
+  `anno call anno_batch_execute`. A real classification pass is dozens of ranges, and one
   batch is one open/commit/close rather than dozens.
 - **A wrong classification is not a disaster and does not need undoing.**
-  `anno_set_data_type` is idempotent over a range: set the correct type again
+  `anno call anno_set_data_type` is idempotent over a range: set the correct type again
   over the same range and the previous one is gone, and an identical repeat
   succeeds reporting `changed: false`. (Upstream reaches for an undo call here.
   This project does not expose one, and does not need to.)
@@ -350,11 +357,14 @@ them. Each pass makes the next one cheaper.
   ones a human recorded.
 - A split layout REFUSES an odd byte count — the low half and the high half must
   be the same length.
-- Re-read `anno_get_blocks` after each batch to check what actually landed.
+- Re-read `anno call anno_get_blocks` after each batch to check what actually landed.
   `max_results` is REQUIRED on that read and has no default. That read returns
   the true match count beside the list.
 
-Example of a valid data-only batch, then the code regions separately:
+Example of a valid data-only batch, then the code regions separately. Each pseudo-verb line below
+is one call through `anno call <name> --args '<json>'` (the batch line is
+`anno call anno_batch_execute --args-file batch.json`, since a real batch's argument object is too
+large for `--args`):
 
 ```
 anno_batch_execute:
@@ -369,7 +379,7 @@ then: anno_get_blocks max_results=500        # refresh
 
 | Block type | `data_type` | When |
 |---|---|---|
-| **Code** | `code` | Provably-executed instructions. Read the extent with `anno_disassemble` first — it writes nothing — then record exactly what you checked. |
+| **Code** | `code` | Provably-executed instructions. Read the extent with `anno call anno_disassemble` first — it writes nothing — then record exactly what you checked. |
 | Byte | `byte` | Raw 8-bit data: sprites, bitmaps, charsets, lookup tables, variables, unknowns |
 | Word | `word` | 16-bit little-endian values: 16-bit variables, math constants, SID frequencies |
 | Address | `address` | 16-bit LE pointers — jump tables, vector lists. Creates cross-references |
@@ -431,7 +441,7 @@ the answer upstream reached for was a `toggle_splitter` call this project never
 exposed.
 
 **The annotation store does not do that.** It never joins two rows of its own
-accord: adjacent same-type ranges stay two rows, and `anno_get_blocks` reports
+accord: adjacent same-type ranges stay two rows, and `anno call anno_get_blocks` reports
 them as two. A range you name that *spans* several existing rows still collapses
 to the one row you asked for — that is you asking, not the store deciding — and
 partial overlaps split and preserve the addresses outside your range rather than
@@ -442,7 +452,7 @@ So the working rules are now the ordinary ones:
 - **Do** rely on the block listing to tell two adjacent same-type tables apart.
   It can, provided you typed them as two calls rather than one spanning call.
 - **Do** still record the boundary in the annotations as well — an
-  `anno_set_label_name` at the start of the second table and a line comment on
+  `anno call anno_set_label_name` at the start of the second table and a line comment on
   both naming the extent you determined. A name and an evidence line survive a
   later retype. A row boundary does not.
 - **Do not** carry the old over-merge caveat into a report taken from this
@@ -450,8 +460,8 @@ So the working rules are now the ordinary ones:
 
 #### Labelling, and the report
 
-Name what you classified — `anno_set_label_name` on entry points, tables and
-strings — and comment it with `anno_set_comment` (`"line"` above,
+Name what you classified — `anno call anno_set_label_name` on entry points, tables and
+strings — and comment it with `anno call anno_set_comment` (`"line"` above,
 `"side"` beside). For the conventions to name things *by*, and for the
 comment-block format to use on a subroutine, follow the absorbed routine
 procedure in `src/skills/c64-program-recon/SKILL.md`.
@@ -463,7 +473,7 @@ Then report, and mean it:
 - **Every region still uncertain or still Undefined, by address.** This is the
   part that makes the pass reusable. A classification report with no uncertain
   regions on a real game is almost always a report that stopped looking.
-- The store revision, read with `anno_save_project`. That verb performs **no
+- The store revision, read with `anno call anno_save_project`. That verb performs **no
   write** — every classification call above already committed and fsynced its
   own — so quoting the revision pins the report to an exact store
   state rather than to "after the pass".
@@ -495,10 +505,10 @@ name.
 
 - **Always start from an explicit address**, `$XXXX` or its decimal
   equivalent. There is no editor cursor in this project's route, and upstream's
-  own text forbids relying on one anyway. `anno_get_address_details` composes
+  own text forbids relying on one anyway. `anno call anno_get_address_details` composes
   the symbol, comments, block type and cross-references for one explicit
   address in a single call.
-- `anno_get_binary_info` for `system`, `filename`, `description` and
+- `anno call anno_get_binary_info` for `system`, `filename`, `description` and
   `may_contain_undocumented_opcodes`. `filename` and `description` are how a
   symbol gets a *domain* name — `lap_counter` in a racing game, `lives` in a
   platformer — instead of a generic one. With undocumented opcodes in play,
@@ -507,7 +517,7 @@ name.
 
 #### 2. Gather the usage
 
-`anno_get_cross_references` on the address — naming the `store`, the `image` and
+`anno call anno_get_cross_references` on the address — naming the `store`, the `image` and
 a REQUIRED `max_results` — returns every site that touches it. Read the
 instruction at each site, because the instruction is the evidence:
 
@@ -551,8 +561,8 @@ points *to*, which is the thing the name cannot carry.
 **A flag or bitmask?** Only ever `$00`/`$01` or `$00`/`$FF`. Tested with `BIT`
 or `LDA`/`BEQ`. Name it as a predicate — `is_active`, `has_collided`. When the
 individual bits carry separate meanings, that is an enum: define it with
-`anno_create_project_enum` (`$01 = ACTIVE`, `$02 = COLLIDED`, `$04 =
-VISIBLE`) and apply it with `anno_apply_enum_usage` so every bitmask test
+`anno call anno_create_project_enum` (`$01 = ACTIVE`, `$02 = COLLIDED`, `$04 =
+VISIBLE`) and apply it with `anno call anno_apply_enum_usage` so every bitmask test
 reads as words rather than hex.
 
 **A counter or index?** `INC`/`DEC` inside a loop, compared against a limit
@@ -584,13 +594,13 @@ or writing the variable.
 > variable becomes `zp_`-prefixed too. The prefix makes the addressing mode
 > visible at every use site, which is the whole point.
 
-Apply it with `anno_set_label_name`.
+Apply it with `anno call anno_set_label_name`.
 
 #### 5. Document it
 
-- `anno_set_comment` `"line"` at the definition: the range it occupies, its
+- `anno call anno_set_comment` `"line"` at the definition: the range it occupies, its
   purpose, its bitfield layout if it has one.
-- `anno_set_comment` `"side"` at the interesting *uses*: why this read, why
+- `anno call anno_set_comment` `"side"` at the interesting *uses*: why this read, why
   this write. "Reset life counter" beside a `STA` is worth more than any name.
 - Define and apply enums where the values form a set (above).
 
@@ -615,7 +625,7 @@ still readable even though the store cannot format it.
   it. A classification with no evidence line is a guess wearing a name.
 - **Actions taken**: what you renamed, what you commented, which enums were
   defined or applied.
-- **Uncertainty**: if `anno_get_cross_references` returned nothing, say which
+- **Uncertainty**: if `anno call anno_get_cross_references` returned nothing, say which
   of the three explanations in step 2 you could and could not rule out.
 
 ## Troubleshooting
