@@ -1,0 +1,22 @@
+# SQLite Rules
+
+Only `anno-store.ts` imports `node:sqlite`. Everything else calls its
+functions.
+
+```ts
+db.prepare("insert into anno_range(start, end_inclusive, data_type, bank) values (?, ?, ?, ?)")
+  .run(start, endInclusive, dataType, bank);
+```
+
+- Bound parameters via `prepare().run()`. Never interpolate into
+  `exec()`. (Sole exception: `vacuum into '<path>'`, validated and
+  quote-doubled at its one site.)
+- Single quotes for SQL literals. Double quotes throw `no such column`.
+- Never load an extension, and never enable the constructor option.
+- Never set `journal_mode` or `synchronous`. They persist in the file,
+  and the default `delete` mode is the decision.
+- No FTS5 table. Indexed `LIKE 'prefix%'` is faster, and removing FTS5
+  later would be a migration.
+- No save/flush verb. Every accepted write commits before it returns.
+- Never cache a derived index/xref on disk. Recompute from the rows.
+- Schema version check is strict equality, with no migration.
