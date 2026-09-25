@@ -150,7 +150,9 @@ export function refusalMessage(fileName, rungs) {
   return (
     `could not resolve ${fileName}.\n` +
     `Tried, in order:\n${tried}\n` +
-    `Set VICE_MCP_DIR to the directory holding ${fileName}.`
+    `Set VICE_MCP_DIR to the directory holding ${fileName}, or install ${TARGET_PACKAGE} where this script can ` +
+    `resolve it: use the Claude Code plugin, or run the npm installer with --vendor. ` +
+    `Under npx alone nothing on this machine is resolvable.`
   );
 }
 

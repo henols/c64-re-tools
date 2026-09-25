@@ -1667,7 +1667,13 @@ export function buildHostToolArgv(
     // elsewhere, while `!source` resolution is about where the SOURCES live,
     // beside `sourcePath` itself. See `BuildHostToolArgvResult.cwd`'s own
     // doc-comment for the measured reason this field exists at all.
-    return { ok: true, toolPath: acmePath, argv, outputs: [prg], cwd: dirname(sourcePath) };
+    // `.prg` stays outputs[0]; the symbol list, the VICE label file and (unless
+    // suppressed) the report are real outputs too, and on the endpoint route
+    // only declared outputs cross back to the caller. A missing one is
+    // skipped by the digest loop, never an error.
+    const outputs = [prg, `${stem}.sym`, `${stem}.vs`];
+    if (!args.noReport) outputs.push(`${stem}.rep`);
+    return { ok: true, toolPath: acmePath, argv, outputs, cwd: dirname(sourcePath) };
   }
 
   if (request.tool === "ghidra.analyze") {

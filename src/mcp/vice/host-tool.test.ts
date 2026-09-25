@@ -2152,7 +2152,7 @@ test(
           const response = await hostToolOverControlPlane(stateDir, "acme.build", { source: "a.a", noReport: true });
           assert.equal(response.ok, true);
           if (!response.ok) return;
-          assert.equal(response.results.length, 1);
+          assert.equal(response.results.length, 3);
           const producedBytes = statSync(response.results[0].path);
           assert.ok(producedBytes.size > 0);
           const independentSha256 = createHash("sha256")
@@ -2189,8 +2189,8 @@ test(
           assert.equal(responseA.ok, true);
           assert.equal(responseB.ok, true);
           if (!responseA.ok || !responseB.ok) return;
-          assert.equal(responseA.results.length, 1);
-          assert.equal(responseB.results.length, 1);
+          assert.equal(responseA.results.length, 3);
+          assert.equal(responseB.results.length, 3);
           assert.notEqual(responseA.results[0].path, responseB.results[0].path);
           assertAllSpiesEmpty(spies);
         } finally {

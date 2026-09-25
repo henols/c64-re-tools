@@ -10,17 +10,19 @@
 // (`/usr/local/share/acme`, `/usr/share/acme`, `/usr/lib/acme`, `~/.acme`)
 // for its `<...>`-include library -- both are exactly what the owner's rule
 // says cannot work from inside a container. The spawn and the library probe
-// both moved to `src/mcp/vice/host-tool.mts`'s `acme.build` allowlist entry;
-// this file now only constructs a TYPED request and reads the produced files
-// back off the shared workspace tree.
+// both moved to `src/mcp/vice/host-tool.mts`'s `acme.build` allowlist entry.
+// This file constructs a TYPED request and hands it to the compiled endpoint
+// client, which uploads the source's directory to the broker over the fixed
+// endpoint and downloads the produced files into a per-build staging
+// directory beside the output; they are then moved to their final names.
 //
 // WHAT NOT TO DO: never reintroduce a local child-process call to the
 // assembler as a fallback when the seam is unreachable -- a fallback that
 // works on the developer's own host and silently fails inside a container is
 // the exact failure this seam exists to remove. A seam refusal is reported
 // and the build fails; it is never retried by spawning `acme` here.
-import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from "node:fs";
-import { dirname, join, basename, relative, isAbsolute, resolve, sep } from "node:path";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, mkdtempSync, renameSync, rmSync } from "node:fs";
+import { dirname, join, basename, relative, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 
@@ -29,21 +31,22 @@ import { resolveMcpModule, refusalMessage } from "../../c64-ram-capture/scripts/
 const SELF = fileURLToPath(import.meta.url);
 const HERE = dirname(SELF);
 
-/** The MCP-side module this script reaches -- never imported statically
- * (cross-package: this file ships in `@henols/c64-re-tools`, the seam client
- * ships in `@henols/vice-mcp`), only located via the ladder and invoked with
- * `process.execPath`, the interpreter already running this script, on an
- * in-tree module -- not an external host binary. */
-const HOST_TOOL_CLIENT_FILE = "host-tool-client.ts";
+/** The MCP-side module this script reaches -- the COMPILED endpoint client,
+ * never imported statically (cross-package: this file ships in
+ * `@henols/c64-re-tools`, the client ships in `@henols/vice-mcp`), only
+ * located via the ladder and invoked with `process.execPath`, the
+ * interpreter already running this script. Compiled `.mjs`, so it also runs
+ * from under `node_modules`, where Node never strips types. */
+const HOST_TOOL_CLIENT_FILE = "resources/host-tool-endpoint.mjs";
 
 /**
- * Invokes the host-tool execution seam for `tool`/`args`, rooted at
- * `repoRoot` for THIS invocation's workspace-relative path resolution.
+ * Invokes the endpoint client for `tool`/`args`. Relative paths in `args`
+ * resolve against `baseDir`; every downloaded result lands under `toolsRoot`.
  * Never rejects: a resolution failure, a spawn failure, or unparseable
  * output all resolve to `{ ok: false, message }` -- the same shape a tool's
  * own refusal uses, so a caller never needs a try/catch.
  */
-function invokeSeam(tool, args, repoRoot) {
+function invokeSeam(tool, args, { toolsRoot, baseDir }) {
   return new Promise((resolvePromise) => {
     const resolved = resolveMcpModule(HOST_TOOL_CLIENT_FILE);
     if (!resolved.ok) {
@@ -51,7 +54,7 @@ function invokeSeam(tool, args, repoRoot) {
       return;
     }
 
-    const cliArgs = [resolved.path, "run", "--tool", tool, "--args", JSON.stringify(args), "--repo-root", repoRoot];
+    const cliArgs = [resolved.path, "run", "--tool", tool, "--args", JSON.stringify(args), "--tools-root", toolsRoot, "--base-dir", baseDir];
     let child;
     try {
       child = spawn(process.execPath, cliArgs, { stdio: ["ignore", "pipe", "pipe"] });
@@ -69,46 +72,16 @@ function invokeSeam(tool, args, repoRoot) {
       const lines = stdout.split("\n").filter((line) => line.trim() !== "");
       const last = lines[lines.length - 1];
       if (last === undefined) {
-        resolvePromise({ ok: false, message: `host-tool-client.ts produced no output${stderr ? ` (stderr: ${stderr})` : ""}` });
+        resolvePromise({ ok: false, message: `host-tool-endpoint produced no output${stderr ? ` (stderr: ${stderr})` : ""}` });
         return;
       }
       try {
         resolvePromise(JSON.parse(last));
       } catch {
-        resolvePromise({ ok: false, message: `host-tool-client.ts produced non-JSON output: ${last}` });
+        resolvePromise({ ok: false, message: `host-tool-endpoint produced non-JSON output: ${last}` });
       }
     });
   });
-}
-
-/** The smallest common ancestor directory of two absolute paths -- computed,
- * never a fixed guess, so the request's `--repo-root` for THIS invocation is
- * always exactly big enough to contain both the source and the output
- * directory, and no bigger. This is what keeps a build entirely outside this
- * project's own tree (this repo's `skill-acme-build-cli.test.ts`'s own
- * scratch directories under the SYSTEM temp dir, and CI's own
- * `RUNNER_TEMP`-rooted scaffold check) working after the migration: the
- * seam's `resolveWorkspacePath()` refuses any path outside its given root, so
- * the root for one invocation is chosen to be wherever that invocation's own
- * files actually live, never a client-supplied absolute path sent as-is. */
-function commonAncestorDir(a, b) {
-  const partsA = resolve(a).split(sep);
-  const partsB = resolve(b).split(sep);
-  const common = [];
-  for (let i = 0; i < Math.min(partsA.length, partsB.length); i++) {
-    if (partsA[i] === partsB[i]) common.push(partsA[i]);
-    else break;
-  }
-  const joined = common.join(sep);
-  return joined === "" ? sep : joined;
-}
-
-/** `path.relative()`, except the "same directory" case yields `"."` rather
- * than `""` -- the seam's `resolveWorkspacePath()` refuses an empty string,
- * but accepts `"."` as a no-op relative reference to its own root. */
-function toRel(root, abs) {
-  const r = relative(root, abs);
-  return r === "" ? "." : r;
 }
 
 // How to refer to this script in hints, from wherever we were run.
@@ -187,45 +160,33 @@ async function build(src, opts) {
   if (!existsSync(desiredOutDirAbs)) mkdirSync(desiredOutDirAbs, { recursive: true });
   const desiredStem = desiredPrg.replace(/\.prg$/i, "");
 
-  // Workspace-relative request construction (A-03): the root for THIS
-  // invocation is the smallest ancestor containing both the source and the
-  // output directory -- see commonAncestorDir()'s own header.
-  const repoRoot = commonAncestorDir(dirname(srcAbs), desiredOutDirAbs);
-  const autoOutDirAbs = dirname(srcAbs); // the executor's own default when outDir is omitted
-
-  const args = { source: toRel(repoRoot, srcAbs) };
-  if (desiredOutDirAbs !== autoOutDirAbs) args.outDir = toRel(repoRoot, desiredOutDirAbs);
+  const args = { source: srcAbs };
   if (opts.format) args.format = opts.format;
   if (opts.setpc) args.setpc = opts.setpc;
   if (opts.defines && opts.defines.length) args.defines = opts.defines;
   if (opts.includes && opts.includes.length) args.includes = opts.includes;
   if (opts.noReport) args.noReport = true;
 
-  const response = await invokeSeam("acme.build", args, repoRoot);
-
-  if (!response.ok) {
-    // A seam-level refusal (unresolvable seam, unreachable broker, a bad
-    // request) -- never a local fallback that spawns the assembler itself.
-    die(response.message);
-  }
-
-  // The executor always names outputs after the SOURCE's own basename (never
-  // a caller-chosen stem) -- see host-tool.mts's buildHostToolArgv(). When
-  // `-o`/`--out-dir` asked for a DIFFERENT stem (a rename, not just a
-  // different directory), the produced files are moved here to the exact
-  // requested names -- a workspace file operation, not a second copy of
-  // argv construction.
-  const autoStem = join(desiredOutDirAbs, basename(srcAbs).replace(/\.(a|asm|s)$/i, ""));
-  if (autoStem !== desiredStem) {
-    for (const ext of [".prg", ".sym", ".vs", ".rep"]) {
-      const from = `${autoStem}${ext}`;
-      const to = `${desiredStem}${ext}`;
-      if (existsSync(from) && from !== to) {
-        mkdirSync(dirname(to), { recursive: true });
-        renameSync(from, to);
-      }
+  // Results download into a per-build staging directory beside the output,
+  // so the final move is a same-filesystem rename, and the directory is
+  // removed on every path.
+  const toolsRoot = mkdtempSync(join(desiredOutDirAbs, ".acme-build-"));
+  let response;
+  try {
+    response = await invokeSeam("acme.build", args, { toolsRoot, baseDir: process.cwd() });
+    // The executor names outputs after the SOURCE's own basename; each
+    // downloaded result is moved to the requested stem with its extension.
+    for (const result of response.ok ? response.results ?? [] : []) {
+      const ext = (basename(result.path).match(/\.(prg|sym|vs|rep)$/i) ?? [])[0];
+      if (!ext) continue;
+      renameSync(result.path, `${desiredStem}${ext.toLowerCase()}`);
     }
+  } finally {
+    rmSync(toolsRoot, { recursive: true, force: true });
   }
+  // A seam-level refusal (unresolvable client, unreachable broker, a bad
+  // request) -- never a local fallback that spawns the assembler itself.
+  if (!response.ok) die(response.message);
 
   const stem = desiredStem;
   const prg = desiredPrg;

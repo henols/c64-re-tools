@@ -86,6 +86,10 @@ export interface StartHarnessBrokerOptions {
   /** How many times to retry with a freshly allocated port when the child
    * exits early naming the port as already in use. */
   maxPortRetries?: number;
+  /** Extra environment for the BROKER process only (e.g. `ACME: ""` to make
+   * the broker's own ACME library lookup come up empty). Applied after the
+   * inherited environment and before the harness's own keys. */
+  env?: Record<string, string>;
 }
 
 export interface HarnessBroker {
@@ -118,6 +122,7 @@ export async function startHarnessBroker(options: StartHarnessBrokerOptions = {}
 
     const env: NodeJS.ProcessEnv = {
       ...process.env,
+      ...options.env,
       VICE_BROKER_HOME: home,
       VICE_BROKER_CONTROL_PORT: String(port),
       VICE_SUPERVISOR_ALLOW_CONTAINER: "1",

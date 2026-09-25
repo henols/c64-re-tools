@@ -39,7 +39,7 @@
 // check is exit status plus the produced artefact, never an empty-stderr
 // assertion -- ACME emits legal warnings (e.g. "Label name not in leftmost
 // column") on otherwise-successful builds.
-import { test } from "node:test";
+import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -48,6 +48,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { ACME_BIN, acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
+import { startHarnessBroker, type HarnessBroker } from "./broker-harness.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRIPT_PATH = join(HERE, "..", "..", "skills", "acme-build", "scripts", "acme.mjs");
@@ -64,55 +65,30 @@ test("acme.mjs is resolved at the expected relative path", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Subprocess helper. `libraryFree: true` clears ACME in the child env,
-// mirroring CI's `ACME= node ...` invocation and findAcmeLib()'s own
-// "falsy env var -> not tried" semantics.
-//
-// hostRouteChildEnv() additionally strips CONTAINER_WORKSPACE_PATH from the
-// copy. This file asserts that a REAL assembler on THIS machine produced a
-// real program file on disk -- a host-route claim, and the variable can
-// still arrive ambiently from a genuine devcontainer or a developer's own
-// exported shell. If it did, it would route the child to a control plane
-// with no broker behind it, turning every assembling case into a transport
-// refusal rather than a build result. Stripping it removes ONE spoofable
-// signal and cannot mask a genuine container, which fires four others. The
-// container-route behaviour of the seam is already covered by the
-// real-control-plane cases in host-tool-transport.test.ts and is not this
-// file's subject.
+// Subprocess helper. acme.mjs reaches ACME only through the broker's fixed
+// endpoint, so the assembling cases run against this file's OWN harness
+// broker (never a machine broker), started once when ACME is available. The
+// broker runs with ACME="" so its own <...>-include library lookup comes up
+// empty -- the library-free build CI checks. `libraryFree` is kept on the
+// call sites for readability; the broker's environment is what enforces it.
 // ---------------------------------------------------------------------------
 
-function hostRouteChildEnv(opts: { libraryFree?: boolean } = {}): NodeJS.ProcessEnv {
-  const env = { ...process.env };
-  if (opts.libraryFree) env.ACME = "";
-  delete env.CONTAINER_WORKSPACE_PATH;
-  return env;
-}
+let broker: HarnessBroker | null = null;
 
-function runAcme(args: string[], opts: { libraryFree?: boolean } = {}): { status: number | null; stdout: string; stderr: string } {
-  const env = hostRouteChildEnv(opts);
+before(async () => {
+  if (SKIP_REASON) return;
+  broker = await startHarnessBroker({ env: { ACME: "" } });
+});
+
+after(async () => {
+  await broker?.stop();
+});
+
+function runAcme(args: string[], _opts: { libraryFree?: boolean } = {}): { status: number | null; stdout: string; stderr: string } {
+  const env = broker ? broker.childEnv : process.env;
   const r = spawnSync(process.execPath, [SCRIPT_PATH, ...args], { encoding: "utf8", env });
   return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
 }
-
-test(
-  "hostRouteChildEnv() strips CONTAINER_WORKSPACE_PATH from the child environment even when the PARENT process has it set, while leaving an unrelated inherited key untouched (so the helper cannot degrade into returning an empty environment)",
-  () => {
-    const previous = process.env.CONTAINER_WORKSPACE_PATH;
-    process.env.CONTAINER_WORKSPACE_PATH = "/synthetic-parent-workspace";
-    try {
-      const env = hostRouteChildEnv({ libraryFree: true });
-      assert.equal(
-        Object.prototype.hasOwnProperty.call(env, "CONTAINER_WORKSPACE_PATH"),
-        false,
-        "hostRouteChildEnv() must remove CONTAINER_WORKSPACE_PATH from the returned environment",
-      );
-      assert.equal(env.PATH, process.env.PATH, "an unrelated inherited key (PATH) must still be present and unchanged");
-    } finally {
-      if (previous === undefined) delete process.env.CONTAINER_WORKSPACE_PATH;
-      else process.env.CONTAINER_WORKSPACE_PATH = previous;
-    }
-  },
-);
 
 function withTempDir<T>(fn: (dir: string) => T): T {
   const dir = mkdtempSync(join(tmpdir(), "acme-cli-test-"));

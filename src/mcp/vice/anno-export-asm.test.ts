@@ -4252,7 +4252,7 @@ test(
     assert.equal(response.ok, true, response.ok ? "" : response.message);
     if (!response.ok) return;
     assert.equal(response.exitStatus, 0, "real ACME must exit 0 when its cwd is the tree's own directory");
-    assert.equal(response.results.length, 1);
+    assert.equal(response.results.length, 3);
     const producedBytes = new Uint8Array(readFileSync(response.results[0]!.path));
     assert.deepEqual(producedBytes, result.expectedBytes, "the produced .prg bytes must be octet-identical to bytes taken from the image");
   },
@@ -4355,7 +4355,7 @@ test(
     assert.equal(response.ok, true, response.ok ? "" : response.message);
     if (!response.ok) return;
     assert.equal(response.exitStatus, 0, "real ACME must exit 0 assembling the multi-scope-plus-unscoped tree");
-    assert.equal(response.results.length, 1);
+    assert.equal(response.results.length, 3);
     const producedBytes = new Uint8Array(readFileSync(response.results[0]!.path));
     assert.deepEqual(producedBytes, result.expectedBytes, "the produced bytes must be octet-identical to bytes taken from the image");
   },
@@ -4866,7 +4866,7 @@ test(
     assert.equal(response.ok, true, response.ok ? "" : response.message);
     if (!response.ok) return;
     assert.equal(response.exitStatus, 0, "a tree carrying an external_file block must assemble cleanly");
-    assert.equal(response.results.length, 1);
+    assert.equal(response.results.length, 3);
     const producedBytes = new Uint8Array(readFileSync(response.results[0]!.path));
     assert.deepEqual(producedBytes, result.expectedBytes, "the produced bytes must be octet-identical to bytes taken from the image");
   },
@@ -5225,7 +5225,7 @@ test(
     assert.equal(response.ok, true, response.ok ? "" : response.message);
     if (!response.ok) return;
     assert.equal(response.exitStatus, 0, "a forward cross-file reference must assemble at exit 0");
-    assert.equal(response.results.length, 1);
+    assert.equal(response.results.length, 3);
     const producedBytes = new Uint8Array(readFileSync(response.results[0]!.path));
     assert.deepEqual(producedBytes, result.expectedBytes, "the forward cross-file reference must reassemble byte-identically");
   },
@@ -5246,7 +5246,7 @@ test(
     assert.equal(response.ok, true, response.ok ? "" : response.message);
     if (!response.ok) return;
     assert.equal(response.exitStatus, 0, "a backward cross-file reference must assemble at exit 0");
-    assert.equal(response.results.length, 1);
+    assert.equal(response.results.length, 3);
     const producedBytes = new Uint8Array(readFileSync(response.results[0]!.path));
     assert.deepEqual(producedBytes, result.expectedBytes, "the backward cross-file reference must reassemble byte-identically");
   },
@@ -5604,7 +5604,7 @@ test(
     assert.equal(response.ok, true, response.ok ? "" : response.message);
     if (!response.ok) return;
     assert.equal(response.exitStatus, 0, "a paired-symbol split-address table must assemble cleanly");
-    assert.equal(response.results.length, 1);
+    assert.equal(response.results.length, 3);
     const producedBytes = new Uint8Array(readFileSync(response.results[0]!.path));
     assert.deepEqual(producedBytes, result.expectedBytes, "the produced bytes must be octet-identical to bytes taken from the image");
   },
@@ -5628,7 +5628,7 @@ test(
     assert.equal(response.ok, true, response.ok ? "" : response.message);
     if (!response.ok) return;
     assert.equal(response.exitStatus, 0, "a hi_lo_address paired-symbol table must assemble cleanly");
-    assert.equal(response.results.length, 1);
+    assert.equal(response.results.length, 3);
     const producedBytes = new Uint8Array(readFileSync(response.results[0]!.path));
     assert.deepEqual(producedBytes, result.expectedBytes, "the produced bytes must be octet-identical to bytes taken from the image");
   },
@@ -5903,7 +5903,7 @@ test(
     assert.equal(response.ok, true, response.ok ? "" : response.message);
     if (!response.ok) return;
     assert.equal(response.exitStatus, 0, "the relocated tree must still assemble cleanly");
-    assert.equal(response.results.length, 1);
+    assert.equal(response.results.length, 3);
     const producedBytes = new Uint8Array(readFileSync(response.results[0]!.path));
     assert.deepEqual(producedBytes, afterResult.expectedBytes, "the produced bytes must be octet-identical to bytes taken from the moved image");
     assert.ok(after.storePath.length > 0, "precondition: the 'after' fixture must actually exist");

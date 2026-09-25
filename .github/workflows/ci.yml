@@ -103,20 +103,9 @@ jobs:
         # this step gates every later step including both publish paths, and
         # a fast dedicated failure is worth the second second.
         #
-        # The measured cause of the long-standing break: this job used to set
-        # workspace variables for path translation job-wide, and those same
-        # variables were also read by the container detector as proof of
-        # being inside a container, which routed this host-side invocation to
-        # a control plane that has no broker behind it on a runner. The job
-        # no longer declares a container environment at all -- the
-        # detector's third signal is a devcontainer-only variable and a
-        # runner is a host, so this step now runs under an environment that
-        # matches the machine it actually is. What still guards the original
-        # break: this step's own test file's host-route child-environment
-        # helper (hostRouteChildEnv()), which carries its own never-skipped
-        # contract case, plus the workflow assertions in
-        # ci-guardrails.test.mjs that fail if the container-workspace
-        # declaration ever returns.
+        # The test file starts its OWN harness broker (broker-harness.ts) and
+        # runs acme.mjs against it over the fixed endpoint, so this step needs
+        # no machine broker and no container environment.
         working-directory: src/mcp/vice
         env:
           VICE_REQUIRE_ACME: "1"

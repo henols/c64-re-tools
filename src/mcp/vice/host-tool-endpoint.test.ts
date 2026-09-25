@@ -74,7 +74,7 @@ test("Task 1: acme.build runs through the fixed endpoint, one file in, one resul
     if (!result.ok) return;
     assert.equal(result.tool, "acme.build");
     assert.equal(result.exitStatus, 0, `expected exitStatus 0, stderrTail: ${(result as { stderrTail?: string }).stderrTail}`);
-    assert.equal(result.results.length, 1);
+    assert.equal(result.results.length, 4);
 
     const resultPath = result.results[0]!.path;
     assert.ok(resultPath.startsWith(`${join(toolsRoot, "builds")}/`), `expected result under ${join(toolsRoot, "builds")}/, got ${resultPath}`);
@@ -353,7 +353,7 @@ test("Task 1 Test 6: acme.build with a subdirectory !source and a separate -I tr
     assert.equal(result.ok, true, `expected ok:true, got ${JSON.stringify(result)}`);
     if (!result.ok) return;
     assert.equal(result.exitStatus, 0, `expected exitStatus 0, stderrTail: ${(result as { stderrTail?: string }).stderrTail}`);
-    assert.equal(result.results.length, 1);
+    assert.equal(result.results.length, 4);
 
     const resultPath = result.results[0]!.path;
     const bytes = readFileSync(resultPath);
@@ -615,7 +615,7 @@ test("Task 3 Test 1: a build whose source directory also holds data.bin and note
 
     assert.equal(result.ok, true, result.ok ? "" : JSON.stringify(result));
     if (!result.ok) return;
-    assert.equal(result.results.length, 1, "only the declared .prg output may appear in results[]");
+    assert.equal(result.results.length, 4, "only the declared ACME outputs (.prg, .sym, .vs, .rep) may appear in results[]");
     assert.ok(result.results[0]!.path.endsWith(".prg"));
   } finally {
     await broker.stop();
@@ -844,7 +844,7 @@ test("Task 3 Test 6: two concurrent downloads of different content to the SAME d
       const runResult = await session.run("acme.build", { source: fileHandle, noReport: true }, stageResult.request);
       if (!runResult.ok) throw new Error(runResult.reason);
       const response = runResult.response as { ok: boolean; results?: Array<{ handle: string; sha256: string; byteLength: number }> };
-      if (!response.ok || !Array.isArray(response.results) || response.results.length !== 1) {
+      if (!response.ok || !Array.isArray(response.results) || response.results.length !== 3) {
         throw new Error(`buildOnce("${tag}"): unexpected run response ${JSON.stringify(response)}`);
       }
       return { session, result: response.results[0]! };

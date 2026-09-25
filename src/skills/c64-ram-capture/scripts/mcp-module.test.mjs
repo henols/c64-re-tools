@@ -71,6 +71,15 @@ test("resolveMcpModule: no per-file special-casing -- host-tool-client.ts resolv
   });
 });
 
+test("resolveMcpModule: the compiled endpoint client resolves through the in-repo rung", () => {
+  withViceMcpDir(undefined, () => {
+    const result = resolveMcpModule("resources/host-tool-endpoint.mjs");
+    assert.equal(result.ok, true);
+    assert.equal(result.rung, "in-repo relative path");
+    assert.ok(result.path.endsWith(join("mcp", "vice", "resources", "host-tool-endpoint.mjs")));
+  });
+});
+
 test("resolveMcpModule: no rung resolves -- refuses by name, naming every rung tried and instructing VICE_MCP_DIR", () => {
   const dir = mkdtempSync(join(tmpdir(), "mcp-module-test-empty-"));
   try {
@@ -109,4 +118,5 @@ test("refusalMessage: builds text naming every rung and the instruction to set V
   assert.match(message, /could not resolve thing\.ts/);
   assert.ok(message.includes("/some/path/thing.ts"));
   assert.match(message, /Set VICE_MCP_DIR to the directory holding thing\.ts/);
+  assert.match(message, /--vendor/, "the refusal names the npm-installer remedy");
 });
