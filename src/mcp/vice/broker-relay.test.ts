@@ -46,7 +46,6 @@ import {
 } from "./broker-relay.mts";
 import {
   startControlListener,
-  newControlToken,
   type StartControlListenerResult,
   type AcquireOutcome,
   type StatusInstanceEntry,
@@ -324,7 +323,6 @@ function setupMultiGrantBrokerState(grants: Array<{ port: number; targetId: stri
 interface RelayTestBrokerContext {
   listener: StartControlListenerResult;
   listenerPort: number;
-  token: string;
   state: BrokerState;
   /** The scratch directory THIS broker's own handleRelayDeath() writes
    * incidents into -- absent when the caller supplied its own `deps`
@@ -355,18 +353,16 @@ interface RelayTestBrokerContext {
 async function startRelayListenerForState(
   state: BrokerState,
   relayDeathDeps?: TestHandleRelayDeathDeps,
-): Promise<{ listener: StartControlListenerResult; token: string; incidentsDir: string | null }> {
+): Promise<{ listener: StartControlListenerResult; incidentsDir: string | null }> {
   let incidentsDir: string | null = null;
   let deps = relayDeathDeps;
   if (!deps) {
     incidentsDir = mkdtempSync(join(tmpdir(), "vice-relay-incidents-"));
     deps = { writeIncident: (record) => writeBrokerIncident(record, { dir: incidentsDir as string }) };
   }
-  const token = newControlToken();
   const listener = await startControlListener({
     host: "127.0.0.1",
     port: 0,
-    token,
     onAcquire: async (): Promise<AcquireOutcome> => ({ ok: false, reason: "internal" }),
     onRelease: () => {},
     onStatus: (): StatusInstanceEntry[] => [],
@@ -387,7 +383,7 @@ async function startRelayListenerForState(
     // is the home for `operation` coverage).
     onOperation: () => ({ ok: true }),
   });
-  return { listener, token, incidentsDir };
+  return { listener, incidentsDir };
 }
 
 async function withRelayTestBroker<T>(
@@ -397,9 +393,9 @@ async function withRelayTestBroker<T>(
   relayDeathDeps?: TestHandleRelayDeathDeps,
 ): Promise<T> {
   const state = setupBrokerState(emulatorPort, targetId);
-  const { listener, token, incidentsDir } = await startRelayListenerForState(state, relayDeathDeps);
+  const { listener, incidentsDir } = await startRelayListenerForState(state, relayDeathDeps);
   try {
-    return await fn({ listener, listenerPort: listener.port, token, state, incidentsDir });
+    return await fn({ listener, listenerPort: listener.port, state, incidentsDir });
   } finally {
     listener.server.close();
     if (incidentsDir) rmSync(incidentsDir, { recursive: true, force: true });
@@ -415,9 +411,9 @@ async function withMultiRelayTestBroker<T>(
   relayDeathDeps?: TestHandleRelayDeathDeps,
 ): Promise<T> {
   const state = setupMultiGrantBrokerState(grants);
-  const { listener, token, incidentsDir } = await startRelayListenerForState(state, relayDeathDeps);
+  const { listener, incidentsDir } = await startRelayListenerForState(state, relayDeathDeps);
   try {
-    return await fn({ listener, listenerPort: listener.port, token, state, incidentsDir });
+    return await fn({ listener, listenerPort: listener.port, state, incidentsDir });
   } finally {
     listener.server.close();
     if (incidentsDir) rmSync(incidentsDir, { recursive: true, force: true });

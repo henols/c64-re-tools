@@ -21,42 +21,6 @@ import { resolve, join } from "node:path";
 import { readFileSync } from "node:fs";
 
 import { supervisorDir } from "./repo-root.ts";
-import { isInsideContainer, type ContainerGuardDeps } from "./container-guard.mts";
-
-// The address of the host machine -- the ONE definition every consumer that
-// needs to build a host-facing URL from a bare port reads, instead of each
-// inlining its own `process.env.VICE_MCP_HOST || "host.docker.internal"`
-// copy (there were three such copies before vice.ts's own predecessor
-// consolidated them). A FUNCTION, not a module-level constant, so it stays
-// sensitive to a runtime env override -- some tests mutate
-// process.env.VICE_MCP_HOST across cases within the SAME process, which a
-// constant captured once at import time would silently stop honouring.
-//
-// CONTAINER-AWARE (2026-08-05, developer instruction). The default was
-// previously the bare literal "host.docker.internal", which is correct in
-// exactly ONE of the two environments this code runs in: it is a
-// Docker-provided alias, published into the container by
-// .devcontainer/devcontainer.json's `--add-host=host.docker.internal:host-gateway`,
-// and it does not resolve on the host at all. Host-bound modules genuinely
-// do consume this tree (vice-broker.mts references vice-broker-client), so
-// a single unconditional answer was wrong for one side by construction.
-//
-// Detection is delegated to container-guard.mts's isInsideContainer() rather
-// than re-derived -- see that function's own comment for why a second
-// detector is a bug waiting to happen here.
-//
-// Non-container branch is 127.0.0.1 rather than "localhost" DELIBERATELY:
-// "localhost" may resolve to ::1 first, and the broker's bound set is IPv4
-// loopback plus its enumerated bridge-gateway addresses -- IPv4-only end to
-// end (broker-control.mts's documented bind), so an IPv6 loopback connect
-// would be refused by a listener that is in fact running. An explicit IPv4
-// literal cannot pick the wrong family. It also classifies as
-// `loopback` under vice-broker-client.ts's classifyConnectHost(), which
-// that resolver deliberately does NOT refuse, and is not `wildcard_bind`,
-// so it does not trip the pre-connect refusal.
-export function mcpHost(deps?: ContainerGuardDeps): string {
-  return process.env.VICE_MCP_HOST || (isInsideContainer(deps) ? "host.docker.internal" : "127.0.0.1");
-}
 
 // Where tools/vice-supervisor.sh (host-only) writes its restart epoch --
 // resolved via repo-root.ts's supervisorDir() (never a fixed hop count off
@@ -106,7 +70,7 @@ export interface ActiveInstance {
 // allocated band (6600+, DEFAULT_BASE_PORT in broker-state.mts).
 const LEGACY_DEFAULT_PORT = 6510;
 
-let activeUrl: string = `http://${mcpHost()}:${LEGACY_DEFAULT_PORT}/mcp`;
+let activeUrl: string = `http://127.0.0.1:${LEGACY_DEFAULT_PORT}/mcp`;
 let activeEpochFile: string = EPOCH_FILE;
 let activePort: number = LEGACY_DEFAULT_PORT;
 // Not part of the seam redirect itself (nothing in this file reads this to

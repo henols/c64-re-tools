@@ -1,6 +1,7 @@
-// The host/container path seam is gone, not merely unused. The broker runs
-// on the host, clients reach it on the fixed endpoint, and files cross the
-// socket as bytes, so no module translates a path between the two sides.
+// The host/container seam is gone, not merely unused. The broker runs on the
+// host, clients reach it on the fixed endpoint with a `hello` (no discovery
+// file, no token), and files cross the socket as bytes, so no module
+// translates a path between the two sides.
 //
 // This test proves the deleted modules stay deleted: none is on disk, none is
 // shipped or compiled, no production source names one, and no production
@@ -35,6 +36,14 @@ const SEAM_IDENTIFIERS: { name: string; re: RegExp }[] = [
   { name: "SET_ENV_HINT", re: /\bSET_ENV_HINT\b/ },
   { name: 'op: "host_tool"', re: /\bop:\s*["']host_tool["']/ },
   { name: "a HOST_WORKSPACE_PATH read", re: /\.HOST_WORKSPACE_PATH\b|\[\s*["']HOST_WORKSPACE_PATH["']\s*\]/ },
+  { name: "mcpHost", re: /\bmcpHost\b/ },
+  { name: "isInsideContainer", re: /\bisInsideContainer\b/ },
+  { name: "openBrokerControl", re: /\bopenBrokerControl\b/ },
+  { name: "acquireOverControlPlane", re: /\bacquireOverControlPlane\b/ },
+  { name: "readBrokerLiveness", re: /\breadBrokerLiveness\b/ },
+  { name: "newControlToken", re: /\bnewControlToken\b/ },
+  { name: "broker.json", re: /\bbroker\.json\b/ },
+  { name: "control_token", re: /\bcontrol_token\b/ },
 ];
 
 /** A string literal naming a deleted module with any source or compiled
@@ -114,12 +123,13 @@ function scannedFiles(): string[] {
  * new module never reds this test; it fails only if the walk breaks. */
 const SCANNED_FILE_FLOOR = 150;
 
-test("the deleted modules are absent from src/mcp/vice and resources/", () => {
+test("the deleted modules and the broker.json fixture are absent from src/mcp/vice and resources/", () => {
   for (const stem of DELETED_STEMS) {
     for (const file of [`${stem}.ts`, `${stem}.mts`, `${stem}.test.ts`, join("resources", `${stem}.mjs`)]) {
       assert.equal(existsSync(join(HERE, file)), false, `${file} must stay deleted`);
     }
   }
+  assert.equal(existsSync(join(HERE, "fixtures", "bash-broker.json")), false, "the frozen broker.json fixture must stay deleted");
 });
 
 test("no production source names a deleted module or uses a seam identifier", () => {
@@ -157,6 +167,14 @@ test("planted violations: each deleted-module shape and each seam identifier is 
     'send({ op: "host_tool", tool });',
     "const root = process.env.HOST_WORKSPACE_PATH;",
     'const root = env["HOST_WORKSPACE_PATH"];',
+    "const host = mcpHost();",
+    "if (isInsideContainer()) return;",
+    "await openBrokerControl(dir);",
+    "await acquireOverControlPlane(dir);",
+    "readBrokerLiveness(path);",
+    "const token = newControlToken();",
+    'const path = join(dir, "broker.json");',
+    "record.control_token = token;",
   ];
   for (const src of planted) {
     assert.notDeepEqual(violationsIn(src), [], `planted source must be caught: ${src}`);
@@ -172,6 +190,9 @@ test("planted non-violations: comments, the live host_tool_* ops and look-alike 
     "const hostPathname = url.pathname;",
     'const file = "transfer-paths.ts";',
     "delete env.HOST_WORKSPACE_PATH_UNRELATED;",
+    "const session = await dialControlSession({ port });",
+    'const path = join(dir, "backend.json");',
+    "// broker.json and control_token were removed",
   ];
   for (const src of clean) {
     assert.deepEqual(violationsIn(src), [], `clean source must not be caught: ${src}`);

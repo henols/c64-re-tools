@@ -864,13 +864,12 @@ export interface SweepOrphanedStagingOptions {
  * connection closing (SESS-03/SESS-04's handleRelease(), already wired).
  *
  * This function may be called only by a broker that has won the
- * control-port bind, and only BEFORE that broker publishes its control
- * token (vice-broker.mts's own call site sits between the confirmed bind
- * and the first writeBrokerRecordFile()). Given that precondition, and only
- * then, every directory still present under the staging root is residue a
+ * control-port bind, and only before it serves a single request
+ * (vice-broker.mts calls it synchronously, with no `await` between the
+ * confirmed bind and the call). Given that precondition, and only then,
+ * every directory still present under the staging root is residue a
  * crashed broker left -- no broker that shut down cleanly leaves one
- * behind, and this process's own sessions cannot exist yet because nothing
- * can hold its token. Every directory found is removed unconditionally and
+ * behind, and this process's own sessions cannot exist yet. Every directory found is removed unconditionally and
  * recursively.
  *
  * The defect this precondition exists to prevent: a second broker

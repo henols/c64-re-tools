@@ -74,7 +74,6 @@ import { ACQUIRE_TIMEOUT_MS } from "./vice-broker-client.ts";
 // established for the client side.
 import {
   startControlListener,
-  newControlToken,
   type AcquireOutcome,
   type RelayAttachOutcome,
   type StageFileOutcome as BrokerStageFileOutcome,
@@ -213,16 +212,16 @@ interface StandInServer {
 const OPEN_SERVERS = new Set<Server>();
 const OPEN_CHILDREN = new Set<ChildProcessWithoutNullStreams>();
 
-// A per-file scratch machine-level root (Phase 64, plan 64-10, G-64-1):
-// every proxy this file spawns now defaults to VICE_BROKER_HOME pointed
-// here, so a test that names neither VICE_POOL_DIR nor VICE_BROKER_HOME of
-// its own no longer falls through to brokerStateDir()'s real-homedir
-// default -- see startProxy()'s own comment for where this is applied, and
-// the "harness isolation" test below for the proof. Created ONCE at module
-// load (not per-test) since it is read-only from this suite's own
-// perspective: nothing here ever expects a broker.json to actually exist at
-// this path, only that discovery finds nothing there.
+// A per-file scratch machine-level root: every proxy this file spawns
+// defaults VICE_BROKER_HOME here, so no test falls through to
+// brokerStateDir()'s real-homedir default. See startProxy().
 const DEFAULT_BROKER_HOME = mkdtempSync(join(tmpdir(), "vice-proxy-test-broker-home-"));
+
+// The control port every proxy this file spawns dials unless a test names
+// its own. Nothing listens on it, so a test that never starts a fixture
+// listener gets the dial-failure answer -- never whatever real broker this
+// machine may be running on the default port (19510).
+const DEFAULT_CONTROL_PORT = await unusedPort();
 
 after(() => {
   rmSync(DEFAULT_BROKER_HOME, { recursive: true, force: true });
@@ -316,26 +315,36 @@ async function listen(server: Server): Promise<number> {
   return (server.address() as AddressInfo).port;
 }
 
+/** A loopback port nothing listens on: bound once, then closed. A test
+ * passes it to the proxy as VICE_BROKER_CONTROL_PORT, then either leaves it
+ * empty (the dial-failure answer) or binds a fixture listener on it with
+ * startControlBroker(). */
+async function unusedPort(): Promise<number> {
+  const server = createNetServer();
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+  const port = (server.address() as AddressInfo).port;
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  return port;
+}
+
 /**
  * Spawns `node vice-proxy.mjs` as a real child process and gives back a
  * small harness for line-based stdin/stdout JSON-RPC exchange, matching the
  * exact framing vice-proxy.mjs itself implements (newline-delimited, one
  * JSON value per line).
  *
- * `VICE_BROKER_HOME` defaults to this file's own `DEFAULT_BROKER_HOME`
- * scratch directory (Phase 64, plan 64-10, G-64-1), spread BEFORE the
- * caller's own `env` so any test that names its own `VICE_BROKER_HOME` (or
- * `VICE_POOL_DIR`, which `brokerStateDir()` still reads first) wins
- * unchanged. Without this default, a proxy given only `CLAUDE_PROJECT_DIR`
- * would fall through to `brokerStateDir()`'s real-homedir default and read
- * this developer's own `~/.c64-re-tools/supervisor/broker.json` -- exactly
- * the leak this default exists to prevent, now that the client resolves
- * broker.json through the SAME machine-level resolver the broker itself
- * does (vice-broker-client.ts's brokerRootDir()).
+ * `VICE_BROKER_HOME` defaults to `DEFAULT_BROKER_HOME` and
+ * `VICE_BROKER_CONTROL_PORT` to `DEFAULT_CONTROL_PORT`, both spread BEFORE the
+ * caller's own `env` so a test that names either wins unchanged.
  */
 function startProxy(env: Record<string, string>): ProxyHandle {
   const child = spawn(process.execPath, [PROXY_PATH], {
-    env: { ...process.env, VICE_BROKER_HOME: DEFAULT_BROKER_HOME, ...env },
+    env: {
+      ...process.env,
+      VICE_BROKER_HOME: DEFAULT_BROKER_HOME,
+      VICE_BROKER_CONTROL_PORT: String(DEFAULT_CONTROL_PORT),
+      ...env,
+    },
     stdio: ["pipe", "pipe", "pipe"] as const,
   });
   OPEN_CHILDREN.add(child);
@@ -390,60 +399,6 @@ function startProxy(env: Record<string, string>): ProxyHandle {
 
   return { child, send, sendRaw, messages, nextMessage, stderr: stderrChunks };
 }
-
-// -----------------------------------------------------------------------
-// Harness isolation proof (Phase 64, plan 64-10, G-64-1). startProxy()'s own
-// default VICE_BROKER_HOME (above) is what keeps every test in this file off
-// the developer's real ~/.c64-re-tools now that the client resolves
-// broker.json through the SAME machine-level resolver the broker itself
-// does. This test proves the default actually takes effect, and does so
-// deterministically rather than depending on whatever this developer's real
-// machine happens to have on disk right now: it plants a STALE broker.json
-// under a FAKE home directory (via HOME) and asserts the proxy still
-// reports never-started, never dead-or-hung naming the planted pid -- a
-// regression that silently dropped the default would instead read the fake
-// home's own .c64-re-tools/supervisor/broker.json and report dead-or-hung.
-// -----------------------------------------------------------------------
-test("harness isolation: startProxy()'s default VICE_BROKER_HOME wins over a stale broker.json planted at HOME's own .c64-re-tools -- no proxy this suite spawns can read a real machine-level root unless a test names its own override (G-64-1)", async () => {
-  const ws = mkdtempSync(join(tmpdir(), "vice-proxy-isolation-ws-"));
-  const fakeHome = mkdtempSync(join(tmpdir(), "vice-proxy-isolation-fakehome-"));
-  const fakeSupervisorDir = join(fakeHome, ".c64-re-tools", "supervisor");
-  mkdirSync(fakeSupervisorDir, { recursive: true });
-  const staleHeartbeat = new Date(Date.now() - 999999999).toISOString(); // far past any stale threshold
-  writeFileSync(
-    join(fakeSupervisorDir, "broker.json"),
-    JSON.stringify({ version: 1, pid: 424242, heartbeat_at: staleHeartbeat }),
-    "utf8"
-  );
-
-  // No VICE_BROKER_HOME/VICE_POOL_DIR of its own -- relies entirely on
-  // startProxy()'s own default winning over HOME's stale record.
-  const proxy = startProxy({ CLAUDE_PROJECT_DIR: ws, HOME: fakeHome });
-  try {
-    await handshake(proxy);
-    const startedAt = Date.now();
-    proxy.send({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "vice_ping", arguments: {} } });
-    const resp = await proxy.nextMessage(10000);
-    const elapsedMs = Date.now() - startedAt;
-    assert.equal(resp.result.isError, true);
-    const text = resp.result.content[0].text;
-    assert.match(
-      text,
-      /never.*started/i,
-      "startProxy()'s default VICE_BROKER_HOME must win over HOME's own stale broker.json -- a dead-or-hung result here means the default silently stopped applying"
-    );
-    assert.doesNotMatch(
-      text,
-      /424242/,
-      "the planted fake-home pid must never surface -- proves this proxy never read HOME's own .c64-re-tools/supervisor/broker.json"
-    );
-    assert.ok(elapsedMs < 5000, `the never-started diagnosis must be fail-fast -- took ${elapsedMs}ms`);
-  } finally {
-    proxy.child.kill("SIGKILL");
-    rmSync(ws, { recursive: true, force: true });
-    rmSync(fakeHome, { recursive: true, force: true });
-  }
-});
 
 // Plan 55-05: rewritten against the proxy-local annotation route.
 // VICE_MCP_URL no longer forwards a `tools/call` to an HTTP stand-in at all
@@ -1348,11 +1303,10 @@ test("never-throw: a broken stdout pipe does not kill the process", async () => 
 // The two claims that survive decompose to two different, currently-green
 // successors:
 //
-//   - never-started / dead-or-hung, same vocabulary (brokerNeverStartedMessage()/
-//     brokerDeadOrHungMessage()), now driven by the BROKER's own broker.json
-//     liveness classification rather than a VICE_MCP_URL probe: "broker three
-//     states: each broker-absent shape gets its own message and fix" (this
-//     file), confirmed passing.
+//   - broker absent: now driven by the dial to the broker's control port
+//     rather than a VICE_MCP_URL probe: "broker states: nothing listening on
+//     the control port and a denied launch each get their own message and
+//     fix" (this file).
 //   - alive-but-failed (a reachable session's own operation fails and is
 //     reported distinctly, never a generic message): the mechanism that used
 //     to classify this over the fork's HTTP transport is gone; the modern
@@ -1393,8 +1347,7 @@ test("never-throw: a broken stdout pipe does not kill the process", async () => 
 // Plan 01.2-01 task 2 / Plan 01.6.2-07: every session-ending path releases
 // the lease, and the deferred-acquisition property (C3) has its own
 // dedicated regression guard. Plan 01.6.2-07 swaps acquisition and release
-// onto the TCP control connection (openBrokerControl()/BrokerControlSession,
-// plan 06's completed client) -- the lease IS the connection now, so a REAL
+// onto the TCP control connection (dialControlSession()/BrokerControlSession) -- the lease IS the connection now, so a REAL
 // control listener (startControlBroker() below) replaces the retiring
 // write-a-request-then-run-the-broker-then-poll-for-a-grant dance, and
 // "released" is observed as the listener's own connection closing, not a
@@ -1435,19 +1388,13 @@ interface StubBrokerDeps {
 
 /** Starts a REAL control listener (broker-control.mts's own
  * startControlListener(), the exact module the proxy's control-plane client
- * speaks to) bound on a kernel-chosen port, with injectable acquire
- * stubs, and writes dir/broker.json naming it as the control endpoint with a
- * fresh heartbeat -- matching the idiom vice-broker-client.test.ts's own
- * startFullBrokerListener() already established for the client side. This is
- * the TCP-control-plane replacement for the retiring
- * writeFreshBrokerJson()/grantDirectly()/waitForRequestId() file-based
- * fixture trio: nothing under `dir` is written except broker.json itself. */
-async function startControlBroker(dir: string, deps: StubBrokerDeps = {}) {
-  const token = newControlToken();
+ * speaks to) on `port` -- the one the proxy was given as
+ * VICE_BROKER_CONTROL_PORT (see unusedPort()) -- with injectable acquire
+ * stubs. Writes nothing to disk. */
+async function startControlBroker(port: number, deps: StubBrokerDeps = {}) {
   const listener = await startControlListener({
     host: "127.0.0.1",
-    port: 0,
-    token,
+    port,
     onAcquire: deps.onAcquire ?? (async () => ({ ok: false, reason: "internal" }) as AcquireOutcome),
     onRelease: () => {},
     onStatus: () => [],
@@ -1488,26 +1435,13 @@ async function startControlBroker(dir: string, deps: StubBrokerDeps = {}) {
   listener.server.on("connection", (socket: Socket) => {
     sockets.push(socket);
   });
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(
-    join(dir, "broker.json"),
-    JSON.stringify({
-      version: 1,
-      pid: process.pid,
-      heartbeat_at: new Date().toISOString(),
-      control_host: "127.0.0.1",
-      control_port: listener.port,
-      control_token: token,
-    }),
-    "utf8"
-  );
-  return { server: listener.server, port: listener.port, token, sockets };
+  return { server: listener.server, port: listener.port, sockets };
 }
 
 /** Drives ONE forwarded tools/call through the full acquire-over-the-
- * control-connection round trip, granting an instance at `targetPort` (the
- * caller's own stand-in host, unrelated to the control listener's own
- * port). Returns once the call has resolved, alongside the control
+ * control-connection round trip: starts a fixture listener on `controlPort`
+ * (the proxy's own VICE_BROKER_CONTROL_PORT) granting an instance at
+ * `targetPort` (the caller's own stand-in host). Returns once the call has resolved, alongside the control
  * listener's own server and the one socket it accepted (so a caller can
  * observe the connection closing). Shared by every test below that needs a
  * REAL session held before it can meaningfully assert that ending it
@@ -1517,8 +1451,9 @@ async function acquireLeaseViaBroker(
   dir: string,
   targetPort: number,
   callId: number,
+  controlPort: number,
 ) {
-  const { server, sockets } = await startControlBroker(dir, {
+  const { server, sockets } = await startControlBroker(controlPort, {
     onAcquire: async () => ({
       ok: true,
       grant: {
@@ -1550,15 +1485,16 @@ for (const trigger of ENDING_TRIGGERS) {
     const dir = mkdtempSync(join(tmpdir(), "vice-proxy-ending-"));
     const { server } = startStandInServer();
     const port = await listen(server);
+    const controlPort = await unusedPort();
     const proxy = startProxy({
       VICE_POOL_DIR: dir,
       VICE_EPOCH_FILE: join(dir, "epoch.json"),
-      VICE_MCP_HOST: "127.0.0.1",
+      VICE_BROKER_CONTROL_PORT: String(controlPort),
     });
     let controlServer: NetServer | null = null;
     try {
       await handshake(proxy);
-      const acquired = await acquireLeaseViaBroker(proxy, dir, port, 3);
+      const acquired = await acquireLeaseViaBroker(proxy, dir, port, 3, controlPort);
       controlServer = acquired.controlServer;
 
       // The control socket accepted for THIS session's own acquire -- there
@@ -1587,21 +1523,17 @@ test("a full acquire-forward-release cycle creates no file under the broker stat
   const dir = mkdtempSync(join(tmpdir(), "vice-proxy-nofile-"));
   const { server } = startStandInServer();
   const port = await listen(server);
+  const controlPort = await unusedPort();
   const proxy = startProxy({
     VICE_POOL_DIR: dir,
     VICE_EPOCH_FILE: join(dir, "epoch.json"),
-    VICE_MCP_HOST: "127.0.0.1",
+    VICE_BROKER_CONTROL_PORT: String(controlPort),
   });
   let controlServer: NetServer | null = null;
   try {
     await handshake(proxy);
 
-    // startControlBroker() writes broker.json ITSELF, standing in for what a
-    // human would already have started on the host BEFORE this session ever
-    // began -- so the "before" snapshot is taken after that fixture write,
-    // and the assertion below is about what the PROXY itself creates from
-    // here on, not about the test's own setup.
-    const acquired = await startControlBroker(dir, {
+    const acquired = await startControlBroker(controlPort, {
       onAcquire: async () => ({
         ok: true,
         grant: {
@@ -1644,13 +1576,14 @@ test("acquiring twice sends exactly one acquire request, asserted by a test list
   const dir = mkdtempSync(join(tmpdir(), "vice-proxy-acquireonce-"));
   const { server } = startStandInServer();
   const port = await listen(server);
+  const controlPort = await unusedPort();
   const proxy = startProxy({
     VICE_POOL_DIR: dir,
     VICE_EPOCH_FILE: join(dir, "epoch.json"),
-    VICE_MCP_HOST: "127.0.0.1",
+    VICE_BROKER_CONTROL_PORT: String(controlPort),
   });
   let acquireCount = 0;
-  const acquired = await startControlBroker(dir, {
+  const acquired = await startControlBroker(controlPort, {
     onAcquire: async () => {
       acquireCount++;
       return {
@@ -1697,13 +1630,17 @@ test("with an explicit endpoint override set, the control listener receives no c
   const port = await listen(server);
   let acquireCount = 0;
   const dir = mkdtempSync(join(tmpdir(), "vice-proxy-override-noconn-"));
-  const acquired = await startControlBroker(dir, {
+  const acquired = await startControlBroker(0, {
     onAcquire: async () => {
       acquireCount++;
       return { ok: false, reason: "internal" };
     },
   });
-  const proxy = startProxy({ VICE_MCP_URL: `http://127.0.0.1:${port}/mcp`, VICE_POOL_DIR: dir });
+  const proxy = startProxy({
+    VICE_MCP_URL: `http://127.0.0.1:${port}/mcp`,
+    VICE_POOL_DIR: dir,
+    VICE_BROKER_CONTROL_PORT: String(acquired.port),
+  });
   try {
     await handshake(proxy);
     proxy.send({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "vice_ping", arguments: {} } });
@@ -1740,18 +1677,19 @@ test("idempotency: SIGINT followed by SIGTERM ~50ms later is a complete no-op th
   const dir = mkdtempSync(join(tmpdir(), "vice-proxy-idem-"));
   const { server } = startStandInServer();
   const port = await listen(server);
+  const controlPort = await unusedPort();
   const proxy = startProxy({
     VICE_POOL_DIR: dir,
     VICE_EPOCH_FILE: join(dir, "epoch.json"),
     // The alias set to loopback -- makes the inverse an identity for a stub
     // that really lives on this side of the boundary (see the "ending path"
     // tests above for the same rationale).
-    VICE_MCP_HOST: "127.0.0.1",
+    VICE_BROKER_CONTROL_PORT: String(controlPort),
   });
   let controlServer: NetServer | null = null;
   try {
     await handshake(proxy);
-    const acquired = await acquireLeaseViaBroker(proxy, dir, port, 3);
+    const acquired = await acquireLeaseViaBroker(proxy, dir, port, 3, controlPort);
     controlServer = acquired.controlServer;
 
     let sawSocketClose = false;
@@ -1780,16 +1718,17 @@ test("a control connection already closed out from under the proxy: teardown doe
   const dir = mkdtempSync(join(tmpdir(), "vice-proxy-already-removed-"));
   const { server } = startStandInServer();
   const port = await listen(server);
+  const controlPort = await unusedPort();
   const proxy = startProxy({
     VICE_POOL_DIR: dir,
     VICE_EPOCH_FILE: join(dir, "epoch.json"),
     // The alias set to loopback -- see the "ending path" tests above.
-    VICE_MCP_HOST: "127.0.0.1",
+    VICE_BROKER_CONTROL_PORT: String(controlPort),
   });
   let controlServer: NetServer | null = null;
   try {
     await handshake(proxy);
-    const acquired = await acquireLeaseViaBroker(proxy, dir, port, 3);
+    const acquired = await acquireLeaseViaBroker(proxy, dir, port, 3, controlPort);
     controlServer = acquired.controlServer;
 
     // Simulate the broker itself dropping the connection out from under the
@@ -1876,38 +1815,28 @@ test("teardown region: no promise-awaiting construct, and the control session's 
 });
 
 // -----------------------------------------------------------------------
-// Plan 01.2-03 task 1: a missing/dead/denying on-demand broker produces one
-// of exactly three distinct, evidence-carrying diagnoses -- never-started,
-// dead-or-hung, launch-failed -- mirroring the host-unreachable triple
-// above (line ~1074) but answering a DIFFERENT question (is the BROKER
-// reachable, not the host VICE MCP server). never-started and dead-or-hung
-// both fail fast, with no request or lease ever written; launch-failed and
-// a warming timeout both clean up the request/lease they created. The
-// proxy stays alive and forwards successfully on the SAME process the
-// instant the broker is up (C11).
+// Plan 01.2-03 task 1: a missing or denying broker produces one of two
+// distinct, evidence-carrying diagnoses -- nothing answering on the control
+// port, or a launch the broker itself denied. Nothing answering fails fast,
+// with no request or lease ever written. The proxy stays alive and forwards
+// successfully on the SAME process the instant the broker is up (C11).
 // -----------------------------------------------------------------------
 
-// P-08 (01.6.2.1-04-PLAN.md): this bound used to be expressed as a FRACTION
-// of ACQUIRE_TIMEOUT_MS (half the acquire deadline). That self-loosens: the
-// deadline's own default just moved 25000 -> 120000, so a fraction-of-the-
-// deadline bound would have silently jumped from 12500ms to 60000ms with no
-// change to this test's own text -- and 60000ms sits well past the 10000ms
-// message-read deadline the `await proxy1.nextMessage(10000)` call below
-// enforces, so a genuine regression would hit THAT timeout (an opaque
-// promise rejection) before this assertion ever got a chance to fire with
-// its own informative message, making the assertion unfalsifiable in
-// practice. Anchored instead to a fixed absolute value: at most 12500ms (at
-// least as strict as the old expression's effective value) and comfortably
-// below the 10000ms message-read deadline, so this assertion -- not the
-// read -- is what fails on a regression.
-const NEVER_STARTED_FAILFAST_BOUND_MS = 5000;
+// A fixed absolute bound, comfortably below the 10000ms message-read
+// deadline below, so this assertion -- not the read -- is what fails on a
+// regression.
+const NOTHING_LISTENING_FAILFAST_BOUND_MS = 5000;
 
-test("broker three states: each broker-absent shape gets its own message and fix", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "vice-proxy-broker3states-"));
+test("broker states: nothing listening on the control port and a denied launch each get their own message and fix", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "vice-proxy-broker-states-"));
 
-  // ---- Never started: no broker.json at all. ----
-  const proxy1 = startProxy({ VICE_POOL_DIR: dir, VICE_EPOCH_FILE: join(dir, "epoch.json") });
-  let neverStartedText;
+  // ---- Nothing listening on the configured control port. ----
+  const proxy1 = startProxy({
+    VICE_POOL_DIR: dir,
+    VICE_EPOCH_FILE: join(dir, "epoch.json"),
+    VICE_BROKER_CONTROL_PORT: String(await unusedPort()),
+  });
+  let nothingListeningText;
   try {
     await handshake(proxy1);
     const startedAt = Date.now();
@@ -1915,76 +1844,50 @@ test("broker three states: each broker-absent shape gets its own message and fix
     const resp = await proxy1.nextMessage(10000);
     const elapsedMs = Date.now() - startedAt;
     assert.equal(resp.result.isError, true);
-    neverStartedText = resp.result.content[0].text;
-    assert.match(neverStartedText, /never.*started/i, "the never-started shape must say the broker was never started");
+    nothingListeningText = resp.result.content[0].text;
+    assert.match(nothingListeningText, /no broker answered/i, "nothing listening must say no broker answered");
     assert.ok(
-      elapsedMs < NEVER_STARTED_FAILFAST_BOUND_MS,
-      `the never-started diagnosis must be fail-fast, well under the fixed bound (${NEVER_STARTED_FAILFAST_BOUND_MS}ms) -- took ${elapsedMs}ms`
+      elapsedMs < NOTHING_LISTENING_FAILFAST_BOUND_MS,
+      `the dial failure must be fail-fast, well under the fixed bound (${NOTHING_LISTENING_FAILFAST_BOUND_MS}ms) -- took ${elapsedMs}ms`
     );
-    assert.equal(existsSync(join(dir, "requests")), false, "never-started must write no request file");
-    assert.equal(existsSync(join(dir, "leases")), false, "never-started must write no lease file");
+    assert.equal(existsSync(join(dir, "requests")), false, "a dial failure must write no request file");
+    assert.equal(existsSync(join(dir, "leases")), false, "a dial failure must write no lease file");
   } finally {
     proxy1.child.kill("SIGKILL");
   }
 
-  // ---- Dead or hung: broker.json exists but its heartbeat is stale. ----
-  const staleHeartbeat = new Date(Date.now() - 999999999).toISOString(); // far past any stale threshold
-  writeFileSync(join(dir, "broker.json"), JSON.stringify({ version: 1, pid: 7777, heartbeat_at: staleHeartbeat }), "utf8");
-  const proxy2 = startProxy({ VICE_POOL_DIR: dir, VICE_EPOCH_FILE: join(dir, "epoch2.json") });
-  let deadOrHungText;
-  try {
-    await handshake(proxy2);
-    proxy2.send({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "vice_ping", arguments: {} } });
-    const resp = await proxy2.nextMessage(10000);
-    assert.equal(resp.result.isError, true);
-    deadOrHungText = resp.result.content[0].text;
-    assert.match(deadOrHungText, /dead or hung/i);
-    assert.match(deadOrHungText, /7777/, "the pid recorded in the planted broker.json must appear in the dead-or-hung message");
-    assert.equal(existsSync(join(dir, "requests")), false, "dead-or-hung must write no request file");
-  } finally {
-    proxy2.child.kill("SIGKILL");
-  }
-  rmSync(join(dir, "broker.json"), { force: true });
-
   // ---- Alive, but the launch itself was denied. ----
   // Over the control plane, a denial carries broker-control.mts's own fixed
   // AcquireOutcome vocabulary (no_free_port/at_capacity/internal), not a
-  // free-form reason string -- so "relayed verbatim" now means the outcome's
+  // free-form reason string -- so "relayed verbatim" means the outcome's
   // own reason word appears unmodified, rather than an arbitrary marker.
-  const { server: controlServer3 } = await startControlBroker(dir, {
+  const { server: controlServer2, port: controlPort2 } = await startControlBroker(0, {
     onAcquire: async () => ({ ok: false, reason: "no_free_port" }),
   });
-  const proxy3 = startProxy({
+  const proxy2 = startProxy({
     VICE_POOL_DIR: dir,
-    VICE_EPOCH_FILE: join(dir, "epoch3.json"),
-    // quick-260805-9ha: openBrokerControl() no longer dials broker.json's
-    // own control_host (startControlBroker() writes "127.0.0.1", the
-    // broker's BIND address, never a dial target) -- without this, the
-    // client would instead resolve the real bridge alias and this test's
-    // in-container listener would never be reached.
-    VICE_BROKER_CONTROL_DIAL_HOST: "127.0.0.1",
+    VICE_EPOCH_FILE: join(dir, "epoch2.json"),
+    VICE_BROKER_CONTROL_PORT: String(controlPort2),
   });
   let launchFailedText;
   try {
-    await handshake(proxy3);
-    proxy3.send({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "vice_ping", arguments: {} } });
+    await handshake(proxy2);
+    proxy2.send({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "vice_ping", arguments: {} } });
 
-    const resp = await proxy3.nextMessage(10000);
+    const resp = await proxy2.nextMessage(10000);
     assert.equal(resp.result.isError, true);
     launchFailedText = resp.result.content[0].text;
     assert.match(launchFailedText, /no_free_port/, "the denial's own reason must appear unmodified in the result");
     assert.doesNotMatch(launchFailedText, /restart/i, "the launch-failed message must NOT carry a restart instruction");
   } finally {
-    proxy3.child.kill("SIGKILL");
-    await new Promise((resolve) => controlServer3.close(resolve));
+    proxy2.child.kill("SIGKILL");
+    await new Promise((resolve) => controlServer2.close(resolve));
   }
 
-  // ---- Cross-cutting assertions across all three shapes. ----
-  assert.notEqual(neverStartedText, deadOrHungText, "never-started and dead-or-hung messages must be pairwise distinct");
-  assert.notEqual(neverStartedText, launchFailedText, "never-started and launch-failed messages must be pairwise distinct");
-  assert.notEqual(deadOrHungText, launchFailedText, "dead-or-hung and launch-failed messages must be pairwise distinct");
+  // ---- Cross-cutting assertions across both shapes. ----
+  assert.notEqual(nothingListeningText, launchFailedText, "the nothing-listening and launch-failed messages must be distinct");
 
-  for (const text of [neverStartedText, deadOrHungText, launchFailedText]) {
+  for (const text of [nothingListeningText, launchFailedText]) {
     assert.ok(text.includes("npx -y @henols/vice-mcp broker"), "every broker-absent message must quote the broker start command");
     assert.match(text, /only route/i, "every broker-absent message must state this is the only route");
     assert.doesNotMatch(text, /vice-broker\.sh/, "no broker-absent message may still name the retiring bash broker");
@@ -1993,77 +1896,33 @@ test("broker three states: each broker-absent shape gets its own message and fix
   rmSync(dir, { recursive: true, force: true });
 });
 
-// -----------------------------------------------------------------------
-// quick-260805-9ha: a fresh, healthy heartbeat but a DEAD control-plane
-// connect must never be misreported as broker liveness -- the exact
-// incident this plan closes (see vice-proxy.ts's own
-// brokerControlUnreachableMessage() header comment for the full record:
-// broker.json is read from the shared filesystem, not over the control
-// connection, so the freshness check had already passed while the real
-// failure was one layer later, at the connect). This distinctive phrase is
-// named as a constant so a future refactor cannot silently reintroduce the
-// mis-attribution this test guards against.
-// -----------------------------------------------------------------------
-const HEARTBEAT_AGE_PHRASE = "heartbeat is older than the stale threshold";
-
-test("control-plane unreachable: a fresh heartbeat but a dead connect names the address and port, never the heartbeat-age wording", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "vice-proxy-control-unreachable-"));
-  const { server, port } = await startControlBroker(dir, {});
-  // Close the listener BEFORE the forwarded call -- startControlBroker()
-  // already wrote broker.json with a heartbeat taken just now, and nothing
-  // re-writes it, so readBrokerLiveness() still classifies `alive` when the
-  // proxy reads it below. Only the CONNECT is dead.
-  await new Promise<void>((r) => server.close(() => r()));
-
-  const proxy = startProxy({
-    VICE_POOL_DIR: dir,
-    VICE_EPOCH_FILE: join(dir, "epoch.json"),
-    // Matches the record's own recorded control_host ("127.0.0.1", written
-    // by startControlBroker()) -- so the closed port, not a mismatched dial
-    // target, is the only reason this connect fails.
-    VICE_MCP_HOST: "127.0.0.1",
-  });
-  try {
-    await handshake(proxy);
-    proxy.send({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "vice_ping", arguments: {} } });
-    const resp = await proxy.nextMessage(10000);
-    assert.equal(resp.result.isError, true);
-    const text = resp.result.content[0].text;
-    assert.match(text, new RegExp(`127\\.0\\.0\\.1:${port}`), `message must name the dial address and port: ${text}`);
-    assert.doesNotMatch(text, new RegExp(HEARTBEAT_AGE_PHRASE, "i"), `message must NOT attribute the failure to heartbeat age: ${text}`);
-  } finally {
-    proxy.child.kill("SIGKILL");
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
 test("broker never-cache: absent-then-alive-and-granted succeeds on the SAME process, no restart", async () => {
   const dir = mkdtempSync(join(tmpdir(), "vice-proxy-broker-nevercache-"));
   const { server } = startStandInServer();
   const port = await listen(server);
+  const controlPort = await unusedPort();
   const proxy = startProxy({
     VICE_POOL_DIR: dir,
     VICE_EPOCH_FILE: join(dir, "epoch.json"),
     // The alias set to loopback -- see the "ending path" tests above.
-    VICE_MCP_HOST: "127.0.0.1",
+    VICE_BROKER_CONTROL_PORT: String(controlPort),
   });
   let controlServer: NetServer | null = null;
   try {
     await handshake(proxy);
     const pidBefore = proxy.child.pid;
 
-    // Call 1: no broker.json at all -- must observe the never-started
-    // message. The proxy stays alive and caches nothing.
+    // Call 1: nothing listening on the control port yet -- must observe the
+    // dial-failure message. The proxy stays alive and caches nothing.
     proxy.send({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "vice_ping", arguments: {} } });
     const down = await proxy.nextMessage(10000);
     assert.equal(down.result.isError, true);
-    assert.match(down.result.content[0].text, /never.*started/i);
-    assert.equal(proxy.child.exitCode, null, "the proxy must still be running after the never-started diagnosis");
+    assert.match(down.result.content[0].text, /no broker answered/i);
+    assert.equal(proxy.child.exitCode, null, "the proxy must still be running after the dial failure");
 
     // Call 2, SAME process, no restart: acquireLeaseViaBroker() both starts
-    // a real control listener (marking the broker alive) and grants the
-    // now-retried request.
-    const acquired = await acquireLeaseViaBroker(proxy, dir, port, 4);
+    // a real control listener on that port and grants the retried request.
+    const acquired = await acquireLeaseViaBroker(proxy, dir, port, 4, controlPort);
     controlServer = acquired.controlServer;
     assert.equal(acquired.controlSocket.destroyed, false, "the second call must succeed and hold a real, open connection, with no restart between calls");
 
@@ -2077,40 +1936,11 @@ test("broker never-cache: absent-then-alive-and-granted succeeds on the SAME pro
   }
 });
 
-test("broker: a malformed broker.json (truncated, wrong type, empty) is treated as absent, never a throw", async () => {
-  const malformedShapes = [
-    { label: "truncated", content: '{"version": 1, "pid": 123, "heartbeat' },
-    { label: "wrong type", content: "[1, 2, 3]" },
-    { label: "empty", content: "" },
-  ];
-
-  for (const shape of malformedShapes) {
-    const dir = mkdtempSync(join(tmpdir(), `vice-proxy-broker-malformed-${shape.label.replace(/\s+/g, "-")}-`));
-    writeFileSync(join(dir, "broker.json"), shape.content, "utf8");
-    const proxy = startProxy({ VICE_POOL_DIR: dir, VICE_EPOCH_FILE: join(dir, "epoch.json") });
-    try {
-      await handshake(proxy);
-      proxy.send({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "vice_ping", arguments: {} } });
-      const resp = await proxy.nextMessage(10000);
-      assert.equal(resp.result.isError, true, `a ${shape.label} broker.json must still answer isError:true, never crash`);
-      assert.match(
-        resp.result.content[0].text,
-        /never.*started/i,
-        `a ${shape.label} broker.json must be treated as absent (never-started), not a parse error`
-      );
-      assert.equal(proxy.child.exitCode, null, `the proxy must stay alive against a ${shape.label} broker.json`);
-    } finally {
-      proxy.child.kill("SIGKILL");
-      rmSync(dir, { recursive: true, force: true });
-    }
-  }
-});
-
 test("broker warming: an acquire deadline with no grant or error is a warming-and-retry result, and leaves the connection closed", async () => {
   const dir = mkdtempSync(join(tmpdir(), "vice-proxy-broker-warming-"));
   // onAcquire never resolves -- simulating a cold x64sc boot still in
   // progress when the client's own per-request deadline elapses.
-  const { server: controlServer } = await startControlBroker(dir, {
+  const { server: controlServer, port: controlPort } = await startControlBroker(0, {
     onAcquire: () => new Promise(() => {}),
   });
 
@@ -2118,9 +1948,7 @@ test("broker warming: an acquire deadline with no grant or error is a warming-an
     VICE_POOL_DIR: dir,
     VICE_EPOCH_FILE: join(dir, "epoch.json"),
     VICE_BROKER_ACQUIRE_TIMEOUT_MS: "300", // short deadline -- nothing will ever grant or deny this request
-    // quick-260805-9ha: see the "broker three states" proxy3 comment above --
-    // openBrokerControl() no longer dials broker.json's own control_host.
-    VICE_BROKER_CONTROL_DIAL_HOST: "127.0.0.1",
+    VICE_BROKER_CONTROL_PORT: String(controlPort),
   });
   try {
     await handshake(proxy);
@@ -2151,10 +1979,11 @@ test("grant check: a grant whose url port disagrees with the granted port is ref
   const { server } = startStandInServer();
   const port = await listen(server);
   const wrongPort = port + 1; // NOT what the stub is actually listening on
+  const controlPort = await unusedPort();
 
   const proxy = startProxy({
     VICE_POOL_DIR: dir,
-    VICE_MCP_HOST: "127.0.0.1",
+    VICE_BROKER_CONTROL_PORT: String(controlPort),
   });
   let controlServer: NetServer | null = null;
   try {
@@ -2162,7 +1991,7 @@ test("grant check: a grant whose url port disagrees with the granted port is ref
     const mismatchedUrl = `http://127.0.0.1:${wrongPort}/mcp`; // disagrees with the granted port
     // checkGrant()'s own fallback construction.
     const fallbackUrl = `http://127.0.0.1:${port}/mcp`;
-    const acquired = await startControlBroker(dir, {
+    const acquired = await startControlBroker(controlPort, {
       onAcquire: async () => ({
         ok: true,
         grant: {
@@ -2218,8 +2047,8 @@ test("grant check: a grant whose url port disagrees with the granted port is ref
 // identical outcome for a fixed-port override whether or not anything is
 // listening on the target port, since ensureLease() short-circuits before
 // ever attempting a connection. This test's own two claims (a fixed-port
-// override gets ITS OWN message, and never the broker's never-started/
-// dead-or-hung/launch-denied vocabulary) are fully subsumed by that
+// override gets ITS OWN message, and never the broker's broker-absent/
+// launch-denied vocabulary) are fully subsumed by that
 // surviving sibling; keeping both would duplicate one assertion under two
 // names for a property that used to be two DIFFERENT diagnoses and no
 // longer is. Named, green successor: "with an explicit endpoint override
@@ -2801,7 +2630,7 @@ test("IN-01: the anno CLI dispatch still ends the process promptly with no serve
 // listener, reaching the relay attach and reading the result -- an offline
 // reproduction turned into a permanent regression test. The security trade
 // that made the fix possible: attach/transfer authenticated by their
-// broker-minted handle alone, ahead of the per-boot token gate.
+// broker-minted handle alone.
 // ===========================================================================
 
 interface G6408DecodedRequest {
@@ -3002,9 +2831,8 @@ interface G6408Fixture {
  * monitor_claim/attach/stage_file/transfer, so this fixture never needs to
  * predict it. `onRelayAttach` is wrapped with a recorder that captures every
  * attach's target, channel and presented handle BEFORE delegating -- the
- * G-64-1 tracer's own central assertion. broker.json is written into `dir`
- * naming the listener's own port and token with a fresh heartbeat, matching
- * vice-proxy.test.ts's own pre-existing startControlBroker() fixture. */
+ * G-64-1 tracer's own central assertion. Each test points its proxy at the
+ * listener with VICE_BROKER_CONTROL_PORT = `listenerPort`. */
 async function g6408StartFixture(
   opts: {
     withTransfer?: boolean;
@@ -3030,12 +2858,10 @@ async function g6408StartFixture(
   const acquiredTargetIds: string[] = [];
   const stageFileCalls: Array<{ targetId: string; slot: string }> = [];
   const fileTransferCalls: FileTransferRequest[] = [];
-  const token = newControlToken();
 
   const listener = await startControlListener({
     host: "127.0.0.1",
     port: 0,
-    token,
     onAcquire: async (requestId) => {
       acquiredTargetIds.push(requestId);
       const instance: InstanceRecord = {
@@ -3101,19 +2927,6 @@ async function g6408StartFixture(
         }
       : undefined,
   });
-
-  writeFileSync(
-    join(dir, "broker.json"),
-    JSON.stringify({
-      version: 1,
-      pid: process.pid,
-      heartbeat_at: new Date().toISOString(),
-      control_host: "127.0.0.1",
-      control_port: listener.port,
-      control_token: token,
-    }),
-    "utf8",
-  );
 
   return {
     dir,
@@ -3185,7 +2998,6 @@ test("G-64-1 tracer: vice_ping through the real proxy reaches a handle-authentic
   const proxy = startProxy({
     VICE_POOL_DIR: fixture.dir,
     VICE_EPOCH_FILE: join(fixture.dir, "epoch.json"),
-    VICE_MCP_HOST: "127.0.0.1",
     VICE_BROKER_CONTROL_PORT: String(fixture.listenerPort),
     CLAUDE_PROJECT_DIR: proxyWorkspace,
     VICE_SKIP_RESOURCE_INSTALL: "1",
@@ -3263,7 +3075,6 @@ test("G-64-1 transfer: vice_snapshot_save then vice_snapshot_load complete throu
   const proxy = startProxy({
     VICE_POOL_DIR: fixture.dir,
     VICE_EPOCH_FILE: join(fixture.dir, "epoch.json"),
-    VICE_MCP_HOST: "127.0.0.1",
     VICE_BROKER_CONTROL_PORT: String(fixture.listenerPort),
     CLAUDE_PROJECT_DIR: proxyWorkspace,
     VICE_SKIP_RESOURCE_INSTALL: "1",
@@ -3311,7 +3122,6 @@ test("G-64-1 text: vice_warp_set completes through the real proxy over the text 
   const proxy = startProxy({
     VICE_POOL_DIR: fixture.dir,
     VICE_EPOCH_FILE: join(fixture.dir, "epoch.json"),
-    VICE_MCP_HOST: "127.0.0.1",
     VICE_BROKER_CONTROL_PORT: String(fixture.listenerPort),
     CLAUDE_PROJECT_DIR: proxyWorkspace,
     VICE_SKIP_RESOURCE_INSTALL: "1",

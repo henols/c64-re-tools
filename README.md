@@ -276,13 +276,15 @@ file.
 
 ## How it locates the project
 
-At runtime the MCP writes host-synchronised state (`.vice-supervisor/`) and
-deploys its host launcher scripts (`tools/`) under the **project you are
-working in**, not under the plugin's own install directory. It resolves that
-root from `CLAUDE_PROJECT_DIR` (which Claude Code sets), falling back to
+The MCP server writes its per-project results (captures, snapshots, tool
+output) under `.c64-re-tools/` in the **project you are working in**, not under
+the plugin's own install directory. It resolves that root from
+`CLAUDE_PROJECT_DIR` (which Claude Code sets), falling back to
 `CONTAINER_WORKSPACE_PATH` and then a `.git` ancestor walk — see
-`src/mcp/vice/repo-root.ts`. The VICE emulator itself runs on the host and
-is reached only through the `mcp__plugin_c64-re-tools_vice__*` tools.
+`src/mcp/vice/repo-root.ts`. The broker keeps its own state under its
+machine-level home (`VICE_BROKER_HOME`), never inside a project. The VICE
+emulator itself runs on the host, launched by the broker, and is reached only
+through the `mcp__plugin_c64-re-tools_vice__*` tools.
 
 ## Layout
 

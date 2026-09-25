@@ -75,8 +75,7 @@ export const HOST_BOUND_ARTIFACTS: string[] = [
  * `src/mcp/vice/prerequisites.json`) -- once `vice-broker.mts` started
  * resolving `x64sc` through the seam at STARTUP (Plan 60-01), a real
  * deployment into a consuming project's `.c64-re-tools/bin/` (where
- * neither candidate exists) made the broker throw before it ever wrote
- * `broker.json`. Copying it into `resources/` here, alongside every
+ * neither candidate exists) made the broker throw at startup. Copying it into `resources/` here, alongside every
  * compiled artifact, makes `install-resources.ts`'s own generic recursive
  * walk of `resources/` deploy it automatically -- no separate deploy-side
  * code needed -- and gives `readDeclaration()`'s FIRST candidate ("beside

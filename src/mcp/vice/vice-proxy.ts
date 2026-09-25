@@ -94,16 +94,13 @@ import { repoRoot, toolsDir } from "./repo-root.ts";
 // why this file must never re-derive any part of the algorithm itself.
 import { runtimeVersion } from "./version.mts";
 // The client half of the broker protocol. Acquisition and release go over
-// the TCP control session (openBrokerControl()/BrokerControlSession).
+// the TCP control session (dialControlSession()/BrokerControlSession).
 import {
-  readBrokerLiveness,
-  brokerRootDir,
-  openBrokerControl,
-  type BrokerLivenessResult,
+  dialControlSession,
   type BrokerControlSession,
-  type ControlFailureKind,
   type HeldLease,
 } from "./vice-broker-client.ts";
+import { brokerStateDir } from "./broker-home.mts";
 import { BROKER_START_COMMAND } from "./broker-endpoint.mts";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -510,9 +507,8 @@ function readManifestTools(): ToolInfo[] {
 // this line may memoise "the broker is absent" as a fact that outlives a
 // single tools/call. There is no cached probe verdict, no sticky "last known
 // unreachable" flag, and no early-return short-circuit keyed off a PREVIOUS
-// failure -- ensureBrokerLease()'s readBrokerLiveness() call reads
-// broker.json fresh every time it is reached, never memoised at module
-// scope. This is deliberate and easy to break by a later, performance-minded
+// failure -- ensureBrokerLease() dials the endpoint fresh every time it is
+// reached, never memoised at module scope. This is deliberate and easy to break by a later, performance-minded
 // edit ("let's remember the broker was absent last call so we don't bother
 // checking again") -- don't. A cached negative here is exactly the "quiet
 // wrong answer" failure class this codebase rejects elsewhere
@@ -550,16 +546,8 @@ function stockDeps(): StockSessionDeps {
 
 // --------------------------------------------------- unreachable diagnostics
 //
-// ONLY_ROUTE_NOTE and brokerHostPath() below are the shared vocabulary the
-// broker-absent diagnostics family (immediately below) uses to name the one
-// route back to a working emulator. The host-unreachable triple that used
-// to live in this section (never-started/dead-or-hung/alive-but-failed,
-// classifying a failed pre-flight liveness check over the fork's own HTTP
-// transport) is deleted along with the fork-only generic forwarding
-// function and its liveness-probe module: stock has no equivalent
-// probe-then-classify step of its own, and stock-session.ts's own
-// session/lease handling reports unreachability through its own vocabulary
-// instead.
+// ONLY_ROUTE_NOTE below is the shared vocabulary the broker-absent
+// diagnostics use to name the one route back to a working emulator.
 //
 // This MCP tool surface is the only route to the emulator -- never named
 // together with a CLI verb here, since plan 01.1-04 installs a durable gate
@@ -569,57 +557,29 @@ const ONLY_ROUTE_NOTE =
   "the human to start it on the host -- falling back to a direct shell invocation of the underlying " +
   "transport is not an available workaround.";
 
-/** The command a human runs on the host to start the broker. */
-function brokerHostPath(): string {
-  return BROKER_START_COMMAND;
-}
-
 // ------------------------------------------------- broker-absent diagnostics
 //
-// Plan 01.2-03 task 1 / must_have C10. A missing broker answers exactly one
-// generic message two times out of three sends the reader to the wrong fix.
-// Every message here quotes brokerHostPath() (the broker start command) and
-// the single
-// shared ONLY_ROUTE_NOTE definition; no message below writes its own second
-// only-route sentence.
+// Plan 01.2-03 task 1 / must_have C10: each broker-absent shape gets its own
+// message and fix. Every message here names the broker start command and the
+// single shared ONLY_ROUTE_NOTE; no message writes its own second only-route
+// sentence.
 
-/** State: readBrokerLiveness() found no broker.json at all -- the broker has
- * never been started on this host. Nothing on the other side would ever
- * read a request, so ensureBrokerLease() returns this BEFORE writing one. */
-function brokerNeverStartedMessage(): string {
-  return (
-    `vice: the on-demand VICE broker has never been started on this host -- no broker.json ` +
-    `record exists at all. Start it on the host with:\n` +
-    `  ${brokerHostPath()}\n` +
-    ONLY_ROUTE_NOTE
-  );
+/** State: no dial candidate completed a hello. `reason` is
+ * describeDialFailure()'s ranked text (nothing listening, a foreign
+ * listener, a stale pre-v2.0.0 broker, or a version mismatch), which already
+ * names BROKER_START_COMMAND. */
+function brokerUnreachableMessage(reason: string): string {
+  return `${reason}\n${ONLY_ROUTE_NOTE}`;
 }
 
-/** State: broker.json exists but its heartbeat is older than the stale
- * threshold -- the broker process is dead or hung. Quotes the recorded pid
- * (readBrokerLiveness()'s own field), since checking that pid is the first
- * thing a human does on the host. */
-function brokerDeadOrHungMessage(liveness: BrokerLivenessResult): string {
-  const pidNote = liveness && liveness.pid != null ? ` (pid ${liveness.pid})` : "";
-  return (
-    `vice: the on-demand VICE broker appears to be dead or hung${pidNote} -- its last recorded ` +
-    `heartbeat is older than the stale threshold. Restart it on the host with:\n` +
-    `  ${brokerHostPath()}\n` +
-    ONLY_ROUTE_NOTE
-  );
-}
-
-/** State: the broker is alive and a request was polled, but it wrote a
- * denial rather than a grant. Relays the denial's own `reason` field
- * VERBATIM -- never paraphrased -- and deliberately carries no RESTART
- * instruction: restarting something that is answering correctly is the
- * wrong fix. Still names an absolute path (the running broker's own
- * launcher, purely as a reference) and the only-route sentence, both
- * required of every broker-absent-adjacent message this proxy emits. */
+/** State: the broker answered, but with a denial rather than a grant.
+ * Relays the denial's own `reason` field VERBATIM -- never paraphrased --
+ * and deliberately carries no RESTART instruction: restarting something
+ * that is answering correctly is the wrong fix. Still names the start
+ * command (purely as a reference) and the only-route sentence. */
 function brokerLaunchFailedMessage(reason: string): string {
-  const hostRef = brokerHostPath();
   return (
-    `vice: the on-demand VICE broker (started with ${hostRef}) declined ` +
+    `vice: the on-demand VICE broker (started with ${BROKER_START_COMMAND}) declined ` +
     `to grant an instance for this session: ${reason} ${ONLY_ROUTE_NOTE}`
   );
 }
@@ -636,47 +596,6 @@ function brokerWarmingMessage(elapsedMs: number): string {
     `vice: the on-demand VICE broker is still warming up an instance for this session -- no ` +
     `grant or denial appeared within ${elapsedMs}ms. This is expected for a cold start; retry the same ` +
     `call now, it should succeed once the instance finishes booting.`
-  );
-}
-
-/** State: readBrokerLiveness() just classified broker.json as `alive` (a
- * FRESH heartbeat), yet openBrokerControl() still failed -- a control-plane
- * CONNECTIVITY failure, never a dead or hung broker. This is the fix for
- * the exact incident where a live broker was reported as stale, blocking all
- * emulator access: `broker.json` is read from the shared filesystem, not over the control
- * connection, so the freshness computation had a perfectly good timestamp
- * and would have returned `alive` -- the failure was one layer later, at
- * the connect (dialing the broker's own recorded bind address, from
- * inside this container). Reporting that connect failure with the
- * heartbeat/stale-threshold wording sent the reader chasing a threshold
- * that was never exceeded, costing that session roughly a dozen tool
- * calls. This message names the address and port instead: from
- * `opened.target` when the outcome resolved one (every connect-adjacent
- * failure kind sets it), degrading to the outcome's own `message` for a
- * kind that never got that far (missing broker.json fields). States
- * plainly that `broker.json`'s own `control_host` field is the broker's
- * BIND address -- loopback or one of its enumerated bridge-gateway
- * addresses (D-09), valid on the host where the broker wrote it,
- * structurally undialable from inside this container -- so a reader is
- * pointed at the connectivity problem, never at broker health. Carries NO
- * secret: not
- * `control_token`, not any other field of the record, only the resolved
- * target and the fixed prose below. Follows the broker-absent family's own
- * stated conventions (quotes `brokerHostPath()` purely as a reference, the
- * shared `ONLY_ROUTE_NOTE`, never a second only-route sentence) -- mirroring
- * brokerLaunchFailedMessage() above rather than the never-started/
- * dead-or-hung pair, since (like a launch denial) the broker here is
- * alive and answering correctly; restarting it would be the wrong fix. */
-function brokerControlUnreachableMessage(opened: { kind: ControlFailureKind; message: string; target?: string }, liveness: BrokerLivenessResult): string {
-  const pidNote = liveness && liveness.pid != null ? ` (pid ${liveness.pid})` : "";
-  const hostRef = brokerHostPath();
-  const targetNote = opened.target ?? opened.message;
-  return (
-    `vice: the on-demand VICE broker${pidNote} (started with ${hostRef}) has ` +
-    `a fresh, healthy heartbeat -- this is NOT a dead or hung broker. This MCP tool surface could not ` +
-    `reach the control plane at ${targetNote}. broker.json's own control_host field records the broker's BIND ` +
-    `address, valid on the host where the broker wrote it and structurally undialable from inside this ` +
-    `container -- a control-plane connectivity failure, not a broker health problem. ${ONLY_ROUTE_NOTE}`
   );
 }
 
@@ -975,17 +894,16 @@ function buildHeldLease(session: BrokerControlSession): HeldLease {
   // Two DIFFERENT directories, deliberately, and not interchangeable:
   //   - epochFile is THIS instance's own `<stateDir>/<port>/epoch.json`, read
   //     fresh from activeInstance() like every other field here.
-  //   - supervisorDir is the TOP-LEVEL `.c64-re-tools/supervisor`, where backend.json
-  //     lives, resolved through brokerRootDir() -- the SAME resolver
-  //     broker.json is read from, never a locally re-derived path (the
-  //     "re-deriving a cross-cutting seam locally" anti-pattern).
+  //   - supervisorDir is the broker state directory, where backend.json
+  //     lives, resolved through broker-home.mts's brokerStateDir() -- the
+  //     broker's own resolver, never a locally re-derived path.
   return {
     host,
     port,
     targetId: grantId ?? "",
     brokerControl: session,
     epochFile,
-    supervisorDir: brokerRootDir(),
+    supervisorDir: brokerStateDir(),
     // Plan 41-01 (D-15): read fresh off the module-level variable
     // adoptGrant() stashed, exactly like every other field here -- `null`
     // becomes `undefined` on the lease (HeldLease.remoteMonitorPort is
@@ -998,50 +916,13 @@ async function ensureBrokerLease(): Promise<BrokerLeaseResult> {
   if (controlSession) return { ok: true, lease: buildHeldLease(controlSession) };
   if (process.env.VICE_MCP_URL) return { ok: true, lease: null }; // explicit override -- broker never contacted, nothing to claim a monitor socket through
 
-  // Classify liveness FIRST, before ever opening a connection (C10).
-  // never_started and stale both return their message immediately, with no
-  // connection attempted -- there is nothing on the other side to answer
-  // one, so attempting it would only delay the diagnosis. readBrokerLiveness()
-  // re-reads broker.json fresh on every call (see its own implementation in
-  // vice-broker-client.ts); nothing here memoises the verdict, so this is the
-  // broker-path instance of the same never-cache-a-negative-result invariant
-  // stated near tools/call above -- the call after a human starts the
-  // broker just works, with no session restart required. openBrokerControl()
-  // performs this SAME classification
-  // again internally (over its own read of broker.json) before it ever
-  // connects -- a second, independent read, not a second answer to trust
-  // instead of this one; fetching liveness here first is what gives the
-  // diagnoses below (dead-or-hung's own pid) something to quote.
-  const liveness = readBrokerLiveness();
-  if (liveness.state === "never_started") {
-    return { ok: false, message: brokerNeverStartedMessage() };
-  }
-  if (liveness.state === "stale") {
-    return { ok: false, message: brokerDeadOrHungMessage(liveness) };
-  }
-
+  // Dial the fixed endpoint. Nothing is read from disk, and a failed dial is
+  // never cached: the call after a human starts the broker just works, with
+  // no session restart required.
   const acquireStartedAt = Date.now();
-  const opened = await openBrokerControl();
+  const opened = await dialControlSession();
   if (!opened.ok) {
-    // openBrokerControl() re-classifies liveness from its OWN read of
-    // broker.json before ever connecting -- never_started/stale here means
-    // that SECOND read found a genuine race (the broker died between the
-    // classification above and this one), so both route to their usual two
-    // messages, unchanged. EVERY other kind (unreachable_control_plane,
-    // connect_refused, protocol, broker_gone, ...) is reached only when that
-    // second read agreed the broker is alive -- reading those as
-    // dead-or-hung was the exact mis-attribution this plan closes (see
-    // brokerControlUnreachableMessage()'s own header comment for the full
-    // incident record): a connect failure against a healthy heartbeat is a
-    // control-plane CONNECTIVITY problem, not a broker liveness one, so it
-    // gets its own message naming the address and port instead.
-    if (opened.kind === "never_started") {
-      return { ok: false, message: brokerNeverStartedMessage() };
-    }
-    if (opened.kind === "stale") {
-      return { ok: false, message: brokerDeadOrHungMessage(liveness) };
-    }
-    return { ok: false, message: brokerControlUnreachableMessage(opened, liveness) };
+    return { ok: false, message: brokerUnreachableMessage(opened.message) };
   }
   const session = opened.session;
 

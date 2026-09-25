@@ -16,10 +16,11 @@ separately so it can be launched directly by an MCP client.
 - **Node.js ≥ 24**. The server ships as TypeScript and runs under
   Node's native type-stripping — no build step, no flags. Older Node needs
   `--experimental-strip-types` and is unsupported.
-- A **host** with VICE (`x64sc`) available, reachable from wherever the MCP client
-  runs. The server talks to the host VICE MCP server over HTTP (default
-  `http://host.docker.internal:6510/mcp` in a container, `http://127.0.0.1:6510/mcp`
-  otherwise); override with `VICE_MCP_URL` / `VICE_MCP_HOST`.
+- A **host** with VICE (`x64sc`) and a running broker
+  (`npx -y @henols/vice-mcp broker`, or its systemd/launchd unit). The server
+  reaches the broker on TCP port 19510, dialling `127.0.0.1` and then
+  `host.docker.internal`, so the same configuration works on the host and inside a
+  container. Nothing is read from disk to find it.
 
 ## Use as an MCP server
 
@@ -39,15 +40,15 @@ Add it to your MCP client configuration and let the client launch it:
 ```
 
 The bin (`vice-mcp`) speaks the MCP stdio protocol. `initialize` and `tools/list`
-are answered locally (from `tools-manifest.stock.json`); `tools/call` forwards to the host
-VICE MCP server.
+are answered locally (from `tools-manifest.stock.json`); `tools/call` runs through an
+emulator instance the broker launches for this session.
 
 ## Environment
 
 | Variable | Purpose |
 | --- | --- |
 | `VICE_MCP_URL` | Full host MCP endpoint (overrides host/port derivation). |
-| `VICE_MCP_HOST` | Host to reach the VICE MCP server on. |
+| `VICE_BROKER_CONTROL_PORT` | The broker's control port (default `19510`), for the broker and every client. |
 | `VICE_SKIP_RESOURCE_INSTALL=1` | Disable deploying host launcher scripts into `<project>/tools/`. |
 | `MASTRA_TELEMETRY_DISABLED=1` | Disable Mastra telemetry. |
 | `VICE_LIVE_STOCK_BIN` | Absolute path to a genuinely unpatched stock VICE binary; opts `stock-live.test.ts` in (default-skipped). |
@@ -87,18 +88,11 @@ same authorisation wording a bare, unrecognised target id gets.
 
 ## Development
 
-`npm test` assumes it is running inside the devcontainer. On a bare host, set
-`CONTAINER_WORKSPACE_PATH` (the repo root) and `HOST_WORKSPACE_PATH` (any
-consistent host-side mirror) exactly as `.github/workflows/ci.yml` does, or
-the path-translation and container-guard tests skip with a reason naming
-both variables instead of running:
+`npm test` runs on the host with no extra environment. Suites that drive a
+real emulator run only when their `VICE_LIVE_*` variable is set, and suites
+that need a host tool skip with a named reason when it is missing.
 
-```sh
-export CONTAINER_WORKSPACE_PATH="$(git rev-parse --show-toplevel)"
-export HOST_WORKSPACE_PATH="/host$(git rev-parse --show-toplevel)"
-```
-
-`npm run test:automated` is the subset of `npm test` that excludes the nine
+`npm run test:automated` is the subset of `npm test` that excludes the
 manual-only files (see `test-gate.mjs`'s own header).
 
 ```sh

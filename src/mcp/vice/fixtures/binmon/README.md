@@ -86,8 +86,8 @@ was optional, `loadCapturedFixture()` derived `synthetic: provenance.synthetic
 ## Frozen evidence vs. living capture
 
 Every fixture here is meant to be a **living capture**, not frozen evidence
-(contrast `../README.md`'s bash-broker fixtures, which are frozen because their
-writer no longer exists): each is regenerable at any time by running
+(contrast `../README.md`'s frozen fixtures, whose writer no longer exists):
+each is regenerable at any time by running
 
 ```
 node probe-binmon.mjs --capture <case>

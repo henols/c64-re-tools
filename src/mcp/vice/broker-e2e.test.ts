@@ -4,7 +4,7 @@
 // path this plan wires, not one layer of it: build the real artifacts,
 // spawn the emitted resources/vice-broker.mjs under bare `node`, connect
 // with the real container-side TCP client (vice-broker-client.ts's
-// acquireOverControlPlane()), send one `acquire`, and assert the grant, the
+// dialControlSession()), send one `acquire`, and assert the grant, the
 // spawn, the epoch write and the connection-close release all happen for
 // real. No real emulator runs anywhere in this test and no test opens a
 // connection to the host VICE -- VICE_BIN is stubbed to /bin/sleep.
@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 import { connect, createServer, type Server } from "node:net";
 
 import { build } from "./build.ts";
-import { acquireOverControlPlane, openBrokerControl } from "./vice-broker-client.ts";
+import { dialControlSession, type AcquireGrant, type BrokerControlSession } from "./vice-broker-client.ts";
 import { verifiedKill } from "./broker-kill.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -35,20 +35,6 @@ const BROKER_ARTIFACT = join(HERE, "resources", "vice-broker.mjs");
 // containerGuardReport() refuse on ANY signal firing, so this single key is
 // as real a test of the wiring as a genuine multi-signal container would be.
 const SIMULATED_CONTAINER_ENV = { CONTAINER_WORKSPACE_PATH: HERE };
-
-// quick-260805-9ha: the broker this file spawns (startBroker() below) binds
-// its control listener INSIDE this container -- nothing here may ever dial
-// the real host. openBrokerControl()/acquireOverControlPlane() no longer
-// dial broker.json's own control_host field (that field is the broker's own
-// BIND address -- the loopback address it enumerated, D-09 -- never a dial
-// target); this override is the CLIENT's (this test process's) own dial
-// knob, set once at module scope so
-// every acquireOverControlPlane()/openBrokerControl() call below resolves
-// to the real in-container listener instead of the bridge alias. It is
-// deliberately NOT passed into the spawned broker's own env (startBroker()
-// below) -- that process's bind address is governed by the separate,
-// existing VICE_BROKER_CONTROL_HOST/VICE_BROKER_CONTROL_PORT knobs.
-process.env.VICE_BROKER_CONTROL_DIAL_HOST = "127.0.0.1";
 
 function isAlive(pid: number): boolean {
   try {
@@ -102,12 +88,6 @@ function buildBrokerEnv(extraEnv: Record<string, string | undefined>): Record<st
     VICE_BIN: "/bin/sleep",
     VICE_ARGS: "600",
     VICE_BROKER_CONTROL_PORT: "0",
-    // quick-260805-9ha: this file's own module-scope override is a CLIENT
-    // (this test process's) dial knob -- unset it here so the SPAWNED
-    // broker's env never carries it, even though process.env above would
-    // otherwise leak it in. The broker's own bind address is governed by
-    // the separate VICE_BROKER_CONTROL_HOST/VICE_BROKER_CONTROL_PORT knobs.
-    VICE_BROKER_CONTROL_DIAL_HOST: undefined,
     ...extraEnv,
   };
   const env: Record<string, string> = {};
@@ -162,11 +142,33 @@ async function stopBroker(handle: BrokerHandle): Promise<void> {
   }
 }
 
-async function waitForBrokerJson(stateDir: string, deadlineMs = 5000): Promise<Record<string, unknown>> {
-  const path = join(stateDir, "broker.json");
-  const appeared = await waitFor(() => existsSync(path) && typeof JSON.parse(readFileSync(path, "utf8")).control_port === "number", deadlineMs);
-  assert.ok(appeared, "broker.json with a control_port did not appear within deadline");
-  return JSON.parse(readFileSync(path, "utf8"));
+/** Waits for the broker's `vice-broker: ready` stderr line and returns the
+ * control port it names -- the kernel-chosen one, since every broker here is
+ * spawned with VICE_BROKER_CONTROL_PORT=0. */
+async function waitForReady(handle: BrokerHandle, deadlineMs = 5000): Promise<number> {
+  const pattern = /vice-broker: ready \(.*\); control listener bound on \S+:(\d+)/;
+  const appeared = await waitFor(() => pattern.test(handle.stderr), deadlineMs);
+  assert.ok(appeared, `the broker's ready line did not appear within deadline; stderr so far: ${handle.stderr}`);
+  return Number(pattern.exec(handle.stderr)![1]);
+}
+
+/** Dials a control session at the broker on `port` over loopback. */
+async function dialBroker(port: number): Promise<BrokerControlSession> {
+  const dialed = await dialControlSession({ port, candidates: ["127.0.0.1"] });
+  assert.ok(dialed.ok, `dialControlSession failed: ${JSON.stringify(dialed)}`);
+  return dialed.session;
+}
+
+/** Dials a session and acquires over it. The session IS the lease: its
+ * release() is the connection close that releases the grant. */
+async function acquireGrant(port: number): Promise<{ grant: AcquireGrant; session: BrokerControlSession }> {
+  const session = await dialBroker(port);
+  const acquired = await session.acquire();
+  if (!acquired.ok) {
+    await session.release();
+    assert.fail(`acquire failed: ${JSON.stringify(acquired)}`);
+  }
+  return { grant: acquired.grant, session };
 }
 
 // ---------------------------------------------------------------------------
@@ -359,36 +361,6 @@ test(
   },
 );
 
-/** Sends one raw acquire request, bypassing acquireOverControlPlane() --
- * used for the token-refusal cases, which need to control (or omit) the
- * token directly. Resolves with the first response line and whether the
- * connection was destroyed by the server. */
-function rawAcquire(host: string, port: number, body: Record<string, unknown>): Promise<{ response: Record<string, unknown>; serverClosed: boolean }> {
-  return new Promise((resolvePromise, reject) => {
-    const socket = connect({ host, port });
-    let buffer = "";
-    let responded = false;
-    socket.on("connect", () => {
-      socket.write(`${JSON.stringify(body)}\n`);
-    });
-    socket.on("data", (chunk: Buffer) => {
-      buffer += chunk.toString("utf8");
-      const idx = buffer.indexOf("\n");
-      if (idx !== -1 && !responded) {
-        responded = true;
-        const response = JSON.parse(buffer.slice(0, idx)) as Record<string, unknown>;
-        // Give the server a moment to destroy the connection (it does so
-        // synchronously right after writing, but the FIN/RST needs one
-        // more tick to be observed on this side).
-        setTimeout(() => {
-          resolvePromise({ response, serverClosed: socket.destroyed || socket.readableEnded });
-        }, 100);
-      }
-    });
-    socket.on("error", reject);
-  });
-}
-
 test(
   "end-to-end: one acquire over the TCP control plane spawns exactly one stub child, writes its epoch, grants, and connection-close identity-verified-kills it",
   { timeout: 20000 },
@@ -397,15 +369,8 @@ test(
     const stateDir = mkdtempSync(join(tmpdir(), "broker-e2e-"));
     const handle = startBroker(stateDir);
     try {
-      const brokerJson = await waitForBrokerJson(stateDir);
-      assert.equal(brokerJson.control_host, "127.0.0.1", `container.json contents: ${JSON.stringify(brokerJson)}`);
-      // This assertion now documents the whole point of the fix (quick-260805-9ha):
-      // the record says "127.0.0.1" -- the broker's own enumerated loopback
-      // BIND address (D-09/D-12) -- and the client below dials elsewhere
-      // (this file's own VICE_BROKER_CONTROL_DIAL_HOST override), never that
-      // recorded value.
-
-      const acquired = await acquireOverControlPlane(stateDir);
+      const port = await waitForReady(handle);
+      const acquired = await acquireGrant(port);
       const grant = acquired.grant;
 
       assert.ok(Number.isInteger(grant.port) && grant.port >= 6600, `grant.port must be an integer >= 6600, got ${grant.port}`);
@@ -428,7 +393,7 @@ test(
 
       // Connection close IS the release -- assert the child is gone within
       // a deadline, never on a wall-clock sleep alone.
-      acquired.release();
+      await acquired.session.release();
       const gone = await waitFor(() => !isAlive(childPid), 5000);
       assert.ok(gone, `spawned child pid ${childPid} must be gone within deadline after connection close`);
     } finally {
@@ -460,8 +425,8 @@ test(
     const stateDir = mkdtempSync(join(tmpdir(), "broker-e2e-supervise-cold-"));
     const handle = startBroker(stateDir, { VICE_RESTART_BACKOFF_S: "0" });
     try {
-      await waitForBrokerJson(stateDir);
-      const acquired = await acquireOverControlPlane(stateDir);
+      const port = await waitForReady(handle);
+      const acquired = await acquireGrant(port);
       const grant = acquired.grant;
 
       const epochBefore = JSON.parse(readFileSync(grant.epoch_file, "utf8"));
@@ -505,7 +470,7 @@ test(
       assert.equal(handle.child.exitCode, null, "the broker process itself must still be running after the respawn");
       assert.equal(handle.child.signalCode, null, "the broker process itself must not have been signalled");
 
-      acquired.release();
+      await acquired.session.release();
     } finally {
       await stopBroker(handle);
       rmSync(stateDir, { recursive: true, force: true });
@@ -568,10 +533,10 @@ test(
       VICE_ARGS: undefined,
     });
     try {
-      await waitForBrokerJson(stateDir);
+      const port = await waitForReady(handle);
 
       // First acquire: a real cold launch, granted.
-      const firstAcquired = await acquireOverControlPlane(stateDir);
+      const firstAcquired = await acquireGrant(port);
       const firstGrant = firstAcquired.grant;
       const epochBefore = JSON.parse(readFileSync(firstGrant.epoch_file, "utf8"));
       const pidBefore: number = epochBefore.pid;
@@ -600,7 +565,7 @@ test(
       // grant's bookkeeping and leaves the respawned instance untouched
       // (broker-state.mts's own pid-identity check), exactly the state this
       // test needs to exist for the second, unrelated acquire below.
-      firstAcquired.release();
+      await firstAcquired.session.release();
 
       // Wait for the RESPAWNED record's own recorded state to reach
       // "ready" -- promoteLaunchingInstances() only promotes on a LATER
@@ -608,29 +573,26 @@ test(
       // warm-instance selector only ever considers a record whose recorded
       // state is "ready" (never merely "launching"). Polled through a
       // SEPARATE, never-acquiring control session (status is read-only).
-      const pollOutcome = await openBrokerControl(stateDir);
-      assert.ok(pollOutcome.ok, `openBrokerControl (status poll) failed: ${JSON.stringify(pollOutcome)}`);
+      const pollSession = await dialBroker(port);
       let becameReady = false;
-      if (pollOutcome.ok) {
-        const deadline = Date.now() + 10000;
-        while (Date.now() < deadline && !becameReady) {
-          const statusResult = await pollOutcome.session.status();
-          if (statusResult.ok) {
-            const entry = statusResult.instances.find((i) => i.port === firstGrant.port);
-            if (entry && entry.state === "ready") {
-              becameReady = true;
-              break;
-            }
+      const deadline = Date.now() + 10000;
+      while (Date.now() < deadline && !becameReady) {
+        const statusResult = await pollSession.status();
+        if (statusResult.ok) {
+          const entry = statusResult.instances.find((i) => i.port === firstGrant.port);
+          if (entry && entry.state === "ready") {
+            becameReady = true;
+            break;
           }
-          await new Promise((r) => setTimeout(r, 25));
         }
-        await pollOutcome.session.release();
+        await new Promise((r) => setTimeout(r, 25));
       }
+      await pollSession.release();
       assert.ok(becameReady, "the respawned instance must reach recorded state \"ready\" within the deadline before the second acquire is sent");
 
       // The second, UNRELATED acquire: served from the ready, ungranted
       // instance the crash-respawn left behind -- no second spawn.
-      const secondAcquired = await acquireOverControlPlane(stateDir);
+      const secondAcquired = await acquireGrant(port);
       const secondGrant = secondAcquired.grant;
       assert.equal(secondGrant.port, firstGrant.port, "the second acquire must be served from the SAME respawned instance, not a freshly launched one");
 
@@ -644,7 +606,7 @@ test(
       );
       assert.equal(Number(portDirs[0].name), firstGrant.port, "the sole remaining instance directory must be the SAME respawned instance the second grant named");
 
-      secondAcquired.release();
+      await secondAcquired.session.release();
     } finally {
       await stopBroker(handle);
       rmSync(stateDir, { recursive: true, force: true });
@@ -662,9 +624,8 @@ test(
 // ---------------------------------------------------------------------------
 
 /** A held raw connection supporting several sequential request/response
- * round trips over ONE socket -- generalises rawAcquire() above (which
- * sends exactly one line and is done) for this task's own proof, which
- * needs ONE connection across several requests (broker-control.mts's own
+ * round trips over ONE socket, for proofs that need ONE connection across
+ * several requests (broker-control.mts's own
  * ownership discipline: a connection may only act on the grant it itself
  * holds). Test-local infrastructure only -- never touches
  * vice-broker-client.ts. */
@@ -741,14 +702,11 @@ test(
     // strictly on demand), so no override is needed here to get it.
     const handle = startBroker(stateDir, { VICE_RESTART_BACKOFF_S: "0", VICE_BROKER_POLL_MS: String(POLL_MS) });
     try {
-      const brokerJson = await waitForBrokerJson(stateDir);
-      const host = String(brokerJson.control_host);
-      const port = Number(brokerJson.control_port);
-      const token = String(brokerJson.control_token);
+      const port = await waitForReady(handle);
 
-      const client = makeRawSession(host, port);
+      const client = makeRawSession("127.0.0.1", port);
       try {
-        client.send({ op: "acquire", id: "release-proof-acquire", token });
+        client.send({ op: "acquire", id: "release-proof-acquire" });
         const grantResp = await client.next();
         assert.equal(grantResp.kind, "grant", `expected a grant, got: ${JSON.stringify(grantResp)}`);
         const grantPort = Number(grantResp.port);
@@ -758,7 +716,7 @@ test(
         const pidBefore: number = epochBefore.pid;
         assert.ok(isAlive(pidBefore), `granted child pid ${pidBefore} must be alive before the release`);
 
-        client.send({ op: "release", token });
+        client.send({ op: "release" });
         const released = await client.next();
         assert.equal(released.kind, "released");
 
@@ -776,7 +734,7 @@ test(
         assert.equal(epochAfter.pid, pidBefore, "the epoch record's own pid must not change after a release -- nothing may have respawned it");
         assert.ok(!isAlive(epochAfter.pid), "no live pid may answer at this port after a release");
 
-        client.send({ op: "status", token });
+        client.send({ op: "status" });
         const status = await client.next();
         assert.equal(status.kind, "status");
         const instances = status.instances as Array<Record<string, unknown>>;
@@ -872,13 +830,10 @@ test(
       VICE_BROKER_BASE_PORT: String(OCCUPIED_BASE_PORT),
     });
     try {
-      const brokerJson = await waitForBrokerJson(stateDir);
-      const host = String(brokerJson.control_host);
-      const port = Number(brokerJson.control_port);
-      const token = String(brokerJson.control_token);
+      const port = await waitForReady(handle);
 
-      const a = makeRawSession(host, port);
-      const b = makeRawSession(host, port);
+      const a = makeRawSession("127.0.0.1", port);
+      const b = makeRawSession("127.0.0.1", port);
       let servedClient: ReturnType<typeof makeRawSession> | null = null;
       let queuedClient: ReturnType<typeof makeRawSession> | null = null;
       try {
@@ -894,8 +849,8 @@ test(
         // the whole (widened) port scan itself; the second finds a launch
         // already in flight and is queued with NO response at all (per
         // broker-control.mts's own attemptAcquire()/enqueueAcquire()).
-        a.send({ op: "acquire", id: "disconnect-queued-a", token });
-        b.send({ op: "acquire", id: "disconnect-queued-b", token });
+        a.send({ op: "acquire", id: "disconnect-queued-a" });
+        b.send({ op: "acquire", id: "disconnect-queued-b" });
 
         // Both `.next()` calls are issued ONCE, up front, against the SAME
         // two promises used below -- calling `.next()` a SECOND time on the
@@ -966,14 +921,14 @@ test(
         assert.equal(epochAfter.pid, epochBefore.pid, "the served instance's pid must be unchanged -- nothing extra may have launched or replaced it");
         assert.ok(isAlive(epochAfter.pid), "exactly one live child pid must be attributable to the broker after the wait");
 
-        servedClient.send({ op: "status", token });
+        servedClient.send({ op: "status" });
         const status = await servedClient.next();
         assert.equal(status.kind, "status");
         const instances = status.instances as Array<Record<string, unknown>>;
         assert.equal(instances.length, 1, `the status response must list exactly one instance, got ${JSON.stringify(instances)}`);
         assert.equal(Number(instances[0].port), grantPort);
 
-        servedClient.send({ op: "release", token });
+        servedClient.send({ op: "release" });
         await servedClient.next();
       } finally {
         a.close();
@@ -987,31 +942,6 @@ test(
   },
 );
 
-test("a control request with no token, and one with a wrong token, both return the unauthorized error code, are disconnected, and leave the spawn count unchanged", { timeout: 20000 }, async () => {
-  const stateDir = mkdtempSync(join(tmpdir(), "broker-e2e-auth-"));
-  const handle = startBroker(stateDir);
-  try {
-    const brokerJson = await waitForBrokerJson(stateDir);
-    const host = String(brokerJson.control_host);
-    const port = Number(brokerJson.control_port);
-
-    const noToken = await rawAcquire(host, port, { op: "acquire", id: "req-no-token" });
-    assert.equal(noToken.response.kind, "error");
-    assert.equal(noToken.response.code, "unauthorized");
-
-    const wrongToken = await rawAcquire(host, port, { op: "acquire", id: "req-wrong-token", token: "0".repeat(64) });
-    assert.equal(wrongToken.response.kind, "error");
-    assert.equal(wrongToken.response.code, "unauthorized");
-
-    // Neither request allocated an instance directory.
-    const portDirs = readdirSync(stateDir, { withFileTypes: true }).filter((d) => d.isDirectory() && /^\d+$/.test(d.name));
-    assert.equal(portDirs.length, 0, `unauthorized requests must not spawn anything, found ${JSON.stringify(portDirs.map((d) => d.name))}`);
-  } finally {
-    await stopBroker(handle);
-    rmSync(stateDir, { recursive: true, force: true });
-  }
-});
-
 // ---------------------------------------------------------------------------
 // Plan 62-04, Task 2 (D-13/BROKER-01/BROKER-06): a broker started with NO
 // project argument resolves its state under the machine-level root
@@ -1020,11 +950,8 @@ test("a control request with no token, and one with a wrong token, both return t
 // broker serves independent sessions from unrelated project directories
 // with its own state inside neither. "Two clients configured against two
 // project directories" is proven as two INDEPENDENT control-plane sessions
-// opened against the broker's own (machine-level) state directory -- the
-// only directory a real broker.json ever lives in under this phase's design
-// (there is deliberately no per-project discovery path any more, which is
-// D-13's whole point) -- rather than by varying each session's own dial
-// target, which nothing in this phase's shape supports.
+// dialed at the one fixed control port, and the state directory is the one
+// the broker itself reports on stderr.
 // ---------------------------------------------------------------------------
 
 test(
@@ -1041,36 +968,32 @@ test(
     // directory, not an argument this test supplies.
     const handle = startBrokerWithArgv([], { VICE_BROKER_HOME: machineHome });
     try {
-      const brokerJson = await waitForBrokerJson(expectedStateDir);
-      assert.equal(brokerJson.control_host, "127.0.0.1", `broker.json contents: ${JSON.stringify(brokerJson)}`);
+      const port = await waitForReady(handle);
+      const reported = /vice-broker: state directory: (.+)\n/.exec(handle.stderr);
+      assert.ok(reported, `the broker must report its state directory on stderr; stderr: ${handle.stderr}`);
+      const stateDir = reported[1];
+      assert.equal(stateDir, expectedStateDir, "the no-argument broker must resolve its state under VICE_BROKER_HOME's machine-level root");
 
       // Two independent control-plane sessions, standing in for two clients
       // launched from two unrelated project checkouts -- both complete a
       // real handshake against the SAME single broker process.
-      const sessionA = await openBrokerControl(expectedStateDir);
-      assert.ok(sessionA.ok, `client A's handshake failed: ${JSON.stringify(sessionA)}`);
-      const sessionB = await openBrokerControl(expectedStateDir);
-      assert.ok(sessionB.ok, `client B's handshake failed: ${JSON.stringify(sessionB)}`);
-
+      const sessionA = await dialBroker(port);
+      const sessionB = await dialBroker(port);
       try {
-        if (sessionA.ok) {
-          const statusA = await sessionA.session.status();
-          assert.ok(statusA.ok, `client A's post-handshake status call failed: ${JSON.stringify(statusA)}`);
-        }
-        if (sessionB.ok) {
-          const statusB = await sessionB.session.status();
-          assert.ok(statusB.ok, `client B's post-handshake status call failed: ${JSON.stringify(statusB)}`);
-        }
+        const statusA = await sessionA.status();
+        assert.ok(statusA.ok, `client A's post-handshake status call failed: ${JSON.stringify(statusA)}`);
+        const statusB = await sessionB.status();
+        assert.ok(statusB.ok, `client B's post-handshake status call failed: ${JSON.stringify(statusB)}`);
       } finally {
-        if (sessionA.ok) await sessionA.session.release();
-        if (sessionB.ok) await sessionB.session.release();
+        await sessionA.release();
+        await sessionB.release();
       }
 
       // The load-bearing containment assertion (BROKER-01/BROKER-06):
       // nothing the broker resolved for itself falls inside EITHER project
       // directory.
-      assert.ok(!expectedStateDir.startsWith(projectA), `state directory ${expectedStateDir} must not be inside project A (${projectA})`);
-      assert.ok(!expectedStateDir.startsWith(projectB), `state directory ${expectedStateDir} must not be inside project B (${projectB})`);
+      assert.ok(!stateDir.startsWith(projectA), `state directory ${stateDir} must not be inside project A (${projectA})`);
+      assert.ok(!stateDir.startsWith(projectB), `state directory ${stateDir} must not be inside project B (${projectB})`);
     } finally {
       await stopBroker(handle);
       rmSync(machineHome, { recursive: true, force: true });
@@ -1085,19 +1008,16 @@ test("with zero live sessions, the handshake still answers and the broker report
   const stateDir = mkdtempSync(join(tmpdir(), "broker-e2e-zero-session-"));
   const handle = startBroker(stateDir);
   try {
-    await waitForBrokerJson(stateDir);
-    const outcome = await openBrokerControl(stateDir);
-    assert.ok(outcome.ok, `handshake with zero live sessions failed: ${JSON.stringify(outcome)}`);
+    const port = await waitForReady(handle);
+    const session = await dialBroker(port);
     try {
-      if (outcome.ok) {
-        const status = await outcome.session.status();
-        assert.ok(status.ok, `status call failed: ${JSON.stringify(status)}`);
-        if (status.ok) {
-          assert.equal(status.instances.length, 0, "no acquire was ever performed against this broker -- its instance list must be empty");
-        }
+      const status = await session.status();
+      assert.ok(status.ok, `status call failed: ${JSON.stringify(status)}`);
+      if (status.ok) {
+        assert.equal(status.instances.length, 0, "no acquire was ever performed against this broker -- its instance list must be empty");
       }
     } finally {
-      if (outcome.ok) await outcome.session.release();
+      await session.release();
     }
   } finally {
     await stopBroker(handle);
@@ -1136,7 +1056,7 @@ test("the emitted broker artifact refuses to start with the container signal inj
       refused.once("exit", (code) => resolvePromise(code));
     });
     assert.equal(refusedCode, 2, "starting in-container with no escape hatch must exit 2");
-    assert.equal(existsSync(join(stateDir, "broker.json")), false, "a refused start must never write broker.json");
+    assert.deepEqual(readdirSync(stateDir), [], "a refused start must leave its state directory untouched");
 
     const reported = spawn(process.execPath, [BROKER_ARTIFACT, "--check-container"], {
       env: { ...process.env, ...SIMULATED_CONTAINER_ENV, VICE_SUPERVISOR_ALLOW_CONTAINER: "" },

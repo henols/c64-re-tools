@@ -36,20 +36,10 @@ import {
 import { createBrokerState, _snapshotState, type BrokerState, type InstanceRecord } from "./broker-state.mts";
 import { epochPathFor, nextEpochFor, writeEpochRecord, type EpochRecord } from "./broker-epoch.mts";
 import { build } from "./build.ts";
-import { acquireOverControlPlane } from "./vice-broker-client.ts";
+import { dialControlSession, type BrokerControlSession } from "./vice-broker-client.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BROKER_ARTIFACT = join(HERE, "resources", "vice-broker.mjs");
-
-// quick-260805-9ha: the broker this file spawns binds its control listener
-// INSIDE this container -- nothing here may ever dial the real host.
-// acquireOverControlPlane() no longer dials broker.json's own control_host
-// field (the broker's BIND address, never a dial target); this override is
-// the CLIENT's (this test process's) own dial knob, set once at module
-// scope. It is deliberately NOT passed into the spawned broker's own env --
-// that process's bind address is governed by the separate, existing
-// VICE_BROKER_CONTROL_HOST/VICE_BROKER_CONTROL_PORT knobs.
-process.env.VICE_BROKER_CONTROL_DIAL_HOST = "127.0.0.1";
 
 /** Poll `predicate` to a bounded deadline rather than sleeping a fixed
  * duration -- this project's own stack pattern (checkpoint/frame
@@ -432,9 +422,8 @@ test("structural: the broker's argument parser recognises exactly --repo-root, -
 
 // TIGHTENED (node-interpreter-pinning quick task): this used to be a single
 // assertion banning the bare substring "execPath" outright, which blocked a
-// legitimate, unrelated use -- recording the broker's own process.execPath in
-// broker.json's node_exec_path field, purely for a later triage session to
-// read. A single substring ban is unbypassable but blunt (it cannot
+// legitimate, unrelated use -- reporting the broker's own process.execPath in
+// its readiness line, purely for a later triage session to read. A single substring ban is unbypassable but blunt (it cannot
 // distinguish that legitimate use from a self-respawn); a single
 // spawn-construct regex is legible but bypassable (one variable of
 // indirection -- `const self = process.execPath; nodeSpawn(self, ...)` --
@@ -446,8 +435,8 @@ test("structural: the broker's argument parser recognises exactly --repo-root, -
 //      being READ -- dot access (`process.execPath`) or bracket access with
 //      any of the three quote characters (`process["execPath"]`,
 //      `process['execPath']`, `` process[`execPath`] ``) -- and require
-//      there be EXACTLY ONE, sitting on the one permitted line
-//      (`node_exec_path: process.execPath`). Stated precisely so this
+//      there be EXACTLY ONE, sitting on the one permitted line (the
+//      `vice-broker: ready (node ... at ${process.execPath}, ...` line). Stated precisely so this
 //      comment cannot overstate its own guarantee: it covers those two
 //      spellings of the property read, at this one call site; it does NOT
 //      by itself prove no *other* string could still smuggle the value out
@@ -474,7 +463,7 @@ test("structural: the broker's argument parser recognises exactly --repo-root, -
 // reused instance across calls.
 const PROCESS_EXEC_PATH_ACCESS = /process\s*(?:\.\s*execPath\b|\[\s*(['"`])execPath\1\s*\])/;
 
-test("structural: the broker never re-executes itself -- process.execPath appears exactly once (the node_exec_path record field) and is never passed to a spawn/exec/fork construct", () => {
+test("structural: the broker never re-executes itself -- process.execPath appears exactly once (the readiness line) and is never passed to a spawn/exec/fork construct", () => {
   const source = readFileSync(join(HERE, "vice-broker.mts"), "utf8");
   const stripped = stripCommentsForRetiredNameGate(source);
 
@@ -492,8 +481,8 @@ test("structural: the broker never re-executes itself -- process.execPath appear
   );
   assert.match(
     execPathLines[0]!.line,
-    /node_exec_path\s*:\s*process\.execPath/,
-    `the one permitted process.execPath occurrence must be the node_exec_path record field, got: ${execPathLines[0]!.line.trim()}`,
+    /vice-broker: ready \(node \$\{process\.version\} at \$\{process\.execPath\}/,
+    `the one permitted process.execPath occurrence must be the readiness line, got: ${execPathLines[0]!.line.trim()}`,
   );
 
   const selfReexecPattern = /\b(?:nodeSpawn|spawn|execFile(?:Sync)?|fork)\s*\(\s*process\.execPath\b/;
@@ -516,7 +505,7 @@ test("structural: no clean-shutdown marker file is ever referenced in broker-kil
 // emulator binary, grant two instances over the real TCP control plane, then
 // signal the broker itself (never a real emulator) and prove BOTH stub
 // children are gone and the broker exits 0. Mirrors broker-e2e.test.ts's own
-// startBroker()/waitForBrokerJson() idiom.
+// startBroker()/waitForReady() idiom.
 // ---------------------------------------------------------------------------
 
 interface BrokerHandle {
@@ -538,13 +527,6 @@ function startBroker(stateDir: string): BrokerHandle {
       // test's own mkdtempSync stateDir (reaped in the caller's own
       // `finally`), never the real machine-level ~/.c64-re-tools.
       VICE_BROKER_HOME: stateDir,
-      // quick-260805-9ha: this file's own module-scope override is a CLIENT
-      // (this test process's) dial knob -- unset it here so the SPAWNED
-      // broker's env never carries it, even though process.env above would
-      // otherwise leak it in. child_process.spawn() drops an undefined-
-      // valued key rather than passing it through as the literal string
-      // "undefined" (verified: Node strips it before execve).
-      VICE_BROKER_CONTROL_DIAL_HOST: undefined,
     },
   });
   const handle: BrokerHandle = { child, stateDir, stderr: "" };
@@ -554,11 +536,24 @@ function startBroker(stateDir: string): BrokerHandle {
   return handle;
 }
 
-async function waitForBrokerJson(stateDir: string, deadlineMs = 5000): Promise<Record<string, unknown>> {
-  const path = join(stateDir, "broker.json");
-  const appeared = await waitFor(() => (existsSync(path) && typeof JSON.parse(readFileSync(path, "utf8")).control_port === "number" ? true : null), { timeoutMs: deadlineMs });
-  assert.ok(appeared, "broker.json with a control_port did not appear within deadline");
-  return JSON.parse(readFileSync(path, "utf8"));
+/** Waits for the broker's `vice-broker: ready` stderr line and returns the
+ * control port it names -- the kernel-chosen one, since startBroker() sets
+ * VICE_BROKER_CONTROL_PORT=0. */
+async function waitForReady(handle: BrokerHandle, deadlineMs = 5000): Promise<number> {
+  const pattern = /vice-broker: ready \(.*\); control listener bound on \S+:(\d+)/;
+  const match = await waitFor(() => pattern.exec(handle.stderr), { timeoutMs: deadlineMs });
+  assert.ok(match, `the broker's ready line did not appear within deadline; stderr so far: ${handle.stderr}`);
+  return Number(match[1]);
+}
+
+/** Dials a session at the broker on `port` and acquires over it. The
+ * returned session holds the grant until it is released or closed. */
+async function acquireOverSession(port: number): Promise<BrokerControlSession> {
+  const dialed = await dialControlSession({ port, candidates: ["127.0.0.1"] });
+  assert.ok(dialed.ok, `dialControlSession failed: ${JSON.stringify(dialed)}`);
+  const acquired = await dialed.session.acquire();
+  assert.ok(acquired.ok, `acquire failed: ${JSON.stringify(acquired)}`);
+  return dialed.session;
 }
 
 function instancePidsUnder(stateDir: string): number[] {
@@ -579,9 +574,9 @@ for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"] as const) {
     const stateDir = mkdtempSync(join(tmpdir(), `broker-kill-${sig}-`));
     const handle = startBroker(stateDir);
     try {
-      await waitForBrokerJson(stateDir);
-      const first = await acquireOverControlPlane(stateDir);
-      const second = await acquireOverControlPlane(stateDir);
+      const port = await waitForReady(handle);
+      const first = await acquireOverSession(port);
+      const second = await acquireOverSession(port);
 
       const pids = await waitFor(() => {
         const found = instancePidsUnder(stateDir);
@@ -618,37 +613,21 @@ test("end-to-end: the broker prints its start-time banner on stderr before the c
   // quick-260805 (todo: 2026-08-05-broker-kill-banner-ordering-test-is-
   // flaky-under-full-suite-load.md): the RETIRED version of this test
   // compared `bannerIdx < listenerBoundIdx`, both read from the SAME
-  // `handle.stderr` buffer -- textually deterministic once both lines have
-  // arrived, but nothing forced the SECOND line ("control listener bound")
-  // to have arrived across the child's stdout/stderr PIPE by the moment the
-  // assertion ran. That line is written (vice-broker.mts) only AFTER
-  // broker.json is already on disk, so under full-suite CPU load the
-  // cross-process pipe delivery of that one stderr line could still be in
-  // flight at the exact instant `waitForBrokerJson()` resolved from a plain,
-  // fast filesystem poll -- producing `listenerBoundIdx === -1` and a false
-  // red on an otherwise-healthy broker. The banner line itself was never the
-  // flaky half (it is written far earlier, before startControlListener() is
-  // even called, so it has a large head start) -- it was comparing against a
-  // second, later stderr line's ARRIVAL TIME that raced the file poll.
-  //
-  // Fix (option 1, the filed preference order's first choice): assert the
-  // CAUSAL property the test's own name promises -- the listener actually
-  // ACCEPTS a connection -- by performing a real acquire over the control
-  // plane (acquireOverControlPlane(), the same call the SIGTERM/SIGINT/
-  // SIGHUP tests above already use against this same startBroker() harness)
-  // rather than grepping stderr for a second log line. A successful acquire
-  // can only happen if the listener genuinely accepted and answered, so this
-  // is deterministic under any load: it is not racing a pipe against a
-  // filesystem poll, it is the accept itself.
+  // `handle.stderr` buffer, which raced the second line's pipe delivery.
+  // This test asserts the CAUSAL property its name promises instead -- the
+  // listener actually ACCEPTS a connection -- by performing a real acquire
+  // over the control plane (the same call the SIGTERM/SIGINT/SIGHUP tests
+  // above use against this same startBroker() harness). A successful acquire
+  // can only happen if the listener genuinely accepted and answered.
   build();
   const stateDir = mkdtempSync(join(tmpdir(), "broker-kill-banner-"));
   const handle = startBroker(stateDir);
   try {
-    await waitForBrokerJson(stateDir);
+    const port = await waitForReady(handle);
 
     // The causal fact: the control listener accepts a connection and
     // completes a real acquire handshake over it.
-    const acquired = await acquireOverControlPlane(stateDir);
+    const acquired = await acquireOverSession(port);
     void acquired; // deliberately left unreleased -- the broker's own SIGKILL teardown below cleans it up, same as the SIGTERM/SIGINT/SIGHUP tests above
 
     // Only now check the banner -- by this point a full request/response

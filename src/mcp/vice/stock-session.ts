@@ -152,8 +152,8 @@ export function clearHeldStockSession(): void {
  * cross-cutting seam locally" anti-pattern, aimed at the lease this time
  * rather than the acquisition itself).
  *
- * This function must NEVER call openBrokerControl(), session.acquire(), or
- * adoptGrant(); NEVER read broker.json; and NEVER construct a host or port
+ * This function must NEVER call dialControlSession(), session.acquire(), or
+ * adoptGrant(); and NEVER construct a host or port
  * from anything but the lease deps.ensureLease() handed it. D-13's
  * guarantee -- nothing reaches a second connect() -- only holds if there is
  * exactly one acquisition, and the monitor_claim inside stockConnect() is

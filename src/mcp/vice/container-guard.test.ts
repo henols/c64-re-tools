@@ -11,7 +11,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { evaluateContainerSignals, containerGuardReport, containerGuardEnforce, isInsideContainer, type ContainerGuardDeps } from "./container-guard.mts";
+import { evaluateContainerSignals, containerGuardReport, containerGuardEnforce, type ContainerGuardDeps } from "./container-guard.mts";
 
 /** A deps fixture with every signal CLEAR by default -- override individual
  * fields per test case so each signal is exercised in isolation. */
@@ -188,38 +188,3 @@ test("containerGuardEnforce: escape hatch is exact-match only -- any other value
   assert.equal(rc, 2);
 });
 
-// isInsideContainer() -- the environment PREDICATE, as opposed to the two
-// refuse-to-run entry points above. Driven entirely through injected deps, so
-// neither branch depends on the environment the test itself runs in: the
-// non-container branch must be provable from inside this container.
-
-test("isInsideContainer(): false when no signal fires -- the HOST verdict", () => {
-  assert.equal(isInsideContainer(clearDeps()), false);
-});
-
-test("isInsideContainer(): true when any single signal fires -- the same >=1 rule containerGuardReport()/Enforce() use", () => {
-  // One case per signal, so a future change that drops a signal from the
-  // predicate's view (without dropping it from the guard's) fails here.
-  assert.equal(isInsideContainer(clearDeps({ fileExists: (p) => p === "/.dockerenv" })), true);
-  assert.equal(isInsideContainer(clearDeps({ fileExists: (p) => p === "/run/.containerenv" })), true);
-  assert.equal(isInsideContainer(clearDeps({ env: { CONTAINER_WORKSPACE_PATH: "/workspaces/c64-project" } })), true);
-  assert.equal(isInsideContainer(clearDeps({ runSystemdDetectVirt: () => "docker" })), true);
-  assert.equal(
-    isInsideContainer(
-      clearDeps({
-        fileExists: (p) => p === "/proc/1/cgroup",
-        readFile: () => "0::/docker/abc123\n",
-      }),
-    ),
-    true,
-  );
-});
-
-test("isInsideContainer(): explicit deps never consult or populate the memoised default verdict, so call order cannot leak", () => {
-  // Deliberately alternates. A cache that explicit deps could write to would
-  // make the second assertion in each pair return the first's answer.
-  for (let i = 0; i < 3; i += 1) {
-    assert.equal(isInsideContainer(clearDeps({ runSystemdDetectVirt: () => "docker" })), true);
-    assert.equal(isInsideContainer(clearDeps()), false);
-  }
-});

@@ -15,17 +15,10 @@
 //     (version.mts's own runtimeVersion() DOES read a package.json, but that
 //     read lives in version.mts, not here -- this module only calls it, the
 //     same way vice-proxy.ts's own PROXY_VERSION already does.)
-//   - Never import vice-broker-client.ts (or anything reachable through its
-//     own import graph, in particular openBrokerControl()/
-//     resolveControlTarget(), the two functions that read broker.json).
-//     That is the legacy, per-project-discovery-record dial path this
-//     milestone runs in parallel with for the whole phase and eventually
-//     deletes (RM-02, Phase 66); blending the two into one function with a
-//     mode flag is the exact defect this module's own separation exists to
-//     prevent -- see 62-01-PLAN.md's assumption_delta_decision for the
-//     generalized-identity reasoning behind keeping this a NEW module
-//     rather than a graft onto the existing resolver.
-//   - Never call isInsideContainer() or any other container detector to
+//   - Never import vice-broker-client.ts. That client wraps this module's
+//     control dial (dialControlSocket()) in its request framing; the import
+//     runs one way only.
+//   - Never call a container detector to
 //     decide which candidate to try, or in which order. DIAL_CANDIDATES'
 //     fixed order IS the host/container detection -- that is this phase's
 //     whole premise (see the phase objective in 62-01-PLAN.md).
@@ -75,8 +68,7 @@ export interface ResolveEndpointPortOptions {
  * when its caller supplies no explicit `port` option. Reads
  * VICE_BROKER_CONTROL_PORT -- the SAME variable broker-control.mts's own
  * resolveControlPort() binds the LISTENER on -- because a bind port and a
- * dial port are the same number, unlike a bind host and a dial host (this
- * is deliberately NOT the VICE_BROKER_CONTROL_DIAL_HOST split). Before this
+ * dial port are the same number, unlike a bind host and a dial host. Before this
  * function existed, every dial in this module hardcoded
  * DEFAULT_CONTROL_PORT regardless of what the broker was actually told to
  * bind on -- the latent "relay always dials 19510" defect the G-64-1
@@ -271,11 +263,8 @@ interface NodeConnectError extends Error {
  * connection, a reply timeout, and a malformed reply all resolve the same
  * promise shape with a rank, exactly the never-throw posture this boundary
  * requires. Gives this candidate its OWN connect timer and its OWN reply
- * timer, both `.unref()`d and cleared on settle, mirroring
- * vice-broker-client.ts's openBrokerControl() connect/timeout/settled
- * machinery -- this project's one existing primitive for this exact shape,
- * reused rather than reinvented, so a wedged candidate can never block its
- * sibling (ENDPOINT-02).
+ * timer, both `.unref()`d and cleared on settle, so a wedged candidate can
+ * never block its sibling (ENDPOINT-02).
  *
  * `onSocket` fires SYNCHRONOUSLY, before this function returns, with the
  * live socket handle -- dialBrokerEndpoint() needs it immediately (not only
@@ -516,9 +505,7 @@ const INSTALLER_PACKAGE_NAME = "@henols/c64-re-tools";
  * connection by construction, "resolved but failed" collapses to simply
  * "any observation has resolved:true". Gated on this dial-observed
  * condition alone, NEVER on a container-detection call -- that would
- * reintroduce in this client exactly the isInsideContainer() call RM-03
- * deletes, and would contradict this phase's own premise that the dial
- * order IS the detection.
+ * contradict this phase's own premise that the dial order IS the detection.
  *
  * Community-sourced, MEDIUM confidence: worded as a possibility to check,
  * with that provenance disclosed in the sentence itself, and never stated
@@ -1465,17 +1452,14 @@ function makeHostToolSession(socket: Socket): HostToolSession {
   };
 }
 
-/** Dials the fixed endpoint for a host-tool session: the SAME two-candidate
- * hello race `dialFileTransfer()`/`dialMonitorRelay()` run above, tagged
- * `HOST_TOOL_TAG`, but on the FIRST completed handshake this function keeps
- * that winning socket alive (destroying only the losing candidate's) and
- * hands back a `HostToolSession` -- never throws. `ok: false` covers ONLY
- * "no candidate could even complete a hello" (reusing
- * `describeDialFailure()`'s own ranked text): there is no further
- * request/reply exchange for this function itself to fail on, unlike
- * `dialMonitorRelay()`/`dialFileTransfer()` above, which each write one
- * line immediately after the hello race completes. */
-export function dialHostToolSession(options: DialHostToolSessionOptions = {}): Promise<DialHostToolSessionResult> {
+type DialKeptSocketResult = { ok: true; socket: Socket } | { ok: false; reason: string };
+
+/** Runs the same two-candidate hello race `dialFileTransfer()`/
+ * `dialMonitorRelay()` run above, under `tag`, but keeps the winning socket
+ * alive (destroying only the losing candidate's) and hands it back. Never
+ * throws. `ok: false` covers only "no candidate completed a hello", with
+ * `describeDialFailure()`'s ranked text as the reason. */
+function dialKeptSocket(tag: string, options: DialHostToolSessionOptions): Promise<DialKeptSocketResult> {
   const port = options.port ?? resolveEndpointPort();
   const candidates = options.candidates ?? DIAL_CANDIDATES;
   const connectTimeoutMs = options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
@@ -1483,7 +1467,7 @@ export function dialHostToolSession(options: DialHostToolSessionOptions = {}): P
   const connectFn = options.connect ?? connect;
   const clientVersion = options.clientVersion ?? CLIENT_VERSION;
 
-  return new Promise<DialHostToolSessionResult>((resolveOuter) => {
+  return new Promise<DialKeptSocketResult>((resolveOuter) => {
     const sockets: (Socket | null)[] = candidates.map(() => null);
     const observations: (DialCandidateObservation | undefined)[] = candidates.map(() => undefined);
     let settledCount = 0;
@@ -1512,7 +1496,7 @@ export function dialHostToolSession(options: DialHostToolSessionOptions = {}): P
         (socket) => {
           sockets[idx] = socket;
         },
-        HOST_TOOL_TAG,
+        tag,
       ).then((outcome) => {
         settledCount++;
         if (outerSettled) return;
@@ -1525,10 +1509,10 @@ export function dialHostToolSession(options: DialHostToolSessionOptions = {}): P
             // Structurally unreachable: dialOneCandidate's own onSocket
             // callback fires synchronously before this .then() can ever
             // run. Guarded anyway -- never a throw out of this function.
-            resolveOuter({ ok: false, reason: "vice: internal error -- host-tool dial completed with no live socket" });
+            resolveOuter({ ok: false, reason: "vice: internal error -- the dial completed with no live socket" });
             return;
           }
-          resolveOuter({ ok: true, session: makeHostToolSession(winnerSocket) });
+          resolveOuter({ ok: true, socket: winnerSocket });
           return;
         }
         observations[idx] = {
@@ -1547,4 +1531,27 @@ export function dialHostToolSession(options: DialHostToolSessionOptions = {}): P
       });
     });
   });
+}
+
+/** Dials the fixed endpoint for a host-tool session (tag `HOST_TOOL_TAG`). */
+export function dialHostToolSession(options: DialHostToolSessionOptions = {}): Promise<DialHostToolSessionResult> {
+  return dialKeptSocket(HOST_TOOL_TAG, options).then((dialed) =>
+    dialed.ok ? { ok: true, session: makeHostToolSession(dialed.socket) } : dialed,
+  );
+}
+
+/** The hello tag of a long-lived control connection: the one that carries
+ * acquire/release/status and monitor claims, and whose close is the lease's
+ * release. */
+export const CONTROL_TAG = "control";
+
+export type DialControlSocketOptions = DialHostToolSessionOptions;
+export type DialControlSocketResult = DialKeptSocketResult;
+
+/** Dials the fixed endpoint for a control connection (tag `CONTROL_TAG`) and
+ * hands back the hello'd socket. vice-broker-client.ts's
+ * `dialControlSession()` wraps it in the request/reply framing; this module
+ * never imports that client. */
+export function dialControlSocket(options: DialControlSocketOptions = {}): Promise<DialControlSocketResult> {
+  return dialKeptSocket(CONTROL_TAG, options);
 }

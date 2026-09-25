@@ -207,9 +207,8 @@ export function readDeployManifest(root: string): string[] {
 
 /** Writes the deploy manifest through the same tmp-sibling, mode-restricted,
  * rename sequence every other state file in this subsystem uses
- * (vice-broker.mts's writeBrokerRecord(): tmp file created empty, chmod 0600
- * BEFORE any content reaches it, then content written, then renamed into
- * place -- so the manifest is never briefly world-readable, V4). `entries`
+ * (tmp file created empty, chmod 0600 BEFORE any content reaches it, then
+ * content written, then renamed into place -- so the manifest is never briefly world-readable, V4). `entries`
  * is sorted before being written so the on-disk manifest is stable and
  * diff-friendly across runs that deploy the same resource set in a
  * different enumeration order. */

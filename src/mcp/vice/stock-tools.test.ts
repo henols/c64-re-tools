@@ -793,11 +793,8 @@ async function withTempRepoRootForConformance<T>(fn: (repoRootDir: string) => Pr
 }
 
 // Phase 64 (XFER-01/XFER-02/XFER-08, plan 64-06): vice_autostart/
-// vice_disk_attach/vice_snapshot_save/vice_snapshot_load all migrated off
-// withEmulatorSidePath() (stock-paths.ts) onto the broker's own file-transfer
-// protocol -- none of the four reaches isInsideContainer() any more, so this
-// file's own former setIsInsideContainerForTest() stub is gone too (D-18:
-// stock-machine.ts no longer imports stock-paths.ts at all). Every
+// vice_disk_attach/vice_snapshot_save/vice_snapshot_load all go through the
+// broker's own file-transfer protocol, so none of them needs a container check. Every
 // conformance case for these four tools now runs through
 // CONFORMANCE_BROKER_CONTROL's stageFile stub and buildConformanceSession()'s
 // deps.transferFile stub instead (both added in plan 64-04, above).

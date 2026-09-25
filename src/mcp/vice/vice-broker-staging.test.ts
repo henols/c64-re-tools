@@ -21,7 +21,6 @@ import { join } from "node:path";
 import { build } from "./build.ts";
 import {
   startControlListener,
-  newControlToken,
   type StartControlListenerResult,
   type AcquireOutcome,
   type StatusInstanceEntry,
@@ -118,12 +117,10 @@ async function startStagingListenerForState(
   state: BrokerState,
   emulatorPort: number,
   getDeps: () => { beforePublish?: () => Promise<void> } = () => ({}),
-): Promise<{ listener: StartControlListenerResult; token: string }> {
-  const token = newControlToken();
+): Promise<{ listener: StartControlListenerResult }> {
   const listener = await startControlListener({
     host: "127.0.0.1",
     port: 0,
-    token,
     onAcquire: async (): Promise<AcquireOutcome> => ({
       ok: true,
       grant: { port: emulatorPort, url: `http://127.0.0.1:${emulatorPort}/mcp`, epochFile: "/tmp/staging-test-epoch.json", supervisorDir: "/tmp/staging-test" },
@@ -150,7 +147,7 @@ async function startStagingListenerForState(
     onStageFile: (targetId: string, slot: string) => handleStageFile(targetId, slot, state),
     onFileTransfer: (request, socket, pending) => handleFileTransfer(request, socket, pending, state, getDeps()),
   });
-  return { listener, token };
+  return { listener };
 }
 
 /** Runs `fn` with a fresh mkdtempSync VICE_BROKER_HOME -- never the real
@@ -298,14 +295,14 @@ test("vice-broker-staging: a full upload-then-download round trip is byte-for-by
     const emulatorPort = nextEmulatorPort();
     const grantId = "req-1-1-aaaaaaaa";
     const state = setupBrokerState(emulatorPort, grantId);
-    const { listener, token } = await startStagingListenerForState(state, emulatorPort);
+    const { listener } = await startStagingListenerForState(state, emulatorPort);
     try {
       const control = makeControlClient(listener.port);
       try {
-        const acquireReply = await control.sendAndRead({ op: "acquire", id: grantId, token });
+        const acquireReply = await control.sendAndRead({ op: "acquire", id: grantId });
         assert.equal(acquireReply.kind, "grant");
 
-        const stageReply = await control.sendAndRead({ op: "stage_file", target_id: grantId, slot: "disk8", token });
+        const stageReply = await control.sendAndRead({ op: "stage_file", target_id: grantId, slot: "disk8" });
         assert.equal(stageReply.kind, "file_staged");
         const handle = stageReply.handle as string;
         const emulatorFilename = stageReply.emulator_filename as string;
@@ -319,7 +316,7 @@ test("vice-broker-staging: a full upload-then-download round trip is byte-for-by
         const uploadSocket = netConnect({ host: "127.0.0.1", port: listener.port });
         await onceConnected(uploadSocket);
         const uploadReplyPromise = readLineFromSocket(uploadSocket);
-        uploadSocket.write(`${JSON.stringify({ op: "transfer", direction: "upload", handle, byteLength, sha256, token })}\n`);
+        uploadSocket.write(`${JSON.stringify({ op: "transfer", direction: "upload", handle, byteLength, sha256 })}\n`);
         const { obj: uploadReply } = await uploadReplyPromise;
         assert.equal(uploadReply.kind, "transfer_ready");
 
@@ -348,7 +345,7 @@ test("vice-broker-staging: a full upload-then-download round trip is byte-for-by
         const downloadSocket = netConnect({ host: "127.0.0.1", port: listener.port });
         await onceConnected(downloadSocket);
         const downloadReplyPromise = readLineFromSocket(downloadSocket);
-        downloadSocket.write(`${JSON.stringify({ op: "transfer", direction: "download", handle, token })}\n`);
+        downloadSocket.write(`${JSON.stringify({ op: "transfer", direction: "download", handle })}\n`);
         const { obj: downloadReply, pending } = await downloadReplyPromise;
         assert.equal(downloadReply.kind, "transfer_payload");
         assert.equal(downloadReply.byteLength, byteLength);
@@ -370,12 +367,12 @@ test("vice-broker-staging: a transfer presenting an unknown handle receives an e
     const emulatorPort = nextEmulatorPort();
     const grantId = "req-1-1-bbbbbbbb";
     const state = setupBrokerState(emulatorPort, grantId);
-    const { listener, token } = await startStagingListenerForState(state, emulatorPort);
+    const { listener } = await startStagingListenerForState(state, emulatorPort);
     try {
       const socket = netConnect({ host: "127.0.0.1", port: listener.port });
       await onceConnected(socket);
       const replyPromise = readLineFromSocket(socket);
-      socket.write(`${JSON.stringify({ op: "transfer", direction: "download", handle: "0000000000000000000000000000000000", token })}\n`);
+      socket.write(`${JSON.stringify({ op: "transfer", direction: "download", handle: "0000000000000000000000000000000000" })}\n`);
       const { obj: reply } = await replyPromise;
       assert.equal(reply.kind, "error");
       assert.equal(reply.code, "denied");
@@ -393,12 +390,12 @@ test("vice-broker-staging: an upload whose declared digest disagrees with its by
     const emulatorPort = nextEmulatorPort();
     const grantId = "req-1-1-cccccccc";
     const state = setupBrokerState(emulatorPort, grantId);
-    const { listener, token } = await startStagingListenerForState(state, emulatorPort);
+    const { listener } = await startStagingListenerForState(state, emulatorPort);
     try {
       const control = makeControlClient(listener.port);
       try {
-        await control.sendAndRead({ op: "acquire", id: grantId, token });
-        const stageReply = await control.sendAndRead({ op: "stage_file", target_id: grantId, slot: "disk8", token });
+        await control.sendAndRead({ op: "acquire", id: grantId });
+        const stageReply = await control.sendAndRead({ op: "stage_file", target_id: grantId, slot: "disk8" });
         const handle = stageReply.handle as string;
         const emulatorFilename = stageReply.emulator_filename as string;
 
@@ -408,7 +405,7 @@ test("vice-broker-staging: an upload whose declared digest disagrees with its by
         const uploadSocket = netConnect({ host: "127.0.0.1", port: listener.port });
         await onceConnected(uploadSocket);
         const uploadReplyPromise = readLineFromSocket(uploadSocket);
-        uploadSocket.write(`${JSON.stringify({ op: "transfer", direction: "upload", handle, byteLength: payload.length, sha256: wrongSha256, token })}\n`);
+        uploadSocket.write(`${JSON.stringify({ op: "transfer", direction: "upload", handle, byteLength: payload.length, sha256: wrongSha256 })}\n`);
         const { obj: uploadReply } = await uploadReplyPromise;
         assert.equal(uploadReply.kind, "transfer_ready");
 
@@ -441,12 +438,12 @@ test("vice-broker-staging: real fs fault at the publish rename (the session dire
     // Starts undefined -- armed right before this upload so the hook is
     // per-case, matching stock-connect.test.ts's own getDeps shape.
     let beforePublish: (() => Promise<void>) | undefined;
-    const { listener, token } = await startStagingListenerForState(state, emulatorPort, () => ({ beforePublish }));
+    const { listener } = await startStagingListenerForState(state, emulatorPort, () => ({ beforePublish }));
     try {
       const control = makeControlClient(listener.port);
       try {
-        await control.sendAndRead({ op: "acquire", id: grantId, token });
-        const stageReply = await control.sendAndRead({ op: "stage_file", target_id: grantId, slot: "disk8", token });
+        await control.sendAndRead({ op: "acquire", id: grantId });
+        const stageReply = await control.sendAndRead({ op: "stage_file", target_id: grantId, slot: "disk8" });
         const handle = stageReply.handle as string;
         const emulatorFilename = stageReply.emulator_filename as string;
 
@@ -464,7 +461,7 @@ test("vice-broker-staging: real fs fault at the publish rename (the session dire
         const uploadSocket = netConnect({ host: "127.0.0.1", port: listener.port });
         await onceConnected(uploadSocket);
         const uploadReplyPromise = readLineFromSocket(uploadSocket);
-        uploadSocket.write(`${JSON.stringify({ op: "transfer", direction: "upload", handle, byteLength, sha256, token })}\n`);
+        uploadSocket.write(`${JSON.stringify({ op: "transfer", direction: "upload", handle, byteLength, sha256 })}\n`);
         const { obj: uploadReply } = await uploadReplyPromise;
         assert.equal(uploadReply.kind, "transfer_ready");
 
@@ -496,12 +493,12 @@ test("vice-broker-staging: real fs fault in the pre-publish hook (a real ENOENT 
     const grantId = "req-64-15-t2-hook";
     const state = setupBrokerState(emulatorPort, grantId);
     let beforePublish: (() => Promise<void>) | undefined;
-    const { listener, token } = await startStagingListenerForState(state, emulatorPort, () => ({ beforePublish }));
+    const { listener } = await startStagingListenerForState(state, emulatorPort, () => ({ beforePublish }));
     try {
       const control = makeControlClient(listener.port);
       try {
-        await control.sendAndRead({ op: "acquire", id: grantId, token });
-        const stageReply = await control.sendAndRead({ op: "stage_file", target_id: grantId, slot: "disk8", token });
+        await control.sendAndRead({ op: "acquire", id: grantId });
+        const stageReply = await control.sendAndRead({ op: "stage_file", target_id: grantId, slot: "disk8" });
         const handle = stageReply.handle as string;
         const emulatorFilename = stageReply.emulator_filename as string;
 
@@ -517,7 +514,7 @@ test("vice-broker-staging: real fs fault in the pre-publish hook (a real ENOENT 
         const uploadSocket = netConnect({ host: "127.0.0.1", port: listener.port });
         await onceConnected(uploadSocket);
         const uploadReplyPromise = readLineFromSocket(uploadSocket);
-        uploadSocket.write(`${JSON.stringify({ op: "transfer", direction: "upload", handle, byteLength, sha256, token })}\n`);
+        uploadSocket.write(`${JSON.stringify({ op: "transfer", direction: "upload", handle, byteLength, sha256 })}\n`);
         const { obj: uploadReply } = await uploadReplyPromise;
         assert.equal(uploadReply.kind, "transfer_ready");
 
@@ -548,12 +545,12 @@ test("vice-broker-staging: a download for a handle whose staged file does not ex
     const emulatorPort = nextEmulatorPort();
     const grantId = "req-1-1-dddddddd";
     const state = setupBrokerState(emulatorPort, grantId);
-    const { listener, token } = await startStagingListenerForState(state, emulatorPort);
+    const { listener } = await startStagingListenerForState(state, emulatorPort);
     try {
       const control = makeControlClient(listener.port);
       try {
-        await control.sendAndRead({ op: "acquire", id: grantId, token });
-        const stageReply = await control.sendAndRead({ op: "stage_file", target_id: grantId, slot: "disk8", token });
+        await control.sendAndRead({ op: "acquire", id: grantId });
+        const stageReply = await control.sendAndRead({ op: "stage_file", target_id: grantId, slot: "disk8" });
         const handle = stageReply.handle as string;
         const emulatorFilename = stageReply.emulator_filename as string;
         assert.equal(existsSync(emulatorFilename), false, "nothing has been uploaded yet");
@@ -561,7 +558,7 @@ test("vice-broker-staging: a download for a handle whose staged file does not ex
         const socket = netConnect({ host: "127.0.0.1", port: listener.port });
         await onceConnected(socket);
         const replyPromise = readLineFromSocket(socket);
-        socket.write(`${JSON.stringify({ op: "transfer", direction: "download", handle, token })}\n`);
+        socket.write(`${JSON.stringify({ op: "transfer", direction: "download", handle })}\n`);
         const { obj: reply } = await replyPromise;
         assert.equal(reply.kind, "error");
         assert.equal(reply.code, "denied");
@@ -581,12 +578,12 @@ test("vice-broker-staging: a second transfer on an in-flight handle is refused w
     const emulatorPort = nextEmulatorPort();
     const grantId = "req-1-1-eeeeeeee";
     const state = setupBrokerState(emulatorPort, grantId);
-    const { listener, token } = await startStagingListenerForState(state, emulatorPort);
+    const { listener } = await startStagingListenerForState(state, emulatorPort);
     try {
       const control = makeControlClient(listener.port);
       try {
-        await control.sendAndRead({ op: "acquire", id: grantId, token });
-        const stageReply = await control.sendAndRead({ op: "stage_file", target_id: grantId, slot: "disk8", token });
+        await control.sendAndRead({ op: "acquire", id: grantId });
+        const stageReply = await control.sendAndRead({ op: "stage_file", target_id: grantId, slot: "disk8" });
         const handle = stageReply.handle as string;
         const emulatorFilename = stageReply.emulator_filename as string;
 
@@ -596,7 +593,7 @@ test("vice-broker-staging: a second transfer on an in-flight handle is refused w
         const firstSocket = netConnect({ host: "127.0.0.1", port: listener.port });
         await onceConnected(firstSocket);
         const firstReplyPromise = readLineFromSocket(firstSocket);
-        firstSocket.write(`${JSON.stringify({ op: "transfer", direction: "upload", handle, byteLength, sha256, token })}\n`);
+        firstSocket.write(`${JSON.stringify({ op: "transfer", direction: "upload", handle, byteLength, sha256 })}\n`);
         const { obj: firstReply } = await firstReplyPromise;
         assert.equal(firstReply.kind, "transfer_ready");
         // Write all but the last byte -- the transfer is now "in flight"
@@ -607,7 +604,7 @@ test("vice-broker-staging: a second transfer on an in-flight handle is refused w
         const secondSocket = netConnect({ host: "127.0.0.1", port: listener.port });
         await onceConnected(secondSocket);
         const secondReplyPromise = readLineFromSocket(secondSocket);
-        secondSocket.write(`${JSON.stringify({ op: "transfer", direction: "download", handle, token })}\n`);
+        secondSocket.write(`${JSON.stringify({ op: "transfer", direction: "download", handle })}\n`);
         const { obj: secondReply } = await secondReplyPromise;
         assert.equal(secondReply.kind, "error");
         assert.equal(secondReply.code, "denied");
@@ -638,12 +635,12 @@ test("vice-broker-staging: after the session-close path runs for a grant, the se
     const emulatorPort = nextEmulatorPort();
     const grantId = "req-1-1-ffffffff";
     const state = setupBrokerState(emulatorPort, grantId);
-    const { listener, token } = await startStagingListenerForState(state, emulatorPort);
+    const { listener } = await startStagingListenerForState(state, emulatorPort);
     try {
       const control = makeControlClient(listener.port);
-      const acquireReply = await control.sendAndRead({ op: "acquire", id: grantId, token });
+      const acquireReply = await control.sendAndRead({ op: "acquire", id: grantId });
       assert.equal(acquireReply.kind, "grant");
-      const stageReply = await control.sendAndRead({ op: "stage_file", target_id: grantId, slot: "disk8", token });
+      const stageReply = await control.sendAndRead({ op: "stage_file", target_id: grantId, slot: "disk8" });
       assert.equal(stageReply.kind, "file_staged");
       const emulatorFilename = stageReply.emulator_filename as string;
       const sessionDir = join(home, "staging", grantId);
@@ -669,7 +666,7 @@ test("vice-broker-staging: after the session-close path runs for a grant, the se
 // reapOrphanedConfigScratch() runs in vice-broker.mts's pre-bind,
 // unconditional startup-reap block, beside reapOrphanedInstances().
 // sweepOrphanedStaging() runs later, only in the process that has won the
-// control-port bind and only before it publishes its control token -- see
+// control-port bind -- see
 // vice-broker.mts's own call site. This test calls both directly through
 // the SAME production root-resolution wiring vice-broker.mts itself uses
 // (brokerConfigScratchDir()/brokerStagingDir(), no arguments, reading

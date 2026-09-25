@@ -26,7 +26,6 @@ import {
 import { build } from "./build.ts";
 import {
   startControlListener,
-  newControlToken,
   type StartControlListenerResult,
   type AcquireOutcome,
   type StatusInstanceEntry,
@@ -1217,8 +1216,7 @@ async function startTransferControlListener(
   state: BrokerState,
   emulatorPort: number,
   getDeps: () => { beforePublish?: () => Promise<void> },
-): Promise<{ listener: StartControlListenerResult; token: string }> {
-  const token = newControlToken();
+): Promise<{ listener: StartControlListenerResult }> {
   const viceBrokerModule = (await import(new URL("./resources/vice-broker.mjs", import.meta.url).href)) as unknown as {
     handleRelease: (requestId: string, state: BrokerState) => void;
     handleStageFile: (grantId: string, slot: string, state: BrokerState) => ControlStageFileOutcome;
@@ -1234,7 +1232,6 @@ async function startTransferControlListener(
   const listener = await startControlListener({
     host: "127.0.0.1",
     port: 0,
-    token,
     onAcquire: async (): Promise<AcquireOutcome> => ({
       ok: true,
       grant: { port: emulatorPort, url: `http://127.0.0.1:${emulatorPort}/mcp`, epochFile: "/tmp/stock-connect-transfer-epoch.json", supervisorDir: "/tmp/stock-connect-transfer" },
@@ -1257,7 +1254,7 @@ async function startTransferControlListener(
     onStageFile: (targetId: string, slot: string) => handleStageFile(targetId, slot, state),
     onFileTransfer: (request, socket, pending) => handleFileTransfer(request, socket, pending, state, getDeps()),
   });
-  return { listener, token };
+  return { listener };
 }
 
 /** A minimal line-oriented control client -- send() writes one JSON line,
@@ -1324,7 +1321,7 @@ test("stockConnect: publish lands late -- the production upload resolves only on
   // this hook already present but no reply/reader on either side) fails
   // deterministically rather than racing a same-process loopback.
   let beforePublishHook: (() => Promise<void>) | undefined;
-  const { listener, token } = await startTransferControlListener(state, emulatorPort, () => ({ beforePublish: beforePublishHook }));
+  const { listener } = await startTransferControlListener(state, emulatorPort, () => ({ beforePublish: beforePublishHook }));
 
   // The control connection MUST stay open through the whole transfer, not
   // just through staging: `onRelease` (broker-control.mts) fires
@@ -1337,9 +1334,9 @@ test("stockConnect: publish lands late -- the production upload resolves only on
   try {
     let handle: string;
     let emulatorFilename: string;
-    const acquireReply = await control.sendAndRead({ op: "acquire", id: grantId, token });
+    const acquireReply = await control.sendAndRead({ op: "acquire", id: grantId });
     assert.equal(acquireReply.kind, "grant");
-    const stageReply = await control.sendAndRead({ op: "stage_file", target_id: grantId, slot: "disk8", token });
+    const stageReply = await control.sendAndRead({ op: "stage_file", target_id: grantId, slot: "disk8" });
     assert.equal(stageReply.kind, "file_staged");
     handle = stageReply.handle as string;
     emulatorFilename = stageReply.emulator_filename as string;

@@ -128,7 +128,6 @@ export async function startHarnessBroker(options: StartHarnessBrokerOptions = {}
       VICE_SUPERVISOR_ALLOW_CONTAINER: "1",
     };
     delete env.VICE_POOL_DIR;
-    delete env.VICE_BROKER_CONTROL_DIAL_HOST;
 
     const argv = options.repoRoot !== undefined ? [brokerArtifact, "--repo-root", options.repoRoot] : [brokerArtifact];
     const child = spawn(process.execPath, argv, { env }) as ChildProcessWithoutNullStreams;

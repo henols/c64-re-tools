@@ -81,10 +81,11 @@ import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { connect } from "node:net";
+import { connect, createServer } from "node:net";
 
 import { build } from "./build.ts";
-import { openBrokerControl, type BrokerControlSession, type HeldLease } from "./vice-broker-client.ts";
+import { dialBrokerEndpoint } from "./broker-endpoint.mts";
+import { dialControlSession, type BrokerControlSession, type HeldLease } from "./vice-broker-client.ts";
 import { textConnect, textDisconnect } from "./text-connect.ts";
 import { TEXT_COMMAND_ALLOWLIST, withTextChannelLock, buildTextCommand } from "./text-protocol.ts";
 import { callStockTool } from "./stock-tools.ts";
@@ -126,12 +127,6 @@ const SKIP_REASON: string | false = !VICE_LIVE_STOCK_BIN_ENV
       "VICE binary at that absolute path (e.g. /usr/bin/x64sc). A bare \"x64sc\" on PATH would resolve to the " +
       "fork build instead of genuine stock."
     : false;
-
-// This file's own dial knob -- every openBrokerControl() call below resolves
-// to the loopback control listener this test's OWN spawned broker binds,
-// never the bridge alias resolveControlTarget() would otherwise fall back
-// to. Matches stock-live-broker-monitor.test.ts's own precedent exactly.
-process.env.VICE_BROKER_CONTROL_DIAL_HOST = "127.0.0.1";
 
 // ---------------------------------------------------------------------------
 // Small shared helpers -- copied from stock-live-broker-monitor.test.ts's own
@@ -188,13 +183,13 @@ interface BrokerHandle {
   stderr: string;
 }
 
-function startBroker(stateDir: string, viceBinPath: string, scratchDir: string): BrokerHandle {
+function startBroker(stateDir: string, viceBinPath: string, scratchDir: string, controlPort: number): BrokerHandle {
   const merged: Record<string, string | undefined> = {
     ...process.env,
     VICE_SUPERVISOR_ALLOW_CONTAINER: undefined,
     VICE_BIN: viceBinPath,
     VICE_ARGS: undefined,
-    VICE_BROKER_CONTROL_PORT: "0",
+    VICE_BROKER_CONTROL_PORT: String(controlPort),
     VICE_BROKER_MAX: "1",
     VICE_BROKER_POLL_MS: "250",
     VICE_RESTART_BACKOFF_S: "1",
@@ -204,7 +199,6 @@ function startBroker(stateDir: string, viceBinPath: string, scratchDir: string):
     // this harness's own mkdtempSync scratchDir, never the real
     // machine-level ~/.c64-re-tools.
     VICE_BROKER_HOME: scratchDir,
-    VICE_BROKER_CONTROL_DIAL_HOST: undefined,
   };
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(merged)) {
@@ -235,11 +229,26 @@ async function stopBroker(handle: BrokerHandle): Promise<boolean> {
   return waitFor(() => handle.child.exitCode !== null || handle.child.signalCode !== null, 3000);
 }
 
-async function waitForBrokerJson(stateDir: string, deadlineMs = 10000): Promise<Record<string, unknown>> {
-  const path = join(stateDir, "broker.json");
-  const appeared = await waitFor(() => existsSync(path) && typeof JSON.parse(readFileSync(path, "utf8")).control_port === "number", deadlineMs);
-  assert.ok(appeared, "broker.json with a control_port did not appear within deadline");
-  return JSON.parse(readFileSync(path, "utf8"));
+/** A loopback port nothing listens on yet, for this suite's own broker --
+ * never the fixed default (19510), which a real broker may hold. */
+async function allocateControlPort(): Promise<number> {
+  const server = createServer();
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+  const address = server.address();
+  const port = typeof address === "object" && address !== null ? address.port : 0;
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  return port;
+}
+
+/** Bounded-waits for the broker to answer a hello on `port`. */
+async function waitForBrokerReady(port: number, deadlineMs = 10000): Promise<void> {
+  const deadline = Date.now() + deadlineMs;
+  while (Date.now() < deadline) {
+    const dialed = await dialBrokerEndpoint({ port, candidates: ["127.0.0.1"] });
+    if (dialed.ok) return;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  assert.fail(`the broker never answered a hello on 127.0.0.1:${port} within ${deadlineMs}ms`);
 }
 
 interface HarnessReport {
@@ -315,12 +324,16 @@ function pidsMatchingCommandLine(needle: string): number[] {
   }
 }
 
-async function withBrokerHarness(viceBinPath: string, fn: (ctx: { stateDir: string; recordPid: (pid: number) => void; host: string }) => Promise<void>): Promise<HarnessReport> {
+async function withBrokerHarness(
+  viceBinPath: string,
+  fn: (ctx: { stateDir: string; controlPort: number; recordPid: (pid: number) => void; host: string }) => Promise<void>,
+): Promise<HarnessReport> {
   build(); // ensure resources/ is a fresh build of the current TypeScript source
   const scratchDir = mkdtempSync(join(tmpdir(), "text-monitor-live-"));
   const stateDir = join(scratchDir, "state");
   const recordedPids = new Set<number>();
-  const handle = startBroker(stateDir, viceBinPath, scratchDir);
+  const controlPort = await allocateControlPort();
+  const handle = startBroker(stateDir, viceBinPath, scratchDir, controlPort);
   // Captured immediately after startBroker() returns, before anything else
   // can fail -- this is the pid the teardown half below is responsible for.
   const brokerPid: number | null = typeof handle.child.pid === "number" ? handle.child.pid : null;
@@ -328,8 +341,8 @@ async function withBrokerHarness(viceBinPath: string, fn: (ctx: { stateDir: stri
   let strayPidsMatchingScratch: number[] = [];
   let scratchDirRemoved = false;
   try {
-    await waitForBrokerJson(stateDir);
-    await fn({ stateDir, recordPid: (pid: number) => recordedPids.add(pid), host: "127.0.0.1" });
+    await waitForBrokerReady(controlPort);
+    await fn({ stateDir, controlPort, recordPid: (pid: number) => recordedPids.add(pid), host: "127.0.0.1" });
   } finally {
     const brokerExitedCleanly = await stopBroker(handle);
     if (!brokerExitedCleanly && brokerPid !== null) {
@@ -442,9 +455,9 @@ test(
   async () => {
     const viceBinPath = VICE_LIVE_STOCK_BIN_ENV as string;
 
-    const report = await withBrokerHarness(viceBinPath, async ({ stateDir, recordPid, host }) => {
-      const opened = await openBrokerControl(stateDir);
-      assert.ok(opened.ok, `openBrokerControl failed: ${JSON.stringify(opened)}`);
+    const report = await withBrokerHarness(viceBinPath, async ({ stateDir, controlPort, recordPid, host }) => {
+      const opened = await dialControlSession({ port: controlPort, candidates: ["127.0.0.1"] });
+      assert.ok(opened.ok, `dialControlSession failed: ${JSON.stringify(opened)}`);
       if (!opened.ok) return;
       const session: BrokerControlSession = opened.session;
 
@@ -526,9 +539,9 @@ test(
   async () => {
     const viceBinPath = VICE_LIVE_STOCK_BIN_ENV as string;
 
-    const report = await withBrokerHarness(viceBinPath, async ({ stateDir, recordPid, host }) => {
-      const opened = await openBrokerControl(stateDir);
-      assert.ok(opened.ok, `openBrokerControl failed: ${JSON.stringify(opened)}`);
+    const report = await withBrokerHarness(viceBinPath, async ({ stateDir, controlPort, recordPid, host }) => {
+      const opened = await dialControlSession({ port: controlPort, candidates: ["127.0.0.1"] });
+      assert.ok(opened.ok, `dialControlSession failed: ${JSON.stringify(opened)}`);
       if (!opened.ok) return;
       const session: BrokerControlSession = opened.session;
 
@@ -651,9 +664,9 @@ test(
     const kernalIrq = readKernalIrqAddress();
     console.log(`text-monitor-live (criterion 3): armed address = ${kernalIrq.addressHex} (${kernalIrq.address})`);
 
-    const report = await withBrokerHarness(viceBinPath, async ({ stateDir, recordPid, host }) => {
-      const opened = await openBrokerControl(stateDir);
-      assert.ok(opened.ok, `openBrokerControl failed: ${JSON.stringify(opened)}`);
+    const report = await withBrokerHarness(viceBinPath, async ({ stateDir, controlPort, recordPid, host }) => {
+      const opened = await dialControlSession({ port: controlPort, candidates: ["127.0.0.1"] });
+      assert.ok(opened.ok, `dialControlSession failed: ${JSON.stringify(opened)}`);
       if (!opened.ok) return;
       const session: BrokerControlSession = opened.session;
 
@@ -780,9 +793,9 @@ test(
     resetChannelLockForTests();
     const viceBinPath = VICE_LIVE_STOCK_BIN_ENV as string;
 
-    const report = await withBrokerHarness(viceBinPath, async ({ stateDir, recordPid, host }) => {
-      const opened = await openBrokerControl(stateDir);
-      assert.ok(opened.ok, `openBrokerControl failed: ${JSON.stringify(opened)}`);
+    const report = await withBrokerHarness(viceBinPath, async ({ stateDir, controlPort, recordPid, host }) => {
+      const opened = await dialControlSession({ port: controlPort, candidates: ["127.0.0.1"] });
+      assert.ok(opened.ok, `dialControlSession failed: ${JSON.stringify(opened)}`);
       if (!opened.ok) return;
       const session: BrokerControlSession = opened.session;
 
@@ -938,9 +951,9 @@ test(
 
     let skipReason: string | null = null;
 
-    const report = await withBrokerHarness(viceBinPath, async ({ stateDir, recordPid, host }) => {
-      const opened = await openBrokerControl(stateDir);
-      assert.ok(opened.ok, `openBrokerControl failed: ${JSON.stringify(opened)}`);
+    const report = await withBrokerHarness(viceBinPath, async ({ stateDir, controlPort, recordPid, host }) => {
+      const opened = await dialControlSession({ port: controlPort, candidates: ["127.0.0.1"] });
+      assert.ok(opened.ok, `dialControlSession failed: ${JSON.stringify(opened)}`);
       if (!opened.ok) return;
       const session: BrokerControlSession = opened.session;
 
@@ -1184,9 +1197,9 @@ test(
     resetChannelLockForTests();
     const viceBinPath = VICE_LIVE_STOCK_BIN_ENV as string;
 
-    const report = await withBrokerHarness(viceBinPath, async ({ stateDir, recordPid, host }) => {
-      const opened = await openBrokerControl(stateDir);
-      assert.ok(opened.ok, `openBrokerControl failed: ${JSON.stringify(opened)}`);
+    const report = await withBrokerHarness(viceBinPath, async ({ stateDir, controlPort, recordPid, host }) => {
+      const opened = await dialControlSession({ port: controlPort, candidates: ["127.0.0.1"] });
+      assert.ok(opened.ok, `dialControlSession failed: ${JSON.stringify(opened)}`);
       if (!opened.ok) return;
       const session: BrokerControlSession = opened.session;
 
@@ -1282,9 +1295,9 @@ test(
     resetTextCapabilityCache();
     const viceBinPath = VICE_LIVE_STOCK_BIN_ENV as string;
 
-    const report = await withBrokerHarness(viceBinPath, async ({ stateDir, recordPid, host }) => {
-      const opened = await openBrokerControl(stateDir);
-      assert.ok(opened.ok, `openBrokerControl failed: ${JSON.stringify(opened)}`);
+    const report = await withBrokerHarness(viceBinPath, async ({ stateDir, controlPort, recordPid, host }) => {
+      const opened = await dialControlSession({ port: controlPort, candidates: ["127.0.0.1"] });
+      assert.ok(opened.ok, `dialControlSession failed: ${JSON.stringify(opened)}`);
       if (!opened.ok) return;
       const session: BrokerControlSession = opened.session;
 

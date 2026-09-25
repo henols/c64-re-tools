@@ -6,25 +6,17 @@
 // rebuild.
 // vice-broker.mts
 //
-// The long-lived host broker entry point. Extends an earlier write-once
-// tracer script in place rather than replacing it: parseArgs(),
-// readBrokerRecordMaybe() and the atomic tmp-sibling-then-rename write
-// discipline all survive; main() grows a real control listener, a
-// heartbeat and a real acquire/release path spawning a real child.
-//
-// heartbeat_at is now MANDATORY, refreshed on a recurring timer for as long
-// as this process lives. The tracer's own header comment used to forbid it
-// ("DELIBERATELY OMITS heartbeat_at") because a heartbeat-less record from a
-// write-once tracer that immediately exits would strand every later
-// session's readBrokerLiveness() classification at never_started forever.
-// That reasoning does not apply here: this broker is genuinely long-lived,
-// so omitting heartbeat_at would instead make a REAL, RUNNING broker read
-// as never_started -- exactly the failure this field exists to prevent.
+// The long-lived host broker entry point: one per machine, on the fixed
+// control port. It binds the control listener (loopback plus the enumerated
+// bridge gateways, never the wildcard address), serves acquire/release over
+// that one endpoint, and launches and supervises the emulator instances it
+// grants. Clients find it by dialling the port and completing a `hello`;
+// nothing is written to disk for them to read.
 //
 // Imports node: builtins ONLY plus this phase's own sibling modules --
 // mcp__vice__* stays the only route to the emulator; nothing here opens a
 // connection to it.
-import { readFileSync, mkdirSync, openSync, writeFileSync, chmodSync, renameSync, existsSync } from "node:fs";
+import { mkdirSync, openSync, existsSync } from "node:fs";
 import { join, basename, relative, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn as nodeSpawn } from "node:child_process";
@@ -90,7 +82,7 @@ import { runHostTool, bindStagedInputs } from "./host-tool.mjs";
 // compiled into that same directory by the same build.ts pass (both source
 // and target are already listed in HOST_BOUND_ARTIFACTS).
 import { ensureGhidraRunsHandle } from "./ghidra-project.mjs";
-import { startControlListenerOnHosts, enumerateBindHosts, newControlToken, drainPendingAcquires, resolveControlPort, } from "./broker-control.mjs";
+import { startControlListenerOnHosts, enumerateBindHosts, drainPendingAcquires, resolveControlPort, } from "./broker-control.mjs";
 // A VALUE import of the machine-level state resolver (plan 62-02) -- safe
 // here for the SAME reason every other sibling value import above is: this
 // file is ALWAYS run from its own compiled resources/ form, and
@@ -102,6 +94,8 @@ import { startControlListenerOnHosts, enumerateBindHosts, newControlToken, drain
 // and no --repo-root apply, which is exactly BROKER-01/BROKER-06's "no
 // project argument at all" case (D-13).
 import { brokerStateDir, brokerConfigScratchDir, brokerStagingDir } from "./broker-home.mjs";
+// The endpoint dialler, for the hello probe that arbitrates a busy control port.
+import { dialBrokerEndpoint, describeDialFailure } from "./broker-endpoint.mjs";
 // A VALUE import of the staging/transfer primitives (Phase 64, plan 64-03,
 // XFER-04/XFER-07) -- safe here for the SAME reason every other sibling
 // value import above is: this file is ALWAYS run from its own compiled
@@ -178,10 +172,6 @@ export function parseArgs(argv) {
     const resolvedStateDir = stateDir ?? brokerStateDir();
     return { repoRoot: repoRoot ?? "", stateDir: resolvedStateDir, checkContainer, dryRun };
 }
-/** The deployed JavaScript broker artifact's own name. This field used to
- * read "vice-broker.sh" (the retiring bash daemon), which was false the
- * moment a real TypeScript broker existed. It now names itself. */
-export const WRITTEN_BY = "vice-broker.mjs";
 // ---------------------------------------------------------------------------
 // Small, locally-duplicated env-var reader (plan 05) -- the SAME pattern
 // broker-kill.mts's own resolveBasePortForReap()/resolveViceBinForReap()
@@ -191,8 +181,8 @@ export const WRITTEN_BY = "vice-broker.mjs";
 // exporting it would widen broker-launch.mts's own surface for a one-line
 // env-var read this file can duplicate exactly as cheaply). Mirrors
 // broker-launch.mts's own default precisely (VICE_BROKER_MAX/16) so
-// broker.json's config echo and host_state's own answer can never disagree
-// with what atCapacity() itself actually enforces. This used to be a PAIR
+// host_state's own answer can never disagree with what atCapacity() itself
+// actually enforces. This used to be a PAIR
 // with resolveWarmFloorForRecord() (VICE_BROKER_WARM_FLOOR/1), kept in
 // lockstep with broker-launch.mts's own matching pair so the two numbers
 // could never disagree. The warm-floor half of that pair is RETIRED along
@@ -207,80 +197,17 @@ function resolveCeilingForRecord() {
     const n = Number(raw);
     return Number.isFinite(n) ? n : 16;
 }
-/** Duplicates vice-broker-client.ts's readBrokerLiveness() classification
- * logic (never_started / stale / alive against BROKER_STALE_MS) rather than
- * importing it -- confirmed empirically (plan 02's own SUMMARY) that
- * importing vice-broker-client.ts into a HOST-BOUND module pulls its
- * transitive dependents (repo-root.ts, install-resources.ts, hostpath.ts)
- * into the SAME tsc build program, which either fails to compile under
- * tsconfig.build.json's allowImportingTsExtensions:false or forces those
- * container-side files to be committed under resources/ as if host-bound.
- * This is the SAME classification a test can drive the REAL
- * readBrokerLiveness() over (broker-control.test.ts does exactly that,
- * against records this function's own caller writes), proving the two never
- * diverge -- this module only needs the classification NAME (never_started
- * / stale / alive), never the pid/heartbeatAt fields readBrokerLiveness()
- * also returns. */
-const BROKER_STALE_MS = Number(process.env.VICE_BROKER_STALE_MS || 180000);
-function classifyBrokerLivenessLocal(path) {
-    const parsed = readBrokerRecordMaybe(path);
-    if (parsed === null)
-        return "never_started";
-    const heartbeatAt = typeof parsed.heartbeat_at === "string" ? parsed.heartbeat_at : null;
-    const heartbeatMs = heartbeatAt ? Date.parse(heartbeatAt) : NaN;
-    if (!Number.isFinite(heartbeatMs))
-        return "never_started";
-    return Date.now() - heartbeatMs > BROKER_STALE_MS ? "stale" : "alive";
-}
 /** Classifies a bare hostname as a wildcard bind address, in the IPv4 and
  * IPv6 "listen on everything" spellings this project cares about --
  * DELIBERATELY RE-STATED here rather than imported from
  * vice-broker-client.ts's own `isWildcardBindHost()`: that module is
- * container-side and this one is host-bound, compiled away from it, the
- * SAME boundary classifyBrokerLivenessLocal()'s own comment above explains
- * for readBrokerLiveness(). Used ONLY to refuse an explicitly-set
+ * container-side and this one is host-bound, compiled away from it. Used ONLY to refuse an explicitly-set
  * VICE_BROKER_CONTROL_HOST value before ever attempting to bind it (D-09) --
  * never applied to an enumerated host, which can never be a wildcard by
  * construction. */
 function isWildcardBindHostLocal(host) {
     const bare = host.replace(/^\[/, "").replace(/\]$/, "");
     return bare === "0.0.0.0" || bare === "::" || /^(0{1,4}:){7}0{1,4}$/.test(bare);
-}
-function isPlainObject(value) {
-    return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-/** Read and parse a broker record, treating anything short of a
- * well-formed object as "not there yet" -- missing file, unreadable file,
- * partial write, malformed JSON, non-object shape. Never throws. */
-export function readBrokerRecordMaybe(path) {
-    let raw;
-    try {
-        raw = readFileSync(path, "utf8");
-    }
-    catch {
-        return null;
-    }
-    try {
-        const parsed = JSON.parse(raw);
-        return isPlainObject(parsed) ? parsed : null;
-    }
-    catch {
-        return null;
-    }
-}
-/** Atomic tmp-sibling -> mode-tighten -> content -> rename, the same
- * choke-point discipline the tracer's own writeBrokerRecord() used, now
- * shared by both the initial write and every heartbeat refresh -- mode
- * stays owner-read-write on EVERY write, refresh included. */
-function writeBrokerRecordFile(stateDir, record) {
-    mkdirSync(stateDir, { recursive: true });
-    const finalPath = join(stateDir, "broker.json");
-    const tmpPath = `${finalPath}.tmp-${process.pid}-${Date.now()}`;
-    writeFileSync(tmpPath, "");
-    chmodSync(tmpPath, 0o600);
-    writeFileSync(tmpPath, JSON.stringify(record, null, 2) + "\n");
-    renameSync(tmpPath, finalPath);
-    return finalPath;
 }
 /** Builds a spawn function that redirects the child's stdout/stderr into a
  * FRESH per-launch log file under logDir (so per-instance boot/crash logs
@@ -823,8 +750,7 @@ export function handleMonitorClaim(requestId, targetId, channel, state) {
     if (!existing) {
         // Phase 63 (SESS-02): mints the per-claim handle a relay connection's
         // `attach` will later have to present -- 16 random bytes rendered as
-        // hex, the SAME rendering newControlToken() already uses for the
-        // per-boot control token, at a size chosen only for the constant-time
+        // hex, at a size chosen only for the constant-time
         // comparison's own length gate (handleRelayAttach() below), not for
         // any wire-format reason.
         const handle = randomBytes(16).toString("hex");
@@ -1678,27 +1604,16 @@ export function handleRelease(requestId, state, deps = {}) {
         `and the current occupant was left untouched${mismatchSuffix}\n`);
 }
 async function run(args) {
-    const finalPath = join(args.stateDir, "broker.json");
-    // An early tracer-era "refuse to overwrite
-    // a record naming a currently-live pid" pre-check is GONE -- REPLACED by
-    // the bind-before-write singleton guard below, not merely extended
-    // alongside it (this phase's own plan-time note is explicit: the
-    // refuse-to-clobber heuristic is replaced, not extended). That old check
-    // read broker.json's OWN recorded pid and asked "is that process alive" --
-    // a heuristic that can never tell "a live broker legitimately holds this
-    // port" apart from "a live but unrelated process happens to share a pid
-    // number with a stale record" (pids get reused). The kernel-enforced bind
-    // below asks the ONLY question that actually matters -- "is the control
-    // port itself already held" -- and broker.json becomes a pure ARBITER of
-    // that question's two possible causes, never a gate in its own right.
+    // The singleton guard is the kernel-enforced bind below: a control port
+    // cannot be bound twice. A failed bind is then arbitrated by dialling the
+    // port and asking for a `hello`.
     //
     // The mandatory start-time banner, printed unconditionally and
     // BEFORE anything else in this function runs -- an operator must be told
     // what a Ctrl-C costs before there is anything running for them to Ctrl-C.
     process.stderr.write(`${startupBanner()}\n`);
     const state = createBrokerState();
-    const token = newControlToken();
-    const startedAt = new Date().toISOString(); // FIXED across every heartbeat refresh -- see writeBrokerRecordFile()'s callers below
+    const startedAt = new Date().toISOString();
     const pollMs = Number(process.env.VICE_BROKER_POLL_MS) || 500;
     const controlPort = resolveControlPort();
     // Resolve the bind set (BROKER-03/D-09/D-10). An explicitly-set
@@ -1866,7 +1781,6 @@ async function run(args) {
     {
         const bindResult = await startControlListenerOnHosts(bindHosts, {
             port: controlPort,
-            token,
             onAcquire: (requestId, profile, label) => handleAcquire(requestId, args.stateDir, state, {
                 backend,
                 // The ONCE-resolved `resolvedViceBin` local from this function's
@@ -1957,34 +1871,20 @@ async function run(args) {
             process.stderr.write(`vice-broker: bridge address ${failure.host} failed to bind (${err.code ?? err.message}) -- continuing on the reduced set; ` +
                 `this address will not be reachable until the broker is restarted (D-10)\n`);
         }
-        // Loopback failing to bind is ALWAYS fatal (D-09) -- routed through the
-        // SAME EADDRINUSE/liveness classification this startup has always used.
-        // The singleton race closes here. A well-known TCP port cannot be bound
-        // twice, so EADDRINUSE is the kernel enforcing the singleton -- but the
-        // guarantee holds only while the control port keeps its default (two
-        // brokers deliberately configured onto DIFFERENT ports are two brokers,
-        // and no code here or anywhere else prevents that). On EADDRINUSE,
-        // broker.json arbitrates via the SAME never_started/stale/alive
-        // classification vice-broker-client.ts's readBrokerLiveness() uses
-        // (duplicated locally above -- see classifyBrokerLivenessLocal()'s own
-        // header comment for why this cannot be a value import), and takes
-        // exactly one of two DISTINCT paths: a record classified alive means
-        // this process lost a genuine race against a live broker -- exit
-        // quietly, status 0, as designed. A record classified stale or
-        // never_started means the port is held by something that does not
-        // answer as a broker at all -- fail loudly, naming the port and what to
-        // check. Conflating these two would let a squatted port masquerade as a
+        // Loopback failing to bind is ALWAYS fatal (D-09). The singleton race
+        // closes here: a well-known TCP port cannot be bound twice, so
+        // EADDRINUSE is the kernel enforcing the singleton -- but the guarantee
+        // holds only while the control port keeps its default (two brokers
+        // deliberately configured onto DIFFERENT ports are two brokers, and no
+        // code here or anywhere else prevents that). On EADDRINUSE this process
+        // dials the port and asks for a `hello`, and takes exactly one of two
+        // DISTINCT paths: a completed handshake means it lost a genuine race
+        // against a live broker -- exit quietly, status 0, as designed. Anything
+        // else means the port is held by something that does not answer as a
+        // compatible broker -- fail loudly, naming the port and what to check.
+        // Conflating these two would let a squatted port masquerade as a
         // healthy singleton, permanently and silently (T-01.6.2-34). Neither
-        // path writes the discovery record, launches an instance, or reaps
-        // again -- both simply exit.
-        //
-        // NOTE for a future reader: this classification reads broker.json (the
-        // discovery file) to decide "alive" vs "stale" -- fine to keep for now
-        // since broker.json is untouched this phase, but it is exactly the file
-        // the milestone's end state (Phase 66) removes. A future phase's
-        // EADDRINUSE refusal will need to reclassify by dialling the port that
-        // just failed to bind and checking whether a valid, version-compatible
-        // `hello` answers instead. Not this phase's problem to solve.
+        // path launches an instance or sweeps staging -- both simply exit.
         if (loopbackFailure) {
             // A bridge address can bind successfully even when loopback itself
             // fails (they are independent sockets) -- every such listener MUST be
@@ -1998,14 +1898,15 @@ async function run(args) {
                 bound.server.close();
             const err = loopbackFailure.error;
             if (err.code === "EADDRINUSE") {
-                const liveness = classifyBrokerLivenessLocal(finalPath);
-                if (liveness === "alive") {
-                    process.stderr.write(`vice-broker: another broker is already running and holds control port ${controlPort} -- exiting quietly as a second instance (record: ${finalPath})\n`);
+                const probe = await dialBrokerEndpoint({ port: controlPort, candidates: [loopbackBindHost] });
+                if (probe.ok) {
+                    process.stderr.write(`vice-broker: another broker (version ${probe.version}) is already running and holds control port ${controlPort} -- exiting quietly as a second instance\n`);
                     process.exitCode = 0;
                     return;
                 }
-                process.stderr.write(`vice-broker: FATAL -- control port ${controlPort} is held by something that does not answer as a broker (discovery record classified "${liveness}"). ` +
-                    `Check what is bound to port ${controlPort} on the host (e.g. \`lsof -i :${controlPort}\` or \`ss -ltnp\`) before restarting. Record: ${finalPath}\n`);
+                process.stderr.write(`vice-broker: FATAL -- control port ${controlPort} is held by something that does not answer as a compatible broker. ` +
+                    `${describeDialFailure(probe)}\n` +
+                    `Check what is bound to port ${controlPort} on the host (e.g. \`lsof -i :${controlPort}\` or \`ss -ltnp\`) before restarting.\n`);
                 process.exitCode = 1;
                 return;
             }
@@ -2034,17 +1935,13 @@ async function run(args) {
             process.exitCode = 1;
             return;
         }
-        // Auditability: an operator can see exactly what is listening without
-        // reading the discovery record, which only ever carries the loopback
-        // address in its own control_host field (see the record write below)
-        // -- this is the property the whole security posture rests on now that
-        // `hello` answers with no credential at all (see this module's own
-        // header comment).
+        // Auditability: an operator can see exactly what is listening -- the
+        // bind set is what the whole security posture rests on, since every op
+        // is answered with no credential at all (see broker-control.mts's
+        // header "Auth:" paragraph).
         process.stderr.write(`vice-broker: bound control listener on: ${bindResult.listeners.map((l) => l.host).join(", ")} (port ${loopbackListener.port})\n`);
         // Auditability for D-13's machine-level fallback (BROKER-01/BROKER-06):
-        // an operator can see where THIS broker is writing without reading the
-        // discovery record, which carries no field naming the machine root (the
-        // record's field set stays frozen -- see the interface above).
+        // an operator can see where THIS broker is writing.
         process.stderr.write(`vice-broker: state directory: ${args.stateDir}\n`);
         listener = { host: loopbackListener.host, port: loopbackListener.port, pendingAcquires: bindResult.pendingAcquires };
     }
@@ -2058,18 +1955,16 @@ async function run(args) {
     // singleton loss) returns before this line is ever reached, so a process
     // that does not own the control port never runs this sweep at all.
     //
-    // This process's OWN sessions cannot be caught by it either: `acquire`
-    // and `stage_file` are both gated on the control token (see
-    // broker-control.mts's token check), and that token has no distribution
-    // channel until the FIRST writeBrokerRecordFile() call below publishes
-    // it. Nothing can hold this process's token yet, so nothing can have
-    // created a staging directory this sweep might find.
+    // This process's OWN sessions cannot be caught by it either. The listener
+    // is already accepting, but the sweep is synchronous and nothing between
+    // the bind resolving and this line awaits, so no connection handler --
+    // and therefore no `acquire` or `stage_file` -- can run before the sweep
+    // has finished.
     //
     // Never move this call back above the bind -- that reintroduces the
-    // defect above. Never move it below the record write -- once that line
-    // runs, a client can hold the token, call `acquire` and `stage_file`, and
-    // this sweep would remove the very file it just staged. Never add a
-    // timer (D-07): the sweep runs once, here, in the process that has just
+    // defect above. Never put an `await` between the bind and this call --
+    // that would let a client stage a file this sweep then removes. Never add
+    // a timer (D-07): the sweep runs once, here, in the process that has just
     // confirmed it won the bind.
     //
     // The residual this does NOT cover: a broker deliberately configured onto
@@ -2086,50 +1981,11 @@ async function run(args) {
     // (kill-never-recycle). Registered once the listener is up, since there is
     // nothing to tear down before that point.
     registerShutdownHandlers({ state });
-    // A successful bind writes the record UNCONDITIONALLY, overwriting
-    // whatever was there -- the bind itself is the proof of singleton status.
-    // The fourteen-field set (narrowed to thirteen once the warm floor was
-    // retired, then widened back to fourteen to add node_exec_path): the
-    // lease time-to-live field the bash original carried is gone -- the
-    // connection is the lease now, so there is no separate expiry left to
-    // track -- `warm_floor` is likewise gone (there is no warm floor left to
-    // echo a configured value for) -- and every other config-echo field survives
-    // even though no consumer parses it beyond a status message, because a
-    // human reading this file by hand benefits from the full echo.
-    //
-    // node_exec_path is process.execPath, not something threaded in from
-    // outside: exec() replaces the process image, so whatever interpreter the
-    // launcher resolved and gated IS this process's own execPath by the time
-    // this line runs -- the record tells the truth without either side having
-    // to pass anything, and it stays truthful even when this broker was
-    // started directly, bypassing the launcher entirely.
-    let record = {
-        version: 1,
-        written_by: WRITTEN_BY,
-        pid: process.pid,
-        started_at: startedAt,
-        heartbeat_at: new Date().toISOString(),
-        node_version: process.version,
-        node_exec_path: process.execPath,
-        control_host: listener.host,
-        control_port: listener.port,
-        control_token: token, // never logged -- T-01.6.2-02
-        max_instances: resolveCeilingForRecord(),
-        base_port: resolveBasePort(),
-        poll_ms: pollMs,
-        dry_run: args.dryRun,
-    };
-    writeBrokerRecordFile(args.stateDir, record);
-    process.stderr.write(`vice-broker: wrote ${finalPath} (node ${record.node_version} at ${record.node_exec_path}); control listener bound on ${listener.host}:${listener.port}\n`);
-    const heartbeatMs = Number(process.env.VICE_BROKER_HEARTBEAT_MS) || 30000;
-    setInterval(() => {
-        // The refresh path goes through the SAME atomic tmp-then-rename choke
-        // point as the initial write (writeBrokerRecordFile() itself), and the
-        // mode is tightened to owner-read-write on EVERY write, refresh
-        // included -- never only on the first.
-        record = { ...record, heartbeat_at: new Date().toISOString() };
-        writeBrokerRecordFile(args.stateDir, record);
-    }, heartbeatMs);
+    // The readiness line. node_exec_path is process.execPath: exec() replaces
+    // the process image, so whatever interpreter the launcher resolved IS this
+    // process's own execPath by now, and the line stays truthful even when
+    // this broker was started directly, bypassing the launcher.
+    process.stderr.write(`vice-broker: ready (node ${process.version} at ${process.execPath}, max ${resolveCeilingForRecord()} instances, base port ${resolveBasePort()}, poll ${pollMs}ms${args.dryRun ? ", dry run" : ""}); control listener bound on ${listener.host}:${listener.port}\n`);
     // The fixed-order evaluation pass (runBrokerPass, broker-launch.mts):
     // serve pending acquires, then promote launching -> ready -- mirroring
     // the retiring bash daemon's own broker_once() ordering (the warm floor
@@ -2142,8 +1998,7 @@ async function run(args) {
     // (an early stubbed `serveAcquires: () => {}` comment reserved exactly
     // this room) -- an acquire queued because a launch was
     // already in flight is retried here, on the SAME pass that also promotes
-    // any newly-ready instance, so a stalled pass shows up as a stale record
-    // rather than a silently wrong one. Re-entrancy guarded: a pass that is
+    // any newly-ready instance. Re-entrancy guarded: a pass that is
     // still running (e.g. a slow readiness probe against a genuinely slow
     // host) is never overlapped by the next tick.
     let passInFlight = false;

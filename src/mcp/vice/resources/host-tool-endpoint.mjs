@@ -57,8 +57,7 @@ import { dialHostToolSession, DEFAULT_HOST_TOOL_STAGE_REPLY_TIMEOUT_MS } from ".
 import { transferFileOverEndpoint, validateContainedDestination } from "./transfer-client.mjs";
 import { TRANSFER_MAX_BYTES } from "./transfer-hash.mjs";
 /** The per-tool CLIENT-side request-deadline table. Bounds the REQUEST
- * phase only, mirroring `openBrokerControl()`'s own connect-then-request
- * split. Every entry here MUST be strictly greater than `host-tool.mts`'s
+ * phase only, not the connect. Every entry here MUST be strictly greater than `host-tool.mts`'s
  * own `HOST_TOOL_TIMEOUT_MS` entry for the SAME tool id -- the side that
  * owns the budget (the host-bound executor) must be the side that reports
  * the verdict, or a caller sees an opaque transport timeout instead of the

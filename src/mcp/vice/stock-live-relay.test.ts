@@ -48,8 +48,8 @@
 //   - Never dial the fixed default control port (19510) -- it is a
 //     persistent, machine-wide fixture on this host that may legitimately
 //     already be held by an unrelated broker. This file's own spawned broker
-//     always binds an EPHEMERAL control port (VICE_BROKER_CONTROL_PORT=0),
-//     and dialMonitorRelay() below is always given that port explicitly.
+//     always binds a freshly allocated control port (allocateControlPort()),
+//     and every dial below is given that port explicitly.
 //   - Never hardcode a 6510 register id (PC, A, X, ...) -- REGISTERS_AVAILABLE
 //     (0x83) is the one place this file resolves PC's id, exactly like
 //     stock-registers.ts's own registerCatalogFor() never hardcodes one.
@@ -69,8 +69,8 @@ import { fileURLToPath } from "node:url";
 import { connect, createServer } from "node:net";
 
 import { build } from "./build.ts";
-import { openBrokerControl, resolveSessionLabel, type BrokerControlSession, type AcquireGrant } from "./vice-broker-client.ts";
-import { dialMonitorRelay } from "./broker-endpoint.mts";
+import { dialControlSession, resolveSessionLabel, type BrokerControlSession, type AcquireGrant } from "./vice-broker-client.ts";
+import { dialBrokerEndpoint, dialMonitorRelay } from "./broker-endpoint.mts";
 import { probeReady } from "./broker-launch.mts";
 import {
   ViceMonitorClient,
@@ -121,12 +121,6 @@ const SKIP_REASON: string | false = !VICE_LIVE_RELAY_BIN_ENV
       "VICE binary at that absolute path (e.g. /usr/bin/x64sc). A bare \"x64sc\" on PATH would resolve to the fork " +
       "build instead of genuine stock."
     : false;
-
-// Matches stock-live-broker-monitor.test.ts:162's own precedent exactly --
-// this file's own spawned broker's control-plane DIAL target, never the
-// broker's own BIND address (governed separately by
-// VICE_BROKER_CONTROL_HOST/VICE_BROKER_CONTROL_PORT below).
-process.env.VICE_BROKER_CONTROL_DIAL_HOST = "127.0.0.1";
 
 // ---------------------------------------------------------------------------
 // Small shared helpers -- mirrors stock-live-broker-monitor.test.ts's own
@@ -201,18 +195,17 @@ interface BrokerHandle {
  * bare node, wired for a genuine stock backend against a genuine stock
  * binary -- mirrors stock-live-broker-monitor.test.ts's own startBroker()
  * shape exactly, including its VICE_ARGS-must-be-unset discipline. */
-function startBroker(stateDir: string, viceBinPath: string, scratchDir: string): BrokerHandle {
+function startBroker(stateDir: string, viceBinPath: string, scratchDir: string, controlPort: number): BrokerHandle {
   const merged: Record<string, string | undefined> = {
     ...process.env,
     VICE_SUPERVISOR_ALLOW_CONTAINER: undefined,
     VICE_BIN: viceBinPath,
     VICE_ARGS: undefined,
-    VICE_BROKER_CONTROL_PORT: "0",
+    VICE_BROKER_CONTROL_PORT: String(controlPort),
     VICE_BROKER_MAX: "1",
     VICE_BROKER_POLL_MS: "250",
     VICE_RESTART_BACKOFF_S: "1",
     XDG_CONFIG_HOME: scratchDir,
-    VICE_BROKER_CONTROL_DIAL_HOST: undefined,
   };
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(merged)) {
@@ -236,11 +229,26 @@ async function stopBroker(handle: BrokerHandle): Promise<void> {
   }
 }
 
-async function waitForBrokerJson(stateDir: string, deadlineMs = 10000): Promise<Record<string, unknown>> {
-  const path = join(stateDir, "broker.json");
-  const appeared = await waitFor(() => existsSync(path) && typeof JSON.parse(readFileSync(path, "utf8")).control_port === "number", deadlineMs);
-  assert.ok(appeared, "broker.json with a control_port did not appear within deadline");
-  return JSON.parse(readFileSync(path, "utf8"));
+/** A loopback port nothing listens on yet, for this suite's own broker --
+ * never the fixed default (19510), which a real broker may hold. */
+async function allocateControlPort(): Promise<number> {
+  const server = createServer();
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+  const address = server.address();
+  const port = typeof address === "object" && address !== null ? address.port : 0;
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  return port;
+}
+
+/** Bounded-waits for the broker to answer a hello on `port`. */
+async function waitForBrokerReady(port: number, deadlineMs = 10000): Promise<void> {
+  const deadline = Date.now() + deadlineMs;
+  while (Date.now() < deadline) {
+    const dialed = await dialBrokerEndpoint({ port, candidates: ["127.0.0.1"] });
+    if (dialed.ok) return;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  assert.fail(`the broker never answered a hello on 127.0.0.1:${port} within ${deadlineMs}ms`);
 }
 
 // ---------------------------------------------------------------------------
@@ -283,8 +291,8 @@ interface RawStatusInstance {
   sessionLabel: string | null;
 }
 
-async function rawStatus(host: string, port: number, token: string): Promise<RawStatusInstance[]> {
-  const line = await rawControlRequest(host, port, { op: "status", token });
+async function rawStatus(host: string, port: number): Promise<RawStatusInstance[]> {
+  const line = await rawControlRequest(host, port, { op: "status" });
   const instances = Array.isArray(line.instances) ? (line.instances as Array<Record<string, unknown>>) : [];
   return instances.map((e) => ({
     port: Number(e.port),
@@ -344,27 +352,27 @@ interface HarnessReport {
 
 async function withRelayHarness(
   viceBinPath: string,
-  fn: (ctx: { session: BrokerControlSession; grant: AcquireGrant; controlHost: string; controlPort: number; controlToken: string; recordPid: (pid: number) => void }) => Promise<void>,
+  fn: (ctx: { session: BrokerControlSession; grant: AcquireGrant; controlHost: string; controlPort: number; recordPid: (pid: number) => void }) => Promise<void>,
 ): Promise<HarnessReport> {
   build(); // ensure resources/ is a fresh build of the current TypeScript source
   const scratchDir = mkdtempSync(join(tmpdir(), "vice-live-relay-"));
   const stateDir = join(scratchDir, "state");
   const recordedPids = new Set<number>();
-  const handle = startBroker(stateDir, viceBinPath, scratchDir);
+  const controlPort = await allocateControlPort();
+  const handle = startBroker(stateDir, viceBinPath, scratchDir, controlPort);
   let pidsAliveAfterTeardown: number[] = [];
   let session: BrokerControlSession | null = null;
   try {
-    const brokerJson = await waitForBrokerJson(stateDir);
+    await waitForBrokerReady(controlPort);
     const controlHost = "127.0.0.1";
-    const controlPort = Number(brokerJson.control_port);
-    const controlToken = String(brokerJson.control_token);
 
-    const opened = await openBrokerControl(stateDir);
-    assert.ok(opened.ok, `openBrokerControl failed: ${JSON.stringify(opened)}`);
+    const opened = await dialControlSession({ port: controlPort, candidates: [controlHost] });
+    assert.ok(opened.ok, `dialControlSession failed: ${JSON.stringify(opened)}`);
     if (!opened.ok) return { recordedPids: [], pidsAliveAfterTeardown: [] };
-    session = opened.session;
+    const liveSession: BrokerControlSession = opened.session;
+    session = liveSession;
 
-    const acquired = await session.acquire();
+    const acquired = await liveSession.acquire();
     assert.ok(acquired.ok, `session.acquire() failed: ${JSON.stringify(acquired)}`);
     if (!acquired.ok) return { recordedPids: [], pidsAliveAfterTeardown: [] };
     const grant = acquired.grant;
@@ -378,7 +386,7 @@ async function withRelayHarness(
     const epoch = JSON.parse(readFileSync(grant.epoch_file, "utf8")) as { pid: number };
     recordedPids.add(epoch.pid);
 
-    await fn({ session, grant, controlHost, controlPort, controlToken, recordPid: (pid: number) => recordedPids.add(pid) });
+    await fn({ session: liveSession, grant, controlHost, controlPort, recordPid: (pid: number) => recordedPids.add(pid) });
   } finally {
     if (session) {
       try {
@@ -422,7 +430,7 @@ test(
     let report: HarnessReport | undefined;
 
     try {
-      report = await withRelayHarness(viceBinPath, async ({ session, grant, controlHost, controlPort, controlToken }) => {
+      report = await withRelayHarness(viceBinPath, async ({ session, grant, controlHost, controlPort }) => {
       // --- Real monitor claim, over the SAME control session the grant was
       // acquired through -- never a second connection.
       const claim = await session.claimMonitor({ targetId: grant.id, channel: "binary" });
@@ -591,7 +599,7 @@ test(
       // did not behave as the plan's own default-jamaction assumption
       // expected.
       const expectedLabel = resolveSessionLabel();
-      const statusInstances = await rawStatus(controlHost, controlPort, controlToken);
+      const statusInstances = await rawStatus(controlHost, controlPort);
       const myEntry = statusInstances.find((i) => i.port === grant.port);
       assert.ok(myEntry, `expected a status entry for port ${grant.port}, got: ${JSON.stringify(statusInstances)}`);
       assert.equal(myEntry?.sessionLabel, expectedLabel, `status's sessionLabel for port ${grant.port} must equal this process's own resolveSessionLabel(), got ${JSON.stringify(myEntry)} vs expected "${expectedLabel}"`);

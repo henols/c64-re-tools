@@ -3,7 +3,7 @@
 // Plan 62-01, task 1: the genuine end-to-end case (a real listener, a real
 // dial, a completed handshake), plus the structural assertions that keep
 // this module's own written-down contract honest -- no filesystem access,
-// no import of the legacy discovery-record client, and the two mirrored
+// no import of vice-broker-client.ts, and the two mirrored
 // magic-string literals in byte-identical agreement.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -12,7 +12,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { connect, createServer, Socket, type Server } from "node:net";
 
-import { startControlListener, bindControlListener, HELLO_PROTOCOL_MAGIC as SERVER_HELLO_PROTOCOL_MAGIC, newControlToken } from "./broker-control.mts";
+import { startControlListener, bindControlListener, HELLO_PROTOCOL_MAGIC as SERVER_HELLO_PROTOCOL_MAGIC } from "./broker-control.mts";
 import {
   dialBrokerEndpoint,
   classifyHelloReply,
@@ -80,11 +80,9 @@ function stripCommentLines(src: string): string {
 // ---------------------------------------------------------------------------
 
 test("dialBrokerEndpoint completes a real handshake end to end against a real listener on an ephemeral port", async () => {
-  const token = newControlToken();
   const listener = await startControlListener({
     host: "127.0.0.1",
     port: 0, // ephemeral -- never the production port literal
-    token,
     onAcquire: async () => ({ ok: false, reason: "internal" }),
     onRelease: () => {},
     onStatus: () => [],
@@ -158,11 +156,9 @@ test("resolveEndpointPort: defaults to process.env when no env option is supplie
 });
 
 test("dialBrokerEndpoint with no port option reaches a hello-answering listener on the port named by VICE_BROKER_CONTROL_PORT", async () => {
-  const token = newControlToken();
   const listener = await startControlListener({
     host: "127.0.0.1",
     port: 0,
-    token,
     onAcquire: async () => ({ ok: false, reason: "internal" }) as const,
     onRelease: () => {},
     onStatus: () => [],
@@ -196,19 +192,19 @@ test("dialBrokerEndpoint with no port option reaches a hello-answering listener 
 });
 
 // ---------------------------------------------------------------------------
-// Structural assertions: no filesystem access, no legacy-client import.
+// Structural assertions: no filesystem access, no vice-broker-client import.
 // ---------------------------------------------------------------------------
 
-test("broker-endpoint.mts never touches the filesystem and never imports the legacy discovery-record client", () => {
+test("broker-endpoint.mts never touches the filesystem and never imports vice-broker-client.ts", () => {
   // readFileSync, not a shell grep -- four source files in this tree carry
   // NUL bytes that a shell grep silently skips (see this repo's own
   // documented gotcha); readFileSync with "utf8" never truncates on one.
   // Comment-stripped, because this module's own header comments NAME the
-  // forbidden calls and the legacy module while explaining why they are
+  // forbidden calls and vice-broker-client.ts while explaining why they are
   // forbidden -- a raw substring check would trip on that prose, not on
   // real code.
   const source = stripCommentLines(readFileSync(BROKER_ENDPOINT_TS, "utf8"));
-  for (const forbidden of ["readFileSync(", "existsSync(", "readFile(", "broker.json", "vice-broker-client"]) {
+  for (const forbidden of ["readFileSync(", "existsSync(", "readFile(", "vice-broker-client"]) {
     assert.ok(!source.includes(forbidden), `broker-endpoint.mts must not contain ${JSON.stringify(forbidden)} outside of comments`);
   }
 });
@@ -239,11 +235,9 @@ test("the mirrored HELLO_PROTOCOL_MAGIC literal in broker-endpoint.mts is byte-i
  * every acquire/release/etc callback is a harmless no-op refusal, since no
  * task-2 test exercises the lease-bearing ops. */
 async function startHealthyListener(overrides: { helloVersion?: string } = {}) {
-  const token = newControlToken();
   const listener = await startControlListener({
     host: "127.0.0.1",
     port: 0,
-    token,
     onAcquire: async () => ({ ok: false, reason: "internal" }) as const,
     onRelease: () => {},
     onStatus: () => [],
@@ -262,7 +256,7 @@ async function startHealthyListener(overrides: { helloVersion?: string } = {}) {
     onOperation: () => ({ ok: false, code: "bad_request" as const }),
     helloVersion: overrides.helloVersion,
   });
-  return { listener, token };
+  return { listener };
 }
 
 /** Binds a real listener, reads back its kernel-chosen port, then closes it
@@ -727,12 +721,10 @@ test("all four ranks produce distinct message text", () => {
  * a hand-rolled fixture, for every case except the two load-bearing
  * byte-level ones below (which need to control the exact bytes of a single
  * socket write, something no callback signature can express). */
-async function startTransferCapableListener(onFileTransfer: NonNullable<StartControlListenerOptions["onFileTransfer"]>, sharedToken?: string) {
-  const token = sharedToken ?? newControlToken();
+async function startTransferCapableListener(onFileTransfer: NonNullable<StartControlListenerOptions["onFileTransfer"]>) {
   const listener = await startControlListener({
     host: "127.0.0.1",
     port: 0,
-    token,
     onAcquire: async () => ({ ok: false, reason: "internal" }) as const,
     onRelease: () => {},
     onStatus: () => [],
@@ -751,7 +743,7 @@ async function startTransferCapableListener(onFileTransfer: NonNullable<StartCon
     onOperation: () => ({ ok: false, code: "bad_request" as const }),
     onFileTransfer,
   });
-  return { listener, token };
+  return { listener };
 }
 
 /** A raw, hand-written fixture (no broker-control.mts involved at all) that
@@ -817,11 +809,10 @@ test("dialFileTransfer: races the same two candidates on the fixed control port,
     socket.write(`${JSON.stringify({ kind: "transfer_payload", byteLength: 0, sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" })}\n`);
     return { ok: true };
   };
-  // A SHARED token: both candidate listeners must accept the SAME dial, and
-  // the race can legitimately settle on either one.
-  const sharedToken = newControlToken();
-  const { listener: a } = await startTransferCapableListener(answerEmptyDownload, sharedToken);
-  const { listener: b } = await startTransferCapableListener(answerEmptyDownload, sharedToken);
+  // Both candidate listeners accept the SAME dial, so the race can
+  // legitimately settle on either one.
+  const { listener: a } = await startTransferCapableListener(answerEmptyDownload);
+  const { listener: b } = await startTransferCapableListener(answerEmptyDownload);
   try {
     const connectFn = makeCandidateConnect({ "cand-a": a.port, "cand-b": b.port });
     const result: DialFileTransferResult = await dialFileTransfer({
@@ -991,13 +982,11 @@ test("dialFileTransfer: every failure mode resolves rather than rejecting, and t
 });
 
 // ============================================================================
-// Plan 64-09 (G-64-1): the wire proves what the types promise. Plan 64-08
-// moved attach/transfer dispatch ahead of the per-boot control-token gate on
-// the broker side; this plan deleted the client-side credential field these
-// two dials used to write. These three tests capture a REAL request line
-// from a REAL dial and assert its exact key set -- a behavioural observation
-// of the wire, never a scan of source text (D-17, 260914-poo D-1) -- so a
-// later edit that adds a credential key back onto either line goes red here.
+// Plan 64-09 (G-64-1): the wire proves what the types promise. These three
+// tests capture a REAL request line from a REAL dial and assert its exact
+// key set -- a behavioural observation of the wire, never a scan of source
+// text (D-17, 260914-poo D-1) -- so a later edit that adds a credential key
+// onto either line goes red here.
 // ============================================================================
 
 /** A raw, hand-written fixture (no broker-control.mts involved at all) that

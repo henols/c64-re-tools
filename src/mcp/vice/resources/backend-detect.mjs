@@ -137,7 +137,7 @@ function readCacheRecord(supervisorDir) {
     return record;
 }
 /** Tmp-sibling -> chmod 0600 -> content -> rename, the SAME atomic-write
- * discipline vice-broker.mts's writeBrokerRecordFile() already uses -- a
+ * discipline the rest of the broker state uses -- a
  * crash mid-write can only ever leave a stray tmp sibling behind, never a
  * truncated or empty file at the real cache path that a later read would
  * wrongly accept. */

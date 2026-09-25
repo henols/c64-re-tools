@@ -128,6 +128,11 @@ from production code**, not only bypassed.
   external analyser was removed, and nothing replaces it yet.
 - The bank-boundary annotation claim is proven only on a synthetic fixture, not
   yet on real cracked code.
+- The epoch drift check still reads the grant's `epoch_file`, a broker-side
+  path. Inside a container that path does not exist, so the check never finds
+  a baseline there.
+- `vice_program_load` still sends a client-side path to the broker instead of
+  staging the file as bytes.
 - Cycle-exact equivalence past anchor hit 75 is still open. CPU history through
   the text monitor now provides an instrument for it.
 

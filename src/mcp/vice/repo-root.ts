@@ -1,8 +1,6 @@
 // The ONE shared place every module in this directory resolves the repo
 // root through (D-2). Everything else in this module tree -- vice.mjs's
-// EPOCH_FILE, vice-broker-client.mjs's brokerRootDir() (and, before their
-// 2026-08-02 deletion, vice-pool.mjs's poolDir() and vice-session.mjs's
-// sessionFilePath()) -- derives its `.vice-supervisor` path through
+// EPOCH_FILE -- derives its `.vice-supervisor` path through
 // supervisorDir() below, so there is exactly one definition of both "where
 // is the repo root" and "what is the shared state directory called".
 //
@@ -193,19 +191,12 @@ export function repoRoot({ from = HERE, env = process.env, exists = existsSync }
  * and neither was ever measured before being written down. The corrected
  * picture:
  *
- *   - FOUR files call `toolsDir()`/`supervisorDir()` directly, across FOUR
- *     distinct subdirectories: incident-record.ts (`incidents`),
- *     stock-paths.ts (`snapshots`), vice-proxy.ts (`bin`, reading back the
- *     deployed launcher path), and vice.ts, via `supervisorDir()`
- *     (`supervisor`, the broker state directory). CORRECTED (Phase 64, plan
- *     64-10, G-64-1): vice-broker-client.ts's brokerRootDir() used to be a
- *     second `supervisorDir()` caller here, alongside vice.ts -- that was
- *     G-64-1's secondary cause, because the documented machine-level start
- *     route never writes to a directory THIS function resolves (a directory
- *     inside whichever project checkout happens to be current). It now
- *     imports broker-home.mts's `brokerStateDir()` instead, sharing the
- *     broker's own machine-level resolver, and calls this function not at
- *     all.
+ *   - THREE files call `toolsDir()`/`supervisorDir()` directly:
+ *     transfer-paths.ts (`snapshots` and the per-kind result directories),
+ *     vice-proxy.ts (the bare root, handed to backend-detect.mts's
+ *     resolvedBackend()), and vice-errors.ts, via `supervisorDir()`
+ *     (`supervisor`, the fixed-port epoch file). The broker state directory
+ *     is broker-home.mts's `brokerStateDir()`, never this function.
  *   - FIVE files cannot import this container-side module at all, so each
  *     joins `".c64-re-tools"` with its own trailing segment(s) directly,
  *     matching this function's shape by CONVENTION, never by shared code:

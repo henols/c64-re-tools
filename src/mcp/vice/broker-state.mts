@@ -436,10 +436,9 @@ export const DEFAULT_BASE_PORT = 6600;
 const PORT_SCAN_CEILING = 100;
 
 /** Exported (plan 05): vice-broker.mts's host_state control-plane response
- * and broker.json's own `base_port` field both need the SAME resolved base
- * port this allocator itself uses -- reading it here rather than
- * re-duplicating the env-var lookup a third time keeps the two values
- * structurally unable to disagree. */
+ * and its readiness line both need the SAME resolved base port this
+ * allocator itself uses -- reading it here rather than re-duplicating the
+ * env-var lookup keeps the values structurally unable to disagree. */
 export function resolveBasePort(): number {
   const raw = process.env.VICE_BROKER_BASE_PORT;
   if (raw === undefined || raw === "") return DEFAULT_BASE_PORT;

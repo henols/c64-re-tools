@@ -4,26 +4,16 @@
 // own state under, and every directory derived from it (BROKER-06, D-13,
 // D-14). This is HOST-BOUND, compiled by build.ts into resources/, because
 // only the long-lived broker process -- never a per-project client -- may
-// WRITE anywhere under this root: broker.json, epoch records, incidents,
+// WRITE anywhere under this root: epoch records, incidents,
 // staging and config scratch are all written by the broker alone, and that
 // write ownership is BROKER-06's whole content.
 //
-// CORRECTED (Phase 64, plan 64-10, G-64-1's secondary cause): this header
-// used to say no client ever touches this root at all -- that was true only
-// on the ONE route (vice-launcher.sh's `--repo-root` pin) that happened to
-// make the client's own (then project-local) resolver agree with the
-// broker's. Every other documented start route left the two disagreeing.
-// A same-machine client now READS through this exact module -- never writes
-// -- to find broker.json and share its capability record, exactly as
-// vice-launcher.sh's route already shared it: vice-broker-client.ts's
-// brokerRootDir() imports `brokerStateDir()` below directly (a value import;
-// this module carries only `node:` imports, so it loads unbuilt from that
-// container-side caller too), sharing the SAME resolver the broker itself
-// calls rather than recomputing a second answer that could drift. A client
-// inside a devcontainer resolves its OWN home, which is not the host
-// broker's -- an interim limitation with no translation fix (the path lies
-// outside the bind mount), permanently removed once Phase 66's RM-02
-// deletes broker.json and there is no file left for a client to read.
+// A same-machine client READS through this module -- never writes -- to
+// share the broker's capability record: vice-proxy.ts imports
+// `brokerStateDir()` directly (this module carries only `node:` imports, so
+// it loads unbuilt there too) rather than recomputing a second answer that
+// could drift. A client inside a devcontainer resolves its OWN home, which is
+// not the host broker's, so it simply misses that cache.
 //
 // WHY NOT repo-root.ts's toolsDir()/supervisorDir(). Those resolve a
 // directory INSIDE whichever project checkout happens to be current

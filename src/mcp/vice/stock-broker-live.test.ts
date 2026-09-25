@@ -124,7 +124,8 @@ import { fileURLToPath } from "node:url";
 import { createServer } from "node:net";
 
 import { build } from "./build.ts";
-import { openBrokerControl, type BrokerControlSession, type HeldLease, type AcquireGrant } from "./vice-broker-client.ts";
+import { dialBrokerEndpoint } from "./broker-endpoint.mts";
+import { dialControlSession, type BrokerControlSession, type HeldLease, type AcquireGrant } from "./vice-broker-client.ts";
 import { callStockTool } from "./stock-tools.ts";
 import { clearHeldStockSession, type StockSessionDeps } from "./stock-session.ts";
 import { stockConnect, type StockConnectOptions } from "./stock-connect.ts";
@@ -230,7 +231,7 @@ function writeD64Fixture(dir: string, prgPath: string): string {
 
 // ---------------------------------------------------------------------------
 // Real-broker-artifact spawn/teardown -- stock-live-broker-monitor.test.ts's
-// own startBroker()/stopBroker()/waitForBrokerJson() shape, trimmed to what
+// own startBroker()/stopBroker() shape, trimmed to what
 // this file needs (no crash-respawn machinery).
 // ---------------------------------------------------------------------------
 
@@ -239,7 +240,7 @@ interface BrokerHandle {
   stderr: string;
 }
 
-function startBroker(stateDir: string, viceBinPath: string, scratchDir: string): BrokerHandle {
+function startBroker(stateDir: string, viceBinPath: string, scratchDir: string, controlPort: number): BrokerHandle {
   const merged: Record<string, string | undefined> = {
     ...process.env,
     // Deliberately omitted -- this genuinely runs on the host.
@@ -249,7 +250,7 @@ function startBroker(stateDir: string, viceBinPath: string, scratchDir: string):
     // argv override in buildViceArgs() and would bypass it entirely, which
     // is exactly the gap this file exists to close.
     VICE_ARGS: undefined,
-    VICE_BROKER_CONTROL_PORT: "0",
+    VICE_BROKER_CONTROL_PORT: String(controlPort),
     VICE_BROKER_MAX: "1",
     VICE_BROKER_POLL_MS: "250",
     VICE_RESTART_BACKOFF_S: "1",
@@ -290,11 +291,26 @@ async function stopBroker(handle: BrokerHandle): Promise<void> {
   if (!exited) handle.child.kill("SIGKILL");
 }
 
-async function waitForBrokerJson(stateDir: string, deadlineMs = 10000): Promise<Record<string, unknown>> {
-  const path = join(stateDir, "broker.json");
-  const appeared = await waitFor(() => existsSync(path) && typeof JSON.parse(readFileSync(path, "utf8")).control_port === "number", deadlineMs);
-  assert.ok(appeared, "broker.json with a control_port did not appear within deadline");
-  return JSON.parse(readFileSync(path, "utf8"));
+/** A loopback port nothing listens on yet, for this suite's own broker --
+ * never the fixed default (19510), which a real broker may hold. */
+async function allocateControlPort(): Promise<number> {
+  const server = createServer();
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+  const address = server.address();
+  const port = typeof address === "object" && address !== null ? address.port : 0;
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+  return port;
+}
+
+/** Bounded-waits for the broker to answer a hello on `port`. */
+async function waitForBrokerReady(port: number, deadlineMs = 10000): Promise<void> {
+  const deadline = Date.now() + deadlineMs;
+  while (Date.now() < deadline) {
+    const dialed = await dialBrokerEndpoint({ port, candidates: ["127.0.0.1"] });
+    if (dialed.ok) return;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  assert.fail(`the broker never answered a hello on 127.0.0.1:${port} within ${deadlineMs}ms`);
 }
 
 function isAlive(pid: number): boolean {
@@ -390,15 +406,18 @@ interface HarnessReport {
   pidsAliveAfterTeardown: number[];
 }
 
-async function withBrokerHarness(fn: (ctx: { stateDir: string; scratchDir: string; recordPid: (pid: number) => void }) => Promise<void>): Promise<HarnessReport> {
+async function withBrokerHarness(
+  fn: (ctx: { stateDir: string; scratchDir: string; controlPort: number; recordPid: (pid: number) => void }) => Promise<void>,
+): Promise<HarnessReport> {
   build(); // ensure resources/ is a fresh build of the current TypeScript source
   const scratchDir = mkdtempSync(join(tmpdir(), "stock-broker-live-"));
   const stateDir = join(scratchDir, "state");
   const recordedPids = new Set<number>();
-  const handle = startBroker(stateDir, resolvedBinPath, scratchDir);
+  const controlPort = await allocateControlPort();
+  const handle = startBroker(stateDir, resolvedBinPath, scratchDir, controlPort);
   let pidsAliveAfterTeardown: number[] = [];
   try {
-    await fn({ stateDir, scratchDir, recordPid: (pid: number) => recordedPids.add(pid) });
+    await fn({ stateDir, scratchDir, controlPort, recordPid: (pid: number) => recordedPids.add(pid) });
   } finally {
     await stopBroker(handle);
     for (const pid of recordedPids) {
@@ -472,18 +491,15 @@ test(
   async () => {
     clearHeldStockSession();
     let report: HarnessReport | null = null;
-    report = await withBrokerHarness(async ({ stateDir, scratchDir, recordPid }) => {
+    report = await withBrokerHarness(async ({ stateDir, scratchDir, controlPort, recordPid }) => {
       const { prgPath } = writePrgFixture(scratchDir);
       const d64Path = writeD64Fixture(scratchDir, prgPath);
 
-      const brokerJson = await waitForBrokerJson(stateDir);
+      await waitForBrokerReady(controlPort);
       const host = "127.0.0.1";
-      const controlPort = Number(brokerJson.control_port);
-      const token = String(brokerJson.control_token);
-      assert.ok(Number.isFinite(controlPort) && token.length > 0, `broker.json must carry a real control_port/control_token, got: ${JSON.stringify(brokerJson)}`);
 
-      const opened = await openBrokerControl(stateDir);
-      assert.ok(opened.ok, `openBrokerControl failed: ${JSON.stringify(opened)}`);
+      const opened = await dialControlSession({ port: controlPort, candidates: ["127.0.0.1"] });
+      assert.ok(opened.ok, `dialControlSession failed: ${JSON.stringify(opened)}`);
       if (!opened.ok) return;
       const controlSession = opened.session;
 
@@ -585,16 +601,15 @@ test(
     const snapshotMetaPath = snapshotMetaPathFor(SNAPSHOT_ROUND_TRIP_NAME);
     try {
       let report: HarnessReport | null = null;
-      report = await withBrokerHarness(async ({ stateDir, scratchDir, recordPid }) => {
+      report = await withBrokerHarness(async ({ stateDir, scratchDir, controlPort, recordPid }) => {
         const { prgPath } = writePrgFixture(scratchDir);
         const d64Path = writeD64Fixture(scratchDir, prgPath);
 
-        const brokerJson = await waitForBrokerJson(stateDir);
+        await waitForBrokerReady(controlPort);
         const host = "127.0.0.1";
-        assert.ok(Number(brokerJson.control_port) > 0, `broker.json must carry a real control_port, got: ${JSON.stringify(brokerJson)}`);
 
-        const opened = await openBrokerControl(stateDir);
-        assert.ok(opened.ok, `openBrokerControl failed: ${JSON.stringify(opened)}`);
+        const opened = await dialControlSession({ port: controlPort, candidates: ["127.0.0.1"] });
+        assert.ok(opened.ok, `dialControlSession failed: ${JSON.stringify(opened)}`);
         if (!opened.ok) return;
         const controlSession = opened.session;
 
@@ -724,14 +739,14 @@ test(
   async () => {
     clearHeldStockSession();
     let report: HarnessReport | null = null;
-    report = await withBrokerHarness(async ({ stateDir, scratchDir, recordPid }) => {
+    report = await withBrokerHarness(async ({ stateDir, scratchDir, controlPort, recordPid }) => {
       const { prgPath } = writePrgFixture(scratchDir);
 
-      const brokerJson = await waitForBrokerJson(stateDir);
+      await waitForBrokerReady(controlPort);
       const host = "127.0.0.1";
 
-      const opened = await openBrokerControl(stateDir);
-      assert.ok(opened.ok, `openBrokerControl failed: ${JSON.stringify(opened)}`);
+      const opened = await dialControlSession({ port: controlPort, candidates: ["127.0.0.1"] });
+      assert.ok(opened.ok, `dialControlSession failed: ${JSON.stringify(opened)}`);
       if (!opened.ok) return;
       const controlSession = opened.session;
 
@@ -994,16 +1009,15 @@ test(
   async () => {
     clearHeldStockSession();
     let report: HarnessReport | null = null;
-    report = await withBrokerHarness(async ({ stateDir, scratchDir, recordPid }) => {
+    report = await withBrokerHarness(async ({ stateDir, scratchDir, controlPort, recordPid }) => {
       const { prgPath, acmeVersion } = assembleReactingProgram(scratchDir);
       console.log(`stock-broker-live (scenario 2, keyboard): acme --version -> ${acmeVersion}`);
 
-      const brokerJson = await waitForBrokerJson(stateDir);
+      await waitForBrokerReady(controlPort);
       const host = "127.0.0.1";
-      assert.ok(Number(brokerJson.control_port) > 0, `broker.json must carry a real control_port, got: ${JSON.stringify(brokerJson)}`);
 
-      const opened = await openBrokerControl(stateDir);
-      assert.ok(opened.ok, `openBrokerControl failed: ${JSON.stringify(opened)}`);
+      const opened = await dialControlSession({ port: controlPort, candidates: ["127.0.0.1"] });
+      assert.ok(opened.ok, `dialControlSession failed: ${JSON.stringify(opened)}`);
       if (!opened.ok) return;
       const controlSession = opened.session;
 

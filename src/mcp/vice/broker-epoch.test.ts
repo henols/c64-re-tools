@@ -1,10 +1,10 @@
 // broker-epoch.test.ts
 //
 // Task 1 (this file, this commit): frozen-contract assertions against the
-// three fixtures captured live from the running bash broker in
-// `fixtures/README.md`, BEFORE `vice-supervisor.sh`'s `write_epoch()` and
-// `vice-broker.sh`'s `write_broker_json()` are deleted. These assertions
-// pin down the "before" shape of both records so a later plan's TypeScript
+// two epoch fixtures captured live from the running bash broker in
+// `fixtures/README.md`, BEFORE `vice-supervisor.sh`'s `write_epoch()` is
+// deleted. These assertions pin down the "before" shape of the epoch record
+// so a later plan's TypeScript
 // writer (`broker-epoch.mts`, plan 03) can be held to it with something
 // concrete to diff against.
 //
@@ -105,28 +105,6 @@ for (const { file, port } of EPOCH_FIXTURES) {
     assert.ok(!(parsed.log as string).startsWith("/"), "log must be a relative path, not absolute");
   });
 }
-
-test("frozen broker fixture bash-broker.json: carries the fields readBrokerLiveness() reads, plus its writer field", () => {
-  const parsed = readFixtureJson("bash-broker.json") as Record<string, unknown>;
-  const keys = new Set(Object.keys(parsed));
-
-  // readBrokerLiveness() (vice-broker-client.ts) reads `pid` and
-  // `heartbeat_at` to classify never_started / stale / alive.
-  assert.ok(keys.has("pid"), "must carry pid");
-  assert.ok(keys.has("heartbeat_at"), "must carry heartbeat_at");
-
-  // The field naming the record's writer.
-  assert.ok(keys.has("written_by"), "must carry written_by");
-});
-
-test("frozen broker fixture bash-broker.json: written_by is the retiring bash daemon's filename (D-26 'before' half)", () => {
-  const parsed = readFixtureJson("bash-broker.json") as Record<string, unknown>;
-
-  // This is the pre-change record: the bash daemon's own filename, which is
-  // false the moment the new broker exists (D-26). This assertion is
-  // EXPECTED TO CHANGE in task 3, once the new writer names itself instead.
-  assert.equal(parsed.written_by, "vice-broker.sh");
-});
 
 test("broker-epoch.mts's writeEpochRecord() round-trips a record built from the 6510 fixture's own values, matching key set and value types exactly", () => {
   const fixture = readFixtureJson("bash-epoch-6510.json") as Record<string, unknown>;

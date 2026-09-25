@@ -37,7 +37,6 @@ import {
   type MonitorReleaseOutcome,
   MAX_LINE_BYTES,
 } from "./broker-control.mts";
-import { brokerJsonPath } from "./vice-broker-client.ts";
 import { build } from "./build.ts";
 // Phase 65 (plan 65-03, D-11, Task 2 Test 6): the CLIENT-side mirrored
 // stage-line budget -- kept at or under MAX_LINE_BYTES above by the relation
@@ -45,20 +44,6 @@ import { build } from "./build.ts";
 // directly by its own .mts source (host-tool-endpoint.mts carries no
 // host-bound APIs and ships no build step).
 import { HOST_TOOL_STAGE_LINE_MAX_BYTES } from "./host-tool-endpoint.mts";
-
-// This file's cases dial a control-plane listener THIS test file itself
-// started moments earlier, on loopback -- so loopback is the only address
-// that can ever be right for them. Without this pin, resolveControlTarget()
-// falls through to mcpHost()'s bridge-alias default, and an ambient
-// devcontainer workspace variable (CONTAINER_WORKSPACE_PATH/
-// HOST_WORKSPACE_PATH, settable from a genuine devcontainer or a developer's
-// own exported shell) makes isInsideContainer() report true, so the client
-// resolves the container-side bridge alias instead of loopback and the case
-// dies in DNS resolution (`getaddrinfo ENOTFOUND host.docker.internal`)
-// before any assertion runs. This is not a CI-only accommodation: the pin is
-// unconditional and was measured green with the workspace variables both set
-// and unset. Mirrors the existing, committed idiom at broker-e2e.test.ts:47.
-process.env.VICE_BROKER_CONTROL_DIAL_HOST = "127.0.0.1";
 
 // ---------------------------------------------------------------------------
 // The cap, read from the module under test -- never a hand-written literal
@@ -135,7 +120,6 @@ async function startTransportListener(): Promise<StartControlListenerResult> {
   return startControlListener({
     host: "127.0.0.1",
     port: 0,
-    token: "host-tool-transport-test-token",
     ...baseListenerOptions(),
   });
 }
@@ -143,10 +127,8 @@ async function startTransportListener(): Promise<StartControlListenerResult> {
 // ---------------------------------------------------------------------------
 // Raw-socket probe for the cap-boundary cases. Dials, writes ONE line with NO
 // trailing newline, and races a `close` event against a short, `unref()`ed
-// bounded timer -- the same "connection stayed open" idiom
-// `acquireOverControlPlane()`'s own connect timer uses, so a hung case can
-// never wedge the test runner. Always `destroy()`s the socket in `finish()`,
-// win or lose the race.
+// bounded timer, so a hung case can never wedge the test runner. Always
+// `destroy()`s the socket in `finish()`, win or lose the race.
 // ---------------------------------------------------------------------------
 interface RawProbeOutcome {
   /** True once a `close` event actually fired before the bounded wait
