@@ -1379,7 +1379,7 @@ export async function handleHostToolRun(requestKey: string, raw: unknown, projec
     return { ok: false, message: bound.message };
   }
 
-  const response = await runHostTool(bound.request, { repoRoot: scratchRoot, projectRoot, clearDeclaredOutputs: true, log: deps.log });
+  const response = await runHostTool(bound.request, { repoRoot: scratchRoot, projectRoot, clearDeclaredOutputs: true, outputDir: join(scratchRoot, "out"), log: deps.log });
 
   const responseObj = response as unknown as Record<string, unknown>;
 

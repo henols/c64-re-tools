@@ -102,7 +102,10 @@
     "resources",
     "tools-manifest.stock.json",
     "README.md",
-    "THIRD-PARTY-NOTICES.md"
+    "THIRD-PARTY-NOTICES.md",
+    "vendor/ghidra-ext/",
+    "vendor/dxa/",
+    "!vendor/dxa/dxa"
   ],
   "engines": {
     "node": ">=24.0.0"

@@ -915,17 +915,6 @@ test("runHostTool: a real symlink planted inside the workspace, pointing outside
   });
 });
 
-test("runHostTool: the same planted link used as acme.build's outDir is REFUSED, and the outside directory is still empty afterwards -- write key, the reproduced defect was a file created OUTSIDE the workspace root", async () => {
-  await withSymlinkFixture(async (ws, outside) => {
-    writeFileSync(join(ws, "a.a"), "; test source\n", "utf8");
-    symlinkSync(outside, join(ws, "escape"), "dir");
-    const response = await runHostTool({ tool: "acme.build", args: { source: "a.a", outDir: "escape" } }, { repoRoot: ws });
-    assert.equal(response.ok, false);
-    if (!response.ok) assert.match(response.message, /escapes the workspace root/);
-    assert.deepEqual(readdirSync(outside), [], "the assertion that carries the finding: outside must still be EMPTY, not merely errored");
-  });
-});
-
 test("runHostTool: a symlink pointing INSIDE the workspace is FOLLOWED -- the request is accepted and the spawned include is the link's REAL location, not the path as written through the link (discriminating case)", async () => {
   await withSymlinkFixture(async (ws, outside) => {
     void outside;
@@ -1007,17 +996,6 @@ test("resolveWorkspacePath: a candidate several levels below the deepest existin
     const deep = resolveWorkspacePath(ws, "build/out/deep/a.prg");
     assert.equal(deep.ok, true);
     if (deep.ok) assert.equal(deep.path, join(ws, "build", "out", "deep", "a.prg"));
-  });
-});
-
-test("runHostTool: an acme.build request whose outDir names an uncreated in-workspace directory is still accepted end to end", async () => {
-  await withSymlinkFixture(async (ws) => {
-    writeFileSync(join(ws, "a.a"), "; test source\n", "utf8");
-    const fakeAcme = writeFakeAcme(ws, "zerobyte");
-    await withFakeAcme(fakeAcme, async () => {
-      const response = await runHostTool({ tool: "acme.build", args: { source: "a.a", outDir: "not/yet/created" } }, { repoRoot: ws });
-      assert.equal(response.ok, true);
-    });
   });
 });
 
@@ -2387,7 +2365,7 @@ test("Plan 60-03 Task 2 Test 3b: ghidra.installExtension's own runHostTool() pre
     delete process.env.GHIDRA_HOME;
     try {
       const response = await runHostTool(
-        { tool: "ghidra.installExtension", args: { sourceDir: "src/mcp/vice/vendor/ghidra-ext", moduleName: "t2-mod-3b" } },
+        { tool: "ghidra.installExtension", args: { moduleName: "t2-mod-3b" } },
         { repoRoot: realRepoRoot, here: declDir },
       );
       assert.equal(response.ok, false);
@@ -2412,7 +2390,7 @@ test("Plan 60-03 Task 2 Test 3c: ghidra.installExtension's own buildHostToolArgv
     delete process.env.GHIDRA_HOME;
     try {
       const built = buildHostToolArgv(
-        { tool: "ghidra.installExtension", args: { sourceDir: "src/mcp/vice/vendor/ghidra-ext", moduleName: "t2-mod-3c" } },
+        { tool: "ghidra.installExtension", args: { moduleName: "t2-mod-3c" } },
         { sourceDirPath: join(dir, "vendored-ghidra-ext"), moduleName: "t2-mod-3c" },
         undefined,
         { toolsDir: join(dir, ".c64-re-tools"), projectRoot: dir, here: declDir },
@@ -2995,8 +2973,8 @@ test("HOST_TOOL_ARG_KEYS/HOST_TOOL_PATH_ARG_KEYS: ghidra.analyze and ghidra.inst
     [...HOST_TOOL_PATH_ARG_KEYS["ghidra.analyze"]].sort(),
     ["dataRangesPath", "entrypointsPath", "exportPath", "importPath", "postScript", "preScript", "scriptPath"].sort(),
   );
-  assert.deepEqual([...HOST_TOOL_ARG_KEYS["ghidra.installExtension"]].sort(), ["moduleName", "sourceDir"].sort());
-  assert.deepEqual([...HOST_TOOL_PATH_ARG_KEYS["ghidra.installExtension"]].sort(), ["sourceDir"]);
+  assert.deepEqual([...HOST_TOOL_ARG_KEYS["ghidra.installExtension"]].sort(), ["moduleName"]);
+  assert.deepEqual([...HOST_TOOL_PATH_ARG_KEYS["ghidra.installExtension"]].sort(), []);
 });
 
 test("runHostTool: a scriptPath/entrypointsPath/exportPath reaching outside the workspace root through a symlink is refused, naming the resolved path and the root", async () => {
@@ -3415,7 +3393,7 @@ const HOST_TOOL_MINIMAL_VALID_ARGS: Readonly<Record<string, () => Record<string,
   "oracle.probe": () => ({}),
   "oracle.run": () => ({ source: "a.bin" }),
   "dxa.disassemble": () => ({ image: "x.prg", imageKind: "prg" }),
-  "ghidra.installExtension": () => ({ sourceDir: "ghidra-ext", moduleName: "census-module" }),
+  "ghidra.installExtension": () => ({ moduleName: "census-module" }),
   "c1541.bam": () => ({ image: "x.d64" }),
   "c1541.dir": () => ({ image: "x.d64" }),
   "c1541.entry": () => ({ image: "x.d64", name: "basicstub" }),
@@ -3472,7 +3450,10 @@ test("HOST_TOOL_PATH_ARG_KEYS: every declared path key is a member of that tool'
   // each declare two path-bearing keys (image, outDir) -- 17 + 10 = 27.
   // Phase 40, plan 40-03 raised it from 27 to 29: petcat.decode declares the
   // same two path-bearing keys (image, outDir) -- 27 + 2 = 29.
-  assert.equal(totalDeclared, 29, "the declared path-key total across all tools must be 29 -- a different count means a key was added or dropped without updating this census");
+  // v2.0.0 step 1 lowered it from 29 to 20: outDir left acme.build,
+  // dxa.disassemble, the five c1541.* ids and petcat.decode (8), and
+  // sourceDir left ghidra.installExtension (1).
+  assert.equal(totalDeclared, 20, "the declared path-key total across all tools must be 20 -- a different count means a key was added or dropped without updating this census");
 });
 
 test("HOST_TOOL_PATH_ARG_KEYS: every declared path key refuses an escaping value and an absolute value, with the executed-assertion count equal to twice the declared total (non-vacuity)", async () => {
@@ -3508,8 +3489,9 @@ test("HOST_TOOL_PATH_ARG_KEYS: every declared path key refuses an escaping value
       // (ghidra.analyze's one new path key, dataRangesPath). Phase 40,
       // plan 40-02 raised it from 17 to 27 (the five c1541.* ids' own
       // image/outDir pairs). Phase 40, plan 40-03 raised it from 27 to 29
-      // (petcat.decode's own image/outDir pair).
-      assert.equal(totalDeclared, 29, "sanity: the declared path-key total must still be 29");
+      // (petcat.decode's own image/outDir pair). v2.0.0 step 1 lowered it
+      // from 29 to 20 (outDir and sourceDir removed).
+      assert.equal(totalDeclared, 20, "sanity: the declared path-key total must still be 20");
       assert.equal(executed, totalDeclared * 2, "the executed-assertion count must equal twice the declared total (one escaping + one absolute check per key)");
     });
   } finally {
@@ -4188,26 +4170,18 @@ test("Phase 65-03 Task 1 Test 2: bindStagedInputs maps acme includes (tree handl
   assert.equal(executed, 4, "non-vacuity: every unsafe exportPath candidate must have been exercised");
 });
 
-test("Phase 65-03 Task 1 Test 3: bindStagedInputs refuses outDir and sourceDir by name -- results land under the client's own .c64-re-tools/<kind>/", () => {
-  // Every OTHER key on the same request must resolve, so the outDir/
-  // sourceDir refusal fires first rather than being masked by an unrelated
-  // "unknown upload handle" refusal for some other key on the same object.
-  const lookup = { fileHandle: () => "in/0/bound-file", treeHandle: () => "in/0" };
+test("outDir and sourceDir are not host-tool arguments: every tool refuses both as unknown keys", () => {
   let executed = 0;
   for (const tool of HOST_TOOL_IDS) {
-    const pathKeys = HOST_TOOL_PATH_ARG_KEYS[tool]!;
     for (const key of ["outDir", "sourceDir"] as const) {
-      if (!pathKeys.includes(key)) continue;
       const baseArgs = HOST_TOOL_MINIMAL_VALID_ARGS[tool]();
-      const result = bindStagedInputs({ tool, args: { ...baseArgs, [key]: "some-handle" } }, lookup);
-      assert.equal(result.ok, false, `${tool}.${key} must be refused on the fixed-endpoint route`);
-      if (!result.ok) {
-        assert.match(result.message, /\.c64-re-tools\/<kind>\//, `${tool}.${key} refusal must name the client's own .c64-re-tools/<kind>/ directory`);
-      }
+      const result = normaliseHostToolRequest({ tool, args: { ...baseArgs, [key]: "anywhere" } });
+      assert.equal(result.ok, false, `${tool}.${key} must be refused`);
+      if (!result.ok) assert.match(result.message, new RegExp(`unknown key\\(s\\) ${key}`), `${tool}.${key} refusal must name the key`);
       executed++;
     }
   }
-  assert.ok(executed > 0, "non-vacuity: at least one tool must declare outDir or sourceDir");
+  assert.equal(executed, HOST_TOOL_IDS.length * 2, "non-vacuity: every tool must have been exercised for both keys");
 });
 
 test("Phase 65-03 Task 1 Test 4: with clearDeclaredOutputs true, a stale output already on disk before the spawn is not reported when the tool fails to write it", async () => {

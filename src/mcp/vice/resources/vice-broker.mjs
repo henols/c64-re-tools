@@ -1070,7 +1070,7 @@ export async function handleHostToolRun(requestKey, raw, projectRoot, deps = {})
     if (!bound.ok) {
         return { ok: false, message: bound.message };
     }
-    const response = await runHostTool(bound.request, { repoRoot: scratchRoot, projectRoot, clearDeclaredOutputs: true, log: deps.log });
+    const response = await runHostTool(bound.request, { repoRoot: scratchRoot, projectRoot, clearDeclaredOutputs: true, outputDir: join(scratchRoot, "out"), log: deps.log });
     const responseObj = response;
     if (!response.ok) {
         const message = typeof responseObj.message === "string" ? responseObj.message : "vice: the host tool refused";

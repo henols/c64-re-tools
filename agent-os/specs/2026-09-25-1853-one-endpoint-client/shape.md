@@ -22,6 +22,21 @@ Out of scope: deleting `host-tool-client.ts`, the legacy `host_tool` op and the 
 - Skill scripts stay `.mjs` in this step. The `.ts` conversion is a separate roadmap item.
 - Nothing under `.planning/` is touched.
 
+### Decided during implementation
+
+- Skill scripts download results into a staging directory inside their own
+  output directory (`mcp-module.mjs` `invokeHostTool()`), then move them into
+  place, not under `<project>/.c64-re-tools/`. `projectRoot()` walks up from
+  the script, which fails in plugin mode, and a same-filesystem move needs no
+  copy.
+- `outDir` is replaced by `HostToolDeps.outputDir`, an executor option no
+  request can set. The broker sets it to the request's scratch `out/`, and
+  in-process callers name their own.
+- `acme.build` declares `.sym`, `.vs` and `.rep` as outputs, because only
+  declared outputs cross back on the endpoint route.
+- The transfer dial pauses the socket when it hands it over, fixing an
+  intermittent 0-byte download.
+
 ## Context
 
 - **Visuals:** none.

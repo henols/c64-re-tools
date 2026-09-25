@@ -67,7 +67,7 @@ const DXA_BIN_PATH = join(HERE, "vendor", "dxa", "dxa");
 const hostToolModule = (await import(new URL("./resources/host-tool.mjs", import.meta.url).href)) as unknown as {
   runHostTool: (
     raw: unknown,
-    deps: { repoRoot: string; log?: (line: string) => void; timeoutMs?: number },
+    deps: { repoRoot: string; log?: (line: string) => void; timeoutMs?: number; outputDir?: string },
   ) => Promise<
     | { ok: true; tool: string; exitStatus: number | null; results: Array<{ path: string; sha256: string; byteLength: number }>; stderrTail: string }
     | { ok: false; message: string }
@@ -348,9 +348,9 @@ async function extractCorpusProgram(): Promise<Uint8Array> {
   const scratch = mkdtempSync(join(tmpdir(), "dxa-live-corpus-dir-"));
   try {
     const root = commonAncestorDir(dirname(CORPUS_PATH), scratch);
-    const baseArgs = { image: toRel(root, CORPUS_PATH), outDir: toRel(root, scratch) };
+    const baseArgs = { image: toRel(root, CORPUS_PATH) };
 
-    const dirResp = await runHostTool({ tool: "c1541.dir", args: baseArgs }, { repoRoot: root });
+    const dirResp = await runHostTool({ tool: "c1541.dir", args: baseArgs }, { repoRoot: root, outputDir: scratch });
     if (!dirResp.ok) throw new Error(`dxa-live CORPUS: c1541.dir refused: ${dirResp.message}`);
     const listingPath = dirResp.results[0]?.path;
     if (!listingPath) throw new Error("dxa-live CORPUS: c1541.dir reported no listing output");
@@ -359,7 +359,7 @@ async function extractCorpusProgram(): Promise<Uint8Array> {
     if (!entryMatch) throw new Error("dxa-live CORPUS: the corpus image's directory listing has no entries");
     const entryName = entryMatch[1]!.replace(/\s+$/, "");
 
-    const readResp = await runHostTool({ tool: "c1541.read", args: { ...baseArgs, name: entryName } }, { repoRoot: root });
+    const readResp = await runHostTool({ tool: "c1541.read", args: { ...baseArgs, name: entryName } }, { repoRoot: root, outputDir: scratch });
     if (!readResp.ok) throw new Error(`dxa-live CORPUS: c1541.read refused: ${readResp.message}`);
     const readPath = readResp.results[0]?.path;
     if (!readPath) throw new Error("dxa-live CORPUS: c1541.read reported no output file");

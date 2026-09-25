@@ -72,7 +72,7 @@ function censusAbsoluteValue(): string {
   return "/etc/passwd";
 }
 
-const DXA_PATH_KEYS = ["image", "entrypointsPath", "datablocksPath", "labelsPath", "outDir"] as const;
+const DXA_PATH_KEYS = ["image", "entrypointsPath", "datablocksPath", "labelsPath"] as const;
 
 // ---------------------------------------------------------------------------
 // FIXTURE: the one plant idiom this file uses for every case that needs a
