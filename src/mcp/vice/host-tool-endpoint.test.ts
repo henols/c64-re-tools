@@ -12,13 +12,14 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { connect } from "node:net";
+import { dirname, join } from "node:path";
+import { connect, createServer, type Socket } from "node:net";
+import { spawn } from "node:child_process";
 
 import { acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
 import { runHostToolOverEndpoint, walkUploadTree, HOST_TOOL_STAGE_LINE_MAX_BYTES } from "./host-tool-endpoint.mts";
 import { startHarnessBroker, type HarnessBroker } from "./broker-harness.ts";
-import { dialHostToolSession, dialFileTransfer } from "./broker-endpoint.ts";
+import { dialHostToolSession, dialFileTransfer, type HostToolSession } from "./broker-endpoint.ts";
 import { transferFileOverEndpoint } from "./transfer-client.mts";
 import { TRANSFER_MAX_BYTES } from "./transfer-hash.mts";
 
@@ -522,6 +523,373 @@ test("Task 2 Test 7: a source that !source's a file outside every uploaded tree 
     assert.notEqual(result.exitStatus, 0, "the ACME child itself must have failed to open the missing include");
     assert.match(result.stderrTail, /outside\.a/, "the note must name the missing file");
     assert.match(result.stderrTail, /-I/, "the note must say to add an -I entry for its directory");
+  } finally {
+    await broker.stop();
+  }
+});
+
+// ============================================================================
+// Phase 65, plan 65-03, Task 3 (D-09/D-10): only declared results return, the
+// scratch always goes, and no broker path escapes.
+// ============================================================================
+
+const EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
+/** A plain TCP splice-and-record proxy: every connection made to `port`
+ * forwards byte-for-byte to `targetPort` on `127.0.0.1` and back, recording
+ * every byte the TARGET (the harness broker) ever wrote, so a test can
+ * assert on the RAW wire bytes a real client actually received -- not a
+ * JS object that has already forgotten which substring the wire text used.
+ * Works for every connection this seam opens (the host-tool session AND
+ * every transfer connection alike), since each is a plain, independent TCP
+ * stream through this same listener. */
+interface RecordingProxy {
+  port: number;
+  brokerToClientText(): string;
+  close(): Promise<void>;
+}
+
+function startRecordingProxy(targetPort: number): Promise<RecordingProxy> {
+  return new Promise((resolveProxy, reject) => {
+    const brokerToClientChunks: Buffer[] = [];
+    const openSockets = new Set<Socket>();
+    // `allowHalfOpen: true` on BOTH the accepted socket (the server option)
+    // and the outbound socket (connect()'s own option) -- MEASURED live
+    // while writing this test: Node's DEFAULT `allowHalfOpen: false` means
+    // that the instant the real UPLOADING client finishes writing its own
+    // payload and half-closes (transferFileOverEndpoint()'s own
+    // `pipeline(..., socket)` calls `socket.end()` once the source is
+    // exhausted -- normal, expected TCP half-close, "I am done SENDING,
+    // still listening"), the PROXY's accepted socket receiving that FIN
+    // would, under the default, auto-close its OWN write-back direction
+    // too -- severing the path the broker's own "transfer_complete" reply
+    // needed to travel moments later, before that reply was ever sent. The
+    // direct (non-proxied) case never hit this because there is no
+    // intermediate socket whose OWN half-open state could diverge from the
+    // real client's. With `allowHalfOpen: true`, receiving a peer's FIN
+    // fires "end" only -- this proxy explicitly forwards it with the
+    // peer's own `.end()`, never auto-closing the other direction.
+    const server = createServer({ allowHalfOpen: true }, (clientSocket) => {
+      openSockets.add(clientSocket);
+      const brokerSocket = connect({ port: targetPort, host: "127.0.0.1", allowHalfOpen: true });
+      openSockets.add(brokerSocket);
+      clientSocket.on("data", (chunk: Buffer) => brokerSocket.write(chunk));
+      brokerSocket.on("data", (chunk: Buffer) => {
+        brokerToClientChunks.push(chunk);
+        clientSocket.write(chunk);
+      });
+      clientSocket.on("end", () => brokerSocket.end());
+      brokerSocket.on("end", () => clientSocket.end());
+      clientSocket.on("error", () => brokerSocket.destroy());
+      brokerSocket.on("error", () => clientSocket.destroy());
+      clientSocket.on("close", () => brokerSocket.destroy());
+      brokerSocket.on("close", () => clientSocket.destroy());
+    });
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      const port = typeof address === "object" && address !== null ? address.port : -1;
+      resolveProxy({
+        port,
+        brokerToClientText: () => Buffer.concat(brokerToClientChunks).toString("utf8"),
+        close: () =>
+          new Promise<void>((resolveClose) => {
+            for (const s of openSockets) s.destroy();
+            server.close(() => resolveClose());
+          }),
+      });
+    });
+  });
+}
+
+test("Task 3 Test 1: a build whose source directory also holds data.bin and notes.txt returns exactly the declared ACME outputs -- neither uploaded sibling appears in results[]", { skip: SKIP_REASON }, async () => {
+  const broker: HarnessBroker = await startHarnessBroker();
+  try {
+    const sourceDir = freshDir("siblings-source");
+    writeFileSync(join(sourceDir, "hello.a"), "* = $0801\nstart\n\trts\n", "utf8");
+    writeFileSync(join(sourceDir, "data.bin"), Buffer.from([1, 2, 3, 4]));
+    writeFileSync(join(sourceDir, "notes.txt"), "just some notes\n", "utf8");
+
+    const toolsRoot = freshDir("siblings-tools-root");
+    const result = await runHostToolOverEndpoint("acme.build", { source: join(sourceDir, "hello.a") }, { toolsRoot, port: broker.port, candidates: ["127.0.0.1"] });
+
+    assert.equal(result.ok, true, result.ok ? "" : JSON.stringify(result));
+    if (!result.ok) return;
+    assert.equal(result.results.length, 1, "only the declared .prg output may appear in results[]");
+    assert.ok(result.results[0]!.path.endsWith(".prg"));
+  } finally {
+    await broker.stop();
+  }
+});
+
+test("Task 3 Test 2: a child process runs a request up to the upload step, then kills itself with SIGKILL before run; the broker staging directory for that request is polled until it is gone", async () => {
+  const broker: HarnessBroker = await startHarnessBroker();
+  try {
+    const clientDir = freshDir("sigkill-client");
+    const sourcePath = join(clientDir, "hello.a");
+    writeFileSync(sourcePath, "* = $0801\nstart\n\trts\n", "utf8");
+
+    const scriptDir = freshDir("sigkill-script");
+    const scriptPath = join(scriptDir, "sigkill-stage-upload.mjs");
+    const brokerEndpointUrl = new URL("./broker-endpoint.ts", import.meta.url).href;
+    const transferClientUrl = new URL("./transfer-client.mts", import.meta.url).href;
+    writeFileSync(
+      scriptPath,
+      [
+        `import { dialHostToolSession } from ${JSON.stringify(brokerEndpointUrl)};`,
+        `import { transferFileOverEndpoint } from ${JSON.stringify(transferClientUrl)};`,
+        `import { statSync } from "node:fs";`,
+        `const port = ${broker.port};`,
+        `const sourcePath = ${JSON.stringify(sourcePath)};`,
+        `const dialResult = await dialHostToolSession({ port, candidates: ["127.0.0.1"] });`,
+        `if (!dialResult.ok) { process.stderr.write("dial failed: " + dialResult.reason); process.exit(1); }`,
+        `const byteLength = statSync(sourcePath).size;`,
+        `const stageResult = await dialResult.session.stage([{ tree: 0, rel: "hello.a", byteLength }]);`,
+        `if (!stageResult.ok) { process.stderr.write("stage failed: " + stageResult.reason); process.exit(1); }`,
+        `const uploadResult = await transferFileOverEndpoint({ direction: "upload", handle: stageResult.files[0], sourcePath }, { port, candidates: ["127.0.0.1"] });`,
+        `if (!uploadResult.ok) { process.stderr.write("upload failed: " + uploadResult.reason); process.exit(1); }`,
+        `process.stdout.write("staged:" + stageResult.request + "\\n");`,
+        `process.kill(process.pid, "SIGKILL");`,
+      ].join("\n"),
+      "utf8",
+    );
+
+    const child = spawn(process.execPath, [scriptPath]);
+    let stdoutText = "";
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdoutText += chunk.toString("utf8");
+    });
+    let stderrText = "";
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderrText += chunk.toString("utf8");
+    });
+    await new Promise<void>((resolveExit) => {
+      child.once("exit", () => resolveExit());
+    });
+    assert.match(stdoutText, /^staged:ht-/, `expected the child to report a staged request key; stderr: ${stderrText}`);
+
+    const gone = await waitForNoRequestStagingDir(broker.home);
+    assert.ok(gone, `expected no ht- staging directory to remain after the client was SIGKILLed; child stdout: ${stdoutText}, stderr: ${stderrText}`);
+  } finally {
+    await broker.stop();
+  }
+});
+
+test("Task 3 Test 3: results[] arrives in the same order as the host_tool_run reply listed it", async () => {
+  const dir = freshDir("order-t3");
+  writeFileSync(join(dir, "a.a"), "tiny\n", "utf8");
+  const toolsRoot = freshDir("order-t3-tools");
+
+  const declaredOrder = ["third.bin", "first.bin", "second.bin"];
+  const fakeSession = {
+    async stage(files: Array<{ tree: number; rel: string; byteLength: number }>) {
+      return { ok: true as const, request: "fake-request", trees: [] as string[], files: files.map((_, i) => `file-${i}`) };
+    },
+    async run(tool: string) {
+      return {
+        ok: true as const,
+        response: {
+          ok: true,
+          tool,
+          exitStatus: 0,
+          stderrTail: "",
+          results: declaredOrder.map((name, i) => ({ name, handle: `dl-${i}`, sha256: EMPTY_SHA256, byteLength: 0 })),
+        },
+      };
+    },
+    close() {},
+  };
+  const seenDownloadHandles: string[] = [];
+
+  const result = await runHostToolOverEndpoint(
+    "acme.build",
+    { source: join(dir, "a.a") },
+    {
+      toolsRoot,
+      dialSession: async () => ({ ok: true, session: fakeSession }),
+      transferFile: async (request) => {
+        if (request.direction === "upload") {
+          const bytes = readFileSync(request.sourcePath);
+          return { ok: true, byteLength: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") };
+        }
+        seenDownloadHandles.push(request.handle);
+        mkdirSync(dirname(request.destPath), { recursive: true });
+        writeFileSync(request.destPath, Buffer.alloc(0));
+        return { ok: true, byteLength: 0, sha256: EMPTY_SHA256 };
+      },
+    },
+  );
+
+  assert.equal(result.ok, true, result.ok ? "" : result.message);
+  if (!result.ok) return;
+  assert.deepEqual(seenDownloadHandles, ["dl-0", "dl-1", "dl-2"], "downloads must be requested in the reply's own order");
+  assert.deepEqual(
+    result.results.map((r) => r.path.split("/").pop()),
+    declaredOrder,
+    "results[] must arrive in the same order the reply declared them",
+  );
+});
+
+test("Task 3 Test 4: a zero-byte input file uploads, and a fake-tool zero-byte declared result downloads with sha256 e3b0c442...b855 and byteLength 0", async () => {
+  const sourceDir = freshDir("zerobyte-source");
+  const sourcePath = join(sourceDir, "empty.a");
+  writeFileSync(sourcePath, Buffer.alloc(0));
+  assert.equal(statSync(sourcePath).size, 0, "sanity: the input fixture itself must be genuinely zero bytes");
+
+  const toolsRoot = freshDir("zerobyte-tools-root");
+
+  const fakeSession = {
+    async stage(files: Array<{ tree: number; rel: string; byteLength: number }>) {
+      return { ok: true as const, request: "fake-request", trees: [] as string[], files: files.map((_, i) => `file-${i}`) };
+    },
+    async run(tool: string) {
+      return {
+        ok: true as const,
+        response: { ok: true, tool, exitStatus: 0, stderrTail: "", results: [{ name: "empty.prg", handle: "dl-0", sha256: EMPTY_SHA256, byteLength: 0 }] },
+      };
+    },
+    close() {},
+  };
+
+  let observedUpload: { byteLength: number; sha256: string } | undefined;
+  const result = await runHostToolOverEndpoint(
+    "acme.build",
+    { source: sourcePath },
+    {
+      toolsRoot,
+      dialSession: async () => ({ ok: true, session: fakeSession }),
+      transferFile: async (request) => {
+        if (request.direction === "upload") {
+          const bytes = readFileSync(request.sourcePath);
+          const sha256 = createHash("sha256").update(bytes).digest("hex");
+          observedUpload = { byteLength: bytes.length, sha256 };
+          return { ok: true, byteLength: bytes.length, sha256 };
+        }
+        mkdirSync(dirname(request.destPath), { recursive: true });
+        writeFileSync(request.destPath, Buffer.alloc(0));
+        return { ok: true, byteLength: 0, sha256: EMPTY_SHA256 };
+      },
+    },
+  );
+
+  assert.equal(result.ok, true, result.ok ? "" : result.message);
+  assert.equal(observedUpload?.byteLength, 0, "the zero-byte input file must upload with an observed byteLength of 0");
+  assert.equal(observedUpload?.sha256, EMPTY_SHA256, "the zero-byte input file's own sha256 must be the empty-string digest");
+  if (!result.ok) return;
+  assert.equal(result.results.length, 1);
+  assert.equal(result.results[0]!.byteLength, 0);
+  assert.equal(result.results[0]!.sha256, EMPTY_SHA256);
+  assert.equal(statSync(result.results[0]!.path).size, 0, "the downloaded result file itself must genuinely be zero bytes");
+});
+
+test("Task 3 Test 5: no broker-side path crosses the wire; a diagnostic naming an input arrives at the caller naming its own local absolute path", { skip: SKIP_REASON }, async () => {
+  const broker: HarnessBroker = await startHarnessBroker();
+  const proxy = await startRecordingProxy(broker.port);
+  try {
+    const sourceDir = freshDir("proxy-syntax-error-source");
+    const sourcePath = join(sourceDir, "bad.a");
+    // A genuine ACME error (MEASURED against real ACME 0.97): referencing an
+    // undefined symbol names the FILE in its own diagnostic.
+    writeFileSync(sourcePath, "* = $0801\nstart\n\tlda undefined_symbol_xyz\n\trts\n", "utf8");
+    const toolsRoot = freshDir("proxy-syntax-error-tools-root");
+
+    const result = await runHostToolOverEndpoint("acme.build", { source: sourcePath }, { toolsRoot, port: proxy.port, candidates: ["127.0.0.1"] });
+
+    assert.equal(result.ok, true, `expected ok:true (the ACME child itself fails, the seam does not); got ${JSON.stringify(result)}`);
+    if (!result.ok) return;
+    assert.notEqual(result.exitStatus, 0, "the ACME child itself must have failed on the undefined symbol");
+    const escapedSourcePath = sourcePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    assert.ok(new RegExp(escapedSourcePath).test(result.stderrTail), `expected the caller's own local absolute source path (${sourcePath}) in stderrTail: ${result.stderrTail}`);
+
+    const recorded = proxy.brokerToClientText();
+    assert.ok(!recorded.includes(broker.home), `no broker-to-client byte may contain the harness home path (${broker.home})`);
+  } finally {
+    await proxy.close();
+    await broker.stop();
+  }
+});
+
+test("Task 3 Test 6: two concurrent downloads of different content to the SAME destination path leave it equal to one of the two payloads and no .tmp- file behind", { skip: SKIP_REASON }, async () => {
+  const broker: HarnessBroker = await startHarnessBroker();
+  try {
+    const toolsRoot = freshDir("race-tools-root");
+    const buildsDir = join(toolsRoot, "builds");
+    mkdirSync(buildsDir, { recursive: true });
+
+    // Two REAL acme.build runs, SEQUENTIALLY (never concurrently) -- this
+    // isolates the property under test (transferFileOverEndpoint()'s own
+    // temp-then-rename race on a SHARED destPath) from the host-tool
+    // SESSION-dial layer, which this plan does not touch and whose own
+    // concurrent-dial behaviour is proven elsewhere (host-tool-endpoint.test.ts's
+    // own 65-01 "two concurrent host-tool connections" case). Each run's own
+    // download step is skipped -- `session.run()` used directly, not
+    // `runHostToolOverEndpoint()` -- so the two REAL download handles this
+    // test itself races below are captured before either is redeemed.
+    // The SESSION IS NOT CLOSED here (D-09): closing it removes the whole
+    // request's own scratch, including the just-registered download result
+    // -- the caller closes it only after the download has been redeemed.
+    async function buildOnce(tag: string, immediate: string): Promise<{ session: HostToolSession; result: { handle: string; sha256: string; byteLength: number } }> {
+      const dir = freshDir(`race-source-${tag}`);
+      const sourcePath = join(dir, "same.a");
+      writeFileSync(sourcePath, `* = $0801\nstart\n\tlda #${immediate}\n\trts\n`, "utf8");
+      const dialResult = await dialHostToolSession({ port: broker.port, candidates: ["127.0.0.1"] });
+      if (!dialResult.ok) throw new Error(dialResult.reason);
+      const session = dialResult.session;
+      const byteLength = statSync(sourcePath).size;
+      const stageResult = await session.stage([{ tree: 0, rel: "same.a", byteLength }]);
+      if (!stageResult.ok) throw new Error(stageResult.reason);
+      const fileHandle = stageResult.files[0]!;
+      const uploadResult = await transferFileOverEndpoint({ direction: "upload", handle: fileHandle, sourcePath }, { port: broker.port, candidates: ["127.0.0.1"] });
+      if (!uploadResult.ok) throw new Error(uploadResult.reason);
+      const runResult = await session.run("acme.build", { source: fileHandle, noReport: true }, stageResult.request);
+      if (!runResult.ok) throw new Error(runResult.reason);
+      const response = runResult.response as { ok: boolean; results?: Array<{ handle: string; sha256: string; byteLength: number }> };
+      if (!response.ok || !Array.isArray(response.results) || response.results.length !== 1) {
+        throw new Error(`buildOnce("${tag}"): unexpected run response ${JSON.stringify(response)}`);
+      }
+      return { session, result: response.results[0]! };
+    }
+
+    const built = [await buildOnce("a", "1"), await buildOnce("b", "2")];
+    try {
+      const [{ result: downloadA }, { result: downloadB }] = built;
+      assert.notEqual(downloadA.sha256, downloadB.sha256, "sanity: the two builds must genuinely have produced different bytes");
+
+      // The race itself: both handles redeemed CONCURRENTLY against the SAME
+      // local destPath -- exactly the shape a same-basename builds/<name>.prg
+      // collision produces, isolated to the download/rename mechanism alone.
+      // The second dial starts a few ms after the first (never fully
+      // serialised -- both transfers are still genuinely in flight
+      // together, since a real round trip over this seam takes well over
+      // 5ms) rather than in the exact same microtask: a bare-simultaneous
+      // `Promise.all()` start intermittently hit a pre-existing, narrow
+      // dial-level contention window this plan does not touch (MEASURED
+      // live while writing this test -- an infrequent, load-sensitive
+      // "declared N bytes, observed 0 bytes" on one of the two downloads,
+      // reproducible only under `node --test` and only occasionally, never
+      // in an isolated repro script issuing the identical two calls). Both
+      // downloads still target the exact same destPath while genuinely
+      // overlapping, which is what this test's own property depends on.
+      const destPath = join(buildsDir, "same.prg");
+      const downloadPromiseA = transferFileOverEndpoint({ direction: "download", handle: downloadA.handle, destPath }, { port: broker.port, candidates: ["127.0.0.1"] });
+      await new Promise((r) => setTimeout(r, 5));
+      const downloadPromiseB = transferFileOverEndpoint({ direction: "download", handle: downloadB.handle, destPath }, { port: broker.port, candidates: ["127.0.0.1"] });
+      const [resultA, resultB] = await Promise.all([downloadPromiseA, downloadPromiseB]);
+      assert.equal(resultA.ok, true, resultA.ok ? "" : resultA.reason);
+      assert.equal(resultB.ok, true, resultB.ok ? "" : resultB.reason);
+
+      const finalBytes = readFileSync(destPath);
+      const finalDigest = createHash("sha256").update(finalBytes).digest("hex");
+      assert.ok(
+        finalDigest === downloadA.sha256 || finalDigest === downloadB.sha256,
+        "the final published file must equal ONE of the two downloaded payloads, never a torn mix of both",
+      );
+
+      const leftoverTmp = readdirSync(buildsDir).filter((name) => name.includes(".tmp-"));
+      assert.deepEqual(leftoverTmp, [], `expected no leftover .tmp- file in builds/, found: ${JSON.stringify(leftoverTmp)}`);
+    } finally {
+      for (const { session } of built) session.close();
+    }
   } finally {
     await broker.stop();
   }

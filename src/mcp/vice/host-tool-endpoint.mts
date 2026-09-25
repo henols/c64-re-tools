@@ -338,6 +338,41 @@ export function walkUploadTree(root: string): WalkUploadTreeResult {
   return { ok: true, entries };
 }
 
+/** Phase 65 (plan 65-03, D-10, T-65-06): the string-typed response fields a
+ * run reply's own text can arrive on -- shared between the run-reply
+ * detokenizer below and nothing else, so a future field is one entry here,
+ * never a second, near-duplicate list. */
+const HOST_TOOL_RESPONSE_TEXT_FIELDS: readonly string[] = ["message", "stderrTail", "reason", "entrypointReason"];
+
+/**
+ * Rewrites every occurrence of the broker's own `"<staged-request>"` token
+ * (`vice-broker.mts`'s own `redactScratchRoot()`, the SENDING side of this
+ * same exchange) back into a path the CALLER can act on, across every text
+ * field `HOST_TOOL_RESPONSE_TEXT_FIELDS` names -- never a broker-side path,
+ * on either the refusal path or the success path (D-10). `<staged-request>/
+ * in/<idx>/` becomes `localTreeRoots[idx]` plus the platform separator (the
+ * LOCAL absolute directory tree `idx`'s own bytes came from); any remaining
+ * bare `<staged-request>` token (naming the scratch root itself, with no
+ * `in/<idx>/` suffix -- e.g. a diagnostic about the run's own OUTPUT
+ * directory, which has no local counterpart) becomes the literal text
+ * `"(broker scratch)"`. Returns a NEW object; never mutates `response`.
+ */
+function detokenizeResponseFields(response: Record<string, unknown>, localTreeRoots: readonly string[]): Record<string, unknown> {
+  const rewritten: Record<string, unknown> = { ...response };
+  for (const field of HOST_TOOL_RESPONSE_TEXT_FIELDS) {
+    const value = rewritten[field];
+    if (typeof value !== "string") continue;
+    let text = value;
+    for (let i = 0; i < localTreeRoots.length; i++) {
+      const token = `<staged-request>/in/${i}/`;
+      text = text.split(token).join(`${localTreeRoots[i]}${sep}`);
+    }
+    text = text.split("<staged-request>").join("(broker scratch)");
+    rewritten[field] = text;
+  }
+  return rewritten;
+}
+
 /**
  * Runs a host tool through the fixed endpoint end to end: stages every
  * declared file-input key present on `args` (per `HOST_TOOL_FILE_INPUT_KEYS`),
@@ -370,6 +405,15 @@ export async function runHostToolOverEndpoint(tool: string, args: Record<string,
     const uploadLocalPaths: string[] = [];
     let treeIndex = 0;
     let declaredAggregate = 0;
+    // Phase 65 (plan 65-03, D-10): `localTreeRoots[i]` is the LOCAL absolute
+    // directory tree `i`'s own `rel` paths are relative to -- populated in
+    // lockstep with every `treeIndex` allocation below (a plain single-file
+    // key gets its own tree of one, rooted at `dirname(localPath)`, exactly
+    // matching how the broker lays every upload out under `in/<idx>/`,
+    // regardless of which binding class minted it). Used ONLY to detokenize
+    // the run reply's own text fields after the run -- never uploaded,
+    // never sent on the wire itself.
+    const localTreeRoots: string[] = [];
 
     const fileBindings: { key: string; manifestIndex: number }[] = [];
     const treeBindings: { key: string; treeIndex: number }[] = [];
@@ -404,6 +448,7 @@ export async function runHostToolOverEndpoint(tool: string, args: Record<string,
       if (!walked.ok) return { ok: false, message: `runHostToolOverEndpoint: ${walked.message}` };
       const tree = treeIndex;
       treeIndex += 1;
+      localTreeRoots.push(rootPath);
       for (const entry of walked.entries) {
         const pushed = pushManifestEntry(tree, entry.rel, entry.abs, entry.size);
         if (!pushed.ok) return pushed;
@@ -431,6 +476,7 @@ export async function runHostToolOverEndpoint(tool: string, args: Record<string,
       if (!walked.ok) return { ok: false, message: `runHostToolOverEndpoint: ${walked.message}` };
       const tree = treeIndex;
       treeIndex += 1;
+      localTreeRoots.push(sourceDir);
       let sourceManifestIndex: number | undefined;
       for (const entry of walked.entries) {
         const pushed = pushManifestEntry(tree, entry.rel, entry.abs, entry.size);
@@ -464,6 +510,7 @@ export async function runHostToolOverEndpoint(tool: string, args: Record<string,
       }
       const tree = treeIndex;
       treeIndex += 1;
+      localTreeRoots.push(dirname(localPath));
       const pushed = pushManifestEntry(tree, basename(localPath), localPath, byteLength);
       if (!pushed.ok) return pushed;
       fileBindings.push({ key, manifestIndex: pushed.index });
@@ -567,7 +614,14 @@ export async function runHostToolOverEndpoint(tool: string, args: Record<string,
     const runResult = await session.run(tool, boundArgs, stageResult.request, replyTimeoutMs);
     if (!runResult.ok) return { ok: false, message: runResult.reason };
 
-    const response = runResult.response as Record<string, unknown>;
+    // Phase 65 (plan 65-03, D-10): detokenize BEFORE reading any text field
+    // -- the broker's own redactScratchRoot() (vice-broker.mts) already
+    // replaced its scratch root with the fixed "<staged-request>" token;
+    // this rewrites that token back into a path the CALLER can actually act
+    // on (their own local tree root), so no broker-side filesystem path
+    // ever reaches the caller, on either the refusal path or the success
+    // path.
+    const response = detokenizeResponseFields(runResult.response as Record<string, unknown>, localTreeRoots);
     if (response.ok !== true) {
       const message = typeof response.message === "string" ? response.message : "runHostToolOverEndpoint: the host tool refused";
       return { ok: false, message };

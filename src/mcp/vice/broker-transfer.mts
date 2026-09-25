@@ -449,7 +449,10 @@ export async function receivePayloadToFile({
   }
 
   mkdirSync(dirname(destPath), { recursive: true });
-  const tmpPath = `${destPath}.tmp-${process.pid}-${Date.now()}`;
+  // Phase 65 (plan 65-03, D-09/SEAM-03/concurrency): the SAME collision-
+  // resistance fix as transfer-client.mts's own download-side tmpPath --
+  // see that file's comment for the measured race this closes.
+  const tmpPath = `${destPath}.tmp-${process.pid}-${Date.now()}-${randomBytes(8).toString("hex")}`;
 
   const cleanupTmp = (): void => {
     try {

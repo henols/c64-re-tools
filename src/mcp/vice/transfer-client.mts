@@ -54,6 +54,7 @@ import { createReadStream, createWriteStream, mkdirSync, renameSync, rmSync, sta
 import { isAbsolute, dirname, join } from "node:path";
 import { Writable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { randomBytes } from "node:crypto";
 
 import { dialFileTransfer, awaitTransferComplete, type BrokerEndpointConnectFn } from "./broker-endpoint.ts";
 import { createHashAndCountTransform, verifyObserved, TRANSFER_MAX_BYTES } from "./transfer-hash.mts";
@@ -237,7 +238,16 @@ export async function transferFileOverEndpoint(request: TransferFileRequest, opt
     if (pending.length > 0) socket.unshift(pending);
 
     mkdirSync(dirname(request.destPath), { recursive: true });
-    const tmpPath = `${request.destPath}.tmp-${process.pid}-${Date.now()}`;
+    // Phase 65 (plan 65-03, D-09/SEAM-03/concurrency): a random suffix joins
+    // pid+timestamp -- `Date.now()` alone is MILLISECOND granularity, so two
+    // downloads racing to the SAME destPath from the SAME process (two
+    // concurrent host-tool requests whose sources share a basename) can
+    // collide on the exact same tmpPath within one millisecond. MEASURED
+    // live while writing this plan's own concurrency test: an intermittent
+    // ENOENT renaming a tmp file the OTHER racer had already renamed-and-
+    // removed out from under this one. `randomBytes(8).toString("hex")` is
+    // vanishingly unlikely to collide even within the same millisecond.
+    const tmpPath = `${request.destPath}.tmp-${process.pid}-${Date.now()}-${randomBytes(8).toString("hex")}`;
     const cleanupTmp = (): void => {
       try {
         rmSync(tmpPath, { force: true });
