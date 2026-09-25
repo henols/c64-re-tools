@@ -43,6 +43,7 @@ import {
   blocksFromStore,
   crossReferencesFromStore,
 } from "./anno-cli.ts";
+import { CURATED_ANNO_TOOLS } from "./anno-tools.ts";
 import {
   openStore,
   closeStore,
@@ -2356,5 +2357,125 @@ test("evid-disagreements: a missing annotation store is refused rather than CREA
     assert.notEqual(code, 0);
     assert.match(stderr, /annotation store not found/);
     assert.equal(existsSync(absentStore), false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// `call` (D-12, plan 65-02): the one generic route for the 28 (MEASURED)
+// former `anno_*` MCP tools this CLI has no bare verb for. Six behaviours,
+// per this plan's own Task 1 must_haves.
+// ---------------------------------------------------------------------------
+
+/** `--args`'s JSON string, single-quoted at the shell in the plan's own
+ * prose but built here as a plain JS string -- these tests call `runAnnoCli()`
+ * / spawn the bin directly, never a shell, so no shell-quoting is involved. */
+function setLabelArgsJson(storePath: string, address: number, name: string): string {
+  return JSON.stringify({ store: storePath, address, name });
+}
+function getSymbolsArgsJson(storePath: string, maxResults = 10): string {
+  return JSON.stringify({ store: storePath, max_results: maxResults });
+}
+
+test("call, Test 1: write-then-read against a real store with no x64sc on PATH (spawned, CLAUDE_PROJECT_DIR set)", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    const storePath = join(ws, "call-test1.annostore");
+    // Every anno_* verb (including a "writer") REFUSES a store path that does
+    // not already exist (assertStorePresent(), D-06) -- there is no implicit
+    // bootstrap on first write. Create it deliberately first.
+    closeStore(openStore(storePath, { workspaceRoot: ws }));
+    const env = { ...CLI_ENV, CLAUDE_PROJECT_DIR: ws };
+
+    const setResult = spawnSync(
+      process.execPath,
+      [VICE_PROXY, "anno", "call", "anno_set_label_name", "--args", setLabelArgsJson(storePath, 0xc000, "call_test1_label")],
+      { encoding: "utf8" as const, env, timeout: CLI_TIMEOUT_MS },
+    );
+    assert.equal(setResult.status, 0, `anno_set_label_name via call must exit 0: stdout=${setResult.stdout} stderr=${setResult.stderr}`);
+
+    const getResult = spawnSync(
+      process.execPath,
+      [VICE_PROXY, "anno", "call", "anno_get_symbols", "--args", getSymbolsArgsJson(storePath)],
+      { encoding: "utf8" as const, env, timeout: CLI_TIMEOUT_MS },
+    );
+    assert.equal(getResult.status, 0, `anno_get_symbols via call must exit 0: stdout=${getResult.stdout} stderr=${getResult.stderr}`);
+    assert.match(getResult.stdout, /call_test1_label/, "the label just set must round-trip back out through call");
+  });
+});
+
+test("call, Test 2: an unknown tool name is refused, naming the verb and at least one real CURATED_ANNO_TOOLS name", async () => {
+  const { result: code, stderr } = await withCapturedConsole(() => runAnnoCli(["call", "anno_not_a_verb", "--args", "{}"]));
+  assert.notEqual(code, 0);
+  assert.match(stderr, /anno_not_a_verb/, "the refusal must name the verb the caller typed");
+  assert.ok(
+    CURATED_ANNO_TOOLS.some((name) => stderr.includes(name)),
+    `the refusal must list at least one real accepted name from CURATED_ANNO_TOOLS; stderr=${stderr}`,
+  );
+});
+
+test("call, Test 3: malformed JSON and a non-object value are each refused, naming the flag or 'object'", async () => {
+  const malformed = await withCapturedConsole(() => runAnnoCli(["call", "anno_get_symbols", "--args", "{not json"]));
+  assert.notEqual(malformed.result, 0);
+  assert.match(malformed.stderr, /--args/, "the parse-failure refusal must name the flag");
+
+  const nonObject = await withCapturedConsole(() => runAnnoCli(["call", "anno_get_symbols", "--args", "[1]"]));
+  assert.notEqual(nonObject.result, 0);
+  assert.match(nonObject.stderr, /object/i, "the non-object refusal must name 'object'");
+});
+
+test("call, Test 4: --args together with --args-file is refused, naming both flags", async () => {
+  const { result: code, stderr } = await withCapturedConsole(() =>
+    runAnnoCli(["call", "anno_get_symbols", "--args", "{}", "--args-file", "some-file.json"]),
+  );
+  assert.notEqual(code, 0);
+  assert.match(stderr, /--args/);
+  assert.match(stderr, /--args-file/);
+});
+
+test("call, Test 5: --args-file outside the workspace root is refused through storePathWithinWorkspace(); an in-workspace file succeeds", async () => {
+  const outsideResult = await withTempDir(async (outsideDir) => {
+    const argsFile = join(outsideDir, "outside-args.json");
+    writeFileSync(argsFile, getSymbolsArgsJson(join(outsideDir, "whatever.annostore")), "utf8");
+    return withCapturedConsole(() => runAnnoCli(["call", "anno_get_symbols", "--args-file", argsFile]));
+  });
+  assert.notEqual(outsideResult.result, 0, "an --args-file outside the workspace root must be refused");
+  assert.match(outsideResult.stderr, /outside the workspace root/);
+
+  await withWorkspaceTempDir(async (ws) => {
+    const storePath = join(ws, "call-test5.annostore");
+    closeStore(openStore(storePath, { workspaceRoot: ws }));
+    const setArgsFile = join(ws, "set-args.json");
+    writeFileSync(setArgsFile, setLabelArgsJson(storePath, 0xc010, "call_test5_label"), "utf8");
+    const setResult = await withCapturedConsole(() => runAnnoCli(["call", "anno_set_label_name", "--args-file", setArgsFile]));
+    assert.equal(setResult.result, 0, `an in-workspace --args-file must succeed: stderr=${setResult.stderr}`);
+
+    const getArgsFile = join(ws, "get-args.json");
+    writeFileSync(getArgsFile, getSymbolsArgsJson(storePath), "utf8");
+    const getResult = await withCapturedConsole(() => runAnnoCli(["call", "anno_get_symbols", "--args-file", getArgsFile]));
+    assert.equal(getResult.result, 0);
+    assert.match(getResult.stdout, /call_test5_label/);
+  });
+});
+
+test("call, Test 6: Test 1's write-then-read pair still succeeds with PATH narrowed to only process.execPath's own directory (no x64sc reachable)", async () => {
+  await withWorkspaceTempDir(async (ws) => {
+    const storePath = join(ws, "call-test6.annostore");
+    closeStore(openStore(storePath, { workspaceRoot: ws }));
+    const narrowPath = dirname(process.execPath);
+    const env = { ...CLI_ENV, CLAUDE_PROJECT_DIR: ws, PATH: narrowPath };
+
+    const setResult = spawnSync(
+      process.execPath,
+      [VICE_PROXY, "anno", "call", "anno_set_label_name", "--args", setLabelArgsJson(storePath, 0xc020, "call_test6_label")],
+      { encoding: "utf8" as const, env, timeout: CLI_TIMEOUT_MS },
+    );
+    assert.equal(setResult.status, 0, `must succeed with no x64sc reachable on PATH: stdout=${setResult.stdout} stderr=${setResult.stderr}`);
+
+    const getResult = spawnSync(
+      process.execPath,
+      [VICE_PROXY, "anno", "call", "anno_get_symbols", "--args", getSymbolsArgsJson(storePath)],
+      { encoding: "utf8" as const, env, timeout: CLI_TIMEOUT_MS },
+    );
+    assert.equal(getResult.status, 0, `must succeed with no x64sc reachable on PATH: stdout=${getResult.stdout} stderr=${getResult.stderr}`);
+    assert.match(getResult.stdout, /call_test6_label/);
   });
 });

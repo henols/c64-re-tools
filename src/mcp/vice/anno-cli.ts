@@ -21,12 +21,16 @@
 // raise over that framing, not the first.
 //
 // A SEVENTH VERB, `call`, landed 2026-09-25 (D-12, plan 65-02) for a
-// different reason than the first six: D-13 deletes all 25 `anno_*` MCP
-// tools from `tools/list` in the same change, and only six of those 25 had a
-// CLI route before this verb. `call` is the ONE generic route for the other
-// nineteen -- it takes a curated tool name and one JSON argument object and
-// hands both to `runAnnoTool()` unchanged, so none of the 25 is
-// reimplemented here a second time.
+// different reason than the first six: D-13 deletes the whole `anno_*` MCP
+// tool family from `tools/list` in the same change. `CURATED_ANNO_TOOLS`
+// (anno-tools.ts) MEASURED at 28 names at this commit -- the plan that
+// authored this verb estimated 25 and named exactly two as colliding with a
+// CLI verb name (hazard-report, evid-disagreements); the measured count is
+// higher, but the same two are still the only ones that collide, so 26 of
+// the 28 had no CLI route before this verb. `call` is the ONE generic route
+// for the other twenty-six -- it takes a curated tool name and one JSON
+// argument object and hands both to `runAnnoTool()` unchanged, so none of
+// the 28 is reimplemented here a second time.
 // ---------------------------------------------------------------------------
 // This file used to carry eight. Six were removed in one commit because they
 // were delivery paths for the retired external analyser this project used to
@@ -3029,7 +3033,7 @@ function parseCallArgs(rest: string[]): CallParsedArgs {
  * generic verb. It refuses a name outside `CURATED_ANNO_TOOLS`, reads the
  * argument object from exactly one of `--args`/`--args-file`, and hands both
  * straight to `runAnnoTool()` UNCHANGED -- there is no second implementation
- * of any of the 25 former MCP verbs here, and `anno-tools.ts` is not edited
+ * of any of the 28 former MCP verbs here, and `anno-tools.ts` is not edited
  * by this change. The name set and the argument shapes are exactly the
  * former `anno_*` MCP tools' own, so a skill's existing argument
  * documentation for those tools stays valid against this verb.
