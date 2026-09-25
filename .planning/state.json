@@ -341,7 +341,7 @@
     {
       "number": "65",
       "name": "Every Skill Script Through the One Endpoint, and CI With It",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "number": "66",
@@ -359,5 +359,5 @@
     "label": "Advance to the next step",
     "reason": "Phase 65 of 6 · 50% · executing"
   },
-  "updated_at": "2026-09-25T08:16:58.026Z"
+  "updated_at": "2026-09-25T09:11:17.943Z"
 }
