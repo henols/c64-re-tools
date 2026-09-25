@@ -50,8 +50,7 @@
 //   - CITATION DISCIPLINE, carried over verbatim in intent from
 //     `module-classification.ts`: `path` is ALWAYS repository-root-relative,
 //     never relative to this directory, because consumers legitimately live
-//     under `.planning/`, `scripts/` and `src/skills/` as well as beside this
-//     file. `symbol` names what the consumer actually TAKES from the verb (an
+//     under `scripts/` and `src/skills/` as well as beside this file. `symbol` names what the consumer actually TAKES from the verb (an
 //     imported binding, a store entry point, or -- for a documentation consumer
 //     -- the identifier the cited line names); it is a CITATION, never a
 //     justification. `line` is OPTIONAL AND ADVISORY: where present the
@@ -140,13 +139,13 @@ export const ANNO_VERB_REGISTER: readonly AnnoVerbRegisterEntry[] = Object.freez
     kind: "unclassified",
     consumers: [
       { path: "src/mcp/vice/anno-store.ts", symbol: "removeScope" },
-      { path: ".planning/phases/28-the-store-core/28-REVIEW.md", symbol: "removeScope" },
+      { path: "src/mcp/vice/anno-tools.ts", symbol: "anno_remove_scope" },
     ],
     requirements: ["STORE-01"],
     rationale:
       "The inverse of the overlap refusal, and the register's clearest case of a verb existing because a " +
-      "recorded finding demanded it rather than because a procedure used it. 28-REVIEW's round-6 WARNING is " +
-      "the named consumer: the store refuses any scope overlapping an existing one, and had no removal verb " +
+      "review finding demanded it rather than because a procedure used it: " +
+      "the store refuses any scope overlapping an existing one, and had no removal verb " +
       "for a scope, a label, a comment, a cross-reference or an enum. A write verb whose mistakes cannot be " +
       "undone is a data-loss surface even when every individual refusal is correct, so the inverse ships in " +
       "the same phase as the refusal.",
@@ -163,12 +162,6 @@ export const ANNO_VERB_REGISTER: readonly AnnoVerbRegisterEntry[] = Object.freez
     consumers: [
       { path: "src/mcp/vice/anno-derive.ts", symbol: "searchAnnotations" },
       { path: "src/mcp/vice/anno-tools.ts", symbol: "anno_search" },
-      // Re-pointed at the v0.7.0 close, 2026-09-01: `/gsd-complete-milestone`
-      // `git rm`s `.planning/REQUIREMENTS.md` and archives it under
-      // `milestones/<version>-REQUIREMENTS.md`. The cited text is unchanged --
-      // this names the file STORE-06 is actually declared in today, so
-      // DIRECTION 5's "every path exists" check stays a real check.
-      { path: ".planning/milestones/v0.7.0-REQUIREMENTS.md", symbol: "STORE-06" },
     ],
     requirements: ["STORE-06"],
     rationale:
@@ -177,8 +170,7 @@ export const ANNO_VERB_REGISTER: readonly AnnoVerbRegisterEntry[] = Object.freez
       "gone rather than kept as a fallback. The manifest cannot classify it: the upstream call it derives " +
       "from appears in no absorbed procedure, so the derivation is silent and the requirement is the whole " +
       "basis. That is the second of the two admissible bases and not a weaker one -- it is the strongest " +
-      "kind of entry this register holds, because a requirement id is checkable against a committed document " +
-      "whereas a consumer can be deleted by the next refactor.",
+      "kind of entry this register holds.",
     note:
       "This entry is load-bearing for a check in another file. The skill-coverage script's non-vacuity " +
       "control is re-pointed onto this verb (C-5): it is STORE-06's named requirement AND it lives here, so " +

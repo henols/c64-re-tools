@@ -3041,7 +3041,7 @@ test("hello's version uses the injected helloVersion override when supplied, and
 });
 
 test("resolveBrokerVersion() degrades to the dev placeholder when no package.json is found at either candidate", () => {
-  const version = resolveBrokerVersion("/tmp/gsd-62-01-nonexistent-dir-for-resolveBrokerVersion-test");
+  const version = resolveBrokerVersion("/tmp/nonexistent-dir-for-resolveBrokerVersion-test");
   assert.equal(version, "0.0.0-dev");
 });
 

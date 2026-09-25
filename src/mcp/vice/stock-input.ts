@@ -161,10 +161,8 @@ export const handleKeyboardPetscii: StockSessionHandler = async (args, session) 
  * JOYPORT_SET's `value` bit layout. **[ASSUMED]** -- RESEARCH.md
  * Assumptions Log row A3: derived from general VICE joystick-driver
  * knowledge, never confirmed against the manual or a probe run against a
- * real binary. Probe debt filed at
- * .planning/todos/pending/2026-08-14-probe-phase3-assumed-wire-details.md.
- * Do not remove the [ASSUMED] label until that todo's acceptance check
- * closes it -- do not write a comment claiming this mapping is verified.
+ * real binary. Do not remove the [ASSUMED] label until a live probe
+ * confirms it -- do not write a comment claiming this mapping is verified.
  *
  * Exported as a single named constant so a future probe session has
  * exactly one place to correct it -- joyportSetBody() itself deliberately

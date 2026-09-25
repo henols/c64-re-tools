@@ -36,12 +36,8 @@
 //   * So the autostarted ordering is UNRESOLVED for a post-load stop, and this
 //     module implements the READY-prompt sequence measured green instead --
 //     never an ordering the evidence does not support.
-//   * The full ordered 11-step `S3` table, its argv, its measured
-//     divergence counts, and the withdrawal of the earlier "frame anchoring
-//     always fits inside the cap of 64" claim (66 differing addresses at
-//     jitter 4000) live in
-//     `.planning/phases/33-the-reproducible-run-protocol-and-the-capture-substrate-go-d/evidence/33-autostart-sequencing.md`.
-//     Read that file before adding an autostart path here.
+//   * The earlier "frame anchoring always fits inside the cap of 64" claim
+//     is withdrawn (66 differing addresses at jitter 4000).
 //
 // WHAT THIS PROCEDURE REPORTS, AND WHAT IT DOES NOT ASSERT. It REPORTS the stop
 // identity it achieved. It does NOT assert frame-exactness -- `33-03`'s

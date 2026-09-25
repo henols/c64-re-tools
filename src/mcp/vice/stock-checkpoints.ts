@@ -270,8 +270,7 @@ async function setConditionFailClosed(
 // below) rather than a next-dispatch check, because the flood this guards
 // against is synchronous and blocking the emulator thread -- promptness is
 // the point, and waiting for the agent's next unrelated tool call could be
-// arbitrarily long. RESEARCH.md flags this as an assumption (A4); the probe
-// debt is filed under .planning/todos/pending/.
+// arbitrarily long. RESEARCH.md flags this as an assumption (A4).
 // ---------------------------------------------------------------------------
 
 /** Deliberately conservative first guess -- change this single constant if

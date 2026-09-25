@@ -19,10 +19,7 @@
 // identity: loopback meant the CONTAINER's own loopback (ECONNREFUSED, since
 // nothing listens there), and the host-rooted epoch path simply didn't
 // resolve inside the container. Every broker-granted instance was silently
-// unreachable -- see
-// .planning/quick/260801-ccn-translate-broker-granted-host-coordinate/260801-ccn-PLAN.md's
-// "The bug" section for the full, already-root-caused failure shape this
-// module fixes.
+// unreachable -- the already-root-caused failure shape this module fixes.
 //
 // Mirrors hostpath.ts deliberately: the same derive-never-hardcode rule
 // (the mapping is never written down as a literal -- see hostRootCandidates()

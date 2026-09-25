@@ -150,9 +150,8 @@ binary monitor on `127.0.0.1`, so neither is recommended either way.
 No shipped tool in this project refuses on a VICE version. `vice_cpu_history`
 — the exact per-instruction cycle counter — runs over the text channel's
 `chis` command, not the binary monitor's `CPUHISTORY_GET` opcode, so it works
-the same regardless of which VICE version you have installed. The 3.10 floor
-binds `CPUHISTORY_GET` itself, an opcode no shipped tool calls — see
-`.planning/REQUIREMENTS.md` for the measured claim.
+the same regardless of which VICE version you have installed. The measured
+3.10 floor binds `CPUHISTORY_GET` itself, an opcode no shipped tool calls.
 Consequently the prerequisite declaration (`src/mcp/vice/prerequisites.json`)
 carries no VICE version data of any kind — not a floor, and not a dated
 observation.

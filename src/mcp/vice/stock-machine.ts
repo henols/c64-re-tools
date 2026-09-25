@@ -253,8 +253,7 @@ export const handleAutostart: StockSessionHandler = async (args, session) => {
  * plan 13-03's live A5 probe observed against real fork VICE 3.10: a full
  * machine reset AND a program load, not "attach without disturbing machine
  * state." Exported so the pinning test derives its expectation from this
- * constant rather than re-typing the sentence, so the two cannot drift. See
- * `.planning/phases/13-external-verification/13-PROBE-RESULTS.md` § A5.
+ * constant rather than re-typing the sentence, so the two cannot drift.
  */
 export const DISK_ATTACH_APPROXIMATION =
   "AUTOSTART (D-14): performs a full machine reset and loads a program from the image; " +
@@ -306,8 +305,7 @@ export const DISK_ATTACH_WRITE_LOSS =
  * 0x8f here means it accepted none of them -- never a checkpoint-condition
  * parse failure (that generic gloss, in `stock-handler.ts`'s own
  * `WIRE_ERROR_TEXT`, is what pointed plan 64-11's diagnosis at checkpoints
- * when the real cause was a missing/unpublished file --
- * `.planning/debug/vice-0x8f-disk-attach-snapshot-load.md`). Exported, like
+ * when the real cause was a missing/unpublished file). Exported, like
  * `DISK_ATTACH_APPROXIMATION`/`DISK_ATTACH_WRITE_LOSS` above, so a test
  * derives its own expectation from this constant rather than re-typing the
  * sentence -- the two cannot drift.

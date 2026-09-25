@@ -2,7 +2,7 @@
 // join-image-controls.test.ts
 //
 // Phase 37, plan 37-05: two observed-red controls, each its own task and its
-// own commit, per `.planning/research/PITFALLS.md` Pitfall 23 -- a red
+// own commit -- a red
 // observation is its own committed deliverable, never batched together with
 // the fix that makes it green again. Both cases mutate a SCRATCH copy only;
 // the committed `anno-join.ts`, `memmap-lookup.ts` and `memmap.json` are

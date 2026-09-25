@@ -680,9 +680,8 @@ function brokerWarmingMessage(elapsedMs: number): string {
 /** State: readBrokerLiveness() just classified broker.json as `alive` (a
  * FRESH heartbeat), yet openBrokerControl() still failed -- a control-plane
  * CONNECTIVITY failure, never a dead or hung broker. This is the fix for
- * the exact incident recorded in
- * .planning/todos/pending/2026-08-04-proxy-reports-a-live-broker-as-stale-blocking-all-emulator-access.md:
- * `broker.json` is read from the shared filesystem, not over the control
+ * the exact incident where a live broker was reported as stale, blocking all
+ * emulator access: `broker.json` is read from the shared filesystem, not over the control
  * connection, so the freshness computation had a perfectly good timestamp
  * and would have returned `alive` -- the failure was one layer later, at
  * the connect (dialing the broker's own recorded bind address, from

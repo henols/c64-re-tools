@@ -389,10 +389,9 @@ test("regionAdmitsEntry(): matches io_area/character_rom/basic_rom/kernal_rom vi
 // Phase 37, plan 37-06, Task 2 -- Control: bypassing the processor-port
 // decode reddens the two-value flip (37-VALIDATION.md Observed-Red Controls
 // row 5). The mutation lives in a SCRATCH COPY of `anno-bank.ts` ONLY; the
-// committed module is never opened for writing by this file
-// (`.planning/research/PITFALLS.md` Pitfall 23 -- a red observation is its
-// own committed deliverable, never batched with the fix that makes it
-// green).
+// committed module is never opened for writing by this file (a red
+// observation is its own committed deliverable, never batched with the fix
+// that makes it green).
 // ---------------------------------------------------------------------------
 
 /** `decodeBankState()`'s committed form, held verbatim so the mutation below

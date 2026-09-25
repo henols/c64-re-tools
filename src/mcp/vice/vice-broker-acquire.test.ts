@@ -1103,7 +1103,7 @@ test("handleAcquire: the grant-time-probe-failure log line is distinct from brok
 });
 
 // ---------------------------------------------------------------------------
-// WR-02 (.planning/todos/pending/2026-08-05-wr-02-*, decision: fix now): the
+// WR-02 (decision: fix now): the
 // grant-time probe failure's kill must be fire-and-forget, matching
 // handleRelease()'s own posture, so the acquiring request never waits up to
 // VICE_BROKER_KILL_WAIT_S per dead candidate before the walk can move on.

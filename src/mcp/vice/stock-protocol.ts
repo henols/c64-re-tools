@@ -748,8 +748,7 @@ export function registersSetBody({ memspace, items }: RegistersSetBodyOptions): 
 // unconfirmed -- A3 stayed INCONCLUSIVE (no observable signal either way)
 // and A5 was CONTRADICTED (still pending its correction) -- and each of
 // those two encoders' own JSDoc, below, still carries its own [ASSUMED]
-// naming that row and pointing at .planning/todos/pending/ for the
-// remaining probe debt.
+// naming that row.
 // ---------------------------------------------------------------------------
 
 export interface AdvanceInstructionsBodyOptions {
@@ -1158,9 +1157,7 @@ export interface ParsedUndumpResponse extends ParsedBaseResponse {
  * (`monitor_binary.c:1452-1620`) and verified against the real committed
  * captures `fixtures/binmon/cpuhistory-get.bin` and `cpuhistory-get-multi.bin`
  * (plan 07-12). The PREVIOUS layout this comment cited was disproven live
- * against a genuine VICE 3.10 build -- see
- * `.planning/phases/07-cycle-timing-and-wedge-triage/deferred-items.md`,
- * "Route A (CPUHISTORY_GET) live decode mismatch" -- do not re-trust it.
+ * against a genuine VICE 3.10 build -- do not re-trust it.
  */
 export interface ParsedCpuHistoryEntry {
   cycle: bigint;
@@ -1183,9 +1180,8 @@ export interface ParsedCpuHistoryEntry {
  * from `monitor_binary_process_cpuhistory()` (`monitor_binary.c:1452-1620`)
  * and verified against the real captures `fixtures/binmon/cpuhistory-get.bin`
  * (single entry) and `cpuhistory-get-multi.bin` (multi-entry, the stride AND
- * order proof) -- see plan 07-12 and
- * `.planning/phases/07-cycle-timing-and-wedge-triage/deferred-items.md` for
- * the disproven earlier layout this replaces.
+ * order proof) -- see plan 07-12 for the disproven earlier layout this
+ * replaces.
  */
 export interface ParsedCpuHistoryResponse extends ParsedBaseResponse {
   type: "cpu_history";
@@ -1484,10 +1480,8 @@ export function parseResponse({ apiVersion, responseType, errorCode, requestId, 
       // monitor_binary_process_cpuhistory() (monitor_binary.c:1452-1620) and
       // verified against the real captures fixtures/binmon/cpuhistory-get.bin
       // (single entry) and cpuhistory-get-multi.bin (multi-entry, the stride
-      // proof) -- see plan 07-12 and
-      // .planning/phases/07-cycle-timing-and-wedge-triage/deferred-items.md's
-      // "Route A (CPUHISTORY_GET) live decode mismatch" for the disproven
-      // earlier layout this replaces (WR-13): that layout was NEVER
+      // proof) -- see plan 07-12 for the disproven earlier layout this
+      // replaces (WR-13): that layout was NEVER
       // confirmed against a real reply and does not match what a genuine
       // VICE >= 3.10 build actually sends.
       //

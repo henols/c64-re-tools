@@ -15,8 +15,7 @@
 // dynamic-import-with-cache-buster case (D-37-14), and from
 // `sleigh-compile-gate.test.ts`'s planted-violation shape (assert the
 // specific named signal, tear down in a `finally`, never touch the committed
-// tree). Each case's own committed transcript lives under
-// `.planning/phases/37-the-importer-and-the-automatic-annotation-join/evidence/`.
+// tree).
 //
 // THIS FILE MUST NEVER MUTATE `memmap-lookup.ts` ON DISK. Every mutation
 // happens inside an `mkdtempSync` root, mirroring the real repo shape three

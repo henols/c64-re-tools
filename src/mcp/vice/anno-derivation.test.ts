@@ -67,7 +67,7 @@ import { annoRegisterEntryFor } from "./anno-register.ts";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MANIFEST_PATH = resolve(
   HERE,
-  "../../../.planning/phases/19-absorbed-procedures-and-the-coverage-instrument/upstream-procedure-manifest.json"
+  "fixtures/upstream-procedure-manifest.json"
 );
 const manifest = JSON.parse(readFileSync(MANIFEST_PATH, "utf8"));
 

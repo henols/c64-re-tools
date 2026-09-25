@@ -143,8 +143,7 @@ export function convertHandshakeError(toolName: string, err: unknown): StockErro
  * G-64-3 (plan 64-13, Task 3): the CmdFailure entry no longer attributes
  * every 0x8f to a checkpoint-condition parse failure -- that parenthetical
  * is what steered plan 64-11's diagnosis toward checkpoints when the real
- * cause was a missing/unpublished file
- * (`.planning/debug/vice-0x8f-disk-attach-snapshot-load.md`). VICE sends no
+ * cause was a missing/unpublished file. VICE sends no
  * further diagnostic with this code at all; the emulator's own log may
  * carry the reason. "no further diagnostic" itself is kept verbatim --
  * `stock-handler.test.ts` pins it. */

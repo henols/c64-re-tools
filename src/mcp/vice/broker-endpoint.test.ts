@@ -129,8 +129,7 @@ test("DIAL_CANDIDATES is exactly the two fixed hosts, loopback first", () => {
 // Plan 64-08 (G-64-1 gap closure, Task 1): resolveEndpointPort() -- the one
 // default-port resolver every fixed-endpoint dial in this module now uses,
 // closing the latent "relay always dials 19510" defect the G-64-1 diagnosis
-// recorded (.planning/debug/vice-proxy-control-token-handshake.md, Evidence
-// 16:42).
+// recorded.
 // ---------------------------------------------------------------------------
 
 test("resolveEndpointPort: absent, empty, non-integer, out-of-range and zero all fall back to 19510", () => {

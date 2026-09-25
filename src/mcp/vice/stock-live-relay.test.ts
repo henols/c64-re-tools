@@ -729,9 +729,7 @@ test(
 // REGISTER_INFO greeting. Neither case touches or relaxes the combined
 // proof's own two unrelaxed assertions above -- this round measures the
 // open question, it does not weaken a recorded finding to make a suite
-// green. See
-// .planning/phases/63-the-monitor-channel-relayed-and-the-connection-as-the-sessio/evidence/phase63-gap-closure-live-measurements.md
-// for the disposition these two cases feed.
+// green.
 //
 // Both cases print exactly one greppable observation line each (see each
 // case's own `finally` block for the exact literal), so a thrown assertion

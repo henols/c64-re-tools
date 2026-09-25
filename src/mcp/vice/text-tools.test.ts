@@ -1603,10 +1603,9 @@ test("all five text tools surface a disagreeing broker identity's warning on the
 // Construction mirrors stock-tools.test.ts's own D-02 conformance
 // harness shape (a StockSessionDeps whose ensureLease() hands back fixed
 // coordinates, a no-op claimMonitor/releaseMonitor stub) but substitutes a
-// REAL socket to a directly-spawned x64sc for the stubbed client --
-// `.planning/phases/43-.../evidence/evid06-instrumentation-ab.mjs` is plan
-// 43-01's own one-off broker-driven A/B measurement script and stays that
-// way; this is a new, independent, committed live test case.
+// REAL socket to a directly-spawned x64sc for the stubbed client -- plan
+// 43-01's one-off broker-driven A/B measurement script stays that way; this
+// is a new, independent, committed live test case.
 //
 // A stock x64sc launched with `-console` plus a monitor flag starts with
 // the CPU HALTED (MEASURED, `probe-harness.mjs`'s own `resumeExecution()`
@@ -1683,7 +1682,7 @@ test(
     const binPath = VICE_LIVE_STOCK_BIN_ENV as string;
     const binaryPort = await freeEphemeralPort();
     const textPort = await freeEphemeralPort();
-    const scratchDir = mkdtempSync(join(tmpdir(), "gsd-4303-memmapzap-live-"));
+    const scratchDir = mkdtempSync(join(tmpdir(), "memmapzap-live-"));
     const child: ChildProcess = spawn(
       binPath,
       [

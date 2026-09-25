@@ -14,10 +14,10 @@ actually names it -- pinning that the guard reads disposition sources rather
 than unconditionally reporting every id as undispositioned (which would
 falsely pass the "reports undispositioned" test while being useless).
 
-This file is deliberately NOT placed under `.planning/todos/pending/` or
-`.planning/todos/completed/` and is never read by the real todo scan
-(`readTodoFiles()`, which only reads those two directories) -- it is read
-directly, by path, only from within the test file itself.
+This file is deliberately NOT placed in either todo directory and is never
+read by the real todo scan (`readTodoFiles()`, which only reads those two
+directories) -- it is read directly, by path, only from within the test file
+itself.
 
 **Disposition: fixed.** WR-99 does not describe real code; this line exists
 only to be found.

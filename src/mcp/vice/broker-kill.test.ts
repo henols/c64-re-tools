@@ -674,8 +674,6 @@ test("end-to-end: the broker prints its start-time banner on stderr before the c
 // a host process listing or an argv scan. The former identity mechanism's
 // two functions, and the listProcesses/defaultListProcesses plumbing that
 // existed only to serve them, are DELETED outright from broker-kill.mts
-// (folded todo
-// `.planning/todos/pending/2026-08-12-broker-orphan-reap-substring-identity-match.md`)
 // -- nothing heuristic replaces them; a process this broker never allocated
 // a port for is out of scope by construction, and every test below proves
 // that boundary rather than merely the happy path.

@@ -75,8 +75,7 @@ export const DOT_SEGMENT_REFUSAL = "path element starting with '.' is not permit
  * an earlier, unmeasured claim recorded right here -- see "What this
  * corrects" below.
  *
- * MEASURED against real Ghidra 12.1.3
- * (`.planning/notes/ghidra-dot-path-check-semantics.md`: 5 live
+ * MEASURED against real Ghidra 12.1.3 (5 live
  * `analyzeHeadless` runs plus a `javap` read of `ProjectLocator.class`): the
  * dot-segment refusal binds the ABSOLUTIZED project-location path argument
  * -- `ProjectLocator` calls `java.io.File.getAbsolutePath()` and never
@@ -551,7 +550,7 @@ export type ResolveGhidraProjectResult =
  * `runId` type and pattern, then the dot-segment check over the computed
  * ABSOLUTE `projectLocation` (which, since it is built by joining `repoRoot`
  * onto itself, also catches a dot-prefixed `repoRoot` -- e.g. a caller that
- * mistakenly passed `.vice-supervisor/` or `.planning/` as `repoRoot`),
+ * mistakenly passed `.vice-supervisor/` as `repoRoot`),
  * then `ensureGhidraRunsHandle()` as an idempotent precondition (a refusal
  * here propagates straight out, before any reuse check and before the
  * reservation `mkdirSync` below ever runs -- this order is what keeps a

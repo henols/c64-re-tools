@@ -5,8 +5,7 @@ a fixed set of parseable commands, captured **live** from both binaries on this
 host — genuine unpatched stock VICE 3.9 (`/usr/bin/x64sc`) and the patched fork
 VICE 3.10 (`/usr/local/bin/x64sc`) — with the same five-key provenance
 discipline `../binmon/README.md` already documents for the binary-monitor
-fixtures. Captured by
-`.planning/phases/39-the-dual-channel-coexistence-gate-go-degrade-no-go/evidence/fixture-capture.mjs`
+fixtures. Captured by a now-retired capture script, `fixture-capture.mjs`
 (plan `39-07`, `CHAN-01`).
 
 **Every fixture here is a real, hardware-recorded capture (`"synthetic": false`).**
@@ -172,12 +171,11 @@ the missing capability and the binary.
 framing, on purpose.** `CPUHISTORY_GET` (0x86) requires VICE ≥ 3.10 over the
 **binary** monitor because the opcode itself does not exist in 3.9's wire
 protocol. The **text**-monitor `chis` command is a different capability
-entirely: `.planning/notes/text-monitor-channel-live-probe.md` already
-measured `chis 4` returning real CPU-history entries with per-entry cycle
-counts against genuine stock VICE 3.9, and this batch's own
-`cpu-history-stock.txt` reconfirms it. The version floor applies to the
-**binary opcode**, never to the **capability**, and no finding in this tree —
-or in `39-fixture-batch.md` — states otherwise. Any text-monitor
+entirely: an earlier live probe already measured `chis 4` returning real
+CPU-history entries with per-entry cycle counts against genuine stock VICE
+3.9, and this batch's own `cpu-history-stock.txt` reconfirms it. The version
+floor applies to the **binary opcode**, never to the **capability**, and no
+finding in this tree states otherwise. Any text-monitor
 "opt-out-at-build-time" capability gap (D-20) would be a *build configuration*
 question (a specific binary compiled without a specific feature), never a
 protocol *version* question the way the binary side's opcode gate is.
@@ -186,13 +184,14 @@ protocol *version* question the way the binary side's opcode gate is.
 
 Hand-editing any `.txt` or `.json` here is never the right move — a fixture
 edited to make a test pass silently stops being evidence of anything.
-Regenerate the whole batch instead:
+Regenerate the whole batch instead: the capture script is retired and no
+longer in the tree, so recover `fixture-capture.mjs` from git history
 
 ```
-node .planning/phases/39-the-dual-channel-coexistence-gate-go-degrade-no-go/evidence/fixture-capture.mjs
+git log --all -- '*/fixture-capture.mjs'
 ```
 
-against both `/usr/bin/x64sc` and `/usr/local/bin/x64sc` present and
+and run it against both `/usr/bin/x64sc` and `/usr/local/bin/x64sc` present and
 executable, with the `vice-broker` user unit `inactive` and no other `x64sc`
 process alive (the script's own `preflight()` refuses in code otherwise, per
 D-16). The script commits into this directory directly; every fixture pair in

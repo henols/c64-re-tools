@@ -5,12 +5,10 @@
 // against a real, broker-launched genuine-stock VICE instance and drives
 // sustained hit pressure past stock-checkpoints.ts's D-11 rate-limit guard
 // (TRACE_HITS_PER_SECOND_LIMIT, currently 20/s) -- the ONE safety-critical
-// probe this milestone's carried debt names and no prior phase armed: A4 of
-// .planning/todos/pending/2026-08-14-probe-phase3-assumed-wire-details.md
+// probe this milestone's carried debt names and no prior phase armed: A4
 // (the `setImmediate()` auto-disable deferral's race-freedom under a real,
-// synchronous CHECKPOINT_INFO flood from inside VICE's own CPU loop) and
-// 03-HUMAN-UAT.md scenario 3 (the same question, framed as a UAT gate) --
-// closed by the SAME experiment; see plan 15-10's own objective.
+// synchronous CHECKPOINT_INFO flood from inside VICE's own CPU loop) and the
+// same question framed as a UAT gate -- closed by the SAME experiment.
 //
 // WHY GENTLE FIRST: CLAUDE.md's own Protocol constraint says a non-stopping
 // checkpoint's CHECKPOINT_INFO hit frame is emitted SYNCHRONOUSLY, over the

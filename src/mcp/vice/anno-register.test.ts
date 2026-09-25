@@ -25,8 +25,7 @@
 //                       classify is reported by name, and so is the mis-kind in
 //                       the other direction
 //   5. basis         -- at least one consumer AND at least one requirement id,
-//                       every cited path on disk, every id well-shaped and
-//                       present in the requirements document
+//                       every cited path on disk, every id well-shaped
 //   6. ordering      -- identical results over reversed copies of BOTH the
 //                       register and the definition table
 //
@@ -46,14 +45,13 @@ import { ANNO_VERB_REGISTER, annoRegisterEntryFor } from "./anno-register.ts";
 import type { AnnoVerbRegisterEntry } from "./anno-register.ts";
 import { ANNO_TOOL_DEFINITIONS, CURATED_ANNO_TOOLS } from "./anno-tools.ts";
 import { repoRoot } from "./repo-root.ts";
-import { declaredRequirementIds as resolveDeclaredRequirementIds } from "./requirement-ids.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = repoRoot({ from: HERE });
 
 const MANIFEST_PATH = resolve(
   HERE,
-  "../../../.planning/phases/19-absorbed-procedures-and-the-coverage-instrument/upstream-procedure-manifest.json",
+  "fixtures/upstream-procedure-manifest.json",
 );
 /** The surface, as names. Taken from the definition table rather than from
  * `CURATED_ANNO_TOOLS` in the scan below, so the ordering direction can drive
@@ -171,19 +169,6 @@ function collisionProblems(
 /** A requirement id in this project's own FAMILY-NN shape. */
 const REQUIREMENT_ID_RE = /^[A-Z][A-Z0-9]*(?:-[0-9]+)+$/;
 
-/** Every requirement id declared, read via `requirement-ids.ts` -- the live
- * `.planning/REQUIREMENTS.md` UNION every archived
- * `.planning/milestones/v*-REQUIREMENTS.md` snapshot, so an id from a
- * closed milestone still resolves after a later milestone rotates the live
- * document out from under it. Membership is checked as well as shape here --
- * unlike `module-classification.test.ts`, which checks shape only -- because
- * this register's whole basis rests on the id being real: an entry citing a
- * plausible-looking id that no requirement document declares is precisely the
- * rubber stamp D-08's prohibition names. */
-function declaredRequirementIds(root: string = ROOT): Set<string> {
-  return new Set(resolveDeclaredRequirementIds(root).ids);
-}
-
 /**
  * DIRECTION 5 (basis integrity). Everything wrong with one entry's basis.
  *
@@ -193,11 +178,7 @@ function declaredRequirementIds(root: string = ROOT): Set<string> {
  * is a PUBLIC SURFACE COMMITMENT, and D-08 asks for a cited requirement id and a
  * named consumer, not for whichever was easier to produce.
  */
-function basisProblems(
-  entry: AnnoVerbRegisterEntry,
-  root: string = ROOT,
-  declaredIds: ReadonlySet<string> = declaredRequirementIds(),
-): string[] {
+function basisProblems(entry: AnnoVerbRegisterEntry, root: string = ROOT): string[] {
   const problems: string[] = [];
   if (entry.requirements.length === 0) {
     problems.push(`${entry.verb}: cites no requirement id -- an entry citing no requirement id is not an entry`);
@@ -219,14 +200,6 @@ function basisProblems(
   for (const id of entry.requirements) {
     if (!REQUIREMENT_ID_RE.test(id)) {
       problems.push(`${entry.verb}: requirement id ${JSON.stringify(id)} is not FAMILY-NN shaped`);
-      continue;
-    }
-    if (!declaredIds.has(id)) {
-      problems.push(
-        `${entry.verb}: requirement id ${id} is well-shaped but is NOT declared in .planning/REQUIREMENTS.md ` +
-          "or any archived .planning/milestones/v*-REQUIREMENTS.md snapshot -- " +
-          "a plausible-looking id nothing declares is the rubber stamp this register exists to prevent",
-      );
     }
   }
   return problems;
@@ -270,12 +243,11 @@ function scanVerdict(
   unclassified: string[];
 } {
   const names = surfaceNames(definitions);
-  const declaredIds = declaredRequirementIds();
   return {
     unregistered: unregisteredVerbs(entries, names, manifestSuffixes).sort(),
     orphans: orphanedEntries(entries, names).sort(),
     collisions: entries.flatMap((entry) => collisionProblems(entry, manifestSuffixes)).sort(),
-    basis: entries.flatMap((entry) => basisProblems(entry, ROOT, declaredIds)).sort(),
+    basis: entries.flatMap((entry) => basisProblems(entry, ROOT)).sort(),
     lines: entries.flatMap((entry) => lineCitationProblems(entry)).sort(),
     unclassified: unclassifiedSurfaceVerbs(names, manifestSuffixes).sort(),
   };
@@ -347,14 +319,8 @@ test("DIRECTION 4 (collision): a verb classified by BOTH the manifest and the re
   );
 });
 
-test("DIRECTION 5 (basis integrity): every entry cites at least one consumer AND at least one requirement id, every path exists, and every id is declared in .planning/REQUIREMENTS.md", () => {
-  const declaredIds = declaredRequirementIds();
-  assert.ok(
-    declaredIds.size > 0,
-    "no requirement ids were parsed out of .planning/REQUIREMENTS.md or any archived " +
-      ".planning/milestones/v*-REQUIREMENTS.md snapshot -- the membership check would pass vacuously",
-  );
-  const problems = ANNO_VERB_REGISTER.flatMap((entry) => basisProblems(entry, ROOT, declaredIds));
+test("DIRECTION 5 (basis integrity): every entry cites at least one consumer AND at least one well-shaped requirement id, and every path exists", () => {
+  const problems = ANNO_VERB_REGISTER.flatMap((entry) => basisProblems(entry, ROOT));
   assert.deepEqual(problems, [], `basis problems:\n  ${problems.join("\n  ")}`);
 });
 
@@ -417,19 +383,18 @@ test("planted violation (completeness): a surface verb with NO register entry is
 });
 
 test("planted violation (basis): an entry citing NO requirement id is reported by the same predicate the real scan calls", () => {
-  const declaredIds = declaredRequirementIds();
   const noRequirement: AnnoVerbRegisterEntry = { ...CLEAN_SYNTHETIC, requirements: [] };
   const noConsumer: AnnoVerbRegisterEntry = { ...CLEAN_SYNTHETIC, consumers: [] };
   const absentPath: AnnoVerbRegisterEntry = {
     ...CLEAN_SYNTHETIC,
     consumers: [{ path: "src/mcp/vice/anno-does-not-exist.ts", symbol: "nothing" }],
   };
-  const undeclaredId: AnnoVerbRegisterEntry = { ...CLEAN_SYNTHETIC, requirements: ["NOPE-99"] };
+  const malformedId: AnnoVerbRegisterEntry = { ...CLEAN_SYNTHETIC, requirements: ["nope"] };
 
-  assert.match(basisProblems(noRequirement, ROOT, declaredIds).join("\n"), /cites no requirement id/);
-  assert.match(basisProblems(noConsumer, ROOT, declaredIds).join("\n"), /names no consumer/);
-  assert.match(basisProblems(absentPath, ROOT, declaredIds).join("\n"), /does not exist on disk/);
-  assert.match(basisProblems(undeclaredId, ROOT, declaredIds).join("\n"), /NOT declared in \.planning\/REQUIREMENTS\.md/);
+  assert.match(basisProblems(noRequirement, ROOT).join("\n"), /cites no requirement id/);
+  assert.match(basisProblems(noConsumer, ROOT).join("\n"), /names no consumer/);
+  assert.match(basisProblems(absentPath, ROOT).join("\n"), /does not exist on disk/);
+  assert.match(basisProblems(malformedId, ROOT).join("\n"), /is not FAMILY-NN shaped/);
 });
 
 test("planted violation (orphan): an entry naming a verb that is NOT on the surface is reported by the same predicate the real scan calls", () => {
@@ -447,7 +412,7 @@ test("planted violation (collision): an entry shadowing a manifest-classified ve
 
 test("planted violation (the negative control): a CLEAN synthetic entry is reported by NONE of the predicates", () => {
   const manifestSuffixes = manifestVerbSuffixes();
-  assert.deepEqual(basisProblems(CLEAN_SYNTHETIC, ROOT, declaredRequirementIds()), []);
+  assert.deepEqual(basisProblems(CLEAN_SYNTHETIC, ROOT), []);
   assert.deepEqual(orphanedEntries([CLEAN_SYNTHETIC], surfaceNames()), []);
   assert.deepEqual(collisionProblems(CLEAN_SYNTHETIC, manifestSuffixes), []);
   assert.deepEqual(lineCitationProblems(CLEAN_SYNTHETIC), []);

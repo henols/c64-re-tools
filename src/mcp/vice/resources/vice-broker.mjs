@@ -1294,11 +1294,10 @@ export function tearDownRelaySessionsForGrant(targetId, state) {
  * emulator leg connected" -- spliceRelay() dialled the emulator itself and
  * spliced immediately, with no wait for the TCP connect to succeed, which
  * is what let a cold session's first PING die under an ECONNREFUSED relay
- * (see .planning/debug/cold-launch-relay-attach-race.md for the measured
- * mechanism). This function now marks the channel `attached` synchronously
- * (so a concurrent second attach is still refused immediately) and THEN
- * awaits the bounded dial (broker-relay.mjs's dialEmulatorLeg()) before
- * ever reporting success -- the emulator leg is guaranteed connected by
+ * (a measured mechanism). This function now marks the channel `attached`
+ * synchronously (so a concurrent second attach is still refused
+ * immediately) and THEN awaits the bounded dial (broker-relay.mjs's
+ * dialEmulatorLeg()) before ever reporting success -- the emulator leg is guaranteed connected by
  * the time this function's promise resolves `ok: true`.
  *
  * The client leg is paused for the duration of that wait (see the

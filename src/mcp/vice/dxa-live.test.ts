@@ -292,15 +292,8 @@ test(
 // failure. `evidence/35-dxa03-real-image.md` records the release identity,
 // the extracted entry and the chosen range's provenance in full; this file
 // only asserts the exclusion, relatively, from dxa's own classification.
-const CORPUS_PATH = join(
-  repoRoot({ from: HERE }),
-  ".planning",
-  "phases",
-  "23-the-real-release-gate-go-degrade-no-go",
-  "evidence",
-  "corpus",
-  "danish.d64",
-);
+/** The corpus image, gitignored under the repository root's `corpus/`. */
+const CORPUS_PATH = join(repoRoot({ from: HERE }), "corpus", "danish.d64");
 
 /** Gated behind BOTH VICE_LIVE_DXA=1 (this file's own opt-in, above) AND its
  * OWN VICE_LIVE_DXA_CORPUS=1 -- the corpus image is gitignored (D-04) and
@@ -314,7 +307,7 @@ const CORPUS_SKIP_REASON: string | false =
       ? "dxa-live.test.ts's corpus case is opt-in and default-skipped -- set VICE_LIVE_DXA_CORPUS=1 (in addition to VICE_LIVE_DXA=1) to run it."
       : !existsSync(CORPUS_PATH)
         ? `VICE_LIVE_DXA_CORPUS=1 but the corpus image does not exist at ${CORPUS_PATH} -- this repository never commits it (D-04, ` +
-          `.planning/phases/23-.../evidence/README.md convention 10); obtain the Phase 23 corpus release separately.`
+          `gitignored); obtain the corpus release separately and place it there.`
         : false;
 
 /** The smallest common ancestor directory of two absolute paths -- computed,

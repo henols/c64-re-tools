@@ -122,8 +122,7 @@ test("isAllowlistedTextCommand: accepts every TEXT_COMMAND_ALLOWLIST entry and r
     assert.ok(isAllowlistedTextCommand(cmd), `expected ${JSON.stringify(cmd)} to be allowlisted`);
   }
   // Narrowed, not deleted (plan 50-04, 2026-09-15, developer decision
-  // "route-d": widen the allowlist for `load`, recorded in
-  // .planning/phases/50-equivalence-and-modifiability/evidence/LOAD-ROUTE.md).
+  // "route-d": widen the allowlist for `load`).
   // An ARBITRARY load command, with a caller-chosen filename, must still
   // never be allowlisted -- this is exactly what the string below is: a
   // *different* file ("foo") and a *different* device (8) than the one
@@ -213,15 +212,6 @@ test("HAZARD_SUBJECT_PRG_RELPATHS (plan 50-05, rows generalised plan 50-06): the
     "the derived basename table must carry exactly the source table's own ids",
   );
 
-  // The rebuild row is the one member that is NOT under the fixture
-  // directory, and that is the whole reason the rows were generalised --
-  // asserted rather than left as prose, so a later edit that quietly moves
-  // it back into fixtures/ fails here instead of silently narrowing the
-  // table's reach.
-  assert.ok(
-    hazardSubjectPrgPath("rebuild").includes(join(".planning", "phases", "50-equivalence-and-modifiability", "evidence")),
-    "the rebuild subject must resolve under the phase evidence directory, not the fixture directory",
-  );
   assert.ok(
     hazardSubjectPrgPath("original").includes(join("src", "mcp", "vice", "fixtures", "hazard-subject")),
     "the original subject must still resolve under the committed fixture directory",

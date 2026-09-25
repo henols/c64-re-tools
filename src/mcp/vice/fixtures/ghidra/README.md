@@ -2,11 +2,9 @@
 
 ## `bank.a` / `bank.prg` (36-03, `VolatileCarve.java`'s own hazard fixture)
 
-`bank.a` is copied UNCHANGED from
-`.planning/notes/dxa-ghidra-pivot-evidence/bank.a` -- the fixture the
-volatile-block dead-store-elimination hazard was originally demonstrated on
-(see `.planning/ROADMAP.md` -- Standing Constraints, "Ghidra deletes hardware
-writes as dead stores unless the I/O ranges are marked volatile"). Its own
+`bank.a` is copied UNCHANGED from the fixture the volatile-block
+dead-store-elimination hazard was originally demonstrated on ("Ghidra deletes
+hardware writes as dead stores unless the I/O ranges are marked volatile"). Its own
 comment names what it exercises: "the SAME address means different things
 under different $01" -- three passes over `$D020` and one over `$D000,x`,
 each under a different `$01` banking value, so a correct volatile carve must

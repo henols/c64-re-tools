@@ -1142,7 +1142,7 @@ export function handleStageFile(grantId: string, slot: string, state: BrokerStat
  * actually renamed it into place: the client's own upload resolved when
  * ITS pipeline into this socket finished, not when the broker had
  * published the bytes, and VICE answered 0x8f probing a path that did not
- * exist yet (`.planning/debug/vice-0x8f-disk-attach-snapshot-load.md`).
+ * exist yet.
  * The upload branch therefore also sets `socket.allowHalfOpen = true`
  * before writing `transfer_ready`, so the broker can still answer after
  * the client ends its own write side to mark the end of the payload. */
@@ -1666,11 +1666,10 @@ export function tearDownRelaySessionsForGrant(targetId: string, state: BrokerSta
  * emulator leg connected" -- spliceRelay() dialled the emulator itself and
  * spliced immediately, with no wait for the TCP connect to succeed, which
  * is what let a cold session's first PING die under an ECONNREFUSED relay
- * (see .planning/debug/cold-launch-relay-attach-race.md for the measured
- * mechanism). This function now marks the channel `attached` synchronously
- * (so a concurrent second attach is still refused immediately) and THEN
- * awaits the bounded dial (broker-relay.mjs's dialEmulatorLeg()) before
- * ever reporting success -- the emulator leg is guaranteed connected by
+ * (a measured mechanism). This function now marks the channel `attached`
+ * synchronously (so a concurrent second attach is still refused
+ * immediately) and THEN awaits the bounded dial (broker-relay.mjs's
+ * dialEmulatorLeg()) before ever reporting success -- the emulator leg is guaranteed connected by
  * the time this function's promise resolves `ok: true`.
  *
  * The client leg is paused for the duration of that wait (see the

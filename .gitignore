@@ -6,7 +6,7 @@ node_modules/
 # 2026-09-08, gap G-40-1): every writer in this codebase that used to
 # scatter its output across four separate locations (.vice-supervisor/,
 # .vice-snapshots/, tools/*.mjs + vice-launcher.sh + .vice-deployed.json,
-# and .planning/incidents/) now lands
+# and an incidents directory) now lands
 # under ONE directory: supervisor/ (broker state), snapshots/ (.vsf + .json
 # sidecars), bin/ (deployed host launcher artifacts), runs/oracle/
 # (oracle.run scratch), runs/ghidra/ (ghidra.analyze's per-run project
@@ -15,7 +15,7 @@ node_modules/
 # gets exactly one ignorable directory and one directory to delete, rather
 # than five. This is a clean break: no dual-read of the previous locations,
 # no migration shim -- a pre-existing old-layout tree (.vice-supervisor/,
-# .vice-snapshots/, tools/*.mjs, .planning/incidents/) is simply left on
+# .vice-snapshots/, tools/*.mjs) is simply left on
 # disk, unread, for the user to delete by hand.
 /.c64-re-tools/
 # ...and the same directory written anywhere else. The rule above is
@@ -29,8 +29,7 @@ node_modules/
 # minted symlink (ghidra-project.mts's ensureGhidraRunsHandle()) whose
 # RELATIVE target is .c64-re-tools/, existing solely because Ghidra's own
 # dot-segment refusal binds the ABSOLUTIZED project-location path
-# (getAbsolutePath(), never getCanonicalPath() -- MEASURED,
-# .planning/notes/ghidra-dot-path-check-semantics.md) while the bytes
+# (getAbsolutePath(), never getCanonicalPath() -- MEASURED) while the bytes
 # genuinely live under .c64-re-tools/runs/ghidra/ above. tools/ itself is
 # now vestigial -- git ls-files tools/ is empty, and ghidra.analyze's old
 # tools/ghidra-runs/ location (this stanza's predecessor) was its last
@@ -78,55 +77,26 @@ dist/
 # makes the guarantee local and explicit rather than relying on that.
 /.claude/settings.local.json
 
-# GSD research scratch cache (subagent working files, not artifacts)
-.planning/research/.cache/
-
-# GSD runtime lock: a live phase claim, heartbeated per session (4h TTL).
-# Runtime state like .gsd/, never an artifact.
-/.planning/milestone.lock
-
-# GSD (@opengsd/gsd-core) is a VENDORED install, not project source. It is
-# ~700 files / 12MB, regenerated wholesale by `/gsd-update`, and it is stamped
-# with THIS machine's absolute paths at install time -- 216 of its 697 files
-# contain the literal checkout path, so the tree is not portable to CI, to
-# another machine, or to another clone. Committing it would make every
-# `/gsd-update` a 12MB diff of unusable-elsewhere content; leaving it merely
-# untracked let a stray `git add -A` commit it by accident and kept `git
-# status` permanently noisy. Ignoring it explicitly is the intended state:
-# GSD may be updated freely and the repo never changes as a result.
-#
-# Local customisations to this tree are therefore NOT preserved by git. They
-# are reapplied idempotently by `node scripts/gsd-reapply-local.mjs` -- run it
-# after `/gsd-update`. Nothing in the repo may branch on whether this tree
-# exists; guards assert over tracked `.planning/` and `CLAUDE.md` only.
-/.claude/gsd-core/
-/.claude/gsd-local-patches/
-/.claude/gsd-pristine/
+# Local Claude Code tooling (commands, skills, agents, hooks). Machine-local
+# and not project source.
 /.claude/agents/
 /.claude/commands/
 /.claude/hooks/
 /.claude/scripts/
 /.claude/skills/
-/.claude/gsd-file-manifest.json
-/.claude/gsd-install-state.json
-/.claude/gsd-migration-journal/
-/.claude/.gsd-profile
-/.gsd/
-# .agents/ is skills-manager scratch and stays ignored, EXCEPT the mastra skill:
-# gsd-planner/executor/researcher read it via agent_skills and run inside git
-# worktrees, which only contain TRACKED files. Keeping it in-repo also avoids a
-# ~/.claude/skills copy, which would leak into every other GSD project on this
-# machine (promolab pins a different mastra revision).
+# .agents/ is skills-manager scratch and stays ignored, EXCEPT the mastra skill,
+# which is kept in-repo so git worktrees (tracked files only) can read it.
 /.agents/*
 !/.agents/skills/
 /.agents/skills/*
 !/.agents/skills/mastra/
 /.codex/
 
-# Graphify raw scratch output. Regenerable from `/gsd-graphify build`, so it is
-# ignored. NOTE: `.planning/graphs/` is deliberately NOT ignored — gsd-planner
-# and gsd-phase-researcher read `.planning/graphs/graph.json`, and those agents
-# run inside git worktrees, which only contain tracked files.
+# Real-release disk images for the opt-in live corpus tests (dxa-live,
+# ghidra-live, ghidra-opcode-live). Never committed.
+/corpus/
+
+# Graphify raw scratch output. Regenerable, so it is ignored.
 /graphify-out/
 
 # Phase 35 (DXA-01): the built dxa binary and its intermediate object files.

@@ -12,7 +12,7 @@ living here.
 alone.** There is a single blanket answer for this directory now, and there
 did not used to be: this README once claimed three fixtures were synthetic,
 which stopped being true when the external-verification phase re-recorded
-them (see `.planning/phases/13-external-verification/13-CAPTURE-TRANSCRIPT.md`).
+them.
 Every sidecar **states** `synthetic` explicitly, and
 `../../binmon-fixtures.ts`'s `loadCapturedFixture()` **requires** the key, so
 provenance can never again be established by omission.
@@ -68,10 +68,8 @@ derived.** `probe-binmon.mjs`'s `runCapture()` builds it from
 `process.env.CAPTURE_BACKEND_KIND`, set by hand at capture time -- nothing
 validates it against which binary actually answered (`VICE_BIN`, recorded in
 the same string). `cpuhistory-get`/`cpuhistory-get-multi` carried a wrong
-kind for over two months before this was caught (see
-`2026-08-22-cpuhistory-get-sidecars-mislabel-the-fork-as-stock.md` in
-`.planning/todos/completed/`); a future capture run can make the identical
-mistake. Read each sidecar's own `capturedFrom` path segment against
+kind for over two months before this was caught; a future capture run can
+make the identical mistake. Read each sidecar's own `capturedFrom` path segment against
 CLAUDE.md's binary framing if the kind looks surprising, rather than trusting
 the kind label alone.
 

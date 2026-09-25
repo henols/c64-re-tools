@@ -8,7 +8,7 @@
 // Every assertion here drives the shipped `installer/bin/cli.mjs` directly
 // (wireMcp/readJson exported via the entry-point dispatch guard at the
 // bottom of that file) -- there is no second, test-local copy of the merge
-// logic. See .planning/phases/16-packaging-and-repo-shape/16-03-PLAN.md.
+// logic.
 //
 // Happy-path cases (this file's first half) call wireMcp() in-process,
 // since it only returns/writes on success. Refusal cases (second half) go

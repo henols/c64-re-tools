@@ -195,7 +195,7 @@ test("resolveGhidraProject: CREATES the run directory as the last step of a succ
   });
 });
 
-test("resolveGhidraProject: refuses a repoRoot that itself contains a dot-prefixed segment, naming that segment -- rules out .vice-supervisor/ and .planning/ as ancestors -- and creates NOTHING on disk (the dot check runs before any filesystem write)", async () => {
+test("resolveGhidraProject: refuses a repoRoot that itself contains a dot-prefixed segment, naming that segment -- rules out .vice-supervisor/ as an ancestor -- and creates NOTHING on disk (the dot check runs before any filesystem write)", async () => {
   await withTempDir((dir) => {
     const repoRoot = join(dir, ".vice-supervisor", "nested");
     const result = resolveGhidraProject({ repoRoot, runId: "r1" });

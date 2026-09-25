@@ -51,9 +51,6 @@
 //   - GATE 3 (the run is reproducible from the committed script set with no
 //     click-path, and Ghidra's own installed version is read from the
 //     installation and asserted against a named constant, never assumed).
-// See `.planning/phases/36-the-sleigh-language-and-the-ghidra-harness/
-// evidence/36-04-three-gates.md` for the recorded transcript of all three
-// gates firing.
 import { test, before, after } from "node:test";
 import { startHarnessBroker, type HarnessBroker } from "./broker-harness.ts";
 import assert from "node:assert/strict";
@@ -1095,15 +1092,8 @@ test(
 // through it.
 // ---------------------------------------------------------------------------
 
-const CORPUS_PATH = join(
-  repoRoot({ from: HERE }),
-  ".planning",
-  "phases",
-  "23-the-real-release-gate-go-degrade-no-go",
-  "evidence",
-  "corpus",
-  "danish.d64",
-);
+/** The corpus image, gitignored under the repository root's `corpus/`. */
+const CORPUS_PATH = join(repoRoot({ from: HERE }), "corpus", "danish.d64");
 
 /** Gated behind BOTH `VICE_LIVE_GHIDRA=1` (this file's own opt-in, above) AND
  * its OWN `VICE_LIVE_GHIDRA_CORPUS=1` -- mirrors
@@ -1115,7 +1105,7 @@ const CORPUS_SKIP_REASON: string | false =
       ? "ghidra-live.test.ts's corpus case is opt-in and default-skipped -- set VICE_LIVE_GHIDRA_CORPUS=1 (in addition to VICE_LIVE_GHIDRA=1) to run it."
       : !existsSync(CORPUS_PATH)
         ? `VICE_LIVE_GHIDRA_CORPUS=1 but the corpus image does not exist at ${CORPUS_PATH} -- this repository never commits it (D-04, ` +
-          `.planning/phases/23-.../evidence/README.md convention 10); obtain the Phase 23 corpus release separately.`
+          `gitignored); obtain the corpus release separately and place it there.`
         : false;
 
 /** The SAME five entry points `ghidra-opcode-live.test.ts`'s own CORPUS case
@@ -2083,13 +2073,12 @@ test(
 );
 
 // ---------------------------------------------------------------------------
-// Gap G-40-1 (plan 40-09, Task 3): the guard .planning/todos/pending/
-// 2026-09-08-guard-ghidra-symlink-project-location.md describes. The
-// symlink route this plan's own Task 1/2 depend on rests on a property of
+// Gap G-40-1 (plan 40-09, Task 3): the Ghidra symlink project-location
+// guard. The symlink route this plan's own Task 1/2 depend on rests on a property of
 // real Ghidra this project does not control: `ProjectLocator` calls
 // `java.io.File.getAbsolutePath()` and never `getCanonicalPath()`, so it
 // never resolves the non-dotted handle -- MEASURED in bytecode against
-// 12.1.3 (.planning/notes/ghidra-dot-path-check-semantics.md). If a future
+// 12.1.3. If a future
 // release switches that one call, every ghidra.analyze run breaks at once,
 // silently, 12-16 seconds into a JVM startup, with a dot-segment error
 // naming a path the user never typed. This guard fails at TEST time
@@ -2196,7 +2185,7 @@ test(
       const physicalProjectDir = join(ghidraRunsRealRoot(ws.root), runId);
       assert.ok(
         ghidraProjectDatabaseExists(physicalProjectDir, runId),
-        `SYMLINK GUARD REGRESSION: expected a Ghidra project database (${runId}.gpr) physically under the dotted root at ${physicalProjectDir} -- if absent, Ghidra now appears to resolve symlinks in the project location (ProjectLocator switching from getAbsolutePath() to getCanonicalPath()), so the dotted runs root is no longer reachable through the handle and every ghidra.analyze call is about to fail. See .planning/notes/ghidra-dot-path-check-semantics.md.`,
+        `SYMLINK GUARD REGRESSION: expected a Ghidra project database (${runId}.gpr) physically under the dotted root at ${physicalProjectDir} -- if absent, Ghidra now appears to resolve symlinks in the project location (ProjectLocator switching from getAbsolutePath() to getCanonicalPath()), so the dotted runs root is no longer reachable through the handle and every ghidra.analyze call is about to fail.`,
       );
       const repEntries = existsSync(join(physicalProjectDir, `${runId}.rep`)) ? readdirSync(join(physicalProjectDir, `${runId}.rep`)) : [];
       assert.ok(repEntries.length > 0, `expected the project's own .rep/ directory to carry real content physically under ${physicalProjectDir}`);

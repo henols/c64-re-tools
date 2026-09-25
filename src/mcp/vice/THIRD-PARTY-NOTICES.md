@@ -509,10 +509,9 @@ VICE's own C source.
 
 ## Explicitly NOT a source: `fluffy-6502`
 
-`fluffy-6502`, named in `.planning/ROADMAP.md` and in 04-CONTEXT.md D-06 as an
-MIT cross-check source, **could not be located under that name** on GitHub or
-the general web during Phase 4 research (`04-RESEARCH.md` Assumptions Log
-A1 / Pitfall 5). It was therefore **not used and is not cited** as a source
+`fluffy-6502`, named during planning as an MIT cross-check source, **could not
+be located under that name** on GitHub or the general web during Phase 4
+research. It was therefore **not used and is not cited** as a source
 of this table — a notices entry naming a project whose URL 404s would
 overstate what was actually checked. The opcode table's independent
 verification instead comes from `disasm-opcodes.test.ts`'s `aaabbbcc`

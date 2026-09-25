@@ -1,2 +1,0 @@
-al C:c000 .start
-al C:c01b .probe_user_label

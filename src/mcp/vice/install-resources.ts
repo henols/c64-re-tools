@@ -387,8 +387,7 @@ function isGeneratedEntry(entry: string): boolean {
  * hand-edited there, a `diverged` GENERATED entry cannot mean "a local edit
  * worth protecting" -- staleness is the only thing divergence can mean for
  * it, so refusing it (the old default) was silently no-op'ing on exactly
- * the files that most needed refreshing (see
- * .planning/todos/pending/2026-08-05-installresources-cannot-refresh-a-stale-deploy-without-force.md).
+ * the files that most needed refreshing.
  * The one HAND-AUTHORED entry, `vice-launcher.sh`, keeps the original
  * refuse-on-divergence posture -- see isGeneratedEntry() above for how the
  * two are told apart.

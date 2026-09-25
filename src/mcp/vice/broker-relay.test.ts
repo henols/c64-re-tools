@@ -1019,8 +1019,7 @@ function makeRealBrokerControl(state: BrokerState, targetId: string): StockConne
 // ===========================================================================
 // G-64-4 (plan 64-12), Task 1: the cold-launch relay-attach race. Real
 // x64sc's binary-monitor port binds 55-142ms after spawn while the client's
-// own attach+first-PING lands 17-31ms after spawn (measured,
-// .planning/debug/cold-launch-relay-attach-race.md) -- every PRE-EXISTING
+// own attach+first-PING lands 17-31ms after spawn (measured) -- every PRE-EXISTING
 // stub emulator in this file binds its port SYNCHRONOUSLY, before the attach
 // is ever sent, which is exactly what hid this race from every earlier test.
 // withLateBindingStubEmulatorServer() reverses that: the attach is sent

@@ -827,20 +827,12 @@ test(
 // rather than failing.
 // ---------------------------------------------------------------------------
 
-const CORPUS_PATH = join(
-  repoRoot({ from: HERE }),
-  ".planning",
-  "phases",
-  "23-the-real-release-gate-go-degrade-no-go",
-  "evidence",
-  "corpus",
-  "danish.d64",
-);
+/** The corpus image, gitignored under the repository root's `corpus/`. */
+const CORPUS_PATH = join(repoRoot({ from: HERE }), "corpus", "danish.d64");
 
 /** Gated behind BOTH `VICE_LIVE_GHIDRA=1` (this file's own opt-in, above) AND
  * its OWN `VICE_LIVE_GHIDRA_CORPUS=1` -- the corpus image is gitignored
- * (D-04, `.planning/phases/23-.../evidence/README.md` convention 10) and
- * absent on every machine but the one that separately fetched it. */
+ * (D-04) and absent on every machine but the one that separately fetched it. */
 const CORPUS_SKIP_REASON: string | false =
   SKIP_REASON !== false
     ? SKIP_REASON
@@ -848,7 +840,7 @@ const CORPUS_SKIP_REASON: string | false =
       ? "ghidra-opcode-live.test.ts's corpus case is opt-in and default-skipped -- set VICE_LIVE_GHIDRA_CORPUS=1 (in addition to VICE_LIVE_GHIDRA=1) to run it."
       : !existsSync(CORPUS_PATH)
         ? `VICE_LIVE_GHIDRA_CORPUS=1 but the corpus image does not exist at ${CORPUS_PATH} -- this repository never commits it (D-04, ` +
-          `.planning/phases/23-.../evidence/README.md convention 10); obtain the Phase 23 corpus release separately.`
+          `gitignored); obtain the corpus release separately and place it there.`
         : false;
 
 /** The `.prg` route's own fixed default base address (`importRouteBaseAddr("prg")`,

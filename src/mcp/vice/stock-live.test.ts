@@ -211,7 +211,7 @@ const STOCK_LIVE_1313_BROKER_CONTROL = {
  */
 async function withOwnStockInstance<T>(binPath: string, fn: (info: { port: number; binPath: string }) => Promise<T>): Promise<T> {
   const port = await freeEphemeralPort();
-  const scratchDir = mkdtempSync(join(tmpdir(), "gsd-0713-vicerc-"));
+  const scratchDir = mkdtempSync(join(tmpdir(), "stock-live-vicerc-"));
   const child = spawn(
     binPath,
     ["-default", "-binarymonitor", "-binarymonitoraddress", `ip4://127.0.0.1:${port}`],
@@ -242,7 +242,7 @@ before(async () => {
   if (SKIP_REASON) return;
 
   const port = await freeEphemeralPort();
-  const scratchDir = mkdtempSync(join(tmpdir(), "gsd-0316-vicerc-"));
+  const scratchDir = mkdtempSync(join(tmpdir(), "stock-live-vicerc-"));
   // Bind 127.0.0.1 only (T-03-16-01) -- the binary monitor is unauthenticated
   // full machine control; XDG_CONFIG_HOME silences the shared-vicerc version
   // mismatch dialog (T-03-16-04) without ever touching the real config.

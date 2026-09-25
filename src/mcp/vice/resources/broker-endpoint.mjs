@@ -74,8 +74,7 @@ const DEFAULT_CONTROL_PORT = 19510;
  * function existed, every dial in this module hardcoded
  * DEFAULT_CONTROL_PORT regardless of what the broker was actually told to
  * bind on -- the latent "relay always dials 19510" defect the G-64-1
- * diagnosis recorded (.planning/debug/vice-proxy-control-token-handshake.md,
- * Evidence 16:42): a client and a broker moved together off the default
+ * diagnosis recorded: a client and a broker moved together off the default
  * port would never meet.
  *
  * An unusable value (absent, empty, non-integer, or outside 1..65535) is
@@ -119,10 +118,9 @@ export const DEFAULT_ATTACH_REPLY_TIMEOUT_MS = 8000;
  * only to keep a client from waiting forever against a broker that never
  * answers (a crash mid-publish, or a broker built before this reply
  * existed). Ten seconds -- generous relative to the sub-2ms publish
- * latencies this same gap-closure plan measured on a same-host broker
- * (`.planning/debug/vice-0x8f-disk-attach-snapshot-load.md`), never tuned
- * down to save wall-clock time in a test; a test that needs a SHORT bound
- * passes its own `timeoutMs` explicitly instead. */
+ * latencies this same gap-closure plan measured on a same-host broker,
+ * never tuned down to save wall-clock time in a test; a test that needs a
+ * SHORT bound passes its own `timeoutMs` explicitly instead. */
 export const DEFAULT_TRANSFER_COMPLETE_TIMEOUT_MS = 10000;
 /** This module's own directory, computed once at module load -- the same
  * `dirname(fileURLToPath(import.meta.url))` idiom vice-proxy.ts's own

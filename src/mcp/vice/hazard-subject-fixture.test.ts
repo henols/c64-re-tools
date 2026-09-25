@@ -194,8 +194,6 @@ test("hazard subject: the root source carries exactly four bare-filename !source
 
 test("hazard subject: no planning-vocabulary string appears anywhere in the dispatch fixture source", () => {
   const dispatchSource = readFileSync(DISPATCH_SOURCE_PATH, "utf8");
-  assert.ok(!dispatchSource.includes(".planning/"), "must not reference a .planning/ path");
-  assert.ok(!/\/gsd-/.test(dispatchSource), "must not reference a /gsd- command name");
   assert.ok(!/\bD-\d/.test(dispatchSource), "must not carry a bare D-NN decision id");
   assert.ok(!/\bBUILD-\d/.test(dispatchSource), "must not carry a BUILD-NN requirement id");
   assert.ok(!/\bPhase\s+\d/.test(dispatchSource), "must not carry a 'Phase N' citation");
@@ -281,8 +279,6 @@ test("hazard subject: the sprite pointer and the VIC memory-control bits are der
 
 test("hazard subject: no planning-vocabulary string appears anywhere in the alignment fixture source", () => {
   const alignSource = readFileSync(ALIGN_SOURCE_PATH, "utf8");
-  assert.ok(!alignSource.includes(".planning/"), "must not reference a .planning/ path");
-  assert.ok(!/\/gsd-/.test(alignSource), "must not reference a /gsd- command name");
   assert.ok(!/\bD-\d/.test(alignSource), "must not carry a bare D-NN decision id");
   assert.ok(!/\bBUILD-\d/.test(alignSource), "must not carry a BUILD-NN requirement id");
   assert.ok(!/\bPhase\s+\d/.test(alignSource), "must not carry a 'Phase N' citation");
@@ -394,8 +390,6 @@ test("hazard subject: the raster fixture's own header names which of the detecto
 
 test("hazard subject: no planning-vocabulary string appears anywhere in the raster fixture source", () => {
   const rasterSource = readFileSync(RASTER_SOURCE_PATH, "utf8");
-  assert.ok(!rasterSource.includes(".planning/"), "must not reference a .planning/ path");
-  assert.ok(!/\/gsd-/.test(rasterSource), "must not reference a /gsd- command name");
   assert.ok(!/\bD-\d/.test(rasterSource), "must not carry a bare D-NN decision id");
   assert.ok(!/\bBUILD-\d/.test(rasterSource), "must not carry a BUILD-NN requirement id");
   assert.ok(!/\bPhase\s+\d/.test(rasterSource), "must not carry a 'Phase N' citation");
@@ -597,8 +591,6 @@ test("hazard subject: the mis-aligned source's header states that the assembler 
 
 test("hazard subject: no planning-vocabulary string appears anywhere in the mis-aligned fixture source", () => {
   const misalignedSource = readFileSync(ALIGN_MISALIGNED_SOURCE_PATH, "utf8");
-  assert.ok(!misalignedSource.includes(".planning/"), "must not reference a .planning/ path");
-  assert.ok(!/\/gsd-/.test(misalignedSource), "must not reference a /gsd- command name");
   assert.ok(!/\bD-\d/.test(misalignedSource), "must not carry a bare D-NN decision id");
   assert.ok(!/\bBUILD-\d/.test(misalignedSource), "must not carry a BUILD-NN requirement id");
   assert.ok(!/\bPhase\s+\d/.test(misalignedSource), "must not carry a 'Phase N' citation");

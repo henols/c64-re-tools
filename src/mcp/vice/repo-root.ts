@@ -186,8 +186,7 @@ export function repoRoot({ from = HERE, env = process.env, exists = existsSync }
  * ultimately derives its location from (D-33, 2026-09-08 clean-break
  * consolidation): `join(repoRoot(...), ".c64-re-tools")`.
  *
- * CORRECTED 2026-09-08 (gap `G-40-1`; see
- * .planning/notes/ghidra-dot-path-check-semantics.md): this comment used to
+ * CORRECTED 2026-09-08 (gap `G-40-1`): this comment used to
  * claim (a) that the Ghidra runs directory was among the writers resolving
  * through THIS function, and (b) that the literal string below had exactly
  * one non-comment occurrence in the codebase. Both were false when written,
@@ -284,9 +283,8 @@ export function repoRoot({ from = HERE, env = process.env, exists = existsSync }
  * one root. The superseded method that produced the original overstated
  * claim was running this project's OWN dot-segment-refusal check
  * (`hasDotPrefixedSegment()`) against a synthetic string -- which observes
- * this project, never Ghidra. See
- * .planning/notes/ghidra-dot-path-check-semantics.md for the full live
- * measurement against real Ghidra 12.1.3.
+ * this project, never Ghidra; the corrected claim was measured live against
+ * real Ghidra 12.1.3.
  *
  * This is a clean break, not a migration: no code path falls back to any of
  * the five previous locations when the new one is absent, and there is no

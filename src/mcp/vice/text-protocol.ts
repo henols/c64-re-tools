@@ -148,8 +148,7 @@ export const PROMPT_RE = /\(C:\$[0-9A-Fa-f]{4}\)\s*$/;
  * rule above was never "no `load` or `save`" in principle, it was "no verb
  * that touches a host file" -- and `memmapsave`'s rejection above is a
  * WRITE. `load` is a READ, and the developer judged the original rule to
- * have over-reached for the read direction (recorded in
- * `.planning/phases/50-equivalence-and-modifiability/evidence/LOAD-ROUTE.md`).
+ * have over-reached for the read direction.
  * This is NOT a general "load anything" capability: the entry added to
  * TEXT_COMMAND_PARAM_SPECS below bakes in the ONE committed fixture path
  * this phase's tracer plan targets as part of the verb's own frozen
@@ -252,16 +251,10 @@ function renderAddressParam(verb: string, value: number): string {
  * below is a REVIEWED LITERAL spelled out in this file, whole.
  *
  * WHY THE ROWS CARRY A WHOLE REPO-RELATIVE PATH AND NOT A BARE BASENAME
- * (plan 50-06). Plan 50-05 wrote each row as a basename and joined a single
- * fixed `src/mcp/vice/fixtures/hazard-subject` directory onto it, and said
- * in this very comment that a build artifact outside that directory "gets a
- * reviewed row of its own, spelled out here the same way". Plan 50-06 is the
- * plan with that artifact: its rebuild `.prg` is produced from the committed
- * annotation store and lands under the PHASE EVIDENCE directory, not the
- * fixture directory, because it is an output of this phase rather than a
- * committed fixture. A basename-plus-fixed-directory row cannot spell that,
- * so the row now carries the whole repo-relative path as an array of
- * reviewed segments. Nothing about the CLOSURE changed: the path is still
+ * (plan 50-06). Each row carries the whole repo-relative path as an array of
+ * reviewed segments, so a subject outside the fixture directory could get a
+ * reviewed row of its own. Every member currently lives under
+ * `src/mcp/vice/fixtures/hazard-subject`. Nothing about the CLOSURE changed: the path is still
  * chosen entirely by this file, a caller still supplies no path, no
  * basename, no directory and no fragment of one, and the only thing a
  * caller ever names is an id this table's own keys define.
@@ -285,17 +278,8 @@ export const HAZARD_SUBJECT_PRG_RELPATHS = Object.freeze({
   modified: Object.freeze(["src", "mcp", "vice", "fixtures", "hazard-subject", "hazard-subject-modified.prg"]),
   /** Plan 50-06's REBUILD: the committed subject re-produced from its own
    * committed annotation store through importStoreDocument() ->
-   * exportAsmTree() -> verifyAcmeAssemblesTree(), recorded in
-   * `.planning/phases/50-equivalence-and-modifiability/evidence/REBUILD.md`.
-   * The only row that is not a committed fixture, and the reason the rows
-   * carry a whole repo-relative path -- see this table's own comment. */
-  rebuild: Object.freeze([
-    ".planning",
-    "phases",
-    "50-equivalence-and-modifiability",
-    "evidence",
-    "hazard-subject-rebuild.prg",
-  ]),
+   * exportAsmTree() -> verifyAcmeAssemblesTree(). */
+  rebuild: Object.freeze(["src", "mcp", "vice", "fixtures", "hazard-subject", "hazard-subject-rebuild.prg"]),
   /** Plan 50-08's exported-edit subject: the same one-behaviour-removed,
    * one-behaviour-added pair `modified` carries, made this time in a file
    * `exportAsmTree()` itself emitted (`scope_087a.a`) rather than in the
@@ -348,10 +332,8 @@ export function isHazardSubjectId(value: unknown): value is HazardSubjectId {
 }
 
 /**
- * Absolute host path to one member of the closed table above. Three members
- * are committed fixtures; `rebuild` is plan 50-06's own build artifact under
- * the phase evidence directory, which is why the table's rows carry a whole
- * repo-relative path rather than a basename joined onto one fixed directory.
+ * Absolute host path to one member of the closed table above. Every member
+ * is a committed fixture.
  *
  * Resolved through repoRoot() rather than hard-coded as a relative string:
  * `broker-launch.mts` spawns `x64sc` with no explicit `cwd` (checked
@@ -584,9 +566,7 @@ export function isAllowlistedTextCommand(cmd: string): boolean {
  * render() function, or in isDialableTextCommandForVerb()'s own round trip,
  * is now a real way a control character could reach this far, and this
  * check is what still stops it before a single byte is written. It also
- * guards any future allowlist entry the same way it always did. (canon-
- * referral breadcrumb: generic command injection is `/gsd-secure-phase`
- * canon, not re-litigated here). */
+ * guards any future allowlist entry the same way it always did. */
 const FORBIDDEN_COMMAND_CHARS_RE = /[\r\n\x00-\x1f]/;
 
 /**

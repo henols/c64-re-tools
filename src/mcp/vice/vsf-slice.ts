@@ -35,13 +35,12 @@
 // structural guard's scanned set entirely.
 //
 // WHAT NOT TO DO:
-//   - Never reach `C64MEM` by a fixed byte offset. The already-written
-//     prototype at `.planning/phases/23-the-real-release-gate-go-degrade-no-go/
-//     evidence/vsf-ram-extract.mjs` carries `first_module_offset = 37`, which
-//     is stale: a SECOND magic block (`"VICE Version\x1a"`, 13 bytes, plus 4
-//     version bytes plus a 4-byte SVN dword) follows the 16-byte machine
-//     name, so the real first module offset is 58. Offset 37 lands inside
-//     that second magic block, where the first "module" reads
+//   - Never reach `C64MEM` by a fixed byte offset. The earlier Phase 23
+//     prototype carried `first_module_offset = 37`, which is stale: a
+//     SECOND magic block (`"VICE Version\x1a"`, 13 bytes, plus 4 version
+//     bytes plus a 4-byte SVN dword) follows the 16-byte machine name, so
+//     the real first module offset is 58. Offset 37 lands inside that
+//     second magic block, where the first "module" reads
 //     `size = 1291845632`.
 //   - Never carry that prototype's recovery path, which is the more dangerous
 //     half. It survives the stale offset only by `off++`-rescanning for a

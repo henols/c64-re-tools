@@ -2924,14 +2924,13 @@ test("structural: no message quotes the launcher with a subcommand -- vice-launc
 });
 
 // ---------------------------------------------------------------------------
-// Phase 01.4 plan 03 (criterion 5), executing
-// .planning/todos/pending/de-architecture-agent-visible-proxy-messages.md: a
+// Phase 01.4 plan 03 (criterion 5): a
 // permanent regression guard against the topology-naming "vice-proxy:"
 // prefix silently creeping back into an agent-visible message. A
 // backtick-opened template literal beginning with the literal sequence
 // "vice-proxy:" is agent-visible tool-result `content` in every case in
 // this file EXCEPT when it is an argument to `console.error(...)` (stderr
-// only, never read by the model, and deliberately out of this todo's
+// only, never read by the model, and deliberately out of this guard's
 // scope).
 //
 // Plan 03-15 task 3: the ORIGINAL rule here was proximity-based ("does
@@ -3484,14 +3483,10 @@ test("IN-01: the anno CLI dispatch still ends the process promptly with no serve
 // ===========================================================================
 // G-64-1 gap closure (plan 64-08). The regression test that would have
 // caught G-64-1: a REAL vice-proxy.ts over stdio, against a REAL control
-// listener, reaching the relay attach and reading the result -- see
-// .planning/debug/vice-proxy-control-token-handshake.md (Evidence 16:35 for
-// the offline reproduction this turns into a permanent regression test,
-// Evidence 16:42 for why the pre-existing proxy tests could not catch it)
-// and .planning/phases/64-files-as-bytes-both-directions/evidence/
-// 64-g641-handle-only-authority.md for the security trade that made the fix
-// possible (attach/transfer authenticated by their broker-minted handle
-// alone, ahead of the per-boot token gate).
+// listener, reaching the relay attach and reading the result -- an offline
+// reproduction turned into a permanent regression test. The security trade
+// that made the fix possible: attach/transfer authenticated by their
+// broker-minted handle alone, ahead of the per-boot token gate.
 // ===========================================================================
 
 interface G6408DecodedRequest {

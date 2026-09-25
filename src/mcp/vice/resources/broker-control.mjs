@@ -24,10 +24,9 @@
 // considered and rejected a unix-domain-socket alternative. Auth: `hello`
 // (plan 62-01) answers UNCONDITIONALLY, to any caller that can reach a
 // bound address, with no credential of any kind -- `attach` and `transfer`
-// (Phase 64 gap G-64-1, owner decision 5, REQUIREMENTS.md) now answer
+// (Phase 64 gap G-64-1, owner decision 5) now answer
 // BEFORE the token gate too, by their broker-minted per-claim/per-stage
-// handle alone; see .planning/phases/64-files-as-bytes-both-directions/
-// evidence/64-g641-handle-only-authority.md for the full reversal record.
+// handle alone.
 // This drops the "every op requires the token" absolute the very first
 // version of this comment stated, but does not drop the credential
 // itself: monitor_claim (which mints an attach handle) and stage_file
@@ -722,9 +721,7 @@ function attachControlProtocol(server, opts, pendingAcquires) {
                 return;
             }
             // Phase 63 (SESS-02), REVERSED by Phase 64 gap G-64-1 (owner decision
-            // 5, REQUIREMENTS.md; see .planning/phases/64-files-as-bytes-both-
-            // directions/evidence/64-g641-handle-only-authority.md for the full
-            // record). Dispatched HERE, ahead of the token gate below, by the
+            // 5). Dispatched HERE, ahead of the token gate below, by the
             // broker-minted per-claim handle ALONE -- see this file's own header
             // "Auth:" paragraph and ControlRequestKind's own comment on `attach`.
             // `hello` above is no longer the ONLY op this listener answers before

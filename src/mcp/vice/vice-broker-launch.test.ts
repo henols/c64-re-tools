@@ -103,8 +103,7 @@ interface RunResult {
 // configured emulator binary path, paired only with a port-band check --
 // a short, ubiquitous identity like "/bin/sleep" could therefore let a
 // broker started by this suite SIGTERM/SIGKILL an unrelated process on a
-// developer's host (folded todo
-// `.planning/todos/pending/2026-08-12-broker-orphan-reap-substring-identity-match.md`).
+// developer's host.
 // The reap is now driven entirely by this broker's own on-disk allocation
 // record (broker-kill.mts's reapOrphanedInstances()), so that specific
 // hazard no longer exists -- the unique stub path is kept anyway as

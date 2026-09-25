@@ -36,12 +36,11 @@
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = resolve(HERE, "..", "..", "..", "..", "..");
 const VICE_DIR = join(HERE, "..", "..");
 const FIXTURE_DIR = HERE;
 
@@ -59,10 +58,7 @@ const MANIFEST_PATH = arg("manifest", join(FIXTURE_DIR, "exported-edit.manifest.
 const STORE_DOC = arg("store", join(FIXTURE_DIR, "hazard-subject.annostore.json"));
 const IMAGE = arg("image", join(FIXTURE_DIR, "hazard-subject.prg"));
 const OUT_PRG = arg("out", join(FIXTURE_DIR, "hazard-subject-exported-edit.prg"));
-const RECORD = arg(
-  "record",
-  join(REPO_ROOT, ".planning", "phases", "50-equivalence-and-modifiability", "evidence", "exported-edit-run.json"),
-);
+const RECORD = arg("record", join(FIXTURE_DIR, "exported-edit-run.json"));
 
 const sha256 = (buf) => createHash("sha256").update(buf).digest("hex");
 const hex4 = (n) => "$" + n.toString(16).toUpperCase().padStart(4, "0");

@@ -18,10 +18,9 @@
 // considered and rejected a unix-domain-socket alternative. Auth: `hello`
 // (plan 62-01) answers UNCONDITIONALLY, to any caller that can reach a
 // bound address, with no credential of any kind -- `attach` and `transfer`
-// (Phase 64 gap G-64-1, owner decision 5, REQUIREMENTS.md) now answer
+// (Phase 64 gap G-64-1, owner decision 5) now answer
 // BEFORE the token gate too, by their broker-minted per-claim/per-stage
-// handle alone; see .planning/phases/64-files-as-bytes-both-directions/
-// evidence/64-g641-handle-only-authority.md for the full reversal record.
+// handle alone.
 // This drops the "every op requires the token" absolute the very first
 // version of this comment stated, but does not drop the credential
 // itself: monitor_claim (which mints an attach handle) and stage_file
@@ -89,11 +88,10 @@ import type { ViceBackend } from "./backend-detect.mjs";
 // site and its own comment on why that placement is load-bearing.
 // `attach` joins as the TENTH member, Phase 63 (SESS-02) -- ORIGINALLY it
 // sat AFTER the token gate, in the same post-gate chain as every other
-// target-naming op; Phase 64 gap G-64-1 (owner decision 5, REQUIREMENTS.md)
+// target-naming op; Phase 64 gap G-64-1 (owner decision 5)
 // REVERSED that placement, moving it BEFORE the gate, dispatched by its
 // broker-minted per-claim handle alone -- see this file's own header
-// "Auth:" paragraph and .planning/phases/64-files-as-bytes-both-directions/
-// evidence/64-g641-handle-only-authority.md for the full record. Sent on a
+// "Auth:" paragraph. Sent on a
 // connection dedicated solely to becoming a relay splice: this listener
 // answers it once, then that socket's own line reader stops running (see
 // the relayMode flag inside attachControlProtocol()) and every further
@@ -478,9 +476,7 @@ export interface StartControlListenerOptions {
    * token check had already passed; Phase 64 gap G-64-1 (owner decision 5)
    * REVERSED that -- this callback now runs BEFORE the token check, by
    * design, with the presented handle as the sole authority (see this
-   * file's own header "Auth:" paragraph and
-   * .planning/phases/64-files-as-bytes-both-directions/evidence/
-   * 64-g641-handle-only-authority.md). Called AFTER this listener has
+   * file's own header "Auth:" paragraph). Called AFTER this listener has
    * already stopped its own line reader on this socket (see the relayMode
    * flag inside attachControlProtocol()) -- a synchronous splice inside
    * this callback can never race this connection's next `"data"` event.
@@ -1400,9 +1396,7 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
       }
 
       // Phase 63 (SESS-02), REVERSED by Phase 64 gap G-64-1 (owner decision
-      // 5, REQUIREMENTS.md; see .planning/phases/64-files-as-bytes-both-
-      // directions/evidence/64-g641-handle-only-authority.md for the full
-      // record). Dispatched HERE, ahead of the token gate below, by the
+      // 5). Dispatched HERE, ahead of the token gate below, by the
       // broker-minted per-claim handle ALONE -- see this file's own header
       // "Auth:" paragraph and ControlRequestKind's own comment on `attach`.
       // `hello` above is no longer the ONLY op this listener answers before

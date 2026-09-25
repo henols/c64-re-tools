@@ -520,7 +520,7 @@ export function resolveRelayChannelTarget(channel: MonitorChannel, targetId: str
 // ---------------------------------------------------------------------------
 // Bounded emulator-leg dial (G-64-4, plan 64-12, Task 1). A cold-launched
 // instance's binary-monitor port binds 55-142ms after spawn on real x64sc,
-// MEASURED (.planning/debug/cold-launch-relay-attach-race.md); the client's
+// MEASURED; the client's
 // own attach+first-PING lands 17-31ms after spawn. spliceRelay() used to
 // dial the emulator itself and splice immediately, with no wait for the TCP
 // connect to actually succeed -- so a cold session's `attached`

@@ -57,8 +57,7 @@ jobs:
         # `32303212069` sat ~25 minutes stalled against an unresponsive apt
         # mirror with zero log output before it had to be cancelled by hand --
         # `build` gates `release`, `publish-npm` and `release-on-merge`, so an
-        # unbounded stall here silently blocks every publish path. See the
-        # closed todo .planning/todos/completed/2026-08-19-ci-acme-install-has-no-timeout-or-retry.md.
+        # unbounded stall here silently blocks every publish path.
         timeout-minutes: 5
         run: |
           set -euo pipefail
@@ -151,9 +150,7 @@ jobs:
           # running to completion with zero failures in under two minutes
           # wall-clock, including the suite that provides the stdio proxy's
           # only end-to-end wire proof (BACK-05) and the two suites that hang
-          # locally outside a devcontainer (see the closed todo this comment
-          # replaces:
-          # .planning/todos/completed/2026-08-13-reconcile-ci-test-command-with-narrowed-gate.md).
+          # locally outside a devcontainer.
           # None of these suites needs a real emulator binary to reach its
           # own default-SKIP branch, so every one of them stays a no-op skip
           # on this runner even under the wide glob -- including the newest
