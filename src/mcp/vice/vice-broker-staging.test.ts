@@ -24,7 +24,6 @@ import {
   newControlToken,
   type StartControlListenerResult,
   type AcquireOutcome,
-  type RecycleOutcome,
   type StatusInstanceEntry,
   type HostStateFields,
   type MonitorClaimOutcome,
@@ -130,15 +129,6 @@ async function startStagingListenerForState(
       grant: { port: emulatorPort, url: `http://127.0.0.1:${emulatorPort}/mcp`, epochFile: "/tmp/staging-test-epoch.json", supervisorDir: "/tmp/staging-test" },
     }),
     onRelease: (requestId: string) => handleRelease(requestId, state),
-    onRecycle: async (): Promise<RecycleOutcome> => ({
-      port: null,
-      pid: null,
-      viceBin: null,
-      killStage: "no_signal",
-      epochBefore: null,
-      outcome: "grant_lookup_failed",
-      reason: "not exercised by vice-broker-staging.test.ts",
-    }),
     onStatus: (): StatusInstanceEntry[] => [],
     onHostState: (): HostStateFields => ({
       pid: process.pid,

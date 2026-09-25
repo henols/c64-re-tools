@@ -114,7 +114,7 @@ export interface VideoStandardResult {
  * reason this file itself could cause.
  *
  * WR-14 (07-REVIEW.md) added the EPOCH half. `session.targetId` survives both a
- * `stockReconnect()` and a `vice_recycle` respawn, so a `targetId`-keyed entry
+ * `stockReconnect()` and a broker crash-respawn, so a `targetId`-keyed entry
  * outlives the machine it describes -- a respawned instance can be a different
  * build or a different model entirely. Every entry therefore records the
  * `baselineEpoch` of the session that established it, and an entry whose epoch
@@ -173,10 +173,9 @@ export async function resolveVideoStandard(session: StockConnectSession): Promis
     // and must NOT be laundered into "assuming PAL".
     //
     // This is the last wire call inside Route B's readCycleBaseline(), which
-    // runStockLivenessBracket() calls -- so a socket that dies HERE used to be
+    // liveness-bracket calls -- so a socket that dies HERE used to be
     // swallowed, and 07-15's new `connection_lost` / `request_timeout`
-    // diagnosis_unavailable reason classes (which both the stock manifest and
-    // vice-wedge-triage/SKILL.md now promise) could never be reached from this
+    // diagnosis_unavailable reason classes could never be reached from this
     // path. The failure re-surfaced later, if at all, as
     // `evidence_gathering_failed`. The new classification is only ever as
     // honest as the narrowest catch on the path, and this was it.
@@ -354,7 +353,7 @@ export async function readCycleBaseline(session: StockConnectSession): Promise<C
  *
  * WR-14 (07-REVIEW.md): each entry records the `baselineEpoch` of the session
  * that recorded it. `session.targetId` survives a `stockReconnect()` AND a
- * `vice_recycle` respawn, so keying on it alone let the stopwatch compare a
+ * broker crash-respawn, so keying on it alone let the stopwatch compare a
  * baseline taken on one machine against a sample taken on its replacement.
  * Only Route A had a `delta < 0n` guard to catch that accidentally; Route B
  * compared two unrelated within-frame positions and answered
@@ -468,7 +467,7 @@ export const handleCyclesStopwatch: StockSessionHandler = async (args, session) 
   }
 
   // WR-14: the epoch check, BEFORE either route's arithmetic. `targetId`
-  // survives a stockReconnect() and a vice_recycle respawn, so a matching key
+  // survives a stockReconnect() and a broker crash-respawn, so a matching key
   // does not prove the baseline and the sample came from the same machine.
   // Only Route A had a `delta < 0n` guard that caught this by accident; Route B
   // happily subtracted two unrelated within-frame positions and answered

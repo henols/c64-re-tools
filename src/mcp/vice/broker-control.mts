@@ -1,6 +1,6 @@
 // broker-control.mts
 //
-// The framing, the token gate, acquire/release, recycle, status,
+// The framing, the token gate, acquire/release, status,
 // host_state, the arrival-ordered pending-acquire structure, and the
 // kernel-enforced singleton guard's low-level bind primitive. Also adds
 // `monitor_claim`/`monitor_release`: exclusive ownership of an instance's
@@ -26,7 +26,7 @@
 // version of this comment stated, but does not drop the credential
 // itself: monitor_claim (which mints an attach handle) and stage_file
 // (which mints a transfer handle) are BOTH still token-gated, and every
-// other op -- acquire, release, recycle, status, host_state,
+// other op -- acquire, release, status, host_state,
 // monitor_claim, monitor_release, host_tool, operation -- still gates on
 // the SAME per-boot capability token compared constant-time, checked
 // BEFORE any state read or write, until Phase 66 (RM-02) deletes
@@ -100,7 +100,7 @@ import type { ViceBackend } from "./backend-detect.mjs";
 // byte belongs to broker-relay.mts's spliceRelay(), never to this
 // JSON-line dispatcher again.
 // `operation` joins as the ELEVENTH member, Phase 63 (SESS-05) -- gated on
-// the SAME ownsTarget() predicate `monitor_claim`/`monitor_release`/`recycle`
+// the SAME ownsTarget() predicate `monitor_claim`/`monitor_release`
 // already share (never a bare target_id), and dispatched on the connection's
 // ordinary line reader like every op except `attach`/`transfer` -- it never
 // touches relayMode. Declares (or, with a `null` name, clears) the operation
@@ -111,7 +111,7 @@ import type { ViceBackend } from "./backend-detect.mjs";
 // StartControlListenerOptions' onOperation comment for why that is safe.
 // `stage_file` joins as the TWELFTH member, Phase 64 (XFER-04, D-01) --
 // gated on the SAME ownsTarget() predicate `monitor_claim`/`monitor_release`/
-// `recycle`/`operation` already share (never a bare target_id), and
+// `operation` already shares (never a bare target_id), and
 // dispatched on the connection's ordinary line reader -- it never touches
 // relayMode. Mints an opaque, broker-chosen handle and a broker-side path
 // the emulator itself must open (`emulator_filename`); the caller never
@@ -148,7 +148,7 @@ import type { ViceBackend } from "./backend-detect.mjs";
 // reader, never handing the connection to a splice. The legacy `host_tool`
 // literal, below the token gate, is UNTOUCHED by either -- two distinct
 // functions, never a shared literal or a mode flag (T-65-05).
-export type ControlRequestKind = "acquire" | "release" | "recycle" | "status" | "host_state" | "monitor_claim" | "monitor_release" | "host_tool" | "hello" | "attach" | "operation" | "stage_file" | "transfer" | "host_tool_stage" | "host_tool_run";
+export type ControlRequestKind = "acquire" | "release" | "status" | "host_state" | "monitor_claim" | "monitor_release" | "host_tool" | "hello" | "attach" | "operation" | "stage_file" | "transfer" | "host_tool_stage" | "host_tool_run";
 // `no_free_text_port` joins the vocabulary as its OWN code -- a stock
 // acquire that fails only on the SECOND (`-remotemonitor`) allocation is
 // reported distinctly from `no_free_port` (which still means the
@@ -226,25 +226,6 @@ export type AcquireOutcome =
   // for why this is a separate code rather than collapsing into the
   // existing `no_free_port` reason.
   | { ok: false; reason: "no_free_port" | "no_free_text_port" | "at_capacity" | "launch_in_flight" | "internal" };
-
-/** The recycle acknowledgement's business fields, field-for-field the same
- * set resources/vice-broker.sh's write_recycle_ack() emits (id, target_id,
- * port, x64sc_pid, vice_bin, kill_stage, epoch_before, outcome, reason) --
- * `version`/`acked_at` are file-envelope fields with no equivalent need on a
- * live connection and are deliberately dropped. The outcome values a real
- * onRecycle() implementation produces are a SUBSET of the values
- * vice-proxy.ts's recycleAckOutcomeMessage() switches on (this plan does
- * not author the direct fairness/completeness proof of every switch case --
- * only the ones this broker's own recycle path can actually produce). */
-export interface RecycleOutcome {
-  port: number | null;
-  pid: number | null;
-  viceBin: string | null;
-  killStage: string;
-  epochBefore: number | null;
-  outcome: string;
-  reason: string;
-}
 
 export interface StatusInstanceEntry {
   port: number;
@@ -469,13 +450,6 @@ export interface StartControlListenerOptions {
    * (whichever happens first) -- the kernel enforces the release including
    * on the client's own SIGKILL, since close always fires either way. */
   onRelease: (requestId: string) => void;
-  /** Called on `recycle`, ONLY after this listener has already confirmed the
-   * requesting connection holds the named target grant (T-01.6.2-31) -- a
-   * connection may only ever recycle the grant it itself holds; anything
-   * else is answered `denied` without this callback ever being invoked, so
-   * an injected kill/signal recorder observes nothing for a mismatched
-   * target. */
-  onRecycle: (targetId: string) => Promise<RecycleOutcome>;
   /** Called on `status` -- answers the question the dropped
    * broker-instances.json projection used to answer, computed on
    * demand. Synchronous: this broker holds every instance in one in-memory
@@ -490,7 +464,7 @@ export interface StartControlListenerOptions {
    * the SAME gate every other op runs, checked before any state is read or
    * written. `requestId` is this specific claim request's own correlation
    * id; `targetId` both resolves which instance is being claimed (the same
-   * way onRecycle's targetId resolves its own target) AND is the claiming
+   * way every target-naming op resolves its own target) AND is the claiming
    * identity compared against a conflicting holder; `channel` is the
    * resolved channel this request named -- see vice-broker.mts's
    * handleMonitorClaim() for the resolution and idempotency rules. */
@@ -585,7 +559,7 @@ export interface StartControlListenerOptions {
    * the SAME gate every other op runs. Handed its OWN function, declared
    * alongside these seven and NEVER composed from any of them -- that is
    * what gives the `host_tool` branch zero reachability into lease state:
-   * it cannot call onAcquire/onRelease/onRecycle/onStatus/onHostState/
+   * it cannot call onAcquire/onRelease/onStatus/onHostState/
    * onMonitorClaim/onMonitorRelease because nothing hands it a reference
    * to any of them. `raw` is the FULL, un-narrowed request object;
    * host-tool.mts's own normaliseHostToolRequest() is the one place it is
@@ -641,18 +615,6 @@ export interface StartControlListenerResult {
 export type ControlResponse =
   | { kind: "grant"; id: string; port: number; url: string; epoch_file: string; supervisor_dir: string; remote_monitor_port?: number }
   | { kind: "released" }
-  | {
-      kind: "recycle_ack";
-      id: string;
-      target_id: string;
-      port: number | null;
-      x64sc_pid: number | null;
-      vice_bin: string | null;
-      kill_stage: string;
-      epoch_before: number | null;
-      outcome: string;
-      reason: string;
-    }
   | { kind: "status"; instances: StatusInstanceEntry[] }
   | {
       kind: "host_state";
@@ -1278,8 +1240,7 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
 
     /**
      * THE per-connection ownership predicate every target-naming op is
-     * gated on -- the same rule `recycle` has enforced since this
-     * protocol's earliest version, now shared rather than copied.
+     * gated on, shared rather than copied.
      *
      * Before this existed, `monitor_claim`/`monitor_release` took `target_id`
      * from the request and passed it straight through, so any connection
@@ -1687,7 +1648,7 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
       // reach attemptAcquire() -- what actually makes this branch unable to
       // touch lease state is that opts.onHostTool is its OWN callback (see
       // StartControlListenerOptions' own comment), never composed from
-      // onAcquire/onRelease/onRecycle/onStatus/onHostState/onMonitorClaim/
+      // onAcquire/onRelease/onStatus/onHostState/onMonitorClaim/
       // onMonitorRelease.
       if (req.op === "host_tool") {
         opts
@@ -1739,43 +1700,6 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
           opts.onRelease(id);
         }
         writeLine(socket, { kind: "released" });
-      } else if (req.op === "recycle") {
-        const recycleId = typeof req.id === "string" && req.id !== "" ? req.id : defaultRequestId("recycle");
-        const targetId = typeof req.target_id === "string" ? req.target_id : "";
-        // T-01.6.2-31: a connection may only recycle the grant IT ITSELF
-        // holds. This check happens here, before onRecycle() is ever
-        // called, so a mismatched target never reaches the kill discipline
-        // and never signals anything -- an injected signal recorder stays
-        // empty for this case. Now expressed through the SAME ownsTarget()
-        // predicate monitor_claim/monitor_release use, so the three
-        // target-naming ops cannot drift apart.
-        if (!ownsTarget(targetId)) {
-          writeLine(socket, {
-            kind: "error",
-            code: "denied" as ControlErrorCode,
-            message: "recycle may only target the grant this connection itself holds",
-          });
-          return;
-        }
-        opts
-          .onRecycle(targetId)
-          .then((result) => {
-            writeLine(socket, {
-              kind: "recycle_ack",
-              id: recycleId,
-              target_id: targetId,
-              port: result.port,
-              x64sc_pid: result.pid,
-              vice_bin: result.viceBin,
-              kill_stage: result.killStage,
-              epoch_before: result.epochBefore,
-              outcome: result.outcome,
-              reason: result.reason,
-            });
-          })
-          .catch(() => {
-            writeLine(socket, { kind: "error", code: "internal" as ControlErrorCode, message: "recycle threw" });
-          });
       } else if (req.op === "status") {
         writeLine(socket, { kind: "status", instances: opts.onStatus() });
       } else if (req.op === "host_state") {
@@ -1914,7 +1838,7 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
         }
       } else if (req.op === "stage_file") {
         // Phase 64 (XFER-04, D-01). Gated on the SAME ownsTarget() predicate
-        // monitor_claim/monitor_release/recycle/operation already share --
+        // monitor_claim/monitor_release/operation already share --
         // dispatched on this connection's ORDINARY line reader; never
         // touches relayMode.
         const targetId = typeof req.target_id === "string" ? req.target_id : "";

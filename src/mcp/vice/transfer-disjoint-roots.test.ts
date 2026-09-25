@@ -54,7 +54,6 @@ import { startControlListener, newControlToken } from "./broker-control.mts";
 import type {
   StartControlListenerResult,
   AcquireOutcome,
-  RecycleOutcome,
   StatusInstanceEntry,
   HostStateFields,
   MonitorClaimOutcome,
@@ -158,15 +157,6 @@ async function startDisjointListener(
       },
     }),
     onRelease: (requestId: string) => handleRelease(requestId, state),
-    onRecycle: async (): Promise<RecycleOutcome> => ({
-      port: null,
-      pid: null,
-      viceBin: null,
-      killStage: "no_signal",
-      epochBefore: null,
-      outcome: "grant_lookup_failed",
-      reason: "not exercised by transfer-disjoint-roots.test.ts",
-    }),
     onStatus: (): StatusInstanceEntry[] => [],
     onHostState: (): HostStateFields => ({
       pid: process.pid,

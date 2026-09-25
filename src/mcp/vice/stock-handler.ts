@@ -79,9 +79,8 @@ export type StockSessionHandler = (args: Record<string, unknown>, session: Stock
 // the typed errors ensureStockSession()/stockConnect() can propagate into
 // well-formed refusal text, naming the tool. Never mentions "wedge",
 // "hung", or "unresponsive" -- a monitor-ownership conflict is the broker's
-// own enforcement of a DIFFERENT grant already holding this instance, a
-// state vice-wedge-triage's opening move must not be misdirected by into
-// treating as a wedged emulator.
+// own enforcement of a DIFFERENT grant already holding this instance, which
+// an agent must never mistake for a wedged emulator.
 // ---------------------------------------------------------------------------
 
 export function convertHandshakeError(toolName: string, err: unknown): StockErrorResult {

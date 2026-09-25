@@ -7,9 +7,9 @@
 // retiring together -- startHeartbeat()/the mtime-as-heartbeat
 // convention/touchLease()/pollGrant()/pollRecycleAck()/the request-grant-
 // denial-lease-recycle-ack directory tree) now that vice-proxy.ts's
-// acquisition, release AND recycle all run over the TCP control plane
+// acquisition and release run over the TCP control plane
 // (openBrokerControl()/BrokerControlSession below) instead. What survives:
-// the request-id primitives (the new client's own acquire()/recycle() still
+// the request-id primitives (the new client's own acquire() still
 // mint ids with newRequestId()), brokerRootDir()/brokerJsonPath() (the
 // discovery record's own location -- the machine-level root broker-home.mts
 // resolves, not any project's tree; see brokerRootDir()'s own comment below,
@@ -423,10 +423,7 @@ function acquireProfileFragment(profile?: LaunchProfile): { profile?: LaunchProf
 }
 
 /** The agent-session identity environment variable this resolver treats as
- * authoritative when set -- the SAME variable stock-recycle.ts's own
- * incident-record `session_id` field already reads (`process.env.
- * CLAUDE_CODE_SESSION_ID`, stock-recycle.ts:496) -- the one existing
- * precedent in this tree for "which agent session is this". Named as its
+ * authoritative when set (`process.env.CLAUDE_CODE_SESSION_ID`). Named as its
  * own constant so a reader does not have to hunt resolveSessionLabel()'s
  * body for the literal string. */
 const SESSION_LABEL_ENV_VAR = "CLAUDE_CODE_SESSION_ID";
@@ -643,14 +640,6 @@ export function acquireOverControlPlane(dir: string = brokerRootDir(), opts: Acq
  * CONTROL_ACQUIRE_TIMEOUT_MS's own declaration above). */
 export const ACQUIRE_TIMEOUT_MS: number = CONTROL_ACQUIRE_TIMEOUT_MS;
 
-/** The recycle bound. An earlier revision referenced the (now-deleted)
- * retiring pollRecycleAck()'s own RECYCLE_ACK_TIMEOUT_MS directly, so the
- * two could never drift apart while both existed; that predecessor is gone
- * entirely, so this reads the SAME environment variable directly -- the
- * value itself is unchanged (VICE_BROKER_RECYCLE_TIMEOUT_MS, default
- * 30000). Final tuning remains a future item. */
-export const RECYCLE_TIMEOUT_MS: number = Number(process.env.VICE_BROKER_RECYCLE_TIMEOUT_MS || 30000);
-
 /** Genuinely NEW: the file protocol never "connected" anywhere, so there is
  * no retiring value to carry forward for this one. A conservative bound for
  * a TCP connect over the docker bridge to a broker broker.json has already
@@ -695,14 +684,6 @@ export type ControlFailureKind =
 export type ControlAcquireResult = { ok: true; grant: AcquireGrant } | { ok: false; kind: ControlFailureKind; message: string };
 
 export type ControlReleaseResult = { ok: true };
-
-interface ControlRecycleAck {
-  outcome: string;
-  kill_stage: string;
-  reason: string;
-}
-
-export type ControlRecycleResult = { ok: true; ack: ControlRecycleAck } | { ok: false; kind: ControlFailureKind; message: string };
 
 interface ControlStatusInstanceEntry {
   port: number;
@@ -857,8 +838,7 @@ export interface MonitorOwnershipErrorOptions {
  * grant already holds this instance's monitor socket. Names the holding
  * grant and the port plainly, as an ownership
  * conflict -- a state the broker itself enforced, distinct from an emulator
- * that has stopped answering, and NOT a state the vice-wedge-triage skill's
- * opening move should ever be misdirected by.
+ * that has stopped answering.
  *
  * The claim this error reports on a refusal is made BEFORE any binmon
  * connect() is ever attempted: stock VICE services exactly one binmon
@@ -904,7 +884,6 @@ export interface BrokerControlSession {
    * every pre-existing call. */
   acquire(opts?: ControlDeadlineOptions & AcquireProfileOptions): Promise<ControlAcquireResult>;
   release(): Promise<ControlReleaseResult>;
-  recycle(targetId: string, opts?: ControlDeadlineOptions): Promise<ControlRecycleResult>;
   status(opts?: ControlDeadlineOptions): Promise<ControlStatusResult>;
   hostState(opts?: ControlDeadlineOptions): Promise<ControlHostStateResult>;
   /** Claims exclusive ownership of an instance's monitor socket BEFORE any
@@ -913,7 +892,7 @@ export interface BrokerControlSession {
    * the only way this refusal can ever be distinguishable from a wedge. */
   claimMonitor(opts: ClaimMonitorOptions): Promise<ClaimMonitorOutcome>;
   /** Releases a previously claimed monitor socket. Tolerates a broker that
-   * has already cleared the record (release/recycle/process-exit all clear
+   * has already cleared the record (release/process-exit both clear
    * it broker-side) -- a second release is `ok: true`, not an error. */
   releaseMonitor(opts: ReleaseMonitorOptions): Promise<ReleaseMonitorOutcome>;
   /** Declares (or, with `opts.name: null`, clears) the operation THIS
@@ -934,7 +913,7 @@ export interface BrokerControlSession {
    * SAME session -- never a second connection. Mints no path or filename
    * itself: the broker chooses both and returns them (`handle`,
    * `emulatorFilename`) in the reply. Gated broker-side by the SAME
-   * ownsTarget() predicate `claimMonitor`/`releaseMonitor`/`recycle` are, so
+   * ownsTarget() predicate `claimMonitor`/`releaseMonitor` are, so
    * this connection can only stage against the grant it itself holds. */
   stageFile(opts: StageFileOptions): Promise<StageFileOutcome>;
 }
@@ -955,8 +934,7 @@ export type OpenBrokerControlOutcome =
  * forwardToVice() reads activeInstance() from the same module (vice.ts)
  * that owns the state, not because this shape is stock-specific.
  *
- * `targetId` is the GRANT ID, not the port -- the exact same value
- * vice-proxy.ts's own `controlSession.recycle(grantId)` call site passes.
+ * `targetId` is the GRANT ID, not the port.
  * `brokerControl` is the SAME control session the grant was acquired
  * through; a stock handler must claim its monitor socket on this session,
  * never on one it opened itself (see stock-dispatch.ts's own
@@ -1195,28 +1173,6 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
     return { ok: true };
   }
 
-  async function recycle(targetId: string, opts: ControlDeadlineOptions = {}): Promise<ControlRecycleResult> {
-    const requestId = newRequestId();
-    const raw = await sendAndAwaitLine({ op: "recycle", id: requestId, target_id: targetId, token }, opts.timeoutMs ?? RECYCLE_TIMEOUT_MS);
-    if (!raw.ok) return raw;
-    const line = raw.line;
-    if (line.kind !== "recycle_ack") {
-      return { ok: false, kind: "protocol", message: `openBrokerControl: recycle got unexpected response kind ${String(line.kind)}` };
-    }
-    // Exactly the key set vice-proxy.ts's recycleAckOutcomeMessage() (lines
-    // 584-611) plus its caller (lines 707-713) read from the ack: outcome,
-    // kill_stage, reason -- documented at the point of use here rather than
-    // only in the plan, since this IS the point of use.
-    return {
-      ok: true,
-      ack: {
-        outcome: typeof line.outcome === "string" ? line.outcome : "unknown",
-        kill_stage: typeof line.kill_stage === "string" ? line.kill_stage : "unknown",
-        reason: typeof line.reason === "string" ? line.reason : "",
-      },
-    };
-  }
-
   async function status(opts: ControlDeadlineOptions = {}): Promise<ControlStatusResult> {
     // Reuses ACQUIRE_TIMEOUT_MS as a shared bound -- status is a synchronous,
     // in-memory read on the broker side (no launch, no kill involved), so it
@@ -1402,7 +1358,7 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
     return { ok: true, handle, emulatorFilename };
   }
 
-  return { acquire, release, recycle, status, hostState, claimMonitor, releaseMonitor, noteOperation, stageFile };
+  return { acquire, release, status, hostState, claimMonitor, releaseMonitor, noteOperation, stageFile };
 }
 
 /** Opens ONE session against the control plane: reads broker.json ONCE for

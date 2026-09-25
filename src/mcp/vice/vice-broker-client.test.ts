@@ -37,7 +37,6 @@ import {
   startControlListener,
   newControlToken,
   type AcquireOutcome,
-  type RecycleOutcome,
   type StatusInstanceEntry,
   type HostStateFields,
   type MonitorClaimOutcome,
@@ -315,7 +314,6 @@ interface FullBrokerDeps {
    * THIRD parameter carrying the already-sanitised session label. */
   onAcquire?: (id: string, profile?: LaunchProfile, label?: string | null) => Promise<AcquireOutcome>;
   onRelease?: (id: string) => void;
-  onRecycle?: (targetId: string) => Promise<RecycleOutcome>;
   onStatus?: () => StatusInstanceEntry[];
   onHostState?: () => HostStateFields;
   onMonitorClaim?: (requestId: string, targetId: string) => MonitorClaimOutcome;
@@ -352,9 +350,6 @@ async function startFullBrokerListener(deps: FullBrokerDeps = {}): Promise<{
     token,
     onAcquire: deps.onAcquire ?? (async () => ({ ok: false, reason: "internal" }) as AcquireOutcome),
     onRelease: deps.onRelease ?? (() => {}),
-    onRecycle:
-      deps.onRecycle ??
-      (async () => ({ port: null, pid: null, viceBin: null, killStage: "no_signal", epochBefore: null, outcome: "grant_lookup_failed", reason: "no stub configured" })),
     onStatus: deps.onStatus ?? (() => []),
     onHostState:
       deps.onHostState ??
@@ -412,14 +407,9 @@ async function startFullBrokerListener(deps: FullBrokerDeps = {}): Promise<{
 
 // ------------------------------------------------- openBrokerControl(): happy path
 
-test("openBrokerControl(): opens a session and drives all five request kinds, every one carrying the discovery record's token", async () => {
-  let recycleCalledWith: string | null = null;
+test("openBrokerControl(): opens a session and drives all four request kinds, every one carrying the discovery record's token", async () => {
   const { server, dir, rawLines } = await startFullBrokerListener({
     onAcquire: async () => ({ ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp", epochFile: "/tmp/epoch.json", supervisorDir: "/tmp/6600" } }),
-    onRecycle: async (targetId) => {
-      recycleCalledWith = targetId;
-      return { port: 6600, pid: 4242, viceBin: "x64sc", killStage: "sigterm", epochBefore: 3, outcome: "ok", reason: "" };
-    },
   });
   try {
     const opened = await openBrokerControl(dir);
@@ -445,17 +435,10 @@ test("openBrokerControl(): opens a session and drives all five request kinds, ev
     // boundary to the one known value or null.
     assert.equal(hostStateResult.hostState.backend, "stock");
 
-    const recycled = await session.recycle(acquired.grant.id);
-    assert.equal(recycled.ok, true, `recycle must succeed: ${JSON.stringify(recycled)}`);
-    if (!recycled.ok) return;
-    assert.equal(recycled.ack.outcome, "ok");
-    assert.equal(recycled.ack.kill_stage, "sigterm");
-    assert.equal(recycleCalledWith, acquired.grant.id);
-
     const released = await session.release();
     assert.equal(released.ok, true);
 
-    assert.ok(rawLines.length >= 4, `expected at least 4 request lines observed, saw ${rawLines.length}`);
+    assert.ok(rawLines.length >= 3, `expected at least 3 request lines observed, saw ${rawLines.length}`);
     // Every observed request line carries a `token` field equal to the
     // discovery record's own control_token -- asserted against the SAME
     // token startFullBrokerListener() minted and wrote into broker.json.
@@ -488,39 +471,6 @@ test("acquire result: the grant object has exactly the key set containerizeGrant
     assert.equal(acquired.ok, true);
     if (!acquired.ok) return;
     assert.deepEqual(Object.keys(acquired.grant).sort(), [...CONTAINERIZE_GRANT_FIELDS].sort());
-    await opened.session.release();
-  } finally {
-    server.close();
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-// vice-proxy.ts's recycleAckOutcomeMessage() (lines 584-611) plus its caller
-// (lines 707-713, `ack.kill_stage`/`ack.outcome`) -- the ONLY fields the
-// proxy ever reads off a recycle ack, read directly from source at the time
-// this test was written. This is deliberately narrower than the wire's full
-// nine-field recycle_ack response (broker-control.mts's own RecycleOutcome);
-// `port`/`x64sc_pid`/`vice_bin`/`epoch_before`/`id`/`target_id` have no
-// reader on the proxy side and are dropped here, matching plan 05's own
-// "documented SUBSET, never a bijection" precedent for this same ack.
-const OUTCOME_RENDERER_FIELDS = ["outcome", "kill_stage", "reason"];
-
-test("recycle result: the ack object has exactly the key set the proxy's outcome renderer reads", async () => {
-  const { server, dir } = await startFullBrokerListener({
-    onAcquire: async () => ({ ok: true, grant: { port: 6602, url: "http://127.0.0.1:6602/mcp", epochFile: "/tmp/e.json", supervisorDir: "/tmp/6602" } }),
-    onRecycle: async () => ({ port: 6602, pid: 1, viceBin: "x64sc", killStage: "sigterm", epochBefore: 1, outcome: "ok", reason: "" }),
-  });
-  try {
-    const opened = await openBrokerControl(dir);
-    assert.equal(opened.ok, true);
-    if (!opened.ok) return;
-    const acquired = await opened.session.acquire();
-    assert.equal(acquired.ok, true);
-    if (!acquired.ok) return;
-    const recycled = await opened.session.recycle(acquired.grant.id);
-    assert.equal(recycled.ok, true);
-    if (!recycled.ok) return;
-    assert.deepEqual(Object.keys(recycled.ack).sort(), [...OUTCOME_RENDERER_FIELDS].sort());
     await opened.session.release();
   } finally {
     server.close();
@@ -593,10 +543,9 @@ test("openBrokerControl(): a stale record returns a typed failure fast, without 
   });
 });
 
-test("openBrokerControl(): reads broker.json exactly once -- deleting it after the session opens does not affect five subsequent requests", async () => {
+test("openBrokerControl(): reads broker.json exactly once -- deleting it after the session opens does not affect four subsequent requests", async () => {
   const { server, dir } = await startFullBrokerListener({
     onAcquire: async () => ({ ok: true, grant: { port: 6603, url: "http://127.0.0.1:6603/mcp", epochFile: "/tmp/e.json", supervisorDir: "/tmp/6603" } }),
-    onRecycle: async () => ({ port: 6603, pid: 1, viceBin: "x64sc", killStage: "sigterm", epochBefore: 1, outcome: "ok", reason: "" }),
   });
   try {
     const opened = await openBrokerControl(dir);
@@ -616,8 +565,6 @@ test("openBrokerControl(): reads broker.json exactly once -- deleting it after t
     assert.equal(statusResult.ok, true, `status after deletion must still succeed: ${JSON.stringify(statusResult)}`);
     const hostStateResult = await opened.session.hostState();
     assert.equal(hostStateResult.ok, true, `hostState after deletion must still succeed: ${JSON.stringify(hostStateResult)}`);
-    const recycled = await opened.session.recycle(acquired.grant.id);
-    assert.equal(recycled.ok, true, `recycle after deletion must still succeed: ${JSON.stringify(recycled)}`);
     const released = await opened.session.release();
     assert.equal(released.ok, true, `release after deletion must still succeed`);
   } finally {
@@ -1588,7 +1535,6 @@ test("the client module's export list is exactly the surviving surface", () => {
     "CONTROL_ACQUIRE_TIMEOUT_MS",
     "acquireOverControlPlane",
     "ACQUIRE_TIMEOUT_MS",
-    "RECYCLE_TIMEOUT_MS",
     "CONTROL_CONNECT_TIMEOUT_MS",
     "openBrokerControl",
     // quick-260805-9ha: the dial-resolution layer's own two runtime exports.

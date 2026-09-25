@@ -531,8 +531,8 @@ export async function runReproducible(
   // timeout -- with the socket and the instance still very much alive. On that
   // path the frame anchor was left ARMED: temporary:false, stop:true, sitting
   // at a once-per-frame address. Every subsequent resume on that session then
-  // halts within one frame, which is indistinguishable from a wedge to
-  // vice-wedge-triage and poisons the instance for every later tool call.
+  // halts within one frame, which is indistinguishable from a wedge and
+  // poisons the instance for every later tool call.
   //
   // So delete the anchor when the instance is still there. `connected` is the
   // operative test (it is the observable that says whether a delete could even
@@ -605,7 +605,8 @@ export async function runReproducible(
         ? "the cleanup CHECKPOINT_DELETE sent after the timeout halted the emulated machine (on stock, any inbound byte does), " +
           "and nothing here resumed it -- this is expected, not a wedge. Call vice_execution_run to resume."
         : "the machine's run state could NOT be established: the cleanup CHECKPOINT_DELETE did not complete (see cleanupError) " +
-          "and/or the connection is gone, so nothing here can claim the machine is halted. Call vice_diagnose before acting.",
+          "and/or the connection is gone, so nothing here can claim the machine is halted. Call vice_execution_pause, then " +
+          "vice_registers_get, before acting. If neither answers, ask the user to restart the broker.",
       resumes: 1,
       resumesNote:
         "exactly one resume (EXIT) was sent for this wait, which is vice-sync.ts's own invariant in its stock-native " +

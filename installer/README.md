@@ -36,8 +36,9 @@ you pass `--force`.
 
 ## What gets installed
 
-- **Skills** — `acme-build`, `c64-memory-mapping`, `c64-program-recon`,
-  `c64-provenance-diff`, `c64-ram-capture`, `vice-wedge-triage`.
+- **Skills** — `acme-build`, `c64-disk-access`, `c64-memory-mapping`,
+  `c64-petcat`, `c64-program-recon`, `c64-provenance-diff`, `c64-ram-capture`,
+  `routine-queue-walker`.
 - **MCP server** — `@henols/vice-mcp`, exposing the `vice` tools.
 
 ## Requirements

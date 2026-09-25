@@ -12,7 +12,6 @@ import {
   CHANNEL_LOCK_ACQUIRE_TIMEOUT_MS,
   ChannelLockTimeoutError,
   acquireChannelLock,
-  tryAcquireChannelLock,
   currentChannelLockHolder,
   channelLockRefusalMessage,
   resetChannelLockForTests,
@@ -254,28 +253,6 @@ test("a stale handle's release() after re-acquisition does not release the new h
   assert.equal(stillHeld.operation, "second-holder");
 
   second.release();
-  assert.equal(currentChannelLockHolder(), null);
-});
-
-// ---------------------------------------------------------------------------
-// tryAcquireChannelLock(): synchronous, no queueing.
-// ---------------------------------------------------------------------------
-
-test("tryAcquireChannelLock() returns null synchronously while held -- no await between the first acquire and the try", async () => {
-  const handle = await acquireChannelLock({ channel: "binary", operation: "holder-for-try" });
-  // No `await` between the acquire above settling and this call -- the
-  // acceptance criterion requires the try to be observed synchronously
-  // against the already-settled holder.
-  const attempt = tryAcquireChannelLock({ channel: "text", operation: "diagnostic-probe" });
-  assert.equal(attempt, null);
-  handle.release();
-});
-
-test("tryAcquireChannelLock() grants immediately when free, and never queues", async () => {
-  const handle = tryAcquireChannelLock({ channel: "binary", operation: "diagnostic-probe" });
-  assert.ok(handle);
-  assert.equal(handle.holder.channel, "binary");
-  handle.release();
   assert.equal(currentChannelLockHolder(), null);
 });
 

@@ -72,35 +72,10 @@ export interface InstanceRecord {
    * epoch.json record broker-epoch.mts writes. */
   epoch?: number;
   /** Set BEFORE any signal is sent to this instance's child (T-01.6.2-21)
-   * -- the exit handler reads this to distinguish a broker-ordered death
-   * from a crash (respawn). NARROWED (plan 13): this field alone no longer
-   * decides whether a replacement follows -- it answers only "did the
-   * broker order this death," never "should a replacement follow." That
-   * second, separate question is respawnAfterKill below. Before plan 13
-   * there was exactly one kind of broker-ordered death (a release, which
-   * never respawns), so one boolean silently answered both questions; a
-   * recycle introduces a second kind whose answer to the second question
-   * differs, which is why the two are split here. The name is kept
-   * unchanged even though its meaning narrowed: five rows of
-   * 01.6.2-VALIDATION.md's disposition ledger cite, by exact test name, the
-   * shutdown test whose title contains it, and renaming would force
-   * cosmetic edits to the artifact whose honesty is this gap closure's own
-   * first failed truth. Without this field, EVERY broker-ordered death
-   * would be misread as a crash and respawned, silently breaking
-   * kill-never-recycle. */
+   * -- the exit handler reads this to tell a broker-ordered death, which is
+   * final, from a crash, which respawns. Without it every broker-ordered
+   * death would be respawned, silently breaking kill-never-recycle. */
   deliberateKill?: boolean;
-  /** The answer to a question separate from deliberateKill's own: whether a
-   * replacement follows this broker-ordered death, on the SAME port. Set
-   * TOGETHER with deliberateKill, before any signal is sent (same ordering
-   * requirement, same reason) -- vice-broker.mts's shared marker-and-intent
-   * setter is the one place that sets both together, so no call site can
-   * set one and forget the other. Absent or false means the death is final
-   * (a release); true means the exit handler relaunches on the same port,
-   * carrying the pre-kill crash history and backoff forward UNCHANGED and
-   * restoring a granted pre-kill state (a recycle). Meaningless when
-   * deliberateKill is not also set -- an unexplained crash never consults
-   * this field. */
-  respawnAfterKill?: boolean;
   /** Timestamps (ms, per the injected clock) of this instance's recent
    * crashes still inside the crash window -- carried FORWARD across
    * respawns (a fresh InstanceRecord is created on every relaunch) so the
@@ -130,8 +105,7 @@ export interface InstanceRecord {
   // a successful monitor_claim for that channel, cleared by
   // clearMonitorClient() below for that one channel on an explicit
   // monitor_release, and cleared for EVERY channel together on this
-  // instance's own release/recycle (vice-broker.mts's handleRelease() /
-  // handleRecycleForRealBroker()) and on the instance's process exit
+  // instance's own release (vice-broker.mts's handleRelease()) and on the instance's process exit
   // (broker-launch.mts's crash-supervision handleExit()) -- so a client
   // that died without releasing can never permanently lock the instance on
   // any channel.
@@ -249,8 +223,8 @@ export interface InstanceRecord {
 
 /** Clears ONE channel's entry when `channel` is passed (an explicit
  * `monitor_release` for that channel), or EVERY channel's entry when it is
- * omitted (the whole record's ownership is going away -- recycle, release,
- * or the instance's own process exit; see InstanceRecord.monitorClients'
+ * omitted (the whole record's ownership is going away -- a release or the
+ * instance's own process exit; see InstanceRecord.monitorClients'
  * own header comment for the exact call sites of each case) -- so a dead or
  * torn-down client can never hold this lock forever, on any channel. The
  * ONE place a holder entry is cleared, apart from broker-launch.mts's
@@ -281,10 +255,7 @@ export interface GrantRecord {
    * port for an unrelated cold launch, or a give-up). Comparing this field
    * against the port's current occupant's own pid before releasing is what
    * proves "the same process this grant was actually issued for," not
-   * merely "whatever now holds this port number." A legitimate recycle
-   * (broker-launch.mts's handleExit()) keeps this field in sync with the
-   * respawned record's own pid, so the check never misfires against this
-   * project's own kill-never-recycle design. */
+   * merely "whatever now holds this port number." */
   pid: number | null;
   /** The client-declared name of whatever operation this grant's own
    * connection currently has in flight, and the moment (Date.now()) it was
@@ -338,7 +309,7 @@ export interface BrokerState {
    *    broker-launch.mts's acquirePortAndLaunch() -- this one IS released,
    *    by that module's deleteInstanceRecord(), the moment the instance
    *    holding it is torn down for good. It survives a
-   *    crash-respawn or a recycle, because the replacement instance reuses the
+   *    crash-respawn, because the replacement instance reuses the
    *    same second port exactly as it reuses the same primary port.
    *
    * Nothing here distinguishes the two: population 2's entries are simply
@@ -564,7 +535,7 @@ export interface NextFreePortOptions {
 // process until the ENTIRE scan, spawn and record sequence had already
 // resolved, confirmed with the real production functions in isolation
 // before this fix). That is a real liveness gap independent of this
-// plan's own test -- a release, a recycle or a status request over an
+// plan's own test -- a release or a status request over an
 // UNRELATED connection would be held up for as long as a contended scan
 // takes, not merely a competing acquire. Yielding via setImmediate every
 // few candidates restores that liveness at negligible cost (the scan

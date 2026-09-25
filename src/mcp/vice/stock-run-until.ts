@@ -9,11 +9,9 @@
 // stock-only `timeout_ms` argument defaulting to 30000, the same default
 // VICE_MCP_TIMEOUT_MS already uses, so one number governs both layers.
 //
-// WHY THIS FILE EXISTS: the wedge-triage skill documents `vice_run_until` as
-// having NO working timeout on stock today -- a call against an address that
+// WHY THIS FILE EXISTS: without a timeout, a call against an address that
 // never executes is indistinguishable from a genuine wedge. This module is
-// what bounds that wait and tells the two apart, and is one of the last two
-// skill-called tools missing on the stock backend.
+// what bounds that wait and tells the two apart.
 //
 // WHAT NOT TO DO:
 //   - Never wrap the three cleanup paths (hit / timeout / restarted) in one
@@ -430,8 +428,9 @@ export const handleRunUntil: StockSessionHandler = async (args, session, _deps) 
     ? "the cleanup CHECKPOINT_DELETE sent after the timeout halted the emulated machine (on stock, any inbound byte does), and " +
       "nothing here resumed it -- this is expected, not a wedge. Call vice_execution_run to resume."
     : "the machine's run state could NOT be established: the cleanup CHECKPOINT_DELETE did not complete (see cleanupError) " +
-      "and/or the connection is gone, so nothing here can claim the machine is halted. Call vice_diagnose before acting -- " +
-      "in particular do not assume vice_execution_run will reach this instance.";
+      "and/or the connection is gone, so nothing here can claim the machine is halted. Call vice_execution_pause, then " +
+      "vice_registers_get, before acting -- in particular do not assume vice_execution_run will reach this instance. If " +
+      "neither answers, ask the user to restart the broker.";
 
   const payload: Record<string, unknown> = {
     requested: "run_until",
@@ -443,7 +442,7 @@ export const handleRunUntil: StockSessionHandler = async (args, session, _deps) 
     machineHaltedNote,
     explanation:
       "an address that never executes within the timeout window is, from the caller's side, indistinguishable from " +
-      "a genuinely wedged emulator -- see vice-wedge-triage/SKILL.md. This bounded answer means the address itself " +
+      "a genuinely wedged emulator. This bounded answer means the address itself " +
       "did not execute in time, not that the connection is unresponsive. Whether the machine is now stopped -- and " +
       "therefore whether vice_execution_run is the right next call -- is reported by machineHalted and " +
       "machineHaltedNote; read those rather than assuming either way.",

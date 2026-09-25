@@ -66,7 +66,7 @@ import { repoRoot } from "./repo-root.ts";
 // pollGrant()'s ACQUIRE_TIMEOUT_MS in this role) is already exported for
 // exactly this purpose.
 import { ACQUIRE_TIMEOUT_MS } from "./vice-broker-client.ts";
-// Plan 01.6.2-07: the proxy's acquisition/release/recycle paths now run over
+// Plan 01.6.2-07: the proxy's acquisition/release paths now run over
 // the TCP control plane instead of the file protocol, so this file drives a
 // REAL control listener (broker-control.mts's own startControlListener(),
 // the exact module the proxy's client speaks to) instead of writing
@@ -77,7 +77,6 @@ import {
   startControlListener,
   newControlToken,
   type AcquireOutcome,
-  type RecycleOutcome,
   type RelayAttachOutcome,
   type StageFileOutcome as BrokerStageFileOutcome,
   type FileTransferRequest,
@@ -729,15 +728,13 @@ test("tools/list reads the committed snapshot with no emulator", async () => {
     const resp = await proxy.nextMessage();
     const tools = resp.result.tools;
     // Both fixture tools, PLUS the always-present synthetic
-    // vice_result_continue tool (task 3), vice_recycle (plan 01.3-01), and
-    // vice_diagnose (plan 01.3-02) -- tools/list never omits a synthetic
-    // tool. D-13 (plan 65-02) removed the 25 curated anno_* tools from this
+    // vice_result_continue tool (task 3) -- tools/list never omits it. D-13 (plan 65-02) removed the 25 curated anno_* tools from this
     // count outright; this proxy process was not started with
     // VICE_TEST_FIXTURE_TOOL, so the test-only fixture tool is absent too.
     assert.equal(
       tools.length,
-      2 + 3,
-      "both fixture tools plus all three synthetic tools must come back",
+      2 + 1,
+      "both fixture tools plus the synthetic vice_result_continue tool must come back",
     );
 
     const byName = Object.fromEntries(tools.map((t: any) => [t.name, t]));
@@ -790,15 +787,13 @@ test("tools/list survives a missing or corrupt snapshot", async () => {
         proxy.send({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
         const resp = await proxy.nextMessage();
         // "Empty tools array" means empty of MANIFEST-derived tools -- the
-        // always-present synthetic tools (vice_result_continue, task 3;
-        // vice_recycle, plan 01.3-01; and vice_diagnose, plan 01.3-02) are
-        // not sourced from the manifest at all, so a broken manifest can't
-        // take any of them down with it. D-13 (plan 65-02) removed the 25
+        // always-present synthetic vice_result_continue tool is not sourced
+        // from the manifest at all, so a broken manifest can't take it down. D-13 (plan 65-02) removed the 25
         // curated anno_* tools from this list outright.
         assert.deepEqual(
           resp.result.tools.map((t: any) => t.name),
-          ["vice_result_continue", "vice_recycle", "vice_diagnose"],
-          `expected only the synthetic tools for ${manifestFile}`
+          ["vice_result_continue"],
+          `expected only the synthetic tool for ${manifestFile}`
         );
 
         // The child must still be alive and answer a SUBSEQUENT
@@ -815,7 +810,7 @@ test("tools/list survives a missing or corrupt snapshot", async () => {
 
         proxy.send({ jsonrpc: "2.0", id: 4, method: "tools/list", params: {} });
         const secondList = await proxy.nextMessage();
-        assert.deepEqual(secondList.result.tools.map((t: any) => t.name), ["vice_result_continue", "vice_recycle", "vice_diagnose"]);
+        assert.deepEqual(secondList.result.tools.map((t: any) => t.name), ["vice_result_continue"]);
 
         assert.equal(proxy.child.exitCode, null, "the proxy process must still be running");
         assert.equal(proxy.child.killed, false);
@@ -886,20 +881,7 @@ test("tools/list's full output matches the manifest exactly (name set, order, sc
   // name carried -- there is no deny list in shipped code any more (Plan
   // 55-03 confirmed DENY_LIST: 0 hits in vice-proxy.ts), so that clause
   // named a mechanism that does not exist and is dropped from both the name
-  // and the body below. The actual failure was ORDER: `vice_recycle` and
-  // `vice_diagnose` are now genuinely present in tools-manifest.stock.json
-  // (Plan 55-04 Task 2's own measurement), so they already appear once, at
-  // their natural manifest position, via `expectedManifestNames` below --
-  // the old `expectedOrder` appended them a SECOND time after
-  // vice_result_continue, a leftover from when both were synthetic-only and
-  // absent from the manifest. `tools{}` in vice-proxy.ts is a name-keyed
-  // record (whichever assignment to a given key runs LAST wins, but
-  // insertion ORDER is set at FIRST assignment and does not move on a later
-  // overwrite -- see resolveAdvertisedToolDefinition()'s own header
-  // comment), so vice_recycle/vice_diagnose's insertion position is fixed
-  // by the manifest loop that runs first; the later
-  // `tools[RECYCLE_TOOL.name] = ...`/`tools[DIAGNOSE_TOOL.name] = ...`
-  // lines change only the RUNNER, never the position.
+  // and the body below.
   const manifestText = readFileSync(join(HERE, "tools-manifest.stock.json"), "utf8");
   const manifest = JSON.parse(manifestText);
   const expectedManifestNames = manifest.tools.map((t: any) => t.name);
@@ -907,10 +889,9 @@ test("tools/list's full output matches the manifest exactly (name set, order, sc
   // registration order IS the wire order here, and that is a real contract
   // a client can depend on -- @mastra/mcp's tools/list handler answers over
   // the registry vice-proxy.ts builds, in the order tools{}'s keys were
-  // first inserted: the manifest loop (manifest order, with vice_recycle/
-  // vice_diagnose falling wherever the manifest itself places them), then
-  // vice_result_continue (the one synthetic still absent from the manifest,
-  // so its key is inserted fresh, after the loop) last. D-13 (plan 65-02)
+  // first inserted: the manifest loop (manifest order), then
+  // vice_result_continue (absent from the manifest, so its key is inserted
+  // fresh, after the loop) last. D-13 (plan 65-02)
   // deleted the anno_* loop that used to be registered after it; this proxy
   // process is not started with VICE_TEST_FIXTURE_TOOL, so the test-only
   // fixture tool never joins this order either. This is asserted, not left
@@ -940,7 +921,7 @@ test("tools/list's full output matches the manifest exactly (name set, order, sc
     // (a) ORDER parity -- see the ORDERING DECISION comment above this
     // block: registration order is the wire order, and it is a real,
     // asserted contract here, not an incidental artifact.
-    assert.deepEqual(actualNames, expectedOrder, "the wire tools/list order must match the manifest's own order (vice_recycle/vice_diagnose included, at their manifest position), vice_result_continue then anno_* appended last");
+    assert.deepEqual(actualNames, expectedOrder, "the wire tools/list order must match the manifest's own order, with vice_result_continue appended last");
 
     // (b) per-tool inputSchema deep-equal against the manifest's own raw
     // schema, for EVERY manifest-derived tool, not just vice_ping.
@@ -1931,12 +1912,11 @@ async function handshake(proxy: ProxyHandle): Promise<void> {
 
 interface StubBrokerDeps {
   onAcquire?: () => Promise<AcquireOutcome>;
-  onRecycle?: (targetId: string) => Promise<RecycleOutcome>;
 }
 
 /** Starts a REAL control listener (broker-control.mts's own
  * startControlListener(), the exact module the proxy's control-plane client
- * speaks to) bound on a kernel-chosen port, with injectable acquire/recycle
+ * speaks to) bound on a kernel-chosen port, with injectable acquire
  * stubs, and writes dir/broker.json naming it as the control endpoint with a
  * fresh heartbeat -- matching the idiom vice-broker-client.test.ts's own
  * startFullBrokerListener() already established for the client side. This is
@@ -1951,17 +1931,6 @@ async function startControlBroker(dir: string, deps: StubBrokerDeps = {}) {
     token,
     onAcquire: deps.onAcquire ?? (async () => ({ ok: false, reason: "internal" }) as AcquireOutcome),
     onRelease: () => {},
-    onRecycle:
-      deps.onRecycle ??
-      (async () => ({
-        port: null,
-        pid: null,
-        viceBin: null,
-        killStage: "no_signal",
-        epochBefore: null,
-        outcome: "grant_lookup_failed",
-        reason: "no stub configured",
-      })),
     onStatus: () => [],
     onHostState: () => ({
       pid: process.pid,
@@ -2024,16 +1993,12 @@ async function startControlBroker(dir: string, deps: StubBrokerDeps = {}) {
  * listener's own server and the one socket it accepted (so a caller can
  * observe the connection closing). Shared by every test below that needs a
  * REAL session held before it can meaningfully assert that ending it
- * releases the connection. `onRecycle`, if given, wires the SAME listener's
- * recycle stub -- so a test needing both an acquired session and control
- * over its later recycle acknowledgement (e.g. via
- * makeControllableRecycle()) does not need a second listener. */
+ * releases the connection. */
 async function acquireLeaseViaBroker(
   proxy: ProxyHandle,
   dir: string,
   targetPort: number,
   callId: number,
-  onRecycle?: (targetId: string) => Promise<RecycleOutcome>
 ) {
   const { server, sockets } = await startControlBroker(dir, {
     onAcquire: async () => ({
@@ -2045,7 +2010,6 @@ async function acquireLeaseViaBroker(
         supervisorDir: join(dir, String(targetPort)),
       },
     }),
-    onRecycle,
   });
 
   proxy.send({ jsonrpc: "2.0", id: callId, method: "tools/call", params: { name: "vice_ping", arguments: {} } });
@@ -3440,39 +3404,6 @@ test("output-limit warning: exactly one stderr line when MAX_MCP_OUTPUT_TOKENS i
 });
 
 // ---------------------------------------------------------------------------
-// Plan 01.3-01 task 2: vice_recycle's proxy-side half -- every failure mode
-// returns a well-formed result (never a throw, never a hang), the incident
-// record is written before the request (D-17), and a confirmed recycle
-// re-baselines the epoch guard. Every test here redirects incident-
-// record.mjs's own writes via VICE_INCIDENTS_DIR (its test-only override,
-// mirroring VICE_POOL_DIR) so nothing here ever touches the real, permanent
-// .planning/incidents/.
-// ---------------------------------------------------------------------------
-
-function tmpIncidentsDir() {
-  return mkdtempSync(join(tmpdir(), "vice-proxy-incidents-"));
-}
-
-test("vice_recycle: with the endpoint override set returns a well-formed error result naming that no broker is in the loop, writes no request", async () => {
-  const incidentsDir = tmpIncidentsDir();
-  const { server } = startStandInServer();
-  const port = await listen(server);
-  const proxy = startProxy({ VICE_MCP_URL: `http://127.0.0.1:${port}/mcp`, VICE_INCIDENTS_DIR: incidentsDir });
-  try {
-    await handshake(proxy);
-    proxy.send({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "vice_recycle", arguments: { reason: "test" } } });
-    const resp = await proxy.nextMessage();
-    assert.equal(resp.result.isError, true);
-    assert.match(resp.result.content[0].text, /VICE_MCP_URL/);
-    assert.equal(readdirSync(incidentsDir).length, 0, "no incident record must be written when there is no broker to ask");
-  } finally {
-    proxy.child.kill("SIGKILL");
-    await new Promise((resolve) => server.close(resolve));
-    rmSync(incidentsDir, { recursive: true, force: true });
-  }
-});
-
-// ---------------------------------------------------------------------------
 // Plan 01.3-01 task 2: the two structural guards keeping this phase inside
 // the only-permitted-route rule (criteria 5, 8, 9 in 01.3-VALIDATION.md).
 // ---------------------------------------------------------------------------
@@ -3542,76 +3473,6 @@ test("structural: the set of source files under src/mcp/vice/ containing a netwo
     `the network-call module set changed -- expected exactly ["broker-launch.mts"], got ${JSON.stringify(offenders)}. ` +
       "A module reaching the host outside the sanctioned transport is the violation, not merely a style break."
   );
-});
-
-test("structural: of the three proxy-local synthetic tools, only vice_result_continue is absent from tools-manifest.stock.json; all three appear in a live tools/list response", async () => {
-  // Plan 55-04: re-measured. vice-proxy.ts registers exactly THREE tool
-  // definitions outside the plain manifest-loop registration --
-  // RESULT_CONTINUE_TOOL, RECYCLE_TOOL, DIAGNOSE_TOOL -- not two. This test
-  // used to assume vice_recycle was, like vice_result_continue, never added
-  // to the committed manifest; that assumption is now false: `vice_recycle`
-  // and `vice_diagnose` are BOTH present in tools-manifest.stock.json today
-  // (their schema is manifest-derived; only their RUNNER is still the
-  // proxy-local handleRecycle()/handleDiagnose() pair, wired via
-  // `stockDispatch.resolveAdvertisedToolDefinition()` after the manifest
-  // loop already registered them -- see vice-proxy.ts's own registration
-  // order). vice_result_continue is the one synthetic that remains served
-  // ENTIRELY proxy-local, absent from the manifest by design (D-E).
-  //
-  // The three names are extracted from the source's own object literals
-  // rather than hand-typed, so this guard cannot drift the same way twice:
-  // a fourth synthetic definition, or a rename of any of the three, is
-  // picked up automatically the next time this test runs.
-  const proxySrc = readFileSync(join(HERE, "vice-proxy.ts"), "utf8");
-  const SYNTHETIC_TOOL_CONSTS = ["RESULT_CONTINUE_TOOL", "RECYCLE_TOOL", "DIAGNOSE_TOOL"];
-  const syntheticNames = SYNTHETIC_TOOL_CONSTS.map((constName) => {
-    const m = proxySrc.match(new RegExp(`const ${constName}: ToolDefinition = \\{[\\s\\S]*?name: "([^"]+)"`));
-    assert.ok(m, `expected to find ${constName}'s own name field in vice-proxy.ts`);
-    return m![1];
-  });
-
-  const manifest = JSON.parse(readFileSync(join(HERE, "tools-manifest.stock.json"), "utf8"));
-  const manifestNames = new Set(manifest.tools.map((t: any) => t.name));
-  const absentFromManifest = syntheticNames.filter((n) => !manifestNames.has(n));
-  assert.deepEqual(
-    absentFromManifest.sort(),
-    ["vice_result_continue"],
-    `expected only vice_result_continue absent from tools-manifest.stock.json among the proxy-local synthetics ${JSON.stringify(syntheticNames)}; got ${JSON.stringify(absentFromManifest)} absent`
-  );
-
-  const { server } = startStandInServer();
-  const port = await listen(server);
-  const proxy = startProxy({ VICE_MCP_URL: `http://127.0.0.1:${port}/mcp` });
-  try {
-    await handshake(proxy);
-    proxy.send({ jsonrpc: "2.0", id: 3, method: "tools/list", params: {} });
-    const resp = await proxy.nextMessage();
-    const names = resp.result.tools.map((t: any) => t.name);
-    for (const n of syntheticNames) {
-      assert.ok(names.includes(n), `${n} must be present in a live tools/list response`);
-    }
-  } finally {
-    proxy.child.kill("SIGKILL");
-    await new Promise((resolve) => server.close(resolve));
-  }
-});
-
-test("vice_diagnose appears in tools/list alongside the other synthetic tools", async () => {
-  const { server } = startStandInServer();
-  const port = await listen(server);
-  const proxy = startProxy({ VICE_MCP_URL: `http://127.0.0.1:${port}/mcp` });
-  try {
-    await handshake(proxy);
-    proxy.send({ jsonrpc: "2.0", id: 3, method: "tools/list", params: {} });
-    const resp = await proxy.nextMessage();
-    const names = resp.result.tools.map((t: any) => t.name);
-    assert.ok(names.includes("vice_diagnose"), "vice_diagnose must be present in a live tools/list response");
-    assert.ok(names.includes("vice_recycle"));
-    assert.ok(names.includes("vice_result_continue"));
-  } finally {
-    proxy.child.kill("SIGKILL");
-    await new Promise((resolve) => server.close(resolve));
-  }
 });
 
 // -----------------------------------------------------------------------
@@ -4040,15 +3901,6 @@ async function g6408StartFixture(
       };
     },
     onRelease: () => {},
-    onRecycle: async () => ({
-      port: null,
-      pid: null,
-      viceBin: null,
-      killStage: "no_signal",
-      epochBefore: null,
-      outcome: "grant_lookup_failed",
-      reason: "not exercised by this fixture",
-    }),
     onStatus: () => [],
     onHostState: () => ({
       pid: process.pid,

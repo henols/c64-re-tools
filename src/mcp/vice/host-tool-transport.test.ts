@@ -31,7 +31,6 @@ import {
   startControlListener,
   type StartControlListenerResult,
   type AcquireOutcome,
-  type RecycleOutcome,
   type StatusInstanceEntry,
   type HostStateFields,
   type MonitorClaimOutcome,
@@ -110,15 +109,6 @@ function baseListenerOptions(onHostTool: (raw: unknown) => Promise<unknown>) {
   return {
     onAcquire: async (): Promise<AcquireOutcome> => ({ ok: false, reason: "internal" }) as AcquireOutcome,
     onRelease: (): void => {},
-    onRecycle: async (): Promise<RecycleOutcome> => ({
-      port: null,
-      pid: null,
-      viceBin: null,
-      killStage: "no_signal",
-      epochBefore: null,
-      outcome: "grant_lookup_failed",
-      reason: "no stub configured",
-    }),
     onStatus: (): StatusInstanceEntry[] => [],
     onHostState: (): HostStateFields => ({
       pid: process.pid,

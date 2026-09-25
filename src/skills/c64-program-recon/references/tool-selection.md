@@ -18,9 +18,8 @@ usage, not measured). Individual rows that have since been exercised live are ma
 | Decode sprite data | `vice_sprite_get` / `vice_sprite_inspect` |
 | Find a known byte pattern | `vice_memory_search` |
 | Carry labels across sessions | `vice_symbols_load` / `vice_symbols_lookup` — ACME `--vicelabels` emits the format they consume. The annotation store's own export into that format is **withdrawn as of 2026-08-29, and no phase currently owns its return**. An earlier forecast named a numbered phase for it, and that forecast is superseded now |
-| Is the machine wedged, or did it stop itself? | `vice_diagnose` — five-state verdict with its evidence (one state is `monitor_held_elsewhere`, because this monitor serves exactly one client at a time). **Reachable and proxy-intercepted as of 2026-08-04** (verified live). Triage tree: `vice-wedge-triage` |
-| Replace a wedged instance | `vice_recycle` — destructive, requires a `reason`, and that reason is written into `.c64-re-tools/incidents/` **before** anything is killed. The reason *is* the evidence record |
-| Read the restart epoch | **No tool does.** The proxy compares it around every forwarded call and raises drift itself. A value comes from that error or from `vice_diagnose` |
+| Did the machine stop itself at my own checkpoint? | `vice_checkpoint_list`, then `vice_registers_get` — a PC sitting on an armed address is a self-inflicted stop, not a wedge. Resume with `vice_execution_run` |
+| Read the restart epoch | **No tool does.** The proxy compares it around every forwarded call and raises drift itself. A value comes from that error |
 
 ## Delegate rather than restate
 
@@ -64,18 +63,12 @@ such construction exists. Use this alongside, never instead of, the runtime-evid
 routes above and in the sibling skills — a region with no finding still needs a human decision before it is
 moved.
 
-## Three traps in this table
+## Two traps in this table
 
 **`vice_run_until`'s `timeout_ms` bounds the wait.** `timeout_ms` (default 30000, ceiling 600000)
 bounds a run to an address the program never reaches, and a timed-out answer says the machine is
 left stopped rather than looking like a wedged emulator. Prefer `vice_checkpoint_add` + a bounded
-poll when the address is a hypothesis rather than a certainty — see `vice-wedge-triage` for the
-full triage judgement and its live evidence. Do not restate it here.
-
-**`vice_diagnose` leaves the machine paused.** When it measures a cycle bracket it resumes the
-machine once or twice and then leaves it **paused** — resuming is your own next call. And a
-`checkpoint_trap` verdict means the machine stopped *itself* at an armed checkpoint: it must
-**not** be recycled, because recycling a self-inflicted stop destroys a healthy instance.
+poll when the address is a hypothesis rather than a certainty.
 
 **Prefer the `*_get_state` calls, but know they pause.** They avoid the raw-register read
 hazards, but most state reads pause the emulator. Read everything first, poll with `vice_ping`,

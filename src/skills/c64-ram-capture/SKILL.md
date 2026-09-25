@@ -190,15 +190,11 @@ What that leaves you:
 
 - **A clean capture is one during which no epoch-drift error appeared.** Record
   that, not a pair of hand-read numbers.
-- **When you need the numbers,** they come from the drift error's own text, or
-  from `mcp__plugin_c64-re-tools_vice__vice_diagnose`'s `restarted` report. Both name the before and
-  after value.
+- **When you need the numbers,** they come from the drift error's own text, which
+  names the before and after value.
 - **A drift error voids the run** even if the very next call succeeds. It will —
   the proxy re-baselines so the session stays usable — and a successful retry
   after a respawn is talking to a freshly-booted machine.
-
-`vice-wedge-triage` carries the decision tree for the other three ways a machine
-stops answering.
 
 **Void a run** whose machine identity you could not prove unchanged:
 
@@ -407,7 +403,7 @@ This one owns the image and its identity. It does not restate what the others ca
 | What a specific address or bit means | `c64-memory-mapping` — `node … lookup '$D018'` |
 | Assembling | `acme-build` |
 | Whether a byte is original or cracker-changed, and what `bucketed` means | `c64-provenance-diff` |
-| Whether the emulator is wedged, and whether it is safe to recycle | `vice-wedge-triage` |
+| Whether the emulator stopped itself at your own checkpoint | `c64-program-recon` — `references/observation-hazards.md` |
 | **A verified 64K image, or proving two captures equivalent** | here |
 
 ## Release registry shape
@@ -471,5 +467,5 @@ grade is only worth anything if it says what you actually knew when you wrote it
 | `compare` fails on `$FAD8` or `$FC51` only | Known and unexplained: RAM under KERNAL ROM, two addresses out of 8192. Record it with the capture rather than voiding a set that is otherwise clean. |
 | `--limit 0` printed nothing | Corrected 2026-08-04 — it now means unlimited. Re-pull the script if you see the old behaviour. |
 | An epoch-drift error appeared mid-capture | The machine restarted under you. Void the run. Do not salvage the artifacts. The next call succeeding does not undo it. |
-| The emulator looks dead | `vice-wedge-triage` — and enumerate your own armed checkpoints before concluding anything. |
+| The emulator looks dead | Enumerate your own armed checkpoints before concluding anything (`c64-program-recon`'s `references/observation-hazards.md`). If nothing answers at all, ask the user to restart the broker. |
 | `` `project-paths: could not locate the project root -- no `.git` found above ...` `` | No `.git` ancestor and no `C64RE_PROJECT_ROOT`. `git init` the project, or set the variable to its root. |

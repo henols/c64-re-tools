@@ -87,7 +87,6 @@ test("dialBrokerEndpoint completes a real handshake end to end against a real li
     token,
     onAcquire: async () => ({ ok: false, reason: "internal" }),
     onRelease: () => {},
-    onRecycle: async () => ({ port: null, pid: null, viceBin: null, killStage: "no_signal", epochBefore: null, outcome: "n/a", reason: "no stub configured" }),
     onStatus: () => [],
     onHostState: () => ({
       pid: process.pid,
@@ -168,7 +167,6 @@ test("dialBrokerEndpoint with no port option reaches a hello-answering listener 
     token,
     onAcquire: async () => ({ ok: false, reason: "internal" }) as const,
     onRelease: () => {},
-    onRecycle: async () => ({ port: null, pid: null, viceBin: null, killStage: "no_signal", epochBefore: null, outcome: "n/a", reason: "n/a" }),
     onStatus: () => [],
     onHostState: () => ({
       pid: process.pid,
@@ -251,7 +249,6 @@ async function startHealthyListener(overrides: { helloVersion?: string } = {}) {
     token,
     onAcquire: async () => ({ ok: false, reason: "internal" }) as const,
     onRelease: () => {},
-    onRecycle: async () => ({ port: null, pid: null, viceBin: null, killStage: "no_signal", epochBefore: null, outcome: "n/a", reason: "n/a" }),
     onStatus: () => [],
     onHostState: () => ({
       pid: process.pid,
@@ -742,7 +739,6 @@ async function startTransferCapableListener(onFileTransfer: NonNullable<StartCon
     token,
     onAcquire: async () => ({ ok: false, reason: "internal" }) as const,
     onRelease: () => {},
-    onRecycle: async () => ({ port: null, pid: null, viceBin: null, killStage: "no_signal", epochBefore: null, outcome: "n/a", reason: "n/a" }),
     onStatus: () => [],
     onHostState: () => ({
       pid: process.pid,

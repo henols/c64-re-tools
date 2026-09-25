@@ -432,9 +432,8 @@ async function safeDisconnect(client: ViceMonitorClient): Promise<void> {
  * Before this function existed, nothing in this tree ever sent 0xaa: the
  * first `vice_ping` on the stock backend froze the machine and left it frozen
  * for the life of the held session, with a `STOPPED` event nobody consumed --
- * exactly the "stopped advancing / not wedged / merely paused" state
- * `vice-wedge-triage` exists to disambiguate, manufactured by the health
- * check itself.
+ * a "stopped advancing / not wedged / merely paused" state manufactured by
+ * the health check itself.
  *
  * WHAT NOT TO DO: never add a command sequence to this file (or to any future
  * stock handler) that leaves the machine halted. The invariant is that a

@@ -30,7 +30,6 @@
 //     never the session-acquisition preamble above it.
 import { resolve, join } from "node:path";
 
-import type { ToolInfo } from "./vice-errors.ts";
 import { type HeldLease } from "./vice-broker-client.ts";
 import { stockConnect, stockDisconnect, stockReconnect, type StockConnectSession, type StockConnectDeps, type DialMonitorSocketFn } from "./stock-connect.ts";
 import {
@@ -73,8 +72,6 @@ import { handleCiaGetState } from "./stock-cia.ts";
 import { handleSpriteGet, handleSpriteInspect } from "./stock-sprites.ts";
 import { handleCyclesStopwatch, forgetTimingForOtherTargets } from "./stock-timing.ts";
 import { handleRunUntil } from "./stock-run-until.ts";
-import { handleDiagnoseStock } from "./stock-diagnose.ts";
-import { handleRecycleStock } from "./stock-recycle.ts";
 import { handleDeviceConsole, handleWarpSet, handleMemmapShow, handleMemmapZap, handleCpuHistory, handleProfileFlat, handleBacktrace, handleIoRegisters, handleProgramLoad } from "./text-tools.ts";
 
 // Re-exported so Phase 2's existing import surface (and its 921-line test
@@ -110,47 +107,6 @@ export function manifestPathForBackend(hereDir: string, envOverride: string | un
     return resolve(envOverride);
   }
   return join(hereDir, "tools-manifest.stock.json");
-}
-
-/**
- * resolveAdvertisedToolDefinition() -- WR-07's fix. `tools` in vice-proxy.ts
- * is a name-keyed record: whichever assignment to a given key runs LAST
- * wins, and vice-proxy.ts's own registration order used to assign
- * RECYCLE_TOOL/DIAGNOSE_TOOL's literal (fork-worded) definitions
- * UNCONDITIONALLY, straight after the manifest loop had already populated
- * the same keys correctly. `tools/list` served the fork's five-verdict
- * vocabulary -- including `stale_read_path`, which stock cannot produce
- * (D-03) -- and omitted `monitor_held_elsewhere`, which stock can, even
- * though the corrected stock manifest entry sat right there in
- * tools-manifest.stock.json, unread. This function is the ONE place that
- * decision is now made, so the manifest loop's own per-tool selection and
- * the two synthetic tools' registration agree.
- *
- * Behaviour: returns the `manifestTools` entry whose `name` equals
- * `syntheticDef.name`, if one exists. Falls back to `syntheticDef` when no
- * match exists -- `readManifestTools()`'s own malformed/unreadable-manifest
- * fallbacks answer `[]`, and in that case the proxy must still advertise a
- * WORKING tool rather than none at all (T-07-16-02). NEVER merges fields
- * from the two definitions -- picking one whole definition keeps
- * `description`, `inputSchema` and `outputSchema` internally consistent; a
- * field-by-field merge could pair one definition's description with the
- * other's `outputSchema`.
- *
- * Declared as a `function`, not a `const` arrow, per this module tree's own
- * standing rule: stock-dispatch.ts <-> stock-diagnose.ts <-> stock-recycle.ts
- * form a runtime import cycle, and the phase already reproduced a live
- * `ReferenceError` from a `const` handler export sitting in that cycle.
- *
- * FORKRM-05 (plan 52-07): this used to take a `backend` parameter and
- * return `syntheticDef` unchanged when it was `"fork"` -- vice-proxy.ts's
- * two call sites always passed the literal `"stock"`, so that branch was
- * dead from the moment plan 52-06 collapsed backend detection. Removed
- * rather than left as an unreachable branch a reader could mistake for live
- * code.
- */
-export function resolveAdvertisedToolDefinition(syntheticDef: ToolInfo, manifestTools: ToolInfo[]): ToolInfo {
-  const manifestEntry = manifestTools.find((t) => t.name === syntheticDef.name);
-  return manifestEntry ?? syntheticDef;
 }
 
 // ---------------------------------------------------------------------------
@@ -834,21 +790,6 @@ const STOCK_DISPATCH_TABLE: Record<string, StockHandler> = {
 
   // derived (TIME-02)
   vice_run_until: withDerivedTool("vice_run_until", { needsSession: true }, handleRunUntil),
-
-  // derived (TIME-04) -- the two proxy-local synthetic tools (RECYCLE_TOOL/
-  // DIAGNOSE_TOOL in vice-proxy.ts), registered via buildViceTool() and
-  // routed to this table's own dispatchStock() entry point, never to the
-  // deleted fork transport. Deliberate asymmetry, documented at this call site (see also
-  // DerivedPureHandler's amended doc comment in stock-derived.ts):
-  // vice_diagnose uses needsSession:false because its own handler acquires
-  // the session itself (inside its own try/catch) so it can convert a
-  // thrown MonitorOwnershipError into the monitor_held_elsewhere VERDICT
-  // rather than let withDerivedTool()'s preamble turn it into refusal text
-  // -- the exact generic error string that verdict exists to replace.
-  // vice_recycle keeps needsSession:true: it needs a live session to gather
-  // evidence and has no verdict vocabulary of its own to preserve.
-  vice_diagnose: withDerivedTool("vice_diagnose", { needsSession: false }, handleDiagnoseStock),
-  vice_recycle: withDerivedTool("vice_recycle", { needsSession: true }, handleRecycleStock),
 
   // text-channel remedy tools (plan 41-06, CHAN-03). needsSession:false,
   // deliberately -- NOT withStockSession()/withDerivedTool(needsSession:

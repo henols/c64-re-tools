@@ -23,12 +23,11 @@ import {
   stockDisconnect,
   withStockSession,
   withDerivedTool,
-  resolveAdvertisedToolDefinition,
   type StockDispatchDeps,
 } from "./stock-dispatch.ts";
 import type { DerivedPureHandler } from "./stock-derived.ts";
 import { encodeResponseFrame } from "./binmon-fixtures.ts";
-import { MachineRestartedError, type ToolInfo } from "./vice-errors.ts";
+import { MachineRestartedError } from "./vice-errors.ts";
 import { MonitorOwnershipError } from "./vice-broker-client.ts";
 import type { HeldLease, BrokerControlSession } from "./vice-broker-client.ts";
 import { stockConnect, type StockConnectSession, type StockConnectOptions, type DialMonitorSocketFn } from "./stock-connect.ts";
@@ -109,22 +108,6 @@ const STOCK_ONLY_TOOLS = new Set([
   "vice_program_load",
 ]);
 
-// Phase 7, plan 07-09: a THIRD named category, distinct from STOCK_ONLY_TOOLS
-// above. vice_diagnose/vice_recycle are served proxy-locally (RECYCLE_TOOL/
-// DIAGNOSE_TOOL in vice-proxy.ts): registered via buildViceTool() OUTSIDE the
-// generic manifest loop, through resolveAdvertisedToolDefinition() (which
-// picks up the stock manifest's own corrected entry when one exists, WR-07),
-// and routed to dispatchStock() rather than the ordinary per-manifest-entry
-// handler wiring. They ARE present in tools-manifest.stock.json -- the
-// distinct category is about REGISTRATION PATH, not manifest membership: a
-// name here is never mislabelled "stock-only" the way STOCK_ONLY_TOOLS's
-// members are, because that label describes tools with no synthetic
-// registration at all. The D-03 name-coverage test below skips PROXY_LOCAL_TOOLS members in its
-// fork-counterpart branch and asserts each is present in the stock manifest,
-// absent from the fork manifest, and NOT a member of STOCK_ONLY_TOOLS (never
-// mislabelled stock-only).
-const PROXY_LOCAL_TOOLS = new Set(["vice_diagnose", "vice_recycle"]);
-
 // --------------------------------------------------------- manifestPathForBackend
 
 test("manifest/backend: with no override resolves to <hereDir>/tools-manifest.stock.json", () => {
@@ -169,99 +152,10 @@ test("manifest/backend: tools-manifest.stock.json's tools array contains a vice_
 // handoff to 03-13, per this plan's own verification section.
 // ---------------------------------------------------------------------------
 
-test("manifest/backend (D-03 name coverage): every STOCK_ONLY_TOOLS and PROXY_LOCAL_TOOLS name is present in the stock manifest, and the two sets are disjoint", () => {
-  // The fork-counterpart comparison this test used to run is gone along with
-  // the fork manifest and transport -- there is no second manifest left to
-  // compare against. What survives: both named sets are still real stock
-  // manifest entries, and PROXY_LOCAL_TOOLS is never mislabelled STOCK_ONLY_TOOLS.
+test("manifest/backend (D-03 name coverage): every STOCK_ONLY_TOOLS name is present in the stock manifest", () => {
   const stock = readManifest(STOCK_MANIFEST_PATH);
   for (const name of STOCK_ONLY_TOOLS) {
     assert.ok(stock.tools.some((t) => t.name === name), `STOCK_ONLY_TOOLS name "${name}" must be present in the stock manifest`);
-  }
-  for (const name of PROXY_LOCAL_TOOLS) {
-    assert.ok(stock.tools.some((t) => t.name === name), `PROXY_LOCAL_TOOLS name "${name}" must be present in the stock manifest`);
-    assert.ok(!STOCK_ONLY_TOOLS.has(name), `PROXY_LOCAL_TOOLS name "${name}" must not also be in STOCK_ONLY_TOOLS -- both backends serve it, it is not stock-only`);
-  }
-});
-
-// ---------------------------------------------------------------------------
-// WR-07 (plan 07-16): resolveAdvertisedToolDefinition() -- the ADVERTISED
-// contract, not just the source file. stock-diagnose.test.ts's own
-// source-level "stale_read_path appears only inside a comment" assertion
-// proved nothing about what vice-proxy.ts actually SERVED in tools/list --
-// vice-proxy.ts's two unconditional overwrites (`tools[RECYCLE_TOOL.name] =
-// ...` / `tools[DIAGNOSE_TOOL.name] = ...`) replaced the stock manifest's own
-// corrected entries with the fork's literal (stale_read_path-bearing) text
-// on EVERY backend, so that source-level test passed while the advertised
-// schema was still wrong. These tests assert on the RESOLVED definition --
-// what resolveAdvertisedToolDefinition() actually hands to buildViceTool()'s
-// registration call -- so a future re-introduction of an unconditional
-// overwrite fails here, not just at the source-text level.
-// ---------------------------------------------------------------------------
-
-/** Minimal stand-ins for vice-proxy.ts's own RECYCLE_TOOL/DIAGNOSE_TOOL
- * literals -- constructed here, not imported, so these tests PROVE the
- * selection rather than assuming vice-proxy.ts's real literals still carry
- * the fork's stale_read_path wording. Deliberately carries that exact fork
- * wording so test 1 below can distinguish "the synthetic stand-in won" from
- * "the manifest entry won" by content, not just by reference identity. */
-const FORK_WORDED_DIAGNOSE_STANDIN: ToolInfo = {
-  name: "vice_diagnose",
-  description:
-    "Read-mostly. Answers which of five states this session's emulator is in -- restarted, checkpoint_trap, wedged, stale_read_path, or live -- with the evidence that produced the verdict.",
-  inputSchema: { type: "object", properties: {} },
-};
-
-const FORK_WORDED_RECYCLE_STANDIN: ToolInfo = {
-  name: "vice_recycle",
-  description: "DESTRUCTIVE. Kills and respawns THIS session's own emulator in place, on the same port, via the host supervisor's existing respawn loop.",
-  inputSchema: { type: "object", properties: { reason: { type: "string" } }, required: ["reason"] },
-};
-
-function stockManifestToolInfos(): ToolInfo[] {
-  return readManifest(STOCK_MANIFEST_PATH).tools as unknown as ToolInfo[];
-}
-
-test("WR-07/resolveAdvertisedToolDefinition (real manifest): vice_diagnose's resolved description drops stale_read_path and names monitor_held_elsewhere", () => {
-  const resolved = resolveAdvertisedToolDefinition(FORK_WORDED_DIAGNOSE_STANDIN, stockManifestToolInfos());
-  const description = String(resolved.description ?? "");
-  assert.ok(!description.includes("stale_read_path"), `resolved vice_diagnose description must not mention stale_read_path: ${description}`);
-  assert.ok(description.includes("monitor_held_elsewhere"), `resolved vice_diagnose description must mention monitor_held_elsewhere: ${description}`);
-});
-
-test("WR-07/resolveAdvertisedToolDefinition (real manifest): vice_diagnose's resolved outputSchema.verdict.enum is exactly D-03's five values, in order", () => {
-  const resolved = resolveAdvertisedToolDefinition(FORK_WORDED_DIAGNOSE_STANDIN, stockManifestToolInfos());
-  const outputSchema = resolved.outputSchema as { properties?: { verdict?: { enum?: unknown[] } } } | undefined;
-  const verdictEnum = outputSchema?.properties?.verdict?.enum;
-  assert.deepEqual(verdictEnum, ["restarted", "checkpoint_trap", "wedged", "monitor_held_elsewhere", "live"]);
-});
-
-test("WR-07/resolveAdvertisedToolDefinition (real manifest): vice_recycle's resolved description states the stock incident record carries no screenshot (D-01)", () => {
-  const resolved = resolveAdvertisedToolDefinition(FORK_WORDED_RECYCLE_STANDIN, stockManifestToolInfos());
-  const description = String(resolved.description ?? "");
-  assert.ok(/no screenshot/i.test(description), `resolved vice_recycle description must state no screenshot is captured on stock: ${description}`);
-});
-
-test("WR-07/resolveAdvertisedToolDefinition (empty/malformed manifest): both names fall back to the synthetic stand-in rather than advertising nothing", () => {
-  const resolvedDiagnose = resolveAdvertisedToolDefinition(FORK_WORDED_DIAGNOSE_STANDIN, []);
-  const resolvedRecycle = resolveAdvertisedToolDefinition(FORK_WORDED_RECYCLE_STANDIN, []);
-  assert.equal(resolvedDiagnose, FORK_WORDED_DIAGNOSE_STANDIN, "an empty manifest array (readManifestTools()'s own malformed-manifest fallback) must still yield a working tool");
-  assert.equal(resolvedRecycle, FORK_WORDED_RECYCLE_STANDIN, "an empty manifest array (readManifestTools()'s own malformed-manifest fallback) must still yield a working tool");
-});
-
-test("WR-07/resolveAdvertisedToolDefinition (guard): every PROXY_LOCAL_TOOLS name resolves to its OWN stock manifest entry, tying the source and manifest levels together", () => {
-  const manifestTools = stockManifestToolInfos();
-  const standins: Record<string, ToolInfo> = {
-    vice_diagnose: FORK_WORDED_DIAGNOSE_STANDIN,
-    vice_recycle: FORK_WORDED_RECYCLE_STANDIN,
-  };
-  for (const name of PROXY_LOCAL_TOOLS) {
-    const manifestEntry = manifestTools.find((t) => t.name === name);
-    assert.ok(manifestEntry, `the stock manifest must carry an entry named "${name}"`);
-    const synthetic = standins[name];
-    assert.ok(synthetic, `this guard needs a synthetic stand-in for "${name}"`);
-    const resolved = resolveAdvertisedToolDefinition(synthetic!, manifestTools);
-    assert.equal(resolved, manifestEntry, `"${name}" must resolve to the stock manifest's OWN entry, not the synthetic stand-in -- a future unconditional overwrite would fail here`);
   }
 });
 
@@ -1127,11 +1021,10 @@ test("dispatch: stockHandlerFor(\"vice_ping\") returns a handler; stockHandlerFo
 // tools are refused without ever touching `deps`.
 // ---------------------------------------------------------------------------
 
-/** The 38 tool names registered in STOCK_DISPATCH_TABLE (25 Phase 3 direct
+/** The 36 tool names registered in STOCK_DISPATCH_TABLE (25 Phase 3 direct
  * tools, 04-05's vice_disassemble, Phase 5's eight DERIV-01/DERIV-04/
- * DERIV-05/DERIV-06 derived tools, and Phase 7's four TIME-01/TIME-02/TIME-04
- * derived tools -- vice_cycles_stopwatch, vice_run_until, vice_diagnose and
- * vice_recycle), driven from an explicit array literal (per this plan's own
+ * DERIV-05/DERIV-06 derived tools, and Phase 7's two TIME-01/TIME-02
+ * derived tools -- vice_cycles_stopwatch and vice_run_until), driven from an explicit array literal (per this plan's own
  * acceptance criteria) so a missing entry fails as a NAMED assertion rather
  * than a generic count mismatch. */
 const REGISTERED_TOOL_NAMES = [
@@ -1171,8 +1064,6 @@ const REGISTERED_TOOL_NAMES = [
   "vice_sprite_inspect",
   "vice_cycles_stopwatch",
   "vice_run_until",
-  "vice_diagnose",
-  "vice_recycle",
 ];
 
 /** The eight tools this plan deliberately does NOT register -- each name's
@@ -1205,20 +1096,20 @@ function expectedStockMissMessage(name: string): string {
   );
 }
 
-test("dispatch: stockHandlerFor returns a function for every one of the 38 registered tool names", () => {
+test("dispatch: stockHandlerFor returns a function for every one of the 36 registered tool names", () => {
   for (const name of REGISTERED_TOOL_NAMES) {
     assert.equal(typeof stockHandlerFor(name), "function", `expected a handler for ${name}`);
   }
 });
 
-test("dispatch: the table's key count is exactly 38", () => {
+test("dispatch: the table's key count is exactly 36", () => {
   // STOCK_DISPATCH_TABLE itself is not exported -- stockHandlerFor() over
   // every name this plan knows about is the table's own public surface, so
-  // this test drives the same 38-name list rather than reaching into the
+  // this test drives the same 36-name list rather than reaching into the
   // module's private object.
   const hits = REGISTERED_TOOL_NAMES.filter((name) => typeof stockHandlerFor(name) === "function");
-  assert.equal(hits.length, 38);
-  assert.equal(REGISTERED_TOOL_NAMES.length, 38);
+  assert.equal(hits.length, 36);
+  assert.equal(REGISTERED_TOOL_NAMES.length, 36);
 });
 
 test("dispatch: every registered tool name matches /^vice_[a-z0-9_]+$/", () => {
@@ -1510,11 +1401,6 @@ const CONFORMANCE_BROKER_CONTROL = {
   // conformance case, not merely fail a type check the `as unknown as` cast
   // below already bypasses.
   noteOperation: async () => ({ ok: true as const }),
-  // Phase 7, plan 07-09: vice_recycle's conformance case needs a `recycle`
-  // stub too -- every other conformance case never calls it, so a single
-  // shared "always succeeds" ack is safe to add here rather than a
-  // per-case override.
-  recycle: async () => ({ ok: true as const, ack: { outcome: "killed", kill_stage: "sigterm", reason: "" } }),
   // Phase 64, plan 64-04 (XFER-01/XFER-02): vice_snapshot_save/
   // vice_snapshot_load's conformance cases now stage a slot before every
   // DUMP/UNDUMP -- a stub without this method would throw "stageFile is not
@@ -2471,136 +2357,6 @@ conformanceTest("vice_run_until", async () => {
   assertAnswerConforms("vice_run_until", result);
 });
 
-// --------------------------------------------------------- wedge triage (Phase 7, TIME-04)
-
-/** Sets `process.env[name]` for the duration of `fn`, restoring the previous
- * value (or deleting it, if previously unset) afterwards -- matching
- * incident-record.test.ts's own withTempIncidentsDir()/stock-diagnose.test.ts's
- * own before()/after() env-restore convention. */
-async function withEnvOverride<T>(name: string, value: string, fn: () => Promise<T>): Promise<T> {
-  const prev = process.env[name];
-  process.env[name] = value;
-  try {
-    return await fn();
-  } finally {
-    if (prev === undefined) delete process.env[name];
-    else process.env[name] = prev;
-  }
-}
-
-conformanceTest("vice_diagnose", async () => {
-  // VICE_STOCK_DIAGNOSE_BRACKET_MS is set small so a case that DID reach the
-  // liveness bracket would not add a quarter second per run -- this
-  // particular case never reaches the bracket at all (see below), but the
-  // override is set defensively per this plan's own instruction.
-  await withEnvOverride("VICE_STOCK_DIAGNOSE_BRACKET_MS", "5", async () => {
-    // The checkpoint_trap shape is the cheapest deterministic verdict -- it
-    // never resumes (zero CommandType.Exit sends), unlike live/wedged which
-    // both require at least one liveness bracket.
-    let memoryGetCallCount = 0;
-    const session = buildConformanceSession("conformance-vice_diagnose", (commandType) => {
-      if (commandType === CommandType.MemoryGet) {
-        memoryGetCallCount += 1;
-        // $01 (HIRAM set -- banked in), then the RAM IRQ vector pair. Not
-        // the trap here -- the checkpoint below traps on the CURRENT PC.
-        return memoryGetCallCount === 1
-          ? { type: "memory_get" as const, requestId: 1, errorCode: 0, bytes: Uint8Array.from([0x37]), related: [] }
-          : { type: "memory_get" as const, requestId: 1, errorCode: 0, bytes: Uint8Array.from([0x00, 0xc1]), related: [] };
-      }
-      if (commandType === CommandType.RegistersAvailable) {
-        return { type: "registers_available" as const, requestId: 1, errorCode: 0, registers: [{ id: 0, size: 16, name: "PC" }], related: [] };
-      }
-      if (commandType === CommandType.RegistersGet) {
-        return { type: "registers" as const, requestId: 1, errorCode: 0, registers: [{ id: 0, value: 0xc000 }], related: [] };
-      }
-      if (commandType === CommandType.CheckpointList) {
-        // fakeConformanceCheckpoint()'s own default shape: start 0xc000,
-        // stopWhenHit:true, enabled:true, operation Exec, hitCount:0 -- an
-        // armed stopping exec checkpoint at the SAME address as the PC
-        // above, so this traps on "pc" (the cheapest of the two trap shapes).
-        return { type: "checkpoint_list" as const, requestId: 1, errorCode: 0, total: 1, checkpoints: [], related: [checkpointInfoReply()] };
-      }
-      throw new Error(`vice_diagnose: unexpected commandType ${commandType} -- the checkpoint_trap path must never resume`);
-    });
-    const deps = buildConformanceDeps(session);
-    const result = await dispatchStock("vice_diagnose", {}, deps);
-    assertAnswerConforms("vice_diagnose", result);
-    const parsed: Record<string, unknown> = JSON.parse((result as { content: { text: string }[] }).content[0]!.text);
-    const stock = readManifest(STOCK_MANIFEST_PATH);
-    const entry = stock.tools.find((t) => t.name === "vice_diagnose")!;
-    const verdictEnum = (entry.outputSchema?.properties?.verdict as { enum?: unknown[] } | undefined)?.enum ?? [];
-    assert.ok(verdictEnum.includes(parsed.verdict), `vice_diagnose's real verdict "${String(parsed.verdict)}" must be a member of the manifest's own declared enum`);
-    assert.equal(parsed.verdict, "checkpoint_trap", "this fixture is deliberately shaped to trap at the current PC");
-  });
-});
-
-conformanceTest("vice_recycle", async () => {
-  const incidentsDir = mkdtempSync(join(tmpdir(), "vice-recycle-conformance-"));
-  try {
-    await withEnvOverride("VICE_INCIDENTS_DIR", incidentsDir, async () => {
-      // gatherStockWedgeEvidence()'s bracket step (gatherBracketEvidence())
-      // reuses runStockLivenessBracket() verbatim, which waits a real
-      // diagnoseBracketWindowMs() -- set small so this case stays fast, the
-      // same override stock-diagnose.test.ts itself uses.
-      await withEnvOverride("VICE_STOCK_DIAGNOSE_BRACKET_MS", "5", async () => {
-        let memoryGetCallCount = 0;
-        const session = buildConformanceSession("conformance-vice_recycle", (commandType) => {
-          if (commandType === CommandType.MemoryGet) {
-            // resolveStockLiveIrqHandler() runs twice across the gather (once
-            // inside the checkpoints step, once as its own irqHandler step) --
-            // alternates $01 (HIRAM set) then the RAM IRQ vector pair, cycling.
-            memoryGetCallCount += 1;
-            return memoryGetCallCount % 2 === 1
-              ? { type: "memory_get" as const, requestId: 1, errorCode: 0, bytes: Uint8Array.from([0x37]), related: [] }
-              : { type: "memory_get" as const, requestId: 1, errorCode: 0, bytes: Uint8Array.from([0x00, 0xc1]), related: [] };
-          }
-          if (commandType === CommandType.RegistersAvailable) {
-            return {
-              type: "registers_available" as const,
-              requestId: 1,
-              errorCode: 0,
-              registers: [
-                { id: 0, size: 16, name: "PC" },
-                { id: 1, size: 16, name: "LIN" },
-                { id: 2, size: 8, name: "CYC" },
-              ],
-              related: [],
-            };
-          }
-          if (commandType === CommandType.RegistersGet) {
-            return {
-              type: "registers" as const,
-              requestId: 1,
-              errorCode: 0,
-              registers: [
-                { id: 0, value: 0xc000 },
-                { id: 1, value: 100 },
-                { id: 2, value: 20 },
-              ],
-              related: [],
-            };
-          }
-          if (commandType === CommandType.ResourceGet) {
-            return { type: "resource_get" as const, requestId: 1, errorCode: 0, valueType: "integer" as const, value: 1 };
-          }
-          if (commandType === CommandType.CheckpointList) {
-            return { type: "checkpoint_list" as const, requestId: 1, errorCode: 0, total: 1, checkpoints: [], related: [checkpointInfoReply()] };
-          }
-          if (commandType === CommandType.Exit) {
-            return conformanceAckReply(CommandType.Exit);
-          }
-          throw new Error(`vice_recycle: unexpected commandType ${commandType}`);
-        });
-        const deps = buildConformanceDeps(session);
-        const result = await dispatchStock("vice_recycle", { reason: "conformance test recycle" }, deps);
-        assertAnswerConforms("vice_recycle", result);
-      });
-    });
-  } finally {
-    rmSync(incidentsDir, { recursive: true, force: true });
-  }
-});
-
 // --------------------------------------------------------- text-channel remedy tools (plan 41-06, CHAN-03)
 //
 // Neither tool is needsSession:true, so buildConformanceSession()/
@@ -2802,33 +2558,6 @@ conformanceTest("vice_program_load", async () => {
       const result = await dispatchStock("vice_program_load", {}, deps);
       assertAnswerConforms("vice_program_load", result);
     },
-  );
-});
-
-test("regression (Phase 7, TIME-04): stockHandlerFor resolves both proxy-local tools -- a stock call no longer reaches dispatchStock()'s refuse-by-name branch", async () => {
-  assert.equal(typeof stockHandlerFor("vice_diagnose"), "function", "vice_diagnose must have a stock dispatch handler");
-  assert.equal(typeof stockHandlerFor("vice_recycle"), "function", "vice_recycle must have a stock dispatch handler");
-
-  // A deliberately refused lease drives both tools down their own refusal
-  // path WITHOUT ever touching the wire -- proving the answer comes from
-  // their own handler (ensureStockSession's lease refusal, verbatim), never
-  // dispatchStock()'s miss branch, which never even reads deps.
-  const refusedLeaseDeps: StockDispatchDeps = {
-    ensureLease: async () => ({ ok: false, message: "regression check: deliberately refused lease" }),
-  };
-
-  const diagnoseResult = await dispatchStock("vice_diagnose", {}, refusedLeaseDeps);
-  assert.doesNotMatch(
-    JSON.stringify(diagnoseResult.content),
-    /is not implemented by the stock backend/,
-    "vice_diagnose must never fall through to dispatchStock()'s refuse-by-name text",
-  );
-
-  const recycleResult = await dispatchStock("vice_recycle", { reason: "regression check" }, refusedLeaseDeps);
-  assert.doesNotMatch(
-    JSON.stringify(recycleResult.content),
-    /is not implemented by the stock backend/,
-    "vice_recycle must never fall through to dispatchStock()'s refuse-by-name text",
   );
 });
 

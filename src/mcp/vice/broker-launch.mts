@@ -1346,7 +1346,7 @@ function resolveCount(envVar: string, defaultValue: number, override?: number): 
  * exported so a caller (this module's own tests, and any future real-broker
  * wiring) can assert which branch a given crash took without inspecting
  * private state. */
-export type RespawnOutcome = "respawned" | "deliberate_teardown" | "given_up" | "recycled";
+export type RespawnOutcome = "respawned" | "deliberate_teardown" | "given_up";
 
 /** broker-epoch.mts's own exports, injected rather than value-imported --
  * see this file's own header comment for why (the same unbuilt-test-import
@@ -1403,23 +1403,9 @@ export interface SuperviseChildDeps {
 
 /** The exit-driven respawn step. Reads the JUST-crashed record (still in
  * state.instances -- nothing here deletes it before this runs), decides
- * among the four outcomes, and acts:
+ * among the three outcomes, and acts:
  *
- * - deliberateKill set AND respawnAfterKill set -> "recycled": a
- *   broker-ordered death that wants a replacement, relaunched on the SAME
- *   port through launchSupervised() -- but called DIRECTLY, bypassing every
- *   crash-accounting step below (no appended crash timestamp, no give-up
- *   evaluation, no backoff wait, no doubling): a deliberate recycle is not
- *   evidence of instability, and the crash-loop machinery exists for an
- *   UNEXPLAINED exit, not this one. The pre-kill crash history and backoff
- *   are carried forward UNCHANGED, and a pre-kill "granted" state is
- *   restored on the fresh record -- the relaunch primitive always creates a
- *   new record in the "launching" state, and leaving it there (once
- *   promoted to "ready" by the next probe pass) would let a LATER,
- *   UNRELATED acquire's own selectWarmInstance() walk (vice-broker.mts)
- *   mistake a recycled session's own machine for an available candidate to
- *   grant out from under the session that already owns it.
- * - deliberateKill set WITHOUT respawnAfterKill -> "deliberate_teardown":
+ * - deliberateKill set -> "deliberate_teardown":
  *   drop the instance, no respawn. This is T-01.6.2-21's whole point --
  *   without reading this flag, every deliberate teardown would respawn
  *   exactly what it just killed, silently breaking kill-never-recycle (a
@@ -1445,8 +1431,7 @@ async function handleExit(reason: string, port: number, deps: SuperviseChildDeps
   const log = deps.log ?? defaultLog;
 
   // The process behind this instance's monitor sockets has just exited, by
-  // every path this function can take (crash, recycle, or a deliberate
-  // teardown) -- clear EVERY channel's ownership record HERE, once, before
+  // every path this function can take (crash or a deliberate teardown) -- clear EVERY channel's ownership record HERE, once, before
   // any of those paths branch, so a client that died without releasing can
   // never hold this lock forever on any channel. Redundant
   // with the respawn/delete paths below (a fresh InstanceRecord never
@@ -1464,51 +1449,6 @@ async function handleExit(reason: string, port: number, deps: SuperviseChildDeps
   record.monitorClients = {};
 
   if (record.deliberateKill) {
-    if (record.respawnAfterKill) {
-      // Recycle. Capture the pre-kill state, crash history and backoff
-      // BEFORE launchSupervised() replaces the map entry at this port key
-      // with a brand new InstanceRecord -- nothing about those three facts
-      // survives once that overwrite happens.
-      const preKillState = record.state;
-      const preKillCrashTimes = record.crashTimes ?? [];
-      const preKillBackoffMs = record.backoffMs ?? resolveMs("VICE_RESTART_BACKOFF_S", 3, deps.initialBackoffMs);
-      // The second (`-remotemonitor`) port is carried forward across the
-      // replacement exactly like the primary port is -- captured BEFORE
-      // launchSupervised() overwrites this port's map entry with a brand
-      // new record, for the same reason the three values above are.
-      const preKillRemoteMonitorPort = record.remoteMonitorPort;
-      // The launch PROFILE is carried forward for exactly the reason the
-      // remote-monitor port is carried forward above, and the failure it
-      // prevents is sharper. Without this, a recycled `{warp:true}`
-      // instance would come back UNWARPED while its fresh record still
-      // claimed `profile:{warp:true}` -- after which profileEligible()
-      // (vice-broker.mts) would happily hand that instance to the next warp
-      // request. That is precisely the undetectable lie this carry-forward
-      // exists to structurally exclude, reintroduced one respawn later.
-      // Captured BEFORE launchSupervised() overwrites this port's map entry
-      // with a brand new record, same as the four values above.
-      const preKillProfile = record.profile;
-
-      const respawned = launchSupervised(reason, port, deps, preKillCrashTimes, preKillBackoffMs, preKillRemoteMonitorPort, preKillProfile);
-      if (respawned && preKillState === "granted") {
-        respawned.state = "granted";
-      }
-      // Keep the matching grant's own recorded pid in sync with the
-      // respawned record's pid -- the ONE legitimate case where the SAME
-      // grant continues to own a DIFFERENT pid on the SAME port. Without
-      // this, vice-broker.mts's handleRelease() own grant-pid identity
-      // check (T-01.6.2.1-28) would misfire and refuse to tear down the
-      // very instance the grant now legitimately owns.
-      if (respawned) {
-        for (const grant of deps.state.grants.values()) {
-          if (grant.port === port) {
-            grant.pid = respawned.pid;
-          }
-        }
-      }
-      deps.onOutcome?.("recycled", port);
-      return;
-    }
     // A deliberate teardown is the END of this instance -- its
     // remote-monitor port must go back to the allocator with it.
     deleteInstanceRecord(deps.state, port);
@@ -1541,7 +1481,7 @@ async function handleExit(reason: string, port: number, deps: SuperviseChildDeps
   const maxBackoffMs = resolveMs("VICE_RESTART_BACKOFF_MAX_S", 30, deps.maxBackoffMs);
   const nextBackoffMs = Math.min(currentBackoffMs * 2, maxBackoffMs);
 
-  // Same carry-forward as the recycle branch above -- a crash must not
+  // A crash must not
   // silently strip `-remotemonitor` (and its InstanceRecord field) off the
   // replacement, which would otherwise make the instance record's claim to
   // carry that field stop being true the first time an instance was
@@ -1611,7 +1551,7 @@ export function withCrashSupervision(
  *
  * `remoteMonitorPort` is threaded the SAME way and for the same reason --
  * it belongs to the instance, not to a single spawn of it. The replacement
- * reuses the port the crashed/recycled process just vacated (already
+ * reuses the port the crashed process just vacated (already
  * reserved in `state.blockedPorts`, so nothing else can have taken it
  * meanwhile), exactly as it reuses the primary `port` argument; this function
  * stays fully synchronous and never allocates. `undefined` is the correct

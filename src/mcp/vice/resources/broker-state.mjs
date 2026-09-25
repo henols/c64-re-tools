@@ -21,8 +21,8 @@ import { createServer } from "node:net";
 export const MONITOR_CHANNELS = Object.freeze(["binary", "text"]);
 /** Clears ONE channel's entry when `channel` is passed (an explicit
  * `monitor_release` for that channel), or EVERY channel's entry when it is
- * omitted (the whole record's ownership is going away -- recycle, release,
- * or the instance's own process exit; see InstanceRecord.monitorClients'
+ * omitted (the whole record's ownership is going away -- a release or the
+ * instance's own process exit; see InstanceRecord.monitorClients'
  * own header comment for the exact call sites of each case) -- so a dead or
  * torn-down client can never hold this lock forever, on any channel. The
  * ONE place a holder entry is cleared, apart from broker-launch.mts's
@@ -138,7 +138,7 @@ export function blockPort(state, port) {
 // process until the ENTIRE scan, spawn and record sequence had already
 // resolved, confirmed with the real production functions in isolation
 // before this fix). That is a real liveness gap independent of this
-// plan's own test -- a release, a recycle or a status request over an
+// plan's own test -- a release or a status request over an
 // UNRELATED connection would be held up for as long as a contended scan
 // takes, not merely a competing acquire. Yielding via setImmediate every
 // few candidates restores that liveness at negligible cost (the scan

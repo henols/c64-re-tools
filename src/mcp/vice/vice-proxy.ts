@@ -20,7 +20,7 @@
 // §B6's HIGH-confidence recommendation to stay fully hand-rolled. The
 // ROADMAP rates this adoption "reversible but costly -- not one-way": the
 // ~88-94% of hand-rolled logic below (broker leasing, epoch/liveness,
-// recycle/diagnose, deny-list enforcement, path rewriting, incident
+// deny-list enforcement, path rewriting, incident
 // capture, the ten broker-state message builders -- enumerated exhaustively
 // in 01.6-PATTERNS.md's "Pattern: The D-01 Seam") never moved and is not
 // part of what a rollback touches.
@@ -108,27 +108,8 @@ import { containerizeRecord } from "./containerpath.ts";
 // (containerpath.ts, install-resources.ts, stock-paths.ts, vice-proxy.ts),
 // pinned by hostpath-consumers.test.ts, and this file is
 // already on that list, so any broker-related host path text is built HERE.
-// Tasks 1+2 (this plan) swap acquisition, release AND recycle onto the TCP
-// control session (openBrokerControl()/BrokerControlSession, plan 06's
-// completed client) -- writeRequest/createLease/touchLease/releaseLease/
-// pollGrant/startHeartbeat/requestsDir/newRequestId/writeRecycleRequest/
-// pollRecycleAck are no longer imported: their whole job (write a request,
-// create a lease file, heartbeat its mtime, poll for a grant or an
-// acknowledgement, unlink on release) is now "send one request over the
-// connection already held". RECYCLE_TIMEOUT_MS (the client's own recycle
-// deadline, task 3's renamed successor to the now-deleted
-// RECYCLE_ACK_TIMEOUT_MS) is reused below as the bound the post-kill
-// epoch-and-readiness poll uses -- a concern this swap does not touch.
-// RECYCLE_TIMEOUT_MS is no longer imported here: the fork-only generic
-// forwarding function and its own wedge-evidence gatherer that used it for
-// their post-kill epoch/readiness poll are deleted -- vice_recycle's
-// stock implementation (stock-recycle.ts, reached via stockDispatch) owns
-// that timeout itself now. The incident-record import (writeIncidentRecord,
-// finaliseIncidentRecord, incidentAssetPath, incidentAssetStem,
-// IncidentEvidence, IncidentAssetStemOptions) is gone for the same reason:
-// its only caller was the fork-only handleRecycle() body that wrote a
-// pre-kill incident record over call() -- stock-recycle.ts's own
-// handleRecycleStock() does this natively now, never through this file.
+// Acquisition and release go over the TCP control session
+// (openBrokerControl()/BrokerControlSession).
 import {
   readBrokerLiveness,
   brokerRootDir,
@@ -510,55 +491,6 @@ const RESULT_CONTINUE_TOOL: ToolDefinition = {
   },
 };
 
-// The recycle tool (plan 01.3-01, task 1): the only new HOST-SIDE ACTION
-// this phase adds. Served entirely proxy-local -- like RESULT_CONTINUE_TOOL
-// above, it is never in tools-manifest.stock.json (RESEARCH Key Finding 3),
-// so a manifest edit can never drop it. Deliberately split from
-// vice_diagnose (D-03): this tool NEVER gates on a verdict, so there is no
-// "confirm"/"mode" argument and no shared state between the two tools to
-// keep in sync -- the separation itself is the safety.
-const RECYCLE_TOOL: ToolDefinition = {
-  name: "vice_recycle",
-  description:
-    "DESTRUCTIVE. Kills and respawns THIS session's own emulator in place, on the same port, via " +
-    "the host supervisor's existing respawn loop -- the same instance, not a different one. The " +
-    "restart epoch changes, so any run in flight is void and must be resumed from the last recorded " +
-    'milestone snapshot. A self-inflicted checkpoint stop (the emulator merely paused at an armed ' +
-    "checkpoint) is NOT a wedge and must not be recycled. Requires a non-empty \"reason\" naming why " +
-    "this recycle is happening; that reason is written to a permanent, repo-tracked incident record " +
-    "BEFORE anything is killed.",
-  inputSchema: {
-    type: "object",
-    properties: {
-      reason: {
-        type: "string",
-        description: "Why this recycle is happening -- written verbatim into the incident record.",
-      },
-    },
-    required: ["reason"],
-  },
-};
-
-// The diagnose tool (plan 01.3-02): the read-mostly companion to
-// RECYCLE_TOOL above, served in the same proxy-local synthetic slot. D-03
-// keeps the two structurally unlinked -- no shared verdict/confirm state,
-// and recycle never reads a diagnose verdict.
-const DIAGNOSE_TOOL: ToolDefinition = {
-  name: "vice_diagnose",
-  description:
-    "Read-mostly. Answers which of five states this session's emulator is in -- restarted, " +
-    "checkpoint_trap, wedged, stale_read_path, or live -- with the evidence that produced the " +
-    "verdict. It may resume the machine once or twice to measure a cycle bracket, so it is never " +
-    "something to call reflexively; when it runs a bracket it leaves the machine PAUSED afterward -- " +
-    'resuming is your own next call. A "checkpoint_trap" verdict means the machine stopped ITSELF at ' +
-    "an armed checkpoint and must NOT be recycled -- recycling a self-inflicted stop destroys a " +
-    "healthy instance.",
-  inputSchema: {
-    type: "object",
-    properties: {},
-  },
-};
-
 // Edit 1 (plan 02-10): delegates to stock-dispatch.ts's own selector function
 // -- the ONE manifest site this file keeps. FORKRM-01: always resolves the
 // stock manifest now, since there is nothing else to select between; the
@@ -637,8 +569,7 @@ function isErrorText(text: string): ErrorTextResult {
 }
 
 /** The shape every tools/call outcome takes (Pattern 2): success or failure,
- * never a JSON-RPC `error` object. Shared by handleRecycle(), handleDiagnose(),
- * handleResultContinue(), wrapPossiblyChunked() and the CallToolRequestSchema
+ * never a JSON-RPC `error` object. Shared by handleResultContinue(), wrapPossiblyChunked() and the CallToolRequestSchema
  * override itself (near the bottom of this file). */
 interface OkTextResult {
   content: { type: "text"; text: string }[];
@@ -649,7 +580,7 @@ type ToolCallResult = ErrorTextResult | OkTextResult;
 // -------------------------------------------------------- dispatchStockFor
 //
 // The one place every stock tool call's shared deps object is built -- used
-// by the manifest loop below and by handleRecycle()/handleDiagnose() alike,
+// by the manifest loop below,
 // so there is exactly one definition of "what dispatchStock needs" rather
 // than three copies that could drift apart. Kept as a single-line-callable
 // helper (not inlined at each call site) so every registration reads as one
@@ -662,45 +593,6 @@ function dispatchStockFor(name: string, args: Record<string, unknown>): Promise<
     resolvedBinaryPath: RESOLVED_BINARY.binPath,
     resolvedBinaryPathIsResolved: RESOLVED_BINARY.binPathResolved,
   });
-}
-
-// ------------------------------------------------------------ vice_recycle
-//
-// vice_recycle and vice_diagnose (below) are registered as this file's own
-// proxy-local synthetic tools (RECYCLE_TOOL/DIAGNOSE_TOOL above). Before
-// plan 52-04, each ALSO carried its own fork-only implementation here --
-// evidence gathered over call()'s HTTP transport, its own incident-record
-// writes -- reachable only on the (now-deleted) fork backend. The
-// (already-active) stock arm never ran that body at all: it dispatched
-// straight through stockDispatch.dispatchStock() to handleRecycleStock()/
-// handleDiagnoseStock() (stock-recycle.ts/stock-diagnose.ts), which own a
-// complete stock-native evidence gatherer and incident-record write of
-// their own (built for exactly this reason -- see stock-recycle.ts's own
-// header). That fork-only body is deleted, not merely emptied:
-// handleRecycle()/handleDiagnose() SURVIVE as named functions --
-// RECYCLE_TOOL/DIAGNOSE_TOOL's own registration still wires them in by name
-// (a structural oracle in vice-proxy.test.ts asserts handleRecycle's own
-// declaration form) -- but their bodies now do exactly what the stock arm
-// already did, unconditionally, rather than re-deriving a second copy of
-// stock-recycle.ts/stock-diagnose.ts's own logic here.
-const handleRecycle: (args: Record<string, unknown>) => Promise<ToolCallResult> = async function handleRecycle(args) {
-  return dispatchStockFor(RECYCLE_TOOL.name, args);
-}
-
-// ----------------------------------------------------------- vice_diagnose
-//
-// See vice_recycle's own header comment immediately above: handleDiagnose()
-// SURVIVES as a named function (DIAGNOSE_TOOL's own registration still wires
-// it in by name) but its fork-only evidence-gathering body (the epoch/
-// checkpoint-trap/cycle-bracket walk, all reached over call()'s HTTP
-// transport) is deleted. The stock arm never ran that body -- it already
-// dispatched straight through stockDispatch.dispatchStock() to
-// handleDiagnoseStock() (stock-diagnose.ts), which owns a complete
-// stock-native five-verdict diagnosis of its own. This is that delegation
-// made unconditional, rather than a second copy of stock-diagnose.ts's own
-// logic living here.
-async function handleDiagnose(args: Record<string, unknown>): Promise<ToolCallResult> {
-  return dispatchStockFor(DIAGNOSE_TOOL.name, args);
 }
 
 // --------------------------------------------------- unreachable diagnostics
@@ -1239,8 +1131,7 @@ type BrokerLeaseResult = { ok: true; lease: HeldLease | null } | { ok: false; me
  * owns host/container translation -- reading its result here is reuse, not
  * re-derivation). `port` is activeInstance().port (the broker allocates one
  * port per instance and passes it to -binarymonitoraddress on the stock
- * backend, per plan 02-03). `targetId` is grantId -- the same value
- * controlSession.recycle(grantId) already sends on the wire. Called only
+ * backend, per plan 02-03). `targetId` is grantId. Called only
  * from the two success returns below that hold a control session.
  */
 function buildHeldLease(session: BrokerControlSession): HeldLease {
@@ -1618,19 +1509,6 @@ for (const def of manifestTools) {
 // kind, so it is correct on either backend and is deliberately NOT routed
 // through dispatchStock (which would refuse the continuation mechanism itself).
 tools[RESULT_CONTINUE_TOOL.name] = buildViceTool(RESULT_CONTINUE_TOOL, (args) => Promise.resolve(handleResultContinue(args)));
-// vice_recycle/vice_diagnose keep their own dedicated handlers
-// (handleRecycle()/handleDiagnose(), declared above) rather than going
-// through the manifest loop's own inline dispatchStock() call -- both
-// handlers delegate to dispatchStock() themselves now, so the observable
-// behaviour is identical either way, but the named handlers stay the
-// registration point so they remain independently locatable and testable.
-// WR-07 (plan 07-16): resolveAdvertisedToolDefinition() picks the corrected
-// stock manifest entry when one exists, falling back to the synthetic
-// RECYCLE_TOOL/DIAGNOSE_TOOL definition otherwise, so the advertised
-// tools/list entry stays correct even if the manifest is ever missing or
-// malformed.
-tools[RECYCLE_TOOL.name] = buildViceTool(stockDispatch.resolveAdvertisedToolDefinition(RECYCLE_TOOL, manifestTools), (args) => handleRecycle(args));
-tools[DIAGNOSE_TOOL.name] = buildViceTool(stockDispatch.resolveAdvertisedToolDefinition(DIAGNOSE_TOOL, manifestTools), (args) => handleDiagnose(args));
 // D-13 (plan 65-02): the anno_* registration loop that used to sit here --
 // 25 tools, imported from anno-tools.ts's own curated definitions -- is
 // deleted outright, not narrowed. Annotation is a stateless, client-local
@@ -1681,9 +1559,8 @@ server.getServer().setRequestHandler(CallToolRequestSchema, async (request) => {
     // Restores wrapPossiblyChunked()'s only call site. buildViceTool() stamps
     // OUTPUT_CHAR_CAP onto EVERY tool's `_meta` unconditionally, so the
     // ceiling has to be honoured for every tool -- and this override is the
-    // one place all four registration families (the manifest loop,
-    // vice_recycle/vice_diagnose, the anno_* loop, and vice_result_continue
-    // itself) converge on a single result before it reaches the wire. A
+    // one place every registration (the manifest loop and
+    // vice_result_continue itself) converges on a single result before it reaches the wire. A
     // previous edit deleted this function's only caller and left the
     // function itself in place: for the whole life of one release a
     // registered continuation tool could only ever refuse an unknown token,

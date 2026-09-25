@@ -241,40 +241,6 @@ test("verifiedKill: killWaitS defaults to 5 seconds when neither the deps overri
   }
 });
 
-test("structural: the module's KillStage vocabulary is exactly the four words stock-recycle.ts's recycle-ack consumer switches on", () => {
-  // vice-proxy.ts's own fork-only handleRecycle() body (and its
-  // recycleAckOutcomeMessage() helper) that used to switch on this
-  // vocabulary directly is deleted along with the fork backend --
-  // vice_recycle's stock implementation, stock-recycle.ts's
-  // handleRecycleStock(), is the sole surviving consumer of this vocabulary
-  // now (reached, on every backend, through vice-proxy.ts's own
-  // stockDispatch.dispatchStock() delegation).
-  const killMts = readFileSync(join(HERE, "broker-kill.mts"), "utf8");
-  const killStageMatch = /export type KillStage = ([^;]+);/.exec(killMts);
-  assert.ok(killStageMatch, "broker-kill.mts must export a KillStage type alias");
-  const stageWords = killStageMatch![1]
-    .split("|")
-    .map((s) => s.trim().replace(/^"|"$/g, ""))
-    .sort();
-  assert.equal(stageWords.length, 4);
-  assert.deepEqual(stageWords, ["already_exited", "identity_refused", "sigkill", "sigterm"]);
-
-  const stockRecycleTs = readFileSync(join(HERE, "stock-recycle.ts"), "utf8");
-  for (const word of stageWords) {
-    assert.ok(stockRecycleTs.includes(`"${word}"`), `stock-recycle.ts must still reference stage word "${word}" -- a renamed/added stage word silently breaks its outcome renderer`);
-  }
-  assert.ok(stockRecycleTs.includes('case "identity_refused":'), 'stock-recycle.ts must still switch on the literal "identity_refused" case');
-
-  const successfulKillLine = stockRecycleTs.split("\n").find((l) => l.includes("const successfulKill"));
-  assert.ok(successfulKillLine, "stock-recycle.ts must still define successfulKill from kill_stage");
-  const successfulWords = [...successfulKillLine!.matchAll(/"([a-z_]+)"/g)].map((m) => m[1]).sort();
-  assert.deepEqual(
-    successfulWords,
-    stageWords.filter((w) => w !== "identity_refused").sort(),
-    "the 'successful kill' subset the consumer checks must be exactly the three non-refusal stage words",
-  );
-});
-
 // ============================================================================
 // Task 2: shutdown()/registerShutdownHandlers() -- every catchable path
 // converges on one re-entrant-safe teardown; startupBanner(); and the

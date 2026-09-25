@@ -43,20 +43,6 @@
 // test file ever escapes both this list and the automated set, so a silent
 // second list would desync from that guard the moment it existed.
 //
-// `stock-live-triage.test.ts` (plan 07-17) joined this list as the fifth
-// entry: like `stock-live.test.ts`, it is default-SKIP everywhere (never
-// hangs) but spawns a real emulator process -- including, for one of its own
-// cases, a genuine kill-and-relaunch -- when opted in via
-// VICE_LIVE_TRIAGE_BIN. Concurrent plan 07-13's `stock-live.test.ts` sibling
-// stays this list's fourth entry unchanged.
-//
-// `stock-live-broker-monitor.test.ts` (quick task 260818-obc) joined this
-// list as the SIXTH entry: it spawns a real broker daemon (resources/
-// vice-broker.mjs, under bare node) AND a real emulator process it kills and
-// lets the broker itself respawn, live-proving the broker-mediated
-// monitor_held_elsewhere verdict. Like every sibling above it is default-SKIP
-// everywhere (opt in via VICE_LIVE_BROKER_BIN) and never hangs CI.
-//
 // `stock-broker-live.test.ts` (audit item I-2, phase 8.2 plan 03) joined this
 // list as the SEVENTH entry: it spawns a real broker daemon (resources/
 // vice-broker.mjs, under bare node) AND a real genuine-stock emulator process
@@ -154,8 +140,6 @@ export const MANUAL_ONLY_TESTS = Object.freeze([
   "vice-proxy.test.ts",
   "broker-e2e.test.ts",
   "stock-live.test.ts",
-  "stock-live-triage.test.ts",
-  "stock-live-broker-monitor.test.ts",
   "stock-broker-live.test.ts",
   "stock-a4-checkpoint-flood.test.ts",
   "dxa-live.test.ts",

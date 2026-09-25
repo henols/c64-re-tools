@@ -1,10 +1,10 @@
 // broker-control.test.ts
 //
-// Plan 05: the complete control-plane message set (acquire/release/recycle/
+// Plan 05: the complete control-plane message set (acquire/release/
 // status/host_state), the arrival-ordered pending-acquire structure, and the
 // kernel-enforced singleton guard's two distinct outcomes. Most tests here
 // drive a REAL listener bound on port zero, in this test's own process,
-// against injected onAcquire/onRelease/onRecycle/onStatus/onHostState
+// against injected onAcquire/onRelease/onStatus/onHostState
 // stubs -- no real emulator, no real spawn, no test opens a connection to
 // the host VICE. The singleton-guard tests (task 3) additionally spawn the
 // real, BUILT broker artifact behind the escape hatch, exactly like
@@ -35,7 +35,6 @@ import {
   enumerateBindHosts,
   type StartControlListenerResult,
   type AcquireOutcome,
-  type RecycleOutcome,
   type StatusInstanceEntry,
   type HostStateFields,
   type PendingAcquireQueue,
@@ -190,7 +189,6 @@ interface StubDeps {
    * parameter carrying the already-sanitised session label. */
   onAcquire?: (id: string, profile?: LaunchProfile, label?: string | null) => Promise<AcquireOutcome>;
   onRelease?: (id: string) => void;
-  onRecycle?: (targetId: string) => Promise<RecycleOutcome>;
   onStatus?: () => StatusInstanceEntry[];
   onHostState?: () => HostStateFields;
   onMonitorClaim?: (requestId: string, targetId: string, channel: MonitorChannel) => MonitorClaimOutcome;
@@ -232,7 +230,6 @@ async function startTestListener(deps: StubDeps = {}): Promise<{
   listener: StartControlListenerResult;
   token: string;
   releases: string[];
-  recycleCalls: string[];
   monitorClaimCalls: string[];
   monitorReleaseCalls: string[];
   // Plan 41-03 (D-14): the channel each monitor_claim/monitor_release call
@@ -262,7 +259,6 @@ async function startTestListener(deps: StubDeps = {}): Promise<{
 }> {
   const token = newControlToken();
   const releases: string[] = [];
-  const recycleCalls: string[] = [];
   const monitorClaimCalls: string[] = [];
   const monitorReleaseCalls: string[] = [];
   const monitorClaimChannels: MonitorChannel[] = [];
@@ -282,12 +278,6 @@ async function startTestListener(deps: StubDeps = {}): Promise<{
       releases.push(id);
       deps.onRelease?.(id);
     },
-    onRecycle:
-      deps.onRecycle ??
-      (async (targetId) => {
-        recycleCalls.push(targetId);
-        return { port: null, pid: null, viceBin: null, killStage: "no_signal", epochBefore: null, outcome: "grant_lookup_failed", reason: "no stub configured" };
-      }),
     onStatus: deps.onStatus ?? (() => []),
     onHostState:
       deps.onHostState ??
@@ -355,7 +345,6 @@ async function startTestListener(deps: StubDeps = {}): Promise<{
     listener,
     token,
     releases,
-    recycleCalls,
     monitorClaimCalls,
     monitorReleaseCalls,
     monitorClaimChannels,
@@ -370,133 +359,18 @@ async function startTestListener(deps: StubDeps = {}): Promise<{
 }
 
 // ============================================================================
-// Task 1: recycle, status, host_state, and the arrival-ordered pending queue.
+// Task 1: status, host_state, and the arrival-ordered pending queue.
 // ============================================================================
 
-test("recycle: a grant this connection holds resolves, kills identity-verified, and answers an ack carrying the stage word and outcome", async () => {
-  let calledWith: string | null = null;
-  const { listener, token } = await startTestListener({
-    onAcquire: async () => ({ ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp", epochFile: "/tmp/epoch.json", supervisorDir: "/tmp/6600" } }),
-    onRecycle: async (targetId) => {
-      calledWith = targetId;
-      return { port: 6600, pid: 4242, viceBin: "x64sc", killStage: "sigterm", epochBefore: 3, outcome: "ok", reason: "" };
-    },
-  });
-  const client = makeClient(listener.port);
-  try {
-    client.send({ op: "acquire", id: "req-1", token });
-    const grant = await client.next();
-    assert.equal(grant.kind, "grant");
-
-    client.send({ op: "recycle", id: "recycle-1", target_id: "req-1", token });
-    const ack = await client.next();
-    assert.equal(ack.kind, "recycle_ack");
-    assert.equal(ack.target_id, "req-1");
-    assert.equal(ack.kill_stage, "sigterm");
-    assert.equal(ack.outcome, "ok");
-    assert.equal(ack.x64sc_pid, 4242);
-    assert.equal(ack.epoch_before, 3);
-    assert.equal(calledWith, "req-1");
-  } finally {
-    client.close();
-    listener.server.close();
-  }
-});
-
-// The recycle acknowledgement's field set, read from
-// resources/vice-broker.sh's own write_recycle_ack() ($1=id $2=target_id
-// $3=port $4=x64sc_pid $5=vice_bin $6=kill_stage $7=epoch_before $8=outcome
-// $9=reason) -- `version` and `acked_at` are file-envelope fields with no
-// equivalent need on a live connection and are deliberately dropped; `kind`
-// is this module's own wire-format discriminator, not a business field.
-const BASH_RECYCLE_ACK_FIELDS = ["id", "target_id", "port", "x64sc_pid", "vice_bin", "kill_stage", "epoch_before", "outcome", "reason"];
-
-test("recycle ack: the key set (minus the wire-format 'kind' discriminator) is deep-equal to the bash acknowledgement writer's own field list", async () => {
-  const { listener, token } = await startTestListener({
-    onAcquire: async () => ({ ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp", epochFile: "/tmp/epoch.json", supervisorDir: "/tmp/6600" } }),
-    onRecycle: async () => ({ port: 6600, pid: 1, viceBin: "x64sc", killStage: "sigterm", epochBefore: 1, outcome: "ok", reason: "" }),
-  });
-  const client = makeClient(listener.port);
-  try {
-    client.send({ op: "acquire", id: "req-1", token });
-    await client.next();
-    client.send({ op: "recycle", id: "recycle-1", target_id: "req-1", token });
-    const ack = await client.next();
-    const keys = Object.keys(ack).filter((k) => k !== "kind");
-    assert.deepEqual(keys.sort(), [...BASH_RECYCLE_ACK_FIELDS].sort());
-  } finally {
-    client.close();
-    listener.server.close();
-  }
-});
-
-// The container-side outcome renderer's own switch cases
-// (vice-proxy.ts's recycleAckOutcomeMessage(), read directly from source at
-// the time this test was written): identity_refused, target_lookup_failed,
-// grant_lookup_failed, epoch_lookup_failed, pid_lookup_failed, plus a
-// default fallback for anything else. This broker's recycle path never
-// needs to produce every one of these (target_lookup_failed has no
-// equivalent here -- an unowned target is answered `denied` at the
-// control-plane level, never as a recycle_ack outcome at all) -- the
-// values it CAN produce are a SUBSET, not a bijection.
-const CONTAINER_RENDERER_OUTCOME_CASES = ["identity_refused", "target_lookup_failed", "grant_lookup_failed", "epoch_lookup_failed", "pid_lookup_failed"];
-
-test("recycle outcome vocabulary: every outcome value this broker's recycle path can produce is a member of the container renderer's own switch cases", () => {
-  const producedByThisBroker = ["ok", "identity_refused", "grant_lookup_failed", "epoch_lookup_failed", "pid_lookup_failed"];
-  const nonOkValues = producedByThisBroker.filter((v) => v !== "ok");
-  for (const v of nonOkValues) {
-    assert.ok(CONTAINER_RENDERER_OUTCOME_CASES.includes(v), `outcome "${v}" must be one of the renderer's own switch cases: ${JSON.stringify(CONTAINER_RENDERER_OUTCOME_CASES)}`);
-  }
-});
-
-test("recycle: a kill returning the identity-refused stage word leaves the target alive and answers an outcome naming the refusal", async () => {
-  const { listener, token } = await startTestListener({
-    onAcquire: async () => ({ ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp", epochFile: "/tmp/e.json", supervisorDir: "/tmp/6600" } }),
-    onRecycle: async () => ({ port: 6600, pid: 999, viceBin: "x64sc", killStage: "identity_refused", epochBefore: 1, outcome: "identity_refused", reason: "mismatch" }),
-  });
-  const client = makeClient(listener.port);
-  try {
-    client.send({ op: "acquire", id: "req-1", token });
-    await client.next();
-    client.send({ op: "recycle", id: "recycle-1", target_id: "req-1", token });
-    const ack = await client.next();
-    assert.equal(ack.kill_stage, "identity_refused");
-    assert.equal(ack.outcome, "identity_refused");
-  } finally {
-    client.close();
-    listener.server.close();
-  }
-});
-
-test("recycle: naming a grant this connection does not hold answers the denied error code, and onRecycle is never invoked", async () => {
-  const { listener, token, recycleCalls } = await startTestListener({
-    onAcquire: async () => ({ ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp", epochFile: "/tmp/e.json", supervisorDir: "/tmp/6600" } }),
-  });
-  const client = makeClient(listener.port);
-  try {
-    client.send({ op: "acquire", id: "req-1", token });
-    await client.next();
-    // Recycle names SOME OTHER id -- one this connection never acquired.
-    client.send({ op: "recycle", id: "recycle-1", target_id: "req-someone-elses", token });
-    const resp = await client.next();
-    assert.equal(resp.kind, "error");
-    assert.equal(resp.code, "denied");
-    assert.deepEqual(recycleCalls, [], "onRecycle (and therefore any kill/signal it might issue) must never be invoked");
-  } finally {
-    client.close();
-    listener.server.close();
-  }
-});
-
-test("recycle: a connection holding NO grant at all answers denied for any target_id", async () => {
-  const { listener, token, recycleCalls } = await startTestListener();
+test("recycle is not an op: a recycle request is answered bad_request as an unknown op", async () => {
+  const { listener, token } = await startTestListener();
   const client = makeClient(listener.port);
   try {
     client.send({ op: "recycle", id: "recycle-1", target_id: "anything", token });
     const resp = await client.next();
     assert.equal(resp.kind, "error");
-    assert.equal(resp.code, "denied");
-    assert.deepEqual(recycleCalls, []);
+    assert.equal(resp.code, "bad_request");
+    assert.match(String(resp.message), /unknown op: recycle/);
   } finally {
     client.close();
     listener.server.close();
@@ -1019,7 +893,7 @@ test("monitor_release: a broker-side non-holder outcome answers a refusal, not s
 // ============================================================================
 // Phase 63, plan 63-03 (SESS-05): the `operation` op -- wire-level dispatch
 // (token gate, the SAME ownsTarget() predicate as monitor_claim/
-// monitor_release/recycle, the channel resolver, the sanitiser) against the
+// monitor_release, the channel resolver, the sanitiser) against the
 // injected onOperation stub. The actual grant-storage behaviour (what
 // handleOperationNote() does once called) is unit-tested directly in
 // vice-broker-acquire.test.ts, mirroring this file's own header comment
@@ -1043,7 +917,7 @@ test("operation: a declaration from a connection that owns the named grant is ac
   }
 });
 
-test("operation: a declaration naming a grant this connection does NOT hold is refused denied, with the SAME ownership wording monitor_claim/monitor_release/recycle share, and the callback never runs", async () => {
+test("operation: a declaration naming a grant this connection does NOT hold is refused denied, with the SAME ownership wording monitor_claim/monitor_release share, and the callback never runs", async () => {
   const { listener, token, operationCalls } = await startTestListener({ onAcquire: grantingAcquire() });
   const client = makeClient(listener.port);
   try {
@@ -2157,7 +2031,7 @@ test("ControlRequestKind (34-01/62-01/63-01/63-03/64-02/65-01, A-01/D-06/D-01/SE
   // AFTER the token gate, in the same post-gate chain as every other
   // target-naming op. Plan 63-03 (SESS-05) adds the eleventh member:
   // "operation", gated on the SAME ownsTarget() predicate as
-  // monitor_claim/monitor_release/recycle. Plan 64-02 (XFER-04, D-01) adds
+  // monitor_claim/monitor_release. Plan 64-02 (XFER-04, D-01) adds
   // the twelfth and thirteenth members: "stage_file" (gated by ownsTarget(),
   // like operation) and "transfer" (deliberately NOT gated, like attach).
   // Plan 65-01 (SEAM-01) adds the fourteenth and fifteenth members:
@@ -2165,8 +2039,8 @@ test("ControlRequestKind (34-01/62-01/63-01/63-03/64-02/65-01, A-01/D-06/D-01/SE
   // beside attach/transfer, never gated by ownsTarget() -- a skill call
   // holds no acquire-level grant to gate on.
   assert.equal(match![1].trim(),
-    '"acquire" | "release" | "recycle" | "status" | "host_state" | "monitor_claim" | "monitor_release" | "host_tool" | "hello" | "attach" | "operation" | "stage_file" | "transfer" | "host_tool_stage" | "host_tool_run"',
-    "the union must be exactly the prior thirteen members plus plan 65-01's host_tool_stage and host_tool_run (SEAM-01)",
+    '"acquire" | "release" | "status" | "host_state" | "monitor_claim" | "monitor_release" | "host_tool" | "hello" | "attach" | "operation" | "stage_file" | "transfer" | "host_tool_stage" | "host_tool_run"',
+    "the union must be exactly these fourteen members (recycle was removed with vice_recycle)",
   );
 });
 
@@ -2640,12 +2514,7 @@ test("structural: vice-broker.mts or broker-control.mts states in a comment that
 });
 
 // ============================================================================
-// 01.6.2-13-PLAN.md, Task 2: the release and recycle handlers must set the
-// deliberate-death marker BEFORE their own kill call, with OPPOSITE
-// respawn-after-kill answers -- held here by a region-scoped source-order
-// structural gate, following the SAME region-scoping technique the two
-// structural tests above already use for this file, rather than inventing a
-// second one.
+// Source-region helpers for the structural gates in this file.
 // ============================================================================
 
 /** Strips both `/* ... *\/` (including JSDoc) block comments and whole `//`
@@ -2670,50 +2539,6 @@ function extractSourceRegion(source: string, startMarker: string, endMarker: str
   assert.ok(endIdx !== -1 && endIdx > startIdx, `extractSourceRegion: end marker not found after start: ${endMarker}`);
   return source.slice(startIdx, endIdx);
 }
-
-test("structural: the release and recycle handlers both set the deliberate-death marker before their own kill call, and set opposite respawn-after-kill answers", () => {
-  const source = stripCommentsForStructuralGate(readFileSync(join(HERE, "vice-broker.mts"), "utf8"));
-
-  const recycleRegion = extractSourceRegion(
-    source,
-    "export async function handleRecycleForRealBroker(targetId: string, state: BrokerState, deps: HandleRecycleDeps = {}): Promise<RecycleOutcome> {",
-    // Plan 41-05 (folded todo): the end marker is RENAMED, not deleted --
-    // the retired maintainWarmFloorForRealBroker() this used to bound the
-    // region against is replaced by promoteLaunchingForRealBroker(), the
-    // next function declared after handleRecycleForRealBroker() in source
-    // order.
-    "function promoteLaunchingForRealBroker(state: BrokerState, backend: ViceBackend): Promise<void> {",
-  );
-  const releaseRegion = extractSourceRegion(
-    source,
-    // Plan 63-04 Task 3: the marker is UPDATED, not deleted -- the handler
-    // gained an optional `deps: HandleReleaseDeps = {}` parameter, and this
-    // region-scoping marker must track its real signature or this whole
-    // gate would silently stop finding the function at all.
-    "export function handleRelease(requestId: string, state: BrokerState, deps: HandleReleaseDeps = {}): void {",
-    "async function run(args: ParsedArgs): Promise<void> {",
-  );
-
-  const recycleMarkerIdx = recycleRegion.indexOf("markDeliberateDeath(");
-  const recycleKillIdx = recycleRegion.indexOf("verifiedKill(");
-  assert.ok(recycleMarkerIdx !== -1, "the recycle handler must call the shared marker-and-intent setter");
-  assert.ok(recycleKillIdx !== -1, "the recycle handler must call verifiedKill()");
-  assert.ok(recycleMarkerIdx < recycleKillIdx, "the recycle handler must set the marker BEFORE its own kill call");
-
-  const releaseMarkerIdx = releaseRegion.indexOf("markDeliberateDeath(");
-  const releaseKillIdx = releaseRegion.indexOf("verifiedKill(");
-  assert.ok(releaseMarkerIdx !== -1, "the release handler must call the shared marker-and-intent setter");
-  assert.ok(releaseKillIdx !== -1, "the release handler must call verifiedKill()");
-  assert.ok(releaseMarkerIdx < releaseKillIdx, "the release handler must set the marker BEFORE its own kill call");
-
-  const recycleCall = recycleRegion.match(/markDeliberateDeath\([^)]*\)/);
-  const releaseCall = releaseRegion.match(/markDeliberateDeath\([^)]*\)/);
-  assert.ok(recycleCall, "the recycle handler's setter call must be matchable");
-  assert.ok(releaseCall, "the release handler's setter call must be matchable");
-  assert.notEqual(recycleCall![0], releaseCall![0], "the two call sites must pass opposite respawn-after-kill answers");
-  assert.match(recycleCall![0], /\btrue\b/, "the recycle handler must pass a TRUE respawn-after-kill answer");
-  assert.match(releaseCall![0], /\bfalse\b/, "the release handler must pass a FALSE respawn-after-kill answer");
-});
 
 test("a bind failure whose cause is NOT address-in-use produces its own loud failure, distinct from either singleton path", async () => {
   build();
@@ -2796,8 +2621,8 @@ test("ControlRequestKind (34-01/62-01/63-01/63-03/64-02/65-01, A-01/D-06/D-01/SE
     .map((s) => s.trim().replace(/^"|"$/g, ""))
     .filter((s) => s !== "");
   assert.deepEqual(members,
-    ["acquire", "release", "recycle", "status", "host_state", "monitor_claim", "monitor_release", "host_tool", "hello", "attach", "operation", "stage_file", "transfer", "host_tool_stage", "host_tool_run"],
-    "the message set must be exactly the prior thirteen plus plan 65-01's host_tool_stage and host_tool_run " +
+    ["acquire", "release", "status", "host_state", "monitor_claim", "monitor_release", "host_tool", "hello", "attach", "operation", "stage_file", "transfer", "host_tool_stage", "host_tool_run"],
+    "the message set must be exactly these fourteen members " +
       "(SEAM-01) -- a genuinely reviewed widening, not a per-tool one: a second host tool is still a new " +
       "HOST_TOOL_IDS entry in host-tool.mts, never a further ControlRequestKind member",
   );
@@ -3104,7 +2929,7 @@ test("acquire profile (33-06): the profile survives being QUEUED behind an in-fl
 
 const BROKER_CONTROL_MTS = join(HERE, "broker-control.mts");
 
-test("the ControlRequestKind union has exactly fifteen members including hello, attach, operation, stage_file, transfer, host_tool_stage and host_tool_run, and the hello arm's dispatch sits before the tokensMatch() call", () => {
+test("the ControlRequestKind union has exactly fourteen members including hello, attach, operation, stage_file, transfer, host_tool_stage and host_tool_run, and the hello arm's dispatch sits before the tokensMatch() call", () => {
   const source = readFileSync(BROKER_CONTROL_MTS, "utf8");
 
   const unionMatch = source.match(/export type ControlRequestKind = ([^;]+);/);
@@ -3113,7 +2938,7 @@ test("the ControlRequestKind union has exactly fifteen members including hello, 
     .split("|")
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
-  assert.equal(members.length, 15, `expected 15 ControlRequestKind members, got ${members.length}: ${JSON.stringify(members)}`);
+  assert.equal(members.length, 14, `expected 14 ControlRequestKind members, got ${members.length}: ${JSON.stringify(members)}`);
   assert.ok(members.includes('"hello"'), `hello must be a member of ControlRequestKind, got ${JSON.stringify(members)}`);
   assert.ok(members.includes('"attach"'), `attach must be a member of ControlRequestKind, got ${JSON.stringify(members)}`);
   assert.ok(members.includes('"operation"'), `operation must be a member of ControlRequestKind, got ${JSON.stringify(members)}`);
@@ -3351,15 +3176,6 @@ test("startControlListenerOnHosts: two listeners on two different bound addresse
       return { ok: true, grant: { port: 6600, url: "http://127.0.0.1:6600/mcp", epochFile: "/tmp/e.json", supervisorDir: "/tmp/6600" } };
     },
     onRelease: () => {},
-    onRecycle: async (): Promise<RecycleOutcome> => ({
-      port: null,
-      pid: null,
-      viceBin: null,
-      killStage: "no_signal",
-      epochBefore: null,
-      outcome: "grant_lookup_failed",
-      reason: "not exercised by this test",
-    }),
     onStatus: (): StatusInstanceEntry[] => [],
     onHostState: (): HostStateFields => ({
       pid: process.pid,
@@ -3568,8 +3384,8 @@ const KNOWN_NON_TARGET_NAMING_OPS = new Set(["acquire", "release", "status", "ho
 // The set this invariant test actually EXERCISES below -- every op whose
 // dispatch arm reads `req.target_id` and resolves it against a grant.
 // `stage_file` (Phase 64, XFER-04) joins this set: gated by the SAME
-// ownsTarget() predicate as monitor_claim/monitor_release/recycle/operation.
-const TARGET_NAMING_OPS_UNDER_TEST = ["monitor_claim", "monitor_release", "recycle", "attach", "operation", "stage_file"];
+// ownsTarget() predicate as monitor_claim/monitor_release/operation.
+const TARGET_NAMING_OPS_UNDER_TEST = ["monitor_claim", "monitor_release", "attach", "operation", "stage_file"];
 
 test("invariant (63-05, T-63-17): every target-naming op refuses ANOTHER session's declared label used as a target id, byte-identically to a bare unrelated garbage target id, and the refusal never quotes the label back; the covered op set is asserted against ControlRequestKind so a future target-naming op reds this test until it is listed", async () => {
   // Structural half FIRST: read ControlRequestKind's own live declaration
@@ -3644,10 +3460,10 @@ test("invariant (63-05, T-63-17): every target-naming op refuses ANOTHER session
     }
 
     // A's own grant must be entirely untouched by every attempt above --
-    // prove it can still recycle itself through its own connection.
-    clientA.send({ op: "recycle", id: "recycle-a-still-alive", target_id: "grant-a", token });
-    const recycleResp = await clientA.next();
-    assert.equal(recycleResp.kind, "recycle_ack", "A's own grant must be unaffected by every refused attempt against its label");
+    // prove it can still declare an operation on it through its own connection.
+    clientA.send({ op: "operation", id: "op-a-still-alive", target_id: "grant-a", name: "vice_ping", token });
+    const ownResp = await clientA.next();
+    assert.equal(ownResp.kind, "operation_noted", "A's own grant must be unaffected by every refused attempt against its label");
   } finally {
     clientA.close();
     clientB.close();
@@ -3667,8 +3483,8 @@ test("invariant (63-05, T-63-17): every target-naming op refuses ANOTHER session
 // read out of a comment.
 // ============================================================================
 
-test("stateless call (63-05, SESS-01): a host_tool request never fires an acquire, release, recycle, monitor-claim, monitor-release, attach or operation callback, the closed connection's own close triggers no release, and status is unchanged across ten sequential calls", async () => {
-  const calls = { acquire: 0, release: 0, recycle: 0, monitorClaim: 0, monitorRelease: 0, attach: 0, operation: 0 };
+test("stateless call (63-05, SESS-01): a host_tool request never fires an acquire, release, monitor-claim, monitor-release, attach or operation callback, the closed connection's own close triggers no release, and status is unchanged across ten sequential calls", async () => {
+  const calls = { acquire: 0, release: 0, monitorClaim: 0, monitorRelease: 0, attach: 0, operation: 0 };
   const fixedStatus: StatusInstanceEntry[] = [
     { port: 6600, url: "http://127.0.0.1:6600/mcp", state: "ready", reason: "spare", epoch: null, hasMonitorClient: false, sessionLabel: null, grantId: null, operation: null },
   ];
@@ -3679,10 +3495,6 @@ test("stateless call (63-05, SESS-01): a host_tool request never fires an acquir
     },
     onRelease: () => {
       calls.release++;
-    },
-    onRecycle: async () => {
-      calls.recycle++;
-      return { port: null, pid: null, viceBin: null, killStage: "no_signal", epochBefore: null, outcome: "grant_lookup_failed", reason: "" };
     },
     onStatus: () => fixedStatus,
     onMonitorClaim: () => {
@@ -3728,7 +3540,7 @@ test("stateless call (63-05, SESS-01): a host_tool request never fires an acquir
     assert.deepEqual(snapshotAfter, snapshotBefore, "status must be byte-identical before and after ten stateless calls");
     assert.deepEqual(
       calls,
-      { acquire: 0, release: 0, recycle: 0, monitorClaim: 0, monitorRelease: 0, attach: 0, operation: 0 },
+      { acquire: 0, release: 0, monitorClaim: 0, monitorRelease: 0, attach: 0, operation: 0 },
       "no lease-bearing callback may ever fire for a stateless host_tool call, across any of the ten repetitions",
     );
   } finally {

@@ -6,7 +6,7 @@
 // rebuild.
 // broker-control.mts
 //
-// The framing, the token gate, acquire/release, recycle, status,
+// The framing, the token gate, acquire/release, status,
 // host_state, the arrival-ordered pending-acquire structure, and the
 // kernel-enforced singleton guard's low-level bind primitive. Also adds
 // `monitor_claim`/`monitor_release`: exclusive ownership of an instance's
@@ -32,7 +32,7 @@
 // version of this comment stated, but does not drop the credential
 // itself: monitor_claim (which mints an attach handle) and stage_file
 // (which mints a transfer handle) are BOTH still token-gated, and every
-// other op -- acquire, release, recycle, status, host_state,
+// other op -- acquire, release, status, host_state,
 // monitor_claim, monitor_release, host_tool, operation -- still gates on
 // the SAME per-boot capability token compared constant-time, checked
 // BEFORE any state read or write, until Phase 66 (RM-02) deletes
@@ -563,8 +563,7 @@ function attachControlProtocol(server, opts, pendingAcquires) {
         });
         /**
          * THE per-connection ownership predicate every target-naming op is
-         * gated on -- the same rule `recycle` has enforced since this
-         * protocol's earliest version, now shared rather than copied.
+         * gated on, shared rather than copied.
          *
          * Before this existed, `monitor_claim`/`monitor_release` took `target_id`
          * from the request and passed it straight through, so any connection
@@ -971,7 +970,7 @@ function attachControlProtocol(server, opts, pendingAcquires) {
             // reach attemptAcquire() -- what actually makes this branch unable to
             // touch lease state is that opts.onHostTool is its OWN callback (see
             // StartControlListenerOptions' own comment), never composed from
-            // onAcquire/onRelease/onRecycle/onStatus/onHostState/onMonitorClaim/
+            // onAcquire/onRelease/onStatus/onHostState/onMonitorClaim/
             // onMonitorRelease.
             if (req.op === "host_tool") {
                 opts
@@ -1026,44 +1025,6 @@ function attachControlProtocol(server, opts, pendingAcquires) {
                     opts.onRelease(id);
                 }
                 writeLine(socket, { kind: "released" });
-            }
-            else if (req.op === "recycle") {
-                const recycleId = typeof req.id === "string" && req.id !== "" ? req.id : defaultRequestId("recycle");
-                const targetId = typeof req.target_id === "string" ? req.target_id : "";
-                // T-01.6.2-31: a connection may only recycle the grant IT ITSELF
-                // holds. This check happens here, before onRecycle() is ever
-                // called, so a mismatched target never reaches the kill discipline
-                // and never signals anything -- an injected signal recorder stays
-                // empty for this case. Now expressed through the SAME ownsTarget()
-                // predicate monitor_claim/monitor_release use, so the three
-                // target-naming ops cannot drift apart.
-                if (!ownsTarget(targetId)) {
-                    writeLine(socket, {
-                        kind: "error",
-                        code: "denied",
-                        message: "recycle may only target the grant this connection itself holds",
-                    });
-                    return;
-                }
-                opts
-                    .onRecycle(targetId)
-                    .then((result) => {
-                    writeLine(socket, {
-                        kind: "recycle_ack",
-                        id: recycleId,
-                        target_id: targetId,
-                        port: result.port,
-                        x64sc_pid: result.pid,
-                        vice_bin: result.viceBin,
-                        kill_stage: result.killStage,
-                        epoch_before: result.epochBefore,
-                        outcome: result.outcome,
-                        reason: result.reason,
-                    });
-                })
-                    .catch(() => {
-                    writeLine(socket, { kind: "error", code: "internal", message: "recycle threw" });
-                });
             }
             else if (req.op === "status") {
                 writeLine(socket, { kind: "status", instances: opts.onStatus() });
@@ -1212,7 +1173,7 @@ function attachControlProtocol(server, opts, pendingAcquires) {
             }
             else if (req.op === "stage_file") {
                 // Phase 64 (XFER-04, D-01). Gated on the SAME ownsTarget() predicate
-                // monitor_claim/monitor_release/recycle/operation already share --
+                // monitor_claim/monitor_release/operation already share --
                 // dispatched on this connection's ORDINARY line reader; never
                 // touches relayMode.
                 const targetId = typeof req.target_id === "string" ? req.target_id : "";

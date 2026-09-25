@@ -765,7 +765,7 @@ test("reproducible: at frame_anchor === address an anchor frame arriving FIRST d
 // per-request timeout, with the socket and instance still alive. The frame
 // anchor is temporary:false and stop:true at a once-per-frame address, so
 // leaving it armed makes every later resume on that session halt within one
-// frame -- indistinguishable from a wedge to vice-wedge-triage.
+// frame -- indistinguishable from a wedge.
 //
 // Both directions are asserted, because the value here is in the DISTINCTION:
 // a live instance gets its anchor deleted, a restarted one is untouched.

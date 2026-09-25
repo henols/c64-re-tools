@@ -679,7 +679,7 @@ This one is the route between the stations. It does not restate what the others 
 | Assembling | `acme-build` |
 | Static disassembly of a `.prg` or flat image | **`anno export-asm`** — withdrawn 2026-08-29, returned 2026-08-31 behind a real-ACME byte-diff oracle that is test-only, so the verb writes source and assembles nothing. Read one range at a time with `anno call anno_read_region` for a single routine (see above) |
 | Whether a byte is original or cracker-changed | `c64-provenance-diff` |
-| The emulator stopped moving — wedged, self-trapped, or respawned | `vice-wedge-triage` |
+| The emulator stopped moving — wedged, self-trapped, or respawned | `references/observation-hazards.md` — enumerate your own armed checkpoints first |
 | **Which address to read next, and what the answer rules out** | here |
 
 ## References

@@ -11,8 +11,7 @@
       "unblocks": {
         "skills": [
           "c64-program-recon",
-          "c64-ram-capture",
-          "vice-wedge-triage"
+          "c64-ram-capture"
         ],
         "mcp": [
           "c1541.bam",
@@ -383,8 +382,7 @@
           "c64-program-recon",
           "c64-provenance-diff",
           "c64-ram-capture",
-          "routine-queue-walker",
-          "vice-wedge-triage"
+          "routine-queue-walker"
         ],
         "mcp": [
           "acme.build",

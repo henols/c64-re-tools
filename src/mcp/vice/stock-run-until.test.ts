@@ -525,7 +525,7 @@ test("run_until: WR-01 a StockConnectionClosedError on the cleanup delete does N
   assert.equal(payload.cleanup, "delete_failed");
   assert.equal(payload.machineHalted, false, "a dead socket cannot establish that the machine is halted");
   assert.match(payload.machineHaltedNote as string, /could NOT be established/);
-  assert.match(payload.machineHaltedNote as string, /vice_diagnose/);
+  assert.match(payload.machineHaltedNote as string, /vice_execution_pause/);
   assert.doesNotMatch(
     payload.explanation as string,
     /needs vice_execution_run to resume/,

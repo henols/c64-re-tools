@@ -444,8 +444,7 @@ const SNAPSHOT_STAGE_SLOT = "snapshot";
  * asserts none of them names the staged path or its containing directory.
  * `handle` preserves the one thing `sentPath` was informally used for --
  * the only correlation thread between a tool result and broker-side
- * diagnostics the vice-wedge-triage skill depends on -- without leaking a
- * path. Its named, accepted cost: an opaque token now appears in a result
+ * diagnostics -- without leaking a path. Its named, accepted cost: an opaque token now appears in a result
  * and an agent may be tempted to reuse it as an argument elsewhere; no tool
  * in this file accepts a handle-shaped argument, so there is nothing here
  * for such a value to be silently accepted by.

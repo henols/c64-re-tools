@@ -697,8 +697,6 @@ const DERIVED_TOOL_MODULES: Record<string, string> = {
   vice_sprite_inspect: "stock-sprites.ts",
   vice_cycles_stopwatch: "stock-timing.ts",
   vice_run_until: "stock-run-until.ts",
-  vice_diagnose: "stock-diagnose.ts",
-  vice_recycle: "stock-recycle.ts",
   vice_device_console: "text-tools.ts",
   vice_warp_set: "text-tools.ts",
   vice_memmap_show: "text-tools.ts",

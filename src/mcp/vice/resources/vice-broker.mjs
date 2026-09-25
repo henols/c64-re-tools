@@ -340,9 +340,8 @@ function writeEpochForLaunch(record, logRelPath) {
     // The in-memory record's own epoch field must carry the SAME value the
     // epoch record was just written with -- without this, every
     // first-generation instance reports an absent epoch to the status
-    // response and an absent epoch-before in a recycle acknowledgement,
-    // making a later respawn's advance unobservable at the one place a
-    // caller reads it (handleStatus(), handleRecycleForRealBroker()).
+    // response, making a later respawn's advance unobservable at the one
+    // place a caller reads it (handleStatus()).
     record.epoch = epochRecord.epoch;
 }
 /** Builds the supervision dependency object for withCrashSupervision(),
@@ -364,8 +363,7 @@ function writeEpochForLaunch(record, logRelPath) {
  * optional field a call site may quietly omit. Before this, both real call
  * sites built their deps here WITHOUT it, so `spawnAndRecordInstance()`'s own
  * unset-parameter default silently took over the moment crash supervision
- * replaced an instance -- a stock instance's crash-respawn or `vice_recycle`
- * could relaunch it with a different backend's argv shape than the one it
+ * replaced an instance -- a stock instance's crash-respawn could relaunch it with a different backend's argv shape than the one it
  * was actually launched with, leaving a pool member that can never be
  * reached over the binary monitor again while still counting toward
  * countReady()/countTotal(). Making it positional and required is what makes
@@ -403,23 +401,18 @@ function superviseDepsFor(stateDir, state, backend, viceBin, binmonHost) {
  * REAL deps object this module actually uses in production, rather than a
  * hand-built SuperviseChildDeps that can (and did) diverge from it -- the
  * exact blind spot the backend-argv bug above lived in: broker-launch.test.ts's
- * own respawn/recycle tests each construct their deps inline and therefore pass
+ * own respawn tests each construct their deps inline and therefore pass
  * `backend: "stock"` directly, so the production builder's missing field was
  * invisible to the whole suite. Same discipline as broker-kill.mts's
  * `_HANDLED_SIGNALS`: an underscore-prefixed alias, never called by any
  * production code path in this module. */
 export const _superviseDepsFor = superviseDepsFor;
-/** Sets the deliberate-death marker and its respawn-after-kill answer
- * TOGETHER -- the single place in this module that ever writes either
- * field, so a call site can never set one and forget the other, which is
- * the exact shape of the defect this closes (T-01.6.2-80). Called BEFORE
- * any signal reaches the target child in both handlers below, never after:
- * the exit handler (broker-launch.mts) runs on the child's OWN exit event,
- * so a marker set after the signal arrives too late to be read
- * (T-01.6.2-84). */
-function markDeliberateDeath(instance, respawnAfterKill) {
+/** Sets the deliberate-death marker. Called BEFORE any signal reaches the
+ * target child, never after: the exit handler (broker-launch.mts) runs on
+ * the child's OWN exit event, so a marker set after the signal arrives too
+ * late to be read (T-01.6.2-84). */
+function markDeliberateDeath(instance) {
     instance.deliberateKill = true;
-    instance.respawnAfterKill = respawnAfterKill;
 }
 // ---------------------------------------------------------------------------
 // THE WARM-INSTANCE PROFILE-ELIGIBILITY RULE.
@@ -536,7 +529,7 @@ async function selectWarmInstance(state, deps) {
         // An ineligible miss falls through EXACTLY as a "no warm instance" miss
         // does: to the caller's own cold arm, which records the one and only
         // grant. It opens no second `state.grants.set()` call, and it never
-        // kills, recycles or re-warps the mismatched instance (see
+        // kills or re-warps the mismatched instance (see
         // profileEligible()'s own banner for why those are excluded by design).
         if (!profileEligible(record, deps.requestedProfile))
             continue;
@@ -558,15 +551,14 @@ async function selectWarmInstance(state, deps) {
         // concurrent sibling's own probe on this same candidate resolves. The
         // fire-and-forget kill below only changes what happens to the kill's
         // own PROMISE next, never this ordering.
-        markDeliberateDeath(record, false);
+        markDeliberateDeath(record);
         // Dropping a record is also where its second
         // (`-remotemonitor`) port stops being spoken for -- deleteInstanceRecord()
         // is the ONE place both mutations happen together, so a drop can never
         // leak a port out of the fixed allocation band.
         deleteInstanceRecord(state, record.port);
         // Distinct wording from shutdown()'s own "shutdown complete" line
-        // (broker-kill.mts) and from handleRecycleForRealBroker's own log-free
-        // path -- the standing constraint that a lifecycle decision must be
+        // (broker-kill.mts) -- the standing constraint that a lifecycle decision must be
         // reconstructable from the log after an incident (both 2026-08-01 and
         // 2026-08-02 were diagnosed from broker log lines). Logged BEFORE the
         // kill settles: the walk does not wait for deps.kill(...) to
@@ -758,7 +750,7 @@ export async function handleAcquire(requestId, stateDir, state, deps = {}) {
  * instance's CURRENT pid. Scanning by (port, pid) rather than merely by
  * port is what keeps a stale grant from reporting IDENTITY for an instance
  * whose port occupant has since been replaced by an unrelated launch (a
- * crash-respawn, a recycle onto a fresh pid, a give-up) -- exactly the same
+ * crash-respawn or a give-up) -- exactly the same
  * gap handleRelease()'s own header comment describes for the kill
  * discipline, now applied to what status DISPLAYS rather than what a
  * release KILLS. Returns `null` when no grant currently matches, which the
@@ -797,7 +789,7 @@ export function handleStatus(state) {
     });
 }
 /** Resolves a monitor_claim/monitor_release target the SAME way
- * handleRelease() and handleRecycleForRealBroker() already resolve theirs:
+ * handleRelease() already resolves its own:
  * `targetId` is a grant id, looked up in state.grants for its port, then
  * the instance at that port. Returns `null` for an unknown target_id/port
  * so callers answer `bad_request`, never `internal`. */
@@ -813,7 +805,7 @@ function resolveInstanceForMonitorTarget(targetId, state) {
  * before any second `connect()` is ever attempted -- the one state stock
  * VICE cannot report and no client-side heuristic can diagnose. `targetId`
  * doubles as both "which instance" (resolved via the SAME grant lookup
- * handleRelease()/handleRecycleForRealBroker() already use) and "the
+ * handleRelease() already uses) and "the
  * requesting grant's own identity" -- the claim IS the grant, so there is
  * no separate identity to carry. A repeated claim from the SAME grant on
  * the SAME channel is idempotent (`ok: true`, no second holder created); a
@@ -1113,7 +1105,7 @@ export function handleHostToolEnd(requestKey) {
  * removed from `state.relaySessions` -- the other being
  * tearDownRelaySessionForChannel() below (whose whole-grant caller,
  * tearDownRelaySessionsForGrant(), and handleMonitorRelease() -- Phase 63,
- * gap closure plan 63-11 -- are wired into every deliberate release/recycle
+ * gap closure plan 63-11 -- are wired into every deliberate release
  * path BEFORE the process or channel they own is signalled), using the
  * same delete-before-close order this function itself uses (see that
  * function's own header comment for why the order is load-bearing). Called
@@ -1262,8 +1254,7 @@ export function tearDownRelaySessionForChannel(targetId, channel, state) {
  * delete-before-close implementation both this function and
  * handleMonitorRelease() share (see that function's own header comment for
  * the full delete-before-close rationale). Called from BOTH of
- * handleRelease()'s branches below, and from handleRecycleForRealBroker(),
- * strictly BEFORE the process this grant owns is signalled.
+ * handleRelease()'s branches below, strictly BEFORE the process this grant owns is signalled.
  *
  * Returns the array of channels that actually held a live session -- an
  * empty array is the ordinary case (most grants never attach a relay at
@@ -1335,7 +1326,7 @@ export function tearDownRelaySessionsForGrant(targetId, state) {
  * On a dial that is ABANDONED (the client leg closed, or the instance/holder
  * identity this attach validated no longer matches the broker's live state):
  * the holder's `attached` marker is cleared -- but ONLY if that holder is
- * still the current one (a release or a recycle that already ran has its
+ * still the current one (a release or a respawn that already ran has its
  * own holder, or none, and must never be perturbed by a stale dial's own
  * cleanup) -- and this function answers a generic `denied`, writing no
  * incident and never splicing. On a dial that GENUINELY FAILS (its own
@@ -1396,7 +1387,7 @@ export async function handleRelayAttach(targetId, channel, presentedHandle, clie
     // stale. `instance`/`holder` here are the EXACT objects validated above --
     // re-resolving the instance for `targetId` and re-reading the channel's
     // current holder and comparing by IDENTITY (never by value) is what
-    // catches a recycle respawn (a brand new InstanceRecord object at the
+    // catches a respawn (a brand new InstanceRecord object at the
     // same or a different port) and a release (the SAME instance object, but
     // a cleared or replaced holder) alike.
     const isAbandoned = () => {
@@ -1418,7 +1409,7 @@ export async function handleRelayAttach(targetId, channel, presentedHandle, clie
     });
     if (!dial.ok) {
         // G-64-4 Task 2: cleared ONLY if this holder is still the CURRENT one --
-        // a release or a recycle that already ran has its own holder (or none
+        // a release or a respawn that already ran has its own holder (or none
         // at all) and must never be perturbed by a stale dial's own cleanup.
         if (instance.monitorClients[channel] === holder)
             holder.attached = false;
@@ -1446,7 +1437,7 @@ export async function handleRelayAttach(targetId, channel, presentedHandle, clie
     }
     // Connected -- re-check the SAME three conditions once more before ever
     // splicing (T-64-G4-02): an instance that reused this exact port after a
-    // kill/recycle while this dial was in flight must never be spliced to as
+    // kill or respawn while this dial was in flight must never be spliced to as
     // if it were still this attach's own original target.
     if (isAbandoned()) {
         if (!dial.socket.destroyed)
@@ -1577,63 +1568,6 @@ export function handleOperationNote(targetId, channel, name, state, opts = {}) {
     }
     return { ok: true };
 }
-export async function handleRecycleForRealBroker(targetId, state, deps = {}) {
-    const grant = state.grants.get(targetId);
-    if (!grant) {
-        return {
-            port: null,
-            pid: null,
-            viceBin: null,
-            killStage: "no_signal",
-            epochBefore: null,
-            outcome: "grant_lookup_failed",
-            reason: `no grant record found for target ${targetId}`,
-        };
-    }
-    const instance = state.instances.get(grant.port);
-    if (!instance) {
-        return {
-            port: grant.port,
-            pid: null,
-            viceBin: null,
-            killStage: "no_signal",
-            epochBefore: null,
-            outcome: "epoch_lookup_failed",
-            reason: `no resolvable epoch record for target ${targetId} (port ${grant.port})`,
-        };
-    }
-    if (instance.pid === null) {
-        return {
-            port: instance.port,
-            pid: null,
-            viceBin: instance.viceBin,
-            killStage: "no_signal",
-            epochBefore: typeof instance.epoch === "number" ? instance.epoch : null,
-            outcome: "pid_lookup_failed",
-            reason: `epoch record carries no pid for target ${targetId}`,
-        };
-    }
-    const epochBefore = typeof instance.epoch === "number" ? instance.epoch : null;
-    markDeliberateDeath(instance, true);
-    // Plan 05: a recycle clears monitor-client ownership as a side effect --
-    // the respawned record the exit handler creates is a BRAND NEW
-    // InstanceRecord object (broker-launch.mts's spawnAndRecordInstance())
-    // that never carries this field forward regardless, but clearing it here
-    // too keeps the CURRENT (pre-kill) record's own state honest for the
-    // window between this call and that respawn.
-    clearMonitorClient(instance);
-    // Plan 63-07 Task 2 (SESS-05 gap closure): torn down BEFORE the kill --
-    // see this function's own header comment for why the order matters.
-    const tornDown = tearDownRelaySessionsForGrant(targetId, state);
-    if (tornDown.length > 0) {
-        process.stderr.write(`vice-broker: recycle on target ${targetId} tore down live relay session(s) on channel(s) ${tornDown.join(", ")} ahead of the kill\n`);
-    }
-    const kill = deps.kill ?? ((opts) => verifiedKill(opts));
-    const killStage = await kill({ pid: instance.pid, expectedIdentity: instance.expectedIdentity });
-    const outcome = killStage === "identity_refused" ? "identity_refused" : "ok";
-    const reason = killStage === "identity_refused" ? "process identity did not match the recorded emulator binary -- the target was NOT signalled and is still running" : "";
-    return { port: instance.port, pid: instance.pid, viceBin: instance.viceBin, killStage, epochBefore, outcome, reason };
-}
 /** The second concern of the fixed-order evaluation pass, RENAMED from the
  * retired warm-floor maintenance function this replaces (the projection
  * write is dropped, and the grant sweep does not appear -- the connection
@@ -1694,7 +1628,7 @@ export function handleRelease(requestId, state, deps = {}) {
         if (tornDown.length > 0) {
             process.stderr.write(`vice-broker: release on target ${requestId} tore down live relay session(s) on channel(s) ${tornDown.join(", ")} ahead of the kill\n`);
         }
-        markDeliberateDeath(instance, false);
+        markDeliberateDeath(instance);
         // Plan 05: releasing clears monitor-client ownership (every channel) as
         // a side effect -- redundant with the instance-map deletion two lines
         // below (the WHOLE record, monitorClients included, is going away), but
@@ -1968,7 +1902,6 @@ async function run(args) {
                 sessionLabel: label,
             }),
             onRelease: (requestId) => handleRelease(requestId, state),
-            onRecycle: (targetId) => handleRecycleForRealBroker(targetId, state),
             onStatus: () => handleStatus(state),
             // Its OWN callback, wired alongside
             // (never derived from) the other six above -- handed only
@@ -2001,7 +1934,7 @@ async function run(args) {
             // Deliberately handed no `state` reference (mirrors `onHostTool`'s own
             // isolation from lease state one screen down): this route reaches
             // only the request's own per-request scratch subtree under
-            // brokerStagingDir(), never this broker's acquire/release/recycle map.
+            // brokerStagingDir(), never this broker's acquire/release map.
             onHostToolStage: (files) => handleHostToolStage(files),
             onHostToolRun: (requestKey, raw) => handleHostToolRun(requestKey, raw, args.repoRoot, {
                 log: (line) => process.stderr.write(`${line}\n`),

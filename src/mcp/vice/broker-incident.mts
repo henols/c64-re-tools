@@ -1,42 +1,17 @@
 // broker-incident.mts
 //
-// The broker's OWN incident writer (Phase 63, SESS-05) -- a small,
-// purpose-built, host-bound sibling of incident-record.ts, never a call
-// into it. Two separate facts force this rather than reuse:
-//
-//   1. This module is HOST-BOUND, compiled by build.ts into resources/,
-//      because the broker runs from that compiled artifact and has no
-//      container-side sibling to import at runtime -- the same constraint
-//      broker-home.mts's own header states for why it cannot import
-//      repo-root.ts. incident-record.ts is a plain container-side `.ts`
-//      module; a host-bound module cannot value-import it.
-//   2. Even if it could, incident-record.ts's own `incidentsDir()` resolves
-//      a PER-PROJECT directory (`toolsDir()`, rooted at whichever repo
-//      checkout is current) -- exactly wrong for a broker that is
-//      machine-level and serves several unrelated projects' sessions at
-//      once. This writer resolves through broker-home.mts's
-//      `brokerIncidentsDir()` instead, giving that function its first real
-//      production caller.
+// WHY THIS FILE EXISTS: the broker's own incident writer (Phase 63,
+// SESS-05). It is host-bound, compiled by build.ts into resources/, and it
+// writes under the machine-level broker home (broker-home.mts's
+// brokerIncidentsDir()), never under a project checkout: the broker serves
+// several projects' sessions at once.
 //
 // WHAT NOT TO DO:
-//   - Never import incident-record.ts from this file, in either direction.
-//     A host-bound module importing a container-side one is exactly the
-//     mistake broker-home.mts's own header already warns against, one
-//     level up.
-//   - Never let this module's field vocabulary drift from
-//     incident-record.ts's own -- the two writers deliberately share field
-//     NAMES (`version`, `at`, `port`, `epoch_before`, `reason`) for a
-//     reader's sake, and broker-incident.test.ts's own sync test is the
-//     ONLY thing holding that agreement together: it reads both sources and
-//     asserts every shared name appears in both, verbatim. A rename on
-//     either side without a matching rename on the other reds that test on
-//     purpose -- fix the drift, never the test.
-//   - Never sanitise a caller-supplied string here beyond what this file's
-//     own atomic-write step already buys (mode 0600, temp-then-rename).
+//   - Never value-import a container-side `.ts` module from here.
+//   - Never sanitise a caller-supplied string here beyond what the atomic
+//     write already buys (mode 0600, temp-then-rename).
 //     `sanitiseSessionLabel()` (broker-control.mts) already ran before a
-//     `session_label`/`operation` name ever reaches this module -- this
-//     writer renders whatever it is handed, exactly like
-//     incident-record.ts's own renderer does for `reason`.
+//     `session_label`/`operation` name reaches this module.
 import { chmodSync, existsSync, renameSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
@@ -48,8 +23,7 @@ export const BROKER_INCIDENT_VERSION = 1;
 /** The four ways a relay/control connection's death can trigger this
  * writer -- documented here as the intended wire vocabulary for the
  * `trigger` field, though `BrokerIncidentInput.trigger` itself stays typed
- * `unknown`, matching incident-record.ts's own untyped-passthrough
- * convention for every field this module merely renders rather than
+ * `unknown`, like every field this module merely renders rather than
  * validates. Consumed by a later plan (63-04's handleRelayDeath()), not
  * written to by this plan's own call sites. */
 export type BrokerIncidentTrigger = "relay_close" | "relay_error" | "relay_idle_expiry" | "control_close";
@@ -72,9 +46,7 @@ export interface BrokerIncidentStemOptions {
   epoch?: unknown;
 }
 
-/** The `<UTC compact timestamp>-port<port>-epoch<epoch>` stem -- byte-for-byte
- * the same naming shape incident-record.ts's own incidentAssetStem() uses,
- * mirrored rather than imported (see this file's own header). */
+/** The `<UTC compact timestamp>-port<port>-epoch<epoch>` stem. */
 export function brokerIncidentStem({ at = new Date(), port, epoch }: BrokerIncidentStemOptions = {}): string {
   const ts = sanitiseUtcTimestamp(at);
   const p = sanitiseInt(port);
@@ -98,8 +70,7 @@ export function brokerIncidentPath({ dir, homeOpts, ...stemOpts }: BrokerInciden
 }
 
 /** The full, untyped-passthrough field set this module renders -- every
- * field typed `unknown`, exactly like incident-record.ts's own
- * IncidentRecordInput, because this module's contract is to render
+ * field typed `unknown`, because this module's contract is to render
  * WHATEVER it is handed, never to validate it. `operation` is the raw
  * `{ name, declaredAt } | null` shape broker-state.mts's own
  * GrantRecord.operation field carries (or a caller's own equivalent
@@ -141,9 +112,8 @@ function parseOperation(raw: unknown): ParsedOperation {
 }
 
 /** Renders the broker's own incident record as markdown: a parseable YAML
- * frontmatter block, mirroring incident-record.ts's own shape and field
- * SPELLING for the fields the two share (`version`, `at`, `port`,
- * `epoch_before`, `reason`), then a short prose body. The `void` flag is
+ * frontmatter block (`version`, `at`, `port`, `epoch_before`, `reason`, ...),
+ * then a short prose body. The `void` flag is
  * `true` exactly when an operation was in flight at the drop -- computed
  * from `operation`, never a separate caller-supplied boolean that could
  * disagree with it. A `null`/absent operation renders as an EXPLICIT
@@ -208,9 +178,7 @@ export function renderBrokerIncident(record: BrokerIncidentInput = {}): string {
 
 /** Tmp sibling created empty -> mode tightened to owner-read-write BEFORE
  * any content lands -> content written -> renamed over the destination --
- * the SAME atomic-write shape incident-record.ts's own writeAtomic() uses
- * (mirrored, not imported, per this file's own header). A reader of `dir`
- * therefore either sees no file at the final path or sees the complete
+ * so a reader of `dir` either sees no file at the final path or sees the complete
  * record; it never observes a half-written one, and the finished file is
  * never briefly group- or world-readable. */
 function writeAtomicIncident(dir: string, path: string, content: string): string {
@@ -233,8 +201,7 @@ export interface WriteBrokerIncidentOptions {
 
 /** Writes a NEW broker incident record, never clobbering an existing file
  * at the same computed path -- a second drop in the same second, on the
- * same port and epoch, appends "-2", "-3", ... exactly like
- * incident-record.ts's own writeIncidentRecord(). Creates the resolved
+ * same port and epoch, appends "-2", "-3", .... Creates the resolved
  * directory when it does not exist. Never throws on a RENDERING concern
  * (every field above degrades rather than throws); a filesystem failure
  * (an unwritable directory, a full disk) propagates uncaught, because a

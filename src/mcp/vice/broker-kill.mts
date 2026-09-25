@@ -58,12 +58,9 @@ import type { EpochRecord } from "./broker-epoch.mjs";
 // value-imports the module that defines it.
 import type { ConfigScratchOwnerRecord } from "./broker-launch.mjs";
 
-/** The same four-value vocabulary resources/vice-broker.sh's
- * signal_vice_child_pid() already returns -- the recycle ack contract
- * (vice-proxy.ts's recycleAckOutcomeMessage()/successfulKill check) depends
- * on this exact set of words, never a fifth. That renderer is NOT changing,
- * so a renamed or added stage word silently breaks an agent-facing message;
- * this type is pinned to it, not the other way around. */
+/** How an identity-verified kill ended: the target had already exited, its
+ * identity did not match (nothing was signalled), or it died on SIGTERM or
+ * SIGKILL. */
 export type KillStage = "already_exited" | "identity_refused" | "sigterm" | "sigkill";
 
 export interface VerifiedKillDeps {

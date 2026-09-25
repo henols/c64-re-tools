@@ -65,7 +65,6 @@ import { startControlListener, newControlToken } from "./broker-control.mts";
 import type {
   StartControlListenerResult,
   AcquireOutcome,
-  RecycleOutcome,
   StatusInstanceEntry,
   HostStateFields,
   MonitorClaimOutcome,
@@ -994,15 +993,6 @@ async function startRoundTripListener(
       grant: { port: emulatorPort, url: `http://127.0.0.1:${emulatorPort}/mcp`, epochFile: "/tmp/stock-machine-roundtrip-epoch.json", supervisorDir: "/tmp/stock-machine-roundtrip" },
     }),
     onRelease: (requestId: string) => handleRelease(requestId, state),
-    onRecycle: async (): Promise<RecycleOutcome> => ({
-      port: null,
-      pid: null,
-      viceBin: null,
-      killStage: "no_signal",
-      epochBefore: null,
-      outcome: "grant_lookup_failed",
-      reason: "not exercised by stock-machine.test.ts",
-    }),
     onStatus: (): StatusInstanceEntry[] => [],
     onHostState: (): HostStateFields => ({
       pid: process.pid,

@@ -32,7 +32,7 @@ import { promisify } from "node:util";
 const execFileP = promisify(execFile);
 
 import { build } from "./build.ts";
-import { startControlListener, type StartControlListenerResult, type AcquireOutcome, type RecycleOutcome, type StatusInstanceEntry, type HostStateFields, type MonitorClaimOutcome, type MonitorReleaseOutcome } from "./broker-control.mts";
+import { startControlListener, type StartControlListenerResult, type AcquireOutcome, type StatusInstanceEntry, type HostStateFields, type MonitorClaimOutcome, type MonitorReleaseOutcome } from "./broker-control.mts";
 import { hostToolOverControlPlane, hostToolRequestTimeoutMs } from "./host-tool-client.ts";
 // Phase 65, plan 65-03 (RESEARCH Pitfall 4): the CLIENT side of the
 // fixed-endpoint route's own cross-seam ordering, reached directly -- this
@@ -2084,7 +2084,6 @@ test("Plan 60-07 Test 6 (the memo is unchanged): within one module instance, a s
 interface CallbackSpies {
   onAcquire: unknown[];
   onRelease: unknown[];
-  onRecycle: unknown[];
   onStatus: unknown[];
   onHostState: unknown[];
   onMonitorClaim: unknown[];
@@ -2092,7 +2091,7 @@ interface CallbackSpies {
 }
 
 async function startListenerWithSpies(repoRootForHostTool: string): Promise<{ listener: StartControlListenerResult; token: string; spies: CallbackSpies }> {
-  const spies: CallbackSpies = { onAcquire: [], onRelease: [], onRecycle: [], onStatus: [], onHostState: [], onMonitorClaim: [], onMonitorRelease: [] };
+  const spies: CallbackSpies = { onAcquire: [], onRelease: [], onStatus: [], onHostState: [], onMonitorClaim: [], onMonitorRelease: [] };
   const token = "host-tool-test-token";
   const listener = await startControlListener({
     host: "127.0.0.1",
@@ -2104,10 +2103,6 @@ async function startListenerWithSpies(repoRootForHostTool: string): Promise<{ li
     },
     onRelease: (): void => {
       spies.onRelease.push(true);
-    },
-    onRecycle: async (): Promise<RecycleOutcome> => {
-      spies.onRecycle.push(true);
-      return { port: null, pid: null, viceBin: null, killStage: "no_signal", epochBefore: null, outcome: "grant_lookup_failed", reason: "spy" };
     },
     onStatus: (): StatusInstanceEntry[] => {
       spies.onStatus.push(true);

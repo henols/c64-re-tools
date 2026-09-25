@@ -20,7 +20,6 @@ import {
   newControlToken,
   type StartControlListenerResult,
   type AcquireOutcome,
-  type RecycleOutcome,
   type StatusInstanceEntry,
   type HostStateFields,
   type MonitorClaimOutcome,
@@ -236,15 +235,6 @@ async function startRelayListenerForState(
     token,
     onAcquire: async (): Promise<AcquireOutcome> => ({ ok: false, reason: "internal" }),
     onRelease: () => {},
-    onRecycle: async (): Promise<RecycleOutcome> => ({
-      port: null,
-      pid: null,
-      viceBin: null,
-      killStage: "no_signal",
-      epochBefore: null,
-      outcome: "grant_lookup_failed",
-      reason: "not exercised by broker-relay-text.test.ts",
-    }),
     onStatus: (): StatusInstanceEntry[] => [],
     onHostState: (): HostStateFields => ({
       pid: process.pid,

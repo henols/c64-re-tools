@@ -15,8 +15,7 @@
 // `async-mutex`) grants and releases but exposes no holder record -- it
 // cannot answer "who holds this, since when, doing what". This module's
 // `ChannelLockHolder` is exactly that record, and it is what makes
-// contention readable to `vice_diagnose` (plan 41-04) rather than a bare
-// "something is locked". `async-mutex` was considered and rejected by this
+// contention readable in a refusal rather than a bare "something is locked". `async-mutex` was considered and rejected by this
 // phase's own locked decision; it is never installed, and there is no
 // install task in this plan for a package-legitimacy audit to cover.
 //
@@ -123,8 +122,7 @@ export const CHANNEL_LOCK_ACQUIRE_TIMEOUT_MS: number = (() => {
 
 /**
  * The ONE refusal wording produced when a caller cannot be granted the lock
- * (either an immediate `tryAcquireChannelLock()` miss reported by a caller,
- * or a `ChannelLockTimeoutError`'s own message). Names the other channel,
+ * (a `ChannelLockTimeoutError`'s own message). Names the other channel,
  * the operation it is running, the hold duration in whole milliseconds, and
  * the holder's grant id (or the literal `unknown` when there is none --
  * never a fabricated id, matching claimMonitor()'s own posture for a
@@ -303,24 +301,6 @@ export interface AcquireChannelLockOptions {
  */
 export function acquireChannelLock(opts: AcquireChannelLockOptions): Promise<ChannelLockHandle> {
   return admit(opts.channel, opts.operation, opts.grantId ?? null, opts.timeoutMs ?? CHANNEL_LOCK_ACQUIRE_TIMEOUT_MS);
-}
-
-export interface TryAcquireChannelLockOptions {
-  channel: MonitorChannel;
-  operation: string;
-  grantId?: string | null;
-}
-
-/**
- * Fully synchronous, no `await` anywhere: grants and returns a handle when
- * free, returns `null` immediately when held -- never queues. This is the
- * entry point a diagnostic uses so that diagnosing contention never queues
- * behind the holder it is diagnosing (consumed by vice_diagnose, plan
- * 41-04).
- */
-export function tryAcquireChannelLock(opts: TryAcquireChannelLockOptions): ChannelLockHandle | null {
-  if (currentHolder !== null) return null;
-  return grantLock(opts.channel, opts.operation, opts.grantId ?? null);
 }
 
 /** A read-only COPY of the holder record -- never the live object, so a

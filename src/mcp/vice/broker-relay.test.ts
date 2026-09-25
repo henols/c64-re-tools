@@ -49,7 +49,6 @@ import {
   newControlToken,
   type StartControlListenerResult,
   type AcquireOutcome,
-  type RecycleOutcome,
   type StatusInstanceEntry,
   type HostStateFields,
   type MonitorClaimOutcome,
@@ -108,10 +107,6 @@ interface TestHandleReleaseDeps {
   writeIncident?: (record: BrokerIncidentInput) => string;
   kill?: (opts: { pid: number | null; expectedIdentity: string }) => Promise<string>;
 }
-/** Mirrors vice-broker.mts's own HandleRecycleDeps (Plan 63-07 Task 2). */
-interface TestHandleRecycleDeps {
-  kill?: (opts: { pid: number | null; expectedIdentity: string }) => Promise<string>;
-}
 const viceBrokerModule = (await import(new URL("./resources/vice-broker.mjs", import.meta.url).href)) as unknown as {
   handleMonitorClaim: (requestId: string, targetId: string, channel: MonitorChannel, state: BrokerState) => MonitorClaimOutcome;
   handleMonitorRelease: (requestId: string, targetId: string, channel: MonitorChannel, state: BrokerState) => MonitorReleaseOutcome;
@@ -135,9 +130,6 @@ const viceBrokerModule = (await import(new URL("./resources/vice-broker.mjs", im
    * handleMonitorRelease() below now both delegate to. See
    * vice-broker.mts's own header comment for the full contract. */
   tearDownRelaySessionForChannel: (targetId: string, channel: MonitorChannel, state: BrokerState) => boolean;
-  /** Plan 63-07 Task 2 (SESS-05 gap closure) -- newly EXPORTED, previously
-   * module-private. See vice-broker.mts's own header comment. */
-  handleRecycleForRealBroker: (targetId: string, state: BrokerState, deps?: TestHandleRecycleDeps) => Promise<RecycleOutcome>;
 };
 const {
   handleMonitorClaim,
@@ -148,7 +140,6 @@ const {
   handleRelease,
   tearDownRelaySessionsForGrant,
   tearDownRelaySessionForChannel,
-  handleRecycleForRealBroker,
 } = viceBrokerModule;
 
 // broker-incident.mts is ALSO host-bound (it value-imports broker-home.mjs),
@@ -350,7 +341,7 @@ interface RelayTestBrokerContext {
  * shared listener-standup both withRelayTestBroker() (one grant) and
  * withMultiRelayTestBroker() (N grants, Task 3's concurrency case) build
  * on. Every other callback is a no-op stub -- this suite never exercises
- * acquire/release/recycle/status/host_state/host_tool.
+ * acquire/release/status/host_state/host_tool.
  *
  * `relayDeathDeps` (Plan 63-04): threaded straight into every
  * handleRelayAttach() call as its own `deps` argument. When the caller
@@ -378,15 +369,6 @@ async function startRelayListenerForState(
     token,
     onAcquire: async (): Promise<AcquireOutcome> => ({ ok: false, reason: "internal" }),
     onRelease: () => {},
-    onRecycle: async (): Promise<RecycleOutcome> => ({
-      port: null,
-      pid: null,
-      viceBin: null,
-      killStage: "no_signal",
-      epochBefore: null,
-      outcome: "grant_lookup_failed",
-      reason: "not exercised by broker-relay.test.ts",
-    }),
     onStatus: (): StatusInstanceEntry[] => [],
     onHostState: (): HostStateFields => ({
       pid: process.pid,
@@ -2389,56 +2371,6 @@ test("handleRelease: the mismatched-occupant branch also tears the grant's relay
   assert.deepEqual(closeCalls, ["relay_close"], "the stand-in's close() must be called exactly once");
   assert.ok(!state.grants.has("grant-release-mismatch-relay"), "the grant's own bookkeeping must still be retired");
   assert.ok(state.instances.has(16611), "the mismatched occupant's instance record must be left running, untouched");
-});
-
-test("handleRecycleForRealBroker: a recycle with a LIVE relay session tears it down before the kill, writes no record, and leaves the grant and instance standing for the exit handler", async () => {
-  const state = setupBrokerState(16612, "grant-recycle-live-relay");
-  const { session, closeCalls } = makeStandInRelaySession();
-  state.relaySessions.set(relaySessionKey("grant-recycle-live-relay", "binary"), session);
-
-  const order: string[] = [];
-  const originalClose = session.close;
-  (session as { close: (t: RelayDeathTrigger) => void }).close = (trigger: RelayDeathTrigger) => {
-    order.push("close");
-    originalClose(trigger);
-  };
-
-  const outcome = await handleRecycleForRealBroker("grant-recycle-live-relay", state, {
-    kill: async () => {
-      order.push("kill");
-      return "sigterm";
-    },
-  });
-
-  assert.deepEqual(order, ["close", "kill"], "the relay session must be torn down BEFORE the kill is invoked");
-  assert.deepEqual(closeCalls, ["relay_close"]);
-  assert.ok(
-    !state.relaySessions.has(relaySessionKey("grant-recycle-live-relay", "binary")),
-    "the relay session entry must be gone from state.relaySessions",
-  );
-  assert.ok(state.grants.has("grant-recycle-live-relay"), "the grant must still stand for the exit handler's respawn");
-  assert.ok(state.instances.has(16612), "the instance record must still stand for the exit handler's respawn");
-  assert.equal(outcome.outcome, "ok");
-
-  let writeCount = 0;
-  handleRelayDeath("grant-recycle-live-relay", "binary", "relay_close", state, {
-    writeIncident: () => {
-      writeCount += 1;
-      return "/fake.md";
-    },
-  });
-  assert.equal(writeCount, 0, "the kill's later socket close must find the map entry already gone and write nothing");
-});
-
-test("handleRecycleForRealBroker: a recycle with no live relay session behaves byte-identically to before", async () => {
-  const state = setupBrokerState(16613, "grant-recycle-no-relay");
-  const outcome = await handleRecycleForRealBroker("grant-recycle-no-relay", state, {
-    kill: async () => "sigterm",
-  });
-  assert.equal(outcome.outcome, "ok");
-  assert.equal(outcome.port, 16613);
-  assert.ok(state.grants.has("grant-recycle-no-relay"));
-  assert.ok(state.instances.has(16613));
 });
 
 test("tearDownRelaySessionsForGrant enumerates every MONITOR_CHANNELS value, so a third channel could never be silently skipped", () => {

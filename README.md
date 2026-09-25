@@ -8,13 +8,15 @@ It provides two things as a single installable unit:
 - **The `vice` MCP server** — tools that drive a host VICE
   emulator (run disks, read/write RAM, checkpoints, save-state capture,
   scripted input) through an on-demand broker.
-- **Six C64 skills:**
+- **Eight C64 skills:**
   - `acme-build` — assemble 6502/6510 source with the ACME cross-assembler.
+  - `c64-disk-access` — read a `.d64` image's directory, BAM and files with c1541.
   - `c64-memory-mapping` — resolve any C64 address; annotate disassembly.
+  - `c64-petcat` — detokenize a BASIC stub and find its machine-code handover.
   - `c64-program-recon` — work out an unknown C64 program's runtime structure.
   - `c64-provenance-diff` — decide what a cracker changed vs. original code.
   - `c64-ram-capture` — capture and compare a running C64's 64K RAM.
-  - `vice-wedge-triage` — diagnose a stuck/wedged VICE and recover safely.
+  - `routine-queue-walker` — drive a store's undocumented routines and symbols to closure.
 
 ## Install
 
@@ -28,11 +30,11 @@ From the project you want to set up:
 npx @henols/c64-re-tools
 ```
 
-This copies the six skills into `<project>/.claude/skills/` and wires the
+This copies the eight skills into `<project>/.claude/skills/` and wires the
 `vice` MCP server into `<project>/.mcp.json` (launched via `npx -y @henols/vice-mcp`).
 Existing servers and skills are preserved; pass `--force` to overwrite, `--dry-run`
-to preview, `--vendor` to install the server locally instead of via `npx`. Running
-the MCP server requires **Node ≥ 24**.
+to preview, `--vendor` to install the server locally instead of via `npx`. The MCP
+server and the skill scripts require **Node ≥ 24** as the `node` on `PATH`.
 
 The two published packages:
 
@@ -52,7 +54,7 @@ the C64 tooling. (In plugin mode the tools are namespaced
 
 ### Developing this repo: no in-repo autoload
 
-The payload (the six skills under `src/skills/` and the `vice` MCP server) now
+The payload (the eight skills under `src/skills/` and the `vice` MCP server) now
 lives under `src/`, which is not a path Claude Code auto-discovers. A Claude Code session opened
 on this repository's own working tree therefore does **not** auto-load the
 skills or the server the way it would if they still sat directly under
@@ -97,14 +99,14 @@ restates one in prose.
 
 | Prerequisite | Unblocks (skills) | Unblocks (MCP tools) | Remedy | Location override |
 | --- | --- | --- | --- | --- |
-| x64sc | c64-program-recon, c64-ram-capture, vice-wedge-triage | c1541.bam, c1541.dir, c1541.entry, c1541.chain, c1541.read, petcat.decode | See the VICE per-package-manager table. | VICE_BIN |
+| x64sc | c64-program-recon, c64-ram-capture | c1541.bam, c1541.dir, c1541.entry, c1541.chain, c1541.read, petcat.decode | See the VICE per-package-manager table. | VICE_BIN |
 | c1541 | c64-disk-access | c1541.bam, c1541.dir, c1541.entry, c1541.chain, c1541.read | See the VICE per-package-manager table. | .c64-re-tools/tools.json |
 | petcat | c64-petcat, c64-program-recon | petcat.decode | See the VICE per-package-manager table. | .c64-re-tools/tools.json |
 | acme | acme-build | acme.build | Install ACME. | ACME_BIN |
 | acme-lib | acme-build | acme.build | export ACME=<dir holding cbm/c64/vic.a>. | ACME |
 | ghidra | c64-program-recon | ghidra.analyze, ghidra.installExtension | Set the GHIDRA_HOME environment variable to name a Ghidra installation directory. | GHIDRA_HOME |
 | dxa | routine-queue-walker | dxa.disassemble | bash vendor/dxa/build.bash build | none |
-| node | acme-build, c64-disk-access, c64-memory-mapping, c64-petcat, c64-program-recon, c64-provenance-diff, c64-ram-capture, routine-queue-walker, vice-wedge-triage | acme.build, ghidra.analyze, oracle.probe, oracle.run, dxa.disassemble, ghidra.installExtension, c1541.bam, c1541.dir, c1541.entry, c1541.chain, c1541.read, petcat.decode | Install Node >= v24 and put it on PATH, or set VICE_BROKER_NODE to an absolute path to one. | none |
+| node | acme-build, c64-disk-access, c64-memory-mapping, c64-petcat, c64-program-recon, c64-provenance-diff, c64-ram-capture, routine-queue-walker | acme.build, ghidra.analyze, oracle.probe, oracle.run, dxa.disassemble, ghidra.installExtension, c1541.bam, c1541.dir, c1541.entry, c1541.chain, c1541.read, petcat.decode | Install Node >= v24 and put it on PATH, or set VICE_BROKER_NODE to an absolute path to one. | none |
 
 <!-- prereq-gen:prerequisite-overview:end -->
 
@@ -196,8 +198,8 @@ instance, VICE's own `-remotemonitor` flag, or any other 6502 debugger that
 dials in. This plugin's own annotation route can never cause it: the `anno`
 CLI opens a SQLite annotation store and decodes bytes out of a file on disk,
 and there is no emulator connection anywhere on that path to contend for the
-port. If an emulator has gone silent, see the
-`vice-wedge-triage` skill before assuming it is wedged.
+port. If an emulator has gone silent, check for one of these before assuming
+it is wedged, then restart the broker.
 
 ## Starting the broker
 
@@ -294,7 +296,7 @@ is reached only through the `mcp__plugin_c64-re-tools_vice__*` tools.
 .mcp.json            # vice server, launched via ${CLAUDE_PLUGIN_ROOT}
 src/
   mcp/vice/          # @henols/vice-mcp — the MCP server (authored TS, generated-but-committed resources/, tests)
-  skills/            # the six skills above (canonical source)
+  skills/            # the eight skills above (canonical source)
 installer/           # @henols/c64-re-tools — npx installer; bundles the skills, depends on vice-mcp
 docs/
   stock-hard-losses.md  # the three capabilities with no route on stock, and why (see above)

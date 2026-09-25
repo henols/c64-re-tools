@@ -26,9 +26,8 @@
 // fixture, NO ACME, and NO autostart needed. Escalation to a genuinely tight
 // loop (see ESCALATION_PROGRAM_SOURCE below) only happens if the gentle tier
 // does not exceed the limit within its own bounded deadline, and only after
-// this file records the wedge-triage recovery route it would use if the
-// escalated tier stalls (see the console.log immediately before escalation,
-// below).
+// this file records the recovery route it would use if the escalated tier
+// stalls (see the console.log immediately before escalation, below).
 //
 // SAFETY DISCIPLINE (this file's own must-haves, mirrored from
 // 15-10-PLAN.md's <threat_model>):
@@ -520,21 +519,13 @@ test(
       if (!outcome.gentleResult.triggered) {
         // --- Escalation, only now, and only after recording the recovery
         // route this file would use if the escalated tier itself stalls:
-        // per vice-wedge-triage/SKILL.md, a bracket that reads exactly zero
-        // twice in a row with no epoch change is `wedged`, and the last
-        // resort is `vice_recycle` with a reason. This harness has no
-        // `vice_recycle` (it drives dispatchStock() directly, not the full
-        // proxy's diagnose/recycle surface) -- its equivalent recovery
-        // action is this test's OWN teardown: withBrokerHarness's `finally`
-        // block SIGTERMs-then-SIGKILLs the granted process regardless of how
-        // this function returns, which is the bounded substitute for
-        // `vice_recycle` in this harness's own scope.
+        // this test's OWN teardown. withBrokerHarness's `finally` block
+        // SIGTERMs-then-SIGKILLs the granted process regardless of how this
+        // function returns.
         console.log(
           "stock-a4-checkpoint-flood: gentle tier did not exceed the rate limit within its deadline -- escalating to a tight loop. " +
             "Recovery route if the escalated tier stalls: this test's own withBrokerHarness() teardown " +
-            "(SIGTERM-then-SIGKILL of the granted process, unconditional in a finally block) is the bounded " +
-            "substitute for vice_recycle in this harness's scope -- there is no vice_diagnose/vice_recycle surface " +
-            "available here, since this file drives dispatchStock() directly rather than the full MCP proxy.",
+            "(SIGTERM-then-SIGKILL of the granted process, unconditional in a finally block).",
         );
         outcome.escalationNeeded = true;
 
