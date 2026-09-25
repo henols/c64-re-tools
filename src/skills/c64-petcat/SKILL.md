@@ -76,9 +76,8 @@ seam's own classifier, not the exit code, is what decides success here.
 ## What this skill does NOT do
 
 - **No direct binary spawn.** `petcat` runs host-side. This script only ever
-  constructs a typed request and reads the produced listing file back off
-  the shared workspace tree — the host-tool execution seam is the only
-  route.
+  sends a typed request to the broker, which returns the produced listing —
+  the broker's host-tool route is the only route. It needs a running broker.
 - **No guessed entry point.** A computed or otherwise unresolvable `SYS`
   argument is always reported as a named decline with `entrypoint: null` —
   never a fallback value, never an inline listing scan for "something that

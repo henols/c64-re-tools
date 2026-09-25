@@ -60,10 +60,12 @@
 //     it: the seam is for binaries that live on the HOST, outside any
 //     container; this ladder is for locating a file inside this project's own
 //     two npm packages.
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { basename, dirname, join, resolve } from "node:path";
+import { spawn, spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -173,4 +175,115 @@ export function resolveMcpModule(fileName) {
   const hit = rungs.find((r) => r.path && existsSync(r.path));
   if (hit) return { ok: true, rung: hit.rung, path: hit.path };
   return { ok: false, rungs, message: refusalMessage(fileName, rungs) };
+}
+
+// ---------------------------------------------------------------------------
+// The host-tool call every skill script makes. Host tools (acme, c1541,
+// petcat, unp64) are reached ONLY through the compiled endpoint client,
+// spawned with process.execPath -- never an external binary spawned here.
+// Compiled `.mjs`, so it also runs from under node_modules.
+// ---------------------------------------------------------------------------
+
+/** The endpoint client every host-tool call spawns. */
+export const HOST_TOOL_CLIENT_FILE = "resources/host-tool-endpoint.mjs";
+
+function clientCliArgs(clientPath, tool, args, toolsRoot, baseDir) {
+  return [clientPath, "run", "--tool", tool, "--args", JSON.stringify(args), "--tools-root", toolsRoot, "--base-dir", baseDir];
+}
+
+function parseClientOutput(stdout, stderr) {
+  const lines = String(stdout ?? "").split("\n").filter((line) => line.trim() !== "");
+  const last = lines[lines.length - 1];
+  if (last === undefined) return { ok: false, message: `host-tool-endpoint produced no output${stderr ? ` (stderr: ${stderr})` : ""}` };
+  try {
+    return JSON.parse(last);
+  } catch {
+    return { ok: false, message: `host-tool-endpoint produced non-JSON output: ${last}` };
+  }
+}
+
+/** Moves every downloaded result out of `staging` into `destDir` under its
+ * own name, rewriting each result's `path`. */
+function settleResults(response, destDir) {
+  if (!response.ok || !Array.isArray(response.results)) return response;
+  const results = response.results.map((r) => {
+    const target = join(destDir, basename(r.path));
+    renameSync(r.path, target);
+    return { ...r, path: target };
+  });
+  return { ...response, results };
+}
+
+/**
+ * Runs `tool` with `args` through the broker's fixed endpoint. Relative paths
+ * in `args` resolve against `baseDir`. Every result the tool declares is
+ * downloaded into a staging directory inside `destDir` (same filesystem, so
+ * the move is a rename) and then moved into `destDir` itself; the staging
+ * directory is removed on every path. Never rejects: every failure resolves
+ * `{ ok: false, message }`.
+ */
+export function invokeHostTool(tool, args, { destDir, baseDir = process.cwd() }) {
+  return new Promise((resolvePromise) => {
+    const resolved = resolveMcpModule(HOST_TOOL_CLIENT_FILE);
+    if (!resolved.ok) {
+      resolvePromise({ ok: false, message: refusalMessage(HOST_TOOL_CLIENT_FILE, resolved.rungs) });
+      return;
+    }
+    let staging;
+    try {
+      mkdirSync(destDir, { recursive: true });
+      staging = mkdtempSync(join(destDir, ".host-tool-"));
+    } catch (e) {
+      resolvePromise({ ok: false, message: `cannot prepare ${destDir}: ${e instanceof Error ? e.message : String(e)}` });
+      return;
+    }
+    const finish = (response) => {
+      let settled;
+      try {
+        settled = settleResults(response, destDir);
+      } catch (e) {
+        settled = { ok: false, message: `cannot move results into ${destDir}: ${e instanceof Error ? e.message : String(e)}` };
+      }
+      rmSync(staging, { recursive: true, force: true });
+      resolvePromise(settled);
+    };
+    let child;
+    try {
+      child = spawn(process.execPath, clientCliArgs(resolved.path, tool, args, staging, baseDir), { stdio: ["ignore", "pipe", "pipe"], shell: false });
+    } catch (e) {
+      finish({ ok: false, message: e instanceof Error ? e.message : String(e) });
+      return;
+    }
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => { stdout += chunk.toString("utf8"); });
+    child.stderr.on("data", (chunk) => { stderr += chunk.toString("utf8"); });
+    child.on("error", (err) => finish({ ok: false, message: err.message }));
+    child.on("close", () => finish(parseClientOutput(stdout, stderr)));
+  });
+}
+
+/**
+ * The synchronous form of invokeHostTool(), for callers that must stay
+ * synchronous. For tools whose answer is carried in the response itself
+ * (e.g. `oracle.probe`/`oracle.run`'s `stdout` field): any downloaded file
+ * lands in a temporary directory that is removed before this returns.
+ * Never throws.
+ */
+export function invokeHostToolSync(tool, args, { baseDir = process.cwd(), timeoutMs } = {}) {
+  const resolved = resolveMcpModule(HOST_TOOL_CLIENT_FILE);
+  if (!resolved.ok) return { ok: false, message: refusalMessage(HOST_TOOL_CLIENT_FILE, resolved.rungs) };
+  const staging = mkdtempSync(join(tmpdir(), "c64re-host-tool-"));
+  try {
+    const r = spawnSync(process.execPath, clientCliArgs(resolved.path, tool, args, staging, baseDir), {
+      encoding: "utf8",
+      timeout: timeoutMs,
+      shell: false,
+      windowsHide: true,
+    });
+    if (r.error && !r.stdout) return { ok: false, message: r.error.message };
+    return parseClientOutput(r.stdout, r.stderr);
+  } finally {
+    rmSync(staging, { recursive: true, force: true });
+  }
 }

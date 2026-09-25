@@ -153,7 +153,7 @@ classifier, not the exit code, is what decides success here.
   reachable from this script, on the wire, or anywhere in this skill's tree
   — this skill exposes only the six read-only capabilities above.
 - **No direct binary spawn.** `c1541` runs host-side. This script only ever
-  constructs a typed request and reads the produced files back off the
-  shared workspace tree — the host-tool execution seam is the only route.
+  sends a typed request to the broker, which returns the produced files —
+  the broker's host-tool route is the only route. It needs a running broker.
 - **No emulator dependency.** This skill names no VICE emulator tool at
   all — it works entirely on files, never on a running machine, by construction.

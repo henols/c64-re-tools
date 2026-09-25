@@ -22,7 +22,7 @@
 //      sibling of whichever `x64sc` backend-detect.mts resolves, not via a
 //      bare PATH search -- this PATH check is the SAME imperfect-but-
 //      accepted go/no-go proxy c1541.test.mjs already uses for `c1541`.)
-import { test } from "node:test";
+import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -33,8 +33,10 @@ import { promisify } from "node:util";
 
 import { parseOpts } from "./petcat.mjs";
 import { projectRoot } from "../../c64-ram-capture/scripts/project-paths.mjs";
+import { startHarnessBroker } from "../../../mcp/vice/broker-harness.ts";
 
 const execFileP = promisify(execFile);
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(HERE, "petcat.mjs");
 const LITERAL_SYS_FIXTURE = join(projectRoot(), "src", "mcp", "vice", "fixtures", "dxa", "basic-stub.prg");
@@ -77,6 +79,19 @@ function findPetcatOnPath() {
 
 const PETCAT_SKIP_REASON = findPetcatOnPath() === null ? "petcat is not resolvable on PATH -- decode's live seam calls are skipped" : false;
 
+// The LIVE cases reach the tool only through the broker's fixed endpoint, so
+// they run against this file's OWN harness broker (never a machine broker),
+// started once when the tool is resolvable.
+let broker = null;
+before(async () => {
+  if (PETCAT_SKIP_REASON) return;
+  broker = await startHarnessBroker();
+});
+after(async () => {
+  await broker?.stop();
+});
+const execScript = (args) => execFileP(process.execPath, args, { env: broker?.childEnv ?? process.env });
+
 // decode's own exit code is response.ok ? 0 : 1 (unlike c1541's `audit`
 // verb, which always exits 0) -- execFile's promisified form rejects on a
 // non-zero exit, so a refused decode is read off the REJECTED error's own
@@ -84,7 +99,7 @@ const PETCAT_SKIP_REASON = findPetcatOnPath() === null ? "petcat is not resolvab
 async function runDecodeCli(imagePath, outDir) {
   const args = [SCRIPT, "decode", "--image", imagePath, "--out-dir", outDir, "--json"];
   try {
-    const { stdout } = await execFileP(process.execPath, args);
+    const { stdout } = await execScript(args);
     return JSON.parse(stdout.trim().split("\n").pop());
   } catch (err) {
     if (typeof err.stdout === "string" && err.stdout.trim() !== "") {

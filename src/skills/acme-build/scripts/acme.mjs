@@ -21,68 +21,13 @@
 // works on the developer's own host and silently fails inside a container is
 // the exact failure this seam exists to remove. A seam refusal is reported
 // and the build fails; it is never retried by spawning `acme` here.
-import { readFileSync, writeFileSync, existsSync, mkdirSync, mkdtempSync, renameSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from "node:fs";
 import { dirname, join, basename, relative, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
-
-import { resolveMcpModule, refusalMessage } from "../../c64-ram-capture/scripts/mcp-module.mjs";
+import { invokeHostTool } from "../../c64-ram-capture/scripts/mcp-module.mjs";
 
 const SELF = fileURLToPath(import.meta.url);
 const HERE = dirname(SELF);
-
-/** The MCP-side module this script reaches -- the COMPILED endpoint client,
- * never imported statically (cross-package: this file ships in
- * `@henols/c64-re-tools`, the client ships in `@henols/vice-mcp`), only
- * located via the ladder and invoked with `process.execPath`, the
- * interpreter already running this script. Compiled `.mjs`, so it also runs
- * from under `node_modules`, where Node never strips types. */
-const HOST_TOOL_CLIENT_FILE = "resources/host-tool-endpoint.mjs";
-
-/**
- * Invokes the endpoint client for `tool`/`args`. Relative paths in `args`
- * resolve against `baseDir`; every downloaded result lands under `toolsRoot`.
- * Never rejects: a resolution failure, a spawn failure, or unparseable
- * output all resolve to `{ ok: false, message }` -- the same shape a tool's
- * own refusal uses, so a caller never needs a try/catch.
- */
-function invokeSeam(tool, args, { toolsRoot, baseDir }) {
-  return new Promise((resolvePromise) => {
-    const resolved = resolveMcpModule(HOST_TOOL_CLIENT_FILE);
-    if (!resolved.ok) {
-      resolvePromise({ ok: false, message: refusalMessage(HOST_TOOL_CLIENT_FILE, resolved.rungs) });
-      return;
-    }
-
-    const cliArgs = [resolved.path, "run", "--tool", tool, "--args", JSON.stringify(args), "--tools-root", toolsRoot, "--base-dir", baseDir];
-    let child;
-    try {
-      child = spawn(process.execPath, cliArgs, { stdio: ["ignore", "pipe", "pipe"] });
-    } catch (e) {
-      resolvePromise({ ok: false, message: e instanceof Error ? e.message : String(e) });
-      return;
-    }
-
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk) => { stdout += chunk.toString("utf8"); });
-    child.stderr.on("data", (chunk) => { stderr += chunk.toString("utf8"); });
-    child.on("error", (err) => resolvePromise({ ok: false, message: err.message }));
-    child.on("close", () => {
-      const lines = stdout.split("\n").filter((line) => line.trim() !== "");
-      const last = lines[lines.length - 1];
-      if (last === undefined) {
-        resolvePromise({ ok: false, message: `host-tool-endpoint produced no output${stderr ? ` (stderr: ${stderr})` : ""}` });
-        return;
-      }
-      try {
-        resolvePromise(JSON.parse(last));
-      } catch {
-        resolvePromise({ ok: false, message: `host-tool-endpoint produced non-JSON output: ${last}` });
-      }
-    });
-  });
-}
 
 // How to refer to this script in hints, from wherever we were run.
 function selfPath() {
@@ -167,26 +112,18 @@ async function build(src, opts) {
   if (opts.includes && opts.includes.length) args.includes = opts.includes;
   if (opts.noReport) args.noReport = true;
 
-  // Results download into a per-build staging directory beside the output,
-  // so the final move is a same-filesystem rename, and the directory is
-  // removed on every path.
-  const toolsRoot = mkdtempSync(join(desiredOutDirAbs, ".acme-build-"));
-  let response;
-  try {
-    response = await invokeSeam("acme.build", args, { toolsRoot, baseDir: process.cwd() });
-    // The executor names outputs after the SOURCE's own basename; each
-    // downloaded result is moved to the requested stem with its extension.
-    for (const result of response.ok ? response.results ?? [] : []) {
-      const ext = (basename(result.path).match(/\.(prg|sym|vs|rep)$/i) ?? [])[0];
-      if (!ext) continue;
-      renameSync(result.path, `${desiredStem}${ext.toLowerCase()}`);
-    }
-  } finally {
-    rmSync(toolsRoot, { recursive: true, force: true });
-  }
+  // Results come back into the output directory under the SOURCE's own
+  // basename (the executor's naming); each is then renamed to the requested
+  // stem with its extension.
+  const response = await invokeHostTool("acme.build", args, { destDir: desiredOutDirAbs });
   // A seam-level refusal (unresolvable client, unreachable broker, a bad
   // request) -- never a local fallback that spawns the assembler itself.
   if (!response.ok) die(response.message);
+  for (const result of response.results ?? []) {
+    const ext = (basename(result.path).match(/\.(prg|sym|vs|rep)$/i) ?? [])[0];
+    const target = ext ? `${desiredStem}${ext.toLowerCase()}` : null;
+    if (target && target !== result.path) renameSync(result.path, target);
+  }
 
   const stem = desiredStem;
   const prg = desiredPrg;

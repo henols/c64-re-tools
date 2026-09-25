@@ -96,11 +96,10 @@
 // a measurement. Installing the identifier and running it against a genuinely
 // packed fixture is the experiment that would settle it; until then the
 // oracle-route test SKIPS with a visible reason and never reads as a pass.
-import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { basename, dirname, resolve } from "node:path";
+import { resolve } from "node:path";
 
-import { resolveMcpModule, refusalMessage } from "../../c64-ram-capture/scripts/mcp-module.mjs";
+import { invokeHostToolSync } from "../../c64-ram-capture/scripts/mcp-module.mjs";
 
 // ---------------------------------------------------------------------------
 // The oracle's own child-process spawn.
@@ -118,80 +117,12 @@ import { resolveMcpModule, refusalMessage } from "../../c64-ram-capture/scripts/
 // (the name parser, the accepted character set, the caps below, the
 // packedness threshold, and both functions' never-throw contract).
 
-// SYNCHRONOUS ON PURPOSE: `execFileSync`, not the async `spawn` acme.mjs's
-// own migration uses. `probeUnp64()`/`runUnp64()` are called synchronously,
-// with no `await`, throughout this module's own colocated test file
-// (`packer-finding.test.mjs`, unmodified by this migration) -- including at
-// module scope (`const PROBED = probeUnp64();`). Converting them to
-// async/Promise-returning functions would silently break every one of those
-// call sites (a Promise is not the finding object the assertions expect),
-// so the OUTER call into the seam's CLI wrapper must itself be synchronous.
-// The asynchronous work (the actual child-process spawn of the oracle
-// binary) still happens -- inside the SPAWNED subprocess, in
-// host-tool.mts's own async `runHostTool()` -- `execFileSync` merely blocks
-// this function until that subprocess exits, exactly as `spawnSync` used to
-// block until `unp64` itself exited.
-const HOST_TOOL_CLIENT_FILE = "host-tool-client.ts";
-
-/**
- * Synchronously invokes the host-tool execution seam for `tool`/`args`,
- * optionally rooted at `repoRoot` for workspace-relative path resolution.
- * NEVER throws: an unresolvable ladder, a spawn failure, a timeout, or
- * unparseable output all return `{ ok: false, message }` -- the SAME shape
- * a tool's own transport-level refusal uses, so callers translate a failure
- * here identically to a `{ ok: false }` response from the seam itself.
- */
-function invokeSeamSync(tool, args, repoRoot) {
-  const resolved = resolveMcpModule(HOST_TOOL_CLIENT_FILE);
-  if (!resolved.ok) {
-    return { ok: false, message: refusalMessage(HOST_TOOL_CLIENT_FILE, resolved.rungs) };
-  }
-
-  const cliArgs = [resolved.path, "run", "--tool", tool, "--args", JSON.stringify(args)];
-  if (repoRoot) cliArgs.push("--repo-root", repoRoot);
-
-  let stdout;
-  try {
-    stdout = execFileSync(process.execPath, cliArgs, {
-      encoding: "utf8",
-      timeout: ORACLE_TIMEOUT_MS + 5_000,
-      shell: false,
-      windowsHide: true,
-    });
-  } catch (err) {
-    // execFileSync throws on a non-zero exit, a timeout, or a genuine spawn
-    // failure -- but a non-zero exit is the NORMAL signal for a tool-level
-    // `{ ok: false }` result (host-tool-client.ts's own CLI wrapper always
-    // prints its one JSON line before exiting non-zero), so recover it from
-    // the error object rather than treating every non-zero exit as a
-    // transport failure.
-    const recovered = typeof err.stdout === "string" ? err.stdout : err.stdout ? err.stdout.toString("utf8") : "";
-    if (recovered.trim() === "") {
-      return { ok: false, message: err instanceof Error ? err.message : String(err) };
-    }
-    stdout = recovered;
-  }
-
-  const lines = stdout.split("\n").filter((line) => line.trim() !== "");
-  const last = lines[lines.length - 1];
-  if (last === undefined) return { ok: false, message: "host-tool-client.ts produced no output" };
-  try {
-    return JSON.parse(last);
-  } catch {
-    return { ok: false, message: `host-tool-client.ts produced non-JSON output: ${last}` };
-  }
-}
-
-/** Splits an arbitrary (absolute or cwd-relative) file path into a workspace
- * root + a plain relative name, so a single-file oracle.run request can
- * satisfy the seam's workspace-relative path requirement (`resolveWorkspacePath()`
- * in host-tool.mts refuses an absolute path outright) without needing the
- * caller's actual project root at all -- the smallest possible root for a
- * single file is its own containing directory. */
-function toWorkspaceRelative(anyPath) {
-  const abs = resolve(anyPath);
-  return { repoRoot: dirname(abs), source: basename(abs) };
-}
+// SYNCHRONOUS ON PURPOSE: `probeUnp64()`/`runUnp64()` are called
+// synchronously, with no `await`, throughout this module's own colocated test
+// file -- including at module scope (`const PROBED = probeUnp64();`) -- so
+// the call into the endpoint client goes through mcp-module.mjs's
+// invokeHostToolSync(). The oracle's answer rides the response's own
+// `stdout` field; no file comes back.
 
 // ---------------------------------------------------------------------------
 // Vocabulary. Exactly four verdicts, frozen. Rule 4.
@@ -365,7 +296,7 @@ function appendHint(reason, hint) {
  */
 export function probeUnp64(env = process.env) {
   const hint = oracleConfigurationHint(env);
-  const response = invokeSeamSync("oracle.probe", {});
+  const response = invokeHostToolSync("oracle.probe", {}, { timeoutMs: ORACLE_TIMEOUT_MS + 5_000 });
 
   if (!response || response.ok !== true) {
     const reason = (response && response.message) || "the packer identifier oracle.probe seam call failed";
@@ -404,12 +335,9 @@ export function runUnp64(probe, filePath) {
     return { ok: false, stdout: "", reason: "the input file does not exist" };
   }
 
-  // The scratch output location, the argument array, the runtime bound and
-  // the input file's absolute/relative form are all resolved host-side now;
-  // this file only ever hands the seam a workspace-relative `source`, rooted
-  // at the smallest root that can express it -- the file's own directory.
-  const { repoRoot, source } = toWorkspaceRelative(filePath);
-  const response = invokeSeamSync("oracle.run", { source }, repoRoot);
+  // The scratch output location, the argument array and the runtime bound
+  // are all resolved host-side; the endpoint client uploads the file itself.
+  const response = invokeHostToolSync("oracle.run", { source: resolve(filePath) }, { timeoutMs: ORACLE_TIMEOUT_MS + 5_000 });
   if (!response || typeof response.ok !== "boolean") {
     return { ok: false, stdout: "", reason: (response && response.message) || "the oracle.run seam call failed" };
   }

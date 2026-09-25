@@ -8,9 +8,9 @@
 // rule of 2026-08-28 is that this script runs container-side, `c1541` lives
 // host-side, and there is no container PATH to find it on. This file never spawns c1541 itself; it constructs a TYPED
 // request per capability (`c1541.bam`/`c1541.dir`/`c1541.entry`/
-// `c1541.chain`/`c1541.read`) and reads the produced files back off the
-// shared workspace tree, mirroring src/skills/acme-build/scripts/acme.mjs's
-// own invokeSeam() shape verbatim.
+// `c1541.chain`/`c1541.read`) and hands it to the compiled endpoint client
+// through mcp-module.mjs's invokeHostTool(), which uploads the image to the
+// broker and moves each produced file into the output directory.
 //
 // WHAT NOT TO DO:
 //   - Never spawn the disk-image utility (`c1541`) directly from this
@@ -22,94 +22,12 @@
 //     reported as `{ ok: false, message }`; it is never retried by
 //     re-implementing the read here.
 import { readFileSync } from "node:fs";
-import { dirname, relative, isAbsolute, resolve, sep } from "node:path";
+import { dirname, relative, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
-
-import { resolveMcpModule, refusalMessage } from "../../c64-ram-capture/scripts/mcp-module.mjs";
+import { invokeHostTool } from "../../c64-ram-capture/scripts/mcp-module.mjs";
 
 const SELF = fileURLToPath(import.meta.url);
 const HERE = dirname(SELF);
-
-/** The MCP-side module this script reaches -- never imported statically
- * (cross-package: this file ships in `@henols/c64-re-tools`, the seam client
- * ships in `@henols/vice-mcp`), only located via the ladder and invoked with
- * `process.execPath`, the interpreter already running this script, on an
- * in-tree module -- not an external host binary. */
-const HOST_TOOL_CLIENT_FILE = "host-tool-client.ts";
-
-/**
- * Invokes the host-tool execution seam for `tool`/`args`, rooted at
- * `repoRoot` for THIS invocation's workspace-relative path resolution.
- * Never rejects: a resolution failure, a spawn failure, or unparseable
- * output all resolve to `{ ok: false, message }` -- the same shape a tool's
- * own refusal uses, so a caller never needs a try/catch. Copied verbatim
- * from acme.mjs's own invokeSeam() -- see this file's own header for why a
- * shared import is not possible across the two npm packages.
- */
-function invokeSeam(tool, args, repoRoot) {
-  return new Promise((resolvePromise) => {
-    const resolved = resolveMcpModule(HOST_TOOL_CLIENT_FILE);
-    if (!resolved.ok) {
-      resolvePromise({ ok: false, message: refusalMessage(HOST_TOOL_CLIENT_FILE, resolved.rungs) });
-      return;
-    }
-
-    const cliArgs = [resolved.path, "run", "--tool", tool, "--args", JSON.stringify(args), "--repo-root", repoRoot];
-    let child;
-    try {
-      child = spawn(process.execPath, cliArgs, { stdio: ["ignore", "pipe", "pipe"] });
-    } catch (e) {
-      resolvePromise({ ok: false, message: e instanceof Error ? e.message : String(e) });
-      return;
-    }
-
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk) => { stdout += chunk.toString("utf8"); });
-    child.stderr.on("data", (chunk) => { stderr += chunk.toString("utf8"); });
-    child.on("error", (err) => resolvePromise({ ok: false, message: err.message }));
-    child.on("close", () => {
-      const lines = stdout.split("\n").filter((line) => line.trim() !== "");
-      const last = lines[lines.length - 1];
-      if (last === undefined) {
-        resolvePromise({ ok: false, message: `host-tool-client.ts produced no output${stderr ? ` (stderr: ${stderr})` : ""}` });
-        return;
-      }
-      try {
-        resolvePromise(JSON.parse(last));
-      } catch {
-        resolvePromise({ ok: false, message: `host-tool-client.ts produced non-JSON output: ${last}` });
-      }
-    });
-  });
-}
-
-/** The smallest common ancestor directory of two absolute paths -- computed,
- * never a fixed guess, so the request's `--repo-root` for THIS invocation is
- * always exactly big enough to contain both the image and the output
- * directory, and no bigger. Copied verbatim from acme.mjs's own
- * commonAncestorDir() -- see this file's own header for why a shared import
- * is not possible. */
-function commonAncestorDir(a, b) {
-  const partsA = resolve(a).split(sep);
-  const partsB = resolve(b).split(sep);
-  const common = [];
-  for (let i = 0; i < Math.min(partsA.length, partsB.length); i++) {
-    if (partsA[i] === partsB[i]) common.push(partsA[i]);
-    else break;
-  }
-  const joined = common.join(sep);
-  return joined === "" ? sep : joined;
-}
-
-/** `path.relative()`, except the "same directory" case yields `"."` rather
- * than `""` -- the seam's `resolveWorkspacePath()` refuses an empty string,
- * but accepts `"."` as a no-op relative reference to its own root. */
-function toRel(root, abs) {
-  const r = relative(root, abs);
-  return r === "" ? "." : r;
-}
 
 // How to refer to this script in hints, from wherever we were run.
 function selfPath() {
@@ -380,18 +298,17 @@ async function runAudit(argv) {
 
   const imageAbs = resolve(o.image);
   const outDirAbs = o.outDir ? resolve(o.outDir) : dirname(imageAbs);
-  const repoRoot = commonAncestorDir(dirname(imageAbs), outDirAbs);
-  const baseArgs = { image: toRel(repoRoot, imageAbs) };
-  if (o.outDir) baseArgs.outDir = toRel(repoRoot, outDirAbs);
+  const baseArgs = { image: imageAbs };
+  const seam = { destDir: outDirAbs };
 
-  const dirResp = await invokeSeam("c1541.dir", baseArgs, repoRoot);
+  const dirResp = await invokeHostTool("c1541.dir", baseArgs, seam);
   if (!dirResp.ok) {
     report(dirResp, o);
     process.exit(1);
   }
   const names = parseDirListing(readSeamOutputText(dirResp));
 
-  const bamResp = await invokeSeam("c1541.bam", baseArgs, repoRoot);
+  const bamResp = await invokeHostTool("c1541.bam", baseArgs, seam);
   if (!bamResp.ok) {
     report(bamResp, o);
     process.exit(1);
@@ -400,7 +317,7 @@ async function runAudit(argv) {
 
   const records = [];
   for (const { name, blocks } of names) {
-    const entryResp = await invokeSeam("c1541.entry", { ...baseArgs, name }, repoRoot);
+    const entryResp = await invokeHostTool("c1541.entry", { ...baseArgs, name }, seam);
     if (entryResp.ok) {
       const fields = parseEntryFields(readSeamOutputText(entryResp));
       records.push(fields ? { name, blocks, ...fields } : { name, blocks, entryFailed: true, reason: "entry response carried no T/S: line" });
@@ -439,8 +356,7 @@ const VERBS_REQUIRING_NAME = new Set(["entry", "chain", "read"]);
 /**
  * Runs one c1541 capability against `--image` (required), `--name`
  * (required for entry/chain/read, ignored for bam/dir), and `--out-dir`
- * (optional, defaults to the seam's own dirname(image) default exactly as
- * acme.build's own outDir default does). Prints the seam's response
+ * (optional, defaults to the image's own directory). Prints the seam's response
  * verbatim as one line of JSON when `--json` is given -- the response IS
  * the reportable shape (`{ ok, tool, exitStatus, results, stderrTail }` /
  * `{ ok: false, message }`), so no reshaping happens here except for
@@ -459,16 +375,10 @@ async function runCapability(verb, argv) {
 
   const imageAbs = resolve(o.image);
   const outDirAbs = o.outDir ? resolve(o.outDir) : dirname(imageAbs);
-
-  // Workspace-relative request construction (mirrors acme.mjs's own build()):
-  // the root for THIS invocation is the smallest ancestor containing both
-  // the image and the output directory.
-  const repoRoot = commonAncestorDir(dirname(imageAbs), outDirAbs);
-  const args = { image: toRel(repoRoot, imageAbs) };
-  if (o.outDir) args.outDir = toRel(repoRoot, outDirAbs);
+  const args = { image: imageAbs };
   if (o.name !== undefined) args.name = o.name;
 
-  let response = await invokeSeam(tool, args, repoRoot);
+  let response = await invokeHostTool(tool, args, { destDir: outDirAbs });
   if (verb === "entry") response = augmentEntryResponse(response);
   report(response, o);
   process.exit(response.ok ? 0 : 1);

@@ -15,7 +15,7 @@
 //      (mirrors this project's own live-test skip convention, e.g.
 //      dxa-live.test.ts's "no vendored binary -> skip", never a hand-rolled
 //      early return that would report a false PASS).
-import { test } from "node:test";
+import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -26,8 +26,10 @@ import { promisify } from "node:util";
 
 import { auditEntries, parseDirListing, parseBamAllocation, parseEntryFields, salvageFirstTsFromRefusal, sectorsPerTrack } from "./c1541.mjs";
 import { projectRoot } from "../../c64-ram-capture/scripts/project-paths.mjs";
+import { startHarnessBroker } from "../../../mcp/vice/broker-harness.ts";
 
 const execFileP = promisify(execFile);
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(HERE, "c1541.mjs");
 const FIXTURES_DIR = join(projectRoot(), "src", "mcp", "vice", "fixtures", "c1541");
@@ -210,8 +212,21 @@ function findC1541OnPath() {
 
 const C1541_SKIP_REASON = findC1541OnPath() === null ? "c1541 is not resolvable on PATH -- audit's live seam calls are skipped" : false;
 
+// The LIVE cases reach the tool only through the broker's fixed endpoint, so
+// they run against this file's OWN harness broker (never a machine broker),
+// started once when the tool is resolvable.
+let broker = null;
+before(async () => {
+  if (C1541_SKIP_REASON) return;
+  broker = await startHarnessBroker();
+});
+after(async () => {
+  await broker?.stop();
+});
+const execScript = (args) => execFileP(process.execPath, args, { env: broker?.childEnv ?? process.env });
+
 async function runAuditCli(imagePath, outDir) {
-  const { stdout } = await execFileP(process.execPath, [SCRIPT, "audit", "--image", imagePath, "--out-dir", outDir, "--json"]);
+  const { stdout } = await execScript([SCRIPT, "audit", "--image", imagePath, "--out-dir", outDir, "--json"]);
   return JSON.parse(stdout.trim().split("\n").pop());
 }
 
@@ -271,7 +286,7 @@ test(
   async () => {
     const outDir = mkdtempSync(join(tmpdir(), "c1541-corpus-"));
     try {
-      const { stdout: dirStdout } = await execFileP(process.execPath, [SCRIPT, "dir", "--image", REAL_CORPUS_IMAGE, "--out-dir", outDir, "--json"]);
+      const { stdout: dirStdout } = await execScript([SCRIPT, "dir", "--image", REAL_CORPUS_IMAGE, "--out-dir", outDir, "--json"]);
       const dirResponse = JSON.parse(dirStdout.trim());
       assert.equal(dirResponse.ok, true, dirResponse.ok ? "" : dirResponse.message);
       const dirText = readFileSync(dirResponse.results[0].path, "utf8");
@@ -284,7 +299,7 @@ test(
       assert.ok(names.length > 0, "the real corpus image must report at least one directory entry");
       const { name } = names[0];
 
-      const { stdout: entryStdout } = await execFileP(process.execPath, [
+      const { stdout: entryStdout } = await execScript([
         SCRIPT,
         "entry",
         "--image",
@@ -310,7 +325,7 @@ test(
       // file's own sector-chain walk) must agree on the SAME real data --
       // something a tool that merely agrees with itself could not fake by
       // construction, since either capability could have diverged.
-      const { stdout: chainStdout } = await execFileP(process.execPath, [
+      const { stdout: chainStdout } = await execScript([
         SCRIPT,
         "chain",
         "--image",

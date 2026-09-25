@@ -218,13 +218,13 @@ test("source level: no oracle-path existence check remains, and the probe's seam
   const plantedExistenceCheck = `${MODULE_SRC}\nif (!existsSync(configured)) { /* planted violation */ }\n`;
   assert.ok(/existsSync\(\s*configured\s*\)/.test(plantedExistenceCheck), "non-vacuity: the planted existence-check control must be caught by the same pattern");
 
-  const emptyArgsCalls = MODULE_SRC.match(/invokeSeamSync\("oracle\.probe",\s*\{\}\)/g) ?? [];
+  const emptyArgsCalls = MODULE_SRC.match(/invokeHostToolSync\("oracle\.probe",\s*\{\},/g) ?? [];
   assert.equal(emptyArgsCalls.length, 1, "the probe's seam call must pass an empty argument object literal at exactly one site");
 
-  const nonEmptyArgsCalls = MODULE_SRC.match(/invokeSeamSync\("oracle\.probe",\s*\{[^}]+\}\)/g) ?? [];
+  const nonEmptyArgsCalls = MODULE_SRC.match(/invokeHostToolSync\("oracle\.probe",\s*\{[^}]+\},/g) ?? [];
   assert.equal(nonEmptyArgsCalls.length, 0, "no seam call for oracle.probe may carry a non-empty (configured) argument object");
-  const plantedConfiguredCall = `${MODULE_SRC}\ninvokeSeamSync("oracle.probe", { command: configured });\n`;
-  const plantedNonEmptyArgsCalls = plantedConfiguredCall.match(/invokeSeamSync\("oracle\.probe",\s*\{[^}]+\}\)/g) ?? [];
+  const plantedConfiguredCall = `${MODULE_SRC}\ninvokeHostToolSync("oracle.probe", { command: configured }, {});\n`;
+  const plantedNonEmptyArgsCalls = plantedConfiguredCall.match(/invokeHostToolSync\("oracle\.probe",\s*\{[^}]+\},/g) ?? [];
   assert.equal(plantedNonEmptyArgsCalls.length, 1, "non-vacuity: a planted call forwarding configuration must be caught by the same pattern");
 });
 
@@ -236,7 +236,7 @@ test("source level: no command-interpreter invocation anywhere in the module", (
   assert.ok(!/shell:\s*true/.test(MODULE_SRC), "no child process may be launched through a command interpreter");
   assert.ok(!/execSync\(/.test(MODULE_SRC));
   assert.ok(!/\bexec\(/.test(MODULE_SRC));
-  assert.ok(/shell:\s*false/.test(MODULE_SRC), "the interpreter must be disabled EXPLICITLY, not merely left at its default");
+  assert.ok(!/node:child_process/.test(MODULE_SRC), "the module spawns nothing itself -- the endpoint client is reached through mcp-module.mjs");
 });
 
 test("source level: the packer name is assigned at exactly one site, and the high confidence level at exactly one", () => {
