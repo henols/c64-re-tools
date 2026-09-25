@@ -15,6 +15,22 @@ This is roadmap v2.0.0 "One Broker, One Socket", step 2. It removes the old host
   - `vice_program_load` sending a client-side path.
 - Kept: `CONTAINER_WORKSPACE_PATH` in `repo-root.ts` and `container-guard.mts`, `containerGuardEnforce`/`Report`, and `runHostTool()`.
 
+### Decided during implementation
+
+- Tasks 3 and 4 landed as one commit. A tokenless control session cannot pass
+  while the broker still gates on the token, so neither task is green alone.
+- `dialControlSession()` lives in `vice-broker-client.ts` and wraps
+  `broker-endpoint.mts`'s new `dialControlSocket()`. The shared hello race is
+  `dialKeptSocket()`, also used by `dialHostToolSession()`.
+- The staging sweep stays safe without the token: it is synchronous and runs
+  right after the bind, with no `await` in between, so no request can be served
+  first.
+- `mcpHost()` and `isInsideContainer()` had no caller left, so both are deleted,
+  along with `VICE_MCP_HOST` and the unreachable fork launch fallback that bound
+  `0.0.0.0`.
+- `broker.json`'s config echo becomes the broker's `vice-broker: ready (...)`
+  stderr line.
+
 ## Context
 
 - **Visuals:** none.

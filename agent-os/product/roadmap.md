@@ -95,7 +95,8 @@ from production code**, not only bypassed.
   Ghidra and dxa callers onto it. Remove the `outDir`/`sourceDir` arguments; the
   broker installs the Ghidra extension from its own vendored tree. Give CI's ACME
   tests their own broker before the old bare-host route is deleted.
-- **Deletion cutover.** Delete `hostpath.ts`, `containerpath.ts` and
+- **Done: deletion cutover** (spec
+  `agent-os/specs/2026-09-25-2240-deletion-cutover/`). Delete `hostpath.ts`, `containerpath.ts` and
   `stock-paths.ts`, the `broker.json` discovery record with every reader of it,
   and the two-route host/container branch in `host-tool-client.ts`. Rewrite the
   stale guidance that the broker binds `0.0.0.0` and remove the dead guard
