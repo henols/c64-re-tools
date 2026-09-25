@@ -25,23 +25,23 @@
 // `instanceof` check keeps passing unchanged.
 //
 // WHAT NOT TO DO:
-//   - Never add filesystem access to `validateContainedDestination()` -- no
-//     stat, no realpath, no existsSync. XFER-03 requires it testable as a
-//     pure function over fixture strings, and the ROADMAP's own notes
-//     mandate exactly that.
-//   - Never sanitise a candidate this validator refuses. Per D-13's
-//     refuse-not-sanitise posture, every one of the six checks below
-//     REJECTS the whole candidate rather than stripping the offending
-//     part -- a caller that wants a different name asks for one, it is
-//     never silently rewritten.
-//   - Never apply Unicode normalisation or case folding to the candidate.
-//     The check runs on the raw string, which is what makes a fullwidth
-//     solidus (U+FF0F) an ordinary filename character rather than a
-//     platform-dependent separator (edge: XFER-03/encoding).
-import { isAbsolute, join } from "node:path";
+//   - Never re-implement `validateContainedDestination()` here. Phase 65
+//     (SEAM-01) moved its OWN definition to `transfer-client.mts` -- this
+//     module re-exports it unchanged below, because `host-tool-endpoint.mts`
+//     (Phase 65) must not import `repo-root.ts` at all (see
+//     `transfer-client.mts`'s own header for the full reason), and this
+//     module imports `repo-root.ts` transitively via `toolsDir()` two lines
+//     down. `transfer-client.mts` is this validator's ONE authoritative
+//     definition now; this file's own re-export is what keeps every
+//     pre-Phase-65 importer of `transfer-paths.ts` unchanged.
+import { join } from "node:path";
 
 import { ViceError, type ViceErrorOptions } from "./vice-errors.ts";
 import { toolsDir } from "./repo-root.ts";
+import { validateContainedDestination, type ContainedDestinationResult } from "./transfer-client.mts";
+
+export { validateContainedDestination };
+export type { ContainedDestinationResult };
 
 /** The one error type `snapshotPathFor()`/`snapshotMetaPathFor()` throw, and
  * the one `stock-paths.ts`'s own `sanitizeSnapshotName()` and
@@ -53,53 +53,6 @@ export class StockPathError extends ViceError {
     super(message, options);
     this.name = "StockPathError";
   }
-}
-
-export type ContainedDestinationResult = { ok: true; resolved: string } | { ok: false; reason: string };
-
-/**
- * D-13/XFER-03's pure containment validator: refuses a broker-supplied
- * destination name rather than sanitising it, checking six rules in this
- * order, each returning its OWN named reason so a caller (and this
- * function's own tests) can tell which rule fired:
- *
- * 1. a NUL byte anywhere in the candidate
- * 2. an empty candidate (never resolves to `rootDir` itself)
- * 3. a candidate equal to a single dot or a double dot
- * 4. a candidate containing a double-dot (`..`) SEGMENT, split on both
- *    ASCII path separators
- * 5. an absolute path, as judged by `isAbsolute()` from `node:path` (a
- *    platform-dependent check -- see rule 6 for why `C:\` is refused on
- *    every platform regardless)
- * 6. a forward slash or a backslash ANYWHERE in the candidate -- this is
- *    what refuses a Windows drive form like `C:\` even on a POSIX host,
- *    where `isAbsolute("C:\\")` returns `false`
- *
- * Only a candidate surviving all six checks resolves, by joining it onto
- * `rootDir`. Performs NO filesystem access whatsoever -- no stat, no
- * realpath, no existsSync -- and applies no Unicode normalisation and no
- * case folding: the check runs on the raw string.
- */
-export function validateContainedDestination(candidate: string, rootDir: string): ContainedDestinationResult {
-  if (candidate.includes("\0")) {
-    return { ok: false, reason: "destination name contains a NUL byte" };
-  }
-  if (candidate.length === 0) {
-    return { ok: false, reason: "destination name is empty -- an empty name must not resolve to the root directory itself" };
-  }
-  if (candidate === "." || candidate === "..") {
-    return { ok: false, reason: `destination name is '${candidate}'` };
-  }
-  if (candidate.split(/[\\/]+/).includes("..")) {
-    return { ok: false, reason: "destination name contains a traversal segment ('..')" };
-  }
-  if (isAbsolute(candidate)) {
-    return { ok: false, reason: "destination name is an absolute path" };
-  }
-  if (candidate.includes("/") || candidate.includes("\\")) {
-    return { ok: false, reason: "destination name contains a path separator" };
-  }
-  return { ok: true, resolved: join(rootDir, candidate) };
 }
 
 const SNAPSHOT_NAME_RE = /^[A-Za-z0-9_-]{1,64}$/;

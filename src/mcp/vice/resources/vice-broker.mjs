@@ -25,7 +25,7 @@
 // mcp__vice__* stays the only route to the emulator; nothing here opens a
 // connection to it.
 import { readFileSync, mkdirSync, openSync, writeFileSync, chmodSync, renameSync, existsSync } from "node:fs";
-import { join, basename, resolve as resolvePath } from "node:path";
+import { join, basename, relative, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn as nodeSpawn } from "node:child_process";
 import { randomBytes, timingSafeEqual } from "node:crypto";
@@ -83,7 +83,7 @@ import { writeEpochRecord, epochPathFor, nextEpochFor, instanceLogDirFor } from 
 // "./host-tool.mjs" is compiled into that same directory by the same build.ts
 // pass (host-tool.mts is added to HOST_BOUND_ARTIFACTS/tsconfig.build.json's
 // include[] in this same commit).
-import { runHostTool } from "./host-tool.mjs";
+import { runHostTool, bindStagedInputs } from "./host-tool.mjs";
 // A VALUE import of the same handle-minting function for the SAME reason as
 // the host-tool.mjs import immediately above -- this file is always run
 // from its own compiled resources/ form, and "./ghidra-project.mjs" is
@@ -111,7 +111,7 @@ import { brokerStateDir, brokerConfigScratchDir, brokerStagingDir } from "./brok
 // handleFileTransfer() below are this module's own callers; neither
 // re-implements the directory layout, the handle minting or the byte
 // movement broker-transfer.mts already owns.
-import { stageFileSlot, resolveStagedFile, markTransferInFlight, clearTransferInFlight, clearStagingForSession, sendPayloadFromFile, receivePayloadToFile, } from "./broker-transfer.mjs";
+import { stageFileSlot, resolveStagedFile, markTransferInFlight, clearTransferInFlight, clearStagingForSession, sendPayloadFromFile, receivePayloadToFile, stageHostToolRequest, listHostToolUploads, registerHostToolResult, } from "./broker-transfer.mjs";
 const USAGE = "usage: vice-broker.mjs [--repo-root <path>] [--state-dir <path>] [--check-container] [--dry-run]";
 /** `--repo-root` is now OPTIONAL (BROKER-01/BROKER-06, D-13): the per-project
  * binding it used to enforce is exactly what a machine-level broker removes,
@@ -933,6 +933,20 @@ export function handleFileTransfer(request, socket, pending, state, deps = {}) {
         clearTransferInFlight(request.handle);
         return { ok: false, code: "denied", message: "vice: transfer failed: the staged file does not exist yet" };
     }
+    // Phase 65 (SEAM-01, D-11): a host-tool upload slot declares its own
+    // byteLength at `host_tool_stage` time (`StagedFileEntry.declaredByteLength`,
+    // broker-transfer.mts) -- a `stageFileSlot()` entry (a monitor upload)
+    // never carries one, so this check is a no-op for every pre-existing
+    // caller. Refused BEFORE `transfer_ready` is ever written and before any
+    // payload byte moves, exactly like every other upload refusal above.
+    if (request.direction === "upload" && entry.declaredByteLength !== undefined && entry.declaredByteLength !== request.byteLength) {
+        clearTransferInFlight(request.handle);
+        return {
+            ok: false,
+            code: "denied",
+            message: `vice: transfer failed: declared byteLength ${request.byteLength} does not match the staged manifest's declared byteLength ${entry.declaredByteLength}`,
+        };
+    }
     const settle = () => {
         clearTransferInFlight(request.handle);
         if (!socket.destroyed)
@@ -978,6 +992,96 @@ export function handleFileTransfer(request, socket, pending, state, deps = {}) {
             .finally(settle);
     }
     return { ok: true };
+}
+// ---------------------------------------------------------------------------
+// host_tool_stage / host_tool_run / host_tool_end (Phase 65, SEAM-01,
+// D-03/D-07/D-09/D-10). The fixed-endpoint route's own three broker-side
+// handlers -- a brand-new request key per host-tool request, never gated by
+// `ownsTarget()` (a skill call holds no acquire-level grant at all,
+// RESEARCH.md Critical Finding 2). Delegates every path-and-handle decision
+// to `broker-transfer.mts`'s own staging primitives, exactly like
+// `handleStageFile()`/`handleFileTransfer()` above already do for a monitor
+// upload; this module orchestrates, it does not choose a path or mint a
+// handle itself.
+// ---------------------------------------------------------------------------
+/** Answers `host_tool_stage`: delegates to `stageHostToolRequest()`
+ * (broker-transfer.mts) unchanged, and reports a staging refusal as
+ * `bad_request` with the (already path-free) reason that function
+ * produced. */
+export function handleHostToolStage(files) {
+    const staged = stageHostToolRequest({ files });
+    if (!staged.ok) {
+        return { ok: false, code: "bad_request", message: staged.reason };
+    }
+    return { ok: true, requestKey: staged.requestKey, treeHandles: staged.treeHandles, fileHandles: staged.fileHandles };
+}
+/** The fixed token every reply string field is scrubbed to once it has
+ * matched the request's own scratch root (D-10) -- so no broker-side
+ * filesystem path ever reaches the wire on this route, mirroring
+ * `broker-transfer.mts`'s own `formatPathFreeFault()` posture of naming a
+ * fixed replacement rather than attempting to scrub an unbounded shape. */
+const STAGED_REQUEST_TOKEN = "<staged-request>";
+function redactScratchRoot(value, scratchRoot) {
+    return value.split(scratchRoot).join(STAGED_REQUEST_TOKEN);
+}
+/** Answers `host_tool_run`: verifies every staged upload for this request
+ * has actually finished transferring (D-09's own "not every declared file
+ * has arrived yet" case), binds every path-bearing wire key to its
+ * scratch-relative path via `bindStagedInputs()` (host-tool.mts), runs
+ * `runHostTool()` against the REQUEST'S OWN scratch root (never this
+ * broker's own `--repo-root` -- the assumption_delta_decision this plan
+ * records), then rewrites the response: every `results[]` entry becomes a
+ * download handle via `registerHostToolResult()` (D-07's first live
+ * producer), and every remaining string field is scrubbed of the scratch
+ * root (D-10, T-65-06). Never rejects -- every failure resolves
+ * `{ ok: false, message }`, mirroring `runHostTool()`'s own contract. */
+export async function handleHostToolRun(requestKey, raw, deps = {}) {
+    const uploads = listHostToolUploads(requestKey);
+    for (const upload of uploads) {
+        if (!existsSync(upload.path)) {
+            return { ok: false, message: "vice: host_tool_run: not every staged upload has finished transferring yet" };
+        }
+    }
+    const scratchRoot = join(brokerStagingDir(), requestKey);
+    const lookup = {
+        fileHandle: (handle) => {
+            const resolved = resolveStagedFile(handle);
+            if (!resolved.ok || resolved.entry.grantId !== requestKey)
+                return undefined;
+            return relative(scratchRoot, resolved.entry.path);
+        },
+    };
+    const bound = bindStagedInputs(raw, lookup);
+    if (!bound.ok) {
+        return { ok: false, message: bound.message };
+    }
+    const response = await runHostTool(bound.request, { repoRoot: scratchRoot, log: deps.log });
+    const responseObj = response;
+    if (!response.ok) {
+        const message = typeof responseObj.message === "string" ? responseObj.message : "vice: the host tool refused";
+        return { ok: false, message: redactScratchRoot(message, scratchRoot) };
+    }
+    const rewritten = { ...responseObj };
+    const results = responseObj.results;
+    if (Array.isArray(results)) {
+        rewritten.results = results.map((result, index) => {
+            const handle = registerHostToolResult({ requestKey, path: result.path, index });
+            return { name: basename(result.path), handle, sha256: result.sha256, byteLength: result.byteLength };
+        });
+    }
+    for (const key of ["message", "stderrTail", "reason", "entrypointReason"]) {
+        const value = rewritten[key];
+        if (typeof value === "string") {
+            rewritten[key] = redactScratchRoot(value, scratchRoot);
+        }
+    }
+    return rewritten;
+}
+/** Answers the connection close that ends a `host_tool_stage` request
+ * (D-09): reuses `clearStagingForSession()` unchanged, exactly like
+ * `handleRelease()` already does for an `acquire` grant's own release. */
+export function handleHostToolEnd(requestKey) {
+    clearStagingForSession(requestKey);
 }
 /**
  * Answers a relay connection's own death (Phase 63, SESS-03/05) -- the ONE
@@ -1869,6 +1973,17 @@ async function run(args) {
             // listener.
             onStageFile: (targetId, slot) => handleStageFile(targetId, slot, state),
             onFileTransfer: (request, socket, pendingBytes) => handleFileTransfer(request, socket, pendingBytes, state),
+            // Phase 65 (SEAM-01): wired in the SAME options object as the two
+            // staging callbacks immediately above, never as a second listener.
+            // Deliberately handed no `state` reference (mirrors `onHostTool`'s own
+            // isolation from lease state one screen down): this route reaches
+            // only the request's own per-request scratch subtree under
+            // brokerStagingDir(), never this broker's acquire/release/recycle map.
+            onHostToolStage: (files) => handleHostToolStage(files),
+            onHostToolRun: (requestKey, raw) => handleHostToolRun(requestKey, raw, {
+                log: (line) => process.stderr.write(`${line}\n`),
+            }),
+            onHostToolEnd: (requestKey) => handleHostToolEnd(requestKey),
             onHostState: () => ({
                 pid: process.pid,
                 startedAt,

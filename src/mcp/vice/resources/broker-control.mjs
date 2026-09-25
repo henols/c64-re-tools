@@ -487,6 +487,13 @@ function attachControlProtocol(server, opts, pendingAcquires) {
         // `JSON.parse()` call, never the accumulator as a whole.
         let carry = Buffer.alloc(0);
         let requestIdForThisConnection = null;
+        // Phase 65 (SEAM-01, D-03/D-09): the request key `host_tool_stage`
+        // minted and bound to THIS connection -- `null` until a stage succeeds,
+        // never re-read from a later `host_tool_run` line's own `request`
+        // field (T-65-04). Mirrors `requestIdForThisConnection`'s own shape one
+        // line above, for the same reason: connection close IS the cleanup
+        // signal (see the close handler below).
+        let hostToolRequestKey = null;
         // Set by the `attach` dispatch arm below, BEFORE onRelayAttach() is
         // ever called -- once true, this socket's OWN "data" listener becomes
         // a no-op forever: every further byte belongs to
@@ -530,6 +537,15 @@ function attachControlProtocol(server, opts, pendingAcquires) {
                 const id = requestIdForThisConnection;
                 requestIdForThisConnection = null;
                 opts.onRelease(id);
+            }
+            // Phase 65 (D-09): the SAME connection-close-is-the-cleanup-signal
+            // posture as the release above, for a `host_tool_stage` request's own
+            // per-request scratch -- fires on an explicit close and on a bare
+            // socket death (SIGKILL) alike, since "close" always fires either way.
+            if (hostToolRequestKey) {
+                const key = hostToolRequestKey;
+                hostToolRequestKey = null;
+                opts.onHostToolEnd?.(key);
             }
         });
         socket.on("error", () => {
@@ -836,6 +852,95 @@ function attachControlProtocol(server, opts, pendingAcquires) {
                 // On success this arm writes NOTHING further -- onFileTransfer()
                 // itself owns every reply line and every payload byte from here on
                 // (see FileTransferOutcome's own header comment).
+                return;
+            }
+            // Phase 65 (SEAM-01, D-03), dispatched HERE, ahead of the token gate,
+            // beside `attach`/`transfer` above -- see ControlRequestKind's own
+            // comment on `host_tool_stage`/`host_tool_run` for the full reasoning.
+            // Never touches relayMode: this op answers on the ordinary line
+            // reader, it never hands the connection to a splice.
+            if (req.op === "host_tool_stage") {
+                if (hostToolRequestKey !== null) {
+                    writeLine(socket, {
+                        kind: "error",
+                        code: "bad_request",
+                        message: "host_tool_stage: a stage request is already bound to this connection",
+                    });
+                    return;
+                }
+                const filesRaw = req.files;
+                if (!Array.isArray(filesRaw)) {
+                    writeLine(socket, { kind: "error", code: "bad_request", message: "host_tool_stage requires files (array)" });
+                    return;
+                }
+                const files = [];
+                for (const rawEntry of filesRaw) {
+                    if (typeof rawEntry !== "object" || rawEntry === null || Array.isArray(rawEntry)) {
+                        writeLine(socket, {
+                            kind: "error",
+                            code: "bad_request",
+                            message: "host_tool_stage: each files[] entry must be an object {tree, rel, byteLength}",
+                        });
+                        return;
+                    }
+                    const entry = rawEntry;
+                    const tree = entry.tree;
+                    const rel = entry.rel;
+                    const byteLength = entry.byteLength;
+                    if (typeof tree !== "number" || !Number.isSafeInteger(tree) || tree < 0 || typeof rel !== "string" || typeof byteLength !== "number") {
+                        writeLine(socket, {
+                            kind: "error",
+                            code: "bad_request",
+                            message: "host_tool_stage: each files[] entry must be {tree: non-negative integer, rel: string, byteLength: number}",
+                        });
+                        return;
+                    }
+                    files.push({ tree, rel, byteLength });
+                }
+                if (!opts.onHostToolStage) {
+                    writeLine(socket, { kind: "error", code: "internal", message: "host_tool_stage is not wired on this broker" });
+                    return;
+                }
+                const stageOutcome = opts.onHostToolStage(files);
+                if (!stageOutcome.ok) {
+                    writeLine(socket, { kind: "error", code: stageOutcome.code, message: stageOutcome.message });
+                    return;
+                }
+                hostToolRequestKey = stageOutcome.requestKey;
+                writeHostToolLine(socket, {
+                    kind: "host_tool_staged",
+                    request: stageOutcome.requestKey,
+                    trees: stageOutcome.treeHandles,
+                    files: stageOutcome.fileHandles,
+                });
+                return;
+            }
+            if (req.op === "host_tool_run") {
+                const presentedRequest = typeof req.request === "string" ? req.request : "";
+                if (hostToolRequestKey === null || presentedRequest === "" || presentedRequest !== hostToolRequestKey) {
+                    writeLine(socket, {
+                        kind: "error",
+                        code: "denied",
+                        message: "host_tool_run: no matching host_tool_stage request is bound to this connection",
+                    });
+                    return;
+                }
+                if (!opts.onHostToolRun) {
+                    writeLine(socket, { kind: "error", code: "internal", message: "host_tool_run is not wired on this broker" });
+                    return;
+                }
+                const boundRequestKey = hostToolRequestKey;
+                opts
+                    .onHostToolRun(boundRequestKey, req)
+                    .then((result) => {
+                    if (!socket.destroyed)
+                        writeHostToolLine(socket, result);
+                })
+                    .catch(() => {
+                    if (!socket.destroyed) {
+                        writeLine(socket, { kind: "error", code: "internal", message: "host_tool_run threw" });
+                    }
+                });
                 return;
             }
             // Token check BEFORE any state is read or written, for every op

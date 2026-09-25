@@ -536,6 +536,18 @@ export function clearStagingForSession(grantId) {
         if (key.startsWith(prefix))
             slotIndex.delete(key);
     }
+    // Phase 65 (D-09): drops every host-tool tree-handle entry minted for this
+    // request key too -- the SAME (grantId-keyed) prefix scan as slotIndex
+    // above, over the two maps stageHostToolRequest()/resolveHostToolTree()
+    // below own.
+    for (const key of Array.from(treeHandleByGrantAndIndex.keys())) {
+        if (key.startsWith(prefix))
+            treeHandleByGrantAndIndex.delete(key);
+    }
+    for (const key of Array.from(treeIndexByGrantAndHandle.keys())) {
+        if (key.startsWith(prefix))
+            treeIndexByGrantAndHandle.delete(key);
+    }
 }
 /** Test-only reset, following `stock-paths.ts`'s `setIsInsideContainerForTest()`
  * / `stock-runstate.ts`'s `resetRunStateTrackersForTest()` precedent: a
@@ -545,4 +557,151 @@ export function resetStagingForTest() {
     handleIndex.clear();
     slotIndex.clear();
     inFlightHandles.clear();
+    treeHandleByGrantAndIndex.clear();
+    treeIndexByGrantAndHandle.clear();
+}
+// ---------------------------------------------------------------------------
+// Host-tool staging (Phase 65, SEAM-01, D-03/D-07/D-09/D-11). A `host_tool`
+// request is a FIXED manifest of upload slots (never a single grant/slot
+// pair the way a monitor upload is) -- `stageHostToolRequest()` mints its
+// OWN grant id (a `ht-` prefixed request key), reuses the SAME `handleIndex`
+// map every `transfer` op already reads (`resolveStagedFile()` above), and
+// reuses `clearStagingForSession()` unchanged for its own D-09 cleanup (a
+// host-tool request key is refused/accepted by `refuseUnsafeSegment()`
+// exactly like any other grant id, so it needs no separate cleanup path).
+//
+// WHAT NOT TO DO:
+//   - Never let a `rel` string reach a path with an unvalidated segment --
+//     `refuseUnsafeRelativePath()` below is the ONE place a host-tool
+//     manifest's own relative path is checked, splitting on "/" and running
+//     each segment through the SAME `refuseUnsafeSegment()` a monitor
+//     upload's own `slot` is checked against.
+// ---------------------------------------------------------------------------
+/** `(requestKey, tree)` -> the minted tree handle; `(requestKey, treeHandle)`
+ * -> the tree index it names. Two maps, not one reversible map, because the
+ * two lookups run in opposite directions and neither side is ever derived
+ * from the other at read time. Composite-keyed with the SAME NUL-joined
+ * convention `stagingSlotKey()` above uses, so `clearStagingForSession()`
+ * can prefix-scan both exactly like it already does for `slotIndex`. */
+const treeHandleByGrantAndIndex = new Map();
+const treeIndexByGrantAndHandle = new Map();
+/**
+ * Refuse-not-sanitise (D-13's own posture, applied here to a host-tool
+ * manifest's `rel` field): splits on ASCII `/` and runs every resulting
+ * segment through `refuseUnsafeSegment()` above -- the SAME per-segment
+ * checks a monitor upload's own `slot` already gets. Also refuses a leading
+ * `/` and any backslash explicitly, ahead of the segment walk, so a
+ * Windows-drive-form or absolute candidate is named by its own rule rather
+ * than falling through to a generic "empty segment" message.
+ */
+export function refuseUnsafeRelativePath(rel) {
+    if (typeof rel !== "string")
+        return { ok: false, reason: "vice: rel must be a string" };
+    if (rel === "")
+        return { ok: false, reason: "vice: rel is empty" };
+    if (rel.startsWith("/"))
+        return { ok: false, reason: "vice: rel must not be an absolute path" };
+    if (rel.includes("\\"))
+        return { ok: false, reason: "vice: rel must not contain a backslash" };
+    for (const segment of rel.split("/")) {
+        const check = refuseUnsafeSegment(segment, "rel segment");
+        if (!check.ok)
+            return check;
+    }
+    return { ok: true };
+}
+/**
+ * Mints a NEW request key (`ht-` plus 16 random bytes as hex) and one
+ * upload-handle entry per manifest file, in manifest order (D-03). Every
+ * `rel` is validated with `refuseUnsafeRelativePath()` above and every
+ * `byteLength` is validated as a non-negative safe integer at or below
+ * `TRANSFER_MAX_BYTES` (D-11) -- BEFORE a single directory is created or a
+ * single handle is minted; the first failing entry refuses the WHOLE
+ * request, nothing partial is registered. Mints one tree handle per
+ * DISTINCT `tree` index (in first-appearance order), and one file handle
+ * per manifest entry (also in manifest order) -- both returned alongside
+ * the new request key. Every file handle is registered in the SAME
+ * `handleIndex` map `resolveStagedFile()`/`transfer` already read, with
+ * `grantId` = the new request key and `slot` = `in:<index>`, so
+ * `clearStagingForSession(requestKey)` (D-09) removes every one of them
+ * with no separate host-tool-specific cleanup path.
+ */
+export function stageHostToolRequest({ files, now = Date.now, }) {
+    for (const file of files) {
+        const relCheck = refuseUnsafeRelativePath(file.rel);
+        if (!relCheck.ok)
+            return { ok: false, reason: relCheck.reason };
+        if (typeof file.byteLength !== "number" || !Number.isSafeInteger(file.byteLength) || file.byteLength < 0) {
+            return { ok: false, reason: `vice: declared byteLength must be a non-negative safe integer, got ${JSON.stringify(file.byteLength)}` };
+        }
+        if (file.byteLength > TRANSFER_MAX_BYTES) {
+            return { ok: false, reason: `vice: declared byteLength ${file.byteLength} exceeds the ${TRANSFER_MAX_BYTES} byte cap (sixteen mebibytes)` };
+        }
+        if (typeof file.tree !== "number" || !Number.isSafeInteger(file.tree) || file.tree < 0) {
+            return { ok: false, reason: `vice: tree must be a non-negative integer, got ${JSON.stringify(file.tree)}` };
+        }
+    }
+    const requestKey = `ht-${randomBytes(16).toString("hex")}`;
+    const sessionDir = join(brokerStagingDir(), requestKey);
+    ensureBrokerDir(sessionDir);
+    const seenTrees = [];
+    const treeHandles = [];
+    const fileHandles = [];
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (!seenTrees.includes(file.tree)) {
+            seenTrees.push(file.tree);
+            const treeHandle = randomBytes(16).toString("hex");
+            treeHandleByGrantAndIndex.set(`${requestKey}\u0000${file.tree}`, treeHandle);
+            treeIndexByGrantAndHandle.set(`${requestKey}\u0000${treeHandle}`, file.tree);
+            treeHandles.push(treeHandle);
+        }
+        const path = join(sessionDir, "in", String(file.tree), ...file.rel.split("/"));
+        const handle = randomBytes(16).toString("hex");
+        const entry = { handle, path, grantId: requestKey, slot: `in:${i}`, claimedAt: now(), declaredByteLength: file.byteLength };
+        handleIndex.set(handle, entry);
+        fileHandles.push(handle);
+    }
+    return { ok: true, requestKey, treeHandles, fileHandles };
+}
+/** Resolves a tree handle minted for `requestKey` back to its own tree
+ * index -- a lookup, nothing more (mirrors `resolveStagedFile()`'s own
+ * posture). Refuses `vice: unknown tree handle` for a handle minted on a
+ * DIFFERENT request key too, since the composite key is scoped by
+ * `requestKey` -- the same per-connection binding `broker-control.mts`'s
+ * own `host_tool_run` dispatch arm already enforces one layer up. */
+export function resolveHostToolTree(requestKey, treeHandle) {
+    const tree = treeIndexByGrantAndHandle.get(`${requestKey}\u0000${treeHandle}`);
+    if (tree === undefined)
+        return { ok: false, reason: "vice: unknown tree handle" };
+    return { ok: true, tree };
+}
+/** Every upload entry (`slot` starting `in:`) registered for `requestKey` --
+ * a `handleIndex` scan, nothing more. Never includes a `registerHostToolResult()`
+ * download entry (`slot` starting `out:`) -- the two slot namespaces are
+ * disjoint by construction, matching `stageFileSlot()`'s own single
+ * `handleIndex` map holding every kind of staged entry without a type tag. */
+export function listHostToolUploads(requestKey) {
+    const results = [];
+    for (const entry of handleIndex.values()) {
+        if (entry.grantId === requestKey && entry.slot.startsWith("in:")) {
+            results.push({ handle: entry.handle, path: entry.path, slot: entry.slot });
+        }
+    }
+    return results;
+}
+/**
+ * Mints a DOWNLOAD handle for a host-tool RESULT file, registered in the
+ * SAME `handleIndex` map every upload entry lives in, with `slot` =
+ * `out:<index>` -- so a later `transfer` (direction: "download") presenting
+ * this handle resolves through the SAME `resolveStagedFile()` every upload
+ * already does, and `clearStagingForSession(requestKey)` (D-09) removes it
+ * exactly like every other entry for this request key, with no separate
+ * result-specific cleanup path.
+ */
+export function registerHostToolResult({ requestKey, path, index, now = Date.now, }) {
+    const handle = randomBytes(16).toString("hex");
+    const entry = { handle, path, grantId: requestKey, slot: `out:${index}`, claimedAt: now() };
+    handleIndex.set(handle, entry);
+    return handle;
 }

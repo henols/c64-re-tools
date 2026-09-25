@@ -131,7 +131,39 @@ import type { ViceBackend } from "./backend-detect.mjs";
 // every payload byte; this listener writes nothing more on that path. Its
 // callback is ALSO optional -- see onFileTransfer's
 // own comment.
-export type ControlRequestKind = "acquire" | "release" | "recycle" | "status" | "host_state" | "monitor_claim" | "monitor_release" | "host_tool" | "hello" | "attach" | "operation" | "stage_file" | "transfer";
+// `host_tool_stage`/`host_tool_run` join as the FOURTEENTH/FIFTEENTH members,
+// Phase 65 (SEAM-01, D-03/D-09) -- dispatched BEFORE the token gate, beside
+// `attach`/`transfer`, by the SAME "this connection is a brand-new socket,
+// never the one that already proved ownership some other way" reasoning
+// those two arms' own comments state: a skill call holds no acquire-level
+// grant at all (RESEARCH.md Critical Finding 2), so there is no `target_id`
+// this pair could ever be gated on. `host_tool_stage` mints a brand-new
+// request key and BINDS it to the connection that sent it (a per-connection
+// variable, mirroring `requestIdForThisConnection`'s own shape); every
+// subsequent `host_tool_run` on that SAME connection is refused `denied`
+// unless it presents that exact key back (T-65-04) -- a key minted on one
+// connection is never honoured on another. `host_tool_run` reuses the
+// bound key; it carries no `target_id` and no token of its own. Neither
+// touches `relayMode` -- both answer on this listener's own ordinary line
+// reader, never handing the connection to a splice. The legacy `host_tool`
+// literal, below the token gate, is UNTOUCHED by either -- two distinct
+// functions, never a shared literal or a mode flag (T-65-05).
+export type ControlRequestKind =
+  | "acquire"
+  | "release"
+  | "recycle"
+  | "status"
+  | "host_state"
+  | "monitor_claim"
+  | "monitor_release"
+  | "host_tool"
+  | "hello"
+  | "attach"
+  | "operation"
+  | "stage_file"
+  | "transfer"
+  | "host_tool_stage"
+  | "host_tool_run";
 // `no_free_text_port` joins the vocabulary as its OWN code -- a stock
 // acquire that fails only on the SECOND (`-remotemonitor`) allocation is
 // reported distinctly from `no_free_port` (which still means the
@@ -379,6 +411,25 @@ export type FileTransferRequest =
  * detect-then-refuse-by-name convention. */
 export type FileTransferOutcome = { ok: true } | { ok: false; code: ControlErrorCode; message: string };
 
+/** One `host_tool_stage` manifest entry, already narrowed off the wire by
+ * THIS listener's own dispatch arm (Phase 65, SEAM-01) -- `tree` is a
+ * non-negative integer, `rel` a string, `byteLength` a number; the callback
+ * never sees an un-narrowed field. */
+export interface HostToolStageFileSpec {
+  tree: number;
+  rel: string;
+  byteLength: number;
+}
+
+/** Discriminated outcome for `host_tool_stage` (Phase 65, SEAM-01, D-03):
+ * resolved by `vice-broker.mts`'s own `handleHostToolStage()`. `ok: true`
+ * mints a request key the REQUEST did not supply, plus one tree handle per
+ * distinct tree and one file handle per manifest entry -- both in manifest
+ * order. `ok: false` reuses this file's OWN `ControlErrorCode` vocabulary. */
+export type HostToolStageOutcome =
+  | { ok: true; requestKey: string; treeHandles: string[]; fileHandles: string[] }
+  | { ok: false; code: ControlErrorCode; message: string };
+
 // `warmFloor` is DELETED, not merely renamed -- the warm floor itself is
 // retired, and a published field whose knob no longer exists is false
 // documentation, so it goes rather than reporting a constant.
@@ -559,6 +610,32 @@ export interface StartControlListenerOptions {
    * dispatch branch below treats a rejection as a genuine possibility
    * anyway and answers `internal` rather than letting it escape uncaught. */
   onHostTool: (raw: unknown) => Promise<unknown>;
+  /** Called on `host_tool_stage` (Phase 65, SEAM-01, D-03), ahead of the
+   * token gate, by the SAME "brand-new connection, no ownership to gate on"
+   * reasoning `onFileTransfer`'s own comment states. OPTIONAL, for the same
+   * reason `onStageFile`/`onFileTransfer` are: refused `internal` by name
+   * when unwired, never invoked with `undefined`. */
+  onHostToolStage?: (files: HostToolStageFileSpec[]) => HostToolStageOutcome;
+  /** Called on `host_tool_run` (Phase 65, SEAM-01, D-03/D-09), AFTER this
+   * listener's own per-connection request-key binding check has already
+   * passed (T-65-04) -- `requestKey` is the bound key, never re-read from
+   * the wire line itself. `raw` is the FULL, un-narrowed request object,
+   * mirroring `onHostTool`'s own contract: `host-tool.mts`'s own
+   * `bindStagedInputs()` is the one place it is narrowed. Resolves the
+   * SAME shape `host-tool.mts`'s `runHostTool()` produces, rewritten to
+   * carry handles instead of a broker path (D-10) -- never rejects in
+   * production, but the dispatch arm below treats a rejection as a genuine
+   * possibility anyway, exactly like `onHostTool`. OPTIONAL, for the same
+   * reason `onHostToolStage` is. */
+  onHostToolRun?: (requestKey: string, raw: unknown) => Promise<unknown>;
+  /** Called when the connection that ran `host_tool_stage` closes (Phase 65,
+   * D-09) -- the per-request scratch and every staging registry entry keyed
+   * to it are gone once this fires, mirroring `onRelease`'s own
+   * connection-close-is-the-release posture for an `acquire` grant.
+   * OPTIONAL: a broker that never wires `onHostToolStage` has nothing to
+   * clean up either, so this callback is simply never invoked on such a
+   * broker. */
+  onHostToolEnd?: (requestKey: string) => void;
 }
 
 export interface StartControlListenerResult {
@@ -628,6 +705,14 @@ export type ControlResponse =
   // own header comment), so this module's own `writeLine()` never produces
   // them.
   | { kind: "file_staged"; handle: string; emulator_filename: string }
+  // Phase 65 (SEAM-01, D-03): the successful reply to `host_tool_stage` --
+  // carries a request key the REQUEST did not supply, plus one tree handle
+  // per distinct tree and one file handle per manifest entry, both in
+  // manifest order. `host_tool_run`'s own successful reply is NOT a member
+  // of this union: it is `host-tool.mts`'s own response shape, written
+  // through `writeHostToolLine()` exactly like the legacy `host_tool` op's
+  // own reply already is (see that function's own header comment).
+  | { kind: "host_tool_staged"; request: string; trees: string[]; files: string[] }
   // Answered BEFORE the token gate (see handleLine()'s own dispatch-order
   // comment) -- carries no token, username, hostname, home directory,
   // absolute path or per-instance detail, since anything reachable at a
@@ -1129,6 +1214,13 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
     // `JSON.parse()` call, never the accumulator as a whole.
     let carry: Buffer = Buffer.alloc(0);
     let requestIdForThisConnection: string | null = null;
+    // Phase 65 (SEAM-01, D-03/D-09): the request key `host_tool_stage`
+    // minted and bound to THIS connection -- `null` until a stage succeeds,
+    // never re-read from a later `host_tool_run` line's own `request`
+    // field (T-65-04). Mirrors `requestIdForThisConnection`'s own shape one
+    // line above, for the same reason: connection close IS the cleanup
+    // signal (see the close handler below).
+    let hostToolRequestKey: string | null = null;
     // Set by the `attach` dispatch arm below, BEFORE onRelayAttach() is
     // ever called -- once true, this socket's OWN "data" listener becomes
     // a no-op forever: every further byte belongs to
@@ -1173,6 +1265,15 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
         const id = requestIdForThisConnection;
         requestIdForThisConnection = null;
         opts.onRelease(id);
+      }
+      // Phase 65 (D-09): the SAME connection-close-is-the-cleanup-signal
+      // posture as the release above, for a `host_tool_stage` request's own
+      // per-request scratch -- fires on an explicit close and on a bare
+      // socket death (SIGKILL) alike, since "close" always fires either way.
+      if (hostToolRequestKey) {
+        const key = hostToolRequestKey;
+        hostToolRequestKey = null;
+        opts.onHostToolEnd?.(key);
       }
     });
 
@@ -1479,6 +1580,96 @@ function attachControlProtocol(server: Server, opts: StartControlListenerOptions
         // On success this arm writes NOTHING further -- onFileTransfer()
         // itself owns every reply line and every payload byte from here on
         // (see FileTransferOutcome's own header comment).
+        return;
+      }
+
+      // Phase 65 (SEAM-01, D-03), dispatched HERE, ahead of the token gate,
+      // beside `attach`/`transfer` above -- see ControlRequestKind's own
+      // comment on `host_tool_stage`/`host_tool_run` for the full reasoning.
+      // Never touches relayMode: this op answers on the ordinary line
+      // reader, it never hands the connection to a splice.
+      if (req.op === "host_tool_stage") {
+        if (hostToolRequestKey !== null) {
+          writeLine(socket, {
+            kind: "error",
+            code: "bad_request" as ControlErrorCode,
+            message: "host_tool_stage: a stage request is already bound to this connection",
+          });
+          return;
+        }
+        const filesRaw = req.files;
+        if (!Array.isArray(filesRaw)) {
+          writeLine(socket, { kind: "error", code: "bad_request" as ControlErrorCode, message: "host_tool_stage requires files (array)" });
+          return;
+        }
+        const files: HostToolStageFileSpec[] = [];
+        for (const rawEntry of filesRaw) {
+          if (typeof rawEntry !== "object" || rawEntry === null || Array.isArray(rawEntry)) {
+            writeLine(socket, {
+              kind: "error",
+              code: "bad_request" as ControlErrorCode,
+              message: "host_tool_stage: each files[] entry must be an object {tree, rel, byteLength}",
+            });
+            return;
+          }
+          const entry = rawEntry as Record<string, unknown>;
+          const tree = entry.tree;
+          const rel = entry.rel;
+          const byteLength = entry.byteLength;
+          if (typeof tree !== "number" || !Number.isSafeInteger(tree) || tree < 0 || typeof rel !== "string" || typeof byteLength !== "number") {
+            writeLine(socket, {
+              kind: "error",
+              code: "bad_request" as ControlErrorCode,
+              message: "host_tool_stage: each files[] entry must be {tree: non-negative integer, rel: string, byteLength: number}",
+            });
+            return;
+          }
+          files.push({ tree, rel, byteLength });
+        }
+        if (!opts.onHostToolStage) {
+          writeLine(socket, { kind: "error", code: "internal" as ControlErrorCode, message: "host_tool_stage is not wired on this broker" });
+          return;
+        }
+        const stageOutcome = opts.onHostToolStage(files);
+        if (!stageOutcome.ok) {
+          writeLine(socket, { kind: "error", code: stageOutcome.code, message: stageOutcome.message });
+          return;
+        }
+        hostToolRequestKey = stageOutcome.requestKey;
+        writeHostToolLine(socket, {
+          kind: "host_tool_staged",
+          request: stageOutcome.requestKey,
+          trees: stageOutcome.treeHandles,
+          files: stageOutcome.fileHandles,
+        });
+        return;
+      }
+
+      if (req.op === "host_tool_run") {
+        const presentedRequest = typeof req.request === "string" ? req.request : "";
+        if (hostToolRequestKey === null || presentedRequest === "" || presentedRequest !== hostToolRequestKey) {
+          writeLine(socket, {
+            kind: "error",
+            code: "denied" as ControlErrorCode,
+            message: "host_tool_run: no matching host_tool_stage request is bound to this connection",
+          });
+          return;
+        }
+        if (!opts.onHostToolRun) {
+          writeLine(socket, { kind: "error", code: "internal" as ControlErrorCode, message: "host_tool_run is not wired on this broker" });
+          return;
+        }
+        const boundRequestKey = hostToolRequestKey;
+        opts
+          .onHostToolRun(boundRequestKey, req)
+          .then((result) => {
+            if (!socket.destroyed) writeHostToolLine(socket, result);
+          })
+          .catch(() => {
+            if (!socket.destroyed) {
+              writeLine(socket, { kind: "error", code: "internal" as ControlErrorCode, message: "host_tool_run threw" });
+            }
+          });
         return;
       }
 

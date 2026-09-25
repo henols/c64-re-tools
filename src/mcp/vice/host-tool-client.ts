@@ -57,6 +57,22 @@ import { brokerRootDir, brokerJsonPath, newRequestId, resolveControlTarget, CONT
 import { containerPath } from "./containerpath.ts";
 import { isInsideContainer } from "./container-guard.mts";
 import { repoRoot } from "./repo-root.ts";
+// Phase 65 (SEAM-01): HostToolFileResult/HOST_TOOL_REQUEST_TIMEOUT_MS/
+// DEFAULT_HOST_TOOL_REQUEST_TIMEOUT_MS/hostToolRequestTimeoutMs()/
+// HostToolClientResult all moved to host-tool-endpoint.mts -- re-exported
+// below, unchanged, so host-tool.test.ts's own cross-seam ordering case (and
+// every other pre-Phase-65 importer of this file) keeps importing them from
+// here with no edit of its own.
+import {
+  type HostToolFileResult,
+  HOST_TOOL_REQUEST_TIMEOUT_MS,
+  DEFAULT_HOST_TOOL_REQUEST_TIMEOUT_MS,
+  hostToolRequestTimeoutMs,
+  type HostToolClientResult,
+} from "./host-tool-endpoint.mts";
+
+export type { HostToolFileResult, HostToolClientResult };
+export { HOST_TOOL_REQUEST_TIMEOUT_MS, DEFAULT_HOST_TOOL_REQUEST_TIMEOUT_MS, hostToolRequestTimeoutMs };
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -80,57 +96,6 @@ function readJsonMaybe(path: string): Record<string, unknown> | null {
     return null;
   }
 }
-
-export interface HostToolFileResult {
-  path: string;
-  sha256: string;
-  byteLength: number;
-}
-
-/** 34-09 (CR-04): the per-tool CLIENT-side request-deadline table, declared
- * in THIS file (never in vice-broker-client.ts, whose export list is pinned
- * by exact set equality -- vice-broker-client.test.ts:1208 -- this file has
- * no such census). Bounds the REQUEST phase only, the phase AFTER the
- * connect timer below has already been cleared -- mirroring
- * openBrokerControl()'s own connect-then-request split
- * (vice-broker-client.ts). Every entry here MUST be strictly greater than
- * host-tool.mts's own HOST_TOOL_TIMEOUT_MS entry for the SAME tool id: the
- * side that owns the budget (the host-bound executor) must be the side that
- * reports the verdict, or a caller sees an opaque transport timeout instead
- * of the host's own diagnosable refusal. This ordering is asserted by
- * host-tool.test.ts's own cross-seam ordering case, which imports BOTH
- * sides and iterates every tool id -- the anti-drift mechanism for two
- * numbers that deliberately live in two files (two processes, one
- * container-side and one host-bound). `ghidra.analyze`'s entry (660_000ms)
- * exceeds the server-side Ghidra budget (600_000ms, host-tool.mts) by 60
- * seconds -- comfortably larger without being needlessly slack. */
-export const HOST_TOOL_REQUEST_TIMEOUT_MS: Readonly<Record<string, number>> = Object.freeze({
-  "ghidra.analyze": 660_000,
-});
-
-/** Fallback request-deadline for a tool id absent from the table above --
- * strictly greater than host-tool.mts's own DEFAULT_HOST_TOOL_TIMEOUT_MS
- * (20_000ms), the server-side fallback for the same tools. */
-export const DEFAULT_HOST_TOOL_REQUEST_TIMEOUT_MS = 30_000;
-
-/** The resolver: an exact table entry wins, else the default above. Mirrors
- * host-tool.mts's own hostToolTimeoutMs() shape on the OTHER side of the
- * seam -- deliberately duplicated, never imported: the two sides run in
- * different processes (this file is container-side, host-tool.mts is
- * host-bound), so there is nothing to import across that boundary. The
- * cross-seam ordering test is what keeps the two numbers from drifting
- * apart, not a shared value. */
-export function hostToolRequestTimeoutMs(tool: string): number {
-  return HOST_TOOL_REQUEST_TIMEOUT_MS[tool] ?? DEFAULT_HOST_TOOL_REQUEST_TIMEOUT_MS;
-}
-
-/** The wire shape host-tool.mts's runHostTool() produces, mirrored here
- * rather than imported as a value -- this file only ever receives this shape
- * as untrusted JSON off a socket or a child process's stdout, never as a
- * same-process function call. */
-export type HostToolClientResult =
-  | { ok: true; tool: string; exitStatus: number | null; results: HostToolFileResult[]; stderrTail: string }
-  | { ok: false; message: string };
 
 /** Dials the broker's control plane, sends ONE `host_tool` request line, and
  * resolves with the raw (untranslated) response -- never rejects on an

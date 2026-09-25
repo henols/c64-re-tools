@@ -1285,3 +1285,255 @@ export function awaitTransferComplete(options: AwaitTransferCompleteOptions): Pr
     if (carry.length > 0) processLine();
   });
 }
+
+// ---------------------------------------------------------------------------
+// dialHostToolSession() -- Phase 65 (SEAM-01). The one authoritative place a
+// host-tool session connection is dialled: the SAME fixed-endpoint,
+// two-candidate hello race dialFileTransfer()/dialMonitorRelay() run above --
+// same ranks, same never-throw posture -- tagged HOST_TOOL_TAG instead of
+// TRANSFER_TAG/RELAY_TAG_BINARY/RELAY_TAG_TEXT. On the FIRST completed
+// handshake this function keeps that winning socket alive (destroying only
+// the losing candidate's) and hands the caller a small session object with
+// `stage()`/`run()`/`close()` -- UNLIKE `attach`/`transfer`, this connection
+// carries MULTIPLE JSON-line round trips (a `host_tool_stage` reply, then a
+// `host_tool_run` reply), never a splice and never a raw payload of its own,
+// so each round trip is a plain string-accumulated line read (no byte-level
+// terminator search is needed -- neither reply carries a trailing binary
+// payload, unlike `attach`'s REGISTER_INFO frame or `transfer`'s own payload
+// bytes).
+// ---------------------------------------------------------------------------
+
+export const HOST_TOOL_TAG = "host-tool";
+
+/** The default reply-wait for BOTH `stage()` and `run()` below when the
+ * caller passes no explicit `replyTimeoutMs` of its own -- `run()`'s own
+ * caller (`host-tool-endpoint.mts`'s `runHostToolOverEndpoint()`) always
+ * passes its own per-tool budget (`hostToolRequestTimeoutMs()`), so this
+ * default binds `stage()` in practice, and `run()` only when a caller
+ * omits its own budget entirely (e.g. a direct test). */
+export const DEFAULT_HOST_TOOL_STAGE_REPLY_TIMEOUT_MS = 5000;
+
+/** One `host_tool_stage` manifest entry -- mirrors
+ * `broker-control.mts`'s own `HostToolStageFileSpec`, duplicated here
+ * (never imported) for the SAME reason every other wire-shape type in this
+ * file is a local copy: this module must never import a host-bound sibling
+ * (see this file's own header). */
+export interface HostToolStageFileSpec {
+  tree: number;
+  rel: string;
+  byteLength: number;
+}
+
+export type HostToolSessionStageResult =
+  | { ok: true; request: string; trees: string[]; files: string[] }
+  | { ok: false; reason: string };
+
+/** `response` is the RAW, un-translated reply object -- either
+ * `host-tool.mts`'s own `runHostTool()` response shape (a tool-level
+ * success OR its own `{ ok: false, message }` refusal, both answered over
+ * this SAME round trip) or, on a control-plane-level refusal
+ * (`denied`/`internal`/`bad_request`), never reached here at all: THAT case
+ * is `ok: false` on THIS type instead, mirroring
+ * `hostToolOverControlPlane()`'s own "a control-plane error rejects, the
+ * tool's own refusal resolves normally" contract in `host-tool-client.ts`. */
+export type HostToolSessionRunResult = { ok: true; response: unknown } | { ok: false; reason: string };
+
+export interface HostToolSession {
+  stage(files: HostToolStageFileSpec[], replyTimeoutMs?: number): Promise<HostToolSessionStageResult>;
+  run(tool: string, args: Record<string, unknown>, request: string, replyTimeoutMs?: number): Promise<HostToolSessionRunResult>;
+  close(): void;
+}
+
+export type DialHostToolSessionResult = { ok: true; session: HostToolSession } | { ok: false; reason: string };
+
+export interface DialHostToolSessionOptions {
+  port?: number;
+  candidates?: readonly string[];
+  connectTimeoutMs?: number;
+  /** The hello race's own reply wait -- keeps DEFAULT_REPLY_TIMEOUT_MS's own
+   * default, unaffected by `stage()`/`run()`'s own `replyTimeoutMs`
+   * parameters, which bound the LATER round trips over the already-hello'd
+   * connection. */
+  replyTimeoutMs?: number;
+  connect?: BrokerEndpointConnectFn;
+  clientVersion?: string;
+}
+
+/** Writes one JSON line onto `socket` and resolves with the next
+ * newline-terminated JSON reply -- a PLAIN string accumulator (never the
+ * byte-level `indexOf(0x0a)` search `performAttach()`/`performTransfer()`
+ * above use), because neither `host_tool_stage`'s nor `host_tool_run`'s own
+ * reply ever carries a trailing binary payload on this connection. Resolves
+ * `{ ok: false, reason }` on a parsed `{"kind":"error",...}` line, a
+ * malformed/non-object line, the socket closing or erroring, or a reply
+ * timeout -- never throws. Does NOT destroy the socket on any path: this
+ * function is called MORE THAN ONCE per connection (`stage()` then `run()`),
+ * so tearing the socket down on its own failure would break the caller's
+ * own second call; `HostToolSession.close()` is the only thing that
+ * destroys it. */
+function sendHostToolLineAwaitReply(
+  socket: Socket,
+  line: Record<string, unknown>,
+  timeoutMs: number,
+): Promise<{ ok: true; value: Record<string, unknown> } | { ok: false; reason: string }> {
+  return new Promise((resolve) => {
+    let carry = "";
+    let settled = false;
+
+    const timer = setTimeout(() => {
+      finish({ ok: false, reason: `vice: the broker did not answer ${JSON.stringify(line.op)} within ${timeoutMs}ms` });
+    }, timeoutMs);
+    if (typeof timer.unref === "function") timer.unref();
+
+    function finish(result: { ok: true; value: Record<string, unknown> } | { ok: false; reason: string }): void {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      socket.removeListener("data", onData);
+      socket.removeListener("error", onError);
+      socket.removeListener("close", onClose);
+      resolve(result);
+    }
+
+    function onData(chunk: Buffer): void {
+      carry += chunk.toString("utf8");
+      const idx = carry.indexOf("\n");
+      if (idx === -1) return;
+      const lineText = carry.slice(0, idx);
+      let parsed: unknown = null;
+      try {
+        parsed = JSON.parse(lineText);
+      } catch {
+        parsed = null;
+      }
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+        finish({ ok: false, reason: "vice: malformed reply line" });
+        return;
+      }
+      const obj = parsed as Record<string, unknown>;
+      if (obj.kind === "error") {
+        const message = typeof obj.message === "string" ? obj.message : "vice: the broker refused the request with an unrecognisable error reply";
+        finish({ ok: false, reason: `vice: ${message}` });
+        return;
+      }
+      finish({ ok: true, value: obj });
+    }
+    function onError(): void {
+      finish({ ok: false, reason: "vice: the host-tool connection failed before a reply arrived" });
+    }
+    function onClose(): void {
+      finish({ ok: false, reason: "vice: the host-tool connection closed before a reply arrived" });
+    }
+
+    socket.on("data", onData);
+    socket.once("error", onError);
+    socket.once("close", onClose);
+    socket.write(`${JSON.stringify(line)}\n`);
+  });
+}
+
+function makeHostToolSession(socket: Socket): HostToolSession {
+  return {
+    async stage(files, replyTimeoutMs = DEFAULT_HOST_TOOL_STAGE_REPLY_TIMEOUT_MS): Promise<HostToolSessionStageResult> {
+      const result = await sendHostToolLineAwaitReply(socket, { op: "host_tool_stage", files }, replyTimeoutMs);
+      if (!result.ok) return result;
+      const { value } = result;
+      if (typeof value.request !== "string" || !Array.isArray(value.trees) || !Array.isArray(value.files)) {
+        return { ok: false, reason: "vice: host_tool_stage reply is missing or malformed request/trees/files" };
+      }
+      return { ok: true, request: value.request, trees: value.trees as string[], files: value.files as string[] };
+    },
+    async run(tool, args, request, replyTimeoutMs = DEFAULT_HOST_TOOL_STAGE_REPLY_TIMEOUT_MS): Promise<HostToolSessionRunResult> {
+      const result = await sendHostToolLineAwaitReply(socket, { op: "host_tool_run", tool, args, request }, replyTimeoutMs);
+      if (!result.ok) return result;
+      return { ok: true, response: result.value };
+    },
+    close(): void {
+      if (!socket.destroyed) socket.destroy();
+    },
+  };
+}
+
+/** Dials the fixed endpoint for a host-tool session: the SAME two-candidate
+ * hello race `dialFileTransfer()`/`dialMonitorRelay()` run above, tagged
+ * `HOST_TOOL_TAG`, but on the FIRST completed handshake this function keeps
+ * that winning socket alive (destroying only the losing candidate's) and
+ * hands back a `HostToolSession` -- never throws. `ok: false` covers ONLY
+ * "no candidate could even complete a hello" (reusing
+ * `describeDialFailure()`'s own ranked text): there is no further
+ * request/reply exchange for this function itself to fail on, unlike
+ * `dialMonitorRelay()`/`dialFileTransfer()` above, which each write one
+ * line immediately after the hello race completes. */
+export function dialHostToolSession(options: DialHostToolSessionOptions = {}): Promise<DialHostToolSessionResult> {
+  const port = options.port ?? resolveEndpointPort();
+  const candidates = options.candidates ?? DIAL_CANDIDATES;
+  const connectTimeoutMs = options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
+  const replyTimeoutMs = options.replyTimeoutMs ?? DEFAULT_REPLY_TIMEOUT_MS;
+  const connectFn = options.connect ?? connect;
+  const clientVersion = options.clientVersion ?? CLIENT_VERSION;
+
+  return new Promise<DialHostToolSessionResult>((resolveOuter) => {
+    const sockets: (Socket | null)[] = candidates.map(() => null);
+    const observations: (DialCandidateObservation | undefined)[] = candidates.map(() => undefined);
+    let settledCount = 0;
+    let outerSettled = false;
+
+    function destroyAllSockets(): void {
+      for (const s of sockets) {
+        if (s && !s.destroyed) s.destroy();
+      }
+    }
+
+    function destroyLosers(winnerIdx: number): void {
+      sockets.forEach((s, idx) => {
+        if (idx !== winnerIdx && s && !s.destroyed) s.destroy();
+      });
+    }
+
+    candidates.forEach((host, idx) => {
+      dialOneCandidate(
+        host,
+        port,
+        connectTimeoutMs,
+        replyTimeoutMs,
+        connectFn,
+        clientVersion,
+        (socket) => {
+          sockets[idx] = socket;
+        },
+        HOST_TOOL_TAG,
+      ).then((outcome) => {
+        settledCount++;
+        if (outerSettled) return;
+        const classification = outcome.classification;
+        if (classification.completed) {
+          outerSettled = true;
+          destroyLosers(idx);
+          const winnerSocket = sockets[idx];
+          if (!winnerSocket) {
+            // Structurally unreachable: dialOneCandidate's own onSocket
+            // callback fires synchronously before this .then() can ever
+            // run. Guarded anyway -- never a throw out of this function.
+            resolveOuter({ ok: false, reason: "vice: internal error -- host-tool dial completed with no live socket" });
+            return;
+          }
+          resolveOuter({ ok: true, session: makeHostToolSession(winnerSocket) });
+          return;
+        }
+        observations[idx] = {
+          host: outcome.host,
+          resolved: outcome.resolved,
+          rank: classification.rank,
+          version: classification.rank === 4 ? classification.version : undefined,
+        };
+        if (settledCount === candidates.length && !outerSettled) {
+          outerSettled = true;
+          destroyAllSockets();
+          const finalObservations = observations as DialCandidateObservation[];
+          const highestRank = finalObservations.reduce<DialRank>((max, o) => (o.rank > max ? o.rank : max), 1);
+          resolveOuter({ ok: false, reason: describeDialFailure({ ok: false, port, clientVersion, rank: highestRank, observations: finalObservations }) });
+        }
+      });
+    });
+  });
+}

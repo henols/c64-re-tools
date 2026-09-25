@@ -68,7 +68,15 @@
 //     pre-existing mitigation; this is a recorded limit, not a widened
 //     hostpath.ts consumer set.
 //   - No inline byte payload on a host-tool response, at any result size --
-//     every result crosses as `{ path, sha256, byteLength }`, never bytes.
+//     no bytes ever ride a host-tool response line, on either route (D-10).
+//     The TWO routes now answer a different SHAPE, though: the dormant
+//     token-gated `host_tool` op (broker-control.mts) still answers each
+//     result as `{ path, sha256, byteLength }` until Phase 66 deletes it;
+//     the fixed-endpoint route's `host_tool_run` op (Phase 65, SEAM-01)
+//     answers each result as `{ name, handle, sha256, byteLength }` instead
+//     -- a download handle the caller redeems over its own `transfer`
+//     connection, never a broker-side path. Either way, the bytes
+//     themselves ride a SEPARATE transfer connection, never this line.
 //   - No second copy of a tool's argv construction -- buildHostToolArgv() is
 //     the one place.
 //   - No synchronous child-process call on any path reachable from the
@@ -321,6 +329,88 @@ function describe(value) {
     catch {
         return String(value);
     }
+}
+// ---------------------------------------------------------------------------
+// Phase 65 (SEAM-01, D-03): the fixed-endpoint route's own input-binding
+// site. `stage_file`/`stage_hostTool_run`'s own request never carries a raw
+// path at all -- every path-bearing key on the wire is instead an UPLOAD
+// HANDLE minted by `host_tool_stage`, and `bindStagedInputs()` is THE ONE
+// PLACE that handle is turned into the scratch-relative path
+// `resolveWorkspacePath()` (this module's own pre-existing confinement
+// site) then resolves. This function does NOT call `resolveWorkspacePath()`
+// itself -- `runHostTool()`'s existing per-tool branches already do that,
+// unchanged, against whatever `bindStagedInputs()` wrote into `args`; this
+// function's own job stops at producing a request whose path-bearing keys
+// are relative strings instead of handles.
+//
+// WHAT NOT TO DO:
+//   - Never bind `outDir`/`sourceDir` to a handle. Results land under the
+//     CLIENT's own per-kind `.c64-re-tools/<kind>/` directory on this route
+//     (D-06/D-08 posture) -- there is no broker-side output directory for a
+//     caller to name, so both keys are refused BY NAME rather than silently
+//     ignored.
+//   - Never bind `includes`/`scriptPath`/`exportPath`. Each names either a
+//     LIST of paths or a not-yet-supported single path on this route; both
+//     are refused BY NAME rather than accepted and silently dropped.
+// ---------------------------------------------------------------------------
+/** The path-bearing wire keys this route refuses BY NAME rather than binds
+ * to an uploaded handle -- `outDir`/`sourceDir` because results now land
+ * under the client's own per-kind directory (D-06/D-08), the remaining
+ * three because this plan's tracer supports exactly one uploaded file per
+ * key and neither a path LIST (`includes`) nor the not-yet-wired
+ * `scriptPath`/`exportPath` fit that shape yet. */
+const HOST_TOOL_REFUSED_STAGED_INPUT_KEYS = new Set(["outDir", "sourceDir", "includes", "scriptPath", "exportPath"]);
+/**
+ * Rewrites a `host_tool_run` request's path-bearing wire keys from upload
+ * handles into scratch-relative paths, per `HOST_TOOL_PATH_ARG_KEYS[tool]`.
+ * Every OTHER field on `args` (a non-path key, or a path-bearing key absent
+ * from this particular request) passes through unchanged. Refuses BY NAME,
+ * never silently drops or coerces: an unknown `tool`, a non-string handle
+ * value, an unknown handle, or any key in
+ * `HOST_TOOL_REFUSED_STAGED_INPUT_KEYS` above (see that constant's own
+ * comment for the per-key reason). This is a REQUEST TRANSFORM ONLY -- it
+ * does not itself call `resolveWorkspacePath()`; `runHostTool()`'s own
+ * per-tool branches do that, unchanged, against whatever this function
+ * wrote into `args`.
+ */
+export function bindStagedInputs(raw, lookup) {
+    if (!isPlainObject(raw)) {
+        return { ok: false, message: `bindStagedInputs: request must be a plain object; got ${describe(raw)}` };
+    }
+    const toolRaw = raw.tool;
+    if (typeof toolRaw !== "string" || !HOST_TOOL_IDS.includes(toolRaw)) {
+        return { ok: false, message: `bindStagedInputs: unknown or missing "tool"; got ${describe(toolRaw)}` };
+    }
+    const tool = toolRaw;
+    const argsRaw = raw.args;
+    if (argsRaw !== undefined && !isPlainObject(argsRaw)) {
+        return { ok: false, message: `bindStagedInputs: "args" must be a plain object or absent; got ${describe(argsRaw)}` };
+    }
+    const args = { ...(argsRaw ?? {}) };
+    const pathKeys = HOST_TOOL_PATH_ARG_KEYS[tool] ?? [];
+    for (const key of pathKeys) {
+        if (!(key in args))
+            continue;
+        if (HOST_TOOL_REFUSED_STAGED_INPUT_KEYS.has(key)) {
+            if (key === "outDir" || key === "sourceDir") {
+                return {
+                    ok: false,
+                    message: `bindStagedInputs: "${key}" is not accepted on the fixed-endpoint route -- results now land under the client's own .c64-re-tools/<kind>/ directory`,
+                };
+            }
+            return { ok: false, message: `bindStagedInputs: "${key}" is not accepted on the fixed-endpoint route` };
+        }
+        const value = args[key];
+        if (typeof value !== "string" || value === "") {
+            return { ok: false, message: `bindStagedInputs: "${key}" must be a non-empty string upload handle; got ${describe(value)}` };
+        }
+        const boundPath = lookup.fileHandle(value);
+        if (boundPath === undefined) {
+            return { ok: false, message: `bindStagedInputs: unknown upload handle for "${key}"` };
+        }
+        args[key] = boundPath;
+    }
+    return { ok: true, request: { tool, args } };
 }
 /** THIS IS THE ONE PLACE a `host_tool` request is narrowed. Never throws;
  * answers a discriminated result naming the offending value or key AND the
