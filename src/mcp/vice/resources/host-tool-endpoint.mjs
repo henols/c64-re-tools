@@ -362,6 +362,11 @@ export async function runHostToolOverEndpoint(tool, args, options) {
             uploadLocalPaths.push(localPath);
             return { ok: true, index };
         }
+        // Every file already uploaded as part of a directory tree, by its local
+        // absolute path -> its manifest index. A file input that names one of
+        // these binds to that entry instead of uploading a second copy: Ghidra
+        // only loads a `postScript` that sits inside its `-scriptPath` tree.
+        const treeEntryIndexByPath = new Map();
         function stageTree(rootPath) {
             const walked = walkUploadTree(rootPath);
             if (!walked.ok)
@@ -373,6 +378,7 @@ export async function runHostToolOverEndpoint(tool, args, options) {
                 const pushed = pushManifestEntry(tree, entry.rel, entry.abs, entry.size);
                 if (!pushed.ok)
                     return pushed;
+                treeEntryIndexByPath.set(resolvePath(entry.abs), pushed.index);
             }
             return { ok: true, tree };
         }
@@ -418,31 +424,6 @@ export async function runHostToolOverEndpoint(tool, args, options) {
         else if (tool === "acme.build" && args.source !== undefined) {
             return { ok: false, message: `runHostToolOverEndpoint: "source" must be a non-empty string path; got ${JSON.stringify(args.source)}` };
         }
-        for (const key of fileInputKeys) {
-            if (tool === "acme.build" && key === "source")
-                continue; // handled above
-            const value = args[key];
-            if (value === undefined)
-                continue;
-            if (typeof value !== "string" || value === "") {
-                return { ok: false, message: `runHostToolOverEndpoint: "${key}" must be a non-empty string path; got ${JSON.stringify(value)}` };
-            }
-            const localPath = resolveLocal(value);
-            let byteLength;
-            try {
-                byteLength = statSync(localPath).size;
-            }
-            catch (e) {
-                return { ok: false, message: `runHostToolOverEndpoint: cannot read "${key}" at ${localPath}: ${e.message}` };
-            }
-            const tree = treeIndex;
-            treeIndex += 1;
-            localTreeRoots.push(dirname(localPath));
-            const pushed = pushManifestEntry(tree, basename(localPath), localPath, byteLength);
-            if (!pushed.ok)
-                return pushed;
-            fileBindings.push({ key, manifestIndex: pushed.index });
-        }
         for (const key of treeInputKeys) {
             const value = args[key];
             if (value === undefined)
@@ -469,6 +450,36 @@ export async function runHostToolOverEndpoint(tool, args, options) {
                     return staged;
                 treeBindings.push({ key, treeIndex: staged.tree });
             }
+        }
+        for (const key of fileInputKeys) {
+            if (tool === "acme.build" && key === "source")
+                continue; // handled above
+            const value = args[key];
+            if (value === undefined)
+                continue;
+            if (typeof value !== "string" || value === "") {
+                return { ok: false, message: `runHostToolOverEndpoint: "${key}" must be a non-empty string path; got ${JSON.stringify(value)}` };
+            }
+            const localPath = resolveLocal(value);
+            const inTree = treeEntryIndexByPath.get(resolvePath(localPath));
+            if (inTree !== undefined) {
+                fileBindings.push({ key, manifestIndex: inTree });
+                continue;
+            }
+            let byteLength;
+            try {
+                byteLength = statSync(localPath).size;
+            }
+            catch (e) {
+                return { ok: false, message: `runHostToolOverEndpoint: cannot read "${key}" at ${localPath}: ${e.message}` };
+            }
+            const tree = treeIndex;
+            treeIndex += 1;
+            localTreeRoots.push(dirname(localPath));
+            const pushed = pushManifestEntry(tree, basename(localPath), localPath, byteLength);
+            if (!pushed.ok)
+                return pushed;
+            fileBindings.push({ key, manifestIndex: pushed.index });
         }
         for (const key of outputNameKeys) {
             const value = args[key];

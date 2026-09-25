@@ -121,6 +121,11 @@ export interface GhidraRunResult {
   runLogPath: string;
   sha256: string;
   byteLength: number;
+  /** Where the post-script's export was downloaded (`results[1]`, under the
+   * caller's `.c64-re-tools/runs/ghidra/`) -- present only when the request
+   * named an `exportPath`. The export never lands at `exportPath` itself:
+   * that is only the name the broker-side script writes. */
+  exportPath?: string;
   /** `analyzeHeadless`'s own process exit status. Carries NO information
    * about whether a script inside the run threw (MEASURED this session) --
    * surfaced here for completeness, never the basis of a pass/fail
@@ -253,10 +258,15 @@ export async function runGhidraAnalyze(args: GhidraRunArgs, opts: GhidraRunOptio
     );
   }
 
+  const exportResult = args.exportPath !== undefined ? response.results[1] : undefined;
+  if (args.exportPath !== undefined && exportResult === undefined) {
+    throw new Error(`runGhidraAnalyze: ghidra.analyze reported no export output for exportPath ${JSON.stringify(args.exportPath)}`);
+  }
   return {
     runLogPath: runLogResult.path,
     sha256: runLogResult.sha256,
     byteLength: runLogResult.byteLength,
+    ...(exportResult !== undefined ? { exportPath: exportResult.path } : {}),
     exitStatus: response.exitStatus,
     language: verdict.language,
   };
