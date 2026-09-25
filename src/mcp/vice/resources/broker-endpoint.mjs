@@ -675,6 +675,12 @@ function performTransfer(socket, host, port, opts, replyTimeoutMs, resolveOuter)
             return;
         settled = true;
         clearTimeout(timer);
+        // Paused BEFORE the listener goes: a flowing socket with no "data"
+        // listener DROPS every chunk it emits, and a payload chunk can be emitted
+        // in the same flush as the reply line, before the caller has attached its
+        // reader. Paused, it stays buffered until the caller's pipeline() (or
+        // awaitTransferComplete()'s own resume()) reads it.
+        socket.pause();
         socket.removeAllListeners("data");
         socket.removeAllListeners("error");
         socket.removeAllListeners("close");
@@ -909,6 +915,8 @@ export function awaitTransferComplete(options) {
         socket.once("error", onError);
         socket.once("end", onEnd);
         socket.once("close", onClose);
+        // performTransfer() left the socket paused; this reader resumes it.
+        socket.resume();
         // A line may already be sitting in `carry` (whatever arrived as
         // `options.pending`, past `transfer_ready`'s own terminator) --
         // vanishingly unlikely (the broker has nothing to report yet at this
