@@ -9,11 +9,7 @@
 // snapshot pair, then `vice_autostart`/`vice_disk_attach` in plan 64-06)
 // injects a recording `stageFile` and a recording `transferFile` through
 // `StockConnectBrokerControl`/`StockConnectDeps` -- the two seams plan 64-02
-// added -- so every handler test still runs without a socket. No handler
-// under test reaches the host/container translation seam any more (D-18:
-// this file no longer imports stock-paths.ts at all), so this file's own
-// former `setIsInsideContainerForTest()` stub is gone too -- stubbing a
-// function the module under test no longer calls would itself be a defect.
+// added -- so every handler test still runs without a socket.
 // The single exception to "no socket" is the round-trip test at the bottom
 // of this file, which deliberately drives a REAL control listener and REAL
 // staged files (mirrors vice-broker-staging.test.ts's own fixture) to prove

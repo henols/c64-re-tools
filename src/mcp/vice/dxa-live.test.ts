@@ -119,7 +119,7 @@ test(
   async () => {
     // HERE (this file's own directory, src/mcp/vice/) is passed explicitly
     // as repoRoot -- the fixture and the vendored binary both live directly
-    // under it. The DEFAULT ladder dxa-run.ts/host-tool-client.ts fall back
+    // under it. The DEFAULT ladder dxa-run.ts falls back
     // to (repoRoot({ from: HERE }), repo-root.ts) walks up to the whole git
     // checkout's top level, which is the right default for a CONSUMING
     // project but not for this repository's own fixtures.

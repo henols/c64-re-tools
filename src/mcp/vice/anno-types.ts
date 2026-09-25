@@ -1427,11 +1427,8 @@ function realpathOfNearestExisting(p: string): string {
  * This is the ONE export in this module that is a function of its arguments AND
  * the filesystem; see the narrowed trap 3 in the header.
  *
- * The path is deliberately NOT routed through either host/container
- * path-translation seam -- see trap 7 in `anno-store.ts`'s header for what a
- * translated store path would do. `node:fs` is a Node builtin, not a seam, and
- * `hostpath-consumers.test.ts`'s closed consumer set still excludes this
- * module.
+ * The path is deliberately NOT translated -- see trap 7 in `anno-store.ts`'s
+ * header for what a translated store path would do.
  */
 export function storePathWithinWorkspace(path: string, workspaceRoot: string): string {
   const resolvedRoot = realpathOfNearestExisting(workspaceRoot);

@@ -205,12 +205,7 @@ test("Criterion 10: install-resources.mjs never imports from repo-root.mjs, in a
 
 // ============================================================================
 // Part 2: the cycle allowlist -- the scaffold Phase 01.6.1 widens to
-// TypeScript sources. Today it has exactly one recorded member: the live
-// three-module cycle repo-root.mjs -> install-resources.mjs -> hostpath.mjs
-// -> repo-root.mjs, surviving only because hostpath.mjs's own hop into
-// repo-root.mjs (`repoRoot()`) is consumed by install-resources.mjs's
-// hostLaunchInstructions(), which is itself called lazily from inside
-// installResources() -- never at any of the three modules' own top level.
+// TypeScript sources. It is EMPTY (see the array's own comment below).
 // ============================================================================
 
 /** Flat module files directly under this directory (siblings, matching this
@@ -322,13 +317,9 @@ function canonicalCycles(cycles: string[][]): string[][] {
   return out;
 }
 
-// The recorded allowlist. EMPTY as of 01.6.1-02 (PTD-1, locked by the
-// developer; RESEARCH §3.4 Option B): the three-module cycle this array
-// used to record (hostpath.mjs -> install-resources.mjs -> repo-root.mjs ->
-// hostpath.mjs) was retired STRUCTURALLY -- hostpath.mjs no longer imports
-// repo-root.mjs at all; it takes the workspace root as an optional argument
-// instead. This array does not record that there is no cycle "for now"; it
-// records that a new one is not allowed through silently. A future cycle
+// The recorded allowlist. EMPTY (PTD-1, locked by the developer; RESEARCH
+// §3.4 Option B). This array does not record that there is no cycle "for
+// now"; it records that a new one is not allowed through silently. A future cycle
 // through repo-root.mjs must be justified by amending this array in this
 // same test, not discovered by accident. See 01.6.1-RESEARCH.md §3.4 for
 // the retirement, and Part 3 below for the complementary call-site guard
@@ -381,9 +372,8 @@ test("cycle allowlist: exactly the recorded three-module cycle passes through re
 // an import cycle exists at all. This is why the guard is scoped to MODULE
 // SCOPE, not "any call inside a listed cycle member" -- with the allowlist
 // empty there is no cycle membership left to scope by, so a member-scoped
-// guard would be vacuous the day it lands. A module-scope guard has a real
-// subject today (containerpath.mjs's own top-level repoRoot() call) and
-// gains a fresh at-risk subject the instant a future edit adds an unguarded
+// guard would be vacuous the day it lands. A module-scope guard gains a
+// fresh at-risk subject the instant a future edit adds an unguarded
 // module-scope repoRoot() call anywhere in this flat tree -- including
 // inside vice-sync.mjs, which this same plan gave a repo-root import it did
 // not have before (see that file's own header comment).

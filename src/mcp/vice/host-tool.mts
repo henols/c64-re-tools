@@ -1,10 +1,10 @@
 // host-tool.mts
 //
-// This is the host-bound executor for the host-tool control op. A
-// container-side caller (host-tool-client.ts) reaches this module over
-// broker-control.mts's `host_tool` op -- never directly -- and this module is
-// the ONE place that turns an untrusted wire request into a real child
-// process on the HOST, outside any container. Motivated by the project
+// This is the host-bound executor for the host-tool control ops. A
+// container-side caller (host-tool-endpoint.mts) reaches this module over
+// the broker's `host_tool_stage`/`host_tool_run` ops -- never directly --
+// and this module is the ONE place that turns an untrusted wire request
+// into a real child process on the HOST, outside any container. Motivated by the project
 // owner's own rule, recorded once a skill script's own binaries (acme, and
 // later dxa/Ghidra/c1541/petcat/cartconv) turned out to need to live
 // host-side: a skill script runs container-side and there is no container
@@ -53,24 +53,14 @@
 //     comparison is byte-wise over the resolved strings with no Unicode
 //     normalisation, so two spellings differing only in normalisation form
 //     are two distinct paths here (same residual anno-confinement.test.ts
-//     records for the same comparison). A third residual, recorded rather
-//     than hidden: because the return value is now the REAL path, on a
-//     host whose workspace root is itself reached through a symlink the
-//     response `path` need not match any member of hostRootCandidates(),
-//     and containerPath() throws rather than passing an untranslatable
-//     path through -- HOST_WORKSPACE_PATH naming the real root is the
-//     pre-existing mitigation; this is a recorded limit, not a widened
-//     hostpath.ts consumer set.
+//     records for the same comparison).
 //   - No inline byte payload on a host-tool response, at any result size --
-//     no bytes ever ride a host-tool response line, on either route (D-10).
-//     The TWO routes now answer a different SHAPE, though: the dormant
-//     token-gated `host_tool` op (broker-control.mts) still answers each
-//     result as `{ path, sha256, byteLength }` until Phase 66 deletes it;
-//     the fixed-endpoint route's `host_tool_run` op (Phase 65, SEAM-01)
-//     answers each result as `{ name, handle, sha256, byteLength }` instead
-//     -- a download handle the caller redeems over its own `transfer`
-//     connection, never a broker-side path. Either way, the bytes
-//     themselves ride a SEPARATE transfer connection, never this line.
+//     no bytes ever ride a host-tool response line (D-10). The
+//     `host_tool_run` op answers each result as
+//     `{ name, handle, sha256, byteLength }` -- a download handle the caller
+//     redeems over its own `transfer` connection, never a broker-side path.
+//     The bytes themselves ride a SEPARATE transfer connection, never this
+//     line.
 //   - No second copy of a tool's argv construction -- buildHostToolArgv() is
 //     the one place.
 //   - No synchronous child-process call on any path reachable from the
@@ -122,13 +112,9 @@ import {
 // where the sibling binary is actually resolved, inside this process.
 // resolvedBackend() is itself memoised at module scope (backend-detect.mts's
 // own `memoisedResult`) and this project's broker already calls it once at
-// startup before the control listener binds (vice-broker.mts's run()) -- for
-// the control-plane route this call below is therefore always a cache hit,
-// never a second probe. The host route (no broker in the loop) has no such
-// warm memo and pays one `--help` probe per invocation, mirroring the
-// existing, already-accepted cost vice-broker.mts's own startup call pays
-// once per broker lifetime -- never re-probed per c1541.* call within the
-// SAME process, per findSiblingBinary()'s own memo below.
+// startup before the control listener binds (vice-broker.mts's run()) -- in
+// the broker this call below is therefore always a cache hit, never a
+// second probe.
 import { resolvedBackend } from "./backend-detect.mjs";
 // This module's THIRD sibling import, and its own use of the `.mjs`-extension
 // rule for a host-bound sibling -- the same form the `backend-detect.mjs`
@@ -137,7 +123,7 @@ import { resolvedBackend } from "./backend-detect.mjs";
 // `toolLocationSeam()` uses. That dance exists ONLY for a module that ships
 // two ways -- unbuilt, imported directly by a real no-build-step entry point,
 // AND compiled -- and `host-tool.mts` does not: every real consumer (this
-// project's own broker, the direct host-spawn route, and every test file
+// project's own broker, and every test file
 // that reaches `runHostTool()`) imports the COMPILED `resources/host-tool.mjs`
 // artifact only, exactly like the `ghidra-project.mjs` import above already
 // does; the unbuilt `.mts` source is never loaded as a live ESM module by
@@ -181,8 +167,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 
 /** The complete accepted tool-id set -- `acme.build` was the tracer, plus
  * `ghidra.analyze` as its first-added sibling. A second tool is ALWAYS a new
- * entry here, never a ninth `ControlRequestKind` member -- see
- * broker-control.mts's own comment on `host_tool` for why a NEW capability
+ * entry here, never a ninth `ControlRequestKind` member -- a NEW capability
  * is a new entry in an existing allowlist rather than a new wire operation.
  * Matched by EXACT, case-sensitive ARRAY membership everywhere in this
  * module -- never an object-property lookup keyed by the untrusted wire
@@ -1136,14 +1121,6 @@ export function normaliseHostToolRequest(raw: unknown): NormaliseHostToolRequest
 // appended and applies no Unicode normalisation, so two spellings differing
 // only in normalisation form are two distinct paths here (the same residual
 // anno-confinement.test.ts records for the same comparison).
-//
-// A recorded residual: because the return value is now the REAL path, on a
-// host whose workspace root is itself reached through a symlink the
-// response `path` need not match any member of hostRootCandidates()
-// (containerpath.ts), and containerPath() throws rather than passing an
-// untranslatable path through -- HOST_WORKSPACE_PATH naming the real root
-// is the pre-existing mitigation. This is a recorded limit, not a widened
-// hostpath.ts consumer set.
 // ---------------------------------------------------------------------------
 
 /**
@@ -2051,7 +2028,7 @@ export const HOST_TOOL_TIMEOUT_MS: Readonly<Record<HostToolId, number>> = Object
     // DEFAULT_HOST_TOOL_TIMEOUT_MS, justified from a measurement rather
     // than a round guess -- the pinned dxa disassembles a full 65,536-byte
     // image in 21ms wall-clock (MEASURED), a 950x headroom against this 20s
-    // ceiling. host-tool-client.ts's request-deadline table gains NO entry
+    // ceiling. host-tool-endpoint.mts's request-deadline table gains NO entry
     // for this tool, because DEFAULT_HOST_TOOL_REQUEST_TIMEOUT_MS (30_000)
     // already exceeds this value -- the cross-seam ordering test stays
     // satisfied by construction.
@@ -2059,7 +2036,7 @@ export const HOST_TOOL_TIMEOUT_MS: Readonly<Record<HostToolId, number>> = Object
     // DEFAULT_HOST_TOOL_TIMEOUT_MS, justified from a measurement rather
     // than a round guess -- `support/sleigh` compiled this extension's
     // whole vendored tree in 1763ms wall-clock (MEASURED, a scratch run),
-    // an ~11x headroom against this 20s ceiling. host-tool-client.ts's
+    // an ~11x headroom against this 20s ceiling. host-tool-endpoint.mts's
     // request-deadline table gains NO entry for this tool, for the same
     // reason dxa.disassemble's own comment above states:
     // DEFAULT_HOST_TOOL_REQUEST_TIMEOUT_MS (30_000) already exceeds this
@@ -2069,7 +2046,7 @@ export const HOST_TOOL_TIMEOUT_MS: Readonly<Record<HostToolId, number>> = Object
     // than a round guess -- `c1541 -attach fixtures/c1541/synthetic.d64
     // -dir` completed in 15ms wall-clock (MEASURED, a scratch run against
     // the committed fixture), a >1300x headroom against this 20s ceiling.
-    // host-tool-client.ts's request-deadline table gains NO entry for this
+    // host-tool-endpoint.mts's request-deadline table gains NO entry for this
     // tool, for the same reason dxa.disassemble's own comment above states:
     // DEFAULT_HOST_TOOL_REQUEST_TIMEOUT_MS (30_000) already exceeds this
     // value.
@@ -2079,7 +2056,7 @@ export const HOST_TOOL_TIMEOUT_MS: Readonly<Record<HostToolId, number>> = Object
     // fixtures/c1541/synthetic.d64 -bam`, `-entry basicstub`, `-chain
     // basicstub` and `-read basicstub <out>` completed in 14-16ms
     // wall-clock (MEASURED, a scratch run against the committed fixture),
-    // a >1200x headroom against this 20s ceiling. host-tool-client.ts's
+    // a >1200x headroom against this 20s ceiling. host-tool-endpoint.mts's
     // request-deadline table gains NO entry for any of these, for the same
     // reason c1541.dir's own comment above states.
     "c1541.bam": DEFAULT_HOST_TOOL_TIMEOUT_MS,
@@ -2089,7 +2066,7 @@ export const HOST_TOOL_TIMEOUT_MS: Readonly<Record<HostToolId, number>> = Object
     // DEFAULT_HOST_TOOL_TIMEOUT_MS, justified from a measurement rather
     // than a round guess -- `petcat -2` completed in 1-2ms wall-clock
     // against both committed fixtures (MEASURED, a scratch run), a
-    // >10000x headroom against this 20s ceiling. host-tool-client.ts's
+    // >10000x headroom against this 20s ceiling. host-tool-endpoint.mts's
     // request-deadline table gains NO entry for this tool, for the same
     // reason c1541.dir's own comment above states:
     // DEFAULT_HOST_TOOL_REQUEST_TIMEOUT_MS (30_000) already exceeds this
@@ -2189,16 +2166,12 @@ export interface HostToolDeps {
   timeoutMs?: number;
   /** Test-only override threaded into the `HostToolLocator` runHostTool()
    * builds internally (see `HostToolLocator.here`'s own doc comment for why
-   * it exists). No production caller sets this -- vice-broker.mts's own
-   * `onHostTool` callback and host-tool-client.ts's direct host route both
-   * construct `HostToolDeps` with `repoRoot` alone. */
+   * it exists). No production caller sets this. */
   here?: string;
   /** Phase 65 (plan 65-03, assumption_delta_decision): the root Ghidra's
    * per-run project location and the `HostToolLocator`'s own `toolsDir`/
-   * `projectRoot` resolve against -- defaults to `repoRoot` when absent
-   * (every existing caller: the legacy control-plane route and the direct
-   * host route both construct `HostToolDeps` with `repoRoot` alone, and
-   * both keep resolving exactly as before). The fixed-endpoint route's own
+   * `projectRoot` resolve against -- defaults to `repoRoot` when absent.
+   * The fixed-endpoint route's own
    * `handleHostToolRun()` (vice-broker.mts) sets `repoRoot` to the
    * REQUEST'S OWN per-request scratch (so every uploaded/resolved path stays
    * confined to it, unchanged from 65-01) but sets THIS field to the
@@ -2216,10 +2189,9 @@ export interface HostToolDeps {
    * stale-output unlink (below) to every tool's every declared output, so a
    * stale file already sitting at a declared output path can never be
    * mistaken for a fresh success when the tool fails to (re)write it. Only
-   * the fixed-endpoint route's own `handleHostToolRun()` sets this; the
-   * legacy control-plane route and the direct host route both leave it
-   * `undefined` (falsy), so the pre-existing `c1541.read`-only unlink below
-   * stays the ONLY clearing behaviour on those two routes, unchanged. */
+   * the fixed-endpoint route's own `handleHostToolRun()` sets this; any
+   * other caller leaves it `undefined` (falsy), so the pre-existing
+   * `c1541.read`-only unlink below stays its ONLY clearing behaviour. */
   clearDeclaredOutputs?: boolean;
   /** The absolute directory every output lands in. Never a request field:
    * the fixed-endpoint route's `handleHostToolRun()` sets it to the
@@ -2826,9 +2798,8 @@ export async function runHostTool(raw: unknown, deps: HostToolDeps): Promise<Hos
 
   const repoRootAbs = resolvePath(deps.repoRoot);
   // Phase 65 (plan 65-03, assumption_delta_decision): `projectRoot` defaults
-  // to `repoRoot` -- every pre-65-03 caller (the legacy control-plane route,
-  // the direct host route) supplies `repoRoot` alone, so this resolves to
-  // the SAME value `repoRootAbs` above does for them, unchanged. Only the
+  // to `repoRoot`, so a caller that supplies `repoRoot` alone resolves to
+  // the SAME value `repoRootAbs` above does. Only the
   // fixed-endpoint route's own `handleHostToolRun()` (vice-broker.mts) ever
   // supplies a DIFFERENT `projectRoot` -- see `HostToolDeps.projectRoot`'s
   // own doc comment for why (Ghidra's project cannot move into the

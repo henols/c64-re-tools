@@ -60,10 +60,8 @@
 //     whole-port or DDR-only predicate.
 //
 // WHAT NOT TO DO:
-//   - Never import hostpath.ts or vice-proxy.ts -- this tool takes no path
-//     argument at all; the host-facing surface is empty by construction
-//     (hostpath-consumers.test.ts's closed five-member consumer list must
-//     stay exactly five).
+//   - Never import vice-proxy.ts -- this tool takes no path argument at
+//     all; the host-facing surface is empty by construction.
 //   - Never turn the MEM_GET body's side-effect flag on. `sidefx` is
 //     hardcoded `false` below with NO argument to override it, because
 //     $DC0D/$DD0D clear their interrupt-status bits ON READ in hardware --

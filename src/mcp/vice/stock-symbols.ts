@@ -13,16 +13,6 @@
 // halts the user's running program -- a genuine ergonomic win over the
 // fork, whose implementation lives inside the emulator process.
 //
-// WHY hostpath.ts IS NEVER IMPORTED HERE, spelled out: hostpath.ts
-// translates a container path into a HOST path for a filename stock VICE
-// ITSELF OPENS ACROSS THE WIRE. `vice_symbols_load` reads the file with
-// Node's `fs` inside the MCP server's OWN process; there is no wire
-// filename argument at all, so the translation does not apply and applying
-// it would read the wrong file (or nothing). hostpath-consumers.test.ts's
-// closed four-member production consumer set (containerpath.ts,
-// install-resources.ts, stock-paths.ts, vice-proxy.ts) must stay exactly
-// four -- this module joining it would fail that test outright.
-//
 // The confirmed input format is a VICE label file, one `al C:xxxx .Name`
 // line per symbol, verified against ACME's `--vicelabels` output via
 // acme-build/scripts/acme.mjs's own parser (curateLabels(),
@@ -41,8 +31,7 @@
 // WHAT NOT TO DO:
 //   - Never add a second resolver holder or call setSymbolResolver() from
 //     any other new Phase 5 module -- this file is the one seam.
-//   - Never import hostpath.ts, stock-paths.ts, containerpath.ts or
-//     vice-proxy.ts from this file (see above).
+//   - Never import vice-proxy.ts from this file.
 //   - Never build a success-result object literal by hand (an "isError"
 //     field set to the negative literal) outside derivedAnswer() -- every
 //     success on this module's two handlers goes through it, exactly as
@@ -99,7 +88,7 @@ const REFUSED_FORMATS = ["kickasm", "simple"];
 
 /** The one address/byte-count error type this module ever throws -- never a
  * bare Error, matching vice.ts's established ViceError hierarchy
- * (stock-address.ts's StockAddressError, stock-paths.ts's StockPathError
+ * (stock-address.ts's StockAddressError, transfer-paths.ts's StockPathError
  * are the sibling precedents). */
 export class StockSymbolsError extends ViceError {
   constructor(message: string, options: ViceErrorOptions = {}) {
@@ -120,8 +109,7 @@ export interface SymbolTable {
 // ---------------------------------------------------------------------------
 // Path containment (T-05-02-01/02) -- resolve `path` against repoRoot() and
 // refuse anything whose resolved absolute path is neither the root itself
-// nor prefixed by `root + sep`, including via a symlink. Never calls
-// hostpath.ts (see this file's header).
+// nor prefixed by `root + sep`, including via a symlink.
 // ---------------------------------------------------------------------------
 
 function isContained(candidate: string, root: string): boolean {
@@ -288,8 +276,8 @@ function installSymbolTable(table: SymbolTable): void {
   setSymbolResolver(resolver);
 }
 
-/** Test-only reset, following stock-paths.ts's setIsInsideContainerForTest()
- * / stock-runstate.ts's resetRunStateTrackersForTest() precedent: a
+/** Test-only reset, following stock-runstate.ts's
+ * resetRunStateTrackersForTest() precedent: a
  * module-level reset exported from the module that owns the state. Also
  * clears stock-address.ts's holder so no test leaks a loaded table into
  * another file's run. */

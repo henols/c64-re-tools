@@ -42,9 +42,6 @@
 //      hard-FAILs under the opt-in `VICE_REQUIRE_ANNO_UPSTREAM` env var. A
 //      silent pass on a missing oracle is the defect class D-11 exists to
 //      close; do not reintroduce it here.
-//   - Do not import `hostpath.ts` or `containerpath.ts`. Every path here is
-//      repo-side or an operator-supplied clone path; `hostpath-consumers.test.ts`
-//      asserts the anno-side modules stay out of that consumer set.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";

@@ -1241,33 +1241,6 @@ conformanceTest("vice_disassemble", async () => {
   assertAnswerConforms("vice_disassemble", result);
 });
 
-test("end-to-end (criterion 1, D-02): vice_disassemble succeeds through the REAL callStockTool() path under a translating environment -- the derived path never reaches host-path translation", async () => {
-  const prevHostWs = process.env.HOST_WORKSPACE_PATH;
-  const prevProjectDir = process.env.CLAUDE_PROJECT_DIR;
-  process.env.HOST_WORKSPACE_PATH = "/home/user/project";
-  process.env.CLAUDE_PROJECT_DIR = "/workspace";
-  try {
-    const session = buildConformanceSession("conformance-vice_disassemble-e2e", (commandType) => {
-      if (commandType === CommandType.MemoryGet) {
-        return { type: "memory_get" as const, requestId: 1, errorCode: 0, bytes: conformanceDisassembleBytes(), related: [] };
-      }
-      throw new Error(`vice_disassemble: unexpected commandType ${commandType}`);
-    });
-    const deps = buildConformanceDeps(session);
-    const result = await callStockTool("vice_disassemble", { address: "$1000" }, deps);
-    assert.equal(
-      result.isError,
-      false,
-      "vice_disassemble must answer a normal success under a translating environment -- a derived tool never reaches hostpath.ts's translation at all",
-    );
-  } finally {
-    if (prevHostWs === undefined) delete process.env.HOST_WORKSPACE_PATH;
-    else process.env.HOST_WORKSPACE_PATH = prevHostWs;
-    if (prevProjectDir === undefined) delete process.env.CLAUDE_PROJECT_DIR;
-    else process.env.CLAUDE_PROJECT_DIR = prevProjectDir;
-  }
-});
-
 // --------------------------------------------------------- vice_symbols_load / vice_symbols_lookup (05-02, DERIV-04)
 
 /** The exact ACME-`--vicelabels`-shaped fixture recorded in 05-02-SUMMARY.md
@@ -1308,39 +1281,20 @@ conformanceTest("vice_symbols_lookup", async () => {
   });
 });
 
-test("end-to-end (criterion 1, D-02): vice_symbols_load succeeds through the REAL callStockTool() path under a translating environment -- resolvedPath stays container-side", async () => {
-  const prevHostWs = process.env.HOST_WORKSPACE_PATH;
-  process.env.HOST_WORKSPACE_PATH = "/home/user/project";
-  try {
-    await withTempRepoRootForConformance(async (repoRootDir) => {
-      // withTempRepoRootForConformance already sets CLAUDE_PROJECT_DIR to
-      // repoRootDir (a DIFFERENT absolute path than HOST_WORKSPACE_PATH
-      // above) and restores it in its own finally block -- this test only
-      // needs to manage HOST_WORKSPACE_PATH around the call.
-      writeFileSync(join(repoRootDir, "labels.lbl"), SYMBOLS_FIXTURE);
-      const deps: StockSessionDeps = { ensureLease: THROWING_ENSURE_LEASE };
-      const result = await callStockTool("vice_symbols_load", { path: "labels.lbl" }, deps);
-      assert.equal(
-        result.isError,
-        false,
-        "vice_symbols_load must answer a normal success under a translating environment -- the derived path never reaches host-path translation",
-      );
-      const parsed: Record<string, unknown> = JSON.parse((result as { content: { text: string }[] }).content[0]!.text);
-      const resolvedPath = parsed.resolvedPath as string;
-      assert.ok(
-        resolvedPath.startsWith(repoRootDir),
-        `resolvedPath must resolve inside CLAUDE_PROJECT_DIR (${repoRootDir}), got ${resolvedPath}`,
-      );
-      assert.ok(
-        !resolvedPath.includes("/home/user/project"),
-        `resolvedPath must never contain the HOST_WORKSPACE_PATH value, got ${resolvedPath}`,
-      );
-      resetSymbolStoreForTest();
-    });
-  } finally {
-    if (prevHostWs === undefined) delete process.env.HOST_WORKSPACE_PATH;
-    else process.env.HOST_WORKSPACE_PATH = prevHostWs;
-  }
+test("end-to-end (criterion 1, D-02): vice_symbols_load succeeds through the REAL callStockTool() path and resolves its path inside the project root", async () => {
+  await withTempRepoRootForConformance(async (repoRootDir) => {
+    writeFileSync(join(repoRootDir, "labels.lbl"), SYMBOLS_FIXTURE);
+    const deps: StockSessionDeps = { ensureLease: THROWING_ENSURE_LEASE };
+    const result = await callStockTool("vice_symbols_load", { path: "labels.lbl" }, deps);
+    assert.equal(result.isError, false, "vice_symbols_load must answer a normal success");
+    const parsed: Record<string, unknown> = JSON.parse((result as { content: { text: string }[] }).content[0]!.text);
+    const resolvedPath = parsed.resolvedPath as string;
+    assert.ok(
+      resolvedPath.startsWith(repoRootDir),
+      `resolvedPath must resolve inside CLAUDE_PROJECT_DIR (${repoRootDir}), got ${resolvedPath}`,
+    );
+    resetSymbolStoreForTest();
+  });
 });
 
 // --------------------------------------------------------- vice_vicii_get_state / vice_cia_get_state / vice_sprite_get / vice_sprite_inspect (05-03/05-04/05-05, DERIV-05/DERIV-06)

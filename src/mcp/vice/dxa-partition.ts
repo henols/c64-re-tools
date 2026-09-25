@@ -50,8 +50,7 @@
 // denominator refuses by name (`formatPercent` throws) rather than
 // rendering `0.00`, `NaN` or `100.00`.
 //
-// THIS MODULE MUST NEVER IMPORT `hostpath.ts` (mirrors `dxa-listing.ts`'s
-// own stated rule for itself) and MUST NEVER CALL `node:child_process`
+// THIS MODULE MUST NEVER CALL `node:child_process`
 // (mirrors `dxa-listing.ts` and `dxa-run.ts`'s SEAM-05 discipline) -- ground
 // truth here is read from a report and from raw bytes the caller already
 // has; it is never derived by running anything.

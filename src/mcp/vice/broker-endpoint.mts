@@ -1331,9 +1331,8 @@ export type HostToolSessionStageResult =
  * success OR its own `{ ok: false, message }` refusal, both answered over
  * this SAME round trip) or, on a control-plane-level refusal
  * (`denied`/`internal`/`bad_request`), never reached here at all: THAT case
- * is `ok: false` on THIS type instead, mirroring
- * `hostToolOverControlPlane()`'s own "a control-plane error rejects, the
- * tool's own refusal resolves normally" contract in `host-tool-client.ts`. */
+ * is `ok: false` on THIS type instead: a control-plane error is a
+ * refusal here, the tool's own refusal is a normal `ok: true` response. */
 export type HostToolSessionRunResult = { ok: true; response: unknown } | { ok: false; reason: string };
 
 export interface HostToolSession {

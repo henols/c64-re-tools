@@ -98,10 +98,8 @@ export const DOT_SEGMENT_REFUSAL = "path element starting with '.' is not permit
  * all three load-bearing and none of them optional:
  *   1. No dotted or bare-dot segment anywhere in the ABSOLUTIZED path handed
  *      to `analyzeHeadless` (this file's own `hasDotPrefixedSegment()`).
- *   2. The path stays INSIDE the bind-mounted workspace tree --
- *      `containerPath()` THROWS on a host path matching no known host root
- *      (`containerpath.ts`), so an out-of-workspace handle (a `/tmp` or
- *      XDG-cache location) breaks the container route outright.
+ *   2. The path stays INSIDE the workspace tree -- never an
+ *      out-of-workspace handle (a `/tmp` or XDG-cache location).
  *   3. The link TARGET is RELATIVE, not absolute -- the CONTAINER itself
  *      traverses this handle to read the per-run log (`ghidra-run.ts:241`),
  *      and an absolute HOST-side target names a path that does not exist

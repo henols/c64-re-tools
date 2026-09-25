@@ -1109,7 +1109,7 @@ test("hazard evidence: the report's emitted limits contain an entry stating that
 // hazard read-only: structural source-text assertion (T-48-01)
 // ---------------------------------------------------------------------------
 
-test("hazard read-only: the module contains no file-write call, no store-open call, no cross-reference write call, no apply-write call, no live-session import and no path-translation import", () => {
+test("hazard read-only: the module contains no file-write call, no store-open call, no cross-reference write call, no apply-write call and no live-session import", () => {
   const source = readFileSync(MODULE_PATH, "utf8");
   const forbidden = [
     "writeFileSync",
@@ -1124,7 +1124,6 @@ test("hazard read-only: the module contains no file-write call, no store-open ca
   for (const banned of forbidden) {
     assert.ok(!source.includes(banned), `anno-hazard-report.ts must never mention ${banned} -- a report run must be read-only by construction`);
   }
-  assert.ok(!/hostpath|containerpath/.test(source), "the hazard report must stay absent from the path-translation consumer set");
 });
 
 test("hazard read-only: the module never uses the existing confidence-grade vocabulary's rendered bracket tokens", () => {

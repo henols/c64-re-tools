@@ -34,11 +34,10 @@
 //   - refusing BY NAME, listing every rung tried, when none resolves
 //     (`refusalMessage()`);
 //   - computing the in-repo hop count from `import.meta.url` rather than a
-//     fixed `".."` count -- `hostpath.ts` and `containerpath.ts` both record
-//     dropping a hard-coded four-level hop when they moved directories once
-//     already, and this project has ALSO shipped a stale hardcoded snapshot
-//     offset before (see `vsf-slice.mjs`'s own header) -- a fixed `".."`
-//     count is a mistake this project keeps making, not a one-off.
+//     fixed `".."` count -- a hard-coded hop breaks the moment a module
+//     moves directories, and this project has ALSO shipped a stale
+//     hardcoded snapshot offset before (see `vsf-slice.mjs`'s own header) --
+//     a fixed `".."` count is a mistake this project keeps making, not a one-off.
 //
 // ---------------------------------------------------------------------------
 // WHAT NOT TO DO

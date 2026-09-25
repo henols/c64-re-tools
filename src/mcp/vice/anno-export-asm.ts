@@ -64,11 +64,6 @@
 //     this tree allowed to INTERPRET that column -- what the data means -- and
 //     everywhere else here the string is copied VERBATIM onto the emitted
 //     block and its trailing comment.
-//   - Never import this tree's host/container path-translation modules
-//     (`hostpath.ts` / `containerpath.ts`). Their consumer set is a closed,
-//     mechanically asserted list of named modules and an exporter has no reason
-//     to join it -- the failure would surface as a test about something else
-//     entirely.
 //   - Never interpolate a read file's own bytes into an error message. A path,
 //     an address and a length are facts ABOUT a file; its contents are not, and
 //     an error text that quotes them turns a refusal into a content-disclosure

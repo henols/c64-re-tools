@@ -4,7 +4,7 @@
 # files (77%) were planning docs (since removed), and an incremental pass then pulled in
 # 489 vendored files under .claude/ plus .vice-supervisor/ broker state —
 # 24526 nodes / 20MB of mostly non-architecture. The graph exists to answer
-# cross-file seam questions ("who consumes hostpath.ts").
+# cross-file seam questions ("who imports broker-endpoint.mts").
 #
 # NOTE: `graphify update` is INCREMENTAL and merges into the existing graph.
 # Adding an ignore rule does not retroactively drop nodes — delete graphify-out/

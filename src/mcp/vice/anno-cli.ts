@@ -126,13 +126,6 @@
 // `console.log`/`console.error` -- never a thrown stack trace for an
 // expected, user-facing failure (missing file, unreadable store, refused
 // overwrite): each of those produces a single actionable line instead.
-//
-// Import nothing from `hostpath.ts` or `containerpath.ts`. Every path this
-// CLI handles is already container-side, and translating any of these
-// arguments would be the mirror image of a screenshot-path trap this project
-// hit before, where a client-side-derived path was wrongly translated a
-// second time. This absence is asserted structurally by
-// `hostpath-consumers.test.ts`, not merely stated here.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";

@@ -67,8 +67,7 @@
 //     `CLI_PATH_ARGUMENTS.length`. A floor computed from the thing it guards
 //     can never fail -- `n >= n` is a guard re-pointed at a subject that
 //     cannot fail -- and it discards the entire non-vacuity the floor exists
-//     to provide. `hostpath-consumers.test.ts` records the same prohibition
-//     over `ANNO_MODULE_FLOOR` for the same reason.
+//     to provide.
 //   - Never widen `NON_PATH_OPTIONS` to silence a failing test. Every widening
 //     is a claim that a new option carries no path, and it must be true rather
 //     than convenient.

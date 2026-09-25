@@ -13,8 +13,7 @@
 // SIX NAMED DIRECTIONS, each extracted into a NAMED PREDICATE that the real scan
 // and the planted-violation tests both call. That sharing is the property that
 // makes the guard trustworthy, and it is the established shape in this suite
-// (`module-classification.test.ts:11-14` states the rule; `hostpath-consumers.test.ts`
-// follows it): a planted violation that re-implements the rule proves nothing
+// (`module-classification.test.ts:11-14` states the rule): a planted violation that re-implements the rule proves nothing
 // about the rule the real scan applies.
 //
 //   1. non-vacuity   -- a DERIVED relation, never a pinned total, placed FIRST

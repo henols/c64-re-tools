@@ -21,9 +21,7 @@
 // tarball.
 //
 // WHAT NOT TO DO:
-//   - Never import hostpath.ts or vice-proxy.ts -- hostpath-consumers.test.ts
-//     gates this file's absence from the closed host-path consumer set
-//     (D-02). This tool takes no path argument at all.
+//   - Never import vice-proxy.ts. This tool takes no path argument at all.
 //   - Never set sidefx: true on any read. The VIC-II block read includes
 //     $D01E/$D01F, which CLEAR ON READ in hardware -- every read here is
 //     sidefx: false, with no argument anywhere to override it.

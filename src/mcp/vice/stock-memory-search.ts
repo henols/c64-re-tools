@@ -10,10 +10,9 @@
 // uses. Listed in stock-tools.ts as "binary" tools.
 //
 // WHAT NOT TO DO:
-//   - Never import hostpath.ts or vice-proxy.ts, and never call the
-//     fork-forwarding function's rewriteArguments() -- hostpath-consumers.test.ts
-//     gates this file's absence from the closed host-path consumer set
-//     (D-02). Neither tool takes a path argument at all.
+//   - Never import vice-proxy.ts, and never call the fork-forwarding
+//     function's rewriteArguments(). Neither tool takes a path argument at
+//     all.
 //   - Never issue an unrequested resume (Phase 3 D-05) -- these handlers
 //     send MEM_GET and nothing else. `runState` on the answer (via
 //     stockAnswer()) reports the halt honestly.

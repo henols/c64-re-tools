@@ -573,14 +573,14 @@ test(
 // program's own verified payload region must STILL match afterwards (proves
 // the load restored THIS machine, not some other one).
 //
-// NOTE on scratch-directory placement: stock-paths.ts's snapshotPathFor()/
-// snapshotMetaPathFor() are FIXED to <repoRoot()>/.vice-snapshots/<name>.{vsf,json}
+// NOTE on scratch-directory placement: transfer-paths.ts's snapshotPathFor()/
+// snapshotMetaPathFor() are FIXED to <toolsDir()>/snapshots/<name>.{vsf,json}
 // -- there is no override to redirect a save/load into this harness's own
 // mkdtempSync() scratch directory (by design: T-3-05, keeping every
-// snapshot inside the workspace's hostpath.ts-translatable tree). This test
-// therefore cleans up its own snapshot artifacts explicitly in a finally
-// block, rather than relying on withBrokerHarness's scratchDir teardown --
-// .vice-snapshots/ is gitignored, but an orphaned .vsf left behind is still
+// snapshot inside the workspace tree). This test therefore cleans up its
+// own snapshot artifacts explicitly in a finally block, rather than relying
+// on withBrokerHarness's scratchDir teardown -- the tools dir is
+// gitignored, but an orphaned .vsf left behind is still
 // exactly the kind of scratch-directory leak this plan's must-haves forbid.
 // ---------------------------------------------------------------------------
 

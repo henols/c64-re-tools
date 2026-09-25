@@ -5,8 +5,7 @@
 // for `c64-memory-mapping`'s own `memmap.json`, its content digest, and
 // narrowest-containing-range selection over its 959 entries.
 //
-// THIS MODULE MUST NEVER IMPORT `hostpath.ts` OR `containerpath.ts` -- every
-// path here is repo-relative and derived from this module's own location, the
+// Every path here is repo-relative and derived from this module's own location, the
 // same posture `anno-regbits-gen.ts` and `dxa-blocks.ts` take for themselves.
 // It also NEVER NAMES `node:sqlite` and NEVER OPENS THE ANNOTATION STORE:
 // `anno-store.ts` is the one module permitted to name that

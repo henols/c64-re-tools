@@ -10,10 +10,7 @@
 // the filename each send carries is a broker-MINTED name from
 // `session.brokerControl.stageFile()`, never a path this client translated
 // or constructed, and the bytes themselves cross the socket through
-// `session.deps.transferFile` rather than a shared bind mount. Plan 64-06
-// migrated the last two (`vice_autostart`/`vice_disk_attach`) and, with them,
-// removed this file's import of `stock-paths.ts` entirely (D-18) -- this is
-// the mechanism that moves the milestone's convergence metric.
+// `session.deps.transferFile` rather than a shared bind mount.
 //
 // WHAT NOT TO DO:
 //   - Never gate or deny vice_machine_reset's hard mode. CLAUDE.md's
@@ -34,9 +31,8 @@
 //     handleSnapshotLoad). The broker mints the handle and the emulator
 //     filename via `stageFile()`; every handler here only relays what the
 //     reply names, verbatim, into the AUTOSTART/DUMP/UNDUMP request body,
-//     and never opens it. Never fall back to a shared-filesystem route (the
-//     deleted `withEmulatorSidePath()`) when a stage or transfer call
-//     fails -- a retained fallback would falsify this milestone's own exit
+//     and never opens it. Never fall back to a shared-filesystem route
+//     when a stage or transfer call fails -- a retained fallback would falsify this milestone's own exit
 //     hypothesis; refuse by name instead.
 //   - Never confine vice_autostart's or vice_disk_attach's `path` to the
 //     workspace. D-14 is a deliberate, accepted owner decision: this tree's
@@ -419,8 +415,7 @@ const SNAPSHOT_STAGE_SLOT = "snapshot";
 
 /**
  * `name` is sanitised through transfer-paths.ts's validateSnapshotName()
- * directly (D-18: this file no longer imports stock-paths.ts at all) into a
- * workspace-internal path -- never treated as a path fragment; this rule is
+ * directly into a workspace-internal path -- never treated as a path fragment; this rule is
  * UNCHANGED by Phase 64 (D-13). The client-side metadata sidecar
  * ("DUMP writes state; JSON metadata is our own bookkeeping") is written ONLY after the download from the broker
  * succeeds, so a failed save never leaves a sidecar claiming a snapshot that
@@ -511,8 +506,7 @@ export const handleSnapshotSave: StockSessionHandler = async (args, session) => 
     // The atomic publish (temp write, rename only after digest/length
     // verify, temp removed on every failure path) lives entirely inside the
     // transfer layer (plan 64-01) -- nothing here reimplements it, and
-    // nothing here falls back to withEmulatorSidePath()'s old shared-mount
-    // route.
+    // nothing here falls back to a shared-mount route.
     return isErrorText(`vice_snapshot_save: downloading the saved snapshot failed (${downloadResult.reason})`);
   }
 

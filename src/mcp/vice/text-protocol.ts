@@ -344,7 +344,7 @@ export function isHazardSubjectId(value: unknown): value is HazardSubjectId {
  * risk (not solved here): this is the CONTAINER-side path as seen by this
  * Node process; on a genuinely containerized deployment (this project has
  * none today -- host-developed, no devcontainer) the host process actually
- * running `x64sc` would need this translated through `hostpath.ts` first.
+ * running `x64sc` would need a host-side path instead.
  * That translation is deliberately NOT added here, matching this project's
  * existing "solve the general host/container case only where it is
  * actually exercised" discipline -- a later plan that runs this widening

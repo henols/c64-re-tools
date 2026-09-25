@@ -39,8 +39,7 @@
 //   - Never write anything. This module is on a read path and is held to
 //     `anno-derive.ts`'s never-cache rule by the same structural control: no
 //     SQL write verb, no filesystem write call, no persistence binding.
-//   - Never import `hostpath.ts`, `containerpath.ts` or `container-guard.mts` --
-//     this composition is proxy-local.
+//   - Never import `container-guard.mts` -- this composition is proxy-local.
 //   - Never return an empty array for something that could not be answered. A
 //     component with no answer comes back as `{available:false, reason}`, so an
 //     address that genuinely has no comments is distinguishable from a question

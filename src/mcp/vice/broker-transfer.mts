@@ -625,8 +625,7 @@ function stagingSlotKey(grantId: string, slot: string): string {
  * refusal never echoes the offending value itself (T-64-13's own posture
  * for a handle refusal, applied here too). */
 // Phase 65 (SEAM-03, D-03): exported so host-tool.mts's own bindStagedInputs()
-// (a container-side... no, HOST-side module, compiled to resources/host-tool.mjs)
-// can validate a bare OUTPUT NAME (e.g. ghidra.analyze's exportPath) with the
+// (a HOST-side module, compiled to resources/host-tool.mjs) can validate a bare OUTPUT NAME (e.g. ghidra.analyze's exportPath) with the
 // SAME refuse-not-sanitise segment check a monitor upload's own slot already
 // gets, rather than duplicating this ordered-checks shape a second time.
 // Value-imported as "./broker-transfer.mjs" -- the same host-bound-sibling
@@ -775,8 +774,8 @@ export function clearStagingForSession(grantId: string): void {
   }
 }
 
-/** Test-only reset, following `stock-paths.ts`'s `setIsInsideContainerForTest()`
- * / `stock-runstate.ts`'s `resetRunStateTrackersForTest()` precedent: a
+/** Test-only reset, following `stock-runstate.ts`'s
+ * `resetRunStateTrackersForTest()` precedent: a
  * module-level registry must not leak state between test cases in the SAME
  * process. Production code never calls this. */
 export function resetStagingForTest(): void {

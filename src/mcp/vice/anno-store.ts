@@ -85,12 +85,8 @@
 //   6. NEVER add an explicit save or flush verb. Durability is this module's
 //      responsibility, not the caller's: every accepted write commits before it
 //      returns. A save verb is a way for a caller to lose data by forgetting.
-//   7. NEVER import either host/container path-translation seam. The store file
-//      is container-side; a host-translated path would let a store write land
-//      on the HOST filesystem, silently, outside the workspace. That is
-//      precisely the failure the closed consumer set in
-//      `hostpath-consumers.test.ts` exists to prevent, and this module's
-//      absence from it is asserted there rather than merely stated here.
+//   7. NEVER translate the store path. A translated path would let a store
+//      write land outside the workspace, silently.
 //   8. NEVER cache a derived index, census or xref on disk. A cached
 //      derivation is a second truth that can disagree with the rows; see
 //      `anno-index.ts`'s trap 2.

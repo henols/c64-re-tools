@@ -37,10 +37,10 @@ const BROKER_ENDPOINT_TS = join(HERE, "broker-endpoint.mts");
 const BROKER_CONTROL_MTS = join(HERE, "broker-control.mts");
 
 /** Strips `//` line comments and `/* ... *\/` block comments -- the same
- * stripCommentLines() idiom hostpath-consumers.test.ts and
- * tool-location-consumers.test.ts already use for exactly this reason: this
- * module's own header comments NAME the forbidden fs calls and the legacy
- * client module (explaining what NOT to do), so a naive raw-source
+ * stripCommentLines() idiom tool-location-consumers.test.ts already uses
+ * for exactly this reason: this module's own header comments NAME the
+ * forbidden fs calls and vice-broker-client.ts (explaining what NOT to do),
+ * so a naive raw-source
  * substring check would trip on its own prose rather than on real code. */
 function stripCommentLines(src: string): string {
   const out: string[] = [];

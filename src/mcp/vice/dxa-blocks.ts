@@ -12,9 +12,7 @@
 // `datablocksPath`/`labelsPath` arguments `dxa.disassemble`'s allowlist
 // landed in plan 35-01) and to the live tests that read dxa's listing.
 //
-// THIS MODULE MUST NEVER IMPORT `hostpath.ts` (mirrors `dxa-listing.ts`'s and
-// `dxa-run.ts`'s own stated rule for themselves) and MUST NEVER CALL
-// `node:child_process` (SEAM-05's `BANNED_COMMAND_SHAPES` already names
+// THIS MODULE MUST NEVER CALL `node:child_process` (SEAM-05's `BANNED_COMMAND_SHAPES` already names
 // `dxa`; nothing here spawns anything). It also NEVER NAMES `node:sqlite` and
 // NEVER OPENS THE STORE FILE ITSELF: `anno-store.ts` is the one module
 // permitted to name that dependency, and this module reads

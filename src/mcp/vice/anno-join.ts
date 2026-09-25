@@ -8,8 +8,7 @@
 // THIS MODULE RECEIVES AN ALREADY-OPEN STORE HANDLE, exactly like
 // `anno-import.ts` -- there is no second store session anywhere in this
 // file. It never names `node:sqlite`, never calls `openStore()`/`closeStore()`
-// itself, and never imports `hostpath.ts`/`containerpath.ts`: the image range
-// it needs arrives as plain numbers (`imageOrigin`, `imageByteLength`) that
+// itself, and the image range it needs arrives as plain numbers (`imageOrigin`, `imageByteLength`) that
 // the caller has already derived from a loaded image, mirroring
 // `dxa-blocks.ts`'s own header posture of reading only already-fetched facts
 // a caller passes in.

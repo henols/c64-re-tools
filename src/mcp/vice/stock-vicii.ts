@@ -54,9 +54,8 @@
 //     never an unrequested resume (Phase 3 D-05). `runState` on the answer
 //     (via stockAnswer()) reports the halt honestly.
 //   - Never build the answer outside stockAnswer() (D-06).
-//   - Never import hostpath.ts or vice-proxy.ts -- this tool takes no path
-//     argument at all, and hostpath-consumers.test.ts gates this file's
-//     absence from the closed host-path consumer set.
+//   - Never import vice-proxy.ts -- this tool takes no path argument at
+//     all.
 //
 // FIELD-NAME PROVENANCE (Assumption A4's mitigation): every bit-field name
 // below was transcribed once from

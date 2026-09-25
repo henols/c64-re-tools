@@ -75,9 +75,8 @@
 //
 // This module imports NOTHING from `src/skills/` (the shipped `@henols/
 // vice-mcp` tarball does not contain that tree, and `anno-join.ts:26` already
-// states the rule for this module family) and nothing from
-// `hostpath.ts`/`containerpath.ts` -- every path this module reads is handed
-// to it already resolved, exactly as `anno-export-asm.ts`'s own `imagePath`
+// states the rule for this module family). Every path this module reads is
+// handed to it already resolved, exactly as `anno-export-asm.ts`'s own `imagePath`
 // is documented: the CALLER owns confinement, this module only reads.
 import { readFileSync } from "node:fs";
 

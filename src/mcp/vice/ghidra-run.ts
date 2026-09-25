@@ -7,8 +7,7 @@
 // host-tool-endpoint.mts) and NEVER `node:child_process` -- a direct spawn
 // here would bypass the one host-tool route every runtime path crosses.
 //
-// THIS MODULE MUST NEVER IMPORT `hostpath.ts`. The endpoint client uploads
-// every input by bytes and downloads every result under this module's own
+// The endpoint client uploads every input by bytes and downloads every result under this module's own
 // tools root, so the run log's path is a local path read AS GIVEN.
 //
 // Phase 36, plan 36-01 (D-36-05): `HostToolClientResult` carries `results[]`

@@ -644,9 +644,8 @@ export async function reapOrphanedInstances(options: ReapOrphanedInstancesOption
 // runs from the SAME unconditional, pre-bind block as reapOrphanedInstances()
 // -- its own mandatory live-pid guard makes that safe even for a process
 // that goes on to lose the singleton race. sweepOrphanedStaging() runs
-// later, only in the process that has actually WON the control-port bind,
-// and only before that process publishes its control token -- see its own
-// call site in vice-broker.mts for why.
+// later, only in the process that has actually WON the control-port bind
+// -- see its own call site in vice-broker.mts for why.
 //
 // The two kinds of broker-owned scratch these reap have OPPOSITE lifetime
 // rules, and that is deliberate, not an oversight to "simplify" later:
@@ -663,10 +662,9 @@ export async function reapOrphanedInstances(options: ReapOrphanedInstancesOption
 //     cleanly. Applying the config rule here -- keep whatever has a live pid
 //     -- is a category error: a staging directory is not itself a process,
 //     so there is no pid to check. Given the precondition above -- this pass
-//     runs only in the process that has won the control-port bind, before it
-//     publishes its token -- every directory still present under the
-//     staging root at that moment is residue the previous, crashed broker
-//     left (D-07's whole argument for a startup-only sweep: this is the one
+//     runs only in the process that has won the control-port bind -- every
+//     directory still present under the staging root at that moment is
+//     residue the previous, crashed broker left (D-07's whole argument for a startup-only sweep: this is the one
 //     moment the residue is unambiguous, and ONLY for the process the kernel
 //     has just confirmed is the broker).
 //

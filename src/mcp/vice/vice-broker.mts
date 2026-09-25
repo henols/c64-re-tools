@@ -2174,11 +2174,9 @@ async function run(args: ParsedArgs): Promise<void> {
   // its own still finds the handle in place the moment it can reach this
   // broker at all. This is deliberately NOT the only call site:
   // resolveGhidraProject() (ghidra-project.mts) calls the same function as
-  // an idempotent precondition, because two host-side routes never involve
-  // a broker at all -- the direct spawn of resources/host-tool.mjs from
-  // host-tool-client.ts:269-273 (the everyday route on a host with no
-  // devcontainer, and the route CI uses), and tests importing that
-  // artifact directly. Both callers write the identical relative-target
+  // an idempotent precondition, because tests importing the compiled
+  // resources/host-tool.mjs artifact directly never involve a broker at
+  // all. Both callers write the identical relative-target
   // link, so a race between them is a benign EEXIST, not a conflict (see
   // ensureGhidraRunsHandle()'s own header). The negative rule: container-
   // side code must NEVER mint this handle -- the link target is relative

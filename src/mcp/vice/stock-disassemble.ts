@@ -16,11 +16,9 @@
 // asked for reads the wrong code).
 //
 // WHAT NOT TO DO:
-//   - Never import hostpath.ts or vice-proxy.ts, and never call the
-//     fork-forwarding function's rewriteArguments() -- hostpath-consumers.test.ts
-//     gates this file's absence from the closed host-path consumer set
-//     (D-02). This tool takes no path argument at all; the surface is empty
-//     by construction.
+//   - Never import vice-proxy.ts, and never call the fork-forwarding
+//     function's rewriteArguments(). This tool takes no path argument at
+//     all; the surface is empty by construction.
 //   - Never issue an unrequested resume (Phase 3 D-05) -- this handler sends
 //     MEM_GET and nothing else. `runState` on the answer (via stockAnswer())
 //     reports the halt honestly.

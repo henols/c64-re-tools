@@ -12,9 +12,8 @@
 // device definitions all annotate unconditionally, because their domain has
 // no path-dependent address meaning).
 //
-// THIS MODULE NEVER NAMES THE PERSISTENCE DEPENDENCY, NEVER OPENS THE STORE,
-// and NEVER IMPORTS `hostpath.ts`/`containerpath.ts` -- the same posture
-// `memmap-lookup.ts` takes. It takes plain data (a raw `$01` value, a
+// THIS MODULE NEVER NAMES THE PERSISTENCE DEPENDENCY and NEVER OPENS THE
+// STORE -- the same posture `memmap-lookup.ts` takes. It takes plain data (a raw `$01` value, a
 // `MemmapEntry`) and returns plain data.
 //
 // WHAT THIS IS THE ONE AUTHORITATIVE PLACE FOR: the bit arithmetic

@@ -58,10 +58,7 @@
 //     write statement, no `node:fs` write call, and no naming of the
 //     persistence builtin `node:sqlite` -- the store is reached ONLY through
 //     `anno-store.ts`'s own read entry points.
-//   - Never import `hostpath.ts`, `containerpath.ts` or `container-guard.mts`.
-//     This module is proxy-local; a host/container-translated path would point
-//     the derivation at bytes on the wrong side of the container boundary
-//     (`hostpath-consumers.test.ts` names this module as forbidden).
+//   - Never import `container-guard.mts`. This module is proxy-local.
 //   - Never add a second address parser, a second range validator or a second
 //     data-type vocabulary. `parseStoreAddress`, `assertRangeShape` and
 //     `assertDataType` are imported from `anno-types.ts` for exactly that

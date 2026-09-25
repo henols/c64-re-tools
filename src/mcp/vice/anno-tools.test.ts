@@ -275,11 +275,11 @@ test("every openStore( in anno-tools.ts is closed by a closeStore( inside a fina
   );
 });
 
-test("MCP-02 by construction: anno-tools.ts reaches no VICE transport and no host-path seam", () => {
+test("MCP-02 by construction: anno-tools.ts reaches no VICE transport", () => {
   const code = ANNO_TOOLS_SOURCE.split("\n")
     .filter((line) => !line.trimStart().startsWith("//") && !line.trimStart().startsWith("*"))
     .join("\n");
-  for (const forbidden of ["forwardToVice", "ensureViceSession", "rewriteArguments", "hostpath"]) {
+  for (const forbidden of ["forwardToVice", "ensureViceSession", "rewriteArguments"]) {
     assert.ok(!code.includes(forbidden), `anno-tools.ts must not reach ${forbidden} -- that is what makes the anno_* family's backend-independence sound`);
   }
 });

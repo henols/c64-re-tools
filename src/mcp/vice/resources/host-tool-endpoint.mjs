@@ -16,16 +16,13 @@
 // CALLER's own `<toolsRoot>/<kind>/` directory -- the first live producer of
 // `validateContainedDestination()` (D-07, XFER-03).
 //
-// THIS FILE MUST STAY A LEAF with respect to the legacy host-tool seam. It
-// imports ONLY `broker-endpoint.mts`, `transfer-client.mts`, `transfer-hash.mts`
-// and node built-ins -- never `host-tool-client.ts` (the legacy, token-gated
-// control-plane/host-spawn seam this route runs alongside, not through),
-// never `repo-root.ts` (this module never resolves THIS project's own
-// workspace root -- every path it writes is relative to a CALLER-supplied
-// `toolsRoot`, per the assumption_delta_decision this plan records), and
-// never `containerpath.ts` (there is no host/container path translation on
-// this route at all -- every byte crosses as a payload, never a shared-
-// filesystem path).
+// THIS FILE MUST STAY A LEAF. It imports ONLY `broker-endpoint.mts`,
+// `transfer-client.mts`, `transfer-hash.mts` and node built-ins -- never
+// `repo-root.ts` (this module never resolves THIS project's own workspace
+// root -- every path it writes is relative to a CALLER-supplied
+// `toolsRoot`, per the assumption_delta_decision this plan records). There
+// is no host/container path translation on this route at all -- every byte
+// crosses as a payload, never a shared-filesystem path.
 //
 // WHAT NOT TO DO:
 //   - Never write a broker-side path anywhere the caller can see it. Every

@@ -44,19 +44,6 @@
 //   comment-and-string-stripped source so this paragraph cannot satisfy the
 //   check by containing the word.
 //
-//   THE HOST-PATH SEAM IS UNREACHABLE FROM HERE, BY CONSTRUCTION.
-//   CLAUDE.md requires derived tools to be intercepted before
-//   `forwardToVice()`, because `rewriteArguments()` runs inside it and would
-//   hand a container-translated path to a runner acting proxy-locally. This
-//   family needs no such interception: `runAnnoTool()` is registered through
-//   `buildViceTool()` directly, so it can never reach `forwardToVice()`,
-//   `call()` or `ensureViceSession()`, and this module must never import
-//   `hostpath.ts` -- `hostpath-consumers.test.ts` names it as forbidden and
-//   keeps that consumer set at exactly five modules. Both the store path and
-//   the image path are PROXY-LOCAL filesystem paths and translating either
-//   would point this code at a file on the wrong side of the container
-//   boundary.
-//
 // TWO REFUSAL CHANNELS, AND THE DIFFERENCE IS DELIBERATE:
 //
 //   1. AN INVALID ARGUMENT resolves `{isError:true}` naming the

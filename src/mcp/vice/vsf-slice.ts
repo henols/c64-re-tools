@@ -71,12 +71,8 @@
 //   - Never give any exported function a filesystem PATH parameter. They take
 //     byte arrays, which is what keeps path traversal out of this module's
 //     threat surface entirely rather than merely checked. Snapshot paths come
-//     from `stock-paths.ts`'s `snapshotPathFor()`, which is confined inside
-//     the workspace by construction. For the same reason this module imports
-//     nothing from either of this repo's two host/container path-translation
-//     seams; that absence is asserted structurally by
-//     `hostpath-consumers.test.ts`, whose consumer set is a closed
-//     five-member list.
+//     from `transfer-paths.ts`'s `snapshotPathFor()`, which is confined inside
+//     the workspace by construction.
 //   - Never `subarray` on an unvalidated length. A short `subarray` silently
 //     returns fewer bytes than asked for, which is the exact shape of the
 //     failure this module exists to refuse.

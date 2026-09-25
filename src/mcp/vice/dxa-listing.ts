@@ -20,11 +20,8 @@
 // line is recorded in the returned `outOfWindow[]` and is never silently
 // dropped.
 //
-// THIS MODULE MUST NEVER IMPORT `hostpath.ts` (mirrors host-tool-client.ts's
-// own stated rule for itself, :29-38): it receives an already
-// container-translated path from its caller (`dxa-run.ts`) and performs NO
-// filesystem or network I/O of its own -- every function here takes a
-// string and returns values, exactly as `prg-image.ts` states of itself for
+// THIS MODULE PERFORMS NO FILESYSTEM OR NETWORK I/O of its own -- every
+// function here takes a string and returns values, exactly as `prg-image.ts` states of itself for
 // the same reason (path resolution and path-boundary hazards stay entirely
 // out of this module's threat surface).
 //

@@ -16,8 +16,7 @@
 // AND NOTHING ELSE. It never receives a store handle, never opens
 // or names `node:sqlite`, never imports `anno-store.ts`, `anno-join.ts`, or
 // any module that reads the stored cross-reference graph, and never imports
-// `hostpath.ts`/`containerpath.ts` or the emulator backend
-// (`stock-vicii.ts`/`stock-sprites.ts`). A module that could see the
+// the emulator backend (`stock-vicii.ts`/`stock-sprites.ts`). A module that could see the
 // reference graph would let an implementation quietly lean on it for the
 // very case this derivation exists to cover -- so its import list is scanned
 // structurally (`anno-graphics.test.ts`) rather than merely reviewed.

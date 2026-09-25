@@ -1421,8 +1421,8 @@ test('02-REVIEW.md IN-05 pin: every thrown message naming a function via a where
   }
 });
 
-// This repo's own stripCommentLines() convention (hostpath-consumers.test.ts,
-// anno-launch.test.ts) reused verbatim rather than reinvented: strips `//`
+// This repo's own stripCommentLines() convention (anno-launch.test.ts)
+// reused verbatim rather than reinvented: strips `//`
 // and `/* ... */` comments line-by-line, closing a block comment on the
 // FIRST close-token found by position, never by whether the trimmed line
 // happens to end with one, and re-feeding any code trailing a same-line
@@ -1463,8 +1463,8 @@ function stripCommentLinesForShellScan(src: string): string {
 /** The complete top-level shell-scannable module list this repo ships: every
  * `*.ts`/`*.mjs` directly under `src/mcp/vice`, excluding `*.test.*`
  * files (same `readdirSync`-derived, non-recursive convention as
- * hostpath-consumers.test.ts's topLevelProductionModules() -- does not walk
- * into `resources/` or `node_modules/`). Test files are excluded because
+ * tool-location-consumers.test.ts's topLevelProductionModules() -- does not
+ * walk into `resources/` or `node_modules/`). Test files are excluded because
  * they legitimately spawn shells against their own fixed, non-caller-derived
  * fixture paths (e.g. vice-proxy.test.ts's `--help` capture helper); the
  * finding this pin closes (13-REVIEW.md WR-01) is about a caller-derived

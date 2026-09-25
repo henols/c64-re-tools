@@ -9,11 +9,11 @@
 // may ever apply either one for them -- that is BROKER-05's whole point, and
 // a promise like that decays silently unless something asserts it. This file
 // is that assertion, copying the closed-consumer-set idiom
-// `hostpath-consumers.test.ts` and `tool-location-consumers.test.ts` already
-// established (comment-stripped source, a `readdirSync` walk over this
+// `tool-location-consumers.test.ts` already established (comment-stripped
+// source, a `readdirSync` walk over this
 // package's own top-level modules, a closed-set assertion, one named
 // predicate shared by the real scan and its own planted-violation proof) --
-// over a THIRD token set: subprocess-invocation arguments, not import
+// over a different token set: subprocess-invocation arguments, not import
 // statements or env-var names.
 //
 // TWO SEPARATE PREDICATES, TWO SEPARATE REQUIREMENTS:
@@ -66,7 +66,7 @@ const LAUNCHD_PLIST_PATH = join(SERVICE_DIR, "com.henols.vice-broker.plist");
 
 /** Strips `//` line comments and `/* ... *\/` block comments, returning the
  * comment-stripped source as ONE newline-joined string. Copied VERBATIM from
- * `hostpath-consumers.test.ts` (its own WR-02 fix, 10-REVIEW.md) rather than
+ * `tool-location-consumers.test.ts` (the WR-02 fix, 10-REVIEW.md) rather than
  * re-derived -- there is exactly one comment stripper in this tree's test
  * suite, not a second copy that can drift from the first. */
 function stripCommentLines(src: string): string {

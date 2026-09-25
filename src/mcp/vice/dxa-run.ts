@@ -8,8 +8,7 @@
 // `BANNED_COMMAND_SHAPES` already names `dxa`, so a direct spawn here is a
 // caught violation, not an invisible one.
 //
-// THIS MODULE MUST NEVER IMPORT `hostpath.ts`. The endpoint client uploads
-// every input by bytes and downloads the listing under this module's own
+// The endpoint client uploads every input by bytes and downloads the listing under this module's own
 // tools root, so the listing's path is a local path read AS GIVEN.
 //
 // The parser's window is computed from the IMAGE FILE, never from the
@@ -150,8 +149,7 @@ function realpathOfNearestExisting(p: string): string {
  * `-B`/`-l` files for `knownDataRows`. That local I/O had no confinement at
  * all, so `image: "../sibling/secret.prg"` read outside the workspace and
  * `outDir: "../sibling-dir"` wrote outside it -- both reproduced. The check
- * is local because this file must never import `hostpath.ts` (see the
- * header) and `resolveWorkspacePath()` is host-bound `.mts`; this is the
+ * is local because `resolveWorkspacePath()` is host-bound `.mts`; this is the
  * same shape, and the same stated rules, as `stock-symbols.ts`'s own
  * `resolveLabelFilePath()`, which is this repository's established pattern
  * for exactly this situation rather than a second copy of a seam.
