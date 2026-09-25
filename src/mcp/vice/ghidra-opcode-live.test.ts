@@ -30,7 +30,7 @@ import assert from "node:assert/strict";
 import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
-import { dirname, join, relative, resolve as resolvePath, sep } from "node:path";
+import { basename, dirname, join, relative, resolve as resolvePath, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runGhidraAnalyze } from "./ghidra-run.ts";
@@ -127,6 +127,13 @@ after(async () => {
 
 interface ScratchWorkspace {
   root: string;
+}
+
+/** Where a run's export lands: the endpoint downloads every result under the
+ * caller's own `.c64-re-tools/runs/ghidra/`, keeping only the basename of the
+ * requested `exportPath`. */
+function exportFileIn(ws: ScratchWorkspace, exportRel: string): string {
+  return join(ws.root, ".c64-re-tools", "runs", "ghidra", basename(exportRel));
 }
 
 /** Duplicated from ghidra-live.test.ts's own identically-shaped helper --
@@ -454,7 +461,7 @@ test(
       );
       assert.equal(result.exitStatus, 0);
 
-      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const exportText = readFileSync(exportFileIn(ws, exportRel), "utf8");
       const classification = parseClassificationByAddress(exportText);
       const observed = new Map<number, ClassificationKind>();
       for (const b of UNDOCUMENTED_BYTE_SET) {
@@ -499,7 +506,7 @@ test(
       );
       assert.equal(result.exitStatus, 0);
 
-      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const exportText = readFileSync(exportFileIn(ws, exportRel), "utf8");
       const classification = parseClassificationByAddress(exportText);
       const observed = new Map<number, ClassificationKind>();
       for (const b of UNDOCUMENTED_BYTE_SET) {
@@ -628,7 +635,7 @@ test(
       );
       assert.equal(result.exitStatus, 0);
 
-      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const exportText = readFileSync(exportFileIn(ws, exportRel), "utf8");
       const decompiledText = extractSection(exportText, "## DECOMPILED_TEXT");
 
       for (const r of UNSTABLE_REPRESENTATIVES) {
@@ -776,7 +783,7 @@ test(
       );
       assert.equal(result.exitStatus, 0);
 
-      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const exportText = readFileSync(exportFileIn(ws, exportRel), "utf8");
       const classification = parseClassificationByAddress(exportText);
       const decompiledText = extractSection(exportText, "## DECOMPILED_TEXT");
 
@@ -1033,7 +1040,7 @@ test(
           { repoRoot: ws.root },
         );
         assert.equal(result.exitStatus, 0, `${runId}: analyzeHeadless's own exit status must be 0`);
-        const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+        const exportText = readFileSync(exportFileIn(ws, exportRel), "utf8");
         return parseClassificationByAddress(exportText);
       }
 

@@ -334,6 +334,10 @@ async function withBrokerHarness(
   const recordedPids = new Set<number>();
   const controlPort = await allocateControlPort();
   const handle = startBroker(stateDir, viceBinPath, scratchDir, controlPort);
+  // The monitor relay and file transfers dial the fixed endpoint, which this
+  // process resolves from VICE_BROKER_CONTROL_PORT -- point it at this broker.
+  const previousControlPort = process.env.VICE_BROKER_CONTROL_PORT;
+  process.env.VICE_BROKER_CONTROL_PORT = String(controlPort);
   // Captured immediately after startBroker() returns, before anything else
   // can fail -- this is the pid the teardown half below is responsible for.
   const brokerPid: number | null = typeof handle.child.pid === "number" ? handle.child.pid : null;
@@ -344,6 +348,8 @@ async function withBrokerHarness(
     await waitForBrokerReady(controlPort);
     await fn({ stateDir, controlPort, recordPid: (pid: number) => recordedPids.add(pid), host: "127.0.0.1" });
   } finally {
+    if (previousControlPort === undefined) delete process.env.VICE_BROKER_CONTROL_PORT;
+    else process.env.VICE_BROKER_CONTROL_PORT = previousControlPort;
     const brokerExitedCleanly = await stopBroker(handle);
     if (!brokerExitedCleanly && brokerPid !== null) {
       try {

@@ -58,7 +58,7 @@ import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, rea
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
-import { dirname, join, relative, resolve as resolvePath, sep } from "node:path";
+import { basename, dirname, join, relative, resolve as resolvePath, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runGhidraAnalyze, classifyGhidraRunLog } from "./ghidra-run.ts";
@@ -166,6 +166,13 @@ after(async () => {
 
 interface ScratchWorkspace {
   root: string;
+}
+
+/** Where a run's export lands: the endpoint downloads every result under the
+ * caller's own `.c64-re-tools/runs/ghidra/`, keeping only the basename of the
+ * requested `exportPath`. */
+function exportFileIn(ws: ScratchWorkspace, exportRel: string): string {
+  return join(ws.root, ".c64-re-tools", "runs", "ghidra", basename(exportRel));
 }
 
 /** Builds a fresh temporary workspace root OUTSIDE this repository, copies
@@ -299,7 +306,7 @@ test(
       const verdict = classifyGhidraRunLog(logText);
       assert.equal(verdict.scriptThrew, true, "the run log must carry the exact literal thrown-script signal");
 
-      const exportPath = join(ws.root, exportRel);
+      const exportPath = exportFileIn(ws, exportRel);
       if (existsSync(exportPath)) {
         const exportText = readFileSync(exportPath, "utf8");
         assert.equal(
@@ -344,7 +351,8 @@ test(
       const verdict = classifyGhidraRunLog(logText);
       assert.equal(verdict.scriptThrew, false, "no thrown-script signal may appear when the internal assertion succeeds");
 
-      const exportPath = join(ws.root, exportRel);
+      const exportPath = exportFileIn(ws, exportRel);
+      assert.equal(result.exportPath, exportPath, "runGhidraAnalyze() must report where the export was downloaded");
       assert.ok(existsSync(exportPath), "the export file must exist when the script completes");
       const exportText = readFileSync(exportPath, "utf8");
       assert.equal(exportText.includes("## UNRESOLVED_DISPATCH"), true, "the export must carry its final, completed-assertion section");
@@ -394,7 +402,7 @@ test(
       );
       assert.equal(result.exitStatus, 0);
 
-      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const exportText = readFileSync(exportFileIn(ws, exportRel), "utf8");
       const { expected, observed } = parseExportClassificationCounts(exportText);
       assert.ok(Number.isInteger(expected) && Number.isInteger(observed), "both classification counts must be exact integers");
       assert.equal(observed, expected, "on the prg route, the observed count must equal the script's own computed block total");
@@ -436,7 +444,7 @@ test(
       );
       assert.equal(result.exitStatus, 0);
 
-      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const exportText = readFileSync(exportFileIn(ws, exportRel), "utf8");
       const { expected, observed } = parseExportClassificationCounts(exportText);
       assert.ok(Number.isInteger(expected) && Number.isInteger(observed), "both classification counts must be exact integers");
       assert.equal(observed, expected, "on the flat64k route, the observed count must equal the script's own computed block total");
@@ -489,7 +497,7 @@ test(
           { repoRoot: ws.root },
         );
         assert.equal(result.exitStatus, 0);
-        return readFileSync(join(ws.root, exportRel));
+        return readFileSync(exportFileIn(ws, exportRel));
       }
 
       const exportA = await runOnce("gate3-repro-a", "gate3-repro-a-export.txt");
@@ -763,7 +771,7 @@ test(
       assert.ok(blockCountMatch, "VOLATILE-BLOCK-COUNT line must be present");
       assert.ok(Number(blockCountMatch![1]) >= 2, "the printed volatile-block count must be at least the number of declared volatile ranges (2)");
 
-      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const exportText = readFileSync(exportFileIn(ws, exportRel), "utf8");
       const referencesText = extractSection(exportText, "## REFERENCES");
       for (const line of WITH_FLAG_REFERENCE_LINES_PRG) {
         assert.ok(referencesText.includes(line), `expected reference line ${JSON.stringify(line)} present in the prg-route with-flag export`);
@@ -819,7 +827,7 @@ test(
       assert.ok(blockCountMatch, "VOLATILE-BLOCK-COUNT line must be present");
       assert.ok(Number(blockCountMatch![1]) >= 2, "the printed volatile-block count must be at least the number of declared volatile ranges (2)");
 
-      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const exportText = readFileSync(exportFileIn(ws, exportRel), "utf8");
       const referencesText = extractSection(exportText, "## REFERENCES");
       for (const line of WITH_FLAG_REFERENCE_LINES_FLAT64K) {
         assert.ok(referencesText.includes(line), `expected reference line ${JSON.stringify(line)} present in the flat64k-route with-flag export`);
@@ -866,7 +874,7 @@ test(
       const logText = readFileSync(result.runLogPath, "utf8");
       assert.equal(classifyGhidraRunLog(logText).scriptThrew, false, "removing the flag must not itself throw -- the carve still completes, just without volatility");
 
-      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const exportText = readFileSync(exportFileIn(ws, exportRel), "utf8");
       assert.ok(exportText.includes("## UNRESOLVED_DISPATCH"), "the without-flag export must still carry its completed-assertion section");
       const referenceCountMatch = /## REFERENCE_COUNT (\d+)/.exec(exportText);
       assert.ok(referenceCountMatch && Number(referenceCountMatch[1]) > 0, "the without-flag export must carry a non-trivial reference count");
@@ -923,7 +931,7 @@ test(
       const logText = readFileSync(result.runLogPath, "utf8");
       assert.equal(classifyGhidraRunLog(logText).scriptThrew, false, "removing the flag must not itself throw -- the carve still completes, just without volatility");
 
-      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const exportText = readFileSync(exportFileIn(ws, exportRel), "utf8");
       assert.ok(exportText.includes("## UNRESOLVED_DISPATCH"), "the without-flag export must still carry its completed-assertion section");
       const referenceCountMatch = /## REFERENCE_COUNT (\d+)/.exec(exportText);
       assert.ok(referenceCountMatch && Number(referenceCountMatch[1]) > 0, "the without-flag export must carry a non-trivial reference count");
@@ -1024,7 +1032,7 @@ test(
       // unset is the failure this plan exists to make impossible") -- the
       // failure mode is not merely possible, it is what a naive "did the
       // export complete" check would actually observe on this exact run.
-      const exportPath = join(ws.root, exportRel);
+      const exportPath = exportFileIn(ws, exportRel);
       assert.ok(existsSync(exportPath), "MEASURED finding: the export file DOES exist even though the pre-script threw");
       const exportText = readFileSync(exportPath, "utf8");
       assert.ok(
@@ -1312,7 +1320,7 @@ test(
         { repoRoot: ws.root },
       );
       assert.equal(result.exitStatus, 0);
-      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const exportText = readFileSync(exportFileIn(ws, exportRel), "utf8");
 
       // The five fact kinds -- each must carry at least one line (found or
       // not-found); which were found on THIS image is recorded below.
@@ -1410,7 +1418,7 @@ test(
         { repoRoot: ws.root },
       );
       assert.equal(result2.exitStatus, 0);
-      const exportText2 = readFileSync(join(ws.root, exportRel2), "utf8");
+      const exportText2 = readFileSync(exportFileIn(ws, exportRel2), "utf8");
       const digest1 = createHash("sha256").update(exportText).digest("hex");
       const digest2 = createHash("sha256").update(exportText2).digest("hex");
       assert.equal(digest1, digest2, "two acceptance runs under different run ids must produce byte-identical export files");
@@ -1454,7 +1462,7 @@ test(
         { repoRoot: ws.root },
       );
       assert.equal(result.exitStatus, 0);
-      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const exportText = readFileSync(exportFileIn(ws, exportRel), "utf8");
       const accounting = parseAccounting(exportText);
       assert.equal(accounting.attempted, 0, "a function-less program must report zero attempted functions");
       assert.ok(accounting.zeroFunctions, "a function-less program must carry the explicit DECOMPILE_ZERO_FUNCTIONS true line");
@@ -1577,7 +1585,7 @@ test(
         { repoRoot: ws.root },
       );
       assert.equal(acceptanceResult.exitStatus, 0);
-      const acceptanceExportText = readFileSync(join(ws.root, acceptanceExportRel), "utf8");
+      const acceptanceExportText = readFileSync(exportFileIn(ws, acceptanceExportRel), "utf8");
       const acceptanceDecompiledLines = countDecompiledTextLines(acceptanceExportText);
 
       // The control: the SAME image, route and language, one argument apart.
@@ -1760,7 +1768,7 @@ test(
       assert.equal(result.exitStatus, 0);
       const logText = readFileSync(result.runLogPath, "utf8");
       assert.equal(classifyGhidraRunLog(logText).scriptThrew, false, "the flat64k-route CONST_WRITES case must not throw");
-      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const exportText = readFileSync(exportFileIn(ws, exportRel), "utf8");
       const portWrites = assertConstWritesPortValuesDiffer(exportText);
       assertSharedSubroutineReachedFromDistinctCallers(exportText, portWrites);
     } finally {
@@ -1780,7 +1788,7 @@ test(
       assert.equal(result.exitStatus, 0);
       const logText = readFileSync(result.runLogPath, "utf8");
       assert.equal(classifyGhidraRunLog(logText).scriptThrew, false, "the prg-route CONST_WRITES case must not throw");
-      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const exportText = readFileSync(exportFileIn(ws, exportRel), "utf8");
       assertConstWritesPortValuesDiffer(exportText);
       // The shared-subroutine-reached-from-two-callers assertion is
       // deliberately NOT run on this route -- see this function's own
@@ -1908,7 +1916,7 @@ test(
       const logText = readFileSync(result.runLogPath, "utf8");
       assert.equal(classifyGhidraRunLog(logText).scriptThrew, false, "the before-run must not throw");
 
-      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const exportText = readFileSync(exportFileIn(ws, exportRel), "utf8");
 
       // The derived range is computed from THIS run's own real CONST_WRITES
       // facts -- never hard-coded, per this plan's own must_haves.truths.
@@ -1966,7 +1974,7 @@ test(
       assert.match(logText, /DataRangeSeed\.java> DATARANGE-OK:/, "DataRangeSeed.java must report a seeded range in the run log");
       assert.match(logText, /DataRangeSeed\.java> DATARANGE-SEED-COUNT: 1/, "DataRangeSeed.java must report exactly one range seeded");
 
-      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const exportText = readFileSync(exportFileIn(ws, exportRel), "utf8");
       const functions = parseFunctionLines(exportText);
       const after = functionsInRange(functions, charsetPhantomDerivedRange!);
       assert.equal(after.length, 0, `the after-set must be EMPTY -- the derived range's own data-range feedback must suppress every phantom label (got ${JSON.stringify(after)})`);
@@ -2007,7 +2015,7 @@ test(
       const logText = readFileSync(result.runLogPath, "utf8");
       assert.equal(classifyGhidraRunLog(logText).scriptThrew, false, "the prg-route case must not throw");
 
-      const exportText = readFileSync(join(ws.root, exportRel), "utf8");
+      const exportText = readFileSync(exportFileIn(ws, exportRel), "utf8");
       const constWrites = parseConstWrites(parseGhidraExport(exportText));
       assert.equal(constWrites.length, 3, "all three VIC register writes must resolve on the prg route too");
       const maps = deriveGraphicsRanges(constWrites);

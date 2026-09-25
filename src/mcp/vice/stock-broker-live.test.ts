@@ -98,11 +98,8 @@
 //     the .d64 or post-fix .prg cases -- that bypasses vice-broker.mts
 //     entirely and would validate I-1's config isolation seam without ever
 //     touching the real makeLoggingSpawn()/withCrashSupervision()
-//     composition a production broker uses. Those two cases MUST launch
-//     through the spawned resources/vice-broker.mjs artifact. Only the
-//     pre-fix .prg baseline (Task 2) uses the in-process tryLaunchOne()
-//     route, and only because a static VICE_ARGS cannot interpolate a
-//     daemon-allocated port -- see that test's own inline comment.
+//     composition a production broker uses. Every case MUST launch
+//     through the spawned resources/vice-broker.mjs artifact.
 //   - Never acquire a child process, socket, or scratch directory outside a
 //     try/finally whose finally SIGTERMs-then-SIGKILLs the emulator and
 //     rmSync()s every scratch dir -- stock VICE's binary monitor services
@@ -129,8 +126,7 @@ import { dialControlSession, type BrokerControlSession, type HeldLease, type Acq
 import { callStockTool } from "./stock-tools.ts";
 import { clearHeldStockSession, type StockSessionDeps } from "./stock-session.ts";
 import { stockConnect, type StockConnectOptions } from "./stock-connect.ts";
-import { tryLaunchOne, probeReady } from "./broker-launch.mts";
-import { createBrokerState } from "./broker-state.mts";
+import { probeReady } from "./broker-launch.mts";
 import { snapshotPathFor, snapshotMetaPathFor } from "./transfer-paths.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -416,9 +412,15 @@ async function withBrokerHarness(
   const controlPort = await allocateControlPort();
   const handle = startBroker(stateDir, resolvedBinPath, scratchDir, controlPort);
   let pidsAliveAfterTeardown: number[] = [];
+  // The monitor relay and file transfers dial the fixed endpoint, which this
+  // process resolves from VICE_BROKER_CONTROL_PORT -- point it at this broker.
+  const previousControlPort = process.env.VICE_BROKER_CONTROL_PORT;
+  process.env.VICE_BROKER_CONTROL_PORT = String(controlPort);
   try {
     await fn({ stateDir, scratchDir, controlPort, recordPid: (pid: number) => recordedPids.add(pid) });
   } finally {
+    if (previousControlPort === undefined) delete process.env.VICE_BROKER_CONTROL_PORT;
+    else process.env.VICE_BROKER_CONTROL_PORT = previousControlPort;
     await stopBroker(handle);
     for (const pid of recordedPids) {
       try {
@@ -788,144 +790,6 @@ test(
 
     assert.ok(report !== null, "withBrokerHarness must have returned a report");
     assert.deepEqual(report!.pidsAliveAfterTeardown, [], `pids still alive after teardown: ${JSON.stringify(report!.pidsAliveAfterTeardown)} (recorded: ${JSON.stringify(report!.recordedPids)})`);
-  },
-);
-
-test(
-  "stock-broker-live: PRE-FIX baseline -- with Drive8Type=0 (the pre-08.2-02 argv, reproduced via the VICE_ARGS static override, in-process tryLaunchOne) a bare .prg autostart is refused at the wire and the payload never lands -- settles the blast-radius verdict as MEASURED, not inferred",
-  { skip: SKIP_REASON, timeout: 60000 },
-  async () => {
-    clearHeldStockSession();
-    // --- Pre-fix case, deliberately the IN-PROCESS tryLaunchOne() route,
-    // not the spawned broker artifact. Rationale, per this plan's own
-    // instruction (stated here, not just in the plan text, so a future
-    // reader meets it at the exact place it matters): VICE_ARGS is a
-    // STATIC STRING and cannot interpolate a port the daemon allocates
-    // later at request time, so a daemon-routed pre-fix case is not
-    // expressible -- the port must be known BEFORE the override string is
-    // built, which only the in-process route allows. This case's only job
-    // is to establish what a Drive8Type=0 instance does with a bare .prg --
-    // an emulator-behaviour question, not a code-path question (the .d64
-    // and post-fix .prg cases above already prove the code path). This case
-    // therefore asserts NOTHING about XDG_CONFIG_HOME: the in-process route
-    // bypasses the real daemon's makeLoggingSpawn()/withCrashSupervision()
-    // composition entirely, and any such assertion here would be exactly
-    // the kind of false green plan 08.2-06 exists to eliminate.
-    const scratchDir = mkdtempSync(join(tmpdir(), "stock-broker-live-prefix-"));
-    const prevViceArgs = process.env.VICE_ARGS;
-    let childPid: number | null = null;
-    try {
-      const { prgPath } = writePrgFixture(scratchDir);
-
-      const port = await new Promise<number>((resolve, reject) => {
-        const srv = createServer();
-        srv.once("error", reject);
-        srv.listen(0, "127.0.0.1", () => {
-          const address = srv.address();
-          const p = typeof address === "object" && address ? address.port : null;
-          srv.close(() => (p === null ? reject(new Error("no ephemeral port")) : resolve(p)));
-        });
-      });
-
-      // The static, pre-fix argv -- byte-identical in shape to what
-      // buildViceArgs()'s stock branch emitted BEFORE plan 08.2-02: no
-      // -default, no -drive8type. This is the supported VICE_ARGS
-      // full-override mechanism (broker-launch.mts's buildViceArgs(),
-      // checked first, ahead of either backend branch) -- reproducing the
-      // pre-fix shape WITHOUT reverting the real fix anywhere in source.
-      process.env.VICE_ARGS = `-binarymonitor -binarymonitoraddress ip4://127.0.0.1:${port}`;
-
-      const supervisorDir = join(scratchDir, "state", String(port));
-      const epochFile = join(supervisorDir, "epoch.json");
-      const state = createBrokerState();
-      const record = tryLaunchOne("pre-fix-baseline", port, {
-        state,
-        supervisorDir,
-        epochFile,
-        viceBin: resolvedBinPath,
-        // backend: "stock" here governs ONLY spawnAndRecordInstance()'s own
-        // XDG_CONFIG_HOME scratch-dir computation (still applied, since
-        // that computation happens at this exact seam regardless of the
-        // VICE_ARGS override deciding the argv) -- it keeps this pre-fix
-        // launch from touching the operator's real vicerc and colliding
-        // with the 3.9-vs-3.10 version-mismatch modal, even though (per
-        // this test's own rationale above) nothing here ASSERTS on it.
-        backend: "stock",
-        // deps.spawn deliberately left undefined -- spawnAndRecordInstance()
-        // falls back to a bare nodeSpawn(cmd, args, options) wrapper, which
-        // still honours the options argument (this is what the "widened
-        // default wrapper" dead-code note in broker-launch.mts refers to).
-      });
-      assert.ok(record, "tryLaunchOne must have returned a record for the pre-fix baseline launch");
-      childPid = record!.pid;
-      assert.ok(childPid, "the pre-fix baseline launch must have a real pid");
-
-      const argv = record!.viceArgs;
-      assert.equal(argv.indexOf("-drive8type"), -1, `PRE-FIX baseline argv must contain no -drive8type, got: ${JSON.stringify(argv)}`);
-
-      const ready = await waitForStockReady(port);
-      assert.ok(ready, `the pre-fix baseline instance at port ${port} never answered a binary-monitor probe within the deadline`);
-
-      const CONFORMANCE_BROKER_CONTROL = {
-        claimMonitor: async () => ({ ok: true as const }),
-        releaseMonitor: async () => ({ ok: true as const }),
-      } as unknown as BrokerControlSession;
-      const lease: HeldLease = {
-        host: "127.0.0.1",
-        port,
-        targetId: "pre-fix-baseline",
-        brokerControl: CONFORMANCE_BROKER_CONTROL,
-        epochFile: "",
-        supervisorDir: "",
-      };
-      const deps: StockSessionDeps = {
-        ensureLease: async () => ({ ok: true as const, lease }),
-        connect: (opts: StockConnectOptions) => stockConnect(opts),
-      };
-
-      // NO vice_disk_attach -- bare .prg autostart, same as the post-fix
-      // case above, so the two are directly comparable.
-      const autostartResult = await callStockTool("vice_autostart", { path: prgPath, run: true }, deps);
-      console.log(`stock-broker-live (pre-fix .prg): vice_autostart -> ${JSON.stringify(autostartResult)}`);
-
-      // MEASURED, not asserted-then-explained: this run's own AUTOSTART
-      // call is refused OUTRIGHT at the wire (isError:true, CmdFailure/0x8f)
-      // -- Drive8Type=0 means no unit 8 answers at all, so the KERNAL-level
-      // load never begins. This is the direct, load-bearing discriminator
-      // for the blast-radius verdict: VERDICT = "all program loads" (a bare
-      // .prg autostart hits the SAME wall a .d64 load does; it does not
-      // bypass the drive). Established by THIS run, on 2026-08-19, against
-      // /usr/bin/x64sc (VICE 3.9) -- see 08.2-BROKER-LIVE-EVIDENCE.md for
-      // the full transcript this comment summarises.
-      assert.equal(
-        (autostartResult as { isError: boolean }).isError,
-        true,
-        `PRE-FIX baseline: expected vice_autostart to be refused at the wire with Drive8Type=0, got: ${JSON.stringify(autostartResult)}`,
-      );
-
-      // Defensive, non-primary corroboration: the payload region must also
-      // never become byte-equal (short bounded poll -- the wire-level
-      // refusal above is already the primary, load-bearing proof, so this
-      // does not need the full 20s budget the success-path cases use).
-      const poll = await pollUntilBytesMatch(deps, VERIFIED_PAYLOAD_ADDRESS, VERIFIED_PAYLOAD, 6000);
-      console.log(
-        `stock-broker-live (pre-fix .prg): expected=${JSON.stringify(VERIFIED_PAYLOAD)} observed=${JSON.stringify(poll.lastObserved)} ` +
-          `(${poll.attempts} attempts, matched=${poll.matched})`,
-      );
-      assert.equal(poll.matched, false, `PRE-FIX baseline: the payload must never land with Drive8Type=0, but it matched after ${poll.attempts} attempts`);
-    } finally {
-      if (prevViceArgs === undefined) delete process.env.VICE_ARGS;
-      else process.env.VICE_ARGS = prevViceArgs;
-      if (childPid !== null) {
-        try {
-          process.kill(childPid, "SIGKILL");
-        } catch {
-          // already gone -- best effort.
-        }
-        await waitFor(() => !isAlive(childPid!), 3000);
-      }
-      rmSync(scratchDir, { recursive: true, force: true });
-    }
   },
 );
 

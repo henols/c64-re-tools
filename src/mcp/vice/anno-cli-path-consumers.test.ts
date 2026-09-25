@@ -79,7 +79,7 @@
 import test, { before } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -536,8 +536,7 @@ test("non-vacuity floor: CLI_PATH_ARGUMENTS has at least CLI_PATH_ARGUMENT_FLOOR
 // two passing a bare "node": the `--help` capture in this file (added by plan
 // 29-20) and `anno-cli.test.ts`'s `spawnCli()` (pre-existing). Both were fixed
 // in one commit, because leaving one behind is what made the other look like a
-// precedent -- `scripts/check-skill-cli-invocations.mjs`, edited in the same
-// round as the new site, already used `process.execPath`.
+// precedent.
 //
 // The guard is a source scan rather than a count, so it names the offending
 // file and line instead of reporting a number that moved. It is deliberately
@@ -547,9 +546,15 @@ test("non-vacuity floor: CLI_PATH_ARGUMENTS has at least CLI_PATH_ARGUMENT_FLOOR
 // ---------------------------------------------------------------------------
 
 test("WR-20: no Node child is spawned as a bare \"node\" -- every site passes process.execPath", () => {
-  // `scripts/lib/` was removed with the two checkers that were its only
-  // consumers, so it is no longer a root to scan -- scandir would throw ENOENT.
-  const roots = [HERE, join(HERE, "..", "..", "..", "scripts")];
+  // This directory plus every skill's `scripts/` -- the skill scripts are the
+  // other tree that spawns Node children (the host-tool endpoint client).
+  const skillsDir = join(HERE, "..", "..", "skills");
+  const roots = [
+    HERE,
+    ...readdirSync(skillsDir, { withFileTypes: true })
+      .filter((d) => d.isDirectory() && existsSync(join(skillsDir, d.name, "scripts")))
+      .map((d) => join(skillsDir, d.name, "scripts")),
+  ];
   const offenders: string[] = [];
   let scanned = 0;
   for (const root of roots) {

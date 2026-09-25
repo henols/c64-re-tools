@@ -325,10 +325,16 @@ async function withBrokerHarness(
   const recordedPids = new Set<number>();
   const controlPort = await allocateControlPort();
   const handle = startBroker(stateDir, resolvedBinPath, scratchDir, controlPort);
+  // The monitor relay and file transfers dial the fixed endpoint, which this
+  // process resolves from VICE_BROKER_CONTROL_PORT -- point it at this broker.
+  const previousControlPort = process.env.VICE_BROKER_CONTROL_PORT;
+  process.env.VICE_BROKER_CONTROL_PORT = String(controlPort);
   let pidsAliveAfterTeardown: number[] = [];
   try {
     await fn({ stateDir, scratchDir, controlPort, recordPid: (pid: number) => recordedPids.add(pid) });
   } finally {
+    if (previousControlPort === undefined) delete process.env.VICE_BROKER_CONTROL_PORT;
+    else process.env.VICE_BROKER_CONTROL_PORT = previousControlPort;
     await stopBroker(handle);
     for (const pid of recordedPids) {
       try {

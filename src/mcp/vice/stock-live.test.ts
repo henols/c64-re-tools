@@ -63,7 +63,7 @@ import { createServer, connect as netConnect } from "node:net";
 import { callStockTool } from "./stock-tools.ts";
 import { clearHeldStockSession, type StockSessionDeps } from "./stock-session.ts";
 import { ViceMonitorClient, CommandType } from "./stock-protocol.ts";
-import { stockConnect, stockDisconnect, type StockConnectSession } from "./stock-connect.ts";
+import { stockConnect, stockDisconnect, type StockConnectSession, type DialMonitorSocketFn } from "./stock-connect.ts";
 import type { HeldLease, BrokerControlSession } from "./vice-broker-client.ts";
 import { attachRunStateTracker, runStateFor } from "./stock-runstate.ts";
 
@@ -96,10 +96,26 @@ const SKIP_REASON: string | false = !process.env.VICE_LIVE_STOCK_BIN
 // the stub, and REAL live coordinates instead of a broker grant.
 // ---------------------------------------------------------------------------
 
-const CONFORMANCE_BROKER_CONTROL = {
-  claimMonitor: async () => ({ ok: true as const }),
-  releaseMonitor: async () => ({ ok: true as const }),
-} as unknown as BrokerControlSession;
+/** A complete broker-control stub for suites that talk to a real VICE with no
+ * broker in between. Typed as the full session, so a method added to the
+ * session is a compile error here rather than a `... is not a function` at
+ * run time. Everything the monitor path calls answers ok; the broker-only
+ * requests refuse. */
+function liveBrokerControlStub(): BrokerControlSession {
+  const refused = { ok: false as const, kind: "internal" as const, message: "not exercised by this live suite" };
+  return {
+    acquire: async () => refused,
+    release: async () => ({ ok: true as const }),
+    status: async () => refused,
+    hostState: async () => refused,
+    claimMonitor: async () => ({ ok: true as const, handle: "live-stub" }),
+    releaseMonitor: async () => ({ ok: true as const }),
+    noteOperation: async () => ({ ok: true as const }),
+    stageFile: async () => ({ ok: false as const, reason: "internal" as const }),
+  };
+}
+
+const CONFORMANCE_BROKER_CONTROL = liveBrokerControlStub();
 
 interface LiveFixture {
   child: ChildProcess;
@@ -184,10 +200,24 @@ const SKIP_REASON_310: string | false = !process.env.VICE_LIVE_STOCK_BIN_310
  * broker-level contention (Task 3's contention is at the SOCKET, not the
  * broker claim; see that test's own header comment on what it does NOT
  * prove). */
-const STOCK_LIVE_1313_BROKER_CONTROL = {
-  claimMonitor: async () => ({ ok: true as const }),
-  releaseMonitor: async () => ({ ok: true as const }),
-} as unknown as BrokerControlSession;
+const STOCK_LIVE_1313_BROKER_CONTROL = liveBrokerControlStub();
+
+/** stockConnect() normally reaches the monitor through the broker's relay.
+ * This suite runs a bare VICE with no broker, so it dials the instance's
+ * binary monitor directly instead. */
+const directDialMonitorSocket: DialMonitorSocketFn = ({ host, port }) =>
+  new Promise((resolve, reject) => {
+    const socket = netConnect({ host, port });
+    socket.once("connect", () => {
+      socket.removeListener("error", reject);
+      resolve({ socket, pending: Buffer.alloc(0) });
+    });
+    socket.once("error", reject);
+  });
+
+/** stockConnect() with the direct dial above. */
+const directStockConnect: typeof stockConnect = (opts) =>
+  stockConnect({ ...opts, deps: { ...opts.deps, dialMonitorSocket: directDialMonitorSocket } });
 
 /**
  * Spawns `binPath` as its OWN, independent stock VICE instance -- never the
@@ -926,7 +956,7 @@ test(
         port,
         targetId: "stock-live-1313-connect-39",
         brokerControl: STOCK_LIVE_1313_BROKER_CONTROL,
-        deps: {},
+        deps: { dialMonitorSocket: directDialMonitorSocket },
       });
       try {
         assert.ok(session.client, "stockConnect() must resolve with a client");
@@ -961,7 +991,7 @@ test(
         port,
         targetId: "stock-live-1313-connect-310",
         brokerControl: STOCK_LIVE_1313_BROKER_CONTROL,
-        deps: {},
+        deps: { dialMonitorSocket: directDialMonitorSocket },
       });
       try {
         assert.ok(session.client, "stockConnect() must resolve with a client -- CR-01's whole point: this used to REJECT");
@@ -1015,7 +1045,7 @@ test(
             supervisorDir: "",
           } as HeldLease,
         }),
-        connect: stockConnect,
+        connect: directStockConnect,
       };
       try {
         // 1. reset -- also proves Route A was actually selected (can only
