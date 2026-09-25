@@ -183,6 +183,7 @@ import {
   stageHostToolRequest,
   listHostToolUploads,
   registerHostToolResult,
+  resolveHostToolTree,
   type ReceivePayloadToFileResult,
 } from "./broker-transfer.mjs";
 
@@ -1338,12 +1339,17 @@ function redactScratchRoot(value: string, scratchRoot: string): string {
  * scratch-relative path via `bindStagedInputs()` (host-tool.mts), runs
  * `runHostTool()` against the REQUEST'S OWN scratch root (never this
  * broker's own `--repo-root` -- the assumption_delta_decision this plan
- * records), then rewrites the response: every `results[]` entry becomes a
- * download handle via `registerHostToolResult()` (D-07's first live
- * producer), and every remaining string field is scrubbed of the scratch
- * root (D-10, T-65-06). Never rejects -- every failure resolves
- * `{ ok: false, message }`, mirroring `runHostTool()`'s own contract. */
-export async function handleHostToolRun(requestKey: string, raw: unknown, deps: { log?: (line: string) => void } = {}): Promise<unknown> {
+ * records) for `repoRoot`, but `projectRoot` (Phase 65, plan 65-03) IS this
+ * broker's own `--repo-root` (`args.repoRoot` at the call site below), so
+ * Ghidra's per-run project and the `tools.json` locator layer keep resolving
+ * exactly where they always have. `clearDeclaredOutputs: true` generalises
+ * the c1541.read-only stale-output unlink to every tool (D-08). Then
+ * rewrites the response: every `results[]` entry becomes a download handle
+ * via `registerHostToolResult()` (D-07's first live producer), and every
+ * remaining string field is scrubbed of the scratch root (D-10, T-65-06).
+ * Never rejects -- every failure resolves `{ ok: false, message }`,
+ * mirroring `runHostTool()`'s own contract. */
+export async function handleHostToolRun(requestKey: string, raw: unknown, projectRoot: string, deps: { log?: (line: string) => void } = {}): Promise<unknown> {
   const uploads = listHostToolUploads(requestKey);
   for (const upload of uploads) {
     if (!existsSync(upload.path)) {
@@ -1352,11 +1358,28 @@ export async function handleHostToolRun(requestKey: string, raw: unknown, deps: 
   }
 
   const scratchRoot = join(brokerStagingDir(), requestKey);
+  // Phase 65 (plan 65-03, D-03): created BEFORE the run, unconditionally --
+  // ghidra.analyze's own exportPath output-name binding (host-tool.mts's
+  // bindStagedInputs()) resolves to "out/<name>" under this directory, and
+  // `resolveWorkspacePath()`'s own ancestor-realpath walk requires SOME
+  // existing ancestor to walk from. A tool with no output-name key stages
+  // an empty, harmless directory here.
+  mkdirSync(join(scratchRoot, "out"), { recursive: true });
   const lookup: HostToolStagedInputLookup = {
     fileHandle: (handle: string) => {
       const resolved = resolveStagedFile(handle);
       if (!resolved.ok || resolved.entry.grantId !== requestKey) return undefined;
       return relative(scratchRoot, resolved.entry.path);
+    },
+    // Phase 65 (plan 65-03, D-04): a tree handle resolves to its own tree
+    // INDEX (resolveHostToolTree()), never a path -- the relative directory
+    // it names is always `in/<tree>`, the SAME layout
+    // stageHostToolRequest() (broker-transfer.mts) already wrote every
+    // manifest entry for that tree under.
+    treeHandle: (handle: string) => {
+      const resolved = resolveHostToolTree(requestKey, handle);
+      if (!resolved.ok) return undefined;
+      return join("in", String(resolved.tree));
     },
   };
 
@@ -1365,7 +1388,7 @@ export async function handleHostToolRun(requestKey: string, raw: unknown, deps: 
     return { ok: false, message: bound.message };
   }
 
-  const response = await runHostTool(bound.request, { repoRoot: scratchRoot, log: deps.log });
+  const response = await runHostTool(bound.request, { repoRoot: scratchRoot, projectRoot, clearDeclaredOutputs: true, log: deps.log });
 
   const responseObj = response as unknown as Record<string, unknown>;
 
@@ -2513,7 +2536,7 @@ async function run(args: ParsedArgs): Promise<void> {
       // brokerStagingDir(), never this broker's acquire/release/recycle map.
       onHostToolStage: (files) => handleHostToolStage(files),
       onHostToolRun: (requestKey, raw) =>
-        handleHostToolRun(requestKey, raw, {
+        handleHostToolRun(requestKey, raw, args.repoRoot, {
           log: (line: string) => process.stderr.write(`${line}\n`),
         }),
       onHostToolEnd: (requestKey) => handleHostToolEnd(requestKey),

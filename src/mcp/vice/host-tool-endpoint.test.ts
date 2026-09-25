@@ -308,3 +308,56 @@ test("Test 10: the raw host_tool_run reply line, read off the socket, contains n
     await broker.stop();
   }
 });
+
+// ============================================================================
+// Phase 65, plan 65-03, Task 1 Test 6 (D-03/D-04): a real, multi-file
+// acme.build assembles through the fixed endpoint end to end -- the whole
+// source directory (including a subdirectory `!source`d file) uploads as
+// its own tree, and a separate `-I` directory uploads as a second tree, with
+// no ACME parsing on the client at any point.
+// ============================================================================
+
+test("Task 1 Test 6: acme.build with a subdirectory !source and a separate -I tree assembles through runHostToolOverEndpoint()", { skip: SKIP_REASON }, async () => {
+  const broker: HarnessBroker = await startHarnessBroker();
+  try {
+    const clientDir = freshDir("multi-file-client");
+
+    // The main source tree: hello.a at the root, !source-ing lib/inc.a --
+    // both cross as bytes under the SAME uploaded tree (tree 0), so ACME
+    // resolves the relative !source with no client-side parsing at all.
+    const sourceDir = join(clientDir, "src");
+    mkdirSync(join(sourceDir, "lib"), { recursive: true });
+    writeFileSync(join(sourceDir, "lib", "inc.a"), "included:\n\trts\n", "utf8");
+    const sourcePath = join(sourceDir, "hello.a");
+    writeFileSync(sourcePath, '* = $0801\nstart\n\t!source "lib/inc.a"\n', "utf8");
+
+    // A second, SEPARATE directory tree for an -I include -- a file this
+    // source references only via its OWN bare filename, resolvable ONLY
+    // because acme's own -I search path (built server-side from the
+    // uploaded tree's scratch-relative directory) includes it.
+    const includeDir = join(clientDir, "extra-include");
+    mkdirSync(includeDir, { recursive: true });
+    writeFileSync(join(includeDir, "extra.a"), "extra:\n\trts\n", "utf8");
+    writeFileSync(sourcePath, '* = $0801\nstart\n\t!source "lib/inc.a"\n\t!source "extra.a"\n', "utf8");
+
+    const toolsRoot = freshDir("multi-file-tools-root");
+
+    const result = await runHostToolOverEndpoint(
+      "acme.build",
+      { source: sourcePath, includes: [includeDir] },
+      { toolsRoot, port: broker.port, candidates: ["127.0.0.1"] },
+    );
+
+    assert.equal(result.ok, true, `expected ok:true, got ${JSON.stringify(result)}`);
+    if (!result.ok) return;
+    assert.equal(result.exitStatus, 0, `expected exitStatus 0, stderrTail: ${(result as { stderrTail?: string }).stderrTail}`);
+    assert.equal(result.results.length, 1);
+
+    const resultPath = result.results[0]!.path;
+    const bytes = readFileSync(resultPath);
+    assert.equal(bytes[0], 0x01);
+    assert.equal(bytes[1], 0x08);
+  } finally {
+    await broker.stop();
+  }
+});

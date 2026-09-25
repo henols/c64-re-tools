@@ -34,6 +34,24 @@ const execFileP = promisify(execFile);
 import { build } from "./build.ts";
 import { startControlListener, type StartControlListenerResult, type AcquireOutcome, type RecycleOutcome, type StatusInstanceEntry, type HostStateFields, type MonitorClaimOutcome, type MonitorReleaseOutcome } from "./broker-control.mts";
 import { hostToolOverControlPlane, hostToolRequestTimeoutMs } from "./host-tool-client.ts";
+// Phase 65, plan 65-03 (RESEARCH Pitfall 4): the CLIENT side of the
+// fixed-endpoint route's own cross-seam ordering, reached directly -- this
+// is a container-side module (host-tool-endpoint.mts carries no host-bound
+// APIs and ships no build step), so it is imported by its own .mts source,
+// never through the compiled hostTool artifact above. Deliberately a
+// SEPARATE identifier (endpointHostToolRequestTimeoutMs) from the
+// legacy-seam `hostToolRequestTimeoutMs` imported immediately above --
+// the two functions read DIFFERENT tables and must never be confused.
+import {
+  runHostToolOverEndpoint,
+  hostToolRequestTimeoutMs as endpointHostToolRequestTimeoutMs,
+  walkUploadTree,
+  HOST_TOOL_FILE_INPUT_KEYS,
+  HOST_TOOL_TREE_INPUT_KEYS,
+  HOST_TOOL_OUTPUT_NAME_KEYS,
+  HOST_TOOL_STAGE_LINE_MAX_BYTES,
+} from "./host-tool-endpoint.mts";
+import { DEFAULT_HOST_TOOL_STAGE_REPLY_TIMEOUT_MS, type HostToolSession } from "./broker-endpoint.ts";
 import { brokerJsonPath, CONTROL_CONNECT_TIMEOUT_MS } from "./vice-broker-client.ts";
 import { acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
 import { dxaSkipReasonFor, assertDxaRequiredIfEnvSet } from "./dxa-gate.ts";
@@ -101,6 +119,16 @@ const hostTool = (await import(new URL("./resources/host-tool.mjs", import.meta.
   HOST_TOOL_IDS: readonly string[];
   HOST_TOOL_ARG_KEYS: Readonly<Record<string, readonly string[]>>;
   HOST_TOOL_PATH_ARG_KEYS: Readonly<Record<string, readonly string[]>>;
+  // Phase 65, plan 65-03 (D-03/D-04): the tree/output-name classification
+  // tables -- the SERVER side of the same two-sided census
+  // host-tool-endpoint.mts's own HOST_TOOL_TREE_INPUT_KEYS/
+  // HOST_TOOL_OUTPUT_NAME_KEYS mirror.
+  HOST_TOOL_TREE_ARG_KEYS: Readonly<Record<string, readonly string[]>>;
+  HOST_TOOL_OUTPUT_NAME_ARG_KEYS: Readonly<Record<string, readonly string[]>>;
+  bindStagedInputs: (
+    raw: unknown,
+    lookup: { fileHandle: (handle: string) => string | undefined; treeHandle: (handle: string) => string | undefined },
+  ) => { ok: true; request: { tool: string; args: Record<string, unknown> } } | { ok: false; message: string };
   // 34-09 (CR-04): the server-side per-tool budget table and its resolver.
   HOST_TOOL_TIMEOUT_MS: Readonly<Record<string, number>>;
   hostToolTimeoutMs: (tool: string, override?: number) => number;
@@ -130,7 +158,7 @@ const hostTool = (await import(new URL("./resources/host-tool.mjs", import.meta.
     // own doc comment) -- threaded into the HostToolLocator runHostTool()
     // builds internally, so a case can point resolution at a scratch
     // prerequisites.json (DECL-03 non-vacuity) without a mocking library.
-    deps: { repoRoot: string; log?: (line: string) => void; timeoutMs?: number; here?: string },
+    deps: { repoRoot: string; log?: (line: string) => void; timeoutMs?: number; here?: string; projectRoot?: string; clearDeclaredOutputs?: boolean },
   ) => Promise<
     | { ok: true; tool: string; exitStatus: number | null; results: Array<{ path: string; sha256: string; byteLength: number }>; stderrTail: string }
     | { ok: false; message: string }
@@ -138,6 +166,9 @@ const hostTool = (await import(new URL("./resources/host-tool.mjs", import.meta.
 };
 const {
   normaliseHostToolRequest,
+  bindStagedInputs,
+  HOST_TOOL_TREE_ARG_KEYS,
+  HOST_TOOL_OUTPUT_NAME_ARG_KEYS,
   resolveWorkspacePath,
   buildHostToolArgv,
   runHostTool,
@@ -4078,4 +4109,219 @@ test('petcat.decode: no wire-selectable BASIC dialect field -- HOST_TOOL_ARG_KEY
     false,
     'HOST_TOOL_ARG_KEYS["petcat.decode"] must carry no dialect-selecting key -- the dialect is fixed server-side (D-24)',
   );
+});
+
+// ---------------------------------------------------------------------------
+// Phase 65, plan 65-03, Task 1 (SEAM-01/SEAM-03, D-03/D-04): every input kind
+// binds by handle on both sides, with a two-sided census. Test 6 (the ACME
+// harness case: a source that `!source`s a subdirectory file and uses an
+// `-I` tree) lives in host-tool-endpoint.test.ts -- it exercises the CLIENT
+// side of this seam end to end through a real harness broker, not this
+// file's own direct `runHostTool()` calls.
+// ---------------------------------------------------------------------------
+
+test("Phase 65-03 Task 1 Test 1: HOST_TOOL_PATH_ARG_KEYS minus {outDir, sourceDir} equals the union of the client's file/tree/output-name keys, with no key in two classes; the broker's tree/output-name tables equal the client mirrors, in both directions", () => {
+  for (const tool of HOST_TOOL_IDS) {
+    const pathKeys = new Set(HOST_TOOL_PATH_ARG_KEYS[tool]!.filter((k) => k !== "outDir" && k !== "sourceDir"));
+    const fileKeys = new Set(HOST_TOOL_FILE_INPUT_KEYS[tool] ?? []);
+    const treeKeysClient = new Set(HOST_TOOL_TREE_INPUT_KEYS[tool] ?? []);
+    const outputNameKeysClient = new Set(HOST_TOOL_OUTPUT_NAME_KEYS[tool] ?? []);
+
+    const union = new Set<string>([...fileKeys, ...treeKeysClient, ...outputNameKeysClient]);
+    assert.deepEqual(
+      [...union].sort(),
+      [...pathKeys].sort(),
+      `${tool}: the client's file+tree+output-name keys must equal HOST_TOOL_PATH_ARG_KEYS minus outDir/sourceDir, in both directions`,
+    );
+
+    for (const key of fileKeys) {
+      assert.ok(!treeKeysClient.has(key), `${tool}.${key}: cannot be classified as BOTH a file key and a tree key`);
+      assert.ok(!outputNameKeysClient.has(key), `${tool}.${key}: cannot be classified as BOTH a file key and an output-name key`);
+    }
+    for (const key of treeKeysClient) {
+      assert.ok(!outputNameKeysClient.has(key), `${tool}.${key}: cannot be classified as BOTH a tree key and an output-name key`);
+    }
+
+    const treeKeysServer = new Set(HOST_TOOL_TREE_ARG_KEYS[tool] ?? []);
+    const outputNameKeysServer = new Set(HOST_TOOL_OUTPUT_NAME_ARG_KEYS[tool] ?? []);
+    assert.deepEqual([...treeKeysServer].sort(), [...treeKeysClient].sort(), `${tool}: the broker's HOST_TOOL_TREE_ARG_KEYS must equal the client's HOST_TOOL_TREE_INPUT_KEYS`);
+    assert.deepEqual(
+      [...outputNameKeysServer].sort(),
+      [...outputNameKeysClient].sort(),
+      `${tool}: the broker's HOST_TOOL_OUTPUT_NAME_ARG_KEYS must equal the client's HOST_TOOL_OUTPUT_NAME_KEYS`,
+    );
+  }
+});
+
+test("Phase 65-03 Task 1 Test 2: bindStagedInputs maps acme includes (tree handles) to in/<idx>, ghidra scriptPath (one tree handle) to in/<idx>, and ghidra exportPath (a name) to out/<name>; refuses an unsafe exportPath by name", () => {
+  const lookup = {
+    fileHandle: (handle: string) => (handle === "file-handle" ? "in/0/source.a" : undefined),
+    treeHandle: (handle: string) => {
+      if (handle === "tree-handle-0") return "in/0";
+      if (handle === "tree-handle-1") return "in/1";
+      return undefined;
+    },
+  };
+
+  const includesResult = bindStagedInputs({ tool: "acme.build", args: { source: "file-handle", includes: ["tree-handle-0", "tree-handle-1"] } }, lookup);
+  assert.equal(includesResult.ok, true, includesResult.ok ? "" : includesResult.message);
+  if (includesResult.ok) {
+    assert.deepEqual(includesResult.request.args.includes, ["in/0", "in/1"], "each includes[] tree handle must map to its own in/<idx> directory");
+  }
+
+  const ghidraBaseArgs = { runId: "r", importPath: "file-handle", processor: "6502:LE:16:default", importRoute: "flat64k" };
+
+  const scriptPathResult = bindStagedInputs({ tool: "ghidra.analyze", args: { ...ghidraBaseArgs, scriptPath: "tree-handle-0" } }, lookup);
+  assert.equal(scriptPathResult.ok, true, scriptPathResult.ok ? "" : scriptPathResult.message);
+  if (scriptPathResult.ok) {
+    assert.equal(scriptPathResult.request.args.scriptPath, "in/0", "a single scriptPath tree handle must map to its own in/<idx> directory");
+  }
+
+  const exportPathResult = bindStagedInputs({ tool: "ghidra.analyze", args: { ...ghidraBaseArgs, exportPath: "classify.json" } }, lookup);
+  assert.equal(exportPathResult.ok, true, exportPathResult.ok ? "" : exportPathResult.message);
+  if (exportPathResult.ok) {
+    assert.equal(exportPathResult.request.args.exportPath, "out/classify.json", "exportPath must rewrite to out/<name>, never bind to a handle");
+  }
+
+  let executed = 0;
+  for (const bad of ["a/b", "..", "", "a\u0000b"]) {
+    const refused = bindStagedInputs({ tool: "ghidra.analyze", args: { ...ghidraBaseArgs, exportPath: bad } }, lookup);
+    assert.equal(refused.ok, false, `exportPath ${JSON.stringify(bad)} must be refused`);
+    if (!refused.ok) assert.match(refused.message, /exportPath/, `refusal for ${JSON.stringify(bad)} must name "exportPath"`);
+    executed++;
+  }
+  assert.equal(executed, 4, "non-vacuity: every unsafe exportPath candidate must have been exercised");
+});
+
+test("Phase 65-03 Task 1 Test 3: bindStagedInputs refuses outDir and sourceDir by name -- results land under the client's own .c64-re-tools/<kind>/", () => {
+  // Every OTHER key on the same request must resolve, so the outDir/
+  // sourceDir refusal fires first rather than being masked by an unrelated
+  // "unknown upload handle" refusal for some other key on the same object.
+  const lookup = { fileHandle: () => "in/0/bound-file", treeHandle: () => "in/0" };
+  let executed = 0;
+  for (const tool of HOST_TOOL_IDS) {
+    const pathKeys = HOST_TOOL_PATH_ARG_KEYS[tool]!;
+    for (const key of ["outDir", "sourceDir"] as const) {
+      if (!pathKeys.includes(key)) continue;
+      const baseArgs = HOST_TOOL_MINIMAL_VALID_ARGS[tool]();
+      const result = bindStagedInputs({ tool, args: { ...baseArgs, [key]: "some-handle" } }, lookup);
+      assert.equal(result.ok, false, `${tool}.${key} must be refused on the fixed-endpoint route`);
+      if (!result.ok) {
+        assert.match(result.message, /\.c64-re-tools\/<kind>\//, `${tool}.${key} refusal must name the client's own .c64-re-tools/<kind>/ directory`);
+      }
+      executed++;
+    }
+  }
+  assert.ok(executed > 0, "non-vacuity: at least one tool must declare outDir or sourceDir");
+});
+
+test("Phase 65-03 Task 1 Test 4: with clearDeclaredOutputs true, a stale output already on disk before the spawn is not reported when the tool fails to write it", async () => {
+  await withTempDir(async (dir) => {
+    writeFileSync(join(dir, "a.a"), "; test source\n", "utf8");
+
+    const successAcme = writeFakeAcme(dir, "utf8");
+    let stalePath = "";
+    await withFakeAcme(successAcme, async () => {
+      const response = await runHostTool({ tool: "acme.build", args: { source: "a.a", noReport: true } }, { repoRoot: dir });
+      assert.equal(response.ok, true, response.ok ? "" : JSON.stringify(response));
+      if (!response.ok) return;
+      assert.equal(response.results.length, 1, "the first, successful run must have produced exactly one output");
+      stalePath = response.results[0]!.path;
+      assert.ok(existsSync(stalePath), "the first run's own output must genuinely exist on disk before the second run");
+    });
+
+    const failAcme = writeFakeAcme(dir, "nonzero");
+    await withFakeAcme(failAcme, async () => {
+      const response = await runHostTool({ tool: "acme.build", args: { source: "a.a", noReport: true } }, { repoRoot: dir, clearDeclaredOutputs: true });
+      assert.equal(response.ok, true, response.ok ? "" : JSON.stringify(response));
+      if (!response.ok) return;
+      assert.equal(response.results.length, 0, "with clearDeclaredOutputs true, the stale prior output must not be reported when this run failed to write it");
+      assert.ok(!existsSync(stalePath), "the stale output file itself must have been removed before this run's own spawn");
+    });
+  });
+});
+
+test("Phase 65-03 Task 1 Test 5: with projectRoot supplied, resolveGhidraProject() receives projectRoot, not repoRoot", async () => {
+  await withTempDir(async (scratchDir) => {
+    await withTempDir(async (projectDir) => {
+      writeFileSync(join(scratchDir, "x.bin"), "tiny\n", "utf8");
+      const previous = process.env.GHIDRA_HOME;
+      delete process.env.GHIDRA_HOME;
+      try {
+        const runId = "t65-03-t1-t5";
+        const response = await runHostTool(
+          { tool: "ghidra.analyze", args: { runId, importPath: "x.bin", processor: "6502:LE:16:default", importRoute: "flat64k" } },
+          { repoRoot: scratchDir, projectRoot: projectDir },
+        );
+        // GHIDRA_HOME is unset, so the run itself refuses at the launcher
+        // lookup -- but resolveGhidraProject() (and its own
+        // ensureGhidraRunsHandle() precondition) already ran by then, and
+        // its own runs-root materialisation is the observable proof of
+        // WHICH root it resolved against. The leaf run directory itself is
+        // best-effort cleaned up on this refusal path (runHostTool()'s own
+        // `!built.ok` branch), so this asserts the RUNS ROOT, one level up,
+        // which that cleanup never touches.
+        assert.equal(response.ok, false, "GHIDRA_HOME is unset, so this run must refuse at the launcher lookup");
+        assert.ok(existsSync(ghidraRunsRealRoot(projectDir)), `expected the Ghidra runs root to materialise under projectRoot (${ghidraRunsRealRoot(projectDir)})`);
+        assert.ok(!existsSync(ghidraRunsRealRoot(scratchDir)), `must NOT have materialised a Ghidra runs root under repoRoot (${ghidraRunsRealRoot(scratchDir)})`);
+      } finally {
+        if (previous === undefined) delete process.env.GHIDRA_HOME;
+        else process.env.GHIDRA_HOME = previous;
+      }
+    });
+  });
+});
+
+test("Phase 65-03 Task 1 Test 7 (RESEARCH Pitfall 4): for every HOST_TOOL_IDS member, the endpoint route's run-reply wait equals hostToolRequestTimeoutMs(tool) and exceeds host-tool.mts's own budget; the stage-reply wait equals DEFAULT_HOST_TOOL_STAGE_REPLY_TIMEOUT_MS, which bounds no tool budget", async () => {
+  for (const tool of HOST_TOOL_IDS) {
+    await withTempDir(async (dir) => {
+      // Fixture files matching every name HOST_TOOL_MINIMAL_VALID_ARGS uses,
+      // across every tool id -- the endpoint route's own client-side stat()
+      // calls must succeed before this call ever reaches the (faked) dial.
+      for (const name of ["a.a", "a.bin", "x.bin", "x.d64", "x.prg", "Pre.java", "Post.java"]) {
+        writeFileSync(join(dir, name), "tiny\n", "utf8");
+      }
+
+      const recorded: { stageTimeoutMs?: number; runTimeoutMs?: number } = {};
+      const fakeSession: HostToolSession = {
+        async stage(files, replyTimeoutMs) {
+          recorded.stageTimeoutMs = replyTimeoutMs;
+          return { ok: true, request: "fake-request", trees: [], files: files.map((_, i) => `file-${i}`) };
+        },
+        async run(toolName, _toolArgs, _request, replyTimeoutMs) {
+          recorded.runTimeoutMs = replyTimeoutMs;
+          return { ok: true, response: { ok: true, tool: toolName, exitStatus: 0, results: [], stderrTail: "" } };
+        },
+        close() {},
+      };
+
+      const args = HOST_TOOL_MINIMAL_VALID_ARGS[tool]();
+      const result = await runHostToolOverEndpoint(tool, args, {
+        toolsRoot: join(dir, "tools-root"),
+        baseDir: dir,
+        dialSession: async () => ({ ok: true, session: fakeSession }),
+        // The fake run() reply above declares an EMPTY results[], so no
+        // download ever happens -- this stub only ever sees "upload"
+        // requests, one per staged manifest entry. Computed from the real
+        // local bytes so a real digest still flows through, with no socket.
+        transferFile: async (request) => {
+          if (request.direction !== "upload") return { ok: false, reason: "Test 7's fake transferFile only expects uploads" };
+          const bytes = readFileSync(request.sourcePath);
+          return { ok: true, byteLength: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") };
+        },
+      });
+      assert.equal(result.ok, true, result.ok ? "" : `${tool}: ${(result as { message: string }).message}`);
+
+      assert.equal(
+        recorded.stageTimeoutMs,
+        DEFAULT_HOST_TOOL_STAGE_REPLY_TIMEOUT_MS,
+        `${tool}: the stage-reply wait must equal DEFAULT_HOST_TOOL_STAGE_REPLY_TIMEOUT_MS (bounds no tool budget)`,
+      );
+      assert.equal(recorded.runTimeoutMs, endpointHostToolRequestTimeoutMs(tool), `${tool}: the run-reply wait must equal hostToolRequestTimeoutMs(tool)`);
+      assert.ok(
+        recorded.runTimeoutMs! > hostToolTimeoutMs(tool),
+        `${tool}: the run-reply wait (${recorded.runTimeoutMs}) must strictly exceed host-tool.mts's own budget (${hostToolTimeoutMs(tool)})`,
+      );
+    });
+  }
 });

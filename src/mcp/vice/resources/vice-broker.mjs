@@ -111,7 +111,7 @@ import { brokerStateDir, brokerConfigScratchDir, brokerStagingDir } from "./brok
 // handleFileTransfer() below are this module's own callers; neither
 // re-implements the directory layout, the handle minting or the byte
 // movement broker-transfer.mts already owns.
-import { stageFileSlot, resolveStagedFile, markTransferInFlight, clearTransferInFlight, clearStagingForSession, sendPayloadFromFile, receivePayloadToFile, stageHostToolRequest, listHostToolUploads, registerHostToolResult, } from "./broker-transfer.mjs";
+import { stageFileSlot, resolveStagedFile, markTransferInFlight, clearTransferInFlight, clearStagingForSession, sendPayloadFromFile, receivePayloadToFile, stageHostToolRequest, listHostToolUploads, registerHostToolResult, resolveHostToolTree, } from "./broker-transfer.mjs";
 const USAGE = "usage: vice-broker.mjs [--repo-root <path>] [--state-dir <path>] [--check-container] [--dry-run]";
 /** `--repo-root` is now OPTIONAL (BROKER-01/BROKER-06, D-13): the per-project
  * binding it used to enforce is exactly what a machine-level broker removes,
@@ -1030,12 +1030,17 @@ function redactScratchRoot(value, scratchRoot) {
  * scratch-relative path via `bindStagedInputs()` (host-tool.mts), runs
  * `runHostTool()` against the REQUEST'S OWN scratch root (never this
  * broker's own `--repo-root` -- the assumption_delta_decision this plan
- * records), then rewrites the response: every `results[]` entry becomes a
- * download handle via `registerHostToolResult()` (D-07's first live
- * producer), and every remaining string field is scrubbed of the scratch
- * root (D-10, T-65-06). Never rejects -- every failure resolves
- * `{ ok: false, message }`, mirroring `runHostTool()`'s own contract. */
-export async function handleHostToolRun(requestKey, raw, deps = {}) {
+ * records) for `repoRoot`, but `projectRoot` (Phase 65, plan 65-03) IS this
+ * broker's own `--repo-root` (`args.repoRoot` at the call site below), so
+ * Ghidra's per-run project and the `tools.json` locator layer keep resolving
+ * exactly where they always have. `clearDeclaredOutputs: true` generalises
+ * the c1541.read-only stale-output unlink to every tool (D-08). Then
+ * rewrites the response: every `results[]` entry becomes a download handle
+ * via `registerHostToolResult()` (D-07's first live producer), and every
+ * remaining string field is scrubbed of the scratch root (D-10, T-65-06).
+ * Never rejects -- every failure resolves `{ ok: false, message }`,
+ * mirroring `runHostTool()`'s own contract. */
+export async function handleHostToolRun(requestKey, raw, projectRoot, deps = {}) {
     const uploads = listHostToolUploads(requestKey);
     for (const upload of uploads) {
         if (!existsSync(upload.path)) {
@@ -1043,6 +1048,13 @@ export async function handleHostToolRun(requestKey, raw, deps = {}) {
         }
     }
     const scratchRoot = join(brokerStagingDir(), requestKey);
+    // Phase 65 (plan 65-03, D-03): created BEFORE the run, unconditionally --
+    // ghidra.analyze's own exportPath output-name binding (host-tool.mts's
+    // bindStagedInputs()) resolves to "out/<name>" under this directory, and
+    // `resolveWorkspacePath()`'s own ancestor-realpath walk requires SOME
+    // existing ancestor to walk from. A tool with no output-name key stages
+    // an empty, harmless directory here.
+    mkdirSync(join(scratchRoot, "out"), { recursive: true });
     const lookup = {
         fileHandle: (handle) => {
             const resolved = resolveStagedFile(handle);
@@ -1050,12 +1062,23 @@ export async function handleHostToolRun(requestKey, raw, deps = {}) {
                 return undefined;
             return relative(scratchRoot, resolved.entry.path);
         },
+        // Phase 65 (plan 65-03, D-04): a tree handle resolves to its own tree
+        // INDEX (resolveHostToolTree()), never a path -- the relative directory
+        // it names is always `in/<tree>`, the SAME layout
+        // stageHostToolRequest() (broker-transfer.mts) already wrote every
+        // manifest entry for that tree under.
+        treeHandle: (handle) => {
+            const resolved = resolveHostToolTree(requestKey, handle);
+            if (!resolved.ok)
+                return undefined;
+            return join("in", String(resolved.tree));
+        },
     };
     const bound = bindStagedInputs(raw, lookup);
     if (!bound.ok) {
         return { ok: false, message: bound.message };
     }
-    const response = await runHostTool(bound.request, { repoRoot: scratchRoot, log: deps.log });
+    const response = await runHostTool(bound.request, { repoRoot: scratchRoot, projectRoot, clearDeclaredOutputs: true, log: deps.log });
     const responseObj = response;
     if (!response.ok) {
         const message = typeof responseObj.message === "string" ? responseObj.message : "vice: the host tool refused";
@@ -1980,7 +2003,7 @@ async function run(args) {
             // only the request's own per-request scratch subtree under
             // brokerStagingDir(), never this broker's acquire/release/recycle map.
             onHostToolStage: (files) => handleHostToolStage(files),
-            onHostToolRun: (requestKey, raw) => handleHostToolRun(requestKey, raw, {
+            onHostToolRun: (requestKey, raw) => handleHostToolRun(requestKey, raw, args.repoRoot, {
                 log: (line) => process.stderr.write(`${line}\n`),
             }),
             onHostToolEnd: (requestKey) => handleHostToolEnd(requestKey),

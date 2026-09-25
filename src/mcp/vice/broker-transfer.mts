@@ -621,7 +621,14 @@ function stagingSlotKey(grantId: string, slot: string): string {
  * exist without one. `label` names the field in the refusal message; the
  * refusal never echoes the offending value itself (T-64-13's own posture
  * for a handle refusal, applied here too). */
-function refuseUnsafeSegment(candidate: string, label: string): { ok: true } | { ok: false; reason: string } {
+// Phase 65 (SEAM-03, D-03): exported so host-tool.mts's own bindStagedInputs()
+// (a container-side... no, HOST-side module, compiled to resources/host-tool.mjs)
+// can validate a bare OUTPUT NAME (e.g. ghidra.analyze's exportPath) with the
+// SAME refuse-not-sanitise segment check a monitor upload's own slot already
+// gets, rather than duplicating this ordered-checks shape a second time.
+// Value-imported as "./broker-transfer.mjs" -- the same host-bound-sibling
+// convention host-tool.mts already uses for ghidra-project.mjs/tool-location.mjs.
+export function refuseUnsafeSegment(candidate: string, label: string): { ok: true } | { ok: false; reason: string } {
   if (candidate.includes("\u0000")) return { ok: false, reason: `vice: ${label} contains a NUL byte` };
   if (candidate.length === 0) return { ok: false, reason: `vice: ${label} is empty` };
   if (candidate === "." || candidate === "..") return { ok: false, reason: `vice: ${label} is '${candidate}'` };

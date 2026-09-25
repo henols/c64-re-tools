@@ -152,6 +152,13 @@ import { resolvedBackend } from "./backend-detect.mjs";
 // SECOND of Phase 59 `D-02`'s three coexisting `$PATH`-walk copies to
 // collapse (plan 60-01 collapsed the first, inside `backend-detect.mts`).
 import { resolveTool, remedyTextsFor, resolveOnPath } from "./tool-location.mjs";
+// This module's FOURTH sibling import, the SAME value-import-of-a-compiled-
+// artifact convention every import above already uses. Phase 65 (SEAM-01,
+// D-03): bindStagedInputs()'s own output-name binding (below) validates a
+// bare output name (e.g. ghidra.analyze's exportPath) with the SAME
+// refuse-not-sanitise segment check broker-transfer.mts's own staging slots
+// already get, rather than duplicating that ordered-checks shape here.
+import { refuseUnsafeSegment } from "./broker-transfer.mjs";
 // This module's own directory, used ONLY to compute the vendored dxa
 // binary's fixed path. Never an environment-variable override: dxa is
 // vendored AND built by this project (unlike ACME_BIN/GHIDRA_HOME, which
@@ -355,11 +362,59 @@ function describe(value) {
 // ---------------------------------------------------------------------------
 /** The path-bearing wire keys this route refuses BY NAME rather than binds
  * to an uploaded handle -- `outDir`/`sourceDir` because results now land
- * under the client's own per-kind directory (D-06/D-08), the remaining
- * three because this plan's tracer supports exactly one uploaded file per
- * key and neither a path LIST (`includes`) nor the not-yet-wired
- * `scriptPath`/`exportPath` fit that shape yet. */
-const HOST_TOOL_REFUSED_STAGED_INPUT_KEYS = new Set(["outDir", "sourceDir", "includes", "scriptPath", "exportPath"]);
+ * under the client's own per-kind directory (D-06/D-08); there is no
+ * broker-side output directory for a caller to name. Every OTHER
+ * path-bearing key now binds to something (a file handle, a tree handle, or
+ * an output name), per `HOST_TOOL_TREE_ARG_KEYS`/`HOST_TOOL_OUTPUT_NAME_ARG_KEYS`
+ * below (Phase 65, plan 65-03, D-03/D-04). */
+const HOST_TOOL_REFUSED_STAGED_INPUT_KEYS = new Set(["outDir", "sourceDir"]);
+/** Phase 65 (plan 65-03, D-04): the frozen per-tool table of path-bearing
+ * keys this route binds to a DIRECTORY TREE handle rather than a single
+ * FILE handle -- `acme.build`'s `includes` (an array of tree handles, one
+ * per `-I` directory) and `ghidra.analyze`'s `scriptPath` (Ghidra's own
+ * `-scriptPath` flag names a directory, never a file). Every other tool id
+ * carries no tree-bearing key at all. Mirrors `host-tool-endpoint.mts`'s own
+ * `HOST_TOOL_TREE_INPUT_KEYS` (the CLIENT side of this same seam) -- the two
+ * tables are independently declared (this module is host-bound and never
+ * imports a container-side sibling) but must agree in practice;
+ * `host-tool.test.ts`'s own both-directions census is what proves they do. */
+export const HOST_TOOL_TREE_ARG_KEYS = Object.freeze(Object.assign(Object.create(null), {
+    "acme.build": Object.freeze(["includes"]),
+    "ghidra.analyze": Object.freeze(["scriptPath"]),
+    "oracle.probe": Object.freeze([]),
+    "oracle.run": Object.freeze([]),
+    "dxa.disassemble": Object.freeze([]),
+    "ghidra.installExtension": Object.freeze([]),
+    "c1541.bam": Object.freeze([]),
+    "c1541.dir": Object.freeze([]),
+    "c1541.entry": Object.freeze([]),
+    "c1541.chain": Object.freeze([]),
+    "c1541.read": Object.freeze([]),
+    "petcat.decode": Object.freeze([]),
+}));
+/** Phase 65 (plan 65-03, D-03): the frozen per-tool table of path-bearing
+ * keys this route binds to a bare OUTPUT NAME rather than an upload handle
+ * -- `ghidra.analyze`'s `exportPath` names a file the POST-SCRIPT WRITES,
+ * never one the caller uploads (D-03's own "exportPath is an output, not an
+ * input" constraint). The value bound here is `out/<name>`, a
+ * scratch-relative path `runHostTool()`'s own (unchanged)
+ * `resolveWorkspacePath()` site resolves under `<scratch>/out/`, which
+ * `vice-broker.mts`'s `handleHostToolRun()` creates before every run. Mirrors
+ * `host-tool-endpoint.mts`'s own `HOST_TOOL_OUTPUT_NAME_KEYS`. */
+export const HOST_TOOL_OUTPUT_NAME_ARG_KEYS = Object.freeze(Object.assign(Object.create(null), {
+    "acme.build": Object.freeze([]),
+    "ghidra.analyze": Object.freeze(["exportPath"]),
+    "oracle.probe": Object.freeze([]),
+    "oracle.run": Object.freeze([]),
+    "dxa.disassemble": Object.freeze([]),
+    "ghidra.installExtension": Object.freeze([]),
+    "c1541.bam": Object.freeze([]),
+    "c1541.dir": Object.freeze([]),
+    "c1541.entry": Object.freeze([]),
+    "c1541.chain": Object.freeze([]),
+    "c1541.read": Object.freeze([]),
+    "petcat.decode": Object.freeze([]),
+}));
 /**
  * Rewrites a `host_tool_run` request's path-bearing wire keys from upload
  * handles into scratch-relative paths, per `HOST_TOOL_PATH_ARG_KEYS[tool]`.
@@ -372,6 +427,15 @@ const HOST_TOOL_REFUSED_STAGED_INPUT_KEYS = new Set(["outDir", "sourceDir", "inc
  * does not itself call `resolveWorkspacePath()`; `runHostTool()`'s own
  * per-tool branches do that, unchanged, against whatever this function
  * wrote into `args`.
+ *
+ * Three binding shapes, per key classification (Phase 65, plan 65-03,
+ * D-03/D-04): a plain path key (absent from BOTH tables below) binds a
+ * single upload handle via `lookup.fileHandle()`; a `HOST_TOOL_TREE_ARG_KEYS`
+ * key binds EITHER a single tree handle (`scriptPath`) or an ARRAY of tree
+ * handles (`includes`) via `lookup.treeHandle()`, one call per element; a
+ * `HOST_TOOL_OUTPUT_NAME_ARG_KEYS` key carries no handle at all -- it is a
+ * bare output NAME, refused-not-sanitised through `refuseUnsafeSegment()`
+ * (broker-transfer.mts) and rewritten to `out/<name>`.
  */
 export function bindStagedInputs(raw, lookup) {
     if (!isPlainObject(raw)) {
@@ -388,17 +452,56 @@ export function bindStagedInputs(raw, lookup) {
     }
     const args = { ...(argsRaw ?? {}) };
     const pathKeys = HOST_TOOL_PATH_ARG_KEYS[tool] ?? [];
+    const treeKeys = HOST_TOOL_TREE_ARG_KEYS[tool] ?? [];
+    const outputNameKeys = HOST_TOOL_OUTPUT_NAME_ARG_KEYS[tool] ?? [];
     for (const key of pathKeys) {
         if (!(key in args))
             continue;
         if (HOST_TOOL_REFUSED_STAGED_INPUT_KEYS.has(key)) {
-            if (key === "outDir" || key === "sourceDir") {
-                return {
-                    ok: false,
-                    message: `bindStagedInputs: "${key}" is not accepted on the fixed-endpoint route -- results now land under the client's own .c64-re-tools/<kind>/ directory`,
-                };
+            return {
+                ok: false,
+                message: `bindStagedInputs: "${key}" is not accepted on the fixed-endpoint route -- results now land under the client's own .c64-re-tools/<kind>/ directory`,
+            };
+        }
+        if (treeKeys.includes(key)) {
+            const rawValue = args[key];
+            if (Array.isArray(rawValue)) {
+                const boundEntries = [];
+                for (const element of rawValue) {
+                    if (typeof element !== "string" || element === "") {
+                        return { ok: false, message: `bindStagedInputs: each entry of "${key}" must be a non-empty string tree handle; got ${describe(element)}` };
+                    }
+                    const boundPath = lookup.treeHandle(element);
+                    if (boundPath === undefined) {
+                        return { ok: false, message: `bindStagedInputs: unknown tree handle for "${key}"` };
+                    }
+                    boundEntries.push(boundPath);
+                }
+                args[key] = boundEntries;
             }
-            return { ok: false, message: `bindStagedInputs: "${key}" is not accepted on the fixed-endpoint route` };
+            else {
+                if (typeof rawValue !== "string" || rawValue === "") {
+                    return { ok: false, message: `bindStagedInputs: "${key}" must be a non-empty string tree handle; got ${describe(rawValue)}` };
+                }
+                const boundPath = lookup.treeHandle(rawValue);
+                if (boundPath === undefined) {
+                    return { ok: false, message: `bindStagedInputs: unknown tree handle for "${key}"` };
+                }
+                args[key] = boundPath;
+            }
+            continue;
+        }
+        if (outputNameKeys.includes(key)) {
+            const value = args[key];
+            if (typeof value !== "string" || value === "") {
+                return { ok: false, message: `bindStagedInputs: "${key}" must be a non-empty string output name; got ${describe(value)}` };
+            }
+            const nameCheck = refuseUnsafeSegment(value, key);
+            if (!nameCheck.ok) {
+                return { ok: false, message: `bindStagedInputs: ${nameCheck.reason}` };
+            }
+            args[key] = `out/${value}`;
+            continue;
         }
         const value = args[key];
         if (typeof value !== "string" || value === "") {
@@ -2117,13 +2220,24 @@ export async function runHostTool(raw, deps) {
     if (request.tool === "oracle.run")
         return runOracleRun(request.args, deps);
     const repoRootAbs = resolvePath(deps.repoRoot);
-    // Built ONCE, from the already-computed repoRootAbs (PD-06), and passed as
-    // the fourth argument to every buildHostToolArgv() call site below plus
+    // Phase 65 (plan 65-03, assumption_delta_decision): `projectRoot` defaults
+    // to `repoRoot` -- every pre-65-03 caller (the legacy control-plane route,
+    // the direct host route) supplies `repoRoot` alone, so this resolves to
+    // the SAME value `repoRootAbs` above does for them, unchanged. Only the
+    // fixed-endpoint route's own `handleHostToolRun()` (vice-broker.mts) ever
+    // supplies a DIFFERENT `projectRoot` -- see `HostToolDeps.projectRoot`'s
+    // own doc comment for why (Ghidra's project cannot move into the
+    // per-request scratch).
+    const projectRootAbs = resolvePath(deps.projectRoot ?? deps.repoRoot);
+    // Built ONCE, from the already-computed projectRootAbs (PD-06), and passed
+    // as the fourth argument to every buildHostToolArgv() call site below plus
     // findAcmeLib() and ghidra.installExtension's own pre-materialisation
     // resolution -- one locator, not a per-branch re-derivation. `here` is
     // `deps.here`, always undefined in production (HostToolDeps.here's own
-    // doc comment).
-    const hostToolLocator = { toolsDir: join(repoRootAbs, ".c64-re-tools"), projectRoot: repoRootAbs, here: deps.here };
+    // doc comment). Deliberately `projectRootAbs`, NOT `repoRootAbs` -- the
+    // `tools.json` locator layer (toolsDir/projectRoot) must keep reading the
+    // SAME location it always has, never the per-request scratch.
+    const hostToolLocator = { toolsDir: join(projectRootAbs, ".c64-re-tools"), projectRoot: projectRootAbs, here: deps.here };
     let built;
     let acmeLib = null;
     // resolveGhidraProject() (below, in the ghidra.analyze branch) RESERVES
@@ -2233,7 +2347,11 @@ export async function runHostTool(raw, deps) {
                 return { ok: false, message: dataRangesPathResult.message };
             dataRangesPathResolved = dataRangesPathResult.path;
         }
-        const projectResolved = resolveGhidraProject({ repoRoot: repoRootAbs, runId: request.args.runId });
+        // Phase 65 (plan 65-03): projectRootAbs, never repoRootAbs -- the Ghidra
+        // project's own per-run directory always lives under the broker's own
+        // --repo-root, never the per-request scratch (HostToolDeps.projectRoot's
+        // own doc comment).
+        const projectResolved = resolveGhidraProject({ repoRoot: projectRootAbs, runId: request.args.runId });
         if (!projectResolved.ok)
             return { ok: false, message: projectResolved.message };
         ghidraReservedProjectLocation = projectResolved.projectLocation;
@@ -2442,6 +2560,24 @@ export async function runHostTool(raw, deps) {
             // Best-effort only -- if the unlink itself fails for some other
             // reason (e.g. permissions), the spawn below proceeds unchanged and
             // classifyC1541ReadOutput() still digests whatever c1541 produces.
+        }
+    }
+    // Phase 65 (plan 65-03, D-08): the fixed-endpoint route's own
+    // generalisation of the c1541.read-only unlink immediately above -- EVERY
+    // declared output, for EVERY tool, best-effort unlinked before the spawn,
+    // so a stale file already sitting at a declared output path can never be
+    // mistaken for a fresh success when the tool fails to (re)write it. Only
+    // set true by vice-broker.mts's handleHostToolRun(); every other caller
+    // leaves this undefined and keeps relying on the c1541.read-only unlink
+    // above alone, unchanged.
+    if (deps.clearDeclaredOutputs) {
+        for (const outputPath of built.outputs) {
+            try {
+                rmSync(outputPath, { force: true });
+            }
+            catch {
+                // Best-effort only, exactly like the c1541.read-only unlink above.
+            }
         }
     }
     const spawnResult = await spawnHostTool(built.toolPath, built.argv, timeoutMs, spawnEnv, built.cwd);
