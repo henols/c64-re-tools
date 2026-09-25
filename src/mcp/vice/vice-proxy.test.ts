@@ -7,9 +7,13 @@
 // unconditionally, the instant VICE_MCP_URL is set (it must claim the
 // monitor socket through a broker-managed instance before dialling
 // anything). The successful-call route today is one of two: this file's own
-// leading tracer proves a real proxy-local anno_* tool call (no stand-in, no
-// broker, no emulator) round-trips end to end; every broker-mediated test
-// below still spawns the SAME in-process node:http stand-in
+// leading tracer proves a real proxy-local tool call -- the test-only
+// fixture tool (VICE_TEST_FIXTURE_TOOL, vice-proxy.ts), gated so it is never
+// wire-visible outside a test process, replacing the anno_* tool call this
+// tracer used to drive before D-13 (plan 65-02) removed the whole family
+// from tools/list -- round-trips end to end with no stand-in, no broker and
+// no emulator; every broker-mediated test below still spawns the SAME
+// in-process node:http stand-in
 // (startStandInServer(), further down this file) but reaches it only
 // through a real acquired broker grant, never through a direct VICE_MCP_URL
 // dial. This is what makes the phase verifiable with the host emulator
@@ -56,19 +60,6 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, readdirSyn
 import { tmpdir, networkInterfaces } from "node:os";
 import { hostPath } from "./hostpath.ts";
 import { repoRoot } from "./repo-root.ts";
-// Plan 11-05: the curated tool surface, imported (not re-hardcoded) so
-// these tests stay correct as the curated set grows or shrinks, rather
-// than drifting the moment a name
-// changes and this file's own copy is not updated in lockstep.
-// Repointed after plan 29-10's merge: `CURATED_ANNO_TOOLS` died with
-// `anno-tools.ts`; `CURATED_ANNO_TOOLS` (anno-tools.ts) is its successor,
-// derived the same way (from ANNO_TOOL_DEFINITIONS) and carrying the renamed
-// anno_* surface.
-import { CURATED_ANNO_TOOLS } from "./anno-tools.ts";
-// The chunking tests below (plan 55-01) seed a real anno_* store rather than
-// dialling the retired HTTP stand-in -- see seedAnnoWorkspace() near the
-// first of those tests for why.
-import { openStore, closeStore, setLabel } from "./anno-store.ts";
 // Read-only import for test assertions only -- this test file does not
 // modify vice-broker-client.ts's own content; ACQUIRE_TIMEOUT_MS (the
 // control-plane client's own acquire deadline, replacing the retiring
@@ -559,14 +550,15 @@ test("harness isolation: startProxy()'s default VICE_BROKER_HOME wins over a sta
 // instance before it ever dials. The old `vice_ping`-through-`startStandInServer()`
 // shape this test used to drive is therefore not a route this proxy has any
 // more; it is not merely stale, it cannot succeed under the code as it
-// ships today. `anno_get_symbols` against a seeded, real `project.annostore`
-// (`seedAnnoWorkspace()`, plan 55-01) crosses the exact same layers a
-// tracer needs to prove -- stdio JSON-RPC framing in, the tools/call
-// override, the proxy's own tool registry, a registered tool's own runner,
-// the result-shape check, and framing back out -- with no emulator, no
-// broker and no stand-in server, MEASURED live at planning time (a spawned
-// child, `CLAUDE_PROJECT_DIR` pointed at a seeded temp workspace, answered
-// `anno_get_symbols` with `isError: false`).
+// ships today. The test-only fixture tool (`vice_test_fixture_result`, gated
+// behind `VICE_TEST_FIXTURE_TOOL` -- see vice-proxy.ts's own header comment
+// for why it replaced `anno_get_symbols` here after D-13, plan 65-02)
+// crosses the exact same layers a tracer needs to prove -- stdio JSON-RPC
+// framing in, the tools/call override, the proxy's own tool registry, a
+// registered tool's own runner, the result-shape check, and framing back
+// out -- with no emulator, no broker and no stand-in server, MEASURED live
+// at planning time (a spawned child, `VICE_TEST_FIXTURE_TOOL=1`, answered
+// `vice_test_fixture_result` with `isError: false`).
 //
 // This tracer deliberately does NOT prove the broker-mediated route (a real
 // broker granting a real emulator instance, then a forwarded stock tool
@@ -575,8 +567,7 @@ test("harness isolation: startProxy()'s default VICE_BROKER_HOME wins over a sta
 // project's manual-only live suite. A tracer that quietly narrowed its own
 // scope without saying so would be worse than one that states the boundary.
 test("tracer: one real tool call round-trips end to end", async () => {
-  const { ws, storePath } = seedAnnoWorkspace(1);
-  const proxy = startProxy({ CLAUDE_PROJECT_DIR: ws });
+  const proxy = startProxy({ VICE_TEST_FIXTURE_TOOL: "1" });
 
   try {
     // 1. initialize -- must echo the requested protocolVersion and declare
@@ -599,26 +590,26 @@ test("tracer: one real tool call round-trips end to end", async () => {
       "initialize result must declare a tools capability"
     );
 
-    // 2. tools/call for anno_get_symbols -- the one real round trip this
-    //    tracer proves: a proxy-local tool, seeded with real content, run
-    //    through the registry and answered whole (the store holds exactly
-    //    one label, well under any chunking cap).
+    // 2. tools/call for the test-only fixture tool -- the one real round
+    //    trip this tracer proves: a proxy-local tool, run through the
+    //    registry and answered whole (one entry is well under any chunking
+    //    cap).
     proxy.send({
       jsonrpc: "2.0",
       id: 2,
       method: "tools/call",
-      params: { name: "anno_get_symbols", arguments: { store: storePath, max_results: 10 } },
+      params: { name: "vice_test_fixture_result", arguments: { count: 1 } },
     });
     const callResp = await proxy.nextMessage();
     assert.equal(callResp.id, 2);
     assert.equal(callResp.jsonrpc, "2.0");
     assert.equal(callResp.result.isError, false, "a successful tool call must report isError: false");
-    assert.equal(callResp.result.content.length, 1, "one label must not trip chunking");
+    assert.equal(callResp.result.content.length, 1, "one entry must not trip chunking");
     assert.equal(callResp.result.content[0].type, "text");
     assert.match(
       callResp.result.content[0].text,
       /label_0_/,
-      "the seeded label this tracer wrote into the store must round-trip back out"
+      "the deterministic entry this tracer asked for must round-trip back out"
     );
 
     // 3. The proxy process must still be alive and answering -- this is the
@@ -628,7 +619,6 @@ test("tracer: one real tool call round-trips end to end", async () => {
     assert.equal(proxy.child.killed, false);
   } finally {
     proxy.child.kill("SIGKILL");
-    rmSync(ws, { recursive: true, force: true });
   }
 });
 
@@ -739,14 +729,15 @@ test("tools/list reads the committed snapshot with no emulator", async () => {
     const resp = await proxy.nextMessage();
     const tools = resp.result.tools;
     // Both fixture tools, PLUS the always-present synthetic
-    // vice_result_continue tool (task 3), vice_recycle (plan 01.3-01),
-    // vice_diagnose (plan 01.3-02), and the 19 curated anno_* tools (plan
-    // 11-05, registered proxy-locally and unconditionally, independent of
-    // any manifest) -- tools/list never omits any synthetic or anno_* tool.
+    // vice_result_continue tool (task 3), vice_recycle (plan 01.3-01), and
+    // vice_diagnose (plan 01.3-02) -- tools/list never omits a synthetic
+    // tool. D-13 (plan 65-02) removed the 25 curated anno_* tools from this
+    // count outright; this proxy process was not started with
+    // VICE_TEST_FIXTURE_TOOL, so the test-only fixture tool is absent too.
     assert.equal(
       tools.length,
-      2 + 3 + CURATED_ANNO_TOOLS.length,
-      "both fixture tools plus all three synthetic tools plus every curated anno_* tool must come back",
+      2 + 3,
+      "both fixture tools plus all three synthetic tools must come back",
     );
 
     const byName = Object.fromEntries(tools.map((t: any) => [t.name, t]));
@@ -800,14 +791,14 @@ test("tools/list survives a missing or corrupt snapshot", async () => {
         const resp = await proxy.nextMessage();
         // "Empty tools array" means empty of MANIFEST-derived tools -- the
         // always-present synthetic tools (vice_result_continue, task 3;
-        // vice_recycle, plan 01.3-01; and vice_diagnose, plan 01.3-02) and
-        // the 19 curated anno_* tools (plan 11-05) are not sourced from the
-        // manifest at all, so a broken manifest can't take any of them down
-        // with it.
+        // vice_recycle, plan 01.3-01; and vice_diagnose, plan 01.3-02) are
+        // not sourced from the manifest at all, so a broken manifest can't
+        // take any of them down with it. D-13 (plan 65-02) removed the 25
+        // curated anno_* tools from this list outright.
         assert.deepEqual(
           resp.result.tools.map((t: any) => t.name),
-          ["vice_result_continue", "vice_recycle", "vice_diagnose", ...CURATED_ANNO_TOOLS],
-          `expected only the synthetic and anno_* tools for ${manifestFile}`
+          ["vice_result_continue", "vice_recycle", "vice_diagnose"],
+          `expected only the synthetic tools for ${manifestFile}`
         );
 
         // The child must still be alive and answer a SUBSEQUENT
@@ -824,7 +815,7 @@ test("tools/list survives a missing or corrupt snapshot", async () => {
 
         proxy.send({ jsonrpc: "2.0", id: 4, method: "tools/list", params: {} });
         const secondList = await proxy.nextMessage();
-        assert.deepEqual(secondList.result.tools.map((t: any) => t.name), ["vice_result_continue", "vice_recycle", "vice_diagnose", ...CURATED_ANNO_TOOLS]);
+        assert.deepEqual(secondList.result.tools.map((t: any) => t.name), ["vice_result_continue", "vice_recycle", "vice_diagnose"]);
 
         assert.equal(proxy.child.exitCode, null, "the proxy process must still be running");
         assert.equal(proxy.child.killed, false);
@@ -919,9 +910,12 @@ test("tools/list's full output matches the manifest exactly (name set, order, sc
   // first inserted: the manifest loop (manifest order, with vice_recycle/
   // vice_diagnose falling wherever the manifest itself places them), then
   // vice_result_continue (the one synthetic still absent from the manifest,
-  // so its key is inserted fresh, after the loop), then the anno_* loop
-  // last. This is asserted, not left silently unstated.
-  const expectedOrder = [...expectedManifestNames, "vice_result_continue", ...CURATED_ANNO_TOOLS];
+  // so its key is inserted fresh, after the loop) last. D-13 (plan 65-02)
+  // deleted the anno_* loop that used to be registered after it; this proxy
+  // process is not started with VICE_TEST_FIXTURE_TOOL, so the test-only
+  // fixture tool never joins this order either. This is asserted, not left
+  // silently unstated.
+  const expectedOrder = [...expectedManifestNames, "vice_result_continue"];
   const manifestSchemaByName: Record<string, unknown> = Object.fromEntries(
     manifest.tools.map((t: any) => [t.name, t.inputSchema])
   );
@@ -941,7 +935,7 @@ test("tools/list's full output matches the manifest exactly (name set, order, sc
     assert.deepEqual(
       new Set(actualNames),
       new Set(expectedOrder),
-      "the wire tools/list name set must be exactly the manifest plus the one still-synthetic-only tool (vice_result_continue) plus the 19 curated anno_* tools -- no tool missing, none extra"
+      "the wire tools/list name set must be exactly the manifest plus the one still-synthetic-only tool (vice_result_continue) -- no tool missing, none extra"
     );
     // (a) ORDER parity -- see the ORDERING DECISION comment above this
     // block: registration order is the wire order, and it is a real,
@@ -1032,53 +1026,27 @@ test("tools/list's full output matches the manifest exactly (name set, order, sc
 // result larger than the declared cap comes back in FULL across an
 // explicit continuation sequence -- reassembled byte-for-byte, never
 // silently truncated. The retired forwardToVice() path drove this fixture
-// through an in-process HTTP stand-in; that path is gone, and the four
-// tests in this section no longer reach it. They drive a real registered
-// tool instead: `anno_get_symbols` against a seeded local store
-// (seedAnnoWorkspace(), just below), which produces a real oversized
-// payload with no emulator, no broker and no stand-in server,
-// deterministically, on every platform -- exactly the route that was
-// silently unchunked for the whole life of one release.
+// through an in-process HTTP stand-in; that path is gone, and the tests in
+// this section no longer reach it. They drive a real registered tool
+// instead: the test-only fixture tool (`vice_test_fixture_result`, gated
+// behind `VICE_TEST_FIXTURE_TOOL`), which produces a real oversized payload
+// with no emulator, no broker and no stand-in server, deterministically, on
+// every platform -- exactly the route that was silently unchunked for the
+// whole life of one release.
 //
 // Plan 55-05 orphan sweep: the old stand-in this section used to drive
 // (`startBigPayloadServer()`) had zero remaining call sites -- confirmed by
 // grep, per Plan 55-01's own note flagging it as a later plan's question --
-// and was removed. `seedAnnoWorkspace()` below is its full replacement.
+// and was removed. Plan 55-01 then replaced it with `anno_get_symbols`
+// against a seeded local store (`seedAnnoWorkspace()`); D-13 (plan 65-02)
+// removed that tool from tools/list along with the rest of the anno_*
+// family, so this section now drives the test-only fixture tool below
+// instead -- same property (a real, wire-registered, backend-independent,
+// deterministically oversized producer), no anno-tools.ts dependency.
 // -----------------------------------------------------------------------
 
-/**
- * Seeds a fresh temp workspace with a `project.annostore` holding
- * `labelCount` distinct labels, and returns the workspace root plus the
- * store's absolute path. Modelled on anno-tools.test.ts's own withStore()
- * helper, adapted for a SPAWNED child rather than an in-process call: the
- * child reads `CLAUDE_PROJECT_DIR` from its own environment at dispatch
- * time (repoRoot()'s branch 0), so this helper hands the workspace root to
- * the caller to pass into startProxy()'s env, rather than mutating this
- * (parent) process's environment the way withStore() does for its
- * in-process runAnnoTool() calls.
- *
- * `anno_get_symbols` needs no emulator, no broker and no stand-in server --
- * a seeded store with enough labels already produces a real oversized
- * result deterministically, which is what makes it a working replacement
- * for the fixture this section used to drive through an HTTP stand-in.
- */
-function seedAnnoWorkspace(labelCount: number): { ws: string; storePath: string } {
-  const ws = mkdtempSync(join(tmpdir(), "vice-proxy-anno-"));
-  const storePath = join(ws, "project.annostore");
-  const handle = openStore(storePath, { workspaceRoot: ws });
-  try {
-    for (let i = 0; i < labelCount; i++) {
-      setLabel(handle, { address: 0xc000 + i, name: `label_${i}_${"x".repeat(20)}`, kind: "User" });
-    }
-  } finally {
-    closeStore(handle);
-  }
-  return { ws, storePath };
-}
-
 test("an oversized result is recoverable in full across continuations", async () => {
-  const { ws, storePath } = seedAnnoWorkspace(30);
-  const proxy = startProxy({ CLAUDE_PROJECT_DIR: ws, VICE_MAX_RESULT_CHARS: "1000" });
+  const proxy = startProxy({ VICE_TEST_FIXTURE_TOOL: "1", VICE_MAX_RESULT_CHARS: "1000" });
 
   try {
     proxy.send({
@@ -1093,7 +1061,7 @@ test("an oversized result is recoverable in full across continuations", async ()
       jsonrpc: "2.0",
       id: 2,
       method: "tools/call",
-      params: { name: "anno_get_symbols", arguments: { store: storePath, max_results: 40 } },
+      params: { name: "vice_test_fixture_result", arguments: { count: 30 } },
     });
     const first = await proxy.nextMessage();
     assert.equal(first.result.isError, false);
@@ -1124,11 +1092,11 @@ test("an oversized result is recoverable in full across continuations", async ()
     assert.match(nextMarker, /\(last chunk\)/, "the sequence must terminate with a last-chunk marker");
 
     // Byte-exactness, proven against a SECOND run of the identical query
-    // rather than a hand-written expected string: a second proxy, pointed
-    // at the SAME seeded store with a cap large enough that this same
-    // payload never splits, must answer with the exact unchunked text this
-    // reassembly is supposed to equal.
-    const unchunkedProxy = startProxy({ CLAUDE_PROJECT_DIR: ws, VICE_MAX_RESULT_CHARS: "500000" });
+    // rather than a hand-written expected string: a second proxy, driving
+    // the SAME deterministic fixture call with a cap large enough that this
+    // same payload never splits, must answer with the exact unchunked text
+    // this reassembly is supposed to equal.
+    const unchunkedProxy = startProxy({ VICE_TEST_FIXTURE_TOOL: "1", VICE_MAX_RESULT_CHARS: "500000" });
     try {
       unchunkedProxy.send({
         jsonrpc: "2.0",
@@ -1141,7 +1109,7 @@ test("an oversized result is recoverable in full across continuations", async ()
         jsonrpc: "2.0",
         id: 2,
         method: "tools/call",
-        params: { name: "anno_get_symbols", arguments: { store: storePath, max_results: 40 } },
+        params: { name: "vice_test_fixture_result", arguments: { count: 30 } },
       });
       const unchunked = await unchunkedProxy.nextMessage();
       assert.equal(unchunked.result.isError, false);
@@ -1156,13 +1124,11 @@ test("an oversized result is recoverable in full across continuations", async ()
     }
   } finally {
     proxy.child.kill("SIGKILL");
-    rmSync(ws, { recursive: true, force: true });
   }
 });
 
 test("an exhausted continuation token fails loudly", async () => {
-  const { ws, storePath } = seedAnnoWorkspace(30);
-  const proxy = startProxy({ CLAUDE_PROJECT_DIR: ws, VICE_MAX_RESULT_CHARS: "1000" });
+  const proxy = startProxy({ VICE_TEST_FIXTURE_TOOL: "1", VICE_MAX_RESULT_CHARS: "1000" });
 
   try {
     proxy.send({
@@ -1177,7 +1143,7 @@ test("an exhausted continuation token fails loudly", async () => {
       jsonrpc: "2.0",
       id: 2,
       method: "tools/call",
-      params: { name: "anno_get_symbols", arguments: { store: storePath, max_results: 40 } },
+      params: { name: "vice_test_fixture_result", arguments: { count: 30 } },
     });
     const first = await proxy.nextMessage();
     const tokenMatch = first.result.content[1].text.match(/"token":"([^"]+)"/);
@@ -1211,7 +1177,6 @@ test("an exhausted continuation token fails loudly", async () => {
     assert.equal(proxy.child.exitCode, null, "the proxy must still be alive after an exhausted-token error");
   } finally {
     proxy.child.kill("SIGKILL");
-    rmSync(ws, { recursive: true, force: true });
   }
 });
 
@@ -1263,11 +1228,10 @@ test("an unknown continuation token (never issued by this proxy) fails loudly, n
   // This test never needed a payload -- what the retired harness forced was
   // `vice_ping` as the "proxy is still alive" follow-up call, which reached
   // through `VICE_MCP_URL` to a stand-in "host" that no longer exists on
-  // this path. `anno_get_symbols` proves the same thing (the proxy answers
-  // a real registered tool normally right after the bogus token) without a
-  // host, a broker or any stand-in server.
-  const { ws, storePath } = seedAnnoWorkspace(1);
-  const proxy = startProxy({ CLAUDE_PROJECT_DIR: ws });
+  // this path. The test-only fixture tool proves the same thing (the proxy
+  // answers a real registered tool normally right after the bogus token)
+  // without a host, a broker or any stand-in server.
+  const proxy = startProxy({ VICE_TEST_FIXTURE_TOOL: "1" });
 
   try {
     proxy.send({
@@ -1295,13 +1259,12 @@ test("an unknown continuation token (never issued by this proxy) fails loudly, n
       jsonrpc: "2.0",
       id: 3,
       method: "tools/call",
-      params: { name: "anno_get_symbols", arguments: { store: storePath, max_results: 10 } },
+      params: { name: "vice_test_fixture_result", arguments: { count: 1 } },
     });
     const followUp = await proxy.nextMessage();
     assert.equal(followUp.result.isError, false, "the proxy must remain fully functional after the bogus token");
   } finally {
     proxy.child.kill("SIGKILL");
-    rmSync(ws, { recursive: true, force: true });
   }
 });
 
@@ -1315,15 +1278,16 @@ test("an unknown continuation token (never issued by this proxy) fails loudly, n
 // value, so a future edit that lets the two drift apart fails here even if
 // it left each half's own test green. Rewired by plan 55-01 onto
 // anno_get_symbols (see the section header above for why the retired
-// stand-in server is gone); the payload is now a store seeded with
-// several chunks' worth of labels rather than a hand-written string, so the
-// final byte-exactness check compares against a second, unchunked run of
-// the identical query instead of a literal fixture -- the same discipline
-// the "recoverable in full" test above uses.
+// stand-in server is gone); D-13 (plan 65-02) removed that tool along with
+// the rest of the anno_* family, so this now drives the test-only fixture
+// tool with several chunks' worth of entries rather than a hand-written
+// string, so the final byte-exactness check compares against a second,
+// unchunked run of the identical query instead of a literal fixture -- the
+// same discipline the "recoverable in full" test above uses.
 test("the _meta cap stamp and the actual chunk boundary never drift apart", async () => {
   const CAP = 777;
-  const { ws, storePath } = seedAnnoWorkspace(50); // several chunks' worth at CAP, not a clean multiple
-  const proxy = startProxy({ CLAUDE_PROJECT_DIR: ws, VICE_MAX_RESULT_CHARS: String(CAP) });
+  // several chunks' worth at CAP, not a clean multiple
+  const proxy = startProxy({ VICE_TEST_FIXTURE_TOOL: "1", VICE_MAX_RESULT_CHARS: String(CAP) });
 
   try {
     proxy.send({
@@ -1348,7 +1312,7 @@ test("the _meta cap stamp and the actual chunk boundary never drift apart", asyn
       jsonrpc: "2.0",
       id: 3,
       method: "tools/call",
-      params: { name: "anno_get_symbols", arguments: { store: storePath, max_results: 60 } },
+      params: { name: "vice_test_fixture_result", arguments: { count: 50 } },
     });
     const first = await proxy.nextMessage();
     assert.equal(first.result.isError, false);
@@ -1386,7 +1350,7 @@ test("the _meta cap stamp and the actual chunk boundary never drift apart", asyn
     }
 
     // Byte-exactness against a second, unchunked run of the identical query.
-    const unchunkedProxy = startProxy({ CLAUDE_PROJECT_DIR: ws, VICE_MAX_RESULT_CHARS: "500000" });
+    const unchunkedProxy = startProxy({ VICE_TEST_FIXTURE_TOOL: "1", VICE_MAX_RESULT_CHARS: "500000" });
     try {
       unchunkedProxy.send({
         jsonrpc: "2.0",
@@ -1399,7 +1363,7 @@ test("the _meta cap stamp and the actual chunk boundary never drift apart", asyn
         jsonrpc: "2.0",
         id: 2,
         method: "tools/call",
-        params: { name: "anno_get_symbols", arguments: { store: storePath, max_results: 60 } },
+        params: { name: "vice_test_fixture_result", arguments: { count: 50 } },
       });
       const unchunked = await unchunkedProxy.nextMessage();
       assert.equal(unchunked.result.content.length, 1);
@@ -1413,7 +1377,6 @@ test("the _meta cap stamp and the actual chunk boundary never drift apart", asyn
     }
   } finally {
     proxy.child.kill("SIGKILL");
-    rmSync(ws, { recursive: true, force: true });
   }
 });
 
@@ -1431,11 +1394,11 @@ test("the _meta cap stamp and the actual chunk boundary never drift apart", asyn
 // actually succeed, and VICE_MCP_URL forwarding is dead (MEASURED,
 // ensureStockSession() refuses outright the instant it is set) -- so this
 // rewrite drops the VICE_MCP_URL stand-in entirely and proves case 6
-// against the proxy-local anno route instead (seedAnnoWorkspace(),
-// Plan 55-01), same as the tracer above.
+// against the test-only fixture tool instead (VICE_TEST_FIXTURE_TOOL, D-13
+// / plan 65-02's replacement for the anno_* route Plan 55-01 used here),
+// same as the tracer above.
 test("never-throw: malformed and hostile input is answered, not fatal", async () => {
-  const { ws, storePath } = seedAnnoWorkspace(1);
-  const proxy = startProxy({ CLAUDE_PROJECT_DIR: ws });
+  const proxy = startProxy({ VICE_TEST_FIXTURE_TOOL: "1" });
 
   try {
     proxy.send({
@@ -1507,7 +1470,7 @@ test("never-throw: malformed and hostile input is answered, not fatal", async ()
       jsonrpc: "2.0",
       id: 13,
       method: "tools/call",
-      params: { name: "anno_get_symbols", arguments: { store: storePath, max_results: 10 } },
+      params: { name: "vice_test_fixture_result", arguments: { count: 1 } },
     });
     const okResp = await proxy.nextMessage();
     assert.equal(okResp.result.isError, false, "a valid call after five hostile inputs must still succeed");
@@ -1516,7 +1479,6 @@ test("never-throw: malformed and hostile input is answered, not fatal", async ()
     assert.equal(proxy.child.killed, false);
   } finally {
     proxy.child.kill("SIGKILL");
-    rmSync(ws, { recursive: true, force: true });
   }
 });
 
@@ -1907,100 +1869,25 @@ test("path translation: relative paths resolve for declared path arguments only"
   }
 });
 
-// Plan 55-05: rewritten against the proxy-local anno_* route. The mechanism
-// this test used to exercise -- isInsideWorkspace()/hostPath() applied to a
-// generic stock tool's own `path` argument, forwarded to a VICE_MCP_URL
-// stand-in -- is only reachable through the two WORKSPACE_ENV-gated siblings
-// immediately above, both already skipped pending this file's own later
-// re-baseline (see this file's header note on WORKSPACE_ENV), and even THEY
-// drive the now-dead VICE_MCP_URL forwarding path this plan's tracer rewrite
-// found cannot succeed. There is no live route left to that specific
-// mechanism at all.
+// Plan 55-05 rewrote this against the proxy-local anno_* route:
+// `anno_get_symbols`'s `store` argument, resolved against `repoRoot()`
+// through `storePathWithinWorkspace()`, was driven over the WIRE (a real
+// spawned proxy, `store` pointed first at a lexical `..` escaping the
+// seeded workspace, refused; then at one that resolves back inside it,
+// accepted) as the live INTEGRATION-layer proof of the same "both
+// directions" property `anno-confinement.test.ts` ("18.
+// workspaceRelativePath") proves at the unit layer.
 //
-// A DIFFERENT confinement check is still live on every call through this
-// file's own proven proxy-local route: `anno_get_symbols`'s `store` argument
-// is resolved against `repoRoot()` (here, `CLAUDE_PROJECT_DIR`) through
-// `storePathWithinWorkspace()` (anno-types.ts), which carries the exact same
-// "both directions" property this test's own header comment states -- refuse
-// what escapes, still accept what merely LOOKS like it escapes but resolves
-// back inside -- MEASURED live at this plan's own planning time (a spawned
-// proxy, `store` pointed first at a lexical `..` escaping the seeded
-// workspace, refused; then at one that resolves back inside it, accepted and
-// answered with the seeded content). `storePathWithinWorkspace()`'s own unit
-// coverage of this identical shape lives in `anno-confinement.test.ts` ("18.
-// workspaceRelativePath: a path OUTSIDE the root is refused BY NAME rather
-// than spelled with `..`, while a `..` that normalises back INSIDE is
-// accepted") -- this rewrite keeps the property live at the INTEGRATION
-// layer (through a real spawned proxy) rather than retiring it down to that
-// unit already covering the underlying function directly.
-//
-// The rename drops "translates": anno store paths are never routed through
-// host/container path translation at all (anno-types.ts's own header comment
-// states this explicitly) -- claiming a translation that does not happen on
-// this route would be the same kind of standing lie this phase removes.
-test("path confinement: a lexical .. cannot escape the workspace, and one that resolves back inside is still accepted", async () => {
-  const { ws, storePath } = seedAnnoWorkspace(1);
-  const proxy = startProxy({ CLAUDE_PROJECT_DIR: ws });
-
-  try {
-    proxy.send({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "initialize",
-      params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } },
-    });
-    await proxy.nextMessage();
-
-    // Built by string concatenation, NOT join()/resolve() -- both would collapse
-    // the ".." here and destroy the very thing under test.
-    const escaping = `${ws}/../../../etc/passwd`;
-    assert.ok(escaping.startsWith(ws), "the probe must lexically start with the workspace root, or it proves nothing");
-
-    proxy.send({
-      jsonrpc: "2.0",
-      id: 2,
-      method: "tools/call",
-      params: { name: "anno_get_symbols", arguments: { store: escaping, max_results: 10 } },
-    });
-    const refused = await proxy.nextMessage();
-    assert.equal(refused.result.isError, true, "a store path that resolves outside the workspace must be refused");
-    assert.match(refused.result.content[0].text, /outside the workspace root/, "the refusal must name the boundary it enforced");
-    assert.doesNotMatch(
-      refused.result.content[0].text,
-      /\.\./,
-      "the refusal must name the RESOLVED path, never hand back the .. spelling it declined"
-    );
-
-    // The complement: ".." that resolves back inside is legitimate and must be
-    // normalized and accepted, not refused.
-    const insideViaDotDot = `${ws}/subdir/../project.annostore`;
-    proxy.send({
-      jsonrpc: "2.0",
-      id: 3,
-      method: "tools/call",
-      params: { name: "anno_get_symbols", arguments: { store: insideViaDotDot, max_results: 10 } },
-    });
-    const accepted = await proxy.nextMessage();
-    assert.equal(accepted.result.isError, false, "a .. that resolves back inside the workspace must not be refused");
-    assert.match(
-      accepted.result.content[0].text,
-      /label_0_/,
-      "the seeded label must be answered, proving the normalized path actually opened the real store"
-    );
-    assert.ok(
-      !accepted.result.content[0].text.includes(".."),
-      "the answer must never carry a .. segment -- the store field reports the resolved path"
-    );
-    assert.equal(
-      JSON.parse(accepted.result.content[0].text).store,
-      storePath,
-      "the normalized store path must equal the seeded store's own path exactly"
-    );
-  } finally {
-    proxy.child.kill("SIGKILL");
-    rmSync(ws, { recursive: true, force: true });
-  }
-});
+// D-13 (plan 65-02) removed the anno_* family from tools/list, so there is
+// no longer a wire-visible tool this property can be driven through at
+// this layer -- the CLI is anno's only live surface now (D-12), and the
+// SAME property is proven there instead: anno-cli.test.ts's `call` Test 5
+// (D-12 must_have) drives `--args-file` pointed outside the workspace
+// through the identical `storePathWithinWorkspace()` seam, refused; and an
+// in-workspace file, accepted. `anno-confinement.test.ts`'s unit coverage
+// is unchanged and still the underlying proof. This file therefore carries
+// no anno-specific integration test any more -- the property has exactly
+// one live surface, and the coverage moved with it.
 
 // -----------------------------------------------------------------------
 // Plan 01.2-01 task 2 / Plan 01.6.2-07: every session-ending path releases

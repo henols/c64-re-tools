@@ -164,25 +164,34 @@ import { CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 // and every call site.
 import * as backendDetect from "./backend-detect.mts";
 import * as stockDispatch from "./stock-dispatch.ts";
-// Plan 29-01: the curated anno_* tool surface's DEFINITIONS, imported
-// STATICALLY -- registration below happens synchronously at module scope, so
-// a dynamic import cannot serve it. This costs nothing at module load: no
-// store file is opened here. The owned SQLite annotation store stays behind
-// anno-tools.ts's own runAnnoTool(), which opens it, answers exactly one call
-// against it and closes it again (D-06), reached only when a tool is called.
-import { ANNO_TOOL_DEFINITIONS, runAnnoTool } from "./anno-tools.ts";
+// D-13 (plan 65-02) removed the anno_* family's registration -- the whole
+// per-tool registration loop over the curated definitions, and the static
+// import feeding it, both of which used to sit here -- from tools/list.
+// Annotation now runs as a stateless, client-local CLI (D-12,
+// `vice-mcp anno call <name> --args JSON`, anno-cli.ts), with no route back
+// onto this file's own tool registry. See anno-cli.ts's own header for the
+// full reasoning; this file no longer imports anything from anno-tools.ts.
 
 // ------------------------------------------------------------ anno subcommand
 //
 // D-06 / RESEARCH.md Open Question #1 (plan 10-04): `vice-mcp anno <verb>` is
-// the ONLY surface that resolves identically across the Claude Code plugin
+// the ONLY surface that RESOLVES identically across the Claude Code plugin
 // route and both npm-installer routes -- `installer/bin/cli.mjs`'s
 // `viceServerEntry()` always launches this server via `npx` in BOTH
 // npm-installer modes (`--vendor` only pre-resolves the package; it never
 // places `src/mcp/vice/*.ts` as plain files inside a consuming project),
 // so any design resolving a filesystem path to the seam would silently fail
-// to resolve for npm-installed users. This bin is the one surface proven to
-// work in all three routes.
+// to resolve for npm-installed users.
+//
+// AMENDED (D-14, plan 65-02): that claim holds for PATH RESOLUTION only, not
+// for execution on every route. MEASURED (65-RESEARCH.md Critical Finding 1):
+// Node refuses to type-strip any `.ts` file whose path sits under
+// `node_modules` (`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`, no flag
+// lifts it), so `npx -y @henols/vice-mcp anno <verb>` crashes on an
+// npm-installed copy today. Only the plugin route and an in-repo checkout
+// actually execute this branch; fixing the npm-installed route for this bin
+// is its own, separately tracked follow-up, out of scope here. No SKILL.md
+// line may cite the `npx -y` form as something that runs (D-14).
 //
 // This branch runs as the first executable statement of the module body,
 // deliberately ABOVE `RESOLVED_BINARY`'s own path resolution (which stats the
@@ -1017,6 +1026,45 @@ function handleResultContinue(args: Record<string, unknown>): ToolCallResult {
   };
 }
 
+// ------------------------------------------------------- test fixture tool
+//
+// D-13 (plan 65-02) removed the anno_* family from tools/list. Before that
+// removal, vice-proxy.test.ts's own oversized-result/continuation coverage
+// drove wrapPossiblyChunked()/handleResultContinue() above through a real
+// anno_* tool call (anno_get_symbols against a seeded local store) --
+// precisely because it needed a real, wire-registered tool with no
+// emulator, no broker and no stand-in server, a property that has nothing
+// to do with anno itself. This fixture reproduces that SAME property with
+// no dependency on anno-tools.ts at all: a real registered tool, answered
+// proxy-locally, fully deterministic from one integer argument.
+//
+// NEVER wire-visible outside a test process: registered only when
+// VICE_TEST_FIXTURE_TOOL is set, which no real invocation sets -- mirrors
+// this file's own VICE_TEST_ANNO_CLI_STDOUT_FILL_BYTES hatch above (the
+// `anno` subcommand's test-only stdout-fill escape hatch), applied here to
+// the tools/list registry instead of to the CLI's exit path.
+const TEST_FIXTURE_TOOL_ENABLED = process.env.VICE_TEST_FIXTURE_TOOL === "1";
+
+const TEST_FIXTURE_TOOL: ToolDefinition = {
+  name: "vice_test_fixture_result",
+  description:
+    "TEST-ONLY. Never advertised outside a test process. Returns `count` deterministic, " +
+    "chunking-sized entries with no emulator, broker or stand-in server involved.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      count: { type: "integer", description: "how many entries to generate" },
+    },
+    required: ["count"],
+  },
+};
+
+function testFixtureResult(args: Record<string, unknown>): OkTextResult {
+  const count = typeof args.count === "number" && Number.isInteger(args.count) && args.count >= 0 ? args.count : 0;
+  const entries = Array.from({ length: count }, (_, i) => ({ address: 0xc000 + i, name: `label_${i}_${"x".repeat(20)}` }));
+  return { content: [{ type: "text", text: JSON.stringify({ symbols: entries }) }], isError: false };
+}
+
 // -------------------------------------------------------------- broker lease
 //
 // On-demand acquisition (Phase 01.2): deferred to the FIRST forwarded
@@ -1583,30 +1631,15 @@ tools[RESULT_CONTINUE_TOOL.name] = buildViceTool(RESULT_CONTINUE_TOOL, (args) =>
 // malformed.
 tools[RECYCLE_TOOL.name] = buildViceTool(stockDispatch.resolveAdvertisedToolDefinition(RECYCLE_TOOL, manifestTools), (args) => handleRecycle(args));
 tools[DIAGNOSE_TOOL.name] = buildViceTool(stockDispatch.resolveAdvertisedToolDefinition(DIAGNOSE_TOOL, manifestTools), (args) => handleDiagnose(args));
-// Backend-INDEPENDENT by construction (plan 29-01): the anno_* family never
-// touches VICE at all -- it reaches a PROXY-LOCAL SQLite annotation store
-// this repo owns, opened and closed inside the runner itself, so there is no
-// fork/stock distinction to make. The family is deliberately absent from
-// tools-manifest.stock.json, which records what a live HOST VICE server
-// answers and never a proxy-local store file. Registering the family here,
-// rather than listing it there, keeps that manifest an honest record of the
-// emulator surface.
-// Registered here via buildViceTool() directly (the SAME pattern
-// RESULT_CONTINUE_TOOL above uses), so no anno_* runner ever reaches
-// stockDispatch: there is no generic-dispatch surface left anywhere in this
-// file for a derived tool's runner to slip behind, so this exemption cannot
-// be violated by omission the way it could when a fork-only forwarding path
-// still existed.
-// Deliberately NOT named `def` (the manifest loop's own loop variable,
-// above): `stock-dispatch.test.ts`'s `proxyToolRegistrations()` regex-scans
-// this file's own `tools[...] = ...;` lines and keys each one by its raw
-// captured text, so an identically-named loop variable here would make this
-// registration textually indistinguishable from the manifest loop's -- a
-// distinct name (`annoDef`) keeps the anno_* family's own registration from
-// ever being confused with, or accidentally merged into, the manifest
-// loop's.
-for (const annoDef of ANNO_TOOL_DEFINITIONS) {
-  tools[annoDef.name] = buildViceTool(annoDef, (args) => runAnnoTool(annoDef.name, args));
+// D-13 (plan 65-02): the anno_* registration loop that used to sit here --
+// 25 tools, imported from anno-tools.ts's own curated definitions -- is
+// deleted outright, not narrowed. Annotation is a stateless, client-local
+// CLI now (D-12, `vice-mcp anno call <name> --args JSON`), reached with no
+// route back onto this proxy's own tool registry at all. This is a one-way
+// removal (D-13's own reversibility note): restoring any anno_* tool to
+// tools/list after release would be a second breaking change.
+if (TEST_FIXTURE_TOOL_ENABLED) {
+  tools[TEST_FIXTURE_TOOL.name] = buildViceTool(TEST_FIXTURE_TOOL, (args) => Promise.resolve(testFixtureResult(args)));
 }
 
 const server = new MCPServer({ name: "vice", version: PROXY_VERSION, tools });
