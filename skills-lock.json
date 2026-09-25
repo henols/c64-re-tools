@@ -6,6 +6,11 @@
       "sourceType": "github",
       "skillPath": "skills/mastra/SKILL.md",
       "computedHash": "6482dad39fb72d1fe9d02078c15c3ee708774fd026a8557b4c7dc37fb554977a"
+    },
+    "asd-ste100": {
+      "source": "danyuchn/asd-ste100-skill",
+      "sourceType": "github",
+      "skillPath": "SKILL.md"
     }
   }
 }

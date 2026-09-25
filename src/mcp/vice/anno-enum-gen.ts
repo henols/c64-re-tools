@@ -1,13 +1,11 @@
 #!/usr/bin/env node
 // anno-enum-gen.ts -- the ONE authoritative place in this repo for value ->
 // variant naming, the adjacent-pair rule, identifier sanitization, the
-// per-register enum plan, the coverage report's wording contract, and (as of
-// phase 45 plan 45-03) the multi-bit register DECOMPOSITION into named,
-// OR-able terms (D-15/D-16/D-17/D-20/D-22/D-23, ANNO-13).
+// per-register enum plan, the coverage report's wording contract, and the
+// multi-bit register DECOMPOSITION into named, OR-able terms.
 //
-// WHAT LEFT, WHAT STAYED, AND WHERE THE ROUTE RETURNS (plan 29-10, D-01,
-// 2026-08-30). Read this paragraph before looking for a function that is not
-// here.
+// WHAT LEFT, WHAT STAYED, AND WHERE THE ROUTE RETURNS. Read this paragraph
+// before looking for a function that is not here.
 //
 //   WHAT LEFT: the ROUTE, and only the route. Four things went, because all
 //   four spoke to the retired external analyser's own tool surface and every
@@ -23,19 +21,19 @@
 //   registry exists to protect, so it was extracted from the route rather
 //   than deleted with it:
 //     - `variantNameFor()` and the bit-name table it decodes against -- the
-//       whole D-22 naming vocabulary, untouched, still pinned by its
+//       whole naming vocabulary, untouched, still pinned by its
 //       injectivity tests across all 256 values.
-//     - `pairSearchRows()` -- the D-23 adjacent-pair rule (a store pairs with
+//     - `pairSearchRows()` -- the adjacent-pair rule (a store pairs with
 //       an immediate load exactly 2 bytes earlier, adjacent-only, no
 //       dataflow, a miss costs nothing), lifted out of the deleted fetch
 //       loop verbatim and now a PURE function of two already-fetched row
 //       arrays. Whoever rebuilds the fetch supplies the rows; the rule does
 //       not change.
-//     - `planEnumsForPairing()` -- D-20's own rule: one variant per DISTINCT
+//     - `planEnumsForPairing()` -- one variant per DISTINCT
 //       value the program actually writes, never a full
 //       256-values-per-register table, with the first-seen `lda` address
 //       kept as each value's representative binding site.
-//     - `buildEnumGenerationReport()` -- D-23's "no silent caps" wording
+//     - `buildEnumGenerationReport()` -- the "no silent caps" wording
 //       contract, which states a possible truncation in WORDS rather than
 //       leaving it to be inferred from a row count.
 //     - `sanitizeVariantMap()` and the identifier gate it runs, unchanged.
@@ -53,21 +51,20 @@
 //   success criterion of it mentioned `gen-enums`, and at that time no phase
 //   owned rebuilding it.
 //
-//   THE SECOND CORRECTION, dated 2026-09-11 (phase 45 plan 45-03, D-15):
-//   Phase 45 owns it now, and has returned it -- the ENUM half of `ANNO-13`
-//   only. `fetchRegisterSearchRows()` walks a store's own `code`-typed ranges
+//   THE SECOND CORRECTION, dated 2026-09-11: this route is owned again --
+//   the ENUM half of the generated-enum capability only.
+//   `fetchRegisterSearchRows()` walks a store's own `code`-typed ranges
 //   through the same `disasm-decoder.ts` `decode()` `anno_disassemble` uses,
 //   `generateEnumsFromStore()` strings fetch -> `pairSearchRows()` ->
 //   `planEnumsForPairing()` -> `sanitizeVariantMap()` -> `installPlannedEnums()`
 //   -> `buildEnumGenerationReport()`, and `installPlannedEnums()` installs
 //   through the same `createProjectEnum()`/`updateProjectEnum()`/
 //   `applyEnumUsage()` write path the by-hand route already used. The symbol
-//   round trip (`ANNO-14`/`ANNO-15`, `export-lbl`/`import-lbl`) is a SEPARATE
-//   capability this phase does not touch and remains unowned -- see
-//   `.planning/PROJECT.md`'s own withdrawal notice, corrected in the same
-//   plan. Everything above this paragraph is the specification this rebuild
-//   was built against, and it needed no changes to build against: every
-//   surviving heuristic is called here unmodified.
+//   round trip (`export-lbl`/`import-lbl`) is a SEPARATE
+//   capability this rebuild does not touch and remains unowned. Everything
+//   above this paragraph is the specification this rebuild was built
+//   against, and it needed no changes to build against: every surviving
+//   heuristic is called here unmodified.
 //
 // MEASURED MECHANISM FACTS, PAST TENSE -- kept because they are WHY the
 // heuristics have the shape they have, not because anything still calls the
@@ -83,14 +80,14 @@
 //     is why `PairOccurrence` carries `ldaAddr` and not the store address.
 //   - Applying an enum emitted its WHOLE variant list into the exported ACME
 //     header; an unmatched value fell back to bare `#$xx` while the dead
-//     definitions were still emitted. This is exactly why D-20 generates one
-//     variant per value the program actually writes.
+//     definitions were still emitted. This is exactly why this module
+//     generates one variant per value the program actually writes.
 //   - Creating an enum FAILED with "Enum '<name>' already exists"
 //     (`app_state.rs:443-457`'s `validate_new_enum_name`) if the name was
 //     already taken -- there was no upsert. That is why `EnumInstallAction`
-//     has two values and why ANNO-13's re-runnability needed a documented
+//     has two values and why re-runnability needed a documented
 //     create-then-update precedence rather than a single call. A rebuilt
-//     installer that cannot express "updated" has lost that requirement.
+//     installer that cannot express "updated" has lost that property.
 //   - The disassembly search matched its `query` regex against the
 //     `mnemonic` and `operand` fields INDEPENDENTLY (`state/search.rs:
 //     309-313`) -- they were NEVER concatenated into one searchable string.
@@ -98,9 +95,10 @@
 //     field alone. The consequence that outlives it: the register and
 //     immediate-mode narrowing belongs CLIENT-SIDE, against this project's
 //     own curated register set derived from `anno-regbits.json`'s own keys,
-//     which is what `pairSearchRows()` still does and what D-23 requires.
+//     which is what `pairSearchRows()` still does and what this module
+//     requires.
 //   - That search's `max_results` server-side default was 50
-//     (`handler.rs:1074-1077`), which is where D-23's "no silent caps" rule
+//     (`handler.rs:1074-1077`), which is where the "no silent caps" rule
 //     came from: never accept a producer's own default ceiling, and report a
 //     possible truncation in words.
 //   - The live query view rendered an applied enum reference as
@@ -111,8 +109,10 @@
 //     one -- the obligation belongs to the rebuild, not to a numbered phase.
 //
 // WHAT NOT TO DO, named concretely:
-//   - Never write a machine-global enum. The machine-wide config-dir save
-//     route named in D-21 is never referenced anywhere in this file, and
+//   - Never write a machine-global enum. Generated enums live project-level
+//     only, so nothing machine-wide is touched and a name collision cannot
+//     silently overwrite another project's enum. The machine-wide config-dir
+//     save route is never referenced anywhere in this file, and
 //     `anno-enum-gen.test.ts`'s own zero-count grep asserts that
 //     mechanically. That guard is DORMANT while this module has no install
 //     route at all and goes live again the instant ANY install route is added
@@ -143,7 +143,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REGBITS_PATH = join(HERE, "anno-regbits.json");
 
 /** The ceiling a caller states instead of trusting a producer's own default
- * (which was 50, `handler.rs:1074-1077`). D-23's "no silent caps" rule: the
+ * (which was 50, `handler.rs:1074-1077`). The "no silent caps" rule: the
  * returned row count is compared against THIS value and a possible truncation
  * is reported in words. A rebuilt fetch passes it explicitly for the same
  * reason. */
@@ -222,16 +222,16 @@ function requireRegBitsEntry(key: string, callerName: string): RegBitsField[] {
 }
 
 /**
- * THE ONE MEMBERSHIP-TEST PREDICATE (45-REVIEW CR-01): answers "does
+ * THE ONE MEMBERSHIP-TEST PREDICATE: answers "does
  * `anno-regbits.json` have an entry for this register at all", independent
  * of whether that entry, once found, can fully decompose any particular
  * value. `pairSearchRows()` above already narrows candidate `sta` targets
  * this same way (`knownRegisters.has(key)`, built from this table's own
  * keys) before ever treating one as a register; this export gives the two
- * D-16 render surfaces (`anno-export-asm.ts`, `anno-tools.ts`'s
+ * render surfaces (`anno-export-asm.ts`, `anno-tools.ts`'s
  * `renderDisassembleListing()`) the identical membership check so a
  * register-SHAPED enum name for a register the table simply does not cover
- * (e.g. `D020`, `D021` -- confirmed absent, `docs/phase45-closure-dxa-family.md`)
+ * (e.g. `D020`, `D021` -- confirmed absent from the curated table)
  * falls through to the plain single-symbol path instead of being attempted,
  * and failing, through `decomposeRegisterValue()`.
  *
@@ -303,7 +303,7 @@ export function variantNameFor(register: number, value: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// The ONE owning multi-bit decoder (Task 1, D-16/D-17). `variantNameFor()`
+// The ONE owning multi-bit decoder. `variantNameFor()`
 // above already decodes a value into per-field tokens and joins them with
 // `_` into ONE total name; this is that SAME token list, unjoined, each term
 // carrying its own masked value -- so the OR-ed decomposition and the
@@ -326,12 +326,12 @@ export interface RegisterTerm {
 
 /** The full decomposition of one register write. `comment` is the
  * mechanical decode text (`<REGKEY>: <FIELD>=<decoded>`, comma-separated, in
- * ascending bit order) -- D-17's readability half; `terms` is the OR-able
+ * ascending bit order) -- the readability half; `terms` is the OR-able
  * half. `multiField` is true when the register's own table entry has two or
  * more fields, regardless of how many terms a particular value happened to
  * produce (a single-field register, or a value that silenced every
- * flag/enum field but one, is not "multi-bit" in the sense D-17 cares
- * about). */
+ * flag/enum field but one, is not "multi-bit" in the sense this module
+ * cares about). */
 export interface RegisterDecomposition {
   terms: RegisterTerm[];
   comment: string;
@@ -339,10 +339,10 @@ export interface RegisterDecomposition {
 }
 
 /**
- * THE ONE OWNING DECODER (D-16): splits `value` into one named term per
+ * THE ONE OWNING DECODER: splits `value` into one named term per
  * bit-field of `register`, arithmetically exact. Both render surfaces
- * (`anno-export-asm.ts`'s OR-ed constants, plan 45-05; `anno_disassemble`'s
- * readable comment, plan 45-05) consume THIS function rather than decoding
+ * (`anno-export-asm.ts`'s OR-ed constants, and `anno_disassemble`'s
+ * readable comment) consume THIS function rather than decoding
  * independently -- see this module's own header for why that is the whole
  * point.
  *
@@ -447,7 +447,7 @@ export function decomposeRegisterValue(register: number, value: number): Registe
 }
 
 // ---------------------------------------------------------------------------
-// The two-pass search + adjacent-pair (D-23).
+// The two-pass search + adjacent-pair.
 // ---------------------------------------------------------------------------
 
 export interface DisasmSearchRow {
@@ -509,17 +509,18 @@ export interface PairingResult {
 }
 
 /**
- * THE D-23 ADJACENT-PAIR RULE -- pure, and the reason this module survived
- * the cut (plan 29-10). It was extracted verbatim from the deleted two-pass
- * fetch, which is now the CALLER's job: hand it the `lda` rows and the `sta`
- * rows and it pairs each store to a register the bit-name table knows with an
- * immediate load exactly 2 bytes earlier.
+ * THE ADJACENT-PAIR RULE -- pure, and the reason this module survived
+ * the cut when the fetch-and-install route was deleted. It was extracted
+ * verbatim from the deleted two-pass fetch, which is now the CALLER's job:
+ * hand it the `lda` rows and the `sta` rows and it pairs each store to a
+ * register the bit-name table knows with an immediate load exactly 2 bytes
+ * earlier.
  *
  * Adjacent-only, no dataflow: `lda #imm` is always 2 bytes in immediate mode,
  * so the following store begins at `ldaAddr + 2` regardless of the store's
  * own addressing mode. A store with no immediate load at exactly that address
- * is simply not paired -- D-23's "a miss costs nothing" posture, which is
- * what keeps this rule cheap enough to be worth having at all.
+ * is simply not paired -- "a miss costs nothing" is this rule's whole
+ * posture, and what keeps it cheap enough to be worth having at all.
  *
  * The register narrowing is CLIENT-SIDE, against `anno-regbits.json`'s own
  * keys, never a second hardcoded list and never a producer-side query
@@ -527,9 +528,9 @@ export interface PairingResult {
  * is not merely a preference).
  *
  * `maxResults` is the ceiling the caller asked its fetch for. A pass whose
- * row count EQUALS that ceiling is reported as possibly truncated, per D-23's
- * "no silent caps" -- pass the same value the fetch used, or the truncation
- * signal is meaningless.
+ * row count EQUALS that ceiling is reported as possibly truncated -- this is
+ * this module's "no silent caps" rule -- pass the same value the fetch used,
+ * or the truncation signal is meaningless.
  */
 export function pairSearchRows(
   ldaRows: readonly DisasmSearchRow[],
@@ -549,7 +550,7 @@ export function pairSearchRows(
       immByAddr.set(row.address_decimal, parseImmediateOperand(row.operand));
     } catch {
       // An unparsable immediate operand is skipped (never paired), not fatal
-      // to the whole pass -- D-23's "a miss costs nothing" posture.
+      // to the whole pass -- "a miss costs nothing" is this module's posture.
     }
   }
 
@@ -563,7 +564,7 @@ export function pairSearchRows(
     const regKey = normalizeOperandAsKey(store.operand)!;
     const ldaAddr = store.address_decimal - 2;
     const imm = immByAddr.get(ldaAddr);
-    if (imm === undefined) continue; // D-23: adjacent-only -- a miss costs nothing
+    if (imm === undefined) continue; // adjacent-only -- a miss costs nothing
     occurrences.push({ regKey, value: imm, ldaAddr });
   }
 
@@ -578,8 +579,8 @@ export function pairSearchRows(
 }
 
 // ---------------------------------------------------------------------------
-// The enum PLAN and its wording contract (D-20/D-21/D-23). The installation
-// route that consumed these was deleted by plan 29-10; what a rebuilt one
+// The enum PLAN and its wording contract. The installation
+// route that consumed these was deleted; what a rebuilt one
 // needs is all still here.
 // ---------------------------------------------------------------------------
 
@@ -614,14 +615,14 @@ export function sanitizeVariantMap(regKey: string, variants: ReadonlyMap<number,
 /**
  * The two outcomes a rebuilt installer must still be able to report.
  *
- * KEPT ACROSS THE CUT (plan 29-10) even though nothing in this repo installs
+ * KEPT ACROSS THE CUT even though nothing in this repo installs
  * an enum today. Creating an enum whose name already existed FAILED outright
- * on the retired producer -- there was no upsert -- so ANNO-13's
- * "re-runnable" requirement was met by a documented precedence: try CREATE
+ * on the retired producer -- there was no upsert -- so re-runnability
+ * was met by a documented precedence: try CREATE
  * first, and only on an already-exists failure fall back to UPDATE, which
  * replaces the variant map wholesale. That precedence, and this two-valued
- * result, are the requirement's whole observable content. A rebuilt installer
- * that can only ever report "created" has quietly dropped ANNO-13.
+ * result, are re-runnability's whole observable content. A rebuilt installer
+ * that can only ever report "created" has quietly dropped it.
  */
 export type EnumInstallAction = "created" | "updated";
 
@@ -640,13 +641,13 @@ export interface EnumInstallSummary {
 export interface PlannedEnum {
   regKey: string;
   enumName: string;
-  /** value -> variant name, one entry per DISTINCT value observed (D-20). */
+  /** value -> variant name, one entry per DISTINCT value observed. */
   variants: Map<number, string>;
   occurrences: PairOccurrence[];
 }
 
 /**
- * D-20's OWN RULE, pure and route-free: group the paired occurrences by
+ * THE GROUPING RULE, pure and route-free: group the paired occurrences by
  * register, keep ONE variant per DISTINCT value the program actually writes,
  * and name each with `variantNameFor()`.
  *
@@ -656,7 +657,7 @@ export interface PlannedEnum {
  * the output for every register touched. The measured fact is in this
  * module's header; this function is where the consequence lives.
  *
- * Extracted from the deleted `generateEnums()` pass by plan 29-10 with its
+ * Extracted from the deleted `generateEnums()` pass with its
  * grouping and naming unchanged -- only the install calls that followed it
  * went.
  */
@@ -696,13 +697,13 @@ export interface EnumGenerationReport {
   pass2Truncated: boolean;
   enums: EnumInstallSummary[];
   /** Human-readable summary lines, always including the word "truncat..." if
-   * either pass hit its own `max_results` ceiling (D-23: "no silent caps" --
+   * either pass hit its own `max_results` ceiling ("no silent caps" --
    * a possible truncation is stated in words, never left to be inferred). */
   summaryLines: string[];
 }
 
 /**
- * D-23's WORDING CONTRACT, pure and route-free: the coverage report that
+ * THE WORDING CONTRACT, pure and route-free: the coverage report that
  * names the totals, the pairing counts and -- in WORDS, never left to be
  * inferred from a row count that happens to equal a ceiling -- any pass that
  * may have been truncated.
@@ -712,7 +713,7 @@ export interface EnumGenerationReport {
  * know whether that is the answer or the ceiling; a line containing the word
  * "TRUNCATION" is the difference between a measurement and a guess.
  *
- * Extracted from the deleted `generateEnums()` pass by plan 29-10 with its
+ * Extracted from the deleted `generateEnums()` pass with its
  * strings byte-identical, so a rebuilt pass reports in the same words rather
  * than paraphrasing them.
  */
@@ -752,7 +753,7 @@ export function buildEnumGenerationReport(
 }
 
 // ---------------------------------------------------------------------------
-// Task 2 (D-15): THE REBUILT FETCH AND INSTALL, over this project's own
+// THE REBUILT FETCH AND INSTALL, over this project's own
 // disassembler and store. Everything above this line is a surviving
 // heuristic, called here but never edited (`variantNameFor()`,
 // `pairSearchRows()`, `planEnumsForPairing()`, `sanitizeVariantMap()`,
@@ -802,7 +803,7 @@ export interface FetchRegisterSearchRowsResult {
 }
 
 /**
- * THE REBUILT FETCH (D-15). Walks `handle`'s own `code`-typed ranges,
+ * THE REBUILT FETCH. Walks `handle`'s own `code`-typed ranges,
  * decoding each through the SAME `disasm-decoder.ts` `decode()` function
  * `anno_disassemble` uses -- never a second decoder, never a regex over
  * rendered text. Returns two plain row arrays in the exact `DisasmSearchRow`
@@ -815,7 +816,7 @@ export interface FetchRegisterSearchRowsResult {
  * truncation signal (a returned row count equal to the ceiling) a true
  * measurement rather than a coincidence: capping here is the only way a
  * caller comparing the returned length against the same ceiling can trust
- * what it sees (D-23's "no silent caps").
+ * what it sees ("no silent caps", stated at this module's top).
  */
 export function fetchRegisterSearchRows(
   handle: AnnoStoreHandle,
@@ -849,7 +850,7 @@ export function fetchRegisterSearchRows(
 }
 
 /**
- * THE REBUILT INSTALL (D-15): create-or-update each planned enum through the
+ * THE REBUILT INSTALL: create-or-update each planned enum through the
  * shipped `createProjectEnum()`/`updateProjectEnum()` write path -- the SAME
  * functions `anno_create_project_enum`/`anno_update_project_enum` dispatch
  * to, never a second install path -- and bind every occurrence through
@@ -865,13 +866,13 @@ export function fetchRegisterSearchRows(
  * `updateProjectEnum()`, which replaces the variant map wholesale. This is
  * `EnumInstallAction`'s own documented re-runnability precedent (see its
  * comment above); an installer that could only ever report "created" would
- * have quietly dropped ANNO-13's re-runnability requirement.
+ * have quietly dropped that re-runnability property.
  */
 export function installPlannedEnums(handle: AnnoStoreHandle, planned: readonly PlannedEnum[]): EnumInstallSummary[] {
   const summaries: EnumInstallSummary[] = [];
   for (const plan of planned) {
     const sanitized = sanitizeVariantMap(plan.regKey, plan.variants);
-    const description = `Generated by anno-enum-gen.ts (D-15) from ${plan.occurrences.length} observed write(s) to ${plan.regKey}.`;
+    const description = `Generated by anno-enum-gen.ts from ${plan.occurrences.length} observed write(s) to ${plan.regKey}.`;
 
     let action: EnumInstallAction;
     try {
@@ -899,7 +900,7 @@ export interface GenerateEnumsFromStoreOptions {
 }
 
 /**
- * THE REBUILT PASS (D-15): fetch -> `pairSearchRows()` -> `planEnumsForPairing()`
+ * THE REBUILT PASS: fetch -> `pairSearchRows()` -> `planEnumsForPairing()`
  * -> `installPlannedEnums()` (which itself calls `sanitizeVariantMap()`) ->
  * `buildEnumGenerationReport()`. The three middle heuristics are called,
  * never edited, exactly per this module's own header specification.

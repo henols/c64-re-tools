@@ -14,7 +14,7 @@ in more than one of them.** Work the order below. Do not start with a remedy.
 | **Stopped itself at your checkpoint** | An armed *stopping* checkpoint on the live IRQ path | Delete/disable the checkpoint. **Never recycle** |
 | **Crashed and respawned** | The proxy raises epoch drift on the next forwarded call | Void the run, reboot from scratch. Already handled for you |
 | **Genuinely wedged** | Two consecutive cycle brackets read exactly `0` | `vice_recycle` with a reason, as a last resort |
-| **Contended between the two channels** | Two brackets would read zero, but `evidence.channelContention.held` is true and `bracketsRun` is 0 | Wait for the other channel's operation to finish, or find its holder. **Never recycle** — the instance is healthy and is answering |
+| **Contended bprogrammeretween the two channels** | Two brackets would read zero, but `evidence.channelContention.held` is true and `bracketsRun` is 0 | Wait for the other channel's operation to finish, or find its holder. **Never recycle** — the instance is healthy and is answering |
 | **Monitor held elsewhere** | A second client already holds this instance's single binary-monitor socket | Find the other holder. **Never recycle** — the instance is healthy, just claimed elsewhere |
 
 ```

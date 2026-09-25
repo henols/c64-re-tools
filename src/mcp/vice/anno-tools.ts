@@ -14,14 +14,14 @@
 //
 // WHY THIS FILE EXISTS, in the words of the decisions that shaped it:
 //
-//   D-05 (ONE PREFIX). `anno_` names the tools, `anno-` names the modules.
+//   ONE PREFIX. `anno_` names the tools, `anno-` names the modules.
 //   There is no second annotation family advertised alongside this one: the
 //   registration loop in `vice-proxy.ts` was SUBSTITUTED, not appended to, so
 //   an agent never has to choose between two surfaces over the same subject.
 //   `stock-dispatch.test.ts`'s ordered two-entry `BACKEND_SEAM_BYPASS_KEYS`
 //   goes red the instant a second family is registered beside this one.
 //
-//   D-06 (OPEN/CLOSE PER CALL, EXPLICIT `store` ON EVERY VERB). This module
+//   OPEN/CLOSE PER CALL, EXPLICIT `store` ON EVERY VERB. This module
 //   holds NO module-level store handle and no ambient "current store" -- every
 //   verb takes `store` as an argument, `runAnnoTool()` opens it, and the
 //   `finally` below closes it on every path including the throwing one. That
@@ -29,7 +29,7 @@
 //   calls, and nothing for a second concurrent caller to corrupt: the store is
 //   open for the duration of one tool call and not one instruction longer.
 //
-//   D-07 (EVERY DERIVED READ NAMES ITS OWN IMAGE). The store holds
+//   EVERY DERIVED READ NAMES ITS OWN IMAGE. The store holds
 //   annotations, never program bytes. Every verb that derives an answer FROM
 //   the bytes -- the disassembly, the region read, the binary info, the
 //   cross-references, the search, the address details -- takes an explicit
@@ -37,7 +37,7 @@
 //   outright: an omitted argument would read as a plausible-looking success
 //   against whatever image happened to be recorded last.
 //
-//   D-09 (THERE IS NO CURSOR, ANYWHERE). Upstream's own procedure text says
+//   THERE IS NO CURSOR, ANYWHERE. Upstream's own procedure text says
 //   never to rely on a current cursor address, and this project has no editor
 //   to have one. The verb that would have exposed it is folded into
 //   `anno_disassemble`'s explicit address argument. Nothing on this surface --
@@ -46,7 +46,7 @@
 //   comment-and-string-stripped source so this paragraph cannot satisfy the
 //   check by containing the word.
 //
-//   MCP-02 (THE HOST-PATH SEAM IS UNREACHABLE FROM HERE, BY CONSTRUCTION).
+//   THE HOST-PATH SEAM IS UNREACHABLE FROM HERE, BY CONSTRUCTION.
 //   CLAUDE.md requires derived tools to be intercepted before
 //   `forwardToVice()`, because `rewriteArguments()` runs inside it and would
 //   hand a container-translated path to a runner acting proxy-locally. This
@@ -69,7 +69,7 @@
 //      That is not a caller error -- the question was legal, the answer is
 //      "no". Returning `isError:true` for it teaches an agent to retry
 //      something that will never succeed; returning `[]` or `0` for it is the
-//      plausible-looking zero MCP-04 exists against. Every reason names what
+//      plausible-looking zero this refusal channel exists to prevent. Every reason names what
 //      was asked for, why it cannot be answered, and where the nearest
 //      answerable thing lives, in the shape `stock-cia.ts:116-124` established
 //      and at the >= 40-character length `check-skill-tool-coverage.mjs:285`

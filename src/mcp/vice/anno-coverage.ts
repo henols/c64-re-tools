@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 // anno-coverage.ts -- the ONE place that measures how well a binary has
-// actually been reverse-engineered (COV-01, COV-02).
+// actually been reverse-engineered, reported as three distinct numbers --
+// structural completeness, the Auto-versus-User label ratio, and a sampled
+// independent-reproducibility check -- never collapsed into one aggregate
+// percentage.
 //
 // ---------------------------------------------------------------------------
 // WHY THIS FILE EXISTS
 // ---------------------------------------------------------------------------
-// COV-01 asks for a coverage instrument, and the obvious implementation --
+// A coverage instrument is needed, and the obvious implementation --
 // ask the external analyser how much of the image it has classified as `Code` and
 // call that "completeness" -- is CIRCULAR, and provably so at upstream's own
 // source. `follow_indirect_jumps()` (`analyzer.rs:445-540` at the pinned
@@ -78,7 +81,7 @@
 //      under a different name, and is never added to it.
 //   3. NEVER emit a single combined coverage figure -- not in the report
 //      object, not in a summary line, not derived at the point of display.
-//      COV-01's substance IS that the measures stay separately addressable.
+//      Staying separately addressable, never combined, IS the whole point.
 //      `coverageFindings()` below is a boolean verdict with per-measure
 //      reasons, NOT an aggregate: it never averages, sums or weights the
 //      measures, and every finding names exactly one of them.
@@ -99,7 +102,7 @@
 //      interrupted run leaves no partial report behind -- there is nothing on
 //      disk for it to leave. `anno-coverage.test.ts` asserts that at source
 //      level.
-//   7. NEVER let an absent input read as a pass (COV-02). A missing payload,
+//   7. NEVER let an absent input read as a pass. A missing payload,
 //      an undecodable one, or an empty comment set reports an explicit `null`
 //      ratio plus a stated reason -- never a silently-omitted measure and
 //      never a zero that reads like "clean".
@@ -120,23 +123,22 @@
 //      proof of code -- make it deliberately or not at all.
 //
 // ---------------------------------------------------------------------------
-// NAMED DEVIATION FROM THE RESEARCH RECOMMENDATION (recorded, deliberate)
+// A DELIBERATE DEVIATION, RECORDED
 // ---------------------------------------------------------------------------
-// 19-RESEARCH.md §3.4 suggested reproducing Phase 11's two-SESSION answer key
-// -- a second agent session re-deriving the answer independently. Nested
-// headless agent sessions stall indefinitely in this project's environment,
-// so that axis is not runnable here. The independence axis used instead is
-// BYTES-VERSUS-STORE: one side classifies an address using only the raw bytes
-// and this file's census, the other using only the store's own documentation
-// (confidence grade, block type). Neither side reads the other's input. The
-// store side's own vocabulary now lives behind the named boundary
-// (`block-class.ts`), which takes the block listing and an address and
-// nothing else -- so the axis cannot be collapsed by quietly handing the
-// store side a look at the bytes. The
-// seal (`evidence/coverage-reproducibility/ANSWER.sha256`) is what makes the
-// result non-retrofittable, exactly as it was in Phase 11: the hash is
-// committed before the re-derivation is written, and a missing or empty
-// re-derivation FAILS rather than skips.
+// A two-SESSION answer key was considered -- a second agent session
+// re-deriving the answer independently. Nested headless agent sessions stall
+// indefinitely in this project's environment, so that axis is not runnable
+// here. The independence axis used instead is BYTES-VERSUS-STORE: one side
+// classifies an address using only the raw bytes and this file's census, the
+// other using only the store's own documentation (confidence grade, block
+// type). Neither side reads the other's input. The store side's own
+// vocabulary now lives behind the named boundary (`block-class.ts`), which
+// takes the block listing and an address and nothing else -- so the axis
+// cannot be collapsed by quietly handing the store side a look at the bytes.
+// The seal (`evidence/coverage-reproducibility/ANSWER.sha256`) is what makes
+// the result non-retrofittable: the hash is committed before the
+// re-derivation is written, and a missing or empty re-derivation FAILS
+// rather than skips.
 
 import { blockClassAt, type BlockClass, type BlockClassifier, type BlockEntry } from "./block-class.ts";
 import { decode, type Instruction } from "./disasm-decoder.ts";
@@ -165,10 +167,10 @@ import { extname } from "node:path";
  *        it used to include moved to the new advisory sibling
  *        `splitTableCandidates`. A consumer reading `discoveredTargets` gets
  *        a smaller, honest set than it did at version 1; this bump is the
- *        signal that a nested meaning changed. Accepted by a human at
- *        19-08's decision checkpoint (option `narrow-and-add-sibling`),
- *        which also discharged 19-VERIFICATION.md's `human_verification`
- *        item 2.
+ *        signal that a nested meaning changed. Accepted by a human at a
+ *        decision checkpoint (option `narrow-and-add-sibling`), which also
+ *        discharged the human-verification requirement this schema bump
+ *        needed.
  */
 export const COVERAGE_SCHEMA_VERSION = 2;
 
@@ -240,8 +242,8 @@ export interface AnnoCoverageInputErrorOptions {
  * Thrown ONLY for a caller contract violation -- an absent or unreadable
  * project path. Never thrown for malformed bytes: a payload that will not
  * gunzip, or a project file that is not JSON, is reported as an explicit
- * `payloadDecoded: false` plus a reason (COV-02's "never a silent skip", and
- * never a throw the caller has to guess at either). Mirrors
+ * `payloadDecoded: false` plus a reason -- never a silent skip, and
+ * never a throw the caller has to guess at either. Mirrors
  * `AnnoProjectSettingsError`'s named-field convention so a caller never has
  * to parse message text to recover the path.
  */
@@ -423,7 +425,7 @@ export function computeStructuralCensus(
   const size = safeBytes.length;
   const maxSteps = Number.isSafeInteger(opts.maxSteps) && opts.maxSteps! > 0 ? opts.maxSteps! : MAX_WALK_STEPS;
 
-  // IN-04. The censused range is bounded at the 16-bit address space, not at
+  // The censused range is bounded at the 16-bit address space, not at
   // `origin + size`. A payload whose origin plus length runs past $FFFF is
   // MALFORMED INPUT -- a `.regen2000proj` file the operator did not author
   // can claim any origin and carry any length -- and this module's contract
@@ -477,7 +479,7 @@ export function computeStructuralCensus(
       const offset = pc - safeOrigin;
       const decoded = decode(safeBytes.subarray(offset), pc, { count: 1 })[0];
       // THE PREDICATE IS CONSULTED HERE, BEFORE THE MARKING LOOP BELOW, and
-      // that order is the whole of the WR-03 fix -- not an accident of how the
+      // that order is deliberate -- not an accident of how the
       // statements happened to be written.
       //
       // Consulted before: the illegal byte is never marked, so it stays
@@ -522,7 +524,7 @@ export function computeStructuralCensus(
 
   // Linear-sweep decodability -- reported, never summed. See trap 2. Swept
   // over the SAME bounded range as the census, so the two figures describe
-  // the same bytes (IN-04).
+  // the same bytes.
   // The skip is expressed through the SAME predicate the descent above reads,
   // so the two figures are comparable by construction rather than by
   // coincidence. This figure's MEANING is untouched: it still counts bytes that
@@ -546,7 +548,7 @@ export function computeStructuralCensus(
     origin: safeOrigin,
     // `size` is the payload's own length; `rangeBytes` is how much of it lies
     // inside the 16-bit address space and was therefore censused. The two
-    // differ only for a malformed origin/length pair (IN-04).
+    // differ only for a malformed origin/length pair.
     size,
     rangeBytes: rangeSize,
     seeds: seedList,
@@ -600,8 +602,8 @@ export interface SplitTableFinding {
    * construction (the load whose value reaches the LOWER of two consecutive
    * zero-page addresses is the lo table).
    *
-   * WR-01 is why this field exists: the shipped scan assigned the roles with
-   * `Math.min`/`Math.max` over the two operand addresses, which is not
+   * This field exists because an earlier version of this scan assigned the
+   * roles with `Math.min`/`Math.max` over the two operand addresses, which is not
    * evidence of anything, and on the stack-return idiom it produced a
    * byte-swapped twin of a finding the OTHER class had already reported
    * correctly ($05c0 for $c005). When this is false the finding is ADVISORY,
@@ -623,7 +625,7 @@ export interface StackReturnFinding {
    * pushes the HIGH byte first, so the idiom's own push order -- not address
    * order -- names which base holds which half. This is the one place a lo/hi
    * assignment was always justified, which is why Class 4 runs first and
-   * Class 3 declines any window it claimed (WR-01). */
+   * Class 3 declines any window it claimed. */
   orientationResolved: true;
 }
 
@@ -747,7 +749,7 @@ interface DispatchPairing {
  * FAILS THE TEST SUITE BY NAME. `anno-coverage.test.ts`'s
  * `GATE_INTERIOR_DECLARATIONS` must claim every id in this array, and a
  * declaration is checked mechanically by a witness that decodes the payload --
- * not accepted as a claim. That mechanism exists because CR-04 was a real
+ * not accepted as a claim. That mechanism exists because this was once a real
  * false-positive route that a 2517-passing suite concealed: every negative
  * control the gate had bracketed it from the OUTSIDE, and a negative control
  * built from the outside of the predicate it constrains is not a control.
@@ -858,7 +860,7 @@ export const DISPATCH_GATE_ROUTES: readonly DispatchGateRoute[] = Object.freeze(
  *     `jmp (vector)`" idiom, matched END TO END and matched against the pairing
  *     under test.
  *
- * WHY THE CONSTRUCTION ALONE IS NOT EVIDENCE (CR-04). Two stores into
+ * WHY THE CONSTRUCTION ALONE IS NOT EVIDENCE. Two stores into
  * consecutive zero-page addresses is how EVERY 16-bit pointer on a 6502 is
  * built, and `lda ($fb),y` -- indirect-indexed DATA access, far more common in
  * real code than indirect jump -- needs exactly the identical construction.
@@ -919,7 +921,7 @@ function hasDispatchContext(insns: readonly Instruction[], start: number, reach:
 
 /**
  * Which of two indexed loads feeds the LOW byte, decided by the pairing's own
- * store construction rather than by address order (WR-01).
+ * store construction rather than by address order.
  *
  * For each load, the nearest FOLLOWING zero-page store within reach is the
  * store that consumes it. When the two loads are consumed by two DIFFERENT,
@@ -974,10 +976,10 @@ export function scanIndirectDispatch(
   const insns = Array.isArray(instructions) ? instructions : [];
   const size = safeBytes.length;
 
-  // IN-05. THE ONE BOUND THIS SCAN DESCRIBES, stated once and read everywhere
+  // THE ONE BOUND THIS SCAN DESCRIBES, stated once and read everywhere
   // below. `computeStructuralCensus()` clamps its range at the 16-bit address
-  // space for IN-04's reason -- a `.regen2000proj` the operator did not author
-  // can claim any origin and carry any length -- and this scan, whose output is
+  // space for the same reason as here -- a `.regen2000proj` the operator did
+  // not author can claim any origin and carry any length -- and this scan, whose output is
   // that report's own dispatch sub-report, was left unbounded. Values at or
   // above $10000 caused no crash (the census's `mark()` filters them) but they
   // were written into the JSON that the decomposition and reassembly work
@@ -1001,8 +1003,8 @@ export function scanIndirectDispatch(
    * instruction?
    *
    * The ONE predicate both gated reconstructions read: class 3's condition (e)
-   * and the class-4 walk's condition (d). Extracted rather than written twice
-   * (WR-14) because the two halves of `provenDispatchTargets()` were held to
+   * and the class-4 walk's condition (d). Extracted rather than written twice,
+   * because the two halves of `provenDispatchTargets()` were held to
    * DIFFERENT standards for exactly as long as this test existed in only one
    * of them. A value pointing at a byte that does not decode is not an entry
    * point, and a mid-instruction address is not evidence of code however
@@ -1073,7 +1075,7 @@ export function scanIndirectDispatch(
   // : pha : rts` contains NO indirect-jump opcode, so an opcode-keyed walk
   // cannot see it at all. Sliding window over the decoded stream.
   //
-  // THIS PASS RUNS BEFORE CLASS 3, DELIBERATELY (WR-01). The idiom's hi/lo
+  // THIS PASS RUNS BEFORE CLASS 3, DELIBERATELY. The idiom's hi/lo
   // assignment is JUSTIFIED -- the 6502 pushes the high byte first, so the
   // first load reads the hi table -- whereas the Class-3 pass has no such
   // evidence. Where both would match the same five instructions, the
@@ -1083,7 +1085,7 @@ export function scanIndirectDispatch(
   // were an address. Every instruction of a matched window is recorded here
   // and the Class-3 pass declines any pairing whose leading load sits in one.
   //
-  // GATED TO THE SAME STANDARD AS CLASS 3 (WR-14). This pass feeds the same
+  // GATED TO THE SAME STANDARD AS CLASS 3. This pass feeds the same
   // `provenDispatchTargets()` seam class 3 feeds, and gating one half of a
   // seam while the other half is ungated is not a gate. A window is PROVEN
   // only when ALL of:
@@ -1145,7 +1147,7 @@ export function scanIndirectDispatch(
     for (let k = 0; k < entries; k++) {
       const loIdx = loBase + k - safeOrigin;
       const hiIdx = hiBase + k - safeOrigin;
-      // IN-05. The upper bound is the scan's ONE `effectiveEnd`, expressed on
+      // The upper bound is the scan's ONE `effectiveEnd`, expressed on
       // the addresses rather than on the indices, so this walk stops where the
       // census stops instead of at the payload's declared length. Both halves
       // of the pair must be inside it: publishing `loBase + k` as a table entry
@@ -1185,7 +1187,7 @@ export function scanIndirectDispatch(
   //       (`hasDispatchContext`) -- either the stack-return push idiom, or a
   //       zero-page vector that an indirect jump in reach actually jumps
   //       THROUGH. The mere construction of a zero-page vector is not enough:
-  //       an indirect-indexed data read builds the identical pointer (CR-04);
+  //       an indirect-indexed data read builds the identical pointer;
   //   (d) its lo/hi orientation is decided by the pairing's own store
   //       construction rather than by address order (`resolveSplitOrientation`);
   //   (e) EVERY reconstructed target lands strictly inside the image AND on a
@@ -1195,7 +1197,7 @@ export function scanIndirectDispatch(
   // orientation claim and no targets, contributing to neither `discovered`
   // nor `tableEntryAddresses`.
   //
-  // AN ADVISORY RECORDING DOES NOT CONSUME THE LEADING LOAD (WR-15). Only a
+  // AN ADVISORY RECORDING DOES NOT CONSUME THE LEADING LOAD. Only a
   // PROVEN pairing does. Otherwise one unrelated indexed load between the two
   // halves of a real split table erases it: the advisory pairing takes the
   // leading load, the genuine pairing behind it is never examined, and the
@@ -1208,7 +1210,7 @@ export function scanIndirectDispatch(
     if (!first.mnemonic.startsWith("ld")) continue;
     if (classFourWindow.has(first.address)) continue; // (a)
 
-    // ONLY A PROVEN PAIRING CONSUMES ITS LEADING LOAD (WR-15). An ADVISORY
+    // ONLY A PROVEN PAIRING CONSUMES ITS LEADING LOAD. An ADVISORY
     // recording does not: the first advisory pairing seen for this leading
     // load is remembered here and emitted only if the window closes with no
     // proven pairing found. Until 19-11 the inner loop broke on BOTH
@@ -1237,7 +1239,7 @@ export function scanIndirectDispatch(
       if (!inImage(a) || !inImage(b)) continue;
 
       // (b) + (d). The orientation is the ONLY thing that may name a base
-      // "lo": `Math.min` over two addresses is not evidence (WR-01).
+      // "lo": `Math.min` over two addresses is not evidence.
       const oriented = sameIndexRegister(first, second) ? resolveSplitOrientation(insns, i, j, SPLIT_TABLE_WINDOW) : null;
       // (c). The pairing under test crosses the call boundary: a predicate
       // that re-guesses which loads it is ruling on cannot rule on them.
@@ -1263,7 +1265,7 @@ export function scanIndirectDispatch(
       for (let k = 0; k < entries; k++) {
         const loIdx = loBase + k - safeOrigin;
         const hiIdx = hiBase + k - safeOrigin;
-        // IN-05, as in the class-4 walk above: the scan's ONE `effectiveEnd`,
+        // As in the class-4 walk above: the scan's ONE `effectiveEnd`,
         // never the payload's declared length.
         if (loIdx < 0 || hiIdx < 0 || loBase + k >= effectiveEnd || hiBase + k >= effectiveEnd) break;
         targets.push(safeBytes[loIdx]! | (safeBytes[hiIdx]! << 8));
@@ -1273,7 +1275,7 @@ export function scanIndirectDispatch(
 
       // (e) every target in-image and decodable as a legal instruction. The
       // predicate is shared with the class-4 walk's condition (d) -- one
-      // definition, read by both gated reconstructions (WR-14).
+      // definition, read by both gated reconstructions.
       const everyTargetIsAPlausibleEntryPoint = targets.every(isPlausibleEntryPoint);
 
       if (gatedSoFar && everyTargetIsAPlausibleEntryPoint) {
@@ -1443,7 +1445,7 @@ export function computeLabelRatio(symbols: readonly AnnoSymbol[], opts: LabelRat
   }
 
   const denominator = user + auto;
-  // WR-02: the count is a count OF the list printed beside it. Deduped ONCE
+  // The count is a count OF the list printed beside it. Deduped ONCE
   // into a local, then both fields read from that local -- two symbols at one
   // address must not report "2 label name(s) ... at $1000", a sentence that
   // contradicts itself.
@@ -1526,7 +1528,7 @@ export interface CommentVacuity {
    */
   malformedGradeAddresses: number[];
   /** Stated when a measure could not be computed, so an absent input can
-   * never read as a pass (COV-02). `null` when everything was computable. */
+   * never read as a pass. `null` when everything was computable. */
   reason: string | null;
 }
 
@@ -1712,7 +1714,7 @@ function escapeRegExp(value: string): string {
 
 /**
  * The adjacent signals that turn a caller's label NAME into a caller
- * CITATION -- the marker set the name branch of `namesACaller()` reads (WR-13).
+ * CITATION -- the marker set the name branch of `namesACaller()` reads.
  *
  * A NAMED CONSTANT rather than literals inlined in the regex, so the decision
  * is inspectable in one place and widening it is a one-line edit somewhere
@@ -1749,13 +1751,13 @@ const CALLER_CITATION_ALTERNATION = CALLER_CITATION_WORDS.map(
  * Does `rawComment` use `name` -- the user label recorded at a caller's
  * address -- AS A REFERENCE to that caller?
  *
- * THE DECISION, RECORDED (WR-13). Bare presence of the name is NOT enough.
+ * THE DECISION, RECORDED. Bare presence of the name is NOT enough.
  * the external analyser label names are routinely ordinary English words -- `loop`,
  * `init`, `main`, `start`, `data`, `table`, `draw` -- and an ordinary
  * description of what a routine does will contain one by accident. The
  * reproduced case: callers `[$0012, $0034]`, comment "sets the mode flag
  * before the main loop runs", caller `$0012` named `loop`. Nothing in that
- * comment refers to the routine at `$0012`, yet the pre-WR-13 identifier-
+ * comment refers to the routine at `$0012`, yet an earlier, identifier-
  * bounded test matched `loop` inside "main loop runs" and certified the label
  * as documenting its caller -- a falsely-clean verdict, and worse than a noisy
  * one, because a label counted as documented stays in `labels.kindRatio.user`
@@ -1774,7 +1776,7 @@ const CALLER_CITATION_ALTERNATION = CALLER_CITATION_WORDS.map(
  *   (c) FOLLOWED BY ITS OWN PARENTHESISED HEX ADDRESS -- `init ($0012)`.
  *
  * THE ALTERNATIVE WEIGHED AND REJECTED: drop the name branch entirely and
- * accept only the hex form, which CR-01's fix already anchors correctly. It is
+ * accept only the hex form, which is already anchored correctly. It is
  * strictly safer and strictly simpler. It was rejected because it would
  * silently reclassify every project whose annotator cites callers by name
  * rather than by address -- a real and reasonable convention -- turning a
@@ -1821,17 +1823,17 @@ function citesCallerByName(rawComment: string, name: string): boolean {
  *     underscore, so `my_entry_pointer` does not name `entry_point` -- AND
  *     must be USED AS A REFERENCE rather than merely present. See
  *     `citesCallerByName()` for what counts, why bare presence does not, and
- *     which alternative was rejected (WR-13).
+ *     which alternative was rejected.
  *
  * Why anchored rather than "purely textual": this rule is the one measure
  * whose entire subject is refusing to be talked into a clean verdict, and an
  * unanchored `includes()` could be satisfied by a string that merely TOUCHES a
  * caller's short form -- a falsely-clean verdict on the anti-gaming measure
- * itself (T-19-14, T-19G-06-01, T-19G-12-01). Held down in BOTH directions by
+ * itself. Held down in BOTH directions by
  * three committed controls in `anno-coverage.test.ts`: "ANCHORING: a
  * colliding longer hex never satisfies the multi-caller rule ...", "ANCHORING:
  * a caller's label name satisfies the rule only on an identifier boundary",
- * and "WR-13: a caller's label name counts only when the comment USES it as a
+ * and "a caller's label name counts only when the comment USES it as a
  * reference ...". */
 function namesACaller(
   rawComment: string,
@@ -1874,7 +1876,7 @@ export function computeReproducibility(input: ReproducibilityInput): Reproducibi
     if (x && Array.isArray(x.callers)) callersByAddress.set(x.address, x.callers);
   }
 
-  // --- The multi-caller rule (COV-02). Strictly MORE THAN ONE caller.
+  // --- The multi-caller rule. Strictly MORE THAN ONE caller.
   const multiCallerUndocumented: number[] = [];
   for (const sym of symbolList) {
     if (!sym) continue;
@@ -1887,7 +1889,7 @@ export function computeReproducibility(input: ReproducibilityInput): Reproducibi
     }
   }
   const undocumented = new Set(multiCallerUndocumented);
-  // WR-02, again: ONE deduped list, and every number reported beside it is
+  // Again: ONE deduped list, and every number reported beside it is
   // derived from it. Same rule as `computeLabelRatio` above -- a count printed
   // in the same sentence as a list must be a count of that list, or the
   // finding text contradicts itself.
@@ -1965,7 +1967,7 @@ export interface DivergenceReport {
   /** False when the caller supplied no block listing at all. The counts above
    * are still computed and still true, but they compare against NOTHING, so
    * an absent listing is reported explicitly rather than read as "the store
-   * classified none of it" (COV-02). */
+   * classified none of it". */
   blocksSupplied: boolean;
   /** Stated whenever `blocksSupplied` is false; `null` otherwise. */
   reason: string | null;
@@ -2028,7 +2030,7 @@ export interface CoverageProjectInfo {
   origin: number;
   size: number;
   /** False when the project file was unreadable as JSON or its payload would
-   * not decode. Never a throw, never a silent skip -- COV-02. */
+   * not decode. Never a throw, never a silent skip. */
   payloadDecoded: boolean;
   /** Stated whenever `payloadDecoded` is false; `null` otherwise. */
   reason: string | null;
@@ -2111,8 +2113,8 @@ export interface LoadedProject {
  * offset at which parsing stopped, as ` (at byte offset N)`, or `""` when the
  * runtime did not name one.
  *
- * WHY THIS IS A DIGIT EXTRACTOR AND NOT A MESSAGE PASS-THROUGH (CR-03,
- * `T-29-16-06`). V8's JSON `SyntaxError` embeds a SNIPPET OF THE INPUT in its
+ * WHY THIS IS A DIGIT EXTRACTOR AND NOT A MESSAGE PASS-THROUGH
+ * (`T-29-16-06`). V8's JSON `SyntaxError` embeds a SNIPPET OF THE INPUT in its
  * own message -- `Unexpected token 'Q', "QQZZORACLE"... is not valid JSON` --
  * so any code that forwards `err.message` from a JSON parse over
  * caller-supplied bytes is a content-disclosure oracle. The capture group is
@@ -2127,7 +2129,7 @@ export interface LoadedProject {
  * explicit cross-reference is cheaper than coupling the instrument to the
  * renderer; if a third caller ever appears, that is the moment to give it a
  * shared home. Keep the two in step: widening either regex beyond digits
- * reopens CR-03 on that side.
+ * reopens the same content-disclosure hazard on that side.
  */
 function jsonParsePosition(err: unknown): string {
   const match = /\bat position (\d+)\b/.exec(err instanceof Error ? err.message : String(err));
@@ -2179,7 +2181,7 @@ function imageRefusal(projectPath: string, err: unknown): LoadedProject {
  * CONTRACT rather than a style choice. It is copied from `anno-tools.ts`'s
  * `loadImage()` -- the surface's own image loader -- rather than re-derived,
  * so the two views of "what is an image" cannot drift. The incident it
- * encodes (WR-07): a 4096-byte flat `.raw` capture fell through to the `.prg`
+ * encodes: a 4096-byte flat `.raw` capture fell through to the `.prg`
  * parser, whose first two bytes become the load address, so a truncated
  * capture silently reported a complete-looking measurement with an origin
  * read backwards out of its own payload bytes, and exited zero -- every
@@ -2188,7 +2190,8 @@ function imageRefusal(projectPath: string, err: unknown): LoadedProject {
  * reachable for those two extensions.
  *
  * The retired JSON-project form is the TRAILING branch and nothing more: its
- * only producer was deleted by D-14 (2026-08-29), so it is retained purely so a
+ * only producer was deleted when the CLI's kept-verb set was narrowed to
+ * `render-memmap` and `coverage` (2026-08-29), so it is retained purely so a
  * caller with an existing project file on disk is not broken. Its diagnoses
  * are byte-identical to what they were, with the single exception recorded on
  * the syntax branch below.
@@ -2206,8 +2209,8 @@ export function loadProjectImage(projectPath: string): LoadedProject {
     // malformed data -- the one class this module throws for. The
     // interpolated message here is an ERRNO-class failure (ENOENT, EACCES,
     // EISDIR) that carries no byte of the file's content, so it is left
-    // interpolated on purpose; plan 29-14 left the equivalent read-failure
-    // branch on the sibling verb alone for exactly this reason.
+    // interpolated on purpose; the equivalent read-failure branch on the
+    // sibling verb was left alone for exactly this reason.
     throw new AnnoCoverageInputError(
       `buildCoverageReport: could not read ${projectPath} -- ${err instanceof Error ? err.message : String(err)}`,
       { cause: err, projectPath },
@@ -2236,18 +2239,18 @@ export function loadProjectImage(projectPath: string): LoadedProject {
   try {
     parsed = JSON.parse(new TextDecoder().decode(bytes));
   } catch (err) {
-    // NEVER INTERPOLATE THE UNDERLYING PARSE ERROR HERE (CR-03,
-    // `T-29-16-06`). V8's SyntaxError quotes a snippet of the input it choked
+    // NEVER INTERPOLATE THE UNDERLYING PARSE ERROR HERE
+    // (`T-29-16-06`). V8's SyntaxError quotes a snippet of the input it choked
     // on, so passing it through turns `<project>` -- a positional the shipped
     // playbooks tell an LLM to compose in a Bash invocation -- into a
     // CONTENT-DISCLOSURE ORACLE. Reproduced verbatim on this very tree before
     // the fix: `game.prg is not valid JSON -- Unexpected token '', "<the
     // file's own opening bytes>"... is not valid JSON`.
     //
-    // Plan 29-14 (`T-29-14-01`) applies exactly this treatment to the
+    // The equivalent fix (`T-29-14-01`) applies exactly this treatment to the
     // `render-memmap --provenance` sidecar's syntax failure. Both sibling
     // verbs therefore give one treatment to one defect class. Residual
-    // severity is MEDIUM here rather than 29-14's HIGH only because
+    // severity is MEDIUM here rather than that sibling's HIGH only because
     // `storePathWithinWorkspace()` confines this positional before the
     // loader sees it, so the oracle cannot leave the workspace -- an
     // in-workspace content echo is still a content echo.
@@ -2263,7 +2266,7 @@ export function loadProjectImage(projectPath: string): LoadedProject {
       payloadDecoded: false,
       reason:
         `${projectPath} is not valid JSON${jsonParsePosition(err)} and is not a .prg or an exactly-65536-byte flat capture ` +
-        "(the underlying parser message is deliberately NOT included -- it quotes the file's own bytes, CR-03)",
+        "(the underlying parser message is deliberately NOT included -- it quotes the file's own bytes)",
     };
   }
 
