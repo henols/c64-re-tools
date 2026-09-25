@@ -164,7 +164,7 @@ only after the provenance diff partitions loader from cracktro from game — see
 
 1. Press past any "hit any key" gate. **`vice_keyboard_matrix` is permanently unavailable** — the
    binary monitor's `KEYBOARD_FEED` only injects PETSCII text into the KERNAL buffer. It cannot
-   drive the raw matrix. See `docs/stock-hard-losses.md`. Use `vice_keyboard_type` /
+   drive the raw matrix. Use `vice_keyboard_type` /
    `vice_keyboard_petscii` when the gate reads the KERNAL buffer, or `vice_joystick_set` when it
    polls the matrix directly. Buffer injection stays invisible to a program that polls
    `$DC00`/`$DC01` itself.

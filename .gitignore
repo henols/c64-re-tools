@@ -1,12 +1,12 @@
-# npm dependencies for the VICE MCP server (src/mcp/vice). Provisioned on
-# the consumer side by scripts/ensure-mcp-deps.sh; never committed.
+# npm dependencies for the VICE MCP server (src/mcp/vice). Installed by the
+# user with `npm ci`; never committed.
 node_modules/
 
 # The single tool-written root (D-33, 2026-09-08 clean break; alias added
 # 2026-09-08, gap G-40-1): every writer in this codebase that used to
-# scatter its output across five separate locations (.vice-supervisor/,
+# scatter its output across four separate locations (.vice-supervisor/,
 # .vice-snapshots/, tools/*.mjs + vice-launcher.sh + .vice-deployed.json,
-# .planning/incidents/, and ensure-mcp-deps.sh's lockfile stamp) now lands
+# and .planning/incidents/) now lands
 # under ONE directory: supervisor/ (broker state), snapshots/ (.vsf + .json
 # sidecars), bin/ (deployed host launcher artifacts), runs/oracle/
 # (oracle.run scratch), runs/ghidra/ (ghidra.analyze's per-run project

@@ -7,9 +7,7 @@
 // the forked VICE MCP backend) because buildHeldLease() in vice-proxy.ts
 // reads activeInstance() on EVERY tool call, on BOTH backends, through
 // ensureBrokerLease() -- deleting vice.ts wholesale would have broken stock
-// lease acquisition, not just the fork's own transport. See
-// docs/stock-hard-losses.md for the stock backend's own accepted hardware
-// limitations, a related but separate concern.
+// lease acquisition, not just the fork's own transport.
 //
 // WHAT NOT TO DO:
 //   - The fork transport (call(), rpc(), ensureInitialized(), withReconnect(),

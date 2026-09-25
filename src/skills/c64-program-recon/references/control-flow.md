@@ -85,8 +85,7 @@ address to checkpoint when the emulator is next available. Testing the RESTORE h
 experiment is not currently possible: **`vice_keyboard_restore` is permanently unavailable.** The
 RESTORE key pulses the NMI line directly and is not part of the keyboard matrix, so `KEYBOARD_FEED`
 (which only injects PETSCII text into the buffer) cannot produce it. Calling the tool returns an
-error naming the reason, rather than pulsing RESTORE. No client-side substitute exists — see
-`docs/stock-hard-losses.md`. The reset half of the experiment remains testable: arm the checkpoint,
+error naming the reason, rather than pulsing RESTORE. No client-side substitute exists. The reset half of the experiment remains testable: arm the checkpoint,
 call `vice_machine_reset` soft and hard, and record where the PC actually lands.
 
 **Evidence:** derived mechanically from six three-run-verified captures. Every value stays

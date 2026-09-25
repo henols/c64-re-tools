@@ -209,8 +209,8 @@ export function stockAnswer(client: ViceMonitorClient, payload: Record<string, u
 // SESSION-FREE (`kind: "pure"`) tool's successful answer is constructed. `runState: "unknown"` is the
 // honest value here, not a placeholder: a session-free handler never opens a
 // monitor connection, so the emulator's run state was genuinely never
-// observed -- "unknown" is already documented (docs/stock-vice-parity.md
-// §A.7) as "the honest post-connect value and is not a failure". This
+// observed -- "unknown" is the honest post-connect value and is not a
+// failure. This
 // function exists so the standing D-06 gate in stock-tools.test.ts
 // ("every stock entry's outputSchema declares a required runState enum of
 // [running, stopped, unknown]") needs no exemption list for the two DERIV-04

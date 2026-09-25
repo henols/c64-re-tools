@@ -19,7 +19,7 @@
 //   - Never gate or deny vice_machine_reset's hard mode. CLAUDE.md's
 //     power-cycle warning is about RESOURCE_SET (0x52) writes to
 //     MachineVideoStandard/VICIIModel/MachinePowerFrequency -- the CUT
-//     vice_machine_config_get/set pair's resources (docs/stock-vice-parity.md), a DIFFERENT opcode entirely. RESET (0xcc) is a distinct
+//     vice_machine_config_get/set pair's resources, a DIFFERENT opcode entirely. RESET (0xcc) is a distinct
 //     command, and an agent-requested hard reset via RESET is exactly what
 //     DIRECT-06 asks for. It needs no deny-list (RESEARCH.md Pitfall 1).
 //   - Never look for a per-unit disk-attach route mid-implementation.
@@ -27,7 +27,7 @@
 //     a protocol gap, not a code bug you can fix by looking harder
 //     (RESEARCH.md Pitfall 2).
 //   - Never add a disk-detach handler here. D-13's vice_disk_detach was
-//     CUT from scope 2026-08-17 (docs/stock-vice-parity.md) -- grep-gated
+//     CUT from scope 2026-08-17 -- grep-gated
 //     to zero occurrences of its name in this file's own acceptance criteria.
 //   - Never build a broker-side path inside ANY handler in this file
 //     (handleAutostart/handleDiskAttach/handleSnapshotSave/
@@ -86,7 +86,7 @@ function checkLocalFileReadable(toolName: string, path: string): string | null {
 
 /**
  * `mode` defaults to "soft"; `run_after` defaults to **false** on stock --
- * the divergence docs/stock-vice-parity.md records. RESET has no run-after
+ * stock's recorded divergence. RESET has no run-after
  * field on the wire at all, so honouring `run_after: true` means sending a
  * follow-up EXIT -- fine when the agent explicitly asked for it (D-05
  * licenses this: the agent's own argument IS the request, not an
@@ -247,8 +247,7 @@ export const handleAutostart: StockSessionHandler = async (args, session) => {
  * refused, never silently retargeted to unit 8 -- AUTOSTART is the only wire
  * route to attaching an image and its request body has NO drive-unit field
  * at all, so an agent told "attached to unit 9" when the image landed on
- * unit 8 would debug the wrong drive. See docs/stock-vice-parity.md's D-14
- * entry.
+ * unit 8 would debug the wrong drive.
  *
  * The returned `approximation` string names BOTH real side effects Phase 13
  * plan 13-03's live A5 probe observed against real fork VICE 3.10: a full
@@ -347,7 +346,7 @@ export const handleDiskAttach: StockSessionHandler = async (args, session) => {
       `vice_disk_attach: unit ${unit} cannot be targeted on the stock backend -- AUTOSTART (0xdd) is the only wire ` +
         "route to attaching a disk image on the stock binary monitor and its request body has no drive-unit field at " +
         "all, so units 9-11 cannot be targeted. Only unit 8 is reachable; the call was refused rather than silently " +
-        "retargeted to unit 8 so you do not debug the wrong drive. See docs/stock-vice-parity.md's D-14 entry.",
+        "retargeted to unit 8 so you do not debug the wrong drive.",
     );
   }
 
@@ -425,8 +424,7 @@ const SNAPSHOT_STAGE_SLOT = "snapshot";
  * directly (D-18: this file no longer imports stock-paths.ts at all) into a
  * workspace-internal path -- never treated as a path fragment; this rule is
  * UNCHANGED by Phase 64 (D-13). The client-side metadata sidecar
- * (docs/stock-vice-parity.md item 6: "DUMP writes state; JSON metadata is
- * our own bookkeeping") is written ONLY after the download from the broker
+ * ("DUMP writes state; JSON metadata is our own bookkeeping") is written ONLY after the download from the broker
  * succeeds, so a failed save never leaves a sidecar claiming a snapshot that
  * does not exist; a sidecar WRITE failure is reported in the answer as
  * `metadataWritten: false` with a reason, never thrown -- the snapshot

@@ -374,7 +374,7 @@ test("Suite C: the acmeExpressible substitution table is byte-faithful in BOTH d
   assert.deepEqual(overSubstituted, [], `Suite C (over-substitution): these acmeExpressible:true entries do not faithfully reassemble to their own opcode byte and must be flipped to false:\n${overSubstituted.join("\n")}`);
   assert.deepEqual(underSubstituted, [], `Suite C (under-substitution): these acmeExpressible:false entries ARE byte-faithful and must be flipped to true:\n${underSubstituted.join("\n")}`);
 
-  // Greppable, stable membership-set dump for 04-07's docs/stock-vice-parity.md.
+  // Greppable, stable membership-set dump.
   console.log(
     "DISASM-03 !byte substitution set (acmeExpressible=false, verified against installed ACME):",
     byteSubstitutionSet.map((op) => `$${op.toString(16).padStart(2, "0").toUpperCase()}`).join(", "),

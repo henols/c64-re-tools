@@ -14,7 +14,7 @@ usage, not measured). Individual rows that have since been exercised live are ma
 | Is this really the main loop? | `vice_checkpoint_add` + `vice_run_until` + `vice_registers_get` — fires once per frame ⇒ proven |
 | What code writes this? | `vice_watch_add` — finds **writers**. Best targets: `$D018`, VM+`$03F8`, `$D404` |
 | Whole-chip VIC-II/CIA state without the read hazards | `vice_vicii_get_state` / `vice_cia_get_state` — prefer these over raw register reads |
-| Whole-chip SID state without the read hazards | `vice_sid_get_state` — **permanently unavailable**: SID `$D400-$D418` is write-only in hardware and the binary monitor has no SID command, so read-back cannot be recovered. Writes to those addresses still work fine over the memory-set primitive. See `docs/stock-hard-losses.md` |
+| Whole-chip SID state without the read hazards | `vice_sid_get_state` — **permanently unavailable**: SID `$D400-$D418` is write-only in hardware and the binary monitor has no SID command, so read-back cannot be recovered. Writes to those addresses still work fine over the memory-set primitive |
 | Decode sprite data | `vice_sprite_get` / `vice_sprite_inspect` |
 | Find a known byte pattern | `vice_memory_search` |
 | Carry labels across sessions | `vice_symbols_load` / `vice_symbols_lookup` — ACME `--vicelabels` emits the format they consume. The annotation store's own export into that format is **withdrawn as of 2026-08-29, and no phase currently owns its return**. An earlier forecast named a numbered phase for it, and that forecast is superseded now |

@@ -81,11 +81,11 @@ Two supported ways to exercise the payload as a consumer does:
 ### Dependencies
 
 The MCP server has real npm dependencies (`@mastra/mcp`, `@mastra/core`). They
-are **not** committed. A `SessionStart` hook (`scripts/ensure-mcp-deps.sh`)
-runs `npm ci` into `src/mcp/vice/node_modules` on first session and after
-any lockfile change, gated on a hash so normal starts are a cheap no-op. This
-needs `node` and `npm` on `PATH` and network access to the npm registry on the
-consumer's machine.
+are **not** committed and nothing installs them for you. After installing the
+plugin, run `npm ci --prefix <plugin-root>/src/mcp/vice` once, and again after
+an update that changes its `package-lock.json`. Without it the `vice` MCP
+server fails to start. This needs `node` ≥ 24 and `npm` on `PATH` and network
+access to the npm registry.
 
 ## Prerequisites at a glance
 
@@ -161,9 +161,7 @@ observation.
 
 Three capabilities have no route on stock VICE at all — a permanent hardware
 fact, not a gap waiting on a later build. Calling any of these returns an
-error naming the tool and the reason; it fails loudly, not silently. See
-[`docs/stock-hard-losses.md`](docs/stock-hard-losses.md) for the full record
-of what is lost and why.
+error naming the tool and the reason; it fails loudly, not silently.
 
 - **`vice_sid_get_state`** — permanently unavailable. SID `$D400`-`$D418` is
   write-only in hardware and the binary monitor has no SID command; writes
@@ -298,10 +296,6 @@ src/
   mcp/vice/          # @henols/vice-mcp — the MCP server (authored TS, generated-but-committed resources/, tests)
   skills/            # the eight skills above (canonical source)
 installer/           # @henols/c64-re-tools — npx installer; bundles the skills, depends on vice-mcp
-docs/
-  stock-hard-losses.md  # the three capabilities with no route on stock, and why (see above)
-scripts/
-  ensure-mcp-deps.sh    # SessionStart dependency provisioning (plugin mode)
 ```
 
 The payload no longer sits on Claude Code's auto-discovery path — see

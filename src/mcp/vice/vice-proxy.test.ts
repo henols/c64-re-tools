@@ -3368,8 +3368,7 @@ test("BACK-05/FORKRM-05: stock now falls through to the plain Unknown tool fallb
       resp.result.content[0].text,
       "Unknown tool: vice_sid_get_state",
       "with the per-backend capability registry gone, an absent tool name -- hardware-only or not -- falls " +
-        "through to the same plain unknown-tool message a typo gets (FORKRM-05); see docs/stock-hard-losses.md " +
-        "for the permanent, human-readable record of why this specific tool has no stock route"
+        "through to the same plain unknown-tool message a typo gets (FORKRM-05)"
     );
   } finally {
     proxy.child.kill("SIGKILL");

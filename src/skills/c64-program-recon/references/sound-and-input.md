@@ -62,7 +62,7 @@ One that programs `$DC04-$DC07` and enables timer A runs its own timebase.
   afternoon.** Games and cracks bypass the KERNAL keyboard buffer and read the matrix directly.
   Assume it until shown otherwise. **`vice_keyboard_matrix` is permanently unavailable** — the
   binary monitor's `KEYBOARD_FEED` only injects PETSCII buffer text and cannot drive the raw
-  matrix. See `docs/stock-hard-losses.md`. Use `vice_keyboard_type` / `vice_keyboard_petscii` when
+  matrix. Use `vice_keyboard_type` / `vice_keyboard_petscii` when
   the gate reads the KERNAL buffer, or `vice_joystick_set` when it polls the matrix directly.
   Buffer injection stays invisible to a program polling `$DC00`/`$DC01` itself.
 

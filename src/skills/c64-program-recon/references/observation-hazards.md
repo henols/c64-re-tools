@@ -75,7 +75,7 @@ Whether the emulator's own `MEM_GET` read path actually honours that flag for
 no probe recorded in this repo. Treat it as unverified, not as a proven guarantee.
 `vice_sid_get_state` read-back is **permanently unavailable**: SID `$D400-$D418` is write-only
 in hardware and the binary monitor has no SID command, so there is no route to recover it.
-Writes to those addresses still work fine. See `docs/stock-hard-losses.md`. Also: an internal
+Writes to those addresses still work fine. Also: an internal
 field the register map cannot expose is marked `{ available: false, reason }` in the answer, never
 a bare `0` — do not record a `0` from one of these fields as a measurement. Check `available`
 first. A chip-state or sprite answer also **names the memory view it read** (`bank`, or
@@ -95,7 +95,7 @@ gate by releasing it at the trigger checkpoint, never earlier.
 **`vice_keyboard_matrix` is permanently unavailable.** The binary monitor's `KEYBOARD_FEED` (0x72)
 only injects PETSCII text into the KERNAL keyboard buffer. The emulator recomputes CIA port B from
 its own keyboard array on every read, so there is no wire command that can drive the raw matrix —
-this is unrecoverable, not merely unbuilt. See `docs/stock-hard-losses.md`. Use
+this is unrecoverable, not merely unbuilt. Use
 `vice_keyboard_type` / `vice_keyboard_petscii` when the gate reads the KERNAL buffer, or
 `vice_joystick_set` when it polls the matrix directly instead. Either way, buffer injection is
 invisible to a program polling `$DC00`/`$DC01` itself, so a matrix-polling gate must be driven by

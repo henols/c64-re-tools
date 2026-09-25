@@ -408,7 +408,6 @@ test("`.gitignore` and install-resources.ts's deployed set (resourceEntries() + 
 // `scripts/` will not find it.
 const EXPECTED_TRACKED_SHELL_SCRIPTS = [
   "src/mcp/vice/resources/vice-launcher.sh",
-  "scripts/ensure-mcp-deps.sh",
   ".planning/phases/29-the-mcp-surface/29-15-e2e.sh",
 ].sort();
 

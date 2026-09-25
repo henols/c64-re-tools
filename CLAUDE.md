@@ -17,7 +17,7 @@ state — and keep working when the emulator misbehaves.
 ## Project Type
 ## Languages
 - TypeScript 
-- Bash - host launcher script (`src/mcp/vice/resources/vice-launcher.sh`), SessionStart dependency provisioning (`scripts/ensure-mcp-deps.sh`)
+- Bash - host launcher script (`src/mcp/vice/resources/vice-launcher.sh`)
 - 6502/6510 assembly (ACME dialect) - skill scaffolds/templates, e.g. `src/skills/acme-build/template.a`
 - Markdown - all skill documentation (`SKILL.md` files).
 ## Runtime
