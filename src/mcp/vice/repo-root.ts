@@ -295,7 +295,15 @@ export function repoRoot({ from = HERE, env = process.env, exists = existsSync }
  * their respective resolved default, exactly as before; only the DEFAULT
  * moved. */
 export function toolsDir(opts: RepoRootOptions = {}): string {
-  return join(repoRoot(opts), ".c64-re-tools");
+  return toolsDirUnder(repoRoot(opts));
+}
+
+/** The same tool-written root, under an explicit `root` rather than one
+ * found by walking up for `.git` -- for callers (dxa-run.ts, ghidra-run.ts)
+ * that are handed their root. Shares this file's single occurrence of the
+ * directory name. */
+export function toolsDirUnder(root: string): string {
+  return join(root, ".c64-re-tools");
 }
 
 /** The one shared directory name every module in this skill reads/writes

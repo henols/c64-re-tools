@@ -32,7 +32,7 @@ import { basename, dirname, join, sep, resolve as resolvePath } from "node:path"
 import { fileURLToPath } from "node:url";
 
 import { runHostToolOverEndpoint, type HostToolClientResult, type RunHostToolOverEndpointOptions } from "./host-tool-endpoint.mts";
-import { repoRoot } from "./repo-root.ts";
+import { repoRoot, toolsDirUnder } from "./repo-root.ts";
 import { parsePrg, flatImageOrigin } from "./prg-image.ts";
 import { parseDumpListing, type DumpListingMap } from "./dxa-listing.ts";
 import { emitDataBlocks, emitLabels, type KnownDataRow } from "./dxa-blocks.ts";
@@ -221,7 +221,7 @@ export async function runDxaDisassemble(args: DxaRunArgs, opts: DxaRunOptions = 
   // refusal wins" discipline for its resolved paths.
   let datablocksPath = args.datablocksPath;
   let labelsPath = args.labelsPath;
-  const toolsRoot = opts.toolsRoot ?? join(root, ".c64-re-tools");
+  const toolsRoot = opts.toolsRoot ?? toolsDirUnder(root);
   let inputsDir: string | undefined;
   if (args.knownDataRows !== undefined) {
     if (datablocksPath !== undefined || labelsPath !== undefined) {

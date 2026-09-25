@@ -61,7 +61,7 @@ import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runHostToolOverEndpoint, type HostToolClientResult, type RunHostToolOverEndpointOptions } from "./host-tool-endpoint.mts";
-import { repoRoot as findRepoRoot } from "./repo-root.ts";
+import { repoRoot as findRepoRoot, toolsDirUnder } from "./repo-root.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -220,7 +220,7 @@ export async function runGhidraAnalyze(args: GhidraRunArgs, opts: GhidraRunOptio
   if (args.dataRangesPath !== undefined) wireArgs.dataRangesPath = args.dataRangesPath;
 
   const root = opts.repoRoot ?? findRepoRoot({ from: HERE });
-  const runOpts: RunHostToolOverEndpointOptions = { baseDir: root, toolsRoot: opts.toolsRoot ?? join(root, ".c64-re-tools") };
+  const runOpts: RunHostToolOverEndpointOptions = { baseDir: root, toolsRoot: opts.toolsRoot ?? toolsDirUnder(root) };
   if (opts.port !== undefined) runOpts.port = opts.port;
 
   const response = await run("ghidra.analyze", wireArgs, runOpts);
