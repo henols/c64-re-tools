@@ -57,7 +57,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { BROKER_START_COMMAND } from "./broker-endpoint.ts";
+import { BROKER_START_COMMAND } from "./broker-endpoint.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SERVICE_DIR = join(HERE, "service");

@@ -70,7 +70,7 @@ import { connect, createServer } from "node:net";
 
 import { build } from "./build.ts";
 import { openBrokerControl, resolveSessionLabel, type BrokerControlSession, type AcquireGrant } from "./vice-broker-client.ts";
-import { dialMonitorRelay } from "./broker-endpoint.ts";
+import { dialMonitorRelay } from "./broker-endpoint.mts";
 import { probeReady } from "./broker-launch.mts";
 import {
   ViceMonitorClient,
@@ -430,7 +430,7 @@ test(
       if (!claim.ok) return;
 
       // --- Real relay attach, through the production fixed-endpoint dial
-      // (dialMonitorRelay(), broker-endpoint.ts) -- pointed at THIS file's
+      // (dialMonitorRelay(), broker-endpoint.mts) -- pointed at THIS file's
       // own ephemeral control port, never the persistent machine-wide
       // default (19510).
       const dial = await dialMonitorRelay({

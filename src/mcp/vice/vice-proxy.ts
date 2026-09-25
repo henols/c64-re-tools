@@ -90,9 +90,9 @@
 import { activeInstance, useInstance, mcpHost, type ActiveInstance, type ToolInfo } from "./vice-errors.ts";
 import { repoRoot, toolsDir } from "./repo-root.ts";
 // The single version-resolution seam (quick-260819-tsz, D-5) -- PROXY_VERSION
-// below is the only consumer in this file; see version.ts's own header for
+// below is the only consumer in this file; see version.mts's own header for
 // why this file must never re-derive any part of the algorithm itself.
-import { runtimeVersion } from "./version.ts";
+import { runtimeVersion } from "./version.mts";
 import { hostPath, SET_ENV_HINT } from "./hostpath.ts";
 // The INVERSE direction (host -> container), for inverting a broker grant's
 // own host-local coordinates before useInstance() ever adopts them (this
@@ -382,7 +382,7 @@ process.stdout.on("error", (err) => {
 // no longer survives as a hand-edited literal (quick-260819-tsz, D-4/D-5):
 // it used to say "0.1.0" while npm's actual `latest` was twelve patches
 // ahead, because nothing updated it. It is now derived through
-// `runtimeVersion()` (the ONE seam, `./version.ts`), which reads this
+// `runtimeVersion()` (the ONE seam, `./version.mts`), which reads this
 // package's own `package.json` first (the published-tarball path, where
 // `npm version` already stamped a real number) and falls back to the
 // repo-root `VERSION` template -- rendered as `<resolved>-dev` -- only in a

@@ -65,7 +65,7 @@ import {
   type StageFileOptions,
   type StageFileOutcome,
 } from "./vice-broker-client.ts";
-import { dialMonitorRelay } from "./broker-endpoint.ts";
+import { dialMonitorRelay } from "./broker-endpoint.mts";
 // Phase 65 (SEAM-01): `transferFileOverEndpoint()` and the three
 // request/result types below moved to `transfer-client.mts` -- this module
 // imports the function as its own `transferFile` default and re-exports the
@@ -357,7 +357,7 @@ export interface StockConnectDeps {
   /** Injectable override for how a payload crosses the wire once a transfer
    * connection is open (Phase 64, XFER-04) -- the SAME injectable-override
    * register `dialMonitorSocket` above already occupies. Omitted means the
-   * module's OWN default: dialFileTransfer() (broker-endpoint.ts) against
+   * module's OWN default: dialFileTransfer() (broker-endpoint.mts) against
    * the broker's fixed endpoint, presenting the per-claim handle as its
    * only authority (G-64-1, owner decision 5) -- no credential of any
    * kind -- streaming the payload through the SAME cap-and-digest

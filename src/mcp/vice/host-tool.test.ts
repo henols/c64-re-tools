@@ -51,7 +51,7 @@ import {
   HOST_TOOL_OUTPUT_NAME_KEYS,
   HOST_TOOL_STAGE_LINE_MAX_BYTES,
 } from "./host-tool-endpoint.mts";
-import { DEFAULT_HOST_TOOL_STAGE_REPLY_TIMEOUT_MS, type HostToolSession } from "./broker-endpoint.ts";
+import { DEFAULT_HOST_TOOL_STAGE_REPLY_TIMEOUT_MS, type HostToolSession } from "./broker-endpoint.mts";
 import { brokerJsonPath, CONTROL_CONNECT_TIMEOUT_MS } from "./vice-broker-client.ts";
 import { acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
 import { dxaSkipReasonFor, assertDxaRequiredIfEnvSet } from "./dxa-gate.ts";

@@ -27,7 +27,7 @@ import {
   type RelayAttachOutcome,
 } from "./broker-control.mts";
 import { createBrokerState, type BrokerState, type InstanceRecord, type MonitorChannel } from "./broker-state.mts";
-import { dialMonitorRelay, HELLO_PROTOCOL_MAGIC, RELAY_TAG_TEXT, type DialMonitorRelayResult } from "./broker-endpoint.ts";
+import { dialMonitorRelay, HELLO_PROTOCOL_MAGIC, RELAY_TAG_TEXT, type DialMonitorRelayResult } from "./broker-endpoint.mts";
 import { TextMonitorClient, withTextChannelLock } from "./text-protocol.ts";
 import { resetChannelLockForTests } from "./channel-lock.ts";
 import { build } from "./build.ts";

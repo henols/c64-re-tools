@@ -1334,9 +1334,9 @@ function createSession(socket: Socket, token: string): BrokerControlSession {
    * Does NOT touch this module's two legacy UTF-8 string framers
    * (see this file's own header comment on that legacy discovery-record
    * dial path). D-03 declined converting them deliberately: that path is
-   * legacy, broker-endpoint.ts's header forbids importing it, and RM-02
+   * legacy, broker-endpoint.mts's header forbids importing it, and RM-02
    * deletes it in Phase 66 -- and the transfer this op sets up rides
-   * broker-endpoint.ts, which accumulates as a Buffer, so no payload byte
+   * broker-endpoint.mts, which accumulates as a Buffer, so no payload byte
    * can reach a string framer by construction. A later reader must not
    * "fix" them on this function's account. */
   async function stageFile(opts: StageFileOptions): Promise<StageFileOutcome> {

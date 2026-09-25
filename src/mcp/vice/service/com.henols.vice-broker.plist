@@ -23,7 +23,7 @@
   below spells out the exact same fixed, path-free command documented
   everywhere else in this project (README.md, the systemd unit beside this
   file, and the dial refusal text BROKER_START_COMMAND exports from
-  src/mcp/vice/broker-endpoint.ts) -- it needs no per-machine rendering step.
+  src/mcp/vice/broker-endpoint.mts) -- it needs no per-machine rendering step.
 -->
 <plist version="1.0">
 <dict>

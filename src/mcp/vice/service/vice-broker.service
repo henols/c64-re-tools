@@ -20,7 +20,7 @@
 # exact same fixed, path-free command documented everywhere else in this
 # project (README.md, the launchd agent beside this file, and the dial
 # refusal text `BROKER_START_COMMAND` exports from
-# src/mcp/vice/broker-endpoint.ts) -- it needs no per-machine rendering step.
+# src/mcp/vice/broker-endpoint.mts) -- it needs no per-machine rendering step.
 
 [Unit]
 Description=vice broker -- the on-demand VICE emulator broker for c64-re-tools

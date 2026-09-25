@@ -47,7 +47,7 @@ import { dirname, join } from "node:path";
 
 import { handleAutostart, handleDiskAttach, handleSnapshotSave, handleSnapshotLoad } from "./stock-machine.ts";
 import { CommandType, type ViceMonitorClient } from "./stock-protocol.ts";
-import { dialFileTransfer, awaitTransferComplete } from "./broker-endpoint.ts";
+import { dialFileTransfer, awaitTransferComplete } from "./broker-endpoint.mts";
 import { createHashAndCountTransform, verifyObserved, TRANSFER_MAX_BYTES } from "./transfer-hash.mts";
 import { build } from "./build.ts";
 import { startControlListener, newControlToken } from "./broker-control.mts";
@@ -240,7 +240,7 @@ function makeRealStageFile(control: { sendAndRead: (obj: Record<string, unknown>
 }
 
 /** A REAL TransferFileFn dialling this listener via dialFileTransfer()
- * (broker-endpoint.ts) and streaming through the SAME cap-and-digest
+ * (broker-endpoint.mts) and streaming through the SAME cap-and-digest
  * Transform (transfer-hash.mts) the real production defaultTransferFile()
  * (stock-connect.ts) uses. Composed here from the same exported public
  * seams a real caller would use -- defaultTransferFile() itself is not

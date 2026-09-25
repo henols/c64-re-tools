@@ -56,7 +56,7 @@ import { Writable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { randomBytes } from "node:crypto";
 
-import { dialFileTransfer, awaitTransferComplete, type BrokerEndpointConnectFn } from "./broker-endpoint.ts";
+import { dialFileTransfer, awaitTransferComplete, type BrokerEndpointConnectFn } from "./broker-endpoint.mts";
 import { createHashAndCountTransform, verifyObserved, TRANSFER_MAX_BYTES } from "./transfer-hash.mts";
 
 /** A `Writable` that discards every chunk written to it -- the digest-only
@@ -105,7 +105,7 @@ export type TransferFileFn = (request: TransferFileRequest) => Promise<TransferF
 
 /** Injectable dial options for `transferFileOverEndpoint()` (Phase 65,
  * SEAM-01) -- threaded straight through to `dialFileTransfer()`
- * (`broker-endpoint.ts`). Every field defaults to that function's own
+ * (`broker-endpoint.mts`). Every field defaults to that function's own
  * default when omitted -- production callers on the monitor-upload path
  * (`stock-connect.ts`) omit this entirely and get byte-identical behaviour
  * to the pre-Phase-65 `defaultTransferFile()`; `host-tool-endpoint.mts`
@@ -120,7 +120,7 @@ export interface TransferFileOverEndpointOptions {
 /**
  * The ONE production place a payload connection is opened and driven end to
  * end over the fixed endpoint. Dials via `dialFileTransfer()`
- * (`broker-endpoint.ts`), presenting `request.handle` as its only authority
+ * (`broker-endpoint.mts`), presenting `request.handle` as its only authority
  * (G-64-1, owner decision 5) -- no credential of any kind -- then streams
  * the payload through the SAME cap-and-digest `Transform`
  * (`transfer-hash.mts`'s `createHashAndCountTransform()`)

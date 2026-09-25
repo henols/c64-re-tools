@@ -29,11 +29,11 @@ import {
   type BrokerEndpointConnectFn,
   type DialFailure,
   type DialFileTransferResult,
-} from "./broker-endpoint.ts";
+} from "./broker-endpoint.mts";
 import type { FileTransferOutcome, FileTransferRequest, StartControlListenerOptions } from "./broker-control.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const BROKER_ENDPOINT_TS = join(HERE, "broker-endpoint.ts");
+const BROKER_ENDPOINT_TS = join(HERE, "broker-endpoint.mts");
 const BROKER_CONTROL_MTS = join(HERE, "broker-control.mts");
 
 /** Strips `//` line comments and `/* ... *\/` block comments -- the same
@@ -202,7 +202,7 @@ test("dialBrokerEndpoint with no port option reaches a hello-answering listener 
 // Structural assertions: no filesystem access, no legacy-client import.
 // ---------------------------------------------------------------------------
 
-test("broker-endpoint.ts never touches the filesystem and never imports the legacy discovery-record client", () => {
+test("broker-endpoint.mts never touches the filesystem and never imports the legacy discovery-record client", () => {
   // readFileSync, not a shell grep -- four source files in this tree carry
   // NUL bytes that a shell grep silently skips (see this repo's own
   // documented gotcha); readFileSync with "utf8" never truncates on one.
@@ -212,11 +212,11 @@ test("broker-endpoint.ts never touches the filesystem and never imports the lega
   // real code.
   const source = stripCommentLines(readFileSync(BROKER_ENDPOINT_TS, "utf8"));
   for (const forbidden of ["readFileSync(", "existsSync(", "readFile(", "broker.json", "vice-broker-client"]) {
-    assert.ok(!source.includes(forbidden), `broker-endpoint.ts must not contain ${JSON.stringify(forbidden)} outside of comments`);
+    assert.ok(!source.includes(forbidden), `broker-endpoint.mts must not contain ${JSON.stringify(forbidden)} outside of comments`);
   }
 });
 
-test("the mirrored HELLO_PROTOCOL_MAGIC literal in broker-endpoint.ts is byte-identical to broker-control.mts's own definition", () => {
+test("the mirrored HELLO_PROTOCOL_MAGIC literal in broker-endpoint.mts is byte-identical to broker-control.mts's own definition", () => {
   assert.equal(HELLO_PROTOCOL_MAGIC, SERVER_HELLO_PROTOCOL_MAGIC);
 
   // Belt and braces: read both literals directly out of source, not just
@@ -226,7 +226,7 @@ test("the mirrored HELLO_PROTOCOL_MAGIC literal in broker-endpoint.ts is byte-id
   const serverSource = readFileSync(BROKER_CONTROL_MTS, "utf8");
   const clientMatch = clientSource.match(/export const HELLO_PROTOCOL_MAGIC = "([^"]+)"/);
   const serverMatch = serverSource.match(/export const HELLO_PROTOCOL_MAGIC = "([^"]+)"/);
-  assert.ok(clientMatch, "broker-endpoint.ts must export HELLO_PROTOCOL_MAGIC as a string literal");
+  assert.ok(clientMatch, "broker-endpoint.mts must export HELLO_PROTOCOL_MAGIC as a string literal");
   assert.ok(serverMatch, "broker-control.mts must export HELLO_PROTOCOL_MAGIC as a string literal");
   assert.equal(clientMatch![1], serverMatch![1]);
 });
@@ -623,7 +623,7 @@ test("BROKER_START_COMMAND is the D-01 npx invocation, one literal with no inter
   assert.equal(BROKER_START_COMMAND, "npx -y @henols/vice-mcp broker");
 });
 
-test("the start-command literal appears in broker-endpoint.ts between 1 and 3 times -- one definition, never a hand-copied second string", () => {
+test("the start-command literal appears in broker-endpoint.mts between 1 and 3 times -- one definition, never a hand-copied second string", () => {
   const source = readFileSync(BROKER_ENDPOINT_TS, "utf8");
   const count = (source.match(/npx -y @henols\/vice-mcp broker/g) ?? []).length;
   assert.ok(count >= 1 && count <= 3, `expected the literal to appear 1-3 times, found ${count}`);

@@ -217,7 +217,7 @@ export type TransferResult =
  * call throws -- and that message embeds the full path (64-REVIEW.md
  * CR-01). Declared as `Extract<>` plus an intersection, not a fresh object
  * literal, so `TransferResult`'s own shape (and every existing comment
- * pointer at it, e.g. broker-endpoint.ts's) stays valid -- this type adds a
+ * pointer at it, e.g. broker-endpoint.mts's) stays valid -- this type adds a
  * constraint, it does not redefine the success branch. */
 export type ReceivePayloadToFileResult =
   | Extract<TransferResult, { ok: true }>
@@ -297,7 +297,7 @@ export interface SendPayloadFromFileOptions {
    * function's pre-Phase-64-03 behaviour, unchanged for every existing
    * caller). `handleFileTransfer()` (vice-broker.mts, plan 64-03) overrides
    * this to `"transfer_payload"` for a download reply, so `dialFileTransfer()`
-   * (broker-endpoint.ts)'s own reply-line classifier -- which keys on
+   * (broker-endpoint.mts)'s own reply-line classifier -- which keys on
    * `obj.kind === "transfer_payload"`, never `"file"` -- recognises it. The
    * byteLength/sha256 fields either kind carries are identical either way;
    * only the frame's own name differs by caller. */

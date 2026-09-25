@@ -58,7 +58,7 @@ import { resetRunStateTrackersForTest } from "./stock-runstate.ts";
 import type { StockConnectSession, TransferFileFn, TransferFileRequest, TransferFileResult } from "./stock-connect.ts";
 import type { ViceMonitorClient } from "./stock-protocol.ts";
 import type { StockSessionDeps } from "./stock-session.ts";
-import { dialFileTransfer, awaitTransferComplete } from "./broker-endpoint.ts";
+import { dialFileTransfer, awaitTransferComplete } from "./broker-endpoint.mts";
 import { createHashAndCountTransform, verifyObserved, TRANSFER_MAX_BYTES } from "./transfer-hash.mts";
 import { build } from "./build.ts";
 import { startControlListener, newControlToken } from "./broker-control.mts";
@@ -1075,7 +1075,7 @@ function makeRealStageFile(control: { sendAndRead: (obj: Record<string, unknown>
 }
 
 /** A REAL TransferFileFn dialling the round trip's own control listener via
- * dialFileTransfer() (broker-endpoint.ts) and streaming through the SAME
+ * dialFileTransfer() (broker-endpoint.mts) and streaming through the SAME
  * cap-and-digest Transform (transfer-hash.mts) the real production
  * defaultTransferFile() (stock-connect.ts) uses -- composed here from the
  * same exported public seams a real caller would use, since

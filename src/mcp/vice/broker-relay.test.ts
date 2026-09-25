@@ -64,7 +64,7 @@ import {
   DEFAULT_ATTACH_REPLY_TIMEOUT_MS,
   type DialMonitorRelayResult,
   type DialMonitorRelaySuccess,
-} from "./broker-endpoint.ts";
+} from "./broker-endpoint.mts";
 import { ViceMonitorClient, CommandType, ResponseType, ErrorCode, REQUEST_HEADER_LEN, VICE_BROADCAST_REQUEST_ID, encodeRequestHeader } from "./stock-protocol.ts";
 import { encodeResponseFrame, syntheticJamFrame } from "./binmon-fixtures.ts";
 import { build } from "./build.ts";

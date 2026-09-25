@@ -1,9 +1,10 @@
-// broker-endpoint.ts
+// broker-endpoint.mts
 //
 // THIS IS THE ONE AUTHORITATIVE PLACE for dialling the fixed machine-level
 // broker endpoint (plan 62-01, ENDPOINT-01..05) and classifying what
-// answers. Container-side, plain TypeScript, run as source under Node's own
-// type-stripping -- there is no compiled counterpart of this file.
+// answers. Runs as source under Node's type-stripping, and is also compiled
+// into resources/ (with host-tool-endpoint.mts) for callers that load it from
+// node_modules, where Node never strips types.
 //
 // WHAT NOT TO DO, and why:
 //   - Never touch the filesystem from this module -- no readFileSync,
@@ -11,8 +12,8 @@
 //     fixed endpoint is that a client finds the broker with nothing on disk
 //     telling it where to look (D-06/D-07); a disk read here would silently
 //     reintroduce the discovery-record dependency this milestone retires.
-//     (version.ts's own runtimeVersion() DOES read a package.json, but that
-//     read lives in version.ts, not here -- this module only calls it, the
+//     (version.mts's own runtimeVersion() DOES read a package.json, but that
+//     read lives in version.mts, not here -- this module only calls it, the
 //     same way vice-proxy.ts's own PROXY_VERSION already does.)
 //   - Never import vice-broker-client.ts (or anything reachable through its
 //     own import graph, in particular openBrokerControl()/
@@ -38,7 +39,7 @@ import { connect, type Socket } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { runtimeVersion } from "./version.ts";
+import { runtimeVersion, DEV_PLACEHOLDER } from "./version.mts";
 
 /** Mirrors broker-control.mts's own HELLO_PROTOCOL_MAGIC literal, character
  * for character. broker-control.mts is the one authoritative definition
@@ -136,12 +137,17 @@ export const DEFAULT_TRANSFER_COMPLETE_TIMEOUT_MS = 10000;
  * HERE_DIR already uses right before it calls runtimeVersion(). */
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-/** This package's own version, resolved ONCE at module load exactly the way
- * vice-proxy.ts's own PROXY_VERSION is -- reads `package.json` beside this
- * file (the published-tarball path) and degrades to the dev placeholder in
- * a git checkout. This is the "client's own version" D-05's major-version
- * compatibility rule compares the broker's reported version against. */
-const CLIENT_VERSION = runtimeVersion({ pkgJsonPath: join(HERE, "package.json") });
+/** This package's own version, resolved ONCE at module load -- reads
+ * `package.json` beside this file, then one directory up (the compiled copy
+ * in resources/ sits one level below the package root, the same lookup
+ * broker-control.mts's resolveBrokerVersion() makes), and degrades to the
+ * dev placeholder in a git checkout. This is the "client's own version"
+ * D-05's major-version compatibility rule compares the broker's reported
+ * version against. */
+const CLIENT_VERSION =
+  [join(HERE, "package.json"), join(HERE, "..", "package.json")]
+    .map((pkgJsonPath) => runtimeVersion({ pkgJsonPath }))
+    .find((v) => v !== DEV_PLACEHOLDER) ?? DEV_PLACEHOLDER;
 
 /** The injectable connect seam's own type -- this project's standard
  * env/time/spawning/I-O injection register (a destructured options object,

@@ -4,7 +4,8 @@
     "noEmit": false,
     "rootDir": ".",
     "outDir": "resources",
-    "allowImportingTsExtensions": false
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true
   },
   "include": [
     "vice-broker.mts",
@@ -22,6 +23,10 @@
     "broker-relay.mts",
     "broker-incident.mts",
     "transfer-hash.mts",
-    "broker-transfer.mts"
+    "broker-transfer.mts",
+    "version.mts",
+    "broker-endpoint.mts",
+    "transfer-client.mts",
+    "host-tool-endpoint.mts"
   ]
 }

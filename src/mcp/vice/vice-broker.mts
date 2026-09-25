@@ -1125,7 +1125,7 @@ export function handleStageFile(grantId: string, slot: string, state: BrokerStat
  * own header comment) -- an upload writes `transfer_ready` then calls
  * `receivePayloadToFile()`; a download calls `sendPayloadFromFile()` with
  * `kind: "transfer_payload"` so the reply frame's own name matches what
- * `dialFileTransfer()` (broker-endpoint.ts) checks for. Neither branch
+ * `dialFileTransfer()` (broker-endpoint.mts) checks for. Neither branch
  * awaits its own promise before returning -- `state` is accepted only for
  * parity with handleRelayAttach()'s own signature and is not read on this
  * path today. The in-flight guard is released once the transfer settles on

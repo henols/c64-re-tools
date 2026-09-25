@@ -32,7 +32,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { dialBrokerEndpoint } from "./broker-endpoint.ts";
+import { dialBrokerEndpoint } from "./broker-endpoint.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_BROKER_ARTIFACT = join(HERE, "resources", "vice-broker.mjs");

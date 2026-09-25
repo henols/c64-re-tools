@@ -57,6 +57,10 @@ export const HOST_BOUND_ARTIFACTS: string[] = [
   "broker-incident.mjs",
   "transfer-hash.mjs",
   "broker-transfer.mjs",
+  "version.mjs",
+  "broker-endpoint.mjs",
+  "transfer-client.mjs",
+  "host-tool-endpoint.mjs",
 ];
 
 /** A plain data file that travels WITH the compiled artifacts above, never

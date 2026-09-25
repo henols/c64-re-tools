@@ -19,7 +19,7 @@ import { spawn } from "node:child_process";
 import { acmeSkipReasonFor, assertAcmeRequiredIfEnvSet } from "./acme-gate.ts";
 import { runHostToolOverEndpoint, walkUploadTree, HOST_TOOL_STAGE_LINE_MAX_BYTES } from "./host-tool-endpoint.mts";
 import { startHarnessBroker, type HarnessBroker } from "./broker-harness.ts";
-import { dialHostToolSession, dialFileTransfer, type HostToolSession } from "./broker-endpoint.ts";
+import { dialHostToolSession, dialFileTransfer, type HostToolSession } from "./broker-endpoint.mts";
 import { transferFileOverEndpoint } from "./transfer-client.mts";
 import { TRANSFER_MAX_BYTES } from "./transfer-hash.mts";
 
@@ -631,7 +631,7 @@ test("Task 3 Test 2: a child process runs a request up to the upload step, then 
 
     const scriptDir = freshDir("sigkill-script");
     const scriptPath = join(scriptDir, "sigkill-stage-upload.mjs");
-    const brokerEndpointUrl = new URL("./broker-endpoint.ts", import.meta.url).href;
+    const brokerEndpointUrl = new URL("./broker-endpoint.mts", import.meta.url).href;
     const transferClientUrl = new URL("./transfer-client.mts", import.meta.url).href;
     writeFileSync(
       scriptPath,

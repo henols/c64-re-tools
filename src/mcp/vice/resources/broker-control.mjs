@@ -77,7 +77,7 @@ export { MAX_LINE_BYTES };
  * broker-relay.mts's own DEFAULT_RELAY_KEEPALIVE_MS. Keeping the two
  * literal values in agreement is this module's own job, same as the
  * `HELLO_PROTOCOL_MAGIC` string mirrored a few lines below from
- * broker-endpoint.ts: a byte-identical sync test is what actually holds
+ * broker-endpoint.mts: a byte-identical sync test is what actually holds
  * the agreement together, not a shared import. */
 const DEFAULT_RELAY_KEEPALIVE_MS_LOCAL = 30000;
 /** DUPLICATES broker-relay.mts's own resolveRelayKeepAliveMs() rather than
@@ -99,7 +99,7 @@ function resolveRelayKeepAliveMsLocal() {
 /** The magic string identifying THIS project's own handshake protocol on
  * the wire -- specific enough that a bare TCP accept by an unrelated
  * service can never be mistaken for it. This is the one authoritative
- * definition (plan 62-01, D-06); `broker-endpoint.ts`, the container-side
+ * definition (plan 62-01, D-06); `broker-endpoint.mts`, the container-side
  * dialling client, MIRRORS this literal rather than importing it (this
  * module is host-bound and compiled into `resources/`, so a container-side
  * source file cannot value-import it) -- broker-endpoint.test.ts asserts
@@ -118,8 +118,8 @@ export const HELLO_PROTOCOL_MAGIC = "vice-mcp-broker-hello-v1";
 const HERE = dirname(fileURLToPath(import.meta.url));
 /** The placeholder a git checkout (or a resolve/parse failure) reports as
  * this broker's own handshake version. Mirrored, not imported, from
- * version.ts's own `DEV_PLACEHOLDER` -- that module is container-side and
- * this one is host-bound, compiled away from it (see version.ts's own
+ * version.mts's own `DEV_PLACEHOLDER` -- that module is container-side and
+ * this one is host-bound, compiled away from it (see version.mts's own
  * header for why importing it here is forbidden). Kept byte-identical to
  * that constant so a published client reads the same placeholder string on
  * either side of the boundary. */

@@ -1,4 +1,4 @@
-// Coverage of version.ts's runtime precedence and the invariants around it.
+// Coverage of version.mts's runtime precedence and the invariants around it.
 //
 // This file used to also cover a bespoke version-RESOLUTION algorithm (a
 // `VERSION` template resolved against the published version under four named
@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { DEV_PLACEHOLDER, runtimeVersion } from "./version.ts";
+import { DEV_PLACEHOLDER, runtimeVersion } from "./version.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 

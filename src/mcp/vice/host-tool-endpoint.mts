@@ -11,7 +11,7 @@
 // `validateContainedDestination()` (D-07, XFER-03).
 //
 // THIS FILE MUST STAY A LEAF with respect to the legacy host-tool seam. It
-// imports ONLY `broker-endpoint.ts`, `transfer-client.mts`, `transfer-hash.mts`
+// imports ONLY `broker-endpoint.mts`, `transfer-client.mts`, `transfer-hash.mts`
 // and node built-ins -- never `host-tool-client.ts` (the legacy, token-gated
 // control-plane/host-spawn seam this route runs alongside, not through),
 // never `repo-root.ts` (this module never resolves THIS project's own
@@ -34,7 +34,7 @@
 //     applied here a second time at the whole-result level).
 //   - Never open a second endpoint dialer. Every connection this module
 //     opens goes through `dialHostToolSession()`/`transferFileOverEndpoint()`
-//     (both `broker-endpoint.ts`/`transfer-client.mts`); this module carries
+//     (both `broker-endpoint.mts`/`transfer-client.mts`); this module carries
 //     no socket code of its own.
 //   - Never parse ACME source (or any other tool's source) on this side to
 //     decide what to upload (D-04). `walkUploadTree()` below uploads a whole
@@ -44,10 +44,11 @@
 //     `walkUploadTree()` refuses the WHOLE call by name when a symlink's
 //     real target lies outside the tree (D-05) -- there is no partial/best-
 //     effort upload.
-import { basename, dirname, isAbsolute, join, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve as resolvePath, sep } from "node:path";
 import { lstatSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
-import { dialHostToolSession, DEFAULT_HOST_TOOL_STAGE_REPLY_TIMEOUT_MS, type DialHostToolSessionOptions, type HostToolSession, type HostToolStageFileSpec, type BrokerEndpointConnectFn } from "./broker-endpoint.ts";
+import { dialHostToolSession, DEFAULT_HOST_TOOL_STAGE_REPLY_TIMEOUT_MS, type DialHostToolSessionOptions, type HostToolSession, type HostToolStageFileSpec, type BrokerEndpointConnectFn } from "./broker-endpoint.mts";
 import { transferFileOverEndpoint, validateContainedDestination } from "./transfer-client.mts";
 import { TRANSFER_MAX_BYTES } from "./transfer-hash.mts";
 
@@ -651,5 +652,55 @@ export async function runHostToolOverEndpoint(tool: string, args: Record<string,
     return rewritten as unknown as HostToolClientResult;
   } finally {
     session?.close();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// CLI: `run --tool <id> --args <json> --tools-root <dir> [--base-dir <dir>]`.
+// The one entry point skill scripts spawn (with process.execPath), usually as
+// the compiled resources/host-tool-endpoint.mjs. Prints exactly ONE JSON line
+// (the HostToolClientResult) and exits 0 on `ok: true`, 1 otherwise --
+// including a usage error or a rejected promise, reported in the same
+// `{ ok: false, message }` shape. `--tools-root` is required: the caller
+// names where results land, this module never guesses a project root.
+// ---------------------------------------------------------------------------
+
+function parseRunCliArgs(argv: readonly string[]): Record<string, string | undefined> {
+  const out: Record<string, string | undefined> = {};
+  for (let i = 0; i < argv.length; i++) {
+    const flag = argv[i];
+    if (flag === "--tool" || flag === "--args" || flag === "--tools-root" || flag === "--base-dir") {
+      out[flag.slice(2)] = argv[++i];
+    }
+  }
+  return out;
+}
+
+function writeCliResult(result: { ok: boolean; message?: string } & Record<string, unknown>): void {
+  process.stdout.write(`${JSON.stringify(result)}\n`);
+  process.exitCode = result.ok ? 0 : 1;
+}
+
+const IS_ENTRY_POINT = process.argv[1] !== undefined && resolvePath(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (IS_ENTRY_POINT) {
+  const usage = "usage: host-tool-endpoint run --tool <id> --args <json> --tools-root <dir> [--base-dir <dir>]";
+  const [, , command, ...rest] = process.argv;
+  const flags = parseRunCliArgs(rest);
+  let parsedArgs: unknown = null;
+  try {
+    parsedArgs = flags.args === undefined ? null : JSON.parse(flags.args);
+  } catch {
+    parsedArgs = null;
+  }
+  if (command !== "run" || !flags.tool || !flags["tools-root"] || typeof parsedArgs !== "object" || parsedArgs === null || Array.isArray(parsedArgs)) {
+    writeCliResult({ ok: false, message: usage });
+  } else {
+    runHostToolOverEndpoint(flags.tool, parsedArgs as Record<string, unknown>, {
+      toolsRoot: resolvePath(flags["tools-root"]),
+      baseDir: flags["base-dir"] ? resolvePath(flags["base-dir"]) : undefined,
+    })
+      .then((response) => writeCliResult(response as unknown as { ok: boolean } & Record<string, unknown>))
+      .catch((err: unknown) => writeCliResult({ ok: false, message: err instanceof Error ? err.message : String(err) }));
   }
 }
