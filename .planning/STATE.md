@@ -4,16 +4,16 @@ milestone: v2.0.0
 milestone_name: One Broker, One Socket
 current_phase: 65
 current_phase_name: Every Skill Script Through the One Endpoint, and CI With It
-status: planning
-stopped_at: Phase 65 context gathered
-last_updated: "2026-09-24T22:23:57.026Z"
-last_activity: 2026-09-24
-last_activity_desc: Phase 64 complete, transitioned to Phase 65
-state_head: 3476be6d704e97faec317117ba9c958aa4561203
+status: executing
+stopped_at: Phase 65 planned (9 plans in 6 waves)
+last_updated: "2026-09-25T07:15:24.491Z"
+last_activity: 2026-09-25
+last_activity_desc: Phase 65 planned — 9 plans in 6 waves, plan-checker passed
+state_head: 7c129d5740465fea5681636de40b24f81dc9b577
 progress:
   total_phases: 6
   completed_phases: 3
-  total_plans: 33
+  total_plans: 42
   completed_plans: 33
   percent: 50
 carried_forward_phases:
@@ -85,9 +85,9 @@ closure still needs to be recorded as one.
 
 ## Current Position
 
-Phase: 65 — Every Skill Script Through the One Endpoint, and CI With It
+Phase: 65 (Every Skill Script Through the One Endpoint, and CI With It) — READY TO EXECUTE
 Plan: Not started
-Status: Ready to plan
+Status: Ready to execute
 Phase 64 closed on 2026-09-24: all 16 plans executed. Verification passed 8/8 after gap-closure round 4.
 UAT 1/1 passed: the owner's in-session live check, run in-session on request, 12/12 MCP calls
 clean against /usr/bin/x64sc 3.9, zero 0x8f, clean teardown. Security verified with threats_open: 0.
@@ -233,7 +233,20 @@ verification passed (6/6 must-haves), nyquist validation PARTIAL and security ve
 with threats_open: 0. The one human decision — 63-REVIEW.md's WR-01 — was ACCEPTED as
 residual risk, recorded as R-63-04 in 63-SECURITY.md.
 Progress: [█████░░░░░] 50% (3 of 6 v2.0.0 phases complete; Phases 62-67)
-Last activity: 2026-09-24 — Phase 64 complete, transitioned to Phase 65
+Last activity: 2026-09-25 — Phase 65 planned (9 plans in 6 waves, plan-checker passed)
+
+**Planning override recorded at the Phase 65 decision-coverage gate (2026-09-25).**
+`check.decision-coverage-plan` returned `passed: false` with
+`reason: "could-not-parse"`, `total: 11, covered: 0, uncovered: []`. Its stderr names
+three unparseable titles in `65-CONTEXT.md`. D-08 and D-13 each carry a `*` inside the
+bold title (`c1541.*`, `anno_*`). D-10 carries a second colon (`host-tool.mts:64-65`).
+The cause is a parser limitation, not a coverage gap. The plan-phase orchestrator ran the
+same gate against a scratch copy of `65-CONTEXT.md` with only those three titles
+neutralised, then deleted the copy: `passed: true, total: 14, covered: 14, uncovered: []`.
+A word-boundary count across `65-*-PLAN.md` also finds every decision D-01 through D-14
+cited, with no `D-NNx` suffix form. `65-CONTEXT.md` was deliberately NOT edited, because
+the only fix rewords the owner's decision titles. verify-phase should re-surface this
+rather than treat it as settled.
 
 **Planning override recorded at the Phase 64 decision-coverage gate.**
 `check.decision-coverage-plan` returned `passed: false` with
