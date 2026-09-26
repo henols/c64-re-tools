@@ -185,6 +185,8 @@ The npm-installed form is `vice-mcp anno call <name> --args '<json>'`.
 row in it belongs to a project. This workspace's project is the one named by
 `.c64-re-tools/project.json`, which is gitignored: a fresh clone or a new worktree starts with an
 empty project of its own. No call takes a `store` argument, and one that passes it is refused.
+Save a project with `anno export-project --out FILE`; `anno import-project FILE` fills an empty
+project from that file, which is also how a project moves to another machine, clone or worktree.
 
 **There is no bootstrap step, and no bootstrap verb.** The first mutating call — `anno call anno_set_label_name`,
 `anno call anno_set_comment`, `anno call anno_set_data_type`, `anno call anno_add_scope` — registers a project

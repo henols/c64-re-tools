@@ -25,16 +25,28 @@
   anchor hit 50; exactness is lost from anchor hit 75.
 
 **Annotation store**
-- `.annostore` (`node:sqlite`, schema version 5) holds labels, comments, a
-  12-member per-range type vocabulary, scopes, project enums and cross-references,
-  with search. Durability is proven across a real `SIGKILL`.
+- The broker owns ONE annotation database per machine (`node:sqlite`, schema
+  version 6). It holds labels, comments, a 12-member per-range type vocabulary,
+  scopes, project enums and cross-references, with search. Durability is proven
+  across a real `SIGKILL`.
+- Every row is scoped by a persisted, randomly created `project_id` from the
+  workspace's gitignored `.c64-re-tools/project.json`, which the first write
+  creates. No call can read or write another project's data. A worker thread in
+  the broker holds the only connection; no client module can load the store,
+  and a structural test with a planted proof keeps it that way. Spec:
+  `agent-os/specs/2026-09-26-2233-broker-owned-store/`.
 - A runtime evidence layer stores what the emulator was observed executing,
   keyed by run. It is joined with the byte-derived block table, and disagreements
   are reported first.
 - Enums are generated from `memmap.json`, so register writes render with bit
   names.
 - The store is reached through the `vice-mcp anno` CLI (`anno call <name> --args
-  JSON`). It is no longer on the MCP tool surface.
+  JSON` and six report verbs), which stages input bytes and asks the broker over
+  one `anno_run` op. It is no longer on the MCP tool surface. No call takes a
+  store path.
+- `anno export-project` and `anno import-project` back a project up and move it
+  between machines, clones and worktrees. Import fills an empty project only, in
+  one transaction.
 
 **Static analysis**
 - dxa 0.1.5 (vendored source) produces a machine-readable code/data map.
@@ -114,22 +126,6 @@
   assert they stay gone. Specs: `agent-os/specs/2026-09-25-1853-one-endpoint-client/`,
   `2026-09-25-2240-deletion-cutover/`, `2026-09-26-0022-ghidra-without-alias/`
   and `2026-09-26-1019-no-cross-side-paths/`.
-
-## In Progress: broker-owned store (v2.0.0)
-
-- **Spec:** `agent-os/specs/2026-09-26-2233-broker-owned-store/`.
-- Move to one broker-owned annotation database per machine. Rows are scoped by a
-  persisted, script-created `project_id`, and no call can read or write another
-  project's data. See `agent-os/standards/anno/store-ownership.md`.
-- All 28 `anno call` tools and all 6 report verbs run in the broker. The
-  `store` argument and the snapshot ring go away, and backup becomes
-  `export-project` / `import-project`.
-- Steps:
-  1. schema v6, project-scoped;
-  2. host-bound, path-free engine;
-  3. broker anno seam;
-  4. cutover;
-  5. backup verbs and close.
 
 ## Planned / Later
 

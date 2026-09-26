@@ -198,6 +198,8 @@ const CLI_PATH_ARGUMENTS: readonly CliPathArgument[] = [
   { verb: "decomp-completeness", argument: "--disagreements", kind: "flag" },
   { verb: "decomp-completeness", argument: "--manifest", kind: "flag" },
   { verb: "hazard-report", argument: "--image", kind: "flag" },
+  { verb: "export-project", argument: "--out", kind: "flag" },
+  { verb: "import-project", argument: "<file>", kind: "positional" },
   { verb: "call", argument: "--args-file", kind: "flag" },
 ];
 
@@ -269,6 +271,9 @@ const NON_PATH_OPTIONS: readonly string[] = ["--check", "--force", "--sample", "
  * unconfined -- and the inventory's other direction (every VERB_OPTIONS
  * entry, every synopsis positional) is what proves they are gone.
  *
+ * RAISED 11 -> 13 with the backup pair: `export-project --out` and
+ * `import-project <file>`, each confined by the same seam.
+ *
  * HAND-PINNED AS AN INTEGER LITERAL, AND IT MUST STAY THAT WAY. Deriving it
  * from `CLI_PATH_ARGUMENTS.length` (or from disk) would make it unfailable and
  * would discard the entire non-vacuity it exists to provide: a truncated or
@@ -276,7 +281,7 @@ const NON_PATH_OPTIONS: readonly string[] = ["--check", "--force", "--sample", "
  * trivially. Raise it when a verb genuinely grows a path argument; never lower
  * it to fit.
  */
-const CLI_PATH_ARGUMENT_FLOOR = 11;
+const CLI_PATH_ARGUMENT_FLOOR = 13;
 
 // ---------------------------------------------------------------------------
 // 1. The inventory is declared and complete.

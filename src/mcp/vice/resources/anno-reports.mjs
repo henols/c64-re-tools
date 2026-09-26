@@ -28,16 +28,25 @@ import { blocksFromStore } from "./block-class.mjs";
 import { crossReferencesTo } from "./anno-derive.mjs";
 import { reconcileObservedExecution } from "./evid-reconcile.mjs";
 import { buildHazardReport } from "./anno-hazard-report.mjs";
-import { renderMemoryMapFrom } from "./anno-memmap-render.mjs";
+import { jsonParsePosition, renderMemoryMapFrom } from "./anno-memmap-render.mjs";
 import { exportAsmFrom, planExportAsmTree } from "./anno-export-asm.mjs";
-import { DECLINE_COMMENT_PREFIX, DISAGREEMENT_ACCEPTED_COMMENT_PREFIX, AUTHORED_PROVENANCE_COMMENT_PREFIX } from "./anno-store-export.mjs";
+import { AUTHORED_PROVENANCE_COMMENT_PREFIX, DECLINE_COMMENT_PREFIX, DISAGREEMENT_ACCEPTED_COMMENT_PREFIX, exportStoreDocument, importStoreDocument, } from "./anno-store-export.mjs";
 import { stagedInputFile } from "./anno-tools.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 /** The report verbs this engine answers. */
-export const ANNO_REPORT_NAMES = ["render-memmap", "coverage", "export-asm", "evid-disagreements", "decomp-completeness", "hazard-report"];
+export const ANNO_REPORT_NAMES = [
+    "render-memmap",
+    "coverage",
+    "export-asm",
+    "evid-disagreements",
+    "decomp-completeness",
+    "hazard-report",
+    "export-project",
+    "import-project",
+];
 /** A refusal whose message is complete as written, verb prefix included; the
  * client prints it verbatim. Any other error is printed after the verb. */
 export class AnnoReportRefusal extends Error {
@@ -659,6 +668,69 @@ function hazardReport(handle, args, inputs) {
     });
     return { json: { ...report, returned: report.findings.length, matched: report.findings.length }, files: [] };
 }
+// ---------------------------------------------------------------------------
+// The backup pair. A project lives only in the broker's database, and
+// project.json is gitignored, so these two are how a project moves between
+// machines, worktrees and clones -- and how it is backed up. The document is
+// the same export document the committed fixtures use.
+// ---------------------------------------------------------------------------
+/** The file name export-project's document travels under. */
+const PROJECT_EXPORT_FILE = "project-export.json";
+/** How many rows of each class a document holds. */
+function documentCounts(doc) {
+    return {
+        ranges: doc.ranges.length,
+        labels: doc.labels.length,
+        comments: doc.comments.length,
+        projectEnums: doc.projectEnums.length,
+        enumUsage: doc.enumUsage.length,
+        xrefs: doc.xrefs.length,
+        execObservations: doc.execObservations.length,
+        scopes: doc.scopes.length,
+        excludedRanges: doc.excludedRanges.length,
+    };
+}
+function exportProjectReport(handle) {
+    const doc = exportStoreDocument(handle);
+    const bytes = new TextEncoder().encode(`${JSON.stringify(doc, null, 2)}\n`);
+    return {
+        json: { schemaVersion: doc.schemaVersion, counts: documentCounts(doc) },
+        files: [{ name: PROJECT_EXPORT_FILE, bytes }],
+    };
+}
+/**
+ * Fills an EMPTY project from an export document, in one transaction. A
+ * project that already holds any row is refused and left untouched: merging
+ * two sets of annotations is a decision about which one is right, and this
+ * verb does not make it.
+ */
+function importProjectReport(handle, args, inputs) {
+    const file = stagedInputFile("import-project", "document", args.document, inputs);
+    let doc;
+    try {
+        doc = JSON.parse(utf8(file.bytes));
+    }
+    catch (err) {
+        // Never the parser's own message: it quotes the file's bytes.
+        throw new AnnoReportRefusal(`import-project: ${file.name} is not valid JSON${jsonParsePosition(err)} -- it is not an export-project document.`);
+    }
+    if (!isPlainObject(doc)) {
+        throw new AnnoReportRefusal(`import-project: ${file.name} holds JSON but not an object -- it is not an export-project document.`);
+    }
+    for (const key of ["ranges", "labels", "comments", "projectEnums", "enumUsage", "xrefs", "execObservations", "scopes", "excludedRanges"]) {
+        if (!Array.isArray(doc[key])) {
+            throw new AnnoReportRefusal(`import-project: ${file.name} has no "${key}" array -- it is not an export-project document.`);
+        }
+    }
+    const held = Object.entries(documentCounts(exportStoreDocument(handle))).filter(([, n]) => n > 0);
+    if (held.length > 0) {
+        throw new AnnoReportRefusal(`import-project: this workspace's project already holds annotations (${held.map(([k, n]) => `${n} ${k}`).join(", ")}) -- ` +
+            "import-project fills an EMPTY project only and never merges. To replace it, save it first with " +
+            "`anno export-project --out FILE`, delete .c64-re-tools/project.json, and import into the new, empty project.");
+    }
+    const imported = importStoreDocument(handle, doc);
+    return { json: { imported }, files: [] };
+}
 /**
  * Answers one report against `handle`, which the caller opened and closes.
  * Throws on a refusal: an `AnnoReportRefusal` carries its complete message,
@@ -679,6 +751,10 @@ export async function runAnnoReportOnHandle(handle, name, args, inputs) {
             return decompCompletenessReport(handle, bag, inputs);
         case "hazard-report":
             return hazardReport(handle, bag, inputs);
+        case "export-project":
+            return exportProjectReport(handle);
+        case "import-project":
+            return importProjectReport(handle, bag, inputs);
         default:
             throw new AnnoReportRefusal(`anno: "${name}" is not a report -- expected one of ${ANNO_REPORT_NAMES.join(", ")}`);
     }

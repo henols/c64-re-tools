@@ -36,13 +36,14 @@ state) and keep working when the emulator misbehaves.
   emulator over its binary monitor and its text monitor, through one broker per
   machine. The broker owns the emulator processes and respawns them when they
   crash.
-- **Annotation store (`.annostore`).** Findings are kept as queryable state, not
-  as prose: labels, comments, per-range types, scopes, enums, cross-references
-  and runtime execution evidence. It is reached through the `vice-mcp anno` CLI.
+- **Annotation store.** Findings are kept as queryable state, not as prose:
+  labels, comments, per-range types, scopes, enums, cross-references and
+  runtime execution evidence. The broker holds one database per machine, with a
+  project per workspace. It is reached through the `vice-mcp anno` CLI.
 - **Analysis engines.** A vendored dxa builds the code/data map, and headless
-  Ghidra runs under this project's own NMOS 6502 language. Both annotate the store
-  automatically.
-- **Rebuild.** An annotated store exports as a directory of ACME source. That
+  Ghidra runs under this project's own NMOS 6502 language. Both annotate the
+  project automatically.
+- **Rebuild.** An annotated project exports as a directory of ACME source. That
   source reassembles to the same bytes as the original, can be edited, and is
   checked for equivalence against the original in VICE.
 - **Eight skills.** These are playbooks with helper scripts: `acme-build`,

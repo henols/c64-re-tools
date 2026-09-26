@@ -102,7 +102,7 @@ test("an old broker: a report in a workspace that has a project is refused with 
 });
 
 test("a malformed project.json is refused by name before the broker is asked, and is never rewritten", async () => {
-  for (const body of ["{not json", JSON.stringify({ projectId: "not-a-uuid" })]) {
+  for (const body of ["{not json", JSON.stringify({ project_id: "not-a-uuid" })]) {
     await withWorkspace(async (ws) => {
       mkdirSync(join(ws, ".c64-re-tools"));
       writeFileSync(projectFile(ws), body);

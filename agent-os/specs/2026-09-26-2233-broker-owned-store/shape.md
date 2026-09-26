@@ -243,6 +243,36 @@ from all 28 `anno call` tools and all 6 report verbs.
   `anno call` write-then-read and the smoke cases start from an empty
   workspace, and their first write registers the project. Step 5's `import-project` is the
   user-facing route for the same thing.
+  - The helper is named `inproc-anno-broker.ts`, not `anno-test-broker.ts`.
+    `anno-seam.test.ts` derives the shipped set from every `anno-*` module
+    on disk, so an `anno-` prefix would have demanded that a test helper
+    ship.
+
+- **The backup verbs are two more reports (step 5).** `export-project` and
+  `import-project` go through the same `anno_run` report kind, so no new op
+  was added. `import-project` asks for the project in write mode: in a
+  workspace with no project it registers one first, as any write does.
+  That project stays, empty, if the import is then refused.
+- **An import is one transaction.** The store gained `applyAtomically(handle,
+  body)`. Every write on that handle inside `body` joins one
+  `begin immediate` and commits together, or everything rolls back.
+  `commitTransaction` is still the single commit site.
+  `importStoreDocument` now always applies its plan this way, so a document
+  that passes validation but that the store refuses part-way leaves the
+  project exactly as it was. A test with a mutation proof covers this: a
+  clashing label name after a range and a first label.
+- **Import fills an empty project only.** A project holding any row is
+  refused. The refusal names the counts it holds and the remedy (export,
+  delete `project.json`, import into the new project). Merging two sets of
+  annotations is a decision about which is right, and the verb does not make
+  it.
+- **The export document is the fixture format** (`JSON.stringify(doc, null,
+  2)` plus a newline), so an exported project can be committed as a fixture.
+  Exporting, importing elsewhere and exporting again gives identical bytes.
+  The smoke test checks this against the real bin.
+- **A non-JSON import document is refused by byte offset only.**
+  `jsonParsePosition` is now exported from `anno-memmap-render.mts` and
+  reused, so no byte of the file reaches the message.
 
 ## Context
 

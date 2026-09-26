@@ -81,6 +81,7 @@
 //     covered by the pre-write pass.
 
 import {
+  applyAtomically,
   setDataType,
   setLabel,
   setComment,
@@ -654,7 +655,9 @@ export function importStoreDocument(handle: AnnoStoreHandle, doc: StoreExportDoc
 
   // VALIDATION IS COMPLETE. Nothing above this line calls a `set*`/`put*`/
   // `insert*` function on `handle` -- everything from here on is applying
-  // the already-validated plan.
+  // the already-validated plan, in ONE transaction: a failure part-way (a
+  // row the store itself refuses, a disk error) leaves the project exactly as
+  // it was, never half-imported.
   const summary: ImportSummary = {
     ranges: 0,
     labels: 0,
@@ -667,6 +670,11 @@ export function importStoreDocument(handle: AnnoStoreHandle, doc: StoreExportDoc
     excludedRanges: 0,
   };
 
+  applyAtomically(handle, () => applyPlan(handle, plan, summary));
+  return summary;
+}
+
+function applyPlan(handle: AnnoStoreHandle, plan: readonly PlannedWrite[], summary: ImportSummary): void {
   for (const write of plan) {
     switch (write.kind) {
       case "range":
@@ -712,6 +720,4 @@ export function importStoreDocument(handle: AnnoStoreHandle, doc: StoreExportDoc
         break;
     }
   }
-
-  return summary;
 }

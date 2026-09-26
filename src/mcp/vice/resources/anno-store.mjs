@@ -585,12 +585,12 @@ export function currentRevision(handle) {
  * different address is the load-bearing case.
  */
 function runWriteSequence(handle, mutate, doCommit, baseRevision) {
-    try {
-        handle.db.exec("begin immediate");
-    }
-    catch (e) {
-        throw new AnnoStoreError(`${handle.path}: could not start the write transaction (${e.message}). Nothing has been changed.`, { code: e.code, data: { path: handle.path, step: "begin the write transaction" } });
-    }
+    // Inside applyAtomically() the write joins the transaction that is already
+    // open: same revision read, same stale check, same advance, and the outer
+    // call commits or rolls back everything together.
+    const joined = joinedTransactions.has(handle);
+    if (!joined)
+        beginWriteTransaction(handle);
     let rev;
     let result;
     try {
@@ -602,48 +602,98 @@ function runWriteSequence(handle, mutate, doCommit, baseRevision) {
         result = mutate(scopeOf(handle));
     }
     catch (e) {
-        // The inner catch is deliberately silent: if the rollback itself fails
-        // there is nothing useful to do with that second error, and reporting it
-        // would replace the caller's actual refusal with a confusing one.
+        if (!joined)
+            rollBackQuietly(handle);
+        throw e;
+    }
+    if (doCommit && !joined)
+        commitOrRollBack(handle, rev);
+    return { revision: rev + 1, result };
+}
+/** Handles inside `applyAtomically()`: their writes join its transaction. */
+const joinedTransactions = new WeakSet();
+function beginWriteTransaction(handle) {
+    try {
+        handle.db.exec("begin immediate");
+    }
+    catch (e) {
+        throw new AnnoStoreError(`${handle.path}: could not start the write transaction (${e.message}). Nothing has been changed.`, { code: e.code, data: { path: handle.path, step: "begin the write transaction" } });
+    }
+}
+/** Rolls back, deliberately silently: if the rollback itself fails there is
+ * nothing useful to do with that second error, and reporting it would
+ * replace the caller's actual refusal with a confusing one. */
+function rollBackQuietly(handle) {
+    try {
+        handle.db.exec("rollback");
+    }
+    catch {
+        // deliberately ignored -- see above
+    }
+}
+/**
+ * Commits the open write transaction, which started at revision `rev`.
+ *
+ * A concurrent READER is enough to make `COMMIT` fail: it needs SQLite's
+ * EXCLUSIVE lock, which `begin immediate` never took. The rollback is the
+ * repair -- it releases the write lock and undoes the revision advance and the
+ * mutation TOGETHER. Its outcome is RECORDED, not assumed: Node's
+ * `DatabaseSync` exposes no transaction-state accessor, so this local is the
+ * only thing that keeps the message honest.
+ */
+function commitOrRollBack(handle, rev) {
+    try {
+        commitTransaction(handle.db);
+    }
+    catch (e) {
+        let rolledBack = true;
         try {
             handle.db.exec("rollback");
         }
         catch {
-            // deliberately ignored -- see above
+            rolledBack = false;
         }
+        if (e instanceof ViceError)
+            throw e;
+        throw new AnnoStoreError(`${handle.path}: the write for revision ${rev + 1} could not be committed (${e.message}). ` +
+            (rolledBack
+                ? `Nothing was written and the transaction has been rolled back, so the project is still at revision ${rev}.`
+                : `Nothing was written, but the rollback ALSO failed: this connection may still hold an open transaction and the ` +
+                    `database's write lock, so CLOSE IT AND REOPEN rather than reusing it. The project on disk is still at revision ${rev}.`), {
+            code: e.code,
+            data: { path: handle.path, revision: rev, rolledBack, step: "committing the write transaction" },
+        });
+    }
+}
+/**
+ * Runs `body` as ONE transaction: every write it makes on `handle` joins it,
+ * and they commit together or not at all. A throw anywhere in `body` rolls
+ * all of them back, so the project is left exactly as it was. Each joined
+ * write still advances the revision, so the project ends where the same
+ * writes made one by one would have left it.
+ *
+ * Nested calls on the same handle run inside the outer transaction.
+ */
+export function applyAtomically(handle, body) {
+    if (joinedTransactions.has(handle))
+        return body();
+    beginWriteTransaction(handle);
+    joinedTransactions.add(handle);
+    let rev;
+    let result;
+    try {
+        rev = readProjectRevision(handle);
+        result = body();
+    }
+    catch (e) {
+        rollBackQuietly(handle);
         throw e;
     }
-    if (doCommit) {
-        // A concurrent READER is enough to make `COMMIT` fail: it needs SQLite's
-        // EXCLUSIVE lock, which `begin immediate` never took. The rollback is the
-        // repair -- it releases the write lock and undoes the revision advance and
-        // the mutation TOGETHER. Its outcome is RECORDED, not assumed: Node's
-        // `DatabaseSync` exposes no transaction-state accessor, so this local is
-        // the only thing that keeps the message honest.
-        try {
-            commitTransaction(handle.db);
-        }
-        catch (e) {
-            let rolledBack = true;
-            try {
-                handle.db.exec("rollback");
-            }
-            catch {
-                rolledBack = false;
-            }
-            if (e instanceof ViceError)
-                throw e;
-            throw new AnnoStoreError(`${handle.path}: the write for revision ${rev + 1} could not be committed (${e.message}). ` +
-                (rolledBack
-                    ? `Nothing was written and the transaction has been rolled back, so the project is still at revision ${rev}.`
-                    : `Nothing was written, but the rollback ALSO failed: this connection may still hold an open transaction and the ` +
-                        `database's write lock, so CLOSE IT AND REOPEN rather than reusing it. The project on disk is still at revision ${rev}.`), {
-                code: e.code,
-                data: { path: handle.path, revision: rev, rolledBack, step: "committing the write transaction" },
-            });
-        }
+    finally {
+        joinedTransactions.delete(handle);
     }
-    return { revision: rev + 1, result };
+    commitOrRollBack(handle, rev);
+    return result;
 }
 /** Runs `mutate` as one durable, revision-advancing write. */
 export function applyWrite(handle, mutate, opts = {}) {

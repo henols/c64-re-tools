@@ -118,7 +118,7 @@ function errMsg(err: unknown): string {
  * end of JSON input` carries none) -- an absent offset is reported by absence,
  * never by a fabricated zero.
  */
-function jsonParsePosition(err: unknown): string {
+export function jsonParsePosition(err: unknown): string {
   const match = /\bat position (\d+)\b/.exec(errMsg(err));
   return match ? ` (at byte offset ${match[1]})` : "";
 }

@@ -14,6 +14,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { startHarnessBroker, type HarnessBroker } from "./broker-harness.ts";
+import { readProjectId } from "./anno-project.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const VICE_PROXY = join(HERE, "vice-proxy.ts");
@@ -21,11 +22,13 @@ const VICE_PROXY = join(HERE, "vice-proxy.ts");
 let broker: HarnessBroker;
 let ws: string;
 let fresh: string;
+let moved: string;
 
 before(async () => {
   broker = await startHarnessBroker();
   ws = mkdtempSync(join(tmpdir(), "anno-cli-smoke-"));
   fresh = mkdtempSync(join(tmpdir(), "anno-cli-smoke-fresh-"));
+  moved = mkdtempSync(join(tmpdir(), "anno-cli-smoke-moved-"));
   // lda #$01 / sta $d020 / rts, loaded at $c000.
   writeFileSync(join(ws, "game.prg"), Buffer.from([0x00, 0xc0, 0xa9, 0x01, 0x8d, 0x20, 0xd0, 0x60]));
   writeFileSync(
@@ -48,7 +51,7 @@ before(async () => {
 
 after(async () => {
   await broker?.stop();
-  for (const dir of [ws, fresh]) if (dir !== undefined) rmSync(dir, { recursive: true, force: true });
+  for (const dir of [ws, fresh, moved]) if (dir !== undefined) rmSync(dir, { recursive: true, force: true });
 });
 
 function anno(workspace: string, argv: string[]) {
@@ -88,6 +91,24 @@ test("smoke: coverage writes its JSON report at --out, naming the image by the c
   assert.equal(covered.status, 0, covered.stderr);
   const report = JSON.parse(readFileSync(out, "utf8")) as { project: { path: string } };
   assert.equal(report.project.path, join(ws, "game.prg"));
+});
+
+test("smoke: export-project and import-project move the project into another workspace, and it exports back byte for byte", () => {
+  const backup = join(ws, "backup.json");
+  const exported = anno(ws, ["export-project", "--out", backup]);
+  assert.equal(exported.status, 0, exported.stderr);
+
+  writeFileSync(join(moved, "backup.json"), readFileSync(backup));
+  const imported = anno(moved, ["import-project", join(moved, "backup.json")]);
+  assert.equal(imported.status, 0, imported.stderr);
+  const movedId = readProjectId(moved);
+  const originalId = readProjectId(ws);
+  assert.ok(movedId.present && originalId.present);
+  assert.notEqual(movedId.projectId, originalId.projectId, "the import fills a new project of the second workspace's own");
+
+  const again = anno(moved, ["export-project", "--out", join(moved, "again.json")]);
+  assert.equal(again.status, 0, again.stderr);
+  assert.deepEqual(readFileSync(join(moved, "again.json")), readFileSync(backup));
 });
 
 test("smoke: a workspace with no project is refused by a report, and the refusal creates nothing", () => {

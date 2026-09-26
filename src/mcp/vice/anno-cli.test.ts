@@ -83,8 +83,20 @@ const REMOVED_VERBS = ["bootstrap", "verify", "gen-enums", "export-lbl", "import
  * six with `hazard-report` -- the CLI route for the movement-hazard
  * report -- and from six to seven with `call` (D-12, plan 65-02) -- the
  * ONE generic route for the other nineteen former `anno_*` MCP tools,
- * added in the same change that removes all 25 from `tools/list` (D-13). */
-const SURVIVING_VERBS = ["render-memmap", "coverage", "export-asm", "evid-disagreements", "decomp-completeness", "hazard-report", "call"];
+ * added in the same change that removes all 25 from `tools/list` (D-13) --
+ * and from seven to nine with `export-project` and `import-project`, the
+ * backup pair for a project that lives only in the broker's database. */
+const SURVIVING_VERBS = [
+  "render-memmap",
+  "coverage",
+  "export-asm",
+  "evid-disagreements",
+  "decomp-completeness",
+  "hazard-report",
+  "export-project",
+  "import-project",
+  "call",
+];
 
 /** A fully-filled provenance sidecar -- `parseProvenanceHeader()` refuses a
  * missing or placeholder key by name, so any test that renders for real needs
@@ -804,7 +816,7 @@ test("the cross-reference adapter answers over the WHOLE population, with no cei
 test("the verb-options map agrees with USAGE's own per-verb option lists, for every verb (IN-06)", () => {
   const usage = helpResult.stdout;
   const verbs = Object.keys(VERB_OPTIONS);
-  assert.equal(verbs.length, 7, `expected exactly 7 verbs in VERB_OPTIONS, found ${verbs.length}: ${verbs.join(", ")}`);
+  assert.equal(verbs.length, 9, `expected exactly 9 verbs in VERB_OPTIONS, found ${verbs.length}: ${verbs.join(", ")}`);
 
   for (const verb of verbs) {
     const lineMatch = new RegExp(`^ {2}${verb.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b.*$`, "m").exec(usage);
@@ -911,13 +923,15 @@ const VALUE_TAKING_PAIRS: readonly { verb: string; option: string }[] = Object.e
   ([verb, options]) => options.filter((o) => !BOOLEAN_OPTIONS.has(o)).map((option) => ({ verb, option })),
 );
 
-/** The one verb with no value-taking option: evid-disagreements answers for
- * the workspace's own project and takes only `--json`. */
-const VERBS_WITHOUT_VALUE_OPTIONS = new Set(["evid-disagreements"]);
+/** The verbs with no value-taking option: evid-disagreements answers for the
+ * workspace's own project and takes only `--json`, and import-project takes
+ * only its one positional. */
+const VERBS_WITHOUT_VALUE_OPTIONS = new Set(["evid-disagreements", "import-project"]);
 
 test("PRECONDITION: VALUE_TAKING_PAIRS is non-empty and covers every verb (30-REVIEW WR-09)", () => {
   assert.ok(VALUE_TAKING_PAIRS.length >= 4, `expected at least four value-taking pairs, got ${VALUE_TAKING_PAIRS.length}`);
   assert.deepEqual(VERB_OPTIONS["evid-disagreements"], ["--json"], "the exemption below must stay a verb with no value-taking option");
+  assert.deepEqual(VERB_OPTIONS["import-project"], [], "the exemption below must stay a verb with no value-taking option");
   assert.deepEqual(
     [...new Set(VALUE_TAKING_PAIRS.map((p) => p.verb))].sort(),
     Object.keys(VERB_OPTIONS).filter((v) => !VERBS_WITHOUT_VALUE_OPTIONS.has(v)).sort(),
@@ -979,7 +993,7 @@ test("PAIRED DIRECTION: an ordinary value is still accepted at every value-takin
 // the next verb to write an output file cannot leave the number behind again.
 // ---------------------------------------------------------------------------
 
-test("refuseOverwrite()'s call-site count matches the number its own doc states (30-REVIEW WR-08; back to two at phase 47 plan 47-05)", () => {
+test("refuseOverwrite()'s call-site count matches the number its own doc states (30-REVIEW WR-08; three since export-project)", () => {
   const stripped = stripCommentsAndLiterals(readFileSync(ANNO_CLI_SOURCE_PATH, "utf8"));
   // The DECLARATION is not a call site. Counting it is an off-by-one this
   // test caught on itself the first time it ran, which is the shape of the
@@ -990,27 +1004,28 @@ test("refuseOverwrite()'s call-site count matches the number its own doc states 
   // BACK DOWN TO TWO as of phase 47 plan 47-05: `export-asm`'s `--out` was
   // promoted to a directory, and its overwrite question moved entirely into
   // `exportAsmTree()`'s own output-directory contract -- `cmdExportAsm()` no
-  // longer calls this single-file check at all.
+  // longer calls this single-file check at all. BACK UP TO THREE with
+  // `export-project`, whose `--out` is a single file.
   assert.equal(
     callSites,
-    2,
+    3,
     `refuseOverwrite() has ${callSites} call site(s) in anno-cli.ts. If that is correct, update BOTH paragraphs of its ` +
       `doc comment -- the one naming the verbs AND the one stating the count. WR-08 was exactly these two disagreeing.`,
   );
 
-  // And the doc really does say two, in the paragraph that states a count.
-  // Read off disk rather than retyped, so a doc that reverts to "three" fails
-  // here rather than passing because this file has its own copy.
+  // And the doc really does say three, in the paragraph that states a count.
+  // Read off disk rather than retyped, so a doc that keeps an older count
+  // fails here rather than passing because this file has its own copy.
   const doc = readFileSync(ANNO_CLI_SOURCE_PATH, "utf8");
   assert.match(
     doc,
-    /stated as the TWO call sites it\s+\* actually has/,
+    /stated as the THREE call sites it\s+\* actually has/,
     "the count-stating paragraph must name the same number the scan just measured",
   );
   assert.doesNotMatch(
     doc,
-    /stated as the THREE call sites/,
-    "the stale phase-47-05 wording (\"three\" as the CURRENT claim) must not come back -- it may still appear as history",
+    /stated as the TWO call sites/,
+    "the phase-47-05 count (\"two\" as the CURRENT claim) must not come back -- it may still appear as history",
   );
 });
 
@@ -2153,12 +2168,12 @@ test("evid-disagreements: --help documents exactly --json, and names no position
   assert.match(helpResult.stdout, /^ {2}evid-disagreements \[--json\]$/m);
 });
 
-test("call: the unknown-verb refusal now names SEVEN verbs, not six", async () => {
+test("call: the unknown-verb refusal names all NINE verbs", async () => {
   const { result: code, stderr } = await withCapturedConsole(() => runAnnoCli(["not-a-real-verb"]));
   assert.notEqual(code, 0);
   assert.match(
     stderr,
-    /this CLI has exactly seven: render-memmap, coverage, export-asm, evid-disagreements, decomp-completeness, hazard-report and call/,
+    /this CLI has exactly nine: render-memmap, coverage, export-asm, evid-disagreements, decomp-completeness, hazard-report, export-project, import-project and call/,
   );
 });
 

@@ -106,11 +106,12 @@ test("the engine never reads handle.path, so no answer can echo where the store 
  * each file input given as `file`. */
 function reportCallsWith(file: unknown): Record<string, Record<string, unknown>> {
   return {
-    "render-memmap": { sidecar: file, store_location: "s", sidecar_location: "p" },
+    "render-memmap": { sidecar: file, sidecar_location: "p" },
     coverage: { image: file },
-    "export-asm": { image: file, store_label: "s" },
-    "decomp-completeness": { disagreements: file, store_label: "s", manifest_entry: { path: "x.prg", execution: "executed", reason: null } },
+    "export-asm": { image: file },
+    "decomp-completeness": { disagreements: file, manifest_entry: { path: "x.prg", execution: "executed", reason: null } },
     "hazard-report": { image: file },
+    "import-project": { document: file },
   };
 }
 
@@ -119,7 +120,7 @@ test("every report file input is refused as a plain path", async () => {
     for (const [name, args] of Object.entries(reportCallsWith("/home/someone/file"))) {
       await assert.rejects(runAnnoReportOnHandle(handle, name, args, new Map()), STAGED_REFUSAL, `${name} must refuse a plain path`);
     }
-    await assert.rejects(runAnnoReportOnHandle(handle, "export-asm", { image: { $file: "f0" }, ledger: "/home/someone/PROVENANCE.md", store_label: "s" }, new Map([["f0", { name: "game.prg", bytes: PRG }]])), STAGED_REFUSAL);
+    await assert.rejects(runAnnoReportOnHandle(handle, "export-asm", { image: { $file: "f0" }, ledger: "/home/someone/PROVENANCE.md" }, new Map([["f0", { name: "game.prg", bytes: PRG }]])), STAGED_REFUSAL);
   });
 });
 

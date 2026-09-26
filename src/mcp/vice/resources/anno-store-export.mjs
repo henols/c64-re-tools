@@ -85,7 +85,7 @@
 //     module's own pre-check but fails that stricter one is a disclosed,
 //     narrow residual gap -- see this module's test file for what IS
 //     covered by the pre-write pass.
-import { setDataType, setLabel, setComment, createProjectEnum, applyEnumUsage, putXref, insertExecObservations, addScope, addExcludedRange, listRanges, listLabels, listComments, listProjectEnums, listEnumUsage, listXrefs, listExcludedRanges, listExecObservations, listScopes, } from "./anno-store.mjs";
+import { applyAtomically, setDataType, setLabel, setComment, createProjectEnum, applyEnumUsage, putXref, insertExecObservations, addScope, addExcludedRange, listRanges, listLabels, listComments, listProjectEnums, listEnumUsage, listXrefs, listExcludedRanges, listExecObservations, listScopes, } from "./anno-store.mjs";
 import { assertDataType, assertRangeShape, parseStoreAddress, assertCommentType, assertCommentText, assertLabelKind, assertLegalLabel, assertAccessKind, assertEvidSourceBank, assertRunIdentityDigest, assertRunIdentitySeed, assertEnumName, } from "./anno-types.mjs";
 /** The one version number a document carries. Bumped only when this file's
  * own export shape changes in a way an older importer could not read
@@ -419,7 +419,9 @@ export function importStoreDocument(handle, doc) {
     }
     // VALIDATION IS COMPLETE. Nothing above this line calls a `set*`/`put*`/
     // `insert*` function on `handle` -- everything from here on is applying
-    // the already-validated plan.
+    // the already-validated plan, in ONE transaction: a failure part-way (a
+    // row the store itself refuses, a disk error) leaves the project exactly as
+    // it was, never half-imported.
     const summary = {
         ranges: 0,
         labels: 0,
@@ -431,6 +433,10 @@ export function importStoreDocument(handle, doc) {
         scopes: 0,
         excludedRanges: 0,
     };
+    applyAtomically(handle, () => applyPlan(handle, plan, summary));
+    return summary;
+}
+function applyPlan(handle, plan, summary) {
     for (const write of plan) {
         switch (write.kind) {
             case "range":
@@ -476,5 +482,4 @@ export function importStoreDocument(handle, doc) {
                 break;
         }
     }
-    return summary;
 }

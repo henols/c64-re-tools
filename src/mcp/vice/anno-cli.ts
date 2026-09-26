@@ -197,8 +197,14 @@ class ReportFailure extends Error {
  * confined local path, staged under its key; the broker receives its bytes,
  * never the path. A workspace with no project is refused: every report reads.
  */
-async function runReport(ctx: CliContext, name: AnnoReportName, args: Record<string, unknown>, files: Record<string, string | undefined>): Promise<ReportAnswer> {
-  const projectId = await workspaceProject(name, "read", ctx.workspaceRoot(), ctx.runRemote);
+async function runReport(
+  ctx: CliContext,
+  name: AnnoReportName,
+  args: Record<string, unknown>,
+  files: Record<string, string | undefined>,
+  mode: "read" | "write" = "read",
+): Promise<ReportAnswer> {
+  const projectId = await workspaceProject(name, mode, ctx.workspaceRoot(), ctx.runRemote);
   const staged: Record<string, unknown> = { ...args };
   const slots: Record<string, string> = {};
   for (const [key, path] of Object.entries(files)) {
@@ -410,6 +416,22 @@ verbs:
       Requires an EXISTING annotation project and an EXISTING image; creates
       neither and writes nothing.
 
+  export-project --out FILE [--force]
+      Writes this workspace's whole annotation project -- every range, label,
+      comment, enum, cross-reference, observation, scope and exclusion -- as
+      one JSON export document at --out, refusing to overwrite an existing
+      file unless --force is passed. The project lives only in the broker's
+      database and .c64-re-tools/project.json is not committed, so this
+      document is how a project is backed up, and how it moves to another
+      machine, clone or worktree. Requires an EXISTING annotation project.
+
+  import-project <file>
+      Fills this workspace's project from an export-project document, in one
+      transaction: every row lands, or none does. The project must be EMPTY
+      -- one that already holds any annotation is refused and left
+      untouched, never merged. In a workspace with no project yet it creates
+      one, as any write does.
+
   call NAME (--args JSON | --args-file FILE)
       The name set and the argument shapes are exactly the former anno_* MCP
       tools' own. A write in a workspace with no annotation project yet
@@ -417,9 +439,9 @@ verbs:
       .c64-re-tools/project.json.
 
 Every annotation lives in the broker's database, in this workspace's
-project, named by .c64-re-tools/project.json. Every report verb reads it and
-refuses a workspace with no project; none derives one path from another --
-this CLI never guesses.
+project, named by .c64-re-tools/project.json. Every report verb except
+import-project reads it and refuses a workspace with no project; none derives
+one path from another -- this CLI never guesses.
 `;
 
 function errMsg(err: unknown): string {
@@ -454,6 +476,8 @@ export const VERB_OPTIONS: Readonly<Record<string, readonly string[]>> = Object.
   "evid-disagreements": ["--json"],
   "decomp-completeness": ["--fixture", "--disagreements", "--manifest", "--json"],
   "hazard-report": ["--image", "--json"],
+  "export-project": ["--out", "--force"],
+  "import-project": [],
   call: ["--args", "--args-file"],
 });
 
@@ -505,16 +529,16 @@ export function checkAcceptedOptions(verb: string, rest: string[]): string | und
 
 /**
  * Refuses to overwrite an existing file at `outPath` unless the caller
- * passed `--force`. Called by the TWO verbs that write a single output FILE
- * -- `cmdRenderMemmap()` (non-`--check` branch only; `--check` never writes)
- * and `cmdCoverage()` -- so overwrite safety is uniform across both rather
- * than one verb accreting a check the other lacks.
+ * passed `--force`. Called by the THREE verbs that write a single output FILE
+ * -- `cmdRenderMemmap()` (non-`--check` branch only; `--check` never writes),
+ * `cmdCoverage()` and `cmdExportProject()` -- so overwrite safety is uniform
+ * across all three rather than one verb accreting a check the others lack.
  *
  * "SHARED BY EVERY VERB THAT WRITES AN OUTPUT FILE" IS WHAT THIS DOC USED TO
  * SAY, AND IT WAS NOT TRUE. `render-memmap` wrote an output file and had
  * neither `--force` in its option set nor a call to this function anywhere on
  * its path; an independent review reproduced it destroying a pre-existing file
- * silently, exit code 0. The claim is now stated as the TWO call sites it
+ * silently, exit code 0. The claim is now stated as the THREE call sites it
  * actually has, because a count is checkable where "every" is not.
  *
  * "THE TWO CALL SITES" IS WHAT THIS SENTENCE SAID UNTIL 2026-08-31, AFTER
@@ -535,6 +559,9 @@ export function checkAcceptedOptions(verb: string, rest: string[]): string | und
  * call here rather than reshaping a file-shaped check to fit a directory. The
  * count this doc states, and the count `anno-cli.test.ts` checks mechanically,
  * moved back down to two with it.
+ *
+ * BACK UP TO THREE with `export-project`, whose `--out` is one file, the
+ * project's export document.
  *
  * `outPath` MUST already be confined through `storePathWithinWorkspace()`.
  * This function performs no confinement of its own and must never be read as
@@ -1825,6 +1852,126 @@ async function cmdHazardReport(rest: string[], ctx: CliContext): Promise<number>
   return 0;
 }
 
+// ---------------------------------------------------------------------------
+// The backup pair: `export-project` and `import-project`. The project lives
+// only in the broker's database and project.json is gitignored, so these are
+// how a project is saved and how it moves to another machine, clone or
+// worktree.
+// ---------------------------------------------------------------------------
+
+interface ExportProjectParsedArgs {
+  positional: string[];
+  out?: string;
+  outMissingValue?: boolean;
+  force?: boolean;
+  unknownOption?: string;
+}
+
+/** Fixed, closed option set for export-project -- exactly `--out` and
+ * `--force`, the same shape as every other verb's parser. */
+function parseExportProjectArgs(rest: string[]): ExportProjectParsedArgs {
+  const positional: string[] = [];
+  let out: string | undefined;
+  let outMissingValue = false;
+  let force = false;
+  let unknownOption: string | undefined;
+  for (let i = 0; i < rest.length; i++) {
+    const a = rest[i]!;
+    if (a === "--out") {
+      const value = rest[i + 1];
+      if (isMissingOptionValue(value)) outMissingValue = true;
+      else {
+        out = value;
+        i++;
+      }
+    } else if (a === "--force") {
+      force = true;
+    } else if (a.startsWith("--")) {
+      unknownOption ??= a;
+    } else {
+      positional.push(a);
+    }
+  }
+  return { positional, out, outMissingValue, force, unknownOption };
+}
+
+function countsLine(counts: Record<string, number>): string {
+  return Object.entries(counts)
+    .map(([key, n]) => `${n} ${key}`)
+    .join(", ");
+}
+
+/** `export-project --out FILE [--force]` -- the workspace's whole project as
+ * one export document, written where `--out` names. */
+async function cmdExportProject(rest: string[], ctx: CliContext): Promise<number> {
+  const { positional, out, outMissingValue, force, unknownOption } = parseExportProjectArgs(rest);
+  if (unknownOption) {
+    console.error(`export-project: unknown option "${unknownOption}"\n`);
+    console.log(USAGE);
+    return 1;
+  }
+  if (outMissingValue) {
+    console.error("export-project: --out requires a value\n");
+    console.log(USAGE);
+    return 1;
+  }
+  if (positional.length > 0) {
+    console.error(`export-project: takes no positional argument, got ${JSON.stringify(positional[0])} -- it exports this workspace's own project.`);
+    return 1;
+  }
+  if (!out) {
+    console.error("export-project: --out FILE is required -- the document goes where you name it; there is no default.\n");
+    console.log(USAGE);
+    return 1;
+  }
+  const outPath = confine("export-project", out, ctx.workspaceRoot());
+  if (outPath === undefined) return 1;
+  if (!refuseOverwrite(outPath, force, "export-project")) return 1;
+
+  let answer: ReportAnswer;
+  try {
+    answer = await runReport(ctx, "export-project", {}, {});
+  } catch (err) {
+    return reportFailure("export-project", err);
+  }
+  try {
+    writeFileSync(outPath, answer.files[0]!.bytes);
+  } catch (err) {
+    console.error(`export-project: could not write ${outPath}: ${errMsg(err)}`);
+    return 1;
+  }
+  const { counts } = answer.json as { counts: Record<string, number> };
+  console.log(`export-project: wrote ${outPath} (${projectLabel(answer.projectId)}: ${countsLine(counts)})`);
+  return 0;
+}
+
+/** `import-project <file>` -- fills the workspace's EMPTY project from an
+ * export document, in one transaction. A write: in a workspace with no
+ * project yet, it registers one first. */
+async function cmdImportProject(rest: string[], ctx: CliContext): Promise<number> {
+  const positional = rest.filter((a) => !a.startsWith("--"));
+  if (positional.length !== 1) {
+    console.error("import-project: usage: import-project <file> -- exactly one export-project document");
+    return 1;
+  }
+  const documentPath = confine("import-project", positional[0]!, ctx.workspaceRoot());
+  if (documentPath === undefined) return 1;
+  if (!existsSync(documentPath)) {
+    console.error(`import-project: document not found: ${documentPath}`);
+    return 1;
+  }
+
+  let answer: ReportAnswer;
+  try {
+    answer = await runReport(ctx, "import-project", {}, { document: documentPath }, "write");
+  } catch (err) {
+    return reportFailure("import-project", err);
+  }
+  const { imported } = answer.json as { imported: Record<string, number> };
+  console.log(`import-project: imported ${documentPath} into ${projectLabel(answer.projectId)} (${countsLine(imported)})`);
+  return 0;
+}
+
 interface CallParsedArgs {
   positional: string[];
   args?: string;
@@ -2035,6 +2182,10 @@ export async function runAnnoCli(argv: string[], deps: AnnoCliDeps = {}): Promis
         return await cmdDecompCompleteness(rest, ctx);
       case "hazard-report":
         return await cmdHazardReport(rest, ctx);
+      case "export-project":
+        return await cmdExportProject(rest, ctx);
+      case "import-project":
+        return await cmdImportProject(rest, ctx);
       case "call":
         return await cmdCall(rest, ctx);
       default:
@@ -2045,8 +2196,8 @@ export async function runAnnoCli(argv: string[], deps: AnnoCliDeps = {}): Promis
         // keeps its current name, so no consumer, test or record entry moves
         // with it.
         console.error(
-          `anno: unknown verb "${verb}" -- this CLI has exactly seven: render-memmap, coverage, export-asm, ` +
-            "evid-disagreements, decomp-completeness, hazard-report and call\n",
+          `anno: unknown verb "${verb}" -- this CLI has exactly nine: render-memmap, coverage, export-asm, ` +
+            "evid-disagreements, decomp-completeness, hazard-report, export-project, import-project and call\n",
         );
         console.log(USAGE);
         return 1;

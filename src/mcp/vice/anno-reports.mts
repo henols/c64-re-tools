@@ -34,9 +34,16 @@ import { crossReferencesTo } from "./anno-derive.mts";
 import { reconcileObservedExecution } from "./evid-reconcile.mts";
 import type { EvidReconciliation } from "./evid-reconcile.mts";
 import { buildHazardReport } from "./anno-hazard-report.mts";
-import { renderMemoryMapFrom } from "./anno-memmap-render.mts";
+import { jsonParsePosition, renderMemoryMapFrom } from "./anno-memmap-render.mts";
 import { exportAsmFrom, planExportAsmTree } from "./anno-export-asm.mts";
-import { DECLINE_COMMENT_PREFIX, DISAGREEMENT_ACCEPTED_COMMENT_PREFIX, AUTHORED_PROVENANCE_COMMENT_PREFIX } from "./anno-store-export.mts";
+import {
+  AUTHORED_PROVENANCE_COMMENT_PREFIX,
+  DECLINE_COMMENT_PREFIX,
+  DISAGREEMENT_ACCEPTED_COMMENT_PREFIX,
+  exportStoreDocument,
+  importStoreDocument,
+  type StoreExportDocument,
+} from "./anno-store-export.mts";
 import { stagedInputFile, type AnnoInputFile, type AnnoInputs } from "./anno-tools.mts";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -45,7 +52,16 @@ import { fileURLToPath } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 /** The report verbs this engine answers. */
-export const ANNO_REPORT_NAMES = ["render-memmap", "coverage", "export-asm", "evid-disagreements", "decomp-completeness", "hazard-report"] as const;
+export const ANNO_REPORT_NAMES = [
+  "render-memmap",
+  "coverage",
+  "export-asm",
+  "evid-disagreements",
+  "decomp-completeness",
+  "hazard-report",
+  "export-project",
+  "import-project",
+] as const;
 export type AnnoReportName = (typeof ANNO_REPORT_NAMES)[number];
 
 /** One file a report produced, for the client to write where it chooses. */
@@ -863,6 +879,77 @@ function hazardReport(handle: AnnoStoreHandle, args: Record<string, unknown>, in
   return { json: { ...report, returned: report.findings.length, matched: report.findings.length }, files: [] };
 }
 
+// ---------------------------------------------------------------------------
+// The backup pair. A project lives only in the broker's database, and
+// project.json is gitignored, so these two are how a project moves between
+// machines, worktrees and clones -- and how it is backed up. The document is
+// the same export document the committed fixtures use.
+// ---------------------------------------------------------------------------
+
+/** The file name export-project's document travels under. */
+const PROJECT_EXPORT_FILE = "project-export.json";
+
+/** How many rows of each class a document holds. */
+function documentCounts(doc: StoreExportDocument): Record<string, number> {
+  return {
+    ranges: doc.ranges.length,
+    labels: doc.labels.length,
+    comments: doc.comments.length,
+    projectEnums: doc.projectEnums.length,
+    enumUsage: doc.enumUsage.length,
+    xrefs: doc.xrefs.length,
+    execObservations: doc.execObservations.length,
+    scopes: doc.scopes.length,
+    excludedRanges: doc.excludedRanges.length,
+  };
+}
+
+function exportProjectReport(handle: AnnoStoreHandle): AnnoReportResult {
+  const doc = exportStoreDocument(handle);
+  const bytes = new TextEncoder().encode(`${JSON.stringify(doc, null, 2)}\n`);
+  return {
+    json: { schemaVersion: doc.schemaVersion, counts: documentCounts(doc) },
+    files: [{ name: PROJECT_EXPORT_FILE, bytes }],
+  };
+}
+
+/**
+ * Fills an EMPTY project from an export document, in one transaction. A
+ * project that already holds any row is refused and left untouched: merging
+ * two sets of annotations is a decision about which one is right, and this
+ * verb does not make it.
+ */
+function importProjectReport(handle: AnnoStoreHandle, args: Record<string, unknown>, inputs: AnnoInputs): AnnoReportResult {
+  const file = stagedInputFile("import-project", "document", args.document, inputs);
+  let doc: unknown;
+  try {
+    doc = JSON.parse(utf8(file.bytes));
+  } catch (err) {
+    // Never the parser's own message: it quotes the file's bytes.
+    throw new AnnoReportRefusal(`import-project: ${file.name} is not valid JSON${jsonParsePosition(err)} -- it is not an export-project document.`);
+  }
+  if (!isPlainObject(doc)) {
+    throw new AnnoReportRefusal(`import-project: ${file.name} holds JSON but not an object -- it is not an export-project document.`);
+  }
+  for (const key of ["ranges", "labels", "comments", "projectEnums", "enumUsage", "xrefs", "execObservations", "scopes", "excludedRanges"]) {
+    if (!Array.isArray(doc[key])) {
+      throw new AnnoReportRefusal(`import-project: ${file.name} has no "${key}" array -- it is not an export-project document.`);
+    }
+  }
+
+  const held = Object.entries(documentCounts(exportStoreDocument(handle))).filter(([, n]) => n > 0);
+  if (held.length > 0) {
+    throw new AnnoReportRefusal(
+      `import-project: this workspace's project already holds annotations (${held.map(([k, n]) => `${n} ${k}`).join(", ")}) -- ` +
+        "import-project fills an EMPTY project only and never merges. To replace it, save it first with " +
+        "`anno export-project --out FILE`, delete .c64-re-tools/project.json, and import into the new, empty project.",
+    );
+  }
+
+  const imported = importStoreDocument(handle, doc as unknown as StoreExportDocument);
+  return { json: { imported }, files: [] };
+}
+
 /**
  * Answers one report against `handle`, which the caller opened and closes.
  * Throws on a refusal: an `AnnoReportRefusal` carries its complete message,
@@ -883,6 +970,10 @@ export async function runAnnoReportOnHandle(handle: AnnoStoreHandle, name: strin
       return decompCompletenessReport(handle, bag, inputs);
     case "hazard-report":
       return hazardReport(handle, bag, inputs);
+    case "export-project":
+      return exportProjectReport(handle);
+    case "import-project":
+      return importProjectReport(handle, bag, inputs);
     default:
       throw new AnnoReportRefusal(`anno: "${name}" is not a report -- expected one of ${ANNO_REPORT_NAMES.join(", ")}`);
   }
