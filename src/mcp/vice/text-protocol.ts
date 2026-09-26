@@ -296,8 +296,38 @@ export function isDialableTextCommandForVerb(verb: string, cmd: string): boolean
  * predicate over TextCommand: the dialable set is now larger than that
  * eight-member union, since a parameterized command is a distinct runtime
  * string TextCommand's own literal union does not (and should not) name. */
+/**
+ * The ONE `load` shape the text monitor accepts: VICE's own
+ * `load "<file>" 0 [<address>]` naming a file the broker staged. The client
+ * streamed the bytes to the broker (stage_file + transfer); the broker named
+ * the staged file after its 32-hex handle, and that name is passed back
+ * verbatim. A caller's own path never appears here, device 0 (the emulator
+ * host's filesystem) is the only device, and a name whose last segment is
+ * not a 32-hex handle is refused.
+ */
+const STAGED_LOAD_RE = /^load "(\/[^"\x00-\x1f]*\/[0-9a-f]{32})" 0( \$[0-9a-f]{4})?$/;
+
+/** Builds the staged `load` command, or refuses. `emulatorFilename` and
+ * `handle` are the broker's own stage_file reply; the name must end in
+ * exactly that handle. `address` overrides the PRG's header address. */
+export function buildStagedLoadCommand(emulatorFilename: string, handle: string, address?: number): BuildTextCommandResult {
+  if (!/^[0-9a-f]{32}$/.test(handle) || !emulatorFilename.endsWith(`/${handle}`)) {
+    return { ok: false, message: "the broker's staged file name does not end in its own 32-hex handle" };
+  }
+  if (address !== undefined && !(Number.isInteger(address) && address >= 0 && address <= 0xffff)) {
+    return { ok: false, message: `address must be an integer in 0..0xffff, got ${JSON.stringify(address)}` };
+  }
+  const suffix = address === undefined ? "" : ` $${address.toString(16).padStart(4, "0")}`;
+  const command = `load "${emulatorFilename}" 0${suffix}`;
+  if (!STAGED_LOAD_RE.test(command)) {
+    return { ok: false, message: "the broker's staged file name is not a plain absolute path" };
+  }
+  return { ok: true, command };
+}
+
 export function isAllowlistedTextCommand(cmd: string): boolean {
   if ((TEXT_COMMAND_ALLOWLIST as readonly string[]).includes(cmd)) return true;
+  if (STAGED_LOAD_RE.test(cmd)) return true;
   for (const verb of Object.keys(TEXT_COMMAND_PARAM_SPECS)) {
     if (cmd.startsWith(`${verb} `) && isDialableTextCommandForVerb(verb, cmd)) return true;
   }

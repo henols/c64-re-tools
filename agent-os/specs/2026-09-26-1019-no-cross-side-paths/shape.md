@@ -85,3 +85,9 @@ it, but nothing reads it.
   an arbitrary program and failed for npm installs. It now takes `path`, reads
   the file on the client and sends the bytes. `hazard-subjects.ts` is deleted,
   and the rule is written down as `standards/global/files-travel-as-bytes.md`.
+- **VICE's own `load`, not a client-side copy (owner correction).** "VICE's
+  implemented capabilities are always the right way." The file is staged on the
+  broker (slot `program`) and loaded with `load "<staged>" 0 [$addr]`. The
+  text-monitor guard accepts only that shape: an absolute path ending in the
+  broker's 32-hex handle, device 0. Measured live: header address and an
+  address override both load correctly.

@@ -35,12 +35,11 @@ import {
   renameSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, relative } from "node:path";
+import { dirname, join } from "node:path";
 
 import {
   handleMachineReset,
   handleAutostart,
-  handleProgramLoad,
   handleDiskAttach,
   handleSnapshotSave,
   handleSnapshotLoad,
@@ -1440,85 +1439,4 @@ test("vice_snapshot_load refusal on a real fs fault (CR-01, G-64-5): the staging
     rmSync(clientDir, { recursive: true, force: true });
     rmSync(brokerHome, { recursive: true, force: true });
   }
-});
-
-// ---------------------------------------------------------------------------
-// handleProgramLoad -- this client reads the PRG at `path` and sends its
-// bytes with MEM_SET; the path never crosses the socket.
-// ---------------------------------------------------------------------------
-
-const memSetAck = (commandType: number) =>
-  commandType === CommandType.MemorySet ? { type: "unknown" as const, requestId: 1, errorCode: 0, responseType: CommandType.MemorySet, related: [] } : undefined;
-
-async function withPrg<T>(bytes: number[], fn: (path: string) => Promise<T>): Promise<T> {
-  const d = mkdtempSync(join(tmpdir(), "vice-program-load-"));
-  const path = join(d, "program.prg");
-  writeFileSync(path, Buffer.from(bytes));
-  try {
-    return await fn(path);
-  } finally {
-    rmSync(d, { recursive: true, force: true });
-  }
-}
-
-test("handleProgramLoad: sends ONE MEM_SET at the header's load address carrying the payload, and stages nothing", async () => {
-  await withPrg([0x01, 0x08, 0xa9, 0x01, 0x60], async (path) => {
-    const { session, sends, stageCalls, transferCalls } = makeMachineSession({ responder: memSetAck });
-    const result = await handleProgramLoad({ path }, session, fakeDeps);
-    assert.equal(result.isError, false, JSON.stringify(result));
-    assert.equal(sends.length, 1);
-    assert.equal(sends[0]!.commandType, CommandType.MemorySet);
-    const body = sends[0]!.body;
-    assert.equal(body.readUInt16LE(1), 0x0801, "start is the header's load address");
-    assert.equal(body.readUInt16LE(3), 0x0803, "end covers the payload");
-    assert.equal(body.readUInt16LE(6), 0x0000, "the CPU view bank");
-    assert.deepEqual([...body.subarray(8)], [0xa9, 0x01, 0x60], "the data is the payload without its header");
-    assert.ok(!body.includes(Buffer.from(path)), "the path never crosses the socket");
-    assert.equal(stageCalls.length, 0);
-    assert.equal(transferCalls.length, 0);
-    const answer = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
-    assert.equal(answer.path, path);
-    assert.equal(answer.loadAddress, 0x0801);
-    assert.equal(answer.endAddress, 0x0803);
-    assert.equal(answer.byteLength, 3);
-    assert.ok("runState" in answer);
-  });
-});
-
-test("handleProgramLoad: a missing path, an unreadable path, a too-short file and a payload past 0xffff are refused with zero sends", async () => {
-  const cases: Array<{ title: string; args: Record<string, unknown>; match: RegExp }> = [
-    { title: "no path", args: {}, match: /path is required/ },
-    { title: "non-string path", args: { path: 7 }, match: /path is required/ },
-    { title: "nonexistent path", args: { path: join(tmpdir(), "vice-program-load-does-not-exist.prg") }, match: /cannot read path/ },
-  ];
-  for (const { title, args, match } of cases) {
-    const { session, sends } = makeMachineSession({ responder: memSetAck });
-    const result = await handleProgramLoad(args, session, fakeDeps);
-    assert.equal(result.isError, true, title);
-    assert.match(result.content[0]!.text, /^vice_program_load: /, title);
-    assert.match(result.content[0]!.text, match, title);
-    assert.equal(sends.length, 0, `${title}: zero sends`);
-  }
-  await withPrg([0x01, 0x08], async (path) => {
-    const { session, sends } = makeMachineSession({ responder: memSetAck });
-    const result = await handleProgramLoad({ path }, session, fakeDeps);
-    assert.match(result.content[0]!.text, /needs a two-byte load address and at least one data byte/);
-    assert.equal(sends.length, 0);
-  });
-  await withPrg([0xfe, 0xff, 1, 2, 3], async (path) => {
-    const { session, sends } = makeMachineSession({ responder: memSetAck });
-    const result = await handleProgramLoad({ path }, session, fakeDeps);
-    assert.match(result.content[0]!.text, /runs past 0xffff/);
-    assert.equal(sends.length, 0);
-  });
-});
-
-test("handleProgramLoad: a relative path resolves against the working directory, as vice_autostart's does", async () => {
-  await withPrg([0x00, 0xc0, 0xea], async (path) => {
-    const { session } = makeMachineSession({ responder: memSetAck });
-    const relativePath = relative(process.cwd(), path);
-    const result = await handleProgramLoad({ path: relativePath }, session, fakeDeps);
-    assert.equal(result.isError, false, JSON.stringify(result));
-    assert.equal((JSON.parse(result.content[0]!.text) as Record<string, unknown>).path, path);
-  });
 });

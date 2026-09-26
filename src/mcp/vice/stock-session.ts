@@ -14,6 +14,7 @@
 //   - Never let a handler's exception escape runBinary()/runPure(): the stdio
 //     server is not restarted for the rest of the session.
 import { type BrokerControlSession, type HeldLease } from "./vice-broker-client.ts";
+import type { TransferFileFn } from "./transfer-client.mts";
 import { stockConnect, stockDisconnect, stockReconnect, type StockConnectSession, type StockConnectDeps, type DialMonitorSocketFn } from "./stock-connect.ts";
 import {
   isErrorText,
@@ -91,6 +92,9 @@ export interface StockSessionDeps {
    * none of this; both channels' own module-level defaults (dialMonitorRelay()
    * against the broker's fixed endpoint) apply. */
   dialMonitorSocket?: DialMonitorSocketFn;
+  /** How a text-channel tool uploads a staged file. Omitted means
+   * transfer-client.mts's transferFileOverEndpoint(); tests inject a fake. */
+  transferFile?: TransferFileFn;
 }
 
 export type EnsureStockSessionOutcome = { ok: true; session: StockConnectSession } | { ok: false; message: string };

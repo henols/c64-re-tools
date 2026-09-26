@@ -14,11 +14,11 @@ import assert from "node:assert/strict";
 import { createServer, connect as netConnect, type Server, type Socket } from "node:net";
 import type { AddressInfo } from "node:net";
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { handleDeviceConsole, handleWarpSet, handleMemmapShow, handleMemmapZap, handleCpuHistory, handleProfileFlat, handleBacktrace, handleIoRegisters } from "./text-tools.ts";
+import { handleDeviceConsole, handleWarpSet, handleMemmapShow, handleMemmapZap, handleCpuHistory, handleProfileFlat, handleBacktrace, handleIoRegisters, handleProgramLoad } from "./text-tools.ts";
 import { callStockTool } from "./stock-tools.ts";
 import type { StockSessionDeps } from "./stock-session.ts";
 import type { StockToolResult } from "./stock-handler.ts";
@@ -1607,3 +1607,138 @@ test(
     }
   },
 );
+
+// ---------------------------------------------------------------------------
+// handleProgramLoad: streams the file to the broker, then VICE's own `load`
+// names only the staged file.
+// ---------------------------------------------------------------------------
+
+const PROGRAM_HANDLE = "00112233445566778899aabbccddeeff";
+const PROGRAM_STAGED = `/broker/home/staging/grant-1/${PROGRAM_HANDLE}`;
+
+function programLoadDeps(port: number, calls: { stage: string[]; upload: string[] }, overrides: Partial<StockSessionDeps> = {}): StockSessionDeps {
+  const base = makeDeps(port);
+  return {
+    ...base,
+    ensureLease: async () => {
+      const outcome = await base.ensureLease();
+      if (!outcome.ok || outcome.lease === null) return outcome;
+      const brokerControl = {
+        ...outcome.lease.brokerControl,
+        stageFile: async (opts: { targetId: string; slot: string }) => {
+          calls.stage.push(opts.slot);
+          return { ok: true as const, handle: PROGRAM_HANDLE, emulatorFilename: PROGRAM_STAGED };
+        },
+      } as unknown as HeldLease["brokerControl"];
+      return { ok: true as const, lease: { ...outcome.lease, brokerControl } };
+    },
+    transferFile: async (request) => {
+      if (request.direction === "upload") calls.upload.push(request.sourcePath);
+      return { ok: true, byteLength: 0, sha256: "" };
+    },
+    ...overrides,
+  };
+}
+
+async function withProgramFile<T>(fn: (path: string) => Promise<T>): Promise<T> {
+  const d = mkdtempSync(join(tmpdir(), "text-tools-program-"));
+  const path = join(d, "program.prg");
+  writeFileSync(path, Buffer.from([0x01, 0x08, 0xa9, 0x01, 0x60]));
+  try {
+    return await fn(path);
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+}
+
+test("handleProgramLoad: stages and uploads the file, then dials VICE's load for the staged name only", async () => {
+  await withProgramFile(async (path) => {
+    const lines: string[] = [];
+    const calls = { stage: [] as string[], upload: [] as string[] };
+    await withStubTextServer(
+      (line, socket) => {
+        lines.push(line);
+        socket.write(`Loading '${PROGRAM_STAGED}' from 0801 to 0803 (0003 bytes)\n${PROMPT}`);
+      },
+      async (port) => {
+        const result = await handleProgramLoad({ path }, programLoadDeps(port, calls));
+        assert.equal(result.isError, false, JSON.stringify(result));
+        assert.deepEqual(calls.stage, ["program"]);
+        assert.deepEqual(calls.upload, [path], "the client's own file is what is uploaded");
+        assert.deepEqual(lines, [`load "${PROGRAM_STAGED}" 0`]);
+        const answer = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+        assert.equal(answer.path, path);
+        assert.equal(answer.loadAddress, 0x0801);
+        assert.equal(answer.endAddress, 0x0803);
+        assert.equal(answer.byteLength, 3);
+        assert.doesNotMatch(result.content[0]!.text, /broker\/home/, "the broker's staged path does not reach the caller");
+      },
+    );
+  });
+});
+
+test("handleProgramLoad: an address argument is passed to VICE's load", async () => {
+  await withProgramFile(async (path) => {
+    const lines: string[] = [];
+    await withStubTextServer(
+      (line, socket) => {
+        lines.push(line);
+        socket.write(`Loading '${PROGRAM_STAGED}' from C000 to C002 (0003 bytes)\n${PROMPT}`);
+      },
+      async (port) => {
+        const result = await handleProgramLoad({ path, address: "$c000" }, programLoadDeps(port, { stage: [], upload: [] }));
+        assert.equal(result.isError, false, JSON.stringify(result));
+        assert.deepEqual(lines, [`load "${PROGRAM_STAGED}" 0 $c000`]);
+      },
+    );
+  });
+});
+
+test("handleProgramLoad: VICE's own refusal is passed through, without the broker's staged path", async () => {
+  await withProgramFile(async (path) => {
+    await withStubTextServer(
+      (_line, socket) => socket.write(`Cannot open ${PROGRAM_STAGED}.\n${PROMPT}`),
+      async (port) => {
+        const result = await handleProgramLoad({ path }, programLoadDeps(port, { stage: [], upload: [] }));
+        assert.equal(result.isError, true);
+        assert.match(result.content[0]!.text, /^vice_program_load: VICE did not load the program: Cannot open <staged file>\./);
+      },
+    );
+  });
+});
+
+test("handleProgramLoad: a missing or unreadable path, or a bad address, is refused before any staging or text-monitor byte", async () => {
+  const calls = { stage: [] as string[], upload: [] as string[] };
+  let dialed = false;
+  const deps: StockSessionDeps = { ...programLoadDeps(1, calls), ensureLease: async () => ((dialed = true), { ok: false, message: "no" }) };
+  for (const args of [{}, { path: 5 }, { path: join(tmpdir(), "text-tools-no-such-program.prg") }]) {
+    const result = await handleProgramLoad(args, deps);
+    assert.equal(result.isError, true, JSON.stringify(args));
+    assert.match(result.content[0]!.text, /^vice_program_load: (path is required|cannot read path)/);
+  }
+  await withProgramFile(async (path) => {
+    const result = await handleProgramLoad({ path, address: "$10000" }, deps);
+    assert.equal(result.isError, true);
+    assert.match(result.content[0]!.text, /^vice_program_load: /);
+  });
+  assert.equal(dialed, false);
+  assert.deepEqual(calls, { stage: [], upload: [] });
+});
+
+test("handleProgramLoad: a failed upload sends no load", async () => {
+  await withProgramFile(async (path) => {
+    const lines: string[] = [];
+    await withStubTextServer(
+      (line, socket) => {
+        lines.push(line);
+        socket.write(PROMPT);
+      },
+      async (port) => {
+        const deps = programLoadDeps(port, { stage: [], upload: [] }, { transferFile: async () => ({ ok: false, reason: "cap exceeded" }) });
+        const result = await handleProgramLoad({ path }, deps);
+        assert.match(result.content[0]!.text, /^vice_program_load: uploading the program failed \(cap exceeded\)/);
+        assert.deepEqual(lines, []);
+      },
+    );
+  });
+});

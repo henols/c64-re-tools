@@ -73,6 +73,7 @@ import { textConnect, textDisconnect } from "./text-connect.ts";
 import {
   withTextChannelLock,
   buildTextCommand,
+  buildStagedLoadCommand,
   type TextMonitorClient,
 } from "./text-protocol.ts";
 import { MonitorOwnershipError } from "./vice-broker-client.ts";
@@ -94,6 +95,10 @@ import {
 } from "./text-capability-probe.ts";
 import type { StockSessionDeps } from "./stock-session.ts";
 import type { HeldLease } from "./vice-broker-client.ts";
+import { resolve } from "node:path";
+import { transferFileOverEndpoint } from "./transfer-client.mts";
+import { checkLocalFileReadable } from "./stock-machine.ts";
+import { parseAddress } from "./stock-address.ts";
 
 /**
  * Phase 63 (SESS-05): the text-channel counterpart of `stock-session.ts`'s
@@ -119,7 +124,7 @@ function declareTextOperation(lease: HeldLease, name: string | null): void {
 async function withTextTool(
   toolName: string,
   deps: StockSessionDeps,
-  fn: (client: TextMonitorClient) => Promise<StockToolResult>,
+  fn: (client: TextMonitorClient, lease: HeldLease) => Promise<StockToolResult>,
 ): Promise<StockToolResult> {
   const leaseOutcome = await deps.ensureLease();
   if (!leaseOutcome.ok) {
@@ -176,7 +181,7 @@ async function withTextTool(
       async () => {
         declareTextOperation(lease, toolName);
         try {
-          return await fn(session.client);
+          return await fn(session.client, lease);
         } finally {
           declareTextOperation(lease, null);
         }
@@ -828,5 +833,71 @@ export async function handleIoRegisters(args: Record<string, unknown>, deps: Sto
       unrecognisedLineCount: parsed.value.unrecognisedLines.length,
       ...(identityWarning !== "" ? { identityWarning } : {}),
     });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// vice_program_load -- VICE's own text-monitor `load`, on a staged file.
+// ---------------------------------------------------------------------------
+
+/** Kept apart from vice_autostart's "autostart" slot so one never replaces
+ * the other's staged file. */
+const PROGRAM_LOAD_STAGE_SLOT = "program";
+
+/** VICE's reply to a successful `load`: "Loading '<file>' from 0801 to 10E7 (08E7 bytes)". */
+const LOAD_REPLY_RE = /from ([0-9a-fA-F]{4}) to ([0-9a-fA-F]{4})/;
+
+/**
+ * `vice_program_load` -- loads a program with VICE's own text-monitor
+ * `load "<file>" 0 [<address>]`, without resetting or starting the machine.
+ * THIS client reads the file at `path` and streams its bytes to the broker
+ * (stage_file + transfer, exactly as vice_autostart does); the text command
+ * names only the broker's staged file. `path` is resolved to an absolute
+ * path and not confined to the workspace (D-14). An optional `address`
+ * overrides the load address in the file's two-byte header, as VICE's own
+ * command allows.
+ */
+export async function handleProgramLoad(args: Record<string, unknown>, deps: StockSessionDeps): Promise<StockToolResult> {
+  const path = args.path;
+  if (typeof path !== "string" || path.length === 0) {
+    return isErrorText("vice_program_load: path is required and must be a non-empty string");
+  }
+  let address: number | undefined;
+  if (args.address !== undefined) {
+    try {
+      address = parseAddress(args.address, { what: "address" });
+    } catch (err) {
+      return isErrorText(`vice_program_load: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  const localPath = resolve(path);
+  const readError = checkLocalFileReadable("vice_program_load", localPath);
+  if (readError !== null) return isErrorText(readError);
+
+  return withTextTool("vice_program_load", deps, async (client, lease) => {
+    const staged = await lease.brokerControl.stageFile({ targetId: lease.targetId, slot: PROGRAM_LOAD_STAGE_SLOT });
+    if (!staged.ok) {
+      return isErrorText(`vice_program_load: staging the program slot was refused (${staged.reason})`);
+    }
+    const transferFile = deps.transferFile ?? transferFileOverEndpoint;
+    const upload = await transferFile({ direction: "upload", handle: staged.handle, sourcePath: localPath });
+    if (!upload.ok) {
+      return isErrorText(`vice_program_load: uploading the program failed (${upload.reason})`);
+    }
+    const built = buildStagedLoadCommand(staged.emulatorFilename, staged.handle, address);
+    if (!built.ok) {
+      return isErrorText(`vice_program_load: ${built.message} -- refusing before any text-monitor byte is written`);
+    }
+    // VICE echoes the file name; the broker's staged path stays on the broker.
+    const response = (await client.command(built.command)).split(staged.emulatorFilename).join("<staged file>");
+    const loaded = LOAD_REPLY_RE.exec(response);
+    if (!loaded) {
+      return isErrorText(`vice_program_load: VICE did not load the program: ${response.trim()}`);
+    }
+    const loadAddress = parseInt(loaded[1]!, 16);
+    const endAddress = parseInt(loaded[2]!, 16);
+    // A fresh connection can prefix leftover prompts; report VICE's own line.
+    const line = response.slice(response.lastIndexOf("Loading") >= 0 ? response.lastIndexOf("Loading") : 0).trim();
+    return derivedAnswer({ path: localPath, loadAddress, endAddress, byteLength: endAddress - loadAddress + 1, response: line });
   });
 }

@@ -1631,3 +1631,73 @@ test(
     assert.equal(report.scratchDirRemoved, true, "the harness's own scratch directory must not survive teardown");
   },
 );
+
+// ---------------------------------------------------------------------------
+// vice_program_load: the client streams the file to the broker, and VICE's own
+// text-monitor `load` loads the staged copy -- at the header address, and at an
+// overriding address.
+// ---------------------------------------------------------------------------
+
+test(
+  "text-monitor-live: vice_program_load streams a PRG to the broker and VICE's own load puts it in RAM, at its header address and at an override",
+  { skip: SKIP_REASON, timeout: 60000 },
+  async () => {
+    clearHeldStockSession();
+    resetChannelLockForTests();
+    const viceBinPath = VICE_LIVE_STOCK_BIN_ENV as string;
+    const prgPath = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "hazard-subject", "hazard-subject.prg");
+    const prg = readFileSync(prgPath);
+    const headerAddress = prg.readUInt16LE(0);
+    const payload = Array.from(prg.subarray(2));
+
+    const report = await withBrokerHarness(viceBinPath, async ({ stateDir, controlPort, recordPid, host }) => {
+      const opened = await dialControlSession({ port: controlPort, candidates: ["127.0.0.1"] });
+      assert.ok(opened.ok, `dialControlSession failed: ${JSON.stringify(opened)}`);
+      if (!opened.ok) return;
+      const session: BrokerControlSession = opened.session;
+      const acquired = await session.acquire();
+      assert.ok(acquired.ok, `acquire failed: ${JSON.stringify(acquired)}`);
+      if (!acquired.ok) return;
+      const grant = acquired.grant;
+      const epochBefore = JSON.parse(readFileSync(epochPathFor(stateDir, grant.port), "utf8")) as { pid: number };
+      recordPid(epochBefore.pid);
+      assert.ok(await waitForPortOpen(host, grant.port, 30000), `binmon port ${grant.port} never opened`);
+
+      const lease: HeldLease = {
+        host,
+        port: grant.port,
+        targetId: grant.id,
+        brokerControl: session,
+        supervisorDir: stateDir,
+        remoteMonitorPort: grant.remote_monitor_port as number,
+      };
+      const deps: StockSessionDeps = {
+        ensureLease: async () => ({ ok: true as const, lease }),
+        connect: (opts: StockConnectOptions) => stockConnect(opts),
+      };
+      const readRam = async (address: number) => {
+        const r = await callStockTool("vice_memory_read", { address, size: payload.length, encoding: "array" }, deps);
+        return parseOkPayload(r as { content: { type: "text"; text: string }[]; isError: boolean }).bytes as number[];
+      };
+
+      const loaded = parseOkPayload((await callStockTool("vice_program_load", { path: prgPath }, deps)) as { content: { type: "text"; text: string }[]; isError: boolean });
+      console.log(`text-monitor-live (program_load): MEASURED ${JSON.stringify(loaded)}`);
+      assert.equal(loaded.loadAddress, headerAddress);
+      assert.equal(loaded.byteLength, payload.length);
+      assert.doesNotMatch(JSON.stringify(loaded), /staging/, "the broker's staged path must not reach the caller");
+      assert.deepEqual(await readRam(headerAddress), payload, "RAM at the header address must equal the PRG payload");
+
+      const override = 0xc000;
+      const moved = parseOkPayload((await callStockTool("vice_program_load", { path: prgPath, address: override }, deps)) as { content: { type: "text"; text: string }[]; isError: boolean });
+      console.log(`text-monitor-live (program_load, address): MEASURED ${JSON.stringify(moved)}`);
+      assert.equal(moved.loadAddress, override);
+      assert.deepEqual(await readRam(override), payload, "RAM at the override address must equal the PRG payload");
+
+      await session.release();
+    });
+
+    assert.deepEqual(report.pidsAliveAfterTeardown, [], `pids still alive after teardown: ${JSON.stringify(report.pidsAliveAfterTeardown)}`);
+    assert.deepEqual(report.strayPidsMatchingScratch, [], `stray processes survived teardown: ${JSON.stringify(report.strayPidsMatchingScratch)}`);
+    assert.equal(report.scratchDirRemoved, true, "the harness's own scratch directory must not survive teardown");
+  },
+);

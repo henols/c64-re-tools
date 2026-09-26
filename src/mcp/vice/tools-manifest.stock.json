@@ -4385,13 +4385,17 @@
     },
     {
       "name": "vice_program_load",
-      "description": "Loads a PRG file into RAM at the load address in its own two-byte header, without resetting or starting the machine. The MCP server reads the file at `path` and streams its bytes to the emulator through the broker; the path itself never crosses the socket. Use vice_autostart instead to reset, load and run. Halts the machine for the duration of the write, like every binary-monitor command.",
+      "description": "Loads a program file into RAM with VICE's own text-monitor command `load \"<file>\" 0 [<address>]`, without resetting or starting the machine. The MCP server reads the file at `path` and streams it to the broker, which stages it; the command names only the staged file, so the path itself never crosses the socket. Without `address`, VICE loads at the address in the file's two-byte header. Use vice_autostart instead to reset, load and run. Halts the machine for the duration of the command.",
       "inputSchema": {
         "type": "object",
         "properties": {
           "path": {
             "type": "string",
-            "description": "Path to the .prg file on the MCP server's side. Relative paths resolve against the MCP server's working directory."
+            "description": "Path to the program file on the MCP server's side. Relative paths resolve against the MCP server's working directory."
+          },
+          "address": {
+            "type": "string",
+            "description": "OPTIONAL. Load address overriding the file's two-byte header, as VICE's `load` allows: number or hex string ($0801)."
           }
         },
         "required": [
@@ -4414,6 +4418,9 @@
           "byteLength": {
             "type": "number"
           },
+          "response": {
+            "type": "string"
+          },
           "runState": {
             "type": "string",
             "enum": [
@@ -4428,6 +4435,7 @@
           "loadAddress",
           "endAddress",
           "byteLength",
+          "response",
           "runState"
         ]
       }

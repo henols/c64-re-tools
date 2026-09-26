@@ -43,9 +43,9 @@
 //     every stock tool answer to carry runState, and stockAnswer() is the
 //     one place that is stamped.
 import { resolve, dirname } from "node:path";
-import { mkdirSync, existsSync, readdirSync, writeFileSync, readFileSync, accessSync, statSync, constants as fsConstants } from "node:fs";
+import { mkdirSync, existsSync, readdirSync, writeFileSync, readFileSync, accessSync, constants as fsConstants } from "node:fs";
 
-import { CommandType, ResetMode, resetBody, autostartBody, dumpBody, undumpBody, memSetBody } from "./stock-protocol.ts";
+import { CommandType, ResetMode, resetBody, autostartBody, dumpBody, undumpBody } from "./stock-protocol.ts";
 import { stockAnswer, convertWireError, isErrorText, type StockSessionHandler } from "./stock-handler.ts";
 import { snapshotPathFor, snapshotMetaPathFor, validateSnapshotName } from "./transfer-paths.ts";
 
@@ -64,10 +64,11 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * unreadable path is refused with zero staging calls and zero sends,
  * matching handleSnapshotLoad's own existsSync-before-anything-else
  * ordering read in the other direction. Used by handleAutostart and
- * handleDiskAttach; handleSnapshotSave/handleSnapshotLoad have their own
- * existing existsSync check for the SAME reason and are unchanged here.
+ * handleDiskAttach, and by text-tools.ts's vice_program_load;
+ * handleSnapshotSave/handleSnapshotLoad have their own existing existsSync
+ * check for the SAME reason and are unchanged here.
  */
-function checkLocalFileReadable(toolName: string, path: string): string | null {
+export function checkLocalFileReadable(toolName: string, path: string): string | null {
   try {
     accessSync(path, fsConstants.R_OK);
     return null;
@@ -232,71 +233,6 @@ export const handleAutostart: StockSessionHandler = async (args, session) => {
   }
 
   return stockAnswer(session.client, { path: localPath, handle: stageOutcome.handle, run, index });
-};
-
-// ---------------------------------------------------------------------------
-// handleProgramLoad -- MEM_SET (0x02) of a PRG this client read.
-// ---------------------------------------------------------------------------
-
-/** The largest PRG that fits the 64K address space: a two-byte load address
- * plus at most 0x10000 data bytes. Checked on the file's size before reading. */
-const PRG_MAX_BYTES = 2 + 0x10000;
-
-/**
- * `vice_program_load` -- puts a PRG into RAM at the load address in its own
- * two-byte header, without resetting or starting the machine. THIS client
- * reads the file at `path` and sends its bytes through the monitor
- * connection with MEM_SET; the path never crosses to the broker or the
- * emulator. `path` is resolved to an absolute path and, like
- * vice_autostart's, not confined to the workspace (D-14). Measured against
- * stock VICE 3.9: the text monitor's `load "<prg>" 0`, which this replaces,
- * changes no byte outside the payload range, so the two leave identical RAM.
- */
-export const handleProgramLoad: StockSessionHandler = async (args, session) => {
-  const a = isPlainObject(args) ? args : {};
-  const path = a.path;
-  if (typeof path !== "string" || path.length === 0) {
-    return isErrorText("vice_program_load: path is required and must be a non-empty string");
-  }
-  const localPath = resolve(path);
-  const readError = checkLocalFileReadable("vice_program_load", localPath);
-  if (readError !== null) return isErrorText(readError);
-
-  let prg: Buffer;
-  try {
-    const size = statSync(localPath).size;
-    if (size > PRG_MAX_BYTES) {
-      return isErrorText(`vice_program_load: ${localPath} is ${size} bytes; a PRG is at most ${PRG_MAX_BYTES} (a two-byte load address plus 64K)`);
-    }
-    prg = readFileSync(localPath);
-  } catch (err) {
-    return isErrorText(`vice_program_load: cannot read path ${localPath} (${err instanceof Error ? err.message : String(err)})`);
-  }
-  if (prg.length < 3) {
-    return isErrorText(`vice_program_load: ${localPath} is ${prg.length} bytes; a PRG needs a two-byte load address and at least one data byte`);
-  }
-  const loadAddress = prg.readUInt16LE(0);
-  const payload = prg.subarray(2);
-  const endAddress = loadAddress + payload.length - 1;
-  if (endAddress > 0xffff) {
-    return isErrorText(
-      `vice_program_load: ${localPath} loads at 0x${loadAddress.toString(16)} with ${payload.length} bytes, which runs past 0xffff`,
-    );
-  }
-
-  let response;
-  try {
-    response = await session.client.send(CommandType.MemorySet, memSetBody({ start: loadAddress, end: endAddress, memspace: 0x00, bank: 0x0000, data: payload }));
-  } catch (err) {
-    return convertWireError("vice_program_load", err);
-  }
-  if (response.type !== "unknown") {
-    return isErrorText(
-      `vice_program_load: the binary monitor replied with an unexpected response type ("${response.type}"), expected an acknowledgement`,
-    );
-  }
-
-  return stockAnswer(session.client, { path: localPath, loadAddress, endAddress, byteLength: payload.length });
 };
 
 // ---------------------------------------------------------------------------

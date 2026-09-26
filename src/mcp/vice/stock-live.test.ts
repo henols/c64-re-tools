@@ -55,10 +55,9 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { createServer, connect as netConnect } from "node:net";
 
 import { callStockTool } from "./stock-tools.ts";
@@ -652,20 +651,6 @@ test(
     }
   },
 );
-
-test("stock-live: vice_program_load puts the PRG payload into RAM at its header address, reading the file on the client and sending only its bytes", { skip: SKIP_REASON }, async () => {
-  const prgPath = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "hazard-subject", "hazard-subject.prg");
-  const prg = readFileSync(prgPath);
-  const loadAddress = prg.readUInt16LE(0);
-  const payload = prg.subarray(2);
-  const loadResult = await callStockTool("vice_program_load", { path: prgPath }, liveDeps());
-  const loaded = parseOkPayload(loadResult as { content: { type: "text"; text: string }[]; isError: boolean });
-  assert.equal(loaded.loadAddress, loadAddress);
-  assert.equal(loaded.byteLength, payload.length);
-  const readResult = await callStockTool("vice_memory_read", { address: loadAddress, size: payload.length, encoding: "array" }, liveDeps());
-  const read = parseOkPayload(readResult as { content: { type: "text"; text: string }[]; isError: boolean });
-  assert.deepEqual(read.bytes, Array.from(payload), "RAM over [load, end] must equal the PRG payload");
-});
 
 test("stock-live (05-09, CR-01): the refusal path's premise is reachable -- the live BANKS_AVAILABLE catalog names both io and ram", { skip: SKIP_REASON }, async () => {
   const result = await callStockTool("vice_memory_banks", {}, liveDeps());

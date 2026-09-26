@@ -11,11 +11,13 @@ const staged = await brokerControl.stageFile({ targetId, slot }); // broker mint
 await transferFile({ direction: "upload", handle: staged.handle, sourcePath: localPath });
 ```
 
-- The emulator or host tool must open a file: stage it (`stageFile` +
-  `transferFile`), then pass the broker-minted name through verbatim
-  (`vice_autostart`, `vice_disk_attach`, `vice_snapshot_load`, host tools).
-- The bytes only need to land in emulator memory: send them in the monitor
-  request itself (`vice_program_load` uses `MEM_SET`).
+- Stage the file (`stageFile` + `transferFile`), then pass the broker-minted
+  name verbatim to the VICE command that already does the job
+  (`vice_autostart`, `vice_disk_attach`, `vice_snapshot_load`, and
+  `vice_program_load` through the text monitor's own `load`), or to the host
+  tool.
+- Prefer the capability VICE already implements over re-creating it on the
+  client.
 - Results come back the same way: download by handle into the project's
   `.c64-re-tools/<kind>/`.
 - Never send a client path to the broker or the emulator, and never read a

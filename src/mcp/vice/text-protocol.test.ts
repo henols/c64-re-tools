@@ -44,6 +44,7 @@ import {
   TEXT_COMMAND_ALLOWLIST,
   TEXT_COMMAND_PARAM_SPECS,
   isAllowlistedTextCommand,
+  buildStagedLoadCommand,
   buildTextCommand,
   isDialableTextCommandForVerb,
   TextFramingError,
@@ -120,15 +121,14 @@ test("isAllowlistedTextCommand: accepts every TEXT_COMMAND_ALLOWLIST entry and r
 /** VICE's host-file load verbs: `load`, `bload` and the `l` alias. */
 const LOAD_VERB_RE = /^\s*(load|bload|l)\b/;
 
-test("the text monitor has no `load` verb: no allowlisted or parameterized verb reads a host file, and a load command is never dialable", () => {
-  // vice_program_load writes a PRG's bytes through the binary monitor, so no
-  // path ever reaches the emulator. VICE's text `load` opens a path on the
-  // emulator's host, which is exactly what must not cross the socket.
+test("the only dialable `load` is a broker-staged file: no allowlist or spec entry loads, and an arbitrary path is refused", () => {
+  // vice_program_load streams the file to the broker and loads the staged
+  // copy with VICE's own `load`. A caller's path must never reach it.
   const allDialableVerbStrings = [...TEXT_COMMAND_ALLOWLIST, ...Object.keys(TEXT_COMMAND_PARAM_SPECS)];
   for (const cmd of allDialableVerbStrings) {
     assert.doesNotMatch(cmd, LOAD_VERB_RE, `${JSON.stringify(cmd)} must not be a host-file load verb`);
   }
-  for (const cmd of ['load "foo" 0', 'load "foo" 8', 'load "/tmp/x.prg" 0']) {
+  for (const cmd of ['load "foo" 0', 'load "foo" 8', 'load "/tmp/x.prg" 0', `load "/s/${"a".repeat(32)}" 8`, `load "/s/${"A".repeat(32)}" 0`, `load "/s/\"/${"a".repeat(32)}" 0`, `bload "/s/${"a".repeat(32)}" 0`]) {
     assert.ok(!isAllowlistedTextCommand(cmd), `${JSON.stringify(cmd)} must never be allowlisted`);
   }
   const built = buildTextCommand('load "foo"', 0);
@@ -914,4 +914,21 @@ test("this file's own fixture directory resolves via TEXTMON_FIXTURE_DIR and eve
     const fixture = loadTextFixture(c);
     assert.ok(fixture.buffer.length >= 0);
   }
+});
+
+test("buildStagedLoadCommand: builds VICE's load for a broker-staged file, with an optional address, and refuses anything else", () => {
+  const handle = "0123456789abcdef0123456789abcdef";
+  const staged = `/home/u/.c64-re-tools/staging/grant-1/${handle}`;
+  const plain = buildStagedLoadCommand(staged, handle);
+  assert.ok(plain.ok && plain.command === `load "${staged}" 0`);
+  assert.ok(plain.ok && isAllowlistedTextCommand(plain.command));
+  const withAddress = buildStagedLoadCommand(staged, handle, 0xc000);
+  assert.ok(withAddress.ok && withAddress.command === `load "${staged}" 0 $c000`);
+  assert.ok(withAddress.ok && isAllowlistedTextCommand(withAddress.command));
+
+  assert.equal(buildStagedLoadCommand(`/home/u/other/${"f".repeat(32)}`, handle).ok, false, "the name must end in the handle it was staged under");
+  assert.equal(buildStagedLoadCommand(`/home/u/"x/${handle}`, handle).ok, false, "a quote in the name is refused");
+  assert.equal(buildStagedLoadCommand(`relative/${handle}`, handle).ok, false, "a relative name is refused");
+  assert.equal(buildStagedLoadCommand(staged, "not-a-handle").ok, false);
+  assert.equal(buildStagedLoadCommand(staged, handle, 0x10000).ok, false);
 });

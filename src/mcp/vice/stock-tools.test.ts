@@ -857,18 +857,6 @@ conformanceTest("vice_memory_write", async () => {
   assertAnswerConforms("vice_memory_write", result);
 });
 
-conformanceTest("vice_program_load", async () => {
-  const session = buildConformanceSession("conformance-vice_program_load", (commandType) => {
-    if (commandType === CommandType.MemorySet) {
-      return conformanceAckReply(CommandType.MemorySet);
-    }
-    throw new Error(`vice_program_load: unexpected commandType ${commandType}`);
-  });
-  const deps = buildConformanceDeps(session);
-  const result = await callStockTool("vice_program_load", { path: join(HERE, "fixtures", "hazard-subject", "hazard-subject.prg") }, deps);
-  assertAnswerConforms("vice_program_load", result);
-});
-
 conformanceTest("vice_memory_banks", async () => {
   const session = buildConformanceSession("conformance-vice_memory_banks", (commandType) => {
     if (commandType === CommandType.BanksAvailable) {
@@ -1619,6 +1607,28 @@ function buildTextConformanceDeps(port: number, overrides: Partial<StockSessionD
     ...overrides,
   };
 }
+
+conformanceTest("vice_program_load", async () => {
+  const staged = "/broker/staging/conformance-text/00112233445566778899aabbccddeeff";
+  await withConformanceTextServer(
+    (_line, socket) => socket.write(`Loading '${staged}' from 0801 to 10E7 (08E7 bytes)\n(C:$0801) `),
+    async (port) => {
+      const base = buildTextConformanceDeps(port);
+      const lease = await base.ensureLease();
+      assert.ok(lease.ok && lease.lease !== null);
+      const brokerControl = {
+        ...lease.lease.brokerControl,
+        stageFile: async () => ({ ok: true as const, handle: "00112233445566778899aabbccddeeff", emulatorFilename: staged }),
+      } as unknown as HeldLease["brokerControl"];
+      const deps = buildTextConformanceDeps(port, {
+        ensureLease: async () => ({ ok: true as const, lease: { ...lease.lease!, brokerControl } }),
+        transferFile: async () => ({ ok: true, byteLength: 0, sha256: "" }),
+      });
+      const result = await callStockTool("vice_program_load", { path: join(HERE, "fixtures", "hazard-subject", "hazard-subject.prg") }, deps);
+      assertAnswerConforms("vice_program_load", result);
+    },
+  );
+});
 
 conformanceTest("vice_device_console", async () => {
   await withConformanceTextServer(
